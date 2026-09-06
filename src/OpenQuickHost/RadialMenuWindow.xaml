@@ -12,7 +12,10 @@
         WindowStartupLocation="Manual"
         Topmost="True"
         Focusable="False"
-        ShowActivated="False">
+        ShowActivated="False"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType"
+        TextOptions.TextHintingMode="Fixed">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
         <local:BooleanToColorConverter x:Key="BooleanToColorConverter" />
@@ -26,12 +29,28 @@
                 IsHitTestVisible="False"
                 Visibility="{Binding IsEditModeLocked, Converter={StaticResource BooleanToVisibilityConverter}}"/>
 
+        <Grid x:Name="VisualContentRoot"
+              Width="1400"
+              Height="1400"
+              HorizontalAlignment="Center"
+              VerticalAlignment="Center"
+              ClipToBounds="False">
+
         <Grid x:Name="CenterMainWheelContainer"
               Width="1400"
               Height="1400"
               HorizontalAlignment="Center"
               VerticalAlignment="Center"
+              RenderTransformOrigin="0.5,0.5"
               Visibility="{Binding IsCenterWheelVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+        <Grid.RenderTransform>
+            <TransformGroup>
+                <ScaleTransform x:Name="WheelEntryScale" ScaleX="1.0" ScaleY="1.0"/>
+                <SkewTransform/>
+                <RotateTransform/>
+                <TranslateTransform/>
+            </TransformGroup>
+        </Grid.RenderTransform>
         <!-- 第 3 层：最外圈 8 方向扩展容器 (半径 165~280，默认隐藏，有配置或鼠标划入时显现) -->
         <Grid x:Name="OuterWheelLayer"
               Width="1400"
@@ -1757,9 +1776,10 @@
                    Minimum="0"
                    Maximum="{Binding EditMaxScrollOffset}"
                    Value="{Binding EditScrollOffsetY, Mode=TwoWay}"
-                   ViewportSize="{Binding ActualHeight, RelativeSource={RelativeSource AncestorType=Window}}"
+                   ViewportSize="{Binding EditContentViewportHeight}"
                    Visibility="{Binding IsScrollBarVisible, Converter={StaticResource BooleanToVisibilityConverter}}"
                    Opacity="0.55"/>
 
+        </Grid><!-- /VisualContentRoot -->
     </Grid>
 </Window>

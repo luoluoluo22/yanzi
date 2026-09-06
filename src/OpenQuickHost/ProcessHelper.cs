@@ -57,24 +57,19 @@ namespace OpenQuickHost
 
             return null;
         }
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<uint, (string Name, long ExpireTick)> _pidNameCache = new();
+
         public static string GetProcessNameByPid(uint processId)
         {
             if (processId == 0) return string.Empty;
 
-            try
+            var now = Environment.TickCount64;
+            if (_pidNameCache.TryGetValue(processId, out var cached) && now < cached.ExpireTick)
             {
-                var proc = Process.GetProcessById((int)processId);
-                var name = proc.ProcessName;
-                if (!string.IsNullOrWhiteSpace(name))
-                {
-                    return name;
-                }
-            }
-            catch
-            {
-                // Process.GetProcessById 在管理员权限进程/全屏游戏下可能抛出 Access Denied 异常
+                return cached.Name;
             }
 
+            string name = string.Empty;
             try
             {
                 IntPtr hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, (int)processId);
@@ -87,7 +82,7 @@ namespace OpenQuickHost
                         if (QueryFullProcessImageName(hProcess, 0, sb, ref capacity))
                         {
                             var fullPath = sb.ToString();
-                            return System.IO.Path.GetFileNameWithoutExtension(fullPath);
+                            name = System.IO.Path.GetFileNameWithoutExtension(fullPath);
                         }
                     }
                     finally
@@ -101,7 +96,12 @@ namespace OpenQuickHost
                 // Ignore
             }
 
-            return string.Empty;
+            if (!string.IsNullOrEmpty(name))
+            {
+                _pidNameCache[processId] = (name, now + 5000); // 缓存 5 秒
+            }
+
+            return name;
         }
 
         public static bool ProcessNameMatches(string processName, string pattern)

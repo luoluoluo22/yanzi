@@ -223,6 +223,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private QuickPanelWindow? _quickPanel;
     private RadialMenuWindow? _radialMenu;
     public RadialMenuWindow? RadialMenuInstance => _radialMenu;
+    private RadialMenuWindow? _standbyRadialMenu;
+    private bool _isPrewarmingRadial;
+    // 备用轮盘预热延迟器：呼出/关闭后延迟预热，避免巨大的 XAML 实例化 + 屏外首帧
+    // 与用户呼出后的首批鼠标交互抢 UI 线程
+    private System.Threading.Timer? _standbyPrewarmTimer;
+    private readonly object _standbyPrewarmGate = new();
     private YanmOverlayWindow? _yanmOverlay;
     private MobileMessageToastWindow? _mobileMessageToastWindow;
     private readonly WindowBoundExtensionsService _windowBoundExtensionsService;
@@ -409,8 +415,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         StateChanged += MainWindow_StateChanged;
 
         _quickPanel = new QuickPanelWindow(this);
-        _radialMenu = new RadialMenuWindow(this);
-        Dispatcher.InvokeAsync(() => _radialMenu?.Warmup(), System.Windows.Threading.DispatcherPriority.Background);
         _yanmOverlay = new YanmOverlayWindow(this);
         _windowBoundExtensionsService = new WindowBoundExtensionsService(this);
         _windowSnapAssistService = new WindowSnapAssistService();
@@ -1221,11 +1225,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         StartMousePanelService();
         StartMouseGestureService();
-        if (!AppSettingsStore.Load().RefreshCloudOnStartup)
+        WarmupChildWindows();
+
+        if (!AppSettingsStore.LoadCached().RefreshCloudOnStartup)
         {
             StartMobileMessageBridge("startup-no-cloud-refresh");
             QueueBackgroundWebDavSync("startup");
-            WarmupChildWindows();
             return;
         }
 
@@ -1238,7 +1243,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 StartMobileMessageBridge("startup-post-refresh");
             }
             StartStartupExtensions();
-            WarmupChildWindows();
         });
     }
 
@@ -1248,28 +1252,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             try
             {
-                if (_radialMenu != null)
-                {
-                    var oLeft = _radialMenu.Left;
-                    var oTop = _radialMenu.Top;
-                    var oShowActivated = _radialMenu.ShowActivated;
-                    var oShowInTaskbar = _radialMenu.ShowInTaskbar;
-                    var oOpacity = _radialMenu.Opacity;
-
-                    _radialMenu.Left = OverlayWindowManager.OffScreenCoordinate;
-                    _radialMenu.Top = OverlayWindowManager.OffScreenCoordinate;
-                    _radialMenu.ShowActivated = false;
-                    _radialMenu.ShowInTaskbar = false;
-                    _radialMenu.Opacity = 0;
-                    _radialMenu.Show();
-                    _radialMenu.Hide();
-
-                    _radialMenu.Left = oLeft;
-                    _radialMenu.Top = oTop;
-                    _radialMenu.ShowActivated = oShowActivated;
-                    _radialMenu.ShowInTaskbar = oShowInTaskbar;
-                    _radialMenu.Opacity = oOpacity;
-                }
 
                 if (_quickPanel != null)
                 {
@@ -1301,12 +1283,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 }
 
                 MouseGestureService.WarmUp();
+                EnsureStandbyRadialMenu();
             }
             catch (Exception ex)
             {
                 HostAssets.AppendLog($"Error warming up windows: {ex}");
             }
-        }), DispatcherPriority.ApplicationIdle);
+        }), DispatcherPriority.Background);
     }
 
     private void MainWindow_Loaded(object sender, RoutedEventArgs e)

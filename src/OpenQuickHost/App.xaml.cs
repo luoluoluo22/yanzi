@@ -180,7 +180,9 @@ public partial class App : WpfApplication
         // 2. 立即执行单实例拦截，拒绝任何多开开销与初始化异常。
         // 将此逻辑提到最前，不仅大幅降低了多实例点击时的 CPU/IO 损耗，更避免了多个进程并发做环境初始化（如读写配置、加载 Everything）所产生的死锁和异常崩溃。
         _singleInstanceService = new SingleInstanceService(SingleInstanceAppId);
-        if (!_singleInstanceService.TryAcquirePrimaryInstance())
+        var isPrimary = _singleInstanceService.TryAcquirePrimaryInstance();
+        HostAssets.AppendLog($"[Startup] TryAcquirePrimaryInstance returned: {isPrimary}");
+        if (!isPrimary)
         {
             try
             {
@@ -248,6 +250,7 @@ public partial class App : WpfApplication
 
             // 无论前台还是后台启动，都必须初始化后台核心服务（WebDAV、Everything、WindowBinding、鼠标手势等）
             window.InitializeBackgroundServices();
+            window.EnsureStandbyRadialMenu();
 
             if (ShouldStartHidden(e.Args))
             {
@@ -357,7 +360,7 @@ public partial class App : WpfApplication
 
     private static void Window_GlobalLoaded(object sender, RoutedEventArgs e)
     {
-        if (sender is not Window window)
+        if (sender is not Window window || window is RadialMenuWindow)
         {
             return;
         }
@@ -395,6 +398,11 @@ public partial class App : WpfApplication
 
     internal static void UpdateWindowDwmTheme(Window window, bool forceNonClientRepaint = true)
     {
+        if (window is RadialMenuWindow)
+        {
+            return;
+        }
+
         var handle = new System.Windows.Interop.WindowInteropHelper(window).Handle;
         if (handle == IntPtr.Zero)
         {

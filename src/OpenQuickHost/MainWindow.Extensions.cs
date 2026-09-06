@@ -40,12 +40,19 @@ public partial class MainWindow
         RefreshExtensionHotkeys();
 
         ExtensionIconLibrary.InvalidateAssociatedIconCache();
+        RadialMenuWindow.InvalidateProcessIconCache();
         if (!string.IsNullOrWhiteSpace(command.IconReference))
         {
             ExtensionIconLibrary.InvalidateImageCache(command.IconReference, command.ExtensionDirectoryPath);
         }
 
         _radialMenu?.LoadRadialMenuPages();
+        if (_standbyRadialMenu != null)
+        {
+            try { _standbyRadialMenu.Close(); } catch { }
+            _standbyRadialMenu = null;
+            EnsureStandbyRadialMenu();
+        }
         _quickPanel?.LoadSlots();
 
         if (!_isReplacingLocalExtensions)
@@ -62,6 +69,13 @@ public partial class MainWindow
         _localExtensionIndex.Remove(extensionId);
         RemoveExtensionUiTracking(extensionId);
         RefreshExtensionHotkeys();
+        _radialMenu?.LoadRadialMenuPages();
+        if (_standbyRadialMenu != null)
+        {
+            try { _standbyRadialMenu.Close(); } catch { }
+            _standbyRadialMenu = null;
+            EnsureStandbyRadialMenu();
+        }
 
         SyncLocalExtensionsToCloud();
     }
@@ -605,6 +619,124 @@ public partial class MainWindow
         _extensionScheduler?.RefreshExtension(extensionId, schedule);
     }
 
+    public void EnsureStandbyRadialMenu()
+    {
+        HostAssets.AppendLog($"[StandbyPool] EnsureStandbyRadialMenu called: AllowClose={AllowClose}, hasStandby={_standbyRadialMenu != null}, isPrewarming={_isPrewarmingRadial}");
+        if (AllowClose || _standbyRadialMenu != null || _isPrewarmingRadial)
+        {
+            return;
+        }
+
+        _isPrewarmingRadial = true;
+        _ = Dispatcher.BeginInvoke(new Action(() =>
+        {
+            try
+            {
+                if (!AllowClose && _standbyRadialMenu == null)
+                {
+                    HostAssets.AppendLog("[StandbyPool] EnsureStandbyRadialMenu started prewarming...");
+                    var radial = new RadialMenuWindow(this);
+                    radial.PrewarmDeep();
+                    _standbyRadialMenu = radial;
+                    HostAssets.AppendLog("[StandbyPool] Standby RadialMenu prewarmed and ready.");
+                }
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"[StandbyPool] Failed to prewarm standby RadialMenu: {ex.Message}");
+            }
+            finally
+            {
+                _isPrewarmingRadial = false;
+            }
+        }), DispatcherPriority.Background);
+    }
+
+    public void ShowRadialMenu(System.Drawing.Point? anchorPoint = null)
+    {
+        Dispatcher.VerifyAccess();
+        if (_radialMenu != null)
+        {
+            if (_radialMenu.IsPinned)
+            {
+                _radialMenu.Activate();
+                return;
+            }
+
+            // 复用停靠实例：Hide 只是把窗口停靠屏外（HWND/D3D 交换链/视觉树全保留），
+            // 直接复活即可，二次呼出零重建成本——这正是"首次丝滑、再次卡顿"的根源修复
+            HostAssets.AppendLog("[StandbyPool] ShowRadialMenu reusing docked instance.");
+            _radialMenu.ShowAtMouse(anchorPoint);
+            return;
+        }
+
+        RadialMenuWindow radial;
+        bool fromStandby = false;
+        if (_standbyRadialMenu != null)
+        {
+            radial = _standbyRadialMenu;
+            _standbyRadialMenu = null;
+            fromStandby = true;
+        }
+        else
+        {
+            radial = new RadialMenuWindow(this);
+        }
+
+        HostAssets.AppendLog($"[StandbyPool] ShowRadialMenu using instance (fromStandby={fromStandby}).");
+
+        _radialMenu = radial;
+        radial.Closed += (_, _) =>
+        {
+            if (ReferenceEquals(_radialMenu, radial))
+            {
+                _radialMenu = null;
+            }
+            // 实例被真正销毁（应用退出等）时才需要补池
+            ScheduleStandbyRadialMenu();
+        };
+        radial.ShowAtMouse(anchorPoint);
+
+        // 呼出实例被取走后延迟预热：预热闭包（实例化整棵 XAML 树 + 屏外首帧上屏）
+        // 动辄上百毫秒，绝不能与呼出后头几百毫秒的鼠标交互抢同一线程
+        ScheduleStandbyRadialMenu();
+    }
+
+    /// <summary>
+    /// 延迟调度备用轮盘预热（默认 3 秒后，轮盘仍可见时顺延）。
+    /// 每次调用都会重置计时器，保证预热只在用户交互低谷期发生。
+    /// </summary>
+    private void ScheduleStandbyRadialMenu()
+    {
+        lock (_standbyPrewarmGate)
+        {
+            _standbyPrewarmTimer?.Dispose();
+            _standbyPrewarmTimer = new System.Threading.Timer(_ =>
+            {
+                try
+                {
+                    var dispatcher = Dispatcher;
+                    if (dispatcher == null || dispatcher.HasShutdownStarted || dispatcher.HasShutdownFinished)
+                    {
+                        return;
+                    }
+
+                    // 主实例常驻复用（停靠屏外）时无需再补池；仅实例被真正销毁后需要
+                    if (_radialMenu != null)
+                    {
+                        return;
+                    }
+
+                    dispatcher.BeginInvoke(new Action(EnsureStandbyRadialMenu), DispatcherPriority.Background);
+                }
+                catch
+                {
+                    // 预热失败不影响主流程
+                }
+            }, null, TimeSpan.FromSeconds(3), Timeout.InfiniteTimeSpan);
+        }
+    }
+
     public void StartMousePanelService()
     {
         if (_listenerServicesPaused)
@@ -615,7 +747,7 @@ public partial class MainWindow
         InputHookService.Start(
             () => _quickPanel?.ShowAtMouse(),
             () => _quickPanel?.ExecuteHoveredSlotFromHoldRelease(),
-            pt => _radialMenu?.ShowAtMouse(pt),
+            pt => ShowRadialMenu(pt),
             () => _radialMenu?.ExecuteSelectedFromHoldRelease(),
             () => _yanmOverlay?.ShowTemporary(),
             () => _yanmOverlay?.HideTemporary(),
@@ -653,7 +785,9 @@ public partial class MainWindow
     public IReadOnlyList<RadialMenuRuntimeItem> GetRadialMenuItems(string? pageId = null, string? activeProcessName = null)
     {
         var allCommands = GetAllCommands();
-        var settings = AppSettingsStore.Load();
+        // 热路径必须走缓存：Load() 每次同步磁盘读 + 全量 JSON 反序列化，
+        // 呼出时经 BuildItems 走到这里会直接卡 UI 线程
+        var settings = AppSettingsStore.LoadCached();
         var radial = settings.RadialMenu ?? new RadialMenuSettings();
         
         RadialMenuPageSettings? targetPage = null;
@@ -1335,6 +1469,7 @@ public partial class MainWindow
             RefreshRadialHotkeyRegistration();
             RefreshWindowSnapAssistHotkeyRegistration();
             RefreshExtensionHotkeys();
+            EnsureStandbyRadialMenu();
         }
     }
 
@@ -1346,6 +1481,11 @@ public partial class MainWindow
             NetworkChange.NetworkAddressChanged -= NetworkChange_NetworkAddressChanged;
             Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= SystemEvents_DisplaySettingsChanged;
             _cloudReconnectTimer.Stop();
+            lock (_standbyPrewarmGate)
+            {
+                _standbyPrewarmTimer?.Dispose();
+                _standbyPrewarmTimer = null;
+            }
 
             if (_source != null)
             {
@@ -1366,6 +1506,11 @@ public partial class MainWindow
                 _mobileMessagePollTimer.Stop();
                 _source.RemoveHook(WndProc);
             }
+
+            try { _standbyRadialMenu?.Close(); } catch { }
+            _standbyRadialMenu = null;
+            try { _radialMenu?.Close(); } catch { }
+            _radialMenu = null;
 
             return;
         }
@@ -1505,7 +1650,7 @@ public partial class MainWindow
         {
             if (IsRadialAllowedForForegroundProcess())
             {
-                _radialMenu?.ShowAtMouse();
+                ShowRadialMenu();
             }
 
             handled = true;

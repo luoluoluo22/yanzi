@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 using System.Windows;
 using System.Windows.Threading;
@@ -8,6 +9,7 @@ namespace OpenQuickHost;
 
 public class InputHookService
 {
+    private static readonly MouseTrajectoryTracker _trajectoryTracker = new();
     private const int WH_MOUSE_LL = 14;
     private const int WH_KEYBOARD_LL = 13;
     private const int WM_LBUTTONDOWN = 0x0201;
@@ -46,6 +48,13 @@ public class InputHookService
     private static IntPtr _mouseHookID = IntPtr.Zero;
     private static IntPtr _keyboardHookID = IntPtr.Zero;
     private static readonly IntPtr SYNTHETIC_EXTRA_INFO = new(0x51554943); // "QUIC"
+
+    private static readonly object _hookLifecycleLock = new();
+    private static Thread? _hookThread;
+    private static uint _hookThreadId;
+    private static ManualResetEventSlim? _hookReady;
+    private static Exception? _hookStartException;
+    private static volatile bool _stopRequested;
 
     /// <summary>
     /// 合成输入统一标记：本服务与其它输入服务（手势重放、双击 Alt 的 Esc 注入等）
@@ -140,24 +149,18 @@ public class InputHookService
         try
         {
             if (!_isEnabled) return;
-            
-            if (_mouseHookID != IntPtr.Zero)
-            {
-                UnhookWindowsHookEx(_mouseHookID);
-                _mouseHookID = IntPtr.Zero;
-            }
-            if (_keyboardHookID != IntPtr.Zero)
-            {
-                UnhookWindowsHookEx(_keyboardHookID);
-                _keyboardHookID = IntPtr.Zero;
-            }
-
-            ResetTransientMouseState();
-
-            _mouseHookID = SetMouseHook(_mouseProc);
-            _keyboardHookID = SetKeyboardHook(_keyboardProc);
-            
-            HostAssets.AppendLog($"Input hook: auto-reinstalled successfully due to {reason}. mouseHook=0x{_mouseHookID.ToInt64():X}, keyboardHook=0x{_keyboardHookID.ToInt64():X}.");
+            Stop();
+            Start(
+                _onShowPanel ?? (() => { }),
+                _onLongPressRelease,
+                _onShowRadial,
+                _onRadialRelease,
+                _onShowYanm,
+                _onYanmRelease,
+                _onShowWindowSnap,
+                _onWindowSnapMove,
+                _onWindowSnapRelease);
+            HostAssets.AppendLog($"Input hook: auto-reinstalled successfully on dedicated thread due to {reason}.");
         }
         catch (Exception ex)
         {
@@ -176,12 +179,6 @@ public class InputHookService
         Action? onWindowSnapMove = null,
         Action? onWindowSnapRelease = null)
     {
-        if (_isEnabled)
-        {
-            HostAssets.AppendLog("Input hook: start skipped because hook is already running.");
-            return;
-        }
-        
         _onShowPanel = onLongPress;
         _onLongPressRelease = onLongPressRelease;
         _onShowRadial = onRadial;
@@ -192,24 +189,122 @@ public class InputHookService
         _onWindowSnapMove = onWindowSnapMove;
         _onWindowSnapRelease = onWindowSnapRelease;
         ReloadSettings();
-        _mouseHookID = SetMouseHook(_mouseProc);
-        if (_mouseHookID == IntPtr.Zero)
+
+        ManualResetEventSlim ready;
+        lock (_hookLifecycleLock)
         {
-            var error = Marshal.GetLastWin32Error();
-            HostAssets.AppendLog($"Input hook: failed to install low level mouse hook, lastError={error}.");
+            if (_hookThread != null && _hookThread.IsAlive)
+            {
+                HostAssets.AppendLog("Input hook: start skipped because hook thread is already running.");
+                return;
+            }
+
+            _stopRequested = false;
+            _hookStartException = null;
+            ready = new ManualResetEventSlim(false);
+            _hookReady = ready;
+            _hookThread = new Thread(HookThreadMain)
+            {
+                IsBackground = true,
+                Name = "Yanzi.InputHook",
+                Priority = ThreadPriority.AboveNormal
+            };
+            _hookThread.Start();
+        }
+
+        try
+        {
+            if (!ready.Wait(TimeSpan.FromSeconds(5)))
+            {
+                throw new TimeoutException("Timed out while starting the low-level input hook thread.");
+            }
+
+            Exception? startException;
+            lock (_hookLifecycleLock)
+            {
+                startException = _hookStartException;
+            }
+            if (startException != null)
+            {
+                throw new Exception("Failed to install low-level input hooks.", startException);
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"Input hook: start failed: {ex.Message}");
+            Stop();
             return;
         }
 
-        _keyboardHookID = SetKeyboardHook(_keyboardProc);
-        if (_keyboardHookID == IntPtr.Zero)
-        {
-            HostAssets.AppendLog($"Input hook: failed to install low level keyboard hook, lastError={Marshal.GetLastWin32Error()}; CapsLock radial trigger disabled for this session.");
-        }
-        
         _longPressTimer = new System.Threading.Timer(OnLongPressTimerTick, null, Timeout.Infinite, Timeout.Infinite);
-
         _isEnabled = true;
-        HostAssets.AppendLog($"Input hook: started. mouseHook=0x{_mouseHookID.ToInt64():X}, keyboardHook=0x{_keyboardHookID.ToInt64():X}, triggers={DescribeSettings()}.");
+        HostAssets.AppendLog($"Input hook: started on dedicated thread. mouseHook=0x{_mouseHookID.ToInt64():X}, keyboardHook=0x{_keyboardHookID.ToInt64():X}, triggers={DescribeSettings()}.");
+    }
+
+    private static void HookThreadMain()
+    {
+        uint threadId = GetCurrentThreadId();
+        lock (_hookLifecycleLock)
+        {
+            _hookThreadId = threadId;
+        }
+
+        try
+        {
+            // 确保该线程拥有 Win32 消息队列
+            PeekMessage(out MSG _, IntPtr.Zero, 0, 0, PM_NOREMOVE);
+
+            _mouseHookID = SetMouseHook(_mouseProc);
+            if (_mouseHookID == IntPtr.Zero)
+            {
+                var error = Marshal.GetLastWin32Error();
+                throw new InvalidOperationException($"Failed to install low level mouse hook, lastError={error}");
+            }
+
+            _keyboardHookID = SetKeyboardHook(_keyboardProc);
+            if (_keyboardHookID == IntPtr.Zero)
+            {
+                HostAssets.AppendLog($"Input hook: failed to install low level keyboard hook, lastError={Marshal.GetLastWin32Error()}; CapsLock radial trigger disabled for this session.");
+            }
+
+            _hookReady?.Set();
+
+            while (!_stopRequested)
+            {
+                int result = GetMessage(out MSG message, IntPtr.Zero, 0, 0);
+                if (result <= 0)
+                {
+                    break;
+                }
+                TranslateMessage(ref message);
+                DispatchMessage(ref message);
+            }
+        }
+        catch (Exception ex)
+        {
+            lock (_hookLifecycleLock)
+            {
+                _hookStartException = ex;
+            }
+            _hookReady?.Set();
+        }
+        finally
+        {
+            if (_mouseHookID != IntPtr.Zero)
+            {
+                UnhookWindowsHookEx(_mouseHookID);
+                _mouseHookID = IntPtr.Zero;
+            }
+            if (_keyboardHookID != IntPtr.Zero)
+            {
+                UnhookWindowsHookEx(_keyboardHookID);
+                _keyboardHookID = IntPtr.Zero;
+            }
+            lock (_hookLifecycleLock)
+            {
+                _hookThreadId = 0;
+            }
+        }
     }
 
     private static void OnLongPressTimerTick(object? state)
@@ -252,14 +347,42 @@ public class InputHookService
             return;
         }
 
-        var mouseUnhooked = _mouseHookID == IntPtr.Zero || UnhookWindowsHookEx(_mouseHookID);
-        var keyboardUnhooked = _keyboardHookID == IntPtr.Zero || UnhookWindowsHookEx(_keyboardHookID);
-        HostAssets.AppendLog($"Input hook: stopped. mouseUnhooked={mouseUnhooked}, keyboardUnhooked={keyboardUnhooked}.");
+        Thread? hookThread;
+        uint hookThreadId;
+        lock (_hookLifecycleLock)
+        {
+            _stopRequested = true;
+            hookThread = _hookThread;
+            hookThreadId = _hookThreadId;
+        }
+
+        if (hookThreadId != 0)
+        {
+            PostThreadMessage(hookThreadId, WM_QUIT, UIntPtr.Zero, IntPtr.Zero);
+        }
+
+        if (hookThread != null && hookThread.ManagedThreadId != Environment.CurrentManagedThreadId)
+        {
+            hookThread.Join(TimeSpan.FromMilliseconds(500));
+        }
+
+        lock (_hookLifecycleLock)
+        {
+            if (_hookThread == hookThread && (hookThread == null || !hookThread.IsAlive))
+            {
+                _hookThread = null;
+                _hookThreadId = 0;
+                _hookReady?.Dispose();
+                _hookReady = null;
+            }
+        }
+
         _longPressTimer?.Change(Timeout.Infinite, Timeout.Infinite);
         _mouseHookID = IntPtr.Zero;
         _keyboardHookID = IntPtr.Zero;
         ResetTransientMouseState();
         _isEnabled = false;
+        HostAssets.AppendLog("Input hook: stopped dedicated hook thread.");
     }
 
     public static void ReloadSettings()
@@ -810,6 +933,7 @@ public class InputHookService
         {
             _middleButtonDownSwallowed = false;
         }
+        _trajectoryTracker.Start(point, button.ToString());
     }
 
     private static bool ShouldDelayRightButtonClick()
@@ -869,6 +993,11 @@ public class InputHookService
 
     private static void HandleMouseMove(POINT point)
     {
+        if (_trackedButton != TrackedMouseButton.None)
+        {
+            _trajectoryTracker.RecordMove(point);
+        }
+
         CancelLongPressOnMovement(point);
 
         if (_activeTriggerTarget == ActiveTriggerTarget.WindowSnap && _dragTriggered)
@@ -908,7 +1037,17 @@ public class InputHookService
             _ => MouseTriggerModes.RightDrag
         };
 
-        var panelDrag = _trackedButton switch
+        var dx = point.x - _downPoint.x;
+        var dy = point.y - _downPoint.y;
+        var distSq = (dx * dx) + (dy * dy);
+
+        // 极速短路：物理位移尚未达到 8 像素时，直接 0 开销放行，绝不执行任何进程名检测与黑白名单匹配
+        if (distSq < 64)
+        {
+            return;
+        }
+
+        var isPanelCandidate = _trackedButton switch
         {
             TrackedMouseButton.Middle => _settings.MiddleButtonDrag,
             TrackedMouseButton.X1 => _settings.X1ButtonDown,
@@ -917,74 +1056,92 @@ public class InputHookService
             _ => _settings.RightButtonDrag
         };
 
-        var yanmDrag = (_trackedButton switch
+        var isYanmCandidate = _trackedButton switch
         {
             TrackedMouseButton.Middle => _yanmSettings.TriggerMiddleButtonDrag || IsMouseTriggerModeActive(MouseTriggerModes.MiddleDrag, _yanmSettings.MouseTriggerMode, _yanmSettings.Enabled),
             TrackedMouseButton.X1 => _yanmSettings.TriggerX1ButtonDown || IsMouseTriggerModeActive(MouseTriggerModes.X1Down, _yanmSettings.MouseTriggerMode, _yanmSettings.Enabled),
             TrackedMouseButton.X2 => _yanmSettings.TriggerX2ButtonDown || IsMouseTriggerModeActive(MouseTriggerModes.X2Down, _yanmSettings.MouseTriggerMode, _yanmSettings.Enabled),
             TrackedMouseButton.CtrlLeft => _yanmSettings.TriggerCtrlLeftDrag || IsMouseTriggerModeActive(MouseTriggerModes.CtrlLeftDrag, _yanmSettings.MouseTriggerMode, _yanmSettings.Enabled),
             _ => _yanmSettings.TriggerRightButtonDrag || IsMouseTriggerModeActive(MouseTriggerModes.RightDrag, _yanmSettings.MouseTriggerMode, _yanmSettings.Enabled)
-        }) && IsTriggerAllowedForTarget(ActiveTriggerTarget.Yanm, logBlocked: false);
+        };
 
-        var radialDrag = (_trackedButton switch
+        var isRadialCandidate = _trackedButton switch
         {
             TrackedMouseButton.Middle => _radialSettings.TriggerMiddleButtonDrag || IsMouseTriggerModeActive(MouseTriggerModes.MiddleDrag, _radialSettings.MouseTriggerMode, _radialSettings.Enabled),
             TrackedMouseButton.X1 => _radialSettings.TriggerX1ButtonDown || IsMouseTriggerModeActive(MouseTriggerModes.X1Down, _radialSettings.MouseTriggerMode, _radialSettings.Enabled),
             TrackedMouseButton.X2 => _radialSettings.TriggerX2ButtonDown || IsMouseTriggerModeActive(MouseTriggerModes.X2Down, _radialSettings.MouseTriggerMode, _radialSettings.Enabled),
             TrackedMouseButton.CtrlLeft => _radialSettings.TriggerCtrlLeftDrag || IsMouseTriggerModeActive(MouseTriggerModes.CtrlLeftDrag, _radialSettings.MouseTriggerMode, _radialSettings.Enabled),
             _ => _radialSettings.TriggerRightButtonDrag || IsMouseTriggerModeActive(MouseTriggerModes.RightDrag, _radialSettings.MouseTriggerMode, _radialSettings.Enabled)
-        }) && IsTriggerAllowedForTarget(ActiveTriggerTarget.Radial, logBlocked: false);
+        };
 
-        var windowSnapDrag = _windowSnapAssistEnabled &&
+        var isWindowSnapCandidate = _windowSnapAssistEnabled &&
                              _onShowWindowSnap != null &&
                              string.Equals(_windowSnapAssistMouseTriggerMode, mode, StringComparison.OrdinalIgnoreCase);
-        if (!radialDrag && !yanmDrag && !panelDrag && !windowSnapDrag)
+
+        if (!isRadialCandidate && !isYanmCandidate && !isPanelCandidate && !isWindowSnapCandidate)
         {
             return;
         }
 
-        var threshold = yanmDrag
-            ? Math.Clamp(_yanmSettings.DragThresholdPixels, 8, 120)
-            : radialDrag
-                ? Math.Clamp(_radialSettings.DragThresholdPixels, 8, 120)
-                : Math.Clamp(_settings.DragThresholdPixels, 8, 120);
-        var dx = point.x - _downPoint.x;
-        var dy = point.y - _downPoint.y;
-
-        if ((dx * dx) + (dy * dy) < threshold * threshold)
+        // 只有当距离确实达到各组件设定的物理阈值时，才触发对应功能及前台进程检查
+        if (isPanelCandidate)
         {
-            return;
+            var panelThreshold = Math.Clamp(_settings.DragThresholdPixels, 8, 120);
+            if (distSq >= panelThreshold * panelThreshold && IsTriggerAllowedForTarget(ActiveTriggerTarget.Panel))
+            {
+                _dragTriggered = true;
+                _longPressTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+                _releaseShouldExecute = true;
+                _activeTriggerTarget = ActiveTriggerTarget.Panel;
+                HostAssets.AppendLog($"Input hook: {_trackedButton} drag/move triggered for mouse panel.");
+                InvokeShowPanel();
+                return;
+            }
         }
 
-        _dragTriggered = true;
-        _longPressTimer?.Change(Timeout.Infinite, Timeout.Infinite);
-        if (panelDrag)
+        if (isRadialCandidate)
         {
-            _releaseShouldExecute = true;
-            _activeTriggerTarget = ActiveTriggerTarget.Panel;
-            HostAssets.AppendLog($"Input hook: {_trackedButton} drag/move triggered for mouse panel.");
-            InvokeShowPanel();
+            var radialThreshold = Math.Clamp(_radialSettings.DragThresholdPixels, 8, 120);
+            if (distSq >= radialThreshold * radialThreshold && IsTriggerAllowedForTarget(ActiveTriggerTarget.Radial))
+            {
+                _dragTriggered = true;
+                _longPressTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+                _releaseShouldExecute = true;
+                _activeTriggerTarget = ActiveTriggerTarget.Radial;
+                HostAssets.AppendLog($"Input hook: {_trackedButton} drag/move triggered for radial, downPt=({_downPoint.x},{_downPoint.y}), currPt=({point.x},{point.y}).");
+                InvokeShowRadial(point);
+                return;
+            }
         }
-        else if (radialDrag && IsTriggerAllowedForTarget(ActiveTriggerTarget.Radial))
+
+        if (isYanmCandidate)
         {
-            _releaseShouldExecute = true;
-            _activeTriggerTarget = ActiveTriggerTarget.Radial;
-            HostAssets.AppendLog($"Input hook: {_trackedButton} drag/move triggered for radial, downPt=({_downPoint.x},{_downPoint.y}), currPt=({point.x},{point.y}).");
-            InvokeShowRadial(point);
+            var yanmThreshold = Math.Clamp(_yanmSettings.DragThresholdPixels, 8, 120);
+            if (distSq >= yanmThreshold * yanmThreshold && IsTriggerAllowedForTarget(ActiveTriggerTarget.Yanm))
+            {
+                _dragTriggered = true;
+                _longPressTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+                _releaseShouldExecute = true;
+                _activeTriggerTarget = ActiveTriggerTarget.Yanm;
+                HostAssets.AppendLog($"Input hook: {_trackedButton} drag/move triggered for Yanm.");
+                InvokeShowYanm();
+                return;
+            }
         }
-        else if (yanmDrag && IsTriggerAllowedForTarget(ActiveTriggerTarget.Yanm))
+
+        if (isWindowSnapCandidate)
         {
-            _releaseShouldExecute = true;
-            _activeTriggerTarget = ActiveTriggerTarget.Yanm;
-            HostAssets.AppendLog($"Input hook: {_trackedButton} drag/move triggered for Yanm.");
-            InvokeShowYanm();
-        }
-        else if (windowSnapDrag && InvokeShowWindowSnap())
-        {
-            _releaseShouldExecute = true;
-            _activeTriggerTarget = ActiveTriggerTarget.WindowSnap;
-            HostAssets.AppendLog($"Input hook: {_trackedButton} drag/move triggered for window snap.");
-            InvokeWindowSnapMove();
+            var snapThreshold = Math.Clamp(_settings.DragThresholdPixels, 8, 120);
+            if (distSq >= snapThreshold * snapThreshold && InvokeShowWindowSnap())
+            {
+                _dragTriggered = true;
+                _longPressTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+                _releaseShouldExecute = true;
+                _activeTriggerTarget = ActiveTriggerTarget.WindowSnap;
+                HostAssets.AppendLog($"Input hook: {_trackedButton} drag/move triggered for window snap.");
+                InvokeWindowSnapMove();
+                return;
+            }
         }
     }
 
@@ -1071,12 +1228,14 @@ public class InputHookService
             _leftButtonDownSwallowed = false;
         }
 
+        _trajectoryTracker.StopAndLog($"{button}Up");
         _trackedButton = TrackedMouseButton.None;
         return swallowRelease;
     }
 
     private static void ResetTransientMouseState()
     {
+        _trajectoryTracker.StopAndLog("Reset");
         _longPressTimer?.Change(Timeout.Infinite, Timeout.Infinite);
         _dragTriggered = false;
         _releaseShouldExecute = false;
@@ -1265,12 +1424,14 @@ public class InputHookService
 
     private static void InvokeShowPanel()
     {
+        _trajectoryTracker.Tag("TRIGGER:Panel");
         OverlayWindowManager.SuppressConflictingOverlays();
         DispatchToUi(() => _onShowPanel?.Invoke());
     }
 
     private static void InvokeShowRadial(POINT? anchorPoint = null)
     {
+        _trajectoryTracker.Tag("TRIGGER:Radial");
         OverlayWindowManager.SuppressConflictingOverlays();
         System.Drawing.Point? drawingPoint = anchorPoint.HasValue
             ? new System.Drawing.Point(anchorPoint.Value.x, anchorPoint.Value.y)
@@ -1280,6 +1441,7 @@ public class InputHookService
 
     private static void InvokeShowYanm()
     {
+        _trajectoryTracker.Tag("TRIGGER:Yanm");
         OverlayWindowManager.SuppressConflictingOverlays();
         DispatchToUi(() => _onShowYanm?.Invoke());
     }
@@ -1651,6 +1813,42 @@ public class InputHookService
     [DllImport("user32.dll")]
     private static extern bool SetCursorPos(int X, int Y);
 
+    private const uint WM_QUIT = 0x0012;
+    private const uint PM_NOREMOVE = 0x0000;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MSG
+    {
+        public IntPtr hwnd;
+        public uint message;
+        public UIntPtr wParam;
+        public IntPtr lParam;
+        public uint time;
+        public POINT pt;
+        public uint lPrivate;
+    }
+
+    [DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool PeekMessage(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax, uint wRemoveMsg);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern int GetMessage(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool TranslateMessage(ref MSG lpMsg);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr DispatchMessage(ref MSG lpMsg);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool PostThreadMessage(uint idThread, uint msg, UIntPtr wParam, IntPtr lParam);
+
     private enum TrackedMouseButton
     {
         None,
@@ -1744,5 +1942,135 @@ public class InputHookService
         public uint uMsg;
         public ushort wParamL;
         public ushort wParamH;
+    }
+
+    /// <summary>
+    /// 高精度鼠标轨迹与掉帧平顺度诊断追踪器
+    /// </summary>
+    private sealed class MouseTrajectoryTracker
+    {
+        private struct TrackPoint
+        {
+            public int X;
+            public int Y;
+            public long Timestamp;
+            public double IntervalMs;
+            public string? Tag;
+        }
+
+        private readonly object _lock = new();
+        private readonly List<TrackPoint> _points = new(512);
+        private long _startTicks;
+        private long _lastTicks;
+        private bool _isTracking;
+
+        public void Start(POINT pt, string reason)
+        {
+            lock (_lock)
+            {
+                _points.Clear();
+                _startTicks = Stopwatch.GetTimestamp();
+                _lastTicks = _startTicks;
+                _isTracking = true;
+                _points.Add(new TrackPoint
+                {
+                    X = pt.x,
+                    Y = pt.y,
+                    Timestamp = _startTicks,
+                    IntervalMs = 0,
+                    Tag = $"DOWN:{reason}"
+                });
+            }
+        }
+
+        public void RecordMove(POINT pt)
+        {
+            lock (_lock)
+            {
+                if (!_isTracking) return;
+                var now = Stopwatch.GetTimestamp();
+                var intervalMs = (double)(now - _lastTicks) * 1000.0 / Stopwatch.Frequency;
+                _lastTicks = now;
+                _points.Add(new TrackPoint
+                {
+                    X = pt.x,
+                    Y = pt.y,
+                    Timestamp = now,
+                    IntervalMs = intervalMs
+                });
+            }
+        }
+
+        public void Tag(string tag)
+        {
+            lock (_lock)
+            {
+                if (!_isTracking) return;
+                if (_points.Count > 0)
+                {
+                    var last = _points[^1];
+                    last.Tag = string.IsNullOrEmpty(last.Tag) ? tag : $"{last.Tag}|{tag}";
+                    _points[^1] = last;
+                }
+            }
+        }
+
+        public void StopAndLog(string reason)
+        {
+            List<TrackPoint> snapshot;
+            long startTicks;
+            lock (_lock)
+            {
+                if (!_isTracking) return;
+                _isTracking = false;
+                if (_points.Count < 2) return;
+                snapshot = [.. _points];
+                startTicks = _startTicks;
+                _points.Clear();
+            }
+
+            var now = Stopwatch.GetTimestamp();
+            var totalMs = (double)(now - startTicks) * 1000.0 / Stopwatch.Frequency;
+            var intervals = snapshot.Skip(1).Select(p => p.IntervalMs).ToList();
+            var avgInterval = intervals.Count > 0 ? intervals.Average() : 0;
+            var maxInterval = intervals.Count > 0 ? intervals.Max() : 0;
+            var minInterval = intervals.Count > 0 ? intervals.Min() : 0;
+            var stalls = snapshot.Where((p, idx) => idx > 0 && p.IntervalMs >= 25.0).ToList();
+
+            var sb = new StringBuilder();
+            sb.AppendLine($"[MouseTrackDiag] === 鼠标手势轨迹平顺度诊断 (动作: {reason}) ===");
+            sb.AppendLine($"[MouseTrackDiag] 采样点数: {snapshot.Count}，总耗时: {totalMs:F1}ms，平均采样间隔: {avgInterval:F1}ms (推算刷新率: {(avgInterval > 0 ? 1000.0 / avgInterval : 0):F0}Hz)");
+            sb.AppendLine($"[MouseTrackDiag] 最小采样间隔: {minInterval:F1}ms，最大采样间隔: {maxInterval:F1}ms，卡顿/掉帧点(≥25ms): {stalls.Count} 次");
+
+            if (stalls.Count > 0)
+            {
+                sb.AppendLine($"[MouseTrackDiag] ⚠️ 发现掉帧/停顿点 (≥25ms):");
+                foreach (var s in stalls.Take(10))
+                {
+                    var elapsed = (double)(s.Timestamp - startTicks) * 1000.0 / Stopwatch.Frequency;
+                    sb.AppendLine($"  - 停顿耗时: {s.IntervalMs:F1}ms @ ({s.X,4},{s.Y,4}) [距按下={elapsed:F1}ms] {(s.Tag != null ? $"[{s.Tag}]" : "")}");
+                }
+            }
+            else
+            {
+                sb.AppendLine($"[MouseTrackDiag] ✅ 轨迹极其平顺！全程无任何超过 25ms 的掉帧停顿。");
+            }
+
+            // 输出触发点前后的关键切片数据
+            var triggerIdx = snapshot.FindIndex(p => p.Tag != null && p.Tag.Contains("TRIGGER"));
+            int startIdx = Math.Max(0, (triggerIdx >= 0 ? triggerIdx - 5 : 0));
+            int endIdx = Math.Min(snapshot.Count, (triggerIdx >= 0 ? triggerIdx + 15 : snapshot.Count));
+
+            sb.AppendLine($"[MouseTrackDiag] 关键轨迹点切片 (#{startIdx} ~ #{endIdx - 1}):");
+            for (int i = startIdx; i < endIdx; i++)
+            {
+                var p = snapshot[i];
+                var elapsedFromStart = (double)(p.Timestamp - startTicks) * 1000.0 / Stopwatch.Frequency;
+                var tagStr = !string.IsNullOrEmpty(p.Tag) ? $" <--- [{p.Tag}]" : "";
+                sb.AppendLine($"  #{i:D2}: ({p.X,4},{p.Y,4}) | Δt={p.IntervalMs,5:F1}ms | 距按下={elapsedFromStart,6:F1}ms{tagStr}");
+            }
+
+            HostAssets.AppendLog(sb.ToString().TrimEnd());
+        }
     }
 }

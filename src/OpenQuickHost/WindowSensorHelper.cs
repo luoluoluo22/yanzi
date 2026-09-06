@@ -91,8 +91,16 @@ public static class WindowSensorHelper
         {
             GetWindowThreadProcessId(hWnd, out var pid);
             if (pid == 0) return string.Empty;
-            using var proc = System.Diagnostics.Process.GetProcessById((int)pid);
-            var name = proc.ProcessName;
+
+            // 优先走 Limited Information 句柄路径：对高权限/受保护窗口更稳，
+            // 也能复用已有 pid 名称缓存，避免 Process.GetProcessById 的 AccessDenied。
+            var name = ProcessHelper.GetProcessNameByPid(pid);
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                using var proc = System.Diagnostics.Process.GetProcessById((int)pid);
+                name = proc.ProcessName;
+            }
+
             return name.Equals("OpenQuickHost", StringComparison.OrdinalIgnoreCase) ? string.Empty : name;
         }
         catch

@@ -1,10 +1,12 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using OpenQuickHost.Sync;
 using Point = System.Windows.Point;
 
@@ -59,6 +61,14 @@ public static class MouseGestureService
     private static readonly LowLevelMouseProc MouseProc = HookCallback;
     private static IntPtr _hookId;
     private static bool _isRunning;
+    private static readonly object _hookLifecycleLock = new();
+    private static Thread? _hookThread;
+    private static uint _hookThreadId;
+    private static ManualResetEventSlim? _hookReady;
+    private static Exception? _hookStartException;
+    private static volatile bool _stopRequested;
+    // 跨线程安全地让状态变更（取消/重置）回到钩子线程执行，避免热路径加锁
+    private static readonly ConcurrentQueue<Action> _pendingHookActions = new();
 
     // 当前拖动状态
     private static bool _leftDown;
@@ -76,8 +86,9 @@ public static class MouseGestureService
     private static MouseGesturePreviewInfo? _lastPreviewInfo;
     private static MouseGestureTraceWindow? _traceWindow;
 
-    // 注册表：trigger -> 模板 + sequence fallback
-    private static readonly Dictionary<string, GestureTriggerRegistry> _registry = new(StringComparer.Ordinal);
+    // 注册表：trigger -> 模板 + sequence fallback。
+    // 钩子线程热路径读取、UI 线程整体替换引用（ReloadRegistrations 原子换表），不加锁
+    private static Dictionary<string, GestureTriggerRegistry> _registry = new(StringComparer.Ordinal);
 
     private const int MinDragDistance = 30;       // 触发手势识别的最小总位移
     private const int MinSegmentDistance = 30;    // 单段最短距离
@@ -117,39 +128,126 @@ public static class MouseGestureService
         }
     }
 
+    public static bool HasAnyGestureRegistrations =>
+        HasRightDragRegistrations || HasMiddleDragRegistrations || HasCtrlLeftDragRegistrations;
+
     /// <summary>
-    /// 取消当前活跃的手势识别与画线轨迹（用于背包、燕环、燕幕长按或浮窗激活时的互斥抢占）
+    /// 取消当前活跃的手势识别与画线轨迹（用于背包、燕环、燕幕长按或浮窗激活时的互斥抢占）。
+    /// 可能从 UI 线程 / InputHookService 钩子线程调用，统一投递到钩子线程执行。
     /// </summary>
     public static void CancelActiveGesture()
     {
-        ResetState();
+        RunOnHookThread(ResetState);
     }
 
     /// <summary>
     /// 启动全局 hook。<paramref name="logger"/> 用于把 (level, message) 输出到调用方日志（一般是 HostAssets）。
+    /// 低级钩子的回调会被派发到安装线程的消息循环，若装在 UI 线程，UI 卡顿时全局鼠标输入就会被拖慢。
+    /// 因此这里与 InputHookService 一样，把钩子安装在专用后台线程上，UI 线程再忙也不影响鼠标跟手。
     /// </summary>
     public static void Start(Action<string, string>? logger = null)
     {
-        if (_isRunning) return;
         _onLog = logger;
         OverlayWindowManager.RegisterSuppressionHandler(CancelActiveGesture);
-        _hookId = SetMouseHook(MouseProc);
-        if (_hookId == IntPtr.Zero)
+
+        if (!HasAnyGestureRegistrations)
         {
-            Log("warn", $"hook install failed: error={Marshal.GetLastWin32Error()}");
+            if (_isRunning) Stop();
+            Log("info", "start skipped because no mouse gesture triggers are configured.");
             return;
         }
+
+        if (_isRunning) return;
+
+        ManualResetEventSlim ready;
+        lock (_hookLifecycleLock)
+        {
+            if (_hookThread != null && _hookThread.IsAlive)
+            {
+                Log("info", "start skipped because hook thread is already running.");
+                return;
+            }
+
+            _stopRequested = false;
+            _hookStartException = null;
+            ready = new ManualResetEventSlim(false);
+            _hookReady = ready;
+            _hookThread = new Thread(HookThreadMain)
+            {
+                IsBackground = true,
+                Name = "Yanzi.MouseGesture",
+                Priority = ThreadPriority.AboveNormal
+            };
+            _hookThread.Start();
+        }
+
+        try
+        {
+            if (!ready.Wait(TimeSpan.FromSeconds(5)))
+            {
+                throw new TimeoutException("Timed out while starting the mouse gesture hook thread.");
+            }
+
+            Exception? startException;
+            lock (_hookLifecycleLock)
+            {
+                startException = _hookStartException;
+            }
+            if (startException != null)
+            {
+                throw new Exception("Failed to install mouse gesture low-level hook.", startException);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log("warn", $"start failed: {ex.Message}");
+            Stop();
+            return;
+        }
+
         _isRunning = true;
-        Log("info", "started.");
+        Log("info", "started on dedicated hook thread.");
     }
 
     public static void Stop()
     {
-        if (_hookId != IntPtr.Zero)
+        if (!_isRunning && _hookThreadId == 0)
         {
-            UnhookWindowsHookEx(_hookId);
-            _hookId = IntPtr.Zero;
+            ResetState();
+            return;
         }
+
+        Thread? hookThread;
+        uint hookThreadId;
+        lock (_hookLifecycleLock)
+        {
+            _stopRequested = true;
+            hookThread = _hookThread;
+            hookThreadId = _hookThreadId;
+        }
+
+        if (hookThreadId != 0)
+        {
+            PostThreadMessage(hookThreadId, WmQuit, UIntPtr.Zero, IntPtr.Zero);
+        }
+
+        if (hookThread != null && hookThread.ManagedThreadId != Environment.CurrentManagedThreadId)
+        {
+            hookThread.Join(TimeSpan.FromMilliseconds(500));
+        }
+
+        lock (_hookLifecycleLock)
+        {
+            if (_hookThread == hookThread && (hookThread == null || !hookThread.IsAlive))
+            {
+                _hookThread = null;
+                _hookThreadId = 0;
+                _hookReady?.Dispose();
+                _hookReady = null;
+            }
+        }
+
+        _hookId = IntPtr.Zero;
         _isRunning = false;
         ResetState();
         Log("info", "stopped.");
@@ -162,15 +260,21 @@ public static class MouseGestureService
     {
         try
         {
-            if (!_isRunning) return;
-            if (_hookId != IntPtr.Zero)
+            if (!HasAnyGestureRegistrations)
             {
-                UnhookWindowsHookEx(_hookId);
-                _hookId = IntPtr.Zero;
+                if (_isRunning) Stop();
+                return;
             }
-            ResetState();
-            _hookId = SetMouseHook(MouseProc);
-            Log("info", $"Mouse gesture hook auto-reinstalled successfully due to {reason}. hookId=0x{_hookId.ToInt64():X}");
+
+            if (!_isRunning)
+            {
+                Start(_onLog);
+                return;
+            }
+
+            Stop();
+            Start(_onLog);
+            Log("info", $"Mouse gesture hook auto-reinstalled successfully due to {reason}.");
         }
         catch (Exception ex)
         {
@@ -178,10 +282,110 @@ public static class MouseGestureService
         }
     }
 
+    private static void HookThreadMain()
+    {
+        uint threadId = GetCurrentThreadId();
+        lock (_hookLifecycleLock)
+        {
+            _hookThreadId = threadId;
+        }
+
+        try
+        {
+            // 确保该线程拥有 Win32 消息队列，低级钩子回调依赖消息泵派发
+            PeekMessage(out MSG _, IntPtr.Zero, 0, 0, PmNoRemove);
+
+            _hookId = SetMouseHook(MouseProc);
+            if (_hookId == IntPtr.Zero)
+            {
+                _hookStartException = new InvalidOperationException($"Failed to install low level mouse hook, lastError={Marshal.GetLastWin32Error()}");
+            }
+
+            _hookReady?.Set();
+
+            while (!_stopRequested)
+            {
+                int result = GetMessage(out MSG message, IntPtr.Zero, 0, 0);
+                if (result <= 0)
+                {
+                    break;
+                }
+
+                if (message.message == WmAppGestureAction)
+                {
+                    DrainPendingHookActions();
+                    continue;
+                }
+
+                TranslateMessage(ref message);
+                DispatchMessage(ref message);
+            }
+        }
+        catch (Exception ex)
+        {
+            lock (_hookLifecycleLock)
+            {
+                _hookStartException = ex;
+            }
+            _hookReady?.Set();
+        }
+        finally
+        {
+            if (_hookId != IntPtr.Zero)
+            {
+                UnhookWindowsHookEx(_hookId);
+                _hookId = IntPtr.Zero;
+            }
+            lock (_hookLifecycleLock)
+            {
+                _hookThreadId = 0;
+            }
+        }
+    }
+
     /// <summary>
-    /// 立即取消当前正在进行的手势画线或捕获状态（Rocker 取消或 ESC 键触发）
+    /// 把状态变更动作投递到钩子线程执行；钩子线程未启动或本就在钩子线程时内联执行。
+    /// 这样外部线程（UI / InputHookService 钩子线程）触发的重置不会与热路径上的
+    /// _path / 按键状态字段并发读写。
+    /// </summary>
+    private static void RunOnHookThread(Action action)
+    {
+        var threadId = _hookThreadId;
+        if (threadId == 0 || threadId == GetCurrentThreadId())
+        {
+            action();
+            return;
+        }
+
+        _pendingHookActions.Enqueue(action);
+        PostThreadMessage(threadId, WmAppGestureAction, UIntPtr.Zero, IntPtr.Zero);
+    }
+
+    private static void DrainPendingHookActions()
+    {
+        while (_pendingHookActions.TryDequeue(out var action))
+        {
+            try
+            {
+                action();
+            }
+            catch (Exception ex)
+            {
+                Log("warn", $"pending hook action failed: {ex.Message}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// 立即取消当前正在进行的手势画线或捕获状态（Rocker 取消或 ESC 键触发）。
+    /// 可能从 InputHookService 钩子线程调用，统一投递到钩子线程执行。
     /// </summary>
     public static void CancelCurrentGesture(string reason = "escape")
+    {
+        RunOnHookThread(() => CancelCurrentGestureCore(reason));
+    }
+
+    private static void CancelCurrentGestureCore(string reason)
     {
         if (_rightDown || _middleDown || _ctrlLeftDown || _traceActive)
         {
@@ -204,21 +408,23 @@ public static class MouseGestureService
     /// </summary>
     public static void ReloadRegistrations(IEnumerable<RegisteredGesture> gestures)
     {
-        _registry.Clear();
-        var activeRuntimeTrigger = MouseGestureTriggerModes.ToRuntimeTrigger(AppSettingsStore.Load().MouseGestureTriggerMode);
+        // 钩子线程会并发读取 _registry：这里先在本地构建完整快照，再原子替换引用，
+        // 读者要么看到旧表要么看到完整新表，绝不会读到半构建状态
+        var registry = new Dictionary<string, GestureTriggerRegistry>(StringComparer.Ordinal);
+        var activeRuntimeTrigger = MouseGestureTriggerModes.ToRuntimeTrigger(AppSettingsStore.LoadCached().MouseGestureTriggerMode);
         if (!string.IsNullOrWhiteSpace(activeRuntimeTrigger))
         {
-            _registry[NormalizeTrigger(activeRuntimeTrigger)] = new GestureTriggerRegistry();
+            registry[NormalizeTrigger(activeRuntimeTrigger)] = new GestureTriggerRegistry();
         }
         var count = 0;
         foreach (var g in gestures)
         {
             if (string.IsNullOrWhiteSpace(g.Sequence) && !MouseGestureTemplateRecognizer.HasTemplateData(g.Data)) continue;
             var trigger = NormalizeTrigger(g.Trigger);
-            if (!_registry.TryGetValue(trigger, out var triggerRegistry))
+            if (!registry.TryGetValue(trigger, out var triggerRegistry))
             {
                 triggerRegistry = new GestureTriggerRegistry();
-                _registry[trigger] = triggerRegistry;
+                registry[trigger] = triggerRegistry;
             }
 
             if (MouseGestureTemplateRecognizer.HasTemplateData(g.Data))
@@ -238,12 +444,13 @@ public static class MouseGestureService
             }
             count++;
         }
-        Log("info", $"registry reloaded: {count} gesture(s) across {_registry.Count} trigger(s).");
+        _registry = registry;
+        Log("info", $"registry reloaded: {count} gesture(s) across {registry.Count} trigger(s).");
     }
 
     public static void ClearRegistrations()
     {
-        _registry.Clear();
+        _registry = new Dictionary<string, GestureTriggerRegistry>(StringComparer.Ordinal);
     }
 
     /// <summary>从扩展目录扫描注册表。返回注册个数。</summary>
@@ -1419,7 +1626,45 @@ public static class MouseGestureService
         return hook != IntPtr.Zero ? hook : SetWindowsHookEx(WhMouseLl, proc, IntPtr.Zero, 0);
     }
 
+    private const uint WmQuit = 0x0012;
+    private const uint PmNoRemove = 0x0000;
+    // WM_APP 私有消息：唤醒钩子线程处理跨线程投递的取消/重置动作
+    private const uint WmAppGestureAction = 0x8000 + 0x51;
+
     private delegate IntPtr LowLevelMouseProc(int nCode, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool PeekMessage(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax, uint wRemoveMsg);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern int GetMessage(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool TranslateMessage(ref MSG lpMsg);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr DispatchMessage(ref MSG lpMsg);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool PostThreadMessage(uint idThread, uint msg, UIntPtr wParam, IntPtr lParam);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MSG
+    {
+        public IntPtr hwnd;
+        public uint message;
+        public UIntPtr wParam;
+        public IntPtr lParam;
+        public uint time;
+        public POINT pt;
+        public uint lPrivate;
+    }
 
     [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
     private static extern IntPtr SetWindowsHookEx(int idHook, LowLevelMouseProc lpfn, IntPtr hMod, uint dwThreadId);

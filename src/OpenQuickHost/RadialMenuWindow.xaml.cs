@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
@@ -7,6 +8,7 @@ using System.Text;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -18,10 +20,15 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 {
     public const double NormalWindowSize = 1400.0;
     public const double NormalMenuCenter = 700.0;
+    public const double CompactWindowSize = 1000.0;
+    public const double CompactMenuCenter = 500.0;
 
     private readonly MainWindow _mainWindow;
     private readonly DispatcherTimer _selectionTimer;
+    private readonly Action _globalEscapeHandler;
+    private bool _isClosing;
     private System.Drawing.Point _centerPixels;
+    private System.Windows.Size _lastShownWorkAreaSize = new(1920, 1080);
     private RadialMenuItemViewModel? _selectedItem;
     private long _shownTimestamp;
 
@@ -29,6 +36,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     private List<RadialMenuPageSettings> _topLevelPages = [];
     private string _currentPageId = string.Empty;
     private string? _activeProcessName;
+    private static readonly ConcurrentDictionary<string, ImageSource?> _processIconCache = new(StringComparer.OrdinalIgnoreCase);
     private bool _isEditHoverActive;
     private bool _isAddHoverActive;
     private bool _isDeleteHoverActive;
@@ -158,7 +166,12 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             Interval = TimeSpan.FromMilliseconds(16)
         };
         _selectionTimer.Tick += (_, _) => UpdateSelectionFromCursor(null);
-        SubRings.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasSubRings));
+        SubRings.CollectionChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(HasSubRings));
+            // 子环出现/消失时按实际内容范围调整窗口大小（Render 拍延后，避免同帧闪烁）
+            ScheduleWindowToFitContent();
+        };
         DataContext = this;
         PreviewKeyDown += (_, e) =>
         {
@@ -167,11 +180,12 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 if (_editModeLocked)
                 {
                     _editModeLocked = false;
+                    ApplyVisualContentRootMode();
                     _selectionTimer.Stop();
                     Width = NormalWindowSize;
                     Height = NormalWindowSize;
                     SubRings.Clear();
-                    BuildItems((AppSettingsStore.Load().RadialMenu ?? new RadialMenuSettings()).RadiusPixels);
+                    BuildItems((AppSettingsStore.LoadCached().RadialMenu ?? new RadialMenuSettings()).RadiusPixels);
                     UpdateEditModeState();
                     OnPropertyChanged(nameof(IsEditModeLocked));
                     OnPropertyChanged(nameof(EditButtonBrush));
@@ -185,7 +199,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 e.Handled = true;
             }
         };
-        MouseMove += (_, e) => UpdateSelectionFromCursor(e.GetPosition(this));
+        MouseMove += (_, e) => QueueSelectionUpdate(e.GetPosition(this));
         MouseWheel += RadialMenuWindow_MouseWheel;
         MouseLeftButtonDown += RadialMenuWindow_MouseLeftButtonDown;
         MouseRightButtonDown += RadialMenuWindow_MouseRightButtonDown;
@@ -219,13 +233,14 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             EnsureNoActivateStyle();
             RebuildItemsForCurrentLayout("loaded");
         };
-        InputHookService.OnGlobalEscapePressed += () =>
+        _globalEscapeHandler = () =>
         {
             if (IsVisible)
             {
                 if (_editModeLocked)
                 {
                     _editModeLocked = false;
+                    ApplyVisualContentRootMode();
                     _selectionTimer.Stop();
                     Width = NormalWindowSize;
                     Height = NormalWindowSize;
@@ -244,12 +259,14 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 }
             }
         };
+        InputHookService.OnGlobalEscapePressed += _globalEscapeHandler;
         SizeChanged += (_, _) =>
         {
             if (IsVisible)
             {
                 RebuildItemsForCurrentLayout("size-changed");
             }
+            OnPropertyChanged(nameof(EditContentViewportHeight));
         };
     }
 
@@ -703,7 +720,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
 
         var activePage = _pages.FirstOrDefault(p => p.Id.Equals(pageId, StringComparison.OrdinalIgnoreCase))
-            ?? AppSettingsStore.Load().RadialMenu?.Pages?.FirstOrDefault(p => p.Id.Equals(pageId, StringComparison.OrdinalIgnoreCase));
+            ?? AppSettingsStore.LoadCached().RadialMenu?.Pages?.FirstOrDefault(p => p.Id.Equals(pageId, StringComparison.OrdinalIgnoreCase));
         if (activePage != null)
         {
             ActiveTitle = $"轮盘：{activePage.Name}";
@@ -721,7 +738,20 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
     internal void LoadRadialMenuPages()
     {
-        var settings = AppSettingsStore.Load();
+        // 复用停靠实例后，外部（扩展/页面/设置变更）调本方法刷新数据。
+        // 置空上次进程名与目标页缓存，强制下次 ShowAtMouse 走"页面重建"分支，
+        // 避免停靠实例在配置变化后仍弹出旧视觉树。
+        _activeProcessName = null;
+        _pages.Clear();
+        SubRings.Clear();
+        IsEditHoverActive = false;
+        IsPinHoverActive = false;
+        IsAddHoverActive = false;
+        IsDeleteHoverActive = false;
+        IsSearchHoverActive = false;
+        IsCloseHoverActive = false;
+
+        var settings = AppSettingsStore.LoadCached();
         settings.RadialMenu ??= new RadialMenuSettings();
         settings.RadialMenu.Pages ??= [];
 
@@ -776,57 +806,129 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private bool _isPrewarmed = false;
+
     /// <summary>
-    /// 预热轮盘窗口：在程序启动时提前创建 HWND 句柄、完成 WPF 首次透明窗口尺寸测量与 VisualTree 编译，
-    /// 彻底消除用户首次呼出轮盘时的掉帧和顿挫感。
+    /// 深度就绪态预热：在后台空闲时提前创建 HWND 句柄、加载默认通用页面、构建扇形布局并在屏幕外完成静默首帧上屏。
+    /// 彻底消除用户呼出轮盘时的 D3D 交换链创建、XAML 编译与排版阻塞。
     /// </summary>
-    public void Warmup()
+    public void PrewarmDeep()
     {
         try
         {
+            HostAssets.AppendLog("RadialMenuWindow: PrewarmDeep starting...");
             var helper = new System.Windows.Interop.WindowInteropHelper(this);
             helper.EnsureHandle();
             EnsureNoActivateStyle();
+            ApplyVisualContentRootMode();
+            // 预热也只开紧凑尺寸，进一步压低首次呼出的合成表面成本
+            if (Math.Abs(Width - CompactWindowSize) > 0.5) Width = CompactWindowSize;
+            if (Math.Abs(Height - CompactWindowSize) > 0.5) Height = CompactWindowSize;
+
+            // 预先解析当前前台应用并构建对应页面（与 ShowAtMouse 同套解析逻辑），
+            // 让首次真实呼出大概率命中"已构建页面"，避免呼出瞬间全量重建
+            var prewarmProcessName = ResolveForegroundProcessNameForPrewarm();
+            if (!string.IsNullOrWhiteSpace(prewarmProcessName))
+            {
+                _activeProcessName = prewarmProcessName;
+            }
 
             LoadRadialMenuPages();
-            _currentPageId = _pages.FirstOrDefault()?.Id ?? string.Empty;
-            var settings = AppSettingsStore.Load().RadialMenu ?? new RadialMenuSettings();
-            BuildItems(settings.RadiusPixels);
+            var settings = AppSettingsStore.LoadCached().RadialMenu ?? new RadialMenuSettings();
+            _lastRadiusPixels = settings.RadiusPixels;
+            _cachedDeadZonePixels = Math.Max(36, settings.DeadZonePixels);
 
+            var prewarmFirstAppPage = _pages.FirstOrDefault(page => !string.IsNullOrEmpty(page.ContextProcessName));
+            string prewarmTargetPageId;
+            if (prewarmFirstAppPage != null)
+            {
+                prewarmTargetPageId = prewarmFirstAppPage.Id;
+            }
+            else if (!string.IsNullOrWhiteSpace(settings.SelectedPageId) &&
+                     _pages.Any(p => p.Id.Equals(settings.SelectedPageId, StringComparison.OrdinalIgnoreCase)))
+            {
+                prewarmTargetPageId = settings.SelectedPageId;
+            }
+            else
+            {
+                prewarmTargetPageId = _pages.FirstOrDefault()?.Id ?? string.Empty;
+            }
+
+            _currentPageId = prewarmTargetPageId;
+            BuildItems(_lastRadiusPixels);
+            UpdateCenterText();
+            ActiveTitle = "取消";
+
+            // 将窗口放置于屏幕外深处，并置为完全透明隐藏
             Opacity = 0;
+            RootGrid.Visibility = Visibility.Hidden;
             Left = OverlayWindowManager.OffScreenCoordinate;
             Top = OverlayWindowManager.OffScreenCoordinate;
+
+            // 屏幕外静默呈现，驱动 WPF 完成 Direct3D 交换链分配、Visual 树首次渲染与 Shader 编译
             Show();
-            UpdateLayout();
-            Hide();
-            Opacity = 1.0;
-            HostAssets.AppendLog("RadialMenuWindow: Warmup completed successfully.");
+            _isPrewarmed = true;
+
+            HostAssets.AppendLog("RadialMenuWindow: PrewarmDeep completed successfully.");
         }
         catch (Exception ex)
         {
-            HostAssets.AppendLog($"RadialMenuWindow.Warmup EXCEPTION: {ex}");
+            HostAssets.AppendLog($"RadialMenuWindow.PrewarmDeep EXCEPTION: {ex}");
         }
+    }
+
+    /// <summary>
+    /// 预热阶段尽力解析当前前台应用（仅用于决定预热构建哪个页面，失败返回 null 不影响流程）。
+    /// </summary>
+    private static string? ResolveForegroundProcessNameForPrewarm()
+    {
+        try
+        {
+            var hwnd = Win32Native.GetForegroundWindow();
+            if (hwnd == IntPtr.Zero)
+            {
+                return null;
+            }
+
+            var name = WindowSensorHelper.GetWindowProcessName(hwnd);
+            return string.IsNullOrWhiteSpace(name) ? null : name;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public void Warmup()
+    {
+        PrewarmDeep();
     }
 
     public void ShowAtMouse(System.Drawing.Point? anchorPoint = null)
     {
-        HostAssets.AppendDebug($"[RadialResidualDebug] ShowAtMouse start: isVisible={IsVisible}, _editModeLocked={_editModeLocked}, SubRings.Count={SubRings.Count}, anchor={anchorPoint}.");
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        // 复用停靠实例时复位关闭标志（Hide 停靠不销毁，Closed 事件不会触发）
+        _isClosing = false;
+        HostAssets.AppendDebug($"[RadialResidualDebug] ShowAtMouse start: isVisible={IsVisible}, _isPrewarmed={_isPrewarmed}, SubRings.Count={SubRings.Count}, anchor={anchorPoint}.");
 
-        // 1400 DIP 的窗口在高缩放比/低分辨率屏幕上比工作区还高，系统会把底边钳进
-        // 工作区导致窗口实际高度 ≠ 1400（轮盘视觉中心与窗口坐标数学脱节的根因）。
-        // 与其被动被钳，不如主动收缩到工作区，让 GetWindowCenter 自适应实际尺寸。
-        var showWorkArea = ScreenHelper.GetScreenContextAtPoint(
+        var screenCtx = ScreenHelper.GetScreenContextAtPoint(
             anchorPoint.HasValue
                 ? new System.Windows.Point(anchorPoint.Value.X, anchorPoint.Value.Y)
-                : ScreenHelper.GetCursorPhysicalPosition()).DipWorkArea;
-        Width = Math.Min(NormalWindowSize, Math.Max(600, showWorkArea.Width));
-        Height = Math.Min(NormalWindowSize, Math.Max(600, showWorkArea.Height));
-        UpdateLayout();
+                : ScreenHelper.GetCursorPhysicalPosition());
+        var showWorkArea = screenCtx.DipWorkArea;
+        _lastShownWorkAreaSize = new System.Windows.Size(showWorkArea.Width, showWorkArea.Height);
+        // 呼出初始用小窗（只覆盖主轮盘），子环展开时再按需放大（见 UpdateWindowToFitContent）
+        var targetWidth = Math.Min(CompactWindowSize, Math.Max(600, showWorkArea.Width));
+        var targetHeight = Math.Min(CompactWindowSize, Math.Max(600, showWorkArea.Height));
+        if (Math.Abs(Width - targetWidth) > 0.5) Width = targetWidth;
+        if (Math.Abs(Height - targetHeight) > 0.5) Height = targetHeight;
+        // 彻底移除 UpdateLayout()，杜绝主线程全量同步排版阻塞
 
         _isExecuting = false;
         _wasActivatedForEdit = false;
         _editModeLocked = false;
         _editInteractionActive = false;
+        ApplyVisualContentRootMode();
         UpdateEditModeState();
         IsChildRingLocked = false;
         IsGrandChildRingLocked = false;
@@ -837,38 +939,50 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         IsGuideLineVisible = false;
         _selectionTimer.Stop();
 
-        // 立即清空上次残留的图标和列表，防止窗口重显时出现旧内容闪烁
-        CenterIcon = null;
-        Items.Clear();
-        OuterItems.Clear();
-        ChildItems.Clear();
-        GrandChildItems.Clear();
-        GreatGrandChildItems.Clear();
-        SubRings.Clear();
-        PageTitle = "燕环";
-
-        var settings = AppSettingsStore.Load().RadialMenu ?? new RadialMenuSettings();
+        var settings = AppSettingsStore.LoadCached().RadialMenu ?? new RadialMenuSettings();
         _shownTimestamp = Environment.TickCount64;
         _lastRadiusPixels = settings.RadiusPixels;
         _cachedDeadZonePixels = Math.Max(36, settings.DeadZonePixels);
 
-        // 获取鼠标所在位置的顶级窗口，而不是当前前台窗口（更符合直觉）
+        // 恢复原始可靠语义：优先取"光标所在的顶级窗口"（用户在哪个窗口上呼出，
+        // 就用哪个窗口的专属轮盘，更符合直觉），前台窗口仅作兜底。
+        // 停靠复用后这里必须每次都重新解析，不能依赖上次的缓存值。
+        var helperHwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+        var mainHwnd = new System.Windows.Interop.WindowInteropHelper(_mainWindow).Handle;
+
         _previousForegroundWindow = IntPtr.Zero;
-        if (Win32Native.GetCursorPos(out var pt))
+        if (Win32Native.GetCursorPos(out var cursorPt))
         {
-            var hwndUnderMouse = Win32Native.WindowFromPoint(pt);
-            if (hwndUnderMouse != IntPtr.Zero)
+            var hwndUnderMouse = Win32Native.WindowFromPoint(cursorPt);
+            if (hwndUnderMouse != IntPtr.Zero &&
+                hwndUnderMouse != helperHwnd &&
+                hwndUnderMouse != mainHwnd)
             {
                 _previousForegroundWindow = Win32Native.GetAncestor(hwndUnderMouse, Win32Native.GA_ROOT);
             }
         }
-        
-        // 兜底方案
-        if (_previousForegroundWindow == IntPtr.Zero)
+
+        // 光标下无有效窗口（桌面/任务栏/自身）时，用系统前台窗口兜底
+        if (_previousForegroundWindow == IntPtr.Zero ||
+            _previousForegroundWindow == helperHwnd ||
+            _previousForegroundWindow == mainHwnd)
         {
             _previousForegroundWindow = Win32Native.GetForegroundWindow();
+            if (_previousForegroundWindow == helperHwnd || _previousForegroundWindow == mainHwnd)
+            {
+                // 前台是自身/主窗口，退回光标下窗口（排除自身后的）
+                if (Win32Native.GetCursorPos(out var pt2))
+                {
+                    var under = Win32Native.WindowFromPoint(pt2);
+                    if (under != IntPtr.Zero)
+                    {
+                        _previousForegroundWindow = Win32Native.GetAncestor(under, Win32Native.GA_ROOT);
+                    }
+                }
+            }
         }
-        _activeProcessName = null;
+
+        string? currentProcessName = null;
         if (_previousForegroundWindow != IntPtr.Zero)
         {
             try
@@ -876,7 +990,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 var resolvedName = WindowSensorHelper.GetWindowProcessName(_previousForegroundWindow);
                 if (!string.IsNullOrWhiteSpace(resolvedName))
                 {
-                    _activeProcessName = resolvedName;
+                    currentProcessName = resolvedName;
                 }
             }
             catch (Exception ex)
@@ -884,52 +998,86 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 HostAssets.AppendLog($"RadialMenu: Failed to get process name: {ex.Message}");
             }
         }
+
+        // 每次呼出都重新解析前台/光标下进程并按进程过滤页面。
+        // 停靠复用后实例跨呼出存活，绝不能依赖上次的缓存判定——
+        // 否则换应用呼出时 _activeProcessName 仍是旧值，专属轮盘不会切换。
+        _activeProcessName = currentProcessName;
         LoadRadialMenuPages();
-        // 精确匹配当前活动进程的专属页面（LoadRadialMenuPages 已过滤，firstAppPage 一定是当前进程的）
+
+        HostAssets.AppendLog($"[RadialProcessDebug] cursorWnd=0x{_previousForegroundWindow.ToInt64():X}, process={_activeProcessName ?? "(null)"}, pages={_pages.Count}, topLevel={_topLevelPages.Count}, currentPage={_currentPageId}, selectedPage={settings.SelectedPageId ?? "(null)"}.");
+
+        // 精确匹配当前活动进程的专属页面（LoadRadialMenuPages 已按进程过滤，firstAppPage 一定是当前进程的）
         var firstAppPage = _pages.FirstOrDefault(page => !string.IsNullOrEmpty(page.ContextProcessName));
+        string targetPageId;
         if (firstAppPage != null)
         {
-            _currentPageId = firstAppPage.Id;
+            targetPageId = firstAppPage.Id;
         }
         else
         {
-            if (!string.IsNullOrWhiteSpace(settings.SelectedPageId) && 
+            if (!string.IsNullOrWhiteSpace(settings.SelectedPageId) &&
                 _pages.Any(p => p.Id.Equals(settings.SelectedPageId, StringComparison.OrdinalIgnoreCase)))
             {
-                _currentPageId = settings.SelectedPageId;
+                targetPageId = settings.SelectedPageId;
             }
             else
             {
-                _currentPageId = _pages.FirstOrDefault()?.Id ?? string.Empty;
+                targetPageId = _pages.FirstOrDefault()?.Id ?? string.Empty;
             }
         }
+
+        HostAssets.AppendLog($"[RadialProcessDebug] targetPage={targetPageId}, firstAppPage={(firstAppPage?.Id ?? "(null)")}, needRebuildCandidate={(_currentPageId != targetPageId || Items.Count == 0)}.");
+
+        // 页面切换或内容为空时才重建视觉树（进程检测/页面过滤是廉价的，BuildItems 才是昂贵的）
+        bool needRebuild = false;
+        if (_currentPageId != targetPageId || Items.Count == 0)
+        {
+            _currentPageId = targetPageId;
+            needRebuild = true;
+        }
+
+        if (needRebuild)
+        {
+            CenterIcon = null;
+            Items.Clear();
+            OuterItems.Clear();
+            ChildItems.Clear();
+            GrandChildItems.Clear();
+            GreatGrandChildItems.Clear();
+            SubRings.Clear();
+            PageTitle = "燕环";
+
+            BuildItems(_lastRadiusPixels);
+        }
+
         _pageStack.Clear();
         _centerPixels = anchorPoint ?? Forms.Cursor.Position;
-
-        BuildItems(_lastRadiusPixels);
         UpdateCenterText();
         ActiveTitle = "取消";
 
-        PositionAroundCursor();
-        RootGrid.Visibility = Visibility.Visible;
-        Opacity = 1.0;
+        // 通过 Win32 API 快速定位到光标中心（传入当前显示器的准确 DPI）
+        PositionAroundCursor(screenCtx.DpiScale.DpiScaleX);
 
         if (!IsVisible)
         {
             Show();
         }
 
-        // 显示后立即按物理像素校正中心：WPF 对 Left/Top 的 DPI 解释随窗口所在显示器而变，
-        // 初始 DIP 估算可能被再次缩放，轮盘会偏离右键按下点（多屏混合缩放必现）。
-        // 第二轮在渲染帧后再校一次：跨 DPI 显示器呼出时 WM_DPICHANGED 的建议矩形
-        // 会异步再调整位置，单次同步校正会被它覆盖（用户日志 delta 恒为 (0,-264) 的来源）。
-        CenterOnAnchorPhysically("show-sync");
-        Dispatcher.BeginInvoke(new Action(() => CenterOnAnchorPhysically("post-render")), DispatcherPriority.Render);
+        // 内容仍不可见时先做物理像素中心校正：此时窗口已移到目标显示器、
+        // 物理尺寸已定型，实测修正不会产生"先出帧再跳动"的可见顿挫。
+        // 旧实现放在 Render 优先级异步执行，首帧会以偏移位置亮相，随后被拉回。
+        CenterOnAnchorPhysically("pre-reveal");
+
+        RootGrid.Visibility = Visibility.Visible;
+        Opacity = 1.0;
+        PlayEntryAnimation();
 
         _selectionTimer.Start();
         UpdateSelectionFromCursor();
 
-        HostAssets.AppendLog($"Radial menu shown: page={_currentPageId}, process={_activeProcessName ?? "(none)"}, items={Items.Count}, center=({_centerPixels.X},{_centerPixels.Y}).");
+        sw.Stop();
+        HostAssets.AppendLog($"[RadialMenuTiming] ShowAtMouse finished in {sw.ElapsedMilliseconds}ms: page={_currentPageId}, process={_activeProcessName ?? "(none)"}, items={Items.Count}, needRebuild={needRebuild}.");
     }
 
     private void RebuildItemsForCurrentLayout(string reason)
@@ -941,6 +1089,11 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
         // 普通日常模式下，尺寸改变不需要重建轮盘布局，只有编辑模式才需要重排
         if (reason == "size-changed" && !_editModeLocked)
+        {
+            return;
+        }
+
+        if (reason == "loaded" && Items.Count > 0 && !_editModeLocked)
         {
             return;
         }
@@ -988,8 +1141,21 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                             }
 
                             var workAreaHeightDip = (mi.rcWork.Bottom - mi.rcWork.Top) / newDpi;
-                            Height = Math.Min(NormalWindowSize, Math.Max(600, workAreaHeightDip));
+                            var workAreaWidthDip = (mi.rcWork.Right - mi.rcWork.Left) / newDpi;
+                            _lastShownWorkAreaSize = new System.Windows.Size(workAreaWidthDip, workAreaHeightDip);
+                            if (_editModeLocked)
+                            {
+                                Height = Math.Min(NormalWindowSize, Math.Max(600, workAreaHeightDip));
+                            }
+                            else
+                            {
+                                Height = Math.Min(CompactWindowSize, Math.Max(600, workAreaHeightDip));
+                            }
                             CenterOnPhysically(_centerPixels.X, _centerPixels.Y, "dpi-changed");
+                            if (!_editModeLocked)
+                            {
+                                UpdateWindowToFitContent();
+                            }
                         }), DispatcherPriority.Render);
                     }
                 }
@@ -1003,7 +1169,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         return IntPtr.Zero;
     }
 
-    private void PositionAroundCursor()
+    private void PositionAroundCursor(double? dpiHint = null)
     {
         // 关键：不用 WPF 的 Left/Top 属性放置！
         // dotnet/wpf#3105（Open/Future）：PerMonitorV2 下 Left/Top 会被 WPF 按
@@ -1011,7 +1177,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         // 改用 Win32 SetWindowPos 直接以物理像素定位——坐标含义无歧义，绕开该缺陷。
         // 只定位不改变大小（NOSIZE）：尺寸交给 WPF 的 DPI 机制按 Width/Height DP 管理，
         // 初始的中心误差由 CenterOnPhysically 在显示后按物理像素校正兜底。
-        var windowDpi = GetWindowDpiScale();
+        var windowDpi = (dpiHint.HasValue && dpiHint.Value > 0) ? dpiHint.Value : GetWindowDpiScale();
         var widthPhys = Width * windowDpi;
         var heightPhys = Height * windowDpi;
         var targetLeft = (int)Math.Round(_centerPixels.X - widthPhys / 2);
@@ -1023,12 +1189,12 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         {
             Win32Native.SetWindowPos(
                 handle,
-                IntPtr.Zero,
+                Win32Native.HWND_TOPMOST,
                 targetLeft,
                 targetTop,
                 0,
                 0,
-                Win32Native.SWP_NOSIZE | Win32Native.SWP_NOZORDER | Win32Native.SWP_NOACTIVATE);
+                Win32Native.SWP_NOSIZE | Win32Native.SWP_NOACTIVATE | Win32Native.SWP_SHOWWINDOW);
         }
     }
 
@@ -1120,26 +1286,259 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         CenterOnPhysically(_centerPixels.X, _centerPixels.Y, pass);
     }
 
+    /// <summary>编辑模式滚动条的视口高度 = 窗口实际内容高度（滚动条在 VisualContentRoot 内，不能绑窗口 ActualHeight）。</summary>
+    public double EditContentViewportHeight => _editModeLocked
+        ? (ActualHeight > 1 ? ActualHeight : Height) - 100.0
+        : 1300.0;
+
+    /// <summary>切换 VisualContentRoot 布局模式：编辑模式铺满窗口（逻辑=窗口坐标），常态固定 1400 画布自动居中。</summary>
+    private void ApplyVisualContentRootMode()
+    {
+        if (VisualContentRoot == null)
+        {
+            return;
+        }
+
+        if (_editModeLocked)
+        {
+            VisualContentRoot.HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch;
+            VisualContentRoot.VerticalAlignment = System.Windows.VerticalAlignment.Stretch;
+            VisualContentRoot.ClearValue(WidthProperty);
+            VisualContentRoot.ClearValue(HeightProperty);
+        }
+        else
+        {
+            VisualContentRoot.HorizontalAlignment = System.Windows.HorizontalAlignment.Center;
+            VisualContentRoot.VerticalAlignment = System.Windows.VerticalAlignment.Center;
+            VisualContentRoot.Width = NormalWindowSize;
+            VisualContentRoot.Height = NormalWindowSize;
+        }
+        OnPropertyChanged(nameof(EditContentViewportHeight));
+    }
+
+    private void PlayEntryAnimation()
+    {
+        try
+        {
+            if (_editModeLocked || RootGrid == null || WheelEntryScale == null)
+            {
+                return;
+            }
+
+            _isEntryAnimationActive = true;
+            _fitContentPending = false;
+
+            // 关键：先用普通属性把动画起点设到位，再 BeginAnimation。
+            // 如果先显式 Opacity=1 再动画拉回 0，首帧会以完整画面亮相一瞬再变透明，
+            // 视觉上就是"出现→消失→再淡入"。同理 scale 起点在显示前就位。
+            WheelEntryScale.ScaleX = 0.94;
+            WheelEntryScale.ScaleY = 0.94;
+
+            // 缩放动画：EaseOut 无过冲（BackEase 的过冲会在呼出瞬间放大抖动）；
+            // 不再对 RootGrid.Opacity 做动画，避免与 AllowsTransparency 合成/隐藏路径打架。
+            var scaleEase = new CubicEase { EasingMode = EasingMode.EaseOut };
+            var anim = new DoubleAnimation(0.94, 1.0, new Duration(TimeSpan.FromMilliseconds(110)))
+            {
+                EasingFunction = scaleEase
+            };
+            anim.Completed += (_, _) =>
+            {
+                WheelEntryScale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+                WheelEntryScale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+                WheelEntryScale.ScaleX = 1.0;
+                WheelEntryScale.ScaleY = 1.0;
+                _isEntryAnimationActive = false;
+                // 动画期间积累的尺寸需求（子环展开）在此一次性执行，避免与缩放动画叠加闪烁
+                if (_fitContentPending)
+                {
+                    _fitContentPending = false;
+                    UpdateWindowToFitContent();
+                }
+            };
+
+            WheelEntryScale.BeginAnimation(ScaleTransform.ScaleXProperty, anim);
+            WheelEntryScale.BeginAnimation(ScaleTransform.ScaleYProperty, anim);
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"[RadialMenuLog] entry animation failed: {ex.Message}");
+            _isEntryAnimationActive = false;
+            if (WheelEntryScale != null)
+            {
+                WheelEntryScale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
+                WheelEntryScale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
+                WheelEntryScale.ScaleX = 1.0;
+                WheelEntryScale.ScaleY = 1.0;
+            }
+        }
+    }
+
+    private bool _isEntryAnimationActive = false;
+    private bool _fitContentPending = false;
+    private bool _fitContentScheduled = false;
+
+    /// <summary>
+    /// 子环集合变化触发的窗口按需放大入口。
+    /// 延后到 Render 优先级：让子环内容先随本帧上屏，窗口 resize 在下一拍完成，
+    /// 避免"新子环 + 窗口改尺寸"挤在同一帧里互相拉扯造成错位闪烁。
+    /// </summary>
+    private void ScheduleWindowToFitContent()
+    {
+        if (_editModeLocked || _fitContentScheduled)
+        {
+            return;
+        }
+
+        _fitContentScheduled = true;
+        _ = Dispatcher.BeginInvoke(new Action(() =>
+        {
+            _fitContentScheduled = false;
+            UpdateWindowToFitContent();
+        }), DispatcherPriority.Render);
+    }
+
     private System.Windows.Size GetMenuSize()
     {
-        // 统一返回窗口实际尺寸：窗口高度可能被工作区钳制（1400 DIP 的轮盘在
-        // 低分辨率/高缩放屏幕上放不下），布局与定位数学必须以实际尺寸为准
-        var width = ActualWidth > 1 ? ActualWidth : Width;
-        var height = ActualHeight > 1 ? ActualHeight : Height;
-        return new System.Windows.Size(width, height);
+        // 编辑模式：窗口铺满工作区，逻辑空间 == 窗口空间，直接返回窗口实际尺寸
+        if (_editModeLocked)
+        {
+            var width = ActualWidth > 1 ? ActualWidth : Width;
+            var height = ActualHeight > 1 ? ActualHeight : Height;
+            return new System.Windows.Size(width, height);
+        }
+
+        // 常态呼出：返回"可见的逻辑视口尺寸"——1410 画布正对窗口中心时，
+        // 可见范围 = 窗口尺寸映射回 1400 坐标系（取 min(1400, 窗口尺寸)）
+        var viewW = Math.Min(NormalWindowSize, ActualWidth > 1 ? ActualWidth : Width);
+        var viewH = Math.Min(NormalWindowSize, ActualHeight > 1 ? ActualHeight : Height);
+        return new System.Windows.Size(viewW, viewH);
     }
 
     /// <summary>
-    /// 窗口坐标系的轮盘中心 = 窗口实际几何中心。
-    /// 轮盘容器（1400x1400）在窗口内双向居中，因此无论窗口被工作区钳制到多高，
-    /// 轮盘视觉中心始终在 (ActualWidth/2, ActualHeight/2)。
-    /// 引导线、命中测试、死区判定等所有"窗口坐标 vs 中心"的数学都必须用这个，
-    /// 否则与轮盘视觉脱节（引导线不从轮盘中心出现的根因）。
+    /// 断言窗口尺寸足以容纳当前内容（主轮盘 + 已展开子环），不够则按需放大。
+    /// 只放大不缩小（收起子环不回收空间，避免反复 resize 抖动）；放大时用单次
+    /// SetWindowPos 同时改尺寸并保持几何中心不动，杜绝"先错位再校正"的中间帧闪烁。
+    /// 呼出入场动画进行中则延迟到动画完成再执行。
+    /// </summary>
+    private void UpdateWindowToFitContent()
+    {
+        if (_editModeLocked || !IsContentVisible)
+        {
+            return;
+        }
+
+        if (_isEntryAnimationActive)
+        {
+            _fitContentPending = true;
+            return;
+        }
+
+        var required = ComputeRequiredLogicalSize();
+        var desiredWidth = Math.Min(NormalWindowSize, Math.Max(CompactWindowSize, Math.Min(required.Width, _lastShownWorkAreaSize.Width)));
+        var desiredHeight = Math.Min(NormalWindowSize, Math.Max(CompactWindowSize, Math.Min(required.Height, _lastShownWorkAreaSize.Height)));
+
+        // 只放大不缩小：当前窗口已足且只是子环收起时，保持现状
+        desiredWidth = Math.Max(desiredWidth, Width);
+        desiredHeight = Math.Max(desiredHeight, Height);
+        if (Math.Abs(Width - desiredWidth) <= 0.5 && Math.Abs(Height - desiredHeight) <= 0.5)
+        {
+            return;
+        }
+
+        // 单次物理 SetWindowPos：改尺寸 + 按当前物理中心重算左上角，一步到位保持中心
+        ResizeWindowKeepingCenterPhysical(desiredWidth, desiredHeight);
+    }
+
+    /// <summary>
+    /// 单次 SetWindowPos 完成"改尺寸 + 保持窗口几何中心不动"。
+    /// 纯物理像素、一次调用，WPF 的 Width/Height 同步为 DIP 值让布局跟随。
+    /// </summary>
+    private void ResizeWindowKeepingCenterPhysical(double newWidthDip, double newHeightDip)
+    {
+        try
+        {
+            var helper = new System.Windows.Interop.WindowInteropHelper(this);
+            var handle = helper.Handle;
+            if (handle == IntPtr.Zero)
+            {
+                Width = newWidthDip;
+                Height = newHeightDip;
+                return;
+            }
+
+            var windowDpi = GetWindowDpiScale();
+            var newWidthPhys = (int)Math.Round(newWidthDip * windowDpi);
+            var newHeightPhys = (int)Math.Round(newHeightDip * windowDpi);
+            if (!Win32Native.GetWindowRect(handle, out var rect))
+            {
+                Width = newWidthDip;
+                Height = newHeightDip;
+                return;
+            }
+
+            var centerX = (rect.Left + rect.Right) / 2.0;
+            var centerY = (rect.Top + rect.Bottom) / 2.0;
+            var targetLeft = (int)Math.Round(centerX - newWidthPhys / 2.0);
+            var targetTop = (int)Math.Round(centerY - newHeightPhys / 2.0);
+
+            Win32Native.SetWindowPos(
+                handle,
+                IntPtr.Zero,
+                targetLeft,
+                targetTop,
+                newWidthPhys,
+                newHeightPhys,
+                Win32Native.SWP_NOZORDER | Win32Native.SWP_NOACTIVATE);
+
+            Width = newWidthDip;
+            Height = newHeightDip;
+            HostAssets.AppendDebug($"[RadialMenuLog] ResizeWindowKeepingCenterPhysical -> {newWidthDip:F0}x{newHeightDip:F0} @ ({targetLeft},{targetTop})");
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"[RadialMenuLog] ResizeWindowKeepingCenterPhysical failed: {ex.Message}");
+            Width = newWidthDip;
+            Height = newHeightDip;
+        }
+    }
+
+    /// <summary>
+    /// 计算当前内容所需的逻辑尺寸：主轮盘外圈固定 280，加上所有已展开子环的最远视觉外缘。
+    /// 子环自身的可视半径：独立大轮盘约 190，普通子环约 118。
+    /// </summary>
+    private System.Windows.Size ComputeRequiredLogicalSize()
+    {
+        if (_editModeLocked)
+        {
+            var w = ActualWidth > 1 ? ActualWidth : Width;
+            var h = ActualHeight > 1 ? ActualHeight : Height;
+            return new System.Windows.Size(w, h);
+        }
+
+        double maxRadius = 280;
+        foreach (var ring in SubRings)
+        {
+            double ringRadius = ring.IsStandaloneRadial ? 190 : 118;
+            maxRadius = Math.Max(maxRadius, Math.Max(Math.Abs(ring.CenterX - NormalMenuCenter), Math.Abs(ring.CenterY - NormalMenuCenter)) + ringRadius);
+        }
+
+        var size = Math.Clamp(Math.Ceiling(maxRadius * 2 + 120), CompactWindowSize, NormalWindowSize);
+        return new System.Windows.Size(size, size);
+    }
+
+    /// <summary>
+    /// 逻辑空间（1400 画布坐标/视觉内容坐标）的轮盘中心。
+    /// 常态呼出固定为画布中心 (700,700)；编辑模式为窗口实际中心。
+    /// 所有命中测试、引导线、子环布局都必须用这个中心，保证缩窗后与视觉严格对齐。
     /// </summary>
     private System.Windows.Point GetWindowCenter()
     {
-        var size = GetMenuSize();
-        return new System.Windows.Point(size.Width / 2, size.Height / 2);
+        if (_editModeLocked)
+        {
+            var size = GetMenuSize();
+            return new System.Windows.Point(size.Width / 2, size.Height / 2);
+        }
+        return new System.Windows.Point(NormalMenuCenter, NormalMenuCenter);
     }
 
     /// <summary>
@@ -1150,9 +1549,23 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         return new System.Windows.Point(NormalMenuCenter, NormalMenuCenter);
     }
 
+    /// <summary>窗口 DIP 坐标 → 逻辑坐标（编辑模式为恒等映射）。</summary>
+    private System.Windows.Point WindowDipToLogical(System.Windows.Point windowDip)
+    {
+        if (_editModeLocked)
+        {
+            return windowDip;
+        }
+        return new System.Windows.Point(
+            windowDip.X + (1400.0 - (ActualWidth > 1 ? ActualWidth : Width)) / 2.0,
+            windowDip.Y + (1400.0 - (ActualHeight > 1 ? ActualHeight : Height)) / 2.0);
+    }
+
     public void ExecuteSelectedFromHoldRelease()
     {
-        if (!IsVisible || _isExecuting)
+        // 用内容可见性而非 IsVisible 判定：停靠屏外的实例 IsVisible 恒为 true（不销毁），
+        // 钩子的释放事件若误入会触发执行/重置逻辑
+        if (!IsContentVisible || _isExecuting)
         {
             return;
         }
@@ -1520,11 +1933,40 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
     }
 
+    // 单飞(single-flight)鼠标更新合并：高回报率鼠标(125~1000Hz)下 MouseMove 远密于显示刷新率，
+    // 若每条事件都同步跑一遍完整命中检测会做大量无效功。这里只记录最新光标位置，
+    // 用 Render 优先级的 BeginInvoke 把一帧内的多次移动合并为一次更新（对标 StarPie 的 QueueHighlightUpdate）。
+    private bool _selectionUpdateScheduled;
+    private System.Windows.Point _pendingSelectionPoint;
+    private bool _hasPendingSelectionPoint;
+
+    private void QueueSelectionUpdate(System.Windows.Point windowPoint)
+    {
+        _pendingSelectionPoint = windowPoint;
+        _hasPendingSelectionPoint = true;
+        if (_selectionUpdateScheduled)
+        {
+            return;
+        }
+
+        _selectionUpdateScheduled = true;
+        _ = Dispatcher.BeginInvoke(new Action(() =>
+        {
+            _selectionUpdateScheduled = false;
+            if (!_hasPendingSelectionPoint)
+            {
+                return;
+            }
+            _hasPendingSelectionPoint = false;
+            UpdateSelectionFromCursor(_pendingSelectionPoint);
+        }), DispatcherPriority.Render);
+    }
+
     private void UpdateSelectionFromCursor(System.Windows.Point? preCalculatedPoint = null)
     {
-        // 窗口已被停靠到屏外（Hide 后定时器可能仍存活一两拍）时直接短路，
-        // 避免每 tick 空转打日志、刷属性
-        if (!IsVisible)
+        // 停靠屏外的复用实例 IsVisible 恒为 true，必须用内容可见性短路，
+        // 避免 16ms 定时器在停靠态空转打日志、刷属性
+        if (!IsContentVisible)
         {
             return;
         }
@@ -1536,6 +1978,10 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
 
         var cursorPoint = preCalculatedPoint ?? GetCursorWindowPoint();
+        if (!_editModeLocked)
+        {
+            cursorPoint = WindowDipToLogical(cursorPoint);
+        }
         if (UpdateAllToolBarHoverStates(cursorPoint))
         {
             IsCenterHovered = false;
@@ -1794,6 +2240,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
     private void RadialMenuWindow_MouseWheel(object sender, MouseWheelEventArgs e)
     {
+        var wheelPoint = WindowDipToLogical(e.GetPosition(this));
         if (_editModeLocked)
         {
             if (EditMaxScrollOffset > 0)
@@ -1804,7 +2251,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 double step = 100.0;
                 double newOffset = EditScrollOffsetY - (delta > 0 ? step : -step);
                 EditScrollOffsetY = Math.Clamp(newOffset, 0, EditMaxScrollOffset);
-                UpdateSelectionFromCursor(e.GetPosition(this));
+                UpdateSelectionFromCursor(wheelPoint);
             }
             e.Handled = true;
             return;
@@ -1992,7 +2439,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     {
         var swExpand = System.Diagnostics.Stopwatch.StartNew();
         SubRings.Clear();
-        var settings = AppSettingsStore.Load();
+        var settings = AppSettingsStore.LoadCached();
         var radialSettings = settings.RadialMenu ?? new RadialMenuSettings();
         var allPages = radialSettings.Pages ?? new List<RadialMenuPageSettings>();
         var childPageIdsSet = radialSettings.GetChildPageIdsSet();
@@ -2542,21 +2989,27 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
     private void ClampRingCenter(ref double x, ref double y, double radius)
     {
-        var size = GetMenuSize();
-        x = Math.Clamp(x, radius + 8, size.Width - radius - 8);
-        if (!_editModeLocked)
+        if (_editModeLocked)
         {
-            y = Math.Clamp(y, radius + 8, size.Height - radius - 8);
-        }
-        else
-        {
+            var full = GetMenuSize();
+            x = Math.Clamp(x, radius + 8, full.Width - radius - 8);
             y = Math.Max(y, radius + 8);
+            return;
         }
+
+        // 常态呼出：逻辑画布固定 1400x1400，子环按画布范围摆放；
+        // 窗口尺寸交给 UpdateWindowToFitContent 事后按"实际使用范围"放大，保证不被裁走
+        var minX = radius + 8;
+        var maxX = NormalWindowSize - radius - 8;
+        var minY = radius + 8;
+        var maxY = NormalWindowSize - radius - 8;
+        x = Math.Clamp(x, minX, maxX);
+        y = Math.Clamp(y, minY, maxY);
     }
 
     private void RadialMenuWindow_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        var clickPoint = e.GetPosition(this);
+        var clickPoint = WindowDipToLogical(e.GetPosition(this));
         HostAssets.AppendLog($"[PickerLog] RadialMenu LeftButtonDown: isPickerMode={_mainWindow.IsRadialPickerMode}, popupOpen={_mainWindow.SearchScopePopup?.IsOpen}, isEditLocked={_editModeLocked}, pageStack={_pageStack.Count}, point=({clickPoint.X:F1},{clickPoint.Y:F1}).");
         if (_mainWindow.IsRadialPickerMode || _mainWindow.SearchScopePopup?.IsOpen == true)
         {
@@ -2639,6 +3092,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         else
         {
             _editModeLocked = false;
+            ApplyVisualContentRootMode();
             _selectionTimer.Stop();
             Hide();
         }
@@ -2657,7 +3111,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        var point = e.GetPosition(this);
+        var point = WindowDipToLogical(e.GetPosition(this));
         if (ShowCenterRenameContextMenuIfHit(point))
         {
             e.Handled = true;
@@ -2670,7 +3124,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
     private void RadialSlot_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        var clickPoint = e.GetPosition(this);
+        var clickPoint = WindowDipToLogical(e.GetPosition(this));
 
         // 如果在编辑模式下，点击点实际落在了任何一个轮盘的中心圆内 (dist <= 48)，优先触发该轮盘中心激活！
         if (_editModeLocked)
@@ -4155,6 +4609,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         {
             // ===== 阶段 1：第 0 毫秒即时视觉响应 =====
             _editModeLocked = true;
+            ApplyVisualContentRootMode();
             IsEditLoading = true;
             _selectionTimer.Stop();
 
@@ -4206,6 +4661,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         {
             // ===== 退出编辑模式 =====
             _editModeLocked = false;
+            ApplyVisualContentRootMode();
             IsEditLoading = false;
             Width = NormalWindowSize;
             Height = NormalWindowSize;
@@ -4281,17 +4737,21 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
     private void AddAppPage()
     {
-        if (string.IsNullOrWhiteSpace(_activeProcessName))
+        var processName = ResolveCurrentRadialProcessNameForEdit();
+        if (string.IsNullOrWhiteSpace(processName))
         {
+            HostAssets.AppendLog("[RadialMenuLog] AddAppPage skipped: unable to resolve current application process.");
             return;
         }
+
+        _activeProcessName = processName;
 
         var settings = AppSettingsStore.Load();
         settings.RadialMenu ??= new RadialMenuSettings();
         settings.RadialMenu.Pages ??= [];
 
-        var normalizedProcess = _activeProcessName.Trim().ToLowerInvariant().Replace(".exe", "");
-        var friendlyName = GetProcessDisplayName(_activeProcessName);
+        var normalizedProcess = processName.Trim().ToLowerInvariant().Replace(".exe", "");
+        var friendlyName = GetProcessDisplayName(processName);
         int appCount = settings.RadialMenu.Pages.Count(p => 
             !string.IsNullOrEmpty(p.ContextProcessName) && 
             p.ContextProcessName.Equals(normalizedProcess, StringComparison.OrdinalIgnoreCase)) + 1;
@@ -4350,6 +4810,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         if (_editModeLocked)
         {
             _editModeLocked = false;
+            ApplyVisualContentRootMode();
             _selectionTimer.Stop();
             SubRings.Clear();
             Width = NormalWindowSize;
@@ -4473,7 +4934,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
         try
         {
-            var topLeft = EditToolBar.TranslatePoint(new System.Windows.Point(0, 0), this);
+            var topLeft = EditToolBar.TranslatePoint(new System.Windows.Point(0, 0), VisualContentRoot);
             var rect = new Rect(topLeft.X, topLeft.Y, EditToolBar.ActualWidth, EditToolBar.ActualHeight);
             rect.Inflate(4, 4);
             return rect.Contains(point);
@@ -4492,7 +4953,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
         try
         {
-            var topLeft = button.TranslatePoint(new System.Windows.Point(0, 0), this);
+            var topLeft = button.TranslatePoint(new System.Windows.Point(0, 0), VisualContentRoot);
             var rect = new Rect(topLeft.X, topLeft.Y, button.ActualWidth, button.ActualHeight);
             rect.Inflate(2, 2);
             return rect.Contains(point);
@@ -4656,7 +5117,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             return false;
         }
 
-        var settings = AppSettingsStore.Load();
+        var settings = AppSettingsStore.LoadCached();
         var normalizedProcess = _activeProcessName.Trim().ToLowerInvariant().Replace(".exe", "");
         var appPage = settings.RadialMenu?.Pages?.FirstOrDefault(item => 
             !string.IsNullOrEmpty(item.ContextProcessName) && 
@@ -4772,51 +5233,134 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
     public new void Hide()
     {
-        HostAssets.AppendDebug($"[RadialResidualDebug] Hide called: _editModeLocked={_editModeLocked}, SubRings.Count={SubRings.Count}, Opacity={Opacity}.");
-        // 停掉 16ms 选中定时器：否则窗口停靠到 -32000 后仍以 60Hz 空转（CPU 尖峰 + 日志膨胀）。
-        // ShowAtMouse 呼出时会重新 Start。
-        _selectionTimer.Stop();
-        if (_wasActivatedForEdit && _previousForegroundWindow != IntPtr.Zero)
+        if (_isClosing)
         {
-            try
-            {
-                Win32Native.SetForegroundWindow(_previousForegroundWindow);
-            }
-            catch { }
+            return;
         }
-        _wasActivatedForEdit = false;
-        _editModeLocked = false;
-        _editInteractionActive = false;
-        IsGuideLineVisible = false;
-        OnPropertyChanged(nameof(IsEditModeLocked));
-        OnPropertyChanged(nameof(EditButtonBrush));
-        Opacity = 0;
-        RootGrid.Visibility = Visibility.Hidden;
 
-        // 默认状态清理工作，还原页面与应用关联属性，消除上一次轮盘的“遗像”残留
-        _activeProcessName = null;
-        _currentPageId = "default";
-        _pageStack.Clear();
+        _isClosing = true;
+        HostAssets.AppendDebug($"[RadialResidualDebug] Hide/Dock called: _editModeLocked={_editModeLocked}, SubRings.Count={SubRings.Count}, Opacity={Opacity}.");
 
-        // 重置 UI 文本及绑定的图像，确保其在下一次呼出前即为默认初始态
-        PageDisplaySummary = string.Empty;
-        PageTitle = "燕环";
-        CenterIcon = null;
-        ActiveTitle = "取消";
+        try
+        {
+            _selectionTimer.Stop();
+            if (_wasActivatedForEdit && _previousForegroundWindow != IntPtr.Zero)
+            {
+                try
+                {
+                    Win32Native.SetForegroundWindow(_previousForegroundWindow);
+                }
+                catch { }
+            }
+            _wasActivatedForEdit = false;
+            _editModeLocked = false;
+            _editInteractionActive = false;
+            IsGuideLineVisible = false;
+            // 钉住态的生命周期只限单次呼出：停靠复用前必须复位，
+            // 否则下次呼出走 IsPinned 分支直接 Activate 屏外透明窗口
+            if (_isPinned)
+            {
+                _isPinned = false;
+                OnPropertyChanged(nameof(IsPinned));
+                OnPropertyChanged(nameof(PinButtonBrush));
+                OnPropertyChanged(nameof(PinButtonTooltip));
+            }
+            // 复位 hover 状态：停靠实例复用时不能残留上一次的工具栏/hover 语义
+            IsEditHoverActive = false;
+            IsPinHoverActive = false;
+            IsAddHoverActive = false;
+            IsDeleteHoverActive = false;
+            IsSearchHoverActive = false;
+            IsCloseHoverActive = false;
+            IsCenterHovered = false;
+            _isOuterRingHoverActive = false;
+            Opacity = 0;
+            RootGrid.Visibility = Visibility.Hidden;
+            DockOffscreen();
+            // 注意：不再 Close()。窗口实例保持"停靠屏外"状态被 MainWindow 复用，
+            // HWND/D3D 交换链/视觉树全部保留，二次呼出零重建成本。
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"RadialMenuWindow.Hide/Dock exception: {ex.Message}");
+        }
+    }
 
-        // 彻底清空图形缓存项与全景子环星系，消除残影
-        Items.Clear();
-        OuterItems.Clear();
-        ChildItems.Clear();
-        GrandChildItems.Clear();
-        SubRings.Clear();
+    /// <summary>窗口是否处于"已呼出过并停靠屏外、可被复用"状态。</summary>
+    public bool IsDockedAvailable => _isPrewarmed && !_isClosing && !IsContentVisible;
 
-        UpdateEditModeState();
-        UpdateLayout();
+    /// <summary>轮盘内容当前是否真正可见（停靠/隐藏态为 false；复用实例的 IsVisible 恒为 true，不能用于此判定）。</summary>
+    public bool IsContentVisible => RootGrid.Visibility == Visibility.Visible && Opacity > 0.01 && IsVisible;
 
-        OverlayWindowManager.SafeHideAndPark(this);
-        MemoryOptimizationService.OptimizeMemoryInBackground();
-        HostAssets.AppendDebug($"[RadialResidualDebug] Hide finished: Left={Left}, Top={Top}, SubRings.Count={SubRings.Count}.");
+    /// <summary>停靠到屏幕外深处：清空动态子环、复位状态、物理移出屏幕（不销毁 HWND）。</summary>
+    private void DockOffscreen()
+    {
+        try
+        {
+            SubRings.Clear();
+            _pageStack.Clear();
+            _fitContentPending = false;
+            _isEntryAnimationActive = false;
+            ApplyVisualContentRootMode();
+
+            var helper = new System.Windows.Interop.WindowInteropHelper(this);
+            var handle = helper.Handle;
+            if (handle != IntPtr.Zero)
+            {
+                // 紧凑尺寸 + 屏外坐标，一次 SetWindowPos 完成（保持复用时窗口状态确定）
+                var windowDpi = GetWindowDpiScale();
+                var wPhys = (int)Math.Round(CompactWindowSize * windowDpi);
+                var hPhys = (int)Math.Round(CompactWindowSize * windowDpi);
+                var offscreen = (int)OverlayWindowManager.OffScreenCoordinate;
+                Win32Native.SetWindowPos(
+                    handle,
+                    IntPtr.Zero,
+                    offscreen,
+                    offscreen,
+                    wPhys,
+                    hPhys,
+                    Win32Native.SWP_NOZORDER | Win32Native.SWP_NOACTIVATE);
+                Width = CompactWindowSize;
+                Height = CompactWindowSize;
+            }
+            else
+            {
+                Left = OverlayWindowManager.OffScreenCoordinate;
+                Top = OverlayWindowManager.OffScreenCoordinate;
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"[RadialMenuLog] DockOffscreen failed: {ex.Message}");
+        }
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        try
+        {
+            _selectionTimer.Stop();
+            if (_globalEscapeHandler != null)
+            {
+                InputHookService.OnGlobalEscapePressed -= _globalEscapeHandler;
+            }
+
+            var source = (System.Windows.Interop.HwndSource?)PresentationSource.FromVisual(this);
+            source?.RemoveHook(RadialWindowWndProc);
+
+            Items.Clear();
+            MiddleItems.Clear();
+            OuterItems.Clear();
+            ChildItems.Clear();
+            GrandChildItems.Clear();
+            GreatGrandChildItems.Clear();
+            SubRings.Clear();
+
+            MemoryOptimizationService.OptimizeMemoryInBackground();
+            HostAssets.AppendDebug("[RadialResidualDebug] RadialMenuWindow OnClosed complete.");
+        }
+        catch { }
+        base.OnClosed(e);
     }
 
     private void EnsureNoActivateStyle()
@@ -4926,6 +5470,45 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         return null;
     }
 
+    /// <summary>
+    /// 解析当前应用进程名：优先用呼出时解析好的 _activeProcessName；
+    /// 为空时（进程识别临时失败）现场再解析一次光标下窗口 → 前台窗口，保证创建专属轮盘不被卡死。
+    /// </summary>
+    private string ResolveCurrentRadialProcessNameForEdit()
+    {
+        if (!string.IsNullOrWhiteSpace(_activeProcessName))
+        {
+            return _activeProcessName;
+        }
+
+        var helperHwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+        var mainHwnd = new System.Windows.Interop.WindowInteropHelper(_mainWindow).Handle;
+
+        IntPtr targetHwnd = IntPtr.Zero;
+        if (Win32Native.GetCursorPos(out var pt))
+        {
+            var under = Win32Native.WindowFromPoint(pt);
+            if (under != IntPtr.Zero && under != helperHwnd && under != mainHwnd)
+            {
+                targetHwnd = Win32Native.GetAncestor(under, Win32Native.GA_ROOT);
+            }
+        }
+
+        if (targetHwnd == IntPtr.Zero || targetHwnd == helperHwnd || targetHwnd == mainHwnd)
+        {
+            targetHwnd = Win32Native.GetForegroundWindow();
+        }
+
+        if (targetHwnd == IntPtr.Zero || targetHwnd == helperHwnd || targetHwnd == mainHwnd)
+        {
+            return string.Empty;
+        }
+
+        var name = WindowSensorHelper.GetWindowProcessName(targetHwnd);
+        HostAssets.AppendLog($"[RadialMenuLog] AddAppPage resolved process on the fly: hwnd=0x{targetHwnd.ToInt64():X}, process={name ?? "(null)"}.");
+        return name;
+    }
+
     private static string GetProcessDisplayName(string? processName)
     {
         if (string.IsNullOrWhiteSpace(processName)) return "全局";
@@ -4938,19 +5521,38 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     {
         try
         {
-            if (string.Equals(processName, "desktop", StringComparison.OrdinalIgnoreCase))
+            // 进程图标按进程名缓存：FindExecutablePath 内部做 Process.GetProcessesByName +
+            // exe 图标提取，是呼出路径上最重的同步开销，不能每次重建都重复执行
+            if (_processIconCache.TryGetValue(processName, out var cached))
             {
-                return ExtensionIconLibrary.ResolveImageSource("mdi:monitor-dashboard", null);
+                return cached;
             }
 
-            var path = FindExecutablePath(processName);
-            if (!string.IsNullOrEmpty(path) && File.Exists(path))
+            ImageSource? icon = null;
+            if (string.Equals(processName, "desktop", StringComparison.OrdinalIgnoreCase))
             {
-                return ExtensionIconLibrary.TryExtractAssociatedIcon(path);
+                icon = ExtensionIconLibrary.ResolveImageSource("mdi:monitor-dashboard", null);
             }
+            else
+            {
+                var path = FindExecutablePath(processName);
+                if (!string.IsNullOrEmpty(path) && File.Exists(path))
+                {
+                    icon = ExtensionIconLibrary.TryExtractAssociatedIcon(path);
+                }
+            }
+
+            _processIconCache[processName] = icon;
+            return icon;
         }
         catch { }
         return null;
+    }
+
+    /// <summary>扩展变更后清除进程图标缓存，避免图标陈旧。</summary>
+    public static void InvalidateProcessIconCache()
+    {
+        _processIconCache.Clear();
     }
 
     public void SetDragHoverItem(RadialMenuItemViewModel? item)
@@ -4986,8 +5588,8 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     {
         if (!IsVisible) return null;
 
-        var localPoint = new System.Windows.Point(screenPoint.X - Left, screenPoint.Y - Top);
-        
+        var localPoint = WindowDipToLogical(new System.Windows.Point(screenPoint.X - Left, screenPoint.Y - Top));
+
         for (int i = SubRings.Count - 1; i >= 0; i--)
         {
             var ring = SubRings[i];
