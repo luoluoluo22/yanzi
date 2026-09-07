@@ -40,27 +40,38 @@ $headers = @{
     "Content-Type"  = "application/json"
 }
 
-# 1. Deploy latest version
+# 1. Deploy latest code version (filter out secret-only empty versions)
 try {
-    $versionsUrl = "https://api.cloudflare.com/client/v4/accounts/$AccountId/workers/scripts/$ScriptName/versions"
+    $versionsUrl = "https://api.cloudflare.com/client/v4/accounts/$AccountId/workers/scripts/$ScriptName/versions?per_page=10"
     $versionsRes = Invoke-RestMethod -Uri $versionsUrl -Method Get -Headers $headers
     if ($versionsRes.success -and $versionsRes.result.items.Count -gt 0) {
-        $latestVersionId = $versionsRes.result.items[0].id
-        $deployUrl = "https://api.cloudflare.com/client/v4/accounts/$AccountId/workers/scripts/$ScriptName/deployments"
-        $deployBody = @{
-            versions = @(
-                @{
-                    version_id = $latestVersionId
-                    percentage = 100
-                }
-            )
-        } | ConvertTo-Json -Depth 5
+        $targetVersionId = $null
+        foreach ($v in $versionsRes.result.items) {
+            $vDetailUrl = "https://api.cloudflare.com/client/v4/accounts/$AccountId/workers/scripts/$ScriptName/versions/$($v.id)"
+            $vDetail = Invoke-RestMethod -Uri $vDetailUrl -Method Get -Headers $headers
+            if ($vDetail.success -and $vDetail.result.resources.script.etag) {
+                $targetVersionId = $v.id
+                break
+            }
+        }
 
-        Invoke-RestMethod -Uri $deployUrl -Method Post -Headers $headers -Body $deployBody | Out-Null
-        Write-Host "[Cloudflare Sync] Latest version ($latestVersionId) deployed successfully."
+        if ($targetVersionId) {
+            $deployUrl = "https://api.cloudflare.com/client/v4/accounts/$AccountId/workers/scripts/$ScriptName/deployments"
+            $deployBody = @{
+                versions = @(
+                    @{
+                        version_id = $targetVersionId
+                        percentage = 100
+                    }
+                )
+            } | ConvertTo-Json -Depth 5
+
+            Invoke-RestMethod -Uri $deployUrl -Method Post -Headers $headers -Body $deployBody | Out-Null
+            Write-Host "[Cloudflare Sync] Latest code version ($targetVersionId) verified and deployed."
+        }
     }
 } catch {
-    Write-Host "[Cloudflare Sync] Note on deploying latest version: $_"
+    Write-Host "[Cloudflare Sync] Note on deploying latest code version: $_"
 }
 
 # 2. Upload secrets
