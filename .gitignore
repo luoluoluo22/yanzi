@@ -63,3 +63,6 @@ env.md
 
 licenses_*.txt
 licenses_output.txt
+
+cards_*.txt
+*.license.txt
