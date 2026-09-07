@@ -5943,6 +5943,19 @@ async function getUserPointsDetail(env, userId) {
       points: userPoints?.points ?? 0,
       wishesCount: userPoints?.wishes_count ?? 0,
       acceptedCount: userPoints?.accepted_count ?? 0,
+      transactions: transactions || []
+    };
+  } catch (err) {
+    console.warn("getUserPointsDetail fallback:", err);
+    return {
+      points: 0,
+      wishesCount: 0,
+      acceptedCount: 0,
+      transactions: []
+    };
+  }
+}
+
 async function updateWish(env, auth, wishId, payload) {
   await ensureWishWallTables(env);
   const wish = await env.DB.prepare("SELECT * FROM wishes WHERE id = ?").bind(wishId).first();
