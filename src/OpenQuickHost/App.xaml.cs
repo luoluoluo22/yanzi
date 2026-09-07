@@ -272,7 +272,13 @@ public partial class App : WpfApplication
             _singleInstanceService.StartServer(message => HandleSecondaryLaunchMessageAsync(window, message));
             _ = HandleLaunchArgumentsAsync(window, e.Args);
 
-            // 4. 标识整个应用的所有核心初始化步骤均顺利执行完成，正式转换为运行期柔性容错模式
+            // 4. 燕子 1.0.0 VIP 维护计划启动门禁自检（在保用户或终身 VIP 0 延迟秒过；未开通或已到期则触发激活引导）
+            _ = Task.Run(async () =>
+            {
+                await OpenQuickHost.Sync.VipGateService.EnsureVipEntitledAsync(window, isStartup: true);
+            });
+
+            // 5. 标识整个应用的所有核心初始化步骤均顺利执行完成，正式转换为运行期柔性容错模式
             _isAppFullyInitialized = true;
 
             // 预加载设置窗口并提前创建 HWND 与 DWM 深色环境，避免第一次打开时因主线程创建句柄和排版引发首屏闪白或卡顿

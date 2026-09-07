@@ -19,6 +19,32 @@ public static class ReleaseHistoryProvider
 {
     private static readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(5) };
 
+    public static async Task<DateTime?> GetReleaseDateAsync(string version)
+    {
+        try
+        {
+            var history = await FetchOnlineHistoryAsync(version);
+            if (history != null)
+            {
+                var cleanTarget = version.TrimStart('v', 'V').Trim();
+                foreach (var item in history)
+                {
+                    if (string.Equals(item.Version.TrimStart('v', 'V').Trim(), cleanTarget, StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (DateTime.TryParse(item.ReleaseDate, out var dt))
+                        {
+                            return dt;
+                        }
+                    }
+                }
+            }
+        }
+        catch
+        {
+        }
+        return null;
+    }
+
     public static async Task<ObservableCollection<ReleaseNoteEntry>?> FetchOnlineHistoryAsync(string? currentVersion)
     {
         var cleanCurrent = (currentVersion ?? string.Empty).TrimStart('v', 'V').Trim();

@@ -21,6 +21,18 @@ public sealed class AuthResponse
     public string Username { get; init; } = string.Empty;
 
     public string? Email { get; init; }
+
+    [JsonPropertyName("isVip")]
+    public bool IsVip { get; init; }
+
+    [JsonPropertyName("vipType")]
+    public string? VipType { get; init; }
+
+    [JsonPropertyName("vipExpireAt")]
+    public string? VipExpireAt { get; init; }
+
+    [JsonPropertyName("daysRemaining")]
+    public int DaysRemaining { get; init; }
 }
 
 public sealed class SendCodeResponse

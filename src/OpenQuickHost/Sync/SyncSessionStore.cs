@@ -49,13 +49,21 @@ public static class SyncSessionStore
 
 public sealed class SyncSession
 {
-    public string AccessToken { get; init; } = string.Empty;
+    public string AccessToken { get; set; } = string.Empty;
 
-    public long ExpiresAt { get; init; }
+    public long ExpiresAt { get; set; }
 
-    public string UserId { get; init; } = string.Empty;
+    public string UserId { get; set; } = string.Empty;
 
-    public string Username { get; init; } = string.Empty;
+    public string Username { get; set; } = string.Empty;
 
-    public string? Email { get; init; }
+    public string? Email { get; set; }
+
+    public bool IsVip { get; set; }
+
+    public string? VipType { get; set; }
+
+    public string? VipExpireAt { get; set; }
+
+    public int DaysRemaining { get; set; }
 }

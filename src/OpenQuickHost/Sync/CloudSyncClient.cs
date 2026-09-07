@@ -291,7 +291,16 @@ public sealed class CloudSyncClient
         using var request = CreateRequest(HttpMethod.Get, "/v1/user/vip-status", includeAuth: true);
         using var response = await SendAsyncWithFallback(request, cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);
-        return await ReadAsync<VipStatusResponse>(response, cancellationToken);
+        var status = await ReadAsync<VipStatusResponse>(response, cancellationToken);
+        if (status != null && _session != null)
+        {
+            _session.IsVip = status.IsVip;
+            _session.VipType = status.VipType;
+            _session.VipExpireAt = status.VipExpireAt;
+            _session.DaysRemaining = status.DaysRemaining;
+            SyncSessionStore.Save(_session);
+        }
+        return status;
     }
 
     public async Task<RedeemLicenseResponse?> RedeemLicenseAsync(string code, CancellationToken cancellationToken = default)
@@ -300,7 +309,16 @@ public sealed class CloudSyncClient
         var payload = new { code = code.Trim().ToUpperInvariant() };
         using var response = await SendJsonAsync(HttpMethod.Post, "/v1/licenses/redeem", payload, includeAuth: true, cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);
-        return await ReadAsync<RedeemLicenseResponse>(response, cancellationToken);
+        var result = await ReadAsync<RedeemLicenseResponse>(response, cancellationToken);
+        if (result != null && result.Ok && _session != null)
+        {
+            _session.IsVip = result.IsVip;
+            _session.VipType = result.VipType;
+            _session.VipExpireAt = result.VipExpireAt;
+            _session.DaysRemaining = result.DaysRemaining;
+            SyncSessionStore.Save(_session);
+        }
+        return result;
     }
 
     public async Task<IReadOnlyList<CloudExtensionRecord>> GetExtensionsAsync(CancellationToken cancellationToken = default)
@@ -1235,7 +1253,11 @@ public sealed class CloudSyncClient
             ExpiresAt = auth.ExpiresAt,
             UserId = auth.UserId,
             Username = auth.Username,
-            Email = auth.Email
+            Email = auth.Email,
+            IsVip = auth.IsVip,
+            VipType = auth.VipType,
+            VipExpireAt = auth.VipExpireAt,
+            DaysRemaining = auth.DaysRemaining
         };
     }
 

@@ -690,6 +690,25 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 NewVersionInfo = updateInfo.TargetFullRelease.Version.ToString();
                 HasNewVersion = true;
 
+                // 维护期校验：检查当前用户是否有权升级到该版本
+                var session = SyncSessionStore.Load();
+                var newVerReleaseDate = await ReleaseHistoryProvider.GetReleaseDateAsync(NewVersionInfo);
+                bool isEntitled = AppVersionInfo.IsVersionEntitled(
+                    session?.IsVip ?? false,
+                    session?.VipType,
+                    session?.VipExpireAt,
+                    newVerReleaseDate
+                );
+
+                if (!isEntitled)
+                {
+                    HostAssets.AppendLog($"SettingsWindow: New version {NewVersionInfo} requires VIP renewal (expireAt={session?.VipExpireAt}, releaseDate={newVerReleaseDate}).");
+                    UpdateDownloaded = false;
+                    IsDownloadingUpdate = false;
+                    UpdateCheckStatusText = $"发现新版本 v{NewVersionInfo}，发布于您的 VIP 维护期之后。续费 VIP 即可立即一键升级！";
+                    return;
+                }
+
                 if (autoDownload)
                 {
                     await DownloadUpdatesCoreAsync(updateInfo);
@@ -718,6 +737,19 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private async void DownloadUpdatesButton_Click(object sender, System.Windows.RoutedEventArgs e)
     {
         if (_newVersionUpdateInfo == null) return;
+        var session = SyncSessionStore.Load();
+        var newVerReleaseDate = await ReleaseHistoryProvider.GetReleaseDateAsync(NewVersionInfo);
+        bool isEntitled = AppVersionInfo.IsVersionEntitled(
+            session?.IsVip ?? false,
+            session?.VipType,
+            session?.VipExpireAt,
+            newVerReleaseDate
+        );
+        if (!isEntitled)
+        {
+            ActivateVipButton_Click(sender, e);
+            return;
+        }
         await DownloadUpdatesCoreAsync(_newVersionUpdateInfo);
     }
 

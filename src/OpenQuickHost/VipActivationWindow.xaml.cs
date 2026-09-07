@@ -25,6 +25,8 @@ public partial class VipActivationWindow : Window
     // 链动小铺赞助维护商品购买直达链接
     public static string PurchaseUrl { get; set; } = "https://wzyp.cn/shop/4AOUCE2B";
 
+    public bool IsActivatedSuccessfully { get; private set; }
+
     public VipActivationWindow(CloudSyncClient syncClient, Action? onVipStatusChanged = null, string? currentVipStatus = null)
     {
         HostAssets.AppendLog($"[VipActivationWindow] Ctor called. syncClient is {(syncClient != null ? "Ready" : "Null")}, currentVip={currentVipStatus}");
@@ -111,6 +113,7 @@ public partial class VipActivationWindow : Window
             HostAssets.AppendLog($"[VipActivationWindow] RedeemLicenseAsync response: ok={response?.Ok}, msg={response?.Message}");
             if (response != null && response.Ok)
             {
+                IsActivatedSuccessfully = true;
                 ShowMessage(response.Message ?? "激活成功！感谢您对燕子开发维护的支持。", isError: false);
                 ClipboardBanner.Visibility = Visibility.Collapsed;
                 LicenseCodeTextBox.Text = string.Empty;

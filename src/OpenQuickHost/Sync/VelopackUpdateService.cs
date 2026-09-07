@@ -270,6 +270,23 @@ public sealed class VelopackUpdateService
                 return;
             }
 
+            // 维护期校验：检查当前用户是否有权升级到该新版本
+            var session = SyncSessionStore.Load();
+            var targetVer = updateInfo.TargetFullRelease.Version.ToString();
+            var newVerReleaseDate = await ReleaseHistoryProvider.GetReleaseDateAsync(targetVer);
+            bool isEntitled = AppVersionInfo.IsVersionEntitled(
+                session?.IsVip ?? false,
+                session?.VipType,
+                session?.VipExpireAt,
+                newVerReleaseDate
+            );
+
+            if (!isEntitled)
+            {
+                HostAssets.AppendLog($"VelopackUpdateService: Silent update to v{targetVer} skipped because current user is not entitled (expireAt={session?.VipExpireAt}, releaseDate={newVerReleaseDate}).");
+                return;
+            }
+
             int downloadAttempts = 0;
             bool downloadSuccess = false;
 
