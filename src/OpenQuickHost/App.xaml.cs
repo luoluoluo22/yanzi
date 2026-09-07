@@ -1007,6 +1007,19 @@ public partial class App : WpfApplication
         (MainWindow as MainWindow)?.HideToTray();
     }
 
+    private void TrayVipActivation_Click(object sender, RoutedEventArgs e)
+    {
+        if (MainWindow is MainWindow mw && mw.CloudSyncClient != null)
+        {
+            var win = new VipActivationWindow(mw.CloudSyncClient, () =>
+            {
+                mw.Dispatcher.Invoke(async () => await mw.RefreshCloudStateAsync());
+            });
+            win.Show();
+            win.Activate();
+        }
+    }
+
     private void TraySettings_Click(object sender, RoutedEventArgs e)
     {
         CurrentApp?.OpenSettingsWindow();

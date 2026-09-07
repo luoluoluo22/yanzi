@@ -2465,6 +2465,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private void QuickMenuOpenVip_Click(object sender, RoutedEventArgs e)
+    {
+        FooterQuickMenuPopup.IsOpen = false;
+        if (CloudSyncClient != null)
+        {
+            var win = new VipActivationWindow(CloudSyncClient, () =>
+            {
+                Dispatcher.Invoke(async () => await RefreshCloudStateAsync());
+            })
+            {
+                Owner = this
+            };
+            win.ShowDialog();
+        }
+    }
+
     private void QuickMenuOpenAbout_Click(object sender, RoutedEventArgs e)
     {
         FooterQuickMenuPopup.IsOpen = false;

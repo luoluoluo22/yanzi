@@ -78,7 +78,7 @@ public partial class MainWindow
         return (true, $"已打开小程序商店链接：{url}");
     }
 
-    private async Task RefreshCloudStateAsync(bool allowLoginPrompt = true)
+    public async Task RefreshCloudStateAsync(bool allowLoginPrompt = true)
     {
         if (_cloudSyncClient == null)
         {

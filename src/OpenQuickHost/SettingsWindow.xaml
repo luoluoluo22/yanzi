@@ -582,47 +582,15 @@
                     </Grid.RowDefinitions>
 
                     <!-- Account Section -->
-                    <Button Grid.Row="0"
+                    <Border Grid.Row="0"
+                            x:Name="AccountCardBorder"
                             Margin="10,15,10,10"
                             Background="Transparent"
-                            BorderThickness="0"
-                            Click="AccountButton_Click">
-                        <Button.Template>
-                            <ControlTemplate TargetType="Button">
-                                <Border x:Name="Root" Background="Transparent" CornerRadius="8" Padding="12,8">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="*" />
-                                        </Grid.ColumnDefinitions>
-                                        <Border Width="32"
-                                                Height="32"
-                                                CornerRadius="16"
-                                                Background="#1A3B82F6"
-                                                VerticalAlignment="Center">
-                                            <Viewbox Width="18" Height="18">
-                                                <Path Data="{local:IconGeometry user}" Fill="#FF3B82F6" Stretch="Uniform"/>
-                                            </Viewbox>
-                                        </Border>
-                                        <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding AccountTitle}"
-                                                       FontSize="{DynamicResource FontSizeNormal}"
-                                                       FontWeight="Medium"
-                                                       Foreground="{DynamicResource BrushTextMain}" />
-                                            <TextBlock Text="账户"
-                                                       Foreground="{DynamicResource BrushTextSec}"
-                                                       FontSize="{DynamicResource FontSizeSmall}" />
-                                        </StackPanel>
-                                    </Grid>
-                                </Border>
-                                <ControlTemplate.Triggers>
-                                    <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter TargetName="Root" Property="Background" Value="{DynamicResource BrushListViewItemMouseOver}" />
-                                    </Trigger>
-                                </ControlTemplate.Triggers>
-                            </ControlTemplate>
-                        </Button.Template>
-                        <Button.ContextMenu>
+                            CornerRadius="8"
+                            Padding="8,8"
+                            Cursor="Hand"
+                            MouseLeftButtonUp="AccountCard_MouseLeftButtonUp">
+                        <Border.ContextMenu>
                             <ContextMenu x:Name="AccountMenu">
                                 <MenuItem Header="登录或切换账号" Click="SignInMenuItem_Click" />
                                 <MenuItem Header="退出登录" Click="SignOutMenuItem_Click" />
@@ -630,8 +598,144 @@
                                 <MenuItem Header="赞助维护与卡密激活" Click="VipActivationMenuItem_Click" />
                                 <MenuItem Header="刷新云状态" Click="RefreshAccountMenuItem_Click" />
                             </ContextMenu>
-                        </Button.ContextMenu>
-                    </Button>
+                        </Border.ContextMenu>
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Background" Value="Transparent" />
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource BrushListViewItemMouseOver}" />
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Border Width="32"
+                                    Height="32"
+                                    CornerRadius="16"
+                                    Background="#1A3B82F6"
+                                    VerticalAlignment="Center">
+                                <Viewbox Width="18" Height="18">
+                                    <Path Data="{local:IconGeometry user}" Fill="#FF3B82F6" Stretch="Uniform"/>
+                                </Viewbox>
+                            </Border>
+                            <StackPanel Grid.Column="1" Margin="8,0,6,0" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding AccountTitle}"
+                                           FontSize="{DynamicResource FontSizeNormal}"
+                                           FontWeight="Medium"
+                                           Foreground="{DynamicResource BrushTextMain}"
+                                           TextTrimming="CharacterEllipsis"
+                                           ToolTip="{Binding AccountTitle}" />
+                                <TextBlock Text="{Binding AccountSubtitle}"
+                                           Foreground="{DynamicResource BrushTextSec}"
+                                           FontSize="{DynamicResource FontSizeSmall}"
+                                           TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+
+                            <!-- 右侧：VIP 状态 / 激活按钮 -->
+                            <Grid Grid.Column="2" VerticalAlignment="Center">
+                                <!-- 未激活 VIP 时：显示“激活VIP”按钮 -->
+                                <Button x:Name="ActivateVipButton"
+                                        Content="激活VIP"
+                                        Click="ActivateVipButton_Click"
+                                        ToolTip="输入卡密激活 VIP 维护支持"
+                                        Cursor="Hand"
+                                        Visibility="{Binding IsVipActive, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                                    <Button.Style>
+                                        <Style TargetType="Button">
+                                            <Setter Property="Background" Value="#22F59E0B" />
+                                            <Setter Property="Foreground" Value="#F59E0B" />
+                                            <Setter Property="BorderBrush" Value="#66F59E0B" />
+                                            <Setter Property="BorderThickness" Value="1" />
+                                            <Setter Property="FontSize" Value="11" />
+                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                            <Setter Property="Padding" Value="7,3" />
+                                            <Setter Property="Template">
+                                                <Setter.Value>
+                                                    <ControlTemplate TargetType="Button">
+                                                        <Border Background="{TemplateBinding Background}"
+                                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                                BorderThickness="{TemplateBinding BorderThickness}"
+                                                                CornerRadius="10"
+                                                                Padding="{TemplateBinding Padding}">
+                                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                        </Border>
+                                                        <ControlTemplate.Triggers>
+                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                <Setter Property="Background" Value="#44F59E0B" />
+                                                                <Setter Property="BorderBrush" Value="#F59E0B" />
+                                                            </Trigger>
+                                                            <Trigger Property="IsPressed" Value="True">
+                                                                <Setter Property="Background" Value="#66F59E0B" />
+                                                            </Trigger>
+                                                        </ControlTemplate.Triggers>
+                                                    </ControlTemplate>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
+
+                                <!-- 已激活 VIP 时：显示 VIP 天数徽章，点击亦可打开卡密窗口进行续费 -->
+                                <Button x:Name="VipDaysBadgeButton"
+                                        Click="ActivateVipButton_Click"
+                                        ToolTip="VIP 维护支持中，点击可输入新卡密续费顺延"
+                                        Cursor="Hand"
+                                        Visibility="{Binding IsVipActive, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <Button.Style>
+                                        <Style TargetType="Button">
+                                            <Setter Property="Background" Value="#26F59E0B" />
+                                            <Setter Property="Foreground" Value="#FBBF24" />
+                                            <Setter Property="BorderBrush" Value="#88F59E0B" />
+                                            <Setter Property="BorderThickness" Value="1" />
+                                            <Setter Property="FontSize" Value="11" />
+                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                            <Setter Property="Padding" Value="6,3" />
+                                            <Setter Property="Template">
+                                                <Setter.Value>
+                                                    <ControlTemplate TargetType="Button">
+                                                        <Border Background="{TemplateBinding Background}"
+                                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                                BorderThickness="{TemplateBinding BorderThickness}"
+                                                                CornerRadius="10"
+                                                                Padding="{TemplateBinding Padding}">
+                                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                                <Path Data="{local:IconGeometry star}" 
+                                                                      Fill="#F59E0B" 
+                                                                      Width="9" Height="9" 
+                                                                      Stretch="Uniform" 
+                                                                      Margin="0,0,3,0" 
+                                                                      VerticalAlignment="Center" />
+                                                                <TextBlock Text="{Binding VipBadgeText}" 
+                                                                           Foreground="#FBBF24" 
+                                                                           FontSize="11" 
+                                                                           FontWeight="SemiBold" 
+                                                                           VerticalAlignment="Center" />
+                                                            </StackPanel>
+                                                        </Border>
+                                                        <ControlTemplate.Triggers>
+                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                <Setter Property="Background" Value="#40F59E0B" />
+                                                                <Setter Property="BorderBrush" Value="#FCD34D" />
+                                                            </Trigger>
+                                                            <Trigger Property="IsPressed" Value="True">
+                                                                <Setter Property="Background" Value="#60F59E0B" />
+                                                            </Trigger>
+                                                        </ControlTemplate.Triggers>
+                                                    </ControlTemplate>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
+                            </Grid>
+                        </Grid>
+                    </Border>
 
                     <!-- Global Search Box -->
                     <Border Grid.Row="1"

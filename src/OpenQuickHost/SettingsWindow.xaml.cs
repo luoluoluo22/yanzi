@@ -40,6 +40,9 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private string _accountSubtitle = "点击左上角账户卡片登录或切换账号。";
     private string _accountInitial = "燕";
     private bool _isAccountLoggedIn;
+    private bool _isVipActive;
+    private string _vipBadgeText = "激活VIP";
+    private string _vipDaysText = string.Empty;
     private string _localExtensionSummary = "正在统计...";
     private string _settingsSearchText = string.Empty;
     private string _extensionSearchText = string.Empty;
@@ -1368,6 +1371,51 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             OnPropertyChanged();
             OnPropertyChanged(nameof(SignInButtonText));
             OnPropertyChanged(nameof(SignInMenuText));
+        }
+    }
+
+    public bool IsVipActive
+    {
+        get => _isVipActive;
+        private set
+        {
+            if (value == _isVipActive)
+            {
+                return;
+            }
+
+            _isVipActive = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public string VipBadgeText
+    {
+        get => _vipBadgeText;
+        private set
+        {
+            if (value == _vipBadgeText)
+            {
+                return;
+            }
+
+            _vipBadgeText = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public string VipDaysText
+    {
+        get => _vipDaysText;
+        private set
+        {
+            if (value == _vipDaysText)
+            {
+                return;
+            }
+
+            _vipDaysText = value;
+            OnPropertyChanged();
         }
     }
 
@@ -4569,6 +4617,21 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private void AccountCard_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement element && element.ContextMenu != null)
+        {
+            element.ContextMenu.PlacementTarget = element;
+            element.ContextMenu.IsOpen = true;
+        }
+    }
+
+    private void ActivateVipButton_Click(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        OpenVipActivationDialog();
+    }
+
     private async void SignInMenuItem_Click(object sender, RoutedEventArgs e)
     {
         await SignInAsync();
@@ -7334,7 +7397,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         {
             IsAccountLoggedIn = true;
             AccountTitle = session.Username;
-            AccountSubtitle = $"已登录 · 用户 ID {session.UserId}";
+            AccountSubtitle = $"用户 ID {session.UserId}";
             AccountInitial = session.Username[..1].ToUpperInvariant();
 
             _ = Task.Run(async () =>
@@ -7344,14 +7407,31 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                     if (_mainWindow.CloudSyncClient != null)
                     {
                         var status = await _mainWindow.CloudSyncClient.GetVipStatusAsync();
-                        if (status != null && status.IsVip)
+                        Dispatcher.Invoke(() =>
                         {
-                            Dispatcher.Invoke(() =>
+                            if (status != null && status.IsVip)
                             {
-                                var tag = status.VipType == "lifetime" ? "永久赞助" : $"赞助维护中 ({status.DaysRemaining}天)";
-                                AccountSubtitle = $"{tag} · 用户 ID {session.UserId}";
-                            });
-                        }
+                                IsVipActive = true;
+                                if (status.VipType == "lifetime")
+                                {
+                                    VipBadgeText = "终身VIP";
+                                    VipDaysText = "永久";
+                                }
+                                else
+                                {
+                                    VipBadgeText = $"VIP {status.DaysRemaining}天";
+                                    VipDaysText = $"{status.DaysRemaining}天";
+                                }
+                                AccountSubtitle = $"{VipBadgeText} · ID {session.UserId}";
+                            }
+                            else
+                            {
+                                IsVipActive = false;
+                                VipBadgeText = "激活VIP";
+                                VipDaysText = string.Empty;
+                                AccountSubtitle = $"普通用户 · ID {session.UserId}";
+                            }
+                        });
                     }
                 }
                 catch
@@ -7363,8 +7443,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
 
         IsAccountLoggedIn = false;
+        IsVipActive = false;
+        VipBadgeText = "激活VIP";
+        VipDaysText = string.Empty;
         AccountTitle = "未登录";
-        AccountSubtitle = "点击左上角账户卡片登录或切换账号。";
+        AccountSubtitle = "点击登录或切换账号。";
         AccountInitial = "燕";
     }
 

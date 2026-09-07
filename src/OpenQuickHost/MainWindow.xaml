@@ -2606,6 +2606,22 @@ Visibility="{Binding AiChatVisibility}">
                                 </Button>
 
                                 <Button Style="{DynamicResource GhostButtonStyle}"
+                                        ToolTip="输入卡密激活 VIP 维护支持"
+                                        HorizontalContentAlignment="Stretch" Click="QuickMenuOpenVip_Click">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="42" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Path Data="{local:IconGeometry star}" 
+                                              Fill="#F59E0B" Height="16" Width="16" Stretch="Uniform" HorizontalAlignment="Center"/>
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                            <TextBlock Text="赞助维护与卡密" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="Medium"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </Button>
+
+                                <Button Style="{DynamicResource GhostButtonStyle}"
                                         ToolTip="查看 燕子 (Swallow) 的版本信息与产品声明"
                                         HorizontalContentAlignment="Stretch" Click="QuickMenuOpenAbout_Click">
                                     <Grid>

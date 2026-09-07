@@ -427,6 +427,11 @@
                         <Path Data="{local:IconGeometry shortcut}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" />
                     </MenuItem.Icon>
                 </MenuItem>
+                <MenuItem Header="赞助维护 / 激活卡密" Click="TrayVipActivation_Click">
+                    <MenuItem.Icon>
+                        <Path Data="{local:IconGeometry star}" Fill="#F59E0B" Stretch="Uniform" />
+                    </MenuItem.Icon>
+                </MenuItem>
                 <MenuItem Header="设置" Click="TraySettings_Click">
                     <MenuItem.Icon>
                         <Path Data="{local:IconGeometry settings}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" />
