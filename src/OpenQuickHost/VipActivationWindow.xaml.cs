@@ -23,19 +23,24 @@ public partial class VipActivationWindow : Window
     private string? _lastAutoFilledCode;
 
     // 链动小铺赞助维护商品购买直达链接
-    public static string PurchaseUrl { get; set; } = "https://wzyp.cn/item/i2w1c0";
+    public static string PurchaseUrl { get; set; } = "https://wzyp.cn/shop/4AOUCE2B";
 
-    public VipActivationWindow(CloudSyncClient syncClient, Action? onVipStatusChanged = null)
+    public VipActivationWindow(CloudSyncClient syncClient, Action? onVipStatusChanged = null, string? currentVipStatus = null)
     {
-        HostAssets.AppendLog($"[VipActivationWindow] Ctor called. syncClient is {(syncClient != null ? "Ready" : "Null")}");
+        HostAssets.AppendLog($"[VipActivationWindow] Ctor called. syncClient is {(syncClient != null ? "Ready" : "Null")}, currentVip={currentVipStatus}");
         InitializeComponent();
         _syncClient = syncClient;
         _onVipStatusChanged = onVipStatusChanged;
 
-        Loaded += async (_, _) =>
+        if (!string.IsNullOrWhiteSpace(currentVipStatus) && currentVipStatus != "激活VIP")
+        {
+            CurrentVipBadgeText.Text = currentVipStatus;
+            CurrentVipBadge.Visibility = Visibility.Visible;
+        }
+
+        Loaded += (_, _) =>
         {
             HostAssets.AppendLog($"[VipActivationWindow] Loaded event. UserLabel={_syncClient?.CurrentUserLabel}, HasCredential={_syncClient?.HasCredential}");
-            await RefreshStatusAsync();
             CheckClipboardForLicense();
         };
 
@@ -43,50 +48,6 @@ public partial class VipActivationWindow : Window
         {
             CheckClipboardForLicense();
         };
-    }
-
-    private async Task RefreshStatusAsync()
-    {
-        AccountText.Text = _syncClient.CurrentUserLabel;
-
-        if (!_syncClient.HasCredential)
-        {
-            VipStatusText.Text = "请先登录账号以绑定维护权益";
-            VipStatusText.Foreground = new SolidColorBrush(MediaColor.FromRgb(255, 152, 0));
-            return;
-        }
-
-        try
-        {
-            VipStatusText.Text = "正在获取云端状态...";
-            var status = await _syncClient.GetVipStatusAsync();
-            if (status != null && status.IsVip)
-            {
-                if (status.VipType == "lifetime")
-                {
-                    VipStatusText.Text = "永久赞助者（全版本终身维护更新）";
-                }
-                else
-                {
-                    var expireStr = !string.IsNullOrWhiteSpace(status.VipExpireAt) && DateTime.TryParse(status.VipExpireAt, out var dt)
-                        ? dt.ToLocalTime().ToString("yyyy-MM-dd")
-                        : "长期有效";
-                    VipStatusText.Text = $"赞助维护版（有效期至 {expireStr}，剩余 {status.DaysRemaining} 天）";
-                }
-                VipStatusText.Foreground = new SolidColorBrush(MediaColor.FromRgb(76, 175, 80));
-            }
-            else
-            {
-                VipStatusText.Text = "社区免费版（基础功能永久免费）";
-                VipStatusText.Foreground = new SolidColorBrush(MediaColor.FromRgb(176, 190, 197));
-            }
-        }
-        catch (Exception ex)
-        {
-            HostAssets.AppendLog($"[VipActivation] Refresh status failed: {ex}");
-            VipStatusText.Text = "云端状态同步失败（可直接输入卡密激活）";
-            VipStatusText.Foreground = new SolidColorBrush(MediaColor.FromRgb(255, 152, 0));
-        }
     }
 
     private void LicenseCodeTextBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -152,7 +113,12 @@ public partial class VipActivationWindow : Window
             {
                 ShowMessage(response.Message ?? "激活成功！感谢您对燕子开发维护的支持。", isError: false);
                 ClipboardBanner.Visibility = Visibility.Collapsed;
-                await RefreshStatusAsync();
+                LicenseCodeTextBox.Text = string.Empty;
+                if (!string.IsNullOrWhiteSpace(response.VipType))
+                {
+                    CurrentVipBadgeText.Text = response.VipType == "lifetime" ? "终身VIP" : $"VIP {response.DaysRemaining}天";
+                    CurrentVipBadge.Visibility = Visibility.Visible;
+                }
                 _onVipStatusChanged?.Invoke();
             }
             else

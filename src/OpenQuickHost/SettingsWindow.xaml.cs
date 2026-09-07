@@ -4682,11 +4682,12 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         try
         {
             HostAssets.AppendLog("[SettingsWindow.Account] Creating VipActivationWindow instance...");
+            var currentVip = IsVipActive ? VipBadgeText : null;
             var vipWindow = new VipActivationWindow(_mainWindow.CloudSyncClient, () =>
             {
                 HostAssets.AppendLog("[SettingsWindow.Account] Vip status changed callback received. Refreshing account summary...");
                 RefreshAccountSummary();
-            });
+            }, currentVip);
 
             if (IsLoaded && IsVisible)
             {
