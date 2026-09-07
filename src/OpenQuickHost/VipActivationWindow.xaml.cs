@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Media;
 using OpenQuickHost.Sync;
 using MediaColor = System.Windows.Media.Color;
@@ -57,6 +58,7 @@ public partial class VipActivationWindow : Window
 
         try
         {
+            VipStatusText.Text = "正在获取云端状态...";
             var status = await _syncClient.GetVipStatusAsync();
             if (status != null && status.IsVip)
             {
@@ -81,9 +83,15 @@ public partial class VipActivationWindow : Window
         }
         catch (Exception ex)
         {
-            VipStatusText.Text = "状态获取中...";
-            Debug.WriteLine($"[VipActivation] Refresh status failed: {ex.Message}");
+            HostAssets.AppendLog($"[VipActivation] Refresh status failed: {ex}");
+            VipStatusText.Text = "云端状态同步失败（可直接输入卡密激活）";
+            VipStatusText.Foreground = new SolidColorBrush(MediaColor.FromRgb(255, 152, 0));
         }
+    }
+
+    private void LicenseCodeTextBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        ActivateButton.IsEnabled = !string.IsNullOrWhiteSpace(LicenseCodeTextBox.Text);
     }
 
     private void CheckClipboardForLicense()
@@ -159,7 +167,7 @@ public partial class VipActivationWindow : Window
         }
         finally
         {
-            ActivateButton.IsEnabled = true;
+            ActivateButton.IsEnabled = !string.IsNullOrWhiteSpace(LicenseCodeTextBox.Text);
             BuyButton.IsEnabled = true;
         }
     }

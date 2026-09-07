@@ -26,15 +26,15 @@
                 </Grid.RowDefinitions>
 
                 <StackPanel Grid.Row="0">
-                    <TextBlock Text="燕子赞助维护计划"
+                    <TextBlock Text="燕子 VIP 维护计划"
                                Style="{StaticResource TitleText}"
                                FontSize="18"
                                FontWeight="SemiBold" />
                     <TextBlock Margin="0,8,0,0"
-                               Text="基础启动与本地快捷功能永久免费。加入赞助维护计划可获得多端云同步、手机联动及后续新版本的持续适配与维护。"
+                               Text="VIP 可以获取最新功能与维护更新。感谢您对燕子持续开发与优化的支持！"
                                TextWrapping="Wrap"
-                               Opacity="0.8"
                                LineHeight="20"
+                               Foreground="{DynamicResource BrushTextSec}"
                                Style="{StaticResource DescriptionText}" />
                 </StackPanel>
 
@@ -52,11 +52,12 @@
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="当前账号："
-                                       Opacity="0.7"
+                                       Foreground="{DynamicResource BrushTextSec}"
                                        FontSize="13" />
                             <TextBlock x:Name="AccountText"
                                        Grid.Column="1"
                                        Text="未登录"
+                                       Foreground="{DynamicResource BrushTextMain}"
                                        FontWeight="Medium"
                                        FontSize="13" />
                         </Grid>
@@ -66,7 +67,7 @@
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="维护状态："
-                                       Opacity="0.7"
+                                       Foreground="{DynamicResource BrushTextSec}"
                                        FontSize="13" />
                             <TextBlock x:Name="VipStatusText"
                                        Grid.Column="1"
@@ -96,6 +97,7 @@
 
                 <StackPanel Grid.Row="3" Margin="0,16,0,0">
                     <TextBlock Text="卡密激活码："
+                               Foreground="{DynamicResource BrushTextMain}"
                                FontSize="13"
                                FontWeight="Medium"
                                Margin="0,0,0,8" />
@@ -105,30 +107,32 @@
                              Padding="10,0"
                              FontSize="14"
                              FontFamily="Consolas, monospace"
+                             TextChanged="LicenseCodeTextBox_TextChanged"
                              TextWrapping="NoWrap" />
                     <TextBlock Margin="0,6,0,0"
                                Text="格式示例：YZ-1Y-XXXX-XXXX-XXXX（不区分大小写）"
-                               Opacity="0.5"
+                               Foreground="{DynamicResource BrushTextSec}"
                                FontSize="11" />
                 </StackPanel>
 
                 <Grid Grid.Row="4" Margin="0,20,0,0">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
                     <Button x:Name="BuyButton"
                             Grid.Column="0"
-                            Content="前往链动小铺获取卡密"
+                            Content="购买VIP"
                             Margin="0,0,6,0"
                             Height="36"
                             Style="{StaticResource SecondaryBtn}"
                             Click="BuyButton_Click" />
                     <Button x:Name="ActivateButton"
                             Grid.Column="1"
-                            Content="立即激活"
+                            Content="激活"
                             Margin="6,0,0,0"
                             Height="36"
+                            IsEnabled="False"
                             Style="{StaticResource PrimaryBtn}"
                             Click="ActivateButton_Click" />
                 </Grid>
