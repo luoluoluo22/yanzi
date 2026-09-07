@@ -3336,12 +3336,19 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private void WindowFrame_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        if (e.ButtonState != MouseButtonState.Pressed || IsInteractiveSource(e.OriginalSource as DependencyObject))
+        var pos = e.GetPosition(this);
+        var isInteractive = IsInteractiveSource(e.OriginalSource as DependencyObject);
+        if (pos.Y <= 64)
+        {
+            HostAssets.AppendLog($"[SettingsWindow.Input] TopArea PreviewMouseDown: pos=({pos.X:F0},{pos.Y:F0}), isInteractive={isInteractive}, source={e.OriginalSource?.GetType().Name}");
+        }
+
+        if (e.ButtonState != MouseButtonState.Pressed || isInteractive)
         {
             return;
         }
 
-        if (e.GetPosition(this).Y > 64)
+        if (pos.Y > 64)
         {
             return;
         }
@@ -4610,25 +4617,35 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private void AccountButton_Click(object sender, RoutedEventArgs e)
     {
+        e.Handled = true;
+        HostAssets.AppendLog($"[SettingsWindow.Account] AccountButton_Click triggered. CurrentUser={AccountTitle}, IsLoggedIn={IsAccountLoggedIn}");
         if (sender is FrameworkElement element && element.ContextMenu != null)
         {
             element.ContextMenu.PlacementTarget = element;
             element.ContextMenu.IsOpen = true;
+            HostAssets.AppendLog("[SettingsWindow.Account] AccountMenu opened via element.ContextMenu.");
+        }
+        else if (AccountMenu != null)
+        {
+            AccountMenu.PlacementTarget = sender as UIElement ?? this;
+            AccountMenu.IsOpen = true;
+            HostAssets.AppendLog("[SettingsWindow.Account] AccountMenu opened via fallback field.");
+        }
+        else
+        {
+            HostAssets.AppendLog("[SettingsWindow.Account] WARNING: Could not find AccountMenu to open.");
         }
     }
 
     private void AccountCard_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
-        if (sender is FrameworkElement element && element.ContextMenu != null)
-        {
-            element.ContextMenu.PlacementTarget = element;
-            element.ContextMenu.IsOpen = true;
-        }
+        AccountButton_Click(sender, e);
     }
 
     private void ActivateVipButton_Click(object sender, RoutedEventArgs e)
     {
         e.Handled = true;
+        HostAssets.AppendLog($"[SettingsWindow.Account] ActivateVipButton_Click triggered. IsVipActive={IsVipActive}, BadgeText={VipBadgeText}");
         OpenVipActivationDialog();
     }
 
@@ -4654,20 +4671,37 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     public void OpenVipActivationDialog()
     {
+        HostAssets.AppendLog($"[SettingsWindow.Account] OpenVipActivationDialog called. HasSyncClient={_mainWindow.CloudSyncClient != null}");
         if (_mainWindow.CloudSyncClient == null)
         {
+            HostAssets.AppendLog("[SettingsWindow.Account] OpenVipActivationDialog aborted: CloudSyncClient is null.");
             System.Windows.MessageBox.Show("云端服务组件未就绪，请稍后重试。", "燕子", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
-        var vipWindow = new VipActivationWindow(_mainWindow.CloudSyncClient, () =>
+        try
         {
-            RefreshAccountSummary();
-        })
+            HostAssets.AppendLog("[SettingsWindow.Account] Creating VipActivationWindow instance...");
+            var vipWindow = new VipActivationWindow(_mainWindow.CloudSyncClient, () =>
+            {
+                HostAssets.AppendLog("[SettingsWindow.Account] Vip status changed callback received. Refreshing account summary...");
+                RefreshAccountSummary();
+            });
+
+            if (IsLoaded && IsVisible)
+            {
+                vipWindow.Owner = this;
+            }
+
+            HostAssets.AppendLog("[SettingsWindow.Account] Displaying VipActivationWindow modal dialog...");
+            var dialogResult = vipWindow.ShowDialog();
+            HostAssets.AppendLog($"[SettingsWindow.Account] VipActivationWindow closed. Result={dialogResult}");
+        }
+        catch (Exception ex)
         {
-            Owner = this
-        };
-        vipWindow.ShowDialog();
+            HostAssets.AppendLog($"[SettingsWindow.Account] CRITICAL: Failed to show VipActivationWindow: {ex}");
+            System.Windows.MessageBox.Show($"打开卡密激活窗口时发生异常：{ex.Message}", "燕子", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
     }
 
     private async void SignInButton_Click(object sender, RoutedEventArgs e)
@@ -9151,7 +9185,18 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 System.Windows.Controls.Primitives.ButtonBase or
                 Selector or
                 System.Windows.Controls.Primitives.ScrollBar or
-                ResizeGrip)
+                ResizeGrip or
+                System.Windows.Controls.Menu or
+                System.Windows.Controls.ContextMenu)
+            {
+                return true;
+            }
+
+            if (source is FrameworkElement fe && (
+                fe.Name == "AccountCardBorder" ||
+                fe.Name == "AccountInfoButton" ||
+                fe.Name == "ActivateVipButton" ||
+                fe.Name == "VipDaysBadgeButton"))
             {
                 return true;
             }

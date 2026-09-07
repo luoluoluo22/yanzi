@@ -587,18 +587,7 @@
                             Margin="10,15,10,10"
                             Background="Transparent"
                             CornerRadius="8"
-                            Padding="8,8"
-                            Cursor="Hand"
-                            MouseLeftButtonUp="AccountCard_MouseLeftButtonUp">
-                        <Border.ContextMenu>
-                            <ContextMenu x:Name="AccountMenu">
-                                <MenuItem Header="登录或切换账号" Click="SignInMenuItem_Click" />
-                                <MenuItem Header="退出登录" Click="SignOutMenuItem_Click" />
-                                <Separator />
-                                <MenuItem Header="赞助维护与卡密激活" Click="VipActivationMenuItem_Click" />
-                                <MenuItem Header="刷新云状态" Click="RefreshAccountMenuItem_Click" />
-                            </ContextMenu>
-                        </Border.ContextMenu>
+                            Padding="6,6">
                         <Border.Style>
                             <Style TargetType="Border">
                                 <Setter Property="Background" Value="Transparent" />
@@ -611,34 +600,66 @@
                         </Border.Style>
                         <Grid>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <Border Width="32"
-                                    Height="32"
-                                    CornerRadius="16"
-                                    Background="#1A3B82F6"
-                                    VerticalAlignment="Center">
-                                <Viewbox Width="18" Height="18">
-                                    <Path Data="{local:IconGeometry user}" Fill="#FF3B82F6" Stretch="Uniform"/>
-                                </Viewbox>
-                            </Border>
-                            <StackPanel Grid.Column="1" Margin="8,0,6,0" VerticalAlignment="Center">
-                                <TextBlock Text="{Binding AccountTitle}"
-                                           FontSize="{DynamicResource FontSizeNormal}"
-                                           FontWeight="Medium"
-                                           Foreground="{DynamicResource BrushTextMain}"
-                                           TextTrimming="CharacterEllipsis"
-                                           ToolTip="{Binding AccountTitle}" />
-                                <TextBlock Text="{Binding AccountSubtitle}"
-                                           Foreground="{DynamicResource BrushTextSec}"
-                                           FontSize="{DynamicResource FontSizeSmall}"
-                                           TextTrimming="CharacterEllipsis" />
-                            </StackPanel>
 
-                            <!-- 右侧：VIP 状态 / 激活按钮 -->
-                            <Grid Grid.Column="2" VerticalAlignment="Center">
+                            <!-- 左侧部分：头像 + 昵称 + 副标题（点击弹出登录/账户菜单） -->
+                            <Button x:Name="AccountInfoButton"
+                                    Grid.Column="0"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Padding="0"
+                                    Margin="0"
+                                    Cursor="Hand"
+                                    HorizontalContentAlignment="Stretch"
+                                    Click="AccountButton_Click">
+                                <Button.Template>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border Background="Transparent">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <Border Width="32"
+                                                        Height="32"
+                                                        CornerRadius="16"
+                                                        Background="#1A3B82F6"
+                                                        VerticalAlignment="Center">
+                                                    <Viewbox Width="18" Height="18">
+                                                        <Path Data="{local:IconGeometry user}" Fill="#FF3B82F6" Stretch="Uniform"/>
+                                                    </Viewbox>
+                                                </Border>
+                                                <StackPanel Grid.Column="1" Margin="8,0,4,0" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding AccountTitle}"
+                                                               FontSize="{DynamicResource FontSizeNormal}"
+                                                               FontWeight="Medium"
+                                                               Foreground="{DynamicResource BrushTextMain}"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               ToolTip="{Binding AccountTitle}" />
+                                                    <TextBlock Text="{Binding AccountSubtitle}"
+                                                               Foreground="{DynamicResource BrushTextSec}"
+                                                               FontSize="{DynamicResource FontSizeSmall}"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                </StackPanel>
+                                            </Grid>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Button.Template>
+                                <Button.ContextMenu>
+                                    <ContextMenu x:Name="AccountMenu">
+                                        <MenuItem Header="登录或切换账号" Click="SignInMenuItem_Click" />
+                                        <MenuItem Header="退出登录" Click="SignOutMenuItem_Click" />
+                                        <Separator />
+                                        <MenuItem Header="赞助维护与卡密激活" Click="VipActivationMenuItem_Click" />
+                                        <MenuItem Header="刷新云状态" Click="RefreshAccountMenuItem_Click" />
+                                    </ContextMenu>
+                                </Button.ContextMenu>
+                            </Button>
+
+                            <!-- 右侧部分：VIP 激活与天数徽章（独立按钮，点击打开卡密窗口） -->
+                            <Grid Grid.Column="1" VerticalAlignment="Center" Margin="2,0,0,0">
                                 <!-- 未激活 VIP 时：显示“激活VIP”按钮 -->
                                 <Button x:Name="ActivateVipButton"
                                         Content="激活VIP"

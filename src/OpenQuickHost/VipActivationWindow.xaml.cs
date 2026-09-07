@@ -26,12 +26,14 @@ public partial class VipActivationWindow : Window
 
     public VipActivationWindow(CloudSyncClient syncClient, Action? onVipStatusChanged = null)
     {
+        HostAssets.AppendLog($"[VipActivationWindow] Ctor called. syncClient is {(syncClient != null ? "Ready" : "Null")}");
         InitializeComponent();
         _syncClient = syncClient;
         _onVipStatusChanged = onVipStatusChanged;
 
         Loaded += async (_, _) =>
         {
+            HostAssets.AppendLog($"[VipActivationWindow] Loaded event. UserLabel={_syncClient?.CurrentUserLabel}, HasCredential={_syncClient?.HasCredential}");
             await RefreshStatusAsync();
             CheckClipboardForLicense();
         };
@@ -114,6 +116,7 @@ public partial class VipActivationWindow : Window
     private async void ActivateButton_Click(object sender, RoutedEventArgs e)
     {
         var rawCode = LicenseCodeTextBox.Text?.Trim().ToUpperInvariant();
+        HostAssets.AppendLog($"[VipActivationWindow] ActivateButton_Click: codePrefix={(rawCode?.Length >= 6 ? rawCode[..6] : "empty")}***");
         if (string.IsNullOrWhiteSpace(rawCode))
         {
             ShowMessage("请输入激活码", isError: true);
@@ -123,6 +126,7 @@ public partial class VipActivationWindow : Window
 
         if (!_syncClient.HasCredential)
         {
+            HostAssets.AppendLog("[VipActivationWindow] ActivateButton_Click aborted: client has no credential.");
             ShowMessage("请先在设置中登录燕子云端账号，以便将维护权益与您的账号绑定。", isError: true);
             return;
         }
@@ -133,7 +137,9 @@ public partial class VipActivationWindow : Window
 
         try
         {
+            HostAssets.AppendLog($"[VipActivationWindow] Calling RedeemLicenseAsync for {rawCode}...");
             var response = await _syncClient.RedeemLicenseAsync(rawCode);
+            HostAssets.AppendLog($"[VipActivationWindow] RedeemLicenseAsync response: ok={response?.Ok}, msg={response?.Message}");
             if (response != null && response.Ok)
             {
                 ShowMessage(response.Message ?? "激活成功！感谢您对燕子开发维护的支持。", isError: false);
@@ -148,6 +154,7 @@ public partial class VipActivationWindow : Window
         }
         catch (Exception ex)
         {
+            HostAssets.AppendLog($"[VipActivationWindow] RedeemLicenseAsync exception: {ex}");
             ShowMessage(ex.Message, isError: true);
         }
         finally
@@ -159,6 +166,7 @@ public partial class VipActivationWindow : Window
 
     private void BuyButton_Click(object sender, RoutedEventArgs e)
     {
+        HostAssets.AppendLog($"[VipActivationWindow] BuyButton_Click: opening {PurchaseUrl}");
         try
         {
             Process.Start(new ProcessStartInfo
@@ -169,6 +177,7 @@ public partial class VipActivationWindow : Window
         }
         catch (Exception ex)
         {
+            HostAssets.AppendLog($"[VipActivationWindow] BuyButton_Click failed: {ex.Message}");
             ShowMessage($"打开购买链接失败: {ex.Message}", isError: true);
         }
     }
