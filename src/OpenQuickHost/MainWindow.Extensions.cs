@@ -513,6 +513,7 @@ public partial class MainWindow
         if (!IsVisible)
         {
             Show();
+            UpdateLayout();
         }
 
         if (WindowState == WindowState.Minimized)
@@ -544,7 +545,7 @@ public partial class MainWindow
         _quickPanel?.Hide();
     }
 
-    private void BringMainWindowToFront()
+    public void BringMainWindowToFront()
     {
         Activate();
         Focus();
@@ -553,6 +554,8 @@ public partial class MainWindow
         if (handle != IntPtr.Zero)
         {
             NativeMethods.SetForegroundWindow(handle);
+            Win32Native.SetWindowPos(handle, Win32Native.HWND_TOPMOST, 0, 0, 0, 0,
+                Win32Native.SWP_NOMOVE | Win32Native.SWP_NOSIZE);
         }
 
         Topmost = true;
@@ -835,9 +838,44 @@ public partial class MainWindow
         return result;
     }
 
-    private static CommandItem? ResolveRadialCommand(string extensionId, IReadOnlyList<CommandItem> allCommands, string? displayTitle = null)
+    public static CommandItem CreateFileShortcutCommand(string path, string? extensionId = null, string? displayTitle = null)
     {
-        var command = allCommands.FirstOrDefault(command => command.ExtensionId.Equals(extensionId, StringComparison.OrdinalIgnoreCase));
+        var fullPath = Path.GetFullPath(path);
+        var isFolder = Directory.Exists(fullPath);
+        var exists = isFolder || File.Exists(fullPath);
+        var title = Path.GetFileName(fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            title = fullPath;
+        }
+
+        var effectiveTitle = !string.IsNullOrWhiteSpace(displayTitle) ? displayTitle.Trim() : title;
+        var effExtensionId = !string.IsNullOrWhiteSpace(extensionId) ? extensionId : $"{ExtensionIdPrefixes.SearchResult}{fullPath}";
+
+        return new CommandItem(
+            glyph: isFolder ? "夹" : "文",
+            title: effectiveTitle,
+            subtitle: exists ? Path.GetDirectoryName(fullPath) ?? fullPath : "文件不存在",
+            category: isFolder ? "文件夹" : "文件",
+            accentHex: isFolder ? "#FF3B82F6" : "#FF4B5563",
+            openTarget: fullPath,
+            keywords: [fullPath, effectiveTitle],
+            source: CommandSource.File,
+            extensionId: effExtensionId,
+            resultKind: isFolder ? ResultItemKind.Folder : ResultItemKind.File,
+            resultProviderTitle: "文件",
+            iconSourceOverride: NativeFileIconService.GetIcon(fullPath, isFolder));
+    }
+
+    public CommandItem? ResolveSlotCommand(string? extensionId, IReadOnlyList<CommandItem>? allCommands = null, string? displayTitle = null)
+    {
+        if (string.IsNullOrWhiteSpace(extensionId))
+        {
+            return null;
+        }
+
+        allCommands ??= GetAllCommands();
+        var command = allCommands.FirstOrDefault(cmd => cmd.ExtensionId.Equals(extensionId, StringComparison.OrdinalIgnoreCase));
         if (command != null)
         {
             return command;
@@ -867,38 +905,28 @@ public partial class MainWindow
         }
 
         const string filePrefix = ExtensionIdPrefixes.SearchResult;
-        if (!extensionId.StartsWith(filePrefix, StringComparison.OrdinalIgnoreCase))
+        if (extensionId.StartsWith(filePrefix, StringComparison.OrdinalIgnoreCase))
         {
-            return null;
+            var path = extensionId[filePrefix.Length..];
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return null;
+            }
+
+            return CreateFileShortcutCommand(path, extensionId, displayTitle);
         }
 
-        var path = extensionId[filePrefix.Length..];
-        if (string.IsNullOrWhiteSpace(path))
+        if (File.Exists(extensionId) || Directory.Exists(extensionId))
         {
-            return null;
+            return CreateFileShortcutCommand(extensionId, $"{ExtensionIdPrefixes.SearchResult}{Path.GetFullPath(extensionId)}", displayTitle);
         }
 
-        var isFolder = Directory.Exists(path);
-        var exists = isFolder || File.Exists(path);
-        var title = Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-        if (string.IsNullOrWhiteSpace(title))
-        {
-            title = path;
-        }
+        return null;
+    }
 
-        return new CommandItem(
-            glyph: isFolder ? "夹" : "文",
-            title: title,
-            subtitle: exists ? Path.GetDirectoryName(path) ?? path : "文件不存在",
-            category: isFolder ? "文件夹" : "文件",
-            accentHex: isFolder ? "#FF3B82F6" : "#FF4B5563",
-            openTarget: path,
-            keywords: [path, title],
-            source: CommandSource.File,
-            extensionId: extensionId,
-            resultKind: isFolder ? ResultItemKind.Folder : ResultItemKind.File,
-            resultProviderTitle: "文件",
-            iconSourceOverride: NativeFileIconService.GetIcon(path, isFolder));
+    private CommandItem? ResolveRadialCommand(string extensionId, IReadOnlyList<CommandItem> allCommands, string? displayTitle = null)
+    {
+        return ResolveSlotCommand(extensionId, allCommands, displayTitle);
     }
 
     private async Task<bool> TryExecuteSimulatedKeystrokeAsync(CommandItem runnable)
@@ -1547,7 +1575,7 @@ public partial class MainWindow
             CapsGuidePopup.IsOpen = false;
         }
 
-        if (_isPinned || !IsVisible)
+        if (_isPinned || !IsVisible || IsRadialPickerMode)
         {
             return;
         }

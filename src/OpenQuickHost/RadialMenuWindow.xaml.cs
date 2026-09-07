@@ -58,9 +58,15 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     private bool _isPinned;
     private static readonly System.Windows.Media.Brush _dismissCaptureBackground = new SolidColorBrush(System.Windows.Media.Color.FromArgb(1, 0, 0, 0));
 
-    private void UpdateWindowBackgroundForPinState()
+    public void UpdateWindowBackgroundForPinState()
     {
-        if (_isPinned && !_editModeLocked)
+        if (_mainWindow?.IsRadialPickerMode == true)
+        {
+            // 仓库选择模式：取消背景（设为 null），使轮盘外围（包括伸向左侧与仓库重叠的区域）
+            // 在 Windows DWM 中成为纯净 0 像素透明层，鼠标点击硬件级原生穿透到仓库窗口！
+            Background = null;
+        }
+        else if (_isPinned && !_editModeLocked)
         {
             // 置顶常驻模式：取消极弱黑色背景（设为 null），使轮盘外围（包括上方 420 像素等大片空白）
             // 在 Windows DWM 中成为纯净 0 像素透明层，Windows 内核自动将鼠标点击、框选、拖拽
@@ -3924,6 +3930,23 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     {
         var normalBrush = (System.Windows.Media.Brush)System.Windows.Application.Current.FindResource("BrushTextSec") ?? System.Windows.Media.Brushes.Gray;
 
+        // 0. 文件（夹） (在仓库上方，点击直接调出文件管理器选择文件或程序)
+        var pickFileItem = new MenuItem
+        {
+            Header = "文件（夹）",
+            Icon = CreateMenuIcon("folder", normalBrush)
+        };
+        pickFileItem.Click += (_, _) =>
+        {
+            _isOpeningSubDialog = true;
+            if (parentMenu is ContextMenu addMenu && addMenu.IsOpen)
+            {
+                addMenu.IsOpen = false;
+            }
+            Dispatcher.BeginInvoke(new Action(() => PickFileForRadialSlot(target)));
+        };
+        parentMenu.Items.Add(pickFileItem);
+
         // 1. 仓库 (搜索图标，点击直接调出主搜索/选择界面)
         var existingExtensionItem = new MenuItem
         {
@@ -4185,6 +4208,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             // _editInteractionActive 卡 true → 轮盘失焦不隐藏、Esc 关不掉、选中逻辑冻结
             _isOpeningSubDialog = false;
             _editInteractionActive = false;
+            UpdateWindowBackgroundForPinState();
             EnsureActivatedForEdit();
             UpdateCenterText();
         }
@@ -4206,6 +4230,49 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             // 同上：不复位会导致轮盘进入“冻结”死状态
             _isOpeningSubDialog = false;
             _editInteractionActive = false;
+            EnsureActivatedForEdit();
+            UpdateCenterText();
+        }
+    }
+
+    private void PickFileForRadialSlot(RadialEditTarget target)
+    {
+        HostAssets.AppendLog($"[RadialMenuLog] PickFileForRadialSlot: page={target.PageId}, index={target.Index}");
+        _isOpeningSubDialog = true;
+        _editInteractionActive = true;
+        IsHitTestVisible = false;
+        BeginModalChildDialog();
+        try
+        {
+            var fileDialog = new Microsoft.Win32.OpenFileDialog
+            {
+                Title = "选择文件或程序",
+                Filter = "所有文件 (*.*)|*.*|应用程序与快捷方式 (*.exe;*.lnk)|*.exe;*.lnk|日常文档 (*.txt;*.docx;*.xlsx;*.pptx;*.pdf;*.md)|*.txt;*.docx;*.xlsx;*.pptx;*.pdf;*.md|音视频与图片 (*.mp4;*.mp3;*.png;*.jpg;*.gif)|*.mp4;*.mp3;*.png;*.jpg;*.gif",
+                Multiselect = false,
+                CheckFileExists = true
+            };
+
+            bool? res = fileDialog.ShowDialog(this);
+            if (res == true && !string.IsNullOrWhiteSpace(fileDialog.FileName))
+            {
+                var selectedPath = fileDialog.FileName;
+                var effectiveId = $"{ExtensionIdPrefixes.SearchResult}{selectedPath}";
+                SaveRadialSlotCommand(target.PageId, target.Index, effectiveId, string.Empty);
+                HostAssets.AppendLog($"Radial edit assigned picked file: page={target.PageId}, index={target.Index + 1}, path={selectedPath}.");
+                RebuildItemsForCurrentLayout("assigned-picked-file");
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"[RadialMenuLog] PickFileForRadialSlot EXCEPTION: {ex}");
+        }
+        finally
+        {
+            EndModalChildDialog();
+            IsHitTestVisible = true;
+            _isOpeningSubDialog = false;
+            _editInteractionActive = false;
+            UpdateWindowBackgroundForPinState();
             EnsureActivatedForEdit();
             UpdateCenterText();
         }
@@ -4441,14 +4508,13 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
         try
         {
-            var command = _mainWindow.CreateQuickOpenExtensionFromPath(firstPath);
-            _mainWindow.MarkExtensionAsNewFromQuickPanel(command);
+            var shortcut = MainWindow.CreateFileShortcutCommand(firstPath);
             WriteRadialSlotPayload(
                 target.PageId,
                 target.Index,
-                new RadialSlotPayload(command.ExtensionId, null, null));
-            ActiveTitle = $"已添加：{command.Title}";
-            HostAssets.AppendLog($"Radial dropped path assigned: page={target.PageId}, index={target.Index + 1}, path={firstPath}, command={command.ExtensionId}.");
+                new RadialSlotPayload(shortcut.ExtensionId, null, null));
+            ActiveTitle = $"已添加文件快捷方式：{shortcut.Title}";
+            HostAssets.AppendLog($"Radial dropped path assigned as file shortcut: page={target.PageId}, index={target.Index + 1}, path={firstPath}, command={shortcut.ExtensionId}.");
         }
         catch (Exception ex)
         {
@@ -5370,6 +5436,11 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         {
             HostAssets.AppendLog("[RadialPinHitDiag] Hide() skipped because _isClosing is already true.");
             return;
+        }
+
+        if (_mainWindow.IsRadialPickerMode)
+        {
+            _mainWindow.CancelRadialPicker();
         }
 
         _isClosing = true;

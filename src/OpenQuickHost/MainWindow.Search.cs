@@ -2015,16 +2015,14 @@ public partial class MainWindow
         try
         {
             var normalizedPath = Path.GetFullPath(command.OpenTarget);
-            var extension = _allCommands.FirstOrDefault(item =>
-                item.Source == CommandSource.LocalExtension &&
-                !string.IsNullOrWhiteSpace(item.OpenTarget) &&
-                string.Equals(Path.GetFullPath(item.OpenTarget), normalizedPath, StringComparison.OrdinalIgnoreCase))
-                ?? CreateQuickOpenExtensionFromPath(command.OpenTarget);
+            var effectiveId = !string.IsNullOrWhiteSpace(command.ExtensionId)
+                ? command.ExtensionId
+                : $"{ExtensionIdPrefixes.SearchResult}{normalizedPath}";
             var settings = AppSettingsStore.Load();
             settings.GlobalFavoriteExtensionIds ??= [];
-            if (!settings.GlobalFavoriteExtensionIds.Contains(extension.ExtensionId, StringComparer.OrdinalIgnoreCase))
+            if (!settings.GlobalFavoriteExtensionIds.Contains(effectiveId, StringComparer.OrdinalIgnoreCase))
             {
-                settings.GlobalFavoriteExtensionIds.Add(extension.ExtensionId);
+                settings.GlobalFavoriteExtensionIds.Add(effectiveId);
             }
 
             AppSettingsStore.Save(settings);
@@ -2240,6 +2238,12 @@ public partial class MainWindow
             case "oqh://delete-extension":
                 _ = DeleteSelectedExtensionAsync();
                 return true;
+            case "scope:file":
+                ShowPanel();
+                SelectedSearchScope = SearchScopes.FirstOrDefault(s => s.Key.Equals(SearchScopeFile, StringComparison.OrdinalIgnoreCase)) ?? SelectedSearchScope;
+                SearchBox.Focus();
+                LastRunMessage = "已打开文件搜索。";
+                return true;
             default:
                 return false;
         }
@@ -2247,7 +2251,8 @@ public partial class MainWindow
 
     private static bool IsInternalCommand(CommandItem command)
     {
-        return command.OpenTarget?.StartsWith("oqh://", StringComparison.OrdinalIgnoreCase) == true;
+        return command.OpenTarget?.StartsWith("oqh://", StringComparison.OrdinalIgnoreCase) == true ||
+               command.OpenTarget?.StartsWith("scope:", StringComparison.OrdinalIgnoreCase) == true;
     }
 
     private static CommandMatch BuildCommandMatch(CommandItem command, string query, bool allowRawQueryArgument = false)

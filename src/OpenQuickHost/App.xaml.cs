@@ -37,7 +37,7 @@ public static class WindowDwmBehavior
     {
         if (sender is Window window)
         {
-            App.UpdateWindowDwmTheme(window);
+            App.UpdateWindowDwmTheme(window, forceNonClientRepaint: false);
         }
     }
 }
@@ -262,7 +262,10 @@ public partial class App : WpfApplication
             }
             else
             {
-                window.ShowPanel();
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    window.ShowPanel();
+                }), System.Windows.Threading.DispatcherPriority.Loaded);
             }
 
             StartLocalAgentApi(window, settings);

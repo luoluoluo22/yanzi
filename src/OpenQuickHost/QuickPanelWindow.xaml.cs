@@ -518,9 +518,12 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             var favIds = _settings.GlobalFavoriteExtensionIds;
             foreach (var favId in favIds)
             {
-                var command = allCommands.FirstOrDefault(c => c.ExtensionId == favId);
+                var command = ResolveSlotCommand(favId, allCommands);
                 if (command != null)
-                    GlobalSlots.Add(new SlotViewModel(GlobalSlots.Count, command, true));
+                {
+                    var isShortcut = command.Source == CommandSource.File || favId.StartsWith(ExtensionIdPrefixes.SearchResult, StringComparison.OrdinalIgnoreCase);
+                    GlobalSlots.Add(new SlotViewModel(GlobalSlots.Count, command, true) { IsShortcut = isShortcut });
+                }
             }
             while (GlobalSlots.Count < _currentGlobalSlotCount)
                 GlobalSlots.Add(new SlotViewModel(GlobalSlots.Count, null, false));
@@ -540,9 +543,12 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             var favIds = _settings.ContextFavoriteExtensionIds;
             foreach (var favId in favIds)
             {
-                var command = allCommands.FirstOrDefault(c => c.ExtensionId == favId);
+                var command = ResolveSlotCommand(favId, allCommands);
                 if (command != null)
-                    ContextSlots.Add(new SlotViewModel(ContextSlots.Count, command, true, isContextual: true));
+                {
+                    var isShortcut = command.Source == CommandSource.File || favId.StartsWith(ExtensionIdPrefixes.SearchResult, StringComparison.OrdinalIgnoreCase);
+                    ContextSlots.Add(new SlotViewModel(ContextSlots.Count, command, true, isContextual: true) { IsShortcut = isShortcut });
+                }
             }
         }
         else
@@ -808,6 +814,12 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(DynamicWindowHeight));
     }
 
+    private CommandItem? ResolveSlotCommand(string? extensionId, IReadOnlyList<CommandItem> allCommands)
+    {
+        if (string.IsNullOrWhiteSpace(extensionId)) return null;
+        return _mainWindow.ResolveSlotCommand(extensionId, allCommands);
+    }
+
     private SlotViewModel CreateSlotViewModel(
         int index,
         QuickPanelSlotItem? item,
@@ -828,7 +840,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             var folderSlotItems = GetFolderSlotItems(item);
             var resolvedCommands = folderSlotItems
                 .Where(static slot => slot != null && !slot.IsFolder && !string.IsNullOrWhiteSpace(slot.ExtensionId))
-                .Select(slot => allCommands.FirstOrDefault(command => string.Equals(command.ExtensionId, slot!.ExtensionId, StringComparison.OrdinalIgnoreCase)))
+                .Select(slot => ResolveSlotCommand(slot!.ExtensionId, allCommands))
                 .OfType<CommandItem>()
                 .ToList();
             var folder = SlotViewModel.CreateFolder(
@@ -844,7 +856,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
         var command = string.IsNullOrWhiteSpace(item.ExtensionId)
             ? null
-            : allCommands.FirstOrDefault(c => string.Equals(c.ExtensionId, item.ExtensionId, StringComparison.OrdinalIgnoreCase));
+            : ResolveSlotCommand(item.ExtensionId, allCommands);
         var isFav = command != null &&
                     (isContextual
                         ? _settings.ContextFavoriteExtensionIds.Contains(command.ExtensionId)
@@ -852,7 +864,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         var vm = new SlotViewModel(index, command, isFav, isContextual: isContextual);
         if (item != null)
         {
-            vm.IsShortcut = item.IsShortcut;
+            vm.IsShortcut = item.IsShortcut || (command?.Source == CommandSource.File) || (item.ExtensionId?.StartsWith(ExtensionIdPrefixes.SearchResult, StringComparison.OrdinalIgnoreCase) == true);
         }
         vm.SetSlotLocation(groupId, containerPath);
         return vm;
@@ -2488,14 +2500,14 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             bool isContextual = target.IsContextual;
             int targetIndex = target.Index;
 
-            // 1. 先创建所有拖入的小程序
+            // 1. 生成所有拖入文件的快捷方式命令
             var createdCommands = new List<CommandItem>();
             foreach (var path in paths)
             {
-                var newCommand = _mainWindow.CreateQuickOpenExtensionFromPath(path);
-                _mainWindow.MarkExtensionAsNewFromQuickPanel(newCommand);
-                createdCommands.Add(newCommand);
-                HostAssets.AppendLog($"[QuickPanel] Created extension '{newCommand.ExtensionId}' for dropped file '{path}'.");
+                if (string.IsNullOrWhiteSpace(path)) continue;
+                var shortcut = MainWindow.CreateFileShortcutCommand(path);
+                createdCommands.Add(shortcut);
+                HostAssets.AppendLog($"[QuickPanel] Created file shortcut '{shortcut.ExtensionId}' for dropped file '{path}'.");
             }
 
             if (createdCommands.Count == 0)
@@ -2513,12 +2525,12 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
                 BringToFront();
                 QuestService.OnFileDroppedToBackpack();
                 _mainWindow.LastRunMessage = createdCommands.Count == 1
-                    ? $"已拖拽创建小程序并放入文件夹：{createdCommands[0].Title}"
-                    : $"已拖拽创建 {createdCommands.Count} 个小程序并放入文件夹。";
+                    ? $"已添加快捷方式到文件夹：{createdCommands[0].Title}"
+                    : $"已添加 {createdCommands.Count} 个快捷方式到文件夹。";
                 return;
             }
 
-            // 3. 获取最新加载的槽位集合（因为 CreateQuickOpenExtensionFromPath 内部会触发 LoadSlots）
+            // 3. 获取目标槽位集合
             var slots = isContextual ? ContextSlots : GlobalSlots;
             int addedCount = 0;
 
@@ -2536,6 +2548,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
                     }
 
                     targetSlot.SetCommand(cmd, false, isContextual);
+                    targetSlot.IsShortcut = true;
                     currentSlotIndex = targetSlot.Index + 1;
                     addedCount++;
                 }
@@ -2547,15 +2560,15 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
                     BringToFront();
                     QuestService.OnFileDroppedToBackpack();
                     _mainWindow.LastRunMessage = addedCount == 1
-                        ? $"已拖拽创建小程序并放入槽位：{createdCommands[0].Title}"
-                        : $"已拖拽创建 {addedCount} 个小程序并放入槽位。";
-                    HostAssets.AppendLog($"[QuickPanel] Successfully placed {addedCount} extension(s) into slots.");
+                        ? $"已添加快捷方式到槽位：{createdCommands[0].Title}"
+                        : $"已添加 {addedCount} 个快捷方式到槽位。";
+                    HostAssets.AppendLog($"[QuickPanel] Successfully placed {addedCount} file shortcut(s) into slots.");
                 }
             }
         }
         catch (Exception ex)
         {
-            _mainWindow.SyncStatus = $"拖拽创建小程序失败：{Path.GetFileName(paths[0])}，{ex.Message}";
+            _mainWindow.SyncStatus = $"拖拽添加快捷方式失败：{Path.GetFileName(paths[0])}，{ex.Message}";
             HostAssets.AppendLog($"[QuickPanel] AddDroppedPathsToSlot failed: {ex}");
         }
     }

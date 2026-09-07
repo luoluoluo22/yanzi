@@ -73,18 +73,42 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (_radialPickerTcs != null && !_radialPickerTcs.Task.IsCompleted)
         {
             HostAssets.AppendLog($"[PickerLog] Overwriting active _radialPickerTcs! Stack:\n{new System.Diagnostics.StackTrace()}");
-            _radialPickerTcs.TrySetResult(null);
+            var oldTcs = _radialPickerTcs;
+            _radialPickerTcs = null;
+            oldTcs.TrySetResult(null);
         }
         _radialPickerTcs = new TaskCompletionSource<RadialPickerResult?>();
         IsRadialPickerMode = true;
         RadialPickerAllowAddChild = allowAddChildPage;
 
+        SearchBox.Text = string.Empty;
         ShowPanel();
+
+        if (FilteredCommands?.Count > 0)
+        {
+            SelectedCommand = FilteredCommands[0];
+            CommandList.SelectedIndex = 0;
+            CommandList.ScrollIntoView(FilteredCommands[0]);
+        }
 
         // 调整位置：左侧仓库，右侧轮盘，两者水平并排不重叠
         PositionPickerSideBySide(radialWindow);
+        BringMainWindowToFront();
 
         return _radialPickerTcs.Task;
+    }
+
+    public void CancelRadialPicker()
+    {
+        if (IsRadialPickerMode || _radialPickerTcs != null)
+        {
+            HostAssets.AppendLog("[PickerLog] CancelRadialPicker called.");
+            IsRadialPickerMode = false;
+            HideToTray();
+            var tcs = _radialPickerTcs;
+            _radialPickerTcs = null;
+            tcs?.TrySetResult(null);
+        }
     }
 
     private void PositionPickerSideBySide(RadialMenuWindow? radialWindow)
@@ -117,7 +141,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Left = startX;
             Top = workTop + Math.Max(20.0, (workHeight - pickerHeight) / 2.0);
 
-            // 2. 右侧轮盘位置
+            // 2. 右侧轮盘位置（并排展示，但焦点留在左侧仓库，不抢焦点）
             if (radialWindow != null)
             {
                 double wheelCenterScreenX = startX + pickerWidth + gap + wheelVisualRadius;
@@ -125,7 +149,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
                 radialWindow.Left = wheelCenterScreenX - 700.0;
                 radialWindow.Top = wheelCenterScreenY - 700.0;
-                radialWindow.ActivateForEditInteraction();
+                radialWindow.UpdateWindowBackgroundForPinState();
             }
 
             HostAssets.AppendLog($"[PickerLog] PositionPickerSideBySide: pickerPos=({Left:0.#},{Top:0.#}), totalWidth={totalWidth:0.#}, screen=({workWidth:0.#}x{workHeight:0.#}).");
@@ -133,6 +157,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch (Exception ex)
         {
             HostAssets.AppendLog($"[PickerLog] PositionPickerSideBySide exception: {ex.Message}");
+        }
+        finally
+        {
+            BringMainWindowToFront();
         }
     }
 
@@ -151,14 +179,23 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         HostAssets.AppendLog($"[PickerLog] ConfirmRadialPickerSelection: SelectedCommand='{SelectedCommand?.Title}', extId='{SelectedCommand?.ExtensionId}', target='{SelectedCommand?.OpenTarget}'. Stack:\n{new System.Diagnostics.StackTrace()}");
         if (SelectedCommand == null)
         {
-            HostAssets.AppendLog("[PickerLog] ConfirmRadialPickerSelection FAILED: SelectedCommand is null!");
-            return;
+            if (FilteredCommands?.Count > 0)
+            {
+                SelectedCommand = FilteredCommands[0];
+            }
+            else
+            {
+                HostAssets.AppendLog("[PickerLog] ConfirmRadialPickerSelection FAILED: SelectedCommand is null!");
+                return;
+            }
         }
 
         var result = new RadialPickerResult(RadialSlotPickerWindow.PickerAction.AddCommand, SelectedCommand);
         IsRadialPickerMode = false;
         HideToTray();
-        _radialPickerTcs?.TrySetResult(result);
+        var tcs = _radialPickerTcs;
+        _radialPickerTcs = null;
+        tcs?.TrySetResult(result);
     }
 
     private void AddChildPageRadialSelection()
@@ -166,7 +203,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var result = new RadialPickerResult(RadialSlotPickerWindow.PickerAction.AddChildPage, null);
         IsRadialPickerMode = false;
         HideToTray();
-        _radialPickerTcs?.TrySetResult(result);
+        var tcs = _radialPickerTcs;
+        _radialPickerTcs = null;
+        tcs?.TrySetResult(result);
     }
 
     private void FooterMenuHint_Click(object sender, MouseButtonEventArgs e)
@@ -1631,9 +1670,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void CommandList_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
+        _commandListDragStartPoint = null;
+        _commandListDragSource = null;
+
         if (TryResolveCommandListItem(sender, e.OriginalSource as DependencyObject, out var command))
         {
             MarkExtensionAsSeen(command);
+            if (command != null)
+            {
+                SelectedCommand = command;
+            }
         }
     }
 
@@ -2070,6 +2116,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void CloseButton_Click(object sender, RoutedEventArgs e)
     {
+        if (IsRadialPickerMode)
+        {
+            CancelRadialPicker();
+            return;
+        }
+
         if (AppSettingsStore.Load().CloseToTray)
         {
             HideToTray();
@@ -2100,6 +2152,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (FooterQuickMenuPopup.IsOpen)
             {
                 FooterQuickMenuPopup.IsOpen = false;
+                return;
+            }
+
+            if (IsRadialPickerMode)
+            {
+                CancelRadialPicker();
+                e.Handled = true;
                 return;
             }
 
@@ -3128,6 +3187,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         return
         [
+            CreateSystemCommand("件", "文件搜索", "使用 Everything 全盘快速搜索文件与文件夹。", "#FF3B82F6", "scope:file", "builtin-file-search", "mdi:file", ["文件", "文件搜索", "everything", "find", "search", "文档", "搜文件"]),
             CreateSystemCommand("设", "系统设置", "打开 Windows 设置首页。", "#FF3B82F6", "ms-settings:", "system-settings-home", "mdi:settings", ["系统", "设置", "windows", "preferences"]),
             CreateSystemCommand("态", "网络状态", "打开网络连接状态总览。", "#FF38BDF8", "ms-settings:network-status", "system-network-status", "mdi:globe", ["系统", "网络", "状态", "internet"]),
             CreateSystemCommand("高", "网络高级设置", "打开高级网络适配器与共享设置。", "#FF0EA5E9", "ms-settings:network-advancedsettings", "system-network-advanced", "mdi:globe", ["系统", "网络", "高级设置", "适配器", "网卡"]),

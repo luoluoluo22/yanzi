@@ -14,7 +14,6 @@
         WindowStartupLocation="CenterScreen"
         WindowStyle="None"
         ShowInTaskbar="False"
-        Visibility="Hidden"
         ResizeMode="CanResize"
         Background="{DynamicResource BrushBG}"
         UseLayoutRounding="True"
@@ -895,16 +894,27 @@
                                         <Border x:Name="Root"
                                                 Padding="12,8"
                                                 CornerRadius="8"
-                                                Background="Transparent">
+                                                Background="Transparent"
+                                                BorderBrush="Transparent"
+                                                BorderThickness="1">
                                             <ContentPresenter />
                                         </Border>
                                         <ControlTemplate.Triggers>
-                                            <Trigger Property="IsSelected" Value="True">
-                                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource BrushListViewItemSelectedBG}" />
-                                            </Trigger>
                                             <Trigger Property="IsMouseOver" Value="True">
                                                 <Setter TargetName="Root" Property="Background" Value="{DynamicResource BrushListViewItemMouseOver}" />
                                             </Trigger>
+                                            <Trigger Property="IsSelected" Value="True">
+                                                <Setter TargetName="Root" Property="Background" Value="#332563EB" />
+                                                <Setter TargetName="Root" Property="BorderBrush" Value="#803B82F6" />
+                                            </Trigger>
+                                            <MultiTrigger>
+                                                <MultiTrigger.Conditions>
+                                                    <Condition Property="IsSelected" Value="True" />
+                                                    <Condition Property="IsMouseOver" Value="True" />
+                                                </MultiTrigger.Conditions>
+                                                <Setter TargetName="Root" Property="Background" Value="#482563EB" />
+                                                <Setter TargetName="Root" Property="BorderBrush" Value="#B060A5FA" />
+                                            </MultiTrigger>
                                         </ControlTemplate.Triggers>
                                     </ControlTemplate>
                                 </Setter.Value>
@@ -928,16 +938,27 @@
                                         <Border x:Name="Root"
                                                 Padding="4,6"
                                                 CornerRadius="8"
-                                                Background="Transparent">
+                                                Background="Transparent"
+                                                BorderBrush="Transparent"
+                                                BorderThickness="1">
                                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                                         </Border>
                                         <ControlTemplate.Triggers>
-                                            <Trigger Property="IsSelected" Value="True">
-                                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource BrushListViewItemSelectedBG}" />
-                                            </Trigger>
                                             <Trigger Property="IsMouseOver" Value="True">
                                                 <Setter TargetName="Root" Property="Background" Value="{DynamicResource BrushListViewItemMouseOver}" />
                                             </Trigger>
+                                            <Trigger Property="IsSelected" Value="True">
+                                                <Setter TargetName="Root" Property="Background" Value="#332563EB" />
+                                                <Setter TargetName="Root" Property="BorderBrush" Value="#803B82F6" />
+                                            </Trigger>
+                                            <MultiTrigger>
+                                                <MultiTrigger.Conditions>
+                                                    <Condition Property="IsSelected" Value="True" />
+                                                    <Condition Property="IsMouseOver" Value="True" />
+                                                </MultiTrigger.Conditions>
+                                                <Setter TargetName="Root" Property="Background" Value="#482563EB" />
+                                                <Setter TargetName="Root" Property="BorderBrush" Value="#B060A5FA" />
+                                            </MultiTrigger>
                                         </ControlTemplate.Triggers>
                                     </ControlTemplate>
                                 </Setter.Value>
@@ -2408,16 +2429,6 @@ Visibility="{Binding AiChatVisibility}">
                                 Style="{DynamicResource GhostButtonStyle}">
                             <Path Data="{local:IconGeometry dots-horizontal}" Fill="{DynamicResource BrushTextMain}" Height="14" Width="14" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Button>
-                        <Button x:Name="FooterAddChildPageButton"
-                                Height="28"
-                                Padding="12,0"
-                                Margin="0,0,12,0"
-                                Content="添加子环"
-                                FontSize="{DynamicResource FontSizeSmallPlus}"
-                                Click="RadialPickerAddChildButton_Click"
-                                Visibility="{Binding RadialPickerAddChildVisibility, FallbackValue=Collapsed}"
-                                Style="{StaticResource SecondaryBtn}">
-                        </Button>
                     </StackPanel>
 
 
@@ -2426,9 +2437,9 @@ Visibility="{Binding AiChatVisibility}">
                         <!-- 选择模式下的主要蓝色高亮按钮 -->
                         <Button x:Name="FooterRadialPickerConfirmButton"
                                 VerticalAlignment="Center"
-                                Content="确认添加"
+                                Content="添加"
                                 Style="{StaticResource PrimaryBtn}"
-                                Width="90"
+                                Width="72"
                                 Height="28"
                                 FontSize="{DynamicResource FontSizeSmallPlus}"
                                 Click="RadialPickerConfirmButton_Click"
