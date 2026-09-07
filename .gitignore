@@ -60,3 +60,6 @@ env.md
 *.token*
 *.secret*
 .tmp-repro/
+
+licenses_*.txt
+licenses_output.txt
