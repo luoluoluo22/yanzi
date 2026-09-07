@@ -21,8 +21,8 @@ public partial class VipActivationWindow : Window
     private readonly Action? _onVipStatusChanged;
     private string? _lastAutoFilledCode;
 
-    // 可配置的链动小铺或发卡商品链接，默认官方首页/商品页
-    public static string PurchaseUrl { get; set; } = "https://wzyp.cn";
+    // 链动小铺赞助维护商品购买直达链接
+    public static string PurchaseUrl { get; set; } = "https://wzyp.cn/item/i2w1c0";
 
     public VipActivationWindow(CloudSyncClient syncClient, Action? onVipStatusChanged = null)
     {
