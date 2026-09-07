@@ -285,6 +285,24 @@ public sealed class CloudSyncClient
         return await ReadAsync<AuthMeResponse>(response, cancellationToken);
     }
 
+    public async Task<VipStatusResponse?> GetVipStatusAsync(CancellationToken cancellationToken = default)
+    {
+        await EnsureAuthenticatedAsync(cancellationToken);
+        using var request = CreateRequest(HttpMethod.Get, "/v1/user/vip-status", includeAuth: true);
+        using var response = await SendAsyncWithFallback(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return await ReadAsync<VipStatusResponse>(response, cancellationToken);
+    }
+
+    public async Task<RedeemLicenseResponse?> RedeemLicenseAsync(string code, CancellationToken cancellationToken = default)
+    {
+        await EnsureAuthenticatedAsync(cancellationToken);
+        var payload = new { code = code.Trim().ToUpperInvariant() };
+        using var response = await SendJsonAsync(HttpMethod.Post, "/v1/licenses/redeem", payload, includeAuth: true, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return await ReadAsync<RedeemLicenseResponse>(response, cancellationToken);
+    }
+
     public async Task<IReadOnlyList<CloudExtensionRecord>> GetExtensionsAsync(CancellationToken cancellationToken = default)
     {
         var cacheBust = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();

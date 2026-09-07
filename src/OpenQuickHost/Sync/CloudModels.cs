@@ -43,6 +43,66 @@ public sealed class AuthMeResponse
     public string? Email { get; init; }
 
     public bool IsAdmin { get; init; }
+
+    [JsonPropertyName("isVip")]
+    public bool IsVip { get; init; }
+
+    [JsonPropertyName("vipType")]
+    public string? VipType { get; init; }
+
+    [JsonPropertyName("vipExpireAt")]
+    public string? VipExpireAt { get; init; }
+
+    [JsonPropertyName("daysRemaining")]
+    public int DaysRemaining { get; init; }
+}
+
+public sealed class VipStatusResponse
+{
+    [JsonPropertyName("ok")]
+    public bool Ok { get; init; }
+
+    [JsonPropertyName("userId")]
+    public string UserId { get; init; } = string.Empty;
+
+    [JsonPropertyName("username")]
+    public string Username { get; init; } = string.Empty;
+
+    [JsonPropertyName("isVip")]
+    public bool IsVip { get; init; }
+
+    [JsonPropertyName("vipType")]
+    public string? VipType { get; init; }
+
+    [JsonPropertyName("vipExpireAt")]
+    public string? VipExpireAt { get; init; }
+
+    [JsonPropertyName("daysRemaining")]
+    public int DaysRemaining { get; init; }
+}
+
+public sealed class RedeemLicenseResponse
+{
+    [JsonPropertyName("ok")]
+    public bool Ok { get; init; }
+
+    [JsonPropertyName("message")]
+    public string Message { get; init; } = string.Empty;
+
+    [JsonPropertyName("code")]
+    public string Code { get; init; } = string.Empty;
+
+    [JsonPropertyName("isVip")]
+    public bool IsVip { get; init; }
+
+    [JsonPropertyName("vipType")]
+    public string? VipType { get; init; }
+
+    [JsonPropertyName("vipExpireAt")]
+    public string? VipExpireAt { get; init; }
+
+    [JsonPropertyName("daysRemaining")]
+    public int DaysRemaining { get; init; }
 }
 
 public sealed class AppUpdateInfoResponse

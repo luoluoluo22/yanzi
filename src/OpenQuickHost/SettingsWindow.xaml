@@ -627,6 +627,7 @@
                                 <MenuItem Header="登录或切换账号" Click="SignInMenuItem_Click" />
                                 <MenuItem Header="退出登录" Click="SignOutMenuItem_Click" />
                                 <Separator />
+                                <MenuItem Header="赞助维护与卡密激活" Click="VipActivationMenuItem_Click" />
                                 <MenuItem Header="刷新云状态" Click="RefreshAccountMenuItem_Click" />
                             </ContextMenu>
                         </Button.ContextMenu>

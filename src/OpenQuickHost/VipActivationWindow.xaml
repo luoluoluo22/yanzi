@@ -1,0 +1,147 @@
+<Window x:Class="OpenQuickHost.VipActivationWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="燕子赞助维护计划与卡密激活"
+        Width="480"
+        SizeToContent="Height"
+        MinHeight="460"
+        WindowStartupLocation="CenterScreen"
+        Background="{x:Null}"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        Style="{StaticResource DialogWindow}">
+    <Border Margin="0"
+            Background="{DynamicResource BrushDialogBG}"
+            BorderBrush="{DynamicResource BrushBorder}"
+            BorderThickness="0">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <Grid Margin="28,24">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <StackPanel Grid.Row="0">
+                    <TextBlock Text="燕子赞助维护计划"
+                               Style="{StaticResource TitleText}"
+                               FontSize="18"
+                               FontWeight="SemiBold" />
+                    <TextBlock Margin="0,8,0,0"
+                               Text="基础启动与本地快捷功能永久免费。加入赞助维护计划可获得多端云同步、手机联动及后续新版本的持续适配与维护。"
+                               TextWrapping="Wrap"
+                               Opacity="0.8"
+                               LineHeight="20"
+                               Style="{StaticResource DescriptionText}" />
+                </StackPanel>
+
+                <Border Grid.Row="1"
+                        Margin="0,18,0,0"
+                        Padding="16"
+                        Background="#0DFFFFFF"
+                        BorderBrush="{DynamicResource BrushBorder}"
+                        BorderThickness="1"
+                        CornerRadius="8">
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="当前账号："
+                                       Opacity="0.7"
+                                       FontSize="13" />
+                            <TextBlock x:Name="AccountText"
+                                       Grid.Column="1"
+                                       Text="未登录"
+                                       FontWeight="Medium"
+                                       FontSize="13" />
+                        </Grid>
+                        <Grid Margin="0,10,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="维护状态："
+                                       Opacity="0.7"
+                                       FontSize="13" />
+                            <TextBlock x:Name="VipStatusText"
+                                       Grid.Column="1"
+                                       Text="社区免费版"
+                                       Foreground="#FF4CAF50"
+                                       FontWeight="SemiBold"
+                                       FontSize="13" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <Border x:Name="ClipboardBanner"
+                        Grid.Row="2"
+                        Margin="0,14,0,0"
+                        Padding="12,10"
+                        Background="#1A2196F3"
+                        BorderBrush="#402196F3"
+                        BorderThickness="1"
+                        CornerRadius="6"
+                        Visibility="Collapsed">
+                    <TextBlock x:Name="ClipboardBannerText"
+                               Text="检测到剪贴板中存在燕子激活码，已自动填入下方输入框。"
+                               Foreground="#FF64B5F6"
+                               FontSize="12"
+                               TextWrapping="Wrap" />
+                </Border>
+
+                <StackPanel Grid.Row="3" Margin="0,16,0,0">
+                    <TextBlock Text="卡密激活码："
+                               FontSize="13"
+                               FontWeight="Medium"
+                               Margin="0,0,0,8" />
+                    <TextBox x:Name="LicenseCodeTextBox"
+                             Height="38"
+                             VerticalContentAlignment="Center"
+                             Padding="10,0"
+                             FontSize="14"
+                             FontFamily="Consolas, monospace"
+                             Style="{StaticResource SettingTextBox}"
+                             TextWrapping="NoWrap" />
+                    <TextBlock Margin="0,6,0,0"
+                               Text="格式示例：YZ-1Y-XXXX-XXXX-XXXX（不区分大小写）"
+                               Opacity="0.5"
+                               FontSize="11" />
+                </StackPanel>
+
+                <Grid Grid.Row="4" Margin="0,20,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Button x:Name="BuyButton"
+                            Grid.Column="0"
+                            Content="前往链动小铺获取卡密"
+                            Margin="0,0,6,0"
+                            Height="36"
+                            Style="{StaticResource SecondaryBtn}"
+                            Click="BuyButton_Click" />
+                    <Button x:Name="ActivateButton"
+                            Grid.Column="1"
+                            Content="立即激活"
+                            Margin="6,0,0,0"
+                            Height="36"
+                            Style="{StaticResource PrimaryBtn}"
+                            Click="ActivateButton_Click" />
+                </Grid>
+
+                <TextBlock x:Name="StatusMessageText"
+                           Grid.Row="5"
+                           Margin="0,12,0,0"
+                           Text=""
+                           FontSize="12"
+                           TextWrapping="Wrap"
+                           HorizontalAlignment="Center" />
+            </Grid>
+        </ScrollViewer>
+    </Border>
+</Window>

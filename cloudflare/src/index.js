@@ -485,6 +485,7 @@ async function handleRequest(request, env) {
     } catch (e) {
       console.warn("user_points query fallback:", e);
     }
+    const vipInfo = await getUserVipInfo(env, auth.userId);
     return json({
       userId: auth.userId,
       username: auth.username,
@@ -492,7 +493,223 @@ async function handleRequest(request, env) {
       points,
       wishesCount,
       acceptedCount,
-      isAdmin: isAdminUser(auth, env)
+      isAdmin: isAdminUser(auth, env),
+      ...vipInfo
+    });
+  }
+
+  // --- VIP 会员与卡密 License 相关 API ---
+  if (url.pathname === "/v1/user/vip-status" && request.method === "GET") {
+    const auth = await requireAuth(request, env);
+    const vipInfo = await getUserVipInfo(env, auth.userId);
+    return json({
+      ok: true,
+      userId: auth.userId,
+      username: auth.username,
+      ...vipInfo
+    });
+  }
+
+  if (url.pathname === "/v1/licenses/redeem" && request.method === "POST") {
+    const auth = await requireAuth(request, env);
+    const payload = await readJson(request);
+    const rawCode = String(payload?.code || "").trim().toUpperCase();
+    if (!rawCode) {
+      throw new HttpError(400, "code_required", "请输入卡密激活码");
+    }
+
+    await ensureLicenseTables(env);
+    const license = await env.DB.prepare(
+      "select code, type, duration_days, status, used_by_user_id from license_keys where code = ?"
+    ).bind(rawCode).first();
+
+    if (!license) {
+      throw new HttpError(404, "invalid_license", "激活码不存在，请核对后重试");
+    }
+
+    if (license.status === "used") {
+      throw new HttpError(400, "license_already_used", "该激活码已被使用");
+    }
+
+    if (license.status === "revoked") {
+      throw new HttpError(400, "license_revoked", "该激活码已作废");
+    }
+
+    const currentUser = await env.DB.prepare(
+      "select vip_expire_at, vip_type from users where user_id = ?"
+    ).bind(auth.userId).first();
+
+    const now = new Date();
+    let newVipType = license.type;
+    let newExpireAt;
+
+    if (license.type === "lifetime" || currentUser?.vip_type === "lifetime") {
+      newVipType = "lifetime";
+      newExpireAt = "2099-12-31T23:59:59.000Z";
+    } else {
+      let baseTime = now.getTime();
+      if (currentUser?.vip_expire_at) {
+        const existingExpire = new Date(currentUser.vip_expire_at).getTime();
+        if (existingExpire > baseTime) {
+          baseTime = existingExpire;
+        }
+      }
+      const addDays = Number(license.duration_days) || (license.type === "year" ? 365 : 30);
+      newExpireAt = new Date(baseTime + addDays * 86400 * 1000).toISOString();
+    }
+
+    const nowIso = now.toISOString();
+
+    await env.DB.batch([
+      env.DB.prepare(
+        `update license_keys
+         set status = 'used',
+             used_by_user_id = ?,
+             used_at = ?
+         where code = ? and status = 'unused'`
+      ).bind(auth.userId, nowIso, rawCode),
+      env.DB.prepare(
+        `update users
+         set vip_expire_at = ?,
+             vip_type = ?,
+             updated_at = ?
+         where user_id = ?`
+      ).bind(newExpireAt, newVipType, nowIso, auth.userId)
+    ]);
+
+    const updatedVipInfo = await getUserVipInfo(env, auth.userId);
+
+    return json({
+      ok: true,
+      message: "激活成功！感谢您对燕子开发维护的支持。",
+      code: rawCode,
+      ...updatedVipInfo
+    });
+  }
+
+  if (url.pathname === "/v1/licenses/generate" && request.method === "POST") {
+    const adminSecret = request.headers.get("x-admin-secret");
+    let isAuthorized = Boolean(adminSecret && env.AUTH_TOKEN_SECRET && adminSecret === env.AUTH_TOKEN_SECRET);
+
+    if (!isAuthorized) {
+      try {
+        const auth = await requireAuth(request, env);
+        isAuthorized = isAdminUser(auth, env);
+      } catch (e) {
+        // 未认证
+      }
+    }
+
+    if (!isAuthorized) {
+      throw new HttpError(403, "admin_required", "需要管理员权限");
+    }
+
+    const payload = await readJson(request);
+    const count = Math.min(Math.max(1, parseInt(payload?.count || "1", 10)), 500);
+    const type = String(payload?.type || "year").toLowerCase();
+    const batchTag = String(payload?.batchTag || `batch_${isoNow().slice(0, 10)}`).trim();
+
+    let durationDays = 365;
+    let typePrefix = "1Y";
+    if (type === "month") {
+      durationDays = 30;
+      typePrefix = "1M";
+    } else if (type === "lifetime") {
+      durationDays = 36500;
+      typePrefix = "LIFE";
+    }
+
+    await ensureLicenseTables(env);
+    const nowIso = isoNow();
+    const generatedCodes = [];
+    const statements = [];
+
+    const chars = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+    for (let i = 0; i < count; i++) {
+      let part1 = "";
+      let part2 = "";
+      let part3 = "";
+      const randomBytes = new Uint8Array(12);
+      crypto.getRandomValues(randomBytes);
+      for (let j = 0; j < 4; j++) part1 += chars[randomBytes[j] % chars.length];
+      for (let j = 4; j < 8; j++) part2 += chars[randomBytes[j] % chars.length];
+      for (let j = 8; j < 12; j++) part3 += chars[randomBytes[j] % chars.length];
+      const code = `YZ-${typePrefix}-${part1}-${part2}-${part3}`;
+      generatedCodes.push(code);
+
+      statements.push(
+        env.DB.prepare(
+          `insert into license_keys (code, type, duration_days, batch_tag, status, created_at)
+           values (?, ?, ?, ?, 'unused', ?)`
+        ).bind(code, type, durationDays, batchTag, nowIso)
+      );
+    }
+
+    const chunkSize = 50;
+    for (let i = 0; i < statements.length; i += chunkSize) {
+      await env.DB.batch(statements.slice(i, i + chunkSize));
+    }
+
+    return json({
+      ok: true,
+      count: generatedCodes.length,
+      type,
+      batchTag,
+      codes: generatedCodes
+    });
+  }
+
+  if (url.pathname === "/v1/licenses/list" && request.method === "GET") {
+    const adminSecret = request.headers.get("x-admin-secret");
+    let isAuthorized = Boolean(adminSecret && env.AUTH_TOKEN_SECRET && adminSecret === env.AUTH_TOKEN_SECRET);
+    if (!isAuthorized) {
+      try {
+        const auth = await requireAuth(request, env);
+        isAuthorized = isAdminUser(auth, env);
+      } catch (e) {}
+    }
+    if (!isAuthorized) {
+      throw new HttpError(403, "admin_required", "需要管理员权限");
+    }
+
+    await ensureLicenseTables(env);
+    const status = url.searchParams.get("status") || "all";
+    const batchTag = url.searchParams.get("batchTag");
+
+    let query = "select code, type, duration_days, batch_tag, status, used_by_user_id, used_at, created_at from license_keys";
+    const conditions = [];
+    const params = [];
+    if (status !== "all") {
+      conditions.push("status = ?");
+      params.push(status);
+    }
+    if (batchTag) {
+      conditions.push("batch_tag = ?");
+      params.push(batchTag);
+    }
+    if (conditions.length > 0) {
+      query += " where " + conditions.join(" and ");
+    }
+    query += " order by created_at desc limit 500";
+
+    let stmt = env.DB.prepare(query);
+    if (params.length > 0) {
+      stmt = stmt.bind(...params);
+    }
+    const result = await stmt.all();
+
+    const summary = await env.DB.prepare(`
+      select
+        count(*) as total,
+        sum(case when status = 'unused' then 1 else 0 end) as unused_count,
+        sum(case when status = 'used' then 1 else 0 end) as used_count
+      from license_keys
+    `).first();
+
+    return json({
+      ok: true,
+      summary,
+      licenses: result.results || []
     });
   }
 
@@ -2368,6 +2585,35 @@ async function handleRequest(request, env) {
   return json({ error: "not_found", message: "Route not found" }, 404);
 }
 
+async function getUserVipInfo(env, userId) {
+  try {
+    await ensureLicenseTables(env);
+    const userRecord = await env.DB.prepare(
+      "select vip_expire_at, vip_type from users where user_id = ?"
+    ).bind(userId).first();
+
+    if (!userRecord) {
+      return { isVip: false, vipType: null, vipExpireAt: null, daysRemaining: 0 };
+    }
+
+    const isLifetime = userRecord.vip_type === "lifetime";
+    const expiryTime = userRecord.vip_expire_at ? new Date(userRecord.vip_expire_at).getTime() : 0;
+    const nowTime = Date.now();
+    const hasValidExpiry = expiryTime > nowTime;
+    const daysRemaining = isLifetime ? 99999 : (hasValidExpiry ? Math.ceil((expiryTime - nowTime) / (86400 * 1000)) : 0);
+
+    return {
+      isVip: Boolean(isLifetime || hasValidExpiry),
+      vipType: userRecord.vip_type || null,
+      vipExpireAt: userRecord.vip_expire_at || null,
+      daysRemaining
+    };
+  } catch (e) {
+    console.warn("getUserVipInfo error:", e);
+    return { isVip: false, vipType: null, vipExpireAt: null, daysRemaining: 0 };
+  }
+}
+
 async function buildAuthResponse(env, user) {
   const now = Math.floor(Date.now() / 1000);
   const expiresAt = now + TOKEN_TTL_SECONDS;
@@ -2379,12 +2625,15 @@ async function buildAuthResponse(env, user) {
     exp: expiresAt
   });
 
+  const vipInfo = await getUserVipInfo(env, user.userId);
+
   return {
     accessToken,
     expiresAt,
     userId: user.userId,
     username: user.username,
-    email: user.email ?? null
+    email: user.email ?? null,
+    ...vipInfo
   };
 }
 
@@ -5742,3 +5991,38 @@ async function deleteWish(env, auth, wishId) {
 
   return { ok: true, deleted: true, wishId };
 }
+
+let _licenseTablesInitialized = false;
+async function ensureLicenseTables(env) {
+  if (_licenseTablesInitialized) return;
+  try {
+    await env.DB.prepare(`
+      CREATE TABLE IF NOT EXISTS license_keys (
+        code TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        duration_days INTEGER NOT NULL DEFAULT 0,
+        batch_tag TEXT,
+        status TEXT NOT NULL DEFAULT 'unused',
+        used_by_user_id TEXT,
+        used_at TEXT,
+        created_at TEXT NOT NULL
+      )
+    `).run();
+
+    try {
+      await env.DB.prepare("ALTER TABLE users ADD COLUMN vip_expire_at TEXT").run();
+    } catch (e) {
+      // Column might already exist
+    }
+    try {
+      await env.DB.prepare("ALTER TABLE users ADD COLUMN vip_type TEXT").run();
+    } catch (e) {
+      // Column might already exist
+    }
+
+    _licenseTablesInitialized = true;
+  } catch (e) {
+    console.warn("ensureLicenseTables error:", e);
+  }
+}
+

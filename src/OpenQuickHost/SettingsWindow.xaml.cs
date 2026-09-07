@@ -4584,6 +4584,29 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         await RefreshCloudAsync();
     }
 
+    private void VipActivationMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        OpenVipActivationDialog();
+    }
+
+    public void OpenVipActivationDialog()
+    {
+        if (_mainWindow.CloudSyncClient == null)
+        {
+            System.Windows.MessageBox.Show("云端服务组件未就绪，请稍后重试。", "燕子", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var vipWindow = new VipActivationWindow(_mainWindow.CloudSyncClient, () =>
+        {
+            RefreshAccountSummary();
+        })
+        {
+            Owner = this
+        };
+        vipWindow.ShowDialog();
+    }
+
     private async void SignInButton_Click(object sender, RoutedEventArgs e)
     {
         await SignInAsync();
@@ -7311,8 +7334,31 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         {
             IsAccountLoggedIn = true;
             AccountTitle = session.Username;
-            AccountSubtitle = $"已登录 Cloud · 用户 ID {session.UserId}";
+            AccountSubtitle = $"已登录 · 用户 ID {session.UserId}";
             AccountInitial = session.Username[..1].ToUpperInvariant();
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    if (_mainWindow.CloudSyncClient != null)
+                    {
+                        var status = await _mainWindow.CloudSyncClient.GetVipStatusAsync();
+                        if (status != null && status.IsVip)
+                        {
+                            Dispatcher.Invoke(() =>
+                            {
+                                var tag = status.VipType == "lifetime" ? "永久赞助" : $"赞助维护中 ({status.DaysRemaining}天)";
+                                AccountSubtitle = $"{tag} · 用户 ID {session.UserId}";
+                            });
+                        }
+                    }
+                }
+                catch
+                {
+                    // 忽略后台静默拉取失败
+                }
+            });
             return;
         }
 
