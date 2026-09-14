@@ -335,19 +335,24 @@
                                        IsOpen="{Binding IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}"
                                        Placement="Right"
                                        PopupAnimation="Fade"
-                                       VerticalOffset="-4">
-                                    <Border Background="{DynamicResource BrushContextMenuBG}"
-                                            BorderBrush="{DynamicResource BrushContextMenuBorder}"
-                                            BorderThickness="1"
-                                            CornerRadius="10"
-                                            Padding="4">
-                                        <Border.Effect>
-                                            <DropShadowEffect BlurRadius="15" Direction="270" ShadowDepth="2" Opacity="0.5"/>
-                                        </Border.Effect>
-                                        <ScrollViewer x:Name="SubMenuScrollViewer" VerticalScrollBarVisibility="Auto">
-                                            <ItemsPresenter x:Name="PART_ItemsPresenter" KeyboardNavigation.DirectionalNavigation="Cycle" Grid.IsSharedSizeScope="True"/>
-                                        </ScrollViewer>
-                                    </Border>
+                                       VerticalOffset="-4"
+                                       HorizontalOffset="-12">
+                                    <!-- 带有透明命中测试背景的承载容器，确保鼠标跨越缝隙时绝不穿透到底层窗口 -->
+                                    <Grid Background="Transparent">
+                                        <Border Background="{DynamicResource BrushContextMenuBG}"
+                                                BorderBrush="{DynamicResource BrushContextMenuBorder}"
+                                                BorderThickness="1"
+                                                CornerRadius="10"
+                                                Padding="4"
+                                                Margin="6,4,6,6">
+                                            <Border.Effect>
+                                                <DropShadowEffect BlurRadius="12" Direction="270" ShadowDepth="2" Opacity="0.4"/>
+                                            </Border.Effect>
+                                            <ScrollViewer x:Name="SubMenuScrollViewer" VerticalScrollBarVisibility="Auto">
+                                                <ItemsPresenter x:Name="PART_ItemsPresenter" KeyboardNavigation.DirectionalNavigation="Cycle" Grid.IsSharedSizeScope="True"/>
+                                            </ScrollViewer>
+                                        </Border>
+                                    </Grid>
                                 </Popup>
                             </Grid>
 
@@ -357,6 +362,10 @@
                                     <Setter TargetName="InputGestureText" Property="Visibility" Value="Collapsed"/>
                                 </Trigger>
                                 <Trigger Property="IsHighlighted" Value="True">
+                                    <Setter TargetName="border" Property="Background" Value="{DynamicResource BrushMenuItemHighlightBG}"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}"/>
+                                </Trigger>
+                                <Trigger Property="IsSubmenuOpen" Value="True">
                                     <Setter TargetName="border" Property="Background" Value="{DynamicResource BrushMenuItemHighlightBG}"/>
                                     <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}"/>
                                 </Trigger>

@@ -4491,6 +4491,18 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 break;
         }
 
+        // 优先判断各个功能显式启用的触发开关，避免被全局默认的 MouseGestureTriggerMode 掩盖而发生误判或被重置
+        if (radialValue) return "Radial";
+        if (panelValue) return "Panel";
+        if (yanmValue) return "Yanm";
+
+        var legacyMode = GestureNameToMouseTriggerMode(gestureName);
+        if (legacyMode != MouseTriggerModes.None &&
+            string.Equals(MouseTriggerModes.Normalize(_settings.WindowSnapAssistMouseTriggerMode), legacyMode, StringComparison.OrdinalIgnoreCase))
+        {
+            return "WindowSnap";
+        }
+
         if (gestureName == "RightButtonDrag" &&
             string.Equals(MouseGestureTriggerModes.Normalize(_settings.MouseGestureTriggerMode), MouseGestureTriggerModes.RightDrag, StringComparison.Ordinal))
         {
@@ -4509,16 +4521,6 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             return "Gesture";
         }
 
-        var legacyMode = GestureNameToMouseTriggerMode(gestureName);
-        if (legacyMode != MouseTriggerModes.None &&
-            string.Equals(MouseTriggerModes.Normalize(_settings.WindowSnapAssistMouseTriggerMode), legacyMode, StringComparison.OrdinalIgnoreCase))
-        {
-            return "WindowSnap";
-        }
-
-        if (panelValue) return "Panel";
-        if (radialValue) return "Radial";
-        if (yanmValue) return "Yanm";
         return "None";
     }
 
@@ -13566,11 +13568,11 @@ public sealed class ExtensionSyncConflictItem
             : record.DetectedAtUtc;
     }
 
-    public string ExtensionId { get; }
-    public string LocalText { get; }
-    public string RemoteText { get; }
-    public string RemoteDeviceText { get; }
-    public string DetectedAtText { get; }
+    public string ExtensionId { get; set; }
+    public string LocalText { get; set; }
+    public string RemoteText { get; set; }
+    public string RemoteDeviceText { get; set; }
+    public string DetectedAtText { get; set; }
 }
 
 public sealed class ExtensionDataConflictItem
@@ -13596,13 +13598,13 @@ public sealed class ExtensionDataConflictItem
             : conflict.DetectedAtUtc;
     }
 
-    public string ExtensionId { get; }
-    public string Key { get; }
+    public string ExtensionId { get; set; }
+    public string Key { get; set; }
     public string DisplayId => $"{ExtensionId} / {Key}";
-    public string LocalText { get; }
-    public string RemoteText { get; }
-    public string RemoteDeviceText { get; }
-    public string DetectedAtText { get; }
+    public string LocalText { get; set; }
+    public string RemoteText { get; set; }
+    public string RemoteDeviceText { get; set; }
+    public string DetectedAtText { get; set; }
 
     private static string ShortHash(string? value) =>
         string.IsNullOrWhiteSpace(value) ? "无 hash" : value.Length <= 10 ? value : value[..10];

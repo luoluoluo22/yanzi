@@ -884,14 +884,15 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             UpdateCenterText();
             ActiveTitle = "取消";
 
-            // 将窗口放置于屏幕外深处，并置为完全透明隐藏
-            Opacity = 0;
-            RootGrid.Visibility = Visibility.Hidden;
+            // 将窗口放置于屏幕外深处，静默完成测量与 Visual 树编译
             Left = OverlayWindowManager.OffScreenCoordinate;
             Top = OverlayWindowManager.OffScreenCoordinate;
-
-            // 屏幕外静默呈现，驱动 WPF 完成 Direct3D 交换链分配、Visual 树首次渲染与 Shader 编译
+            Opacity = 0;
             Show();
+            UpdateLayout();
+            base.Hide();
+            Opacity = 1.0;
+            RootGrid.Visibility = Visibility.Visible;
             _isPrewarmed = true;
 
             HostAssets.AppendLog("RadialMenuWindow: PrewarmDeep completed successfully.");
@@ -1030,21 +1031,29 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         UpdateCenterText();
         ActiveTitle = "取消";
 
-        // 通过 Win32 API 快速定位到光标中心（传入当前显示器的准确 DPI）
-        PositionAroundCursor(screenCtx.DpiScale.DpiScaleX);
+        // 确保内容可见性与顶层属性就绪
+        RootGrid.Visibility = Visibility.Visible;
+        Opacity = 1.0;
+        EnsureNoActivateStyle();
+        Topmost = true;
+
+        // 设置 WPF 的 DIP 坐标（让 WPF 内部对象模型和 DirectComposition 知道窗口处于屏幕内）
+        var dpiScale = screenCtx.DpiScale.DpiScaleX > 0 ? screenCtx.DpiScale.DpiScaleX : 1.0;
+        Left = (_centerPixels.X / dpiScale) - (Width / 2.0);
+        Top = (_centerPixels.Y / dpiScale) - (Height / 2.0);
 
         if (!IsVisible)
         {
             Show();
         }
+        NativeMethods.ShowWithoutActivation(helperHwnd);
 
-        // 内容仍不可见时先做物理像素中心校正：此时窗口已移到目标显示器、
-        // 物理尺寸已定型，实测修正不会产生"先出帧再跳动"的可见顿挫。
-        // 旧实现放在 Render 优先级异步执行，首帧会以偏移位置亮相，随后被拉回。
+        // 通过 Win32 API 快速定位到光标中心（传入当前显示器的准确 DPI，消除跨屏舍入误差）
+        PositionAroundCursor(dpiScale);
+
+        // 物理像素中心校正
         CenterOnAnchorPhysically("pre-reveal");
 
-        RootGrid.Visibility = Visibility.Visible;
-        Opacity = 1.0;
         PlayEntryAnimation();
 
         _selectionTimer.Start();
@@ -1209,11 +1218,11 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         // 只定位不改变大小（NOSIZE）：尺寸交给 WPF 的 DPI 机制按 Width/Height DP 管理，
         // 初始的中心误差由 CenterOnPhysically 在显示后按物理像素校正兜底。
         var windowDpi = (dpiHint.HasValue && dpiHint.Value > 0) ? dpiHint.Value : GetWindowDpiScale();
-        var widthPhys = Width * windowDpi;
-        var heightPhys = Height * windowDpi;
-        var targetLeft = (int)Math.Round(_centerPixels.X - widthPhys / 2);
-        var targetTop = (int)Math.Round(_centerPixels.Y - heightPhys / 2);
-        HostAssets.AppendLog($"[RadialMenuLog] Placement intent (physical): anchor=({_centerPixels.X},{_centerPixels.Y}), left={targetLeft}, top={targetTop}, size=({widthPhys:F0}x{heightPhys:F0}), windowDpi={windowDpi:F2}.");
+        var widthPhys = (int)Math.Round(Width * windowDpi);
+        var heightPhys = (int)Math.Round(Height * windowDpi);
+        var targetLeft = (int)Math.Round(_centerPixels.X - widthPhys / 2.0);
+        var targetTop = (int)Math.Round(_centerPixels.Y - heightPhys / 2.0);
+        HostAssets.AppendLog($"[RadialMenuLog] Placement intent (physical): anchor=({_centerPixels.X},{_centerPixels.Y}), left={targetLeft}, top={targetTop}, size=({widthPhys}x{heightPhys}), windowDpi={windowDpi:F2}.");
         var helper = new System.Windows.Interop.WindowInteropHelper(this);
         var handle = helper.Handle;
         if (handle != IntPtr.Zero)
@@ -1223,9 +1232,9 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 Win32Native.HWND_TOPMOST,
                 targetLeft,
                 targetTop,
-                0,
-                0,
-                Win32Native.SWP_NOSIZE | Win32Native.SWP_NOACTIVATE | Win32Native.SWP_SHOWWINDOW);
+                widthPhys,
+                heightPhys,
+                Win32Native.SWP_NOACTIVATE | Win32Native.SWP_SHOWWINDOW | Win32Native.SWP_FRAMECHANGED);
         }
     }
 
@@ -3930,13 +3939,19 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     {
         var normalBrush = (System.Windows.Media.Brush)System.Windows.Application.Current.FindResource("BrushTextSec") ?? System.Windows.Media.Brushes.Gray;
 
-        // 0. 文件（夹） (在仓库上方，点击直接调出文件管理器选择文件或程序)
-        var pickFileItem = new MenuItem
+        // 0. 文件（夹） (二级子菜单：支持选择文件或文件夹)
+        var pickItem = new MenuItem
         {
             Header = "文件（夹）",
             Icon = CreateMenuIcon("folder", normalBrush)
         };
-        pickFileItem.Click += (_, _) =>
+
+        var pickFileSubItem = new MenuItem
+        {
+            Header = "选择文件...",
+            Icon = CreateMenuIcon("file", normalBrush)
+        };
+        pickFileSubItem.Click += (_, _) =>
         {
             _isOpeningSubDialog = true;
             if (parentMenu is ContextMenu addMenu && addMenu.IsOpen)
@@ -3945,7 +3960,25 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             }
             Dispatcher.BeginInvoke(new Action(() => PickFileForRadialSlot(target)));
         };
-        parentMenu.Items.Add(pickFileItem);
+
+        var pickFolderSubItem = new MenuItem
+        {
+            Header = "选择文件夹...",
+            Icon = CreateMenuIcon("folder", normalBrush)
+        };
+        pickFolderSubItem.Click += (_, _) =>
+        {
+            _isOpeningSubDialog = true;
+            if (parentMenu is ContextMenu addMenu && addMenu.IsOpen)
+            {
+                addMenu.IsOpen = false;
+            }
+            Dispatcher.BeginInvoke(new Action(() => PickFolderForRadialSlot(target)));
+        };
+
+        pickItem.Items.Add(pickFileSubItem);
+        pickItem.Items.Add(pickFolderSubItem);
+        parentMenu.Items.Add(pickItem);
 
         // 1. 仓库 (搜索图标，点击直接调出主搜索/选择界面)
         var existingExtensionItem = new MenuItem
@@ -4265,6 +4298,47 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         catch (Exception ex)
         {
             HostAssets.AppendLog($"[RadialMenuLog] PickFileForRadialSlot EXCEPTION: {ex}");
+        }
+        finally
+        {
+            EndModalChildDialog();
+            IsHitTestVisible = true;
+            _isOpeningSubDialog = false;
+            _editInteractionActive = false;
+            UpdateWindowBackgroundForPinState();
+            EnsureActivatedForEdit();
+            UpdateCenterText();
+        }
+    }
+
+    private void PickFolderForRadialSlot(RadialEditTarget target)
+    {
+        HostAssets.AppendLog($"[RadialMenuLog] PickFolderForRadialSlot: page={target.PageId}, index={target.Index}");
+        _isOpeningSubDialog = true;
+        _editInteractionActive = true;
+        IsHitTestVisible = false;
+        BeginModalChildDialog();
+        try
+        {
+            var folderDialog = new Microsoft.Win32.OpenFolderDialog
+            {
+                Title = "选择文件夹",
+                Multiselect = false
+            };
+
+            bool? res = folderDialog.ShowDialog(this);
+            if (res == true && !string.IsNullOrWhiteSpace(folderDialog.FolderName))
+            {
+                var selectedPath = folderDialog.FolderName;
+                var effectiveId = $"{ExtensionIdPrefixes.SearchResult}{selectedPath}";
+                SaveRadialSlotCommand(target.PageId, target.Index, effectiveId, string.Empty);
+                HostAssets.AppendLog($"Radial edit assigned picked folder: page={target.PageId}, index={target.Index + 1}, path={selectedPath}.");
+                RebuildItemsForCurrentLayout("assigned-picked-folder");
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"[RadialMenuLog] PickFolderForRadialSlot EXCEPTION: {ex}");
         }
         finally
         {
@@ -5480,15 +5554,24 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             IsCloseHoverActive = false;
             IsCenterHovered = false;
             _isOuterRingHoverActive = false;
-            Opacity = 0;
-            RootGrid.Visibility = Visibility.Hidden;
-            DockOffscreen();
-            // 注意：不再 Close()。窗口实例保持"停靠屏外"状态被 MainWindow 复用，
+
+            SubRings.Clear();
+            _pageStack.Clear();
+            _fitContentPending = false;
+            _isEntryAnimationActive = false;
+            ApplyVisualContentRootMode();
+
+            // 安全隐藏窗口并恢复基础可见属性，让下次呼出零状态冲突
+            Topmost = false;
+            OverlayWindowManager.SafeHideAndPark(this);
+            RootGrid.Visibility = Visibility.Visible;
+            Opacity = 1.0;
+            // 注意：不再 Close()。窗口实例保持"隐藏复用"状态被 MainWindow 复用，
             // HWND/D3D 交换链/视觉树全部保留，二次呼出零重建成本。
         }
         catch (Exception ex)
         {
-            HostAssets.AppendLog($"RadialMenuWindow.Hide/Dock exception: {ex.Message}");
+            HostAssets.AppendLog($"RadialMenuWindow.Hide exception: {ex.Message}");
         }
         finally
         {
@@ -5499,7 +5582,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
     /// <summary>窗口是否处于"已呼出过并停靠屏外、可被复用"状态。</summary>
     public bool IsDockedAvailable => _isPrewarmed && !_isClosing && !IsContentVisible;
 
-    /// <summary>轮盘内容当前是否真正可见（停靠/隐藏态为 false；复用实例的 IsVisible 恒为 true，不能用于此判定）。</summary>
+    /// <summary>轮盘内容当前是否真正可见（停靠/隐藏态为 false）。</summary>
     public bool IsContentVisible => RootGrid.Visibility == Visibility.Visible && Opacity > 0.01 && IsVisible;
 
     /// <summary>停靠到屏幕外深处：清空动态子环、复位状态、物理移出屏幕（不销毁 HWND）。</summary>
@@ -5513,31 +5596,10 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             _isEntryAnimationActive = false;
             ApplyVisualContentRootMode();
 
-            var helper = new System.Windows.Interop.WindowInteropHelper(this);
-            var handle = helper.Handle;
-            if (handle != IntPtr.Zero)
-            {
-                // 完整尺寸 + 屏外坐标，一次 SetWindowPos 完成（保持复用时窗口状态确定）
-                var windowDpi = GetWindowDpiScale();
-                var wPhys = (int)Math.Round(NormalWindowSize * windowDpi);
-                var hPhys = (int)Math.Round(NormalWindowSize * windowDpi);
-                var offscreen = (int)OverlayWindowManager.OffScreenCoordinate;
-                Win32Native.SetWindowPos(
-                    handle,
-                    IntPtr.Zero,
-                    offscreen,
-                    offscreen,
-                    wPhys,
-                    hPhys,
-                    Win32Native.SWP_NOZORDER | Win32Native.SWP_NOACTIVATE);
-                Width = NormalWindowSize;
-                Height = NormalWindowSize;
-            }
-            else
-            {
-                Left = OverlayWindowManager.OffScreenCoordinate;
-                Top = OverlayWindowManager.OffScreenCoordinate;
-            }
+            Topmost = false;
+            OverlayWindowManager.SafeHideAndPark(this);
+            RootGrid.Visibility = Visibility.Visible;
+            Opacity = 1.0;
         }
         catch (Exception ex)
         {

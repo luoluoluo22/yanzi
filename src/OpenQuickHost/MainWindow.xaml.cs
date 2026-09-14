@@ -4248,10 +4248,28 @@ public sealed class CloudQuickPanelConfigSnapshot
                snapshot.WindowBindings is { MarginPixels: not 14 } ||
                snapshot.YarnSelect is { Enabled: false } ||
                (snapshot.YarnSelect?.Rules?.Count ?? 0) > 0 ||
+               HasQuickPanelMouseTriggersContent(snapshot.QuickPanelMouseTriggers) ||
                !string.Equals(snapshot.LauncherHotkey, "Alt+Space", StringComparison.OrdinalIgnoreCase) ||
                !string.Equals(snapshot.QuickPanelTrigger, "MiddleButtonLongPress", StringComparison.OrdinalIgnoreCase) ||
                !string.Equals(MouseGestureTriggerModes.Normalize(snapshot.MouseGestureTriggerMode), MouseGestureTriggerModes.None, StringComparison.OrdinalIgnoreCase) ||
                !string.Equals(MouseTriggerModes.Normalize(snapshot.WindowSnapAssistMouseTriggerMode), MouseTriggerModes.None, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool HasQuickPanelMouseTriggersContent(QuickPanelMouseTriggerSettings? triggers)
+    {
+        if (triggers == null) return false;
+        return triggers.MiddleButtonDown ||
+               triggers.X1ButtonDown ||
+               triggers.X2ButtonDown ||
+               triggers.CtrlLeftClick ||
+               triggers.CtrlLeftDrag ||
+               triggers.CtrlRightClick ||
+               triggers.CtrlMiddleClick ||
+               triggers.MiddleButtonLongPress ||
+               triggers.RightButtonLongPress ||
+               triggers.RightButtonDrag ||
+               triggers.MiddleButtonDrag ||
+               triggers.HorizontalWheel;
     }
 
     public static bool IsInitialDefaultSnapshot(CloudQuickPanelConfigSnapshot? snapshot)
