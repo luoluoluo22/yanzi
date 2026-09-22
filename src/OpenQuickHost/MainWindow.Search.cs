@@ -38,6 +38,10 @@ public partial class MainWindow
 
     private void ApplyFilter(string? query)
     {
+        IsSearchResultsPending = false;
+        IsFileSearching = false;
+        IsFileSearchSetupSuggested = false;
+        SearchFeedbackText = "没有找到匹配结果，试试更短的关键词或切换搜索范围。";
         var parsed = ParseSearchQuery(query);
         var normalizedQueryText = query ?? string.Empty;
         var preserveSelection = _hasAppliedFilterOnce &&
@@ -85,6 +89,7 @@ public partial class MainWindow
             if (!_appSettings.EnableEverything)
             {
                 IsFileSearching = false;
+                SearchFeedbackText = "文件搜索未启用，可通过上方开关开启。";
                 FilteredCommands.Clear();
                 SelectedCommand = null;
                 CommandList.SelectedItem = null;
@@ -98,7 +103,7 @@ public partial class MainWindow
                 return;
             }
 
-            _ = ApplyFileSearchResultsAsync(session, parsed.Term);
+            _ = RunSearchTaskAsync(session, () => ApplyFileSearchResultsAsync(session, parsed.Term), "正在查找文件…");
             return;
         }
 
@@ -107,13 +112,13 @@ public partial class MainWindow
         if (TryGetPinnedSearchProviderCommand(parsed.ScopeKey, out var providerCommand))
         {
             var providerTerm = NormalizePinnedSearchProviderInlineQuery(providerCommand, parsed.ScopeKey, parsed.Term);
-            _ = ApplyExtensionSearchProviderResultsAsync(session, providerCommand, parsed.ScopeKey, providerTerm);
+            _ = RunSearchTaskAsync(session, () => ApplyExtensionSearchProviderResultsAsync(session, providerCommand, parsed.ScopeKey, providerTerm), $"正在搜索 {providerCommand.Title}…");
             return;
         }
 
         if (TryResolveInlineSearchProviderCommand(parsed, query, out var inlineProviderCommand, out var inlineProviderTerm))
         {
-            _ = ApplyExtensionSearchProviderResultsAsync(session, inlineProviderCommand, parsed.ScopeKey, inlineProviderTerm);
+            _ = RunSearchTaskAsync(session, () => ApplyExtensionSearchProviderResultsAsync(session, inlineProviderCommand, parsed.ScopeKey, inlineProviderTerm), $"正在搜索 {inlineProviderCommand.Title}…");
             return;
         }
 
@@ -180,7 +185,7 @@ public partial class MainWindow
             !string.IsNullOrWhiteSpace(parsed.Term) &&
             _appSettings.EnableEverything)
         {
-            _ = StreamAllScopeFileResultsAsync(session, parsed.Term, matches, preserveSelection, previousSelectedCommand);
+            _ = RunSearchTaskAsync(session, () => StreamAllScopeFileResultsAsync(session, parsed.Term, matches, preserveSelection, previousSelectedCommand));
         }
     }
 
@@ -1140,6 +1145,7 @@ public partial class MainWindow
     {
         if (string.IsNullOrWhiteSpace(query))
         {
+            SearchFeedbackText = "输入文件名或路径，开始搜索本机文件。";
             IsFileSearching = false;
             if (!_searchPipelineManager.IsActive(session))
             {
@@ -1172,9 +1178,7 @@ public partial class MainWindow
             return;
         }
 
-        FileSearchingText = !EverythingSearchService.IsDatabaseLoaded()
-            ? "Everything 正在初始化索引，请稍候..."
-            : "搜索中...";
+        FileSearchingText = "正在查找文件…";
         IsFileSearching = true;
 
         var (response, fileCommands) = await Task.Run(() =>
@@ -1215,10 +1219,10 @@ public partial class MainWindow
         {
             if (!string.IsNullOrWhiteSpace(response.ErrorMessage))
             {
-                SyncStatus = response.ErrorMessage;
+                SearchFeedbackText = response.ErrorMessage;
             }
 
-            MaybePromptEverythingManualInitialization(query);
+            SuggestEverythingManualInitialization(query);
 
             FilteredCommands.Clear();
             SelectedCommand = null;
@@ -1241,10 +1245,10 @@ public partial class MainWindow
 
         if (fileCommands.Count == 0)
         {
-            MaybePromptEverythingManualInitialization(query);
+            SuggestEverythingManualInitialization(query);
         }
 
-        _ = LoadFileIconsAsync(session, fileCommands);
+        _ = RunSearchTaskAsync(session, () => LoadFileIconsAsync(session, fileCommands));
     }
 
     private async Task StreamAllScopeFileResultsAsync(
@@ -1341,7 +1345,7 @@ public partial class MainWindow
         var fileCommands = merged.Where(static item => item.Source == CommandSource.File).ToList();
         if (fileCommands.Count > 0 && !session.Token.IsCancellationRequested)
         {
-            _ = LoadFileIconsAsync(session, fileCommands);
+            _ = RunSearchTaskAsync(session, () => LoadFileIconsAsync(session, fileCommands));
         }
     }
 
@@ -1406,7 +1410,7 @@ public partial class MainWindow
         {
             if (!string.IsNullOrWhiteSpace(response.ErrorMessage))
             {
-                SyncStatus = response.ErrorMessage;
+                SearchFeedbackText = response.ErrorMessage;
             }
 
             FilteredCommands.Clear();
@@ -1435,10 +1439,10 @@ public partial class MainWindow
 
         if (resultCommands.Count == 0)
         {
-            SyncStatus = $"{providerCommand.Title} 没有找到匹配结果。";
+            SearchFeedbackText = $"{providerCommand.Title} 没有找到匹配结果，试试其他关键词。";
         }
 
-        _ = LoadFileIconsAsync(session, resultCommands);
+        _ = RunSearchTaskAsync(session, () => LoadFileIconsAsync(session, resultCommands));
     }
 
     private static CommandItem BuildCommandFromResultItem(ResultProviderItem result)
@@ -1544,7 +1548,7 @@ public partial class MainWindow
         }, session.Token);
     }
 
-    private void MaybePromptEverythingManualInitialization(string query)
+    private void SuggestEverythingManualInitialization(string query)
     {
         if (string.IsNullOrWhiteSpace(query))
         {
@@ -1561,35 +1565,8 @@ public partial class MainWindow
             return;
         }
 
-        var now = DateTimeOffset.UtcNow;
-        if (now - _lastFileSearchManualInitPromptAt < TimeSpan.FromSeconds(10))
-        {
-            return;
-        }
-
-        _lastFileSearchManualInitPromptAt = now;
-        SyncStatus = EverythingRuntimeService.IsProcessRunning()
-            ? "Everything 已启动，但索引尚未完成初始化。"
-            : "Everything 尚未完成初始化，文件搜索暂时不可用。";
-        HostAssets.AppendLog("File search prompt: Everything runtime is not initialized; showing manual initialization hint.");
-        var result = System.Windows.MessageBox.Show(
-            "文件搜索引擎已启动，但当前还没有完成索引初始化。\n\n点击“是”后，燕子会直接打开 Everything，让它弹出原生授权/初始化提示。完成后回到燕子重新搜索即可。",
-            "文件搜索需要初始化",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Information);
-        if (result != MessageBoxResult.Yes)
-        {
-            return;
-        }
-
-        if (EverythingRuntimeService.ShowInteractiveSetup())
-        {
-            SyncStatus = "已打开 Everything 初始化窗口，请按提示完成授权。";
-        }
-        else
-        {
-            SyncStatus = "无法打开 Everything 初始化窗口，请手动从托盘打开一次 Everything。";
-        }
+        IsFileSearchSetupSuggested = true;
+        SearchFeedbackText = "文件搜索尚未完成初始化，可打开搜索服务完成授权，再回来重试。";
     }
 
     private bool TryShowNativeFileContextMenu()

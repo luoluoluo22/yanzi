@@ -158,6 +158,8 @@ public static class AppSettingsStore
     // 设置文件的所有读写串行化：调用方横跨 UI 线程、云同步后台与本地 HTTP API 线程，
     // 并发 WriteAllText 会互相抛 IOException 导致保存静默丢失。
     private static readonly object SettingsIoLock = new();
+    private static long _writeVersion;
+    internal static long WriteVersion => System.Threading.Interlocked.Read(ref _writeVersion);
 
     // 供低级钩子回调等高频路径使用的短 TTL 缓存；LL 钩子回调内直接读盘会超出
     // LowLevelHooksTimeout，Windows 会静默摘除钩子（表现为所有触发器集体失灵）。
@@ -290,10 +292,13 @@ public static class AppSettingsStore
         AiCredentialStore.RemovePlaintext(settings);
         var json = JsonSerializer.Serialize(settings, JsonOptions);
         SafeFile.AtomicWriteText(SettingsPath, json);
+        System.Threading.Interlocked.Increment(ref _writeVersion);
         UpdateCache(settings);
     }
 
     private static readonly JsonSerializerOptions JsonOptions = JsonDefaults.CamelCaseIndented;
+
+    internal static int NormalizeLongPressMilliseconds(int milliseconds) => Math.Clamp(milliseconds, 50, 1500);
 
     private static AppSettings Normalize(AppSettings settings)
     {
@@ -469,9 +474,7 @@ public static class AppSettingsStore
         settings.RadialMenu.DragThresholdPixels = Math.Clamp(settings.RadialMenu.DragThresholdPixels, 8, 120);
         settings.QuickPanelMouseTriggers ??= new QuickPanelMouseTriggerSettings();
         settings.QuickPanelMouseTriggers.LongPressMilliseconds =
-            (settings.QuickPanelMouseTriggers.LongPressMilliseconds == 120 || settings.QuickPanelMouseTriggers.LongPressMilliseconds == 500 || settings.QuickPanelMouseTriggers.LongPressMilliseconds == 350)
-                ? 250
-                : Math.Clamp(settings.QuickPanelMouseTriggers.LongPressMilliseconds, 50, 1500);
+            NormalizeLongPressMilliseconds(settings.QuickPanelMouseTriggers.LongPressMilliseconds);
         settings.QuickPanelMouseTriggers.DragThresholdPixels = Math.Clamp(settings.QuickPanelMouseTriggers.DragThresholdPixels, 8, 120);
         settings.MouseGestureTriggerMode = MouseGestureTriggerModes.Normalize(settings.MouseGestureTriggerMode);
         settings.YanyuRules ??= [];

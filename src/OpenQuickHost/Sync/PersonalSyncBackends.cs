@@ -45,9 +45,25 @@ internal static class PersonalSyncBackendFactory
         };
     }
 
-    public static bool IsConfigured(AppSettings settings) => Create(settings) != null;
+    public static bool IsConfigured(AppSettings settings) =>
+        settings.PersonalSync?.Enabled == true && IsManuallyConfigured(settings);
 
-    public static bool IsManuallyConfigured(AppSettings settings) => Create(settings, requireEnabled: false) != null;
+    public static bool IsManuallyConfigured(AppSettings settings)
+    {
+        var sync = settings.PersonalSync ?? new PersonalSyncSettings();
+        var secrets = PersonalSyncSecretStore.Load();
+        // Configuration checks must not allocate backend HttpClients and connection pools.
+        return PersonalSyncProviders.Normalize(sync.Provider) switch
+        {
+            PersonalSyncProviders.GitHub => IsGitHubConfigured(sync.GitHub, secrets),
+            PersonalSyncProviders.Gitee => IsGiteeConfigured(sync.Gitee, secrets),
+            PersonalSyncProviders.GitLab => IsGitLabConfigured(sync.GitLab, secrets),
+            PersonalSyncProviders.Gitea => IsGiteaConfigured(sync.Gitea, secrets),
+            PersonalSyncProviders.S3 => IsS3Configured(sync.S3, secrets),
+            PersonalSyncProviders.WebDav => IsWebDavConfigured(sync.WebDav, secrets),
+            _ => false
+        };
+    }
 
     public static string GetDisplayName(AppSettings settings) =>
         PersonalSyncProviders.GetDisplayName(settings.PersonalSync?.Provider);

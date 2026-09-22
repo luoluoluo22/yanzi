@@ -171,10 +171,8 @@ public sealed class WebDavSyncService
                 }
                 catch (FileNotFoundException ex)
                 {
-                    // 远程索引中有记录但文件不存在（可能被手动删除），从索引中移除
-                    HostAssets.AppendLog($"WebDAV skipped missing remote package for {remoteEntry.ExtensionId}: {ex.Message}");
-                    remoteIndexChanged = true;
-                    continue;
+                    // A transient 404 is not evidence of an intentional deletion.
+                    throw new InvalidDataException("远端扩展包暂不可用，已停止同步并保留索引，请稍后重试。", ex);
                 }
 
                 mergedMap[extensionId] = remoteEntry;
@@ -1480,19 +1478,7 @@ public sealed class WebDavSyncService
     private async Task<WebDavSyncIndex> LoadRemoteIndexAsync(CancellationToken cancellationToken)
     {
         var bytes = await TryGetBytesAsync(RemoteIndexPath, cancellationToken);
-        if (bytes == null || bytes.Length == 0)
-        {
-            return new WebDavSyncIndex();
-        }
-
-        try
-        {
-            return JsonSerializer.Deserialize<WebDavSyncIndex>(bytes, JsonOptions) ?? new WebDavSyncIndex();
-        }
-        catch
-        {
-            return new WebDavSyncIndex();
-        }
+        return SyncPackageSafety.ReadIndex(bytes);
     }
 
     private async Task SaveRemoteIndexAsync(WebDavSyncIndex index, CancellationToken cancellationToken)
@@ -1567,7 +1553,7 @@ public sealed class WebDavSyncService
 
     private async Task<bool> ApplyRemoteEntryAsync(WebDavSyncEntry entry, CancellationToken cancellationToken)
     {
-        var localDirectory = Path.Combine(HostAssets.ExtensionsPath, entry.ExtensionId);
+        var localDirectory = SyncPackageSafety.ResolveExtensionDirectory(HostAssets.ExtensionsPath, entry.ExtensionId);
         if (entry.Purged)
         {
             var changed = false;
@@ -1602,6 +1588,7 @@ public sealed class WebDavSyncService
         }
 
         var packageBytes = await GetBytesAsync(entry.PackagePath, cancellationToken);
+        SyncPackageSafety.VerifyHash(packageBytes, entry.PackageHash);
         if (!TryValidateZipArchive(packageBytes, out var packageError))
         {
             throw new InvalidDataException(
@@ -1648,35 +1635,8 @@ public sealed class WebDavSyncService
         throw new FileNotFoundException($"WebDAV 上传验证失败：{entry.PackagePath} 上传后无法读取，可能是服务器延迟或权限问题。", entry.PackagePath);
     }
 
-    private static async Task ReplaceDirectoryFromPackageAsync(string targetDirectory, byte[] packageBytes, CancellationToken cancellationToken)
-    {
-        Directory.CreateDirectory(HostAssets.ExtensionsPath);
-        var tempDirectory = Path.Combine(HostAssets.ExtensionsPath, $".yanzi-sync-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(tempDirectory);
-
-        try
-        {
-            await using var stream = new MemoryStream(packageBytes, writable: false);
-            using (var archive = new ZipArchive(stream, ZipArchiveMode.Read))
-            {
-                archive.ExtractToDirectory(tempDirectory, overwriteFiles: true);
-            }
-
-            if (Directory.Exists(targetDirectory))
-            {
-                Directory.Delete(targetDirectory, recursive: true);
-            }
-
-            Directory.Move(tempDirectory, targetDirectory);
-        }
-        finally
-        {
-            if (Directory.Exists(tempDirectory))
-            {
-                Directory.Delete(tempDirectory, recursive: true);
-            }
-        }
-    }
+    private static Task ReplaceDirectoryFromPackageAsync(string targetDirectory, byte[] packageBytes, CancellationToken cancellationToken)
+        => SyncPackageSafety.ReplaceDirectoryAsync(targetDirectory, packageBytes, cancellationToken);
 
     private void EnsureConfigured()
     {

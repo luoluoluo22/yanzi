@@ -93,7 +93,8 @@ public static class ExtensionPackageService
             var fixedTimestamp = new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero);
             
             foreach (var filePath in Directory.EnumerateFiles(directoryPath, "*", SearchOption.AllDirectories)
-                         .Where(path => ShouldIncludeInPackage(directoryPath, path)))
+                         .Where(path => ShouldIncludeInPackage(directoryPath, path))
+                         .OrderBy(path => Path.GetRelativePath(directoryPath, path), StringComparer.Ordinal))
             {
                 var relativePath = Path.GetRelativePath(directoryPath, filePath);
                 if (string.Equals(relativePath, "manifest.json", StringComparison.OrdinalIgnoreCase))

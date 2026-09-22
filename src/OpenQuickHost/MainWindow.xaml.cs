@@ -279,7 +279,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly DispatcherTimer _mobileMessagePollTimer;
     private readonly DispatcherTimer _searchDebounceTimer;
     private readonly SearchPipelineManager _searchPipelineManager = new();
-    private DateTimeOffset _lastFileSearchManualInitPromptAt = DateTimeOffset.MinValue;
     private bool _backgroundWebDavSyncRunning;
     private bool _backgroundWebDavSyncRequested;
     private string? _backgroundWebDavSyncRequestedReason;
@@ -649,47 +648,34 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public string ViewModeTooltip => IsGridViewMode ? "切换为列表视图" : "切换为网格视图";
 
+    private bool _isViewModeSwitching;
+
     private async void ViewModeSwitchButton_Click(object sender, RoutedEventArgs e)
     {
-        var targetGrid = !IsGridViewMode;
-        if (ViewModeSwitchLoadingText != null && ViewModeSwitchLoadingOverlay != null)
+        if (_isViewModeSwitching) return;
+        _isViewModeSwitching = true;
+        try
         {
-            ViewModeSwitchLoadingText.Text = targetGrid ? "正在切换为网格视图..." : "正在切换为列表视图...";
-            ViewModeSwitchLoadingOverlay.Visibility = Visibility.Visible;
-        }
-
-        // 让 UI 线程先呈现加载动画
-        await Task.Delay(16);
-
-        IsGridViewMode = targetGrid;
-
-        // 后台异步保存配置，不阻塞主线程
-        Task.Run(() =>
-        {
-            try
+            // A local layout change should respond immediately without flashing a full overlay.
+            IsGridViewMode = !IsGridViewMode;
+            var mode = IsGridViewMode ? "Grid" : "List";
+            await Dispatcher.InvokeAsync(() =>
+            {
+                if (SelectedCommand != null) CommandList.ScrollIntoView(SelectedCommand);
+            }, DispatcherPriority.Loaded);
+            await Task.Run(() =>
             {
                 var settings = AppSettingsStore.Load();
-                settings.LauncherResultViewMode = targetGrid ? "Grid" : "List";
+                settings.LauncherResultViewMode = mode;
                 AppSettingsStore.Save(settings);
-            }
-            catch
-            {
-                // ignore
-            }
-        });
-
-        // 等待排版渲染完成再平滑隐藏
-        await Dispatcher.InvokeAsync(() =>
+            });
+        }
+        catch (Exception ex)
         {
-            if (SelectedCommand != null)
-            {
-                CommandList.ScrollIntoView(SelectedCommand);
-            }
-            if (ViewModeSwitchLoadingOverlay != null)
-            {
-                ViewModeSwitchLoadingOverlay.Visibility = Visibility.Collapsed;
-            }
-        }, System.Windows.Threading.DispatcherPriority.Loaded);
+            HostAssets.AppendLog($"View mode persistence failed: {ex.Message}");
+            LastRunMessage = "视图已切换，但偏好未能保存，下次启动可能恢复原设置。";
+        }
+        finally { _isViewModeSwitching = false; }
     }
 
     private int GetGridColumnCount()
@@ -1341,6 +1327,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void SearchBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
     {
         _searchDebounceTimer.Stop();
+        _searchPipelineManager.CancelActive();
+        IsSearchResultsPending = true;
+        IsFileSearching = false;
         if (string.IsNullOrEmpty(SearchBox.Text))
         {
             ApplyFilter(string.Empty);
@@ -1393,6 +1382,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
+        if (e.Key is Key.Down or Key.Up or Key.Enter)
+        {
+            FlushPendingSearch();
+            if (IsSearchResultsPending)
+            {
+                e.Handled = true;
+                return;
+            }
+        }
+
         if (e.Key == Key.Down)
         {
             var delta = IsGridViewMode ? GetGridColumnCount() : 1;
@@ -1408,11 +1407,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         else if (e.Key == Key.Enter)
         {
-            if (_searchDebounceTimer.IsEnabled)
-            {
-                _searchDebounceTimer.Stop();
-                ApplyFilter(SearchBox.Text);
-            }
             RunSelectedCommand();
             e.Handled = true;
         }
@@ -3009,6 +3003,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async Task RunSelectedCommandCore()
     {
+        FlushPendingSearch();
+        if (IsSearchResultsPending)
+        {
+            LastRunMessage = "正在更新搜索结果，请稍候。";
+            return;
+        }
         if (IsRadialPickerMode)
         {
             ConfirmRadialPickerSelection();

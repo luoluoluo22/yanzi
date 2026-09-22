@@ -16,7 +16,19 @@ namespace OpenQuickHost;
 public partial class MainWindow
 {
     private const uint InputKeyboard = 1;
+    private const uint KeyeventfExtendedkey = 0x0001;
     private const uint KeyeventfKeyup = 0x0002;
+    private const uint MapvkVkToVsc = 0;
+
+    private const ushort VkLControl = 0xA2;
+    private const ushort VkRControl = 0xA3;
+    private const ushort VkLMenu = 0xA4;    // Left Alt
+    private const ushort VkRMenu = 0xA5;    // Right Alt
+    private const ushort VkLShift = 0xA0;
+    private const ushort VkRShift = 0xA1;
+    private const ushort VkLWin = 0x5B;
+    private const ushort VkRWin = 0x5C;
+
     private static readonly IntPtr SimulatedInputMarker = new(0x59414E5B);
     private static readonly SemaphoreSlim CSharpPrebuildGate = new(1, 1);
 
@@ -521,6 +533,7 @@ public partial class MainWindow
             WindowState = WindowState.Normal;
         }
 
+        ResumeSearchAfterShow();
         RefreshWindowDpiIfNeeded(_dpiRefreshRequested);
 
         Topmost = true;
@@ -938,7 +951,7 @@ public partial class MainWindow
         }
 
         var shortcut = runnable.ExtensionId[simulatedKeyPrefix.Length..].Trim();
-        if (!TryParseSimulatedShortcut(shortcut, out var modifiers, out var key))
+        if (!TryParseSimulatedShortcut(shortcut, out var modifierKeys, out var key))
         {
             HostAssets.AppendLog($"Simulated keystroke parse failed: {shortcut}");
             LastRunMessage = $"模拟按键无效：{shortcut}";
@@ -947,15 +960,21 @@ public partial class MainWindow
 
         try
         {
-            // 模拟按键必须发给“用户此刻的目标窗口”：启动器自己持有焦点时不先收起，
-            // SendInput 会把组合键打进启动器自己的搜索框
+            // 模拟按键必须发给“用户此刻的目标窗口”：
+            // 1. 若启动器搜索主窗口当前可见，先收起并等待窗口切换完成，避免组合键打进启动器自身搜索框
             if (IsVisible)
             {
                 HideToTray();
                 await Task.Delay(150);
             }
+            else
+            {
+                // 2. 若从燕环轮盘、快捷面板或手势隐藏后触发，给予目标前台窗口（如 Blender、VSCode 等）
+                // 充足的焦点切换与事件循环就绪缓冲，防止在 WM_ACTIVATE / WM_SETFOCUS 过渡期丢失修饰键
+                await Task.Delay(80);
+            }
 
-            var sent = SendSimulatedKeystroke(modifiers, key, out var inputCount, out var lastError);
+            var (sent, inputCount, lastError) = await SendSimulatedKeystrokeAsync(modifierKeys, key);
             HostAssets.AppendLog($"Simulated keystroke SendInput: shortcut={shortcut}, sent={sent}/{inputCount}, inputSize={Marshal.SizeOf<INPUT>()}, lastError={lastError}.");
             if (sent != inputCount)
             {
@@ -976,9 +995,9 @@ public partial class MainWindow
         return true;
     }
 
-    private static bool TryParseSimulatedShortcut(string shortcut, out uint modifiers, out Key key)
+    private static bool TryParseSimulatedShortcut(string shortcut, out List<ushort> modifierKeys, out Key key)
     {
-        modifiers = 0;
+        modifierKeys = new List<ushort>(4);
         key = Key.None;
         if (string.IsNullOrWhiteSpace(shortcut) || IsDoubleTapShortcut(shortcut))
         {
@@ -997,39 +1016,26 @@ public partial class MainWindow
             var segment = segments[index];
             var lower = segment.ToLowerInvariant();
 
-            switch (lower)
+            ushort modVk = lower switch
             {
-                case "ctrl":
-                case "control":
-                case "lctrl":
-                case "rctrl":
-                case "leftctrl":
-                case "rightctrl":
-                    modifiers |= ModControl;
-                    continue;
-                case "alt":
-                case "menu":
-                case "lalt":
-                case "ralt":
-                case "leftalt":
-                case "rightalt":
-                    modifiers |= ModAlt;
-                    continue;
-                case "shift":
-                case "lshift":
-                case "rshift":
-                case "leftshift":
-                case "rightshift":
-                    modifiers |= ModShift;
-                    continue;
-                case "win":
-                case "windows":
-                case "lwin":
-                case "rwin":
-                case "leftwin":
-                case "rightwin":
-                    modifiers |= ModWin;
-                    continue;
+                "ctrl" or "control" or "lctrl" or "leftctrl" => VkLControl,
+                "rctrl" or "rightctrl" => VkRControl,
+                "alt" or "menu" or "lalt" or "leftalt" => VkLMenu,
+                "ralt" or "rightalt" => VkRMenu,
+                "shift" or "lshift" or "leftshift" => VkLShift,
+                "rshift" or "rightshift" => VkRShift,
+                "win" or "windows" or "lwin" or "leftwin" => VkLWin,
+                "rwin" or "rightwin" => VkRWin,
+                _ => 0
+            };
+
+            if (modVk != 0)
+            {
+                if (!modifierKeys.Contains(modVk))
+                {
+                    modifierKeys.Add(modVk);
+                }
+                continue;
             }
 
             if (key != Key.None)
@@ -1081,84 +1087,87 @@ public partial class MainWindow
             }
         }
 
-        return modifiers != 0 || key != Key.None;
+        return modifierKeys.Count > 0 || key != Key.None;
     }
 
-    private static uint SendSimulatedKeystroke(uint modifiers, Key key, out int inputCount, out int lastError)
+    private static async Task<(uint Sent, int TotalInputs, int LastError)> SendSimulatedKeystrokeAsync(IReadOnlyList<ushort> modKeys, Key key)
     {
-        var modKeys = new List<ushort>(4);
-        if ((modifiers & ModControl) != 0)
-        {
-            modKeys.Add(0x11); // VK_CONTROL
-        }
+        uint totalSent = 0;
+        var totalInputs = 0;
+        var lastError = 0;
 
-        if ((modifiers & ModAlt) != 0)
+        void SendBatch(params INPUT[] batch)
         {
-            modKeys.Add(0x12); // VK_MENU
-        }
+            if (batch.Length == 0)
+            {
+                return;
+            }
 
-        if ((modifiers & ModShift) != 0)
-        {
-            modKeys.Add(0x10); // VK_SHIFT
+            totalInputs += batch.Length;
+            var sent = SendInput((uint)batch.Length, batch, Marshal.SizeOf<INPUT>());
+            if (sent < batch.Length)
+            {
+                lastError = Marshal.GetLastWin32Error();
+            }
+            totalSent += sent;
         }
-
-        if ((modifiers & ModWin) != 0)
-        {
-            modKeys.Add(0x5B); // VK_LWIN
-        }
-
-        var inputs = new List<INPUT>(8);
 
         if (key != Key.None)
         {
             var mainVk = (ushort)KeyInterop.VirtualKeyFromKey(key);
 
-            // 1. 先按下所有修饰键
-            foreach (var modVk in modKeys)
+            // 1. 如果有修饰键，先按顺序按下所有修饰键
+            if (modKeys.Count > 0)
             {
-                inputs.Add(CreateKeyInput(modVk, keyUp: false));
+                var modDown = modKeys.Select(vk => CreateKeyInput(vk, keyUp: false)).ToArray();
+                SendBatch(modDown);
+                // 给前台目标程序（如 Blender、Photoshop、VSCode 等）消息循环充分的时间更新修饰键状态缓存
+                await Task.Delay(30);
             }
 
-            // 2. 按下并释放主按键
-            inputs.Add(CreateKeyInput(mainVk, keyUp: false));
-            inputs.Add(CreateKeyInput(mainVk, keyUp: true));
+            // 2. 按下主按键
+            SendBatch(CreateKeyInput(mainVk, keyUp: false));
 
-            // 3. 逆序释放所有修饰键
-            for (var index = modKeys.Count - 1; index >= 0; index--)
+            // 3. 保持主按键处于按压状态（行程驻留），确保事件循环能够检测到主键按下时的修饰键状态
+            await Task.Delay(30);
+
+            // 4. 释放主按键
+            SendBatch(CreateKeyInput(mainVk, keyUp: true));
+
+            // 5. 如果有修饰键，逆序释放所有修饰键
+            if (modKeys.Count > 0)
             {
-                inputs.Add(CreateKeyInput(modKeys[index], keyUp: true));
+                await Task.Delay(20);
+                var modUp = modKeys.Reverse().Select(vk => CreateKeyInput(vk, keyUp: true)).ToArray();
+                SendBatch(modUp);
             }
         }
         else
         {
-            // 纯修饰键模拟（如单 Ctrl、单 Alt、单 Win、单 Shift 或 Ctrl+Alt 等）
-            // 1. 顺序按下所有修饰键
-            foreach (var modVk in modKeys)
+            // 纯修饰键模拟（如单独模拟 Win 或 Shift）
+            if (modKeys.Count > 0)
             {
-                inputs.Add(CreateKeyInput(modVk, keyUp: false));
-            }
-
-            // 2. 逆序释放所有修饰键
-            for (var index = modKeys.Count - 1; index >= 0; index--)
-            {
-                inputs.Add(CreateKeyInput(modKeys[index], keyUp: true));
+                var modDown = modKeys.Select(vk => CreateKeyInput(vk, keyUp: false)).ToArray();
+                SendBatch(modDown);
+                await Task.Delay(35);
+                var modUp = modKeys.Reverse().Select(vk => CreateKeyInput(vk, keyUp: true)).ToArray();
+                SendBatch(modUp);
             }
         }
 
-        inputCount = inputs.Count;
-        if (inputCount == 0)
-        {
-            lastError = 0;
-            return 0;
-        }
-
-        var sent = SendInput((uint)inputs.Count, inputs.ToArray(), Marshal.SizeOf<INPUT>());
-        lastError = Marshal.GetLastWin32Error();
-        return sent;
+        return (totalSent, totalInputs, lastError);
     }
 
     private static INPUT CreateKeyInput(ushort virtualKey, bool keyUp)
     {
+        var scanCode = (ushort)MapVirtualKey(virtualKey, MapvkVkToVsc);
+        var flags = keyUp ? KeyeventfKeyup : 0u;
+
+        if (IsExtendedKey(virtualKey))
+        {
+            flags |= KeyeventfExtendedkey;
+        }
+
         return new INPUT
         {
             type = InputKeyboard,
@@ -1167,10 +1176,29 @@ public partial class MainWindow
                 ki = new KEYBDINPUT
                 {
                     wVk = virtualKey,
-                    dwFlags = keyUp ? KeyeventfKeyup : 0,
-                    dwExtraInfo = SimulatedInputMarker
+                    wScan = scanCode,
+                    dwFlags = flags,
+                    dwExtraInfo = InputHookService.SyntheticInputMarker
                 }
             }
+        };
+    }
+
+    private static bool IsExtendedKey(ushort vk)
+    {
+        return vk switch
+        {
+            VkRControl or VkRMenu => true,
+            VkLWin or VkRWin => true,
+            0x21 or 0x22 => true, // VK_PRIOR (PageUp), VK_NEXT (PageDown)
+            0x23 or 0x24 => true, // VK_END, VK_HOME
+            0x25 or 0x26 or 0x27 or 0x28 => true, // VK_LEFT, VK_UP, VK_RIGHT, VK_DOWN
+            0x2D or 0x2E => true, // VK_INSERT, VK_DELETE
+            0x5D => true,         // VK_APPS
+            0x6F => true,         // VK_DIVIDE
+            0x2C => true,         // VK_SNAPSHOT (PrintScreen)
+            0x90 => true,         // VK_NUMLOCK
+            _ => false
         };
     }
 
@@ -1427,11 +1455,12 @@ public partial class MainWindow
 
     public void HideToTray()
     {
-        _searchPipelineManager.CancelActive();
         if (OwnedWindows.OfType<Window>().Any(static w => w.IsVisible))
         {
             return;
         }
+
+        SuspendSearchForHide();
 
         if (IsRadialPickerMode)
         {
@@ -1505,6 +1534,8 @@ public partial class MainWindow
     {
         if (AllowClose)
         {
+            _searchDebounceTimer.Stop();
+            _searchPipelineManager.Dispose();
             NetworkChange.NetworkAvailabilityChanged -= NetworkChange_NetworkAvailabilityChanged;
             NetworkChange.NetworkAddressChanged -= NetworkChange_NetworkAddressChanged;
             Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= SystemEvents_DisplaySettingsChanged;
@@ -2257,6 +2288,9 @@ public partial class MainWindow
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+
+    [DllImport("user32.dll")]
+    private static extern uint MapVirtualKey(uint uCode, uint uMapType);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct INPUT

@@ -737,6 +737,10 @@
 
                 <ListBox Grid.Row="1"
                          x:Name="CommandList"
+                         IsHitTestVisible="{Binding CanUseSearchResults}"
+                         VirtualizingPanel.IsVirtualizing="True"
+                         VirtualizingPanel.VirtualizationMode="Recycling"
+                         ScrollViewer.CanContentScroll="True"
                          Background="Transparent"
                          BorderThickness="0"
                          ItemsSource="{Binding FilteredCommands}"
@@ -1338,6 +1342,48 @@
                     </ListBox.Style>
                 </ListBox>
 
+                <TextBlock Grid.Row="1"
+                           Text="{Binding SearchFeedbackText}"
+                           Foreground="{DynamicResource BrushTextSec}"
+                           FontSize="{DynamicResource FontSizeSmallPlus}"
+                           TextWrapping="Wrap"
+                           TextAlignment="Center"
+                           MaxWidth="360"
+                           Margin="24"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           IsHitTestVisible="False"
+                           AutomationProperties.LiveSetting="Polite">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <MultiDataTrigger>
+                                    <MultiDataTrigger.Conditions>
+                                        <Condition Binding="{Binding FilteredCommands.Count}" Value="0" />
+                                        <Condition Binding="{Binding IsFileSearching}" Value="False" />
+                                        <Condition Binding="{Binding IsSearchResultsPending}" Value="False" />
+                                        <Condition Binding="{Binding IsAiChatMode}" Value="False" />
+                                        <Condition Binding="{Binding IsHostedViewOpen}" Value="False" />
+                                    </MultiDataTrigger.Conditions>
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </MultiDataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+
+                <Button Grid.Row="1"
+                        Content="打开文件搜索服务"
+                        AutomationProperties.Name="打开文件搜索服务，完成初始化"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Margin="0,100,0,0"
+                        Padding="14,7"
+                        Style="{DynamicResource GhostButtonStyle}"
+                        Visibility="{Binding IsFileSearchSetupSuggested, Converter={StaticResource BooleanToVisibilityConverter}}"
+                        Click="OpenFileSearchSetup_Click" />
+
                 <!-- 文件搜索中 Loading 动画与文案 -->
                 <Grid Grid.Row="1"
                       Visibility="{Binding IsFileSearching, Converter={StaticResource BooleanToVisibilityConverter}}"
@@ -1373,28 +1419,6 @@
                                      BorderThickness="0"
                                      HorizontalAlignment="Center" />
                         <TextBlock Text="正在加载小程序商店..."
-                                   Foreground="{DynamicResource BrushTextSec}"
-                                   FontSize="{DynamicResource FontSizeNormal}"
-                                   Margin="0,12,0,0"
-                                   HorizontalAlignment="Center" />
-                    </StackPanel>
-                </Grid>
-
-                <!-- 5. 视图模式切换加载动画 Overlay -->
-                <Grid x:Name="ViewModeSwitchLoadingOverlay"
-                      Panel.ZIndex="16"
-                      Visibility="Collapsed"
-                      Background="#D518181A">
-                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                        <ProgressBar IsIndeterminate="True"
-                                     Width="160"
-                                     Height="6"
-                                     Foreground="#FF3B82F6"
-                                     Background="#33FFFFFF"
-                                     BorderThickness="0"
-                                     HorizontalAlignment="Center" />
-                        <TextBlock x:Name="ViewModeSwitchLoadingText"
-                                   Text="正在切换视图..."
                                    Foreground="{DynamicResource BrushTextSec}"
                                    FontSize="{DynamicResource FontSizeNormal}"
                                    Margin="0,12,0,0"

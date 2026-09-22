@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -62,6 +63,12 @@ public class InputHookService
     /// </summary>
     internal static IntPtr SyntheticInputMarker => SYNTHETIC_EXTRA_INFO;
     private static System.Threading.Timer? _longPressTimer;
+    private static int _longPressGeneration;
+    private static long _longPressStartedTimestamp;
+    private static int _longPressThresholdMs;
+    private const uint WM_LONG_PRESS = 0x8001;
+    private const uint WM_HOOK_ACTION = 0x8002;
+    private static readonly ConcurrentQueue<Action> PendingHookActions = new();
     private static Action? _onLongPressRelease;
     private static Action? _onRadialRelease;
     public static event Action? OnGlobalMouseDown;
@@ -79,7 +86,7 @@ public class InputHookService
     private static bool _disableInFullScreen;
     private static bool _windowSnapAssistEnabled;
     private static string _windowSnapAssistMouseTriggerMode = MouseTriggerModes.None;
-    private static bool _isEnabled;
+    private static volatile bool _isEnabled;
     private static bool _dragTriggered;
     private static bool _releaseShouldExecute;
     private static bool _leftButtonDownSwallowed;
@@ -138,7 +145,7 @@ public class InputHookService
 
     public static void ResetMouseState(string reason = "tray")
     {
-        ResetTransientMouseState();
+        RunOnHookThread(ResetTransientMouseState);
         HostAssets.AppendLog($"Input hook: mouse state reset requested from {reason}.");
     }
 
@@ -161,7 +168,7 @@ public class InputHookService
                 _onShowWindowSnap,
                 _onWindowSnapMove,
                 _onWindowSnapRelease);
-            HostAssets.AppendLog($"Input hook: auto-reinstalled successfully on dedicated thread due to {reason}.");
+            HostAssets.AppendLog($"Input hook: restart completed, running={IsRunning}, reason={reason}.");
         }
         catch (Exception ex)
         {
@@ -202,6 +209,7 @@ public class InputHookService
 
             _stopRequested = false;
             _hookStartException = null;
+            _hookReady?.Dispose();
             ready = new ManualResetEventSlim(false);
             _hookReady = ready;
             _hookThread = new Thread(HookThreadMain)
@@ -237,8 +245,6 @@ public class InputHookService
             return;
         }
 
-        _longPressTimer = new System.Threading.Timer(OnLongPressTimerTick, null, Timeout.Infinite, Timeout.Infinite);
-        _isEnabled = true;
         HostAssets.AppendLog($"Input hook: started on dedicated thread. mouseHook=0x{_mouseHookID.ToInt64():X}, keyboardHook=0x{_keyboardHookID.ToInt64():X}, triggers={DescribeSettings()}.");
     }
 
@@ -268,6 +274,7 @@ public class InputHookService
                 HostAssets.AppendLog($"Input hook: failed to install low level keyboard hook, lastError={Marshal.GetLastWin32Error()}; CapsLock radial trigger disabled for this session.");
             }
 
+            _isEnabled = !_stopRequested;
             _hookReady?.Set();
 
             while (!_stopRequested)
@@ -276,6 +283,17 @@ public class InputHookService
                 if (result <= 0)
                 {
                     break;
+                }
+                if (message.message == WM_HOOK_ACTION)
+                {
+                    while (PendingHookActions.TryDequeue(out var action)) InvokeSafely(action);
+                    continue;
+                }
+                if (message.message == WM_LONG_PRESS)
+                {
+                    if (_isEnabled && unchecked((int)message.wParam.ToUInt32()) == Volatile.Read(ref _longPressGeneration))
+                        InvokeSafely(() => OnLongPressTimerTick(null));
+                    continue;
                 }
                 TranslateMessage(ref message);
                 DispatchMessage(ref message);
@@ -301,6 +319,9 @@ public class InputHookService
                 UnhookWindowsHookEx(_keyboardHookID);
                 _keyboardHookID = IntPtr.Zero;
             }
+            _isEnabled = false;
+            ResetTransientMouseState();
+            while (PendingHookActions.TryDequeue(out _)) { }
             lock (_hookLifecycleLock)
             {
                 _hookThreadId = 0;
@@ -322,7 +343,6 @@ public class InputHookService
         _releaseShouldExecute = true;
         _activeTriggerTarget = target;
         _pendingLongPressTarget = ActiveTriggerTarget.None;
-        OverlayWindowManager.SuppressConflictingOverlays();
         HostAssets.AppendLog($"Input hook: {_trackedButton} long press triggered for {_activeTriggerTarget}.");
         
         // Invoke the appropriate show method based on the target
@@ -336,17 +356,14 @@ public class InputHookService
         }
         else
         {
-            InvokeShowPanel();
+            InvokeShowPanel(_longPressStartedTimestamp, _longPressThresholdMs);
         }
     }
 
     public static void Stop()
     {
-        if (!_isEnabled)
-        {
-            ResetTransientMouseState();
-            return;
-        }
+        _isEnabled = false;
+        CancelLongPressTimer();
 
         Thread? hookThread;
         uint hookThreadId;
@@ -378,28 +395,40 @@ public class InputHookService
             }
         }
 
-        _longPressTimer?.Change(Timeout.Infinite, Timeout.Infinite);
-        _mouseHookID = IntPtr.Zero;
-        _keyboardHookID = IntPtr.Zero;
-        ResetTransientMouseState();
+        CancelLongPressTimer();
+        // The owning thread releases handles and resets input state in finally.
+        if (hookThread == null || !hookThread.IsAlive) ResetTransientMouseState();
         _isEnabled = false;
-        HostAssets.AppendLog("Input hook: stopped dedicated hook thread.");
+        HostAssets.AppendLog($"Input hook: stop requested, threadExited={hookThread == null || !hookThread.IsAlive}.");
     }
 
     public static void ReloadSettings()
     {
         var appSettings = AppSettingsStore.Load();
-        _settings = appSettings.QuickPanelMouseTriggers ?? new QuickPanelMouseTriggerSettings();
-        _radialSettings = appSettings.RadialMenu ?? new RadialMenuSettings();
-        _yanmSettings = appSettings.Yanm ?? new YanmSettings();
-        _globalServiceBlacklistedProcesses = appSettings.GlobalServiceBlacklistedProcesses ?? [];
-        _disableInFullScreen = appSettings.DisableInFullScreen;
-        _windowSnapAssistEnabled = appSettings.EnableWindowSnapAssist;
-        _windowSnapAssistMouseTriggerMode = MouseTriggerModes.Normalize(appSettings.WindowSnapAssistMouseTriggerMode);
-        ResetTransientMouseState();
+        RunOnHookThread(() =>
+        {
+            _settings = appSettings.QuickPanelMouseTriggers ?? new QuickPanelMouseTriggerSettings();
+            _radialSettings = appSettings.RadialMenu ?? new RadialMenuSettings();
+            _yanmSettings = appSettings.Yanm ?? new YanmSettings();
+            _globalServiceBlacklistedProcesses = appSettings.GlobalServiceBlacklistedProcesses ?? [];
+            _disableInFullScreen = appSettings.DisableInFullScreen;
+            _windowSnapAssistEnabled = appSettings.EnableWindowSnapAssist;
+            _windowSnapAssistMouseTriggerMode = MouseTriggerModes.Normalize(appSettings.WindowSnapAssistMouseTriggerMode);
+            ResetTransientMouseState();
+            HostAssets.AppendLog($"Input hook: settings reloaded, transient mouse state reset, triggers={DescribeSettings()}.");
+        });
+    }
 
-        ResetTransientMouseState();
-        HostAssets.AppendLog($"Input hook: settings reloaded, transient mouse state reset, triggers={DescribeSettings()}.");
+    private static void RunOnHookThread(Action action)
+    {
+        var threadId = _hookThreadId;
+        if (threadId == 0 || threadId == GetCurrentThreadId())
+        {
+            action();
+            return;
+        }
+        PendingHookActions.Enqueue(action);
+        PostThreadMessage(threadId, WM_HOOK_ACTION, UIntPtr.Zero, IntPtr.Zero);
     }
 
     private static IntPtr SetMouseHook(LowLevelMouseProc proc)
@@ -496,11 +525,10 @@ public class InputHookService
         {
             var message = (int)wParam;
 
-            // 1. 高频 WM_MOUSEMOVE 1 纳秒极速短路（Fast-Path Short-Circuit）
-            // 当用户未按住触发键、未在长按判断、或轮盘/面板已激活呈现时，1 纳秒立刻透传放行，彻底消除电竞鼠标微卡顿
+            // 无待处理移动时直接放行；窗口吸附仍需连续接收移动。
             if (message == WM_MOUSEMOVE &&
                 _pendingLongPressTarget == ActiveTriggerTarget.None &&
-                _windowSnapMoveQueued == 0 &&
+                _activeTriggerTarget != ActiveTriggerTarget.WindowSnap &&
                 (_trackedButton == TrackedMouseButton.None || _dragTriggered || _activeTriggerTarget != ActiveTriggerTarget.None))
             {
                 return CallNextHookEx(_mouseHookID, nCode, wParam, lParam);
@@ -537,7 +565,7 @@ public class InputHookService
                 // 摇摆取消 (Rocker Cancel)：当右键正在被跟踪长按或手势划线时，点击左键立即安全熔断取消！
                 if (_rightButtonDown && (_pendingLongPressTarget != ActiveTriggerTarget.None || _trackedButton == TrackedMouseButton.Right))
                 {
-                    _longPressTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+                    CancelLongPressTimer();
                     _pendingLongPressTarget = ActiveTriggerTarget.None;
                     _dragTriggered = false;
                     _releaseShouldExecute = false;
@@ -820,7 +848,7 @@ public class InputHookService
                 // ESC 键逃生熔断：若正在手势划线或长按等待，立即重置长按状态并取消手势
                 if (_pendingLongPressTarget != ActiveTriggerTarget.None || _trackedButton != TrackedMouseButton.None)
                 {
-                    _longPressTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+                    CancelLongPressTimer();
                     _pendingLongPressTarget = ActiveTriggerTarget.None;
                     _dragTriggered = false;
                     _releaseShouldExecute = false;
@@ -978,9 +1006,15 @@ public class InputHookService
                (_settings.CtrlRightClick && IsControlDown());
     }
 
+    private static void CancelLongPressTimer()
+    {
+        Interlocked.Increment(ref _longPressGeneration);
+        Interlocked.Exchange(ref _longPressTimer, null)?.Dispose();
+    }
+
     private static void StartLongPressTimer()
     {
-        _longPressTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+        CancelLongPressTimer();
         _pendingLongPressTarget = ResolveLongPressTarget(_trackedButton);
         if (_pendingLongPressTarget == ActiveTriggerTarget.None)
         {
@@ -989,7 +1023,15 @@ public class InputHookService
         }
 
         var intervalMs = Math.Clamp(_settings.LongPressMilliseconds, 50, 1500);
-        _longPressTimer?.Change(intervalMs, Timeout.Infinite);
+        _longPressStartedTimestamp = Stopwatch.GetTimestamp();
+        _longPressThresholdMs = intervalMs;
+        var generation = Volatile.Read(ref _longPressGeneration);
+        var threadId = _hookThreadId;
+        _longPressTimer = new System.Threading.Timer(_ =>
+        {
+            // Timer threads never mutate input state. A canceled press cannot trigger a later press.
+            PostThreadMessage(threadId, WM_LONG_PRESS, new UIntPtr(unchecked((uint)generation)), IntPtr.Zero);
+        }, null, intervalMs, Timeout.Infinite);
         HostAssets.AppendLog($"Input hook: long press timer started for {_trackedButton}, target={_pendingLongPressTarget}, interval={intervalMs}ms.");
     }
 
@@ -1092,7 +1134,7 @@ public class InputHookService
             if (distSq >= panelThreshold * panelThreshold && IsTriggerAllowedForTarget(ActiveTriggerTarget.Panel))
             {
                 _dragTriggered = true;
-                _longPressTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+                CancelLongPressTimer();
                 _releaseShouldExecute = true;
                 _activeTriggerTarget = ActiveTriggerTarget.Panel;
                 HostAssets.AppendLog($"Input hook: {_trackedButton} drag/move triggered for mouse panel.");
@@ -1107,7 +1149,7 @@ public class InputHookService
             if (distSq >= radialThreshold * radialThreshold && IsTriggerAllowedForTarget(ActiveTriggerTarget.Radial))
             {
                 _dragTriggered = true;
-                _longPressTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+                CancelLongPressTimer();
                 _releaseShouldExecute = true;
                 _activeTriggerTarget = ActiveTriggerTarget.Radial;
                 HostAssets.AppendLog($"Input hook: {_trackedButton} drag/move triggered for radial, downPt=({_downPoint.x},{_downPoint.y}), currPt=({point.x},{point.y}).");
@@ -1122,7 +1164,7 @@ public class InputHookService
             if (distSq >= yanmThreshold * yanmThreshold && IsTriggerAllowedForTarget(ActiveTriggerTarget.Yanm))
             {
                 _dragTriggered = true;
-                _longPressTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+                CancelLongPressTimer();
                 _releaseShouldExecute = true;
                 _activeTriggerTarget = ActiveTriggerTarget.Yanm;
                 HostAssets.AppendLog($"Input hook: {_trackedButton} drag/move triggered for Yanm.");
@@ -1137,7 +1179,7 @@ public class InputHookService
             if (distSq >= snapThreshold * snapThreshold && InvokeShowWindowSnap())
             {
                 _dragTriggered = true;
-                _longPressTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+                CancelLongPressTimer();
                 _releaseShouldExecute = true;
                 _activeTriggerTarget = ActiveTriggerTarget.WindowSnap;
                 HostAssets.AppendLog($"Input hook: {_trackedButton} drag/move triggered for window snap.");
@@ -1162,7 +1204,7 @@ public class InputHookService
             return;
         }
 
-        _longPressTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+        CancelLongPressTimer();
         _pendingLongPressTarget = ActiveTriggerTarget.None;
         HostAssets.AppendLog($"Input hook: canceled {_trackedButton} long press because mouse moved.");
     }
@@ -1174,7 +1216,7 @@ public class InputHookService
             return false;
         }
 
-        _longPressTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+        CancelLongPressTimer();
         var swallowRelease = (button is TrackedMouseButton.Right or TrackedMouseButton.Middle or TrackedMouseButton.X1 or TrackedMouseButton.X2 or TrackedMouseButton.CtrlLeft) && _releaseShouldExecute;
         var downSwallowedByMouseGesture = button switch
         {
@@ -1238,7 +1280,7 @@ public class InputHookService
     private static void ResetTransientMouseState()
     {
         _trajectoryTracker.StopAndLog("Reset");
-        _longPressTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+        CancelLongPressTimer();
         _dragTriggered = false;
         _releaseShouldExecute = false;
         _leftButtonDownSwallowed = false;
@@ -1424,11 +1466,21 @@ public class InputHookService
         };
     }
 
-    private static void InvokeShowPanel()
+    private static void InvokeShowPanel(long longPressStarted = 0, int thresholdMs = 0)
     {
+        var dispatchedAt = Stopwatch.GetTimestamp();
+        if (longPressStarted != 0)
+        {
+            HostAssets.AppendLog($"[BackpackLatency] thresholdMs={thresholdMs}, longPressElapsedMs={Stopwatch.GetElapsedTime(longPressStarted, dispatchedAt).TotalMilliseconds:F1}");
+        }
         _trajectoryTracker.Tag("TRIGGER:Panel");
         OverlayWindowManager.SuppressConflictingOverlays();
-        DispatchToUi(() => _onShowPanel?.Invoke());
+        var queuedAt = Stopwatch.GetTimestamp();
+        DispatchToUi(() =>
+        {
+            HostAssets.AppendLog($"[BackpackLatency] dispatchPreparationMs={Stopwatch.GetElapsedTime(dispatchedAt, queuedAt).TotalMilliseconds:F1}, uiQueueMs={Stopwatch.GetElapsedTime(queuedAt).TotalMilliseconds:F1}");
+            _onShowPanel?.Invoke();
+        });
     }
 
     private static void InvokeShowRadial(POINT? anchorPoint = null)
@@ -1526,8 +1578,7 @@ public class InputHookService
 
     private static void DispatchToUi(Action action)
     {
-        // 统一走 BeginInvoke：钩子回调本身就跑在 UI 线程，若在此内联执行完整的
-        // 面板 Show/布局，低级钩子回调会超时导致 Windows 静默摘钩、全局输入掉帧。
+        // 钩子运行于专用线程；面板显示和布局异步投递，避免阻塞输入。
         UiDispatcher.Post(action);
     }
 
@@ -1999,7 +2050,7 @@ public class InputHookService
         {
             lock (_lock)
             {
-                if (!_isTracking) return;
+                if (!_isTracking || _points.Count >= 2048) return;
                 var now = Stopwatch.GetTimestamp();
                 var intervalMs = (double)(now - _lastTicks) * 1000.0 / Stopwatch.Frequency;
                 _lastTicks = now;
@@ -2071,7 +2122,7 @@ public class InputHookService
             // 输出触发点前后的关键切片数据
             var triggerIdx = snapshot.FindIndex(p => p.Tag != null && p.Tag.Contains("TRIGGER"));
             int startIdx = Math.Max(0, (triggerIdx >= 0 ? triggerIdx - 5 : 0));
-            int endIdx = Math.Min(snapshot.Count, (triggerIdx >= 0 ? triggerIdx + 15 : snapshot.Count));
+            int endIdx = Math.Min(snapshot.Count, (triggerIdx >= 0 ? triggerIdx + 15 : 20));
 
             sb.AppendLine($"[MouseTrackDiag] 关键轨迹点切片 (#{startIdx} ~ #{endIdx - 1}):");
             for (int i = startIdx; i < endIdx; i++)

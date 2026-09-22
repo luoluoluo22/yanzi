@@ -395,9 +395,8 @@ public sealed class PersonalSyncService
                 }
                 catch (FileNotFoundException ex)
                 {
-                    HostAssets.AppendLog($"Personal sync remote package missing; removing stale index entry: id={remoteEntry.ExtensionId}, path={remoteEntry.PackagePath}, error={ex.Message}");
-                    remoteIndexChanged = true;
-                    continue;
+                    // A transient 404 is not evidence of an intentional deletion.
+                    throw new InvalidDataException("远端扩展包暂不可用，已停止同步并保留索引，请稍后重试。", ex);
                 }
 
                 mergedMap[extensionId] = remoteEntry;
@@ -434,9 +433,8 @@ public sealed class PersonalSyncService
                 }
                 catch (FileNotFoundException ex)
                 {
-                    ExtensionSyncConflictStore.Remove(extensionId);
-                    HostAssets.AppendLog(
-                        $"Personal sync conflict remote package missing; local version retained: id={extensionId}, error={ex.Message}");
+                    // A transient 404 is not evidence of an intentional deletion.
+                    throw new InvalidDataException("远端扩展包暂不可用，已停止同步并保留索引，请稍后重试。", ex);
                 }
             }
 
@@ -461,25 +459,16 @@ public sealed class PersonalSyncService
             {
                 try
                 {
-                    if (await ApplyRemoteEntryAsync(winner, cancellationToken))
+                    if (!ExtensionContentEquivalent(localEntry, winner) &&
+                        await ApplyRemoteEntryAsync(winner, cancellationToken))
                     {
                         pulled++;
                     }
                 }
                 catch (FileNotFoundException ex)
                 {
-                    HostAssets.AppendLog($"Personal sync remote package missing; keeping local entry and repairing remote index: id={winner.ExtensionId}, path={winner.PackagePath}, error={ex.Message}");
-                    if (localEntry is { Deleted: false })
-                    {
-                        await UploadPackageIfNeededAsync(localEntry, snapshot.PackageBytesByExtensionId, cancellationToken);
-                        uploaded++;
-                        winner = localEntry;
-                    }
-                    else
-                    {
-                        remoteIndexChanged = true;
-                        continue;
-                    }
+                    // A transient 404 is not evidence of an intentional deletion.
+                    throw new InvalidDataException("远端扩展包暂不可用，已停止同步并保留索引，请稍后重试。", ex);
                 }
 
             }
@@ -1526,19 +1515,7 @@ public sealed class PersonalSyncService
     private async Task<WebDavSyncIndex> LoadRemoteIndexAsync(CancellationToken cancellationToken)
     {
         var bytes = await _backend.TryReadBytesAsync(RemoteIndexPath, cancellationToken);
-        if (bytes == null || bytes.Length == 0)
-        {
-            return new WebDavSyncIndex();
-        }
-
-        try
-        {
-            return JsonSerializer.Deserialize<WebDavSyncIndex>(bytes, JsonOptions) ?? new WebDavSyncIndex();
-        }
-        catch
-        {
-            return new WebDavSyncIndex();
-        }
+        return SyncPackageSafety.ReadIndex(bytes);
     }
 
     private Task SaveRemoteIndexAsync(WebDavSyncIndex index, CancellationToken cancellationToken)
@@ -1617,7 +1594,7 @@ public sealed class PersonalSyncService
 
     private async Task<bool> ApplyRemoteEntryAsync(WebDavSyncEntry entry, CancellationToken cancellationToken)
     {
-        var localDirectory = Path.Combine(HostAssets.ExtensionsPath, entry.ExtensionId);
+        var localDirectory = SyncPackageSafety.ResolveExtensionDirectory(HostAssets.ExtensionsPath, entry.ExtensionId);
         if (entry.Purged)
         {
             var changed = false;
@@ -1653,6 +1630,7 @@ public sealed class PersonalSyncService
 
         var packageBytes = await _backend.TryReadBytesAsync(entry.PackagePath, cancellationToken)
             ?? throw new FileNotFoundException($"远端扩展包不存在：{entry.PackagePath}");
+        SyncPackageSafety.VerifyHash(packageBytes, entry.PackageHash);
         if (!TryValidateZipArchive(packageBytes, out var packageError))
         {
             throw new InvalidDataException($"远端扩展包无效：{entry.PackagePath}，detail={packageError}");
@@ -1662,35 +1640,8 @@ public sealed class PersonalSyncService
         return true;
     }
 
-    private static async Task ReplaceDirectoryFromPackageAsync(string targetDirectory, byte[] packageBytes, CancellationToken cancellationToken)
-    {
-        Directory.CreateDirectory(HostAssets.ExtensionsPath);
-        var tempDirectory = Path.Combine(HostAssets.ExtensionsPath, $".yanzi-sync-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(tempDirectory);
-
-        try
-        {
-            await using var stream = new MemoryStream(packageBytes, writable: false);
-            using (var archive = new ZipArchive(stream, ZipArchiveMode.Read))
-            {
-                archive.ExtractToDirectory(tempDirectory, overwriteFiles: true);
-            }
-
-            if (Directory.Exists(targetDirectory))
-            {
-                Directory.Delete(targetDirectory, recursive: true);
-            }
-
-            Directory.Move(tempDirectory, targetDirectory);
-        }
-        finally
-        {
-            if (Directory.Exists(tempDirectory))
-            {
-                Directory.Delete(tempDirectory, recursive: true);
-            }
-        }
-    }
+    private static Task ReplaceDirectoryFromPackageAsync(string targetDirectory, byte[] packageBytes, CancellationToken cancellationToken)
+        => SyncPackageSafety.ReplaceDirectoryAsync(targetDirectory, packageBytes, cancellationToken);
 
     private static WebDavSyncIndex ClearLocalPendingFlags(WebDavSyncIndex index)
     {

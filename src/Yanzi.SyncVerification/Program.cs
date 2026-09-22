@@ -2,6 +2,12 @@ using System.Text.Json;
 using OpenQuickHost;
 using OpenQuickHost.Sync;
 
+VerifyBackpackResponsiveness();
+if (args.Contains("--backpack-safety")) return;
+VerifySearchInteractionSafety();
+if (args.Contains("--interaction-safety")) return;
+VerifySyncPackageSafety();
+if (args.Contains("--sync-safety")) return;
 VerifySyncCoverageCatalog();
 VerifyAiSecretBoundary();
 VerifyYanmObjectStore();
@@ -336,4 +342,156 @@ static T Clone<T>(T value) => JsonSerializer.Deserialize<T>(JsonSerializer.Seria
 static void Assert(bool condition, string message)
 {
     if (!condition) throw new InvalidOperationException(message);
+}
+
+static void VerifySyncPackageSafety()
+{
+    static void Reject(Action action, string message)
+    {
+        try { action(); }
+        catch (InvalidDataException) { return; }
+        throw new Exception(message);
+    }
+    Assert(SyncPackageSafety.ReadIndex(null).Items.Count == 0, "Missing index should initialize an empty repository.");
+    foreach (var json in new[] { "", "{", "null", "{}", "{\"items\":null}", "{\"items\":[null]}", "{\"schemaVersion\":99,\"items\":[]}" })
+        Reject(() => SyncPackageSafety.ReadIndex(System.Text.Encoding.UTF8.GetBytes(json)), "Corrupt index was treated as empty: " + json);
+    var valid = new WebDavSyncIndex { Items = [new WebDavSyncEntry { ExtensionId = "safe-id", Deleted = true }] };
+    Assert(SyncPackageSafety.ReadIndex(JsonSerializer.SerializeToUtf8Bytes(valid)).Items.Count == 1, "Valid tombstone rejected.");
+    valid.Items.Add(new WebDavSyncEntry { ExtensionId = "SAFE-ID", Deleted = true });
+    Reject(() => SyncPackageSafety.ReadIndex(JsonSerializer.SerializeToUtf8Bytes(valid)), "Duplicate IDs accepted.");
+    var root = Path.Combine(Path.GetTempPath(), "yanzi-sync-verification-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(root);
+    try
+    {
+        foreach (var id in new[] { "..", "../outside", "a/b", "a\\b", "C:\\outside", "name:stream", "trailing.", ".yanzi-old", " " })
+            Reject(() => SyncPackageSafety.ResolveExtensionDirectory(root, id), "Unsafe extension path accepted: " + id);
+        var target = SyncPackageSafety.ResolveExtensionDirectory(root, "extension");
+        Directory.CreateDirectory(target);
+        File.WriteAllText(Path.Combine(target, "original.txt"), "original");
+        using var stream = new MemoryStream();
+        using (var archive = new System.IO.Compression.ZipArchive(stream, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+        using (var writer = new StreamWriter(archive.CreateEntry("new.txt").Open())) writer.Write("updated");
+        using var hostileStream = new MemoryStream();
+        using (var hostileArchive = new System.IO.Compression.ZipArchive(hostileStream, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+        using (var writer = new StreamWriter(hostileArchive.CreateEntry("../escaped.txt").Open())) writer.Write("escape");
+        try { SyncPackageSafety.ReplaceDirectoryAsync(target, hostileStream.ToArray(), default).GetAwaiter().GetResult(); throw new Exception("ZIP traversal accepted."); }
+        catch (IOException) { }
+        Assert(!File.Exists(Path.Combine(root, "escaped.txt")) && File.Exists(Path.Combine(target, "original.txt")), "ZIP traversal damaged files outside staging.");
+        var bytes = stream.ToArray();
+        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes));
+        SyncPackageSafety.VerifyHash(bytes, hash.ToLowerInvariant());
+        Reject(() => SyncPackageSafety.VerifyHash(bytes, new string('0', 64)), "Hash mismatch accepted.");
+        Reject(() => SyncPackageSafety.ReplaceDirectoryAsync(target, [1, 2, 3], default).GetAwaiter().GetResult(), "Corrupt ZIP accepted.");
+        Assert(File.ReadAllText(Path.Combine(target, "original.txt")) == "original", "Failed extraction damaged original files.");
+        using var canceled = new CancellationTokenSource();
+        canceled.Cancel();
+        try { SyncPackageSafety.ReplaceDirectoryAsync(target, bytes, canceled.Token).GetAwaiter().GetResult(); throw new Exception("Cancellation ignored."); }
+        catch (OperationCanceledException) { }
+        Assert(File.Exists(Path.Combine(target, "original.txt")), "Cancellation damaged original files.");
+        // An occupied destination forces promotion to fail; it must remain untouched.
+        var blocked = Path.Combine(root, "occupied");
+        File.WriteAllText(blocked, "keep");
+        try { SyncPackageSafety.ReplaceDirectoryAsync(blocked, bytes, default).GetAwaiter().GetResult(); throw new Exception("Occupied destination accepted."); }
+        catch (IOException) { }
+        Assert(File.ReadAllText(blocked) == "keep", "Failed promotion damaged destination.");
+        SyncPackageSafety.ReplaceDirectoryAsync(target, bytes, default).GetAwaiter().GetResult();
+        Assert(File.ReadAllText(Path.Combine(target, "new.txt")) == "updated" && !File.Exists(Path.Combine(target, "original.txt")), "Replacement did not commit.");
+        Assert(!Directory.EnumerateDirectories(root, ".yanzi-*").Any(), "Temporary directories leaked.");
+    }
+    finally { Directory.Delete(root, recursive: true); }
+    Console.WriteLine("Sync package safety passed: corrupt indexes, duplicate IDs, path traversal, hashes, extraction failures, cancellation and replacement.");
+}
+
+static void VerifySearchInteractionSafety()
+{
+    using var pipeline = new SearchPipelineManager();
+    var first = pipeline.CreateSession("old", "file");
+    var canceled = false;
+    using var registration = first.Token.Register(() => canceled = true);
+    var waiting = Task.Delay(TimeSpan.FromMinutes(1), first.Token);
+    var second = pipeline.CreateSession("new", "all");
+    Assert(canceled && first.Token.IsCancellationRequested, "Replacing a search must cancel its in-flight work.");
+    try { waiting.GetAwaiter().GetResult(); throw new Exception("Old search delay was not canceled."); }
+    catch (OperationCanceledException) { }
+    Assert(!pipeline.IsActive(first) && pipeline.IsActive(second), "Late results must not remain active.");
+    pipeline.CancelActive();
+    Assert(second.Token.IsCancellationRequested && !pipeline.IsActive(second), "Hiding/editing must invalidate active work.");
+    second.Dispose();
+    Assert(second.Token.IsCancellationRequested, "Disposed sessions must expose a safe captured token.");
+    using (var throwing = new SearchSession(99, "test", "provider"))
+    {
+        throwing.Token.Register(() => throw new InvalidOperationException("provider cancellation failed"));
+        throwing.Dispose();
+        Assert(throwing.Token.IsCancellationRequested, "A provider cancellation callback must not break session cleanup.");
+    }
+    for (var i = 0; i < 1000; i++)
+    {
+        var previous = pipeline.CreateSession("a", "file");
+        var current = pipeline.CreateSession("ab", "file");
+        Assert(previous.Token.IsCancellationRequested && pipeline.IsActive(current), "Rapid input left stale work active.");
+    }
+
+    var results = new BulkObservableCollection<string>(["one", "two", "three"]);
+    var changes = new List<System.Collections.Specialized.NotifyCollectionChangedEventArgs>();
+    results.CollectionChanged += (_, e) => changes.Add(e);
+    results.ReplaceAll(new[] { "one", "two", "three" }.Where(_ => true));
+    Assert(changes.Count == 0, "Identical search results should not reset WPF containers/selection.");
+    results.ReplaceAll(results.Where(x => x != "two"));
+    Assert(results.SequenceEqual(["one", "three"]) && changes.Count == 1, "Lazy self-filtering must be snapshotted before clearing.");
+    results.ReplaceAll(results);
+    Assert(changes.Count == 1 && results.Count == 2, "Self replacement must preserve results without a reset.");
+    results[0] = "updated";
+    var replacement = changes.Last();
+    Assert((string?)replacement.NewItems?[0] == "updated" && (string?)replacement.OldItems?[0] == "one", "WPF replacement notification has reversed values.");
+    results.ReplaceAll(Array.Empty<string>());
+    var emptyChanges = changes.Count;
+    results.ReplaceAll(Enumerable.Empty<string>());
+    Assert(results.Count == 0 && changes.Count == emptyChanges, "Repeated empty results should not reset the list.");
+    Console.WriteLine("Search interaction safety passed: cancellation, late-result rejection, disposed tokens, rapid input, stable collections and lazy/self updates.");
+}
+
+static void VerifyBackpackResponsiveness()
+{
+    foreach (var threshold in new[] { 50, 120, 200, 250, 350, 500, 1500 })
+        Assert(AppSettingsStore.NormalizeLongPressMilliseconds(threshold) == threshold, "User long-press threshold was overwritten.");
+    Assert(AppSettingsStore.NormalizeLongPressMilliseconds(-1) == 50 &&
+           AppSettingsStore.NormalizeLongPressMilliseconds(5000) == 1500, "Long-press bounds were not enforced.");
+    using var cache = new QuickPanelSnapshotCache<PanelCacheProbe>();
+    var key = new QuickPanelSnapshotKey("settings.json", 1, 100, 200, "explorer", false, false);
+    var first = new PanelCacheProbe();
+    var second = new PanelCacheProbe();
+    PanelCacheProbe[] commands = [first, second];
+    Assert(!cache.CanReuse(key, commands), "Uninitialized panel cache was reused.");
+    cache.BeginUpdate(key, commands);
+    Assert(!cache.CanReuse(key, commands), "Partial slot rebuild was reused.");
+    cache.CompleteUpdate();
+    Assert(cache.CanReuse(key, commands), "Unchanged panel failed to reuse slots.");
+    foreach (var changed in new[] {
+        key with { WriteVersion = 2 }, key with { LastWriteTicks = 101 },
+        key with { FileLength = 201 }, key with { SettingsPath = "other.json" },
+        key with { ContextProcess = "notepad" }, key with { GlobalFavorites = true },
+        key with { ContextFavorites = true } })
+        Assert(!cache.CanReuse(changed, commands), "Changed panel configuration reused stale slots.");
+    Assert(!cache.CanReuse(null, commands), "Unverifiable settings were reused.");
+    Assert(!cache.CanReuse(key, [second, first]) && !cache.CanReuse(key, [first]) &&
+           !cache.CanReuse(key, [first, new PanelCacheProbe()]), "Command reorder/removal/replacement reused stale slots.");
+    first.Change();
+    Assert(!cache.CanReuse(key, commands), "In-place command change did not invalidate slots.");
+    cache.BeginUpdate(key, commands);
+    second.Change();
+    cache.CompleteUpdate();
+    Assert(!cache.CanReuse(key, commands), "A change during rebuilding was lost.");
+    cache.BeginUpdate(key, commands);
+    cache.CompleteUpdate();
+    Assert(first.SubscriberCount == 1 && second.SubscriberCount == 1, "Rebuild leaked property subscriptions.");
+    cache.Dispose();
+    Assert(first.SubscriberCount == 0 && second.SubscriberCount == 0 && !cache.CanReuse(key, commands), "Cache disposal leaked handlers or remained reusable.");
+    Console.WriteLine("Backpack responsiveness safety passed: unchanged-slot reuse, all invalidation paths, partial rebuilds, handler cleanup and threshold preservation.");
+}
+
+sealed class PanelCacheProbe : System.ComponentModel.INotifyPropertyChanged
+{
+    public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+    public int SubscriberCount => PropertyChanged?.GetInvocationList().Length ?? 0;
+    public void Change() => PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs("Title"));
 }

@@ -179,7 +179,7 @@ if (-not [string]::IsNullOrEmpty($token)) {
         if (-not [string]::IsNullOrWhiteSpace($Notes)) {
             $chineseBody = $Notes.Trim()
         } elseif (Test-Path (Join-Path $root "RELEASE_NOTES.md")) {
-            $chineseBody = (Get-Content (Join-Path $root "RELEASE_NOTES.md") -Raw).Trim()
+            $chineseBody = (Get-Content (Join-Path $root "RELEASE_NOTES.md") -Raw -Encoding UTF8).Trim()
         }
 
         if ([string]::IsNullOrWhiteSpace($chineseBody)) {

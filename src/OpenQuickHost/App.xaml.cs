@@ -936,7 +936,29 @@ public partial class App : WpfApplication
 
         var settings = AppSettingsStore.Load();
         settings.GlobalServiceBlacklistedProcesses ??= new List<string>();
-        if (!settings.GlobalServiceBlacklistedProcesses.Any(p => ProcessHelper.ProcessNameMatches(proc, p)))
+        var matchingEntries = settings.GlobalServiceBlacklistedProcesses
+            .Where(p => ProcessHelper.ProcessNameMatches(proc, p))
+            .ToList();
+
+        if (matchingEntries.Count > 0)
+        {
+            foreach (var match in matchingEntries)
+            {
+                settings.GlobalServiceBlacklistedProcesses.Remove(match);
+            }
+
+            AppSettingsStore.Save(settings);
+
+            if (MainWindow is MainWindow mainWindow)
+            {
+                mainWindow.RefreshAppSettings();
+            }
+
+            CheckForegroundBlacklist();
+
+            ShowDesktopNotification("全局黑名单", $"已成功将「{proc}」从全局服务黑名单中移出。");
+        }
+        else
         {
             settings.GlobalServiceBlacklistedProcesses.Add(proc);
 
@@ -969,10 +991,6 @@ public partial class App : WpfApplication
             CheckForegroundBlacklist();
 
             ShowDesktopNotification("全局黑名单", $"已成功将「{proc}」添加到全局服务黑名单。");
-        }
-        else
-        {
-            ShowDesktopNotification("全局黑名单", $"「{proc}」已在全局黑名单中。");
         }
     }
 
@@ -1293,7 +1311,7 @@ public partial class App : WpfApplication
             }
             else if (Equals(item.Tag, "add-current-to-blacklist"))
             {
-                var proc = _lastUserActiveProcess;
+                var proc = !string.IsNullOrWhiteSpace(_lastUserActiveProcess) ? _lastUserActiveProcess : _lastTrayForegroundProcess;
                 bool isInvalid = string.IsNullOrWhiteSpace(proc) || string.Equals(proc, "desktop", StringComparison.OrdinalIgnoreCase);
 
                 var settings = AppSettingsStore.Load();
@@ -1319,8 +1337,8 @@ public partial class App : WpfApplication
                 }
                 else if (alreadyInList)
                 {
-                    item.Header = $"已在黑名单: {proc}";
-                    item.IsEnabled = false;
+                    item.Header = $"已在黑名单: {proc} (点击移出)";
+                    item.IsEnabled = true;
                 }
                 else
                 {
