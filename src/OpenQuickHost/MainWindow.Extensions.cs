@@ -520,6 +520,12 @@ public partial class MainWindow
 
     public void ShowPanel()
     {
+        var activeHwnd = Win32Native.GetForegroundWindow();
+        if (activeHwnd != IntPtr.Zero && !WindowSensorHelper.IsCurrentProcessWindow(activeHwnd))
+        {
+            _previousForegroundWindow = activeHwnd;
+        }
+
         HasBeenShown = true;
         ShowInTaskbar = true;
         if (!IsVisible)

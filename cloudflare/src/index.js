@@ -3654,19 +3654,19 @@ async function getUserSyncRevision(env, userId) {
 
 async function readUserSyncObjects(env, userId, sinceRevision, limit) {
   await ensureUser(env, userId);
+  const currentRevision = await getUserSyncRevision(env, userId);
   const rows = await env.DB.prepare(
     `select object_id, schema_version, object_revision, updated_at,
             updated_by_device_id, updated_by_device_name, deleted, payload_json
      from user_sync_objects
-     where user_id = ? and object_revision > ?
+     where user_id = ? and object_revision > ? and object_revision <= ?
      order by object_revision asc
      limit ?`
-  ).bind(userId, sinceRevision, limit + 1).all();
+  ).bind(userId, sinceRevision, currentRevision, limit + 1).all();
   const allRows = rows.results || [];
   const hasMore = allRows.length > limit;
   const selectedRows = hasMore ? allRows.slice(0, limit) : allRows;
   const objects = selectedRows.map(serializeUserSyncObject);
-  const currentRevision = await getUserSyncRevision(env, userId);
   const cursorRevision = objects.length > 0
     ? objects[objects.length - 1].revision
     : currentRevision;

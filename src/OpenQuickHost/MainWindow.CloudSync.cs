@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.IO.Compression;
 using System.Collections.Specialized;
 using System.Diagnostics;
@@ -21,8 +21,8 @@ public partial class MainWindow
     private static readonly SemaphoreSlim _extensionUploadLock = new(1, 1);
     private DateTimeOffset _lastNetworkAddressChangedHandledAt = DateTimeOffset.MinValue;
     private static readonly object MobileMessageBridgeLock = new();
-    private readonly SemaphoreSlim _quickPanelCloudPushLock = new(1, 1);
-    private readonly SemaphoreSlim _yanmCloudPushLock = new(1, 1);
+    // All account object domains share one persisted state: serialize whole read/modify/write transactions.
+    private readonly SemaphoreSlim _accountObjectSyncLock = new(1, 1);
     private bool _deviceRegistered;
     private DateTimeOffset _lastDesktopPresenceHeartbeatErrorLogAt = DateTimeOffset.MinValue;
     private const string PublicStoreOrigin = "https://yanzi.luoluoluo.cc.cd";
@@ -2962,6 +2962,13 @@ public partial class MainWindow
 
     private async Task<bool> PullQuickPanelConfigFromCloudAsync()
     {
+        await _accountObjectSyncLock.WaitAsync();
+        try { return await PullQuickPanelConfigFromCloudCoreAsync(); }
+        finally { _accountObjectSyncLock.Release(); }
+    }
+
+    private async Task<bool> PullQuickPanelConfigFromCloudCoreAsync()
+    {
         if (_cloudSyncClient == null)
         {
             return false;
@@ -2976,7 +2983,7 @@ public partial class MainWindow
             CloudSyncDiagnostics.Log("MainWindow.QuickPanel", "Cloud pull found no snapshot", ("shouldBootstrapPush", ShouldSyncLocalQuickPanelConfigToCloud()));
             if (ShouldSyncLocalQuickPanelConfigToCloud())
             {
-                await PushQuickPanelConfigToCloudAsync("cloud-refresh-bootstrap");
+                await PushQuickPanelConfigToCloudCoreAsync("cloud-refresh-bootstrap");
             }
 
             return false;
@@ -3051,14 +3058,14 @@ public partial class MainWindow
                 HostAssets.AppendLog(
                     $"Quick panel cloud pull: merged missing AI config from older cloud snapshot, localUpdated={localUpdatedAtUtc:O}, remoteUpdated={remoteUpdatedAtUtc?.ToString("O") ?? "missing"}.");
                 CloudSyncDiagnostics.Log("MainWindow.QuickPanel", "Cloud pull merged missing AI config", ("remoteUpdatedAtUtc", snapshot.UpdatedAtUtc));
-                await PushQuickPanelConfigToCloudAsync("cloud-refresh-local-newer-ai-merged");
+                await PushQuickPanelConfigToCloudCoreAsync("cloud-refresh-local-newer-ai-merged");
                 return true;
             }
 
             HostAssets.AppendLog(
                 $"Quick panel cloud pull skipped: local config is newer, localUpdated={localUpdatedAtUtc:O}, remoteUpdated={remoteUpdatedAtUtc?.ToString("O") ?? "missing"}.");
             CloudSyncDiagnostics.Log("MainWindow.QuickPanel", "Cloud pull skipped: local config newer", ("remoteUpdatedAtUtc", snapshot.UpdatedAtUtc));
-            await PushQuickPanelConfigToCloudAsync("cloud-refresh-local-newer");
+            await PushQuickPanelConfigToCloudCoreAsync("cloud-refresh-local-newer");
             return false;
         }
 
@@ -3066,7 +3073,7 @@ public partial class MainWindow
         {
             if (shouldBackfillAiConfig || shouldBackfillExtendedConfig)
             {
-                await PushQuickPanelConfigToCloudAsync("cloud-refresh-schema-backfill");
+                await PushQuickPanelConfigToCloudCoreAsync("cloud-refresh-schema-backfill");
                 HostAssets.AppendLog("Quick panel cloud pull: backfilled fields missing from an older cloud snapshot.");
                 return true;
             }
@@ -3094,7 +3101,7 @@ public partial class MainWindow
             ("hasAiConfig", HasAiConfigPayload(snapshot)));
         if (shouldBackfillAiConfig)
         {
-            await PushQuickPanelConfigToCloudAsync("cloud-pull-ai-backfill");
+            await PushQuickPanelConfigToCloudCoreAsync("cloud-pull-ai-backfill");
             HostAssets.AppendLog("Quick panel cloud pull applied: backfilled missing AI config fields.");
         }
 
@@ -3196,14 +3203,14 @@ public partial class MainWindow
 
     private async Task PushQuickPanelConfigToCloudAsync(string reason)
     {
-        await _quickPanelCloudPushLock.WaitAsync();
+        await _accountObjectSyncLock.WaitAsync();
         try
         {
             await PushQuickPanelConfigToCloudCoreAsync(reason);
         }
         finally
         {
-            _quickPanelCloudPushLock.Release();
+            _accountObjectSyncLock.Release();
         }
     }
 
@@ -3312,8 +3319,8 @@ public partial class MainWindow
         }
         catch (Exception ex)
         {
-            HostAssets.AppendLog($"Cloud object pull unavailable; using legacy snapshot: {FormatExceptionMessage(ex)}");
-            return legacySnapshot;
+            HostAssets.AppendLog($"Cloud object pull failed; local settings preserved: {FormatExceptionMessage(ex)}");
+            throw;
         }
     }
 
@@ -3327,6 +3334,7 @@ public partial class MainWindow
         try
         {
             var capabilities = await _cloudSyncClient.GetSyncCapabilitiesAsync();
+            if (!capabilities.Ok) throw new InvalidDataException("云端未返回有效的同步能力信息。");
             var state = CloudObjectSyncStateStore.Load(_cloudSyncClient.CurrentUserId);
             state.ServerProtocolVersion = capabilities.ProtocolVersion;
             state.ObjectSyncAvailable = capabilities.ObjectSyncAvailable;
@@ -3348,8 +3356,8 @@ public partial class MainWindow
         }
         catch (Exception ex)
         {
-            HostAssets.AppendLog($"Cloud sync capability negotiation unavailable; legacy mode retained: {FormatExceptionMessage(ex)}");
-            return null;
+            HostAssets.AppendLog($"Cloud sync capability negotiation failed; sync deferred: {FormatExceptionMessage(ex)}");
+            throw;
         }
     }
 
@@ -3360,6 +3368,8 @@ public partial class MainWindow
             return;
         }
 
+        // Older clients advanced the download cursor after PUT, potentially skipping other devices' edits.
+        if (!state.DownloadCursorValidated) state.LastSyncedRevision = 0;
         CloudSyncObjectListResponse page;
         if (state.LastSyncedRevision == 0 || state.Objects.Count == 0)
         {
@@ -3373,15 +3383,22 @@ public partial class MainWindow
 
         while (true)
         {
+            if (!page.Ok || !string.Equals(page.UserId, state.UserId, StringComparison.Ordinal))
+                throw new InvalidDataException("云端同步响应无效或账号已变化。");
             foreach (var item in page.Objects)
             {
-                state.Objects[item.ObjectId] = CloudObjectSyncCacheEntry.FromRecord(item);
+                if (!state.Objects.TryGetValue(item.ObjectId, out var known) || item.Revision >= known.Revision)
+                    state.Objects[item.ObjectId] = CloudObjectSyncCacheEntry.FromRecord(item);
             }
 
-            state.LastSyncedRevision = Math.Max(state.LastSyncedRevision, page.CursorRevision);
+            var previousCursor = state.LastSyncedRevision;
+            state.LastSyncedRevision = CloudSyncProgress.DownloadCursor(previousCursor, page);
+            if (page.HasMore && state.LastSyncedRevision <= previousCursor)
+                throw new InvalidDataException("云端分页没有前进，请稍后重试。");
             if (!page.HasMore)
             {
-                state.LastSyncedRevision = Math.Max(state.LastSyncedRevision, page.CurrentRevision);
+                state.DownloadCursorValidated = true;
+                CloudConflictReconciler.Reconcile(state);
                 return;
             }
 
@@ -3405,22 +3422,12 @@ public partial class MainWindow
                 var expectedRevision = state.Objects.TryGetValue(write.ObjectId, out var cached)
                     ? cached.Revision
                     : 0;
-                if (cached != null && LauncherConfigObjectStore.HasEquivalentPayload(
-                        write.Envelope,
-                        new LauncherConfigObjectEnvelope
-                        {
-                            ObjectId = cached.ObjectId,
-                            Deleted = cached.Deleted,
-                            Payload = cached.Payload.Clone()
-                        }))
-                {
-                    UpdateKnownDynamicObjectAfterWrite(state, write);
-                    continue;
-                }
+                // Migration may fill missing objects, never overwrite existing authoritative objects.
+                if (cached != null) continue;
 
                 var saved = await PutCloudObjectWriteAsync(write, expectedRevision);
                 state.Objects[write.ObjectId] = CloudObjectSyncCacheEntry.FromRecord(saved);
-                state.LastSyncedRevision = Math.Max(state.LastSyncedRevision, saved.Revision);
+
                 UpdateKnownDynamicObjectAfterWrite(state, write);
             }
             catch (CloudSyncRevisionConflictException)
@@ -3461,29 +3468,7 @@ public partial class MainWindow
             var currentDeviceId = DeviceIdentityStore.GetOrCreateDesktopDeviceId();
             foreach (var write in writes.Values)
             {
-                if (state.Conflicts.TryGetValue(write.ObjectId, out var existingConflict))
-                {
-                    var isSameDeviceConflict = string.Equals(existingConflict.RemoteDeviceId, currentDeviceId, StringComparison.OrdinalIgnoreCase);
-                    if (isSameDeviceConflict)
-                    {
-                        // 远端版本由本机历史上传，且本机正在进行新修改：自动解除误判冲突并加入待上传队列
-                        state.Conflicts.Remove(write.ObjectId);
-                        AddPendingCloudObject(
-                            state,
-                            write.ObjectId,
-                            localUpdatedAtUtc,
-                            existingConflict.RemoteRevision);
-                        HostAssets.AppendLog($"PushQuickPanelObjects: Auto-cleared same-device conflict and promoted to pending upload: object={write.ObjectId}");
-                    }
-                    else
-                    {
-                        existingConflict.LocalSchemaVersion = write.Envelope.SchemaVersion;
-                        existingConflict.LocalDeleted = write.Envelope.Deleted;
-                        existingConflict.LocalPayload = write.Envelope.Payload.Clone();
-                        existingConflict.DetectedAtUtc = DateTime.UtcNow.ToString("O");
-                        continue;
-                    }
-                }
+                if (state.Conflicts.ContainsKey(write.ObjectId)) continue;
                 var matchesBaseline = state.Objects.TryGetValue(write.ObjectId, out var baseline) &&
                                       LauncherConfigObjectStore.HasEquivalentPayload(
                                           write.Envelope,
@@ -3535,6 +3520,7 @@ public partial class MainWindow
 
             foreach (var objectId in state.PendingObjectIds.ToArray())
             {
+                if (state.Conflicts.ContainsKey(objectId)) continue;
                 if (!writes.TryGetValue(objectId, out var write))
                 {
                     // pending 队列由多个对象域共享。主配置同步不得清除燕幕等其他域的待上传项。
@@ -3550,7 +3536,7 @@ public partial class MainWindow
                 {
                     var saved = await PutCloudObjectWriteAsync(write, expectedRevision);
                     state.Objects[objectId] = CloudObjectSyncCacheEntry.FromRecord(saved);
-                    state.LastSyncedRevision = Math.Max(state.LastSyncedRevision, saved.Revision);
+
                     UpdateKnownDynamicObjectAfterWrite(state, write);
                     state.Conflicts.Remove(objectId);
                     RemovePendingCloudObject(state, objectId);
@@ -3566,6 +3552,13 @@ public partial class MainWindow
                         continue;
                     }
 
+                    if (LauncherConfigObjectStore.HasEquivalentPayload(write.Envelope, ToEnvelope(latestRemote)))
+                    {
+                        UpdateKnownDynamicObjectAfterWrite(state, write);
+                        state.Conflicts.Remove(objectId);
+                        RemovePendingCloudObject(state, objectId);
+                        continue;
+                    }
                     var isSameDevice = string.Equals(latestRemote.UpdatedByDeviceId, currentDeviceId, StringComparison.OrdinalIgnoreCase);
                     if (isSameDevice)
                     {
@@ -3729,14 +3722,14 @@ public partial class MainWindow
 
     private async Task PushYanmStateToCloudAsync(string reason)
     {
-        await _yanmCloudPushLock.WaitAsync();
+        await _accountObjectSyncLock.WaitAsync();
         try
         {
             await PushYanmStateToCloudCoreAsync(reason);
         }
         finally
         {
-            _yanmCloudPushLock.Release();
+            _accountObjectSyncLock.Release();
         }
     }
 
@@ -3920,14 +3913,7 @@ public partial class MainWindow
 
         foreach (var write in writes.Values)
         {
-            if (state.Conflicts.TryGetValue(write.ObjectId, out var existingConflict))
-            {
-                existingConflict.LocalSchemaVersion = write.Envelope.SchemaVersion;
-                existingConflict.LocalDeleted = write.Envelope.Deleted;
-                existingConflict.LocalPayload = write.Envelope.Payload.Clone();
-                existingConflict.DetectedAtUtc = DateTime.UtcNow.ToString("O");
-                continue;
-            }
+            if (state.Conflicts.ContainsKey(write.ObjectId)) continue;
             var matchesBaseline = state.Objects.TryGetValue(write.ObjectId, out var baseline) &&
                                   LauncherConfigObjectStore.HasEquivalentPayload(
                                       write.Envelope,
@@ -3955,6 +3941,7 @@ public partial class MainWindow
                      .Where(YanmObjectStore.IsObjectId)
                      .ToArray())
         {
+            if (state.Conflicts.ContainsKey(objectId)) continue;
             if (!writes.TryGetValue(objectId, out var write))
             {
                 continue;
@@ -3967,7 +3954,7 @@ public partial class MainWindow
             {
                 var saved = await PutCloudObjectWriteAsync(write, pending.LastExpectedRevision);
                 state.Objects[objectId] = CloudObjectSyncCacheEntry.FromRecord(saved);
-                state.LastSyncedRevision = Math.Max(state.LastSyncedRevision, saved.Revision);
+
                 UpdateKnownDynamicObjectAfterWrite(state, write);
                 state.Conflicts.Remove(objectId);
                 RemovePendingCloudObject(state, objectId);
@@ -3980,6 +3967,13 @@ public partial class MainWindow
                 if (state.Objects.TryGetValue(objectId, out var latestRemote))
                 {
                     var currentDeviceId = DeviceIdentityStore.GetOrCreateDesktopDeviceId();
+                    if (LauncherConfigObjectStore.HasEquivalentPayload(write.Envelope, ToEnvelope(latestRemote)))
+                    {
+                        UpdateKnownDynamicObjectAfterWrite(state, write);
+                        state.Conflicts.Remove(objectId);
+                        RemovePendingCloudObject(state, objectId);
+                        continue;
+                    }
                     var isSameDevice = string.Equals(latestRemote.UpdatedByDeviceId, currentDeviceId, StringComparison.OrdinalIgnoreCase);
                     if (isSameDevice)
                     {
@@ -4238,14 +4232,14 @@ public partial class MainWindow
             return (false, "未登录燕子账号，无法读取云端燕幕。", false, 0);
         }
 
-        await _yanmCloudPushLock.WaitAsync();
+        await _accountObjectSyncLock.WaitAsync();
         try
         {
             return await PullYanmStateFromCloudCoreAsync();
         }
         finally
         {
-            _yanmCloudPushLock.Release();
+            _accountObjectSyncLock.Release();
         }
     }
 
@@ -5025,16 +5019,15 @@ public partial class MainWindow
 
     public async Task<(bool ok, string message)> ResolveCloudObjectConflictAsync(
         string objectId,
-        bool useLocalVersion)
+        bool useLocalVersion,
+        long reviewedRevision)
     {
         if (_cloudSyncClient == null || string.IsNullOrWhiteSpace(objectId))
         {
             return (false, "账号云同步尚未可用。");
         }
 
-        var conflictLock = YanmObjectStore.IsObjectId(objectId)
-            ? _yanmCloudPushLock
-            : _quickPanelCloudPushLock;
+        var conflictLock = _accountObjectSyncLock;
         await conflictLock.WaitAsync();
         try
         {
@@ -5044,12 +5037,15 @@ public partial class MainWindow
                 return (true, "该冲突已经处理。");
             }
 
+            if (conflict.RemoteRevision != reviewedRevision)
+                return (false, "云端内容刚刚有变化，请查看更新后的差异再选择。");
+
             if (!useLocalVersion)
             {
                 state.Conflicts.Remove(objectId);
                 CloudObjectSyncStateStore.Save(state);
                 await ApplyCloudObjectStateToLocalAsync();
-                return (true, "已接受远端版本，本地冲突副本已清除。");
+                return (true, "已使用云端内容。");
             }
 
             await _cloudSyncClient.EnsureAuthenticatedAsync();
@@ -5066,16 +5062,16 @@ public partial class MainWindow
             var write = new AccountConfigObjectWrite(objectId, envelope);
             var saved = await PutCloudObjectWriteAsync(write, conflict.RemoteRevision);
             state.Objects[objectId] = CloudObjectSyncCacheEntry.FromRecord(saved);
-            state.LastSyncedRevision = Math.Max(state.LastSyncedRevision, saved.Revision);
+
             UpdateKnownDynamicObjectAfterWrite(state, write);
             state.Conflicts.Remove(objectId);
             CloudObjectSyncStateStore.Save(state);
             await ApplyCloudObjectStateToLocalAsync();
-            return (true, $"已重新采用本地版本，云端 revision 更新为 {saved.Revision}。");
+            return (true, "已保留这台电脑的修改，并同步到云端。");
         }
-        catch (CloudSyncRevisionConflictException conflict)
+        catch (CloudSyncRevisionConflictException)
         {
-            return (false, $"处理期间远端再次更新到 revision {conflict.CurrentRevision}，请先刷新后重试。");
+            return (false, "选择期间云端又有新修改，请刷新后重新查看两份内容。");
         }
         catch (Exception ex)
         {
@@ -5097,9 +5093,7 @@ public partial class MainWindow
             throw new InvalidOperationException("账号云同步客户端不可用。");
         }
 
-        var syncLock = YanmObjectStore.IsObjectId(objectId)
-            ? _yanmCloudPushLock
-            : _quickPanelCloudPushLock;
+        var syncLock = _accountObjectSyncLock;
         await syncLock.WaitAsync();
         try
         {
@@ -5198,7 +5192,7 @@ public partial class MainWindow
                 var savedIndex = await PutCloudObjectWriteAsync(indexWrite, cachedIndex.Revision);
                 state.Objects[indexObjectId] = CloudObjectSyncCacheEntry.FromRecord(savedIndex);
                 state.Objects[restored.ObjectId] = CloudObjectSyncCacheEntry.FromRecord(restored);
-                state.LastSyncedRevision = Math.Max(state.LastSyncedRevision, savedIndex.Revision);
+
                 CloudObjectSyncStateStore.Save(state);
                 return;
             }
@@ -6155,9 +6149,7 @@ public partial class MainWindow
     private static PersonalConfigSyncMode GetPersonalConfigSyncMode()
     {
         var session = SyncSessionStore.Load();
-        return session != null && session.ExpiresAt > DateTimeOffset.UtcNow.ToUnixTimeSeconds()
-            ? PersonalConfigSyncMode.UploadOnlyBackup
-            : PersonalConfigSyncMode.Bidirectional;
+        return PersonalSyncAuthority.SelectMode(session, File.Exists(SecureCredentialStore.CredentialPath));
     }
 
     public async Task<IReadOnlyList<LauncherConfigRestorePointInfo>> GetPersonalConfigRestorePointsAsync(

@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
@@ -907,7 +907,7 @@ public sealed class PersonalSyncService
             updatedAtUtc,
             "launcher-config-sync");
         var pointBytes = LauncherConfigObjectStore.SerializeRestorePoint(point);
-        var pointPath = LauncherConfigObjectStore.GetRestorePointPath(updatedAtUtc);
+        var pointPath = LauncherConfigObjectStore.GetRestorePointPath(point);
         var sha256 = Convert.ToHexString(SHA256.HashData(pointBytes)).ToLowerInvariant();
         await _backend.WriteBytesAsync(pointPath, pointBytes, "application/json", cancellationToken);
 
@@ -919,8 +919,7 @@ public sealed class PersonalSyncService
         }
         catch (JsonException ex)
         {
-            HostAssets.AppendLog($"Personal sync restore index was invalid and will be rebuilt: {ex.Message}");
-            index = new LauncherConfigHistoryIndex();
+            throw new InvalidDataException("云端备份目录损坏，已停止更新目录以保留历史备份。", ex);
         }
         index.RestorePoints.RemoveAll(item => item.RestorePointId.Equals(point.RestorePointId, StringComparison.Ordinal));
         index.RestorePoints.Add(new LauncherConfigRestorePointInfo

@@ -2757,7 +2757,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
                 HostAssets.AppendLog("Quick panel execute: selection capture skipped for command without context input.");
             }
 
-            _mainWindow.ExecuteCommandExternally(command, input, launchSource);
+            _mainWindow.ExecuteCommandExternally(command, input, launchSource, _previousForegroundWindow);
         }
         finally
         {

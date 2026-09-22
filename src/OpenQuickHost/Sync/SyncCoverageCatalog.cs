@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 
 namespace OpenQuickHost.Sync;
 
@@ -131,6 +131,24 @@ internal static class SyncCoverageCatalog
         yield return Device(nameof(AppSettings.LastTestArgument), "本机调试输入历史。");
         yield return Device(nameof(AppSettings.LastExtensionEditorTab), "小程序编辑器上次偏好 Tab。");
         yield return Device(nameof(AppSettings.MobileExtensionsJson), "本机移动端代理缓存。");
+
+        yield return Device(nameof(AppSettings.QuickPanelRowCount), "旧版网格尺寸，按本机屏幕迁移。");
+        yield return Device(nameof(AppSettings.QuickPanelGlobalRowCount), "本机屏幕对应的背包网格尺寸。");
+        yield return Device(nameof(AppSettings.QuickPanelGlobalColumnCount), "本机屏幕对应的背包网格尺寸。");
+        yield return Device(nameof(AppSettings.QuickPanelContextRowCount), "本机屏幕对应的场景网格尺寸。");
+        yield return Device(nameof(AppSettings.QuickPanelContextColumnCount), "本机屏幕对应的场景网格尺寸。");
+        yield return Device(nameof(AppSettings.DisableInFullScreen), "本机全屏应用的输入保护策略。");
+        yield return Device(nameof(AppSettings.GlobalServiceBlacklistedProcesses), "本机安装应用的输入排除列表。");
+        yield return Device(nameof(AppSettings.MouseGestureBlacklistedProcesses), "本机安装应用的手势排除列表。");
+        yield return Device(nameof(AppSettings.ProcessExecutablePaths), "本机可执行文件路径，不可跨设备复用。");
+        yield return Device(nameof(AppSettings.MouseGestureEnableRockerActions), "本机鼠标硬件与手势操作偏好。");
+        yield return Device(nameof(AppSettings.MouseGestureEnableWheelActions), "本机鼠标硬件与滚轮操作偏好。");
+        yield return Device(nameof(AppSettings.ShowBlindOperationGuide), "本机操作引导显示状态。");
+        yield return Device(nameof(AppSettings.HasOpenedBackpack), "本机新手引导进度。");
+        yield return Device(nameof(AppSettings.LauncherResultViewMode), "本机搜索窗口展示方式。");
+        yield return Device(nameof(AppSettings.AchievementPoints), "本地成就记录，尚未建立账号成就合并协议。");
+        yield return Device(nameof(AppSettings.CompletedQuestIds), "本地任务记录，尚未建立账号成就合并协议。");
+        yield return Device(nameof(AppSettings.UnlockedBadges), "本地徽章记录，尚未建立账号成就合并协议。");
 
         // 密钥或设备身份只允许留在本机。
         yield return Entry(nameof(AppSettings.AgentApiToken), SyncDestination.LocalSecret,

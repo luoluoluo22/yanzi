@@ -80,9 +80,29 @@ public static class NativeFileIconService
             return null;
         }
 
+        if (IsDesktopTarget(path))
+        {
+            return GetDesktopIcon();
+        }
+
+        if (IsDownloadsTarget(path))
+        {
+            return GetDownloadsIcon();
+        }
+
         if (path.StartsWith("shell:AppsFolder\\", StringComparison.OrdinalIgnoreCase))
         {
             return IconCache.GetOrAdd(path, _ => LoadUwpIcon(path));
+        }
+
+        if (path.StartsWith("shell:", StringComparison.OrdinalIgnoreCase))
+        {
+            return IconCache.GetOrAdd(path, _ =>
+            {
+                var hq = LoadHighQualityIcon(path, 256);
+                if (hq != null) return hq;
+                return LoadSmallIcon(path, isFolder: true);
+            });
         }
 
         var cleanPath = ExtractCleanPath(path);
@@ -200,6 +220,211 @@ public static class NativeFileIconService
         {
             DestroyIcon(shinfo.hIcon);
         }
+    }
+
+    public static bool IsDesktopTarget(string? target)
+    {
+        if (string.IsNullOrWhiteSpace(target)) return false;
+        var t = target.Trim();
+        if (t.Equals("shell:Desktop", StringComparison.OrdinalIgnoreCase) ||
+            t.Equals("stock:desktop", StringComparison.OrdinalIgnoreCase) ||
+            t.Equals("desktop", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        try
+        {
+            var desktop = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+            if (!string.IsNullOrWhiteSpace(desktop) && string.Equals(t.TrimEnd('\\', '/'), desktop.TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            var desktopDir = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+            if (!string.IsNullOrWhiteSpace(desktopDir) && string.Equals(t.TrimEnd('\\', '/'), desktopDir.TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+        catch { }
+
+        return false;
+    }
+
+    public static ImageSource? GetDesktopIcon()
+    {
+        return IconCache.GetOrAdd("stock:desktop", _ =>
+        {
+            try
+            {
+                // 1. 优先尝试从 shell:Desktop 提取 Windows Shell 原生 256x256 高清原画图标
+                var hq = LoadHighQualityIcon("shell:Desktop", 256);
+                if (hq != null) return hq;
+
+                // 2. 尝试从真实桌面物理路径提取
+                var desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+                if (!string.IsNullOrWhiteSpace(desktopPath) && Directory.Exists(desktopPath))
+                {
+                    var pathHq = LoadHighQualityIcon(desktopPath, 256);
+                    if (pathHq != null) return pathHq;
+                }
+
+                // 3. 兜底使用 Windows 原生 Stock Icon (SIID_DESKTOP)
+                var stock = LoadStockIcon(SIID_DESKTOP);
+                if (stock != null) return stock;
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"[NativeFileIconService] GetDesktopIcon failed: {ex.Message}");
+            }
+            return null;
+        });
+    }
+
+    public static bool IsDownloadsTarget(string? target)
+    {
+        if (string.IsNullOrWhiteSpace(target)) return false;
+        var t = target.Trim();
+        if (t.Equals("shell:Downloads", StringComparison.OrdinalIgnoreCase) ||
+            t.Equals("stock:downloads", StringComparison.OrdinalIgnoreCase) ||
+            t.Equals("stock:download", StringComparison.OrdinalIgnoreCase) ||
+            t.Equals("downloads", StringComparison.OrdinalIgnoreCase) ||
+            t.Equals("download", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        try
+        {
+            var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            if (!string.IsNullOrWhiteSpace(userProfile))
+            {
+                var defaultDownloads = Path.Combine(userProfile, "Downloads");
+                if (string.Equals(t.TrimEnd('\\', '/'), defaultDownloads.TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            // 读取 Windows 注册表 KnownFolder Downloads 重定向路径
+            var regPath = Microsoft.Win32.Registry.GetValue(
+                @"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders",
+                "{374DE290-123F-4565-9164-39C4925E467B}",
+                null) as string;
+            if (!string.IsNullOrWhiteSpace(regPath))
+            {
+                var expanded = Environment.ExpandEnvironmentVariables(regPath).TrimEnd('\\', '/');
+                if (string.Equals(t.TrimEnd('\\', '/'), expanded, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+        }
+        catch { }
+
+        return false;
+    }
+
+    public static ImageSource? GetDownloadsIcon()
+    {
+        return IconCache.GetOrAdd("stock:downloads", _ =>
+        {
+            try
+            {
+                // 1. 优先尝试通过 shell:Downloads 提取 Windows Shell 原生 256x256 原画图标
+                var hq = LoadHighQualityIcon("shell:Downloads", 256);
+                if (hq != null) return hq;
+
+                // 2. 尝试从真实用户 Downloads 目录提取
+                var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                if (!string.IsNullOrWhiteSpace(userProfile))
+                {
+                    var downloadsPath = Path.Combine(userProfile, "Downloads");
+                    if (Directory.Exists(downloadsPath))
+                    {
+                        var pathHq = LoadHighQualityIcon(downloadsPath, 256);
+                        if (pathHq != null) return pathHq;
+                    }
+                }
+
+                // 3. 从系统 imageres.dll 中提取资源 ID -184 (Windows 官方系统下载文件夹图标)
+                var sysDir = Environment.GetFolderPath(Environment.SpecialFolder.System);
+                var imageres = Path.Combine(sysDir, "imageres.dll");
+                if (File.Exists(imageres))
+                {
+                    var icon = ExtractIconFromDll(imageres, -184, 256);
+                    if (icon != null) return icon;
+                }
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"[NativeFileIconService] GetDownloadsIcon failed: {ex.Message}");
+            }
+            return null;
+        });
+    }
+
+    public static ImageSource? ExtractIconFromDll(string dllPath, int resourceId, int size)
+    {
+        try
+        {
+            IntPtr[] phicon = new IntPtr[1];
+            uint[] piconid = new uint[1];
+            uint count = PrivateExtractIcons(dllPath, resourceId, size, size, phicon, piconid, 1, 0);
+            if (count > 0 && phicon[0] != IntPtr.Zero)
+            {
+                try
+                {
+                    var source = Imaging.CreateBitmapSourceFromHIcon(
+                        phicon[0],
+                        System.Windows.Int32Rect.Empty,
+                        System.Windows.Media.Imaging.BitmapSizeOptions.FromEmptyOptions());
+                    source.Freeze();
+                    return source;
+                }
+                finally
+                {
+                    DestroyIcon(phicon[0]);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"[NativeFileIconService] ExtractIconFromDll failed ({dllPath}, {resourceId}): {ex.Message}");
+        }
+        return null;
+    }
+
+    public static ImageSource? LoadStockIcon(uint siid)
+    {
+        try
+        {
+            var info = new SHSTOCKICONINFO();
+            info.cbSize = (uint)Marshal.SizeOf(typeof(SHSTOCKICONINFO));
+            int hr = SHGetStockIconInfo(siid, SHGSI_ICON | SHGSI_LARGEICON, ref info);
+            if (hr == 0 && info.hIcon != IntPtr.Zero)
+            {
+                try
+                {
+                    var source = Imaging.CreateBitmapSourceFromHIcon(
+                        info.hIcon,
+                        System.Windows.Int32Rect.Empty,
+                        System.Windows.Media.Imaging.BitmapSizeOptions.FromEmptyOptions());
+                    source.Freeze();
+                    return source;
+                }
+                finally
+                {
+                    DestroyIcon(info.hIcon);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"[NativeFileIconService] LoadStockIcon failed for siid={siid}: {ex.Message}");
+        }
+        return null;
     }
 
     private static bool IsShortcutPath(string path)
@@ -444,6 +669,33 @@ public static class NativeFileIconService
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool DestroyIcon(IntPtr hIcon);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    private static extern uint PrivateExtractIcons(
+        string szFileName, int nIconIndex, int cxIcon, int cyIcon,
+        IntPtr[] phicon, uint[] piconid, uint nIcons, uint flags);
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct SHSTOCKICONINFO
+    {
+        public uint cbSize;
+        public IntPtr hIcon;
+        public int iSysImageIndex;
+        public int iIcon;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+        public string szPath;
+    }
+
+    [DllImport("shell32.dll", SetLastError = false)]
+    private static extern int SHGetStockIconInfo(uint siid, uint uFlags, ref SHSTOCKICONINFO psii);
+
+    private const uint SHGSI_ICON = 0x000000100;
+    private const uint SHGSI_LARGEICON = 0x000000000;
+    public const uint SIID_DOCASSOC = 1;
+    public const uint SIID_APPLICATION = 2;
+    public const uint SIID_FOLDER = 3;
+    public const uint SIID_DRIVEFIXED = 8;
+    public const uint SIID_DESKTOP = 34;
 
     [DllImport("shell32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern int SHCreateItemFromParsingName(

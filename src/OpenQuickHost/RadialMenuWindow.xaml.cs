@@ -1781,7 +1781,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 HostAssets.AppendLog("Radial menu execute: selection capture skipped for command without context input.");
             }
 
-            _mainWindow.ExecuteCommandExternally(command, input, launchSource);
+            _mainWindow.ExecuteCommandExternally(command, input, launchSource, _previousForegroundWindow != IntPtr.Zero ? _previousForegroundWindow : currentForeground);
         }
         finally
         {

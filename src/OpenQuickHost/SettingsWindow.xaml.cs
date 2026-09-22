@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
 using System.Diagnostics;
@@ -51,7 +51,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private string _syncStatusText = "同步服务状态未知。";
     private string _webDavStatusText = "未启用个人小程序同步。";
     private string _syncActivityLogText = "暂无同步记录。";
-    private string _personalSyncCommitStatusText = "GitHub 同步启用后可查看最近提交。";
+    private string _personalSyncCommitStatusText = "启用个人云同步后，可查看最近的备份记录。";
     private string _personalConfigRestoreStatusText = "完成一次个人仓库配置备份后会生成恢复点。";
     private string _personalExtensionSyncStatusText = "尚未生成小程序同步索引。";
     private string _extensionDataSyncStatusText = "尚无小程序私有数据同步记录。";
@@ -291,6 +291,16 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     public bool HasExtensionDataConflicts => ExtensionDataConflictItems.Count > 0;
 
+    public bool HasAccountSyncConflicts => AccountSyncStatus.Objects.Any(item => item.HasConflict);
+    public IEnumerable<AccountSyncObjectStatusItem> AccountSyncConflictItems => AccountSyncStatus.Objects.Where(item => item.HasConflict);
+
+    private void ShowAccountConflictsButton_Click(object sender, RoutedEventArgs e)
+    {
+        SyncActiveSubTab = "cloud";
+        AccountConflictPanel.BringIntoView();
+        AccountConflictPanel.Focus();
+    }
+
     public AccountSyncStatusView AccountSyncStatus
     {
         get => _accountSyncStatus;
@@ -298,6 +308,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         {
             _accountSyncStatus = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(HasAccountSyncConflicts));
+            OnPropertyChanged(nameof(AccountSyncConflictItems));
         }
     }
 
@@ -5592,7 +5604,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     {
         try
         {
-            PersonalConfigRestoreStatusText = "正在读取跨后端配置恢复点...";
+            PersonalConfigRestoreStatusText = "正在读取历史备份...";
             var points = await _mainWindow.GetPersonalConfigRestorePointsAsync();
             PersonalConfigRestorePoints.Clear();
             foreach (var point in points)
@@ -5660,7 +5672,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         if (!isGitProvider)
         {
             PersonalSyncCommitItems.Clear();
-            PersonalSyncCommitStatusText = "提交记录当前仅支持 Git 同步仓库 (GitHub/Gitee/GitLab/Gitea)。";
+            PersonalSyncCommitStatusText = "此处可查看 GitHub、Gitee、GitLab 或 Gitea 中的备份记录。";
             return;
         }
 
@@ -5674,7 +5686,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 ("summary", CloudSyncDiagnostics.DescribePersonalSync(_personalSyncSettings, _personalSyncSecrets)));
             if (forceMessage)
             {
-                PersonalSyncCommitStatusText = $"正在读取 {SelectedPersonalSyncProvider} 提交记录...";
+                PersonalSyncCommitStatusText = $"正在读取 {SelectedPersonalSyncProvider} 备份记录...";
             }
 
             var commits = await _mainWindow.GetPersonalSyncCommitsAsync(_personalSyncSettings, _personalSyncSecrets);
@@ -5690,8 +5702,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             }
 
             PersonalSyncCommitStatusText = PersonalSyncCommitItems.Count == 0
-                ? "仓库暂无提交记录。"
-                : $"最近 {PersonalSyncCommitItems.Count} 条提交，可点击打开云端详情。";
+                ? "还没有云端备份记录。"
+                : $"最近 {PersonalSyncCommitItems.Count} 条备份记录，可查看详情。";
 
             CloudSyncDiagnostics.Log(
                 "SettingsWindow.PersonalSync",
@@ -5702,7 +5714,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         catch (Exception ex)
         {
             PersonalSyncCommitItems.Clear();
-            PersonalSyncCommitStatusText = $"读取提交记录失败：{ex.Message}";
+            PersonalSyncCommitStatusText = $"暂时无法读取备份记录：{ex.Message}";
             CloudSyncDiagnostics.Log(
                 "SettingsWindow.PersonalSync",
                 "Refresh personal sync commits failed",
@@ -7210,17 +7222,45 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         RefreshAccountObjectSyncStatus();
     }
 
+    private bool _accountSyncBusy;
+    public bool IsAccountSyncIdle => !_accountSyncBusy;
+
+    private async void UploadAccountSettingsButton_Click(object sender, RoutedEventArgs e) => await TransferAccountSettingsFromButtonAsync(true);
+    private async void DownloadAccountSettingsButton_Click(object sender, RoutedEventArgs e) => await TransferAccountSettingsFromButtonAsync(false);
+
+    private async Task TransferAccountSettingsFromButtonAsync(bool upload)
+    {
+        if (_accountSyncBusy) return;
+        _accountSyncBusy = true;
+        OnPropertyChanged(nameof(IsAccountSyncIdle));
+        try
+        {
+            SyncStatusText = upload ? "正在上传账号设置…" : "正在下载账号设置，本机未上传的修改会保留…";
+            var result = await _mainWindow.TransferAccountSettingsAsync(upload);
+            SyncStatusText = result.message;
+            RefreshAccountObjectSyncStatus();
+            RefreshSyncActivityLog();
+        }
+        catch (Exception ex) { SyncStatusText = $"本次同步未完成：{ex.Message}"; }
+        finally
+        {
+            _accountSyncBusy = false;
+            OnPropertyChanged(nameof(IsAccountSyncIdle));
+        }
+    }
+
     private async void RefreshAccountObjectSyncButton_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is System.Windows.Controls.Button button)
-        {
-            button.IsEnabled = false;
-        }
+        if (_accountSyncBusy) return;
+        _accountSyncBusy = true;
+        OnPropertyChanged(nameof(IsAccountSyncIdle));
 
         try
         {
             SyncStatusText = "正在刷新账号配置同步状态...";
+            var upload = await _mainWindow.TransferAccountSettingsAsync(upload: true);
             await RefreshCloudAsync();
+            if (!upload.ok) SyncStatusText = upload.message;
             RefreshSyncActivityLog();
         }
         catch (Exception ex)
@@ -7230,10 +7270,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
         finally
         {
-            if (sender is System.Windows.Controls.Button completedButton)
-            {
-                completedButton.IsEnabled = true;
-            }
+            _accountSyncBusy = false;
+            OnPropertyChanged(nameof(IsAccountSyncIdle));
         }
     }
 
@@ -7283,12 +7321,9 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         button.IsEnabled = false;
         try
         {
-            var result = await _mainWindow.ResolveCloudObjectConflictAsync(item.ObjectId, useLocalVersion);
+            var result = await _mainWindow.ResolveCloudObjectConflictAsync(item.ObjectId, useLocalVersion, item.Revision);
+            await RefreshCloudAsync();
             SyncStatusText = result.message;
-            if (result.ok)
-            {
-                await RefreshCloudAsync();
-            }
             RefreshAccountObjectSyncStatus();
             RefreshSyncActivityLog();
         }
@@ -7308,6 +7343,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
 
         var state = CloudObjectSyncStateStore.Load(userId);
+        var currentDeviceId = DeviceIdentityStore.GetOrCreateDesktopDeviceId();
         var pendingIds = state.PendingObjectIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var objectIds = state.Objects.Keys
             .Union(pendingIds, StringComparer.OrdinalIgnoreCase)
@@ -7326,29 +7362,25 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 : pending != null
                 ? hasError ? "等待重试" : "待上传"
                 : cached?.Deleted == true ? "已删除" : "已同步";
-            var source = string.IsNullOrWhiteSpace(cached?.UpdatedByDeviceName)
-                ? cached?.UpdatedByDeviceId
-                : cached.UpdatedByDeviceName;
+            var source = SyncUserText.Device(cached?.UpdatedByDeviceId, cached?.UpdatedByDeviceName, currentDeviceId);
             var detail = conflict != null
-                ? $"云端版本 {conflict.RemoteRevision} · 本地副本已保留"
-                : hasError
-                ? pending!.LastError
-                : pending != null
-                    ? $"已尝试 {pending.AttemptCount} 次"
-                    : string.IsNullOrWhiteSpace(source)
-                        ? "来源设备未知"
-                        : $"来源设备：{source}";
+                ? "本机修改已单独保留 · 云端来源：" + source
+                : hasError ? "暂时未能同步，将自动重试"
+                : pending != null ? "联网后将继续同步" : $"来源：{source}";
             return new AccountSyncObjectStatusItem(
                 objectId,
                 GetAccountSyncObjectDisplayName(objectId, cached),
                 status,
-                cached?.Revision ?? pending?.LastObservedRemoteRevision ?? 0,
+                conflict?.RemoteRevision ?? cached?.Revision ?? pending?.LastObservedRemoteRevision ?? 0,
                 FormatAccountSyncTime(cached?.UpdatedAtUtc),
                 detail,
                 pending != null,
                 hasError,
                 conflict != null,
-                state.ObjectHistoryAvailable);
+                state.ObjectHistoryAvailable)
+            {
+                ConflictSummary = conflict == null ? "" : SyncUserText.Differences(conflict, cached)
+            };
         }).ToArray();
 
         var pendingCount = state.PendingOperations.Count;
@@ -7356,19 +7388,18 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         var conflictCount = state.Conflicts.Count;
         var modeText = !state.ObjectSyncAvailable
             ? state.ServerProtocolVersion == 0 ? "正在建立连接" : "兼容备份模式"
-            : state.ObjectsAuthoritative ? "增量同步模式" : "兼容迁移模式";
+            : state.ObjectsAuthoritative ? "自动同步" : "正在升级同步";
         var healthText = conflictCount > 0
-            ? $"{conflictCount} 个跨设备冲突需要选择版本"
+            ? $"{conflictCount} 项设置需要你选择 · 点击查看"
             : errorCount > 0
             ? $"{errorCount} 项数据同步失败，等待重试"
             : pendingCount > 0
                 ? $"{pendingCount} 项数据等待同步"
                 : state.Objects.Count > 0 ? "所有账号配置均已同步" : "等待首次同步";
-        var explanation = state.ObjectsAuthoritative
-            ? "云端数据为权威配置；旧版本客户端数据将自动读取兼容。"
-            : state.ObjectSyncAvailable
-                ? "正在安全迁移：同时写入增量数据 and 整包备份，可安全回退。"
-                : "当前正在使用整包配置同步；暂不支持增量同步。";
+        var explanation = conflictCount > 0
+            ? "这台电脑保留的修改与云端不同，请查看后选择要保留的一份。"
+            : errorCount > 0 ? "暂时未能完成同步，联网后会自动重试。"
+            : "设置会通过账号同步；个人存储空间中的备份单独管理。";
 
         AccountSyncStatus = new AccountSyncStatusView(
             modeText,
@@ -7407,14 +7438,14 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             "settings.hotkeys" => "全局快捷键",
             "settings.mouseTriggers" => "鼠标与手势触发",
             "quickPanel.groups" => "快捷面板分组（旧版）",
-            "quickPanel.groupIndex" => "快捷面板分组索引",
+            "quickPanel.groupIndex" => "快捷面板分组与顺序",
             "quickPanel.favorites" => "收藏、禁用与搜索范围",
             "radialMenu.pages" => "燕环页面（旧版）",
-            "radialMenu.pageIndex" => "燕环页面索引",
+            "radialMenu.pageIndex" => "燕环页面与呼出方式",
             "yanyu.rules" => "燕语规则",
             "window.controls" => "窗口控制与燕选",
             "yanm.layout" => "燕幕布局与组件定义",
-            "yanm.componentStateIndex" => "燕幕组件状态索引",
+            "yanm.componentStateIndex" => "燕幕组件数据",
             _ => string.Empty
         };
         if (!string.IsNullOrWhiteSpace(fixedName)) return fixedName;
@@ -11708,7 +11739,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             }
             catch (Exception ex)
             {
-                System.Windows.MessageBox.Show(this, $"无法打开提交链接: {ex.Message}", "出错啦", MessageBoxButton.OK, MessageBoxImage.Error);
+                System.Windows.MessageBox.Show(this, $"无法打开备份详情： {ex.Message}", "出错啦", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
     }
@@ -13517,7 +13548,10 @@ public sealed record AccountSyncObjectStatusItem(
     bool IsPending,
     bool HasError,
     bool HasConflict,
-    bool HistoryAvailable);
+    bool HistoryAvailable)
+{
+    public string ConflictSummary { get; init; } = "";
+}
 
 public sealed class PersonalConfigRestorePointItem
 {
@@ -13527,10 +13561,8 @@ public sealed class PersonalConfigRestorePointItem
         CreatedAtText = DateTimeOffset.TryParse(info.CreatedAtUtc, out var createdAt)
             ? createdAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture)
             : info.CreatedAtUtc;
-        DeviceText = !string.IsNullOrWhiteSpace(info.SourceDeviceName)
-            ? info.SourceDeviceName!
-            : !string.IsNullOrWhiteSpace(info.SourceDeviceId) ? info.SourceDeviceId! : "未知设备";
-        SummaryText = $"包含项目 {info.ObjectCount} 个 · 本次变更 {info.ChangedObjectIds.Count} 个";
+        DeviceText = SyncUserText.Device(info.SourceDeviceId, info.SourceDeviceName, DeviceIdentityStore.GetOrCreateDesktopDeviceId());
+        SummaryText = $"已备份 {info.ObjectCount} 项设置 · 本次更新 {info.ChangedObjectIds.Count} 项";
         SizeText = info.SizeBytes < 1024
             ? $"{info.SizeBytes} B"
             : $"{info.SizeBytes / 1024.0:0.#} KB";
@@ -13551,15 +13583,15 @@ public sealed class ExtensionSyncConflictItem
     {
         ExtensionId = record.ExtensionId;
         LocalText = record.LocalPurged
-            ? $"本地：彻底删除 · rev {record.LocalRevision}"
+            ? $"本机：彻底删除"
             : record.LocalDeleted
-                ? $"本地：删除 · rev {record.LocalRevision}"
-                : $"本地：v{record.LocalVersion} · rev {record.LocalRevision}";
+                ? $"本机：删除"
+                : $"本机：v{record.LocalVersion}";
         RemoteText = record.RemotePurged
-            ? $"远端：彻底删除 · rev {record.RemoteRevision}"
+            ? $"云端：彻底删除"
             : record.RemoteDeleted
-                ? $"远端：删除 · rev {record.RemoteRevision}"
-                : $"远端：v{record.RemoteVersion} · rev {record.RemoteRevision}";
+                ? $"云端：删除"
+                : $"云端：v{record.RemoteVersion}";
         RemoteDeviceText = !string.IsNullOrWhiteSpace(record.RemoteDeviceName)
             ? record.RemoteDeviceName!
             : !string.IsNullOrWhiteSpace(record.RemoteDeviceId) ? record.RemoteDeviceId! : "未知设备";
@@ -13583,11 +13615,11 @@ public sealed class ExtensionDataConflictItem
         Key = state.Key;
         var conflict = state.Conflict ?? new ExtensionDataConflict();
         LocalText = conflict.LocalDeleted
-            ? $"本地：删除 · base rev {conflict.LocalBaseRevision}"
-            : $"本地：base rev {conflict.LocalBaseRevision} · {ShortHash(conflict.LocalContentHash)}";
+            ? "本机：已删除"
+            : "本机：待同步的内容已保留";
         RemoteText = conflict.Remote.Deleted
-            ? $"远端：删除 · rev {conflict.Remote.Revision}"
-            : $"远端：rev {conflict.Remote.Revision} · {ShortHash(conflict.Remote.ContentHash)}";
+            ? "云端：已删除"
+            : "云端：有另一份修改";
         RemoteDeviceText = !string.IsNullOrWhiteSpace(conflict.Remote.UpdatedByDeviceName)
             ? conflict.Remote.UpdatedByDeviceName
             : !string.IsNullOrWhiteSpace(conflict.Remote.UpdatedByDeviceId)
@@ -13618,7 +13650,7 @@ public sealed class PersonalSyncCommitItem : INotifyPropertyChanged
     public PersonalSyncCommitItem(string sha, string message, string author, DateTimeOffset committedAtUtc, string url)
     {
         Sha = sha;
-        Message = string.IsNullOrWhiteSpace(message) ? "(无提交说明)" : message;
+        Message = string.IsNullOrWhiteSpace(message) ? "备份记录" : message;
         FriendlyMessage = GetFriendlyCommitMessage(Message);
         Author = string.IsNullOrWhiteSpace(author) ? "未知作者" : author;
         CommittedAtUtc = committedAtUtc;
@@ -13649,7 +13681,7 @@ public sealed class PersonalSyncCommitItem : INotifyPropertyChanged
         }
     }
 
-    public string DiffBtnText => IsExpanded ? "收起差异" : "查看差异";
+    public string DiffBtnText => IsExpanded ? "收起技术详情" : "技术详情";
 
     public Visibility DiffVisibility => IsExpanded ? Visibility.Visible : Visibility.Collapsed;
 
@@ -13677,10 +13709,12 @@ public sealed class PersonalSyncCommitItem : INotifyPropertyChanged
     {
         if (string.IsNullOrWhiteSpace(rawMessage))
         {
-            return "(无提交说明)";
+            return "备份记录";
         }
 
         var msg = rawMessage.Trim();
+        if (msg == "同步目录：更新个人扩展索引") return "已更新小程序列表";
+        if (msg == "同步扩展：上传个人扩展包") return "已备份小程序";
 
         if (msg.Equals("Update yanm-state.json from Web", StringComparison.OrdinalIgnoreCase))
         {
@@ -13712,13 +13746,13 @@ public sealed class PersonalSyncCommitItem : INotifyPropertyChanged
         if (normalized.EndsWith("state/yanm-state.json", StringComparison.OrdinalIgnoreCase))
             return "燕幕组件状态";
         if (normalized.EndsWith("state/config-manifest.json", StringComparison.OrdinalIgnoreCase))
-            return "配置清单 (config-manifest.json)";
+            return "设置列表";
         if (normalized.Contains("state/config-changes/", StringComparison.OrdinalIgnoreCase))
-            return "配置历史变更记录 (config-changes)";
+            return "设置更改记录";
         if (normalized.EndsWith("settings-general.json", StringComparison.OrdinalIgnoreCase))
             return "【设置】通用系统设置";
         if (normalized.EndsWith("settings-ai.json", StringComparison.OrdinalIgnoreCase))
-            return "【设置】AI 助手模型与密钥设置";
+            return "【设置】AI 服务与模型设置";
         if (normalized.EndsWith("settings-hotkeys.json", StringComparison.OrdinalIgnoreCase))
             return "【设置】系统主快捷键";
         if (normalized.EndsWith("settings-mouse-triggers.json", StringComparison.OrdinalIgnoreCase))

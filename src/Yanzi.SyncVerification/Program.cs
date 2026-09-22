@@ -2,9 +2,13 @@ using System.Text.Json;
 using OpenQuickHost;
 using OpenQuickHost.Sync;
 
+VerifySyncArchitectureSafety();
+VerifySyncConflictExperience();
+if (args.Contains("--sync-ux-safety")) return;
 VerifyBackpackResponsiveness();
 if (args.Contains("--backpack-safety")) return;
 VerifySearchInteractionSafety();
+VerifyQuickWindowSwitchSafety();
 if (args.Contains("--interaction-safety")) return;
 VerifySyncPackageSafety();
 if (args.Contains("--sync-safety")) return;
@@ -71,6 +75,74 @@ Assert(afterDeletion?.QuickPanelGlobalGroups.Select(static item => item.Id).Sequ
 Assert(afterDeletion?.RadialMenu?.Pages.Select(static item => item.Id).SequenceEqual(["r1"]) == true, "Deleted radial page reappeared after applying tombstones.");
 
 Console.WriteLine("Account config object verification passed: round-trip, isolated edits, safe tombstones, remote-only preservation.");
+
+static void VerifySyncArchitectureSafety()
+{
+    Assert(PersonalSyncAuthority.SelectMode(new SyncSession { UserId = "account", ExpiresAt = 1 }, false) == PersonalConfigSyncMode.UploadOnlyBackup,
+        "Expired authentication must never promote a backup to configuration authority.");
+    Assert(PersonalSyncAuthority.SelectMode(null, true) == PersonalConfigSyncMode.UploadOnlyBackup,
+        "A saved account login must keep personal storage in backup mode while reconnecting.");
+    Assert(PersonalSyncAuthority.SelectMode(null, false) == PersonalConfigSyncMode.Bidirectional,
+        "Standalone users must retain personal synchronization.");
+    var page = new CloudSyncObjectListResponse
+    {
+        CurrentRevision = 30, CursorRevision = 20,
+        Objects = [new CloudSyncObjectRecord { ObjectId = "a", Revision = 20 }]
+    };
+    Assert(CloudSyncProgress.DownloadCursor(10, page) == 20, "A concurrent server write must not advance the downloaded cursor.");
+    Assert(CloudSyncProgress.DownloadCursor(20, new CloudSyncObjectListResponse { CurrentRevision = 40, CursorRevision = 40 }) == 20,
+        "An empty response from an older server must not skip an unseen write.");
+    Assert(CloudSyncProgress.DownloadCursor(20, new CloudSyncObjectListResponse
+        { Objects = [new CloudSyncObjectRecord { ObjectId = "b", Revision = 21 }] }) == 21,
+        "A following page must still receive the other device's write.");
+    var when = new DateTime(2026, 9, 22, 1, 0, 0, DateTimeKind.Utc);
+    var first = LauncherConfigObjectStore.CreateRestorePoint([], [], when, "test");
+    var second = LauncherConfigObjectStore.CreateRestorePoint([], [], when, "test");
+    Assert(first.RestorePointId != second.RestorePointId && LauncherConfigObjectStore.GetRestorePointPath(first) != LauncherConfigObjectStore.GetRestorePointPath(second),
+        "Backups with the same timestamp must not overwrite one another.");
+    foreach (var invalid in new[] { "{}", "null", "{\"restorePoints\":null}", "{\"restorePoints\":[null]}" })
+    {
+        var rejected = false;
+        try { LauncherConfigObjectStore.DeserializeHistoryIndex(System.Text.Encoding.UTF8.GetBytes(invalid)); }
+        catch (JsonException) { rejected = true; }
+        Assert(rejected, "Malformed history must never be treated as an empty backup directory.");
+    }
+    var malformed = new LauncherConfigHistoryIndex { RestorePoints = [new LauncherConfigRestorePointInfo
+        { RestorePointId = "test", Path = "state/config-history/points/../../index.json", Sha256 = new string('a', 64) }] };
+    var unsafePathRejected = false;
+    try { LauncherConfigObjectStore.DeserializeHistoryIndex(LauncherConfigObjectStore.SerializeHistoryIndex(malformed)); }
+    catch (JsonException) { unsafePathRejected = true; }
+    Assert(unsafePathRejected, "History cleanup must not follow paths outside the backup directory.");
+    Console.WriteLine("Sync architecture safety passed: download watermarks, interleaved changes, unique backups, strict history index, stable authority.");
+}
+
+static void VerifySyncConflictExperience()
+{
+    static JsonElement Payload(string json) => JsonSerializer.Deserialize<JsonElement>(json);
+    static LauncherConfigObjectEnvelope Envelope(string json, bool deleted = false) => new()
+        { ObjectId = "settings.mouseTriggers", Payload = Payload(json), Deleted = deleted };
+    Assert(LauncherConfigObjectStore.HasEquivalentPayload(Envelope("{\"a\":1,\"b\":2}"), Envelope("{\"b\":2,\"a\":1}")), "Object property order must not create a conflict.");
+    Assert(!LauncherConfigObjectStore.HasEquivalentPayload(Envelope("[1,2]"), Envelope("[2,1]")), "Array order must remain meaningful.");
+    Assert(!LauncherConfigObjectStore.HasEquivalentPayload(Envelope("{}"), Envelope("{}", true)), "Deletion must remain a real difference.");
+    var state = new CloudObjectSyncState();
+    const string id = "settings.mouseTriggers";
+    var conflict = new CloudObjectConflictRecord { ObjectId = id, LocalPayload = Payload("{\"rightButtonLongPress\":true}"), RemoteRevision = 2 };
+    state.Conflicts[id] = conflict;
+    state.Objects[id] = new CloudObjectSyncCacheEntry { ObjectId = id, Revision = 3, Payload = Payload("{\"rightButtonLongPress\":false}"), UpdatedByDeviceName = "Other" };
+    state.PendingOperations[id] = new CloudObjectPendingOperation { ObjectId = id };
+    Assert(CloudConflictReconciler.Reconcile(state) == 0 && conflict.RemoteRevision == 3, "Real differences must survive and track latest remote revision.");
+    Assert(SyncUserText.Differences(conflict, state.Objects[id]).Contains("右键长按"), "Known differences need understandable names.");
+    state.Objects[id].Revision = 1;
+    state.Objects[id].Payload = conflict.LocalPayload;
+    Assert(CloudConflictReconciler.Reconcile(state) == 0 && state.Conflicts.Count == 1, "Older cache must not erase conflict.");
+    state.Objects[id].Revision = 4;
+    Assert(CloudConflictReconciler.Reconcile(state) == 1 && state.Conflicts.Count == 0, "Equal preserved content must reconcile.");
+    Assert(state.PendingOperations.ContainsKey(id), "Reconciliation must preserve newer pending edits.");
+    Assert(SyncUserText.Device("a", "PC", "a") == "本机", "Own device needs a friendly label.");
+    Assert(SyncUserText.Device("b", "PC", "a") == "PC", "Same display name must not imply same device.");
+    Assert(SyncUserText.Device(null, null, "a") != "本机", "Unknown identity must not imply this device.");
+    Console.WriteLine("Sync UX verification passed: semantic equality, preserved conflicts, revision refresh, pending edits, friendly labels.");
+}
 
 static void VerifySyncCoverageCatalog()
 {
@@ -487,6 +559,42 @@ static void VerifyBackpackResponsiveness()
     cache.Dispose();
     Assert(first.SubscriberCount == 0 && second.SubscriberCount == 0 && !cache.CanReuse(key, commands), "Cache disposal leaked handlers or remained reusable.");
     Console.WriteLine("Backpack responsiveness safety passed: unchanged-slot reuse, all invalidation paths, partial rebuilds, handler cleanup and threshold preservation.");
+}
+
+static void VerifyQuickWindowSwitchSafety()
+{
+    // 1. 目标判定规则验证
+    Assert(QuickWindowSwitchService.IsToggleEligibleTarget("shell:Desktop"), "shell:Desktop 应该支持智能窗口切换。");
+    Assert(QuickWindowSwitchService.IsToggleEligibleTarget("shell:Downloads"), "shell:Downloads 应该支持智能窗口切换。");
+    Assert(QuickWindowSwitchService.IsToggleEligibleTarget("notepad.exe"), "notepad.exe 应该支持智能窗口切换。");
+    Assert(QuickWindowSwitchService.IsToggleEligibleTarget(@"C:\Windows\notepad.exe"), "完整路径可执行文件应该支持智能窗口切换。");
+    Assert(QuickWindowSwitchService.IsToggleEligibleTarget("calc"), "通用命令应该支持智能窗口切换。");
+    Assert(!QuickWindowSwitchService.IsToggleEligibleTarget("https://yanzi.luoluoluo.cc.cd"), "网页网址不应支持智能窗口切换。");
+    Assert(!QuickWindowSwitchService.IsToggleEligibleTarget("http://127.0.0.1:8080"), "HTTP 网址不应支持智能窗口切换。");
+    Assert(!QuickWindowSwitchService.IsToggleEligibleTarget(""), "空字符串不应支持智能窗口切换。");
+
+    // 2. Manifest 序列化与反序列化验证
+    var options = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+    var jsonWithToggleTrue = "{\"name\":\"测试\",\"toggleWindow\":true}";
+    var manifest1 = JsonSerializer.Deserialize<LocalExtensionManifest>(jsonWithToggleTrue, options);
+    Assert(manifest1?.ToggleWindow == true, "反序列化 toggleWindow: true 失败。");
+
+    var jsonWithToggleFalse = "{\"name\":\"测试\",\"toggleWindow\":false}";
+    var manifest2 = JsonSerializer.Deserialize<LocalExtensionManifest>(jsonWithToggleFalse, options);
+    Assert(manifest2?.ToggleWindow == false, "反序列化 toggleWindow: false 失败。");
+
+    var jsonWithoutToggle = "{\"name\":\"测试\"}";
+    var manifest3 = JsonSerializer.Deserialize<LocalExtensionManifest>(jsonWithoutToggle, options);
+    Assert(manifest3?.ToggleWindow == null, "未显式指定 toggleWindow 时应为 null。");
+
+    // 3. CommandItem 默认与显式设置验证
+    var cmdDefault = new CommandItem("T", "测试默认", "subtitle", "小程序", "#000000", "notepad.exe", []);
+    Assert(cmdDefault.ToggleWindow == true, "CommandItem 默认 ToggleWindow 应该为 true。");
+
+    var cmdDisabled = new CommandItem("T", "测试关闭", "subtitle", "小程序", "#000000", "notepad.exe", [], toggleWindow: false);
+    Assert(cmdDisabled.ToggleWindow == false, "CommandItem 显式关闭 ToggleWindow 应该为 false。");
+
+    Console.WriteLine("Quick window switch safety passed: eligibility check, manifest roundtrip, default value fallback and CommandItem mapping.");
 }
 
 sealed class PanelCacheProbe : System.ComponentModel.INotifyPropertyChanged

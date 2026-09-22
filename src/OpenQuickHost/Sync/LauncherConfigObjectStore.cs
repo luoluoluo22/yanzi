@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Security.Cryptography;
@@ -140,8 +140,12 @@ internal static class LauncherConfigObjectStore
             return false;
         }
 
-        return JsonSerializer.Serialize(left.Payload, JsonOptions)
-            .Equals(JsonSerializer.Serialize(right.Payload, JsonOptions), StringComparison.Ordinal);
+        if (left.Payload.ValueKind == JsonValueKind.Undefined || right.Payload.ValueKind == JsonValueKind.Undefined)
+            return left.Payload.ValueKind == right.Payload.ValueKind;
+        // JSON property ordering is not a user edit. Array ordering still matters.
+        return System.Text.Json.Nodes.JsonNode.DeepEquals(
+            System.Text.Json.Nodes.JsonNode.Parse(left.Payload.GetRawText()),
+            System.Text.Json.Nodes.JsonNode.Parse(right.Payload.GetRawText()));
     }
 
     public static LauncherConfigManifest CreateManifest(IEnumerable<LauncherConfigObjectWrite> writes, DateTime updatedAtUtc)
@@ -206,11 +210,8 @@ internal static class LauncherConfigObjectStore
         return $"{ChangeDirectoryPath}/{updatedAtUtc:yyyyMMddHHmmssfff}-{sourceDeviceId}.json";
     }
 
-    public static string GetRestorePointPath(DateTime updatedAtUtc)
-    {
-        var sourceDeviceId = SanitizePathSegment(DeviceIdentityStore.GetOrCreateDesktopDeviceId());
-        return $"{HistoryPointDirectoryPath}/{updatedAtUtc:yyyyMMddHHmmssfff}-{sourceDeviceId}.json";
-    }
+    public static string GetRestorePointPath(LauncherConfigRestorePoint point) =>
+        $"{HistoryPointDirectoryPath}/{SanitizePathSegment(point.RestorePointId)}.json";
 
     public static LauncherConfigRestorePoint CreateRestorePoint(
         IEnumerable<LauncherConfigObjectWrite> effectiveWrites,
@@ -221,7 +222,7 @@ internal static class LauncherConfigObjectStore
         var deviceId = DeviceIdentityStore.GetOrCreateDesktopDeviceId();
         return new LauncherConfigRestorePoint
         {
-            RestorePointId = $"{ToRevision(updatedAtUtc)}-{deviceId}",
+            RestorePointId = $"{ToRevision(updatedAtUtc)}-{deviceId}-{Guid.NewGuid():N}",
             Revision = ToRevision(updatedAtUtc),
             CreatedAtUtc = updatedAtUtc.ToString("O"),
             SourceDeviceId = deviceId,
@@ -315,9 +316,31 @@ internal static class LauncherConfigObjectStore
 
     public static LauncherConfigHistoryIndex DeserializeHistoryIndex(byte[]? bytes)
     {
-        if (bytes is not { Length: > 0 }) return new LauncherConfigHistoryIndex();
-        return JsonSerializer.Deserialize<LauncherConfigHistoryIndex>(bytes, JsonOptions)
-               ?? new LauncherConfigHistoryIndex();
+        if (bytes == null) return new LauncherConfigHistoryIndex();
+        using var document = JsonDocument.Parse(bytes);
+        if (document.RootElement.ValueKind != JsonValueKind.Object ||
+            !document.RootElement.TryGetProperty("restorePoints", out var points) || points.ValueKind != JsonValueKind.Array)
+            throw new JsonException("备份目录缺少有效的历史列表。");
+        var index = JsonSerializer.Deserialize<LauncherConfigHistoryIndex>(bytes, JsonOptions)
+            ?? throw new JsonException("备份目录为空。");
+        if (index.SchemaVersion != 1) throw new JsonException("备份目录版本不受支持。");
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var point in index.RestorePoints)
+        {
+            if (point == null || string.IsNullOrWhiteSpace(point.RestorePointId) || !ids.Add(point.RestorePointId) ||
+                !IsHistoryFile(point.Path, HistoryPointDirectoryPath) ||
+                (!string.IsNullOrEmpty(point.ChangeSetPath) && !IsHistoryFile(point.ChangeSetPath, ChangeDirectoryPath)) ||
+                point.Sha256?.Length != 64 || !point.Sha256.All(Uri.IsHexDigit) || point.ChangedObjectIds == null)
+                throw new JsonException("备份目录包含无效或重复的历史记录。");
+        }
+        return index;
+    }
+
+    private static bool IsHistoryFile(string? path, string directory)
+    {
+        if (path == null || !path.StartsWith(directory + "/", StringComparison.Ordinal) || !path.EndsWith(".json", StringComparison.Ordinal)) return false;
+        var file = path[(directory.Length + 1)..];
+        return file.Length > 5 && file.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' or '.') && !file.Contains("..");
     }
 
     public static byte[] SerializeRestorePoint(LauncherConfigRestorePoint restorePoint) =>

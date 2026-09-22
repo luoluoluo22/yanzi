@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
@@ -858,38 +860,53 @@ public partial class AddJsonExtensionWindow
         if (_isInitializing || _suppressSimpleSync) return;
         OpenTargetBox.Text = OpenTargetSimpleBox.Text;
 
-        // 智能自动推导网站 Favicon 图标或程序真实图标
         var text = OpenTargetSimpleBox.Text?.Trim() ?? string.Empty;
-        if (text.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || text.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        if (!string.IsNullOrEmpty(text))
         {
-            try
-            {
-                var uri = new Uri(text);
-                if (!string.IsNullOrEmpty(uri.Host) && uri.Host.Contains('.'))
-                {
-                    var favIcon = $"{uri.Scheme}://{uri.Host}/favicon.ico";
-                    var currentIcon = IconBox.Text?.Trim() ?? string.Empty;
-                    if (string.IsNullOrEmpty(currentIcon) ||
-                        currentIcon.StartsWith("mdi:", StringComparison.OrdinalIgnoreCase) ||
-                        currentIcon.Contains("/favicon.ico", StringComparison.OrdinalIgnoreCase))
-                    {
-                        IconBox.Text = favIcon;
-                    }
-                }
-            }
-            catch { /* 忽略不合法 URI 输入过程 */ }
-        }
-        else if (System.IO.File.Exists(text) && text.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
-        {
-            var currentIcon = IconBox.Text?.Trim() ?? string.Empty;
-            if (string.IsNullOrEmpty(currentIcon) || currentIcon.StartsWith("mdi:", StringComparison.OrdinalIgnoreCase))
-            {
-                IconBox.Text = text;
-            }
+            ApplyOpenTargetInSimpleMode(text, isExplicitBrowse: false);
         }
 
         TryRefreshJsonFromHiddenForm();
         UpdatePreview();
+        SafeRefreshIconPreview();
+    }
+
+    private void OpenTargetChooseApp_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new InstalledAppPickerDialog(this);
+        if (dialog.ShowDialog() == true && dialog.SelectedApp is { } selected)
+        {
+            var target = selected.LaunchTarget;
+            OpenTargetSimpleBox.Text = target;
+            OpenTargetBox.Text = target;
+
+            // 提取优雅的名称与动作描述
+            var friendlyName = CleanNoiseSuffix(selected.Title);
+            if (string.IsNullOrWhiteSpace(friendlyName))
+            {
+                friendlyName = selected.Title;
+            }
+
+            var newName = $"打开{friendlyName}";
+            var newDesc = $"点击后启动 {friendlyName}。";
+            var icon = selected.IconPath ?? selected.LaunchTarget;
+
+            NameSimpleBox.Text = newName;
+            NameBox.Text = newName;
+            DescriptionSimpleBox.Text = newDesc;
+            DescriptionBox.Text = newDesc;
+            IconSimpleBox.Text = icon;
+            IconBox.Text = icon;
+
+            _lastTemplateSnapshot["Name"] = newName;
+            _lastTemplateSnapshot["Description"] = newDesc;
+            _lastTemplateSnapshot["Icon"] = icon;
+            _lastTemplateSnapshot["OpenTarget"] = target;
+
+            TryRefreshJsonFromHiddenForm();
+            UpdatePreview();
+            SafeRefreshIconPreview();
+        }
     }
 
     private void OpenTargetBrowse_Click(object sender, RoutedEventArgs e)
@@ -897,13 +914,280 @@ public partial class AddJsonExtensionWindow
         var dialog = new Microsoft.Win32.OpenFileDialog
         {
             Title = "选择程序或文件",
-            CheckFileExists = false,
+            Filter = "常用程序与快捷方式 (*.exe;*.lnk;*.bat;*.cmd)|*.exe;*.lnk;*.bat;*.cmd|所有文件 (*.*)|*.*",
+            CheckFileExists = true,
             Multiselect = false
         };
         if (dialog.ShowDialog(this) == true)
         {
-            OpenTargetSimpleBox.Text = dialog.FileName;
+            var chosen = dialog.FileName;
+            OpenTargetSimpleBox.Text = chosen;
+            OpenTargetBox.Text = chosen;
+            ApplyOpenTargetInSimpleMode(chosen, isExplicitBrowse: true);
+            TryRefreshJsonFromHiddenForm();
+            UpdatePreview();
+            SafeRefreshIconPreview();
         }
+    }
+
+    private void ApplyOpenTargetInSimpleMode(string target, bool isExplicitBrowse)
+    {
+        if (string.IsNullOrWhiteSpace(target)) return;
+        var trimmed = target.Trim();
+
+        string friendlyName = string.Empty;
+        string icon = string.Empty;
+        bool isApp = false;
+
+        if (NativeFileIconService.IsDesktopTarget(trimmed))
+        {
+            friendlyName = "桌面";
+            icon = "stock:desktop";
+        }
+        else if (NativeFileIconService.IsDownloadsTarget(trimmed))
+        {
+            friendlyName = "下载";
+            icon = "stock:downloads";
+        }
+        else if (trimmed.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || trimmed.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                var uri = new Uri(trimmed);
+                friendlyName = uri.Host;
+                if (!string.IsNullOrEmpty(friendlyName) && friendlyName.StartsWith("www.", StringComparison.OrdinalIgnoreCase))
+                {
+                    friendlyName = friendlyName[4..];
+                }
+                if (!string.IsNullOrEmpty(uri.Host) && uri.Host.Contains('.'))
+                {
+                    icon = $"{uri.Scheme}://{uri.Host}/favicon.ico";
+                }
+                else
+                {
+                    icon = "mdi:earth";
+                }
+            }
+            catch
+            {
+                friendlyName = "网页";
+                icon = "mdi:earth";
+            }
+        }
+        else if (trimmed.StartsWith("ms-settings", StringComparison.OrdinalIgnoreCase))
+        {
+            friendlyName = "系统设置";
+            icon = "mdi:cog";
+        }
+        else if (File.Exists(trimmed))
+        {
+            var ext = Path.GetExtension(trimmed);
+            isApp = ext.Equals(".exe", StringComparison.OrdinalIgnoreCase) ||
+                    ext.Equals(".bat", StringComparison.OrdinalIgnoreCase) ||
+                    ext.Equals(".cmd", StringComparison.OrdinalIgnoreCase) ||
+                    ext.Equals(".lnk", StringComparison.OrdinalIgnoreCase);
+
+            friendlyName = FormatFriendlyProgramName(trimmed);
+            icon = trimmed;
+        }
+        else if (Directory.Exists(trimmed))
+        {
+            var dirName = Path.GetFileName(trimmed.TrimEnd('\\', '/'));
+            friendlyName = string.IsNullOrWhiteSpace(dirName) ? trimmed : dirName;
+            icon = "mdi:folder";
+        }
+
+        // 如果解析出友好名称，联动更新“名称”和“描述”
+        if (!string.IsNullOrWhiteSpace(friendlyName))
+        {
+            var newName = $"打开{friendlyName}";
+            var newDesc = isApp ? $"点击后启动 {friendlyName}。" : $"点击后打开{friendlyName}。";
+
+            var currentName = NameSimpleBox.Text?.Trim() ?? string.Empty;
+            var snapName = _lastTemplateSnapshot.TryGetValue("Name", out var sn) ? sn : string.Empty;
+
+            bool shouldUpdateName = isExplicitBrowse ||
+                                    string.IsNullOrEmpty(currentName) ||
+                                    currentName == "未命名小程序" ||
+                                    currentName == snapName ||
+                                    currentName.StartsWith("打开", StringComparison.Ordinal);
+
+            if (shouldUpdateName)
+            {
+                NameSimpleBox.Text = newName;
+                NameBox.Text = newName;
+                _lastTemplateSnapshot["Name"] = newName;
+            }
+
+            var currentDesc = DescriptionSimpleBox.Text?.Trim() ?? string.Empty;
+            var snapDesc = _lastTemplateSnapshot.TryGetValue("Description", out var sd) ? sd : string.Empty;
+
+            bool shouldUpdateDesc = isExplicitBrowse ||
+                                    string.IsNullOrEmpty(currentDesc) ||
+                                    currentDesc == "选择类型并填写信息以预览" ||
+                                    currentDesc == snapDesc ||
+                                    currentDesc.StartsWith("点击后打开", StringComparison.Ordinal) ||
+                                    currentDesc.StartsWith("点击后启动", StringComparison.Ordinal);
+
+            if (shouldUpdateDesc)
+            {
+                DescriptionSimpleBox.Text = newDesc;
+                DescriptionBox.Text = newDesc;
+                _lastTemplateSnapshot["Description"] = newDesc;
+            }
+        }
+
+        // 联动更新图标
+        if (!string.IsNullOrWhiteSpace(icon))
+        {
+            var currentIcon = IconSimpleBox.Text?.Trim() ?? string.Empty;
+            var snapIcon = _lastTemplateSnapshot.TryGetValue("Icon", out var si) ? si : string.Empty;
+
+            bool shouldUpdateIcon = isExplicitBrowse ||
+                                    string.IsNullOrEmpty(currentIcon) ||
+                                    currentIcon.StartsWith("mdi:", StringComparison.OrdinalIgnoreCase) ||
+                                    currentIcon.StartsWith("stock:", StringComparison.OrdinalIgnoreCase) ||
+                                    currentIcon.Contains("/favicon.ico", StringComparison.OrdinalIgnoreCase) ||
+                                    currentIcon == snapIcon;
+
+            if (shouldUpdateIcon)
+            {
+                IconSimpleBox.Text = icon;
+                IconBox.Text = icon;
+                _lastTemplateSnapshot["Icon"] = icon;
+            }
+        }
+
+        _lastTemplateSnapshot["OpenTarget"] = trimmed;
+    }
+
+    private static readonly string[] ProgramNoiseSuffixes =
+    [
+        "_x64", "-x64", "_x86", "-x86", "_64", "_32", "_win32", "-win32",
+        "_amd64", "-amd64", "_arm64", "-arm64", "_setup", "-setup", "_installer", "-installer"
+    ];
+
+    private static readonly string[] GenericEndWords =
+    [
+        " Object", " Application", " Executable", " Program", " Client"
+    ];
+
+    private static string FormatFriendlyProgramName(string filePath)
+    {
+        if (string.IsNullOrWhiteSpace(filePath)) return string.Empty;
+        var rawFileName = Path.GetFileNameWithoutExtension(filePath);
+        var cleanFileName = CleanNoiseSuffix(rawFileName);
+
+        try
+        {
+            if (File.Exists(filePath) && filePath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            {
+                var vi = FileVersionInfo.GetVersionInfo(filePath);
+                var desc = CleanDescription(vi.FileDescription, cleanFileName);
+                var prod = CleanDescription(vi.ProductName, cleanFileName);
+                var internalName = CleanDescription(vi.InternalName, cleanFileName);
+
+                // 1. 中文名称优先 (例如: 记事本, 计算器, 微信)
+                if (!string.IsNullOrWhiteSpace(desc) && ContainsChinese(desc)) return desc;
+                if (!string.IsNullOrWhiteSpace(prod) && ContainsChinese(prod)) return prod;
+
+                // 2. 如果 desc 清洗后是干净精炼的产品名 (<= 16 字符)
+                if (!string.IsNullOrWhiteSpace(desc) && desc.Length <= 16 && !desc.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                {
+                    return desc;
+                }
+
+                // 3. 如果 InternalName 干净简短
+                if (!string.IsNullOrWhiteSpace(internalName) && internalName.Length <= 15)
+                {
+                    return CapitalizeTitle(internalName);
+                }
+
+                // 4. 如果 prod 清洗后干净精炼
+                if (!string.IsNullOrWhiteSpace(prod) && prod.Length <= 16 && !prod.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                {
+                    return prod;
+                }
+            }
+        }
+        catch { }
+
+        return CapitalizeTitle(cleanFileName);
+    }
+
+    private static string CleanNoiseSuffix(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return string.Empty;
+        var s = name.Trim();
+        bool trimmedAny = true;
+        while (trimmedAny)
+        {
+            trimmedAny = false;
+            foreach (var suffix in ProgramNoiseSuffixes)
+            {
+                if (s.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                {
+                    s = s[..^suffix.Length].Trim();
+                    trimmedAny = true;
+                    break;
+                }
+            }
+        }
+        return string.IsNullOrEmpty(s) ? name : s;
+    }
+
+    private static string CleanDescription(string? rawDesc, string cleanFileName)
+    {
+        if (string.IsNullOrWhiteSpace(rawDesc)) return string.Empty;
+        var s = rawDesc.Trim();
+
+        // 截断第一个括号及其后面的内容 (如 "(64-bit UNICODE Release)")
+        int bracketIdx = s.IndexOfAny(['(', '[', '{', '（', '【']);
+        if (bracketIdx >= 0)
+        {
+            s = s[..bracketIdx].Trim();
+        }
+
+        // 去除通用噪点后缀词 (如 "Inspect Object" -> "Inspect")
+        foreach (var endWord in GenericEndWords)
+        {
+            if (s.EndsWith(endWord, StringComparison.OrdinalIgnoreCase))
+            {
+                var candidate = s[..^endWord.Length].Trim();
+                if (!string.IsNullOrEmpty(candidate))
+                {
+                    s = candidate;
+                }
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(cleanFileName) && s.Equals(cleanFileName, StringComparison.OrdinalIgnoreCase))
+        {
+            return CapitalizeTitle(cleanFileName);
+        }
+
+        return s;
+    }
+
+    private static bool ContainsChinese(string text)
+    {
+        return text.Any(c => c >= 0x4E00 && c <= 0x9FA5);
+    }
+
+    private static string CapitalizeTitle(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+        var t = text.Trim();
+        if (t.Length <= 3) return t.ToUpperInvariant();
+        if (t.All(char.IsUpper))
+        {
+            return char.ToUpper(t[0]) + t[1..].ToLower();
+        }
+        if (char.IsLower(t[0]))
+        {
+            return char.ToUpper(t[0]) + t[1..];
+        }
+        return t;
     }
 
     private void OpenTargetPreset_Click(object sender, RoutedEventArgs e)
@@ -911,6 +1195,7 @@ public partial class AddJsonExtensionWindow
         if (sender is System.Windows.Controls.Button btn && btn.Tag is string preset)
         {
             OpenTargetSimpleBox.Text = preset;
+            OpenTargetBox.Text = preset;
             
             var label = btn.Content?.ToString() ?? string.Empty;
             if (!string.IsNullOrEmpty(label))
@@ -926,13 +1211,13 @@ public partial class AddJsonExtensionWindow
                 {
                     icon = @"C:\Windows\System32\notepad.exe";
                 }
-                else if (lowerPreset.Contains("desktop"))
+                else if (NativeFileIconService.IsDesktopTarget(preset) || lowerPreset.Contains("desktop"))
                 {
-                    icon = "mdi:monitor";
+                    icon = "stock:desktop";
                 }
-                else if (lowerPreset.Contains("download"))
+                else if (NativeFileIconService.IsDownloadsTarget(preset) || lowerPreset.Contains("download"))
                 {
-                    icon = "mdi:folder-download";
+                    icon = "stock:downloads";
                 }
                 else if (lowerPreset.StartsWith("http://") || lowerPreset.StartsWith("https://"))
                 {
@@ -956,14 +1241,21 @@ public partial class AddJsonExtensionWindow
                 }
 
                 NameSimpleBox.Text = name;
+                NameBox.Text = name;
                 DescriptionSimpleBox.Text = desc;
+                DescriptionBox.Text = desc;
                 IconSimpleBox.Text = icon;
+                IconBox.Text = icon;
                 
                 _lastTemplateSnapshot["Name"] = name;
                 _lastTemplateSnapshot["Description"] = desc;
                 _lastTemplateSnapshot["Icon"] = icon;
                 _lastTemplateSnapshot["OpenTarget"] = preset;
             }
+
+            TryRefreshJsonFromHiddenForm();
+            UpdatePreview();
+            SafeRefreshIconPreview();
         }
     }
 
@@ -1697,6 +1989,12 @@ public partial class AddJsonExtensionWindow
     {
         if (_isInitializing || _suppressSimpleSync) return;
         UpdateFolderSearchProvider();
+        TryRefreshJsonFromHiddenForm();
+    }
+
+    private void ToggleWindowMode_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_isInitializing || _suppressSimpleSync) return;
         TryRefreshJsonFromHiddenForm();
     }
 

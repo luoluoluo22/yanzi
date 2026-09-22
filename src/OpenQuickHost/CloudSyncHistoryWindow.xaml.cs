@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
 using System.Runtime.CompilerServices;
@@ -59,7 +59,7 @@ public partial class CloudSyncHistoryWindow : Window, INotifyPropertyChanged
     {
         try
         {
-            StatusText = "正在读取不可变版本记录...";
+            StatusText = "正在读取历史备份记录...";
             var response = await _client.GetSyncObjectHistoryAsync(ObjectId, limit: 100);
             if (response.Versions.Count > 0)
             {
@@ -74,7 +74,7 @@ public partial class CloudSyncHistoryWindow : Window, INotifyPropertyChanged
 
             StatusText = Versions.Count == 0
                 ? "这个对象还没有可查询的历史。部署历史迁移前产生的旧版本不会被反向补录。"
-                : $"已载入 {Versions.Count} 个版本；当前对象 rev {_currentObjectRevision}。" +
+                : $"已载入 {Versions.Count} 个版本；当前对象 版本 {_currentObjectRevision}。" +
                   (response.HasMore ? " 仍有更早版本未显示。" : string.Empty);
         }
         catch (Exception ex)
@@ -97,7 +97,7 @@ public partial class CloudSyncHistoryWindow : Window, INotifyPropertyChanged
 
         var confirmation = MessageBox.Show(
             this,
-            $"将“{DisplayName}”恢复到 rev {version.Revision}？\n\n恢复会生成一个新版本，现有版本和历史记录都不会删除。",
+            $"将“{DisplayName}”恢复到 版本 {version.Revision}？\n\n恢复会生成一个新版本，现有版本和历史记录都不会删除。",
             "确认恢复同步版本",
             MessageBoxButton.YesNo,
             MessageBoxImage.Question);
@@ -109,7 +109,7 @@ public partial class CloudSyncHistoryWindow : Window, INotifyPropertyChanged
         button.IsEnabled = false;
         try
         {
-            StatusText = $"正在恢复 rev {version.Revision}...";
+            StatusText = $"正在恢复 版本 {version.Revision}...";
             var restored = await _mainWindow.RestoreCloudObjectVersionAsync(
                 ObjectId,
                 _currentObjectRevision,
@@ -120,7 +120,7 @@ public partial class CloudSyncHistoryWindow : Window, INotifyPropertyChanged
             // 立即走正常拉取/合成链，让本机缓存、界面和云端恢复结果保持一致。
             await _mainWindow.RefreshCloudFromSettingsAsync();
             await LoadHistoryAsync();
-            StatusText = $"已从 rev {version.Revision} 恢复，并生成新版本 rev {restored.Revision}。";
+            StatusText = $"已从 版本 {version.Revision} 恢复，并生成新版本 版本 {restored.Revision}。";
         }
         catch (Exception ex)
         {
@@ -170,17 +170,13 @@ public sealed record CloudSyncHistoryVersionView(
             "restore" => "历史恢复",
             _ => "配置修改"
         };
-        var device = !string.IsNullOrWhiteSpace(record.UpdatedByDeviceName)
-            ? record.UpdatedByDeviceName!
-            : !string.IsNullOrWhiteSpace(record.UpdatedByDeviceId)
-                ? record.UpdatedByDeviceId!
-                : "未知设备";
+        var device = SyncUserText.Device(record.UpdatedByDeviceId, record.UpdatedByDeviceName, DeviceIdentityStore.GetOrCreateDesktopDeviceId());
         var time = DateTimeOffset.TryParse(record.UpdatedAtUtc, out var timestamp)
             ? timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture)
             : "未知时间";
         var detail = record.Operation.Equals("restore", StringComparison.OrdinalIgnoreCase) && record.RestoredFromRevision.HasValue
-            ? $"来自 rev {record.RestoredFromRevision.Value}"
-            : record.Deleted ? "墓碑版本" : "完整对象版本";
+            ? $"来自 版本 {record.RestoredFromRevision.Value}"
+            : record.Deleted ? "删除记录" : "设置备份";
         var isCurrent = record.Revision == currentRevision;
         return new(record.Revision, operation, time, device, detail, isCurrent, !isCurrent);
     }

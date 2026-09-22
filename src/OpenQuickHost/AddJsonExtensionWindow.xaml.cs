@@ -2596,6 +2596,7 @@ public partial class AddJsonExtensionWindow : Window
             Description = NullIfEmpty(DescriptionBox.Text),
             Keywords = SplitCsv(KeywordsBox.Text),
             OpenTarget = NullIfEmpty(OpenTargetBox.Text),
+            ToggleWindow = ToggleWindowModeCheck?.IsChecked,
             QueryPrefixes = SplitCsv(QueryPrefixesBox.Text),
             QueryTargetTemplate = NullIfEmpty(QueryTargetTemplateBox.Text),
             Icon = NullIfEmpty(IconBox.Text),
@@ -2704,6 +2705,7 @@ public partial class AddJsonExtensionWindow : Window
         DescriptionBox.Text = manifest.Description ?? string.Empty;
         KeywordsBox.Text = manifest.Keywords == null ? string.Empty : string.Join(", ", manifest.Keywords);
         OpenTargetBox.Text = manifest.OpenTarget ?? string.Empty;
+        ToggleWindowModeCheck.IsChecked = manifest.ToggleWindow ?? true;
         QueryPrefixesBox.Text = manifest.QueryPrefixes == null ? string.Empty : string.Join(", ", manifest.QueryPrefixes);
         QueryTargetTemplateBox.Text = manifest.QueryTargetTemplate ?? string.Empty;
         IconBox.Text = manifest.Icon ?? string.Empty;
@@ -3058,11 +3060,24 @@ public partial class AddJsonExtensionWindow : Window
             // 系统协议（shell:、ms-settings:、ms-photos: 之类）和 PATH 查得到的可执行文件也算合法目标
             var isShellProtocol = target.Contains(':') && !Path.IsPathFullyQualified(target);
             var resolvedFromPath = !exists && TryResolveExecutableOnPath(target);
-            Process.Start(new ProcessStartInfo
+
+            var toggleEnabled = manifest.ToggleWindow ?? true;
+            if (toggleEnabled && QuickWindowSwitchService.IsToggleEligibleTarget(target))
             {
-                FileName = target,
-                UseShellExecute = true
-            });
+                var toggleResult = QuickWindowSwitchService.ExecuteToggleOrLaunch(
+                    target,
+                    arguments: null,
+                    workingDirectory: null,
+                    title: manifest.Name);
+                logBuilder.AppendLine("类型：打开目标小程序 (智能窗口切换)");
+                logBuilder.AppendLine($"目标：{target}");
+                logBuilder.AppendLine($"切换动作：{toggleResult.Action}");
+                logBuilder.AppendLine($"消息：{toggleResult.Message}");
+                return new TestExecutionResult(true, $"测试通过：{toggleResult.Message}", logBuilder.ToString());
+            }
+
+            var startPsi = QuickWindowSwitchService.CreateLaunchProcessStartInfo(target);
+            Process.Start(startPsi);
             logBuilder.AppendLine("类型：打开目标小程序");
             logBuilder.AppendLine($"目标：{target}");
             logBuilder.AppendLine($"本地存在：{exists}");
@@ -3245,7 +3260,8 @@ public partial class AddJsonExtensionWindow : Window
             entryMode: manifest.EntryMode,
             inlineScriptSource: manifest.Script?.Source,
             iconReference: manifest.Icon,
-            searchProvider: manifest.SearchProvider?.ToDefinition(manifest.OpenTarget));
+            searchProvider: manifest.SearchProvider?.ToDefinition(manifest.OpenTarget),
+            toggleWindow: manifest.ToggleWindow ?? true);
     }
 
     private static string BuildGenerationPrompt(string request)

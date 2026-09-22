@@ -3,6 +3,7 @@ using System.IO;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Globalization;
 using System.Threading.Tasks;
 
@@ -193,7 +194,8 @@ public static class LocalExtensionCatalog
             queryTargetTemplate: manifest.QueryTargetTemplate,
             startup: manifest.Startup?.ToDefinition(),
             searchProvider: manifest.SearchProvider?.ToDefinition(manifest.OpenTarget),
-            isPublishedInStore: manifest.IsPublished == true);
+            isPublishedInStore: manifest.IsPublished == true,
+            toggleWindow: manifest.ToggleWindow ?? true);
     }
 
     public static void SetExtensionPublishedState(string extensionId, bool isPublished)
@@ -710,7 +712,8 @@ public static class YanziAction
             queryPrefixes: manifest.QueryPrefixes,
             queryTargetTemplate: manifest.QueryTargetTemplate,
             startup: manifest.Startup?.ToDefinition(),
-            searchProvider: manifest.SearchProvider?.ToDefinition(manifest.OpenTarget));
+            searchProvider: manifest.SearchProvider?.ToDefinition(manifest.OpenTarget),
+            toggleWindow: manifest.ToggleWindow ?? true);
     }
 
     public static string LoadManifestJson(string extensionId)
@@ -861,6 +864,7 @@ public static class YanziAction
             Description = "示例：打开当前用户桌面目录。",
             Keywords = ["桌面", "desktop", "打开"],
             OpenTarget = "shell:Desktop",
+            ToggleWindow = true,
             Icon = "mdi:monitor-dashboard"
         };
 
@@ -1136,6 +1140,9 @@ public sealed record LocalExtensionManifest
     public string[]? Keywords { get; init; }
 
     public string? OpenTarget { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? ToggleWindow { get; init; }
 
     public string[]? QueryPrefixes { get; init; }
 

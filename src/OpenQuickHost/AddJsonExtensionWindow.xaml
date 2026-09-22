@@ -631,13 +631,18 @@
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <TextBox x:Name="OpenTargetSimpleBox"
                                              Style="{StaticResource FormTextBoxStyle}"
                                              TextChanged="OpenTargetSimpleBox_TextChanged" />
-                                    <Button Grid.Column="1" Content="浏览…"
+                                    <Button Grid.Column="1" Content="选择程序…"
                                             Style="{DynamicResource GhostButtonStyle}"
                                             Height="32" Margin="8,0,0,0"
+                                            Click="OpenTargetChooseApp_Click" />
+                                    <Button Grid.Column="2" Content="浏览文件…"
+                                            Style="{DynamicResource GhostButtonStyle}"
+                                            Height="32" Margin="6,0,0,0"
                                             Click="OpenTargetBrowse_Click" />
                                 </Grid>
                                 <TextBlock Style="{StaticResource HintTextStyle}">
@@ -647,6 +652,13 @@
                                     <Run Text="ms-settings:" Foreground="{DynamicResource BrushAccent}" />
                                     <Run Text="）。" />
                                 </TextBlock>
+                                <CheckBox x:Name="ToggleWindowModeCheck"
+                                          Content="智能窗口切换（未启动则启动，后台则激活到前台，已在前台则置于后台）"
+                                          IsChecked="True"
+                                          Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}"
+                                          Margin="0,10,0,0"
+                                          Checked="ToggleWindowMode_Changed"
+                                          Unchecked="ToggleWindowMode_Changed" />
                                 <TextBlock Text="举个栗子" Style="{StaticResource FieldLabelStyle}" Margin="0,18,0,6" />
                                 <WrapPanel>
                                     <Button Content="桌面" Style="{DynamicResource GhostButtonStyle}" Margin="0,0,6,6"

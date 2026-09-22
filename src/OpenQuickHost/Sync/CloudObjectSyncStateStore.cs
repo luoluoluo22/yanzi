@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.IO;
 
@@ -155,6 +155,8 @@ internal sealed class CloudObjectSyncState
     public string UserId { get; set; } = string.Empty;
 
     public long LastSyncedRevision { get; set; }
+
+    public bool DownloadCursorValidated { get; set; }
 
     public int ServerProtocolVersion { get; set; }
 

@@ -298,17 +298,46 @@ internal static class ExtensionIconLibrary
 
     public static ImageSource? ResolveImageSource(string? iconReference, string? extensionDirectoryPath)
     {
-        if (iconReference != null && iconReference.StartsWith("shell:AppsFolder\\", StringComparison.OrdinalIgnoreCase))
+        if (!string.IsNullOrWhiteSpace(iconReference))
         {
-            if (ImageCache.TryGetValue(iconReference, out var cachedUwpImage))
+            var trimmedRef = iconReference.Trim();
+            if (NativeFileIconService.IsDesktopTarget(trimmedRef))
             {
-                return cachedUwpImage;
+                return NativeFileIconService.GetDesktopIcon();
             }
-            var uwpIcon = NativeFileIconService.GetIcon(iconReference, isFolder: false);
-            if (uwpIcon != null)
+
+            if (NativeFileIconService.IsDownloadsTarget(trimmedRef))
             {
-                ImageCache[iconReference] = uwpIcon;
-                return uwpIcon;
+                return NativeFileIconService.GetDownloadsIcon();
+            }
+
+            if (trimmedRef.StartsWith("shell:AppsFolder\\", StringComparison.OrdinalIgnoreCase))
+            {
+                if (ImageCache.TryGetValue(trimmedRef, out var cachedUwpImage))
+                {
+                    return cachedUwpImage;
+                }
+                var uwpIcon = NativeFileIconService.GetIcon(trimmedRef, isFolder: false);
+                if (uwpIcon != null)
+                {
+                    ImageCache[trimmedRef] = uwpIcon;
+                    return uwpIcon;
+                }
+            }
+
+            if (trimmedRef.StartsWith("shell:", StringComparison.OrdinalIgnoreCase) ||
+                trimmedRef.StartsWith("stock:", StringComparison.OrdinalIgnoreCase))
+            {
+                if (ImageCache.TryGetValue(trimmedRef, out var cachedShell))
+                {
+                    return cachedShell;
+                }
+                var shellIcon = NativeFileIconService.GetIcon(trimmedRef, isFolder: true);
+                if (shellIcon != null)
+                {
+                    ImageCache[trimmedRef] = shellIcon;
+                    return shellIcon;
+                }
             }
         }
 

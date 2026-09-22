@@ -31,6 +31,7 @@ namespace OpenQuickHost;
 public partial class MainWindow : Window, INotifyPropertyChanged
 {
     public bool HasBeenShown { get; set; } = false;
+    private IntPtr _previousForegroundWindow = IntPtr.Zero;
 
     private TaskCompletionSource<RadialPickerResult?>? _radialPickerTcs;
     private bool _isRadialPickerMode;
@@ -3141,13 +3142,36 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             try
             {
-                Process.Start(new ProcessStartInfo
+                if (runnable.ToggleWindow && QuickWindowSwitchService.IsToggleEligibleTarget(executionTarget))
                 {
-                    FileName = executionTarget,
-                    Arguments = runnable.LaunchArguments ?? string.Empty,
-                    WorkingDirectory = string.IsNullOrWhiteSpace(runnable.WorkingDirectory) ? string.Empty : runnable.WorkingDirectory,
-                    UseShellExecute = true
-                });
+                    if (string.Equals(launchSource, "launcher", StringComparison.OrdinalIgnoreCase))
+                    {
+                        HideToTray();
+                    }
+
+                    var toggleResult = QuickWindowSwitchService.ExecuteToggleOrLaunch(
+                        executionTarget,
+                        runnable.LaunchArguments,
+                        string.IsNullOrWhiteSpace(runnable.WorkingDirectory) ? null : runnable.WorkingDirectory,
+                        runnable.Title,
+                        _previousForegroundWindow);
+
+                    RecordCommandUsage(runnable);
+                    HostAssets.AppendRecent(runnable.Title);
+                    LastRunMessage = toggleResult.Message;
+                    return;
+                }
+
+                if (string.Equals(launchSource, "launcher", StringComparison.OrdinalIgnoreCase))
+                {
+                    HideToTray();
+                }
+
+                var psi = QuickWindowSwitchService.CreateLaunchProcessStartInfo(
+                    executionTarget,
+                    runnable.LaunchArguments,
+                    string.IsNullOrWhiteSpace(runnable.WorkingDirectory) ? null : runnable.WorkingDirectory);
+                Process.Start(psi);
                 RecordCommandUsage(runnable);
                 HostAssets.AppendRecent(runnable.Title);
                 HostAssets.AppendLog($"Executed command: {runnable.Title} -> {executionTarget}");
@@ -3518,6 +3542,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public void ExecuteCommandExternally(CommandItem command, string? explicitInput = null, string launchSource = "quick-panel")
     {
+        ExecuteCommandExternally(command, explicitInput, launchSource, IntPtr.Zero);
+    }
+
+    public void ExecuteCommandExternally(CommandItem command, string? explicitInput, string launchSource, IntPtr previousForeground)
+    {
+        if (previousForeground != IntPtr.Zero)
+        {
+            _previousForegroundWindow = previousForeground;
+        }
         _ = ExecuteCommandAsync(ResolveRunnableCommand(command), explicitInput ?? string.Empty, launchSource);
     }
 
@@ -4500,7 +4533,8 @@ public sealed class CommandItem : INotifyPropertyChanged
         CommandSearchProviderDefinition? searchProvider = null,
         ResultItemKind resultKind = ResultItemKind.None,
         string? resultProviderTitle = null,
-        bool isPublishedInStore = false)
+        bool isPublishedInStore = false,
+        bool toggleWindow = true)
     {
         Glyph = glyph;
         Title = title;
@@ -4531,13 +4565,25 @@ public sealed class CommandItem : INotifyPropertyChanged
         InlineScriptSource = inlineScriptSource;
         IconReference = iconReference;
         _iconSource = iconSourceOverride ?? ExtensionIconLibrary.ResolveImageSource(iconReference, extensionDirectoryPath);
-        if (_iconSource == null && !string.IsNullOrWhiteSpace(openTarget) && (File.Exists(openTarget) || Directory.Exists(openTarget)))
+        if (_iconSource == null && !string.IsNullOrWhiteSpace(openTarget))
         {
             _iconSource = ExtensionIconLibrary.ResolveImageSource(openTarget, extensionDirectoryPath);
         }
 
+        // 如果该小程序的目标是桌面或下载，且未配置明确的外部自定义图片文件（即无图标或仅为通用/mdi 图标），自动优先呈现系统原生高品质图标
+        if ((NativeFileIconService.IsDesktopTarget(openTarget) || NativeFileIconService.IsDesktopTarget(iconReference))
+            && (string.IsNullOrWhiteSpace(iconReference) || iconReference.StartsWith("mdi:", StringComparison.OrdinalIgnoreCase) || iconReference.StartsWith("stock:", StringComparison.OrdinalIgnoreCase) || iconReference.Equals("shell:Desktop", StringComparison.OrdinalIgnoreCase)))
+        {
+            _iconSource = NativeFileIconService.GetDesktopIcon();
+        }
+        else if ((NativeFileIconService.IsDownloadsTarget(openTarget) || NativeFileIconService.IsDownloadsTarget(iconReference))
+            && (string.IsNullOrWhiteSpace(iconReference) || iconReference.StartsWith("mdi:", StringComparison.OrdinalIgnoreCase) || iconReference.StartsWith("stock:", StringComparison.OrdinalIgnoreCase) || iconReference.Equals("shell:Downloads", StringComparison.OrdinalIgnoreCase)))
+        {
+            _iconSource = NativeFileIconService.GetDownloadsIcon();
+        }
+
         VectorIcon = ExtensionIconLibrary.ResolveVectorIcon(iconReference);
-        if (_iconSource != null && (iconReference == "mdi:file" || iconReference == "mdi:document" || string.IsNullOrWhiteSpace(iconReference)))
+        if (_iconSource != null && (iconReference == "mdi:file" || iconReference == "mdi:document" || string.IsNullOrWhiteSpace(iconReference) || iconReference == "stock:desktop" || iconReference == "shell:Desktop" || iconReference == "stock:downloads" || iconReference == "shell:Downloads" || NativeFileIconService.IsDesktopTarget(openTarget) || NativeFileIconService.IsDesktopTarget(iconReference) || NativeFileIconService.IsDownloadsTarget(openTarget) || NativeFileIconService.IsDownloadsTarget(iconReference)))
         {
             VectorIcon = null;
         }
@@ -4551,6 +4597,7 @@ public sealed class CommandItem : INotifyPropertyChanged
         ResultKind = resultKind;
         ResultProviderTitle = resultProviderTitle;
         IsPublishedInStore = isPublishedInStore;
+        ToggleWindow = toggleWindow;
         UsageCount = SearchUsageMemory.Load().GetUsageCount(ExtensionId);
     }
 
@@ -4619,6 +4666,8 @@ public sealed class CommandItem : INotifyPropertyChanged
     public System.Windows.Media.Brush AccentBrush { get; }
 
     public string? OpenTarget { get; }
+
+    public bool ToggleWindow { get; } = true;
 
     public IReadOnlyList<string> Keywords { get; }
 
