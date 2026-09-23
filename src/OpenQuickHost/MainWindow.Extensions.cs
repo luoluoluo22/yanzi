@@ -1925,10 +1925,19 @@ public partial class MainWindow
         UnregisterExtensionHotkeys();
         _nextExtensionHotkeyId = 0x5400;
 
-        foreach (var command in _localExtensionIndex.Values
+        var extensionCommands = _localExtensionIndex.Values
                      .Where(command => IsExtensionEnabled(command.ExtensionId))
-                     .Where(static x => !string.IsNullOrWhiteSpace(x.GlobalShortcut))
-                     .OrderBy(static x => x.Title, StringComparer.OrdinalIgnoreCase))
+                     .Where(static x => !string.IsNullOrWhiteSpace(x.GlobalShortcut));
+
+        var otherCommands = _allCommands
+                     .Where(static x => x.Source != CommandSource.LocalExtension && !string.IsNullOrWhiteSpace(x.GlobalShortcut));
+
+        var allHotkeys = extensionCommands
+                     .Concat(otherCommands)
+                     .DistinctBy(static x => x.ExtensionId)
+                     .OrderBy(static x => x.Title, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var command in allHotkeys)
         {
             if (!TryParseHotkey(command.GlobalShortcut!, out var modifiers, out var key))
             {

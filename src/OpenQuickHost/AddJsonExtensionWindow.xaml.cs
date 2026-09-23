@@ -2072,9 +2072,15 @@ public partial class AddJsonExtensionWindow : Window
 
     private void UpdateWindowHeightForStep()
     {
-        // 优化后的编辑器固定大尺寸，提供沉浸式编辑体验
-        Width = 1200;
-        MinWidth = 1080;
+        if (IsLoaded)
+        {
+            // 窗口加载呈现后，不再在刷新状态时重设窗口尺寸，防止用户调整尺寸被重置或卡片切换时宽度突变
+            return;
+        }
+
+        // 优化后的编辑器固定大尺寸，提供沉浸式编辑体验（与 XAML 默认宽高 1240x880 保持严格一致）
+        Width = 1240;
+        MinWidth = 1100;
         MaxWidth = double.PositiveInfinity;
         ApplyWindowHeight(preferredHeight: 880, minimumHeight: 760);
     }

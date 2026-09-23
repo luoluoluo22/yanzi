@@ -6,70 +6,123 @@ namespace OpenQuickHost.Sync;
 
 internal static class CloudObjectSyncStateStore
 {
-    private static string StatePath => HostAssets.ResolveDataFilePath("cloud-object-sync-state.json");
+    private static readonly object IoLock = new();
 
-    public static CloudObjectSyncState Load(string? userId)
+    public static CloudObjectSyncState Load(string? userId) => LoadAt(HostAssets.DataRootPath, userId);
+    public static void Save(CloudObjectSyncState state) => SaveAt(HostAssets.DataRootPath, state);
+
+    internal static string AccountPath(string root, string userId) => Path.Combine(root, "SyncState",
+        Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(userId))).ToLowerInvariant() + ".json");
+
+    internal static CloudObjectSyncState LoadAt(string root, string? userId)
     {
-        try
+        if (string.IsNullOrWhiteSpace(userId)) return NewState(userId);
+        lock (IoLock)
         {
-            if (!File.Exists(StatePath))
+            try
             {
-                return NewState(userId);
-            }
-
-            var state = JsonSerializer.Deserialize<CloudObjectSyncState>(File.ReadAllText(StatePath), JsonOptions)
-                ?? NewState(userId);
-            if (!string.Equals(state.UserId, userId, StringComparison.Ordinal))
-            {
-                return NewState(userId);
-            }
-
-            state.Objects ??= new(StringComparer.OrdinalIgnoreCase);
-            state.PendingObjectIds ??= [];
-            state.PendingOperations ??= new(StringComparer.OrdinalIgnoreCase);
-            state.KnownLocalDynamicObjectIds ??= [];
-            state.Conflicts ??= new(StringComparer.OrdinalIgnoreCase);
-            foreach (var objectId in state.PendingObjectIds)
-            {
-                if (!state.PendingOperations.ContainsKey(objectId))
+                var path = AccountPath(root, userId);
+                CloudObjectSyncState state;
+                if (!File.Exists(path))
                 {
-                    state.PendingOperations[objectId] = new CloudObjectPendingOperation
+                    var legacyPath = Path.Combine(root, "cloud-object-sync-state.json");
+                    if (!File.Exists(legacyPath)) return NewState(userId);
+                    state = Read(legacyPath);
+                    if (!string.Equals(state.UserId, userId, StringComparison.Ordinal)) return NewState(userId);
+                }
+                else
+                {
+                    try { state = Read(path); }
+                    catch (Exception ex) when (ex is JsonException or IOException)
                     {
-                        ObjectId = objectId,
-                        CreatedAtUtc = DateTime.UtcNow.ToString("O")
-                    };
+                        // Keep the damaged original until a recovered state is successfully saved.
+                        state = Read(path + ".bak");
+                        state.RecoveredFromBackup = true;
+                    }
+                    if (!string.Equals(state.UserId, userId, StringComparison.Ordinal))
+                        throw new JsonException("同步记录不属于当前账号。");
                 }
-                var pending = state.PendingOperations[objectId];
-                if (pending.AttemptCount == 0 && pending.LastExpectedRevision == 0 &&
-                    state.Objects.TryGetValue(objectId, out var cached) && cached.Revision > 0)
+                if (state.SchemaVersion is < 1 or > 5) throw new JsonException("同步记录版本不受支持。");
+                state.Objects ??= new(StringComparer.OrdinalIgnoreCase);
+                if (!state.LocalBaselinesInitialized)
                 {
-                    pending.LastExpectedRevision = cached.Revision;
+                    state.LocalBaselines = state.Objects.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
+                    state.LocalBaselinesInitialized = true;
                 }
+                state.PendingObjectIds ??= [];
+                state.PendingOperations ??= new(StringComparer.OrdinalIgnoreCase);
+                state.KnownLocalDynamicObjectIds ??= [];
+                state.Conflicts ??= new(StringComparer.OrdinalIgnoreCase);
+                foreach (var objectId in state.PendingObjectIds)
+                {
+                    if (!state.PendingOperations.ContainsKey(objectId))
+                        state.PendingOperations[objectId] = new CloudObjectPendingOperation
+                        {
+                            ObjectId = objectId, CreatedAtUtc = DateTime.UtcNow.ToString("O"),
+                            LastExpectedRevision = state.Objects.TryGetValue(objectId, out var cached) ? cached.Revision : 0
+                        };
+                }
+                // Only genuinely migrated legacy entries acquire a baseline here. Existing revision 0 is intentional.
+                state.PendingObjectIds = state.PendingOperations.Keys.ToList();
+                var scrubbedSecrets = ScrubCachedAiSecrets(state);
+                state.SchemaVersion = 5;
+                if (scrubbedSecrets) SaveAt(root, state);
+                return state;
             }
-            var scrubbedSecrets = ScrubCachedAiSecrets(state);
-            state.SchemaVersion = 5;
-            if (scrubbedSecrets)
+            catch (Exception ex)
             {
-                Save(state);
+                var blocked = NewState(userId);
+                blocked.PersistenceError = "本机同步记录暂时无法读取，已停止同步以保留未上传内容。";
+                HostAssets.AppendLog($"Cloud object state read blocked: {ex.GetType().Name}");
+                return blocked;
             }
-            return state;
-        }
-        catch
-        {
-            return NewState(userId);
         }
     }
 
-    public static void Save(CloudObjectSyncState state)
+    private static CloudObjectSyncState Read(string path)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(StatePath)!);
-        var tempPath = StatePath + ".tmp";
-        File.WriteAllText(tempPath, JsonSerializer.Serialize(state, JsonOptions));
-        File.Move(tempPath, StatePath, overwrite: true);
+        var json = File.ReadAllText(path);
+        using var document = JsonDocument.Parse(json);
+        if (document.RootElement.ValueKind != JsonValueKind.Object ||
+            !document.RootElement.TryGetProperty("objects", out var objects) || objects.ValueKind != JsonValueKind.Object ||
+            !document.RootElement.TryGetProperty("pendingObjectIds", out var pending) || pending.ValueKind != JsonValueKind.Array)
+            throw new JsonException("同步记录结构不完整。");
+        var state = JsonSerializer.Deserialize<CloudObjectSyncState>(json, JsonOptions)
+            ?? throw new JsonException("同步记录为空。");
+        if (string.IsNullOrWhiteSpace(state.UserId)) throw new JsonException("同步记录缺少账号信息。");
+        if (state.Objects.Values.Any(value => value == null) || state.PendingObjectIds.Any(string.IsNullOrWhiteSpace) ||
+            state.PendingOperations?.Values.Any(value => value == null) == true || state.Conflicts?.Values.Any(value => value == null) == true)
+            throw new JsonException("同步记录包含无效项目。");
+        return state;
+    }
+
+    internal static void SaveAt(string root, CloudObjectSyncState state)
+    {
+        if (!string.IsNullOrWhiteSpace(state.PersistenceError)) throw new IOException(state.PersistenceError);
+        if (string.IsNullOrWhiteSpace(state.UserId)) throw new IOException("未登录，无法保存账号同步记录。");
+        lock (IoLock)
+        {
+            var path = AccountPath(root, state.UserId);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            var tempPath = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                File.WriteAllText(tempPath, JsonSerializer.Serialize(state, JsonOptions));
+                if (File.Exists(path))
+                {
+                    if (state.RecoveredFromBackup) File.Copy(path, path + ".corrupt-" + Guid.NewGuid().ToString("N"));
+                    File.Replace(tempPath, path, path + ".bak");
+                }
+                else File.Move(tempPath, path);
+                state.RecoveredFromBackup = false;
+            }
+            finally { if (File.Exists(tempPath)) File.Delete(tempPath); }
+        }
     }
 
     private static CloudObjectSyncState NewState(string? userId) => new()
     {
+        LocalBaselinesInitialized = true,
         UserId = userId ?? string.Empty
     };
 
@@ -105,6 +158,11 @@ internal static class CloudObjectSyncStateStore
         {
             cached.Payload = RemoveSensitiveAiFields(cached.Payload, out var cachedChanged);
             changed |= cachedChanged;
+        }
+        if (state.LocalBaselines.TryGetValue("settings.ai", out var applied))
+        {
+            applied.Payload = RemoveSensitiveAiFields(applied.Payload, out var appliedChanged);
+            changed |= appliedChanged;
         }
         if (state.Conflicts.TryGetValue("settings.ai", out var conflict))
         {
@@ -150,6 +208,12 @@ internal static class CloudObjectSyncStateStore
 
 internal sealed class CloudObjectSyncState
 {
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string? PersistenceError { get; set; }
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool RecoveredFromBackup { get; set; }
+
     public int SchemaVersion { get; set; } = 5;
 
     public string UserId { get; set; } = string.Empty;
@@ -171,6 +235,10 @@ internal sealed class CloudObjectSyncState
     public string CapabilitiesCheckedAtUtc { get; set; } = string.Empty;
 
     public Dictionary<string, CloudObjectSyncCacheEntry> Objects { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public bool LocalBaselinesInitialized { get; set; }
+
+    public Dictionary<string, CloudObjectSyncCacheEntry> LocalBaselines { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
     public List<string> PendingObjectIds { get; set; } = [];
 

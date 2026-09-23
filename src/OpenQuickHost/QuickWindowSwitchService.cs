@@ -113,7 +113,7 @@ public static class QuickWindowSwitchService
 
         try
         {
-            var targetHwnd = FindExistingTargetWindow(target);
+            var targetHwnd = FindExistingTargetWindow(target, displayTitle);
             if (targetHwnd != IntPtr.Zero)
             {
                 var currentFg = Win32Native.GetForegroundWindow();
@@ -167,7 +167,7 @@ public static class QuickWindowSwitchService
     /// <summary>
     /// 寻找匹配目标的现有顶级窗口句柄
     /// </summary>
-    public static IntPtr FindExistingTargetWindow(string target)
+    public static IntPtr FindExistingTargetWindow(string target, string? title = null)
     {
         if (string.IsNullOrWhiteSpace(target)) return IntPtr.Zero;
         var t = target.Trim();
@@ -185,15 +185,15 @@ public static class QuickWindowSwitchService
         // 2. 系统设置（ms-settings:）
         if (t.StartsWith("ms-settings:", StringComparison.OrdinalIgnoreCase))
         {
-            var settingsHwnd = FindWindowByProcessName(["SystemSettings"]);
+            var settingsHwnd = FindWindowByProcessName(["SystemSettings", "ApplicationFrameHost"]);
             if (settingsHwnd != IntPtr.Zero)
             {
                 return settingsHwnd;
             }
         }
 
-        // 3. 应用程序进程匹配（notepad.exe, calc.exe, 绝对路径等）
-        var appHwnd = FindApplicationWindow(t);
+        // 3. 应用程序进程匹配（notepad.exe, calc.exe, 绝对路径, 快捷方式等）
+        var appHwnd = FindApplicationWindow(t, title);
         if (appHwnd != IntPtr.Zero)
         {
             return appHwnd;
@@ -444,13 +444,77 @@ public static class QuickWindowSwitchService
     /// <summary>
     /// 查找应用程序顶级窗口
     /// </summary>
-    private static IntPtr FindApplicationWindow(string target)
+    private static IntPtr FindApplicationWindow(string target, string? appTitle = null)
     {
         var candidateProcessNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var baseName = Path.GetFileNameWithoutExtension(target).Trim();
-        if (string.IsNullOrEmpty(baseName)) return IntPtr.Zero;
+        var candidateTitles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        candidateProcessNames.Add(baseName);
+        var baseName = Path.GetFileNameWithoutExtension(target).Trim();
+        if (!string.IsNullOrEmpty(baseName))
+        {
+            candidateProcessNames.Add(baseName);
+            candidateTitles.Add(baseName);
+        }
+
+        // 收集标题候选项
+        if (!string.IsNullOrWhiteSpace(appTitle))
+        {
+            var rawTitle = appTitle.Trim();
+            candidateTitles.Add(rawTitle);
+            if (rawTitle.StartsWith("打开", StringComparison.OrdinalIgnoreCase) && rawTitle.Length > 2)
+            {
+                candidateTitles.Add(rawTitle.Substring(2).Trim());
+            }
+        }
+
+        // 若是快捷方式 (.lnk)，通过 WScript.Shell 动态解析其真实的 exe 目标与进程名
+        if (target.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase) && File.Exists(target))
+        {
+            try
+            {
+                var shellType = Type.GetTypeFromProgID("WScript.Shell");
+                if (shellType != null)
+                {
+                    dynamic? shell = Activator.CreateInstance(shellType);
+                    dynamic? shortcut = shell?.CreateShortcut(target);
+                    string? lnkTarget = (string?)shortcut?.TargetPath;
+                    if (!string.IsNullOrWhiteSpace(lnkTarget))
+                    {
+                        var lnkBaseName = Path.GetFileNameWithoutExtension(lnkTarget).Trim();
+                        if (!string.IsNullOrEmpty(lnkBaseName))
+                        {
+                            candidateProcessNames.Add(lnkBaseName);
+                        }
+                    }
+                }
+            }
+            catch { }
+        }
+
+        // UWP / Modern Apps 特殊处理
+        if (target.StartsWith("shell:AppsFolder", StringComparison.OrdinalIgnoreCase))
+        {
+            candidateProcessNames.Add("ApplicationFrameHost");
+            if (target.Contains("immersivecontrolpanel", StringComparison.OrdinalIgnoreCase))
+            {
+                candidateProcessNames.Add("SystemSettings");
+                candidateTitles.Add("设置");
+                candidateTitles.Add("Settings");
+            }
+            else if (target.Contains("calculator", StringComparison.OrdinalIgnoreCase))
+            {
+                candidateProcessNames.Add("CalculatorApp");
+                candidateProcessNames.Add("Calculator");
+                candidateTitles.Add("计算器");
+                candidateTitles.Add("Calculator");
+            }
+            else if (target.Contains("notepad", StringComparison.OrdinalIgnoreCase))
+            {
+                candidateProcessNames.Add("Notepad");
+                candidateTitles.Add("记事本");
+                candidateTitles.Add("Notepad");
+            }
+        }
 
         // 常用工具别名映射
         if (baseName.Equals("calc", StringComparison.OrdinalIgnoreCase))
@@ -474,32 +538,61 @@ public static class QuickWindowSwitchService
             var procName = ProcessHelper.GetProcessNameByPid(pid);
             if (string.IsNullOrWhiteSpace(procName)) return true;
 
+            var title = GetWindowTitleText(hwnd);
+            Win32Native.GetWindowRect(hwnd, out var rect);
+            var hasReasonableSize = (rect.Width > 60 && rect.Height > 60) || !string.IsNullOrWhiteSpace(title);
+
+            if (!hasReasonableSize) return true;
+
+            // 1. 如果匹配了进程名
             if (candidateProcessNames.Contains(procName))
             {
-                var title = GetWindowTitleText(hwnd);
-                Win32Native.GetWindowRect(hwnd, out var rect);
-
-                // 排除大小过小或零尺寸的隐藏辅助窗口
-                if ((rect.Width > 60 && rect.Height > 60) || !string.IsNullOrWhiteSpace(title))
+                // 若进程为通用 UWP 外壳宿主 ApplicationFrameHost，需进一步检查窗口标题是否吻合
+                if (procName.Equals("ApplicationFrameHost", StringComparison.OrdinalIgnoreCase))
                 {
-                    // 若目标给定了完整的绝对文件路径，进一步核实可执行文件路径
-                    if (File.Exists(target) && Path.IsPathFullyQualified(target))
+                    if (candidateTitles.Count > 0)
                     {
-                        try
-                        {
-                            var proc = Process.GetProcessById((int)pid);
-                            var procPath = ProcessHelper.GetProcessExecutablePath(proc);
-                            if (!string.IsNullOrWhiteSpace(procPath) &&
-                                !string.Equals(Path.GetFullPath(procPath), Path.GetFullPath(target), StringComparison.OrdinalIgnoreCase))
-                            {
-                                return true; // 不是同一个可执行文件
-                            }
-                        }
-                        catch { }
-                    }
+                        var matchedTitle = candidateTitles.Any(t =>
+                            string.Equals(title, t, StringComparison.OrdinalIgnoreCase) ||
+                            title.Contains(t, StringComparison.OrdinalIgnoreCase));
 
+                        if (!matchedTitle)
+                        {
+                            return true; // 不匹配当前 UWP，继续枚举
+                        }
+                    }
+                }
+                else if (File.Exists(target) && Path.IsPathFullyQualified(target) && !target.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase))
+                {
+                    // 若目标给定了非快捷方式的完整绝对路径，进一步核实可执行文件路径
+                    try
+                    {
+                        var proc = Process.GetProcessById((int)pid);
+                        var procPath = ProcessHelper.GetProcessExecutablePath(proc);
+                        if (!string.IsNullOrWhiteSpace(procPath) &&
+                            !string.Equals(Path.GetFullPath(procPath), Path.GetFullPath(target), StringComparison.OrdinalIgnoreCase))
+                        {
+                            return true; // 不是同一个可执行文件
+                        }
+                    }
+                    catch { }
+                }
+
+                matchedHwnd = hwnd;
+                return false; // 找到目标窗口，停止枚举
+            }
+
+            // 2. 标题精确匹配辅助兜底（针对部分名称完全对应但由于权限无法准确读取进程的独立主窗口）
+            if (candidateTitles.Count > 0 && !string.IsNullOrWhiteSpace(title))
+            {
+                var isExactTitleMatch = candidateTitles.Any(t =>
+                    string.Equals(title, t, StringComparison.OrdinalIgnoreCase) ||
+                    title.StartsWith(t + " - ", StringComparison.OrdinalIgnoreCase));
+
+                if (isExactTitleMatch)
+                {
                     matchedHwnd = hwnd;
-                    return false; // 找到目标窗口，停止枚举
+                    return false;
                 }
             }
 

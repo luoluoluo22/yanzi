@@ -783,7 +783,7 @@ public partial class AddJsonExtensionWindow
                     _manualSearchProvider = null;
                     _manualUiMode = null;
                     if (string.IsNullOrWhiteSpace(PowerShellScriptBox.Text) ||
-                        LooksLikeGeneratedSendKeysScript(PowerShellScriptBox.Text) ||
+                        LooksLikeGeneratedHotkeyScript(PowerShellScriptBox.Text) ||
                         LooksLikeOldPowerShellEchoTemplate(PowerShellScriptBox.Text))
                     {
                         PowerShellScriptBox.Text = CreatePowerShellPopupScript();
@@ -1751,11 +1751,179 @@ public partial class AddJsonExtensionWindow
         return vk != 0;
     }
 
+    private static bool LooksLikeGeneratedHotkeyScript(string? script)
+    {
+        if (string.IsNullOrWhiteSpace(script))
+        {
+            return false;
+        }
+
+        // 1. keybd_event 模拟按键
+        if (script.Contains("YanziWin32.Win32Keybd", StringComparison.OrdinalIgnoreCase) ||
+            (script.Contains("keybd_event", StringComparison.OrdinalIgnoreCase) &&
+             (script.Contains("UIntPtr", StringComparison.OrdinalIgnoreCase) || script.Contains("bVk", StringComparison.OrdinalIgnoreCase))))
+        {
+            return true;
+        }
+
+        // 2. SendKeys / KeystrokeSender 模拟按键
+        if (script.Contains("System.Windows.Forms.SendKeys", StringComparison.OrdinalIgnoreCase) ||
+            script.Contains("KeystrokeSender", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
     private static bool LooksLikeGeneratedSendKeysScript(string? script)
     {
-        return !string.IsNullOrWhiteSpace(script) &&
-               (script.Contains("System.Windows.Forms.SendKeys", StringComparison.OrdinalIgnoreCase) ||
-                script.Contains("KeystrokeSender", StringComparison.OrdinalIgnoreCase));
+        return LooksLikeGeneratedHotkeyScript(script);
+    }
+
+    private static bool TryExtractShortcutFromSimulationScript(string? script, out string shortcutText)
+    {
+        shortcutText = string.Empty;
+        if (string.IsNullOrWhiteSpace(script))
+        {
+            return false;
+        }
+
+        // 1. 尝试从 keybd_event 匹配按下序列 (第三个参数 dwFlags 为 0)
+        var matches = Regex.Matches(
+            script,
+            @"keybd_event\s*\(\s*0x([0-9A-Fa-f]{1,2})\s*,\s*\d+\s*,\s*0\s*,",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+        if (matches.Count > 0)
+        {
+            var keys = new List<string>();
+            foreach (Match m in matches)
+            {
+                if (byte.TryParse(m.Groups[1].Value, System.Globalization.NumberStyles.HexNumber, null, out var vk))
+                {
+                    if (TryReverseVirtualKey(vk, out var name) && !keys.Contains(name, StringComparer.OrdinalIgnoreCase))
+                    {
+                        keys.Add(name);
+                    }
+                }
+            }
+
+            if (keys.Count > 0)
+            {
+                shortcutText = string.Join("+", keys);
+                return true;
+            }
+        }
+
+        // 2. 尝试从 SendKeys.SendWait 提取
+        var sendWaitMatch = Regex.Match(
+            script,
+            @"SendWait\s*\(\s*""(?<seq>[^""]+)""\s*\)",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+        if (sendWaitMatch.Success)
+        {
+            var seq = sendWaitMatch.Groups["seq"].Value;
+            shortcutText = ConvertSendWaitSequenceToShortcut(seq);
+            return true;
+        }
+
+        // 3. 若符合模拟按键脚本特征但无法解析具体按键，提供合理默认值
+        if (LooksLikeGeneratedHotkeyScript(script))
+        {
+            shortcutText = "Ctrl+C";
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryReverseVirtualKey(byte vk, out string keyName)
+    {
+        keyName = string.Empty;
+        if (vk is >= (byte)'A' and <= (byte)'Z')
+        {
+            keyName = ((char)vk).ToString();
+            return true;
+        }
+        if (vk is >= (byte)'0' and <= (byte)'9')
+        {
+            keyName = ((char)vk).ToString();
+            return true;
+        }
+        if (vk is >= 0x60 and <= 0x69)
+        {
+            keyName = $"NumPad{vk - 0x60}";
+            return true;
+        }
+        if (vk is >= 0x70 and <= 0x87)
+        {
+            keyName = $"F{vk - 0x70 + 1}";
+            return true;
+        }
+
+        keyName = vk switch
+        {
+            0x11 => "Ctrl",
+            0xA3 => "RCtrl",
+            0x12 => "Alt",
+            0xA5 => "RAlt",
+            0x10 => "Shift",
+            0xA1 => "RShift",
+            0x5B => "Win",
+            0x5C => "RWin",
+            0x0D => "Enter",
+            0x1B => "Esc",
+            0x08 => "Backspace",
+            0x2E => "Delete",
+            0x2D => "Insert",
+            0x09 => "Tab",
+            0x20 => "Space",
+            0x24 => "Home",
+            0x23 => "End",
+            0x21 => "PageUp",
+            0x22 => "PageDown",
+            0x26 => "Up",
+            0x28 => "Down",
+            0x25 => "Left",
+            0x27 => "Right",
+            0x14 => "CapsLock",
+            0x5D => "Apps",
+            0x2C => "PrintScreen",
+            _ => string.Empty
+        };
+
+        return !string.IsNullOrEmpty(keyName);
+    }
+
+    private static string ConvertSendWaitSequenceToShortcut(string seq)
+    {
+        if (string.IsNullOrWhiteSpace(seq)) return "Ctrl+C";
+
+        var trimmed = seq.Trim();
+        if (trimmed.StartsWith("^", StringComparison.Ordinal) && trimmed.Length == 2)
+        {
+            return $"Ctrl+{char.ToUpperInvariant(trimmed[1])}";
+        }
+        if (trimmed.StartsWith("%", StringComparison.Ordinal) && trimmed.Length == 2)
+        {
+            return $"Alt+{char.ToUpperInvariant(trimmed[1])}";
+        }
+        if (trimmed.StartsWith("+", StringComparison.Ordinal) && trimmed.Length == 2)
+        {
+            return $"Shift+{char.ToUpperInvariant(trimmed[1])}";
+        }
+
+        return trimmed switch
+        {
+            "{ENTER}" => "Enter",
+            "{ESC}" => "Esc",
+            "{TAB}" => "Tab",
+            "{BACKSPACE}" or "{BS}" or "{BKSP}" => "Backspace",
+            "{DELETE}" or "{DEL}" => "Delete",
+            _ => trimmed
+        };
     }
 
     private static bool LooksLikeGeneratedPasteScript(string? script)
@@ -2192,6 +2360,10 @@ public partial class AddJsonExtensionWindow
                 {
                     PasteTextSimpleBox.Text = pasteText;
                 }
+                if (TryExtractShortcutFromSimulationScript(scriptSource, out var hotkeyText))
+                {
+                    HotkeySequenceBox.Text = hotkeyText;
+                }
             }
             else if (runtime == "csharp")
             {
@@ -2241,6 +2413,7 @@ public partial class AddJsonExtensionWindow
         if (hasScript)
         {
             if (LooksLikeGeneratedPasteScript(ScriptSourceBox.Text)) return "paste-text";
+            if (LooksLikeGeneratedHotkeyScript(ScriptSourceBox.Text)) return "hotkey";
             if (runtime == "csharp") return "script-cs";
             return "script-ps";
         }

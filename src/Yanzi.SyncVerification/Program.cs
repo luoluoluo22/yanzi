@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using OpenQuickHost;
 using OpenQuickHost.Sync;
 
@@ -78,6 +78,88 @@ Console.WriteLine("Account config object verification passed: round-trip, isolat
 
 static void VerifySyncArchitectureSafety()
 {
+    var compatibility = new CloudSyncCapabilitiesResponse { Ok = true, ObjectSyncAvailable = true, ObjectsAuthoritative = false };
+    Assert(CloudSyncTransferPolicy.SupportsUpload(compatibility), "Compatibility mode supports conditional object uploads.");
+    Assert(!CloudSyncTransferPolicy.SupportsDownload(compatibility), "Partial compatibility objects must not be treated as the only download source.");
+    Assert(!CloudSyncTransferPolicy.SupportsUpload(new CloudSyncCapabilitiesResponse { Ok = true }), "Unavailable object PUT must remain blocked.");
+    var oldPending = new CloudObjectPendingOperation { LastExpectedRevision = 577 };
+    var knownLayout = new CloudObjectSyncCacheEntry { ObjectId = "yanm.layout", Revision = 600, UpdatedByDeviceId = "this-device", Payload = JsonSerializer.SerializeToElement(new { layout = 1 }) };
+    Assert(CloudSyncTransferPolicy.UploadRevision(oldPending, knownLayout, knownLayout, "this-device") == 600,
+        "An old same-device retry must use the already adopted version instead of getting stuck at 577.");
+    Assert(CloudSyncTransferPolicy.UploadRevision(oldPending, knownLayout, knownLayout, "another-device") == 577,
+        "Another device's data must not be silently rebased.");
+    Assert(CloudSyncTransferPolicy.UploadRevision(new CloudObjectPendingOperation(), knownLayout, knownLayout, "this-device") == 0,
+        "Intentional creates must still conflict if an object already exists.");
+    Assert(CloudSyncTransferPolicy.UploadRevision(oldPending, knownLayout, null, "this-device") == 577,
+        "A remote-only version must not become the local baseline implicitly.");
+
+    var pendingState = new CloudObjectSyncState();
+    var baseline = new Dictionary<string, CloudObjectSyncCacheEntry>
+    {
+        ["settings.general"] = new() { ObjectId = "settings.general", Revision = 5, Payload = JsonSerializer.SerializeToElement(new { enabled = false }) }
+    };
+    var write = new AccountConfigObjectWrite("settings.general", new LauncherConfigObjectEnvelope
+        { ObjectId = "settings.general", Payload = JsonSerializer.SerializeToElement(new { enabled = true }) });
+    CloudPendingChanges.Capture(pendingState, [write], baseline);
+    Assert(pendingState.PendingOperations[write.ObjectId].LastExpectedRevision == 5, "Offline edits must retain the observed base revision.");
+    baseline[write.ObjectId].Revision = 8;
+    CloudPendingChanges.Capture(pendingState, [write], baseline);
+    Assert(pendingState.PendingOperations[write.ObjectId].LastExpectedRevision == 5, "Downloading a new baseline must not authorize overwriting it.");
+    var uploadedOnly = new CloudObjectSyncState();
+    uploadedOnly.LocalBaselines[write.ObjectId] = new CloudObjectSyncCacheEntry
+        { ObjectId = write.ObjectId, Revision = 5, Payload = write.Envelope.Payload };
+    uploadedOnly.Objects[write.ObjectId] = new CloudObjectSyncCacheEntry
+        { ObjectId = write.ObjectId, Revision = 8, Payload = JsonSerializer.SerializeToElement(new { enabled = false }) };
+    CloudPendingChanges.RecordApplied(uploadedOnly, [write]);
+    CloudPendingChanges.Capture(uploadedOnly, [write], uploadedOnly.LocalBaselines);
+    Assert(uploadedOnly.LocalBaselines[write.ObjectId].Revision == 5 && uploadedOnly.PendingOperations.Count == 0,
+        "Upload-only preflight must not turn an unapplied remote change into a new local edit.");
+    var received = new AccountConfigObjectWrite(write.ObjectId, new LauncherConfigObjectEnvelope
+        { ObjectId = write.ObjectId, Payload = uploadedOnly.Objects[write.ObjectId].Payload });
+    CloudPendingChanges.RecordApplied(uploadedOnly, [received]);
+    Assert(uploadedOnly.LocalBaselines[write.ObjectId].Revision == 8, "The local baseline advances when remote data is actually applied.");
+    var freshState = new CloudObjectSyncState();
+    CloudPendingChanges.Capture(freshState, [write], new Dictionary<string, CloudObjectSyncCacheEntry>());
+    Assert(freshState.PendingOperations.Count == 0, "New-device defaults must not become offline edits.");
+    freshState.Conflicts[write.ObjectId] = new CloudObjectConflictRecord { ObjectId = write.ObjectId };
+    CloudPendingChanges.Capture(freshState, [write], baseline);
+    Assert(freshState.PendingOperations.Count == 0, "Unresolved conflicts must not be resubmitted by unrelated edits.");
+    var testRoot = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "yanzi-state-test-" + Guid.NewGuid().ToString("N"));
+    System.IO.Directory.CreateDirectory(testRoot);
+    try
+    {
+        var accountA = new CloudObjectSyncState { UserId = "account-a" };
+        accountA.Objects["settings.general"] = new CloudObjectSyncCacheEntry
+            { ObjectId = "settings.general", Revision = 10, Payload = JsonSerializer.SerializeToElement(new { enabled = false }) };
+        accountA.PendingObjectIds.Add("settings.general");
+        accountA.PendingOperations["settings.general"] = new CloudObjectPendingOperation { ObjectId = "settings.general", LastExpectedRevision = 0 };
+        CloudObjectSyncStateStore.SaveAt(testRoot, accountA);
+        CloudObjectSyncStateStore.SaveAt(testRoot, new CloudObjectSyncState { UserId = "account-b" });
+        Assert(CloudObjectSyncStateStore.LoadAt(testRoot, "account-a").PendingOperations.Count == 1,
+            "Switching accounts must preserve the first account's offline edits.");
+        Assert(CloudObjectSyncStateStore.LoadAt(testRoot, "account-a").PendingOperations["settings.general"].LastExpectedRevision == 0,
+            "A persisted create operation must not silently rebase to a remote revision on load.");
+        accountA.LastSyncedRevision = 9;
+        CloudObjectSyncStateStore.SaveAt(testRoot, accountA);
+        var accountPath = CloudObjectSyncStateStore.AccountPath(testRoot, "account-a");
+        System.IO.File.WriteAllText(accountPath, "broken");
+        var recovered = CloudObjectSyncStateStore.LoadAt(testRoot, "account-a");
+        Assert(recovered.RecoveredFromBackup && recovered.PendingOperations.Count == 1,
+            "Damaged state must recover a valid previous copy with offline edits.");
+        CloudObjectSyncStateStore.SaveAt(testRoot, recovered);
+        Assert(System.IO.Directory.GetFiles(System.IO.Path.GetDirectoryName(accountPath)!, "*.corrupt-*").Length == 1,
+            "Recovery must preserve damaged original for diagnosis.");
+        System.IO.File.WriteAllText(accountPath, "broken");
+        System.IO.File.WriteAllText(accountPath + ".bak", "broken too");
+        var blocked = CloudObjectSyncStateStore.LoadAt(testRoot, "account-a");
+        Assert(!string.IsNullOrEmpty(blocked.PersistenceError), "Unreadable state must block synchronization, not look like a new device.");
+        var saveBlocked = false;
+        try { CloudObjectSyncStateStore.SaveAt(testRoot, blocked); }
+        catch (System.IO.IOException) { saveBlocked = true; }
+        Assert(saveBlocked && System.IO.File.ReadAllText(accountPath) == "broken", "Blocked recovery must not replace original data.");
+    }
+    finally { System.IO.Directory.Delete(testRoot, recursive: true); }
+
     Assert(PersonalSyncAuthority.SelectMode(new SyncSession { UserId = "account", ExpiresAt = 1 }, false) == PersonalConfigSyncMode.UploadOnlyBackup,
         "Expired authentication must never promote a backup to configuration authority.");
     Assert(PersonalSyncAuthority.SelectMode(null, true) == PersonalConfigSyncMode.UploadOnlyBackup,

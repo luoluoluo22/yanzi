@@ -1,4 +1,4 @@
-using OpenQuickHost.Sync;
+﻿using OpenQuickHost.Sync;
 
 namespace OpenQuickHost;
 
@@ -13,8 +13,10 @@ public partial class MainWindow
         {
             await _cloudSyncClient.EnsureAuthenticatedAsync();
             var capabilities = await TryGetCloudSyncCapabilitiesAsync();
-            if (capabilities?.ObjectsAuthoritative != true)
-                return (false, "当前服务端尚未启用安全的单向同步，请升级服务端后重试。");
+            if (upload ? !CloudSyncTransferPolicy.SupportsUpload(capabilities) : !CloudSyncTransferPolicy.SupportsDownload(capabilities))
+                return (false, upload
+                    ? "当前服务端暂不支持带版本检查的账号设置上传，请升级服务端后重试。"
+                    : "当前服务端仍使用兼容模式，请使用“立即同步”读取完整设置；单向下载需要服务端启用统一对象同步。");
 
             var state = CloudObjectSyncStateStore.Load(_cloudSyncClient.CurrentUserId);
             var settings = AppSettingsStore.Load();
@@ -27,13 +29,13 @@ public partial class MainWindow
                     state.Objects.Keys, state.KnownLocalDynamicObjectIds)
                     .Where(_ => state.Objects.Keys.Any(YanmObjectStore.IsObjectId) || HasYanmLayoutUserContent(settings.Yanm) || settings.Yanm?.ComponentState?.Count > 0))
                 .ToDictionary(w => w.ObjectId, StringComparer.OrdinalIgnoreCase);
-            var previouslyKnown = state.Objects.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var previouslyKnown = state.LocalBaselines.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
             // Persist offline edits before a GET changes their observed baseline.
             foreach (var write in writes.Values)
             {
                 if (state.Conflicts.ContainsKey(write.ObjectId)) continue;
-                var known = state.Objects.TryGetValue(write.ObjectId, out var baseline);
+                var known = state.LocalBaselines.TryGetValue(write.ObjectId, out var baseline);
                 if ((known || upload) && (!known || !LauncherConfigObjectStore.HasEquivalentPayload(write.Envelope, ToEnvelope(baseline!))))
                     AddPendingCloudObject(state, write.ObjectId, DateTime.UtcNow, baseline?.Revision ?? 0);
             }
@@ -42,6 +44,13 @@ public partial class MainWindow
             if (!string.Equals(state.UserId, _cloudSyncClient.CurrentUserId, StringComparison.Ordinal))
                 return (false, "账号已变化，本次同步已停止，请重新操作。");
 
+            foreach (var write in writes.Values)
+                if (!state.Conflicts.ContainsKey(write.ObjectId) && state.Objects.TryGetValue(write.ObjectId, out var equalRemote) &&
+                    LauncherConfigObjectStore.HasEquivalentPayload(write.Envelope, ToEnvelope(equalRemote)))
+                {
+                    RemovePendingCloudObject(state, write.ObjectId);
+                    UpdateKnownDynamicObjectAfterWrite(state, write);
+                }
             var transferred = 0;
             if (upload)
             {
@@ -55,6 +64,9 @@ public partial class MainWindow
                         RemovePendingCloudObject(state, write.ObjectId);
                         continue;
                     }
+                    state.LocalBaselines.TryGetValue(write.ObjectId, out var localBaseline);
+                    pending.LastExpectedRevision = CloudSyncTransferPolicy.UploadRevision(pending, remote, localBaseline,
+                        DeviceIdentityStore.GetOrCreateDesktopDeviceId());
                     pending.AttemptCount++;
                     pending.LastAttemptAtUtc = DateTime.UtcNow.ToString("O");
                     try
@@ -78,6 +90,7 @@ public partial class MainWindow
                     catch (Exception ex)
                     {
                         pending.LastError = FormatExceptionMessage(ex);
+                        break;
                     }
                     CloudObjectSyncStateStore.Save(state);
                 }
@@ -141,6 +154,10 @@ public partial class MainWindow
             AppSettingsStore.Save(settings);
             RefreshRuntimeAfterCloudLauncherPull(settings, resolved);
         }
+        CloudPendingChanges.RecordApplied(state, AccountConfigObjectStore.PrepareWrites(
+            CloudQuickPanelConfigSnapshot.FromSettings(settings), DateTime.UtcNow, state.Objects.Keys, state.KnownLocalDynamicObjectIds));
         ApplyYanmObjectsFromCache(settings, state);
+        state.YanmObjectsInitialized |= state.Objects.ContainsKey(YanmObjectStore.LayoutObjectId);
+        CloudObjectSyncStateStore.Save(state);
     }
 }

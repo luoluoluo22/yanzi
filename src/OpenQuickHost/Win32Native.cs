@@ -27,6 +27,7 @@ public static class Win32Native
     public const int SW_SHOWNOACTIVATE = 4;
     public const int SW_HIDE = 0;
     public const int SW_SHOW = 5;
+    public const int SW_RESTORE = 9;
 
     // 常用窗口消息
     public const int WM_MOUSEACTIVATE = 0x0021;
@@ -252,4 +253,17 @@ public static class Win32Native
         }
         catch { }
     }
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool IsIconic(IntPtr hWnd);
+
+    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+    public static extern IntPtr FindWindow(string? lpClassName, string? lpWindowName);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetShellWindow();
+
+    [DllImport("kernel32.dll")]
+    public static extern uint GetCurrentThreadId();
 }

@@ -61,14 +61,38 @@ public static class WindowSensorHelper
     }
 
     /// <summary>
-    /// 判断是否是 Windows 桌面窗口
+    /// 判断是否是 Windows 桌面窗口（涵盖 Progman、WorkerW、桌面视图 SHELLDLL_DefView、桌面图标列表 SysListView32 及 ShellWindow）
     /// </summary>
     public static bool IsDesktopWindow(IntPtr hWnd)
     {
         if (hWnd == IntPtr.Zero) return false;
+        if (hWnd == Win32Native.GetShellWindow()) return true;
+
         var className = GetWindowClassName(hWnd);
-        return string.Equals(className, "Progman", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(className, "WorkerW", StringComparison.OrdinalIgnoreCase);
+        if (string.Equals(className, "Progman", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(className, "WorkerW", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(className, "SHELLDLL_DefView", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(className, "SysListView32", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        try
+        {
+            var root = Win32Native.GetAncestor(hWnd, Win32Native.GA_ROOT);
+            if (root != IntPtr.Zero && root != hWnd)
+            {
+                var rootClass = GetWindowClassName(root);
+                if (string.Equals(rootClass, "Progman", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(rootClass, "WorkerW", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+        }
+        catch { }
+
+        return false;
     }
 
     /// <summary>
@@ -128,6 +152,13 @@ public static class WindowSensorHelper
                 string.Equals(name, "Yanzi", StringComparison.OrdinalIgnoreCase))
             {
                 return string.Empty;
+            }
+
+            // 动态壁纸（Wallpaper Engine）窗口归类为桌面
+            if (string.Equals(name, "wallpaper32", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(name, "wallpaper64", StringComparison.OrdinalIgnoreCase))
+            {
+                return "desktop";
             }
 
             return name;
@@ -299,5 +330,176 @@ public static class WindowSensorHelper
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// 呼出前探测光标所在位置的窗口并将其激活为前台活动窗口（支持普通应用、桌面与任务栏）。
+    /// 解决呼出前仅检查置顶窗口导致光标放在桌面或后台应用时上下文不符合直觉的问题。
+    /// </summary>
+    /// <param name="cursorPoint">可选光标物理坐标</param>
+    /// <param name="excludeHwnd">需排除的自身窗口句柄</param>
+    /// <returns>激活后（或无需切换时）的目标前台窗口句柄</returns>
+    public static IntPtr ActivateWindowUnderCursor(System.Drawing.Point? cursorPoint = null, IntPtr excludeHwnd = default)
+    {
+        try
+        {
+            var currentFg = Win32Native.GetForegroundWindow();
+
+            // 1. 获取光标物理坐标
+            Win32Native.POINT pt;
+            if (cursorPoint.HasValue)
+            {
+                pt = new Win32Native.POINT(cursorPoint.Value.X, cursorPoint.Value.Y);
+            }
+            else if (!Win32Native.GetCursorPos(out pt))
+            {
+                return currentFg;
+            }
+
+            // 2. 探测光标下的窗口句柄
+            var under = Win32Native.WindowFromPoint(pt);
+            if (under == IntPtr.Zero || under == excludeHwnd || IsCurrentProcessWindow(under))
+            {
+                // 光标悬停在燕子自身窗口（主界面、背包、浮窗等）或无效位置，不切换前台
+                return currentFg;
+            }
+
+            // 3. 解析目标顶级根窗口
+            var targetHwnd = Win32Native.GetAncestor(under, Win32Native.GA_ROOT);
+            if (targetHwnd == IntPtr.Zero || !Win32Native.IsWindow(targetHwnd))
+            {
+                targetHwnd = under;
+            }
+
+            if (targetHwnd == excludeHwnd || IsCurrentProcessWindow(targetHwnd))
+            {
+                return currentFg;
+            }
+
+            // 4. 判断是否是桌面或任务栏
+            bool isDesktop = IsDesktopWindow(targetHwnd) || IsDesktopWindow(under);
+            if (!isDesktop)
+            {
+                var underClass = GetWindowClassName(under);
+                if (string.Equals(underClass, "SHELLDLL_DefView", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(underClass, "SysListView32", StringComparison.OrdinalIgnoreCase))
+                {
+                    isDesktop = true;
+                }
+                else
+                {
+                    var proc = GetWindowProcessName(targetHwnd);
+                    if (string.Equals(proc, "desktop", StringComparison.OrdinalIgnoreCase))
+                    {
+                        isDesktop = true;
+                    }
+                }
+            }
+
+            if (isDesktop)
+            {
+                // 如果当前前台已经是桌面，无需重复激活
+                if (IsDesktopWindow(currentFg))
+                {
+                    return currentFg;
+                }
+
+                // 激活桌面：优先使用 ShellWindow 或 Progman，若无效则用探测到的根窗口
+                var shellWnd = Win32Native.GetShellWindow();
+                if (shellWnd == IntPtr.Zero)
+                {
+                    shellWnd = Win32Native.FindWindow("Progman", null);
+                }
+                var desktopToActivate = (shellWnd != IntPtr.Zero && Win32Native.IsWindow(shellWnd))
+                    ? shellWnd
+                    : targetHwnd;
+
+                if (desktopToActivate != IntPtr.Zero)
+                {
+                    ForceSetForegroundWindow(desktopToActivate);
+                    HostAssets.AppendLog($"[WindowSensorHelper] ActivateWindowUnderCursor: activated desktop 0x{desktopToActivate.ToInt64():X}.");
+                    var newFg = Win32Native.GetForegroundWindow();
+                    return (newFg != IntPtr.Zero && IsDesktopWindow(newFg)) ? newFg : desktopToActivate;
+                }
+                return currentFg;
+            }
+
+            // 5. 若光标已经在当前前台窗口上，无需重复激活
+            if (targetHwnd == currentFg)
+            {
+                return currentFg;
+            }
+
+            // 6. 普通后台应用窗口：强制将其激活至前台
+            if (Win32Native.IsWindow(targetHwnd))
+            {
+                ForceSetForegroundWindow(targetHwnd);
+                HostAssets.AppendLog($"[WindowSensorHelper] ActivateWindowUnderCursor: activated window 0x{targetHwnd.ToInt64():X}, previousFg=0x{currentFg.ToInt64():X}.");
+                var newFg = Win32Native.GetForegroundWindow();
+                return newFg != IntPtr.Zero ? newFg : targetHwnd;
+            }
+
+            return currentFg;
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"[WindowSensorHelper] ActivateWindowUnderCursor error: {ex.Message}");
+            return Win32Native.GetForegroundWindow();
+        }
+    }
+
+    /// <summary>
+    /// 突破 Windows 前台限制强制激活指定窗口并带到前台
+    /// </summary>
+    public static bool ForceSetForegroundWindow(IntPtr hWnd)
+    {
+        if (hWnd == IntPtr.Zero || !Win32Native.IsWindow(hWnd)) return false;
+
+        var currentFg = Win32Native.GetForegroundWindow();
+        if (currentFg == hWnd) return true;
+
+        if (Win32Native.IsIconic(hWnd))
+        {
+            Win32Native.ShowWindow(hWnd, Win32Native.SW_RESTORE);
+        }
+
+        uint fgThread = Win32Native.GetWindowThreadProcessId(currentFg, out _);
+        uint targetThread = Win32Native.GetWindowThreadProcessId(hWnd, out _);
+        uint currentThread = Win32Native.GetCurrentThreadId();
+
+        bool attachedFg = false;
+        if (fgThread != 0 && fgThread != currentThread)
+        {
+            attachedFg = Win32Native.AttachThreadInput(currentThread, fgThread, true);
+        }
+
+        bool attachedTarget = false;
+        if (targetThread != 0 && targetThread != currentThread && targetThread != fgThread)
+        {
+            attachedTarget = Win32Native.AttachThreadInput(currentThread, targetThread, true);
+        }
+
+        try
+        {
+            Win32Native.BringWindowToTop(hWnd);
+            var result = Win32Native.SetForegroundWindow(hWnd);
+            Win32Native.SetActiveWindow(hWnd);
+            return result;
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            if (attachedTarget)
+            {
+                Win32Native.AttachThreadInput(currentThread, targetThread, false);
+            }
+            if (attachedFg)
+            {
+                Win32Native.AttachThreadInput(currentThread, fgThread, false);
+            }
+        }
     }
 }

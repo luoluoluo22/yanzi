@@ -7343,6 +7343,12 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
 
         var state = CloudObjectSyncStateStore.Load(userId);
+        if (!string.IsNullOrWhiteSpace(state.PersistenceError))
+        {
+            AccountSyncStatus = new AccountSyncStatusView("同步已暂停", "本机同步记录需要修复", "", "", "",
+                state.PersistenceError, true, false, []);
+            return;
+        }
         var currentDeviceId = DeviceIdentityStore.GetOrCreateDesktopDeviceId();
         var pendingIds = state.PendingObjectIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var objectIds = state.Objects.Keys
@@ -7366,7 +7372,9 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             var detail = conflict != null
                 ? "本机修改已单独保留 · 云端来源：" + source
                 : hasError ? "暂时未能同步，将自动重试"
-                : pending != null ? "联网后将继续同步" : $"来源：{source}";
+                : pending != null
+                    ? state.ObjectSyncAvailable ? "等待上传，可在云端同步页点击 ↑ 重试" : "服务端暂不支持此项上传"
+                    : $"来源：{source}";
             return new AccountSyncObjectStatusItem(
                 objectId,
                 GetAccountSyncObjectDisplayName(objectId, cached),

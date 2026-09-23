@@ -1,44 +1,46 @@
-using System.ComponentModel;
-
 namespace OpenQuickHost;
 
 internal sealed record QuickPanelSnapshotKey(
-    string SettingsPath, long WriteVersion, long LastWriteTicks, long FileLength,
-    string ContextProcess, bool GlobalFavorites, bool ContextFavorites);
+    long SettingsVersion,
+    string ContextProcess,
+    string? GlobalGroupId,
+    string? ContextGroupId,
+    bool GlobalFavorites,
+    bool ContextFavorites,
+    int CommandsCount);
 
-// UI-thread owned, with property-change invalidation allowed from background work.
-internal sealed class QuickPanelSnapshotCache<T> : IDisposable where T : class, INotifyPropertyChanged
+/// <summary>
+/// 快捷面板槽位状态快照缓存：通过单调递增设置版本、进程标识、分组与命令总数进行毫秒级纯内存校验，
+/// 杜绝磁盘 IO 与对全局上千个命令的高频 PropertyChanged 监听，使连续呼出时 99% 命中就地复用。
+/// </summary>
+internal sealed class QuickPanelSnapshotCache : IDisposable
 {
     private QuickPanelSnapshotKey? _key;
-    private T[] _items = [];
     private volatile bool _dirty;
     private bool _ready;
 
-    public bool CanReuse(QuickPanelSnapshotKey? key, IReadOnlyList<T> items)
+    public bool CanReuse(QuickPanelSnapshotKey? key)
     {
-        if (!_ready || _dirty || key == null || key != _key || items.Count != _items.Length) return false;
-        for (var i = 0; i < items.Count; i++)
-            if (!ReferenceEquals(items[i], _items[i])) return false;
-        return true;
+        if (!_ready || _dirty || key == null || _key == null) return false;
+        return key == _key;
     }
 
-    public void BeginUpdate(QuickPanelSnapshotKey? key, IReadOnlyList<T> items)
+    public void UpdateKey(QuickPanelSnapshotKey? key)
     {
-        Dispose();
         _key = key;
-        _items = items.ToArray();
         _dirty = false;
-        foreach (var item in _items) item.PropertyChanged += Invalidate;
+        _ready = true;
     }
 
-    public void CompleteUpdate() => _ready = true;
-
-    private void Invalidate(object? sender, PropertyChangedEventArgs e) => _dirty = true;
+    public void Invalidate()
+    {
+        _dirty = true;
+        _ready = false;
+        _key = null;
+    }
 
     public void Dispose()
     {
-        _ready = false;
-        foreach (var item in _items) item.PropertyChanged -= Invalidate;
-        _items = [];
+        Invalidate();
     }
 }

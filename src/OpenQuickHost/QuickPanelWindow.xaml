@@ -207,9 +207,22 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}" CornerRadius="12">
+                        <Border x:Name="RootBorder"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="8"
+                                Padding="2,3">
                             <ContentPresenter/>
                         </Border>
+                        <ControlTemplate.Triggers>
+                            <!-- 悬浮态：参考仓库图标模式的悬浮样式，高亮整个卡片背景，图标保持原样不变色 -->
+                            <MultiDataTrigger>
+                                <MultiDataTrigger.Conditions>
+                                    <Condition Binding="{Binding Path=IsMouseOver, RelativeSource={RelativeSource Self}}" Value="True"/>
+                                    <Condition Binding="{Binding IsEmpty}" Value="False"/>
+                                </MultiDataTrigger.Conditions>
+                                <Setter TargetName="RootBorder" Property="Background" Value="{DynamicResource BrushListViewItemMouseOver}"/>
+                            </MultiDataTrigger>
+                        </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
@@ -725,32 +738,14 @@
                                                                 <DataTrigger Binding="{Binding IsQuestHighlight}" Value="True">
                                                                     <Setter Property="Background" Value="#26F59E0B"/>
                                                                 </DataTrigger>
-                                                                <!-- 空格子：仅当鼠标真正移入该 40x40 方块自身时才高亮变蓝 -->
+                                                                <!-- 空格子：当鼠标移入该 40x40 方块自身时柔和微白高亮 -->
                                                                 <MultiDataTrigger>
                                                                     <MultiDataTrigger.Conditions>
                                                                         <Condition Binding="{Binding IsEmpty}" Value="True"/>
                                                                         <Condition Binding="{Binding Path=IsMouseOver, RelativeSource={RelativeSource Self}}" Value="True"/>
                                                                     </MultiDataTrigger.Conditions>
-                                                                    <Setter Property="Background" Value="#FF3B82F6"/>
+                                                                    <Setter Property="Background" Value="#25FFFFFF"/>
                                                                 </MultiDataTrigger>
-                                                                <!-- 非空格子：鼠标移入整个 Button 卡片区域高亮 -->
-                                                                <MultiDataTrigger>
-                                                                    <MultiDataTrigger.Conditions>
-                                                                        <Condition Binding="{Binding IsEmpty}" Value="False"/>
-                                                                        <Condition Binding="{Binding Path=IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True"/>
-                                                                    </MultiDataTrigger.Conditions>
-                                                                    <Setter Property="Background" Value="#FF3B82F6"/>
-                                                                </MultiDataTrigger>
-                                                                <DataTrigger Binding="{Binding IsReleaseTarget}" Value="True">
-                                                                    <Setter Property="Background" Value="#503B82F6"/>
-                                                                    <Setter Property="BorderBrush" Value="#FF3B82F6"/>
-                                                                    <Setter Property="BorderThickness" Value="2.5"/>
-                                                                    <Setter Property="RenderTransform">
-                                                                        <Setter.Value>
-                                                                            <ScaleTransform ScaleX="1.12" ScaleY="1.12"/>
-                                                                        </Setter.Value>
-                                                                    </Setter>
-                                                                </DataTrigger>
                                                                 <DataTrigger Binding="{Binding HasEffectiveImageIcon}" Value="True">
                                                                     <Setter Property="Background" Value="Transparent"/>
                                                                 </DataTrigger>
@@ -850,9 +845,7 @@
                                                                         <DataTrigger Binding="{Binding IsCSharpPrebuilding}" Value="True">
                                                                             <Setter Property="Opacity" Value="0.55" />
                                                                         </DataTrigger>
-                                                                        <DataTrigger Binding="{Binding IsReleaseTarget}" Value="True">
-                                                                            <Setter Property="Opacity" Value="0.45" />
-                                                                        </DataTrigger>
+
                                                                         <DataTrigger Binding="{Binding HasDropPreviewIcon}" Value="True">
                                                                             <Setter Property="Visibility" Value="Collapsed" />
                                                                         </DataTrigger>
@@ -1318,26 +1311,9 @@
                                                                     <Condition Binding="{Binding IsEmpty}" Value="True"/>
                                                                     <Condition Binding="{Binding Path=IsMouseOver, RelativeSource={RelativeSource Self}}" Value="True"/>
                                                                 </MultiDataTrigger.Conditions>
-                                                                <Setter Property="Background" Value="#FF3B82F6"/>
+                                                                <Setter Property="Background" Value="#25FFFFFF"/>
                                                             </MultiDataTrigger>
-                                                            <!-- 非空格子：鼠标移入整个 Button 卡片区域高亮 -->
-                                                            <MultiDataTrigger>
-                                                                <MultiDataTrigger.Conditions>
-                                                                    <Condition Binding="{Binding IsEmpty}" Value="False"/>
-                                                                    <Condition Binding="{Binding Path=IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True"/>
-                                                                </MultiDataTrigger.Conditions>
-                                                                <Setter Property="Background" Value="#FF3B82F6"/>
-                                                            </MultiDataTrigger>
-                                                            <DataTrigger Binding="{Binding IsReleaseTarget}" Value="True">
-                                                                <Setter Property="Background" Value="#503B82F6"/>
-                                                                <Setter Property="BorderBrush" Value="#FF3B82F6"/>
-                                                                <Setter Property="BorderThickness" Value="2.5"/>
-                                                                <Setter Property="RenderTransform">
-                                                                    <Setter.Value>
-                                                                        <ScaleTransform ScaleX="1.12" ScaleY="1.12"/>
-                                                                    </Setter.Value>
-                                                                </Setter>
-                                                            </DataTrigger>
+
                                                             <DataTrigger Binding="{Binding HasEffectiveImageIcon}" Value="True">
                                                                 <Setter Property="Background" Value="Transparent"/>
                                                             </DataTrigger>
@@ -1911,19 +1887,14 @@
                                                         <DataTrigger Binding="{Binding IsEmpty}" Value="True">
                                                             <Setter Property="Background" Value="{DynamicResource BrushSecondaryBtnBG}"/>
                                                         </DataTrigger>
-                                                        <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
-                                                            <Setter Property="Background" Value="#FF3B82F6"/>
-                                                        </DataTrigger>
-                                                        <DataTrigger Binding="{Binding IsReleaseTarget}" Value="True">
-                                                            <Setter Property="Background" Value="#503B82F6"/>
-                                                            <Setter Property="BorderBrush" Value="#FF3B82F6"/>
-                                                            <Setter Property="BorderThickness" Value="2.5"/>
-                                                            <Setter Property="RenderTransform">
-                                                                <Setter.Value>
-                                                                    <ScaleTransform ScaleX="1.12" ScaleY="1.12"/>
-                                                                </Setter.Value>
-                                                            </Setter>
-                                                        </DataTrigger>
+                                                        <!-- 空格子：当鼠标移入该 40x40 方块自身时柔和微白高亮 -->
+                                                        <MultiDataTrigger>
+                                                            <MultiDataTrigger.Conditions>
+                                                                <Condition Binding="{Binding IsEmpty}" Value="True"/>
+                                                                <Condition Binding="{Binding Path=IsMouseOver, RelativeSource={RelativeSource Self}}" Value="True"/>
+                                                            </MultiDataTrigger.Conditions>
+                                                            <Setter Property="Background" Value="#25FFFFFF"/>
+                                                        </MultiDataTrigger>
                                                         <DataTrigger Binding="{Binding HasImageIcon}" Value="True">
                                                             <Setter Property="Background" Value="Transparent"/>
                                                         </DataTrigger>

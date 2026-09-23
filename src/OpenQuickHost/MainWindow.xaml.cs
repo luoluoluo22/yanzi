@@ -409,6 +409,23 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _allCommands = CreateSeedCommands();
         _allCommands.AddRange(LocalExtensionCatalog.LoadCommands());
         _allCommands.AddRange(CreateInstalledApplicationCommands());
+
+        var customShortcuts = AppSettingsStore.Load().CustomCommandShortcuts ?? new(StringComparer.OrdinalIgnoreCase);
+        foreach (var cmd in _allCommands.Where(static x => x.Source != CommandSource.LocalExtension))
+        {
+            if (string.IsNullOrWhiteSpace(cmd.GlobalShortcut))
+            {
+                if (customShortcuts.TryGetValue(cmd.ExtensionId, out var s) && !string.IsNullOrWhiteSpace(s))
+                {
+                    cmd.UpdateGlobalShortcut(s);
+                }
+                else if (!string.IsNullOrWhiteSpace(cmd.OpenTarget) && customShortcuts.TryGetValue(cmd.OpenTarget, out var s2) && !string.IsNullOrWhiteSpace(s2))
+                {
+                    cmd.UpdateGlobalShortcut(s2);
+                }
+            }
+        }
+
         _localExtensionIndex = _allCommands
             .Where(x => x.Source == CommandSource.LocalExtension)
             .GroupBy(x => x.ExtensionId, StringComparer.OrdinalIgnoreCase)
@@ -582,6 +599,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged(nameof(NormalLauncherVisibility));
             OnPropertyChanged(nameof(IsFileSearchScopeActive));
             OnPropertyChanged(nameof(AiChatModelDisplayText));
+            OnPropertyChanged(nameof(IsAllScopeActive));
 
             if (IsStoreMode)
             {
@@ -968,6 +986,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         string.Equals(_activeFilterScopeKey, SearchScopeFile, StringComparison.OrdinalIgnoreCase) &&
         !IsAiChatMode;
 
+    public bool IsAllScopeActive =>
+        string.Equals(_activeFilterScopeKey, SearchScopeAll, StringComparison.OrdinalIgnoreCase) &&
+        !IsAiChatMode && !IsStoreMode;
+
     private bool _isFileSearching;
     public bool IsFileSearching
     {
@@ -1281,25 +1303,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
                 if (_quickPanel != null)
                 {
-                    var oLeft = _quickPanel.Left;
-                    var oTop = _quickPanel.Top;
-                    var oShowActivated = _quickPanel.ShowActivated;
-                    var oShowInTaskbar = _quickPanel.ShowInTaskbar;
-                    var oOpacity = _quickPanel.Opacity;
-
-                    _quickPanel.Left = OverlayWindowManager.OffScreenCoordinate;
-                    _quickPanel.Top = OverlayWindowManager.OffScreenCoordinate;
-                    _quickPanel.ShowActivated = false;
-                    _quickPanel.ShowInTaskbar = false;
-                    _quickPanel.Opacity = 0;
-                    _quickPanel.Show();
-                    _quickPanel.Hide();
-
-                    _quickPanel.Left = oLeft;
-                    _quickPanel.Top = oTop;
-                    _quickPanel.ShowActivated = oShowActivated;
-                    _quickPanel.ShowInTaskbar = oShowInTaskbar;
-                    _quickPanel.Opacity = oOpacity;
+                    _quickPanel.PrewarmDeep();
                 }
 
                 var currentSettings = AppSettingsStore.Load();
@@ -1838,6 +1842,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void CommandList_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
     {
+        _commandActionsMenuOrigin = CommandActionsMenuOrigin.MouseRightClick;
         var dependencyObject = e.OriginalSource as DependencyObject;
         while (dependencyObject != null && dependencyObject is not ListBoxItem)
         {
@@ -1881,6 +1886,104 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
         }
     }
+
+    private void RunAsAdminMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        var command = GetCommandFromMenuItem(sender) ?? SelectedCommand;
+        if (command == null) return;
+        var resolved = ResolveRunnableCommand(command);
+        var target = resolved.OpenTarget;
+        if (string.IsNullOrWhiteSpace(target)) return;
+
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = target,
+                Arguments = resolved.LaunchArguments ?? string.Empty,
+                UseShellExecute = true,
+                Verb = "runas"
+            };
+
+            if (!string.IsNullOrWhiteSpace(resolved.WorkingDirectory) && Directory.Exists(resolved.WorkingDirectory))
+            {
+                psi.WorkingDirectory = resolved.WorkingDirectory;
+            }
+
+            Process.Start(psi);
+            LastRunMessage = $"已以管理员身份启动：{resolved.Title}";
+            SyncStatus = $"已以管理员身份启动：{resolved.Title}";
+            CloseActiveContextMenu();
+            HideToTray();
+        }
+        catch (Exception ex)
+        {
+            LastRunMessage = $"以管理员身份启动失败：{FormatExceptionMessage(ex)}";
+            SyncStatus = $"以管理员身份启动失败：{FormatExceptionMessage(ex)}";
+            HostAssets.AppendLog($"RunAsAdmin failed for '{resolved.Title}' ({target}): {ex}");
+        }
+    }
+
+    private void OpenAppFileLocationMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        var command = GetCommandFromMenuItem(sender) ?? SelectedCommand;
+        if (command == null) return;
+        var resolved = ResolveRunnableCommand(command);
+        var target = resolved.OpenTarget;
+        if (string.IsNullOrWhiteSpace(target)) return;
+
+        try
+        {
+            if (File.Exists(target))
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "explorer.exe",
+                    Arguments = $"/select,\"{target}\"",
+                    UseShellExecute = true
+                });
+                LastRunMessage = $"已定位文件：{Path.GetFileName(target)}";
+            }
+            else if (Directory.Exists(target))
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = target,
+                    UseShellExecute = true
+                });
+                LastRunMessage = $"已打开目录：{target}";
+            }
+            CloseActiveContextMenu();
+        }
+        catch (Exception ex)
+        {
+            LastRunMessage = $"打开文件位置失败：{FormatExceptionMessage(ex)}";
+            HostAssets.AppendLog($"OpenAppFileLocation failed for '{resolved.Title}' ({target}): {ex}");
+        }
+    }
+
+    private void CopyAppPathMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        var command = GetCommandFromMenuItem(sender) ?? SelectedCommand;
+        if (command == null) return;
+        var resolved = ResolveRunnableCommand(command);
+        var target = resolved.OpenTarget;
+        if (string.IsNullOrWhiteSpace(target)) return;
+
+        try
+        {
+            System.Windows.Clipboard.SetText(target);
+            LastRunMessage = $"已复制路径：{target}";
+            SyncStatus = $"已复制路径：{target}";
+            CloseActiveContextMenu();
+        }
+        catch (Exception ex)
+        {
+            LastRunMessage = $"复制路径失败：{FormatExceptionMessage(ex)}";
+            HostAssets.AppendLog($"CopyAppPath failed for '{resolved.Title}' ({target}): {ex}");
+        }
+    }
+
     private async void CreateDesktopShortcutMenuItem_Click(object sender, RoutedEventArgs e)
     {
         await CreateDesktopShortcutAsync();
@@ -2376,7 +2479,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private enum CommandActionsMenuOrigin
     {
         SearchBox,
-        ResultsList
+        ResultsList,
+        MouseRightClick
     }
 
     private void UpdateFooterMenuHint(bool isMenuOpen)
@@ -2534,6 +2638,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void CommandList_ContextMenuOpening(object sender, System.Windows.Controls.ContextMenuEventArgs? e)
     {
+        _commandActionsMenuOrigin = CommandActionsMenuOrigin.MouseRightClick;
+
         if (SelectedCommand?.IsFileSystemResult == true || SelectedCommand?.IsProviderResult == true)
         {
             if (e != null)
@@ -2561,45 +2667,144 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return false;
         }
 
-        CreateDesktopShortcutMenuItem.IsEnabled = resolved.OpenTarget is { Length: > 0 } && !IsInternalCommand(resolved);
-        var canManageLocalExtension = resolved.Source == CommandSource.LocalExtension;
+        var isLocalExtension = resolved.Source == CommandSource.LocalExtension;
         var isYanyuRule = IsYanyuRuleCommand(current);
-        SetCommandShortcutMenuItem.IsEnabled = canManageLocalExtension;
-        SetCommandShortcutMenuItem.Visibility = Visibility.Collapsed;
-        RenameCommandMenuItem.IsEnabled = canManageLocalExtension;
-        RenameCommandMenuItem.Visibility = Visibility.Collapsed;
-        EditExtensionMenuItem.IsEnabled = canManageLocalExtension || isYanyuRule;
-        EditExtensionMenuItem.Header = isYanyuRule ? "编辑燕语" : "编辑小程序";
-        PublishExtensionMenuItem.IsEnabled = canManageLocalExtension && _cloudSyncClient != null;
-        PublishExtensionMenuItem.Visibility = isYanyuRule ? Visibility.Collapsed : Visibility.Visible;
-        PublishExtensionMenuItem.Header = (resolved.IsPublishedInStore) ? "更新到商店" : "发布到商店";
-        CopyExtensionStoreLinkMenuItem.IsEnabled = canManageLocalExtension;
-        CopyExtensionStoreLinkMenuItem.Visibility = (canManageLocalExtension && resolved.IsPublishedInStore) ? Visibility.Visible : Visibility.Collapsed;
-        OpenExtensionStoreLinkMenuItem.IsEnabled = canManageLocalExtension;
-        OpenExtensionStoreLinkMenuItem.Visibility = (canManageLocalExtension && resolved.IsPublishedInStore && !isYanyuRule) ? Visibility.Visible : Visibility.Collapsed;
-        DeleteExtensionMenuItem.IsEnabled = canManageLocalExtension || isYanyuRule;
-        DeleteExtensionMenuItem.Header = isYanyuRule ? "删除燕语" : "删除";
-        
-        // 停止运行
-        TerminateExtensionMenuItem.IsEnabled = resolved.IsRunning;
-        TerminateExtensionMenuItem.Visibility = resolved.IsRunning ? Visibility.Visible : Visibility.Collapsed;
+        var isExtensionLike = isLocalExtension || isYanyuRule;
 
-        // 打开扩展目录
-        OpenExtensionDirectoryMenuItem.IsEnabled = canManageLocalExtension;
-        OpenExtensionDirectoryMenuItem.Visibility = canManageLocalExtension ? Visibility.Visible : Visibility.Collapsed;
+        var target = resolved.OpenTarget;
+        var hasValidLocalTarget = !string.IsNullOrWhiteSpace(target) &&
+                                  !target.StartsWith("shell:", StringComparison.OrdinalIgnoreCase) &&
+                                  !target.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+                                  !target.StartsWith("https://", StringComparison.OrdinalIgnoreCase) &&
+                                  (File.Exists(target) || Directory.Exists(target));
+
+        // 1. 应用/本地可执行文件专属操作
+        var isAppTarget = !isExtensionLike && hasValidLocalTarget && !IsInternalCommand(resolved);
+        var isExecutable = isAppTarget && File.Exists(target) && 
+                           (target.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ||
+                            target.EndsWith(".bat", StringComparison.OrdinalIgnoreCase) ||
+                            target.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase) ||
+                            target.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase));
+
+        RunAsAdminMenuItem.Visibility = isExecutable ? Visibility.Visible : Visibility.Collapsed;
+        RunAsAdminMenuItem.IsEnabled = isExecutable;
+
+        OpenAppFileLocationMenuItem.Visibility = isAppTarget ? Visibility.Visible : Visibility.Collapsed;
+        OpenAppFileLocationMenuItem.IsEnabled = isAppTarget;
+
+        CopyAppPathMenuItem.Visibility = (!isExtensionLike && !string.IsNullOrWhiteSpace(target) && !IsInternalCommand(resolved)) 
+            ? Visibility.Visible : Visibility.Collapsed;
+        CopyAppPathMenuItem.IsEnabled = CopyAppPathMenuItem.Visibility == Visibility.Visible;
+
+        var hasVisibleAppActions = RunAsAdminMenuItem.Visibility == Visibility.Visible ||
+                                   OpenAppFileLocationMenuItem.Visibility == Visibility.Visible ||
+                                   CopyAppPathMenuItem.Visibility == Visibility.Visible;
+
+        // 2. 小程序/燕语专属管理操作与快捷键设置
+        var canSetShortcut = !IsInternalCommand(resolved) && 
+                             (isLocalExtension || resolved.Source == CommandSource.Application || resolved.Source == CommandSource.Local);
+        SetCommandShortcutMenuItem.IsEnabled = canSetShortcut;
+        SetCommandShortcutMenuItem.Visibility = canSetShortcut ? Visibility.Visible : Visibility.Collapsed;
+        if (canSetShortcut)
+        {
+            var currentShortcut = resolved.GlobalShortcut;
+            SetCommandShortcutMenuItem.Header = string.IsNullOrWhiteSpace(currentShortcut)
+                ? "设置快捷键"
+                : $"设置快捷键 ({currentShortcut})";
+        }
+
+        RenameCommandMenuItem.IsEnabled = isLocalExtension;
+        RenameCommandMenuItem.Visibility = Visibility.Collapsed;
+
+        EditExtensionMenuItem.Visibility = isExtensionLike ? Visibility.Visible : Visibility.Collapsed;
+        EditExtensionMenuItem.IsEnabled = isExtensionLike;
+        EditExtensionMenuItem.Header = isYanyuRule ? "编辑燕语" : "编辑小程序";
+
+        PublishExtensionMenuItem.Visibility = (isLocalExtension && !isYanyuRule) ? Visibility.Visible : Visibility.Collapsed;
+        PublishExtensionMenuItem.IsEnabled = isLocalExtension && _cloudSyncClient != null;
+        PublishExtensionMenuItem.Header = (resolved.IsPublishedInStore) ? "更新到商店" : "发布到商店";
+
+        CopyExtensionStoreLinkMenuItem.Visibility = (isLocalExtension && resolved.IsPublishedInStore) ? Visibility.Visible : Visibility.Collapsed;
+        CopyExtensionStoreLinkMenuItem.IsEnabled = isLocalExtension;
+
+        OpenExtensionStoreLinkMenuItem.Visibility = (isLocalExtension && resolved.IsPublishedInStore && !isYanyuRule) ? Visibility.Visible : Visibility.Collapsed;
+        OpenExtensionStoreLinkMenuItem.IsEnabled = isLocalExtension;
+
+        DeleteExtensionMenuItem.Visibility = isExtensionLike ? Visibility.Visible : Visibility.Collapsed;
+        DeleteExtensionMenuItem.IsEnabled = isExtensionLike;
+        DeleteExtensionMenuItem.Header = isYanyuRule ? "删除燕语" : "删除";
+
+        TerminateExtensionMenuItem.Visibility = (isExtensionLike && resolved.IsRunning) ? Visibility.Visible : Visibility.Collapsed;
+        TerminateExtensionMenuItem.IsEnabled = resolved.IsRunning;
+
+        OpenExtensionDirectoryMenuItem.Visibility = isLocalExtension ? Visibility.Visible : Visibility.Collapsed;
+        OpenExtensionDirectoryMenuItem.IsEnabled = isLocalExtension;
 
         ToggleYanyuEnabledMenuItem.Visibility = isYanyuRule ? Visibility.Visible : Visibility.Collapsed;
         ToggleYanyuEnabledMenuItem.IsEnabled = isYanyuRule;
         ToggleYanyuEnabledMenuItem.Header = isYanyuRule && IsYanyuRuleEnabled(current) ? "停用燕语" : "启用燕语";
-        CopyExtensionMenuItem.IsEnabled = true;
-        CutExtensionMenuItem.IsEnabled = true;
-        PasteExtensionMenuItem.IsEnabled = true;
+
+        var hasVisibleExtensionActions = EditExtensionMenuItem.Visibility == Visibility.Visible ||
+                                         PublishExtensionMenuItem.Visibility == Visibility.Visible ||
+                                         CopyExtensionStoreLinkMenuItem.Visibility == Visibility.Visible ||
+                                         OpenExtensionStoreLinkMenuItem.Visibility == Visibility.Visible ||
+                                         DeleteExtensionMenuItem.Visibility == Visibility.Visible ||
+                                         TerminateExtensionMenuItem.Visibility == Visibility.Visible ||
+                                         OpenExtensionDirectoryMenuItem.Visibility == Visibility.Visible ||
+                                         ToggleYanyuEnabledMenuItem.Visibility == Visibility.Visible;
+
+        // 3. 小程序剪贴板操作
+        CopyExtensionMenuItem.Visibility = isExtensionLike ? Visibility.Visible : Visibility.Collapsed;
+        CopyExtensionMenuItem.IsEnabled = isExtensionLike;
+
+        CutExtensionMenuItem.Visibility = isExtensionLike ? Visibility.Visible : Visibility.Collapsed;
+        CutExtensionMenuItem.IsEnabled = isExtensionLike;
+
+        PasteExtensionMenuItem.Visibility = isExtensionLike ? Visibility.Visible : Visibility.Collapsed;
+        PasteExtensionMenuItem.IsEnabled = isExtensionLike;
+
+        var hasVisibleClipboardActions = CopyExtensionMenuItem.Visibility == Visibility.Visible ||
+                                         CutExtensionMenuItem.Visibility == Visibility.Visible ||
+                                         PasteExtensionMenuItem.Visibility == Visibility.Visible;
+
+        // 4. 通用快捷操作
+        AddToQuickPanelMenuItem.Visibility = Visibility.Visible;
+        AddToQuickPanelMenuItem.IsEnabled = true;
+
+        var canCreateShortcut = resolved.OpenTarget is { Length: > 0 } && !IsInternalCommand(resolved);
+        CreateDesktopShortcutMenuItem.Visibility = canCreateShortcut ? Visibility.Visible : Visibility.Collapsed;
+        CreateDesktopShortcutMenuItem.IsEnabled = canCreateShortcut;
+
+        var hasVisibleCommonActions = SetCommandShortcutMenuItem.Visibility == Visibility.Visible ||
+                                      AddToQuickPanelMenuItem.Visibility == Visibility.Visible ||
+                                      CreateDesktopShortcutMenuItem.Visibility == Visibility.Visible;
+
+        // 5. 分隔线与返回按钮联动控制（根据键盘或鼠标呼出上下文）
+        var isKeyboardInvoked = _commandActionsMenuOrigin != CommandActionsMenuOrigin.MouseRightClick;
+        BackToSearchMenuItem.Visibility = isKeyboardInvoked ? Visibility.Visible : Visibility.Collapsed;
+
+        var hasAnyBelowActions = hasVisibleAppActions || hasVisibleExtensionActions || hasVisibleClipboardActions || hasVisibleCommonActions;
+        TopActionsSeparator.Visibility = (isKeyboardInvoked && hasAnyBelowActions)
+            ? Visibility.Visible : Visibility.Collapsed;
+
+        AppActionsSeparator.Visibility = (hasVisibleAppActions && (hasVisibleExtensionActions || hasVisibleClipboardActions || hasVisibleCommonActions))
+            ? Visibility.Visible : Visibility.Collapsed;
+
+        ExtensionActionsSeparator.Visibility = (hasVisibleExtensionActions && (hasVisibleClipboardActions || hasVisibleCommonActions))
+            ? Visibility.Visible : Visibility.Collapsed;
+
+        ClipboardActionsSeparator.Visibility = (hasVisibleClipboardActions && hasVisibleCommonActions)
+            ? Visibility.Visible : Visibility.Collapsed;
+
         SetCommandContextMenuCommand(current);
         return true;
     }
 
     private void SetCommandContextMenuCommand(CommandItem? command)
     {
+        RunAsAdminMenuItem.CommandParameter = command;
+        OpenAppFileLocationMenuItem.CommandParameter = command;
+        CopyAppPathMenuItem.CommandParameter = command;
         CreateDesktopShortcutMenuItem.CommandParameter = command;
         SetCommandShortcutMenuItem.CommandParameter = command;
         RenameCommandMenuItem.CommandParameter = command;
@@ -2768,22 +2973,31 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint
         };
 
-        AddMenuItem(menu, "编辑小程序", "pen", async () => await EditSelectedExtensionAsync(), command.Source == CommandSource.LocalExtension);
-        AddMenuItem(menu, command.IsPublishedInStore ? "更新到商店" : "发布到商店", "publish", async () =>
+        if (command.Source == CommandSource.LocalExtension)
         {
-            var ok = await PublishSelectedExtensionAsync();
-            if (!ok)
+            AddMenuItem(menu, "编辑小程序", "pen", async () => await EditSelectedExtensionAsync(), true);
+            if (_cloudSyncClient != null)
             {
-                SyncStatus = string.IsNullOrWhiteSpace(SyncStatus) ? (command.IsPublishedInStore ? "更新到商店失败。" : "发布到商店失败。") : SyncStatus;
+                AddMenuItem(menu, command.IsPublishedInStore ? "更新到商店" : "发布到商店", "publish", async () =>
+                {
+                    var ok = await PublishSelectedExtensionAsync();
+                    if (!ok)
+                    {
+                        SyncStatus = string.IsNullOrWhiteSpace(SyncStatus) ? (command.IsPublishedInStore ? "更新到商店失败。" : "发布到商店失败。") : SyncStatus;
+                    }
+                }, true);
             }
-        }, command.Source == CommandSource.LocalExtension && _cloudSyncClient != null);
-        AddMenuItem(menu, "打开商店链接", "link", () => OpenExtensionStoreLinkMenuItem_Click(CreateMenuSender(command), new RoutedEventArgs()), command.Source == CommandSource.LocalExtension && command.IsPublishedInStore);
-        AddMenuItem(menu, "删除", "delete", async () => await DeleteSelectedExtensionAsync(), command.Source == CommandSource.LocalExtension);
-        menu.Items.Add(new Separator());
-        AddMenuItem(menu, "复制小程序", "copy", () => CopyExtensionMenuItem_Click(CreateMenuSender(command), new RoutedEventArgs()), true);
-        AddMenuItem(menu, "剪切小程序", "cut", () => CutExtensionMenuItem_Click(CreateMenuSender(command), new RoutedEventArgs()), true);
-        AddMenuItem(menu, "粘贴小程序", "paste", () => PasteExtensionMenuItem_Click(CreateMenuSender(command), new RoutedEventArgs()), true);
-        menu.Items.Add(new Separator());
+            if (command.IsPublishedInStore)
+            {
+                AddMenuItem(menu, "打开商店链接", "link", () => OpenExtensionStoreLinkMenuItem_Click(CreateMenuSender(command), new RoutedEventArgs()), true);
+            }
+            AddMenuItem(menu, "删除", "delete", async () => await DeleteSelectedExtensionAsync(), true);
+            menu.Items.Add(new Separator());
+            AddMenuItem(menu, "复制小程序", "copy", () => CopyExtensionMenuItem_Click(CreateMenuSender(command), new RoutedEventArgs()), true);
+            AddMenuItem(menu, "剪切小程序", "cut", () => CutExtensionMenuItem_Click(CreateMenuSender(command), new RoutedEventArgs()), true);
+            AddMenuItem(menu, "粘贴小程序", "paste", () => PasteExtensionMenuItem_Click(CreateMenuSender(command), new RoutedEventArgs()), true);
+            menu.Items.Add(new Separator());
+        }
         AddMenuItem(menu, "添加到背包", "backpack", () => AddCurrentCommandToQuickPanel(), true);
         menu.Items.Add(new Separator());
         var hoverModeEnabled = IsWindowBindingHoverMode(bindingRuleId);
@@ -3362,20 +3576,35 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             var entries = InstalledApplicationCatalog.Load();
             HostAssets.AppendLog($"Installed applications loaded: count={entries.Count}.");
+            var customShortcuts = AppSettingsStore.Load().CustomCommandShortcuts ?? new(StringComparer.OrdinalIgnoreCase);
             return entries
-                .Select(entry => new CommandItem(
-                    glyph: InferApplicationGlyph(entry.Title),
-                    title: entry.Title,
-                    subtitle: entry.Subtitle,
-                    category: "应用",
-                    accentHex: "#FF4B5563",
-                    openTarget: entry.LaunchTarget,
-                    keywords: entry.Keywords,
-                    source: CommandSource.Application,
-                    extensionId: entry.ExtensionId,
-                    iconReference: entry.IconPath,
-                    launchArguments: entry.Arguments,
-                    workingDirectory: entry.WorkingDirectory))
+                .Select(entry =>
+                {
+                    string? shortcut = null;
+                    if (customShortcuts.TryGetValue(entry.ExtensionId, out var s) && !string.IsNullOrWhiteSpace(s))
+                    {
+                        shortcut = s;
+                    }
+                    else if (customShortcuts.TryGetValue(entry.LaunchTarget, out var s2) && !string.IsNullOrWhiteSpace(s2))
+                    {
+                        shortcut = s2;
+                    }
+
+                    return new CommandItem(
+                        glyph: InferApplicationGlyph(entry.Title),
+                        title: entry.Title,
+                        subtitle: entry.Subtitle,
+                        category: "应用",
+                        accentHex: "#FF4B5563",
+                        openTarget: entry.LaunchTarget,
+                        keywords: entry.Keywords,
+                        source: CommandSource.Application,
+                        extensionId: entry.ExtensionId,
+                        iconReference: entry.IconPath,
+                        launchArguments: entry.Arguments,
+                        workingDirectory: entry.WorkingDirectory,
+                        globalShortcut: shortcut);
+                })
                 .ToList();
         }
         catch (Exception ex)
@@ -3398,6 +3627,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 }
                 _allCommands.RemoveAll(x => x.Source == CommandSource.Application);
                 _allCommands.AddRange(commands);
+                RefreshExtensionHotkeys();
                 OnPropertyChanged(nameof(VisibleCountText));
                 OnPropertyChanged(nameof(FooterHint));
                 _quickPanel?.LoadSlots();
@@ -3425,6 +3655,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
     public List<CommandItem> GetAllCommands() => _allCommands.ToList();
+
+    public int CommandsCount => _allCommands?.Count ?? 0;
 
     public QuickPanelClipboardItem? GetQuickPanelClipboard() => _quickPanelClipboard;
 
@@ -4687,7 +4919,16 @@ public sealed class CommandItem : INotifyPropertyChanged
 
     public HostedPluginViewDefinition? HostedView { get; }
 
-    public string? GlobalShortcut { get; }
+    public string? GlobalShortcut { get; private set; }
+
+    public void UpdateGlobalShortcut(string? shortcut)
+    {
+        var normalized = string.IsNullOrWhiteSpace(shortcut) ? null : shortcut.Trim();
+        GlobalShortcut = normalized;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(GlobalShortcut)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasGlobalShortcut)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShortcutLabel)));
+    }
 
     public string? HotkeyBehavior { get; }
 
@@ -4833,6 +5074,8 @@ public sealed class CommandItem : INotifyPropertyChanged
             ? "网页"
         : Category.Contains("燕语", StringComparison.OrdinalIgnoreCase)
             ? BrandTerms.Current.YanVoice
+        : Source == CommandSource.LocalExtension
+            ? BrandTerms.Current.MiniApp
         : Category.Contains("系统", StringComparison.OrdinalIgnoreCase)
             ? "系统"
             : BrandTerms.Current.MiniApp;

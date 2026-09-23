@@ -463,7 +463,7 @@
                 </Grid.ColumnDefinitions>
 
                 <ScrollViewer x:Name="SimpleModePanel" Grid.Column="0"
-                              VerticalScrollBarVisibility="Auto"
+                              VerticalScrollBarVisibility="Visible"
                               HorizontalScrollBarVisibility="Disabled"
                               Padding="28,24,18,24">
                     <StackPanel HorizontalAlignment="Stretch">
@@ -1467,7 +1467,7 @@
                             </Grid>
                         </Border>
 
-                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="20,18">
+                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Visible" Padding="20,18">
                             <StackPanel HorizontalAlignment="Stretch">
                             <TextBlock Text="{local:TermFormat '在[Warehouse]中显示为'}" Style="{StaticResource SectionTitleStyle}" />
                             <Border Background="{DynamicResource BrushSecondaryBtnBG}"

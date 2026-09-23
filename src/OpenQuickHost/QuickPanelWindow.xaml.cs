@@ -55,7 +55,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
     private int _currentGlobalSlotCount;
     private int _currentContextSlotCount;
     private readonly MainWindow _mainWindow;
-    private readonly QuickPanelSnapshotCache<CommandItem> _slotSnapshot = new();
+    private readonly QuickPanelSnapshotCache _slotSnapshot = new();
     private int _showGeneration;
     private AppSettings _settings;
     private readonly List<SlotViewModel> _allGlobalSlots = new();
@@ -119,6 +119,62 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         catch
         {
             // Best effort
+        }
+    }
+
+    /// <summary>
+    /// 深度预热背包面板：在屏幕外静默预先加载槽位并完成布局排版，使后续首次呼出时即刻命中快照缓存，
+    /// 消除初次呼出时的控件实例化耗时与阴影闪烁。
+    /// </summary>
+    public void PrewarmDeep()
+    {
+        try
+        {
+            if (IsVisible) return;
+            EnsureNoActivateStyle();
+
+            // 预先初始化槽位
+            if (GlobalSlots.Count == 0 && ContextSlots.Count == 0)
+            {
+                LoadSlots();
+            }
+
+            var oLeft = Left;
+            var oTop = Top;
+            var oShowActivated = ShowActivated;
+            var oShowInTaskbar = ShowInTaskbar;
+            var oOpacity = Opacity;
+
+            Left = OverlayWindowManager.OffScreenCoordinate;
+            Top = OverlayWindowManager.OffScreenCoordinate;
+            ShowActivated = false;
+            ShowInTaskbar = false;
+            Opacity = 0;
+
+            Show();
+            UpdateLayout();
+            Hide();
+
+            Left = oLeft;
+            Top = oTop;
+            ShowActivated = oShowActivated;
+            ShowInTaskbar = oShowInTaskbar;
+            Opacity = oOpacity;
+
+            _slotSnapshot.UpdateKey(ReadSlotSnapshotKey());
+
+            if (!_processIconCache.ContainsKey("desktop"))
+            {
+                var desktopIcon = NativeFileIconService.GetDesktopIcon();
+                if (desktopIcon != null)
+                {
+                    _processIconCache["desktop"] = desktopIcon;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"Quick panel PrewarmDeep failed: {ex.Message}");
         }
     }
 
@@ -517,13 +573,18 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
     {
         try
         {
-            var file = new FileInfo(AppSettingsStore.SettingsPath);
-            return new QuickPanelSnapshotKey(file.FullName, AppSettingsStore.WriteVersion,
-                file.Exists ? file.LastWriteTimeUtc.Ticks : 0, file.Exists ? file.Length : 0,
+            var globalGroupId = _selectedGlobalGroup?.Id ?? GetSelectedGlobalGroupSettings()?.Id;
+            var contextGroupId = _selectedContextGroup?.Id ?? GetSelectedContextGroupSettings()?.Id;
+            return new QuickPanelSnapshotKey(
+                AppSettingsStore.WriteVersion,
                 NormalizeProcessName(_foregroundAppContext?.ProcessName),
-                _isShowingGlobalFavorites, _isShowingContextFavorites);
+                globalGroupId,
+                contextGroupId,
+                _isShowingGlobalFavorites,
+                _isShowingContextFavorites,
+                _mainWindow.CommandsCount);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch
         {
             return null; // Metadata cannot be verified: do not reuse old content.
         }
@@ -532,7 +593,6 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
     internal void LoadSlots()
     {
         var allCommands = _mainWindow.GetAllCommands();
-        _slotSnapshot.BeginUpdate(ReadSlotSnapshotKey(), allCommands);
         _settings = AppSettingsStore.Load();
         LoadGroups();
         GlobalSlots.Clear();
@@ -598,7 +658,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         var currentGlobalGroup = GetSelectedGlobalGroupSettings();
         _lastLoadedContextGroupId = currentContextGroup?.Id;
         _lastLoadedGlobalGroupId = currentGlobalGroup?.Id;
-        _slotSnapshot.CompleteUpdate();
+        _slotSnapshot.UpdateKey(ReadSlotSnapshotKey());
     }
 
     public void AddGlobalRow()
@@ -3596,14 +3656,19 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         try
         {
             HostAssets.AppendLog("Quick panel show requested.");
-            _previousForegroundWindow = NativeMethods.GetForegroundWindow();
-            _previousFocusWindow = NativeMethods.GetForegroundFocusWindow();
-            _foregroundAppContext = BuildForegroundAppContext(_previousForegroundWindow);
-            var contextReady = Stopwatch.GetTimestamp();
             var cursorPixels = NativeMethods.GetCursorPosition();
             var screenCtx = ScreenHelper.GetScreenContextAtPoint(new System.Windows.Point(cursorPixels.X, cursorPixels.Y));
             var cursorDips = ScreenHelper.PhysicalToDip(new System.Windows.Point(cursorPixels.X, cursorPixels.Y), screenCtx.DpiScale);
             var screenBounds = screenCtx.DipWorkArea;
+
+            // 呼出前探测光标所在窗口并优先将其激活为前台（解决光标在桌面或后台窗口时未激活、上下文不符合直觉的问题）
+            var helperHwnd = new WindowInteropHelper(this).Handle;
+            _previousForegroundWindow = WindowSensorHelper.ActivateWindowUnderCursor(
+                new System.Drawing.Point((int)cursorPixels.X, (int)cursorPixels.Y),
+                excludeHwnd: helperHwnd);
+            _previousFocusWindow = NativeMethods.GetForegroundFocusWindow();
+            _foregroundAppContext = BuildForegroundAppContext(_previousForegroundWindow);
+            var contextReady = Stopwatch.GetTimestamp();
 
             var safeAnchorY = Height / 2;
             var requestedTop = cursorDips.Y - safeAnchorY;
@@ -3615,13 +3680,30 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
             HubSearchBox.Text = string.Empty; // Reset search on show
             _hoveredSlot = null;
-            var slotsReused = _slotSnapshot.CanReuse(ReadSlotSnapshotKey(), _mainWindow.GetAllCommands());
-            if (!slotsReused) LoadSlots();
-            else RestoreSlotCollections();
+            var slotsReused = _slotSnapshot.CanReuse(ReadSlotSnapshotKey());
+            if (!slotsReused)
+            {
+                LoadSlots();
+                // 槽位重建后强制执行同步排版，确保控件模板与图标在暴露给 DWM 前已排版完毕，彻底消除带阴影的空白帧
+                UpdateLayout();
+            }
+            else
+            {
+                RestoreSlotCollections();
+            }
             var slotsReady = Stopwatch.GetTimestamp();
             var occupiedGlobal = GlobalSlots.Count(slot => slot.IsOccupied);
             var occupiedContext = ContextSlots.Count(slot => slot.IsOccupied);
             HostAssets.AppendLog($"Quick panel showing at ({Left:0},{Top:0}), cursorPixels=({cursorPixels.X:0},{cursorPixels.Y:0}), cursorDips=({cursorDips.X:0},{cursorDips.Y:0}), cursorLocalX={cursorDips.X - Left:0}, topConstrained={topConstrained}, screenDips=({screenBounds.Left:0},{screenBounds.Top:0},{screenBounds.Right:0},{screenBounds.Bottom:0}), occupiedGlobal={occupiedGlobal}, occupiedContext={occupiedContext}, totalGlobal={GlobalSlots.Count}, totalContext={ContextSlots.Count}, previousFocus={DescribeWindow(_previousFocusWindow)}.");
+            var currentProc = _foregroundAppContext?.ProcessName;
+            if (!string.IsNullOrWhiteSpace(currentProc) && _processIconCache.TryGetValue(currentProc, out var fastIcon))
+            {
+                ContextProcessIcon = fastIcon;
+            }
+            else
+            {
+                ContextProcessIcon = null;
+            }
             OnPropertyChanged(nameof(ContextSectionTitle));
             OnPropertyChanged(nameof(ContextHintText));
             _wasActivatedForInput = false;
@@ -4863,15 +4945,22 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         var titleBuilder = new StringBuilder(256);
         _ = NativeMethods.GetWindowText(hwnd, titleBuilder, titleBuilder.Capacity);
         _ = NativeMethods.GetWindowThreadProcessId(hwnd, out var processId);
-        try
+
+        string? processName = ProcessHelper.GetProcessNameByPid(processId);
+        if (string.IsNullOrWhiteSpace(processName))
         {
-            using var process = Process.GetProcessById((int)processId);
-            return new ForegroundAppContext(process.ProcessName, titleBuilder.ToString().Trim());
+            try
+            {
+                using var process = Process.GetProcessById((int)processId);
+                processName = process.ProcessName;
+            }
+            catch
+            {
+                return null;
+            }
         }
-        catch
-        {
-            return null;
-        }
+
+        return new ForegroundAppContext(processName, titleBuilder.ToString().Trim());
     }
 
     private static readonly ConcurrentDictionary<string, ImageSource?> _processIconCache = new(StringComparer.OrdinalIgnoreCase);
@@ -4880,21 +4969,53 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
     private async Task UpdateContextProcessIconAsync(IntPtr hwnd, string? processName, int generation)
     {
-        ContextProcessIcon = null;
-        if (hwnd == IntPtr.Zero || string.IsNullOrWhiteSpace(processName)) return;
+        if (string.IsNullOrWhiteSpace(processName))
+        {
+            ContextProcessIcon = null;
+            return;
+        }
+
         try
         {
             if (_processIconCache.TryGetValue(processName, out var cached))
             {
-                ContextProcessIcon = cached;
+                if (generation == _showGeneration && IsVisible)
+                {
+                    ContextProcessIcon = cached;
+                }
                 return;
             }
+
             if (string.Equals(processName, "desktop", StringComparison.OrdinalIgnoreCase))
             {
-                ContextProcessIcon = ExtensionIconLibrary.ResolveImageSource("mdi:monitor-dashboard", null);
-                if (ContextProcessIcon != null) _processIconCache[processName] = ContextProcessIcon;
+                var desktopIcon = NativeFileIconService.GetDesktopIcon();
+                if (desktopIcon == null)
+                {
+                    var geom = ExtensionIconLibrary.ResolveVectorIcon("mdi:monitor-dashboard");
+                    if (geom != null)
+                    {
+                        var brush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 220, 220));
+                        brush.Freeze();
+                        var drawing = new GeometryDrawing(brush, null, geom);
+                        drawing.Freeze();
+                        var drawingImg = new DrawingImage(drawing);
+                        drawingImg.Freeze();
+                        desktopIcon = drawingImg;
+                    }
+                }
+
+                if (desktopIcon != null)
+                {
+                    _processIconCache[processName] = desktopIcon;
+                    if (generation == _showGeneration && IsVisible)
+                    {
+                        ContextProcessIcon = desktopIcon;
+                    }
+                }
                 return;
             }
+
+            if (hwnd == IntPtr.Zero) return;
             // Repeated opens share one extraction while the shell is slow.
             var pending = PendingProcessIcons.GetOrAdd(processName, _ =>
                 new Lazy<Task<ImageSource?>>(() => Task.Run(() => ExtractContextProcessIcon(hwnd))));

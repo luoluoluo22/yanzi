@@ -49,6 +49,7 @@ public partial class MainWindow
                                 string.Equals(parsed.ScopeKey, _lastAppliedFilterScopeKey, StringComparison.OrdinalIgnoreCase);
         var previousSelectedCommand = SelectedCommand;
         _activeFilterScopeKey = parsed.ScopeKey;
+        OnPropertyChanged(nameof(IsAllScopeActive));
         UpdateSearchScopeCounts(parsed);
         _activeQueryArgument = string.Empty;
 
@@ -179,6 +180,7 @@ public partial class MainWindow
         OnPropertyChanged(nameof(FooterHint));
         OnPropertyChanged(nameof(IsFileSearchScopeActive));
         OnPropertyChanged(nameof(IsFileSearchEnabledInHomeView));
+        OnPropertyChanged(nameof(IsAllScopeActive));
 
         // Tier 2 (异步流式 Async Tier)：全范围 Everything 检索流式追加，增量平滑合并
         if (string.Equals(parsed.ScopeKey, SearchScopeAll, StringComparison.OrdinalIgnoreCase) &&
@@ -596,7 +598,7 @@ public partial class MainWindow
             SearchScopeStore => command.Source == CommandSource.Cloud,
             SearchScopeApplication => command.Source == CommandSource.Application,
             SearchScopeFile => command.Source == CommandSource.File,
-            SearchScopeSystem => command.Category.Contains("系统", StringComparison.OrdinalIgnoreCase),
+            SearchScopeSystem => command.Source != CommandSource.LocalExtension && command.Category.Contains("系统", StringComparison.OrdinalIgnoreCase),
             SearchScopeYanyu => command.Category.Contains("燕语", StringComparison.OrdinalIgnoreCase),
             _ when SearchScopeTab.TryParsePinnedCommandScope(scope, out var extensionId) =>
                 command.ExtensionId.Equals(extensionId, StringComparison.OrdinalIgnoreCase),
@@ -1090,21 +1092,25 @@ public partial class MainWindow
             : _lastActionableCommand;
         if (sourceCommand == null)
         {
-            SyncStatus = "没有可设置快捷键的扩展。";
+            SyncStatus = "没有可设置快捷键的命令。";
             return Task.CompletedTask;
         }
 
-        var extension = ResolveRunnableCommand(sourceCommand);
-        if (extension.Source != CommandSource.LocalExtension)
+        var resolved = ResolveRunnableCommand(sourceCommand);
+        var isLocalExtension = resolved.Source == CommandSource.LocalExtension;
+        var isCustomConfigurable = !isLocalExtension && !IsInternalCommand(resolved) && 
+                                   (resolved.Source == CommandSource.Application || resolved.Source == CommandSource.Local);
+
+        if (!isLocalExtension && !isCustomConfigurable)
         {
-            SyncStatus = "当前选中项不是本地小程序，不能直接设置快捷键。";
+            SyncStatus = "当前选中项不支持设置快捷键。";
             return Task.CompletedTask;
         }
 
         var dialog = new HotkeyCaptureWindow(
             "设置快捷键",
             "窗口激活后，直接按一次新的组合键即可完成录制。需要清除时可点“清空”。",
-            extension.GlobalShortcut ?? string.Empty,
+            resolved.GlobalShortcut ?? string.Empty,
             allowEmpty: true)
         {
             Owner = this
@@ -1116,22 +1122,67 @@ public partial class MainWindow
 
         try
         {
-            if (!string.IsNullOrWhiteSpace(dialog.ShortcutText) &&
-                (!TryParseHotkey(dialog.ShortcutText, out _, out _) || IsDoubleTapShortcut(dialog.ShortcutText)))
+            var newShortcut = dialog.ShortcutText?.Trim();
+            if (!string.IsNullOrWhiteSpace(newShortcut) &&
+                (!TryParseHotkey(newShortcut, out _, out _) || IsDoubleTapShortcut(newShortcut)))
             {
                 SyncStatus = "快捷键格式无效。示例：Ctrl+Alt+T";
                 return Task.CompletedTask;
             }
 
-            var updated = LocalExtensionCatalog.SetGlobalShortcut(extension.ExtensionId, dialog.ShortcutText);
-            UpsertLocalExtensionCommand(updated);
-            ApplyFilter(SearchBox.Text);
-            SelectedCommand = _allCommands.FirstOrDefault(x => x.ExtensionId.Equals(updated.ExtensionId, StringComparison.OrdinalIgnoreCase));
-            CommandList.SelectedItem = SelectedCommand;
-            LastRunMessage = string.IsNullOrWhiteSpace(updated.GlobalShortcut)
-                ? $"已清除快捷键：{updated.Title}"
-                : $"已设置快捷键：{updated.Title} -> {updated.GlobalShortcut}";
-            QueueBackgroundWebDavSync("extension-shortcut");
+            if (isLocalExtension)
+            {
+                var updated = LocalExtensionCatalog.SetGlobalShortcut(resolved.ExtensionId, newShortcut);
+                UpsertLocalExtensionCommand(updated);
+                ApplyFilter(SearchBox.Text);
+                SelectedCommand = _allCommands.FirstOrDefault(x => x.ExtensionId.Equals(updated.ExtensionId, StringComparison.OrdinalIgnoreCase));
+                CommandList.SelectedItem = SelectedCommand;
+                LastRunMessage = string.IsNullOrWhiteSpace(updated.GlobalShortcut)
+                    ? $"已清除快捷键：{updated.Title}"
+                    : $"已设置快捷键：{updated.Title} -> {updated.GlobalShortcut}";
+                QueueBackgroundWebDavSync("extension-shortcut");
+            }
+            else if (isCustomConfigurable)
+            {
+                _appSettings.CustomCommandShortcuts ??= new(StringComparer.OrdinalIgnoreCase);
+                if (string.IsNullOrWhiteSpace(newShortcut))
+                {
+                    _appSettings.CustomCommandShortcuts.Remove(resolved.ExtensionId);
+                    if (!string.IsNullOrWhiteSpace(resolved.OpenTarget))
+                    {
+                        _appSettings.CustomCommandShortcuts.Remove(resolved.OpenTarget);
+                    }
+                }
+                else
+                {
+                    _appSettings.CustomCommandShortcuts[resolved.ExtensionId] = newShortcut;
+                    if (!string.IsNullOrWhiteSpace(resolved.OpenTarget))
+                    {
+                        _appSettings.CustomCommandShortcuts[resolved.OpenTarget] = newShortcut;
+                    }
+                }
+
+                AppSettingsStore.Save(_appSettings);
+
+                foreach (var cmd in _allCommands.Where(x => x.ExtensionId.Equals(resolved.ExtensionId, StringComparison.OrdinalIgnoreCase)))
+                {
+                    cmd.UpdateGlobalShortcut(string.IsNullOrWhiteSpace(newShortcut) ? null : newShortcut);
+                }
+                foreach (var cmd in FilteredCommands.Where(x => x.ExtensionId.Equals(resolved.ExtensionId, StringComparison.OrdinalIgnoreCase)))
+                {
+                    cmd.UpdateGlobalShortcut(string.IsNullOrWhiteSpace(newShortcut) ? null : newShortcut);
+                }
+
+                RefreshExtensionHotkeys();
+                ApplyFilter(SearchBox.Text);
+                SelectedCommand = _allCommands.FirstOrDefault(x => x.ExtensionId.Equals(resolved.ExtensionId, StringComparison.OrdinalIgnoreCase));
+                CommandList.SelectedItem = SelectedCommand;
+
+                LastRunMessage = string.IsNullOrWhiteSpace(newShortcut)
+                    ? $"已清除快捷键：{resolved.Title}"
+                    : $"已设置快捷键：{resolved.Title} -> {newShortcut}";
+                QueueBackgroundWebDavSync("command-shortcut");
+            }
         }
         catch (Exception ex)
         {
@@ -1593,6 +1644,12 @@ public partial class MainWindow
             return false;
         }
 
+        if (menu.Items.Count > 1 && menu.Items[0] is MenuItem backItem && menu.Items[1] is Separator topSep)
+        {
+            backItem.Visibility = keyboardInvoked ? Visibility.Visible : Visibility.Collapsed;
+            topSep.Visibility = keyboardInvoked ? Visibility.Visible : Visibility.Collapsed;
+        }
+
         menu.PlacementTarget = placementTarget ?? CommandList;
         menu.Placement = keyboardInvoked && placementTarget != null
             ? System.Windows.Controls.Primitives.PlacementMode.Right
@@ -1612,6 +1669,12 @@ public partial class MainWindow
         if (TryFindResource("GenericResultContextMenu") is not System.Windows.Controls.ContextMenu menu)
         {
             return false;
+        }
+
+        if (menu.Items.Count > 1 && menu.Items[0] is MenuItem backItem && menu.Items[1] is Separator topSep)
+        {
+            backItem.Visibility = keyboardInvoked ? Visibility.Visible : Visibility.Collapsed;
+            topSep.Visibility = keyboardInvoked ? Visibility.Visible : Visibility.Collapsed;
         }
 
         foreach (var item in menu.Items.OfType<MenuItem>())
@@ -2269,6 +2332,11 @@ public partial class MainWindow
         if (command.Keywords.Any(k => k.Contains(query, StringComparison.OrdinalIgnoreCase)))
         {
             return new CommandMatch(true, 140);
+        }
+
+        if (!string.IsNullOrWhiteSpace(command.GlobalShortcut) && command.GlobalShortcut.Contains(query, StringComparison.OrdinalIgnoreCase))
+        {
+            return new CommandMatch(true, 180);
         }
 
         return new CommandMatch(false, 0);

@@ -1054,8 +1054,6 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         // 物理像素中心校正
         CenterOnAnchorPhysically("pre-reveal");
 
-        PlayEntryAnimation();
-
         _selectionTimer.Start();
         UpdateSelectionFromCursor();
 
@@ -1356,65 +1354,6 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(EditContentViewportHeight));
     }
 
-    private void PlayEntryAnimation()
-    {
-        try
-        {
-            if (_editModeLocked || RootGrid == null || WheelEntryScale == null)
-            {
-                return;
-            }
-
-            _isEntryAnimationActive = true;
-            _fitContentPending = false;
-
-            // 关键：先用普通属性把动画起点设到位，再 BeginAnimation。
-            // 如果先显式 Opacity=1 再动画拉回 0，首帧会以完整画面亮相一瞬再变透明，
-            // 视觉上就是"出现→消失→再淡入"。同理 scale 起点在显示前就位。
-            WheelEntryScale.ScaleX = 0.94;
-            WheelEntryScale.ScaleY = 0.94;
-
-            // 缩放动画：EaseOut 无过冲（BackEase 的过冲会在呼出瞬间放大抖动）；
-            // 不再对 RootGrid.Opacity 做动画，避免与 AllowsTransparency 合成/隐藏路径打架。
-            var scaleEase = new CubicEase { EasingMode = EasingMode.EaseOut };
-            var anim = new DoubleAnimation(0.94, 1.0, new Duration(TimeSpan.FromMilliseconds(110)))
-            {
-                EasingFunction = scaleEase
-            };
-            anim.Completed += (_, _) =>
-            {
-                WheelEntryScale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
-                WheelEntryScale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
-                WheelEntryScale.ScaleX = 1.0;
-                WheelEntryScale.ScaleY = 1.0;
-                _isEntryAnimationActive = false;
-                // 动画期间积累的尺寸需求（子环展开）在此一次性执行，避免与缩放动画叠加闪烁
-                if (_fitContentPending)
-                {
-                    _fitContentPending = false;
-                    UpdateWindowToFitContent();
-                }
-            };
-
-            WheelEntryScale.BeginAnimation(ScaleTransform.ScaleXProperty, anim);
-            WheelEntryScale.BeginAnimation(ScaleTransform.ScaleYProperty, anim);
-        }
-        catch (Exception ex)
-        {
-            HostAssets.AppendLog($"[RadialMenuLog] entry animation failed: {ex.Message}");
-            _isEntryAnimationActive = false;
-            if (WheelEntryScale != null)
-            {
-                WheelEntryScale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
-                WheelEntryScale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
-                WheelEntryScale.ScaleX = 1.0;
-                WheelEntryScale.ScaleY = 1.0;
-            }
-        }
-    }
-
-    private bool _isEntryAnimationActive = false;
-    private bool _fitContentPending = false;
     private bool _fitContentScheduled = false;
 
     /// <summary>
@@ -1476,12 +1415,6 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         // 常态下窗口已固定为 NormalWindowSize（1400x1400），无需动态 resize
         if (Math.Abs(Width - NormalWindowSize) <= 0.5 && Math.Abs(Height - NormalWindowSize) <= 0.5)
         {
-            return;
-        }
-
-        if (_isEntryAnimationActive)
-        {
-            _fitContentPending = true;
             return;
         }
 
@@ -5557,8 +5490,6 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
 
             SubRings.Clear();
             _pageStack.Clear();
-            _fitContentPending = false;
-            _isEntryAnimationActive = false;
             ApplyVisualContentRootMode();
 
             // 安全隐藏窗口并恢复基础可见属性，让下次呼出零状态冲突
@@ -5592,8 +5523,6 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         {
             SubRings.Clear();
             _pageStack.Clear();
-            _fitContentPending = false;
-            _isEntryAnimationActive = false;
             ApplyVisualContentRootMode();
 
             Topmost = false;

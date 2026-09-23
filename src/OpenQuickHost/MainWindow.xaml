@@ -769,15 +769,33 @@
                                     <Path Data="{local:IconGeometry arrow-left}" Fill="{DynamicResource BrushTextMain}" Stretch="Uniform" Width="14" Height="14" />
                                 </MenuItem.Icon>
                             </MenuItem>
-                            <Separator />
-                            <MenuItem x:Name="SetCommandShortcutMenuItem"
-                                      Header="设置快捷键"
-                                      Visibility="Collapsed"
-                                      Click="SetCommandShortcutMenuItem_Click">
+                            <Separator x:Name="TopActionsSeparator" />
+
+                            <!-- 应用/本地程序专属操作 -->
+                            <MenuItem x:Name="RunAsAdminMenuItem"
+                                      Header="以管理员身份运行"
+                                      Click="RunAsAdminMenuItem_Click">
                                 <MenuItem.Icon>
-                                    <Path Data="{local:IconGeometry shortcut}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
+                                    <Path Data="{local:IconGeometry terminal}" Fill="#F59E0B" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
                             </MenuItem>
+                            <MenuItem x:Name="OpenAppFileLocationMenuItem"
+                                      Header="打开文件位置"
+                                      Click="OpenAppFileLocationMenuItem_Click">
+                                <MenuItem.Icon>
+                                    <Path Data="{local:IconGeometry open-folder}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem x:Name="CopyAppPathMenuItem"
+                                      Header="复制路径"
+                                      Click="CopyAppPathMenuItem_Click">
+                                <MenuItem.Icon>
+                                    <Path Data="{local:IconGeometry copy}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <Separator x:Name="AppActionsSeparator" />
+
+                            <!-- 小程序/燕语专属管理操作 -->
                             <MenuItem x:Name="RenameCommandMenuItem"
                                       Header="重命名"
                                       Visibility="Collapsed"
@@ -843,7 +861,9 @@
                                     <Path Data="{local:IconGeometry power}" Fill="#22C55E" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
                             </MenuItem>
-                            <Separator />
+                            <Separator x:Name="ExtensionActionsSeparator" />
+
+                            <!-- 小程序剪贴板操作 -->
                             <MenuItem x:Name="CopyExtensionMenuItem"
                                       Header="{local:Term MiniApp, Prefix='复制'}"
                                       Click="CopyExtensionMenuItem_Click">
@@ -865,12 +885,21 @@
                                     <Path Data="{local:IconGeometry paste}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
                             </MenuItem>
-                            <Separator />
+                            <Separator x:Name="ClipboardActionsSeparator" />
+
+                            <!-- 通用快捷操作 -->
+                            <MenuItem x:Name="SetCommandShortcutMenuItem"
+                                      Header="设置快捷键"
+                                      Click="SetCommandShortcutMenuItem_Click">
+                                <MenuItem.Icon>
+                                    <Path Data="{local:IconGeometry shortcut}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
+                                </MenuItem.Icon>
+                            </MenuItem>
                             <MenuItem x:Name="AddToQuickPanelMenuItem"
                                       Header="{local:Term Backpack, Prefix='添加到'}"
                                       Click="AddToQuickPanelMenuItem_Click">
                                 <MenuItem.Icon>
-            <Path Data="{local:IconGeometry backpack}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
+                                    <Path Data="{local:IconGeometry backpack}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
                             </MenuItem>
                             <MenuItem x:Name="CreateDesktopShortcutMenuItem"
@@ -1121,12 +1150,26 @@
                                                        FontWeight="SemiBold" />
                                         </Border>
 
-                                        <!-- 普通分类标签 (小程序/应用/文件等) -->
+                                        <!-- 普通分类标签 (小程序/应用/文件等，仅在“全部”分类下显示) -->
                                         <TextBlock Text="{Binding DisplayTypeLabel}" 
                                                    Foreground="{DynamicResource BrushTextSec}" 
                                                    FontSize="{DynamicResource FontSizeSmallPlus}" 
-                                                   VerticalAlignment="Center"
-                                                   Visibility="{Binding HasDisplayTypeLabel, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                   VerticalAlignment="Center">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                    <Style.Triggers>
+                                                        <MultiDataTrigger>
+                                                            <MultiDataTrigger.Conditions>
+                                                                <Condition Binding="{Binding HasDisplayTypeLabel}" Value="True" />
+                                                                <Condition Binding="{Binding IsAllScopeActive, RelativeSource={RelativeSource AncestorType=Window}}" Value="True" />
+                                                            </MultiDataTrigger.Conditions>
+                                                            <Setter Property="Visibility" Value="Visible" />
+                                                        </MultiDataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
                                     </StackPanel>
                                 </Grid>
 

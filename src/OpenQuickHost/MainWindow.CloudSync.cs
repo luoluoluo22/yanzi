@@ -114,6 +114,7 @@ public partial class MainWindow
             var pulledConfig = await PullWebDavConfigFromCloudAsync();
             var pulledQuickPanelConfig = await PullQuickPanelConfigFromCloudAsync();
             var yanmCloudResult = await PullYanmStateFromCloudNowAsync();
+            await RetryPendingYanmUploadsAsync();
             QueueBackgroundWebDavSyncAfterCloudRefresh("cloud-refresh");
             launchedPersonalSync = true;
             if (!IsStoreMode)
@@ -3041,6 +3042,7 @@ public partial class MainWindow
                 ApplyCloudLauncherSettings(settings, incoming, snapshot);
                 settings.LauncherConfigUpdatedAtUtc = remoteUpdatedAtUtc?.ToString("O") ?? DateTime.UtcNow.ToString("O");
                 AppSettingsStore.Save(settings);
+                RecordAppliedLauncherBaseline(settings);
                 RefreshRuntimeAfterCloudLauncherPull(settings, snapshot);
                 HostAssets.AppendLog(
                     $"Quick panel cloud pull applied over fresh local config: localUpdated={localUpdatedAtUtc:O}, remoteUpdated={remoteUpdatedAtUtc?.ToString("O") ?? "missing"}.");
@@ -3071,6 +3073,7 @@ public partial class MainWindow
 
         if (!changed)
         {
+            RecordAppliedLauncherBaseline(settings);
             if (shouldBackfillAiConfig || shouldBackfillExtendedConfig)
             {
                 await PushQuickPanelConfigToCloudCoreAsync("cloud-refresh-schema-backfill");
@@ -3087,6 +3090,7 @@ public partial class MainWindow
         settings.LauncherConfigUpdatedAtUtc = remoteUpdatedAtUtc?.ToString("O") ?? DateTime.UtcNow.ToString("O");
 
         AppSettingsStore.Save(settings);
+        RecordAppliedLauncherBaseline(settings);
         RefreshRuntimeAfterCloudLauncherPull(settings, snapshot);
         HostAssets.AppendLog(
             $"Quick panel cloud pull applied: globalGroups={settings.QuickPanelGlobalGroups.Count}, contextGroups={settings.QuickPanelContextGroups.Count}, globalFavs={settings.GlobalFavoriteExtensionIds.Count}, contextFavs={settings.ContextFavoriteExtensionIds.Count}, yanyu={settings.YanyuRules.Count}, radialPages={settings.RadialMenu?.Pages?.Count ?? 0}, aiConfig={HasAiConfigPayload(snapshot)}");
@@ -3106,6 +3110,15 @@ public partial class MainWindow
         }
 
         return true;
+    }
+
+    private void RecordAppliedLauncherBaseline(AppSettings settings)
+    {
+        var state = CloudObjectSyncStateStore.Load(_cloudSyncClient?.CurrentUserId);
+        if (state.Objects.Count == 0) return;
+        CloudPendingChanges.RecordApplied(state, AccountConfigObjectStore.PrepareWrites(
+            CloudQuickPanelConfigSnapshot.FromSettings(settings), DateTime.UtcNow, state.Objects.Keys, state.KnownLocalDynamicObjectIds));
+        CloudObjectSyncStateStore.Save(state);
     }
 
     private void RefreshRuntimeAfterCloudLauncherPull(AppSettings settings, CloudQuickPanelConfigSnapshot snapshot)
@@ -3271,6 +3284,9 @@ public partial class MainWindow
             }
 
             var state = CloudObjectSyncStateStore.Load(_cloudSyncClient.CurrentUserId);
+            var baseline = state.LocalBaselines.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
+            CapturePendingLauncherChanges(state, baseline);
+            CloudObjectSyncStateStore.Save(state);
             await RefreshCloudObjectCacheAsync(state);
             if (legacySnapshot != null &&
                 (!state.Objects.ContainsKey(AccountConfigObjectStore.QuickPanelIndexObjectId) ||
@@ -3278,6 +3294,8 @@ public partial class MainWindow
             {
                 await BootstrapCloudObjectsFromLegacySnapshotAsync(state, legacySnapshot);
             }
+            // Also capture edits made while the network request was in flight, against the original baseline.
+            CapturePendingLauncherChanges(state, baseline);
             var envelopeMap = state.Objects.Values
                 .Select(static item => new LauncherConfigObjectEnvelope
                 {
@@ -3322,6 +3340,13 @@ public partial class MainWindow
             HostAssets.AppendLog($"Cloud object pull failed; local settings preserved: {FormatExceptionMessage(ex)}");
             throw;
         }
+    }
+
+    private static void CapturePendingLauncherChanges(CloudObjectSyncState state, IReadOnlyDictionary<string, CloudObjectSyncCacheEntry> baseline)
+    {
+        var snapshot = CloudQuickPanelConfigSnapshot.FromSettings(AppSettingsStore.Load());
+        var writes = AccountConfigObjectStore.PrepareWrites(snapshot, DateTime.UtcNow, baseline.Keys, state.KnownLocalDynamicObjectIds);
+        CloudPendingChanges.Capture(state, writes, baseline);
     }
 
     private async Task<CloudSyncCapabilitiesResponse?> TryGetCloudSyncCapabilitiesAsync()
@@ -3469,7 +3494,7 @@ public partial class MainWindow
             foreach (var write in writes.Values)
             {
                 if (state.Conflicts.ContainsKey(write.ObjectId)) continue;
-                var matchesBaseline = state.Objects.TryGetValue(write.ObjectId, out var baseline) &&
+                var matchesBaseline = state.LocalBaselines.TryGetValue(write.ObjectId, out var baseline) &&
                                       LauncherConfigObjectStore.HasEquivalentPayload(
                                           write.Envelope,
                                           new LauncherConfigObjectEnvelope
@@ -3651,36 +3676,8 @@ public partial class MainWindow
             DeviceIdentityStore.GetDesktopDisplayName());
     }
 
-    private static void AddPendingCloudObject(
-        CloudObjectSyncState state,
-        string objectId,
-        DateTime localUpdatedAtUtc,
-        long expectedRevision = 0)
-    {
-        if (!state.PendingObjectIds.Contains(objectId, StringComparer.OrdinalIgnoreCase))
-        {
-            state.PendingObjectIds.Add(objectId);
-        }
-        if (!state.PendingOperations.ContainsKey(objectId))
-        {
-            state.PendingOperations[objectId] = new CloudObjectPendingOperation
-            {
-                ObjectId = objectId,
-                CreatedAtUtc = localUpdatedAtUtc.ToString("O"),
-                LastExpectedRevision = expectedRevision
-            };
-        }
-        else
-        {
-            var pending = state.PendingOperations[objectId];
-            var existingUpdatedAtUtc = TryParseCloudTimestamp(pending.CreatedAtUtc) ?? DateTime.MinValue;
-            if (localUpdatedAtUtc > existingUpdatedAtUtc)
-            {
-                pending.CreatedAtUtc = localUpdatedAtUtc.ToString("O");
-                pending.LastError = string.Empty;
-            }
-        }
-    }
+    private static void AddPendingCloudObject(CloudObjectSyncState state, string objectId, DateTime localUpdatedAtUtc, long expectedRevision = 0) =>
+        CloudPendingChanges.Enqueue(state, objectId, localUpdatedAtUtc, expectedRevision);
 
     private static void RemovePendingCloudObject(CloudObjectSyncState state, string objectId)
     {
@@ -3692,6 +3689,7 @@ public partial class MainWindow
         CloudObjectSyncState state,
         AccountConfigObjectWrite write)
     {
+        CloudPendingChanges.RecordApplied(state, [write]);
         if (!IsCloudDynamicObjectId(write.ObjectId))
         {
             return;
@@ -3719,6 +3717,26 @@ public partial class MainWindow
     private static bool IsCloudDynamicObjectId(string objectId) =>
         AccountConfigObjectStore.IsDynamicObjectId(objectId) ||
         YanmObjectStore.IsDynamicObjectId(objectId);
+
+    private async Task RetryPendingYanmUploadsAsync()
+    {
+        if (_cloudSyncClient?.HasCredential != true) return;
+        // One extra pass handles a same-device 409 rebase without waiting for another user edit.
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var state = CloudObjectSyncStateStore.Load(_cloudSyncClient.CurrentUserId);
+            var pending = state.PendingOperations.Values
+                .Where(item => YanmObjectStore.IsObjectId(item.ObjectId) && !state.Conflicts.ContainsKey(item.ObjectId)).ToArray();
+            if (pending.Length == 0 || !string.IsNullOrWhiteSpace(state.PersistenceError)) return;
+            if (attempt > 0 && pending.Any(item => !string.IsNullOrWhiteSpace(item.LastError))) return;
+            try { await PushYanmStateToCloudAsync("cloud-refresh-pending"); }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"Pending Yanm upload deferred: {FormatExceptionMessage(ex)}");
+                return;
+            }
+        }
+    }
 
     private async Task PushYanmStateToCloudAsync(string reason)
     {
@@ -3914,7 +3932,7 @@ public partial class MainWindow
         foreach (var write in writes.Values)
         {
             if (state.Conflicts.ContainsKey(write.ObjectId)) continue;
-            var matchesBaseline = state.Objects.TryGetValue(write.ObjectId, out var baseline) &&
+            var matchesBaseline = state.LocalBaselines.TryGetValue(write.ObjectId, out var baseline) &&
                                   LauncherConfigObjectStore.HasEquivalentPayload(
                                       write.Envelope,
                                       ToEnvelope(baseline));
@@ -4155,6 +4173,9 @@ public partial class MainWindow
                 ApplyYanmObjectSettingsToRuntime(settings);
             }
         }
+        CloudPendingChanges.RecordApplied(state, YanmObjectStore.PrepareWrites(settings.Yanm ?? new YanmSettings(), DateTime.UtcNow,
+            state.Objects.Keys, state.KnownLocalDynamicObjectIds));
+        CloudObjectSyncStateStore.Save(state);
         await Task.CompletedTask;
     }
 
@@ -4188,8 +4209,11 @@ public partial class MainWindow
             envelopes.Values,
             out var applied,
             out var updatedAtUtc);
-        if (!applied || AreJsonPayloadsEqual(settings.Yanm, effective))
+        if (!applied) return;
+        if (AreJsonPayloadsEqual(settings.Yanm, effective))
         {
+            CloudPendingChanges.RecordApplied(state, YanmObjectStore.PrepareWrites(effective, DateTime.UtcNow, state.Objects.Keys, state.KnownLocalDynamicObjectIds));
+            CloudObjectSyncStateStore.Save(state);
             return;
         }
 
@@ -4199,6 +4223,8 @@ public partial class MainWindow
             settings.YanmStateUpdatedAtUtc = updatedAtUtc.Value.ToString("O");
         }
         AppSettingsStore.Save(settings);
+        CloudPendingChanges.RecordApplied(state, YanmObjectStore.PrepareWrites(effective, DateTime.UtcNow, state.Objects.Keys, state.KnownLocalDynamicObjectIds));
+        CloudObjectSyncStateStore.Save(state);
         ApplyYanmObjectSettingsToRuntime(settings);
     }
 
@@ -4256,7 +4282,16 @@ public partial class MainWindow
             if (capabilities?.ObjectSyncAvailable == true)
             {
                 var objectState = CloudObjectSyncStateStore.Load(_cloudSyncClient.CurrentUserId);
+                var baseline = objectState.LocalBaselines.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
+                var local = AppSettingsStore.Load();
+                CloudPendingChanges.Capture(objectState, YanmObjectStore.PrepareWrites(local.Yanm ?? new YanmSettings(), DateTime.UtcNow,
+                    baseline.Keys, objectState.KnownLocalDynamicObjectIds), baseline);
+                CloudObjectSyncStateStore.Save(objectState);
                 await RefreshCloudObjectCacheAsync(objectState);
+                local = AppSettingsStore.Load();
+                CloudPendingChanges.Capture(objectState, YanmObjectStore.PrepareWrites(local.Yanm ?? new YanmSettings(), DateTime.UtcNow,
+                    baseline.Keys, objectState.KnownLocalDynamicObjectIds), baseline);
+                CloudObjectSyncStateStore.Save(objectState);
                 if (objectState.Objects.TryGetValue(YanmObjectStore.LayoutObjectId, out var layoutObject) && !layoutObject.Deleted)
                 {
                     var objectSettings = AppSettingsStore.Load();
@@ -5032,6 +5067,7 @@ public partial class MainWindow
         try
         {
             var state = CloudObjectSyncStateStore.Load(_cloudSyncClient.CurrentUserId);
+            if (!string.IsNullOrWhiteSpace(state.PersistenceError)) return (false, state.PersistenceError);
             if (!state.Conflicts.TryGetValue(objectId, out var conflict))
             {
                 return (true, "该冲突已经处理。");
@@ -5044,7 +5080,7 @@ public partial class MainWindow
             {
                 state.Conflicts.Remove(objectId);
                 CloudObjectSyncStateStore.Save(state);
-                await ApplyCloudObjectStateToLocalAsync();
+                await ApplyCloudObjectStateToLocalAsync(objectId);
                 return (true, "已使用云端内容。");
             }
 
@@ -5066,7 +5102,7 @@ public partial class MainWindow
             UpdateKnownDynamicObjectAfterWrite(state, write);
             state.Conflicts.Remove(objectId);
             CloudObjectSyncStateStore.Save(state);
-            await ApplyCloudObjectStateToLocalAsync();
+            await ApplyCloudObjectStateToLocalAsync(objectId);
             return (true, "已保留这台电脑的修改，并同步到云端。");
         }
         catch (CloudSyncRevisionConflictException)
@@ -5097,6 +5133,8 @@ public partial class MainWindow
         await syncLock.WaitAsync();
         try
         {
+            var state = CloudObjectSyncStateStore.Load(_cloudSyncClient.CurrentUserId);
+            if (!string.IsNullOrWhiteSpace(state.PersistenceError)) throw new IOException(state.PersistenceError);
             var restored = await _cloudSyncClient.RestoreSyncObjectAsync(
                 objectId,
                 expectedRevision,
@@ -5227,23 +5265,19 @@ public partial class MainWindow
         PropertyNameCaseInsensitive = true
     };
 
-    private async Task ApplyCloudObjectStateToLocalAsync()
+    private Task ApplyCloudObjectStateToLocalAsync(string resolvedObjectId)
     {
+        var state = CloudObjectSyncStateStore.Load(_cloudSyncClient?.CurrentUserId);
         var settings = AppSettingsStore.Load();
-        var baseSnapshot = CloudQuickPanelConfigSnapshot.FromSettings(settings);
-        var resolvedSnapshot = await TryComposeCloudObjectSnapshotAsync(baseSnapshot);
-        if (resolvedSnapshot == null)
-        {
-            return;
-        }
-
-        ApplyCloudLauncherSettings(settings, resolvedSnapshot.ToAppSettings(), resolvedSnapshot);
-        settings.LauncherConfigUpdatedAtUtc = resolvedSnapshot.UpdatedAtUtc ?? DateTime.UtcNow.ToString("O");
-        AppSettingsStore.Save(settings);
-        RefreshRuntimeAfterCloudLauncherPull(settings, resolvedSnapshot);
-
-        var objectState = CloudObjectSyncStateStore.Load(_cloudSyncClient?.CurrentUserId);
-        ApplyYanmObjectsFromCache(settings, objectState);
+        var snapshot = CloudQuickPanelConfigSnapshot.FromSettings(settings);
+        var otherLocalWrites = AccountConfigObjectStore.PrepareWrites(snapshot, DateTime.UtcNow, state.Objects.Keys, state.KnownLocalDynamicObjectIds)
+            .Concat(YanmObjectStore.PrepareWrites(settings.Yanm ?? new YanmSettings(), DateTime.UtcNow, state.Objects.Keys, state.KnownLocalDynamicObjectIds))
+            .Where(write => !write.ObjectId.Equals(resolvedObjectId, StringComparison.OrdinalIgnoreCase));
+        // A choice applies to this conflict only; preserve unrelated edits made while the request was running.
+        CloudPendingChanges.Capture(state, otherLocalWrites, state.LocalBaselines);
+        CloudObjectSyncStateStore.Save(state);
+        ApplyDownloadedAccountSettings(state);
+        return Task.CompletedTask;
     }
 
     public void SignOutFromSettings()
