@@ -92,6 +92,7 @@
                               Fill="{Binding SectorBrush}"
                               Stroke="{Binding SectorStrokeBrush}"
                               StrokeThickness="{Binding SectorStrokeThickness}"
+                              StrokeDashArray="{Binding SectorStrokeDashArray}"
                               StrokeLineJoin="Round"
                               Effect="{Binding SectorEffect}"
                               Opacity="{Binding SectorOpacity}"
@@ -169,6 +170,7 @@
                           Fill="{Binding SectorBrush}"
                           Stroke="{Binding SectorStrokeBrush}"
                           StrokeThickness="{Binding SectorStrokeThickness}"
+                          StrokeDashArray="{Binding SectorStrokeDashArray}"
                           StrokeLineJoin="Round"
                           Effect="{Binding SectorEffect}"
                           Opacity="{Binding SectorOpacity}"
@@ -196,6 +198,7 @@
                           Fill="{Binding SectorBrush}"
                           Stroke="{Binding SectorStrokeBrush}"
                           StrokeThickness="{Binding SectorStrokeThickness}"
+                          StrokeDashArray="{Binding SectorStrokeDashArray}"
                           StrokeLineJoin="Round"
                           Effect="{Binding SectorEffect}"
                           Opacity="{Binding SectorOpacity}"
@@ -339,7 +342,7 @@
                             <ScaleTransform ScaleX="{Binding Scale}" ScaleY="{Binding Scale}"/>
                         </Border.RenderTransform>
                         <Grid>
-                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="{Binding ContentOpacity}">
                                 <TextBlock Text="➕" 
                                            Foreground="#E2E8F0" 
                                            FontSize="{DynamicResource FontSizeTitle}" 
@@ -379,6 +382,22 @@
                                             Margin="-2,0,0,-2"
                                             IsHitTestVisible="False"
                                             Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                    <!-- Shadow / Linked Badge (Only visible in edit mode for shadow slots) -->
+                                    <Border Width="9"
+                                            Height="9"
+                                            CornerRadius="4.5"
+                                            Background="#D01E293B"
+                                            BorderBrush="#8038BDF8"
+                                            BorderThickness="1"
+                                            HorizontalAlignment="Right"
+                                            VerticalAlignment="Top"
+                                            Margin="0,-3,-3,0"
+                                            IsHitTestVisible="False"
+                                            Visibility="{Binding IsShadowBadgeVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                        <Viewbox Width="5.5" Height="5.5" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                            <Path Data="{local:IconGeometry link}" Fill="#FF38BDF8" Stretch="Uniform"/>
+                                        </Viewbox>
+                                    </Border>
                                 </Grid>
                                 <TextBlock Text="{Binding Title}"
                                            Foreground="{Binding IsSelected, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='BrushRadialTextActive|BrushRadialText'}"
@@ -428,7 +447,7 @@
                             <ScaleTransform ScaleX="{Binding Scale}" ScaleY="{Binding Scale}"/>
                         </Border.RenderTransform>
                         <Grid>
-                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="{Binding ContentOpacity}">
                                 <TextBlock Text="➕" 
                                            Foreground="{DynamicResource BrushRadialTextMuted}" 
                                            FontSize="{DynamicResource FontSizeTitle}" 
@@ -467,6 +486,22 @@
                                             Margin="-2,0,0,-2"
                                             IsHitTestVisible="False"
                                             Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                    <!-- Shadow / Linked Badge (Only visible in edit mode for shadow slots) -->
+                                    <Border Width="9"
+                                            Height="9"
+                                            CornerRadius="4.5"
+                                            Background="#D01E293B"
+                                            BorderBrush="#8038BDF8"
+                                            BorderThickness="1"
+                                            HorizontalAlignment="Right"
+                                            VerticalAlignment="Top"
+                                            Margin="0,-3,-3,0"
+                                            IsHitTestVisible="False"
+                                            Visibility="{Binding IsShadowBadgeVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                        <Viewbox Width="5.5" Height="5.5" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                            <Path Data="{local:IconGeometry link}" Fill="#FF38BDF8" Stretch="Uniform"/>
+                                        </Viewbox>
+                                    </Border>
                                 </Grid>
                                 <TextBlock Text="{Binding Title}"
                                            Foreground="{Binding IsSelected, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='BrushRadialTextActive|BrushRadialText'}"
@@ -515,7 +550,7 @@
                             <ScaleTransform ScaleX="{Binding Scale}" ScaleY="{Binding Scale}"/>
                         </Border.RenderTransform>
                         <Grid>
-                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="{Binding ContentOpacity}">
                                 <TextBlock Text="➕" 
                                            Foreground="{DynamicResource BrushRadialTextMuted}" 
                                            FontSize="{DynamicResource FontSizeHeader}" 
@@ -572,6 +607,22 @@
                                             Margin="-2,0,0,-2"
                                             IsHitTestVisible="False"
                                             Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                    <!-- Shadow / Linked Badge (Only visible in edit mode for shadow slots) -->
+                                    <Border Width="9"
+                                            Height="9"
+                                            CornerRadius="4.5"
+                                            Background="#D01E293B"
+                                            BorderBrush="#8038BDF8"
+                                            BorderThickness="1"
+                                            HorizontalAlignment="Right"
+                                            VerticalAlignment="Top"
+                                            Margin="0,-3,-3,0"
+                                            IsHitTestVisible="False"
+                                            Visibility="{Binding IsShadowBadgeVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                        <Viewbox Width="5.5" Height="5.5" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                            <Path Data="{local:IconGeometry link}" Fill="#FF38BDF8" Stretch="Uniform"/>
+                                        </Viewbox>
+                                    </Border>
                                 </Grid>
                                 <TextBlock Text="{Binding Title}"
                                            Foreground="{Binding IsSelected, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='BrushRadialTextActive|BrushRadialText'}"
@@ -686,7 +737,7 @@
                                 <ScaleTransform ScaleX="{Binding Scale}" ScaleY="{Binding Scale}"/>
                             </Border.RenderTransform>
                             <Grid>
-                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="{Binding ContentOpacity}">
                                     <TextBlock Text="➕" 
                                                Foreground="{DynamicResource BrushRadialTextMuted}" 
                                                FontSize="22" 
@@ -743,6 +794,22 @@
                                                 Margin="-1.5,0,0,-1.5"
                                                 IsHitTestVisible="False"
                                                 Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                        <!-- Shadow / Linked Badge (Only visible in edit mode for shadow slots) -->
+                                        <Border Width="8"
+                                                Height="8"
+                                                CornerRadius="4"
+                                                Background="#D01E293B"
+                                                BorderBrush="#8038BDF8"
+                                                BorderThickness="1"
+                                                HorizontalAlignment="Right"
+                                                VerticalAlignment="Top"
+                                                Margin="0,-2,-2,0"
+                                                IsHitTestVisible="False"
+                                                Visibility="{Binding IsShadowBadgeVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                            <Viewbox Width="5" Height="5" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                <Path Data="{local:IconGeometry link}" Fill="#FF38BDF8" Stretch="Uniform"/>
+                                            </Viewbox>
+                                        </Border>
                                     </Grid>
                                     <TextBlock Text="{Binding Title}"
                                                Foreground="{Binding IsSelected, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='BrushAccent|BrushRadialText'}"
@@ -858,7 +925,7 @@
                                 <ScaleTransform ScaleX="{Binding Scale}" ScaleY="{Binding Scale}"/>
                             </Border.RenderTransform>
                             <Grid>
-                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="{Binding ContentOpacity}">
                                     <TextBlock Text="➕" 
                                                Foreground="#80FFFFFF" 
                                                FontSize="{DynamicResource FontSizeTitle}" 
@@ -898,6 +965,22 @@
                                                 Margin="-2,0,0,-2"
                                                 IsHitTestVisible="False"
                                                 Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                        <!-- Shadow / Linked Badge (Only visible in edit mode for shadow slots) -->
+                                        <Border Width="9"
+                                                Height="9"
+                                                CornerRadius="4.5"
+                                                Background="#D01E293B"
+                                                BorderBrush="#8038BDF8"
+                                                BorderThickness="1"
+                                                HorizontalAlignment="Right"
+                                                VerticalAlignment="Top"
+                                                Margin="0,-3,-3,0"
+                                                IsHitTestVisible="False"
+                                                Visibility="{Binding IsShadowBadgeVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                            <Viewbox Width="5.5" Height="5.5" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                <Path Data="{local:IconGeometry link}" Fill="#FF38BDF8" Stretch="Uniform"/>
+                                            </Viewbox>
+                                        </Border>
                                     </Grid>
                                     <TextBlock Text="{Binding Title}"
                                                Foreground="{Binding IsSelected, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='BrushAccent|BrushRadialText'}"
@@ -1297,6 +1380,9 @@
                                 <DataTemplate>
                                     <Path Data="{Binding SectorGeometry}"
                                           Fill="{Binding SectorBrush}"
+                                          Stroke="{Binding SectorStrokeBrush}"
+                                          StrokeThickness="{Binding SectorStrokeThickness}"
+                                          StrokeDashArray="{Binding SectorStrokeDashArray}"
                                           Opacity="{Binding SectorOpacity}"
                                           Visibility="{Binding IsSectorVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                 </DataTemplate>
@@ -1355,6 +1441,9 @@
                                 <DataTemplate>
                                     <Path Data="{Binding SectorGeometry}"
                                           Fill="{Binding SectorBrush}"
+                                          Stroke="{Binding SectorStrokeBrush}"
+                                          StrokeThickness="{Binding SectorStrokeThickness}"
+                                          StrokeDashArray="{Binding SectorStrokeDashArray}"
                                           Opacity="{Binding SectorOpacity}"
                                           Visibility="{Binding IsSectorVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                 </DataTemplate>
@@ -1438,7 +1527,7 @@
                                             <ScaleTransform ScaleX="{Binding Scale}" ScaleY="{Binding Scale}"/>
                                         </Border.RenderTransform>
                                         <Grid>
-                                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="{Binding ContentOpacity}">
                                                 <TextBlock Text="➕" 
                                                            Foreground="{DynamicResource BrushRadialTextMuted}" 
                                                            FontSize="{DynamicResource FontSizeNormal}" 
@@ -1493,6 +1582,22 @@
                                                             Margin="-2,0,0,-2"
                                                             IsHitTestVisible="False"
                                                             Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                    <!-- Shadow / Linked Badge (Only visible in edit mode for shadow slots) -->
+                                                    <Border Width="7"
+                                                            Height="7"
+                                                            CornerRadius="3.5"
+                                                            Background="#D01E293B"
+                                                            BorderBrush="#8038BDF8"
+                                                            BorderThickness="0.8"
+                                                            HorizontalAlignment="Right"
+                                                            VerticalAlignment="Top"
+                                                            Margin="0,-2,-2,0"
+                                                            IsHitTestVisible="False"
+                                                            Visibility="{Binding IsShadowBadgeVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                        <Viewbox Width="4.5" Height="4.5" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                            <Path Data="{local:IconGeometry link}" Fill="#FF38BDF8" Stretch="Uniform"/>
+                                                        </Viewbox>
+                                                    </Border>
                                                 </Grid>
                                                 <TextBlock Text="{Binding Title}"
                                                            Foreground="{Binding IsSelected, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='BrushAccent|BrushRadialText'}"
@@ -1522,6 +1627,9 @@
                                 <DataTemplate>
                                     <Path Data="{Binding SectorGeometry}"
                                           Fill="{Binding SectorBrush}"
+                                          Stroke="{Binding SectorStrokeBrush}"
+                                          StrokeThickness="{Binding SectorStrokeThickness}"
+                                          StrokeDashArray="{Binding SectorStrokeDashArray}"
                                           Opacity="{Binding SectorOpacity}"
                                           Visibility="{Binding IsSectorVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                 </DataTemplate>
@@ -1578,7 +1686,7 @@
                                             <ScaleTransform ScaleX="{Binding Scale}" ScaleY="{Binding Scale}"/>
                                         </Border.RenderTransform>
                                         <Grid>
-                                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="{Binding ContentOpacity}">
                                                 <TextBlock Text="➕" 
                                                            Foreground="{DynamicResource BrushRadialTextMuted}" 
                                                            FontSize="{DynamicResource FontSizeNormal}" 
@@ -1633,6 +1741,22 @@
                                                             Margin="-2,0,0,-2"
                                                             IsHitTestVisible="False"
                                                             Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                    <!-- Shadow / Linked Badge (Only visible in edit mode for shadow slots) -->
+                                                    <Border Width="7"
+                                                            Height="7"
+                                                            CornerRadius="3.5"
+                                                            Background="#D01E293B"
+                                                            BorderBrush="#8038BDF8"
+                                                            BorderThickness="0.8"
+                                                            HorizontalAlignment="Right"
+                                                            VerticalAlignment="Top"
+                                                            Margin="0,-2,-2,0"
+                                                            IsHitTestVisible="False"
+                                                            Visibility="{Binding IsShadowBadgeVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                        <Viewbox Width="4.5" Height="4.5" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                            <Path Data="{local:IconGeometry link}" Fill="#FF38BDF8" Stretch="Uniform"/>
+                                                        </Viewbox>
+                                                    </Border>
                                                 </Grid>
                                                 <TextBlock Text="{Binding Title}"
                                                            Foreground="{Binding IsSelected, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='BrushAccent|BrushRadialText'}"
@@ -1682,7 +1806,7 @@
                                             <ScaleTransform ScaleX="{Binding Scale}" ScaleY="{Binding Scale}"/>
                                         </Border.RenderTransform>
                                         <Grid>
-                                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="{Binding ContentOpacity}">
                                                 <TextBlock Text="➕" 
                                                            Foreground="{DynamicResource BrushRadialTextMuted}" 
                                                            FontSize="{DynamicResource FontSizeHeader}" 
@@ -1739,6 +1863,22 @@
                                                             Margin="-2,0,0,-2"
                                                             IsHitTestVisible="False"
                                                             Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                    <!-- Shadow / Linked Badge (Only visible in edit mode for shadow slots) -->
+                                                    <Border Width="8"
+                                                            Height="8"
+                                                            CornerRadius="4"
+                                                            Background="#D01E293B"
+                                                            BorderBrush="#8038BDF8"
+                                                            BorderThickness="1"
+                                                            HorizontalAlignment="Right"
+                                                            VerticalAlignment="Top"
+                                                            Margin="0,-2,-2,0"
+                                                            IsHitTestVisible="False"
+                                                            Visibility="{Binding IsShadowBadgeVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                        <Viewbox Width="5" Height="5" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                            <Path Data="{local:IconGeometry link}" Fill="#FF38BDF8" Stretch="Uniform"/>
+                                                        </Viewbox>
+                                                    </Border>
                                                 </Grid>
                                                 <TextBlock Text="{Binding Title}"
                                                            Foreground="{Binding IsSelected, Converter={StaticResource BooleanToColorConverter}, ConverterParameter='BrushAccent|BrushRadialText'}"

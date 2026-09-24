@@ -1810,6 +1810,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             var item = items.ElementAtOrDefault(index);
             var command = item?.Command;
             var childPageId = item?.ChildPageId ?? string.Empty;
+            var isShadow = item?.IsShadow ?? false;
             var vm = new RadialMenuItemViewModel(
                 _currentPageId,
                 index,
@@ -1822,7 +1823,8 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 RadialMenuRing.Inner,
                 CreateSectorGeometry(center.X, center.Y, 36, 100, angleDegrees - 22.5, angleDegrees + 22.5),
                 center.X,
-                center.Y)
+                center.Y,
+                isShadow)
             {
                 IsEditMode = _editModeLocked
             };
@@ -1840,6 +1842,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             var item = items.ElementAtOrDefault(index);
             var command = item?.Command;
             var childPageId = item?.ChildPageId ?? string.Empty;
+            var isShadow = item?.IsShadow ?? false;
             var vm = new RadialMenuItemViewModel(
                 _currentPageId,
                 index,
@@ -1852,7 +1855,8 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 RadialMenuRing.Middle,
                 CreateSectorGeometry(center.X, center.Y, 100, 165, angleDegrees - 11.25, angleDegrees + 11.25),
                 center.X,
-                center.Y)
+                center.Y,
+                isShadow)
             {
                 IsEditMode = _editModeLocked
             };
@@ -1870,6 +1874,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             var item = items.ElementAtOrDefault(index);
             var command = item?.Command;
             var childPageId = item?.ChildPageId ?? string.Empty;
+            var isShadow = item?.IsShadow ?? false;
             var vm = new RadialMenuItemViewModel(
                 _currentPageId,
                 index,
@@ -1882,7 +1887,8 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 RadialMenuRing.Outer,
                 CreateSectorGeometry(center.X, center.Y, 165, 280, angleDegrees - 22.5, angleDegrees + 22.5),
                 center.X,
-                center.Y)
+                center.Y,
+                isShadow)
             {
                 IsEditMode = _editModeLocked
             };
@@ -2546,6 +2552,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             var item = items.ElementAtOrDefault(index);
             var command = item?.Command;
             var childPageId = item?.ChildPageId ?? string.Empty;
+            var isShadow = item?.IsShadow ?? false;
             var vm = new RadialMenuItemViewModel(
                 page.Id,
                 index,
@@ -2558,7 +2565,11 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 RadialMenuRing.Inner,
                 CreateSectorGeometry(cX, cY, 36, 100, childAngleDegrees - 22.5, childAngleDegrees + 22.5),
                 cX,
-                cY);
+                cY,
+                isShadow)
+            {
+                IsEditMode = _editModeLocked
+            };
             ring.Items.Add(vm);
         }
 
@@ -2574,6 +2585,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             var item = items.ElementAtOrDefault(index);
             var command = item?.Command;
             var childPageId = item?.ChildPageId ?? string.Empty;
+            var isShadow = item?.IsShadow ?? false;
             var vm = new RadialMenuItemViewModel(
                 page.Id,
                 index,
@@ -2586,7 +2598,11 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 RadialMenuRing.Middle,
                 CreateSectorGeometry(cX, cY, 100, 165, childAngleDegrees - 11.25, childAngleDegrees + 11.25),
                 cX,
-                cY);
+                cY,
+                isShadow)
+            {
+                IsEditMode = _editModeLocked
+            };
             ring.OuterItems.Add(vm);
         }
 
@@ -2602,6 +2618,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
             var item = items.ElementAtOrDefault(index);
             var command = item?.Command;
             var childPageId = item?.ChildPageId ?? string.Empty;
+            var isShadow = item?.IsShadow ?? false;
             var vm = new RadialMenuItemViewModel(
                 page.Id,
                 index,
@@ -2614,7 +2631,11 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 RadialMenuRing.Outer,
                 CreateSectorGeometry(cX, cY, 165, 280, childAngleDegrees - 22.5, childAngleDegrees + 22.5),
                 cX,
-                cY);
+                cY,
+                isShadow)
+            {
+                IsEditMode = _editModeLocked
+            };
             ring.MostOuterItems.Add(vm);
         }
 
@@ -4016,19 +4037,92 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         ActiveTitle = "添加槽位项";
     }
 
+    private bool IsAppRadialPage(string? pageId)
+    {
+        var effectivePageId = !string.IsNullOrWhiteSpace(pageId)
+            ? pageId
+            : (!string.IsNullOrWhiteSpace(_currentPageId) ? _currentPageId : string.Empty);
+        var page = _pages.FirstOrDefault(p => p.Id.Equals(effectivePageId, StringComparison.OrdinalIgnoreCase));
+        return page != null && !string.IsNullOrEmpty(page.ContextProcessName);
+    }
+
+    private bool TryGetGlobalPageSlotContent(int index, out string? globalExtId, out string? globalChildId)
+    {
+        globalExtId = null;
+        globalChildId = null;
+        var settings = AppSettingsStore.LoadCached();
+        var radial = settings.RadialMenu ?? new RadialMenuSettings();
+        var globalPage = radial.Pages.FirstOrDefault(item => string.IsNullOrEmpty(item.ContextProcessName));
+        if (globalPage == null || index < 0 || index >= RadialMenuSettings.TotalSlotCount)
+        {
+            return false;
+        }
+        globalExtId = globalPage.Slots.ElementAtOrDefault(index);
+        globalChildId = globalPage.ChildPageIds.ElementAtOrDefault(index);
+        return !string.IsNullOrWhiteSpace(globalExtId) || !string.IsNullOrWhiteSpace(globalChildId);
+    }
+
+    private void SolidifyShadowSlot(RadialEditTarget target)
+    {
+        EnsureActivatedForEdit();
+        if (target.Item.HasChildPage && !string.IsNullOrWhiteSpace(target.Item.ChildPageId))
+        {
+            WriteRadialSlotPayload(target.PageId, target.Index, new RadialSlotPayload(null, null, target.Item.ChildPageId));
+        }
+        else if (target.Item.Command != null)
+        {
+            WriteRadialSlotPayload(target.PageId, target.Index, new RadialSlotPayload(target.Item.Command.ExtensionId, target.Item.Command.Title, null));
+        }
+        ActiveTitle = "已固化为专属动作";
+    }
+
+    private void HideSlotInCurrentApp(RadialEditTarget target)
+    {
+        EnsureActivatedForEdit();
+        WriteRadialSlotPayload(target.PageId, target.Index, new RadialSlotPayload("__disabled__", null, null));
+        ActiveTitle = "已在此应用中隐藏";
+    }
+
+    private void RestoreGlobalShadow(RadialEditTarget target)
+    {
+        EnsureActivatedForEdit();
+        WriteRadialSlotPayload(target.PageId, target.Index, new RadialSlotPayload(null, null, null));
+        ActiveTitle = "已恢复为全局影子";
+    }
+
     private ContextMenu BuildEditContextMenu(RadialEditTarget target)
     {
         var menu = new ContextMenu();
         var normalBrush = (System.Windows.Media.Brush)System.Windows.Application.Current.FindResource("BrushTextSec") ?? System.Windows.Media.Brushes.Gray;
         var dangerBrush = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#EF4444"));
+        var accentBrush = (System.Windows.Media.Brush)System.Windows.Application.Current.FindResource("BrushAccent") ?? System.Windows.Media.Brushes.DodgerBlue;
 
-        bool hasContent = target.Item.Command != null || target.Item.HasChildPage;
+        bool isAppPage = IsAppRadialPage(target.PageId);
+        bool hasGlobalSlot = TryGetGlobalPageSlotContent(target.Index, out _, out _);
 
-        if (hasContent)
+        if (target.Item.IsShadow)
         {
+            var solidifyItem = new MenuItem
+            {
+                Header = "固化为专属动作",
+                Icon = CreateMenuIcon("pin", accentBrush)
+            };
+            solidifyItem.Click += (_, _) => Dispatcher.BeginInvoke(new Action(() => SolidifyShadowSlot(target)));
+            menu.Items.Add(solidifyItem);
+
+            var hideItem = new MenuItem
+            {
+                Header = "在此应用中隐藏",
+                Icon = CreateMenuIcon("trash", dangerBrush)
+            };
+            hideItem.Click += (_, _) => Dispatcher.BeginInvoke(new Action(() => HideSlotInCurrentApp(target)));
+            menu.Items.Add(hideItem);
+
+            menu.Items.Add(new Separator());
+
             var editItem = new MenuItem
             {
-                Header = "编辑",
+                Header = "替换为此动作并固化",
                 Icon = CreateMenuIcon("pencil", normalBrush)
             };
             editItem.Click += (_, _) =>
@@ -4037,14 +4131,6 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 Dispatcher.BeginInvoke(new Action(() => EditSlotContentFromTarget(target)));
             };
             menu.Items.Add(editItem);
-
-            var clearItem = new MenuItem
-            {
-                Header = "删除",
-                Icon = CreateMenuIcon("trash", dangerBrush)
-            };
-            clearItem.Click += (_, _) => Dispatcher.BeginInvoke(new Action(() => ClearSlotContentFromTarget(target)));
-            menu.Items.Add(clearItem);
 
             var cutItem = new MenuItem
             {
@@ -4070,17 +4156,97 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
         }
         else
         {
-            PopulateAddMenuOptions(menu, target);
+            bool hasContent = target.Item.Command != null || target.Item.HasChildPage;
 
-            if (_cutSlotPayload != null)
+            if (hasContent)
             {
-                var pasteItem = new MenuItem
+                var editItem = new MenuItem
                 {
-                    Header = "粘贴到此槽位",
-                    Icon = CreateMenuIcon("paste", normalBrush)
+                    Header = "编辑",
+                    Icon = CreateMenuIcon("pencil", normalBrush)
                 };
-                pasteItem.Click += (_, _) => PasteRadialSlot(target);
-                menu.Items.Add(pasteItem);
+                editItem.Click += (_, _) =>
+                {
+                    _isOpeningSubDialog = true;
+                    Dispatcher.BeginInvoke(new Action(() => EditSlotContentFromTarget(target)));
+                };
+                menu.Items.Add(editItem);
+
+                var clearItem = new MenuItem
+                {
+                    Header = "删除",
+                    Icon = CreateMenuIcon("trash", dangerBrush)
+                };
+                clearItem.Click += (_, _) => Dispatcher.BeginInvoke(new Action(() => ClearSlotContentFromTarget(target)));
+                menu.Items.Add(clearItem);
+
+                if (isAppPage && hasGlobalSlot)
+                {
+                    var restoreItem = new MenuItem
+                    {
+                        Header = "恢复为全局影子",
+                        Icon = CreateMenuIcon("link", accentBrush)
+                    };
+                    restoreItem.Click += (_, _) => Dispatcher.BeginInvoke(new Action(() => RestoreGlobalShadow(target)));
+                    menu.Items.Add(restoreItem);
+
+                    var hideItem = new MenuItem
+                    {
+                        Header = "在此应用中隐藏",
+                        Icon = CreateMenuIcon("trash", dangerBrush)
+                    };
+                    hideItem.Click += (_, _) => Dispatcher.BeginInvoke(new Action(() => HideSlotInCurrentApp(target)));
+                    menu.Items.Add(hideItem);
+                }
+
+                var cutItem = new MenuItem
+                {
+                    Header = "剪切槽位",
+                    Icon = CreateMenuIcon("cut", normalBrush)
+                };
+                cutItem.Click += (_, _) => Dispatcher.BeginInvoke(new Action(() => CutRadialSlot(target)));
+                menu.Items.Add(cutItem);
+
+                if (_cutSlotPayload != null)
+                {
+                    var pasteItem = new MenuItem
+                    {
+                        Header = "粘贴到此槽位",
+                        Icon = CreateMenuIcon("paste", normalBrush)
+                    };
+                    pasteItem.Click += (_, _) => PasteRadialSlot(target);
+                    menu.Items.Add(pasteItem);
+                }
+
+                menu.Items.Add(new Separator());
+                PopulateAddMenuOptions(menu, target);
+            }
+            else
+            {
+                if (isAppPage && hasGlobalSlot)
+                {
+                    var restoreItem = new MenuItem
+                    {
+                        Header = "恢复为全局影子",
+                        Icon = CreateMenuIcon("link", accentBrush)
+                    };
+                    restoreItem.Click += (_, _) => Dispatcher.BeginInvoke(new Action(() => RestoreGlobalShadow(target)));
+                    menu.Items.Add(restoreItem);
+                    menu.Items.Add(new Separator());
+                }
+
+                PopulateAddMenuOptions(menu, target);
+
+                if (_cutSlotPayload != null)
+                {
+                    var pasteItem = new MenuItem
+                    {
+                        Header = "粘贴到此槽位",
+                        Icon = CreateMenuIcon("paste", normalBrush)
+                    };
+                    pasteItem.Click += (_, _) => PasteRadialSlot(target);
+                    menu.Items.Add(pasteItem);
+                }
             }
         }
 
@@ -4099,7 +4265,7 @@ public partial class RadialMenuWindow : Window, INotifyPropertyChanged
                 unbindItem.Click += (_, _) => UnbindRadialSlotFromCurrentApp(target);
                 menu.Items.Add(unbindItem);
             }
-            else if (hasContent)
+            else if (target.Item.Command != null || target.Item.HasChildPage)
             {
                 menu.Items.Add(new Separator());
                 var bindItem = new MenuItem 
@@ -5831,8 +5997,19 @@ public sealed class RadialMenuItemViewModel : INotifyPropertyChanged
     private static readonly System.Windows.Media.Brush IdleOccupiedStrokeBrush;
     private static readonly System.Windows.Media.Brush IdleOccupiedFillBrush;
 
+    private static readonly DoubleCollection ShadowDashArray;
+    private static readonly System.Windows.Media.Brush ShadowStrokeBrush;
+
     static RadialMenuItemViewModel()
     {
+        var dashes = new DoubleCollection { 3, 2 };
+        dashes.Freeze();
+        ShadowDashArray = dashes;
+
+        var shadowStroke = new SolidColorBrush(System.Windows.Media.Color.FromArgb(180, 56, 189, 248)); // #38BDF8 柔和天蓝虚线
+        shadowStroke.Freeze();
+        ShadowStrokeBrush = shadowStroke;
+
         // 边框线不发光：激活时不绘制高亮发光描边
         ActiveStrokeBrush = System.Windows.Media.Brushes.Transparent;
 
@@ -5859,7 +6036,8 @@ public sealed class RadialMenuItemViewModel : INotifyPropertyChanged
         RadialMenuRing ring,
         Geometry? sectorGeometry = null,
         double centerX = 0,
-        double centerY = 0)
+        double centerY = 0,
+        bool isShadow = false)
     {
         OwnerPageId = ownerPageId;
         Index = index;
@@ -5873,6 +6051,7 @@ public sealed class RadialMenuItemViewModel : INotifyPropertyChanged
         SectorGeometry = sectorGeometry;
         _centerX = centerX;
         _centerY = centerY;
+        IsShadow = isShadow;
 
         if (Command != null)
         {
@@ -6022,10 +6201,23 @@ public sealed class RadialMenuItemViewModel : INotifyPropertyChanged
         }
     }
 
+    public bool IsShadow { get; }
+
+    public double ContentOpacity => (IsEditMode && IsShadow) ? 0.55 : 1.0;
+
+    public DoubleCollection? SectorStrokeDashArray => (IsEditMode && IsShadow) ? ShadowDashArray : null;
+
+    public bool IsShadowBadgeVisible => IsEditMode && IsShadow;
+
     public System.Windows.Media.Brush SectorStrokeBrush
     {
         get
         {
+            if (IsEditMode && IsShadow)
+            {
+                return (IsSelected || IsHovered) ? ActiveStrokeBrush : ShadowStrokeBrush;
+            }
+
             if (IsSelected || IsHovered)
             {
                 return ActiveStrokeBrush;
@@ -6041,7 +6233,9 @@ public sealed class RadialMenuItemViewModel : INotifyPropertyChanged
     }
 
     public double SectorStrokeThickness =>
-        (IsSelected || IsHovered) ? 0.0 : (IsNotEmpty ? 0.6 : 0.0);
+        (IsEditMode && IsShadow)
+            ? ((IsSelected || IsHovered) ? 0.0 : 1.2)
+            : ((IsSelected || IsHovered) ? 0.0 : (IsNotEmpty ? 0.6 : 0.0));
 
     public System.Windows.Media.Effects.Effect? SectorEffect => null;
 
@@ -6064,6 +6258,9 @@ public sealed class RadialMenuItemViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(SectorBrush));
             OnPropertyChanged(nameof(SectorStrokeBrush));
             OnPropertyChanged(nameof(SectorStrokeThickness));
+            OnPropertyChanged(nameof(SectorStrokeDashArray));
+            OnPropertyChanged(nameof(ContentOpacity));
+            OnPropertyChanged(nameof(IsShadowBadgeVisible));
             OnPropertyChanged(nameof(SectorEffect));
             OnPropertyChanged(nameof(ZIndex));
         }
@@ -6144,7 +6341,7 @@ public sealed class RadialMenuItemViewModel : INotifyPropertyChanged
 
 public sealed record RadialSeparatorViewModel(double X1, double Y1, double X2, double Y2, System.Windows.Media.Brush? StrokeBrush = null);
 
-public sealed record RadialMenuRuntimeItem(CommandItem? Command, string ChildPageId);
+public sealed record RadialMenuRuntimeItem(CommandItem? Command, string ChildPageId, bool IsShadow = false);
 
 internal sealed record RadialEditTarget(string PageId, int Index, RadialMenuItemViewModel Item);
 

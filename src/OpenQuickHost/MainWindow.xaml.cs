@@ -1984,6 +1984,39 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private void ToggleAppStartupMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        var command = GetCommandFromMenuItem(sender) ?? SelectedCommand;
+        if (command == null) return;
+        var resolved = ResolveRunnableCommand(command);
+        var target = resolved.OpenTarget;
+        if (string.IsNullOrWhiteSpace(target)) return;
+
+        var currentStartup = AppManagementHelper.IsStartupEnabled(target, resolved.Title);
+        var targetStartup = !currentStartup;
+
+        var result = AppManagementHelper.SetStartupEnabled(target, resolved.Title, targetStartup);
+        ToggleAppStartupMenuItem.InputGestureText = targetStartup ? "已开启" : "已关闭";
+        command.IsStartupEnabled = targetStartup;
+        resolved.IsStartupEnabled = targetStartup;
+
+        LastRunMessage = result.Message;
+        SyncStatus = result.Message;
+        CloseActiveContextMenu();
+    }
+
+    private void UninstallAppMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        var command = GetCommandFromMenuItem(sender) ?? SelectedCommand;
+        if (command == null) return;
+        var resolved = ResolveRunnableCommand(command);
+        var target = resolved.OpenTarget;
+        if (string.IsNullOrWhiteSpace(target)) return;
+
+        CloseActiveContextMenu();
+        AppManagementHelper.UninstallApp(this, target, resolved.Title);
+    }
+
     private async void CreateDesktopShortcutMenuItem_Click(object sender, RoutedEventArgs e)
     {
         await CreateDesktopShortcutAsync();
@@ -2696,9 +2729,27 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ? Visibility.Visible : Visibility.Collapsed;
         CopyAppPathMenuItem.IsEnabled = CopyAppPathMenuItem.Visibility == Visibility.Visible;
 
+        ToggleAppStartupMenuItem.Visibility = isExecutable ? Visibility.Visible : Visibility.Collapsed;
+        ToggleAppStartupMenuItem.IsEnabled = isExecutable;
+        if (isExecutable && !string.IsNullOrWhiteSpace(target))
+        {
+            var isStartup = AppManagementHelper.IsStartupEnabled(target!, resolved.Title);
+            ToggleAppStartupMenuItem.InputGestureText = isStartup ? "已开启" : "已关闭";
+            if (current != null)
+            {
+                current.IsStartupEnabled = isStartup;
+            }
+            resolved.IsStartupEnabled = isStartup;
+        }
+
+        UninstallAppMenuItem.Visibility = isExecutable ? Visibility.Visible : Visibility.Collapsed;
+        UninstallAppMenuItem.IsEnabled = isExecutable;
+        UninstallSeparator.Visibility = isExecutable ? Visibility.Visible : Visibility.Collapsed;
+
         var hasVisibleAppActions = RunAsAdminMenuItem.Visibility == Visibility.Visible ||
                                    OpenAppFileLocationMenuItem.Visibility == Visibility.Visible ||
-                                   CopyAppPathMenuItem.Visibility == Visibility.Visible;
+                                   CopyAppPathMenuItem.Visibility == Visibility.Visible ||
+                                   ToggleAppStartupMenuItem.Visibility == Visibility.Visible;
 
         // 2. 小程序/燕语专属管理操作与快捷键设置
         var canSetShortcut = !IsInternalCommand(resolved) && 
@@ -2805,6 +2856,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         RunAsAdminMenuItem.CommandParameter = command;
         OpenAppFileLocationMenuItem.CommandParameter = command;
         CopyAppPathMenuItem.CommandParameter = command;
+        ToggleAppStartupMenuItem.CommandParameter = command;
+        UninstallAppMenuItem.CommandParameter = command;
         CreateDesktopShortcutMenuItem.CommandParameter = command;
         SetCommandShortcutMenuItem.CommandParameter = command;
         RenameCommandMenuItem.CommandParameter = command;
@@ -3577,35 +3630,47 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             var entries = InstalledApplicationCatalog.Load();
             HostAssets.AppendLog($"Installed applications loaded: count={entries.Count}.");
             var customShortcuts = AppSettingsStore.Load().CustomCommandShortcuts ?? new(StringComparer.OrdinalIgnoreCase);
-            return entries
-                .Select(entry =>
-                {
-                    string? shortcut = null;
-                    if (customShortcuts.TryGetValue(entry.ExtensionId, out var s) && !string.IsNullOrWhiteSpace(s))
-                    {
-                        shortcut = s;
-                    }
-                    else if (customShortcuts.TryGetValue(entry.LaunchTarget, out var s2) && !string.IsNullOrWhiteSpace(s2))
-                    {
-                        shortcut = s2;
-                    }
+            var startupSnapshot = AppManagementHelper.GetStartupSnapshot();
+            var seenKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var resultList = new List<CommandItem>();
 
-                    return new CommandItem(
-                        glyph: InferApplicationGlyph(entry.Title),
-                        title: entry.Title,
-                        subtitle: entry.Subtitle,
-                        category: "应用",
-                        accentHex: "#FF4B5563",
-                        openTarget: entry.LaunchTarget,
-                        keywords: entry.Keywords,
-                        source: CommandSource.Application,
-                        extensionId: entry.ExtensionId,
-                        iconReference: entry.IconPath,
-                        launchArguments: entry.Arguments,
-                        workingDirectory: entry.WorkingDirectory,
-                        globalShortcut: shortcut);
-                })
-                .ToList();
+            foreach (var entry in entries)
+            {
+                var dedupeKey = $"{entry.NormalizedTitle}|{entry.NormalizedDisplayPath}";
+                if (!seenKeys.Add(dedupeKey))
+                {
+                    continue;
+                }
+
+                string? shortcut = null;
+                if (customShortcuts.TryGetValue(entry.ExtensionId, out var s) && !string.IsNullOrWhiteSpace(s))
+                {
+                    shortcut = s;
+                }
+                else if (customShortcuts.TryGetValue(entry.LaunchTarget, out var s2) && !string.IsNullOrWhiteSpace(s2))
+                {
+                    shortcut = s2;
+                }
+
+                var item = new CommandItem(
+                    glyph: InferApplicationGlyph(entry.Title),
+                    title: entry.Title,
+                    subtitle: entry.Subtitle,
+                    category: "应用",
+                    accentHex: "#FF4B5563",
+                    openTarget: entry.LaunchTarget,
+                    keywords: entry.Keywords,
+                    source: CommandSource.Application,
+                    extensionId: entry.ExtensionId,
+                    iconReference: entry.IconPath,
+                    launchArguments: entry.Arguments,
+                    workingDirectory: entry.WorkingDirectory,
+                    globalShortcut: shortcut);
+                item.IsStartupEnabled = startupSnapshot.IsStartup(entry.LaunchTarget, entry.Title);
+                resultList.Add(item);
+            }
+
+            return resultList;
         }
         catch (Exception ex)
         {
@@ -4883,6 +4948,20 @@ public sealed class CommandItem : INotifyPropertyChanged
             {
                 _isNextToSelected = value;
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsNextToSelected)));
+            }
+        }
+    }
+
+    private bool _isStartupEnabled;
+    public bool IsStartupEnabled
+    {
+        get => _isStartupEnabled;
+        set
+        {
+            if (_isStartupEnabled != value)
+            {
+                _isStartupEnabled = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsStartupEnabled)));
             }
         }
     }

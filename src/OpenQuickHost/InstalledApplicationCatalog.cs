@@ -8,6 +8,7 @@ internal static class InstalledApplicationCatalog
     {
         var results = new List<InstalledApplicationEntry>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var seenTitleAndDisplay = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var seenTitles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var totalScannedFiles = 0;
         var totalSkippedDirectories = 0;
@@ -31,7 +32,8 @@ internal static class InstalledApplicationCatalog
                 }
 
                 var dedupeKey = $"{entry.NormalizedTitle}|{entry.NormalizedLaunchTarget}";
-                if (!seen.Add(dedupeKey))
+                var displayDedupeKey = $"{entry.NormalizedTitle}|{entry.NormalizedDisplayPath}";
+                if (!seen.Add(dedupeKey) || !seenTitleAndDisplay.Add(displayDedupeKey))
                 {
                     continue;
                 }
@@ -46,7 +48,7 @@ internal static class InstalledApplicationCatalog
                 $"InstalledApplicationCatalog root scanned: path={root}, recurse={scanRoot.Recurse}, files={scanResult.ScannedFiles}, skippedDirectories={scanResult.SkippedDirectories}, acceptedSoFar={results.Count}.");
         }
 
-        ScanAppsFolder(results, seen, seenTitles);
+        ScanAppsFolder(results, seen, seenTitleAndDisplay, seenTitles);
 
         HostAssets.AppendLog(
             $"InstalledApplicationCatalog load summary: roots={GetScanRoots().Count()}, scannedFiles={totalScannedFiles}, skippedDirectories={totalSkippedDirectories}, accepted={results.Count}.");
@@ -56,7 +58,11 @@ internal static class InstalledApplicationCatalog
             .ToList();
     }
 
-    private static void ScanAppsFolder(List<InstalledApplicationEntry> results, HashSet<string> seen, HashSet<string> seenTitles)
+    private static void ScanAppsFolder(
+        List<InstalledApplicationEntry> results,
+        HashSet<string> seen,
+        HashSet<string> seenTitleAndDisplay,
+        HashSet<string> seenTitles)
     {
         try
         {
@@ -101,7 +107,8 @@ internal static class InstalledApplicationCatalog
                     );
 
                     var dedupeKey = $"{entry.NormalizedTitle}|{entry.NormalizedLaunchTarget}";
-                    if (seen.Add(dedupeKey))
+                    var displayDedupeKey = $"{entry.NormalizedTitle}|{entry.NormalizedDisplayPath}";
+                    if (seen.Add(dedupeKey) && seenTitleAndDisplay.Add(displayDedupeKey))
                     {
                         if (seenTitles.Add(entry.NormalizedTitle))
                         {
@@ -208,6 +215,20 @@ internal static class InstalledApplicationCatalog
 
             foreach (var childDirectory in childDirectories)
             {
+                try
+                {
+                    var dirInfo = new DirectoryInfo(childDirectory);
+                    if ((dirInfo.Attributes & FileAttributes.ReparsePoint) != 0)
+                    {
+                        skippedDirectories++;
+                        continue;
+                    }
+                }
+                catch
+                {
+                    continue;
+                }
+
                 pendingDirectories.Push(childDirectory);
             }
         }
@@ -370,9 +391,7 @@ internal static class InstalledApplicationCatalog
     {
         var aliases = BuildAliases(title, displayPath, arguments);
         var extensionId = $"app-{ComputeStableId(title, displayPath, sourcePath)}";
-        var subtitle = string.IsNullOrWhiteSpace(arguments)
-            ? displayPath
-            : $"{displayPath} {arguments}".Trim();
+        var subtitle = displayPath;
 
         return new InstalledApplicationEntry(
             extensionId,
@@ -525,6 +544,8 @@ internal sealed record InstalledApplicationEntry(
     public string NormalizedTitle => Title.Trim().ToLowerInvariant();
 
     public string NormalizedLaunchTarget => LaunchTarget.Trim().ToLowerInvariant();
+
+    public string NormalizedDisplayPath => DisplayPath.Trim().ToLowerInvariant();
 }
 
 internal sealed record ApplicationScanResult(

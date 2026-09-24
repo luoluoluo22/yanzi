@@ -776,7 +776,7 @@
                                       Header="以管理员身份运行"
                                       Click="RunAsAdminMenuItem_Click">
                                 <MenuItem.Icon>
-                                    <Path Data="{local:IconGeometry terminal}" Fill="#F59E0B" Stretch="Uniform" Width="16" Height="16" />
+                                    <Path Data="{local:IconGeometry terminal}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
                             </MenuItem>
                             <MenuItem x:Name="OpenAppFileLocationMenuItem"
@@ -791,6 +791,13 @@
                                       Click="CopyAppPathMenuItem_Click">
                                 <MenuItem.Icon>
                                     <Path Data="{local:IconGeometry copy}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem x:Name="ToggleAppStartupMenuItem"
+                                      Header="开机自启动"
+                                      Click="ToggleAppStartupMenuItem_Click">
+                                <MenuItem.Icon>
+                                    <Path x:Name="ToggleAppStartupIcon" Data="{local:IconGeometry startup}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
                             </MenuItem>
                             <Separator x:Name="AppActionsSeparator" />
@@ -815,7 +822,7 @@
                                       Header="发布到商店"
                                       Click="PublishExtensionMenuItem_Click">
                                 <MenuItem.Icon>
-                                    <Path Data="{local:IconGeometry publish}" Fill="#F59E0B" Stretch="Uniform" Width="16" Height="16" />
+                                    <Path Data="{local:IconGeometry publish}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
                             </MenuItem>
                             <MenuItem x:Name="CopyExtensionStoreLinkMenuItem"
@@ -823,28 +830,28 @@
                                       Visibility="Collapsed"
                                       Click="CopyExtensionStoreLinkMenuItem_Click">
                                 <MenuItem.Icon>
-                                    <Path Data="{local:IconGeometry link}" Fill="#93C5FD" Stretch="Uniform" Width="16" Height="16" />
+                                    <Path Data="{local:IconGeometry link}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
                             </MenuItem>
                             <MenuItem x:Name="OpenExtensionStoreLinkMenuItem"
                                       Header="打开商店链接"
                                       Click="OpenExtensionStoreLinkMenuItem_Click">
                                 <MenuItem.Icon>
-                                    <Path Data="{local:IconGeometry link}" Fill="#93C5FD" Stretch="Uniform" Width="16" Height="16" />
+                                    <Path Data="{local:IconGeometry link}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
                             </MenuItem>
                             <MenuItem x:Name="DeleteExtensionMenuItem"
                                       Header="删除"
                                       Click="DeleteExtensionMenuItem_Click">
                                 <MenuItem.Icon>
-                                    <Path Data="{local:IconGeometry delete}" Fill="#EF4444" Stretch="Uniform" Width="16" Height="16" />
+                                    <Path Data="{local:IconGeometry delete}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
                             </MenuItem>
                             <MenuItem x:Name="TerminateExtensionMenuItem"
                                       Header="停止运行"
                                       Click="TerminateExtensionMenuItem_Click">
                                 <MenuItem.Icon>
-                                    <Path Data="{local:IconGeometry stop}" Fill="#EF4444" Stretch="Uniform" Width="16" Height="16" />
+                                    <Path Data="{local:IconGeometry stop}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
                             </MenuItem>
                             <MenuItem x:Name="OpenExtensionDirectoryMenuItem"
@@ -858,7 +865,7 @@
                                       Header="{local:Term YanVoice, Prefix='启用'}"
                                       Click="ToggleYanyuEnabledMenuItem_Click">
                                 <MenuItem.Icon>
-                                    <Path Data="{local:IconGeometry power}" Fill="#22C55E" Stretch="Uniform" Width="16" Height="16" />
+                                    <Path Data="{local:IconGeometry power}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
                             </MenuItem>
                             <Separator x:Name="ExtensionActionsSeparator" />
@@ -906,7 +913,15 @@
                                       Header="添加桌面快捷方式"
                                       Click="CreateDesktopShortcutMenuItem_Click">
                                 <MenuItem.Icon>
-                                    <Path Data="{local:IconGeometry desktop-shortcut}" Fill="{DynamicResource BrushAccent}" Stretch="Uniform" Width="16" Height="16" />
+                                    <Path Data="{local:IconGeometry desktop-shortcut}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <Separator x:Name="UninstallSeparator" />
+                            <MenuItem x:Name="UninstallAppMenuItem"
+                                      Header="卸载"
+                                      Click="UninstallAppMenuItem_Click">
+                                <MenuItem.Icon>
+                                    <Path Data="{local:IconGeometry delete}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
                             </MenuItem>
                         </ContextMenu>
@@ -1136,6 +1151,31 @@
                                                 Orientation="Horizontal"
                                                 VerticalAlignment="Center"
                                                 Margin="8,0,5,0">
+                                        <!-- 开机自启动标签 (如果该应用开启了开机自启动) -->
+                                        <Border Background="#1A10B981"
+                                                BorderBrush="#4010B981"
+                                                BorderThickness="1"
+                                                CornerRadius="4"
+                                                Padding="5,1.5"
+                                                Margin="0,0,6,0"
+                                                VerticalAlignment="Center"
+                                                Visibility="{Binding IsStartupEnabled, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                <Path Data="{local:IconGeometry startup}"
+                                                      Fill="#34D399"
+                                                      Width="10"
+                                                      Height="10"
+                                                      Stretch="Uniform"
+                                                      Margin="0,0,3,0"
+                                                      VerticalAlignment="Center" />
+                                                <TextBlock Text="自启"
+                                                           Foreground="#34D399"
+                                                           FontSize="10"
+                                                           FontWeight="SemiBold"
+                                                           VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </Border>
+
                                         <!-- 快捷键徽标 (如果该项配置了快捷键) -->
                                         <Border Background="{DynamicResource BrushBG}"
                                                 BorderBrush="{DynamicResource BrushBorderStrong}"

@@ -57,3 +57,22 @@
 >    custom_domain = true
 >    ```
 
+---
+
+## 4. 本地修改与测试构建后的自动启动规约
+
+> [!IMPORTANT]
+> **构建成功后自动启动程序**
+> 1. 在完成本地代码修改并执行 `dotnet build` 构建通过（0 错误）后，AI Agent **必须自动启动程序**以便用户直接体验与验收，无需等待用户额外提醒或手动启动。
+> 2. **进程管理与启动命令规范**：
+>    - 若系统中已有旧版 `Yanzi` 进程在运行，先安全终止旧进程：
+>      ```powershell
+>      Stop-Process -Name Yanzi -Force -ErrorAction SilentlyContinue
+>      ```
+>    - 为防止进程受控制台生命周期回收影响，必须使用独立进程创建方式拉起可执行文件（兼容 Windows PowerShell 5.1）：
+>      ```powershell
+>      Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = "F:\Desktop\kaifa\OpenQuickHost\src\OpenQuickHost\bin\Debug\net9.0-windows\Yanzi.exe"; CurrentDirectory = "F:\Desktop\kaifa\OpenQuickHost\src\OpenQuickHost\bin\Debug\net9.0-windows" }
+>      ```
+>      脱离终端作业独立运行，保证桌面窗口正常渲染且不阻塞命令行交互。
+
+

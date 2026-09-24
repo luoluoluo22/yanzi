@@ -834,11 +834,17 @@ public partial class MainWindow
         }
 
         var result = new List<RadialMenuRuntimeItem>();
+        bool isAppPage = targetPage != null && !string.IsNullOrEmpty(targetPage.ContextProcessName);
+        RadialMenuPageSettings? globalPage = isAppPage
+            ? radial.Pages.FirstOrDefault(item => string.IsNullOrEmpty(item.ContextProcessName))
+            : null;
+
         for (var index = 0; index < RadialMenuSettings.TotalSlotCount; index++)
         {
             string? extensionId = null;
             string? displayTitle = null;
             string? childPageId = null;
+            bool isShadow = false;
 
             if (targetPage != null)
             {
@@ -847,11 +853,37 @@ public partial class MainWindow
                 childPageId = targetPage.ChildPageIds.ElementAtOrDefault(index);
             }
 
+            // 如果当前在应用专属轮盘下，且该槽位未配置专属内容且未显式屏蔽（"__disabled__" / "__empty__"）
+            if (isAppPage &&
+                string.IsNullOrWhiteSpace(extensionId) &&
+                string.IsNullOrWhiteSpace(childPageId) &&
+                globalPage != null)
+            {
+                var globalExtId = globalPage.Slots.ElementAtOrDefault(index);
+                var globalChildId = globalPage.ChildPageIds.ElementAtOrDefault(index);
+                if (!string.IsNullOrWhiteSpace(globalExtId) || !string.IsNullOrWhiteSpace(globalChildId))
+                {
+                    extensionId = globalExtId;
+                    displayTitle = globalPage.SlotTitles.ElementAtOrDefault(index);
+                    childPageId = globalChildId;
+                    isShadow = true;
+                }
+            }
+            else if (string.Equals(extensionId, "__disabled__", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(extensionId, "__empty__", StringComparison.OrdinalIgnoreCase))
+            {
+                // 显式屏蔽该槽位，不继承全局
+                extensionId = null;
+                displayTitle = null;
+                childPageId = null;
+                isShadow = false;
+            }
+
             var command = string.IsNullOrWhiteSpace(extensionId)
                 ? null
                 : ResolveRadialCommand(extensionId, allCommands, displayTitle);
             
-            result.Add(new RadialMenuRuntimeItem(command, childPageId ?? string.Empty));
+            result.Add(new RadialMenuRuntimeItem(command, childPageId ?? string.Empty, isShadow));
         }
 
         return result;
