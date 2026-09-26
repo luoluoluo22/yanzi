@@ -75,4 +75,23 @@
 >      ```
 >      脱离终端作业独立运行，保证桌面窗口正常渲染且不阻塞命令行交互。
 
+---
+
+## 5. 燕子小程序（Extension）开发与测试规约
+
+> [!IMPORTANT]
+> **扩展体系核心规范参考**
+> 在新增、修改或维护燕子本地小程序时，必须深入阅读并严格遵循以下三份标准规范文档：
+> 1. [《燕子小程序（Extension）开发规范指南》](file:///F:/Desktop/kaifa/OpenQuickHost/docs/extension-development-specification.md)：规定了 manifest.json 配置字典、独立源码文件模式、输入捕获优先级模型与交互原则；
+> 2. [《C# 扩展运行时（YanziActionContext）API 参考》](file:///F:/Desktop/kaifa/OpenQuickHost/docs/csharp-runtime-api-reference.md)：说明了 Roslyn 动态编译机制、`YanziActionContext` 暴露的通知/日志/存储方法以及代码最佳范式；
+> 3. [《LocalAgentApi 接口清单》](file:///F:/Desktop/kaifa/OpenQuickHost/docs/local-agent-api-reference.md)：汇总了本地代理服务的 RESTful 接口，包含扩展执行、存储读写与桌面通知的端点说明。
+
+> [!CAUTION]
+> **小程序架构边界与交互防线**
+> 1. **代码边界解耦**：小程序具备完整的 .NET 9 BCL 与 Win32 互操作能力，应当自身闭环解决问题。**严禁为了单个小程序的功能改动燕子主程序源代码**。
+> 2. **UNIX 静默交互哲学**：高频触发的快捷类小程序，**成功执行一律静默（不弹通知、不弹确认窗）**；只有当执行异常、文件不存在、启动失败时，才调用桌面通知报警。
+> 3. **API 自动化测试入参规范**：调用 `POST /v1/extensions/{id}/run` 进行本地测试时，JSON Body 传递的输入参数字段名必须为 **`input`**（小写），切勿写错为 `inputText`。
+> 4. **精炼命名规范（轮盘与背包呈现）**：小程序名称必须简练利落，**最长建议不超过 6 个字，以 2 ~ 4 个字为最佳**（如“日历”、“截图”、“智能识别”）。由于小程序会在【轮盘背包（Backpack）】和【燕环（RadialMenu）】槽位中高频呈现，过长的名称会导致扇区槽位内文字拥挤排版、折行重叠或被省略号截断。
+
+
 

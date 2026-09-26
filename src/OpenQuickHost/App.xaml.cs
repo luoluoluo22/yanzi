@@ -871,6 +871,12 @@ public partial class App : WpfApplication
 
     public void ShowDesktopNotification(string title, string message, Forms.ToolTipIcon icon = Forms.ToolTipIcon.Info)
     {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.InvokeAsync(() => ShowDesktopNotification(title, message, icon));
+            return;
+        }
+
         if (_notifyIcon == null)
         {
             return;
@@ -1287,7 +1293,7 @@ public partial class App : WpfApplication
 
     private void UpdateTrayMenuState(System.Windows.Controls.ContextMenu menu)
     {
-        foreach (var item in menu.Items.OfType<System.Windows.Controls.MenuItem>())
+        foreach (var item in GetAllMenuItems(menu))
         {
             if (Equals(item.Tag, "show-searchbox"))
             {
@@ -1307,7 +1313,9 @@ public partial class App : WpfApplication
             }
             else if (Equals(item.Tag, "running-extensions"))
             {
-                item.Header = $"正在运行的小程序 ({RunningExtensionRegistry.GetRunningCount()})";
+                var count = RunningExtensionRegistry.GetRunningCount();
+                item.Header = $"正在运行的小程序 ({count})";
+                item.IsEnabled = count > 0;
             }
             else if (Equals(item.Tag, "add-current-to-blacklist"))
             {
@@ -1345,6 +1353,18 @@ public partial class App : WpfApplication
                     item.Header = $"添加「{proc}」到黑名单";
                     item.IsEnabled = true;
                 }
+            }
+        }
+    }
+
+    private static IEnumerable<System.Windows.Controls.MenuItem> GetAllMenuItems(System.Windows.Controls.ItemsControl parent)
+    {
+        foreach (var item in parent.Items.OfType<System.Windows.Controls.MenuItem>())
+        {
+            yield return item;
+            foreach (var child in GetAllMenuItems(item))
+            {
+                yield return child;
             }
         }
     }

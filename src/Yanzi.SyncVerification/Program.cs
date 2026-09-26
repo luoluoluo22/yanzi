@@ -1,7 +1,20 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using OpenQuickHost;
 using OpenQuickHost.Sync;
 
+if (args.Contains("--fresh-device-sync"))
+{
+    await FreshDeviceSyncVerification.RunAsync();
+    return;
+}
+if (args.Contains("--fresh-account-sync"))
+{
+    await FreshDeviceSyncVerification.RunAccountOnlyAsync();
+    return;
+}
+
+VerifyExtensionPackageStability();
+if (args.Contains("--package-stability")) return;
 VerifySyncArchitectureSafety();
 VerifySyncConflictExperience();
 if (args.Contains("--sync-ux-safety")) return;
@@ -555,6 +568,37 @@ static void VerifySyncPackageSafety()
     finally { Directory.Delete(root, recursive: true); }
     Console.WriteLine("Sync package safety passed: corrupt indexes, duplicate IDs, path traversal, hashes, extraction failures, cancellation and replacement.");
 }
+static void VerifyExtensionPackageStability()
+{
+    var directory = Path.Combine(Path.GetTempPath(), "yanzi-package-stability-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(directory);
+    try
+    {
+        File.WriteAllText(Path.Combine(directory, "manifest.json"), "{\"id\":\"test-extension\",\"name\":\"测试小程序\"}");
+        File.WriteAllText(Path.Combine(directory, "content.txt"), "stable content");
+        var command = new CommandItem("T", "测试小程序", "", "小程序", "#000000", null, [],
+            source: CommandSource.LocalExtension, extensionId: "test-extension", extensionDirectoryPath: directory);
+        var first = ExtensionPackageService.BuildPackage(command, "0.1.0");
+
+        File.WriteAllText(Path.Combine(directory, ".yanzi-inline-123.ps1"), "temporary script");
+        File.WriteAllText(Path.Combine(directory, "debug.log"), "runtime trace");
+        var cacheDirectory = Path.Combine(directory, ".yanzi-csharp-cache", "test", "bin", "Release", "net9.0");
+        Directory.CreateDirectory(cacheDirectory);
+        File.WriteAllBytes(Path.Combine(cacheDirectory, "YanziExtension.dll"), [1, 2, 3]);
+        var second = ExtensionPackageService.BuildPackage(command, "0.1.0");
+        Assert(first.SequenceEqual(second), "An inline runtime temp file changed the extension package hash.");
+        using var archive = new System.IO.Compression.ZipArchive(new MemoryStream(second));
+        Assert(archive.Entries.Any(entry => entry.FullName == "content.txt"), "Real extension content was omitted from the package.");
+        Assert(!archive.Entries.Any(entry => entry.FullName.StartsWith(".yanzi-inline-", StringComparison.OrdinalIgnoreCase)),
+            "An inline runtime temp file was included in the package.");
+    }
+    finally
+    {
+        Directory.Delete(directory, recursive: true);
+    }
+
+    Console.WriteLine("Extension package stability passed: runtime temp files do not change package bytes.");
+}
 
 static void VerifySearchInteractionSafety()
 {
@@ -610,37 +654,25 @@ static void VerifyBackpackResponsiveness()
         Assert(AppSettingsStore.NormalizeLongPressMilliseconds(threshold) == threshold, "User long-press threshold was overwritten.");
     Assert(AppSettingsStore.NormalizeLongPressMilliseconds(-1) == 50 &&
            AppSettingsStore.NormalizeLongPressMilliseconds(5000) == 1500, "Long-press bounds were not enforced.");
-    using var cache = new QuickPanelSnapshotCache<PanelCacheProbe>();
-    var key = new QuickPanelSnapshotKey("settings.json", 1, 100, 200, "explorer", false, false);
-    var first = new PanelCacheProbe();
-    var second = new PanelCacheProbe();
-    PanelCacheProbe[] commands = [first, second];
-    Assert(!cache.CanReuse(key, commands), "Uninitialized panel cache was reused.");
-    cache.BeginUpdate(key, commands);
-    Assert(!cache.CanReuse(key, commands), "Partial slot rebuild was reused.");
-    cache.CompleteUpdate();
-    Assert(cache.CanReuse(key, commands), "Unchanged panel failed to reuse slots.");
+    using var cache = new QuickPanelSnapshotCache();
+    var key = new QuickPanelSnapshotKey(1, "explorer", "global", "context", false, false, 2);
+    Assert(!cache.CanReuse(key), "Uninitialized panel cache was reused.");
+    cache.UpdateKey(key);
+    Assert(cache.CanReuse(key), "Unchanged panel failed to reuse slots.");
     foreach (var changed in new[] {
-        key with { WriteVersion = 2 }, key with { LastWriteTicks = 101 },
-        key with { FileLength = 201 }, key with { SettingsPath = "other.json" },
-        key with { ContextProcess = "notepad" }, key with { GlobalFavorites = true },
-        key with { ContextFavorites = true } })
-        Assert(!cache.CanReuse(changed, commands), "Changed panel configuration reused stale slots.");
-    Assert(!cache.CanReuse(null, commands), "Unverifiable settings were reused.");
-    Assert(!cache.CanReuse(key, [second, first]) && !cache.CanReuse(key, [first]) &&
-           !cache.CanReuse(key, [first, new PanelCacheProbe()]), "Command reorder/removal/replacement reused stale slots.");
-    first.Change();
-    Assert(!cache.CanReuse(key, commands), "In-place command change did not invalidate slots.");
-    cache.BeginUpdate(key, commands);
-    second.Change();
-    cache.CompleteUpdate();
-    Assert(!cache.CanReuse(key, commands), "A change during rebuilding was lost.");
-    cache.BeginUpdate(key, commands);
-    cache.CompleteUpdate();
-    Assert(first.SubscriberCount == 1 && second.SubscriberCount == 1, "Rebuild leaked property subscriptions.");
+        key with { SettingsVersion = 2 }, key with { ContextProcess = "notepad" },
+        key with { GlobalGroupId = "other" }, key with { ContextGroupId = "other" },
+        key with { GlobalFavorites = true }, key with { ContextFavorites = true },
+        key with { CommandsCount = 3 } })
+        Assert(!cache.CanReuse(changed), "Changed panel configuration reused stale slots.");
+    Assert(!cache.CanReuse(null), "Unverifiable settings were reused.");
+    cache.Invalidate();
+    Assert(!cache.CanReuse(key), "Invalidated panel cache was reused.");
+    cache.UpdateKey(key);
+    Assert(cache.CanReuse(key), "Updated panel cache was not reusable.");
     cache.Dispose();
-    Assert(first.SubscriberCount == 0 && second.SubscriberCount == 0 && !cache.CanReuse(key, commands), "Cache disposal leaked handlers or remained reusable.");
-    Console.WriteLine("Backpack responsiveness safety passed: unchanged-slot reuse, all invalidation paths, partial rebuilds, handler cleanup and threshold preservation.");
+    Assert(!cache.CanReuse(key), "Disposed panel cache remained reusable.");
+    Console.WriteLine("Backpack responsiveness safety passed: unchanged-slot reuse, configuration invalidation and threshold preservation.");
 }
 
 static void VerifyQuickWindowSwitchSafety()
@@ -677,11 +709,4 @@ static void VerifyQuickWindowSwitchSafety()
     Assert(cmdDisabled.ToggleWindow == false, "CommandItem 显式关闭 ToggleWindow 应该为 false。");
 
     Console.WriteLine("Quick window switch safety passed: eligibility check, manifest roundtrip, default value fallback and CommandItem mapping.");
-}
-
-sealed class PanelCacheProbe : System.ComponentModel.INotifyPropertyChanged
-{
-    public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
-    public int SubscriberCount => PropertyChanged?.GetInvocationList().Length ?? 0;
-    public void Change() => PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs("Title"));
 }

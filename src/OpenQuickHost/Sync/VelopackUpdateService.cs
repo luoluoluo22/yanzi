@@ -106,6 +106,13 @@ public sealed class VelopackUpdateService
             return null;
         }
 
+        if (!_updateManager.IsInstalled)
+        {
+            HostAssets.AppendDebug("VelopackUpdateService: update check skipped for unpackaged build.");
+            UpdateStatusChanged?.Invoke("当前为未安装版本，自动更新不可用。");
+            return null;
+        }
+
         var channelName = channelMode == UpdateChannelMode.Mirror ? "镜像源 (ghfast.top)" : "官方源 (GitHub)";
         try
         {

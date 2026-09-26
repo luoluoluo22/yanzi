@@ -344,7 +344,7 @@ public partial class MainWindow
         {
             "all" or "全部" => SearchScopeAll,
             "extension" or "ext" or "扩展" or "插件" => SearchScopeExtension,
-            "application" or "app" or "应用" or "程序" => SearchScopeApplication,
+            "application" or "app" or "软件" or "应用" or "程序" => SearchScopeApplication,
             "file" or "files" or "everything" or "文件" => SearchScopeFile,
             "system" or "sys" or "设置" or "系统" => SearchScopeSystem,
             "yanyu" or "yan" or "燕语" or "文本指令" => SearchScopeYanyu,

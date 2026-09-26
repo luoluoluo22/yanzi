@@ -189,6 +189,7 @@ internal static class ExtensionIconLibrary
     private static readonly Dictionary<string, ImageSource?> ImageCache = new(StringComparer.OrdinalIgnoreCase);
     public static event Action<string, ImageSource?>? RemoteIconDownloaded;
     private static readonly HashSet<string> DownloadingUrls = [];
+    private static readonly Dictionary<string, DateTimeOffset> RejectedRemoteIcons = new(StringComparer.OrdinalIgnoreCase);
     private static readonly Lazy<IReadOnlyDictionary<string, string>> FullMdiIcons = new(LoadFullMdiIcons);
 
     public static IReadOnlyList<ExtensionIconOption> GetBuiltInOptions()
@@ -360,7 +361,7 @@ internal static class ExtensionIconLibrary
                 ? new Uri(resolvedPath, UriKind.Absolute).LocalPath
                 : (File.Exists(resolvedPath) || Directory.Exists(resolvedPath) ? resolvedPath : null);
 
-            HostAssets.AppendLog($"[IconLog] ResolveImageSource: iconReference='{iconReference}', resolvedPath='{resolvedPath}', localPath='{localPath}', exists={(!string.IsNullOrWhiteSpace(localPath) && (File.Exists(localPath) || Directory.Exists(localPath)))}.");
+            HostAssets.AppendDebug($"[IconLog] ResolveImageSource: iconReference='{iconReference}', resolvedPath='{resolvedPath}', localPath='{localPath}', exists={(!string.IsNullOrWhiteSpace(localPath) && (File.Exists(localPath) || Directory.Exists(localPath)))}.");
 
             if (!string.IsNullOrWhiteSpace(localPath) && (File.Exists(localPath) || Directory.Exists(localPath)))
             {
@@ -372,7 +373,10 @@ internal static class ExtensionIconLibrary
                 }
 
                 var systemIcon = NativeFileIconService.GetIcon(localPath, Directory.Exists(localPath));
-                HostAssets.AppendLog($"[IconLog] NativeFileIconService.GetIcon for '{localPath}' returned {(systemIcon != null ? "SUCCESS" : "NULL")}.");
+                if (systemIcon == null)
+                {
+                    HostAssets.AppendDebug($"[IconLog] NativeFileIconService.GetIcon returned NULL for '{localPath}'.");
+                }
                 if (systemIcon != null)
                 {
                     ImageCache[resolvedPath] = systemIcon;
@@ -382,7 +386,7 @@ internal static class ExtensionIconLibrary
                 if (CanExtractAssociatedIcon(localPath))
                 {
                     var extracted = TryExtractAssociatedIcon(localPath);
-                    HostAssets.AppendLog($"[IconLog] TryExtractAssociatedIcon for '{localPath}' returned {(extracted != null ? "SUCCESS" : "NULL")}.");
+                    HostAssets.AppendDebug($"[IconLog] TryExtractAssociatedIcon for '{localPath}' returned {(extracted != null ? "SUCCESS" : "NULL")}.");
                     if (extracted != null)
                     {
                         ImageCache[resolvedPath] = extracted;
@@ -738,7 +742,7 @@ internal static class ExtensionIconLibrary
     {
         try
         {
-            var resource = System.Windows.Application.GetResourceStream(new Uri("pack://application:,,,/Assets/mdi-icons.json", UriKind.Absolute));
+            var resource = System.Windows.Application.GetResourceStream(new Uri("/Yanzi;component/Assets/mdi-icons.json", UriKind.Relative));
             if (resource == null)
             {
                 HostAssets.AppendLog("Full MDI icon resource not found: Assets/mdi-icons.json");
@@ -758,7 +762,7 @@ internal static class ExtensionIconLibrary
 
     private static Geometry LoadSvgAssetGeometry(string fileName)
     {
-        var resource = System.Windows.Application.GetResourceStream(new Uri($"pack://application:,,,/Assets/Icons/{fileName}", UriKind.Absolute))
+        var resource = System.Windows.Application.GetResourceStream(new Uri($"/Yanzi;component/Assets/Icons/{fileName}", UriKind.Relative))
             ?? throw new InvalidOperationException($"Icon resource not found: {fileName}");
 
         using var stream = resource.Stream;
@@ -913,12 +917,34 @@ internal static class ExtensionIconLibrary
         var cachePath = Path.Combine(cacheDirectory, ComputeCacheName(uri.AbsoluteUri));
         if (File.Exists(cachePath))
         {
-            return new Uri(cachePath).AbsoluteUri;
+            try
+            {
+                using var cached = File.OpenRead(cachePath);
+                var prefix = new byte[Math.Min(256, (int)Math.Min(cached.Length, 256))];
+                _ = cached.Read(prefix);
+                if (!LooksLikeErrorPage(prefix))
+                {
+                    return new Uri(cachePath).AbsoluteUri;
+                }
+
+                cached.Close();
+                File.Delete(cachePath);
+                ImageCache.Remove(new Uri(cachePath).AbsoluteUri);
+                HostAssets.AppendLog($"Rejected invalid cached icon response: host={uri.Host}, key={Path.GetFileName(cachePath)}.");
+            }
+            catch (IOException)
+            {
+                return null;
+            }
         }
 
         var url = uri.AbsoluteUri;
         lock (DownloadingUrls)
         {
+            if (RejectedRemoteIcons.TryGetValue(url, out var retryAfter) && retryAfter > DateTimeOffset.UtcNow)
+            {
+                return null;
+            }
             if (DownloadingUrls.Contains(url))
             {
                 return null;
@@ -933,6 +959,16 @@ internal static class ExtensionIconLibrary
                 var bytes = await IconHttpClient.GetByteArrayAsync(uri);
                 if (bytes.Length > 0)
                 {
+                    if (LooksLikeErrorPage(bytes))
+                    {
+                        lock (DownloadingUrls)
+                        {
+                            RejectedRemoteIcons[url] = DateTimeOffset.UtcNow.AddHours(1);
+                        }
+                        HostAssets.AppendLog($"Remote icon returned an error page: host={uri.Host}, key={Path.GetFileName(cachePath)}.");
+                        return;
+                    }
+
                     File.WriteAllBytes(cachePath, bytes);
 
                     var dispatcher = System.Windows.Application.Current?.Dispatcher;
@@ -957,7 +993,7 @@ internal static class ExtensionIconLibrary
             }
             catch (Exception ex)
             {
-                HostAssets.AppendLog($"Failed to download remote icon {url}: {ex.Message}");
+                HostAssets.AppendLog($"Failed to download remote icon: host={uri.Host}, key={Path.GetFileName(cachePath)}, error={ex.Message}");
             }
             finally
             {
@@ -975,6 +1011,14 @@ internal static class ExtensionIconLibrary
     {
         var hash = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
         return hash + ".img";
+    }
+
+    private static bool LooksLikeErrorPage(ReadOnlySpan<byte> bytes)
+    {
+        var text = System.Text.Encoding.UTF8.GetString(bytes[..Math.Min(bytes.Length, 256)]).TrimStart('\uFEFF', ' ', '\r', '\n', '\t');
+        return text.StartsWith("<!doctype html", StringComparison.OrdinalIgnoreCase) ||
+               text.StartsWith("<html", StringComparison.OrdinalIgnoreCase) ||
+               text.StartsWith("{\"error", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool TryParseBuiltinReference(string? iconReference, out string library, out string name)

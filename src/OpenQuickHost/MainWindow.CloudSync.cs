@@ -18,6 +18,7 @@ namespace OpenQuickHost;
 public partial class MainWindow
 {
     private static readonly SemaphoreSlim _extensionSyncLock = new(1, 1);
+    private static readonly SemaphoreSlim _accountDeletionReconcileLock = new(1, 1);
     private static readonly SemaphoreSlim _extensionUploadLock = new(1, 1);
     private DateTimeOffset _lastNetworkAddressChangedHandledAt = DateTimeOffset.MinValue;
     private static readonly object MobileMessageBridgeLock = new();
@@ -25,6 +26,9 @@ public partial class MainWindow
     private readonly SemaphoreSlim _accountObjectSyncLock = new(1, 1);
     private bool _deviceRegistered;
     private DateTimeOffset _lastDesktopPresenceHeartbeatErrorLogAt = DateTimeOffset.MinValue;
+    private int _desktopPresenceHeartbeatFailureCount;
+    private int _backgroundPersonalSyncFailureCount;
+    private DateTimeOffset _backgroundPersonalSyncRetryAfterUtc = DateTimeOffset.MinValue;
     private const string PublicStoreOrigin = "https://yanzi.luoluoluo.cc.cd";
 
     public static string BuildExtensionStoreUrl(string extensionId)
@@ -80,6 +84,20 @@ public partial class MainWindow
 
     public async Task RefreshCloudStateAsync(bool allowLoginPrompt = true)
     {
+        if (!Dispatcher.CheckAccess())
+        {
+            await await Dispatcher.InvokeAsync(() => RefreshCloudStateAsync(allowLoginPrompt));
+            return;
+        }
+
+        if (allowLoginPrompt)
+        {
+            _cloudSyncClient?.ResumeTransportAfterNetworkChange();
+            _cloudReconnectAttemptCount = 0;
+            _backgroundPersonalSyncFailureCount = 0;
+            _backgroundPersonalSyncRetryAfterUtc = DateTimeOffset.MinValue;
+        }
+
         if (_cloudSyncClient == null)
         {
             await SyncPersonalWebDavAsync(showDisabledMessage: true);
@@ -811,7 +829,12 @@ public partial class MainWindow
             }
 
             HostAssets.AppendLog("Network availability restored, scheduling silent cloud reconnect.");
+            _cloudSyncClient?.ResumeTransportAfterNetworkChange();
+            _cloudReconnectAttemptCount = 0;
+            _backgroundPersonalSyncFailureCount = 0;
+            _backgroundPersonalSyncRetryAfterUtc = DateTimeOffset.MinValue;
             ScheduleSilentCloudReconnect("network-available", immediate: true);
+            StartMobileMessageBridge("network-available");
         });
     }
 
@@ -841,6 +864,12 @@ public partial class MainWindow
     {
         if (_cloudSyncClient == null || !_cloudSyncClient.HasCredential || !_appSettings.RefreshCloudOnStartup)
         {
+            return;
+        }
+
+        if (!immediate && _cloudReconnectAttemptCount >= 5)
+        {
+            HostAssets.AppendLog("Silent cloud reconnect stopped after 5 failed attempts; waiting for network change or manual sync.");
             return;
         }
 
@@ -913,6 +942,12 @@ public partial class MainWindow
 
     private static bool IsTransientNetworkException(Exception ex)
     {
+        if (ex is HttpRequestException || ex is TimeoutException || ex is System.Net.Sockets.SocketException ||
+            ex.InnerException is HttpRequestException or TimeoutException or System.Net.Sockets.SocketException)
+        {
+            return true;
+        }
+
         var message = FormatExceptionMessage(ex);
         return message.Contains("SSL connection could not be established", StringComparison.OrdinalIgnoreCase) ||
                message.Contains("unexpected EOF", StringComparison.OrdinalIgnoreCase) ||
@@ -923,6 +958,8 @@ public partial class MainWindow
                message.Contains("Name or service not known", StringComparison.OrdinalIgnoreCase) ||
                message.Contains("connection attempt failed", StringComparison.OrdinalIgnoreCase) ||
                message.Contains("actively refused", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("积极拒绝", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("无法连接", StringComparison.OrdinalIgnoreCase) ||
                message.Contains("temporarily unavailable", StringComparison.OrdinalIgnoreCase) ||
                message.Contains("timed out", StringComparison.OrdinalIgnoreCase);
     }
@@ -966,6 +1003,8 @@ public partial class MainWindow
             return;
         }
 
+        _desktopPresenceHeartbeatFailureCount = 0;
+
         if (!_desktopPresenceHeartbeatTimer.IsEnabled)
         {
             _desktopPresenceHeartbeatTimer.Start();
@@ -994,6 +1033,7 @@ public partial class MainWindow
                 BuildDesktopDeviceCapabilities(),
                 cancellationToken: heartbeatTimeout.Token);
             _deviceRegistered = true;
+            _desktopPresenceHeartbeatFailureCount = 0;
 
             if (reason.StartsWith("start-", StringComparison.OrdinalIgnoreCase))
             {
@@ -1002,6 +1042,13 @@ public partial class MainWindow
         }
         catch (Exception ex)
         {
+            _desktopPresenceHeartbeatFailureCount = Math.Min(_desktopPresenceHeartbeatFailureCount + 1, 5);
+            if (_desktopPresenceHeartbeatFailureCount >= 5)
+            {
+                _desktopPresenceHeartbeatTimer.Stop();
+                HostAssets.AppendLog("Desktop presence heartbeat stopped after 5 failures; waiting for network change or next cloud refresh.");
+            }
+
             if (DateTimeOffset.UtcNow - _lastDesktopPresenceHeartbeatErrorLogAt > TimeSpan.FromMinutes(1))
             {
                 _lastDesktopPresenceHeartbeatErrorLogAt = DateTimeOffset.UtcNow;
@@ -1039,16 +1086,19 @@ public partial class MainWindow
             HostAssets.AppendLog($"Mobile bridge SSE sync error during startup: {ex.Message}");
         }
 
+        var consecutiveFailures = 0;
         while (!cancellationToken.IsCancellationRequested)
         {
+            DateTimeOffset? connectedAtUtc = null;
             try
             {
-                HostAssets.AppendLog("Mobile bridge establishing SSE connection to cloud...");
+                HostAssets.AppendDebug("Mobile bridge establishing SSE connection to cloud...");
                 using var response = await _cloudSyncClient!.GetMobileMessagesEventsStreamAsync(_desktopDeviceId, cancellationToken);
                 using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
                 using var reader = new System.IO.StreamReader(stream, System.Text.Encoding.UTF8);
 
-                HostAssets.AppendLog("Mobile bridge SSE connection established successfully.");
+                connectedAtUtc = DateTimeOffset.UtcNow;
+                HostAssets.AppendDebug("Mobile bridge SSE connection established successfully.");
 
                 while (!cancellationToken.IsCancellationRequested && !reader.EndOfStream)
                 {
@@ -1109,15 +1159,42 @@ public partial class MainWindow
             }
             catch (Exception ex)
             {
-                HostAssets.AppendLog($"Mobile bridge SSE connection error: {FormatExceptionMessage(ex)}");
+                var stableConnection = connectedAtUtc.HasValue &&
+                    DateTimeOffset.UtcNow - connectedAtUtc.Value >= TimeSpan.FromMinutes(1);
+                var message = $"Mobile bridge SSE connection error: {FormatExceptionMessage(ex)}";
+                if (stableConnection && message.Contains("ResponseEnded", StringComparison.OrdinalIgnoreCase))
+                {
+                    HostAssets.AppendDebug(message);
+                }
+                else
+                {
+                    HostAssets.AppendLog(message);
+                }
             }
 
             if (!cancellationToken.IsCancellationRequested)
             {
-                HostAssets.AppendLog("Mobile bridge SSE disconnected. Retrying in 5 seconds...");
+                var stableConnection = connectedAtUtc.HasValue &&
+                    DateTimeOffset.UtcNow - connectedAtUtc.Value >= TimeSpan.FromMinutes(1);
+                if (stableConnection)
+                {
+                    consecutiveFailures = 0;
+                }
+
+                consecutiveFailures++;
+                if (consecutiveFailures >= 5)
+                {
+                    HostAssets.AppendLog("Mobile bridge SSE stopped after 5 failed connections; waiting for network change or next cloud refresh.");
+                    break;
+                }
+
+                var retrySeconds = Math.Min(5 * (1 << (consecutiveFailures - 1)), 60);
+                var retryMessage = $"Mobile bridge SSE disconnected. Retrying in {retrySeconds} seconds ({consecutiveFailures}/5)...";
+                if (stableConnection) HostAssets.AppendDebug(retryMessage);
+                else HostAssets.AppendLog(retryMessage);
                 try
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
+                    await Task.Delay(TimeSpan.FromSeconds(retrySeconds), cancellationToken);
                 }
                 catch (OperationCanceledException)
                 {
@@ -2138,7 +2215,10 @@ public partial class MainWindow
 
     private void StartBackgroundWebDavSync()
     {
-        if (PersonalSyncBackendFactory.IsConfigured(AppSettingsStore.Load()) && !_backgroundWebDavSyncTimer.IsEnabled)
+        var settings = AppSettingsStore.Load();
+        if (settings.PersonalSyncAutoSyncDelaySeconds > 0 &&
+            PersonalSyncBackendFactory.IsConfigured(settings) &&
+            !_backgroundWebDavSyncTimer.IsEnabled)
         {
             _backgroundWebDavSyncTimer.Start();
         }
@@ -2152,6 +2232,28 @@ public partial class MainWindow
             return;
         }
 
+        if (settings.PersonalSyncAutoSyncDelaySeconds <= 0 &&
+            !string.Equals(reason, "api-trigger", StringComparison.OrdinalIgnoreCase))
+        {
+            HostAssets.AppendLog($"Personal sync automatic sync skipped by setting: {reason}");
+            return;
+        }
+
+        if (_backgroundPersonalSyncFailureCount >= 5 || DateTimeOffset.UtcNow < _backgroundPersonalSyncRetryAfterUtc)
+        {
+            HostAssets.AppendLog($"Personal sync background sync deferred after network failure: reason={reason}, failures={_backgroundPersonalSyncFailureCount}, retryAfter={_backgroundPersonalSyncRetryAfterUtc:O}");
+            return;
+        }
+
+        if ((reason.Equals("startup", StringComparison.OrdinalIgnoreCase) ||
+             reason.Equals("cloud-refresh", StringComparison.OrdinalIgnoreCase) ||
+             reason.Equals("timer", StringComparison.OrdinalIgnoreCase)) &&
+            HasRecentlyModifiedExtensionFiles())
+        {
+            reason = "extension-" + reason;
+            forceImmediate = false;
+        }
+
         StartBackgroundWebDavSync();
         if (!forceImmediate && !IsImmediateBackgroundSyncReason(reason))
         {
@@ -2162,19 +2264,35 @@ public partial class MainWindow
                 return;
             }
 
+            var extensionChange = reason.Contains("extension", StringComparison.OrdinalIgnoreCase) ||
+                _firstPendingPersonalExtensionSyncAt != DateTimeOffset.MinValue;
+            if (extensionChange)
+            {
+                delaySeconds = Math.Max(delaySeconds, 60);
+                if (_firstPendingPersonalExtensionSyncAt == DateTimeOffset.MinValue)
+                    _firstPendingPersonalExtensionSyncAt = DateTimeOffset.UtcNow;
+                delaySeconds = (int)Math.Min(delaySeconds,
+                    Math.Max(1, (_firstPendingPersonalExtensionSyncAt.AddMinutes(5) - DateTimeOffset.UtcNow).TotalSeconds));
+            }
             _pendingBackgroundWebDavSyncReason = reason;
             _backgroundWebDavSyncDelayTimer.Stop();
             _backgroundWebDavSyncDelayTimer.Interval = TimeSpan.FromSeconds(Math.Clamp(delaySeconds, 2, 120));
             _backgroundWebDavSyncDelayTimer.Start();
-            HostAssets.AppendLog($"Personal sync auto sync scheduled: reason={reason}, delaySeconds={delaySeconds}");
+            if (!extensionChange || _firstPendingPersonalExtensionSyncAt > DateTimeOffset.UtcNow.AddSeconds(-2))
+                HostAssets.AppendLog($"Personal sync auto sync scheduled: reason={reason}, delaySeconds={delaySeconds}");
             return;
         }
+
+        _backgroundWebDavSyncDelayTimer.Stop();
+        _pendingBackgroundWebDavSyncReason = null;
+        _firstPendingPersonalExtensionSyncAt = DateTimeOffset.MinValue;
 
         if (_backgroundWebDavSyncRunning)
         {
             _backgroundWebDavSyncRequested = true;
             if (reason.Contains("cloud-refresh", StringComparison.OrdinalIgnoreCase) ||
-                reason.Contains("settings-login", StringComparison.OrdinalIgnoreCase))
+                reason.Contains("settings-login", StringComparison.OrdinalIgnoreCase) ||
+                reason.Contains("extension", StringComparison.OrdinalIgnoreCase))
             {
                 _backgroundWebDavSyncRequestedReason = reason;
             }
@@ -2208,6 +2326,8 @@ public partial class MainWindow
     private async Task RunBackgroundWebDavSyncAsync(string reason)
     {
         _backgroundWebDavSyncRunning = true;
+        var runId = Guid.NewGuid().ToString("N")[..8];
+        var elapsed = Stopwatch.StartNew();
         var showSyncToast = reason.Contains("cloud-refresh", StringComparison.OrdinalIgnoreCase) ||
                             reason.Contains("settings-login", StringComparison.OrdinalIgnoreCase);
         try
@@ -2218,7 +2338,7 @@ public partial class MainWindow
                 ShowSettingsCloudSyncProgressToast("正在同步个人扩展与本地配置...");
             }
 
-            HostAssets.AppendLog($"Personal sync background sync started: reason={reason}, provider={settings.PersonalSync.Provider}");
+            HostAssets.AppendLog($"Personal sync background sync started: runId={runId}, reason={reason}, provider={settings.PersonalSync.Provider}");
             var configSyncMode = GetPersonalConfigSyncMode();
             var result = await Task.Run(async () =>
             {
@@ -2234,13 +2354,22 @@ public partial class MainWindow
             ApplyYanmStateSyncResult(result.Yanm);
             ReconcileDeletedExtensionsWithAccountLibrary();
             SyncStatus = $"{BuildPersonalSyncCompletedMessage(result.Extensions, includeConfigSummary: false)} 燕幕{BuildYanmSyncAction(result.Yanm)}；扩展数据 pending 上传 {result.ExtensionData.UploadedCount}，失败 {result.ExtensionData.FailedCount}。";
-            HostAssets.AppendLog($"Personal sync background sync completed: reason={reason}, configMode={configSyncMode}, uploaded={result.Extensions.UploadedCount}, pulled={result.Extensions.PulledCount}, configUploaded={result.Extensions.ConfigUploaded}, configPulled={result.Extensions.ConfigPulled}, yanmUploaded={result.Yanm.Uploaded}, yanmPulled={result.Yanm.Pulled}, yanmBytes={result.Yanm.PayloadBytes}, extensionDataUploaded={result.ExtensionData.UploadedCount}, extensionDataFailed={result.ExtensionData.FailedCount}");
+            HostAssets.AppendLog($"Personal sync background sync completed: runId={runId}, reason={reason}, durationMs={elapsed.ElapsedMilliseconds}, configMode={configSyncMode}, uploaded={result.Extensions.UploadedCount}, pulled={result.Extensions.PulledCount}, configUploaded={result.Extensions.ConfigUploaded}, configPulled={result.Extensions.ConfigPulled}, yanmUploaded={result.Yanm.Uploaded}, yanmPulled={result.Yanm.Pulled}, yanmSnapshotBytes={result.Yanm.PayloadBytes}, extensionDataUploaded={result.ExtensionData.UploadedCount}, extensionDataFailed={result.ExtensionData.FailedCount}");
+            _backgroundPersonalSyncFailureCount = 0;
+            _backgroundPersonalSyncRetryAfterUtc = DateTimeOffset.MinValue;
         }
         catch (Exception ex)
         {
             var message = FormatExceptionMessage(ex);
             SyncStatus = $"个人扩展后台同步失败：{message}";
-            HostAssets.AppendLog($"Personal sync background sync failed: reason={reason} -> {message}");
+            HostAssets.AppendLog($"Personal sync background sync failed: runId={runId}, reason={reason}, durationMs={elapsed.ElapsedMilliseconds} -> {message}");
+            if (IsTransientNetworkException(ex))
+            {
+                _backgroundPersonalSyncFailureCount = Math.Min(_backgroundPersonalSyncFailureCount + 1, 5);
+                var delaySeconds = Math.Min(15 * (1 << (_backgroundPersonalSyncFailureCount - 1)), 300);
+                _backgroundPersonalSyncRetryAfterUtc = DateTimeOffset.UtcNow.AddSeconds(delaySeconds);
+                HostAssets.AppendLog($"Personal sync background sync retry deferred: attempt={_backgroundPersonalSyncFailureCount}/5, delaySeconds={delaySeconds}");
+            }
         }
         finally
         {
@@ -2260,7 +2389,7 @@ public partial class MainWindow
         }
     }
 
-    private void ApplyWebDavSyncResult(WebDavSyncResult result)
+    private void ApplyWebDavSyncResult(WebDavSyncResult result, bool syncAccountImmediately = false)
     {
         if (result.PulledCount > 0 || result.ConfigPulled)
         {
@@ -2268,7 +2397,7 @@ public partial class MainWindow
             NotifySettingsWindowExtensionsChanged();
         }
 
-        SyncLocalExtensionsToCloud();
+        SyncLocalExtensionsToCloud(syncAccountImmediately);
 
         if (!result.ConfigPulled)
         {
@@ -2302,17 +2431,77 @@ public partial class MainWindow
         return result.Pulled ? "已拉取" : result.Uploaded ? "已上传" : "无变化";
     }
 
-    public void SyncLocalExtensionsToCloud()
+    public void SyncLocalExtensionsToCloud(bool forceImmediate = false)
     {
         if (_cloudSyncClient == null || !_cloudSyncClient.HasCredential)
         {
             return;
         }
 
+        if (!Dispatcher.CheckAccess())
+        {
+            _ = Dispatcher.BeginInvoke(new Action(() => SyncLocalExtensionsToCloud(forceImmediate)));
+            return;
+        }
+
+        if (forceImmediate)
+        {
+            _accountExtensionSyncTimer.Stop();
+            _firstPendingAccountExtensionSyncAt = DateTimeOffset.MinValue;
+            RunLocalExtensionsAccountSync();
+            return;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        if (_firstPendingAccountExtensionSyncAt == DateTimeOffset.MinValue)
+            _firstPendingAccountExtensionSyncAt = now;
+        var secondsUntilMaxWait = (_firstPendingAccountExtensionSyncAt.AddMinutes(5) - now).TotalSeconds;
+        _accountExtensionSyncTimer.Stop();
+        _accountExtensionSyncTimer.Interval = TimeSpan.FromSeconds(Math.Clamp(secondsUntilMaxWait, 1, 60));
+        _accountExtensionSyncTimer.Start();
+    }
+
+    private static bool HasRecentlyModifiedExtensionFiles()
+    {
+        var cutoff = DateTime.UtcNow.AddSeconds(-60);
+        foreach (var command in LocalExtensionCatalog.LoadCommands())
+        {
+            var directory = command.ExtensionDirectoryPath;
+            if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
+                continue;
+
+            try
+            {
+                foreach (var file in Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories))
+                {
+                    if (ExtensionPackageService.ShouldIncludeInPackage(directory, file) &&
+                        File.GetLastWriteTimeUtc(file) >= cutoff)
+                        return true;
+                }
+            }
+            catch (IOException)
+            {
+                return true;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void RunLocalExtensionsAccountSync()
+    {
+        if (_cloudSyncClient == null || !_cloudSyncClient.HasCredential)
+            return;
+
         _ = Task.Run(async () =>
         {
             if (!await _extensionSyncLock.WaitAsync(0))
             {
+                _ = Dispatcher.BeginInvoke(new Action(() => SyncLocalExtensionsToCloud()));
                 return;
             }
             try
@@ -2322,12 +2511,13 @@ public partial class MainWindow
                     : System.Windows.Application.Current.Dispatcher.Invoke(LocalExtensionCatalog.LoadCommands);
 
                 var cloudExtensions = await _cloudSyncClient.GetUserExtensionsAsync();
-                var cloudRevisionMap = cloudExtensions.ToDictionary(
+                var cloudRecordMap = cloudExtensions.ToDictionary(
                     item => item.ExtensionId,
-                    item => item.ArchiveRevision,
+                    item => item,
                     StringComparer.OrdinalIgnoreCase);
 
                 int successCount = 0;
+                int unchangedCount = 0;
                 int skipCount = 0;
                 int failCount = 0;
                 var failedDetails = new List<string>();
@@ -2338,8 +2528,20 @@ public partial class MainWindow
                     {
                         try
                         {
-                            cloudRevisionMap.TryGetValue(cmd.ExtensionId, out var expectedRevision);
-                            await SyncPrivateExtensionToAccountAsync(cmd, expectedRevision);
+                            cloudRecordMap.TryGetValue(cmd.ExtensionId, out var cloudRecord);
+                            if (cloudRecord != null &&
+                                !string.IsNullOrWhiteSpace(cloudRecord.PublisherUserId) &&
+                                !string.Equals(cloudRecord.PublisherUserId, _cloudSyncClient.CurrentUserId, StringComparison.Ordinal))
+                            {
+                                skipCount++;
+                                continue;
+                            }
+                            if (IsAccountExtensionCurrent(cmd, cloudRecord))
+                            {
+                                unchangedCount++;
+                                continue;
+                            }
+                            await SyncPrivateExtensionToAccountAsync(cmd, cloudRecord?.ArchiveRevision ?? 0);
                             successCount++;
                         }
                         catch (Exception ex) when (ex.Message.Contains("Only the owner", StringComparison.OrdinalIgnoreCase) ||
@@ -2356,7 +2558,7 @@ public partial class MainWindow
                         }
                     }
                 }
-                HostAssets.AppendLog($"Auto sync local extensions completed: {successCount} synced, {skipCount} skipped (not owned), {failCount} failed.");
+                HostAssets.AppendLog($"Auto sync local extensions completed: {successCount} synced, {unchangedCount} unchanged, {skipCount} skipped (not owned), {failCount} failed.");
                 if (failCount > 0)
                 {
                     HostAssets.AppendLog($"Failed sync details: {string.Join("; ", failedDetails)}");
@@ -2470,8 +2672,7 @@ public partial class MainWindow
             var pulledCount = 0;
             foreach (var item in items)
             {
-                if (!item.IsPrivate ||
-                    item.Enabled == 0 ||
+                if (item.Enabled == 0 ||
                     !item.HasArchive ||
                     string.IsNullOrWhiteSpace(item.ExtensionId) ||
                     localIds.Contains(item.ExtensionId) ||
@@ -2484,10 +2685,11 @@ public partial class MainWindow
                 try
                 {
                     var packageBytes = await _cloudSyncClient.DownloadMyExtensionArchiveAsync(item.ExtensionId);
-                    var result = await ExtensionInstallService.InstallPackageAsync(packageBytes, item.ExtensionId);
+                    var result = await ExtensionInstallService.InstallPackageAsync(
+                        packageBytes, item.ExtensionId, fallbackName: item.DisplayName);
                     localIds.Add(result.ExtensionId);
                     pulledCount++;
-                    HostAssets.AppendLog($"Pulled private extension from cloud library: {result.ExtensionId} v{result.Version}");
+                    HostAssets.AppendLog($"Pulled extension from account library: {result.ExtensionId} v{result.Version}");
                 }
                 catch (Exception ex)
                 {
@@ -2498,7 +2700,7 @@ public partial class MainWindow
             if (pulledCount > 0)
             {
                 await Dispatcher.InvokeAsync(ReloadLocalExtensionsFromExternal);
-                LastRunMessage = $"已从账号私有库拉取 {pulledCount} 个扩展。";
+                LastRunMessage = $"已从账号小程序库拉取 {pulledCount} 个扩展。";
             }
         }
         catch (Exception ex)
@@ -2518,10 +2720,120 @@ public partial class MainWindow
 
     private void ReconcileDeletedExtensionsWithAccountLibrary()
     {
-        foreach (var extensionId in LoadPersonalSyncDeletedExtensionIds())
+        var deletedIds = LoadPersonalSyncDeletedExtensionIds();
+        if (deletedIds.Count == 0 || _cloudSyncClient == null || !_cloudSyncClient.HasCredential)
         {
-            QueuePrivateExtensionRemovalFromAccount(extensionId);
+            return;
         }
+
+        _ = Task.Run(async () =>
+        {
+            if (!await _accountDeletionReconcileLock.WaitAsync(0))
+            {
+                return;
+            }
+            try
+            {
+                var accountIds = (await _cloudSyncClient.GetUserExtensionsAsync())
+                    .Select(static item => item.ExtensionId)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var removed = 0;
+                foreach (var extensionId in deletedIds.Where(accountIds.Contains))
+                {
+                    await _cloudSyncClient.RemoveUserExtensionAsync(extensionId);
+                    removed++;
+                }
+
+                if (removed > 0)
+                {
+                    HostAssets.AppendLog($"Reconciled deleted extensions in account library: removed={removed}, alreadyAbsent={deletedIds.Count - removed}.");
+                }
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"Account library deletion reconciliation failed: {FormatExceptionMessage(ex)}");
+            }
+            finally
+            {
+                _accountDeletionReconcileLock.Release();
+            }
+        });
+    }
+
+    private static bool IsAccountExtensionCurrent(CommandItem command, UserExtensionRecord? record)
+    {
+        if (record is not { HasArchive: true } || string.IsNullOrWhiteSpace(record.ArchiveSha256))
+            return false;
+
+        var version = string.IsNullOrWhiteSpace(command.DeclaredVersion) ? "0.1.0" : command.DeclaredVersion;
+        if (!string.Equals(record.DisplayName, command.Title, StringComparison.Ordinal))
+            return false;
+        if (!string.Equals(record.LatestVersion, version, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var packageBytes = ExtensionPackageService.BuildPackage(command, version, GetArchivedManifestIcon(record.ManifestJson));
+        var hash = Convert.ToHexString(SHA256.HashData(packageBytes));
+        return string.Equals(hash, record.ArchiveSha256, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? GetArchivedManifestIcon(string? manifestJson)
+    {
+        if (string.IsNullOrWhiteSpace(manifestJson))
+            return null;
+        try
+        {
+            using var document = JsonDocument.Parse(manifestJson);
+            return document.RootElement.TryGetProperty("icon", out var icon) && icon.ValueKind == JsonValueKind.String
+                ? icon.GetString()
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private void StartExtensionContentWatcher()
+    {
+        try
+        {
+            Directory.CreateDirectory(HostAssets.ExtensionsPath);
+            _extensionContentWatcher = new FileSystemWatcher(HostAssets.ExtensionsPath)
+            {
+                IncludeSubdirectories = true,
+                NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
+                EnableRaisingEvents = true
+            };
+            _extensionContentWatcher.Changed += ExtensionContentWatcher_Changed;
+            _extensionContentWatcher.Created += ExtensionContentWatcher_Changed;
+            _extensionContentWatcher.Deleted += ExtensionContentWatcher_Changed;
+            _extensionContentWatcher.Renamed += ExtensionContentWatcher_Changed;
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"Extension change monitoring unavailable: {ex.Message}");
+        }
+    }
+
+    private void ExtensionContentWatcher_Changed(object sender, FileSystemEventArgs e)
+    {
+        if (_extensionContentWatcher == null || Dispatcher.HasShutdownStarted)
+            return;
+
+        var relativePath = Path.GetRelativePath(HostAssets.ExtensionsPath, e.FullPath);
+        var segments = relativePath.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length < 2 ||
+            !ExtensionPackageService.ShouldIncludeInPackage(
+                Path.Combine(HostAssets.ExtensionsPath, segments[0]), e.FullPath))
+            return;
+
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (!IsLoaded)
+                return;
+            QueueBackgroundWebDavSync("extension-file-change");
+            SyncLocalExtensionsToCloud();
+        }));
     }
 
     private static HashSet<string> LoadPersonalSyncDeletedExtensionIds()
@@ -6064,6 +6376,16 @@ public partial class MainWindow
         settings.PersonalSyncAutoSyncDelaySeconds = normalized;
         AppSettingsStore.Save(settings);
         _appSettings = settings;
+        if (normalized <= 0)
+        {
+            _backgroundWebDavSyncTimer.Stop();
+            _backgroundWebDavSyncDelayTimer.Stop();
+            _pendingBackgroundWebDavSyncReason = null;
+        }
+        else
+        {
+            StartBackgroundWebDavSync();
+        }
         if (queueCloudSync)
         {
             QueueCloudWebDavConfigSync("personal-sync-delay-saved");
@@ -6171,7 +6493,7 @@ public partial class MainWindow
                 return (Extensions: extensions, ExtensionData: extensionData);
             });
             AppSettingsStore.Save(settings);
-            ApplyWebDavSyncResult(result.Extensions);
+            ApplyWebDavSyncResult(result.Extensions, syncAccountImmediately: true);
             return (true, $"{BuildPersonalSyncCompletedMessage(result.Extensions)} 扩展数据 pending 上传 {result.ExtensionData.UploadedCount}，失败 {result.ExtensionData.FailedCount}。");
         }
         catch (Exception ex)

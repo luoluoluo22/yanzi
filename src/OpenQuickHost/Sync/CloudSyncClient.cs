@@ -15,6 +15,9 @@ public sealed class CloudSyncClient
     private readonly SyncOptions _options;
     private SyncSession? _session;
     private SavedCredential? _credential;
+    private readonly object _transportRetryLock = new();
+    private int _consecutiveTransportFailures;
+    private DateTimeOffset _transportRetryAfterUtc;
 
     public byte[]? E2eeMasterKey { get; private set; }
 
@@ -108,7 +111,6 @@ public sealed class CloudSyncClient
     {
         if (HasValidSession())
         {
-            CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Using existing session", ("user", CurrentUserLabel));
             if (E2eeMasterKey == null && HasCredential)
             {
                 var restoredKeys = DeriveSyncKeys(_credential!.LoginEmail, _credential.Password);
@@ -839,6 +841,7 @@ public sealed class CloudSyncClient
 
     public async Task<HttpResponseMessage> GetMobileMessagesEventsStreamAsync(string deviceId, CancellationToken cancellationToken)
     {
+        ThrowIfTransportCoolingDown(cancellationToken);
         await EnsureAuthenticatedAsync(cancellationToken);
         
         var request = new HttpRequestMessage(HttpMethod.Get, $"/v1/me/mobile/messages/events?deviceId={Uri.EscapeDataString(deviceId)}");
@@ -857,16 +860,17 @@ public sealed class CloudSyncClient
             (_directHttpClient, "direct"),
             (_httpClient, "proxy-retry")
         };
-
         for (var index = 0; index < attempts.Length; index++)
         {
             try
             {
-                var response = await attempts[index].client.SendAsync(CloneRequest(request), HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                using var attemptRequest = CloneRequest(request);
+                var response = await attempts[index].client.SendAsync(attemptRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
                 response.EnsureSuccessStatusCode();
+                ResetTransportBackoff();
                 return response;
             }
-            catch (Exception ex) when (IsRetryableTransportException(ex) && index < attempts.Length - 1)
+            catch (Exception ex) when (IsRetryableTransportException(ex, cancellationToken) && index < attempts.Length - 1)
             {
                 lastError = ex;
                 await Task.Delay(TimeSpan.FromMilliseconds(250 * (index + 1)), cancellationToken);
@@ -874,10 +878,12 @@ public sealed class CloudSyncClient
             catch (Exception ex)
             {
                 lastError = ex;
-                if (index == attempts.Length - 1)
+                var retryable = IsRetryableTransportException(ex, cancellationToken);
+                if (retryable)
                 {
-                    throw new InvalidOperationException($"Failed to establish SSE connection: {ex.Message}", lastError);
+                    RegisterTransportFailure();
                 }
+                throw new InvalidOperationException($"Failed to establish SSE connection: {ex.Message}", lastError);
             }
         }
         throw new InvalidOperationException("Failed to establish SSE connection.", lastError);
@@ -1097,6 +1103,7 @@ public sealed class CloudSyncClient
 
     private async Task<HttpResponseMessage> SendAsyncWithFallback(HttpRequestMessage request, CancellationToken cancellationToken)
     {
+        ThrowIfTransportCoolingDown(cancellationToken);
         Exception? lastError = null;
         var attempts = new (HttpClient client, string label)[]
         {
@@ -1104,14 +1111,18 @@ public sealed class CloudSyncClient
             (_directHttpClient, "direct"),
             (_httpClient, "proxy-retry")
         };
+        var maxAttempts = IsIdempotentMethod(request.Method) ? attempts.Length : 1;
 
-        for (var index = 0; index < attempts.Length; index++)
+        for (var index = 0; index < maxAttempts; index++)
         {
             try
             {
-                return await attempts[index].client.SendAsync(CloneRequest(request), cancellationToken);
+                using var attemptRequest = CloneRequest(request);
+                var response = await attempts[index].client.SendAsync(attemptRequest, cancellationToken);
+                ResetTransportBackoff();
+                return response;
             }
-            catch (Exception ex) when (IsRetryableTransportException(ex) && index < attempts.Length - 1)
+            catch (Exception ex) when (IsRetryableTransportException(ex, cancellationToken) && index < maxAttempts - 1)
             {
                 lastError = ex;
                 CloudSyncDiagnostics.Log(
@@ -1123,6 +1134,12 @@ public sealed class CloudSyncClient
                     ("channel", attempts[index].label),
                     ("error", ex.Message));
                 await Task.Delay(TimeSpan.FromMilliseconds(250 * (index + 1)), cancellationToken);
+            }
+            catch (Exception ex) when (IsRetryableTransportException(ex, cancellationToken))
+            {
+                lastError = ex;
+                RegisterTransportFailure();
+                break;
             }
         }
 
@@ -1201,8 +1218,23 @@ public sealed class CloudSyncClient
         return client;
     }
 
-    private static bool IsRetryableTransportException(Exception ex)
+    private static bool IsRetryableTransportException(Exception ex, CancellationToken cancellationToken)
     {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return false;
+        }
+
+        if (ex is HttpRequestException httpException && httpException.StatusCode == null)
+        {
+            return true;
+        }
+
+        if (ex is OperationCanceledException)
+        {
+            return true; // HttpClient timeout, rather than caller cancellation.
+        }
+
         var message = ex.ToString();
         return message.Contains("SSL connection could not be established", StringComparison.OrdinalIgnoreCase) ||
                message.Contains("unexpected EOF", StringComparison.OrdinalIgnoreCase) ||
@@ -1213,6 +1245,50 @@ public sealed class CloudSyncClient
                message.Contains("operation was canceled", StringComparison.OrdinalIgnoreCase) ||
                message.Contains("timed out", StringComparison.OrdinalIgnoreCase);
     }
+
+    private static bool IsIdempotentMethod(HttpMethod method) =>
+        method == HttpMethod.Get || method == HttpMethod.Head ||
+        method == HttpMethod.Put || method == HttpMethod.Delete ||
+        method == HttpMethod.Options;
+
+    private void ThrowIfTransportCoolingDown(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_transportRetryLock)
+        {
+            if (DateTimeOffset.UtcNow < _transportRetryAfterUtc)
+            {
+                throw new HttpRequestException("网络连接暂时不可用，稍后自动重试。");
+            }
+        }
+    }
+
+    private void RegisterTransportFailure()
+    {
+        lock (_transportRetryLock)
+        {
+            _consecutiveTransportFailures = Math.Min(_consecutiveTransportFailures + 1, 8);
+            if (_consecutiveTransportFailures < 2)
+            {
+                return;
+            }
+
+            var delaySeconds = Math.Min(15 * (1 << Math.Min(_consecutiveTransportFailures - 2, 5)), 300);
+            _transportRetryAfterUtc = DateTimeOffset.UtcNow.AddSeconds(delaySeconds);
+            CloudSyncDiagnostics.Log("CloudSyncClient.Http", "Transport retry cooldown", ("seconds", delaySeconds), ("failures", _consecutiveTransportFailures));
+        }
+    }
+
+    private void ResetTransportBackoff()
+    {
+        lock (_transportRetryLock)
+        {
+            _consecutiveTransportFailures = 0;
+            _transportRetryAfterUtc = DateTimeOffset.MinValue;
+        }
+    }
+
+    public void ResumeTransportAfterNetworkChange() => ResetTransportBackoff();
 
     private static HttpRequestMessage CloneRequest(HttpRequestMessage request)
     {

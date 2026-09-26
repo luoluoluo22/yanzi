@@ -252,6 +252,9 @@ public sealed class UserExtensionRecord
     [JsonPropertyName("user_id")]
     public string UserId { get; init; } = string.Empty;
 
+    [JsonPropertyName("publisher_user_id")]
+    public string PublisherUserId { get; init; } = string.Empty;
+
     [JsonPropertyName("extension_id")]
     public string ExtensionId { get; init; } = string.Empty;
 

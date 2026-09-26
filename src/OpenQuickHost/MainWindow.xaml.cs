@@ -275,6 +275,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly WindowSnapAssistService _windowSnapAssistService;
     private readonly DispatcherTimer _backgroundWebDavSyncTimer;
     private readonly DispatcherTimer _backgroundWebDavSyncDelayTimer;
+    private readonly DispatcherTimer _accountExtensionSyncTimer;
+    private FileSystemWatcher? _extensionContentWatcher;
+    private DateTimeOffset _firstPendingAccountExtensionSyncAt = DateTimeOffset.MinValue;
+    private DateTimeOffset _firstPendingPersonalExtensionSyncAt = DateTimeOffset.MinValue;
     private readonly DispatcherTimer _cloudReconnectTimer;
     private readonly DispatcherTimer _desktopPresenceHeartbeatTimer;
     private readonly DispatcherTimer _mobileMessagePollTimer;
@@ -380,6 +384,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _pendingBackgroundWebDavSyncReason = null;
             QueueBackgroundWebDavSync($"delayed-{reason}", forceImmediate: true);
         };
+
+        _accountExtensionSyncTimer = new DispatcherTimer();
+        _accountExtensionSyncTimer.Tick += (_, _) =>
+        {
+            _accountExtensionSyncTimer.Stop();
+            _firstPendingAccountExtensionSyncAt = DateTimeOffset.MinValue;
+            RunLocalExtensionsAccountSync();
+        };
+        StartExtensionContentWatcher();
 
         _cloudReconnectTimer = new DispatcherTimer();
         _cloudReconnectTimer.Tick += CloudReconnectTimer_Tick;
@@ -497,6 +510,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Closed += (s, e) =>
         {
             RunningExtensionRegistry.Changed -= RunningExtensionRegistry_Changed;
+            _extensionContentWatcher?.Dispose();
+            _extensionContentWatcher = null;
+            _accountExtensionSyncTimer.Stop();
         };
     }
 
@@ -1282,16 +1298,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        _ = Task.Run(async () =>
-        {
-            await RefreshCloudStateAsync(allowLoginPrompt: false);
-            if (_cloudSyncClient != null && _cloudSyncClient.HasCredential)
-            {
-                ScheduleSilentCloudReconnect("startup-post-refresh");
-                StartMobileMessageBridge("startup-post-refresh");
-            }
-            StartStartupExtensions();
-        });
+        _ = CompleteStartupCloudRefreshAsync();
+    }
+
+    private async Task CompleteStartupCloudRefreshAsync()
+    {
+        await RefreshCloudStateAsync(allowLoginPrompt: false);
+        StartStartupExtensions();
     }
 
     private void WarmupChildWindows()
@@ -1984,6 +1997,49 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private void CopyAppNameMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        var command = GetCommandFromMenuItem(sender) ?? SelectedCommand;
+        if (command == null) return;
+        var resolved = ResolveRunnableCommand(command);
+
+        try
+        {
+            System.Windows.Clipboard.SetText(resolved.Title);
+            LastRunMessage = $"已复制软件名：{resolved.Title}";
+            SyncStatus = $"已复制软件名：{resolved.Title}";
+            CloseActiveContextMenu();
+        }
+        catch (Exception ex)
+        {
+            LastRunMessage = $"复制软件名失败：{FormatExceptionMessage(ex)}";
+            HostAssets.AppendLog($"CopyAppName failed for '{resolved.Title}': {ex}");
+        }
+    }
+
+    private void CopyAppFileMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        var command = GetCommandFromMenuItem(sender) ?? SelectedCommand;
+        if (command == null) return;
+        var resolved = ResolveRunnableCommand(command);
+        var target = resolved.OpenTarget;
+        if (string.IsNullOrWhiteSpace(target) || !File.Exists(target)) return;
+
+        try
+        {
+            var files = new System.Collections.Specialized.StringCollection { target };
+            System.Windows.Clipboard.SetFileDropList(files);
+            LastRunMessage = $"已复制软件文件：{resolved.Title}";
+            SyncStatus = $"已复制软件文件：{resolved.Title}";
+            CloseActiveContextMenu();
+        }
+        catch (Exception ex)
+        {
+            LastRunMessage = $"复制软件文件失败：{FormatExceptionMessage(ex)}";
+            HostAssets.AppendLog($"CopyAppFile failed for '{resolved.Title}' ({target}): {ex}");
+        }
+    }
+
     private void ToggleAppStartupMenuItem_Click(object sender, RoutedEventArgs e)
     {
         var command = GetCommandFromMenuItem(sender) ?? SelectedCommand;
@@ -2573,6 +2629,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private void FooterSettingsButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (System.Windows.Application.Current is App app)
+        {
+            app.OpenSettingsWindow("general");
+            LastRunMessage = "已打开设置。";
+        }
+    }
+
     private async void QuickMenuRefreshCloud_Click(object sender, RoutedEventArgs e)
     {
         FooterQuickMenuPopup.IsOpen = false;
@@ -2725,9 +2790,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OpenAppFileLocationMenuItem.Visibility = isAppTarget ? Visibility.Visible : Visibility.Collapsed;
         OpenAppFileLocationMenuItem.IsEnabled = isAppTarget;
 
-        CopyAppPathMenuItem.Visibility = (!isExtensionLike && !string.IsNullOrWhiteSpace(target) && !IsInternalCommand(resolved)) 
-            ? Visibility.Visible : Visibility.Collapsed;
-        CopyAppPathMenuItem.IsEnabled = CopyAppPathMenuItem.Visibility == Visibility.Visible;
+        var isAppCopyVisible = (!isExtensionLike && !string.IsNullOrWhiteSpace(target) && !IsInternalCommand(resolved));
+        CopyAppMenu.Visibility = isAppCopyVisible ? Visibility.Visible : Visibility.Collapsed;
+        CopyAppMenu.IsEnabled = isAppCopyVisible;
+        CopyAppPathMenuItem.Visibility = isAppCopyVisible ? Visibility.Visible : Visibility.Collapsed;
+        CopyAppPathMenuItem.IsEnabled = isAppCopyVisible;
+        CopyAppNameMenuItem.Visibility = isAppCopyVisible ? Visibility.Visible : Visibility.Collapsed;
+        CopyAppNameMenuItem.IsEnabled = isAppCopyVisible;
+        var hasAppFile = isAppCopyVisible && File.Exists(target);
+        CopyAppFileMenuItem.Visibility = hasAppFile ? Visibility.Visible : Visibility.Collapsed;
+        CopyAppFileMenuItem.IsEnabled = hasAppFile;
 
         ToggleAppStartupMenuItem.Visibility = isExecutable ? Visibility.Visible : Visibility.Collapsed;
         ToggleAppStartupMenuItem.IsEnabled = isExecutable;
@@ -2748,7 +2820,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         var hasVisibleAppActions = RunAsAdminMenuItem.Visibility == Visibility.Visible ||
                                    OpenAppFileLocationMenuItem.Visibility == Visibility.Visible ||
-                                   CopyAppPathMenuItem.Visibility == Visibility.Visible ||
+                                   CopyAppMenu.Visibility == Visibility.Visible ||
                                    ToggleAppStartupMenuItem.Visibility == Visibility.Visible;
 
         // 2. 小程序/燕语专属管理操作与快捷键设置
@@ -2775,11 +2847,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         PublishExtensionMenuItem.IsEnabled = isLocalExtension && _cloudSyncClient != null;
         PublishExtensionMenuItem.Header = (resolved.IsPublishedInStore) ? "更新到商店" : "发布到商店";
 
-        CopyExtensionStoreLinkMenuItem.Visibility = (isLocalExtension && resolved.IsPublishedInStore) ? Visibility.Visible : Visibility.Collapsed;
-        CopyExtensionStoreLinkMenuItem.IsEnabled = isLocalExtension;
+        // 仅当小程序已发布在商店时才显示【商店链接】二级菜单，未发布坚决隐藏！
+        var hasStoreShareActions = isLocalExtension && resolved.IsPublishedInStore;
+        StoreShareMenu.Visibility = hasStoreShareActions ? Visibility.Visible : Visibility.Collapsed;
+        StoreShareMenu.IsEnabled = isLocalExtension && hasStoreShareActions;
 
-        OpenExtensionStoreLinkMenuItem.Visibility = (isLocalExtension && resolved.IsPublishedInStore && !isYanyuRule) ? Visibility.Visible : Visibility.Collapsed;
-        OpenExtensionStoreLinkMenuItem.IsEnabled = isLocalExtension;
+        CopyExtensionStoreLinkMenuItem.Visibility = hasStoreShareActions ? Visibility.Visible : Visibility.Collapsed;
+        CopyExtensionStoreLinkMenuItem.IsEnabled = isLocalExtension && hasStoreShareActions;
+
+        OpenExtensionStoreLinkMenuItem.Visibility = (hasStoreShareActions && !isYanyuRule) ? Visibility.Visible : Visibility.Collapsed;
+        OpenExtensionStoreLinkMenuItem.IsEnabled = isLocalExtension && hasStoreShareActions;
 
         DeleteExtensionMenuItem.Visibility = isExtensionLike ? Visibility.Visible : Visibility.Collapsed;
         DeleteExtensionMenuItem.IsEnabled = isExtensionLike;
@@ -2788,35 +2865,38 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         TerminateExtensionMenuItem.Visibility = (isExtensionLike && resolved.IsRunning) ? Visibility.Visible : Visibility.Collapsed;
         TerminateExtensionMenuItem.IsEnabled = resolved.IsRunning;
 
-        OpenExtensionDirectoryMenuItem.Visibility = isLocalExtension ? Visibility.Visible : Visibility.Collapsed;
-        OpenExtensionDirectoryMenuItem.IsEnabled = isLocalExtension;
-
         ToggleYanyuEnabledMenuItem.Visibility = isYanyuRule ? Visibility.Visible : Visibility.Collapsed;
         ToggleYanyuEnabledMenuItem.IsEnabled = isYanyuRule;
         ToggleYanyuEnabledMenuItem.Header = isYanyuRule && IsYanyuRuleEnabled(current) ? "停用燕语" : "启用燕语";
 
-        var hasVisibleExtensionActions = EditExtensionMenuItem.Visibility == Visibility.Visible ||
-                                         PublishExtensionMenuItem.Visibility == Visibility.Visible ||
-                                         CopyExtensionStoreLinkMenuItem.Visibility == Visibility.Visible ||
-                                         OpenExtensionStoreLinkMenuItem.Visibility == Visibility.Visible ||
-                                         DeleteExtensionMenuItem.Visibility == Visibility.Visible ||
-                                         TerminateExtensionMenuItem.Visibility == Visibility.Visible ||
-                                         OpenExtensionDirectoryMenuItem.Visibility == Visibility.Visible ||
-                                         ToggleYanyuEnabledMenuItem.Visibility == Visibility.Visible;
+        // 小程序管理二级菜单
+        OpenExtensionDirectoryMenuItem.Visibility = isLocalExtension ? Visibility.Visible : Visibility.Collapsed;
+        OpenExtensionDirectoryMenuItem.IsEnabled = isLocalExtension;
 
-        // 3. 小程序剪贴板操作
         CopyExtensionMenuItem.Visibility = isExtensionLike ? Visibility.Visible : Visibility.Collapsed;
         CopyExtensionMenuItem.IsEnabled = isExtensionLike;
 
         CutExtensionMenuItem.Visibility = isExtensionLike ? Visibility.Visible : Visibility.Collapsed;
         CutExtensionMenuItem.IsEnabled = isExtensionLike;
 
-        PasteExtensionMenuItem.Visibility = isExtensionLike ? Visibility.Visible : Visibility.Collapsed;
-        PasteExtensionMenuItem.IsEnabled = isExtensionLike;
+        // 核心修复：只有剪贴板里真正复制了小程序数据时，才显示“粘贴小程序”；否则坚决隐藏！
+        var hasClipboardExtension = HasExtensionInClipboard();
+        PasteExtensionMenuItem.Visibility = (isExtensionLike && hasClipboardExtension) ? Visibility.Visible : Visibility.Collapsed;
+        PasteExtensionMenuItem.IsEnabled = isExtensionLike && hasClipboardExtension;
 
-        var hasVisibleClipboardActions = CopyExtensionMenuItem.Visibility == Visibility.Visible ||
-                                         CutExtensionMenuItem.Visibility == Visibility.Visible ||
-                                         PasteExtensionMenuItem.Visibility == Visibility.Visible;
+        ExtensionManageSubSeparator.Visibility = (isLocalExtension && isExtensionLike) ? Visibility.Visible : Visibility.Collapsed;
+
+        var hasVisibleManageActions = isLocalExtension || isExtensionLike;
+        ManageExtensionMenu.Visibility = hasVisibleManageActions ? Visibility.Visible : Visibility.Collapsed;
+        ManageExtensionMenu.IsEnabled = hasVisibleManageActions;
+
+        var hasVisibleExtensionActions = EditExtensionMenuItem.Visibility == Visibility.Visible ||
+                                         PublishExtensionMenuItem.Visibility == Visibility.Visible ||
+                                         StoreShareMenu.Visibility == Visibility.Visible ||
+                                         DeleteExtensionMenuItem.Visibility == Visibility.Visible ||
+                                         TerminateExtensionMenuItem.Visibility == Visibility.Visible ||
+                                         ToggleYanyuEnabledMenuItem.Visibility == Visibility.Visible ||
+                                         ManageExtensionMenu.Visibility == Visibility.Visible;
 
         // 4. 通用快捷操作
         AddToQuickPanelMenuItem.Visibility = Visibility.Visible;
@@ -2834,17 +2914,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var isKeyboardInvoked = _commandActionsMenuOrigin != CommandActionsMenuOrigin.MouseRightClick;
         BackToSearchMenuItem.Visibility = isKeyboardInvoked ? Visibility.Visible : Visibility.Collapsed;
 
-        var hasAnyBelowActions = hasVisibleAppActions || hasVisibleExtensionActions || hasVisibleClipboardActions || hasVisibleCommonActions;
+        var hasAnyBelowActions = hasVisibleAppActions || hasVisibleExtensionActions || hasVisibleCommonActions;
         TopActionsSeparator.Visibility = (isKeyboardInvoked && hasAnyBelowActions)
             ? Visibility.Visible : Visibility.Collapsed;
 
-        AppActionsSeparator.Visibility = (hasVisibleAppActions && (hasVisibleExtensionActions || hasVisibleClipboardActions || hasVisibleCommonActions))
+        AppActionsSeparator.Visibility = (hasVisibleAppActions && (hasVisibleExtensionActions || hasVisibleCommonActions))
             ? Visibility.Visible : Visibility.Collapsed;
 
-        ExtensionActionsSeparator.Visibility = (hasVisibleExtensionActions && (hasVisibleClipboardActions || hasVisibleCommonActions))
-            ? Visibility.Visible : Visibility.Collapsed;
-
-        ClipboardActionsSeparator.Visibility = (hasVisibleClipboardActions && hasVisibleCommonActions)
+        ExtensionActionsSeparator.Visibility = (hasVisibleExtensionActions && hasVisibleCommonActions)
             ? Visibility.Visible : Visibility.Collapsed;
 
         SetCommandContextMenuCommand(current);
@@ -2855,7 +2932,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         RunAsAdminMenuItem.CommandParameter = command;
         OpenAppFileLocationMenuItem.CommandParameter = command;
+        CopyAppMenu.CommandParameter = command;
         CopyAppPathMenuItem.CommandParameter = command;
+        CopyAppNameMenuItem.CommandParameter = command;
+        CopyAppFileMenuItem.CommandParameter = command;
         ToggleAppStartupMenuItem.CommandParameter = command;
         UninstallAppMenuItem.CommandParameter = command;
         CreateDesktopShortcutMenuItem.CommandParameter = command;
@@ -2863,10 +2943,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         RenameCommandMenuItem.CommandParameter = command;
         EditExtensionMenuItem.CommandParameter = command;
         PublishExtensionMenuItem.CommandParameter = command;
+        StoreShareMenu.CommandParameter = command;
         CopyExtensionStoreLinkMenuItem.CommandParameter = command;
         OpenExtensionStoreLinkMenuItem.CommandParameter = command;
         DeleteExtensionMenuItem.CommandParameter = command;
         TerminateExtensionMenuItem.CommandParameter = command;
+        ManageExtensionMenu.CommandParameter = command;
         OpenExtensionDirectoryMenuItem.CommandParameter = command;
         ToggleYanyuEnabledMenuItem.CommandParameter = command;
         CopyExtensionMenuItem.CommandParameter = command;
@@ -4831,7 +4913,9 @@ public sealed class CommandItem : INotifyPropertyChanged
         ResultItemKind resultKind = ResultItemKind.None,
         string? resultProviderTitle = null,
         bool isPublishedInStore = false,
-        bool toggleWindow = true)
+        bool toggleWindow = true,
+        bool runAsAdmin = false,
+        bool waitForExit = true)
     {
         Glyph = glyph;
         Title = title;
@@ -4895,6 +4979,8 @@ public sealed class CommandItem : INotifyPropertyChanged
         ResultProviderTitle = resultProviderTitle;
         IsPublishedInStore = isPublishedInStore;
         ToggleWindow = toggleWindow;
+        RunAsAdmin = runAsAdmin;
+        WaitForExit = waitForExit;
         UsageCount = SearchUsageMemory.Load().GetUsageCount(ExtensionId);
     }
 
@@ -5028,6 +5114,10 @@ public sealed class CommandItem : INotifyPropertyChanged
     public string? LaunchArguments { get; }
 
     public string? WorkingDirectory { get; }
+
+    public bool RunAsAdmin { get; }
+
+    public bool WaitForExit { get; } = true;
 
     public CommandSearchProviderDefinition? SearchProvider { get; }
 

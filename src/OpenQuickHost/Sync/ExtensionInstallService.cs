@@ -11,7 +11,8 @@ public static class ExtensionInstallService
     public static async Task<ExtensionInstallResult> InstallPackageAsync(
         byte[] packageBytes,
         string? requestedExtensionId = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? fallbackName = null)
     {
         if (packageBytes == null || packageBytes.Length == 0)
         {
@@ -50,6 +51,17 @@ public static class ExtensionInstallService
             if (manifest == null)
             {
                 throw new InvalidOperationException("扩展包中的 manifest.json 无效。");
+            }
+
+            if ((string.IsNullOrWhiteSpace(manifest.Id) && !string.IsNullOrWhiteSpace(requestedExtensionId)) ||
+                (string.IsNullOrWhiteSpace(manifest.Name) && !string.IsNullOrWhiteSpace(fallbackName)))
+            {
+                manifest = manifest with
+                {
+                    Id = string.IsNullOrWhiteSpace(manifest.Id) ? requestedExtensionId! : manifest.Id,
+                    Name = string.IsNullOrWhiteSpace(manifest.Name) ? fallbackName! : manifest.Name
+                };
+                await File.WriteAllTextAsync(manifestPath, JsonSerializer.Serialize(manifest, JsonOptions), cancellationToken);
             }
 
             if (string.IsNullOrWhiteSpace(manifest.Id) || string.IsNullOrWhiteSpace(manifest.Name))
@@ -147,19 +159,27 @@ public static class ExtensionInstallService
             return manifest;
         }
 
-        using var httpClient = new HttpClient
+        byte[] bytes;
+        string? mediaType;
+        try
         {
-            Timeout = TimeSpan.FromSeconds(15)
-        };
-        using var response = await httpClient.GetAsync(iconUri, cancellationToken);
-        response.EnsureSuccessStatusCode();
-        var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+            using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+            using var response = await httpClient.GetAsync(iconUri, cancellationToken);
+            response.EnsureSuccessStatusCode();
+            bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+            mediaType = response.Content.Headers.ContentType?.MediaType;
+        }
+        catch (Exception ex) when ((ex is HttpRequestException or TaskCanceledException) && !cancellationToken.IsCancellationRequested)
+        {
+            HostAssets.AppendLog($"Extension icon localization skipped: {ex.GetType().Name}");
+            return manifest;
+        }
         if (bytes.Length == 0)
         {
             return manifest;
         }
 
-        var extension = ResolveIconExtension(iconUri, response.Content.Headers.ContentType?.MediaType);
+        var extension = ResolveIconExtension(iconUri, mediaType);
         var fileName = "icon" + extension;
         var filePath = Path.Combine(extensionDirectory, fileName);
         await File.WriteAllBytesAsync(filePath, bytes, cancellationToken);

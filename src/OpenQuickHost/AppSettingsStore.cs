@@ -671,7 +671,7 @@ public static class AppSettingsStore
         {
             ("all", "全部"),
             ("extension", BrandTerms.DefaultMiniApp),
-            ("application", "应用"),
+            ("application", "软件"),
             ("file", "文件"),
             ("system", "系统"),
             ("yanyu", BrandTerms.DefaultYanVoice),
@@ -699,6 +699,11 @@ public static class AppSettingsStore
                      (string.Equals(cfg.Label, "扩展商店", StringComparison.Ordinal) || string.IsNullOrWhiteSpace(cfg.Label)))
             {
                 cfg.Label = $"{BrandTerms.Current.MiniApp}商店";
+            }
+            else if (string.Equals(cfg.Key, "application", StringComparison.OrdinalIgnoreCase) &&
+                     (string.Equals(cfg.Label, "应用", StringComparison.Ordinal) || string.IsNullOrWhiteSpace(cfg.Label)))
+            {
+                cfg.Label = "软件";
             }
         }
 

@@ -64,12 +64,15 @@ public partial class RunningExtensionsWindow : Window
         }
 
         var success = RunningExtensionRegistry.TryTerminate(instanceId, out var message);
-        System.Windows.MessageBox.Show(
-            this,
-            message,
-            success ? "操作完成" : "操作失败",
-            MessageBoxButton.OK,
-            success ? MessageBoxImage.Information : MessageBoxImage.Error);
+        if (!success)
+        {
+            System.Windows.MessageBox.Show(
+                this,
+                string.IsNullOrWhiteSpace(message) ? "结束小程序进程失败。" : message,
+                "操作失败",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
         RefreshItems();
     }
 
@@ -84,7 +87,7 @@ public partial class RunningExtensionsWindow : Window
             _items.Add(new RunningExtensionItemViewModel(item, matchedCommand));
         }
 
-        SummaryTextBlock.Text = $"当前共 {_items.Count} 个正在运行的独立窗口扩展";
+        SummaryTextBlock.Text = $"当前共 {_items.Count} 个正在运行的小程序进程";
         EmptyStateTextBlock.Visibility = _items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 

@@ -355,7 +355,7 @@
                     
                         <!-- Search Box Placeholder -->
                         <TextBlock IsHitTestVisible="False"
-                                   Text="搜索应用、小程序、系统项，或输入 @应用 / @系统 ..."
+                                   Text="搜索软件、小程序、系统项，或输入 @软件 / @系统 ..."
                                    VerticalAlignment="Center"
                                    Foreground="{DynamicResource BrushTextMuted}"
                                    FontSize="{DynamicResource FontSizeTitle}"
@@ -786,12 +786,32 @@
                                     <Path Data="{local:IconGeometry open-folder}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
                             </MenuItem>
-                            <MenuItem x:Name="CopyAppPathMenuItem"
-                                      Header="复制路径"
-                                      Click="CopyAppPathMenuItem_Click">
+                            <MenuItem x:Name="CopyAppMenu"
+                                      Header="复制">
                                 <MenuItem.Icon>
                                     <Path Data="{local:IconGeometry copy}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
+                                <MenuItem x:Name="CopyAppPathMenuItem"
+                                          Header="软件地址"
+                                          Click="CopyAppPathMenuItem_Click">
+                                    <MenuItem.Icon>
+                                        <Path Data="{local:IconGeometry link}" Fill="#A0FFFFFF" Stretch="Uniform" Width="14" Height="14" />
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                                <MenuItem x:Name="CopyAppNameMenuItem"
+                                          Header="软件名"
+                                          Click="CopyAppNameMenuItem_Click">
+                                    <MenuItem.Icon>
+                                        <Path Data="{local:IconGeometry note}" Fill="#A0FFFFFF" Stretch="Uniform" Width="14" Height="14" />
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                                <MenuItem x:Name="CopyAppFileMenuItem"
+                                          Header="软件"
+                                          Click="CopyAppFileMenuItem_Click">
+                                    <MenuItem.Icon>
+                                        <Path Data="{local:IconGeometry file}" Fill="#A0FFFFFF" Stretch="Uniform" Width="14" Height="14" />
+                                    </MenuItem.Icon>
+                                </MenuItem>
                             </MenuItem>
                             <MenuItem x:Name="ToggleAppStartupMenuItem"
                                       Header="开机自启动"
@@ -825,20 +845,26 @@
                                     <Path Data="{local:IconGeometry publish}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
                             </MenuItem>
-                            <MenuItem x:Name="CopyExtensionStoreLinkMenuItem"
-                                      Header="复制商店链接"
-                                      Visibility="Collapsed"
-                                      Click="CopyExtensionStoreLinkMenuItem_Click">
+                            <MenuItem x:Name="StoreShareMenu"
+                                      Header="商店链接"
+                                      Visibility="Collapsed">
                                 <MenuItem.Icon>
                                     <Path Data="{local:IconGeometry link}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
-                            </MenuItem>
-                            <MenuItem x:Name="OpenExtensionStoreLinkMenuItem"
-                                      Header="打开商店链接"
-                                      Click="OpenExtensionStoreLinkMenuItem_Click">
-                                <MenuItem.Icon>
-                                    <Path Data="{local:IconGeometry link}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
-                                </MenuItem.Icon>
+                                <MenuItem x:Name="CopyExtensionStoreLinkMenuItem"
+                                          Header="复制商店链接"
+                                          Click="CopyExtensionStoreLinkMenuItem_Click">
+                                    <MenuItem.Icon>
+                                        <Path Data="{local:IconGeometry link}" Fill="#A0FFFFFF" Stretch="Uniform" Width="14" Height="14" />
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                                <MenuItem x:Name="OpenExtensionStoreLinkMenuItem"
+                                          Header="打开商店链接"
+                                          Click="OpenExtensionStoreLinkMenuItem_Click">
+                                    <MenuItem.Icon>
+                                        <Path Data="{local:IconGeometry link}" Fill="#A0FFFFFF" Stretch="Uniform" Width="14" Height="14" />
+                                    </MenuItem.Icon>
+                                </MenuItem>
                             </MenuItem>
                             <MenuItem x:Name="DeleteExtensionMenuItem"
                                       Header="删除"
@@ -854,13 +880,6 @@
                                     <Path Data="{local:IconGeometry stop}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
                             </MenuItem>
-                            <MenuItem x:Name="OpenExtensionDirectoryMenuItem"
-                                      Header="{local:Term MiniApp, Prefix='打开', Suffix='目录'}"
-                                      Click="OpenExtensionDirectoryMenuItem_Click">
-                                <MenuItem.Icon>
-                                    <Path Data="{local:IconGeometry open-folder}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
-                                </MenuItem.Icon>
-                            </MenuItem>
                             <MenuItem x:Name="ToggleYanyuEnabledMenuItem"
                                       Header="{local:Term YanVoice, Prefix='启用'}"
                                       Click="ToggleYanyuEnabledMenuItem_Click">
@@ -868,31 +887,44 @@
                                     <Path Data="{local:IconGeometry power}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
                             </MenuItem>
-                            <Separator x:Name="ExtensionActionsSeparator" />
 
-                            <!-- 小程序剪贴板操作 -->
-                            <MenuItem x:Name="CopyExtensionMenuItem"
-                                      Header="{local:Term MiniApp, Prefix='复制'}"
-                                      Click="CopyExtensionMenuItem_Click">
+                            <!-- 小程序管理与整理二级菜单 -->
+                            <MenuItem x:Name="ManageExtensionMenu"
+                                      Header="{local:Term MiniApp, Suffix='管理'}">
                                 <MenuItem.Icon>
-                                    <Path Data="{local:IconGeometry copy}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
+                                    <Path Data="{local:IconGeometry open-folder}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
+                                <MenuItem x:Name="OpenExtensionDirectoryMenuItem"
+                                          Header="{local:Term MiniApp, Prefix='打开', Suffix='目录'}"
+                                          Click="OpenExtensionDirectoryMenuItem_Click">
+                                    <MenuItem.Icon>
+                                        <Path Data="{local:IconGeometry open-folder}" Fill="#A0FFFFFF" Stretch="Uniform" Width="14" Height="14" />
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                                <Separator x:Name="ExtensionManageSubSeparator" />
+                                <MenuItem x:Name="CopyExtensionMenuItem"
+                                          Header="{local:Term MiniApp, Prefix='复制'}"
+                                          Click="CopyExtensionMenuItem_Click">
+                                    <MenuItem.Icon>
+                                        <Path Data="{local:IconGeometry copy}" Fill="#A0FFFFFF" Stretch="Uniform" Width="14" Height="14" />
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                                <MenuItem x:Name="CutExtensionMenuItem"
+                                          Header="{local:Term MiniApp, Prefix='剪切'}"
+                                          Click="CutExtensionMenuItem_Click">
+                                    <MenuItem.Icon>
+                                        <Path Data="{local:IconGeometry cut}" Fill="#A0FFFFFF" Stretch="Uniform" Width="14" Height="14" />
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                                <MenuItem x:Name="PasteExtensionMenuItem"
+                                          Header="{local:Term MiniApp, Prefix='粘贴'}"
+                                          Click="PasteExtensionMenuItem_Click">
+                                    <MenuItem.Icon>
+                                        <Path Data="{local:IconGeometry paste}" Fill="#A0FFFFFF" Stretch="Uniform" Width="14" Height="14" />
+                                    </MenuItem.Icon>
+                                </MenuItem>
                             </MenuItem>
-                            <MenuItem x:Name="CutExtensionMenuItem"
-                                      Header="{local:Term MiniApp, Prefix='剪切'}"
-                                      Click="CutExtensionMenuItem_Click">
-                                <MenuItem.Icon>
-                                    <Path Data="{local:IconGeometry cut}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
-                                </MenuItem.Icon>
-                            </MenuItem>
-                            <MenuItem x:Name="PasteExtensionMenuItem"
-                                      Header="{local:Term MiniApp, Prefix='粘贴'}"
-                                      Click="PasteExtensionMenuItem_Click">
-                                <MenuItem.Icon>
-                                    <Path Data="{local:IconGeometry paste}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
-                                </MenuItem.Icon>
-                            </MenuItem>
-                            <Separator x:Name="ClipboardActionsSeparator" />
+                            <Separator x:Name="ExtensionActionsSeparator" />
 
                             <!-- 通用快捷操作 -->
                             <MenuItem x:Name="SetCommandShortcutMenuItem"
@@ -1133,10 +1165,11 @@
                                                 Background="#FF10B981"
                                                 BorderBrush="#CCFFFFFF"
                                                 BorderThickness="1"
-                                                HorizontalAlignment="Left"
+                                                HorizontalAlignment="Right"
                                                 VerticalAlignment="Bottom"
-                                                Margin="-2,0,0,-2"
+                                                Margin="0,0,-2,-2"
                                                 IsHitTestVisible="False"
+                                                ToolTip="正在后台运行中"
                                                 Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                     </Grid>
 
@@ -1378,6 +1411,19 @@
                                                     Visibility="{Binding HasNewBadge, Converter={StaticResource BooleanToVisibilityConverter}}" />
                                         </Grid>
                                     </Border>
+                                    <!-- 运行状态绿点 -->
+                                    <Border Width="9"
+                                            Height="9"
+                                            CornerRadius="4.5"
+                                            Background="#FF10B981"
+                                            BorderBrush="#CCFFFFFF"
+                                            BorderThickness="1"
+                                            HorizontalAlignment="Right"
+                                            VerticalAlignment="Bottom"
+                                            Margin="0,0,-2,-2"
+                                            IsHitTestVisible="False"
+                                            ToolTip="正在后台运行中"
+                                            Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                 </Grid>
 
                                 <!-- 下方名称（单行，省略截断，居中） -->
@@ -2504,7 +2550,7 @@ Visibility="{Binding AiChatVisibility}">
                                 Width="32"
                                 Height="32"
                                 Padding="0"
-                                Margin="0,0,10,0"
+                                Margin="0,0,6,0"
                                 Background="Transparent"
                                 BorderThickness="0"
                                 ToolTip="添加小程序"
@@ -2523,6 +2569,19 @@ Visibility="{Binding AiChatVisibility}">
                                     <Path Data="{local:IconGeometry plus}" Fill="{DynamicResource BrushTextMain}" />
                                 </Canvas>
                             </Viewbox>
+                        </Button>
+                        <Button x:Name="FooterSettingsButton"
+                                Width="32"
+                                Height="32"
+                                Padding="0"
+                                Margin="0,0,6,0"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                ToolTip="设置"
+                                Click="FooterSettingsButton_Click"
+                                Visibility="{Binding NormalFooterMenuVisibility}"
+                                Style="{DynamicResource GhostButtonStyle}">
+                            <Path Data="{local:IconGeometry settings}" Fill="{DynamicResource BrushTextMain}" Height="15" Width="15" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Button>
                         <Button x:Name="FooterQuickMenuButton"
                                 Width="32"
@@ -2662,21 +2721,6 @@ Visibility="{Binding AiChatVisibility}">
                                     </Grid>
                                 </Button>
 
-                                <Button Style="{DynamicResource GhostButtonStyle}"
-                                        ToolTip="进入设置页调整程序同步、外观及各项偏好"
-                                        HorizontalContentAlignment="Stretch" Click="QuickMenuOpenSettings_Click">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="42" />
-                                            <ColumnDefinition Width="*" />
-                                        </Grid.ColumnDefinitions>
-                                        <Path Data="{local:IconGeometry settings}" 
-                                              Fill="{DynamicResource BrushTextMain}" Height="18" Width="18" Stretch="Uniform" HorizontalAlignment="Center"/>
-                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                            <TextBlock Text="设置" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="Medium"/>
-                                        </StackPanel>
-                                    </Grid>
-                                </Button>
 
                                 <Button Style="{DynamicResource GhostButtonStyle}"
                                         ToolTip="强制重新同步当前账户下的云端小程序状态"

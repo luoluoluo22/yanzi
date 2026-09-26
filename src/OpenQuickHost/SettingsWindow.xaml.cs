@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
 using System.Diagnostics;
@@ -85,6 +85,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private readonly Dictionary<string, WpfComboBox> _mouseTriggerTargetCombos = new(StringComparer.Ordinal);
     private bool _isUpdatingMouseTriggerTargetCombos;
     private bool _isLoadingSettings = true;
+    private bool _isRefreshingSettingsFromDisk;
     private bool _showPersonalSyncAdvancedOptions;
     private readonly List<SettingsSearchItem> _dynamicSettingsSearchItems = [];
     private readonly Dictionary<TextBlock, string> _searchHighlightSnapshots = new();
@@ -160,6 +161,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
 
         SubscribeUpdateEvents();
+        RunningExtensionRegistry.Changed += SettingsRunningExtensionRegistry_Changed;
+        Closed += (s, e) =>
+        {
+            RunningExtensionRegistry.Changed -= SettingsRunningExtensionRegistry_Changed;
+        };
         AiSettingsStatusText = BuildAiSettingsSummary(_settings);
         EnvironmentVariables = new ObservableCollection<EnvironmentVariableEditorItem>(
             AppEnvironmentVariableStore.Load().Select(static item => new EnvironmentVariableEditorItem(item.Name, item.Value, item.Description)));
@@ -547,6 +553,20 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     {
         get => _releaseNotes;
         set { _releaseNotes = value; OnPropertyChanged(); }
+    }
+
+    private void SettingsRunningExtensionRegistry_Changed(object? sender, EventArgs e)
+    {
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (_cachedExtensionItems != null)
+            {
+                foreach (var item in _cachedExtensionItems)
+                {
+                    item.RefreshRunningState();
+                }
+            }
+        }));
     }
 
     private void SubscribeUpdateEvents()
@@ -2624,7 +2644,9 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         get => string.Join(", ", _settings.GlobalServiceBlacklistedProcesses ?? []);
         set
         {
-            _settings.GlobalServiceBlacklistedProcesses = ParseProcessList(value);
+            var processes = ParseProcessList(value);
+            if (ProcessListsEqual(_settings.GlobalServiceBlacklistedProcesses, processes)) return;
+            _settings.GlobalServiceBlacklistedProcesses = processes;
             OnPropertyChanged();
             QueueQuickPanelTriggerSave(500);
         }
@@ -2635,7 +2657,9 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         get => string.Join(", ", _settings.RadialMenu.BlacklistedProcesses ?? []);
         set
         {
-            _settings.RadialMenu.BlacklistedProcesses = ParseProcessList(value);
+            var processes = ParseProcessList(value);
+            if (ProcessListsEqual(_settings.RadialMenu.BlacklistedProcesses, processes)) return;
+            _settings.RadialMenu.BlacklistedProcesses = processes;
             OnPropertyChanged();
             QueueQuickPanelTriggerSave(500);
         }
@@ -2646,7 +2670,9 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         get => string.Join(", ", _settings.RadialMenu.WhitelistedProcesses ?? []);
         set
         {
-            _settings.RadialMenu.WhitelistedProcesses = ParseProcessList(value);
+            var processes = ParseProcessList(value);
+            if (ProcessListsEqual(_settings.RadialMenu.WhitelistedProcesses, processes)) return;
+            _settings.RadialMenu.WhitelistedProcesses = processes;
             OnPropertyChanged();
             QueueQuickPanelTriggerSave(500);
         }
@@ -2810,13 +2836,17 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     public bool EnableYanm
     {
         get => _settings.Yanm.Enabled;
-        set => UpdateYanm(value, settings => settings.Enabled = value);
+        set { if (value != _settings.Yanm.Enabled) UpdateYanm(value, settings => settings.Enabled = value); }
     }
 
     public string YanmActivationKey
     {
         get => YanmActivationKeys.Normalize(_settings.Yanm.ActivationKey);
-        set => UpdateYanm(YanmActivationKeys.Normalize(value), settings => settings.ActivationKey = YanmActivationKeys.Normalize(value));
+        set
+        {
+            var normalized = YanmActivationKeys.Normalize(value);
+            if (normalized != YanmActivationKey) UpdateYanm(normalized, settings => settings.ActivationKey = normalized);
+        }
     }
 
     public bool YanmUsesCustomShortcut => string.Equals(YanmActivationKey, YanmActivationKeys.Custom, StringComparison.OrdinalIgnoreCase);
@@ -2824,7 +2854,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     public string YanmCustomShortcut
     {
         get => _settings.Yanm.CustomShortcut;
-        set => UpdateYanm(value, settings => settings.CustomShortcut = value);
+        set { if (value != _settings.Yanm.CustomShortcut) UpdateYanm(value, settings => settings.CustomShortcut = value); }
     }
 
     private DispatcherTimer? _yanmSaveTimer;
@@ -2847,7 +2877,9 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         get => string.Join(", ", _settings.Yanm.BlacklistedProcesses ?? []);
         set
         {
-            _settings.Yanm.BlacklistedProcesses = ParseProcessList(value);
+            var processes = ParseProcessList(value);
+            if (ProcessListsEqual(_settings.Yanm.BlacklistedProcesses, processes)) return;
+            _settings.Yanm.BlacklistedProcesses = processes;
             OnPropertyChanged();
             QueueYanmSave(500);
         }
@@ -2859,12 +2891,17 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         .Distinct(StringComparer.OrdinalIgnoreCase)
         .ToList();
 
+    private static bool ProcessListsEqual(List<string>? current, List<string> updated) =>
+        (current ?? []).SequenceEqual(updated, StringComparer.OrdinalIgnoreCase);
+
     public string YanmWhitelistedProcessesText
     {
         get => string.Join(", ", _settings.Yanm.WhitelistedProcesses ?? []);
         set
         {
-            _settings.Yanm.WhitelistedProcesses = ParseProcessList(value);
+            var processes = ParseProcessList(value);
+            if (ProcessListsEqual(_settings.Yanm.WhitelistedProcesses, processes)) return;
+            _settings.Yanm.WhitelistedProcesses = processes;
             OnPropertyChanged();
             QueueYanmSave(500);
         }
@@ -2873,31 +2910,39 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     public bool YanmTriggerHold
     {
         get => _settings.Yanm.TriggerWinHold;
-        set => UpdateYanm(value, settings => settings.TriggerWinHold = value);
+        set { if (value != _settings.Yanm.TriggerWinHold) UpdateYanm(value, settings => settings.TriggerWinHold = value); }
     }
 
     public bool YanmTriggerDoubleTap
     {
         get => _settings.Yanm.TriggerWinDoubleTap;
-        set => UpdateYanm(value, settings => settings.TriggerWinDoubleTap = value);
+        set { if (value != _settings.Yanm.TriggerWinDoubleTap) UpdateYanm(value, settings => settings.TriggerWinDoubleTap = value); }
     }
 
     public bool YanmMouseTriggerRightDrag
     {
         get => _settings.Yanm.TriggerRightButtonDrag;
-        set => UpdateYanm(value, settings => settings.TriggerRightButtonDrag = value);
+        set { if (value != _settings.Yanm.TriggerRightButtonDrag) UpdateYanm(value, settings => settings.TriggerRightButtonDrag = value); }
     }
 
     public string YanmMouseTriggerMode
     {
         get => MouseTriggerModes.Normalize(_settings.Yanm.MouseTriggerMode);
-        set => UpdateYanm(MouseTriggerModes.Normalize(value), settings => settings.MouseTriggerMode = MouseTriggerModes.Normalize(value));
+        set
+        {
+            var normalized = MouseTriggerModes.Normalize(value);
+            if (normalized != YanmMouseTriggerMode) UpdateYanm(normalized, settings => settings.MouseTriggerMode = normalized);
+        }
     }
 
     public string RadialMouseTriggerMode
     {
         get => MouseTriggerModes.Normalize(_settings.RadialMenu.MouseTriggerMode);
-        set => UpdateRadialMenu(value, settings => settings.MouseTriggerMode = MouseTriggerModes.Normalize(value));
+        set
+        {
+            var normalized = MouseTriggerModes.Normalize(value);
+            if (normalized != RadialMouseTriggerMode) UpdateRadialMenu(normalized, settings => settings.MouseTriggerMode = normalized);
+        }
     }
 
     public string YanmSummary
@@ -3256,6 +3301,9 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private void DoReloadSettingsFromDisk()
     {
+        _isRefreshingSettingsFromDisk = true;
+        try
+        {
         _settings = AppSettingsStore.Load();
         _settings.YarnSelect ??= new YarnSelectSettings();
         _settings.Yanm ??= new YanmSettings();
@@ -3285,6 +3333,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         AiApiKey = _settings.AiApiKey;
         AiModel = _settings.AiModel;
         AiSystemPrompt = _settings.AiSystemPrompt;
+        _originalAiBaseUrl = _settings.AiBaseUrl;
+        _originalAiApiKey = _settings.AiApiKey;
+        _originalAiModel = _settings.AiModel;
+        _originalAiSystemPrompt = _settings.AiSystemPrompt;
+        HasAiSettingsChanged = false;
         AiSettingsStatusText = BuildAiSettingsSummary(_settings);
         
         // 加载已保存的密码
@@ -3306,6 +3359,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         // Refresh gesture card colors after settings reload
         InitializeMouseTriggerTargetDropdowns();
         UpdateAllGestureCardColors();
+        }
+        finally
+        {
+            _isRefreshingSettingsFromDisk = false;
+        }
     }
 
     private void SettingsWindow_Activated(object? sender, EventArgs e)
@@ -3629,9 +3687,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         e.Cancel = true;
         Hide();
         
-        // 关闭时立即保存，不使用防抖
+        // 先写入尚未到期的编辑，再保存窗口位置；位置保存会读取最新设置。
         _windowBoundsPersistTimer?.Stop();
-        PersistWindowBounds();
         FlushYarnSelectSave();
         FlushYanmSave();
         FlushQuickPanelTriggerSave();
@@ -3639,6 +3696,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         FlushWebDavSettingsSave();
         FlushEnvironmentVariablesSave();
         FlushWanPushSave();
+        PersistWindowBounds();
     }
 
     private void PersistWindowBoundsDebounced()
@@ -3669,6 +3727,12 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
 
         var latest = AppSettingsStore.Load();
+        if (latest.SettingsWindowLeft == Left && latest.SettingsWindowTop == Top &&
+            latest.SettingsWindowWidth == Width && latest.SettingsWindowHeight == Height)
+        {
+            return;
+        }
+
         latest = latest with
         {
             SettingsWindowLeft = Left,
@@ -3676,7 +3740,6 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             SettingsWindowWidth = Width,
             SettingsWindowHeight = Height
         };
-        _settings = latest;
         AppSettingsStore.Save(latest);
     }
 
@@ -3690,6 +3753,12 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private void ThemeModeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        if (_isLoadingSettings || _isRefreshingSettingsFromDisk || !IsLoaded ||
+            string.Equals(AppSettingsStore.Load().ThemeMode, _settings.ThemeMode, StringComparison.Ordinal))
+        {
+            return;
+        }
+
         AppSettingsStore.Save(_settings);
         _mainWindow.RefreshAppSettings();
         if (IsLoaded)
@@ -3922,6 +3991,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private void SaveQuickPanelTrigger_Click(object sender, RoutedEventArgs e)
     {
+        if (_isLoadingSettings || _isRefreshingSettingsFromDisk)
+        {
+            return;
+        }
+
         SaveQuickPanelTriggerSettings();
     }
 
@@ -4088,7 +4162,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private void MouseTriggerTargetCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_isUpdatingMouseTriggerTargetCombos)
+        if (_isUpdatingMouseTriggerTargetCombos || _isLoadingSettings || _isRefreshingSettingsFromDisk)
         {
             return;
         }
@@ -4100,6 +4174,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
         var target = combo.SelectedValue as string;
         if (string.IsNullOrWhiteSpace(target))
+        {
+            return;
+        }
+
+        if (string.Equals(target, GetGestureTarget(gestureName), StringComparison.Ordinal))
         {
             return;
         }
@@ -4408,6 +4487,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             case "CtrlRightClick": radial.TriggerCtrlRightClick = value; break;
             case "CtrlMiddleClick": radial.TriggerCtrlMiddleClick = value; break;
         }
+
+        if (value)
+        {
+            radial.MouseTriggerMode = GestureNameToMouseTriggerMode(gestureName);
+        }
     }
 
     private void SetGestureForYanm(string gestureName, bool value)
@@ -4427,6 +4511,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             case "CtrlLeftDrag": yanm.TriggerCtrlLeftDrag = value; break;
             case "CtrlRightClick": yanm.TriggerCtrlRightClick = value; break;
             case "CtrlMiddleClick": yanm.TriggerCtrlMiddleClick = value; break;
+        }
+
+        if (value)
+        {
+            yanm.MouseTriggerMode = GestureNameToMouseTriggerMode(gestureName);
         }
     }
 
@@ -5231,8 +5320,16 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private void AiSettings_TextChanged(object sender, TextChangedEventArgs e)
     {
+        if (_isLoadingSettings || _isRefreshingSettingsFromDisk)
+        {
+            return;
+        }
+
         CheckAiSettingsChanged();
-        QueueAiSettingsSave(500);
+        if (HasAiSettingsChanged)
+        {
+            QueueAiSettingsSave(500);
+        }
     }
 
     private void EditSystemPromptInNewWindow_Click(object sender, RoutedEventArgs e)
@@ -9486,10 +9583,6 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         _settings.RadialMenu.CustomShortcut = (_settings.RadialMenu.CustomShortcut ?? string.Empty).Trim();
         _settings.RadialMenu.WhitelistedProcesses = ParseProcessList(string.Join(", ", _settings.RadialMenu.WhitelistedProcesses ?? []));
         _settings.RadialMenu.BlacklistedProcesses = ParseProcessList(string.Join(", ", _settings.RadialMenu.BlacklistedProcesses ?? []));
-        SyncRadialMouseTriggerModeFromFlags(_settings.RadialMenu);
-        SyncYanmMouseTriggerModeFromFlags(_settings.Yanm);
-        ApplyMouseTriggerModeToRadialFlags(_settings.RadialMenu);
-        ApplyMouseTriggerModeToYanmFlags(_settings.Yanm);
         AppSettingsStore.Save(_settings);
         _mainWindow.RefreshAppSettings();
         _mainWindow.NotifyQuickPanelSettingsChanged("quickpanel-trigger-settings-saved");
@@ -9730,7 +9823,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private void YanmActivationKey_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_isLoadingSettings)
+        if (_isLoadingSettings || _isRefreshingSettingsFromDisk)
         {
             return;
         }
@@ -13137,6 +13230,23 @@ public sealed class SettingsExtensionItem : INotifyPropertyChanged
     public bool HasVectorIcon => VectorIcon != null && !HasImageIcon;
 
     public bool UseGlyphIcon => !HasImageIcon && !HasVectorIcon && !string.IsNullOrWhiteSpace(DisplayGlyph);
+
+    public bool IsRunning
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(ExtensionId))
+            {
+                return false;
+            }
+            return RunningExtensionRegistry.GetSnapshot().Any(x => string.Equals(x.ExtensionId, ExtensionId, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    public void RefreshRunningState()
+    {
+        OnPropertyChanged(nameof(IsRunning));
+    }
 
     public string Shortcut
     {

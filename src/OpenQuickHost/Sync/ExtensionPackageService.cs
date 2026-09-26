@@ -139,17 +139,24 @@ public static class ExtensionPackageService
                 : manifest with { Icon = iconOverride });
     }
 
-    private static bool ShouldIncludeInPackage(string rootDirectory, string filePath)
+    internal static bool ShouldIncludeInPackage(string rootDirectory, string filePath)
     {
         var relativePath = Path.GetRelativePath(rootDirectory, filePath);
         var normalizedRelativePath = relativePath.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
         var segments = normalizedRelativePath.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
 
-        if (normalizedRelativePath.StartsWith(".yanzi-csharp-cache" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        // 内联脚本执行时生成的临时文件不属于小程序内容。将其打包会让每次运行都产生新哈希并重复上传。
+        if (segments.Length == 1 &&
+            (segments[0].StartsWith(".yanzi-inline-", StringComparison.OrdinalIgnoreCase) ||
+             segments[0].Equals("debug.log", StringComparison.OrdinalIgnoreCase)))
         {
-            return normalizedRelativePath.EndsWith(
-                Path.Combine("bin", "Release", "net9.0", "YanziExtension.dll"),
-                StringComparison.OrdinalIgnoreCase);
+            return false;
+        }
+
+        if (normalizedRelativePath.Equals(".yanzi-csharp-cache", StringComparison.OrdinalIgnoreCase) ||
+            normalizedRelativePath.StartsWith(".yanzi-csharp-cache" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
         }
 
         if (segments.Any(static segment =>

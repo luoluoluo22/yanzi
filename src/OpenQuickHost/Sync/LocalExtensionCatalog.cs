@@ -195,7 +195,10 @@ public static class LocalExtensionCatalog
             startup: manifest.Startup?.ToDefinition(),
             searchProvider: manifest.SearchProvider?.ToDefinition(manifest.OpenTarget),
             isPublishedInStore: manifest.IsPublished == true,
-            toggleWindow: manifest.ToggleWindow ?? true);
+            toggleWindow: manifest.ToggleWindow ?? true,
+            workingDirectory: manifest.WorkingDirectory,
+            runAsAdmin: manifest.RunAsAdmin ?? false,
+            waitForExit: manifest.WaitForExit ?? true);
     }
 
     public static void SetExtensionPublishedState(string extensionId, bool isPublished)
@@ -677,6 +680,14 @@ public static class YanziAction
             manifest = manifest with { Id = CreateAvailableSystemExtensionId() };
         }
 
+        if (manifest.Id is "." or ".." ||
+            manifest.Id.EndsWith(' ') || manifest.Id.EndsWith('.') ||
+            manifest.Id.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ||
+            !string.Equals(Path.GetFileName(manifest.Id), manifest.Id, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("小程序内部 ID 无效，不能包含路径或系统保留字符。");
+        }
+
         var extensionDirectory = Path.Combine(CatalogRootPath, manifest.Id);
         Directory.CreateDirectory(extensionDirectory);
         manifest = NormalizeManifestForPersistence(manifest, extensionDirectory);
@@ -713,7 +724,10 @@ public static class YanziAction
             queryTargetTemplate: manifest.QueryTargetTemplate,
             startup: manifest.Startup?.ToDefinition(),
             searchProvider: manifest.SearchProvider?.ToDefinition(manifest.OpenTarget),
-            toggleWindow: manifest.ToggleWindow ?? true);
+            toggleWindow: manifest.ToggleWindow ?? true,
+            workingDirectory: manifest.WorkingDirectory,
+            runAsAdmin: manifest.RunAsAdmin ?? false,
+            waitForExit: manifest.WaitForExit ?? true);
     }
 
     public static string LoadManifestJson(string extensionId)
@@ -1121,6 +1135,7 @@ public static class YanziAction
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         PropertyNameCaseInsensitive = true,
         WriteIndented = true,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
 }
@@ -1181,6 +1196,12 @@ public sealed record LocalExtensionManifest
     public LocalExtensionSearchProviderManifest? SearchProvider { get; init; }
 
     public LocalExtensionMouseGestureManifest? MouseGesture { get; init; }
+
+    public string? WorkingDirectory { get; init; }
+
+    public bool? RunAsAdmin { get; init; }
+
+    public bool? WaitForExit { get; init; }
 
     public bool? IsPublished { get; init; }
 }

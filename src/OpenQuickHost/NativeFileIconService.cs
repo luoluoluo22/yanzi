@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Xml.Linq;
 using Microsoft.Win32;
 
@@ -107,11 +108,23 @@ public static class NativeFileIconService
 
         var cleanPath = ExtractCleanPath(path);
 
-        var cacheKey = !isFolder && (IsShortcutPath(path) || IsShortcutPath(cleanPath)) ? path : BuildCacheKey(cleanPath, isFolder);
+        var isImg = !isFolder && (IsImageFile(path) || IsImageFile(cleanPath));
+        var cacheKey = !isFolder && (IsShortcutPath(path) || IsShortcutPath(cleanPath) || isImg) ? path : BuildCacheKey(cleanPath, isFolder);
         return IconCache.GetOrAdd(cacheKey, _ =>
         {
             if (!isFolder)
             {
+                // 0. 如果是图片文件且物理文件存在，优先直接生成超清缩略图 (限制96px尺寸，解码极快且跨线程安全)
+                var directCandidate = File.Exists(path) ? path : (File.Exists(cleanPath) ? cleanPath : null);
+                if (directCandidate != null && IsImageFile(directCandidate))
+                {
+                    var imgThumb = LoadImageThumbnail(directCandidate, 96);
+                    if (imgThumb != null)
+                    {
+                        return imgThumb;
+                    }
+                }
+
                 // 1. 优先尝试为原始文件/快捷方式 (.lnk / .exe / .url) 提取 Windows Shell 权威 256x256 高品质原画图标
                 if (File.Exists(path))
                 {
@@ -155,11 +168,80 @@ public static class NativeFileIconService
         });
     }
 
+    public static bool IsImageExtension(string? extension)
+    {
+        if (string.IsNullOrWhiteSpace(extension)) return false;
+        var ext = extension.StartsWith('.') ? extension : $".{extension}";
+        return ext.Equals(".png", StringComparison.OrdinalIgnoreCase) ||
+               ext.Equals(".jpg", StringComparison.OrdinalIgnoreCase) ||
+               ext.Equals(".jpeg", StringComparison.OrdinalIgnoreCase) ||
+               ext.Equals(".webp", StringComparison.OrdinalIgnoreCase) ||
+               ext.Equals(".bmp", StringComparison.OrdinalIgnoreCase) ||
+               ext.Equals(".gif", StringComparison.OrdinalIgnoreCase) ||
+               ext.Equals(".jfif", StringComparison.OrdinalIgnoreCase) ||
+               ext.Equals(".ico", StringComparison.OrdinalIgnoreCase) ||
+               ext.Equals(".tif", StringComparison.OrdinalIgnoreCase) ||
+               ext.Equals(".tiff", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static bool IsImageFile(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return false;
+        try
+        {
+            var ext = Path.GetExtension(path);
+            return IsImageExtension(ext);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public static ImageSource? LoadImageThumbnail(string path, int targetSize = 96)
+    {
+        try
+        {
+            if (!File.Exists(path)) return null;
+
+            var bitmap = new BitmapImage();
+            bitmap.BeginInit();
+            bitmap.UriSource = new Uri(path);
+            bitmap.DecodePixelWidth = targetSize;
+            bitmap.CacheOption = BitmapCacheOption.OnLoad;
+            bitmap.CreateOptions = BitmapCreateOptions.IgnoreColorProfile;
+            bitmap.EndInit();
+            bitmap.Freeze();
+            return bitmap;
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"[NativeFileIconService] LoadImageThumbnail failed for '{path}': {ex.Message}");
+            return null;
+        }
+    }
+
+    public static void ClearCacheForPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return;
+        IconCache.TryRemove(path, out _);
+        var clean = ExtractCleanPath(path);
+        if (!string.IsNullOrWhiteSpace(clean) && !string.Equals(clean, path, StringComparison.OrdinalIgnoreCase))
+        {
+            IconCache.TryRemove(clean, out _);
+        }
+    }
+
     private static string BuildCacheKey(string path, bool isFolder)
     {
         if (isFolder)
         {
             return "__folder__";
+        }
+
+        if (IsImageFile(path))
+        {
+            return path;
         }
 
         var extension = Path.GetExtension(path);
@@ -177,7 +259,8 @@ public static class NativeFileIconService
                (extension.Equals(".exe", StringComparison.OrdinalIgnoreCase) ||
                 extension.Equals(".lnk", StringComparison.OrdinalIgnoreCase) ||
                 extension.Equals(".url", StringComparison.OrdinalIgnoreCase) ||
-                extension.Equals(".ico", StringComparison.OrdinalIgnoreCase));
+                extension.Equals(".ico", StringComparison.OrdinalIgnoreCase) ||
+                IsImageExtension(extension));
     }
 
     private static ImageSource? LoadSmallIcon(string path, bool isFolder)

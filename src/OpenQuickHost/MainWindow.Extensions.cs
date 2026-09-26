@@ -595,6 +595,12 @@ public partial class MainWindow
 
             foreach (var command in startupCommands)
             {
+                if (RunningExtensionRegistry.IsRunning(command.ExtensionId))
+                {
+                    HostAssets.AppendLog($"Startup extension already running, skipping: {command.Title} ({command.ExtensionId})");
+                    continue;
+                }
+
                 await Dispatcher.InvokeAsync(async () => 
                 {
                     try

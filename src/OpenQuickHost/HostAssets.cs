@@ -13,18 +13,40 @@ public static class HostAssets
     private const int MaxLogFlushLines = 256;
 
     private static readonly ConcurrentQueue<string> PendingLogLines = new();
+    private static readonly ConcurrentQueue<string> PendingCloudDiagnosticLines = new();
     private static readonly AutoResetEvent LogFlushSignal = new(false);
     private static int _logWorkerStarted;
     private static int _queuedLogLineCount;
+    private static int _droppedLogLineCount;
+    private static int _queuedCloudDiagnosticLineCount;
+    private static int _droppedCloudDiagnosticLineCount;
+    private static string? _isolatedVerificationDataRootPath;
 
     public static string InstallRootPath => AppDomain.CurrentDomain.BaseDirectory;
 
     public static string RootPath => DataRootPath;
 
     public static string DataRootPath =>
-        Path.Combine(
+        _isolatedVerificationDataRootPath ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "OpenQuickHost");
+
+    internal static IDisposable UseIsolatedDataRootForVerification(string path)
+    {
+        if (!Path.IsPathFullyQualified(path) || Directory.Exists(path) && Directory.EnumerateFileSystemEntries(path).Any())
+        {
+            throw new ArgumentException("验证数据目录必须是绝对路径且为空。", nameof(path));
+        }
+
+        var previous = _isolatedVerificationDataRootPath;
+        _isolatedVerificationDataRootPath = Path.GetFullPath(path);
+        return new VerificationDataRootScope(() => _isolatedVerificationDataRootPath = previous);
+    }
+
+    private sealed class VerificationDataRootScope(Action restore) : IDisposable
+    {
+        public void Dispose() => restore();
+    }
 
     public static string ExtensionsPath => ResolveDataDirectoryPath("Extensions");
 
@@ -150,6 +172,7 @@ public static class HostAssets
         if (Interlocked.Increment(ref _queuedLogLineCount) > MaxQueuedLogLines)
         {
             Interlocked.Decrement(ref _queuedLogLineCount);
+            Interlocked.Increment(ref _droppedLogLineCount);
             return;
         }
 
@@ -181,19 +204,26 @@ public static class HostAssets
 
     public static void AppendCloudSyncDiagnosticLog(string message)
     {
-        try
+        var line = $"{Environment.NewLine}[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}";
+        // Keep failure signals in the main log even if the detailed queue is full.
+        if (message.Contains(" failed", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains(" blocked", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains(" conflict", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains(" cooldown", StringComparison.OrdinalIgnoreCase))
         {
-            EnsureCreated();
-            RotateFileIfTooLarge(CloudSyncDiagnosticsLogPath, MaxLogFileBytes);
-            SafeFile.TryAppendAllText(
-                CloudSyncDiagnosticsLogPath,
-                $"{Environment.NewLine}[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}");
+            AppendLog($"[CloudSyncDiag] {message}");
         }
-        catch
+
+        if (Interlocked.Increment(ref _queuedCloudDiagnosticLineCount) > MaxQueuedLogLines)
         {
-            // 同上：诊断日志自身失败绝不能打断云同步重试流程或顶替真实异常
+            Interlocked.Decrement(ref _queuedCloudDiagnosticLineCount);
+            Interlocked.Increment(ref _droppedCloudDiagnosticLineCount);
+            return;
         }
-        AppendLog($"[CloudSyncDiag] {message}");
+
+        PendingCloudDiagnosticLines.Enqueue(line);
+        EnsureLogWorkerStarted();
+        LogFlushSignal.Set();
     }
 
     public static IReadOnlyList<string> ReadHostLogTailLines(int maxBytes, int maxLines)
@@ -273,12 +303,13 @@ public static class HostAssets
         {
             LogFlushSignal.WaitOne(TimeSpan.FromSeconds(1));
             FlushPendingLogLines();
+            FlushPendingCloudDiagnosticLines();
         }
     }
 
     private static void FlushPendingLogLines()
     {
-        if (PendingLogLines.IsEmpty)
+        if (PendingLogLines.IsEmpty && Volatile.Read(ref _droppedLogLineCount) == 0)
         {
             return;
         }
@@ -292,18 +323,31 @@ public static class HostAssets
             RotateFileIfTooLarge(HostLogPath, MaxLogFileBytes);
 
             var builder = new StringBuilder(capacity: 8192);
-            var flushed = 0;
-            while (flushed < MaxLogFlushLines && PendingLogLines.TryDequeue(out var line))
+            var batch = PendingLogLines.Take(MaxLogFlushLines).ToArray();
+            foreach (var line in batch)
             {
-                Interlocked.Decrement(ref _queuedLogLineCount);
                 builder.Append(line);
-                flushed++;
+            }
+
+            var dropped = Volatile.Read(ref _droppedLogLineCount);
+            if (dropped > 0)
+            {
+                builder.Append($"{Environment.NewLine}[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] Host log queue overflow: dropped={dropped} lines.");
             }
 
             if (builder.Length > 0)
             {
                 File.AppendAllText(HostLogPath, builder.ToString());
             }
+
+            for (var index = 0; index < batch.Length; index++)
+            {
+                if (PendingLogLines.TryDequeue(out _))
+                {
+                    Interlocked.Decrement(ref _queuedLogLineCount);
+                }
+            }
+            if (dropped > 0) Interlocked.Add(ref _droppedLogLineCount, -dropped);
 
             if (!PendingLogLines.IsEmpty)
             {
@@ -313,6 +357,55 @@ public static class HostAssets
         catch
         {
             // Logging must never block normal app execution.
+        }
+    }
+
+    private static void FlushPendingCloudDiagnosticLines()
+    {
+        if (PendingCloudDiagnosticLines.IsEmpty && Volatile.Read(ref _droppedCloudDiagnosticLineCount) == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(LogsPath);
+            RotateFileIfTooLarge(CloudSyncDiagnosticsLogPath, MaxLogFileBytes);
+            var builder = new StringBuilder(capacity: 8192);
+            var batch = PendingCloudDiagnosticLines.Take(MaxLogFlushLines).ToArray();
+            foreach (var line in batch)
+            {
+                builder.Append(line);
+            }
+
+            var dropped = Volatile.Read(ref _droppedCloudDiagnosticLineCount);
+            if (dropped > 0)
+            {
+                builder.Append($"{Environment.NewLine}[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] Cloud diagnostic queue overflow: dropped={dropped} lines.");
+            }
+
+            if (builder.Length > 0)
+            {
+                File.AppendAllText(CloudSyncDiagnosticsLogPath, builder.ToString());
+            }
+
+            for (var index = 0; index < batch.Length; index++)
+            {
+                if (PendingCloudDiagnosticLines.TryDequeue(out _))
+                {
+                    Interlocked.Decrement(ref _queuedCloudDiagnosticLineCount);
+                }
+            }
+            if (dropped > 0) Interlocked.Add(ref _droppedCloudDiagnosticLineCount, -dropped);
+
+            if (!PendingCloudDiagnosticLines.IsEmpty)
+            {
+                LogFlushSignal.Set();
+            }
+        }
+        catch
+        {
+            // Logging must never block cloud sync; unwritten records remain queued.
         }
     }
 

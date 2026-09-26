@@ -2103,6 +2103,9 @@ public sealed class WebDavSyncEntry
 
     public string PackageHash { get; set; } = string.Empty;
 
+    // 只写入本机索引：旧版云端包解压后重新打包的字节可能不同，用于识别内容是否真的变化。
+    public string LocalContentHash { get; set; } = string.Empty;
+
     public string PackagePath { get; set; } = string.Empty;
 
     public string UpdatedAtUtc { get; set; } = string.Empty;

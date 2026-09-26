@@ -96,6 +96,67 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
     private DateTimeOffset _suspendOutsideClickHideUntilUtc = DateTimeOffset.MinValue;
     private bool _wasActivatedForInput;
 
+    private readonly DispatcherTimer _imagePreviewTimer;
+    private SlotViewModel? _pendingImagePreviewSlot;
+    private string? _pendingImagePreviewPath;
+    private FrameworkElement? _pendingImagePreviewElement;
+    private bool _isImagePreviewOpen;
+    private ImageSource? _imagePreviewSource;
+    private string _imagePreviewTitle = string.Empty;
+    private string _imagePreviewInfo = string.Empty;
+
+    public bool IsImagePreviewOpen
+    {
+        get => _isImagePreviewOpen;
+        set
+        {
+            if (_isImagePreviewOpen != value)
+            {
+                _isImagePreviewOpen = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public ImageSource? ImagePreviewSource
+    {
+        get => _imagePreviewSource;
+        set
+        {
+            if (_imagePreviewSource != value)
+            {
+                _imagePreviewSource = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public string ImagePreviewTitle
+    {
+        get => _imagePreviewTitle;
+        set
+        {
+            if (_imagePreviewTitle != value)
+            {
+                _imagePreviewTitle = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public string ImagePreviewInfo
+    {
+        get => _imagePreviewInfo;
+        set
+        {
+            if (_imagePreviewInfo != value)
+            {
+                _imagePreviewInfo = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
     public static bool HasUnreadMessages { get; set; } = false;
 
     public void EnsureNoActivateStyle()
@@ -214,6 +275,12 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             Interval = TimeSpan.FromSeconds(2)
         };
         _folderCreationTimer.Tick += FolderCreationTimer_Tick;
+
+        _imagePreviewTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(550)
+        };
+        _imagePreviewTimer.Tick += ImagePreviewTimer_Tick;
         
         var mobileDetectTimer = new DispatcherTimer
         {
@@ -1804,6 +1871,22 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             return;
         }
 
+        if (IsSlotImageFile(vm, out var imgPath))
+        {
+            if (!ReferenceEquals(_pendingImagePreviewSlot, vm))
+            {
+                _pendingImagePreviewSlot = vm;
+                _pendingImagePreviewPath = imgPath;
+                _pendingImagePreviewElement = sender as FrameworkElement;
+                _imagePreviewTimer.Stop();
+                _imagePreviewTimer.Start();
+            }
+        }
+        else
+        {
+            HideImagePreview();
+        }
+
         if (vm.IsFolder)
         {
             ShowFolderPreview(vm);
@@ -1819,6 +1902,8 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
     private void SlotButton_MouseLeave(object sender, System.Windows.Input.MouseEventArgs e)
     {
+        HideImagePreview();
+
         if (sender is FrameworkElement { Tag: SlotViewModel vm })
         {
             if (ReferenceEquals(_hoveredSlot, vm))
@@ -1840,6 +1925,18 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             return;
         }
 
+        if (IsSlotImageFile(vm, out var imgPath))
+        {
+            if (!ReferenceEquals(_pendingImagePreviewSlot, vm))
+            {
+                _pendingImagePreviewSlot = vm;
+                _pendingImagePreviewPath = imgPath;
+                _pendingImagePreviewElement = sender as FrameworkElement;
+                _imagePreviewTimer.Stop();
+                _imagePreviewTimer.Start();
+            }
+        }
+
         if (vm.IsFolder)
         {
             ShowFolderPreview(vm);
@@ -1855,6 +1952,8 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
     private void SlotButton_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
+        HideImagePreview();
+
         if (sender is not FrameworkElement { Tag: SlotViewModel vm } || vm.Item == null)
         {
             _dragStartPoint = null;
@@ -3071,6 +3170,289 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private void RenameSlot_Click(object sender, RoutedEventArgs e)
+    {
+        SlotViewModel? slot = null;
+        if (sender is MenuItem mi && mi.CommandParameter is SlotViewModel vm)
+        {
+            slot = vm;
+        }
+        else if (sender is FrameworkElement fe && fe.Tag is SlotViewModel tagVm)
+        {
+            slot = tagVm;
+        }
+
+        if (slot == null || slot.IsEmpty)
+        {
+            return;
+        }
+
+        HideImagePreview();
+
+        var reference = BuildSlotReference(slot);
+        var container = reference == null ? null : GetSlotContainer(reference);
+        if (reference == null || container == null || reference.Index < 0 || reference.Index >= container.Count)
+        {
+            return;
+        }
+
+        if (slot.IsFolder)
+        {
+            var dialog = new SimpleTextInputWindow("重命名文件夹", "请输入文件夹的新名称：", slot.Title)
+            {
+                Owner = this
+            };
+            if (dialog.ShowDialog() != true)
+            {
+                return;
+            }
+
+            var newFolderName = dialog.ValueText;
+            if (string.IsNullOrWhiteSpace(newFolderName) || string.Equals(newFolderName, slot.Title, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            var folderItem = container[reference.Index];
+            if (folderItem != null && folderItem.IsFolder)
+            {
+                folderItem.FolderName = newFolderName;
+                slot.SetFolderName(newFolderName);
+                RefreshAllLegacySlots();
+                SaveQuickPanelSettings("quickpanel-rename-folder");
+                LoadSlots();
+                RefreshActiveFolderAfterMutation();
+            }
+            return;
+        }
+
+        if (slot.Command == null)
+        {
+            return;
+        }
+
+        var openTarget = slot.Command.OpenTarget;
+        bool isDiskFile = !string.IsNullOrWhiteSpace(openTarget) && (File.Exists(openTarget) || Directory.Exists(openTarget));
+
+        if (isDiskFile)
+        {
+            var currentFileName = Path.GetFileName(openTarget) ?? string.Empty;
+            var dirPath = Path.GetDirectoryName(openTarget);
+
+            var dialog = new SimpleTextInputWindow("重命名文件", "请输入新的文件名：", currentFileName)
+            {
+                Owner = this
+            };
+            if (dialog.ShowDialog() != true)
+            {
+                return;
+            }
+
+            var newFileName = dialog.ValueText;
+            if (string.IsNullOrWhiteSpace(newFileName) || string.Equals(newFileName, currentFileName, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            var invalidChars = Path.GetInvalidFileNameChars();
+            if (newFileName.Any(c => invalidChars.Contains(c)))
+            {
+                System.Windows.MessageBox.Show(this, "文件名包含无效字符，请重新输入。", "重命名失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var oldExt = Path.GetExtension(openTarget);
+            var newExt = Path.GetExtension(newFileName);
+            if (string.IsNullOrEmpty(newExt) && !string.IsNullOrEmpty(oldExt) && File.Exists(openTarget))
+            {
+                newFileName += oldExt;
+            }
+
+            var newFullPath = string.IsNullOrEmpty(dirPath) ? newFileName : Path.Combine(dirPath, newFileName);
+
+            if (string.Equals(openTarget, newFullPath, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            try
+            {
+                if (File.Exists(openTarget))
+                {
+                    if (File.Exists(newFullPath))
+                    {
+                        System.Windows.MessageBox.Show(this, $"目标文件已存在：{newFileName}", "重命名失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        return;
+                    }
+                    File.Move(openTarget, newFullPath);
+                }
+                else if (Directory.Exists(openTarget))
+                {
+                    if (Directory.Exists(newFullPath))
+                    {
+                        System.Windows.MessageBox.Show(this, $"目标文件夹已存在：{newFileName}", "重命名失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        return;
+                    }
+                    Directory.Move(openTarget, newFullPath);
+                }
+
+                if (!string.IsNullOrEmpty(openTarget))
+                {
+                    NativeFileIconService.ClearCacheForPath(openTarget);
+                }
+                NativeFileIconService.ClearCacheForPath(newFullPath);
+
+                var newCommand = MainWindow.CreateFileShortcutCommand(newFullPath);
+                var existingItem = container[reference.Index];
+                container[reference.Index] = new QuickPanelSlotItem
+                {
+                    ItemType = "extension",
+                    ExtensionId = newCommand.ExtensionId,
+                    IsShortcut = existingItem?.IsShortcut ?? true
+                };
+
+                RefreshAllLegacySlots();
+                SaveQuickPanelSettings(slot.IsContextual ? "quickpanel-rename-file-context" : "quickpanel-rename-file-global");
+                LoadSlots();
+                RefreshActiveFolderAfterMutation();
+
+                _mainWindow.LastRunMessage = $"已成功重命名为：{Path.GetFileName(newFullPath)}";
+                HostAssets.AppendLog($"[QuickPanel] Renamed file from '{openTarget}' to '{newFullPath}'.");
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show(this, $"重命名失败：{ex.Message}", "重命名错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                HostAssets.AppendLog($"[QuickPanel] Rename file failed: {ex}");
+            }
+        }
+    }
+
+    private static bool IsSlotImageFile(SlotViewModel? slot, out string? imagePath)
+    {
+        imagePath = null;
+        if (slot == null || slot.IsFolder || slot.Command == null) return false;
+        var target = slot.Command.OpenTarget;
+        if (!string.IsNullOrWhiteSpace(target) && NativeFileIconService.IsImageFile(target) && File.Exists(target))
+        {
+            imagePath = target;
+            return true;
+        }
+        return false;
+    }
+
+    private void ImagePreviewTimer_Tick(object? sender, EventArgs e)
+    {
+        _imagePreviewTimer.Stop();
+        if (!IsVisible || _pendingImagePreviewSlot == null || string.IsNullOrWhiteSpace(_pendingImagePreviewPath))
+        {
+            HideImagePreview();
+            return;
+        }
+
+        var filePath = _pendingImagePreviewPath;
+        var targetElement = _pendingImagePreviewElement;
+        if (!File.Exists(filePath) || targetElement == null)
+        {
+            HideImagePreview();
+            return;
+        }
+
+        try
+        {
+            var bitmap = new BitmapImage();
+            bitmap.BeginInit();
+            bitmap.UriSource = new Uri(filePath);
+            bitmap.DecodePixelWidth = 800;
+            bitmap.CacheOption = BitmapCacheOption.OnLoad;
+            bitmap.CreateOptions = BitmapCreateOptions.IgnoreColorProfile;
+            bitmap.EndInit();
+            bitmap.Freeze();
+
+            int origW = 0, origH = 0;
+            try
+            {
+                using var fs = File.Open(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                var decoder = BitmapDecoder.Create(fs, BitmapCreateOptions.DelayCreation, BitmapCacheOption.None);
+                if (decoder.Frames.Count > 0)
+                {
+                    origW = decoder.Frames[0].PixelWidth;
+                    origH = decoder.Frames[0].PixelHeight;
+                }
+            }
+            catch { }
+
+            var fileInfo = new FileInfo(filePath);
+            string sizeStr = FormatByteSize(fileInfo.Length);
+            string dimStr = origW > 0 && origH > 0 ? $"{origW} × {origH}" : $"{bitmap.PixelWidth} × {bitmap.PixelHeight}";
+
+            ImagePreviewSource = bitmap;
+            ImagePreviewTitle = Path.GetFileName(filePath);
+            ImagePreviewInfo = $"{dimStr}   •   {sizeStr}";
+
+            PositionImagePreviewPopup(targetElement);
+            IsImagePreviewOpen = true;
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"[QuickPanel] Show image preview failed: {ex.Message}");
+            HideImagePreview();
+        }
+    }
+
+    private void PositionImagePreviewPopup(FrameworkElement targetElement)
+    {
+        if (ImagePreviewPopup == null) return;
+
+        ImagePreviewPopup.PlacementTarget = targetElement;
+
+        try
+        {
+            var screenPoint = targetElement.PointToScreen(new System.Windows.Point(0, 0));
+            var screen = System.Windows.Forms.Screen.FromPoint(new System.Drawing.Point((int)screenPoint.X, (int)screenPoint.Y));
+            var workArea = screen.WorkingArea;
+
+            double rightSpace = workArea.Right - (screenPoint.X + targetElement.ActualWidth);
+            if (rightSpace >= 400)
+            {
+                ImagePreviewPopup.Placement = System.Windows.Controls.Primitives.PlacementMode.Right;
+                ImagePreviewPopup.HorizontalOffset = 12;
+            }
+            else
+            {
+                ImagePreviewPopup.Placement = System.Windows.Controls.Primitives.PlacementMode.Left;
+                ImagePreviewPopup.HorizontalOffset = -12;
+            }
+        }
+        catch
+        {
+            ImagePreviewPopup.Placement = System.Windows.Controls.Primitives.PlacementMode.Right;
+            ImagePreviewPopup.HorizontalOffset = 12;
+        }
+    }
+
+    private static string FormatByteSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        if (bytes < 1024 * 1024 * 1024) return $"{bytes / (1024.0 * 1024):F1} MB";
+        return $"{bytes / (1024.0 * 1024 * 1024):F2} GB";
+    }
+
+    private void HideImagePreview()
+    {
+        _imagePreviewTimer?.Stop();
+        _pendingImagePreviewSlot = null;
+        _pendingImagePreviewPath = null;
+        _pendingImagePreviewElement = null;
+        if (IsImagePreviewOpen)
+        {
+            IsImagePreviewOpen = false;
+            ImagePreviewSource = null;
+            ImagePreviewTitle = string.Empty;
+            ImagePreviewInfo = string.Empty;
+        }
+    }
+
     private async void DeleteExtension_Click(object sender, RoutedEventArgs e)
     {
         if (sender is MenuItem mi && mi.CommandParameter is SlotViewModel vm)
@@ -3169,6 +3551,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
     {
         if (sender is not ContextMenu menu) return;
         _currentContextMenu = menu;
+        HideImagePreview();
 
         var clipboard = _mainWindow.GetQuickPanelClipboard();
         
@@ -3963,6 +4346,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
 
     private void HidePanel()
     {
+        HideImagePreview();
         _releaseTargetTimer.Stop();
         StopFolderHoverTimer();
         StopEditButtonHoverTimer();
@@ -5470,6 +5854,44 @@ public class SlotViewModel : INotifyPropertyChanged
     public bool CanOpenDirectory => CanEdit && !string.IsNullOrWhiteSpace(_command?.ExtensionDirectoryPath);
     public bool CanRemoveFromFixedSlots => _item != null;
     public bool CanDeleteExtension => !IsFolder && _command?.Source == CommandSource.LocalExtension;
+    public bool CanRename => IsFolder || (IsOccupied && _command != null);
+    public string RenameMenuHeader
+    {
+        get
+        {
+            if (IsFolder) return "重命名文件夹";
+            if (IsFileShortcutTarget) return "重命名文件";
+            return "重命名";
+        }
+    }
+    public bool IsFileShortcutTarget
+    {
+        get
+        {
+            if (IsFolder || _command == null) return false;
+            var target = _command.OpenTarget;
+            return !string.IsNullOrWhiteSpace(target) && (File.Exists(target) || Directory.Exists(target));
+        }
+    }
+    public bool IsImageFileSlot
+    {
+        get
+        {
+            if (IsFolder || _command == null) return false;
+            var target = _command.OpenTarget;
+            return !string.IsNullOrWhiteSpace(target) && NativeFileIconService.IsImageFile(target) && File.Exists(target);
+        }
+    }
+    public void SetFolderName(string newName)
+    {
+        if (IsFolder && _item != null)
+        {
+            _folderName = newName;
+            _item.FolderName = newName;
+            OnPropertyChanged(nameof(Title));
+            OnPropertyChanged(nameof(DisplayTitle));
+        }
+    }
     public string FavoriteLabel => _isFavorite ? "取消收藏" : "收藏";
     public string Title => IsFolder ? _folderName : _command?.Title ?? string.Empty;
     public string DisplayTitle
@@ -5680,6 +6102,10 @@ public class SlotViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(SourceFolderIndex));
         OnPropertyChanged(nameof(SourceFolderItemIndex));
         OnPropertyChanged(nameof(IsRunning));
+        OnPropertyChanged(nameof(CanRename));
+        OnPropertyChanged(nameof(RenameMenuHeader));
+        OnPropertyChanged(nameof(IsFileShortcutTarget));
+        OnPropertyChanged(nameof(IsImageFileSlot));
     }
 
     private void AttachCommandEvents()

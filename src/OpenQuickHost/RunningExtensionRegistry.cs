@@ -67,11 +67,23 @@ public static class RunningExtensionRegistry
         return GetSnapshot().Count;
     }
 
-    public static void RegisterNativeWindowProcess(CommandItem command, Process process, string launchSource)
+    public static bool IsRunning(string? extensionId)
+    {
+        if (string.IsNullOrWhiteSpace(extensionId)) return false;
+        var snapshot = GetSnapshot();
+        return snapshot.Any(s => string.Equals(s.ExtensionId, extensionId, StringComparison.OrdinalIgnoreCase));
+    }
+
+    public static Guid? RegisterProcess(CommandItem command, Process process, string launchSource)
+    {
+        return RegisterNativeWindowProcess(command, process, launchSource);
+    }
+
+    public static Guid? RegisterNativeWindowProcess(CommandItem command, Process process, string launchSource)
     {
         if (!IsAlive(process))
         {
-            return;
+            return null;
         }
 
         var processId = TryGetProcessId(process);
@@ -79,7 +91,7 @@ public static class RunningExtensionRegistry
             Guid.NewGuid(),
             command.ExtensionId ?? $"pid-{processId}",
             string.IsNullOrWhiteSpace(command.Title) ? command.ExtensionId ?? "未命名扩展" : command.Title,
-            string.IsNullOrWhiteSpace(command.Runtime) ? "csharp" : command.Runtime,
+            string.IsNullOrWhiteSpace(command.Runtime) ? "powershell" : command.Runtime,
             string.IsNullOrWhiteSpace(launchSource) ? "unknown" : launchSource,
             DateTimeOffset.Now,
             process,
@@ -94,7 +106,7 @@ public static class RunningExtensionRegistry
         catch (Exception ex)
         {
             HostAssets.AppendLog($"RunningExtensionRegistry register skipped: id={entry.ExtensionId}, title={entry.Title}, pid={processId}, error={ex.Message}");
-            return;
+            return null;
         }
 
         lock (Gate)
@@ -104,6 +116,27 @@ public static class RunningExtensionRegistry
 
         HostAssets.AppendLog($"RunningExtensionRegistry registered: id={entry.ExtensionId}, title={entry.Title}, pid={processId}, launchSource={entry.LaunchSource}");
         RaiseChanged();
+        return entry.InstanceId;
+    }
+
+    public static void RemoveByExtensionId(string? extensionId, string reason)
+    {
+        if (string.IsNullOrWhiteSpace(extensionId)) return;
+        List<Guid> toRemove = [];
+        lock (Gate)
+        {
+            foreach (var pair in Entries)
+            {
+                if (string.Equals(pair.Value.ExtensionId, extensionId, StringComparison.OrdinalIgnoreCase))
+                {
+                    toRemove.Add(pair.Key);
+                }
+            }
+        }
+        foreach (var id in toRemove)
+        {
+            Remove(id, reason);
+        }
     }
 
     public static void RegisterManagedExtension(

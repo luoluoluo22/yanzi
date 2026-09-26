@@ -229,6 +229,11 @@ public partial class AddJsonExtensionWindow
 
     private void CloseTestResultPanel_Click(object sender, RoutedEventArgs e)
     {
+        if (_isTestRunning)
+        {
+            CancelRunningTest();
+        }
+
         if (ManualTestResultPanel != null)
         {
             ManualTestResultPanel.Visibility = Visibility.Collapsed;
@@ -686,6 +691,13 @@ public partial class AddJsonExtensionWindow
 
     private async void HeaderTestButton_Click(object sender, RoutedEventArgs e)
     {
+        HostAssets.AppendLog($"HeaderTestButton_Click: _isTestRunning={_isTestRunning}");
+        if (_isTestRunning)
+        {
+            CancelRunningTest();
+            return;
+        }
+
         // 顶部「试运行」直接跑一次测试。简单模式下也能看到结果。
         if (TestDelayCheck != null && TestDelayCheck.IsChecked == true)
         {
@@ -800,12 +812,27 @@ public partial class AddJsonExtensionWindow
                     {
                         CSharpUseNativeWindowCheck.IsChecked = true;
                     }
-                    if (string.IsNullOrWhiteSpace(CSharpScriptBox.Text) ||
-                        LooksLikeOldCSharpEchoTemplate(CSharpScriptBox.Text))
+                    var isCsEntry = CSharpModeEntryRadio?.IsChecked == true ||
+                                    string.Equals(EntryModeBox.Text, "entry", StringComparison.OrdinalIgnoreCase) ||
+                                    !string.IsNullOrWhiteSpace(EntryBox.Text);
+                    if (isCsEntry)
                     {
-                        CSharpScriptBox.Text = CreateCSharpWindowScript();
+                        EntryModeBox.Text = "entry";
+                        EntryBox.Text = string.IsNullOrWhiteSpace(CSharpEntryBox?.Text) ? (string.IsNullOrWhiteSpace(EntryBox.Text) ? "main.cs" : EntryBox.Text.Trim()) : CSharpEntryBox.Text.Trim();
+                        ScriptSourceBox.Text = string.Empty;
+                        UpdateCSharpUiForCurrentMode();
                     }
-                    ScriptSourceBox.Text = CSharpScriptBox.Text;
+                    else
+                    {
+                        EntryModeBox.Text = "inline";
+                        EntryBox.Text = string.Empty;
+                        if (string.IsNullOrWhiteSpace(CSharpScriptBox.Text) ||
+                            LooksLikeOldCSharpEchoTemplate(CSharpScriptBox.Text))
+                        {
+                            CSharpScriptBox.Text = CreateCSharpWindowScript();
+                        }
+                        ScriptSourceBox.Text = CSharpScriptBox.Text;
+                    }
                     break;
                 case "workbench":
                     OpenTargetBox.Text = string.Empty;
@@ -2104,17 +2131,34 @@ public partial class AddJsonExtensionWindow
     {
         if (_isInitializing || _suppressSimpleSync) return;
         if (sender is not WpfTextBox tb) return;
-        ScriptSourceBox.Text = tb.Text ?? string.Empty;
         var tag = tb.Tag as string;
         if (tag == "ps")
         {
             RuntimeBox.Text = "powershell";
+            ScriptSourceBox.Text = tb.Text ?? string.Empty;
+            EntryModeBox.Text = "inline";
         }
         else if (tag == "cs")
         {
             RuntimeBox.Text = "csharp";
+            if (CSharpModeEntryRadio?.IsChecked == true)
+            {
+                EntryModeBox.Text = "entry";
+                EntryBox.Text = string.IsNullOrWhiteSpace(CSharpEntryBox?.Text) ? "main.cs" : CSharpEntryBox.Text.Trim();
+                ScriptSourceBox.Text = string.Empty;
+            }
+            else
+            {
+                EntryModeBox.Text = "inline";
+                EntryBox.Text = string.Empty;
+                ScriptSourceBox.Text = tb.Text ?? string.Empty;
+            }
         }
-        EntryModeBox.Text = "inline";
+        else
+        {
+            ScriptSourceBox.Text = tb.Text ?? string.Empty;
+            EntryModeBox.Text = "inline";
+        }
 
         if (_currentSimpleType == "workbench")
         {
@@ -2127,6 +2171,314 @@ public partial class AddJsonExtensionWindow
     {
         if (_isInitializing || _suppressSimpleSync) return;
         _manualUiMode = CSharpUseNativeWindowCheck.IsChecked == true ? "native-window" : null;
+        TryRefreshJsonFromHiddenForm();
+    }
+
+    private string GetCurrentExtensionDirectory()
+    {
+        var id = (IdBox?.Text ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            return string.Empty;
+        }
+        return Path.Combine(LocalExtensionCatalog.CatalogRootPath, id);
+    }
+
+    private void UpdateCSharpUiForCurrentMode(string? inlineSource = null)
+    {
+        var isEntry = CSharpModeEntryRadio?.IsChecked == true;
+        if (CSharpEntryPanel != null)
+        {
+            CSharpEntryPanel.Visibility = isEntry ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        var entryFileName = string.IsNullOrWhiteSpace(CSharpEntryBox?.Text) ? "main.cs" : CSharpEntryBox.Text.Trim();
+        var extDir = GetCurrentExtensionDirectory();
+
+        if (isEntry)
+        {
+            if (CSharpScriptContentHeader != null)
+            {
+                CSharpScriptContentHeader.Text = $"脚本源码 ({entryFileName})";
+            }
+            if (CSharpHintTextBlock != null)
+            {
+                CSharpHintTextBlock.Text = $"独立源文件模式：源码保存在小程序专属目录下的 {entryFileName} 中，保存时将自动同步写回磁盘。";
+            }
+
+            var fullPath = !string.IsNullOrWhiteSpace(extDir) ? Path.Combine(extDir, entryFileName) : string.Empty;
+            if (CSharpFilePathTextBlock != null)
+            {
+                CSharpFilePathTextBlock.Text = string.IsNullOrWhiteSpace(fullPath) ? "文件路径：未指定" : $"文件路径：{fullPath}";
+            }
+
+            if (!string.IsNullOrWhiteSpace(fullPath) && File.Exists(fullPath))
+            {
+                try
+                {
+                    var fileInfo = new FileInfo(fullPath);
+                    var text = File.ReadAllText(fullPath, Encoding.UTF8);
+                    _suppressSimpleSync = true;
+                    try
+                    {
+                        if (CSharpScriptBox != null)
+                        {
+                            CSharpScriptBox.Text = text;
+                        }
+                    }
+                    finally
+                    {
+                        _suppressSimpleSync = false;
+                    }
+                    var lines = text.Split('\n').Length;
+                    var sizeKb = fileInfo.Length / 1024.0;
+                    if (CSharpFileInfoTextBlock != null)
+                    {
+                        CSharpFileInfoTextBlock.Text = $"文件大小：{sizeKb:F1} KB，{lines} 行";
+                    }
+                }
+                catch (Exception ex)
+                {
+                    if (CSharpFileInfoTextBlock != null)
+                    {
+                        CSharpFileInfoTextBlock.Text = $"读取失败：{ex.Message}";
+                    }
+                }
+            }
+            else
+            {
+                if (CSharpFileInfoTextBlock != null)
+                {
+                    CSharpFileInfoTextBlock.Text = "新建独立文件（保存时创建）";
+                }
+                if (CSharpScriptBox != null && (string.IsNullOrWhiteSpace(CSharpScriptBox.Text) || LooksLikeOldCSharpEchoTemplate(CSharpScriptBox.Text)))
+                {
+                    _suppressSimpleSync = true;
+                    try
+                    {
+                        CSharpScriptBox.Text = CreateCSharpWindowScript();
+                    }
+                    finally
+                    {
+                        _suppressSimpleSync = false;
+                    }
+                }
+            }
+        }
+        else
+        {
+            if (CSharpScriptContentHeader != null)
+            {
+                CSharpScriptContentHeader.Text = "脚本内容 (内联)";
+            }
+            if (CSharpHintTextBlock != null)
+            {
+                CSharpHintTextBlock.Text = "内联脚本模式：实现静态类 YanziAction.RunAsync(YanziActionContext context)，源码保存在 manifest.json 中。";
+            }
+            if (CSharpFileInfoTextBlock != null)
+            {
+                CSharpFileInfoTextBlock.Text = string.Empty;
+            }
+            if (CSharpScriptBox != null && inlineSource != null)
+            {
+                _suppressSimpleSync = true;
+                try
+                {
+                    CSharpScriptBox.Text = inlineSource;
+                }
+                finally
+                {
+                    _suppressSimpleSync = false;
+                }
+            }
+        }
+    }
+
+    private void CSharpScriptMode_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_isInitializing || _suppressSimpleSync) return;
+        var isEntry = CSharpModeEntryRadio?.IsChecked == true;
+        if (isEntry)
+        {
+            EntryModeBox.Text = "entry";
+            EntryBox.Text = string.IsNullOrWhiteSpace(CSharpEntryBox?.Text) ? "main.cs" : CSharpEntryBox.Text.Trim();
+            ScriptSourceBox.Text = string.Empty;
+        }
+        else
+        {
+            EntryModeBox.Text = "inline";
+            EntryBox.Text = string.Empty;
+            ScriptSourceBox.Text = CSharpScriptBox?.Text ?? string.Empty;
+        }
+        UpdateCSharpUiForCurrentMode();
+        TryRefreshJsonFromHiddenForm();
+    }
+
+    private void CSharpEntryBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_isInitializing || _suppressSimpleSync) return;
+        var entryName = (CSharpEntryBox?.Text ?? string.Empty).Trim();
+        if (CSharpModeEntryRadio?.IsChecked == true)
+        {
+            EntryBox.Text = entryName;
+            var extDir = GetCurrentExtensionDirectory();
+            var fullPath = !string.IsNullOrWhiteSpace(extDir) ? Path.Combine(extDir, string.IsNullOrWhiteSpace(entryName) ? "main.cs" : entryName) : string.Empty;
+            if (CSharpFilePathTextBlock != null)
+            {
+                CSharpFilePathTextBlock.Text = string.IsNullOrWhiteSpace(fullPath) ? "文件路径：未指定" : $"文件路径：{fullPath}";
+            }
+            if (CSharpScriptContentHeader != null)
+            {
+                CSharpScriptContentHeader.Text = $"脚本源码 ({entryName})";
+            }
+            TryRefreshJsonFromHiddenForm();
+        }
+    }
+
+    private void CSharpOpenExternalEditor_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var extDir = GetCurrentExtensionDirectory();
+            var entryFileName = string.IsNullOrWhiteSpace(CSharpEntryBox?.Text) ? "main.cs" : CSharpEntryBox.Text.Trim();
+            var fullPath = !string.IsNullOrWhiteSpace(extDir) ? Path.Combine(extDir, entryFileName) : string.Empty;
+            if (!string.IsNullOrWhiteSpace(fullPath) && File.Exists(fullPath))
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = fullPath,
+                    UseShellExecute = true
+                });
+            }
+            else
+            {
+                ShowError($"文件尚未保存在本地磁盘：{fullPath}");
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowError($"打开外部编辑器失败：{ex.Message}");
+        }
+    }
+
+    private void CSharpOpenFolder_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var extDir = GetCurrentExtensionDirectory();
+            var entryFileName = string.IsNullOrWhiteSpace(CSharpEntryBox?.Text) ? "main.cs" : CSharpEntryBox.Text.Trim();
+            var fullPath = !string.IsNullOrWhiteSpace(extDir) ? Path.Combine(extDir, entryFileName) : string.Empty;
+            if (!string.IsNullOrWhiteSpace(fullPath) && File.Exists(fullPath))
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "explorer.exe",
+                    Arguments = $"/select,\"{fullPath}\"",
+                    UseShellExecute = true
+                });
+            }
+            else if (!string.IsNullOrWhiteSpace(extDir) && Directory.Exists(extDir))
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "explorer.exe",
+                    Arguments = $"\"{extDir}\"",
+                    UseShellExecute = true
+                });
+            }
+            else
+            {
+                ShowError("小程序目录尚未创建，请先保存小程序。");
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowError($"打开文件夹失败：{ex.Message}");
+        }
+    }
+
+    private void CSharpReloadSource_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var extDir = GetCurrentExtensionDirectory();
+            var entryFileName = string.IsNullOrWhiteSpace(CSharpEntryBox?.Text) ? "main.cs" : CSharpEntryBox.Text.Trim();
+            var fullPath = !string.IsNullOrWhiteSpace(extDir) ? Path.Combine(extDir, entryFileName) : string.Empty;
+            if (!string.IsNullOrWhiteSpace(fullPath) && File.Exists(fullPath))
+            {
+                var text = File.ReadAllText(fullPath, Encoding.UTF8);
+                _suppressSimpleSync = true;
+                try
+                {
+                    if (CSharpScriptBox != null)
+                    {
+                        CSharpScriptBox.Text = text;
+                    }
+                }
+                finally
+                {
+                    _suppressSimpleSync = false;
+                }
+                var fileInfo = new FileInfo(fullPath);
+                var lines = text.Split('\n').Length;
+                var sizeKb = fileInfo.Length / 1024.0;
+                if (CSharpFileInfoTextBlock != null)
+                {
+                    CSharpFileInfoTextBlock.Text = $"文件大小：{sizeKb:F1} KB，{lines} 行 (已重新载入)";
+                }
+            }
+            else
+            {
+                ShowError($"未找到本地文件：{fullPath}");
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowError($"重新载入失败：{ex.Message}");
+        }
+    }
+
+    private void BrowsePowerShellWorkingDirButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Forms.FolderBrowserDialog
+        {
+            Description = "选择脚本运行目录（工作目录）",
+            UseDescriptionForTitle = true,
+            ShowNewFolderButton = true
+        };
+        if (!string.IsNullOrWhiteSpace(PowerShellWorkingDirBox.Text) && Directory.Exists(PowerShellWorkingDirBox.Text))
+        {
+            dialog.SelectedPath = PowerShellWorkingDirBox.Text;
+        }
+        if (dialog.ShowDialog() == Forms.DialogResult.OK)
+        {
+            PowerShellWorkingDirBox.Text = dialog.SelectedPath;
+        }
+    }
+
+    private void PowerShellWorkingDirBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_isInitializing || _suppressSimpleSync) return;
+        _manualWorkingDirectory = string.IsNullOrWhiteSpace(PowerShellWorkingDirBox.Text) ? null : PowerShellWorkingDirBox.Text.Trim();
+        TryRefreshJsonFromHiddenForm();
+    }
+
+    private void PowerShellUiModeCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_isInitializing || _suppressSimpleSync) return;
+        if (PowerShellUiModeCombo.SelectedItem is ComboBoxItem item)
+        {
+            var tag = item.Tag?.ToString();
+            _manualUiMode = string.IsNullOrWhiteSpace(tag) ? null : tag;
+            TryRefreshJsonFromHiddenForm();
+        }
+    }
+
+    private void PowerShellOption_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_isInitializing || _suppressSimpleSync) return;
+        _manualWaitForExit = PowerShellWaitForExitCheck?.IsChecked ?? true;
+        _manualRunAsAdmin = PowerShellRunAsAdminCheck?.IsChecked ?? false;
         TryRefreshJsonFromHiddenForm();
     }
 
@@ -2367,13 +2719,50 @@ public partial class AddJsonExtensionWindow
             }
             else if (runtime == "csharp")
             {
-                CSharpScriptBox.Text = scriptSource;
+                var isEntry = string.Equals(EntryModeBox.Text, "entry", StringComparison.OrdinalIgnoreCase) ||
+                              !string.IsNullOrWhiteSpace(EntryBox.Text);
+                if (CSharpModeEntryRadio != null && CSharpModeInlineRadio != null)
+                {
+                    CSharpModeEntryRadio.IsChecked = isEntry;
+                    CSharpModeInlineRadio.IsChecked = !isEntry;
+                }
+                if (CSharpEntryBox != null)
+                {
+                    CSharpEntryBox.Text = string.IsNullOrWhiteSpace(EntryBox.Text) ? "main.cs" : EntryBox.Text.Trim();
+                }
+                UpdateCSharpUiForCurrentMode(scriptSource);
             }
 
             if (CSharpUseNativeWindowCheck != null)
             {
                 CSharpUseNativeWindowCheck.IsChecked =
                     string.Equals(_manualUiMode, "native-window", StringComparison.OrdinalIgnoreCase);
+            }
+
+            // PowerShell 选项同步
+            if (PowerShellWorkingDirBox != null)
+            {
+                PowerShellWorkingDirBox.Text = _manualWorkingDirectory ?? string.Empty;
+            }
+            if (PowerShellWaitForExitCheck != null)
+            {
+                PowerShellWaitForExitCheck.IsChecked = _manualWaitForExit ?? true;
+            }
+            if (PowerShellRunAsAdminCheck != null)
+            {
+                PowerShellRunAsAdminCheck.IsChecked = _manualRunAsAdmin ?? false;
+            }
+            if (PowerShellUiModeCombo != null)
+            {
+                var targetUiMode = _manualUiMode ?? string.Empty;
+                foreach (ComboBoxItem item in PowerShellUiModeCombo.Items)
+                {
+                    if ((item.Tag?.ToString() ?? string.Empty) == targetUiMode)
+                    {
+                        PowerShellUiModeCombo.SelectedItem = item;
+                        break;
+                    }
+                }
             }
 
             // Startup
@@ -2406,23 +2795,41 @@ public partial class AddJsonExtensionWindow
         var hasQueryTemplate = !string.IsNullOrWhiteSpace(QueryTargetTemplateBox.Text);
         var hasHostedView = _manualHostedView != null;
         var runtime = (RuntimeBox.Text ?? string.Empty).Trim().ToLowerInvariant();
+        var entry = (EntryBox.Text ?? string.Empty).Trim().ToLowerInvariant();
+        var hasEntry = !string.IsNullOrWhiteSpace(entry);
 
         if (hasHostedView) return "workbench";
         if (_manualSearchProvider != null) return "folder-search";
         if (hasQueryTemplate) return "search";
+
+        // C# 扩展（不论 inline 还是独立源文件 main.cs）
+        if (runtime is "csharp" or "cs" or "c#" || (hasEntry && entry.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)))
+        {
+            return "script-cs";
+        }
+
+        // PowerShell 扩展
+        if (runtime is "powershell" or "ps" or "ps1" || (hasEntry && entry.EndsWith(".ps1", StringComparison.OrdinalIgnoreCase)))
+        {
+            if (hasScript && LooksLikeGeneratedPasteScript(ScriptSourceBox.Text)) return "paste-text";
+            if (hasScript && LooksLikeGeneratedHotkeyScript(ScriptSourceBox.Text)) return "hotkey";
+            return "script-ps";
+        }
+
         if (hasScript)
         {
             if (LooksLikeGeneratedPasteScript(ScriptSourceBox.Text)) return "paste-text";
             if (LooksLikeGeneratedHotkeyScript(ScriptSourceBox.Text)) return "hotkey";
-            if (runtime == "csharp") return "script-cs";
             return "script-ps";
         }
+
         if (hasOpenTarget && string.IsNullOrEmpty(QueryTargetTemplateBox.Text))
         {
             // 无 script 但有 openTarget；如果还有 prefix 当文件夹搜索
             if (!string.IsNullOrWhiteSpace(QueryPrefixesBox.Text)) return "folder-search";
             return "open-target";
         }
+
         return "open-target";
     }
 

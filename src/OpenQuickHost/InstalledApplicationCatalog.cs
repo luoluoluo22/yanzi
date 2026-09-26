@@ -1,15 +1,15 @@
 using System.IO;
+using System.Text.RegularExpressions;
 
 namespace OpenQuickHost;
 
 internal static class InstalledApplicationCatalog
 {
+    private static readonly Regex DuplicateSuffixRegex = new(@"\s*\((?:\d+|副本|快捷方式)\)$|\s*-\s*(?:副本|快捷方式)$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     public static IReadOnlyList<InstalledApplicationEntry> Load()
     {
-        var results = new List<InstalledApplicationEntry>();
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var seenTitleAndDisplay = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var seenTitles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var rawEntries = new List<InstalledApplicationEntry>();
         var totalScannedFiles = 0;
         var totalSkippedDirectories = 0;
 
@@ -26,43 +26,274 @@ internal static class InstalledApplicationCatalog
             foreach (var file in scanResult.Files)
             {
                 var entry = TryCreateEntry(file);
-                if (entry == null)
+                if (entry != null)
                 {
-                    continue;
+                    rawEntries.Add(entry);
                 }
-
-                var dedupeKey = $"{entry.NormalizedTitle}|{entry.NormalizedLaunchTarget}";
-                var displayDedupeKey = $"{entry.NormalizedTitle}|{entry.NormalizedDisplayPath}";
-                if (!seen.Add(dedupeKey) || !seenTitleAndDisplay.Add(displayDedupeKey))
-                {
-                    continue;
-                }
-                
-                seenTitles.Add(entry.NormalizedTitle);
-                results.Add(entry);
             }
 
             totalScannedFiles += scanResult.ScannedFiles;
             totalSkippedDirectories += scanResult.SkippedDirectories;
             HostAssets.AppendLog(
-                $"InstalledApplicationCatalog root scanned: path={root}, recurse={scanRoot.Recurse}, files={scanResult.ScannedFiles}, skippedDirectories={scanResult.SkippedDirectories}, acceptedSoFar={results.Count}.");
+                $"InstalledApplicationCatalog root scanned: path={root}, recurse={scanRoot.Recurse}, files={scanResult.ScannedFiles}, skippedDirectories={scanResult.SkippedDirectories}, acceptedSoFar={rawEntries.Count}.");
         }
 
-        ScanAppsFolder(results, seen, seenTitleAndDisplay, seenTitles);
+        ScanAppsFolder(rawEntries);
+
+        var finalResults = DeduplicateAndRefine(rawEntries);
 
         HostAssets.AppendLog(
-            $"InstalledApplicationCatalog load summary: roots={GetScanRoots().Count()}, scannedFiles={totalScannedFiles}, skippedDirectories={totalSkippedDirectories}, accepted={results.Count}.");
+            $"InstalledApplicationCatalog load summary: roots={GetScanRoots().Count()}, scannedFiles={totalScannedFiles}, skippedDirectories={totalSkippedDirectories}, raw={rawEntries.Count}, accepted={finalResults.Count}.");
 
-        return results
+        return finalResults;
+    }
+
+    private static IReadOnlyList<InstalledApplicationEntry> DeduplicateAndRefine(
+        List<InstalledApplicationEntry> rawEntries)
+    {
+        if (rawEntries.Count == 0)
+        {
+            return rawEntries;
+        }
+
+        // 阶段一：相同启动命令去重（LaunchTarget + Arguments）
+        // 目标和参数完全一致说明启动行为100%相同，只保留质量最高的一项（例如 Debuggable Package Manager 去除多余副本）
+        var commandGroups = new Dictionary<string, List<InstalledApplicationEntry>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in rawEntries)
+        {
+            var cmdKey = $"{entry.NormalizedLaunchTarget}|{entry.NormalizedArguments}";
+            if (!commandGroups.TryGetValue(cmdKey, out var list))
+            {
+                list = new List<InstalledApplicationEntry>();
+                commandGroups[cmdKey] = list;
+            }
+            list.Add(entry);
+        }
+
+        var uniqueByCommand = new List<InstalledApplicationEntry>();
+        foreach (var group in commandGroups.Values)
+        {
+            if (group.Count == 1)
+            {
+                uniqueByCommand.Add(group[0]);
+            }
+            else
+            {
+                var best = group.OrderByDescending(CalculateEntryQuality).First();
+                uniqueByCommand.Add(best);
+            }
+        }
+
+        // 阶段二：标题清洗与副本编号智能微调（例如 Visual Studio 2022 (2) -> Visual Studio 2022）
+        var refinedEntries = new List<InstalledApplicationEntry>(uniqueByCommand.Count);
+        foreach (var entry in uniqueByCommand)
+        {
+            var refinedTitle = RefineDuplicateTitle(entry, uniqueByCommand);
+            if (!string.Equals(refinedTitle, entry.Title, StringComparison.Ordinal))
+            {
+                refinedEntries.Add(WithTitle(entry, refinedTitle));
+            }
+            else
+            {
+                refinedEntries.Add(entry);
+            }
+        }
+
+        // 阶段三：同名（Title）完全重复去重（例如两个 Python 3.12、两个 Tuanjie）
+        var titleGroups = new Dictionary<string, List<InstalledApplicationEntry>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in refinedEntries)
+        {
+            var titleKey = entry.NormalizedTitle;
+            if (!titleGroups.TryGetValue(titleKey, out var list))
+            {
+                list = new List<InstalledApplicationEntry>();
+                titleGroups[titleKey] = list;
+            }
+            list.Add(entry);
+        }
+
+        var uniqueByTitle = new List<InstalledApplicationEntry>();
+        foreach (var group in titleGroups.Values)
+        {
+            if (group.Count == 1)
+            {
+                uniqueByTitle.Add(group[0]);
+            }
+            else
+            {
+                var best = group.OrderByDescending(CalculateEntryQuality).First();
+                uniqueByTitle.Add(best);
+            }
+        }
+
+        // 阶段四：同一个 DisplayPath 且无参数的条目去重（例如桌面和开始菜单都有同一个裸 exe 且无参数）
+        var exeGroups = new Dictionary<string, List<InstalledApplicationEntry>>(StringComparer.OrdinalIgnoreCase);
+        var finalResults = new List<InstalledApplicationEntry>();
+
+        foreach (var entry in uniqueByTitle)
+        {
+            if (string.IsNullOrWhiteSpace(entry.Arguments) &&
+                !string.IsNullOrWhiteSpace(entry.DisplayPath) &&
+                entry.DisplayPath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            {
+                var exeKey = entry.NormalizedDisplayPath;
+                if (!exeGroups.TryGetValue(exeKey, out var list))
+                {
+                    list = new List<InstalledApplicationEntry>();
+                    exeGroups[exeKey] = list;
+                }
+                list.Add(entry);
+            }
+            else
+            {
+                finalResults.Add(entry);
+            }
+        }
+
+        foreach (var group in exeGroups.Values)
+        {
+            if (group.Count == 1)
+            {
+                finalResults.Add(group[0]);
+            }
+            else
+            {
+                var best = group.OrderByDescending(CalculateEntryQuality).First();
+                finalResults.Add(best);
+            }
+        }
+
+        return finalResults
             .OrderBy(static entry => entry.Title, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
 
-    private static void ScanAppsFolder(
-        List<InstalledApplicationEntry> results,
-        HashSet<string> seen,
-        HashSet<string> seenTitleAndDisplay,
-        HashSet<string> seenTitles)
+    private static int CalculateEntryQuality(InstalledApplicationEntry entry)
+    {
+        var score = 100;
+
+        // 优先没有 (2)、副本等后缀的项
+        if (DuplicateSuffixRegex.IsMatch(entry.Title))
+        {
+            score -= 50;
+        }
+
+        // 优先没有 Preview、Beta 的项（如果有正式版同命令项）
+        if (entry.Title.Contains("Preview", StringComparison.OrdinalIgnoreCase) ||
+            entry.Title.Contains("Beta", StringComparison.OrdinalIgnoreCase))
+        {
+            score -= 20;
+        }
+
+        // 物理本地文件和快捷方式优于 shell:AppsFolder 虚拟项
+        if (!entry.LaunchTarget.StartsWith("shell:AppsFolder", StringComparison.OrdinalIgnoreCase))
+        {
+            score += 25;
+        }
+
+        // 快捷方式通常包含完整环境配置（工作目录、参数等），优于裸 exe
+        if (entry.LaunchTarget.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase))
+        {
+            score += 15;
+        }
+
+        // 优先安装在标准 Program Files 或 Local Programs 目录
+        var normPath = entry.DisplayPath.ToLowerInvariant();
+        if (normPath.Contains(@"\program files") || normPath.Contains(@"\local\programs"))
+        {
+            score += 25;
+        }
+        else if (normPath.Contains(@"\desktop") || normPath.Contains(@"\备用") || normPath.Contains(@"\temp"))
+        {
+            score -= 15;
+        }
+
+        // 优先有图标的项
+        if (!string.IsNullOrWhiteSpace(entry.IconPath))
+        {
+            score += 5;
+        }
+
+        // 优先有参数的项（针对同名项，带参数通常是完整配置）
+        if (!string.IsNullOrWhiteSpace(entry.Arguments))
+        {
+            score += 10;
+        }
+
+        // 标题越简洁优雅得分稍高
+        score -= Math.Min(entry.Title.Length, 30);
+
+        return score;
+    }
+
+    private static string RefineDuplicateTitle(
+        InstalledApplicationEntry entry,
+        IReadOnlyList<InstalledApplicationEntry> allEntries)
+    {
+        var title = entry.Title;
+        var match = DuplicateSuffixRegex.Match(title);
+        var cleanTitle = DuplicateSuffixRegex.Replace(title, "").Trim();
+
+        // 仅对开发人员命令提示符/PowerShell这类由 BuildTools 和 Community 共存导致的副本进行区分标注
+        var isDevConsole = cleanTitle.Contains("Command Prompt", StringComparison.OrdinalIgnoreCase) ||
+                           cleanTitle.Contains("PowerShell", StringComparison.OrdinalIgnoreCase);
+
+        if (isDevConsole)
+        {
+            var info = $"{entry.Arguments} {entry.DisplayPath}".ToLowerInvariant();
+            if (info.Contains("community"))
+            {
+                var hasBuildToolsSibling = allEntries.Any(other =>
+                    other != entry &&
+                    DuplicateSuffixRegex.Replace(other.Title, "").Trim().Equals(cleanTitle, StringComparison.OrdinalIgnoreCase) &&
+                    $"{other.Arguments} {other.DisplayPath}".ToLowerInvariant().Contains("buildtools"));
+
+                if (hasBuildToolsSibling)
+                {
+                    return $"{cleanTitle} (Community)";
+                }
+            }
+            else if (info.Contains("buildtools"))
+            {
+                var hasCommunitySibling = allEntries.Any(other =>
+                    other != entry &&
+                    DuplicateSuffixRegex.Replace(other.Title, "").Trim().Equals(cleanTitle, StringComparison.OrdinalIgnoreCase) &&
+                    $"{other.Arguments} {other.DisplayPath}".ToLowerInvariant().Contains("community"));
+
+                if (hasCommunitySibling)
+                {
+                    return $"{cleanTitle} (Build Tools)";
+                }
+            }
+        }
+
+        if (!match.Success)
+        {
+            return title;
+        }
+
+        // 普通 (2) 副本，检查列表中是否已经有基础同名项
+        var hasCleanSibling = allEntries.Any(other =>
+            other != entry &&
+            other.Title.Trim().Equals(cleanTitle, StringComparison.OrdinalIgnoreCase));
+
+        return hasCleanSibling ? title : cleanTitle;
+    }
+
+    private static InstalledApplicationEntry WithTitle(InstalledApplicationEntry source, string newTitle)
+    {
+        return CreateEntry(
+            title: newTitle,
+            launchTarget: source.LaunchTarget,
+            displayPath: source.DisplayPath,
+            iconPath: source.IconPath,
+            sourcePath: source.DisplayPath,
+            arguments: source.Arguments,
+            workingDirectory: source.WorkingDirectory
+        );
+    }
+
+    private static void ScanAppsFolder(List<InstalledApplicationEntry> results)
     {
         try
         {
@@ -72,6 +303,8 @@ internal static class InstalledApplicationCatalog
             dynamic? shell = Activator.CreateInstance(shellType);
             dynamic? folder = shell?.NameSpace("shell:AppsFolder");
             if (folder == null) return;
+
+            var seenAppsFolderTargets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             foreach (dynamic item in folder.Items())
             {
@@ -89,7 +322,60 @@ internal static class InstalledApplicationCatalog
                         continue;
                     }
 
-                    if (File.Exists(path) || Directory.Exists(path))
+                    // 0. 过滤 Windows 为传统桌面快捷方式自动生成的影子 AppId，防止与已扫描的开始菜单快捷方式重复
+                    if (path.StartsWith("Microsoft.AutoGenerated.", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    // 1. 过滤所有网络协议与在线网址（例如 Docs API: http://npgsql...）
+                    if (path.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                        path.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
+                        path.StartsWith("ftp://", StringComparison.OrdinalIgnoreCase) ||
+                        path.StartsWith("mailto:", StringComparison.OrdinalIgnoreCase) ||
+                        path.Contains("://", StringComparison.OrdinalIgnoreCase) ||
+                        path.StartsWith("www.", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    // 2. 过滤非可执行文件/文档扩展名（如 .url, .chm, .html, .htm, .pdf, .txt 等）
+                    var pathExt = Path.GetExtension(path);
+                    if (IsExcludedFileExtension(pathExt) || IsExcludedFileExtension(Path.GetExtension(name)))
+                    {
+                        continue;
+                    }
+
+                    // 3. 处理本地物理路径或 Windows 虚拟文件夹路径
+                    if (path.StartsWith("{") || path.Contains('\\') || path.Contains('/'))
+                    {
+                        // 若本地物理文件/目录存在，说明是本地桌面程序，常规扫描已处理或将处理，避免重复
+                        if (File.Exists(path) || Directory.Exists(path))
+                        {
+                            continue;
+                        }
+
+                        // 如果该路径不存在，且不是可执行扩展名，坚决丢弃（包括文档、死链等）
+                        if (string.IsNullOrWhiteSpace(pathExt) ||
+                            (!string.Equals(pathExt, ".exe", StringComparison.OrdinalIgnoreCase) &&
+                             !string.Equals(pathExt, ".bat", StringComparison.OrdinalIgnoreCase) &&
+                             !string.Equals(pathExt, ".cmd", StringComparison.OrdinalIgnoreCase) &&
+                             !string.Equals(pathExt, ".msc", StringComparison.OrdinalIgnoreCase) &&
+                             !string.Equals(pathExt, ".cpl", StringComparison.OrdinalIgnoreCase) &&
+                             !string.Equals(pathExt, ".appref-ms", StringComparison.OrdinalIgnoreCase)))
+                        {
+                            continue;
+                        }
+
+                        // 即使是 .exe 扩展名，但如果是本地绝对物理路径（包含盘符）却不存在，坚决跳过
+                        if (path.Length > 2 && path[1] == ':')
+                        {
+                            continue;
+                        }
+                    }
+
+                    // 4. 忽略以常见异常字符开头的目标
+                    if (path.StartsWith('?') || path.StartsWith('#'))
                     {
                         continue;
                     }
@@ -97,6 +383,11 @@ internal static class InstalledApplicationCatalog
                     string launchTarget = $"shell:AppsFolder\\{path}";
                     string iconPath = $"shell:AppsFolder\\{path}";
                     string displayPath = $"shell:AppsFolder\\{path}";
+
+                    if (!seenAppsFolderTargets.Add(launchTarget))
+                    {
+                        continue;
+                    }
 
                     var entry = CreateEntry(
                         title: name,
@@ -106,15 +397,7 @@ internal static class InstalledApplicationCatalog
                         sourcePath: path
                     );
 
-                    var dedupeKey = $"{entry.NormalizedTitle}|{entry.NormalizedLaunchTarget}";
-                    var displayDedupeKey = $"{entry.NormalizedTitle}|{entry.NormalizedDisplayPath}";
-                    if (seen.Add(dedupeKey) && seenTitleAndDisplay.Add(displayDedupeKey))
-                    {
-                        if (seenTitles.Add(entry.NormalizedTitle))
-                        {
-                            results.Add(entry);
-                        }
-                    }
+                    results.Add(entry);
                 }
                 catch
                 {
@@ -315,9 +598,36 @@ internal static class InstalledApplicationCatalog
                     return null;
                 }
 
+                if (normalizedTargetPath.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                    normalizedTargetPath.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
+                    normalizedTargetPath.Contains("://", StringComparison.OrdinalIgnoreCase))
+                {
+                    return null;
+                }
+
                 var targetExt = Path.GetExtension(normalizedTargetPath).ToLowerInvariant();
-                if (targetExt != ".exe" && targetExt != ".bat" && targetExt != ".cmd" && 
-                    targetExt != ".msc" && targetExt != ".cpl" && targetExt != ".appref-ms")
+                if (IsExcludedFileExtension(targetExt))
+                {
+                    return null;
+                }
+
+                // 批处理脚本（.bat, .cmd）与非执行脚本不是传统意义上的软件，严格排除
+                if (targetExt != ".exe" && targetExt != ".msc" && targetExt != ".cpl" && targetExt != ".appref-ms")
+                {
+                    return null;
+                }
+
+                var targetFileName = Path.GetFileName(normalizedTargetPath).ToLowerInvariant();
+
+                // 排除 rundll32.exe 调起的组件配置窗口
+                if (targetFileName == "rundll32.exe")
+                {
+                    return null;
+                }
+
+                // 排除以命令行外壳（cmd.exe, powershell.exe）包装的批处理脚本或环境初始化控制台（带参数的）
+                if ((targetFileName == "cmd.exe" || targetFileName == "powershell.exe") &&
+                    !string.IsNullOrWhiteSpace(arguments))
                 {
                     return null;
                 }
@@ -482,17 +792,132 @@ internal static class InstalledApplicationCatalog
                string.Equals(extension, ".appref-ms", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static bool IsExcludedFileExtension(string? extension)
+    {
+        if (string.IsNullOrWhiteSpace(extension))
+        {
+            return false;
+        }
+
+        var lowered = extension.Trim().ToLowerInvariant();
+        return lowered is ".url" or ".chm" or ".html" or ".htm" or ".pdf" or ".txt"
+            or ".doc" or ".docx" or ".rtf" or ".hlp" or ".msi" or ".zip" or ".rar"
+            or ".7z" or ".md" or ".log" or ".xml" or ".json" or ".ini" or ".cfg";
+    }
+
+    private static readonly string[] ExcludedTitleSubstrings =
+    [
+        "卸载",
+        "修复",
+        "帮助",
+        "文档",
+        "手册",
+        "指南",
+        "说明书",
+        "使用说明",
+        "网站",
+        "官网",
+        "主页",
+        "许可协议",
+        "常见问题",
+        "更新日志",
+        "服务条款",
+        "隐私政策",
+        "uninstall",
+        "uninst",
+        "repair",
+        "readme",
+        "read me",
+        "documentation",
+        "dokumentation",
+        "user manual",
+        "user guide",
+        "release notes",
+        "releasenotes",
+        "whats new",
+        "what's new",
+        "whatsnew",
+        "faq",
+        "faqs",
+        "website",
+        "web site",
+        "homepage",
+        "home page",
+        "license",
+        "licence",
+        "changelog",
+        "change log",
+        "legal information",
+        "legal notice",
+        "support center",
+        "support by e-mail",
+        "bug report",
+        "module docs",
+        "docs api",
+    ];
+
+    private static readonly string[] ExcludedTitleWords =
+    [
+        "doc",
+        "docs",
+        "help",
+        "manual",
+        "manuals",
+        "guide",
+        "history",
+        "forum",
+        "tutorial",
+        "tutorials",
+    ];
+
     private static bool ShouldExcludeTitle(string title)
     {
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            return true;
+        }
+
         var lowered = title.ToLowerInvariant();
-        return lowered.Contains("卸载") ||
-               lowered.Contains("uninstall") ||
-               lowered.Contains("install") ||
-               lowered.Contains("repair") ||
-               lowered.Contains("update") ||
-               lowered.Contains("帮助") ||
-               lowered.Contains("help") ||
-               lowered.Contains("readme");
+        if (lowered.Contains("install") || lowered.Contains("update"))
+        {
+            return true;
+        }
+
+        foreach (var sub in ExcludedTitleSubstrings)
+        {
+            if (lowered.Contains(sub))
+            {
+                return true;
+            }
+        }
+
+        foreach (var word in ExcludedTitleWords)
+        {
+            if (ContainsWord(lowered, word))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool ContainsWord(string text, string word)
+    {
+        var index = 0;
+        while ((index = text.IndexOf(word, index, StringComparison.OrdinalIgnoreCase)) >= 0)
+        {
+            var startOk = index == 0 || !char.IsLetterOrDigit(text[index - 1]);
+            var endOk = index + word.Length == text.Length || !char.IsLetterOrDigit(text[index + word.Length]);
+            if (startOk && endOk)
+            {
+                return true;
+            }
+
+            index += word.Length;
+        }
+
+        return false;
     }
 
     private static bool ShouldExcludeTarget(string targetPath)
@@ -546,6 +971,8 @@ internal sealed record InstalledApplicationEntry(
     public string NormalizedLaunchTarget => LaunchTarget.Trim().ToLowerInvariant();
 
     public string NormalizedDisplayPath => DisplayPath.Trim().ToLowerInvariant();
+
+    public string NormalizedArguments => (Arguments ?? string.Empty).Trim().ToLowerInvariant();
 }
 
 internal sealed record ApplicationScanResult(

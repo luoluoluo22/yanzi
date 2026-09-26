@@ -25,6 +25,11 @@ public sealed class PersonalSyncService
             ?? throw new InvalidOperationException("个人同步未完整配置。");
     }
 
+    internal PersonalSyncService(IPersonalSyncBackend backend)
+    {
+        _backend = backend ?? throw new ArgumentNullException(nameof(backend));
+    }
+
     public string SyncRootDisplay => _backend.DisplayRoot;
 
     public async Task ProbeAsync(CancellationToken cancellationToken = default)
@@ -492,13 +497,21 @@ public sealed class PersonalSyncService
                 .ToList()
         };
 
-        if (remoteIndexChanged || !IndexesEquivalent(remoteIndex, mergedIndex))
+        var purgedPackagesCleaned = await CleanupPurgedRemotePackagesAsync(mergedIndex, cancellationToken);
+        if (remoteIndexChanged || purgedPackagesCleaned || !IndexesEquivalent(remoteIndex, mergedIndex))
         {
             await SaveRemoteIndexAsync(mergedIndex, cancellationToken);
         }
 
-        await CleanupPurgedRemotePackagesAsync(mergedIndex, cancellationToken);
-        SaveLocalIndex(ClearLocalPendingFlags(mergedIndex));
+        var localIndex = ClearLocalPendingFlags(mergedIndex);
+        var localIndexMap = localIndex.Items.ToDictionary(item => item.ExtensionId, StringComparer.OrdinalIgnoreCase);
+        foreach (var command in LocalExtensionCatalog.LoadCommands())
+        {
+            if (!localIndexMap.TryGetValue(command.ExtensionId, out var entry) || entry.Deleted)
+                continue;
+            entry.LocalContentHash = ComputeSha256(ExtensionPackageService.BuildPackage(command, command.DeclaredVersion));
+        }
+        SaveLocalIndex(localIndex);
         var preferRemoteConfigOnConflict = pulled > 0 && uploaded == 0;
         var (configUploaded, configPulled) = configSyncMode switch
         {
@@ -1420,20 +1433,23 @@ public sealed class PersonalSyncService
             }
 
             var packageBytes = ExtensionPackageService.BuildPackage(command, command.DeclaredVersion);
-            var packageHash = ComputeSha256(packageBytes);
+            var localContentHash = ComputeSha256(packageBytes);
             existingIds.Add(command.ExtensionId);
             stateMap.TryGetValue(command.ExtensionId, out var previous);
+            var contentUnchanged = previous != null && !previous.Deleted &&
+                string.Equals(string.IsNullOrWhiteSpace(previous.LocalContentHash) ? previous.PackageHash : previous.LocalContentHash,
+                    localContentHash, StringComparison.OrdinalIgnoreCase);
+            var packageHash = contentUnchanged ? previous!.PackageHash : localContentHash;
             var updatedAtUtc = previous == null
                 ? GetDirectoryLastWriteUtc(command.ExtensionDirectoryPath).ToString("O")
-                : !previous.Deleted && string.Equals(previous.PackageHash, packageHash, StringComparison.OrdinalIgnoreCase)
+                : contentUnchanged
                     ? previous.UpdatedAtUtc
                     : DateTimeOffset.UtcNow.ToString("O");
-            var contentChanged = previous == null || previous.Revision <= 0 || previous.Deleted ||
-                                 !string.Equals(previous.PackageHash, packageHash, StringComparison.OrdinalIgnoreCase) ||
+            var contentChanged = previous == null || previous.Revision <= 0 || !contentUnchanged ||
                                  !string.Equals(previous.Title, command.Title, StringComparison.Ordinal) ||
                                  !string.Equals(previous.Category, command.Category ?? "扩展", StringComparison.Ordinal) ||
                                  !string.Equals(previous.Version, command.DeclaredVersion, StringComparison.OrdinalIgnoreCase);
-            var packagePath = BuildRemotePackagePath(command.ExtensionId, packageHash);
+            var packagePath = contentUnchanged && previous != null ? previous.PackagePath : BuildRemotePackagePath(command.ExtensionId, packageHash);
             var entry = new WebDavSyncEntry
             {
                 ExtensionId = command.ExtensionId,
@@ -1441,6 +1457,7 @@ public sealed class PersonalSyncService
                 Category = command.Category ?? "扩展",
                 Version = command.DeclaredVersion,
                 PackageHash = packageHash,
+                LocalContentHash = localContentHash,
                 PackagePath = packagePath,
                 UpdatedAtUtc = updatedAtUtc,
                 Revision = contentChanged ? ExtensionSyncRevision.Next(previous?.Revision ?? 0) : previous!.Revision,
@@ -1487,6 +1504,7 @@ public sealed class PersonalSyncService
                 Category = stateEntry.Category,
                 Version = stateEntry.Version,
                 PackageHash = stateEntry.PackageHash,
+                LocalContentHash = stateEntry.LocalContentHash,
                 PackagePath = stateEntry.PackagePath,
                 UpdatedAtUtc = stateEntry.Deleted ? stateEntry.UpdatedAtUtc : DateTimeOffset.UtcNow.ToString("O"),
                 Revision = stateEntry.Revision > 0
@@ -1547,12 +1565,17 @@ public sealed class PersonalSyncService
         return _backend.WriteBytesAsync(RemoteIndexPath, bytes, "application/json", cancellationToken);
     }
 
-    private async Task CleanupPurgedRemotePackagesAsync(WebDavSyncIndex index, CancellationToken cancellationToken)
+    private async Task<bool> CleanupPurgedRemotePackagesAsync(WebDavSyncIndex index, CancellationToken cancellationToken)
     {
+        var cleaned = false;
         foreach (var item in index.Items.Where(entry => entry.Purged && !string.IsNullOrWhiteSpace(entry.PackagePath)))
         {
             await _backend.DeleteFileAsync(item.PackagePath, cancellationToken);
+            item.PackagePath = string.Empty;
+            cleaned = true;
         }
+
+        return cleaned;
     }
 
     private async Task UploadPackageIfNeededAsync(WebDavSyncEntry entry, IReadOnlyDictionary<string, byte[]> packageBytesByExtensionId, CancellationToken cancellationToken)
@@ -1658,6 +1681,7 @@ public sealed class PersonalSyncService
                 Category = item.Category,
                 Version = item.Version,
                 PackageHash = item.PackageHash,
+                LocalContentHash = item.LocalContentHash,
                 PackagePath = item.PackagePath,
                 UpdatedAtUtc = item.UpdatedAtUtc,
                 Revision = item.Revision,
@@ -1733,9 +1757,11 @@ public sealed class PersonalSyncService
             return false;
         }
 
-        for (var index = 0; index < left.Items.Count; index++)
+        var rightMap = right.Items.ToDictionary(item => item.ExtensionId, StringComparer.OrdinalIgnoreCase);
+        foreach (var leftItem in left.Items)
         {
-            if (!EntriesEquivalent(left.Items[index], right.Items[index]))
+            if (!rightMap.TryGetValue(leftItem.ExtensionId, out var rightItem) ||
+                !EntriesEquivalent(leftItem, rightItem))
             {
                 return false;
             }

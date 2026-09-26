@@ -396,57 +396,71 @@
                         <Path Data="{local:IconGeometry backpack}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" />
                     </MenuItem.Icon>
                 </MenuItem>
-                <MenuItem Header="任务与成就" Tag="quest-center" Click="TrayQuestCenter_Click">
-                    <MenuItem.Icon>
-                        <Path Data="{local:IconGeometry trophy}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" />
-                    </MenuItem.Icon>
-                </MenuItem>
                 <MenuItem Header="隐藏主面板" Click="TrayHide_Click" Visibility="Collapsed">
                     <MenuItem.Icon>
                         <Path Data="{local:IconGeometry pin-off}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" Opacity="0.6"/>
                     </MenuItem.Icon>
+                </MenuItem>
+                <Separator />
+                <MenuItem Header="应用黑名单">
+                    <MenuItem.Icon>
+                        <Path Data="{local:IconGeometry block-helper}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" />
+                    </MenuItem.Icon>
+                    <MenuItem x:Name="TrayAddCurrentToBlacklistMenuItem"
+                              Tag="add-current-to-blacklist"
+                              Header="添加当前应用到黑名单"
+                              Click="TrayAddCurrentToBlacklist_Click">
+                        <MenuItem.Icon>
+                            <Path Data="{local:IconGeometry block-helper}" Fill="#EF4444" Stretch="Uniform" />
+                        </MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="管理全局黑名单..." Click="TrayAddGlobalBlacklist_Click">
+                        <MenuItem.Icon>
+                            <Path Data="{local:IconGeometry settings}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" />
+                        </MenuItem.Icon>
+                    </MenuItem>
                 </MenuItem>
                 <MenuItem Header="{local:Term MiniApp, Prefix='正在运行的'}" Tag="running-extensions" Click="TrayRunningExtensions_Click">
                     <MenuItem.Icon>
                         <Path Data="{local:IconGeometry running}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" />
                     </MenuItem.Icon>
                 </MenuItem>
-                <Separator />
-                <MenuItem Header="黑名单" Click="TrayAddGlobalBlacklist_Click">
-                    <MenuItem.Icon>
-                        <Path Data="{local:IconGeometry block-helper}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" />
-                    </MenuItem.Icon>
-                </MenuItem>
-                <MenuItem x:Name="TrayAddCurrentToBlacklistMenuItem"
-                          Tag="add-current-to-blacklist"
-                          Header="添加当前应用到黑名单"
-                          Click="TrayAddCurrentToBlacklist_Click">
-                    <MenuItem.Icon>
-                        <Path Data="{local:IconGeometry block-helper}" Fill="#EF4444" Stretch="Uniform" />
-                    </MenuItem.Icon>
-                </MenuItem>
-                <Separator />
-                <MenuItem Header="查看输入状态" Click="TrayInputState_Click">
-                    <MenuItem.Icon>
-                        <Path Data="{local:IconGeometry mouse-panel}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" />
-                    </MenuItem.Icon>
-                </MenuItem>
-                <MenuItem Header="重置键盘和鼠标状态" Click="TrayResetInputState_Click">
+                <MenuItem Header="工具与排错">
                     <MenuItem.Icon>
                         <Path Data="{local:IconGeometry shortcut}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" />
                     </MenuItem.Icon>
+                    <MenuItem Header="重置键盘和鼠标状态" Click="TrayResetInputState_Click">
+                        <MenuItem.Icon>
+                            <Path Data="{local:IconGeometry shortcut}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" />
+                        </MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="查看输入状态" Click="TrayInputState_Click">
+                        <MenuItem.Icon>
+                            <Path Data="{local:IconGeometry mouse-panel}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" />
+                        </MenuItem.Icon>
+                    </MenuItem>
                 </MenuItem>
-                <MenuItem Header="赞助维护 / 激活卡密" Click="TrayVipActivation_Click">
+                <MenuItem Header="任务与赞助">
                     <MenuItem.Icon>
-                        <Path Data="{local:IconGeometry star}" Fill="#F59E0B" Stretch="Uniform" />
+                        <Path Data="{local:IconGeometry trophy}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" />
                     </MenuItem.Icon>
+                    <MenuItem Header="任务与成就" Tag="quest-center" Click="TrayQuestCenter_Click">
+                        <MenuItem.Icon>
+                            <Path Data="{local:IconGeometry trophy}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" />
+                        </MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="赞助维护 / 激活卡密" Click="TrayVipActivation_Click">
+                        <MenuItem.Icon>
+                            <Path Data="{local:IconGeometry star}" Fill="#F59E0B" Stretch="Uniform" />
+                        </MenuItem.Icon>
+                    </MenuItem>
                 </MenuItem>
+                <Separator />
                 <MenuItem Header="设置" Click="TraySettings_Click">
                     <MenuItem.Icon>
                         <Path Data="{local:IconGeometry settings}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" />
                     </MenuItem.Icon>
                 </MenuItem>
-                <Separator />
                 <MenuItem Header="暂停全部服务" Tag="service-toggle" Click="TrayToggleMousePanelService_Click">
                     <MenuItem.Icon>
                         <Path Data="{local:IconGeometry pause}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform" />
