@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.IO;
@@ -12,6 +12,8 @@ public sealed class CloudSyncClient
 {
     private readonly HttpClient _httpClient;
     private readonly HttpClient _directHttpClient;
+    private readonly HttpClient _largeTransferHttpClient;
+    private readonly HttpClient _directLargeTransferHttpClient;
     private readonly SyncOptions _options;
     private SyncSession? _session;
     private SavedCredential? _credential;
@@ -29,8 +31,10 @@ public sealed class CloudSyncClient
     public CloudSyncClient(SyncOptions options)
     {
         _options = options;
-        _httpClient = CreateHttpClient(options.BaseUrl, useProxy: true);
-        _directHttpClient = CreateHttpClient(options.BaseUrl, useProxy: false);
+        _httpClient = CreateHttpClient(options.BaseUrl, useProxy: true, TimeSpan.FromSeconds(30));
+        _directHttpClient = CreateHttpClient(options.BaseUrl, useProxy: false, TimeSpan.FromSeconds(30));
+        _largeTransferHttpClient = CreateHttpClient(options.BaseUrl, useProxy: true, TimeSpan.FromMinutes(2));
+        _directLargeTransferHttpClient = CreateHttpClient(options.BaseUrl, useProxy: false, TimeSpan.FromMinutes(2));
         _session = SyncSessionStore.Load();
         _credential = SecureCredentialStore.Load();
     }
@@ -367,7 +371,7 @@ public sealed class CloudSyncClient
                 icon = string.IsNullOrWhiteSpace(iconOverride) ? command.IconReference : iconOverride,
                 queryPrefixes = command.QueryPrefixes,
                 queryTargetTemplate = command.QueryTargetTemplate,
-                globalShortcut = command.GlobalShortcut,
+                globalShortcut = (string?)null,
                 hotkeyBehavior = command.HotkeyBehavior,
                 runtime = command.Runtime,
                 entryMode = command.EntryMode,
@@ -976,17 +980,23 @@ public sealed class CloudSyncClient
             includeAuth: true);
         request.Content = new ByteArrayContent(packageBytes);
         request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
-        using var response = await SendAsyncWithFallback(request, cancellationToken);
+        using var response = await SendAsyncWithFallback(
+            request,
+            cancellationToken,
+            largeTransfer: true);
         await EnsureSuccessAsync(response, cancellationToken);
     }
 
     public async Task<byte[]> DownloadExtensionArchiveAsync(string extensionId, CancellationToken cancellationToken = default)
     {
-        using var response = await SendAsyncWithFallback(
+        using var request = CreateRequest(
             HttpMethod.Get,
             $"/v1/extensions/{Uri.EscapeDataString(extensionId)}/archive",
-            includeAuth: false,
-            cancellationToken: cancellationToken);
+            includeAuth: false);
+        using var response = await SendAsyncWithFallback(
+            request,
+            cancellationToken,
+            largeTransfer: true);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsByteArrayAsync(cancellationToken);
     }
@@ -998,7 +1008,10 @@ public sealed class CloudSyncClient
             HttpMethod.Get,
             $"/v1/me/extensions/{Uri.EscapeDataString(extensionId)}/archive",
             includeAuth: true);
-        using var response = await SendAsyncWithFallback(request, cancellationToken);
+        using var response = await SendAsyncWithFallback(
+            request,
+            cancellationToken,
+            largeTransfer: true);
         await EnsureSuccessAsync(response, cancellationToken);
         return await response.Content.ReadAsByteArrayAsync(cancellationToken);
     }
@@ -1101,16 +1114,23 @@ public sealed class CloudSyncClient
         return SendAsyncWithFallback(request, cancellationToken);
     }
 
-    private async Task<HttpResponseMessage> SendAsyncWithFallback(HttpRequestMessage request, CancellationToken cancellationToken)
+    private async Task<HttpResponseMessage> SendAsyncWithFallback(HttpRequestMessage request, CancellationToken cancellationToken, bool largeTransfer = false)
     {
         ThrowIfTransportCoolingDown(cancellationToken);
         Exception? lastError = null;
-        var attempts = new (HttpClient client, string label)[]
-        {
-            (_httpClient, "proxy"),
-            (_directHttpClient, "direct"),
-            (_httpClient, "proxy-retry")
-        };
+        var attempts = largeTransfer
+            ? new (HttpClient client, string label)[]
+            {
+                (_largeTransferHttpClient, "proxy-large"),
+                (_directLargeTransferHttpClient, "direct-large"),
+                (_largeTransferHttpClient, "proxy-large-retry")
+            }
+            : new (HttpClient client, string label)[]
+            {
+                (_httpClient, "proxy"),
+                (_directHttpClient, "direct"),
+                (_httpClient, "proxy-retry")
+            };
         var maxAttempts = IsIdempotentMethod(request.Method) ? attempts.Length : 1;
 
         for (var index = 0; index < maxAttempts; index++)
@@ -1198,7 +1218,10 @@ public sealed class CloudSyncClient
         };
     }
 
-    private static HttpClient CreateHttpClient(string baseUrl, bool useProxy)
+    private static HttpClient CreateHttpClient(
+        string baseUrl,
+        bool useProxy,
+        TimeSpan timeout)
     {
         var handler = new HttpClientHandler
         {
@@ -1208,7 +1231,7 @@ public sealed class CloudSyncClient
         var client = new HttpClient(handler)
         {
             BaseAddress = new Uri(baseUrl, UriKind.Absolute),
-            Timeout = TimeSpan.FromSeconds(30),
+            Timeout = timeout,
             DefaultRequestVersion = HttpVersion.Version11,
             DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrLower
         };

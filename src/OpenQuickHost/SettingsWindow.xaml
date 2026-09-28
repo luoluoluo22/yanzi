@@ -1184,6 +1184,25 @@
                                             </StackPanel>
                                             <Button Grid.Column="1" Content="打开 API 控制台" Style="{StaticResource SecondaryBtn}" Height="28" Padding="14,0" Click="OpenApiDocsUrlButton_Click"/>
                                         </Grid>
+                                        <StackPanel Margin="0,14,0,0">
+                                            <TextBlock Text="API 访问令牌（Token）" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold"/>
+                                            <Grid Margin="0,7,0,0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Border Grid.Column="0" Background="{DynamicResource BrushBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="6" Height="36" Padding="10,0">
+                                                    <Grid>
+                                                        <TextBlock x:Name="AgentApiTokenMaskedText" Text="••••••••••••••••" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center"/>
+                                                        <TextBox x:Name="AgentApiTokenVisibleTextBox" IsReadOnly="True" Visibility="Collapsed" BorderThickness="0" Background="Transparent" Foreground="{DynamicResource BrushTextMain}" CaretBrush="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalContentAlignment="Center"/>
+                                                    </Grid>
+                                                </Border>
+                                                <Button x:Name="AgentApiTokenVisibilityButton" Grid.Column="1" Content="显示" Style="{StaticResource SecondaryBtn}" Height="36" MinWidth="55" Padding="10,0" Margin="8,0,0,0" Click="ToggleAgentApiTokenVisibility_Click"/>
+                                                <Button Grid.Column="2" Content="复制 Token" Style="{StaticResource SecondaryBtn}" Height="36" Padding="12,0" Margin="8,0,0,0" Click="CopyAgentApiToken_Click"/>
+                                            </Grid>
+                                            <TextBlock x:Name="AgentApiTokenHintText" Text="默认隐藏；复制后粘贴到 API 控制台的 X-Yanzi-Token。请勿公开分享。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,8,0,0" TextWrapping="Wrap"/>
+                                        </StackPanel>
                                     </StackPanel>
                                 </StackPanel>
                             </Border>

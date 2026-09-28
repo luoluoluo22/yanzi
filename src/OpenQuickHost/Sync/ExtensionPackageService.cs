@@ -12,7 +12,7 @@ public static class ExtensionPackageService
 {
     public static string ExtensionsRootPath => HostAssets.ExtensionsPath;
 
-    public static byte[] BuildPackage(CommandItem command, string version, string? iconOverride = null)
+    public static byte[] BuildPackage(CommandItem command, string version, string? iconOverride = null, bool includeUserShortcut = true)
     {
         var extensionsRoot = Path.GetFullPath(ExtensionsRootPath);
         var appDataRoot = Path.GetDirectoryName(extensionsRoot);
@@ -26,7 +26,7 @@ public static class ExtensionPackageService
             !string.Equals(dirPath, extensionsRoot, StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(dirPath, appDataRoot, StringComparison.OrdinalIgnoreCase))
         {
-            return BuildDirectoryPackage(dirPath, iconOverride);
+            return BuildDirectoryPackage(dirPath, iconOverride, includeUserShortcut);
         }
 
         using var stream = new MemoryStream();
@@ -82,12 +82,12 @@ public static class ExtensionPackageService
         writer.Write(JsonSerializer.Serialize(data, JsonOptions));
     }
 
-    private static byte[] BuildDirectoryPackage(string directoryPath, string? iconOverride)
+    private static byte[] BuildDirectoryPackage(string directoryPath, string? iconOverride, bool includeUserShortcut)
     {
         using var stream = new MemoryStream();
         using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
         {
-            WriteManifestEntry(archive, directoryPath, iconOverride);
+            WriteManifestEntry(archive, directoryPath, iconOverride, includeUserShortcut);
             
             // 使用固定的时间戳（2020-01-01），确保相同内容生成相同的hash
             var fixedTimestamp = new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero);
@@ -112,10 +112,23 @@ public static class ExtensionPackageService
             }
         }
 
+        var dependencyDlls = Directory
+            .EnumerateFiles(directoryPath, "*.dll", SearchOption.AllDirectories)
+            .Where(path => ShouldIncludeInPackage(directoryPath, path))
+            .Select(path => Path.GetRelativePath(directoryPath, path))
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (dependencyDlls.Length > 0)
+        {
+            HostAssets.AppendLog(
+                $"Extension package built: id={Path.GetFileName(directoryPath)}, zipBytes={stream.Length}, includeUserShortcut={includeUserShortcut}, dependencyDlls={string.Join(",", dependencyDlls)}");
+        }
+
         return stream.ToArray();
     }
 
-    private static void WriteManifestEntry(ZipArchive archive, string directoryPath, string? iconOverride)
+    private static void WriteManifestEntry(ZipArchive archive, string directoryPath, string? iconOverride, bool includeUserShortcut)
     {
         var manifestPath = Path.Combine(directoryPath, "manifest.json");
         if (!File.Exists(manifestPath))
@@ -131,12 +144,19 @@ public static class ExtensionPackageService
             throw new InvalidOperationException("扩展目录中的 manifest.json 缺少 id 或 name。");
         }
 
+        var packagedManifest = string.IsNullOrWhiteSpace(iconOverride)
+            ? manifest
+            : manifest with { Icon = iconOverride };
+
+        if (!includeUserShortcut)
+        {
+            packagedManifest = packagedManifest with { GlobalShortcut = null };
+        }
+
         WriteJsonEntry(
             archive,
             "manifest.json",
-            string.IsNullOrWhiteSpace(iconOverride)
-                ? manifest
-                : manifest with { Icon = iconOverride });
+            packagedManifest);
     }
 
     internal static bool ShouldIncludeInPackage(string rootDirectory, string filePath)
@@ -161,7 +181,13 @@ public static class ExtensionPackageService
 
         if (segments.Any(static segment =>
                 segment.Equals("bin", StringComparison.OrdinalIgnoreCase) ||
-                segment.Equals("obj", StringComparison.OrdinalIgnoreCase)))
+                segment.Equals("obj", StringComparison.OrdinalIgnoreCase) ||
+                segment.Equals("backup", StringComparison.OrdinalIgnoreCase) ||
+                segment.Equals("backups", StringComparison.OrdinalIgnoreCase) ||
+                segment.EndsWith(".bak", StringComparison.OrdinalIgnoreCase) ||
+                segment.Contains(".bak-", StringComparison.OrdinalIgnoreCase) ||
+                segment.EndsWith(".backup", StringComparison.OrdinalIgnoreCase) ||
+                segment.Contains(".backup-", StringComparison.OrdinalIgnoreCase)))
         {
             return false;
         }

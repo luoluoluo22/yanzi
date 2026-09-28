@@ -279,7 +279,11 @@ public partial class MainWindow
             SyncStatus = $"正在发布小程序：{command.Title} ...";
             var version = string.IsNullOrWhiteSpace(command.DeclaredVersion) ? "0.1.0" : command.DeclaredVersion;
             var publishedIcon = await _cloudSyncClient.PublishIconAsync(command, version);
-            var packageBytes = ExtensionPackageService.BuildPackage(command, version, publishedIcon);
+            var packageBytes = ExtensionPackageService.BuildPackage(
+                command,
+                version,
+                publishedIcon,
+                includeUserShortcut: false);
             await _cloudSyncClient.UpsertExtensionAsync(command, publishedIcon);
             await _cloudSyncClient.UploadExtensionArchiveAsync(command, packageBytes, version);
             await _cloudSyncClient.UpsertUserExtensionAsync(command, publishedIcon, hasArchive: true);
@@ -2793,8 +2797,54 @@ public partial class MainWindow
         }
     }
 
+    // The existing watcher scheduled cloud sync only. It did not refresh the
+    // host's cached commands or radial menu when manifests changed on disk.
+    private readonly System.Windows.Threading.DispatcherTimer _extensionCatalogRefreshTimer = new()
+    {
+        Interval = TimeSpan.FromMilliseconds(650)
+    };
+    private string _lastCatalogContentSignature = string.Empty;
+
+    private string GetCatalogContentSignature()
+    {
+        try
+        {
+            using var hash = SHA256.Create();
+            foreach (var path in Directory.EnumerateFiles(HostAssets.ExtensionsPath, "*.*",
+                SearchOption.AllDirectories)
+                .Where(path => Path.GetFileName(path).Equals("manifest.json", StringComparison.OrdinalIgnoreCase) ||
+                    path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
+                .Where(path => !path.Contains(".yanzi-csharp-cache", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
+            {
+                var info = new FileInfo(path);
+                var fingerprint = System.Text.Encoding.UTF8.GetBytes(
+                    path + ":" + info.Length + ":" + info.LastWriteTimeUtc.Ticks + "\n");
+                hash.TransformBlock(fingerprint, 0, fingerprint.Length, null, 0);
+            }
+            hash.TransformFinalBlock([], 0, 0);
+            return Convert.ToHexString(hash.Hash!);
+        }
+        catch (IOException) { return string.Empty; }
+        catch (UnauthorizedAccessException) { return string.Empty; }
+    }
+
     private void StartExtensionContentWatcher()
     {
+        _lastCatalogContentSignature = GetCatalogContentSignature();
+        _extensionCatalogRefreshTimer.Tick += (_, _) =>
+        {
+            _extensionCatalogRefreshTimer.Stop();
+            if (!IsLoaded || Dispatcher.HasShutdownStarted || _isReplacingLocalExtensions)
+                return;
+            var current = GetCatalogContentSignature();
+            if (string.IsNullOrEmpty(current) || current == _lastCatalogContentSignature)
+                return;
+            _lastCatalogContentSignature = current;
+            HostAssets.AppendLog("Local manifest changed: refreshing launcher, wheel and quick panel.");
+            ReloadLocalExtensionsFromExternal();
+        };
+
         try
         {
             Directory.CreateDirectory(HostAssets.ExtensionsPath);
@@ -2831,6 +2881,12 @@ public partial class MainWindow
         {
             if (!IsLoaded)
                 return;
+            if (string.Equals(segments[1], "manifest.json", StringComparison.OrdinalIgnoreCase) ||
+                e.FullPath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
+            {
+                _extensionCatalogRefreshTimer.Stop();
+                _extensionCatalogRefreshTimer.Start();
+            }
             QueueBackgroundWebDavSync("extension-file-change");
             SyncLocalExtensionsToCloud();
         }));

@@ -582,6 +582,12 @@ static void VerifyExtensionPackageStability()
 
         File.WriteAllText(Path.Combine(directory, ".yanzi-inline-123.ps1"), "temporary script");
         File.WriteAllText(Path.Combine(directory, "debug.log"), "runtime trace");
+        File.WriteAllText(Path.Combine(directory, "content.txt.bak"), "old content");
+        File.WriteAllText(Path.Combine(directory, "main.cs.bak-20260927-before-edit"), "old source");
+        File.WriteAllText(Path.Combine(directory, "manifest.json.backup-20260927"), "old manifest");
+        var backupDirectory = Path.Combine(directory, "Backups");
+        Directory.CreateDirectory(backupDirectory);
+        File.WriteAllText(Path.Combine(backupDirectory, "content.txt"), "old content");
         var cacheDirectory = Path.Combine(directory, ".yanzi-csharp-cache", "test", "bin", "Release", "net9.0");
         Directory.CreateDirectory(cacheDirectory);
         File.WriteAllBytes(Path.Combine(cacheDirectory, "YanziExtension.dll"), [1, 2, 3]);

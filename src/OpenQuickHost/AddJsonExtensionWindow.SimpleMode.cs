@@ -1384,6 +1384,15 @@ public partial class AddJsonExtensionWindow
     private void PasteTextSimpleBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         if (_isInitializing || _suppressSimpleSync) return;
+        _lastEditedSource = EditSource.Form;
+        RebuildPasteScript();
+        TryRefreshJsonFromHiddenForm();
+    }
+
+    private void PasteTextPressEnterCheck_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_isInitializing || _suppressSimpleSync) return;
+        _lastEditedSource = EditSource.Form;
         RebuildPasteScript();
         TryRefreshJsonFromHiddenForm();
     }
@@ -1391,14 +1400,31 @@ public partial class AddJsonExtensionWindow
     private void RebuildPasteScript()
     {
         var text = PasteTextSimpleBox.Text ?? string.Empty;
-        ScriptSourceBox.Text = CreateCSharpPasteScript(text);
+        var pressEnter = PasteTextPressEnterCheck?.IsChecked == true;
+        ScriptSourceBox.Text = CreateCSharpPasteScript(text, pressEnter);
         RuntimeBox.Text = "csharp";
         EntryModeBox.Text = "inline";
     }
 
-    private static string CreateCSharpPasteScript(string text)
+    private static string CreateCSharpPasteScript(string text, bool pressEnter = false)
     {
         var b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(text));
+        var enterCall = pressEnter ? "\r\n        Thread.Sleep(80);\r\n        SendEnter();" : "";
+        var enterMethod = pressEnter ? """
+
+
+    private const ushort VkReturn = 0x0D;
+
+    private static void SendEnter()
+    {
+        var down = new[] { KeyInput(VkReturn, 0) };
+        var up = new[] { KeyInput(VkReturn, KeyeventfKeyup) };
+        _ = SendInput(1, down, Marshal.SizeOf<INPUT>());
+        Thread.Sleep(15);
+        _ = SendInput(1, up, Marshal.SizeOf<INPUT>());
+    }
+""" : "";
+
         return $$"""
         using System;
         using System.Runtime.InteropServices;
@@ -1411,14 +1437,14 @@ public partial class AddJsonExtensionWindow
             private const uint InputKeyboard = 1;
             private const ushort VkControl = 0x11;
             private const ushort VkV = 0x56;
-            private const uint KeyeventfKeyup = 0x0002;
+            private const uint KeyeventfKeyup = 0x0002;{{enterMethod}}
 
             public static Task<string> RunAsync(YanziActionContext context)
             {
                 var payload = Encoding.UTF8.GetString(Convert.FromBase64String("{{b64}}"));
                 System.Windows.Forms.Clipboard.SetDataObject(payload, true, 10, 50);
                 Thread.Sleep(35);
-                SendCtrlV();
+                SendCtrlV();{{enterCall}}
                 return Task.FromResult("已粘贴。");
             }
 
@@ -1955,12 +1981,18 @@ public partial class AddJsonExtensionWindow
 
     private static bool LooksLikeGeneratedPasteScript(string? script)
     {
-        return TryExtractGeneratedPasteText(script, out _);
+        return TryExtractGeneratedPasteText(script, out _, out _);
     }
 
     private static bool TryExtractGeneratedPasteText(string? script, out string text)
     {
+        return TryExtractGeneratedPasteText(script, out text, out _);
+    }
+
+    private static bool TryExtractGeneratedPasteText(string? script, out string text, out bool pressEnter)
+    {
         text = string.Empty;
+        pressEnter = false;
         if (string.IsNullOrWhiteSpace(script) ||
             !script.Contains("FromBase64String", StringComparison.OrdinalIgnoreCase) ||
             !(script.Contains("Set-Clipboard", StringComparison.OrdinalIgnoreCase) ||
@@ -1982,6 +2014,9 @@ public partial class AddJsonExtensionWindow
         try
         {
             text = Encoding.UTF8.GetString(Convert.FromBase64String(match.Groups["payload"].Value));
+            pressEnter = script.Contains("SendEnter()", StringComparison.OrdinalIgnoreCase) ||
+                         script.Contains("VkReturn", StringComparison.OrdinalIgnoreCase) ||
+                         script.Contains("SendWait(\"{ENTER}\")", StringComparison.OrdinalIgnoreCase);
             return true;
         }
         catch
@@ -2704,18 +2739,24 @@ public partial class AddJsonExtensionWindow
 
             var runtime = (RuntimeBox.Text ?? string.Empty).Trim().ToLowerInvariant();
             var scriptSource = ScriptSourceBox.Text ?? string.Empty;
+
+            if (TryExtractGeneratedPasteText(scriptSource, out var pasteText, out var pressEnter))
+            {
+                PasteTextSimpleBox.Text = pasteText;
+                if (PasteTextPressEnterCheck != null)
+                {
+                    PasteTextPressEnterCheck.IsChecked = pressEnter;
+                }
+            }
+            if (TryExtractShortcutFromSimulationScript(scriptSource, out var hotkeyText))
+            {
+                HotkeySequenceBox.Text = hotkeyText;
+            }
+
             if (runtime == "powershell")
             {
                 PowerShellScriptBox.Text = scriptSource;
                 WorkbenchScriptBox.Text = scriptSource;
-                if (TryExtractGeneratedPasteText(scriptSource, out var pasteText))
-                {
-                    PasteTextSimpleBox.Text = pasteText;
-                }
-                if (TryExtractShortcutFromSimulationScript(scriptSource, out var hotkeyText))
-                {
-                    HotkeySequenceBox.Text = hotkeyText;
-                }
             }
             else if (runtime == "csharp")
             {
@@ -2792,6 +2833,12 @@ public partial class AddJsonExtensionWindow
     {
         var hasScript = !string.IsNullOrWhiteSpace(ScriptSourceBox.Text);
         var hasOpenTarget = !string.IsNullOrWhiteSpace(OpenTargetBox.Text);
+        // 1. 如果 Manifest 明确记录了入口类型，优先使用（精确区分用户创建时的卡片入口）
+        if (!string.IsNullOrWhiteSpace(_manualEntryType) && TypeTemplates.ContainsKey(_manualEntryType))
+        {
+            return _manualEntryType;
+        }
+
         var hasQueryTemplate = !string.IsNullOrWhiteSpace(QueryTargetTemplateBox.Text);
         var hasHostedView = _manualHostedView != null;
         var runtime = (RuntimeBox.Text ?? string.Empty).Trim().ToLowerInvariant();
@@ -2802,24 +2849,27 @@ public partial class AddJsonExtensionWindow
         if (_manualSearchProvider != null) return "folder-search";
         if (hasQueryTemplate) return "search";
 
-        // C# 扩展（不论 inline 还是独立源文件 main.cs）
+        // 2. 特殊生成脚本（粘贴文本、模拟按键），无论底层是 csharp 还是 powershell，都优先识别为对应的卡片！
+        if (hasScript)
+        {
+            if (LooksLikeGeneratedPasteScript(ScriptSourceBox.Text)) return "paste-text";
+            if (LooksLikeGeneratedHotkeyScript(ScriptSourceBox.Text)) return "hotkey";
+        }
+
+        // 3. 通用 C# 扩展（不论 inline 还是独立源文件 main.cs）
         if (runtime is "csharp" or "cs" or "c#" || (hasEntry && entry.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)))
         {
             return "script-cs";
         }
 
-        // PowerShell 扩展
+        // 4. 通用 PowerShell 扩展
         if (runtime is "powershell" or "ps" or "ps1" || (hasEntry && entry.EndsWith(".ps1", StringComparison.OrdinalIgnoreCase)))
         {
-            if (hasScript && LooksLikeGeneratedPasteScript(ScriptSourceBox.Text)) return "paste-text";
-            if (hasScript && LooksLikeGeneratedHotkeyScript(ScriptSourceBox.Text)) return "hotkey";
             return "script-ps";
         }
 
         if (hasScript)
         {
-            if (LooksLikeGeneratedPasteScript(ScriptSourceBox.Text)) return "paste-text";
-            if (LooksLikeGeneratedHotkeyScript(ScriptSourceBox.Text)) return "hotkey";
             return "script-ps";
         }
 

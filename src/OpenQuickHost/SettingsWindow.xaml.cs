@@ -195,12 +195,14 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         MatchedSearchItems = new ObservableCollection<SearchDisplayItem>();
         UpdateBackupStatusText();
         DataContext = this;
+        RefreshAgentApiTokenDisplay();
         RefreshAccountObjectSyncStatus();
         // 延迟到Loaded事件中执行，避免构造函数卡顿
         // RefreshRadialMenuSlots();
         ApplySavedWindowBounds();
         Loaded += SettingsWindow_Loaded;
         Activated += SettingsWindow_Activated;
+        Deactivated += (_, _) => HideAgentApiToken();
         LocationChanged += SettingsWindow_BoundsChanged;
         SizeChanged += SettingsWindow_BoundsChanged;
         Closing += SettingsWindow_Closing;
@@ -3305,6 +3307,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         try
         {
         _settings = AppSettingsStore.Load();
+        RefreshAgentApiTokenDisplay();
         _settings.YarnSelect ??= new YarnSelectSettings();
         _settings.Yanm ??= new YanmSettings();
         OnPropertyChanged(nameof(LaunchAtStartup));
@@ -3775,6 +3778,79 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         if (sender is FrameworkElement { DataContext: SettingsWindow })
         {
             _mainWindow.NotifyQuickPanelSettingsChanged("general-setting-changed", refreshYanmOverlay: false);
+        }
+    }
+
+    // The console deliberately no longer embeds credentials in public HTML.
+    // Display the *running server's* token here, falling back to the locally saved setting.
+    private string GetAgentApiTokenForDisplay()
+    {
+        var activeToken = (System.Windows.Application.Current as App)?.AgentApiServer?.TokenForSettings;
+        return !string.IsNullOrWhiteSpace(activeToken)
+            ? activeToken
+            : (AppSettingsStore.Load().AgentApiToken ?? string.Empty);
+    }
+
+    private void HideAgentApiToken()
+    {
+        if (AgentApiTokenVisibleTextBox == null) return;
+        AgentApiTokenVisibleTextBox.Text = string.Empty;
+        AgentApiTokenVisibleTextBox.Visibility = Visibility.Collapsed;
+        AgentApiTokenMaskedText.Visibility = Visibility.Visible;
+        AgentApiTokenVisibilityButton.Content = "显示";
+    }
+
+    private void RefreshAgentApiTokenDisplay()
+    {
+        if (AgentApiTokenMaskedText == null) return;
+        HideAgentApiToken();
+        AgentApiTokenMaskedText.Text = string.IsNullOrWhiteSpace(GetAgentApiTokenForDisplay())
+            ? "未配置"
+            : "••••••••••••••••";
+        AgentApiTokenHintText.Text =
+            "默认隐藏。点击复制并粘贴到 API 控制台的 X-Yanzi-Token；请勿公开分享。";
+    }
+
+    private void ToggleAgentApiTokenVisibility_Click(object sender, RoutedEventArgs e)
+    {
+        if (AgentApiTokenVisibleTextBox.Visibility == Visibility.Visible)
+        {
+            HideAgentApiToken();
+            AgentApiTokenHintText.Text = "Token 已隐藏。";
+            return;
+        }
+
+        var token = GetAgentApiTokenForDisplay();
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            AgentApiTokenHintText.Text = "尚未配置 API Token。";
+            return;
+        }
+
+        AgentApiTokenVisibleTextBox.Text = token;
+        AgentApiTokenVisibleTextBox.Visibility = Visibility.Visible;
+        AgentApiTokenMaskedText.Visibility = Visibility.Collapsed;
+        AgentApiTokenVisibilityButton.Content = "隐藏";
+        AgentApiTokenHintText.Text = "Token 仅在本地设置窗口显示，离开窗口后自动隐藏。";
+    }
+
+    private void CopyAgentApiToken_Click(object sender, RoutedEventArgs e)
+    {
+        var token = GetAgentApiTokenForDisplay();
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            AgentApiTokenHintText.Text = "尚未配置 API Token。";
+            return;
+        }
+
+        try
+        {
+            System.Windows.Clipboard.SetText(token);
+            AgentApiTokenHintText.Text = "已复制当前 API Token，请粘贴到控制台；剪贴板中包含敏感信息。";
+        }
+        catch (System.Exception ex)
+        {
+            AgentApiTokenHintText.Text = "复制失败：" + ex.Message;
         }
     }
 

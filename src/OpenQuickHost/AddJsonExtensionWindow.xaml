@@ -750,6 +750,12 @@
                                          Style="{StaticResource MonoTextBoxStyle}"
                                          Height="160" TextWrapping="Wrap"
                                          TextChanged="PasteTextSimpleBox_TextChanged" />
+                                <CheckBox x:Name="PasteTextPressEnterCheck"
+                                          Content="粘贴后按回车（Enter 发送）"
+                                          Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}"
+                                          Margin="0,10,0,0"
+                                          Checked="PasteTextPressEnterCheck_Changed"
+                                          Unchecked="PasteTextPressEnterCheck_Changed" />
                                 <TextBlock Style="{StaticResource HintTextStyle}"
                                            Text="点击小程序时把这段文本写入剪贴板并自动粘贴到当前光标处。" />
                             </StackPanel>

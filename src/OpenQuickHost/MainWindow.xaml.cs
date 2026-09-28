@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -512,6 +512,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             RunningExtensionRegistry.Changed -= RunningExtensionRegistry_Changed;
             _extensionContentWatcher?.Dispose();
             _extensionContentWatcher = null;
+            _extensionCatalogRefreshTimer.Stop();
             _accountExtensionSyncTimer.Stop();
         };
     }
@@ -1284,6 +1285,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             StartMouseGestureService();
             QueueBackgroundWebDavSync("startup");
             WarmupChildWindows();
+            StartStartupExtensions();
             return;
         }
 
@@ -1295,16 +1297,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             StartMobileMessageBridge("startup-no-cloud-refresh");
             QueueBackgroundWebDavSync("startup");
+            StartStartupExtensions();
             return;
         }
 
+        StartStartupExtensions();
         _ = CompleteStartupCloudRefreshAsync();
     }
 
     private async Task CompleteStartupCloudRefreshAsync()
     {
         await RefreshCloudStateAsync(allowLoginPrompt: false);
-        StartStartupExtensions();
     }
 
     private void WarmupChildWindows()

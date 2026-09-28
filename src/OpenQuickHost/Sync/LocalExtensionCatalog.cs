@@ -1203,6 +1203,9 @@ public sealed record LocalExtensionManifest
 
     public bool? WaitForExit { get; init; }
 
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? EntryType { get; init; }
+
     public bool? IsPublished { get; init; }
 }
 

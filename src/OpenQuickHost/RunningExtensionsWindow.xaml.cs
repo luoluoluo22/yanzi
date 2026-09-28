@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Windows;
 using System.Windows.Media;
+using System.Windows.Threading;
 using OpenQuickHost.Sync;
 
 namespace OpenQuickHost;
@@ -8,6 +9,10 @@ namespace OpenQuickHost;
 public partial class RunningExtensionsWindow : Window
 {
     private readonly ObservableCollection<RunningExtensionItemViewModel> _items = [];
+    private readonly DispatcherTimer _refreshTimer = new()
+    {
+        Interval = TimeSpan.FromSeconds(1)
+    };
 
     public RunningExtensionsWindow()
     {
@@ -15,16 +20,19 @@ public partial class RunningExtensionsWindow : Window
         ExtensionListView.ItemsSource = _items;
         Loaded += RunningExtensionsWindow_Loaded;
         Closed += RunningExtensionsWindow_Closed;
+        _refreshTimer.Tick += (_, _) => RefreshItems();
     }
 
     private void RunningExtensionsWindow_Loaded(object sender, RoutedEventArgs e)
     {
         RunningExtensionRegistry.Changed += RunningExtensionRegistry_Changed;
         RefreshItems();
+        _refreshTimer.Start();
     }
 
     private void RunningExtensionsWindow_Closed(object? sender, EventArgs e)
     {
+        _refreshTimer.Stop();
         RunningExtensionRegistry.Changed -= RunningExtensionRegistry_Changed;
     }
 
@@ -87,7 +95,7 @@ public partial class RunningExtensionsWindow : Window
             _items.Add(new RunningExtensionItemViewModel(item, matchedCommand));
         }
 
-        SummaryTextBlock.Text = $"当前共 {_items.Count} 个正在运行的小程序进程";
+        SummaryTextBlock.Text = $"当前共 {_items.Count} 个正在运行的小程序";
         EmptyStateTextBlock.Visibility = _items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
@@ -98,7 +106,9 @@ public partial class RunningExtensionsWindow : Window
             InstanceId = info.InstanceId;
             Title = info.Title;
             ExtensionId = info.ExtensionId;
-            ProcessId = info.ProcessId.ToString();
+            ProcessId = info.ProcessId > 0
+                ? info.ProcessId.ToString()
+                : "宿主内";
             Runtime = info.Runtime;
             LaunchSource = info.LaunchSource;
             StartedAtText = info.StartedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");

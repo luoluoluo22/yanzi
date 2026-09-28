@@ -422,14 +422,25 @@ public partial class MainWindow
 
     private CommandItem ResolveRunnableCommand(CommandItem command)
     {
-        if (command.Source != CommandSource.Cloud)
+        // Wheel/quick-panel slots may retain an older CommandItem after a manifest
+        // changes. Always resolve local extensions against the current catalog at
+        // execution time; a host restart must not be required to run new code.
+        if (command.Source == CommandSource.LocalExtension &&
+            !string.IsNullOrWhiteSpace(command.ExtensionId))
         {
-            return command;
+            return LocalExtensionCatalog.LoadCommands().FirstOrDefault(item =>
+                item.ExtensionId.Equals(command.ExtensionId, StringComparison.OrdinalIgnoreCase))
+                ?? command;
         }
 
-        return _localExtensionIndex.TryGetValue(command.ExtensionId, out var localExtension)
-            ? localExtension
-            : command;
+        if (command.Source == CommandSource.Cloud)
+        {
+            return _localExtensionIndex.TryGetValue(command.ExtensionId, out var localExtension)
+                ? ResolveRunnableCommand(localExtension)
+                : command;
+        }
+
+        return command;
     }
 
     public CommandItem? OpenAddExtensionForSlot(Window? owner = null)
@@ -2477,6 +2488,9 @@ public partial class MainWindow
 
     private void ReplaceLocalExtensions(IReadOnlyList<CommandItem> commands, string? statusText)
     {
+        // Refresh all cached launcher, wheel and quick-panel command entries in
+        // one UI-thread pass. A live extension instance remains running; only
+        // subsequent launches use the new manifest/source.
         _isReplacingLocalExtensions = true;
         try
         {

@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.IO;
 using System.Text;
 using System.Text.Json;
@@ -10,7 +10,7 @@ using OpenQuickHost.Sync;
 
 namespace OpenQuickHost;
 
-public sealed class LocalAgentApiServer : IDisposable
+public sealed partial class LocalAgentApiServer : IDisposable
 {
     private WebSocket? _activeBrowserSocket;
     private static int _nextWsId;
@@ -95,6 +95,9 @@ public sealed class LocalAgentApiServer : IDisposable
 
     private readonly string _prefix;
     private readonly string _token;
+    // Exposed only inside the desktop application for its local Settings window.
+    // Never serialize this into /docs or any unauthenticated API response.
+    internal string TokenForSettings => _token;
     private readonly Action<string?> _onMutated;
     private readonly Action? _onTriggerSync;
     private readonly Func<string, Task<(bool ok, string message)>>? _onPublishExtension;
@@ -109,6 +112,8 @@ public sealed class LocalAgentApiServer : IDisposable
     private readonly CancellationTokenSource _cts = new();
     private Task? _loopTask;
     private static readonly ConcurrentDictionary<string, CancellationTokenSource> _runningTasks = new(StringComparer.OrdinalIgnoreCase);
+    // Prevent concurrent deployment, execution, and stop calls from racing with a reload.
+    private static readonly ConcurrentDictionary<string, byte> _deployingExtensions = new(StringComparer.OrdinalIgnoreCase);
     private static readonly ConcurrentDictionary<string, LocalMobileMessageDetail> _localMobileMessages = new(StringComparer.OrdinalIgnoreCase);
 
     public LocalAgentApiServer(
@@ -149,6 +154,7 @@ public sealed class LocalAgentApiServer : IDisposable
 
     public void Stop()
     {
+        EndAllUiSessions("agent_api_stopped");
         _cts.Cancel();
         if (_listener.IsListening)
         {
@@ -385,6 +391,13 @@ public sealed class LocalAgentApiServer : IDisposable
 
             if (request.HttpMethod == "GET" && (path == "/docs" || path == "/" || path == "/index.html"))
             {
+                // The console holds privileged credentials; never execute third-party scripts.
+                response.Headers["Content-Security-Policy"] =
+                    "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; " +
+                    "connect-src 'self'; img-src 'self' blob: data:; " +
+                    "base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+                response.Headers["Cache-Control"] = "no-store";
+                response.Headers["X-Content-Type-Options"] = "nosniff";
                 response.ContentType = "text/html; charset=utf-8";
                 response.StatusCode = 200;
                 var html = GetDocsHtml();
@@ -455,9 +468,19 @@ public sealed class LocalAgentApiServer : IDisposable
                 return;
             }
 
+            if (await TryHandleConsoleLogoutAsync(request, response, path))
+                return;
             if (!IsAuthorized(request))
             {
                 await WriteJsonAsync(response, 401, new { error = "unauthorized" });
+                return;
+            }
+            if (await TryHandleConsoleSessionApiAsync(request, response, path))
+                return;
+
+            // UI capture and interaction endpoints are scoped to an installed extension.
+            if (await TryHandleUiApiAsync(request, response, path))
+            {
                 return;
             }
 
@@ -1052,6 +1075,30 @@ public sealed class LocalAgentApiServer : IDisposable
                 return;
             }
 
+            if (request.HttpMethod == "POST" && path.StartsWith("/v1/extensions/", StringComparison.Ordinal) && path.EndsWith("/build", StringComparison.Ordinal))
+            {
+                if (!IsTrustedDeploymentRequest(request))
+                {
+                    await WriteJsonAsync(response, 403, new { error = "deployment_origin_or_token_invalid" });
+                    return;
+                }
+                var id = Uri.UnescapeDataString(path["/v1/extensions/".Length..^"/build".Length]);
+                await HandleExtensionBuildAsync(response, id);
+                return;
+            }
+
+            if (request.HttpMethod == "POST" && path.StartsWith("/v1/extensions/", StringComparison.Ordinal) && path.EndsWith("/reload", StringComparison.Ordinal))
+            {
+                if (!IsTrustedDeploymentRequest(request))
+                {
+                    await WriteJsonAsync(response, 403, new { error = "deployment_origin_or_token_invalid" });
+                    return;
+                }
+                var id = Uri.UnescapeDataString(path["/v1/extensions/".Length..^"/reload".Length]);
+                await HandleExtensionReloadAsync(response, id);
+                return;
+            }
+
             if (request.HttpMethod == "POST" && path.EndsWith("/run", StringComparison.Ordinal) && path.StartsWith("/v1/extensions/", StringComparison.Ordinal))
             {
                 var id = Uri.UnescapeDataString(path["/v1/extensions/".Length..^"/run".Length]);
@@ -1063,6 +1110,13 @@ public sealed class LocalAgentApiServer : IDisposable
                 if (command == null)
                 {
                     await WriteJsonAsync(response, 404, new { error = "not_found" });
+                    return;
+                }
+
+                EnsureNoActiveUiSession(id);
+                if (_deployingExtensions.ContainsKey(id))
+                {
+                    await WriteJsonAsync(response, 409, new { error = "deployment_in_progress" });
                     return;
                 }
 
@@ -1087,10 +1141,11 @@ public sealed class LocalAgentApiServer : IDisposable
                     }
 
                     await WriteJsonAsync(response, 200, new { 
-                        ok = true, 
-                        success = result.Success, 
-                        output = result.Output, 
-                        error = result.Error,
+                        ok = result.Success,
+                        success = result.Success,
+                        output = result.Output,
+                        message = result.Success ? result.Error : string.Empty,
+                        error = result.Success ? string.Empty : result.Error,
                         exitCode = result.ExitCode 
                     });
                 }
@@ -1101,24 +1156,66 @@ public sealed class LocalAgentApiServer : IDisposable
                 return;
             }
 
+            if (request.HttpMethod == "GET" && path.StartsWith("/v1/extensions/", StringComparison.Ordinal) && path.EndsWith("/logs", StringComparison.Ordinal))
+            {
+                var id = Uri.UnescapeDataString(path["/v1/extensions/".Length..^"/logs".Length]);
+                var command = FindExtension(id);
+                if (command == null)
+                {
+                    await WriteJsonAsync(response, 404, new { error = "extension_not_found" });
+                    return;
+                }
+                int maxLines = int.TryParse(request.QueryString["maxLines"], out var requested)
+                    ? Math.Clamp(requested, 1, 500) : 100;
+                var logPath = Path.Combine(command.ExtensionDirectoryPath!, "debug.log");
+                var lines = File.Exists(logPath) ? File.ReadLines(logPath).TakeLast(maxLines).ToArray() : [];
+                await WriteJsonAsync(response, 200, new { ok = true, id, logs = lines });
+                return;
+            }
+
             if (request.HttpMethod == "GET" && path.StartsWith("/v1/extensions/", StringComparison.Ordinal) && path.EndsWith("/status", StringComparison.Ordinal))
             {
                 var id = Uri.UnescapeDataString(path["/v1/extensions/".Length..^"/status".Length]);
-                var isRunning = _runningTasks.ContainsKey(id);
-                await WriteJsonAsync(response, 200, new { ok = true, isRunning });
+                var command = FindExtension(id);
+                if (command == null)
+                {
+                    await WriteJsonAsync(response, 404, new { error = "extension_not_found" });
+                    return;
+                }
+                var instances = RunningExtensionRegistry.GetSnapshot()
+                    .Where(x => string.Equals(x.ExtensionId, id, StringComparison.OrdinalIgnoreCase))
+                    .Select(x => new { x.InstanceId, x.Runtime, x.StartedAt, x.LaunchSource })
+                    .ToArray();
+                bool apiTaskActive = _runningTasks.ContainsKey(id);
+                await WriteJsonAsync(response, 200, new
+                {
+                    ok = true, id, installed = true, version = command.DeclaredVersion,
+                    runtime = command.Runtime, isRunning = apiTaskActive || instances.Length > 0,
+                    apiTaskActive, instanceCount = instances.Length, instances,
+                    isDeploying = _deployingExtensions.ContainsKey(id),
+                    uiSession = UiSessions.Values.Where(s => string.Equals(
+                        s.ExtensionId, id, StringComparison.OrdinalIgnoreCase))
+                        .Select(SessionDto).FirstOrDefault()
+                });
                 return;
             }
 
             if (request.HttpMethod == "POST" && path.StartsWith("/v1/extensions/", StringComparison.Ordinal) && path.EndsWith("/stop", StringComparison.Ordinal))
             {
                 var id = Uri.UnescapeDataString(path["/v1/extensions/".Length..^"/stop".Length]);
+                if (_deployingExtensions.ContainsKey(id))
+                {
+                    await WriteJsonAsync(response, 409, new { error = "deployment_in_progress" });
+                    return;
+                }
+                EndUiSessionsForExtension(id, "extension_stopped");
                 var stoppedAny = false;
 
                 // 1. 尝试停止轻量级后台Task
                 if (_runningTasks.TryGetValue(id, out var cts))
                 {
                     try { cts.Cancel(); } catch { }
-                    _runningTasks.TryRemove(id, out _);
+                    // Keep the task registered until its execution finally block runs.
                     stoppedAny = true;
                 }
 
@@ -1137,7 +1234,8 @@ public sealed class LocalAgentApiServer : IDisposable
 
                 if (stoppedAny)
                 {
-                    await WriteJsonAsync(response, 200, new { ok = true, stopped = true });
+                    bool stillRunning = _runningTasks.ContainsKey(id) || RunningExtensionRegistry.IsRunning(id);
+                    await WriteJsonAsync(response, 200, new { ok = true, stopped = !stillRunning, stopRequested = true, isRunning = stillRunning });
                 }
                 else
                 {
@@ -1726,6 +1824,10 @@ public sealed class LocalAgentApiServer : IDisposable
         {
             await WriteJsonAsync(response, 404, new { error = ex.Message });
         }
+        catch (UiApiException ex)
+        {
+            await WriteJsonAsync(response, ex.Status, new { ok = false, error = ex.Code });
+        }
         catch (InvalidOperationException ex)
         {
             await WriteJsonAsync(response, 400, new { error = ex.Message });
@@ -1753,7 +1855,8 @@ public sealed class LocalAgentApiServer : IDisposable
         }
 
         var incoming = request.Headers["X-Yanzi-Token"];
-        return string.Equals(incoming, _token, StringComparison.Ordinal);
+        return string.Equals(incoming, _token, StringComparison.Ordinal) ||
+               IsValidConsoleCookie(request);
     }
 
     private static Task WriteYanmStateAsync(HttpListenerResponse response, AppSettings settings)
@@ -2006,10 +2109,7 @@ public sealed class LocalAgentApiServer : IDisposable
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Swallow (燕子) Local Agent API Console</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js"></script>
+    <title>燕子 · 本地 Agent API 控制台</title>
     <style>
         :root {
             --bg-color: #0b0f19;
@@ -2272,14 +2372,15 @@ public sealed class LocalAgentApiServer : IDisposable
 </head>
 <body>
     <div class="header">
-        <h1>Swallow (燕子) Local Agent API Console</h1>
-        <div class="badge-service">API Online</div>
+        <h1>燕子 · 本地 Agent API 控制台</h1>
+        <div class="badge-service">API 服务正常</div>
     </div>
     <div class="container">
+        <datalist id="available-program-ids"></datalist>
         <div class="api-list">
             <!-- Diagnostics -->
             <div class="api-section">
-                <h3 class="api-section-title">Diagnostics & Health</h3>
+                <h3 class="api-section-title">诊断与健康检查</h3>
                 <div class="card">
                     <div class="card-header" onclick="toggleCard(this)">
                         <span class="method get">GET</span>
@@ -2288,141 +2389,200 @@ public sealed class LocalAgentApiServer : IDisposable
                     </div>
                     <div class="card-body">
                         <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">检查 API 监听器是否运行正常。</p>
-                        <button class="btn-send" onclick="testHealth()">Send Request</button>
+                        <button class="btn-send" onclick="testHealth()">发送请求</button>
                     </div>
                 </div>
             </div>
 
             <!-- Extensions -->
             <div class="api-section">
-                <h3 class="api-section-title">Extension Management</h3>
+                <h3 class="api-section-title">小程序管理</h3>
                 <div class="card">
                     <div class="card-header" onclick="toggleCard(this)">
                         <span class="method get">GET</span>
                         <span class="path">/v1/extensions</span>
-                        <span class="desc">获取已安装扩展列表</span>
+                        <span class="desc">读取已安装小程序</span>
                     </div>
                     <div class="card-body">
-                        <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">列出当前燕子启动器中加载的所有本地扩展信息。</p>
-                        <button class="btn-send" onclick="testListExtensions()">Send Request</button>
+                        <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">读取当前燕子中实际安装的小程序，不依赖示例 ID。</p>
+                        <button class="btn-send" onclick="testListExtensions()">发送请求</button>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header" onclick="toggleCard(this)">
+                        <span class="method post">接口</span>
+                        <span class="path">/v1/extensions/{id}/status · build · reload</span>
+                        <span class="desc">开发与重载</span>
+                    </div>
+                    <div class="card-body">
+                        <p style="font-size:13px; color:var(--text-muted);">GET 查询状态；POST 编译只构建不停止；POST 重载先编译再启动。重载不保证运行时失败后的自动回滚。</p>
+                        <div class="form-group">
+                            <label>小程序 ID</label>
+                            <input type="text" class="form-control" id="deploy-ext-id" list="available-program-ids" placeholder="先读取已安装小程序">
+                        </div>
+                        <button class="btn-send" onclick="testDeployment('status')">查看状态</button>
+                        <button class="btn-send" onclick="testDeployment('build')">编译</button>
+                        <button class="btn-send" onclick="testDeployment('reload')">重载</button>
                     </div>
                 </div>
                 <div class="card">
                     <div class="card-header" onclick="toggleCard(this)">
                         <span class="method post">POST</span>
                         <span class="path">/v1/extensions/{id}/run</span>
-                        <span class="desc">执行扩展</span>
+                        <span class="desc">运行小程序</span>
                     </div>
                     <div class="card-body">
-                        <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">触发执行指定 ID 的扩展脚本或可执行文件。</p>
+                        <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">运行指定小程序脚本或可执行文件。</p>
                         <div class="form-group">
-                            <label>Extension ID</label>
-                            <input type="text" class="form-control" id="run-ext-id" placeholder="例如: text-length-counter">
+                            <label>小程序 ID</label>
+                            <input type="text" class="form-control" id="run-ext-id" list="available-program-ids" placeholder="先读取已安装小程序">
                         </div>
                         <div class="form-group">
-                            <label>Input Text (输入内容)</label>
-                            <textarea class="form-control" id="run-input" placeholder="作为参数传给扩展..."></textarea>
+                            <label>运行参数（文本）</label>
+                            <textarea class="form-control" id="run-input" placeholder="作为参数传给所选小程序…"></textarea>
                         </div>
-                        <button class="btn-send" onclick="testRunExtension()">Send Request</button>
+                        <button class="btn-send" onclick="testRunExtension()">发送请求</button>
                     </div>
                 </div>
                 <div class="card">
                     <div class="card-header" onclick="toggleCard(this)">
                         <span class="method post">POST</span>
                         <span class="path">/v1/extensions/{id}/stop</span>
-                        <span class="desc">停止扩展</span>
+                        <span class="desc">停止小程序</span>
                     </div>
                     <div class="card-body">
                         <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">中止或终止指定 ID 的运行中进程或后台任务。</p>
                         <div class="form-group">
-                            <label>Extension ID</label>
-                            <input type="text" class="form-control" id="stop-ext-id" placeholder="例如: text-length-counter">
+                            <label>小程序 ID</label>
+                            <input type="text" class="form-control" id="stop-ext-id" list="available-program-ids" placeholder="先读取已安装小程序">
                         </div>
-                        <button class="btn-send" onclick="testStopExtension()">Send Request</button>
+                        <button class="btn-send" onclick="testStopExtension()">发送请求</button>
                     </div>
                 </div>
                 <div class="card">
                     <div class="card-header" onclick="toggleCard(this)">
                         <span class="method delete">DELETE</span>
                         <span class="path">/v1/extensions/{id}</span>
-                        <span class="desc">将扩展移至回收站</span>
+                        <span class="desc">将小程序移至回收站</span>
                     </div>
                     <div class="card-body">
-                        <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">将本地特定 ID 的扩展移动到回收站（软删除）。</p>
+                        <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">将指定小程序移入回收站（软删除）。</p>
                         <div class="form-group">
-                            <label>Extension ID</label>
-                            <input type="text" class="form-control" id="delete-ext-id" placeholder="例如: text-counter-pro">
+                            <label>小程序 ID</label>
+                            <input type="text" class="form-control" id="delete-ext-id" list="available-program-ids" placeholder="先读取已安装小程序">
                         </div>
-                        <button class="btn-send" onclick="testDeleteExtension()">Send Request</button>
+                        <button class="btn-send" onclick="testDeleteExtension()">发送请求</button>
                     </div>
                 </div>
                 <div class="card">
                     <div class="card-header" onclick="toggleCard(this)">
                         <span class="method delete">DELETE</span>
                         <span class="path">/v1/extensions/recycle-bin/{id}</span>
-                        <span class="desc">彻底删除扩展</span>
+                        <span class="desc">彻底删除小程序</span>
                     </div>
                     <div class="card-body">
-                        <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">从回收站中永久清除特定 ID 的扩展，此操作不可逆。</p>
+                        <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">从回收站中永久删除指定小程序，此操作不可逆。</p>
                         <div class="form-group">
-                            <label>Extension ID</label>
-                            <input type="text" class="form-control" id="purge-ext-id" placeholder="例如: text-counter-pro">
+                            <label>小程序 ID</label>
+                            <input type="text" class="form-control" id="purge-ext-id" list="available-program-ids" placeholder="先读取已安装小程序">
                         </div>
-                        <button class="btn-send" onclick="testPurgeExtension()">Send Request</button>
+                        <button class="btn-send" onclick="testPurgeExtension()">发送请求</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Scoped extension UI capture and automation -->
+            <div class="api-section">
+                <h3 class="api-section-title">小程序界面测试</h3>
+                <div class="card expanded">
+                    <div class="card-header" onclick="toggleCard(this)">
+                        <span class="method post">界面</span>
+                        <span class="path">/v1/extensions/{id}/ui/*</span>
+                        <span class="desc">窗口截图与 UI 自动化</span>
+                    </div>
+                    <div class="card-body">
+                        <p style="font-size:13px; color:var(--text-muted);">只访问指定小程序窗口，不会捕获整个桌面。日历失去焦点后可在后台截图，无需重新弹出；自动化点击则会主动显示日历。须先填写本地 API Token。</p>
+                        <div class="form-group">
+                            <label>小程序 ID</label>
+                            <select class="form-control" id="ui-ext-id" onchange="onSelectedProgramChanged()" disabled><option value="">请先登录并读取已安装小程序</option></select>
+                        </div>
+                        <button class="btn-send" onclick="refreshInstalledPrograms(true)">刷新小程序列表</button><span id="program-load-state" aria-live="polite" style="margin-left:10px;font-size:12px;color:var(--text-muted)">尚未读取</span><br><button class="btn-send" onclick="testUi('windows')">窗口列表</button>
+                        <button class="btn-send" onclick="testUi('open')">打开窗口</button>
+                        <button class="btn-send" onclick="testUi('elements')">查看控件</button>
+                        <button class="btn-send" onclick="testUi('capture')">截图</button>
+                        <div style="margin-top:14px;padding:12px;border:1px solid #3777CE;border-radius:9px;background:rgba(45,113,210,.09)">
+                            <strong style="color:#93C5FD">AI 自动化会话 · 蓝色屏幕边框与操作提示</strong>
+                            <div id="ui-session-state" style="font-size:12px;color:#AAA;margin:7px 0">尚未建立会话。普通自动化操作会显示短暂的测试提示。</div>
+                            <button class="btn-send" onclick="testUiSession('start')">开始窗口测试</button>
+                            <button class="btn-send" onclick="testUiSession('foreground')">前台测试（需确认）</button>
+                            <button class="btn-send" onclick="testUiSession('pause')">暂停</button>
+                            <button class="btn-send" onclick="testUiSession('resume')">继续</button>
+                            <button class="btn-send" onclick="testUiSession('stop')">结束</button>
+                            <button class="btn-send" onclick="testUiSession('status')">状态</button>
+                            <p style="font-size:11px;color:#A8BFEA;margin:9px 0 0">检测到用户操作会自动暂停；此时需在桌面蓝色工具条上手动点击继续。紧急停止：Ctrl+Alt+Shift+F12。前台模式暂不注入系统鼠标输入。</p>
+                        </div>
+                        <div class="form-group" style="margin-top:12px">
+                            <label>界面操作步骤（JSON；先读取控件 ID）</label>
+                            <textarea class="form-control" id="ui-action-json" rows="5" placeholder="先选择小程序，点击“查看控件”，再填写控件 ID 与操作步骤。"></textarea>
+                        </div>
+                        <button class="btn-send" onclick="testUi('actions')">执行操作并截图</button>
+                        <div style="margin-top:12px">
+                            <img id="ui-preview" alt="小程序界面截图" style="display:none;max-width:100%;border-radius:8px;border:1px solid #444" />
+                        </div>
                     </div>
                 </div>
             </div>
 
             <!-- Storage -->
             <div class="api-section">
-                <h3 class="api-section-title">Extension Storage</h3>
+                <h3 class="api-section-title">小程序数据存储</h3>
                 <div class="card">
                     <div class="card-header" onclick="toggleCard(this)">
                         <span class="method get">GET</span>
                         <span class="path">/v1/storage/{id}</span>
-                        <span class="desc">读取扩展存储数据</span>
+                        <span class="desc">读取小程序存储数据</span>
                     </div>
                     <div class="card-body">
-                        <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">读取某个扩展存放在沙盒里的配置、笔记或其他文本数据。</p>
+                        <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">读取某个小程序存放在沙盒里的配置、笔记或其他文本数据。</p>
                         <div class="form-group">
-                            <label>Extension ID</label>
-                            <input type="text" class="form-control" id="get-store-id" placeholder="例如: yanzi-notes">
+                            <label>小程序 ID</label>
+                            <input type="text" class="form-control" id="get-store-id" list="available-program-ids" placeholder="先读取已安装小程序">
                         </div>
                         <div class="form-group">
-                            <label>Storage Key (存储键/相对路径)</label>
+                            <label>存储键（相对路径）</label>
                             <input type="text" class="form-control" id="get-store-key" placeholder="例如: notes/index.json">
                         </div>
-                        <button class="btn-send" onclick="testGetStorage()">Send Request</button>
+                        <button class="btn-send" onclick="testGetStorage()">发送请求</button>
                     </div>
                 </div>
                 <div class="card">
                     <div class="card-header" onclick="toggleCard(this)">
                         <span class="method put">PUT</span>
                         <span class="path">/v1/storage/{id}</span>
-                        <span class="desc">修改/写入扩展数据</span>
+                        <span class="desc">修改/写入小程序数据</span>
                     </div>
                     <div class="card-body">
-                        <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">覆写或创建某个扩展沙盒中的键值文件，支持本地和云端的自动更新。</p>
+                        <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">覆写或创建某个小程序沙盒中的键值文件，支持本地和云端的自动更新。</p>
                         <div class="form-group">
-                            <label>Extension ID</label>
-                            <input type="text" class="form-control" id="put-store-id" placeholder="例如: yanzi-notes">
+                            <label>小程序 ID</label>
+                            <input type="text" class="form-control" id="put-store-id" list="available-program-ids" placeholder="先读取已安装小程序">
                         </div>
                         <div class="form-group">
-                            <label>Storage Key</label>
+                            <label>存储键</label>
                             <input type="text" class="form-control" id="put-store-key" placeholder="例如: notes/index.json">
                         </div>
                         <div class="form-group">
-                            <label>Content (写入内容)</label>
+                            <label>写入内容</label>
                             <textarea class="form-control" id="put-store-content" placeholder="写入的 JSON 或文本..."></textarea>
                         </div>
-                        <button class="btn-send" onclick="testPutStorage()">Send Request</button>
+                        <button class="btn-send" onclick="testPutStorage()">发送请求</button>
                     </div>
                 </div>
             </div>
 
             <!-- Yanm Status -->
             <div class="api-section">
-                <h3 class="api-section-title">Yanm Overlay Control</h3>
+                <h3 class="api-section-title">燕幕状态管理</h3>
                 <div class="card">
                     <div class="card-header" onclick="toggleCard(this)">
                         <span class="method get">GET</span>
@@ -2431,7 +2591,7 @@ public sealed class LocalAgentApiServer : IDisposable
                     </div>
                     <div class="card-body">
                         <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">获取当前燕幕的组件状态、便签内容和组件列表。</p>
-                        <button class="btn-send" onclick="testGetYanmState()">Send Request</button>
+                        <button class="btn-send" onclick="testGetYanmState()">发送请求</button>
                     </div>
                 </div>
                 <div class="card">
@@ -2443,10 +2603,10 @@ public sealed class LocalAgentApiServer : IDisposable
                     <div class="card-body">
                         <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">修改燕幕便签组件的内容或组件布局状态，立即反映在屏幕上。</p>
                         <div class="form-group">
-                            <label>Yanm Settings Payload (JSON)</label>
+                            <label>燕幕配置数据（JSON）</label>
                             <textarea class="form-control" id="put-yanm-content" placeholder='例如: {"componentState": {"note": "新便签内容"}}'></textarea>
                         </div>
-                        <button class="btn-send" onclick="testPutYanmState()">Send Request</button>
+                        <button class="btn-send" onclick="testPutYanmState()">发送请求</button>
                     </div>
                 </div>
             </div>
@@ -2455,117 +2615,250 @@ public sealed class LocalAgentApiServer : IDisposable
         <div class="sidebar">
             <!-- Credentials Panel -->
             <div class="panel panel-credentials">
-                <h4 class="panel-title">Credentials Configuration</h4>
+                <h4 class="panel-title">身份验证</h4>
                 <div class="form-group" style="margin-top:0;">
-                    <label>Base URL</label>
+                    <label>服务地址</label>
                     <input type="text" class="form-control" id="base-url" readonly>
                 </div>
                 <div class="form-group">
                     <label>X-Yanzi-Token</label>
                     <div class="token-container">
-                        <input type="password" class="form-control" id="api-token" value="__YANZI_TOKEN__">
-                        <button class="btn-action" onclick="toggleTokenVisibility()">Show</button>
-                        <button class="btn-action" onclick="copyToken()">Copy</button>
+                        <input type="password" class="form-control" id="api-token" value=""
+                            autocomplete="off" spellcheck="false" placeholder="首次使用：从燕子设置中粘贴 Token">
+                        <button id="token-visibility-button" class="btn-action" onclick="toggleTokenVisibility()">显示</button>
+                        <button class="btn-action" onclick="copyToken()">复制</button>
                     </div>
+                    <p id="console-auth-state" aria-live="polite" style="font-size:12px;color:var(--text-muted);margin:10px 0">正在检测本机登录状态…</p>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:9px">
+                        <button class="btn-action" onclick="rememberConsoleLogin()">验证并记住此浏览器</button>
+                        <button class="btn-action" onclick="signOutConsole()">退出并清除此浏览器的登录</button>
+                    </div>
+                    <p style="font-size:12px;color:var(--text-muted);margin:10px 0 0">
+                        获取方式：燕子 → 设置 → 常规 → 本地 Agent API → 复制 Token。首次验证后使用 HttpOnly 登录 Cookie，
+                        无需每次粘贴，也不会将原始 Token 保存到网页存储。使用公用电脑时请退出登录；
+                        清除浏览器 Cookie 或修改燕子 Token 后需要重新验证。
+                    </p>
                 </div>
             </div>
 
             <!-- Response Panel -->
             <div class="panel panel-response">
-                <h4 class="panel-title">Response Monitor</h4>
+                <h4 class="panel-title">响应监视器</h4>
                 <div class="res-meta">
-                    <div>Status: <span id="res-status" class="status-badge" style="display:inline-block; min-width:40px; text-align:center;">-</span></div>
-                    <div>Latency: <span id="res-time">-</span></div>
+                    <div>状态：<span id="res-status" class="status-badge" style="display:inline-block; min-width:40px; text-align:center;">-</span></div>
+                    <div>耗时：<span id="res-time">-</span></div>
                 </div>
                 <div class="res-container">
-                    <pre><code id="res-body" class="language-json">No requests sent yet.</code></pre>
+                    <pre><code id="res-body" class="language-json">尚未发送请求。</code></pre>
                 </div>
             </div>
         </div>
     </div>
 
     <script>
-        // Set dynamic base URL
+        // Console login uses an HttpOnly, SameSite=Strict cookie. No raw token
+        // is persisted in JS-accessible localStorage or injected in public HTML.
         document.getElementById('base-url').value = window.location.origin;
+        const calendarExample = JSON.stringify({
+            captureEach: true,
+            actions: [
+                {type: 'invoke', automationId: 'calendar.add',
+                 waitFor: 'calendar.editor.title'},
+                {type: 'invoke', automationId: 'calendar.editor.cancel'}
+            ]
+        }, null, 2);
+        let activePrograms = [];
+
+        function setAuthState(message, success = false) {
+            const status = document.getElementById('console-auth-state');
+            status.textContent = message;
+            status.style.color = success ? '#6ee7b7' : 'var(--text-muted)';
+        }
 
         function toggleCard(header) {
-            const card = header.parentElement;
-            card.classList.toggle('expanded');
+            header.parentElement.classList.toggle('expanded');
         }
 
         function toggleTokenVisibility() {
-            const tokenInput = document.getElementById('api-token');
-            const showBtn = event.target;
-            if (tokenInput.type === 'password') {
-                tokenInput.type = 'text';
-                showBtn.textContent = 'Hide';
-            } else {
-                tokenInput.type = 'password';
-                showBtn.textContent = 'Show';
+            const input = document.getElementById('api-token');
+            const button = document.getElementById('token-visibility-button');
+            input.type = input.type === 'password' ? 'text' : 'password';
+            button.textContent = input.type === 'password' ? '显示' : '隐藏';
+        }
+
+        async function copyToken() {
+            const value = document.getElementById('api-token').value;
+            if (!value) return alert('登录后的原始 Token 不在网页中保存；如需复制，请到燕子设置界面获取。');
+            try {
+                await navigator.clipboard.writeText(value);
+                setAuthState('已复制到剪贴板。请妥善保管。', true);
+            } catch (error) {
+                setAuthState('复制失败，请检查浏览器剪贴板权限。');
             }
         }
 
-        function copyToken() {
-            const tokenInput = document.getElementById('api-token');
-            navigator.clipboard.writeText(tokenInput.value);
-            const copyBtn = event.target;
-            const originalText = copyBtn.textContent;
-            copyBtn.textContent = 'Copied!';
-            setTimeout(() => {
-                copyBtn.textContent = originalText;
-            }, 1500);
+        async function rememberConsoleLogin() {
+            const input = document.getElementById('api-token');
+            const token = input.value.trim();
+            if (!token) {
+                return setAuthState('请先从燕子设置中复制 Token 并粘贴。');
+            }
+            setAuthState('正在验证并创建本机登录…');
+            try {
+                const result = await fetch('/v1/console/login', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    cache: 'no-store',
+                    headers: {'Content-Type': 'application/json', 'X-Yanzi-Token': token},
+                    body: '{}'
+                });
+                if (!result.ok) throw new Error('Token 验证失败（HTTP ' + result.status + '）');
+                input.value = '';
+                input.type = 'password';
+                document.getElementById('token-visibility-button').textContent = '显示';
+                setAuthState('已记住此浏览器：下次打开控制台可直接使用。', true);
+                await refreshInstalledPrograms();
+            } catch (error) {
+                setAuthState(error.message + '；请检查设置中的当前 Token。');
+            }
+        }
+
+        async function signOutConsole() {
+            try {
+                const result = await fetch('/v1/console/logout', {
+                    method: 'POST', credentials: 'same-origin',
+                    headers: {'Content-Type': 'application/json'}, body: '{}'
+                });
+                if (!result.ok) throw new Error('退出失败（HTTP ' + result.status + '）');
+                document.getElementById('api-token').value = '';
+                resetInstalledPrograms('已退出，请重新验证后读取小程序');
+                setAuthState('已清除当前浏览器的登录 Cookie。');
+            } catch (error) {
+                setAuthState('无法退出登录：' + error.message);
+            }
+        }
+
+        function resetInstalledPrograms(message) {
+            activePrograms = [];
+            const selector = document.getElementById('ui-ext-id');
+            selector.replaceChildren(new Option('请先读取已安装小程序', ''));
+            selector.disabled = true;
+            document.getElementById('available-program-ids').replaceChildren();
+            document.getElementById('program-load-state').textContent = message;
+            document.getElementById('ui-action-json').value = '';
+        }
+
+        function onSelectedProgramChanged() {
+            const selected = document.getElementById('ui-ext-id').value;
+            const editor = document.getElementById('ui-action-json');
+            if (selected === 'taskbar-calendar' && !editor.value.trim())
+                editor.value = calendarExample;
+            else if (selected !== 'taskbar-calendar' && editor.value.trim() === calendarExample)
+                editor.value = '';
+        }
+
+        async function refreshInstalledPrograms(showInMonitor = false) {
+            const manuallyEnteredToken = document.getElementById('api-token').value.trim();
+            const headers = manuallyEnteredToken ? {'X-Yanzi-Token': manuallyEnteredToken} : {};
+            const status = document.getElementById('program-load-state');
+            status.textContent = '正在读取…';
+            try {
+                const result = await fetch('/v1/extensions', {
+                    method: 'GET', headers, cache: 'no-store', credentials: 'same-origin'
+                });
+                if (result.status === 401) {
+                    resetInstalledPrograms('身份验证失效');
+                    setAuthState('登录失效。请到燕子设置中复制当前 Token，重新验证。');
+                    return;
+                }
+                if (!result.ok) throw new Error('HTTP ' + result.status);
+                const data = await result.json();
+                activePrograms = Array.isArray(data.items)
+                    ? data.items.filter(item => item && typeof item.id === 'string' && item.id.trim())
+                        .sort((a, b) => (a.title || a.id).localeCompare(b.title || b.id, 'zh-CN'))
+                    : [];
+                const selector = document.getElementById('ui-ext-id');
+                const oldSelection = selector.value;
+                selector.replaceChildren(new Option('请选择已安装小程序', ''));
+                const suggestions = document.getElementById('available-program-ids');
+                suggestions.replaceChildren();
+                for (const program of activePrograms) {
+                    selector.add(new Option((program.title || program.id) + ' · ' + program.id, program.id));
+                    suggestions.appendChild(new Option(program.id));
+                }
+                selector.disabled = activePrograms.length === 0;
+                if (activePrograms.some(program => program.id === oldSelection))
+                    selector.value = oldSelection;
+                status.textContent = '已读取 ' + activePrograms.length + ' 个小程序';
+                setAuthState('本机 API 已登录，可以直接操作已安装小程序。', true);
+                if (showInMonitor) showResponse(200, {ok: true, items: activePrograms});
+            } catch (error) {
+                resetInstalledPrograms('读取失败');
+                setAuthState('获取小程序列表失败：' + error.message);
+            }
+        }
+
+        const statusTranslations = {
+            200: '成功', 201: '已创建', 202: '已接受', 204: '已完成',
+            400: '请求错误', 401: '未授权', 403: '禁止访问', 404: '未找到',
+            405: '不支持该操作', 409: '状态冲突', 413: '请求过大',
+            422: '无法处理', 429: '请求过多', 500: '服务器错误',
+            503: '服务不可用'
+        };
+
+        function showResponse(status, value, duration = '-') {
+            const statusEl = document.getElementById('res-status');
+            statusEl.textContent = status + ' ' + (statusTranslations[status] || '请求完成');
+            statusEl.className = 'status-badge ' +
+                (status >= 200 && status < 300 ? 'status-ok' : 'status-error');
+            document.getElementById('res-time').textContent =
+                duration === '-' ? '-' : duration + ' 毫秒';
+            const code = document.getElementById('res-body');
+            code.textContent = typeof value === 'string'
+                ? value : JSON.stringify(value, null, 2);
         }
 
         async function sendRequest(method, path, body = null) {
-            const origin = window.location.origin;
-            const token = document.getElementById('api-token').value;
-            const url = origin + path;
-            const startTime = performance.now();
-            const statusEl = document.getElementById('res-status');
-            const timeEl = document.getElementById('res-time');
-            const codeEl = document.getElementById('res-body');
-            
-            statusEl.textContent = 'Sending...';
-            timeEl.textContent = '-';
-            codeEl.textContent = 'Loading...';
-            codeEl.className = 'language-json';
-
-            const headers = {
-                'Content-Type': 'application/json'
-            };
-            if (token) {
-                headers['X-Yanzi-Token'] = token;
-            }
-
-            const options = {
-                method: method,
-                headers: headers
-            };
-            if (body && (method === 'POST' || method === 'PUT')) {
-                options.body = typeof body === 'string' ? body : JSON.stringify(body);
-            }
-
+            const token = document.getElementById('api-token').value.trim();
+            const headers = {'Content-Type': 'application/json'};
+            if (token) headers['X-Yanzi-Token'] = token;
+            const options = {method, headers, credentials: 'same-origin'};
+            if (method === 'POST' || method === 'PUT')
+                options.body = typeof body === 'string' ? body : JSON.stringify(body ?? {});
+            showResponse(0, '正在发送…');
+            const start = performance.now();
             try {
-                const response = await fetch(url, options);
-                const duration = (performance.now() - startTime).toFixed(1);
-                statusEl.textContent = response.status + ' ' + response.statusText;
-                statusEl.className = 'status-badge ' + (response.status >= 200 && response.status < 300 ? 'status-ok' : 'status-error');
-                timeEl.textContent = duration + ' ms';
-                
-                let text = await response.text();
-                try {
-                    const parsed = JSON.parse(text);
-                    codeEl.textContent = JSON.stringify(parsed, null, 2);
-                } catch {
-                    codeEl.textContent = text;
+                const response = await fetch(window.location.origin + path, options);
+                const duration = (performance.now() - start).toFixed(1);
+                const raw = await response.text();
+                let data;
+                try { data = JSON.parse(raw); }
+                catch { data = raw; }
+                showResponse(response.status, data, duration);
+                if (response.status === 401)
+                    setAuthState('尚未登录或 Token 已失效；请到燕子设置中获取当前 Token。');
+                return response.ok ? data : null;
+            } catch (error) {
+                showResponse(0, '请求失败：' + error.message,
+                    (performance.now() - start).toFixed(1));
+                return null;
+            }
+        }
+
+        async function bootstrapConsole() {
+            resetInstalledPrograms('请先登录并读取已安装小程序');
+            try {
+                const response = await fetch('/v1/console/session', {
+                    credentials: 'same-origin', cache: 'no-store'
+                });
+                if (response.ok) {
+                    setAuthState('已恢复此浏览器的本机登录状态。', true);
+                    await refreshInstalledPrograms();
+                } else {
+                    setAuthState('首次使用：在燕子设置中复制 Token，点击“验证并记住此浏览器”。');
                 }
-                hljs.highlightElement(codeEl);
-            } catch (err) {
-                const duration = (performance.now() - startTime).toFixed(1);
-                statusEl.textContent = 'Error';
-                statusEl.className = 'status-badge status-error';
-                timeEl.textContent = duration + ' ms';
-                codeEl.textContent = err.toString();
+            } catch {
+                setAuthState('暂时无法连接本地 API 服务，请检查燕子是否已启动。');
             }
         }
 
@@ -2574,38 +2867,125 @@ public sealed class LocalAgentApiServer : IDisposable
         }
 
         function testListExtensions() {
-            sendRequest('GET', '/v1/extensions');
+            refreshInstalledPrograms(true);
+        }
+
+        function testDeployment(action) {
+            const id = document.getElementById('deploy-ext-id').value.trim();
+            if (!id) return alert('请先选择或填写已安装的小程序 ID');
+            if (!['status', 'build', 'reload'].includes(action)) return;
+            if (action === 'reload' && !confirm('重新加载会关闭当前实例；运行时失败时不会自动回滚。是否继续？')) return;
+            const endpoint = `/v1/extensions/${encodeURIComponent(id)}/${action}`;
+            sendRequest(action === 'status' ? 'GET' : 'POST', endpoint);
+        }
+
+        async function testUiSession(action) {
+            const id = document.getElementById('ui-ext-id').value.trim();
+            const indicator = document.getElementById('ui-session-state');
+            if (!id) return alert('请先读取并选择小程序');
+            let method = 'GET', path = '', body = null;
+            if (action === 'start' || action === 'foreground') {
+                if (window.yanziCurrentUiSessionId) {
+                    return alert('请先结束已有会话');
+                }
+                if (action === 'foreground' &&
+                    !confirm('前台测试将显示蓝色屏幕边缘和 AI 光标提示。真实用户输入会自动暂停。继续吗？'))
+                    return;
+                method = 'POST';
+                path = '/v1/extensions/' + encodeURIComponent(id) + '/ui/sessions';
+                body = {
+                    mode: action === 'foreground' ? 'foreground' : 'scoped',
+                    userConsent: action === 'foreground',
+                    launchIfNeeded: true
+                };
+            } else {
+                const sessionId = window.yanziCurrentUiSessionId;
+                if (!sessionId) return alert('尚未建立 UI 会话');
+                path = '/v1/ui/sessions/' + sessionId;
+                if (action !== 'status') {
+                    method = action === 'stop' ? 'DELETE' : 'POST';
+                    if (action !== 'stop') path += '/' + action;
+                }
+            }
+            const response = await sendRequest(method, path, body);
+            if (!response) return;
+            if (response.session?.sessionId)
+                window.yanziCurrentUiSessionId = response.session.sessionId;
+            if (response.ended) window.yanziCurrentUiSessionId = null;
+            indicator.textContent = response.session
+                ? ({active:'测试中',paused:'已暂停',ended:'已结束'}[response.session.state] || response.session.state) + ' · ' + response.session.stage +
+                  ' · ' + ({scoped:'小程序窗口',foreground:'前台提示'}[response.session.mode] || response.session.mode) + ' · 会话 ' +
+                  response.session.sessionId.slice(0, 8)
+                : response.ended ? '会话已结束，边框与光标提示已释放'
+                : '无法获取会话状态';
+        }
+
+        async function testUi(action) {
+            const id = document.getElementById('ui-ext-id').value.trim();
+            if (!id) return alert('请先读取并选择小程序');
+            const prefix = '/v1/extensions/' + encodeURIComponent(id) + '/ui/';
+            let method = 'GET', route = action, body = null;
+            if (action === 'open') {
+                method = 'POST'; body = {launchIfNeeded: true};
+            } else if (action === 'capture') {
+                method = 'POST'; body = {mode: 'auto', launchIfNeeded: false};
+            } else if (action === 'actions') {
+                method = 'POST';
+                try { body = JSON.parse(document.getElementById('ui-action-json').value); }
+                catch { return alert('操作步骤必须是有效的 JSON'); }
+                if (!confirm('即将操作所选扩展的真实窗口。请勿在测试脚本中触发真实数据保存或删除。')) return;
+            }
+            if (body && window.yanziCurrentUiSessionId && (action === 'capture' || action === 'actions'))
+                body.sessionId = window.yanziCurrentUiSessionId;
+            const payload = await sendRequest(method, prefix + route, body);
+            if (action !== 'capture' && action !== 'actions') return;
+            try {
+                const snapshots = action === 'capture' ? [payload.capture] : payload.captures;
+                const last = snapshots?.[snapshots.length - 1];
+                if (!last?.imageUrl) return;
+                const token = document.getElementById('api-token').value.trim();
+                const headers = token ? {'X-Yanzi-Token': token} : {};
+                const result = await fetch(last.imageUrl, {headers, cache: 'no-store', credentials: 'same-origin'});
+                if (!result.ok) throw new Error('截图请求失败（HTTP ' + result.status + '）');
+                const preview = document.getElementById('ui-preview');
+                if (preview.dataset.objectUrl) URL.revokeObjectURL(preview.dataset.objectUrl);
+                preview.dataset.objectUrl = URL.createObjectURL(await result.blob());
+                preview.src = preview.dataset.objectUrl;
+                preview.style.display = 'block';
+            } catch (err) {
+                document.getElementById('res-body').textContent += '\n图片预览失败：' + err.message;
+            }
         }
 
         function testRunExtension() {
             const id = document.getElementById('run-ext-id').value.trim();
             const input = document.getElementById('run-input').value;
-            if (!id) return alert('请输入 Extension ID');
+            if (!id) return alert('请先选择或填写已安装的小程序 ID');
             sendRequest('POST', `/v1/extensions/${encodeURIComponent(id)}/run`, { input });
         }
 
         function testStopExtension() {
             const id = document.getElementById('stop-ext-id').value.trim();
-            if (!id) return alert('请输入 Extension ID');
+            if (!id) return alert('请先选择或填写已安装的小程序 ID');
             sendRequest('POST', `/v1/extensions/${encodeURIComponent(id)}/stop`);
         }
 
         function testDeleteExtension() {
             const id = document.getElementById('delete-ext-id').value.trim();
-            if (!id) return alert('请输入 Extension ID');
+            if (!id) return alert('请先选择或填写已安装的小程序 ID');
             sendRequest('DELETE', `/v1/extensions/${encodeURIComponent(id)}`);
         }
 
         function testPurgeExtension() {
             const id = document.getElementById('purge-ext-id').value.trim();
-            if (!id) return alert('请输入 Extension ID');
+            if (!id) return alert('请先选择或填写已安装的小程序 ID');
             sendRequest('DELETE', `/v1/extensions/recycle-bin/${encodeURIComponent(id)}`);
         }
 
         function testGetStorage() {
             const id = document.getElementById('get-store-id').value.trim();
             const key = document.getElementById('get-store-key').value.trim();
-            if (!id || !key) return alert('请输入 Extension ID 和 Storage Key');
+            if (!id || !key) return alert('请输入小程序 ID 和存储键');
             sendRequest('GET', `/v1/storage/${encodeURIComponent(id)}?key=${encodeURIComponent(key)}`);
         }
 
@@ -2613,7 +2993,7 @@ public sealed class LocalAgentApiServer : IDisposable
             const id = document.getElementById('put-store-id').value.trim();
             const key = document.getElementById('put-store-key').value.trim();
             const content = document.getElementById('put-store-content').value;
-            if (!id || !key) return alert('请输入 Extension ID 和 Storage Key');
+            if (!id || !key) return alert('请输入小程序 ID 和存储键');
             sendRequest('PUT', `/v1/storage/${encodeURIComponent(id)}`, { key, content });
         }
 
@@ -2623,7 +3003,7 @@ public sealed class LocalAgentApiServer : IDisposable
 
         function testPutYanmState() {
             const content = document.getElementById('put-yanm-content').value.trim();
-            if (!content) return alert('请输入 Yanm Settings Payload JSON');
+            if (!content) return alert('请输入燕幕配置 JSON');
             try {
                 const parsed = JSON.parse(content);
                 sendRequest('PUT', '/v1/me/yanm-state', parsed);
@@ -2631,11 +3011,13 @@ public sealed class LocalAgentApiServer : IDisposable
                 alert('JSON 格式错误: ' + e.message);
             }
         }
+        bootstrapConsole();
     </script>
 </body>
 </html>
 """;
-        return html.Replace("__YANZI_TOKEN__", _token ?? string.Empty);
+        // /docs is public on loopback: never embed an API credential in HTML.
+        return html.Replace("__YANZI_TOKEN__", string.Empty);
     }
 
     private async Task HandleBrowserWebSocketLoopAsync(WebSocket webSocket, int socketId, string browserName)

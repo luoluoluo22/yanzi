@@ -2890,9 +2890,9 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             vm.NotifyGamingStatCardChanged();
             HostAssets.AppendLog($"Quick panel execute: source={launchSource}, slot={vm.Index}, extension={command.ExtensionId}, usageCount={command.UsageCount}.");
             _releaseTargetTimer.Stop();
-            if (TryExtractGeneratedPasteText(command, out var pasteText))
+            if (TryExtractGeneratedPasteText(command, out var pasteText, out var pressEnter))
             {
-                await ExecuteGeneratedPasteAsync(command, pasteText, launchSource);
+                await ExecuteGeneratedPasteAsync(command, pasteText, pressEnter, launchSource);
                 return;
             }
 
@@ -2929,7 +2929,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private async Task ExecuteGeneratedPasteAsync(CommandItem command, string text, string launchSource)
+    private async Task ExecuteGeneratedPasteAsync(CommandItem command, string text, bool pressEnter, string launchSource)
     {
         var totalStopwatch = Stopwatch.StartNew();
         try
@@ -2958,11 +2958,17 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             var sent = NativeMethods.SendCtrlV(out var inputCount, out var lastError);
             sendStopwatch.Stop();
 
+            if (pressEnter)
+            {
+                await Task.Delay(80);
+                NativeMethods.SendEnter(out _, out _);
+            }
+
             _mainWindow.LastRunMessage = $"已粘贴：{command.Title}";
             _mainWindow.SyncStatus = "已粘贴。";
             HostAssets.AppendRecent(command.Title);
             HostAssets.AppendLog(
-                $"Quick panel paste: id={command.ExtensionId}, title={command.Title}, source={launchSource}, textLength={text.Length}, SendInput sent={sent}/{inputCount}, lastError={lastError}, elapsedMs={totalStopwatch.ElapsedMilliseconds}, clipboardMs={clipboardStopwatch.ElapsedMilliseconds}, restoreMs={restoreStopwatch.ElapsedMilliseconds}, settleMs={settleDelayMs}, sendMs={sendStopwatch.ElapsedMilliseconds}, foregroundRestored={restoredForeground}, focusRestored={focusRestored}.");
+                $"Quick panel paste: id={command.ExtensionId}, title={command.Title}, source={launchSource}, textLength={text.Length}, pressEnter={pressEnter}, SendInput sent={sent}/{inputCount}, lastError={lastError}, elapsedMs={totalStopwatch.ElapsedMilliseconds}, clipboardMs={clipboardStopwatch.ElapsedMilliseconds}, restoreMs={restoreStopwatch.ElapsedMilliseconds}, settleMs={settleDelayMs}, sendMs={sendStopwatch.ElapsedMilliseconds}, foregroundRestored={restoredForeground}, focusRestored={focusRestored}.");
         }
         catch (Exception ex)
         {
@@ -2992,9 +2998,13 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         return restored;
     }
 
-    private static bool TryExtractGeneratedPasteText(CommandItem command, out string text)
+    private static bool TryExtractGeneratedPasteText(CommandItem command, out string text) =>
+        TryExtractGeneratedPasteText(command, out text, out _);
+
+    private static bool TryExtractGeneratedPasteText(CommandItem command, out string text, out bool pressEnter)
     {
         text = string.Empty;
+        pressEnter = false;
         var script = command.InlineScriptSource;
         if (string.IsNullOrWhiteSpace(script) ||
             !string.Equals(command.EntryMode, "inline", StringComparison.OrdinalIgnoreCase) ||
@@ -3018,6 +3028,9 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         try
         {
             text = Encoding.UTF8.GetString(Convert.FromBase64String(match.Groups["payload"].Value));
+            pressEnter = script.Contains("SendEnter()", StringComparison.OrdinalIgnoreCase) ||
+                         script.Contains("VkReturn", StringComparison.OrdinalIgnoreCase) ||
+                         script.Contains("SendWait(\"{ENTER}\")", StringComparison.OrdinalIgnoreCase);
             return true;
         }
         catch
@@ -6199,6 +6212,7 @@ internal static class NativeMethods
     private const uint KeyeventfKeyup = 0x0002;
     private const ushort VkControl = 0x11;
     private const ushort VkV = 0x56;
+    private const ushort VkReturn = 0x0D;
     private const uint SwpNoSize = 0x0001;
     private const uint SwpNoMove = 0x0002;
     private const uint SwpNoActivate = 0x0010;
@@ -6359,6 +6373,18 @@ internal static class NativeMethods
         var sent = SendInput((uint)inputs.Length, inputs, System.Runtime.InteropServices.Marshal.SizeOf<INPUT>());
         lastError = System.Runtime.InteropServices.Marshal.GetLastWin32Error();
         return sent;
+    }
+
+    public static uint SendEnter(out int inputCount, out int lastError)
+    {
+        var down = new[] { KeyInput(VkReturn, 0) };
+        var up = new[] { KeyInput(VkReturn, KeyeventfKeyup) };
+        var sentDown = SendInput(1, down, System.Runtime.InteropServices.Marshal.SizeOf<INPUT>());
+        Thread.Sleep(15);
+        var sentUp = SendInput(1, up, System.Runtime.InteropServices.Marshal.SizeOf<INPUT>());
+        inputCount = 2;
+        lastError = System.Runtime.InteropServices.Marshal.GetLastWin32Error();
+        return sentDown + sentUp;
     }
 
     private static INPUT KeyInput(ushort virtualKey, uint flags)

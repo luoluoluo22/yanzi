@@ -15,6 +15,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Yanzi.Avalonia", "src\Yanzi
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Yanzi.SyncVerification", "src\Yanzi.SyncVerification\Yanzi.SyncVerification.csproj", "{068E7D53-94FB-44B9-9B3B-DA1F82731D98}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Yanzi.Capture", "src\Yanzi.Capture\Yanzi.Capture.csproj", "{16D04E9A-7FEA-4EC1-8180-9A71EF35767D}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -85,6 +87,18 @@ Global
 		{068E7D53-94FB-44B9-9B3B-DA1F82731D98}.Release|x64.Build.0 = Release|Any CPU
 		{068E7D53-94FB-44B9-9B3B-DA1F82731D98}.Release|x86.ActiveCfg = Release|Any CPU
 		{068E7D53-94FB-44B9-9B3B-DA1F82731D98}.Release|x86.Build.0 = Release|Any CPU
+		{16D04E9A-7FEA-4EC1-8180-9A71EF35767D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{16D04E9A-7FEA-4EC1-8180-9A71EF35767D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{16D04E9A-7FEA-4EC1-8180-9A71EF35767D}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{16D04E9A-7FEA-4EC1-8180-9A71EF35767D}.Debug|x64.Build.0 = Debug|Any CPU
+		{16D04E9A-7FEA-4EC1-8180-9A71EF35767D}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{16D04E9A-7FEA-4EC1-8180-9A71EF35767D}.Debug|x86.Build.0 = Debug|Any CPU
+		{16D04E9A-7FEA-4EC1-8180-9A71EF35767D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{16D04E9A-7FEA-4EC1-8180-9A71EF35767D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{16D04E9A-7FEA-4EC1-8180-9A71EF35767D}.Release|x64.ActiveCfg = Release|Any CPU
+		{16D04E9A-7FEA-4EC1-8180-9A71EF35767D}.Release|x64.Build.0 = Release|Any CPU
+		{16D04E9A-7FEA-4EC1-8180-9A71EF35767D}.Release|x86.ActiveCfg = Release|Any CPU
+		{16D04E9A-7FEA-4EC1-8180-9A71EF35767D}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -95,5 +109,6 @@ Global
 		{A373F1D8-9963-4617-AD09-8734C35F1BF4} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{B0F0C0F2-DB34-4E72-88DE-5A8E12219CFB} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{068E7D53-94FB-44B9-9B3B-DA1F82731D98} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{16D04E9A-7FEA-4EC1-8180-9A71EF35767D} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal

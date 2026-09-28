@@ -1,0 +1,21 @@
+{
+  "id": "yanzi-capture",
+  "name": "燕子截图",
+  "version": "0.4.0",
+  "category": "系统工具",
+  "description": "宿主内运行的截图与录屏扩展，支持区域截图、OCR、画笔、文字、马赛克、贴图与非破坏式编辑。",
+  "keywords": ["截图", "截屏", "OCR", "文字识别", "标注", "录屏"],
+  "icon": "mdi:crop-free",
+  "accentHex": "#3A8DFF",
+  "runtime": "csharp",
+  "uiMode": "native-window",
+  "entryMode": "entry",
+  "entry": "Yanzi.Capture.dll",
+  "permissions": [],
+  "waitForExit": false,
+  "runAsAdmin": false,
+  "startup": {
+    "mode": "on_app_launch"
+  },
+  "isPublished": true
+}

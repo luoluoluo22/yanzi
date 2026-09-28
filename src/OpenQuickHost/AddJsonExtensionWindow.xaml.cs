@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -55,6 +55,7 @@ public partial class AddJsonExtensionWindow : Window
     private string? _manualWorkingDirectory;
     private bool? _manualRunAsAdmin;
     private bool? _manualWaitForExit;
+    private string? _manualEntryType;
     private bool _lastJsonValid;
     private bool _testCompleted;
     private bool _testSucceeded;
@@ -2270,7 +2271,8 @@ public partial class AddJsonExtensionWindow : Window
 
     private string ResolveJsonForSave()
     {
-        if (_lastEditedSource == EditSource.Form)
+        var isSimpleMode = SimpleModeTab?.IsChecked == true || SimpleModePanel?.Visibility == Visibility.Visible;
+        if (isSimpleMode || _lastEditedSource == EditSource.Form)
         {
             try
             {
@@ -2657,6 +2659,7 @@ public partial class AddJsonExtensionWindow : Window
             WorkingDirectory = NullIfEmpty(_manualWorkingDirectory),
             RunAsAdmin = _manualRunAsAdmin,
             WaitForExit = _manualWaitForExit,
+            EntryType = NullIfEmpty(_currentSimpleType ?? _manualEntryType),
             EntryMode = entryMode,
             Entry = NullIfEmpty(EntryBox.Text),
             Permissions = SplitCsv(PermissionsBox.Text),
@@ -2774,6 +2777,7 @@ public partial class AddJsonExtensionWindow : Window
         _manualWorkingDirectory = manifest.WorkingDirectory;
         _manualRunAsAdmin = manifest.RunAsAdmin;
         _manualWaitForExit = manifest.WaitForExit;
+        _manualEntryType = manifest.EntryType;
         SafeRefreshIconPreview();
     }
 

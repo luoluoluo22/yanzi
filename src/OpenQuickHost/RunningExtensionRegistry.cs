@@ -38,11 +38,38 @@ public static class RunningExtensionRegistry
                     }
                 }
 
+                var processId = pair.Value.Process?.Id ?? -1;
+
+                if (processId < 0)
+                {
+                    try
+                    {
+                        var objectKey = $"{pair.Value.ExtensionId}-window";
+                        if (HostObjectRegistry.TryGetObject(objectKey, out var hostObject) &&
+                            hostObject != null)
+                        {
+                            var processIdProperty = hostObject
+                                .GetType()
+                                .GetProperty("ProcessId");
+
+                            if (processIdProperty?.GetValue(hostObject) is int externalPid &&
+                                externalPid > 0)
+                            {
+                                processId = externalPid;
+                            }
+                        }
+                    }
+                    catch
+                    {
+                        // A managed extension may not expose an external PID.
+                    }
+                }
+
                 snapshot.Add(new RunningExtensionInfo(
                     pair.Value.InstanceId,
                     pair.Value.ExtensionId,
                     pair.Value.Title,
-                    pair.Value.Process?.Id ?? -1,
+                    processId,
                     pair.Value.Runtime,
                     pair.Value.LaunchSource,
                     pair.Value.StartedAt));
@@ -212,9 +239,15 @@ public static class RunningExtensionRegistry
                 }
 
                 entry.AbortAction();
-                Remove(instanceId, "terminated by user");
-                message = $"已结束扩展：{entry.Title}";
-                HostAssets.AppendLog($"RunningExtensionRegistry terminated managed: id={entry.ExtensionId}, title={entry.Title}");
+                // A managed extension can take time to stop its dispatcher and unload.
+                // Keep it registered until its worker actually exits, so status/reload
+                // cannot mistake a stop request for a completed termination.
+                if (entry.IsAliveFunc?.Invoke() != true)
+                {
+                    Remove(instanceId, "terminated by user");
+                }
+                message = $"已请求结束扩展：{entry.Title}";
+                HostAssets.AppendLog($"RunningExtensionRegistry termination requested: id={entry.ExtensionId}, title={entry.Title}");
                 return true;
             }
 
