@@ -1,4 +1,4 @@
-﻿param(
+param(
     [string]$Version = "0.1.0",
     [string]$Platform = "windows", # windows 或 android
     [string]$Repo = "luoluoluo22/yanzi",
@@ -78,6 +78,12 @@ if (-not $KeepProxy) {
     $env:HTTPS_PROXY = ""
     $env:ALL_PROXY = ""
     $env:NO_PROXY = ""
+} else {
+    if ([string]::IsNullOrWhiteSpace($env:HTTP_PROXY)) {
+        $env:HTTP_PROXY = "http://127.0.0.1:7890"
+        $env:HTTPS_PROXY = "http://127.0.0.1:7890"
+        $env:ALL_PROXY = "http://127.0.0.1:7890"
+    }
 }
 
 $env:GODEBUG = "http2client=0"
@@ -108,8 +114,7 @@ if (-not $releaseExists) {
         --repo $Repo `
         --target $Target `
         --title $releaseTitle `
-        --notes-file $notesPath `
-        --draft | Out-Host
+        --notes-file $notesPath | Out-Host
 } else {
     gh release edit $tag `
         --repo $Repo `
