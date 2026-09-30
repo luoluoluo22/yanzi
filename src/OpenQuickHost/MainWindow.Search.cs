@@ -1140,6 +1140,7 @@ public partial class MainWindow
                 LastRunMessage = string.IsNullOrWhiteSpace(updated.GlobalShortcut)
                     ? $"已清除快捷键：{updated.Title}"
                     : $"已设置快捷键：{updated.Title} -> {updated.GlobalShortcut}";
+                QueuePrivateExtensionUpsertToAccount(updated.ExtensionId);
                 QueueBackgroundWebDavSync("extension-shortcut");
             }
             else if (isCustomConfigurable)

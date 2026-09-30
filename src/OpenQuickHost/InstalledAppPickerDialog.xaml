@@ -68,8 +68,8 @@
             <!-- 顶部标题栏 -->
             <Grid Grid.Row="0" Margin="2,2,2,14" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown" Background="Transparent">
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="选择已安装程序" Foreground="{DynamicResource BrushTextMain}" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
-                    <TextBlock x:Name="StatsText" Text="正在扫描系统程序..." Foreground="{DynamicResource BrushTextSec}" FontSize="12" Margin="10,2,0,0" VerticalAlignment="Center" Opacity="0.75" />
+                    <TextBlock Text="选择已安装程序" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeLargePlus}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    <TextBlock x:Name="StatsText" Text="正在扫描系统程序..." Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="10,2,0,0" VerticalAlignment="Center" Opacity="0.75" />
                 </StackPanel>
                 
                 <Button HorizontalAlignment="Right" VerticalAlignment="Center" Width="28" Height="28" Click="CancelButton_Click" Cursor="Hand">
@@ -152,7 +152,7 @@
                                             <!-- 程序信息 -->
                                             <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                                 <TextBlock Text="{Binding Title}" Foreground="{DynamicResource BrushTextMain}" FontSize="13.5" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                                                <TextBlock Text="{Binding LaunchTarget}" Foreground="{DynamicResource BrushTextSec}" FontSize="11" Margin="0,3,0,0" TextTrimming="CharacterEllipsis" Opacity="0.75" />
+                                                <TextBlock Text="{Binding LaunchTarget}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,3,0,0" TextTrimming="CharacterEllipsis" Opacity="0.75" />
                                             </StackPanel>
                                         </Grid>
                                     </Border>
@@ -175,7 +175,7 @@
 
             <!-- 底部操作栏 -->
             <Grid Grid.Row="3" Margin="2,0,2,2">
-                <TextBlock x:Name="SelectedHintText" Text="提示：双击任意程序即可直接选定并填充。" Foreground="{DynamicResource BrushTextSec}" FontSize="12" VerticalAlignment="Center" Opacity="0.7" />
+                <TextBlock x:Name="SelectedHintText" Text="提示：双击任意程序即可直接选定并填充。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center" Opacity="0.7" />
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                     <Button Content="取消" Style="{DynamicResource GhostButtonStyle}" Height="32" Padding="16,0" Click="CancelButton_Click" Cursor="Hand" />
                     <Button x:Name="ConfirmButton" Content="确认选择" Style="{DynamicResource GhostButtonStyle}" BorderBrush="{DynamicResource BrushAccent}" Height="32" Padding="16,0" Margin="10,0,0,0" Click="ConfirmButton_Click" Cursor="Hand" />

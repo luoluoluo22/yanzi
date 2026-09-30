@@ -136,12 +136,12 @@
 
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
                     <StackPanel Orientation="Horizontal">
-                        <TextBlock x:Name="GestureTitleText" Text="手势名称" Foreground="{DynamicResource BrushTextMain}" FontSize="16" FontWeight="Bold"/>
+                        <TextBlock x:Name="GestureTitleText" Text="手势名称" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeLargePlus}" FontWeight="Bold"/>
                         <Border x:Name="GestureTriggerBadge" Background="#1A3B82F6" BorderBrush="#FF3B82F6" BorderThickness="1" CornerRadius="4" Padding="6,1" Margin="10,0,0,0" VerticalAlignment="Center">
-                            <TextBlock x:Name="GestureTriggerText" Text="按住右键划线" Foreground="#FF3B82F6" FontSize="11" FontWeight="SemiBold"/>
+                            <TextBlock x:Name="GestureTriggerText" Text="按住右键划线" Foreground="{DynamicResource BrushAccent}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold"/>
                         </Border>
                     </StackPanel>
-                    <TextBlock x:Name="GestureDescText" Text="可选择触发的小程序，配置白名单生效应用或黑名单禁用应用" Foreground="{DynamicResource BrushTextSec}" FontSize="12" Margin="0,4,0,0"/>
+                    <TextBlock x:Name="GestureDescText" Text="可选择触发的小程序，配置白名单生效应用或黑名单禁用应用" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,4,0,0"/>
                 </StackPanel>
 
                 <!-- 关闭按钮 -->
@@ -184,7 +184,7 @@
                         <Viewbox Width="14" Height="14" VerticalAlignment="Center" HorizontalAlignment="Center">
                             <Path Data="{local:IconGeometry search}" Fill="{DynamicResource BrushTextSec}" Stretch="Uniform"/>
                         </Viewbox>
-                        <TextBox Grid.Column="1" x:Name="SearchBox" TextChanged="SearchBox_TextChanged" Background="Transparent" BorderThickness="0" Foreground="{DynamicResource BrushTextMain}" CaretBrush="White" VerticalContentAlignment="Center" FontSize="13"/>
+                        <TextBox Grid.Column="1" x:Name="SearchBox" TextChanged="SearchBox_TextChanged" Background="Transparent" BorderThickness="0" Foreground="{DynamicResource BrushTextMain}" CaretBrush="White" VerticalContentAlignment="Center" FontSize="{DynamicResource FontSizeNormal}"/>
                         <TextBlock Grid.Column="1" x:Name="SearchPlaceholder" Text="搜索小程序名称或 ID..." Foreground="#FF666666" VerticalAlignment="Center" IsHitTestVisible="False" Margin="2,0,0,0"/>
                     </Grid>
                 </Border>
@@ -240,15 +240,15 @@
                                         <Grid>
                                             <Image Source="{Binding IconSource}" Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                             <Path Data="{Binding VectorIcon}" Fill="White" Stretch="Uniform" Width="16" Height="16" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                            <TextBlock Text="{Binding DisplayGlyph}" Foreground="White" FontSize="12" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                            <TextBlock Text="{Binding DisplayGlyph}" Foreground="White" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                         </Grid>
                                     </Border>
                                     <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="10,0,0,0">
-                                        <TextBlock Text="{Binding Label}" Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="SemiBold"/>
-                                        <TextBlock Text="{Binding ExtensionId}" Foreground="{DynamicResource BrushTextSec}" FontSize="11" Margin="0,2,0,0"/>
+                                        <TextBlock Text="{Binding Label}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
+                                        <TextBlock Text="{Binding ExtensionId}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,2,0,0"/>
                                     </StackPanel>
                                     <Border Grid.Column="2" Background="#1AFBBF24" BorderBrush="#FFFBBF24" BorderThickness="1" CornerRadius="4" Padding="6,2" VerticalAlignment="Center">
-                                        <TextBlock Text="{Binding Category}" Foreground="#FFFBBF24" FontSize="11"/>
+                                        <TextBlock Text="{Binding Category}" Foreground="#FFFBBF24" FontSize="{DynamicResource FontSizeSmall}"/>
                                     </Border>
                                 </Grid>
                             </DataTemplate>
@@ -304,12 +304,12 @@
                                     </Border>
 
                                     <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="10,0,0,0">
-                                        <TextBlock Text="{Binding AppName}" Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="SemiBold"/>
-                                        <TextBlock Text="{Binding AppPath}" Foreground="{DynamicResource BrushTextSec}" FontSize="11" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Text="{Binding AppName}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
+                                        <TextBlock Text="{Binding AppPath}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
                                     </StackPanel>
 
                                     <Border Grid.Column="3" Background="#1A3B82F6" BorderBrush="#FF3B82F6" BorderThickness="1" CornerRadius="4" Padding="6,2" VerticalAlignment="Center">
-                                        <TextBlock Text="限定生效" Foreground="#FF3B82F6" FontSize="11"/>
+                                        <TextBlock Text="限定生效" Foreground="{DynamicResource BrushAccent}" FontSize="{DynamicResource FontSizeSmall}"/>
                                     </Border>
                                 </Grid>
                             </DataTemplate>
@@ -365,12 +365,12 @@
                                     </Border>
 
                                     <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="10,0,0,0">
-                                        <TextBlock Text="{Binding AppName}" Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="SemiBold"/>
-                                        <TextBlock Text="{Binding AppPath}" Foreground="{DynamicResource BrushTextSec}" FontSize="11" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Text="{Binding AppName}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
+                                        <TextBlock Text="{Binding AppPath}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
                                     </StackPanel>
 
                                     <Border Grid.Column="3" Background="#1AEF4444" BorderBrush="#FFEF4444" BorderThickness="1" CornerRadius="4" Padding="6,2" VerticalAlignment="Center">
-                                        <TextBlock Text="前台禁用" Foreground="#FFEF4444" FontSize="11"/>
+                                        <TextBlock Text="前台禁用" Foreground="#FFEF4444" FontSize="{DynamicResource FontSizeSmall}"/>
                                     </Border>
                                 </Grid>
                             </DataTemplate>
@@ -391,7 +391,7 @@
                 <Button x:Name="UnbindButton" Content="解除绑定" Style="{StaticResource SecondaryBtn}" Foreground="#FFEF4444" Height="34" Padding="14,0" Click="UnbindButton_Click" Visibility="Collapsed"/>
 
                 <!-- 统计提示信息 -->
-                <TextBlock Grid.Column="1" x:Name="SelectedSummaryText" Text="未限定应用（全局所有窗口生效）" Foreground="{DynamicResource BrushTextSec}" VerticalAlignment="Center" Margin="14,0" FontSize="12"/>
+                <TextBlock Grid.Column="1" x:Name="SelectedSummaryText" Text="未限定应用（全局所有窗口生效）" Foreground="{DynamicResource BrushTextSec}" VerticalAlignment="Center" Margin="14,0" FontSize="{DynamicResource FontSizeSmallPlus}"/>
 
                 <StackPanel Grid.Column="2" Orientation="Horizontal">
                     <Button Content="取消" Style="{StaticResource SecondaryBtn}" Height="34" Padding="16,0" Margin="0,0,10,0" Click="CloseButton_Click"/>

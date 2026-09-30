@@ -7,14 +7,22 @@ namespace Yanzi.Capture;
 
 public sealed class CaptureDocument
 {
-    public BitmapSource BaseImage { get; }
+    public BitmapSource BaseImage { get; private set; }
     public ObservableCollection<Annotation> Annotations { get; } = [];
     public CommandHistory History { get; } = new();
+    public event Action? BaseImageChanged;
 
     public CaptureDocument(BitmapSource baseImage)
     {
         BaseImage = baseImage;
         if (BaseImage.CanFreeze) BaseImage.Freeze();
+    }
+
+    public void ReplaceBaseImage(BitmapSource baseImage)
+    {
+        if (baseImage.CanFreeze) baseImage.Freeze();
+        BaseImage = baseImage;
+        BaseImageChanged?.Invoke();
     }
 }
 

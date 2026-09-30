@@ -2896,6 +2896,16 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
                 return;
             }
 
+            if (MainWindow.IsQuickNoteCommand(command))
+            {
+                HidePanelIfAllowed();
+                MainWindow.OpenQuickNoteEditor(command, null, (newTitle, newText) =>
+                {
+                    LoadSlots();
+                });
+                return;
+            }
+
             HidePanelIfAllowed();
             if (_wasActivatedForInput && _previousForegroundWindow != IntPtr.Zero)
             {
@@ -3315,7 +3325,8 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
                 }
                 NativeFileIconService.ClearCacheForPath(newFullPath);
 
-                var newCommand = MainWindow.CreateFileShortcutCommand(newFullPath);
+                var isQuickNote = MainWindow.IsQuickNoteCommand(slot.Command);
+                var newCommand = isQuickNote ? MainWindow.CreateQuickNoteCommand(newFullPath, null, Path.GetFileNameWithoutExtension(newFullPath)) : MainWindow.CreateFileShortcutCommand(newFullPath);
                 var existingItem = container[reference.Index];
                 container[reference.Index] = new QuickPanelSlotItem
                 {
@@ -3560,76 +3571,471 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         _mainWindow.LastRunMessage = message;
     }
 
+    private sealed class ClipboardSnapshot
+    {
+        public bool HasImage { get; set; }
+        public BitmapSource? ImageSource { get; set; }
+        public bool HasFiles { get; set; }
+        public List<string> FilePaths { get; set; } = [];
+        public bool HasText { get; set; }
+        public string? Text { get; set; }
+    }
+
+    private static ClipboardSnapshot GetClipboardSnapshotSafe()
+    {
+        var snapshot = new ClipboardSnapshot();
+        try
+        {
+            if (System.Windows.Clipboard.ContainsFileDropList())
+            {
+                var dropList = System.Windows.Clipboard.GetFileDropList();
+                if (dropList != null && dropList.Count > 0)
+                {
+                    foreach (var path in dropList)
+                    {
+                        if (!string.IsNullOrWhiteSpace(path) && (File.Exists(path) || Directory.Exists(path)))
+                        {
+                            snapshot.FilePaths.Add(path);
+                        }
+                    }
+                    if (snapshot.FilePaths.Count > 0)
+                    {
+                        snapshot.HasFiles = true;
+                    }
+                }
+            }
+        }
+        catch { }
+
+        try
+        {
+            if (System.Windows.Clipboard.ContainsImage())
+            {
+                var img = System.Windows.Clipboard.GetImage();
+                if (img != null)
+                {
+                    snapshot.HasImage = true;
+                    snapshot.ImageSource = img;
+                }
+            }
+        }
+        catch { }
+
+        try
+        {
+            if (System.Windows.Clipboard.ContainsText())
+            {
+                var text = System.Windows.Clipboard.GetText();
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    snapshot.HasText = true;
+                    snapshot.Text = text;
+                }
+            }
+        }
+        catch { }
+
+        return snapshot;
+    }
+
+    private static string GetSafeFileName(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input)) return string.Empty;
+        var invalid = Path.GetInvalidFileNameChars();
+        var cleaned = new string(input.Select(c => invalid.Contains(c) ? '_' : c).ToArray()).Trim();
+        return cleaned;
+    }
+
+    private bool TrySetSlotItemDirectly(SlotViewModel targetSlot, string extensionId, bool isShortcut, out string message)
+    {
+        var targetReference = BuildSlotReference(targetSlot);
+        var targetContainer = targetReference == null ? null : GetSlotContainer(targetReference);
+        if (targetReference == null || targetContainer == null)
+        {
+            message = "当前鼠标面板分组不可用。";
+            return false;
+        }
+
+        targetContainer[targetReference.Index] = new QuickPanelSlotItem
+        {
+            ItemType = "extension",
+            ExtensionId = extensionId,
+            IsShortcut = isShortcut
+        };
+        RefreshAllLegacySlots();
+        SaveQuickPanelSettings("quickpanel-paste-item-slot");
+        LoadSlots();
+        RefreshActiveFolderAfterMutation();
+        message = targetSlot.Item == null
+            ? $"已放置到第 {targetSlot.Index + 1} 个槽位"
+            : $"已替换第 {targetSlot.Index + 1} 个槽位";
+        return true;
+    }
+
+    private void PasteClipboardImage_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem { CommandParameter: SlotViewModel targetSlot })
+        {
+            return;
+        }
+
+        var snapshot = GetClipboardSnapshotSafe();
+        if (!snapshot.HasImage || snapshot.ImageSource == null)
+        {
+            _mainWindow.SyncStatus = "剪贴板中未检测到图片。";
+            return;
+        }
+
+        if (!ConfirmReplaceOccupiedSlot(targetSlot, "剪贴板图片"))
+        {
+            return;
+        }
+
+        try
+        {
+            HostAssets.EnsureCreated();
+            var dir = HostAssets.PastedImagesPath;
+            if (!Directory.Exists(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+
+            var timeStamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            var rand = Guid.NewGuid().ToString("N")[..4];
+            var fileName = $"Image_{timeStamp}_{rand}.png";
+            var filePath = Path.Combine(dir, fileName);
+
+            using (var fileStream = new FileStream(filePath, FileMode.Create))
+            {
+                var encoder = new PngBitmapEncoder();
+                encoder.Frames.Add(BitmapFrame.Create(snapshot.ImageSource));
+                encoder.Save(fileStream);
+            }
+
+            var extensionId = $"{ExtensionIdPrefixes.SearchResult}{filePath}";
+            if (TrySetSlotItemDirectly(targetSlot, extensionId, isShortcut: true, out var message))
+            {
+                _mainWindow.LastRunMessage = $"已粘贴图片到槽位：{fileName}";
+            }
+            else if (!string.IsNullOrWhiteSpace(message))
+            {
+                _mainWindow.SyncStatus = message;
+            }
+        }
+        catch (Exception ex)
+        {
+            _mainWindow.SyncStatus = $"保存图片失败：{ex.Message}";
+        }
+    }
+
+    private void PasteClipboardFile_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem { CommandParameter: SlotViewModel targetSlot })
+        {
+            return;
+        }
+
+        var snapshot = GetClipboardSnapshotSafe();
+        if (!snapshot.HasFiles || snapshot.FilePaths.Count == 0)
+        {
+            _mainWindow.SyncStatus = "剪贴板中未检测到文件。";
+            return;
+        }
+
+        var targetReference = BuildSlotReference(targetSlot);
+        var targetContainer = targetReference == null ? null : GetSlotContainer(targetReference);
+        if (targetReference == null || targetContainer == null)
+        {
+            _mainWindow.SyncStatus = "当前鼠标面板分组不可用。";
+            return;
+        }
+
+        if (snapshot.FilePaths.Count == 1)
+        {
+            var singleFile = snapshot.FilePaths[0];
+            var fileName = Path.GetFileName(singleFile);
+            if (string.IsNullOrWhiteSpace(fileName)) fileName = singleFile;
+
+            if (!ConfirmReplaceOccupiedSlot(targetSlot, fileName))
+            {
+                return;
+            }
+
+            var extensionId = $"{ExtensionIdPrefixes.SearchResult}{singleFile}";
+            if (TrySetSlotItemDirectly(targetSlot, extensionId, isShortcut: true, out var message))
+            {
+                _mainWindow.LastRunMessage = $"已粘贴文件快捷方式：{fileName}";
+            }
+            else if (!string.IsNullOrWhiteSpace(message))
+            {
+                _mainWindow.SyncStatus = message;
+            }
+            return;
+        }
+
+        if (!ConfirmReplaceOccupiedSlot(targetSlot, $"{snapshot.FilePaths.Count} 个文件"))
+        {
+            return;
+        }
+
+        int inserted = 0;
+        int currentIndex = targetReference.Index;
+        foreach (var path in snapshot.FilePaths)
+        {
+            if (currentIndex >= targetContainer.Count) break;
+            if (inserted > 0)
+            {
+                while (currentIndex < targetContainer.Count && targetContainer[currentIndex] != null)
+                {
+                    currentIndex++;
+                }
+                if (currentIndex >= targetContainer.Count) break;
+            }
+
+            targetContainer[currentIndex] = new QuickPanelSlotItem
+            {
+                ItemType = "extension",
+                ExtensionId = $"{ExtensionIdPrefixes.SearchResult}{path}",
+                IsShortcut = true
+            };
+            inserted++;
+            currentIndex++;
+        }
+
+        RefreshAllLegacySlots();
+        SaveQuickPanelSettings("quickpanel-paste-files-slot");
+        LoadSlots();
+        RefreshActiveFolderAfterMutation();
+        _mainWindow.LastRunMessage = $"已粘贴 {inserted} 个文件到槽位。";
+    }
+
+    private void PasteClipboardText_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem { CommandParameter: SlotViewModel targetSlot })
+        {
+            return;
+        }
+
+        var snapshot = GetClipboardSnapshotSafe();
+        if (!snapshot.HasText || string.IsNullOrWhiteSpace(snapshot.Text))
+        {
+            _mainWindow.SyncStatus = "剪贴板中未检测到文本。";
+            return;
+        }
+
+        var text = snapshot.Text;
+        var firstLine = text.Replace("\r", "").Split('\n', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim() ?? string.Empty;
+        var safePrefix = GetSafeFileName(firstLine);
+        if (string.IsNullOrWhiteSpace(safePrefix))
+        {
+            safePrefix = "便签";
+        }
+        else if (safePrefix.Length > 16)
+        {
+            safePrefix = safePrefix[..16];
+        }
+
+        var incomingTitle = string.IsNullOrWhiteSpace(firstLine) ? "文本便签" : (firstLine.Length > 16 ? firstLine[..16] + "..." : firstLine);
+        if (!ConfirmReplaceOccupiedSlot(targetSlot, incomingTitle))
+        {
+            return;
+        }
+
+        try
+        {
+            HostAssets.EnsureCreated();
+            var dir = HostAssets.PastedNotesPath;
+            if (!Directory.Exists(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+
+            var timeStamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            var rand = Guid.NewGuid().ToString("N")[..4];
+            var fileName = $"{safePrefix}_{timeStamp}_{rand}.txt";
+            var filePath = Path.Combine(dir, fileName);
+
+            File.WriteAllText(filePath, text, Encoding.UTF8);
+
+            var extensionId = $"{MainWindow.QuickNotePrefix}{filePath}";
+            if (TrySetSlotItemDirectly(targetSlot, extensionId, isShortcut: true, out var message))
+            {
+                _mainWindow.LastRunMessage = $"已粘贴便签到槽位：{incomingTitle}";
+            }
+            else if (!string.IsNullOrWhiteSpace(message))
+            {
+                _mainWindow.SyncStatus = message;
+            }
+        }
+        catch (Exception ex)
+        {
+            _mainWindow.SyncStatus = $"保存文本便签失败：{ex.Message}";
+        }
+    }
+
     private void SlotContextMenu_Opened(object sender, RoutedEventArgs e)
     {
         if (sender is not ContextMenu menu) return;
         _currentContextMenu = menu;
         HideImagePreview();
 
-        var clipboard = _mainWindow.GetQuickPanelClipboard();
-        
-        MenuItem? pasteNormal = menu.Items.OfType<MenuItem>().FirstOrDefault(mi => mi.Tag?.ToString() == "PasteNormal");
-        MenuItem? pasteShortcut = menu.Items.OfType<MenuItem>().FirstOrDefault(mi => mi.Tag?.ToString() == "PasteShortcut");
-        MenuItem? pasteCopy = menu.Items.OfType<MenuItem>().FirstOrDefault(mi => mi.Tag?.ToString() == "PasteCopy");
-
-        if (pasteNormal == null) return;
-
         var slotVm = (menu.PlacementTarget as FrameworkElement)?.DataContext as SlotViewModel
                      ?? (menu.PlacementTarget as FrameworkElement)?.Tag as SlotViewModel
                      ?? menu.Items.OfType<MenuItem>().FirstOrDefault()?.CommandParameter as SlotViewModel;
 
         var isOccupied = slotVm is { IsOccupied: true, Command: not null };
-        var hasClipboardData = clipboard != null || _mainWindow.HasExtensionInClipboard();
 
-        if (!hasClipboardData)
-        {
-            // 剪贴板没有小程序数据时：空格子和已占用格子均不显示粘贴/替换
-            pasteNormal.Visibility = Visibility.Collapsed;
-            if (pasteShortcut != null) pasteShortcut.Visibility = Visibility.Collapsed;
-            if (pasteCopy != null) pasteCopy.Visibility = Visibility.Collapsed;
-            return;
-        }
+        // 1. 处理从系统剪贴板粘贴 (图片、文本、文件)
+        var snapshot = GetClipboardSnapshotSafe();
+        var pasteImage = menu.Items.OfType<MenuItem>().FirstOrDefault(mi => mi.Tag?.ToString() == "PasteClipboardImage");
+        var pasteText = menu.Items.OfType<MenuItem>().FirstOrDefault(mi => mi.Tag?.ToString() == "PasteClipboardText");
+        var pasteFile = menu.Items.OfType<MenuItem>().FirstOrDefault(mi => mi.Tag?.ToString() == "PasteClipboardFile");
+        var pasteEmpty = menu.Items.OfType<MenuItem>().FirstOrDefault(mi => mi.Tag?.ToString() == "PasteClipboardEmpty");
+        var pasteSep = menu.Items.OfType<Separator>().FirstOrDefault(s => s.Tag?.ToString() == "PasteClipboardSeparator");
 
-        if (isOccupied)
+        bool anyClipboardPasteVisible = false;
+
+        if (pasteImage != null)
         {
-            // 当前槽位已有小程序，且剪贴板有数据：只显示“替换”
-            pasteNormal.Visibility = Visibility.Visible;
-            pasteNormal.Header = "替换";
-            if (pasteShortcut != null) pasteShortcut.Visibility = Visibility.Collapsed;
-            if (pasteCopy != null) pasteCopy.Visibility = Visibility.Collapsed;
-        }
-        else
-        {
-            // 当前槽位为空，且剪贴板有数据：
-            if (clipboard == null)
+            if (snapshot.HasImage)
             {
-                // 系统剪贴板中存在有效小程序 JSON
-                pasteNormal.Visibility = Visibility.Visible;
-                pasteNormal.Header = "粘贴";
-                if (pasteShortcut != null) pasteShortcut.Visibility = Visibility.Collapsed;
-                if (pasteCopy != null) pasteCopy.Visibility = Visibility.Collapsed;
-            }
-            else if (clipboard.IsCut)
-            {
-                pasteNormal.Visibility = Visibility.Visible;
-                pasteNormal.Header = "移动到此处";
-                if (pasteShortcut != null) pasteShortcut.Visibility = Visibility.Collapsed;
-                if (pasteCopy != null) pasteCopy.Visibility = Visibility.Collapsed;
+                pasteImage.Visibility = Visibility.Visible;
+                pasteImage.Header = isOccupied ? "粘贴图片 (替换当前槽位)" : "粘贴图片";
+                anyClipboardPasteVisible = true;
             }
             else
             {
-                pasteNormal.Visibility = Visibility.Collapsed;
-                if (pasteShortcut != null)
+                pasteImage.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        if (pasteText != null)
+        {
+            if (snapshot.HasText)
+            {
+                pasteText.Visibility = Visibility.Visible;
+                var textPreview = snapshot.Text?.Replace("\r", "").Split('\n', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim();
+                if (!string.IsNullOrWhiteSpace(textPreview) && textPreview.Length > 12)
                 {
-                    pasteShortcut.Visibility = Visibility.Visible;
-                    pasteShortcut.Header = "粘贴为快捷方式";
+                    textPreview = textPreview[..10] + "...";
                 }
-                if (pasteCopy != null)
+
+                var titleSuffix = !string.IsNullOrWhiteSpace(textPreview) ? $": {textPreview}" : "";
+                pasteText.Header = isOccupied ? $"粘贴文本{titleSuffix} (替换)" : $"粘贴文本{titleSuffix}";
+                anyClipboardPasteVisible = true;
+            }
+            else
+            {
+                pasteText.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        if (pasteFile != null)
+        {
+            if (snapshot.HasFiles && snapshot.FilePaths.Count > 0)
+            {
+                pasteFile.Visibility = Visibility.Visible;
+                string fileHeader;
+                if (snapshot.FilePaths.Count == 1)
                 {
-                    pasteCopy.Visibility = Visibility.Visible;
-                    pasteCopy.Header = "粘贴为副本";
+                    var fileName = Path.GetFileName(snapshot.FilePaths[0]);
+                    if (string.IsNullOrWhiteSpace(fileName)) fileName = snapshot.FilePaths[0];
+                    if (fileName.Length > 16) fileName = fileName[..14] + "...";
+                    fileHeader = isOccupied ? $"粘贴文件: {fileName} (替换)" : $"粘贴文件: {fileName}";
+                }
+                else
+                {
+                    fileHeader = isOccupied ? $"粘贴文件 ({snapshot.FilePaths.Count}个, 替换)" : $"粘贴文件 ({snapshot.FilePaths.Count}个)";
+                }
+                pasteFile.Header = fileHeader;
+                anyClipboardPasteVisible = true;
+            }
+            else
+            {
+                pasteFile.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        if (pasteEmpty != null)
+        {
+            if (!anyClipboardPasteVisible && !isOccupied)
+            {
+                pasteEmpty.Visibility = Visibility.Visible;
+                anyClipboardPasteVisible = true;
+            }
+            else
+            {
+                pasteEmpty.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        // 2. 原有整理槽位逻辑
+        var clipboard = _mainWindow.GetQuickPanelClipboard();
+        var clipboardMenu = menu.Items.OfType<MenuItem>()
+            .FirstOrDefault(mi => mi.Tag?.ToString() == "SlotClipboardMenu");
+
+        bool hasExtensionClipboard = clipboard != null || _mainWindow.HasExtensionInClipboard();
+        if (clipboardMenu != null)
+        {
+            MenuItem? pasteNormal = clipboardMenu.Items.OfType<MenuItem>().FirstOrDefault(mi => mi.Tag?.ToString() == "PasteNormal");
+            MenuItem? pasteShortcut = clipboardMenu.Items.OfType<MenuItem>().FirstOrDefault(mi => mi.Tag?.ToString() == "PasteShortcut");
+            MenuItem? pasteCopy = clipboardMenu.Items.OfType<MenuItem>().FirstOrDefault(mi => mi.Tag?.ToString() == "PasteCopy");
+
+            clipboardMenu.Visibility = isOccupied || hasExtensionClipboard ? Visibility.Visible : Visibility.Collapsed;
+
+            if (pasteNormal != null)
+            {
+                if (!hasExtensionClipboard)
+                {
+                    pasteNormal.Visibility = Visibility.Collapsed;
+                    if (pasteShortcut != null) pasteShortcut.Visibility = Visibility.Collapsed;
+                    if (pasteCopy != null) pasteCopy.Visibility = Visibility.Collapsed;
+                }
+                else if (isOccupied)
+                {
+                    pasteNormal.Visibility = Visibility.Visible;
+                    pasteNormal.Header = "替换";
+                    if (pasteShortcut != null) pasteShortcut.Visibility = Visibility.Collapsed;
+                    if (pasteCopy != null) pasteCopy.Visibility = Visibility.Collapsed;
+                }
+                else
+                {
+                    if (clipboard == null)
+                    {
+                        pasteNormal.Visibility = Visibility.Visible;
+                        pasteNormal.Header = "粘贴";
+                        if (pasteShortcut != null) pasteShortcut.Visibility = Visibility.Collapsed;
+                        if (pasteCopy != null) pasteCopy.Visibility = Visibility.Collapsed;
+                    }
+                    else if (clipboard.IsCut)
+                    {
+                        pasteNormal.Visibility = Visibility.Visible;
+                        pasteNormal.Header = "移动到此处";
+                        if (pasteShortcut != null) pasteShortcut.Visibility = Visibility.Collapsed;
+                        if (pasteCopy != null) pasteCopy.Visibility = Visibility.Collapsed;
+                    }
+                    else
+                    {
+                        pasteNormal.Visibility = Visibility.Collapsed;
+                        if (pasteShortcut != null)
+                        {
+                            pasteShortcut.Visibility = Visibility.Visible;
+                            pasteShortcut.Header = "粘贴为快捷方式";
+                        }
+                        if (pasteCopy != null)
+                        {
+                            pasteCopy.Visibility = Visibility.Visible;
+                            pasteCopy.Header = "粘贴为副本";
+                        }
+                    }
                 }
             }
+        }
+
+        if (pasteSep != null)
+        {
+            bool hasSubsequentVisible = (clipboardMenu != null && clipboardMenu.Visibility == Visibility.Visible) || isOccupied;
+            pasteSep.Visibility = (anyClipboardPasteVisible && hasSubsequentVisible) ? Visibility.Visible : Visibility.Collapsed;
         }
     }
 
@@ -3826,6 +4232,15 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             return;
         }
 
+        if (MainWindow.IsQuickNoteCommand(vm.Command))
+        {
+            MainWindow.OpenQuickNoteEditor(vm.Command, this, (newTitle, newText) =>
+            {
+                LoadSlots();
+            });
+            return;
+        }
+
         var result = await _mainWindow.EditExtensionFromQuickPanelAsync(vm.Command!.ExtensionId, this);
         if (!result.ok && !string.IsNullOrWhiteSpace(result.message))
         {
@@ -3841,6 +4256,24 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         if (sender is not MenuItem { CommandParameter: SlotViewModel { Command: not null } vm } ||
             !vm.CanOpenDirectory)
         {
+            return;
+        }
+
+        if (MainWindow.IsQuickNoteCommand(vm.Command) && !string.IsNullOrWhiteSpace(vm.Command.OpenTarget) && File.Exists(vm.Command.OpenTarget))
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "explorer.exe",
+                    Arguments = $"/select,\"{vm.Command.OpenTarget}\"",
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show(this, $"打开目录失败：{ex.Message}", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
             return;
         }
 
@@ -5859,12 +6292,12 @@ public class SlotViewModel : INotifyPropertyChanged
     public IReadOnlyList<int> ContainerPath => _containerPath;
     public int SourceFolderIndex => _sourceFolderIndex;
     public int SourceFolderItemIndex => _sourceFolderItemIndex;
-    public bool CanEdit => !IsFolder && _command?.Source == CommandSource.LocalExtension;
+    public bool CanEdit => !IsFolder && (_command?.Source == CommandSource.LocalExtension || MainWindow.IsQuickNoteCommand(_command));
     public bool CanPublish => !IsFolder && _command?.Source == CommandSource.LocalExtension;
     public bool IsPublishedInStore => !IsFolder && _command?.Source == CommandSource.LocalExtension && (_command?.IsPublishedInStore ?? false);
     public string PublishMenuHeader => IsPublishedInStore ? "更新到商店" : "发布到商店";
     public bool CanShowStoreLink => !IsFolder && _command?.Source == CommandSource.LocalExtension && IsPublishedInStore;
-    public bool CanOpenDirectory => CanEdit && !string.IsNullOrWhiteSpace(_command?.ExtensionDirectoryPath);
+    public bool CanOpenDirectory => (CanEdit && !string.IsNullOrWhiteSpace(_command?.ExtensionDirectoryPath)) || (MainWindow.IsQuickNoteCommand(_command) && !string.IsNullOrWhiteSpace(_command?.OpenTarget));
     public bool CanRemoveFromFixedSlots => _item != null;
     public bool CanDeleteExtension => !IsFolder && _command?.Source == CommandSource.LocalExtension;
     public bool CanRename => IsFolder || (IsOccupied && _command != null);

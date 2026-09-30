@@ -2644,7 +2644,13 @@ public partial class MainWindow
 
             await _cloudSyncClient.UpsertPrivateExtensionAsync(command, publishedIcon);
             var version = string.IsNullOrWhiteSpace(command.DeclaredVersion) ? "0.1.0" : command.DeclaredVersion;
-            var packageBytes = ExtensionPackageService.BuildPackage(command, version, publishedIcon);
+            // User shortcuts are account/device state, not extension package content.
+            // Keep archives share-safe; the private manifest still carries the shortcut.
+            var packageBytes = ExtensionPackageService.BuildPackage(
+                command,
+                version,
+                publishedIcon,
+                includeUserShortcut: false);
             await _cloudSyncClient.UploadPrivateExtensionArchiveAsync(command, packageBytes, version, expectedRevision);
             await _cloudSyncClient.UpsertUserExtensionAsync(command, publishedIcon, hasArchive: true);
         }
@@ -2691,6 +2697,14 @@ public partial class MainWindow
                     var packageBytes = await _cloudSyncClient.DownloadMyExtensionArchiveAsync(item.ExtensionId);
                     var result = await ExtensionInstallService.InstallPackageAsync(
                         packageBytes, item.ExtensionId, fallbackName: item.DisplayName);
+
+                    if (TryGetArchivedManifestShortcut(item.ManifestJson, out var restoredShortcut))
+                    {
+                        LocalExtensionCatalog.SetGlobalShortcut(
+                            result.ExtensionId,
+                            restoredShortcut);
+                    }
+
                     localIds.Add(result.ExtensionId);
                     pulledCount++;
                     HostAssets.AppendLog($"Pulled extension from account library: {result.ExtensionId} v{result.Version}");
@@ -2775,7 +2789,20 @@ public partial class MainWindow
         if (!string.Equals(record.LatestVersion, version, StringComparison.OrdinalIgnoreCase))
             return false;
 
-        var packageBytes = ExtensionPackageService.BuildPackage(command, version, GetArchivedManifestIcon(record.ManifestJson));
+        if (TryGetArchivedManifestShortcut(record.ManifestJson, out var archivedShortcut) &&
+            !string.Equals(
+                archivedShortcut?.Trim(),
+                command.GlobalShortcut?.Trim(),
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var packageBytes = ExtensionPackageService.BuildPackage(
+            command,
+            version,
+            GetArchivedManifestIcon(record.ManifestJson),
+            includeUserShortcut: false);
         var hash = Convert.ToHexString(SHA256.HashData(packageBytes));
         return string.Equals(hash, record.ArchiveSha256, StringComparison.OrdinalIgnoreCase);
     }
@@ -2794,6 +2821,32 @@ public partial class MainWindow
         catch (JsonException)
         {
             return null;
+        }
+    }
+
+    private static bool TryGetArchivedManifestShortcut(
+        string? manifestJson,
+        out string? shortcut)
+    {
+        shortcut = null;
+
+        if (string.IsNullOrWhiteSpace(manifestJson))
+            return false;
+
+        try
+        {
+            using var document = JsonDocument.Parse(manifestJson);
+            if (!document.RootElement.TryGetProperty("globalShortcut", out var property))
+                return false;
+
+            shortcut = property.ValueKind == JsonValueKind.String
+                ? property.GetString()
+                : null;
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
         }
     }
 
@@ -6619,6 +6672,40 @@ public partial class MainWindow
 
         try
         {
+            var directory = ExtensionStorageService.GetExtensionStorageDirectoryPath(extensionId);
+            var normalizedKey = ExtensionDataObjectStore.NormalizeKey(key);
+            var targetPath = Path.GetFullPath(Path.Combine(
+                directory,
+                normalizedKey.Replace('/', Path.DirectorySeparatorChar)));
+            var rootPath = Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            if (!targetPath.StartsWith(rootPath, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("扩展数据 key 超出本地存储目录。");
+            }
+
+            var localDeleted = !File.Exists(targetPath);
+            var localContent = localDeleted ? string.Empty : await File.ReadAllTextAsync(targetPath);
+            var latestRemote = (await new PersonalSyncService(AppSettingsStore.Load())
+                .TryReadExtensionDataAsync(extensionId, normalizedKey)).Value;
+            if (latestRemote == null)
+            {
+                return (false, "无法确认当前云端版本，请稍后重试。");
+            }
+            if (localDeleted != conflict.LocalDeleted ||
+                (!localDeleted && !ExtensionDataObjectStore.ComputeContentHash(localContent)
+                    .Equals(conflict.LocalContentHash, StringComparison.OrdinalIgnoreCase)))
+            {
+                ExtensionDataSyncStateStore.PreserveConflict(
+                    extensionId, normalizedKey, localContent, latestRemote, localDeleted);
+                return (false, "本地内容已变化，冲突列表已更新，请重新查看后选择。");
+            }
+            if (!latestRemote.VersionId.Equals(conflict.Remote.VersionId, StringComparison.OrdinalIgnoreCase))
+            {
+                ExtensionDataSyncStateStore.PreserveConflict(
+                    extensionId, normalizedKey, localContent, latestRemote, localDeleted);
+                return (false, "云端内容已变化，冲突列表已更新，请重新查看后选择。");
+            }
+
             if (useLocalVersion)
             {
                 var result = conflict.LocalDeleted
@@ -6636,26 +6723,16 @@ public partial class MainWindow
                 return (true, "已采用本地小程序数据，并作为新的 revision 写入个人仓库。");
             }
 
-            var directory = ExtensionStorageService.GetExtensionStorageDirectoryPath(extensionId);
-            var normalizedKey = ExtensionDataObjectStore.NormalizeKey(key);
-            var targetPath = Path.GetFullPath(Path.Combine(
-                directory,
-                normalizedKey.Replace('/', Path.DirectorySeparatorChar)));
-            var rootPath = Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-            if (!targetPath.StartsWith(rootPath, StringComparison.OrdinalIgnoreCase))
-            {
-                throw new InvalidOperationException("扩展数据 key 超出本地存储目录。");
-            }
             Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
-            if (conflict.Remote.Deleted)
+            if (latestRemote.Deleted)
             {
                 if (File.Exists(targetPath)) File.Delete(targetPath);
             }
             else
             {
-                await File.WriteAllTextAsync(targetPath, conflict.Remote.Content, Encoding.UTF8);
+                await File.WriteAllTextAsync(targetPath, latestRemote.Content, Encoding.UTF8);
             }
-            ExtensionDataSyncStateStore.MarkSynced(conflict.Remote);
+            ExtensionDataSyncStateStore.MarkSynced(latestRemote);
             ExtensionDataSyncStateStore.ClearConflict(extensionId, key);
             return (true, "已接受远端扩展数据，本地冲突副本已清除。");
         }

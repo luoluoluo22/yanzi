@@ -35,6 +35,8 @@ public sealed class EditorSurface : FrameworkElement
     public Action<string>? StatusChanged { get; set; }
     public Func<Point, TextAnnotation?>? TextFactory { get; set; }
     public Annotation? Selected => _selected;
+    public bool WorkspaceMode { get; set; }
+    public bool IsInteracting => _drawing || _moving;
 
     public EditorSurface(CaptureDocument document)
     {
@@ -43,6 +45,7 @@ public sealed class EditorSurface : FrameworkElement
         Cursor = Cursors.Arrow;
         _document.History.Changed += () => InvalidateVisual();
         _document.Annotations.CollectionChanged += (_, _) => InvalidateVisual();
+        _document.BaseImageChanged += () => InvalidateVisual();
 
         MouseLeftButtonDown += OnPointerDown;
         MouseMove += OnPointerMove;
@@ -52,34 +55,51 @@ public sealed class EditorSurface : FrameworkElement
 
     protected override void OnRender(DrawingContext dc)
     {
-        dc.DrawRectangle(
-            new SolidColorBrush(Color.FromRgb(17, 19, 24)),
-            null,
-            new Rect(0, 0, ActualWidth, ActualHeight));
+        if (!WorkspaceMode)
+        {
+            dc.DrawRectangle(
+                new SolidColorBrush(Color.FromRgb(17, 19, 24)),
+                null,
+                new Rect(0, 0, ActualWidth, ActualHeight));
+        }
 
         var imageWidth = _document.BaseImage.PixelWidth;
         var imageHeight = _document.BaseImage.PixelHeight;
-        _scale = Math.Min(
-            Math.Max(0.05, (ActualWidth - 56) / imageWidth),
-            Math.Max(0.05, (ActualHeight - 56) / imageHeight));
-        _scale = Math.Min(_scale, 1.5);
+
+        if (WorkspaceMode)
+        {
+            _scale = Math.Min(
+                Math.Max(0.01, ActualWidth / Math.Max(1, imageWidth)),
+                Math.Max(0.01, ActualHeight / Math.Max(1, imageHeight)));
+            _offset = default;
+        }
+        else
+        {
+            _scale = Math.Min(
+                Math.Max(0.05, (ActualWidth - 56) / imageWidth),
+                Math.Max(0.05, (ActualHeight - 56) / imageHeight));
+            _scale = Math.Min(_scale, 1.5);
+
+            var fittedWidth = imageWidth * _scale;
+            var fittedHeight = imageHeight * _scale;
+            _offset = new Vector(
+                Math.Max(28, (ActualWidth - fittedWidth) / 2),
+                Math.Max(28, (ActualHeight - fittedHeight) / 2));
+
+            dc.DrawRoundedRectangle(
+                new SolidColorBrush(Color.FromRgb(8, 9, 12)),
+                null,
+                new Rect(
+                    _offset.X - 8,
+                    _offset.Y - 8,
+                    fittedWidth + 16,
+                    fittedHeight + 16),
+                12,
+                12);
+        }
 
         var shownWidth = imageWidth * _scale;
         var shownHeight = imageHeight * _scale;
-        _offset = new Vector(
-            Math.Max(28, (ActualWidth - shownWidth) / 2),
-            Math.Max(28, (ActualHeight - shownHeight) / 2));
-
-        dc.DrawRoundedRectangle(
-            new SolidColorBrush(Color.FromRgb(8, 9, 12)),
-            null,
-            new Rect(
-                _offset.X - 8,
-                _offset.Y - 8,
-                shownWidth + 16,
-                shownHeight + 16),
-            12,
-            12);
 
         dc.PushTransform(new TranslateTransform(_offset.X, _offset.Y));
         dc.PushTransform(new ScaleTransform(_scale, _scale));
@@ -354,6 +374,31 @@ public sealed class EditorSurface : FrameworkElement
         _selected = annotation;
         InvalidateVisual();
     }
+
+    public bool HasAnnotationAtViewPoint(Point viewPoint)
+    {
+        var point = ToDocument(viewPoint);
+        if (!IsInsideImage(point)) return false;
+        return _document.Annotations
+            .Reverse()
+            .Any(annotation => annotation.HitTest(point));
+    }
+
+    public void CancelCurrentInteraction()
+    {
+        _drawing = false;
+        _moving = false;
+        _preview = null;
+        _penPoints.Clear();
+        _moved = default;
+        Mouse.Capture(null);
+        Cursor = Tool == EditorTool.Select
+            ? Cursors.Arrow
+            : Cursors.Cross;
+        InvalidateVisual();
+    }
+
+    public void RefreshSurface() => InvalidateVisual();
 
     private static Rect Normalize(Point a, Point b) => new(
         Math.Min(a.X, b.X),

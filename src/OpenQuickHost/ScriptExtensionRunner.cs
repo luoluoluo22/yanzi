@@ -21,6 +21,7 @@ public static class ScriptExtensionRunner
 {
     private const string CSharpCacheVersion = "v12";
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> CSharpBuildLocks = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> ExtensionLaunchLocks = new(StringComparer.OrdinalIgnoreCase);
 
     public static async Task<ScriptExecutionResult> PreparePortableAssetsAsync(
         CommandItem command,
@@ -110,6 +111,31 @@ public static class ScriptExtensionRunner
         IReadOnlyDictionary<string, string>? state,
         Action<string>? onOutputLine,
         CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(command.ExtensionId))
+        {
+            return await ExecuteCoreAsync(command, inputText, launchSource, state, onOutputLine, cancellationToken);
+        }
+
+        var launchLock = ExtensionLaunchLocks.GetOrAdd(command.ExtensionId, static _ => new SemaphoreSlim(1, 1));
+        await launchLock.WaitAsync(cancellationToken);
+        try
+        {
+            return await ExecuteCoreAsync(command, inputText, launchSource, state, onOutputLine, cancellationToken);
+        }
+        finally
+        {
+            launchLock.Release();
+        }
+    }
+
+    private static async Task<ScriptExecutionResult> ExecuteCoreAsync(
+        CommandItem command,
+        string? inputText,
+        string launchSource,
+        IReadOnlyDictionary<string, string>? state,
+        Action<string>? onOutputLine,
+        CancellationToken cancellationToken)
     {
         var executionStopwatch = Stopwatch.StartNew();
         if (!CanExecute(command))

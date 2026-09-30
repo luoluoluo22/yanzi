@@ -6,7 +6,7 @@
         Height="560"
         MinWidth="840"
         MinHeight="400"
-        Background="#FF161616"
+        Background="{DynamicResource BrushBG}"
         Foreground="White"
         WindowStartupLocation="CenterScreen">
     <Window.Resources>
@@ -39,8 +39,8 @@
         </Grid>
 
         <Border Grid.Row="1"
-                Background="#FF1E1E1E"
-                BorderBrush="#FF2A2A2A"
+                Background="{DynamicResource BrushInputBG}"
+                BorderBrush="{DynamicResource BrushBorder}"
                 BorderThickness="1"
                 CornerRadius="12">
             <Grid>
@@ -86,7 +86,7 @@
                                                                   Stretch="Uniform" />
                                                         </Viewbox>
                                                         <TextBlock Text="{Binding DisplayGlyph}"
-                                                                   FontSize="10"
+                                                                   FontSize="{DynamicResource FontSizeTiny}"
                                                                    Foreground="White"
                                                                    HorizontalAlignment="Center"
                                                                    VerticalAlignment="Center"
@@ -123,7 +123,7 @@
                                                 Width="84"
                                                 Height="28"
                                                 Foreground="#FFFCA5A5"
-                                                FontSize="12"
+                                                FontSize="{DynamicResource FontSizeSmallPlus}"
                                                 FontWeight="SemiBold"
                                                 Tag="{Binding InstanceId}"
                                                 Click="TerminateButton_Click"
@@ -161,7 +161,7 @@
                 <TextBlock x:Name="EmptyStateTextBlock"
                            Text="当前没有正在运行的小程序。"
                            FontSize="{DynamicResource FontSizeLargePlus}"
-                           Foreground="#FF6B7280"
+                           Foreground="{DynamicResource BrushTextMuted}"
                            HorizontalAlignment="Center"
                            VerticalAlignment="Center"
                            Visibility="Collapsed" />
@@ -170,7 +170,7 @@
 
         <TextBlock Grid.Row="2"
                    Margin="4,12,0,0"
-                   Foreground="#FF6B7280"
+                   Foreground="{DynamicResource BrushTextMuted}"
                    Text="展示当前持续运行的小程序；“宿主内”表示与燕子共享进程，均可随时结束。" />
     </Grid>
 </Window>

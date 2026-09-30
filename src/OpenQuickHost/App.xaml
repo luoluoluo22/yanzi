@@ -18,13 +18,13 @@
             <!-- Global Text Styles -->
             <Style x:Key="TitleText" TargetType="TextBlock">
                 <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}"/>
-                <Setter Property="FontSize" Value="18"/>
+                <Setter Property="FontSize" Value="{DynamicResource FontSizeSubtitle}"/>
                 <Setter Property="FontWeight" Value="SemiBold"/>
             </Style>
 
             <Style x:Key="DescriptionText" TargetType="TextBlock">
                 <Setter Property="Foreground" Value="{DynamicResource BrushTextSec}"/>
-                <Setter Property="FontSize" Value="12"/>
+                <Setter Property="FontSize" Value="{DynamicResource FontSizeSmallPlus}"/>
                 <Setter Property="TextWrapping" Value="Wrap"/>
             </Style>
 
@@ -33,7 +33,7 @@
                 <Setter Property="MinHeight" Value="32"/>
                 <Setter Property="Padding" Value="16,6"/>
                 <Setter Property="FontWeight" Value="SemiBold"/>
-                <Setter Property="FontSize" Value="13"/>
+                <Setter Property="FontSize" Value="{DynamicResource FontSizeNormal}"/>
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="Button">
@@ -86,12 +86,12 @@
 
             <Style TargetType="PasswordBox" BasedOn="{StaticResource BaseInput}">
                 <Setter Property="CaretBrush" Value="{DynamicResource BrushTextMain}"/>
-                <Setter Property="FontSize" Value="14"/>
+                <Setter Property="FontSize" Value="{DynamicResource FontSizeNormalPlus}"/>
             </Style>
 
             <Style TargetType="CheckBox">
                 <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}"/>
-                <Setter Property="FontSize" Value="13"/>
+                <Setter Property="FontSize" Value="{DynamicResource FontSizeNormal}"/>
             </Style>
 
             <Style x:Key="RaycastSwitchStyle" TargetType="CheckBox">

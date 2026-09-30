@@ -55,6 +55,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private string _personalConfigRestoreStatusText = "完成一次个人仓库配置备份后会生成恢复点。";
     private string _personalExtensionSyncStatusText = "尚未生成小程序同步索引。";
     private string _extensionDataSyncStatusText = "尚无小程序私有数据同步记录。";
+    private string _extensionDataConflictActionStatusText = string.Empty;
     private AccountSyncStatusView _accountSyncStatus = AccountSyncStatusView.Empty;
     private string _aiBaseUrl = string.Empty;
     private string _aiApiKey = string.Empty;
@@ -5408,6 +5409,21 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
+    public string ExtensionDataConflictActionStatusText
+    {
+        get => _extensionDataConflictActionStatusText;
+        private set
+        {
+            if (value == _extensionDataConflictActionStatusText) return;
+            _extensionDataConflictActionStatusText = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasExtensionDataConflictActionStatus));
+        }
+    }
+
+    public bool HasExtensionDataConflictActionStatus =>
+        !string.IsNullOrWhiteSpace(ExtensionDataConflictActionStatusText);
+
     private void EditSystemPromptInNewWindow_Click(object sender, RoutedEventArgs e)
     {
         var editor = new SystemPromptEditorWindow(AiSystemPrompt)
@@ -5752,6 +5768,9 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             return;
         }
         button.IsEnabled = false;
+        var originalContent = button.Content;
+        button.Content = "处理中…";
+        ExtensionDataConflictActionStatusText = $"正在核对 {item.DisplayId} 的本机和云端版本…";
         try
         {
             var result = await _mainWindow.ResolveExtensionDataSyncConflictAsync(
@@ -5759,11 +5778,18 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 item.Key,
                 useLocalVersion);
             SyncStatusText = result.message;
+            ExtensionDataConflictActionStatusText = result.message;
             RefreshPersonalExtensionSyncStatus();
             RefreshSyncActivityLog();
         }
+        catch (Exception ex)
+        {
+            SyncStatusText = $"处理小程序数据冲突失败：{ex.Message}";
+            ExtensionDataConflictActionStatusText = SyncStatusText;
+        }
         finally
         {
+            button.Content = originalContent;
             button.IsEnabled = true;
         }
     }

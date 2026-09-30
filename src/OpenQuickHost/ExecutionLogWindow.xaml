@@ -30,8 +30,8 @@
             <Border Grid.Row="1"
                     Margin="0,14,0,0"
                     Padding="12"
-                    Background="#FF1E1E1E"
-                    BorderBrush="#FF2A2A2A"
+                    Background="{DynamicResource BrushInputBG}"
+                    BorderBrush="{DynamicResource BrushBorder}"
                     BorderThickness="1"
                     CornerRadius="10">
                 <Grid>
@@ -81,7 +81,7 @@
                      FontFamily="Consolas"
                      FontSize="{DynamicResource FontSizeSmallPlus}"
                      Background="#FF111111"
-                     BorderBrush="#FF2A2A2A"
+                     BorderBrush="{DynamicResource BrushBorder}"
                      BorderThickness="1"
                      Foreground="#FFD1FAE5" />
 
@@ -103,7 +103,7 @@
                      FontFamily="Consolas"
                      FontSize="{DynamicResource FontSizeSmallPlus}"
                      Background="#FF111111"
-                     BorderBrush="#FF2A2A2A"
+                     BorderBrush="{DynamicResource BrushBorder}"
                      BorderThickness="1"
                      Foreground="#FFFCA5A5" />
 

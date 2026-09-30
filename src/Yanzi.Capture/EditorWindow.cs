@@ -101,7 +101,37 @@ public sealed class EditorWindow : Window
 
         PreviewKeyDown += (_, e) =>
         {
-            if (e.Key != Key.Escape)
+            var key = e.Key == Key.System ? e.SystemKey : e.Key;
+
+            if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+            {
+                if (key == Key.S)
+                {
+                    SaveImage();
+                    e.Handled = true;
+                    return;
+                }
+                if (key == Key.C)
+                {
+                    CopyImage();
+                    e.Handled = true;
+                    return;
+                }
+                if (key == Key.Z)
+                {
+                    _document.History.Undo();
+                    e.Handled = true;
+                    return;
+                }
+                if (key == Key.Y)
+                {
+                    _document.History.Redo();
+                    e.Handled = true;
+                    return;
+                }
+            }
+
+            if (key != Key.Escape)
                 return;
 
             e.Handled = true;
@@ -355,20 +385,20 @@ public sealed class EditorWindow : Window
         actions.Children.Add(
             BottomActionButton(
                 "copy",
-                "复制",
+                "复制 (Ctrl+C)",
                 "capture.copy",
                 CopyImage));
 
         actions.Children.Add(
             BottomActionButton(
                 "done",
-                "完成",
+                "完成 (Esc)",
                 "capture.done",
                 Close));
 
         var save = BottomActionButton(
             "save",
-            "保存",
+            "保存 (Ctrl+S)",
             "capture.save",
             SaveImage,
             primary: true);
@@ -453,13 +483,13 @@ public sealed class EditorWindow : Window
 
         _historyUndo = ToolButton(
             "undo",
-            "撤销",
+            "撤销 (Ctrl+Z)",
             "capture.undo",
             () => _document.History.Undo());
 
         _historyRedo = ToolButton(
             "redo",
-            "重做",
+            "重做 (Ctrl+Y)",
             "capture.redo",
             () => _document.History.Redo());
 
@@ -1001,7 +1031,7 @@ public sealed class EditorWindow : Window
     {
         try
         {
-            Clipboard.SetImage(
+            CaptureClipboard.SetImage(
                 DocumentRenderer.Render(_document));
 
             SetStatus(

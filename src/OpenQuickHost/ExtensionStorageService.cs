@@ -237,6 +237,14 @@ public static class ExtensionStorageService
                     return;
                 }
 
+                // An earlier write from this device is not a competing editor while a newer
+                // local snapshot is still queued. Let the write queue publish that snapshot.
+                if (ShouldSkipCloudRefresh(state, cloudResult.Value,
+                    DeviceIdentityStore.GetOrCreateDesktopDeviceId()))
+                {
+                    return;
+                }
+
                 if (localContent != null &&
                     (state == null || state.Pending || state.Conflict != null ||
                      (!string.IsNullOrWhiteSpace(state.LocalContentHash) &&
@@ -269,6 +277,15 @@ public static class ExtensionStorageService
         });
     }
 
+    internal static bool ShouldSkipCloudRefresh(
+        ExtensionDataSyncState? state,
+        ExtensionDataObject? remote,
+        string localDeviceId) =>
+        state != null && remote != null &&
+        (remote.Revision < state.LastRemoteRevision ||
+         (state.Pending && remote.UpdatedByDeviceId.Equals(
+             localDeviceId, StringComparison.OrdinalIgnoreCase)));
+
     private static void QueueCloudWrite(string extensionId, string key, string content, bool deleted = false)
     {
         _ = Task.Run(async () =>
@@ -279,6 +296,18 @@ public static class ExtensionStorageService
             {
                 await writeLock.WaitAsync();
                 using var cts = new CancellationTokenSource(BackgroundCloudTimeout);
+                var state = ExtensionDataSyncStateStore.Get(extensionId, key);
+                if (state?.Pending != true || state.Conflict != null)
+                {
+                    return;
+                }
+
+                deleted = state.PendingDeleted;
+                if (!deleted)
+                {
+                    var localPath = ResolveLocalFilePath(extensionId, key);
+                    content = await File.ReadAllTextAsync(localPath, cts.Token);
+                }
                 ExtensionDataWriteResult result;
                 if (deleted)
                 {
@@ -413,26 +442,32 @@ public static class ExtensionStorageService
         foreach (var state in pending)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            var operationKey = $"{state.ExtensionId}\0{state.Key}";
+            var writeLock = CloudWriteLocks.GetOrAdd(operationKey, static _ => new SemaphoreSlim(1, 1));
+            await writeLock.WaitAsync(cancellationToken);
             try
             {
-                var path = ResolveLocalFilePath(state.ExtensionId, state.Key);
-                if (!state.PendingDeleted && !File.Exists(path))
+                var current = ExtensionDataSyncStateStore.Get(state.ExtensionId, state.Key);
+                if (current?.Pending != true || current.Conflict != null) continue;
+
+                var path = ResolveLocalFilePath(current.ExtensionId, current.Key);
+                if (!current.PendingDeleted && !File.Exists(path))
                 {
-                    ExtensionDataSyncStateStore.MarkFailed(state.ExtensionId, state.Key, "本地扩展数据文件已不存在。");
+                    ExtensionDataSyncStateStore.MarkFailed(current.ExtensionId, current.Key, "本地扩展数据文件已不存在。");
                     failed++;
                     continue;
                 }
-                var content = state.PendingDeleted
+                var content = current.PendingDeleted
                     ? string.Empty
                     : await File.ReadAllTextAsync(path, cancellationToken);
                 ExtensionDataSyncStateStore.MarkPending(
-                    state.ExtensionId,
-                    state.Key,
+                    current.ExtensionId,
+                    current.Key,
                     ExtensionDataObjectStore.ComputeContentHash(content),
-                    state.PendingDeleted);
-                var result = state.PendingDeleted
-                    ? await service.DeleteExtensionDataAsync(state.ExtensionId, state.Key, cancellationToken)
-                    : await service.WriteExtensionDataTextAsync(state.ExtensionId, state.Key, content, cancellationToken);
+                    current.PendingDeleted);
+                var result = current.PendingDeleted
+                    ? await service.DeleteExtensionDataAsync(current.ExtensionId, current.Key, cancellationToken)
+                    : await service.WriteExtensionDataTextAsync(current.ExtensionId, current.Key, content, cancellationToken);
                 ExtensionDataSyncStateStore.MarkSynced(result.Value);
                 uploaded++;
             }
@@ -440,6 +475,10 @@ public static class ExtensionStorageService
             {
                 ExtensionDataSyncStateStore.MarkFailed(state.ExtensionId, state.Key, ex.Message);
                 failed++;
+            }
+            finally
+            {
+                writeLock.Release();
             }
         }
         return new ExtensionDataPendingSyncResult(uploaded, failed);

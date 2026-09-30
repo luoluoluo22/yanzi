@@ -1,0 +1,51 @@
+{
+  "id": "taskbar-calendar",
+  "name": "日历",
+  "version": "1.0.0",
+  "category": "系统工具",
+  "description": "替代 Windows 原生日历，支持右下角悬停触发与时钟点击拦截双模式，提供中国农历、节假日与日程展示及性能基准评测。",
+  "keywords": [
+    "日历",
+    "calendar",
+    "时钟",
+    "农历",
+    "节气",
+    "任务栏",
+    "clock",
+    "date"
+  ],
+  "openTarget": null,
+  "toggleWindow": false,
+  "queryPrefixes": [
+    "cal",
+    "rl"
+  ],
+  "queryTargetTemplate": null,
+  "icon": "mdi:calendar-clock",
+  "accentHex": "#FF3B82F6",
+  "hostedView": null,
+  "hostedViewV2": null,
+  "hostedViewXaml": null,
+  "app": null,
+  "globalShortcut": null,
+  "hotkeyBehavior": null,
+  "runtime": "csharp",
+  "uiMode": "native-window",
+  "entryMode": "entry",
+  "entry": "main.cs",
+  "permissions": [
+    "storage",
+    "context.read"
+  ],
+  "script": null,
+  "startup": {
+    "mode": "on_app_launch",
+    "schedule": null
+  },
+  "searchProvider": null,
+  "mouseGesture": null,
+  "workingDirectory": null,
+  "runAsAdmin": false,
+  "waitForExit": false,
+  "isPublished": false
+}

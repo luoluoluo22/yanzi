@@ -935,6 +935,76 @@ public partial class MainWindow
             iconSourceOverride: NativeFileIconService.GetIcon(fullPath, isFolder));
     }
 
+    public const string QuickNotePrefix = "quicknote:";
+
+    public static bool IsQuickNoteCommand(CommandItem? command)
+    {
+        if (command == null) return false;
+        return command.ExtensionId.StartsWith(QuickNotePrefix, StringComparison.OrdinalIgnoreCase) ||
+               (string.Equals(command.Category, "便签", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(command.OpenTarget) && File.Exists(command.OpenTarget));
+    }
+
+    public static CommandItem CreateQuickNoteCommand(string path, string? extensionId = null, string? displayTitle = null)
+    {
+        var fullPath = Path.GetFullPath(path);
+        string text = string.Empty;
+        if (File.Exists(fullPath))
+        {
+            try
+            {
+                text = File.ReadAllText(fullPath, System.Text.Encoding.UTF8);
+            }
+            catch
+            {
+                // Ignore
+            }
+        }
+
+        var effectiveTitle = displayTitle;
+        if (string.IsNullOrWhiteSpace(effectiveTitle))
+        {
+            var firstLine = text.Replace("\r", "").Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            if (firstLine.Length > 0 && !string.IsNullOrWhiteSpace(firstLine[0]))
+            {
+                effectiveTitle = firstLine[0].Trim();
+                if (effectiveTitle.Length > 16) effectiveTitle = effectiveTitle[..16] + "...";
+            }
+            else
+            {
+                effectiveTitle = "便签 " + DateTime.Now.ToString("MM-dd HH:mm");
+            }
+        }
+
+        var effExtensionId = !string.IsNullOrWhiteSpace(extensionId) ? extensionId : $"{QuickNotePrefix}{fullPath}";
+        return new CommandItem(
+            glyph: "文",
+            title: effectiveTitle,
+            subtitle: "点击打开便签编辑窗口",
+            category: "便签",
+            accentHex: "#FF10B981",
+            openTarget: fullPath,
+            keywords: [effectiveTitle, "便签", "文本", "note"],
+            source: CommandSource.Local,
+            extensionId: effExtensionId,
+            iconReference: "mdi:note-text");
+    }
+
+    public static void OpenQuickNoteEditor(CommandItem command, Window? owner = null, Action<string, string>? onSaved = null)
+    {
+        var targetFile = command.OpenTarget;
+        if (string.IsNullOrWhiteSpace(targetFile) && command.ExtensionId.StartsWith(QuickNotePrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            targetFile = command.ExtensionId[QuickNotePrefix.Length..];
+        }
+
+        if (string.IsNullOrWhiteSpace(targetFile))
+        {
+            return;
+        }
+
+        PastedTextEditorWindow.Open(targetFile, command.Title, owner, onSaved);
+    }
+
     public CommandItem? ResolveSlotCommand(string? extensionId, IReadOnlyList<CommandItem>? allCommands = null, string? displayTitle = null)
     {
         if (string.IsNullOrWhiteSpace(extensionId))
@@ -972,6 +1042,17 @@ public partial class MainWindow
                 iconReference: "mdi:shortcut");
         }
 
+        if (extensionId.StartsWith(QuickNotePrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            var path = extensionId[QuickNotePrefix.Length..];
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return null;
+            }
+
+            return CreateQuickNoteCommand(path, extensionId, displayTitle);
+        }
+
         const string filePrefix = ExtensionIdPrefixes.SearchResult;
         if (extensionId.StartsWith(filePrefix, StringComparison.OrdinalIgnoreCase))
         {
@@ -986,6 +1067,10 @@ public partial class MainWindow
 
         if (File.Exists(extensionId) || Directory.Exists(extensionId))
         {
+            if (File.Exists(extensionId) && extensionId.StartsWith(HostAssets.PastedNotesPath, StringComparison.OrdinalIgnoreCase))
+            {
+                return CreateQuickNoteCommand(extensionId, $"{QuickNotePrefix}{Path.GetFullPath(extensionId)}", displayTitle);
+            }
             return CreateFileShortcutCommand(extensionId, $"{ExtensionIdPrefixes.SearchResult}{Path.GetFullPath(extensionId)}", displayTitle);
         }
 
@@ -1994,7 +2079,7 @@ public partial class MainWindow
                 continue;
             }
 
-            if (key == Key.None || modifiers == 0)
+            if (key == Key.None || (modifiers == 0 && !HotkeyHelper.IsFunctionOrSpecialKey(key)))
             {
                 HostAssets.AppendLog($"Unsupported extension shortcut skipped: {command.Title} -> {command.GlobalShortcut}");
                 continue;
@@ -2054,8 +2139,36 @@ public partial class MainWindow
 
         var segments = shortcut
             .Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (segments.Length < 2)
+        if (segments.Length == 0)
         {
+            return false;
+        }
+
+        if (segments.Length == 1)
+        {
+            try
+            {
+                var singleKey = segments[0].ToLowerInvariant() switch
+                {
+                    "space" => Key.Space,
+                    "enter" => Key.Enter,
+                    "tab" => Key.Tab,
+                    "esc" or "escape" => Key.Escape,
+                    _ => (Key)new KeyConverter().ConvertFromInvariantString(segments[0])!
+                };
+
+                if (HotkeyHelper.IsFunctionOrSpecialKey(singleKey))
+                {
+                    key = singleKey;
+                    modifiers = 0;
+                    return true;
+                }
+            }
+            catch
+            {
+                return false;
+            }
+
             return false;
         }
 
@@ -2995,6 +3108,7 @@ public partial class MainWindow
             var updated = LocalExtensionCatalog.SetGlobalShortcut(extensionId, shortcut);
             UpsertLocalExtensionCommand(updated);
             ApplyFilter(SearchBox.Text);
+            QueuePrivateExtensionUpsertToAccount(updated.ExtensionId);
             QueueBackgroundWebDavSync("extension-shortcut-settings");
 
             var message = string.IsNullOrWhiteSpace(updated.GlobalShortcut)

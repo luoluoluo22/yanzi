@@ -2883,13 +2883,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         CutExtensionMenuItem.IsEnabled = isExtensionLike;
 
         // 核心修复：只有剪贴板里真正复制了小程序数据时，才显示“粘贴小程序”；否则坚决隐藏！
-        var hasClipboardExtension = HasExtensionInClipboard();
+        var hasClipboardExtension = HasSystemExtensionJsonInClipboard();
         PasteExtensionMenuItem.Visibility = (isExtensionLike && hasClipboardExtension) ? Visibility.Visible : Visibility.Collapsed;
         PasteExtensionMenuItem.IsEnabled = isExtensionLike && hasClipboardExtension;
 
         ExtensionManageSubSeparator.Visibility = (isLocalExtension && isExtensionLike) ? Visibility.Visible : Visibility.Collapsed;
 
-        var hasVisibleManageActions = isLocalExtension || isExtensionLike;
+        var hasVisibleManageActions = OpenExtensionDirectoryMenuItem.Visibility == Visibility.Visible ||
+                                      CopyExtensionMenuItem.Visibility == Visibility.Visible ||
+                                      CutExtensionMenuItem.Visibility == Visibility.Visible ||
+                                      PasteExtensionMenuItem.Visibility == Visibility.Visible;
         ManageExtensionMenu.Visibility = hasVisibleManageActions ? Visibility.Visible : Visibility.Collapsed;
         ManageExtensionMenu.IsEnabled = hasVisibleManageActions;
 
@@ -3133,7 +3136,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             menu.Items.Add(new Separator());
             AddMenuItem(menu, "复制小程序", "copy", () => CopyExtensionMenuItem_Click(CreateMenuSender(command), new RoutedEventArgs()), true);
             AddMenuItem(menu, "剪切小程序", "cut", () => CutExtensionMenuItem_Click(CreateMenuSender(command), new RoutedEventArgs()), true);
-            AddMenuItem(menu, "粘贴小程序", "paste", () => PasteExtensionMenuItem_Click(CreateMenuSender(command), new RoutedEventArgs()), true);
+            AddMenuItem(menu, "粘贴小程序", "paste", () => PasteExtensionMenuItem_Click(CreateMenuSender(command), new RoutedEventArgs()), HasSystemExtensionJsonInClipboard());
             menu.Items.Add(new Separator());
         }
         AddMenuItem(menu, "添加到背包", "backpack", () => AddCurrentCommandToQuickPanel(), true);
@@ -3384,6 +3387,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async Task ExecuteCommandAsync(CommandItem runnable, string? explicitInput = null, string launchSource = "launcher")
     {
+        if (IsQuickNoteCommand(runnable))
+        {
+            RecordCommandUsage(runnable);
+            if (string.Equals(launchSource, "launcher", StringComparison.OrdinalIgnoreCase))
+            {
+                HideToTray();
+            }
+            OpenQuickNoteEditor(runnable, this, (newTitle, newText) =>
+            {
+                ApplyFilter(SearchBox.Text);
+            });
+            return;
+        }
+
         var hasExternalInput = !string.IsNullOrWhiteSpace(explicitInput);
         if (runnable.App != null)
         {
@@ -3825,6 +3842,103 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             : $"已{action}背包中的小程序：{command.Title}。";
     }
 
+    public bool HasSystemExtensionJsonInClipboard()
+    {
+        try
+        {
+            if (System.Windows.Clipboard.ContainsText())
+            {
+                var text = System.Windows.Clipboard.GetText();
+                return TryExtractValidExtensionJson(text, out _);
+            }
+        }
+        catch { }
+
+        return false;
+    }
+
+    public static bool TryExtractValidExtensionJson(string? text, out string validJson)
+    {
+        validJson = string.Empty;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        var trimmed = text.Trim();
+        if (trimmed.StartsWith("```", StringComparison.Ordinal))
+        {
+            var lines = trimmed.Split(["\r\n", "\n"], StringSplitOptions.None).ToList();
+            if (lines.Count >= 2 && lines[0].StartsWith("```", StringComparison.Ordinal))
+            {
+                lines.RemoveAt(0);
+            }
+
+            if (lines.Count > 0 && lines[^1].StartsWith("```", StringComparison.Ordinal))
+            {
+                lines.RemoveAt(lines.Count - 1);
+            }
+
+            trimmed = string.Join(Environment.NewLine, lines).Trim();
+        }
+
+        var firstBrace = trimmed.IndexOf('{');
+        var lastBrace = trimmed.LastIndexOf('}');
+        if (firstBrace < 0 || lastBrace <= firstBrace)
+        {
+            return false;
+        }
+
+        trimmed = trimmed[firstBrace..(lastBrace + 1)];
+
+        try
+        {
+            using var doc = JsonDocument.Parse(trimmed);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                return false;
+            }
+
+            bool hasName = (root.TryGetProperty("name", out var nameProp) && nameProp.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(nameProp.GetString()))
+                        || (root.TryGetProperty("title", out var titleProp) && titleProp.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(titleProp.GetString()));
+
+            if (!hasName)
+            {
+                return false;
+            }
+
+            bool hasExtensionCharacteristics =
+                root.TryGetProperty("openTarget", out _) ||
+                root.TryGetProperty("script", out _) ||
+                root.TryGetProperty("entry", out _) ||
+                root.TryGetProperty("entryMode", out _) ||
+                root.TryGetProperty("runtime", out _) ||
+                root.TryGetProperty("hostedView", out _) ||
+                root.TryGetProperty("hostedViewV2", out _) ||
+                root.TryGetProperty("hostedViewXaml", out _) ||
+                root.TryGetProperty("app", out _) ||
+                root.TryGetProperty("searchProvider", out _) ||
+                root.TryGetProperty("mouseGesture", out _) ||
+                root.TryGetProperty("queryPrefixes", out _) ||
+                root.TryGetProperty("version", out _) ||
+                root.TryGetProperty("category", out _) ||
+                root.TryGetProperty("description", out _);
+
+            if (!hasExtensionCharacteristics)
+            {
+                return false;
+            }
+
+            validJson = trimmed;
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public bool HasExtensionInClipboard()
     {
         if (GetQuickPanelClipboard() != null)
@@ -3890,36 +4004,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private static string ExtractExtensionJsonFromClipboard(string? text)
     {
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            return string.Empty;
-        }
-
-        var trimmed = text.Trim();
-        if (trimmed.StartsWith("```", StringComparison.Ordinal))
-        {
-            var lines = trimmed.Split(["\r\n", "\n"], StringSplitOptions.None).ToList();
-            if (lines.Count >= 2 && lines[0].StartsWith("```", StringComparison.Ordinal))
-            {
-                lines.RemoveAt(0);
-            }
-
-            if (lines.Count > 0 && lines[^1].StartsWith("```", StringComparison.Ordinal))
-            {
-                lines.RemoveAt(lines.Count - 1);
-            }
-
-            trimmed = string.Join(Environment.NewLine, lines).Trim();
-        }
-
-        var firstBrace = trimmed.IndexOf('{');
-        var lastBrace = trimmed.LastIndexOf('}');
-        if (firstBrace >= 0 && lastBrace > firstBrace)
-        {
-            trimmed = trimmed[firstBrace..(lastBrace + 1)];
-        }
-
-        return trimmed;
+        return TryExtractValidExtensionJson(text, out var validJson) ? validJson : string.Empty;
     }
 
     public void ExecuteCommandExternally(CommandItem command, string? explicitInput = null, string launchSource = "quick-panel")

@@ -31,7 +31,7 @@
                 <TextBlock x:Name="TitleText"
                            Text="手机发来消息"
                            Foreground="{DynamicResource BrushTextMain}"
-                           FontSize="15"
+                           FontSize="{DynamicResource FontSizeLarge}"
                            FontWeight="SemiBold"
                            TextTrimming="CharacterEllipsis"
                            DockPanel.Dock="Left"/>
@@ -41,7 +41,7 @@
                         Content="×"
                         Style="{StaticResource SecondaryBtn}"
                         Padding="0"
-                        FontSize="12"
+                        FontSize="{DynamicResource FontSizeSmallPlus}"
                         Click="CloseButton_Click" />
             </DockPanel>
 
@@ -49,7 +49,7 @@
                        Grid.Row="1"
                        Margin="0,8,0,0"
                        Foreground="{DynamicResource BrushTextMain}"
-                       FontSize="13"
+                       FontSize="{DynamicResource FontSizeNormal}"
                        TextWrapping="Wrap"
                        MaxHeight="80"/>
 
@@ -57,7 +57,7 @@
                        Grid.Row="2"
                        Margin="0,6,0,0"
                        Foreground="{DynamicResource BrushTextSec}"
-                       FontSize="11"
+                       FontSize="{DynamicResource FontSizeSmall}"
                        HorizontalAlignment="Right"/>
         </Grid>
     </Border>

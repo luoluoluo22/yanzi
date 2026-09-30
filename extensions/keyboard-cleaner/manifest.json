@@ -1,0 +1,33 @@
+{
+  "id": "keyboard-cleaner",
+  "name": "键盘清洁",
+  "version": "1.0.0",
+  "category": "系统工具",
+  "description": "擦拭键盘时安全屏蔽按键输入信号，鼠标仍可正常操作，支持倒计时与拦截计数。",
+  "keywords": [
+    "键盘",
+    "清洁",
+    "清理",
+    "锁定",
+    "屏蔽",
+    "clean"
+  ],
+  "toggleWindow": false,
+  "queryPrefixes": [
+    "键盘清洁",
+    "清理键盘",
+    "锁定键盘"
+  ],
+  "icon": "mdi:keyboard-outline",
+  "accentHex": "#0EA5E9",
+  "runtime": "csharp",
+  "uiMode": "native-window",
+  "entryMode": "entry",
+  "entry": "main.cs",
+  "permissions": [
+    "context.read"
+  ],
+  "runAsAdmin": false,
+  "waitForExit": false,
+  "isPublished": true
+}

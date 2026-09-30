@@ -1,4 +1,4 @@
-﻿<Window x:Class="OpenQuickHost.CloudSyncHistoryWindow"
+<Window x:Class="OpenQuickHost.CloudSyncHistoryWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="账号同步历史"
@@ -19,17 +19,17 @@
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <StackPanel>
-                <TextBlock Text="{Binding DisplayName}" Foreground="{DynamicResource BrushTextMain}" FontSize="20" FontWeight="SemiBold"/>
-                <TextBlock Text="设置的修改和恢复记录" ToolTip="{Binding ObjectId}" Foreground="{DynamicResource BrushTextSec}" FontSize="11" Margin="0,5,0,0"/>
+                <TextBlock Text="{Binding DisplayName}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold"/>
+                <TextBlock Text="设置的修改和恢复记录" ToolTip="{Binding ObjectId}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,5,0,0"/>
                 <TextBlock Text="每次创建、修改、删除和恢复都会形成一个历史备份；恢复也会生成新版本，不会抹掉历史。"
-                           Foreground="{DynamicResource BrushTextSec}" FontSize="12" Margin="0,9,0,0" TextWrapping="Wrap"/>
+                           Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,9,0,0" TextWrapping="Wrap"/>
             </StackPanel>
             <Button Grid.Column="1" Content="刷新历史" Style="{StaticResource SecondaryBtn}" Height="30" Padding="12,0" Click="RefreshButton_Click"/>
         </Grid>
 
         <Border Grid.Row="1" Background="#0AFFFFFF" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1"
                 CornerRadius="7" Padding="10,7" Margin="0,16,0,10">
-            <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource BrushTextSec}" FontSize="12" TextWrapping="Wrap"/>
+            <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" TextWrapping="Wrap"/>
         </Border>
 
         <ListView Grid.Row="2" ItemsSource="{Binding Versions}" Background="Transparent"
@@ -67,7 +67,7 @@
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <TextBlock Text="历史内容不会在列表中展开，以免意外暴露 AI 密钥等敏感配置。" Foreground="{DynamicResource BrushTextSec}" FontSize="11" VerticalAlignment="Center"/>
+            <TextBlock Text="历史内容不会在列表中展开，以免意外暴露 AI 密钥等敏感配置。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" VerticalAlignment="Center"/>
             <Button Grid.Column="1" Content="关闭" Style="{StaticResource SecondaryBtn}" Width="80" Height="30" Click="CloseButton_Click"/>
         </Grid>
     </Grid>

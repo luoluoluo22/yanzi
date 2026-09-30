@@ -130,6 +130,12 @@ public final class MobileIconLibrary {
                 pathData = getFromLargeLibrary(key);
             }
             if (pathData == null) {
+                String fallback = ALIASES.get(key);
+                if (fallback != null) {
+                    pathData = ICONS.get(fallback);
+                }
+            }
+            if (pathData == null) {
                 return null;
             }
             try {
@@ -150,10 +156,10 @@ public final class MobileIconLibrary {
     }
 
     private static void loadLargeLibrary() {
-        largeLibraryLoaded = true;
         if (appContext == null) {
             return;
         }
+        largeLibraryLoaded = true;
         try (InputStream is = appContext.getAssets().open("mdi-icons.json");
              JsonReader reader = new JsonReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
             reader.beginObject();
@@ -200,11 +206,7 @@ public final class MobileIconLibrary {
             value = inferFromReference(value);
         }
         value = value.toLowerCase(Locale.ROOT);
-        // 去除 MDI 中空心图标常用的后缀 -outline 以最大化复用已有图标路径
-        if (value.endsWith("-outline")) {
-            value = value.substring(0, value.length() - 8);
-        }
-        return ALIASES.containsKey(value) ? ALIASES.get(value) : value;
+        return value;
     }
 
     private static String inferFromReference(String reference) {

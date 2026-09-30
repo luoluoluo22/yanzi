@@ -56,6 +56,10 @@ public static class HostAssets
 
     public static string DocsPath => ResolveDataDirectoryPath("docs");
 
+    public static string PastedImagesPath => ResolveDataDirectoryPath("PastedImages");
+
+    public static string PastedNotesPath => ResolveDataDirectoryPath("PastedNotes");
+
     public static string SkillsPath => ResolveDataDirectoryPath("skills");
 
     public static string DocsReadmePath => Path.Combine(DocsPath, "README.txt");
@@ -92,6 +96,8 @@ public static class HostAssets
         Directory.CreateDirectory(ExtensionsPath);
         Directory.CreateDirectory(ExtensionRecycleBinPath);
         Directory.CreateDirectory(DocsPath);
+        Directory.CreateDirectory(PastedImagesPath);
+        Directory.CreateDirectory(PastedNotesPath);
         Directory.CreateDirectory(LogsPath);
         Directory.CreateDirectory(SkillsPath);
 

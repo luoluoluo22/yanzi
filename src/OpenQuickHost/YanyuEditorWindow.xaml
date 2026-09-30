@@ -129,7 +129,7 @@
                                   Margin="0,0,14,0"
                                   HorizontalAlignment="Right"
                                   VerticalAlignment="Center"
-                                  Fill="#FF8E8E8E"
+                                  Fill="{DynamicResource BrushTextSec}"
                                   IsHitTestVisible="False"
                                   Data="M0,0 L5,6 L10,0 Z" />
                             <Popup x:Name="PART_Popup"
@@ -267,7 +267,7 @@
                     </Grid>
                     <TextBlock Text="绑定进程可选，例如 code 或 notepad；多个进程用逗号分隔。留空表示所有应用生效。"
                                Margin="2,8,0,0"
-                               Foreground="#FF8E8E8E"
+                               Foreground="{DynamicResource BrushTextSec}"
                                FontSize="{DynamicResource FontSizeSmallPlus}"
                                TextWrapping="Wrap" />
 
@@ -284,7 +284,7 @@
                                        FontWeight="SemiBold" />
                             <TextBlock Text="正则捕获可用 {0}、{1}、{name} 占位符。"
                                        Margin="0,6,0,0"
-                                       Foreground="#FF8E8E8E"
+                                       Foreground="{DynamicResource BrushTextSec}"
                                        FontSize="{DynamicResource FontSizeSmallPlus}" />
                             <TextBox x:Name="TextContentBox"
                                      Margin="0,10,0,0"
@@ -353,7 +353,7 @@
                                      MaxHeight="180"
                                      Visibility="Collapsed"
                                      Background="#FF1A1A1A"
-                                     BorderBrush="#FF2A2A2A"
+                                     BorderBrush="{DynamicResource BrushBorder}"
                                      BorderThickness="1"
                                      Foreground="White"
                                      ItemContainerStyle="{StaticResource YanyuExtensionListItemStyle}"
@@ -406,7 +406,7 @@
                                                            Foreground="White"
                                                            FontSize="{DynamicResource FontSizeNormal}" />
                                                 <TextBlock Text="{Binding Detail}"
-                                                           Foreground="#FF8E8E8E"
+                                                           Foreground="{DynamicResource BrushTextSec}"
                                                            FontSize="{DynamicResource FontSizeSmall}"
                                                            Margin="0,3,0,0"
                                                            TextTrimming="CharacterEllipsis" />

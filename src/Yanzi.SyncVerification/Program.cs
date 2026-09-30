@@ -454,6 +454,29 @@ static void VerifyExtensionDataObjects()
            }, ExtensionDataObjectStore.ComputeContentHash(string.Empty), localDeleted: true),
         "A stale extension-data deletion could overwrite a newer remote value without conflict.");
 
+    var rapidEditState = new ExtensionDataSyncState
+    {
+        Pending = true,
+        LocalContentHash = second.ContentHash,
+        LastRemoteRevision = first.Revision
+    };
+    ExtensionDataSyncStateStore.ApplySynced(rapidEditState, first);
+    Assert(rapidEditState.Pending && rapidEditState.LocalContentHash == second.ContentHash,
+        "Completing an older upload cleared a newer local edit.");
+    first.UpdatedByDeviceId = "this-device";
+    Assert(ExtensionStorageService.ShouldSkipCloudRefresh(rapidEditState, first, "this-device"),
+        "A pending edit conflicted with an earlier upload from the same device.");
+    Assert(!ExtensionStorageService.ShouldSkipCloudRefresh(rapidEditState, first, "other-device"),
+        "A concurrent edit from another device was silently ignored.");
+    ExtensionDataSyncStateStore.ApplySynced(rapidEditState, second);
+    Assert(!rapidEditState.Pending && rapidEditState.LastRemoteRevision == second.Revision,
+        "Completing the latest upload did not clear its pending state.");
+    ExtensionDataSyncStateStore.ApplySynced(rapidEditState, first);
+    Assert(rapidEditState.LastRemoteRevision == second.Revision && rapidEditState.LocalContentHash == second.ContentHash,
+        "A delayed response moved the extension-data baseline backward.");
+    Assert(ExtensionStorageService.ShouldSkipCloudRefresh(rapidEditState, first, "other-device"),
+        "An older remote read was allowed to replace a newer baseline.");
+
     var roundTrip = ExtensionDataObjectStore.Deserialize(
         ExtensionDataObjectStore.Serialize(second),
         second.ExtensionId,

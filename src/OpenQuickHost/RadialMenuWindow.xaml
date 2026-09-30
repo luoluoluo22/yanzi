@@ -219,7 +219,7 @@
         <Grid HorizontalAlignment="Center" VerticalAlignment="Center" Width="64" Height="64">
             <TextBlock Text="{Binding CenterPrimaryText}"
                        Foreground="{DynamicResource BrushRadialText}"
-                       FontSize="12"
+                       FontSize="{DynamicResource FontSizeSmallPlus}"
                        FontWeight="SemiBold"
                        HorizontalAlignment="Center"
                        VerticalAlignment="Center"
@@ -298,7 +298,7 @@
  
         <TextBlock Text="{Binding PageDisplaySummary}"
                    Foreground="{DynamicResource BrushRadialTextMuted}"
-                   FontSize="10"
+                   FontSize="{DynamicResource FontSizeTiny}"
                    Width="350"
                    HorizontalAlignment="Center"
                    VerticalAlignment="Center"
@@ -343,13 +343,10 @@
                         </Border.RenderTransform>
                         <Grid>
                             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="{Binding ContentOpacity}">
-                                <TextBlock Text="➕" 
-                                           Foreground="#E2E8F0" 
-                                           FontSize="{DynamicResource FontSizeTitle}" 
+                                <Path Data="{local:IconGeometry plus}" Fill="#E2E8F0" Width="{DynamicResource FontSizeTitle}" Height="{DynamicResource FontSizeTitle}" Stretch="Uniform"
                                            HorizontalAlignment="Center" 
-                                           VerticalAlignment="Center">
-                                    <TextBlock.Style>
-                                        <Style TargetType="TextBlock">
+                                           VerticalAlignment="Center"><Path.Style>
+                                        <Style TargetType="Path">
                                             <Setter Property="Visibility" Value="Collapsed"/>
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding ShouldShowEmptyPlaceholder}" Value="True">
@@ -357,8 +354,7 @@
                                                 </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
-                                    </TextBlock.Style>
-                                </TextBlock>
+                                    </Path.Style></Path>
                                                        <!-- Show normal content for filled slots -->
                                 <Grid Width="26" Height="26" HorizontalAlignment="Center" Visibility="{Binding IsNotEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
                                     <Border Width="26" Height="26" CornerRadius="6" Background="{Binding AccentBrush}">
@@ -448,13 +444,10 @@
                         </Border.RenderTransform>
                         <Grid>
                             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="{Binding ContentOpacity}">
-                                <TextBlock Text="➕" 
-                                           Foreground="{DynamicResource BrushRadialTextMuted}" 
-                                           FontSize="{DynamicResource FontSizeTitle}" 
+                                <Path Data="{local:IconGeometry plus}" Fill="{DynamicResource BrushRadialTextMuted}" Width="{DynamicResource FontSizeTitle}" Height="{DynamicResource FontSizeTitle}" Stretch="Uniform"
                                            HorizontalAlignment="Center" 
-                                           VerticalAlignment="Center">
-                                    <TextBlock.Style>
-                                        <Style TargetType="TextBlock">
+                                           VerticalAlignment="Center"><Path.Style>
+                                        <Style TargetType="Path">
                                             <Setter Property="Visibility" Value="Collapsed"/>
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding ShouldShowEmptyPlaceholder}" Value="True">
@@ -462,8 +455,7 @@
                                                 </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
-                                    </TextBlock.Style>
-                                </TextBlock>
+                                    </Path.Style></Path>
                                 <Grid Width="26" Height="26" HorizontalAlignment="Center" Visibility="{Binding IsNotEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
                                     <Border Width="26" Height="26" CornerRadius="6" Background="{Binding AccentBrush}">
                                         <Grid ClipToBounds="True">
@@ -551,13 +543,10 @@
                         </Border.RenderTransform>
                         <Grid>
                             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="{Binding ContentOpacity}">
-                                <TextBlock Text="➕" 
-                                           Foreground="{DynamicResource BrushRadialTextMuted}" 
-                                           FontSize="{DynamicResource FontSizeHeader}" 
+                                <Path Data="{local:IconGeometry plus}" Fill="{DynamicResource BrushRadialTextMuted}" Width="{DynamicResource FontSizeHeader}" Height="{DynamicResource FontSizeHeader}" Stretch="Uniform"
                                            HorizontalAlignment="Center" 
-                                           VerticalAlignment="Center">
-                                    <TextBlock.Style>
-                                        <Style TargetType="TextBlock">
+                                           VerticalAlignment="Center"><Path.Style>
+                                        <Style TargetType="Path">
                                             <Setter Property="Visibility" Value="Collapsed"/>
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding ShouldShowEmptyPlaceholder}" Value="True">
@@ -565,8 +554,7 @@
                                                 </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
-                                    </TextBlock.Style>
-                                </TextBlock>
+                                    </Path.Style></Path>
                                 
                                 <!-- Show normal content for filled slots -->
                                 <Grid Width="26"
@@ -738,13 +726,10 @@
                             </Border.RenderTransform>
                             <Grid>
                                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="{Binding ContentOpacity}">
-                                    <TextBlock Text="➕" 
-                                               Foreground="{DynamicResource BrushRadialTextMuted}" 
-                                               FontSize="22" 
+                                    <Path Data="{local:IconGeometry plus}" Fill="{DynamicResource BrushRadialTextMuted}" Width="22" Height="22" Stretch="Uniform"
                                                HorizontalAlignment="Center" 
-                                               VerticalAlignment="Center">
-                                        <TextBlock.Style>
-                                            <Style TargetType="TextBlock">
+                                               VerticalAlignment="Center"><Path.Style>
+                                            <Style TargetType="Path">
                                                 <Setter Property="Visibility" Value="Collapsed"/>
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding ShouldShowEmptyPlaceholder}" Value="True">
@@ -752,8 +737,7 @@
                                                     </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
-                                        </TextBlock.Style>
-                                    </TextBlock>
+                                        </Path.Style></Path>
                                     
                                     <!-- Show normal content for filled slots -->
                                     <Grid Width="22"
@@ -926,13 +910,10 @@
                             </Border.RenderTransform>
                             <Grid>
                                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="{Binding ContentOpacity}">
-                                    <TextBlock Text="➕" 
-                                               Foreground="#80FFFFFF" 
-                                               FontSize="{DynamicResource FontSizeTitle}" 
+                                    <Path Data="{local:IconGeometry plus}" Fill="#80FFFFFF" Width="{DynamicResource FontSizeTitle}" Height="{DynamicResource FontSizeTitle}" Stretch="Uniform"
                                                HorizontalAlignment="Center" 
-                                               VerticalAlignment="Center">
-                                        <TextBlock.Style>
-                                            <Style TargetType="TextBlock">
+                                               VerticalAlignment="Center"><Path.Style>
+                                            <Style TargetType="Path">
                                                 <Setter Property="Visibility" Value="Collapsed"/>
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding ShouldShowEmptyPlaceholder}" Value="True">
@@ -940,8 +921,7 @@
                                                     </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
-                                        </TextBlock.Style>
-                                    </TextBlock>
+                                        </Path.Style></Path>
                                                              <!-- Show normal content for filled slots -->
                                     <Grid Width="26" Height="26" HorizontalAlignment="Center" Visibility="{Binding IsNotEmpty, Converter={StaticResource BooleanToVisibilityConverter}}">
                                         <Border Width="26" Height="26" CornerRadius="6" Background="{Binding AccentBrush}">
@@ -1484,7 +1464,7 @@
                               IsHitTestVisible="False">
                             <TextBlock Text="{Binding Title}"
                                        Foreground="{DynamicResource BrushRadialText}"
-                                       FontSize="12"
+                                       FontSize="{DynamicResource FontSizeSmallPlus}"
                                        FontWeight="SemiBold"
                                        HorizontalAlignment="Center"
                                        VerticalAlignment="Center"
@@ -1528,13 +1508,10 @@
                                         </Border.RenderTransform>
                                         <Grid>
                                             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="{Binding ContentOpacity}">
-                                                <TextBlock Text="➕" 
-                                                           Foreground="{DynamicResource BrushRadialTextMuted}" 
-                                                           FontSize="{DynamicResource FontSizeNormal}" 
+                                                <Path Data="{local:IconGeometry plus}" Fill="{DynamicResource BrushRadialTextMuted}" Width="{DynamicResource FontSizeNormal}" Height="{DynamicResource FontSizeNormal}" Stretch="Uniform"
                                                            HorizontalAlignment="Center" 
-                                                           VerticalAlignment="Center">
-                                                    <TextBlock.Style>
-                                                        <Style TargetType="TextBlock">
+                                                           VerticalAlignment="Center"><Path.Style>
+                                                        <Style TargetType="Path">
                                                             <Setter Property="Visibility" Value="Collapsed"/>
                                                             <Style.Triggers>
                                                                 <DataTrigger Binding="{Binding ShouldShowEmptyPlaceholder}" Value="True">
@@ -1542,8 +1519,7 @@
                                                                 </DataTrigger>
                                                             </Style.Triggers>
                                                         </Style>
-                                                    </TextBlock.Style>
-                                                </TextBlock>
+                                                    </Path.Style></Path>
                                                 
                                                 <Grid Width="22"
                                                       Height="22"
@@ -1687,13 +1663,10 @@
                                         </Border.RenderTransform>
                                         <Grid>
                                             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="{Binding ContentOpacity}">
-                                                <TextBlock Text="➕" 
-                                                           Foreground="{DynamicResource BrushRadialTextMuted}" 
-                                                           FontSize="{DynamicResource FontSizeNormal}" 
+                                                <Path Data="{local:IconGeometry plus}" Fill="{DynamicResource BrushRadialTextMuted}" Width="{DynamicResource FontSizeNormal}" Height="{DynamicResource FontSizeNormal}" Stretch="Uniform"
                                                            HorizontalAlignment="Center" 
-                                                           VerticalAlignment="Center">
-                                                    <TextBlock.Style>
-                                                        <Style TargetType="TextBlock">
+                                                           VerticalAlignment="Center"><Path.Style>
+                                                        <Style TargetType="Path">
                                                             <Setter Property="Visibility" Value="Collapsed"/>
                                                             <Style.Triggers>
                                                                 <DataTrigger Binding="{Binding ShouldShowEmptyPlaceholder}" Value="True">
@@ -1701,8 +1674,7 @@
                                                                 </DataTrigger>
                                                             </Style.Triggers>
                                                         </Style>
-                                                    </TextBlock.Style>
-                                                </TextBlock>
+                                                    </Path.Style></Path>
                                                 
                                                 <Grid Width="22"
                                                       Height="22"
@@ -1807,13 +1779,10 @@
                                         </Border.RenderTransform>
                                         <Grid>
                                             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="{Binding ContentOpacity}">
-                                                <TextBlock Text="➕" 
-                                                           Foreground="{DynamicResource BrushRadialTextMuted}" 
-                                                           FontSize="{DynamicResource FontSizeHeader}" 
+                                                <Path Data="{local:IconGeometry plus}" Fill="{DynamicResource BrushRadialTextMuted}" Width="{DynamicResource FontSizeHeader}" Height="{DynamicResource FontSizeHeader}" Stretch="Uniform"
                                                            HorizontalAlignment="Center" 
-                                                           VerticalAlignment="Center">
-                                                    <TextBlock.Style>
-                                                        <Style TargetType="TextBlock">
+                                                           VerticalAlignment="Center"><Path.Style>
+                                                        <Style TargetType="Path">
                                                             <Setter Property="Visibility" Value="Collapsed"/>
                                                             <Style.Triggers>
                                                                 <DataTrigger Binding="{Binding ShouldShowEmptyPlaceholder}" Value="True">
@@ -1821,8 +1790,7 @@
                                                                 </DataTrigger>
                                                             </Style.Triggers>
                                                         </Style>
-                                                    </TextBlock.Style>
-                                                </TextBlock>
+                                                    </Path.Style></Path>
                                                 
                                                 <!-- Show normal content for filled slots -->
                                                 <Grid Width="26"

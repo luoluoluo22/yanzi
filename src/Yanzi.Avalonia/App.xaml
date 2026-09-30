@@ -5,4 +5,12 @@
     <Application.Styles>
         <FluentTheme/>
     </Application.Styles>
+    <Application.Resources>
+        <SolidColorBrush x:Key="OverlayTextSecondary" Color="#A0FFFFFF"/>
+        <SolidColorBrush x:Key="OverlayTextMuted" Color="#80FFFFFF"/>
+        <SolidColorBrush x:Key="OverlayBorder" Color="#1AFFFFFF"/>
+        <SolidColorBrush x:Key="OverlayBorderStrong" Color="#3F3F46"/>
+        <SolidColorBrush x:Key="OverlaySurface" Color="#27272A"/>
+        <SolidColorBrush x:Key="OverlayHover" Color="#20FFFFFF"/>
+    </Application.Resources>
 </Application>

@@ -36,31 +36,42 @@ internal static class ExtensionDataSyncStateStore
 
     public static void MarkSynced(ExtensionDataObject remote)
     {
-        Mutate(remote.ExtensionId, remote.Key, state =>
+        Mutate(remote.ExtensionId, remote.Key, state => ApplySynced(state, remote));
+    }
+
+    internal static void ApplySynced(ExtensionDataSyncState state, ExtensionDataObject remote)
+    {
+        if (remote.Revision < state.LastRemoteRevision) return;
+
+        var newerLocalWritePending = state.Pending &&
+            (state.PendingDeleted != remote.Deleted ||
+             (!remote.Deleted && !state.LocalContentHash.Equals(remote.ContentHash, StringComparison.OrdinalIgnoreCase)));
+        if (!newerLocalWritePending)
         {
             state.Pending = false;
             state.PendingDeleted = false;
             state.LocalContentHash = remote.ContentHash;
-            state.LastRemoteRevision = remote.Revision;
-            state.LastRemoteContentHash = remote.ContentHash;
-            state.LastRemoteVersionId = remote.VersionId;
-            state.LastRemoteDeviceId = remote.UpdatedByDeviceId;
-            state.LastRemoteDeviceName = remote.UpdatedByDeviceName;
-            state.LastSyncedAtUtc = DateTimeOffset.UtcNow.ToString("O");
-            state.LastError = null;
-            if (state.Conflict != null &&
-                state.Conflict.LocalDeleted == remote.Deleted &&
-                (remote.Deleted || state.Conflict.LocalContentHash.Equals(remote.ContentHash, StringComparison.OrdinalIgnoreCase)))
-            {
-                state.Conflict = null;
-            }
-        });
+        }
+        state.LastRemoteRevision = remote.Revision;
+        state.LastRemoteContentHash = remote.ContentHash;
+        state.LastRemoteVersionId = remote.VersionId;
+        state.LastRemoteDeviceId = remote.UpdatedByDeviceId;
+        state.LastRemoteDeviceName = remote.UpdatedByDeviceName;
+        state.LastSyncedAtUtc = DateTimeOffset.UtcNow.ToString("O");
+        if (!newerLocalWritePending) state.LastError = null;
+        if (state.Conflict != null &&
+            state.Conflict.LocalDeleted == remote.Deleted &&
+            (remote.Deleted || state.Conflict.LocalContentHash.Equals(remote.ContentHash, StringComparison.OrdinalIgnoreCase)))
+        {
+            state.Conflict = null;
+        }
     }
 
     public static void MarkFailed(string extensionId, string key, string error)
     {
         Mutate(extensionId, key, state =>
         {
+            if (!state.Pending && state.Conflict == null) return;
             state.Pending = state.Conflict == null;
             state.LastAttemptAtUtc = DateTimeOffset.UtcNow.ToString("O");
             state.LastError = error;

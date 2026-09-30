@@ -145,7 +145,7 @@
                                    AllowsTransparency="True"
                                    Focusable="False"
                                    PopupAnimation="Slide">
-                                <Border Background="#FF1E1E1E"
+                                <Border Background="{DynamicResource BrushInputBG}"
                                         BorderBrush="#FF434346"
                                         BorderThickness="1"
                                         CornerRadius="8"
@@ -712,7 +712,7 @@
                                    SnapsToDevicePixels="True"
                                    Visibility="{Binding HasEverythingIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                             <Path Data="{local:IconGeometry search}"
-                                  Fill="#FF3B82F6"
+                                  Fill="{DynamicResource BrushAccent}"
                                   Stretch="Uniform"
                                   Width="15"
                                   Height="15"
@@ -1203,7 +1203,7 @@
                                                       VerticalAlignment="Center" />
                                                 <TextBlock Text="自启"
                                                            Foreground="#34D399"
-                                                           FontSize="10"
+                                                           FontSize="{DynamicResource FontSizeTiny}"
                                                            FontWeight="SemiBold"
                                                            VerticalAlignment="Center" />
                                             </StackPanel>
@@ -1282,7 +1282,7 @@
                                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                             <TextBlock Text="{Binding Title}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormalPlus}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                                             <Border Background="#153B82F6" BorderBrush="#303B82F6" BorderThickness="1" CornerRadius="4" Padding="6,1" Margin="8,0,0,0" VerticalAlignment="Center">
-                                                <TextBlock Text="{Binding Category}" Foreground="#60A5FA" FontSize="10" FontWeight="SemiBold"/>
+                                                <TextBlock Text="{Binding Category}" Foreground="#60A5FA" FontSize="{DynamicResource FontSizeTiny}" FontWeight="SemiBold"/>
                                             </Border>
                                         </StackPanel>
                                         <TextBlock Text="{Binding EffectiveSubtitle}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,3,0,0" TextTrimming="CharacterEllipsis" />
@@ -1291,15 +1291,15 @@
                                     <!-- Actions Area -->
                                     <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
                                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,12,0" Opacity="0.7">
-                                            <TextBlock Text="★ " Foreground="#FBBF24" FontSize="11" VerticalAlignment="Center" />
-                                            <TextBlock Text="{Binding RatingLabel}" Foreground="{DynamicResource BrushTextMuted}" FontSize="11" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                            <Path Data="{local:IconGeometry star}" Width="{DynamicResource FontSizeSmall}" Height="{DynamicResource FontSizeSmall}" Stretch="Uniform" Fill="#FBBF24" VerticalAlignment="Center" />
+                                            <TextBlock Text="{Binding RatingLabel}" Foreground="{DynamicResource BrushTextMuted}" FontSize="{DynamicResource FontSizeSmall}" VerticalAlignment="Center" Margin="0,0,8,0" />
                                             
-                                            <TextBlock Text="⬇ " Foreground="{DynamicResource BrushTextMuted}" FontSize="11" VerticalAlignment="Center" />
-                                            <TextBlock Text="{Binding InstallCountLabel}" Foreground="{DynamicResource BrushTextMuted}" FontSize="11" VerticalAlignment="Center" />
+                                            <Path Data="{local:IconGeometry download}" Width="{DynamicResource FontSizeSmall}" Height="{DynamicResource FontSizeSmall}" Stretch="Uniform" Fill="{DynamicResource BrushTextMuted}" VerticalAlignment="Center" />
+                                            <TextBlock Text="{Binding InstallCountLabel}" Foreground="{DynamicResource BrushTextMuted}" FontSize="{DynamicResource FontSizeSmall}" VerticalAlignment="Center" />
                                         </StackPanel>
 
                                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                            <Button Content="详情" Click="StoreDetailButton_Click" Tag="{Binding}" Height="22" Padding="8,0" Margin="0,0,6,0" FontSize="11" Background="Transparent" Foreground="{DynamicResource BrushTextSec}" BorderBrush="#25FFFFFF" BorderThickness="1" Cursor="Hand" Focusable="False">
+                                            <Button Content="详情" Click="StoreDetailButton_Click" Tag="{Binding}" Height="22" Padding="8,0" Margin="0,0,6,0" FontSize="{DynamicResource FontSizeSmall}" Background="Transparent" Foreground="{DynamicResource BrushTextSec}" BorderBrush="#25FFFFFF" BorderThickness="1" Cursor="Hand" Focusable="False">
                                                 <Button.Resources>
                                                     <Style TargetType="Border">
                                                         <Setter Property="CornerRadius" Value="4"/>
@@ -1307,7 +1307,7 @@
                                                 </Button.Resources>
                                             </Button>
 
-                                            <Button Content="试运行" Click="StoreDryRunButton_Click" Tag="{Binding}" IsEnabled="{Binding HasArchive}" Height="22" Padding="8,0" Margin="0,0,6,0" FontSize="11" Background="#20FFFFFF" Foreground="{DynamicResource BrushTextMain}" BorderBrush="#30FFFFFF" BorderThickness="1" Cursor="Hand" Focusable="False">
+                                            <Button Content="试运行" Click="StoreDryRunButton_Click" Tag="{Binding}" IsEnabled="{Binding HasArchive}" Height="22" Padding="8,0" Margin="0,0,6,0" FontSize="{DynamicResource FontSizeSmall}" Background="#20FFFFFF" Foreground="{DynamicResource BrushTextMain}" BorderBrush="#30FFFFFF" BorderThickness="1" Cursor="Hand" Focusable="False">
                                                 <Button.Resources>
                                                     <Style TargetType="Border">
                                                         <Setter Property="CornerRadius" Value="4"/>
@@ -1316,7 +1316,7 @@
                                             </Button>
 
                                             <Grid>
-                                                <Button Content="安装" Click="StoreInstallButton_Click" Tag="{Binding}" IsEnabled="{Binding HasArchive}" Height="22" Padding="10,0" FontSize="11" FontWeight="SemiBold" Background="{DynamicResource BrushAccent}" Foreground="White" BorderThickness="0" Cursor="Hand" Focusable="False">
+                                                <Button Content="安装" Click="StoreInstallButton_Click" Tag="{Binding}" IsEnabled="{Binding HasArchive}" Height="22" Padding="10,0" FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold" Background="{DynamicResource BrushAccent}" Foreground="White" BorderThickness="0" Cursor="Hand" Focusable="False">
                                                     <Button.Style>
                                                         <Style TargetType="Button">
                                                             <Setter Property="Visibility" Value="Visible" />
@@ -1335,7 +1335,7 @@
                                                 </Button>
 
                                                 <Border Background="#12FFFFFF" BorderBrush="#15FFFFFF" BorderThickness="1" CornerRadius="4" Padding="8,3" Visibility="{Binding IsInstalled, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                    <TextBlock Text="已安装" Foreground="{DynamicResource BrushTextMuted}" FontSize="11" FontWeight="SemiBold"/>
+                                                    <TextBlock Text="已安装" Foreground="{DynamicResource BrushTextMuted}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold"/>
                                                 </Border>
                                             </Grid>
                                         </StackPanel>
@@ -1393,7 +1393,7 @@
                                                       Stretch="Uniform" />
                                             </Viewbox>
                                             <TextBlock Text="{Binding DisplayGlyph}"
-                                                       FontSize="16"
+                                                       FontSize="{DynamicResource FontSizeLargePlus}"
                                                        Foreground="{DynamicResource BrushTextMain}"
                                                        HorizontalAlignment="Center"
                                                        VerticalAlignment="Center"
@@ -1522,7 +1522,7 @@
                         <ProgressBar IsIndeterminate="True"
                                      Width="140"
                                      Height="4"
-                                     Foreground="#FF3B82F6"
+                                     Foreground="{DynamicResource BrushAccent}"
                                      Background="#22FFFFFF"
                                      BorderThickness="0"
                                      HorizontalAlignment="Center" />
@@ -1543,7 +1543,7 @@
                         <ProgressBar IsIndeterminate="True"
                                      Width="160"
                                      Height="6"
-                                     Foreground="#FF3B82F6"
+                                     Foreground="{DynamicResource BrushAccent}"
                                      Background="#33FFFFFF"
                                      BorderThickness="0"
                                      HorizontalAlignment="Center" />
@@ -1584,9 +1584,9 @@
                                     HorizontalAlignment="Left"
                                     VerticalAlignment="Center"
                                     Focusable="False">
-                                <TextBlock Text="←" Foreground="{DynamicResource BrushTextMain}" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                <TextBlock Text="←" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Button>
-                            <TextBlock Text="小程序详情" Foreground="{DynamicResource BrushTextMain}" FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            <TextBlock Text="小程序详情" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeLarge}" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Grid>
                     </Border>
 
@@ -1607,15 +1607,15 @@
                                         <Viewbox Margin="9" Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
                                             <Path Width="24" Height="24" Data="{Binding VectorIcon}" Fill="{Binding VectorIconBrush, FallbackValue=White}" Stretch="Uniform" />
                                         </Viewbox>
-                                        <TextBlock Text="{Binding DisplayGlyph}" FontSize="20" Foreground="{DynamicResource BrushTextMain}" HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="Bold" Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                        <TextBlock Text="{Binding DisplayGlyph}" FontSize="{DynamicResource FontSizeTitle}" Foreground="{DynamicResource BrushTextMain}" HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="Bold" Visibility="{Binding UseGlyphIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
                                     </Grid>
                                 </Border>
 
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding Title}" Foreground="{DynamicResource BrushTextMain}" FontSize="18" FontWeight="Bold" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{Binding Title}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSubtitle}" FontWeight="Bold" TextWrapping="Wrap"/>
                                     <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                                        <TextBlock Text="{Binding VersionLabel}" Foreground="{DynamicResource BrushTextSec}" FontSize="12" Margin="0,0,12,0"/>
-                                        <TextBlock Text="{Binding ItemKindLabel}" Foreground="{DynamicResource BrushTextSec}" FontSize="12" Margin="0,0,12,0"/>
+                                        <TextBlock Text="{Binding VersionLabel}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,0,12,0"/>
+                                        <TextBlock Text="{Binding ItemKindLabel}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,0,12,0"/>
                                     </StackPanel>
                                 </StackPanel>
                             </Grid>
@@ -1625,25 +1625,25 @@
                                 <!-- 下载量胶囊 -->
                                 <Border Background="#153B82F6" BorderBrush="#303B82F6" BorderThickness="1" CornerRadius="12" Padding="12,5" Margin="0,0,8,0">
                                     <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="⤓ " Foreground="{DynamicResource BrushTextMain}" FontSize="12" FontWeight="SemiBold"/>
-                                        <TextBlock Text="{Binding InstallCountLabel}" Foreground="{DynamicResource BrushTextMain}" FontSize="12" FontWeight="SemiBold"/>
-                                        <TextBlock Text=" 次下载" Foreground="{DynamicResource BrushTextSec}" FontSize="11" Margin="2,1,0,0"/>
+                                        <Path Data="{local:IconGeometry download}" Width="{DynamicResource FontSizeSmallPlus}" Height="{DynamicResource FontSizeSmallPlus}" Stretch="Uniform" Fill="{DynamicResource BrushTextMain}"/>
+                                        <TextBlock Text="{Binding InstallCountLabel}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold"/>
+                                        <TextBlock Text=" 次下载" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="2,1,0,0"/>
                                     </StackPanel>
                                 </Border>
                                 <!-- 评分星级胶囊 -->
                                 <Border Background="#15FFB000" BorderBrush="#30FFB000" BorderThickness="1" CornerRadius="12" Padding="12,5">
                                     <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="★ " Foreground="#FFFFB000" FontSize="12"/>
-                                        <TextBlock Text="{Binding RatingLabel}" Foreground="{DynamicResource BrushTextMain}" FontSize="12" FontWeight="SemiBold"/>
-                                        <TextBlock Text=" 评分" Foreground="{DynamicResource BrushTextSec}" FontSize="11" Margin="2,1,0,0"/>
+                                        <Path Data="{local:IconGeometry star}" Width="{DynamicResource FontSizeSmallPlus}" Height="{DynamicResource FontSizeSmallPlus}" Stretch="Uniform" Fill="#FFFFB000"/>
+                                        <TextBlock Text="{Binding RatingLabel}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold"/>
+                                        <TextBlock Text=" 评分" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="2,1,0,0"/>
                                     </StackPanel>
                                 </Border>
                             </StackPanel>
 
                             <!-- 详细说明 -->
-                            <TextBlock Text="小程序介绍" Foreground="{DynamicResource BrushTextMain}" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                            <TextBlock Text="小程序介绍" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" Margin="0,0,0,8"/>
                             <Border Background="#10FFFFFF" CornerRadius="8" Padding="12" Margin="0,0,24,0">
-                                <TextBlock Text="{Binding Subtitle}" Foreground="{DynamicResource BrushTextMain}" FontSize="12" TextWrapping="Wrap" LineHeight="18"/>
+                                <TextBlock Text="{Binding Subtitle}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" TextWrapping="Wrap" LineHeight="18"/>
                             </Border>
 
                             <!-- 操作大按钮 -->
@@ -1722,7 +1722,7 @@
                                             </Style.Triggers>
                                         </Style>
                                     </Border.Style>
-                                    <TextBlock Text="已安装此小程序" Foreground="{DynamicResource BrushTextMuted}" FontSize="13" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    <TextBlock Text="已安装此小程序" Foreground="{DynamicResource BrushTextMuted}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                 </Border>
                             </Grid>
                         </StackPanel>
@@ -1813,8 +1813,8 @@ Visibility="{Binding AiChatVisibility}">
                                                 <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,10,0">
                                                     <StackPanel Orientation="Horizontal" Margin="0,0,0,4" 
                                                                 Visibility="{Binding IsPinned, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                        <TextBlock Text="📌" FontSize="11" Margin="0,0,4,0" VerticalAlignment="Center"/>
-                                                        <TextBlock Text="已置顶" Foreground="{DynamicResource BrushTextMuted}" FontSize="11" VerticalAlignment="Center"/>
+                                                        <Path Data="{local:IconGeometry pin}" Width="{DynamicResource FontSizeSmall}" Height="{DynamicResource FontSizeSmall}" Stretch="Uniform" Margin="0,0,4,0" VerticalAlignment="Center" Fill="{DynamicResource BrushTextMain}"/>
+                                                        <TextBlock Text="已置顶" Foreground="{DynamicResource BrushTextMuted}" FontSize="{DynamicResource FontSizeSmall}" VerticalAlignment="Center"/>
                                                     </StackPanel>
                                                     <TextBlock Text="{Binding Title}"
                                                                Foreground="{DynamicResource BrushTextMain}"
@@ -1990,7 +1990,7 @@ Visibility="{Binding AiChatVisibility}">
                                 Click="AiChatSettingsButton_Click"
                                 Style="{DynamicResource GhostButtonStyle}">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                <TextBlock Text="⚙️" FontSize="{DynamicResource FontSizeNormal}" Margin="0,0,4,0" />
+                                <Path Data="{local:IconGeometry cog}" Width="{DynamicResource FontSizeNormal}" Height="{DynamicResource FontSizeNormal}" Stretch="Uniform" Margin="0,0,4,0"  Fill="{DynamicResource BrushTextMain}"/>
                                 <TextBlock Text="设置" FontSize="{DynamicResource FontSizeSmallPlus}" />
                             </StackPanel>
                         </Button>
@@ -2041,9 +2041,9 @@ Visibility="{Binding AiChatVisibility}">
                                                                    HorizontalAlignment="Stretch">
                                                              <Expander.Header>
                                                                  <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                                                     <TextBlock Text="🔧" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                                                     <Path Data="{local:IconGeometry tools}" Width="14" Height="14" Stretch="Uniform" Margin="0,0,6,0" VerticalAlignment="Center" Fill="{DynamicResource BrushTextMain}"/>
                                                                      <TextBlock Text="AI 正在使用工具: " Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center"/>
-                                                                     <TextBlock Text="{Binding ToolName}" Foreground="#FF3B82F6" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="Bold" VerticalAlignment="Center"/>
+                                                                     <TextBlock Text="{Binding ToolName}" Foreground="{DynamicResource BrushAccent}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="Bold" VerticalAlignment="Center"/>
                                                                  </StackPanel>
                                                              </Expander.Header>
                                                              <StackPanel Margin="24,8,0,0" MinWidth="450" MaxWidth="560">
@@ -2326,10 +2326,8 @@ Visibility="{Binding AiChatVisibility}">
                                         </Border>
                                     </ControlTemplate>
                                 </Button.Template>
-                                <TextBlock Text="➜"
-                                           Foreground="{DynamicResource BrushTextMain}"
-                                           FontSize="{DynamicResource FontSizeSubtitle}"
-                                           FontWeight="SemiBold"
+                                <Path Data="{local:IconGeometry arrow-right}" Width="{DynamicResource FontSizeSubtitle}" Height="{DynamicResource FontSizeSubtitle}" Stretch="Uniform"
+                                           Fill="{DynamicResource BrushTextMain}"
                                            HorizontalAlignment="Center"
                                            VerticalAlignment="Center" />
                             </Button>
@@ -2664,7 +2662,7 @@ Visibility="{Binding AiChatVisibility}">
                                     HorizontalAlignment="Center"
                                     VerticalAlignment="Center">
                                 <TextBlock Text="?"
-                                           FontSize="11"
+                                           FontSize="{DynamicResource FontSizeSmall}"
                                            FontWeight="Bold"
                                            Foreground="{DynamicResource BrushTextSec}"
                                            HorizontalAlignment="Center"
@@ -2813,7 +2811,7 @@ Visibility="{Binding AiChatVisibility}">
                                 <!-- 顶部标题与关闭按钮 -->
                                 <Grid Margin="0,0,0,8">
                                     <TextBlock Text="盲操指南"
-                                               FontSize="11"
+                                               FontSize="{DynamicResource FontSizeSmall}"
                                                FontWeight="SemiBold"
                                                Foreground="{DynamicResource BrushTextSec}"
                                                HorizontalAlignment="Center"
@@ -2829,10 +2827,8 @@ Visibility="{Binding AiChatVisibility}">
                                             ToolTip="关闭盲操指南 (不再自动弹出)"
                                             Click="CloseBlindGuide_Click"
                                             Style="{DynamicResource GhostButtonStyle}">
-                                        <TextBlock Text="✕"
-                                                   FontSize="10"
-                                                   FontWeight="Bold"
-                                                   Foreground="{DynamicResource BrushTextMuted}"
+                                        <Path Data="{local:IconGeometry close}" Width="{DynamicResource FontSizeTiny}" Height="{DynamicResource FontSizeTiny}" Stretch="Uniform"
+                                                   Fill="{DynamicResource BrushTextMuted}"
                                                    HorizontalAlignment="Center"
                                                    VerticalAlignment="Center"
                                                    Margin="0,-1,0,0"/>
@@ -2845,7 +2841,7 @@ Visibility="{Binding AiChatVisibility}">
                                             VerticalAlignment="Center"
                                             Margin="0,0,0,10">
                                     <TextBlock Text="按住"
-                                               FontSize="10"
+                                               FontSize="{DynamicResource FontSizeTiny}"
                                                Foreground="{DynamicResource BrushTextSec}"
                                                VerticalAlignment="Center"
                                                Margin="0,0,5,0" />
@@ -2872,14 +2868,14 @@ Visibility="{Binding AiChatVisibility}">
                                             </Style>
                                         </Border.Style>
                                         <TextBlock Text="CAPS"
-                                                   FontSize="10"
+                                                   FontSize="{DynamicResource FontSizeTiny}"
                                                    FontWeight="Bold"
                                                    Foreground="{DynamicResource BrushTextMain}"
                                                    HorizontalAlignment="Center"/>
                                     </Border>
 
                                     <TextBlock Text="+"
-                                               FontSize="12"
+                                               FontSize="{DynamicResource FontSizeSmallPlus}"
                                                FontWeight="Bold"
                                                Foreground="{DynamicResource BrushTextSec}"
                                                VerticalAlignment="Center"
@@ -2906,9 +2902,9 @@ Visibility="{Binding AiChatVisibility}">
                                                 </Style.Triggers>
                                             </Style>
                                         </Border.Style>
-                                        <TextBlock Text="W" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource BrushTextMain}" HorizontalAlignment="Center"/>
+                                        <TextBlock Text="W" FontSize="{DynamicResource FontSizeTiny}" FontWeight="Bold" Foreground="{DynamicResource BrushTextMain}" HorizontalAlignment="Center"/>
                                     </Border>
-                                    <TextBlock Grid.Column="1" Text="上一项" FontSize="11" Foreground="{DynamicResource BrushTextSec}" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                    <TextBlock Grid.Column="1" Text="上一项" FontSize="{DynamicResource FontSizeSmall}" Foreground="{DynamicResource BrushTextSec}" VerticalAlignment="Center" Margin="8,0,0,0"/>
                                 </Grid>
 
                                 <!-- 下一项: [ S ] -->
@@ -2931,9 +2927,9 @@ Visibility="{Binding AiChatVisibility}">
                                                 </Style.Triggers>
                                             </Style>
                                         </Border.Style>
-                                        <TextBlock Text="S" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource BrushTextMain}" HorizontalAlignment="Center"/>
+                                        <TextBlock Text="S" FontSize="{DynamicResource FontSizeTiny}" FontWeight="Bold" Foreground="{DynamicResource BrushTextMain}" HorizontalAlignment="Center"/>
                                     </Border>
-                                    <TextBlock Grid.Column="1" Text="下一项" FontSize="11" Foreground="{DynamicResource BrushTextSec}" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                    <TextBlock Grid.Column="1" Text="下一项" FontSize="{DynamicResource FontSizeSmall}" Foreground="{DynamicResource BrushTextSec}" VerticalAlignment="Center" Margin="8,0,0,0"/>
                                 </Grid>
 
                                 <Separator Background="{DynamicResource BrushSeparator}" Margin="0,0,0,8"/>
@@ -2958,9 +2954,9 @@ Visibility="{Binding AiChatVisibility}">
                                                 </Style.Triggers>
                                             </Style>
                                         </Border.Style>
-                                        <TextBlock Text="A" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource BrushTextMain}" HorizontalAlignment="Center"/>
+                                        <TextBlock Text="A" FontSize="{DynamicResource FontSizeTiny}" FontWeight="Bold" Foreground="{DynamicResource BrushTextMain}" HorizontalAlignment="Center"/>
                                     </Border>
-                                    <TextBlock Grid.Column="1" Text="返回输入" FontSize="11" Foreground="{DynamicResource BrushTextSec}" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                    <TextBlock Grid.Column="1" Text="返回输入" FontSize="{DynamicResource FontSizeSmall}" Foreground="{DynamicResource BrushTextSec}" VerticalAlignment="Center" Margin="8,0,0,0"/>
                                 </Grid>
 
                                 <!-- 操作菜单: [ D ] -->
@@ -2983,9 +2979,9 @@ Visibility="{Binding AiChatVisibility}">
                                                 </Style.Triggers>
                                             </Style>
                                         </Border.Style>
-                                        <TextBlock Text="D" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource BrushTextMain}" HorizontalAlignment="Center"/>
+                                        <TextBlock Text="D" FontSize="{DynamicResource FontSizeTiny}" FontWeight="Bold" Foreground="{DynamicResource BrushTextMain}" HorizontalAlignment="Center"/>
                                     </Border>
-                                    <TextBlock Grid.Column="1" Text="操作菜单" FontSize="11" Foreground="{DynamicResource BrushTextSec}" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                    <TextBlock Grid.Column="1" Text="操作菜单" FontSize="{DynamicResource FontSizeSmall}" Foreground="{DynamicResource BrushTextSec}" VerticalAlignment="Center" Margin="8,0,0,0"/>
                                 </Grid>
 
                                 <!-- 执行: [ 空格 ] -->
@@ -3010,7 +3006,7 @@ Visibility="{Binding AiChatVisibility}">
                                         </Border.Style>
                                         <TextBlock Text="空格" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource BrushTextMain}" HorizontalAlignment="Center"/>
                                     </Border>
-                                    <TextBlock Grid.Column="1" Text="直接运行" FontSize="11" Foreground="{DynamicResource BrushTextSec}" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                    <TextBlock Grid.Column="1" Text="直接运行" FontSize="{DynamicResource FontSizeSmall}" Foreground="{DynamicResource BrushTextSec}" VerticalAlignment="Center" Margin="8,0,0,0"/>
                                 </Grid>
                             </StackPanel>
                         </Border>

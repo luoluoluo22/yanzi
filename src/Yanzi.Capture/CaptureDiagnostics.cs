@@ -105,6 +105,7 @@ public static class CaptureDiagnostics
         eventName == "process.start" ||
         eventName.EndsWith("contentRendered", StringComparison.Ordinal) ||
         eventName == "ocr.end" ||
+        eventName == "clipboard.image.failed" ||
         eventName == "app.run.end" ||
         eventName.EndsWith(".closed", StringComparison.Ordinal);
 

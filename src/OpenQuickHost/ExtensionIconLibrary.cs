@@ -131,33 +131,16 @@ internal static class ExtensionIconLibrary
 
     private static readonly IReadOnlyDictionary<string, string> IconAliases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
     {
-        ["notebook-outline"] = "note",
-        ["notebook-edit-outline"] = "pen",
-        ["note-text-outline"] = "note",
-        ["clipboard-outline"] = "clipboard",
-        ["clipboard-text"] = "clipboard",
-        ["clipboard-text-outline"] = "clipboard",
-        ["clipboard-check"] = "clipboard",
-        ["clipboard-check-outline"] = "clipboard",
-        ["clipboard-edit"] = "clipboard",
-        ["clipboard-edit-outline"] = "clipboard",
-        ["content-copy"] = "clipboard",
-        ["text-box-edit-outline"] = "pen",
-        ["text-box-search-outline"] = "note",
-        ["monitor-dashboard"] = "dashboard",
-        ["view-dashboard-outline"] = "dashboard",
-        ["application-outline"] = "dashboard",
-        ["cog-outline"] = "settings",
-        ["folder-search-outline"] = "folder",
-        ["folder-cog-outline"] = "folder",
-        ["file-search-outline"] = "file",
-        ["code-json"] = "form",
-        ["code-tags"] = "code",
-        ["console"] = "terminal",
-        ["counter"] = "timer",
-        ["compass-outline"] = "location",
-        ["notebook"] = "note",
-        ["magnify"] = "search"
+        // UI actions share one semantic icon vocabulary across menus, cards and dialogs.
+        ["clipboard"] = "clipboard-outline",
+        ["copy"] = "content-copy",
+        ["note"] = "file-document-outline",
+        ["file"] = "file-outline",
+        ["window"] = "window-maximize",
+        ["running"] = "play-circle-outline",
+        ["help-docs"] = "book-open-page-variant",
+        ["open-folder"] = "folder-open-outline",
+        ["trash"] = "delete-outline"
     };
 
     private static readonly IReadOnlyDictionary<string, string> AppIcons = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -767,18 +750,32 @@ internal static class ExtensionIconLibrary
 
         using var stream = resource.Stream;
         var document = XDocument.Load(stream);
-        var pathData = document
+        var paths = document
             .Descendants()
-            .FirstOrDefault(static element => string.Equals(element.Name.LocalName, "path", StringComparison.OrdinalIgnoreCase))
-            ?.Attribute("d")
-            ?.Value;
+            .Where(static element => string.Equals(element.Name.LocalName, "path", StringComparison.OrdinalIgnoreCase))
+            .Select(static element => element.Attribute("d")?.Value)
+            .Where(static data => !string.IsNullOrWhiteSpace(data))
+            .ToArray();
 
-        if (string.IsNullOrWhiteSpace(pathData))
+        if (paths.Length == 0)
         {
             throw new InvalidOperationException($"Icon resource has no path data: {fileName}");
         }
 
-        var geometry = Geometry.Parse(pathData);
+        Geometry geometry;
+        if (paths.Length == 1)
+        {
+            geometry = Geometry.Parse(paths[0]!);
+        }
+        else
+        {
+            var group = new GeometryGroup { FillRule = FillRule.Nonzero };
+            foreach (var path in paths)
+            {
+                group.Children.Add(Geometry.Parse(path!));
+            }
+            geometry = group;
+        }
         var bounds = geometry.Bounds;
         if (!bounds.IsEmpty && (Math.Abs(bounds.X) > double.Epsilon || Math.Abs(bounds.Y) > double.Epsilon))
         {

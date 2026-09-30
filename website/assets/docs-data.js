@@ -1,4 +1,4 @@
-window.YANZI_DOCS = {
+﻿window.YANZI_DOCS = {
   nav: [
     { group: "用户手册", items: [
       { path: "/docs/product-overview.html", title: "产品说明" },
@@ -27,7 +27,7 @@ window.YANZI_DOCS = {
           ["燕环与鼠标面板", "长按鼠标右键弹出燕环轮盘，或使用直达网格的鼠标面板，一划即达。"],
           ["燕幕（桌面组件）", "常驻桌面的浮动小组件窗口，显示时钟、便签、系统监控等信息，随时可见。"]
         ]},
-        { title: "扩展系统", body: ["万物皆扩展 —— 所有功能、程序、网站或自动化流程都可以变成独立扩展。支持从扩展商店安装、自建 JSON 和分享发布。"] },
+        { title: "扩展系统", body: ["万物皆扩展 —— 所有功能、程序、网站或自动化流程都可以变成独立扩展。支持从小程序商店安装、自建 JSON 和分享发布。"] },
         { title: "云同步与安全", body: ["支持 WebDAV（坚果云）和 GitHub 两种同步方式，数据存储在你自己的空间。完全开源、免费无广告、隐私优先。"] },
         { title: "移动端伴侣", body: ["Android 伴侣应用可接收桌面端推送通知，实现跨设备信息联动。"] }
       ]
@@ -72,9 +72,9 @@ window.YANZI_DOCS = {
     },
     "/docs/extension-guide.html": {
       title: "6. 扩展安装与管理",
-      description: "介绍如何从扩展商店、剪贴板安装扩展，以及快捷键速查和故障排查。",
+      description: "介绍如何从小程序商店、剪贴板安装扩展，以及快捷键速查和故障排查。",
       sections: [
-        { title: "获取扩展", body: ["支持扩展商店一键安装，或将 manifest.json 复制到剪贴板后直接粘贴导入。"] }
+        { title: "获取扩展", body: ["支持小程序商店一键安装，或将 manifest.json 复制到剪贴板后直接粘贴导入。"] }
       ]
     },
     "/docs/extension-authoring-guide.html": {

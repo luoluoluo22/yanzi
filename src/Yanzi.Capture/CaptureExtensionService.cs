@@ -1,3 +1,4 @@
+using System.IO;
 using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
@@ -230,6 +231,15 @@ public sealed class CaptureExtensionService
             dummy.Freeze();
 
             _ = new CaptureOverlayWindow(dummy);
+            _ = new CaptureWorkspaceWindow(
+                dummy,
+                _context?.ExtensionDataDirectory
+                    ?? Path.Combine(
+                        Environment.GetFolderPath(
+                            Environment.SpecialFolder.LocalApplicationData),
+                        "OpenQuickHost",
+                        "ExtensionData",
+                        "yanzi-capture"));
 
             CaptureDiagnostics.Mark("extension.prewarm.end");
         }
@@ -259,24 +269,31 @@ public sealed class CaptureExtensionService
                 ("width", screen.PixelWidth),
                 ("height", screen.PixelHeight));
 
-            var overlay = new CaptureOverlayWindow(screen);
-            _activeWindow = overlay;
+            var workspace = new CaptureWorkspaceWindow(
+                screen,
+                _context?.ExtensionDataDirectory
+                    ?? Path.Combine(
+                        Environment.GetFolderPath(
+                            Environment.SpecialFolder.LocalApplicationData),
+                        "OpenQuickHost",
+                        "ExtensionData",
+                        "yanzi-capture"));
 
-            overlay.Captured += bitmap =>
+            _activeWindow = workspace;
+
+            workspace.Closed += (_, _) =>
             {
-                _activeWindow = null;
-                OpenEditor(new CaptureDocument(bitmap));
+                CaptureDiagnostics.Mark("workspace.closed");
+                FinishFlow();
             };
 
-            overlay.Cancelled += FinishFlow;
-
-            CaptureDiagnostics.Mark("overlay.show.call");
-            overlay.Show();
-            overlay.Activate();
+            CaptureDiagnostics.Mark("workspace.show.call");
+            workspace.Show();
+            workspace.Activate();
             CaptureDiagnostics.Mark(
-                "overlay.show.return",
-                ("actualWidth", overlay.ActualWidth),
-                ("actualHeight", overlay.ActualHeight));
+                "workspace.show.return",
+                ("actualWidth", workspace.ActualWidth),
+                ("actualHeight", workspace.ActualHeight));
         }
         catch (Exception ex)
         {

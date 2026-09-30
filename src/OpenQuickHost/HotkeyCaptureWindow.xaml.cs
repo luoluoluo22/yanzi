@@ -441,18 +441,19 @@ public partial class HotkeyCaptureWindow : Window
 
         if (modifiers == ModifierKeys.None)
         {
-            if (_allowModifierless)
+            if (_allowModifierless || HotkeyHelper.IsFunctionOrSpecialKey(key))
             {
                 ShortcutText = BuildShortcutText(modifiers, key);
                 CapturedHotkeyText.Text = ShortcutText;
                 SyncDisplayNameFromShortcut();
                 ConfirmButton.IsEnabled = true;
                 _capturedChordDuringModifierPress = true;
-                HostAssets.AppendLog($"Hotkey capture recorded modifierless shortcut: {ShortcutText}.");
+                ErrorText.Visibility = Visibility.Collapsed;
+                HostAssets.AppendLog($"Hotkey capture recorded function/modifierless shortcut: {ShortcutText}.");
             }
             else
             {
-                ErrorText.Text = "请至少包含 Ctrl、Alt、Shift 或 Win 中的一个修饰键。";
+                ErrorText.Text = "除 F1-F12 外，普通按键请至少包含 Ctrl、Alt、Shift 或 Win 修饰键。";
                 ErrorText.Visibility = Visibility.Visible;
                 ConfirmButton.IsEnabled = false;
                 HostAssets.AppendLog($"Hotkey capture rejected modifierless key: {key}.");

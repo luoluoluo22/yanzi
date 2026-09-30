@@ -56,6 +56,15 @@ public static class HotkeyHelper
     }
 
     /// <summary>
+    /// 判断指定的键是否为可以独立作为快捷键的功能键或特殊控制键（F1-F24、PrintScreen、Pause、ScrollLock 等）
+    /// </summary>
+    public static bool IsFunctionOrSpecialKey(Key key)
+    {
+        return (key >= Key.F1 && key <= Key.F24)
+            || key is Key.PrintScreen or Key.Pause or Key.Scroll;
+    }
+
+    /// <summary>
     /// 将单个 Key 格式化为用户友好的文本（如 D1 -> 1, NumPad1 -> Num1, LeftCtrl -> Ctrl）
     /// </summary>
     public static string FormatKey(Key key)
