@@ -1,6 +1,7 @@
 const mobilePollRateLimitMap = new Map();
 const mobilePollRateLimitMaxEntries = 5000;
 const TOKEN_TTL_SECONDS = 60 * 60 * 24 * 30;
+const DEVICE_ONLINE_WINDOW_MS = 2 * 60 * 1000;
 const PASSWORD_ITERATIONS = 100000;
 const VERIFICATION_CODE_TTL_MINUTES = 10;
 const PUBLIC_SITE_ORIGIN = "https://yanzi.luoluoluo.cc.cd";
@@ -2067,10 +2068,13 @@ async function handleRequest(request, env) {
       .bind(auth.userId)
       .all();
 
+    const serverNow = isoNow();
+    const serverNowMs = Date.parse(serverNow);
     return json({
       ok: true,
       userId: auth.userId,
-      items: (rows.results ?? []).map(serializeDeviceRecord)
+      serverNow,
+      items: (rows.results ?? []).map((row) => serializeDeviceRecord(row, serverNowMs))
     });
   }
 
@@ -3104,13 +3108,17 @@ async function notifyDeviceRelay(env, userId) {
   }
 }
 
-function serializeDeviceRecord(row) {
+function serializeDeviceRecord(row, referenceNowMs = Date.now()) {
+  const lastSeenAtMs = Date.parse(String(row.last_seen_at || ""));
+  const online = Number.isFinite(lastSeenAtMs)
+    && Math.max(0, referenceNowMs - lastSeenAtMs) <= DEVICE_ONLINE_WINDOW_MS;
   return {
     deviceId: row.device_id,
     platform: row.platform,
     displayName: row.display_name,
     capabilities: parseJsonObject(row.capabilities_json),
     lastSeenAt: row.last_seen_at,
+    online,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
