@@ -866,6 +866,16 @@ async function handleRequest(request, env) {
   }
 
   const syncObjectMatch = url.pathname.match(/^\/v1\/sync\/objects\/([^/]+)$/);
+  if (syncObjectMatch && request.method === "GET") {
+    const auth = await requireAuth(request, env);
+    const objectId = normalizeSyncObjectId(decodeURIComponent(syncObjectMatch[1]));
+    const result = await readUserSyncObject(env, auth.userId, objectId);
+    if (!result) {
+      throw new HttpError(404, "sync_object_not_found", "sync object was not found");
+    }
+    return json({ ok: true, userId: auth.userId, object: result });
+  }
+
   if (syncObjectMatch && request.method === "PUT") {
     const auth = await requireAuth(request, env);
     const objectId = normalizeSyncObjectId(decodeURIComponent(syncObjectMatch[1]));
@@ -3587,6 +3597,12 @@ function serializeAppRelease(row, channel = DEFAULT_APP_UPDATE_CHANNEL) {
   };
 }
 
+function getSyncDatabase(env) {
+  return typeof env.DB?.withSession === "function"
+    ? env.DB.withSession("first-primary")
+    : env.DB;
+}
+
 async function ensureUser(env, userId) {
   await env.DB.prepare(
     `insert into users (user_id, created_at, updated_at)
@@ -3671,6 +3687,18 @@ async function readUserSyncObjects(env, userId, sinceRevision, limit) {
     ? objects[objects.length - 1].revision
     : currentRevision;
   return { currentRevision, cursorRevision, hasMore, objects };
+}
+
+async function readUserSyncObject(env, userId, objectId) {
+  const db = getSyncDatabase(env);
+  await ensureUser(env, userId);
+  const row = await db.prepare(
+    `select object_id, schema_version, object_revision, updated_at,
+            updated_by_device_id, updated_by_device_name, deleted, payload_json
+     from user_sync_objects
+     where user_id = ? and object_id = ?`
+  ).bind(userId, objectId).first();
+  return row ? serializeUserSyncObject(row) : null;
 }
 
 async function readUserSyncObjectHistory(env, userId, objectId, beforeRevision, limit) {
