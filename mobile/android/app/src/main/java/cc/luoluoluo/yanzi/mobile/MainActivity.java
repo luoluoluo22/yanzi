@@ -629,6 +629,7 @@ extends Activity {
 
     protected void onResume() {
         super.onResume();
+        UpdateManager.resumePendingInstall(this);
         try {
             this.startService(new Intent(this, FloatingWheelService.class));
         } catch (IllegalStateException ex) {

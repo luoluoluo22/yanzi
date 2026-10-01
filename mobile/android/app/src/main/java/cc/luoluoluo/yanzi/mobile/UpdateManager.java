@@ -52,6 +52,15 @@ public final class UpdateManager {
     private static final long STALE_DOWNLOAD_TIMEOUT_MS = 30L * 60L * 1000L;
 
     private static volatile boolean isDownloadCanceled = false;
+    private static volatile boolean pendingInstallPermission = false;
+    private static final java.util.concurrent.ConcurrentHashMap<String, String> updateHashes = new java.util.concurrent.ConcurrentHashMap<>();
+
+    public static void resumePendingInstall(Activity activity) {
+        if (pendingInstallPermission && (Build.VERSION.SDK_INT < 26 || activity.getPackageManager().canRequestPackageInstalls())) {
+            pendingInstallPermission = false;
+            installApk(activity, new File(activity.getCacheDir(), "yanzi_update.apk"));
+        }
+    }
 
     /**
      * 异步检测新版本（直接请求 GitHub API）
@@ -66,7 +75,7 @@ public final class UpdateManager {
             public void run() {
                 HttpURLConnection conn = null;
                 try {
-                    log(activity, "请求 GitHub API: " + GITHUB_RELEASES_API);
+                    log(activity, "请求公网更新清单: " + PUBLIC_RELEASES_API);
                     URL url = new URL(PUBLIC_RELEASES_API);
                     conn = MobileNetworkRouting.openCloudConnection(url);
                     conn.setRequestMethod("GET");
@@ -90,13 +99,14 @@ public final class UpdateManager {
                         InputStream in = conn.getInputStream();
                         byte[] buffer = new byte[4096];
                         int read;
-                        StringBuilder sb = new StringBuilder();
+                    java.io.ByteArrayOutputStream sb = new java.io.ByteArrayOutputStream();
                         while ((read = in.read(buffer)) != -1) {
-                            sb.append(new String(buffer, 0, read, "UTF-8"));
+                            if (sb.size() + read > 2 * 1024 * 1024) throw new java.io.IOException("更新清单过大");
+                            sb.write(buffer, 0, read);
                         }
                         in.close();
 
-                        JSONArray releases = new JSONArray(sb.toString());
+                        JSONArray releases = new JSONArray(sb.toString("UTF-8"));
                         JSONObject latestAndroidRelease = null;
                         
                         for (int i = 0; i < releases.length(); i++) {
@@ -124,6 +134,8 @@ public final class UpdateManager {
                                     String assetName = asset.optString("name", "");
                                     if (assetName.endsWith(".apk") && assetName.contains("-dev.apk") == activity.getPackageName().endsWith(".dev")) {
                                         apkDownloadUrl = asset.optString("browser_download_url", "");
+                                        String digest = asset.optString("digest", "");
+                                        if (digest.matches("sha256:[0-9a-fA-F]{64}")) updateHashes.put(latestVersion, digest.substring(7).toLowerCase(java.util.Locale.ROOT));
                                         break;
                                     }
                                 }
@@ -652,6 +664,7 @@ public final class UpdateManager {
                 log(activity, "安装权限缺失，引导用户前往系统授权面页。");
                 Toast.makeText(activity, "请授予“安装未知来源应用”权限以完成升级", Toast.LENGTH_LONG).show();
                 Intent intent = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES);
+                pendingInstallPermission = true;
                 intent.setData(Uri.parse("package:" + activity.getPackageName()));
                 activity.startActivity(intent);
                 return;
@@ -713,6 +726,11 @@ public final class UpdateManager {
         if (info == null) return false;
         if (!context.getPackageName().equals(info.packageName)) return false;
         try {
+            String expectedHash = updateHashes.get(info.versionName);
+            if (expectedHash != null && !expectedHash.equals(MobileAttachmentClient.hash(apkFile))) {
+                log(context, "更新包 SHA256 校验失败");
+                return false;
+            }
             PackageInfo installed = context.getPackageManager().getPackageInfo(context.getPackageName(), android.content.pm.PackageManager.GET_SIGNATURES);
             if (info.versionCode <= installed.versionCode || info.signatures == null || installed.signatures == null) return false;
             return java.util.Arrays.equals(info.signatures, installed.signatures);

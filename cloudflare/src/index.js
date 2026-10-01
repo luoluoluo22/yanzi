@@ -2488,7 +2488,17 @@ async function handleRequest(request, env, ctx) {
       throw new HttpError(404, "message_not_found", "Message not found");
     }
 
-    return json(serializeDeviceMessageRecord(row));
+    const record = serializeDeviceMessageRecord(row);
+    if (record.payload.accountChat === true) {
+      const receipts = await env.DB.prepare(`SELECT r.device_id, d.display_name, r.status, r.acked_at
+        FROM account_chat_receipts r LEFT JOIN user_devices d
+        ON d.user_id = r.user_id AND d.device_id = r.device_id
+        WHERE r.user_id = ? AND r.message_id = ? ORDER BY r.acked_at`)
+        .bind(auth.userId, messageId).all();
+      record.receipts = (receipts.results || []).map(r => ({deviceId:r.device_id, displayName:r.display_name,
+        status:r.status, ackedAt:r.acked_at}));
+    }
+    return json(record);
   }
 
   const myExtensionMatch = url.pathname.match(/^\/v1\/me\/extensions\/([^/]+)$/);

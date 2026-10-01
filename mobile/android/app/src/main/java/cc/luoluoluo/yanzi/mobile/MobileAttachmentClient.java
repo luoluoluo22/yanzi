@@ -8,6 +8,17 @@ import java.security.MessageDigest;
 
 final class MobileAttachmentClient {
     static final long LIMIT = 30L * 1024 * 1024;
+    static File saveLegacyPhoto(Context context, String messageId, String dataUrl) throws Exception {
+        if (dataUrl.length() > LIMIT * 4 / 3 + 256 || !dataUrl.matches("(?s)^data:image/(png|jpeg);base64,.*"))
+            throw new IOException("Invalid legacy image");
+        byte[] bytes = android.util.Base64.decode(dataUrl.substring(dataUrl.indexOf(',') + 1), android.util.Base64.DEFAULT);
+        if (bytes.length == 0 || bytes.length > LIMIT) throw new IOException("Legacy image too large");
+        File folder = new File(context.getFilesDir(), "mobile-attachments");
+        if (!folder.isDirectory() && !folder.mkdirs()) throw new IOException("Cannot create attachment folder");
+        File file = new File(folder, "legacy-" + Integer.toHexString(messageId.hashCode()) + (dataUrl.startsWith("data:image/png") ? ".png" : ".jpg"));
+        try (OutputStream output = new FileOutputStream(file)) { output.write(bytes); }
+        return file;
+    }
     static String hash(File file) throws Exception {
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
         try (InputStream input = new FileInputStream(file)) {

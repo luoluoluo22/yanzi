@@ -133,12 +133,15 @@ public class DeviceHeartbeatService extends Service {
         String receipt = "messageReceipt." + Integer.toHexString((base + device).hashCode()) + "." + id;
         JSONObject ack = new JSONObject().put("deviceId", device);
         String kind = message.optString("kind", "");
+        if ("screenshot".equals(kind)) kind = "photo";
         boolean attachment = "file".equals(kind) || "photo".equals(kind);
         String content = message.optString("text", "");
         if (!prefs.contains(receipt) && attachment) {
             if (!MobileEventNotifier.canNotify(this)) return;
             JSONObject payload = message.optJSONObject("payload");
-            if (payload == null || !payload.has("attachmentId")) {
+            if (payload != null && payload.has("screenshotDataUrl")) {
+                content = MobileAttachmentClient.saveLegacyPhoto(this, id, payload.getString("screenshotDataUrl")).getAbsolutePath();
+            } else if (payload == null || !payload.has("attachmentId")) {
                 ack.put("success", false).put("result", "Attachment reference missing");
             } else content = MobileAttachmentClient.download(this, base, token, payload.getString("attachmentId")).getAbsolutePath();
         }
@@ -157,7 +160,8 @@ public class DeviceHeartbeatService extends Service {
                         for (int i = 0; i < history.length(); i++)
                             if (history.optJSONObject(i) != null && id.equals(history.optJSONObject(i).optString("messageId"))) recorded = true;
                         if (!recorded) history.put(new JSONObject().put("role", "desktop").put("kind", kind)
-                                .put("content", content).put("time", System.currentTimeMillis()).put("messageId", id));
+                                .put("content", content).put("time", System.currentTimeMillis()).put("messageId", id)
+                                .put("sourceDeviceId", message.optString("sourceDeviceId")));
                         JSONArray bounded = new JSONArray();
                         for (int i = Math.max(0, history.length() - 50); i < history.length(); i++) bounded.put(history.get(i));
                         edit.putString("desktop_chat_history", bounded.toString());
