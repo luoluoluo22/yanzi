@@ -718,3 +718,11 @@ PC 聊天窗口的文字、照片、文件均可转云端；Android 照片和文
 - 验收时发现真实账号遗留一条 `real-account-storage-headless-* / roundtrip/state.json` 测试对象；先核对 objectId 与 extensionId/key 哈希一致后精确 tombstone。清理后公网授权清单从 3 项恢复为 2 项，未采用会误伤真实小程序的通用前缀过滤。
 - `cloudflare npm test` 6 项通过；`scripts/test-application-platform.ps1` 本地真实 Worker/D1 集成通过；`scripts/test-public-application-platform.ps1` 公网应用平台回归通过；新增公网多资源脚本的 API 自动确认模式与真机确认模式均通过。
 - 实体一加生产包仍为 0.2.26，未覆盖、未清数据；只操作 Dev 0.2.31-dev。未操作 K70，未绕过 Android 系统授权/安装流程。系统级厂商推送与强制停止后的唤醒能力仍不属于本轮验收范围。
+
+### 22.2 发布物复现验收（2026-10-01）
+
+- `dotnet build OpenQuickHost.sln -c Release --no-restore` 成功，0 errors；现有 19 个 nullable/未使用字段警告与本轮多资源授权无关。
+- Android `assembleDebug assembleRelease testDebugUnitTest testReleaseUnitTest` 成功；Gradle 223 tasks 完成，无构建错误。
+- 本地 `app-release.apk` SHA256 为 `7B665FDD3CD16172A59C25018FD99358B6D0E6789EE3C0B27FEA1191C457BB0F`，与公网 `yanzi-mobile-0.2.31.apk` 完全一致；公网包解析为 `cc.luoluoluo.yanzi.mobile` / versionCode 31 / versionName 0.2.31。
+- 刚构建的 `app-dev.apk` 已通过 `adb install -r` 覆盖到一加实体机，仅更新 `cc.luoluoluo.yanzi.mobile.dev`，保留原登录数据；重启后仍为 0.2.31-dev，账号会话存在，应用中心 AI 数据清单仍只显示便签与日历。
+- 生产包 `cc.luoluoluo.yanzi.mobile` 仍保持 0.2.26，未覆盖、未清数据。
