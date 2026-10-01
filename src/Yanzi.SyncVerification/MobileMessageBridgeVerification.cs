@@ -64,7 +64,8 @@ internal static class MobileMessageBridgeVerification
                             else
                                 await (Task)typeof(MobileMessageToastWindow).GetMethod("TriggerSendMessageAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(chat, null)!;
                             var status = ((System.Windows.Controls.TextBlock)chat.FindName("SendStatusText")).Text;
-                            File.WriteAllText(Path.Combine(root, "chat-result.json"), JsonSerializer.Serialize(new { status, input = input.Text }));
+                            var messageId = (string?)typeof(MobileMessageToastWindow).GetField("_lastCloudMessageId", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(chat);
+                            File.WriteAllText(Path.Combine(root, "chat-result.json"), JsonSerializer.Serialize(new { status, input = input.Text, messageId }));
                             chat.Close();
                         } catch (Exception ex) {
                             File.WriteAllText(Path.Combine(root, "chat-result.json"), JsonSerializer.Serialize(new { error = ex.ToString() }));

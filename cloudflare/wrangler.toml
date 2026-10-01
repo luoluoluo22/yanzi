@@ -5,9 +5,8 @@ compatibility_date = "2026-04-23"
 name = "DEVICE_RELAY"
 class_name = "DeviceRelay"
 
-[[migrations]]
-tag = "device-relay-v1"
-new_sqlite_classes = ["DeviceRelay"]
+# device-relay-v1 was applied by the Git build on 2026-10-01.
+# Per repository deployment policy, do not recreate the existing namespace.
 
 [triggers]
 crons = ["*/30 * * * *"]

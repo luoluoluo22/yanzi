@@ -1102,8 +1102,10 @@ public partial class MainWindow
                 catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
                 { HostAssets.AppendDebug($"Mobile realtime unavailable; SSE fallback: {ex.GetType().Name}"); }
                 HostAssets.AppendDebug("Mobile bridge establishing SSE connection to cloud...");
-                using var response = await _cloudSyncClient!.GetMobileMessagesEventsStreamAsync(_desktopDeviceId, cancellationToken);
-                using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+                using var fallbackLifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                fallbackLifetime.CancelAfter(TimeSpan.FromMinutes(2));
+                using var response = await _cloudSyncClient!.GetMobileMessagesEventsStreamAsync(_desktopDeviceId, fallbackLifetime.Token);
+                using var stream = await response.Content.ReadAsStreamAsync(fallbackLifetime.Token);
                 using var reader = new System.IO.StreamReader(stream, System.Text.Encoding.UTF8);
 
                 connectedAtUtc = DateTimeOffset.UtcNow;
@@ -1111,7 +1113,7 @@ public partial class MainWindow
 
                 while (!cancellationToken.IsCancellationRequested && !reader.EndOfStream)
                 {
-                    var line = await reader.ReadLineAsync(cancellationToken);
+                    var line = await reader.ReadLineAsync(fallbackLifetime.Token);
                     if (string.IsNullOrWhiteSpace(line))
                     {
                         continue;
@@ -1161,6 +1163,11 @@ public partial class MainWindow
                         }
                     }
                 }
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                HostAssets.AppendDebug("Mobile SSE compatibility interval ended; retrying realtime connection.");
+                continue;
             }
             catch (OperationCanceledException)
             {

@@ -1,4 +1,4 @@
-param (
+﻿param (
     [string]$AccountId = "cc88cc0084b504db93ccd9462af37212",
     [string]$ScriptName = "yanzi-sync"
 )
@@ -40,41 +40,8 @@ $headers = @{
     "Content-Type"  = "application/json"
 }
 
-# 1. Deploy latest code version (filter out secret-only empty versions)
-try {
-    $versionsUrl = "https://api.cloudflare.com/client/v4/accounts/$AccountId/workers/scripts/$ScriptName/versions?per_page=10"
-    $versionsRes = Invoke-RestMethod -Uri $versionsUrl -Method Get -Headers $headers
-    if ($versionsRes.success -and $versionsRes.result.items.Count -gt 0) {
-        $targetVersionId = $null
-        foreach ($v in $versionsRes.result.items) {
-            $vDetailUrl = "https://api.cloudflare.com/client/v4/accounts/$AccountId/workers/scripts/$ScriptName/versions/$($v.id)"
-            $vDetail = Invoke-RestMethod -Uri $vDetailUrl -Method Get -Headers $headers
-            if ($vDetail.success -and $vDetail.result.resources.script.etag) {
-                $targetVersionId = $v.id
-                break
-            }
-        }
-
-        if ($targetVersionId) {
-            $deployUrl = "https://api.cloudflare.com/client/v4/accounts/$AccountId/workers/scripts/$ScriptName/deployments"
-            $deployBody = @{
-                versions = @(
-                    @{
-                        version_id = $targetVersionId
-                        percentage = 100
-                    }
-                )
-            } | ConvertTo-Json -Depth 5
-
-            Invoke-RestMethod -Uri $deployUrl -Method Post -Headers $headers -Body $deployBody | Out-Null
-            Write-Host "[Cloudflare Sync] Latest code version ($targetVersionId) verified and deployed."
-        }
-    }
-} catch {
-    Write-Host "[Cloudflare Sync] Note on deploying latest code version: $_"
-}
-
-# 2. Upload secrets
+# Bind secrets only. Worker code deployment is handled by Git-triggered Cloudflare Builds.
+# Upload secrets
 $secretsToUpload = @()
 if ($authTokenSecret) { $secretsToUpload += @{ name = "AUTH_TOKEN_SECRET"; text = $authTokenSecret; type = "secret_text" } }
 if ($resendKey)         { $secretsToUpload += @{ name = "RESEND_API_KEY"; text = $resendKey; type = "secret_text" } }
