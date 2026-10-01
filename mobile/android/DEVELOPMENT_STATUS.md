@@ -707,3 +707,14 @@ PC 聊天窗口的文字、照片、文件均可转云端；Android 照片和文
 - 手机主应用 0.2.31 提供相同的数据清单与提示词；原生确认逐项展示并提交明确 scopes。旧客户端不能批准多资源申请，单资源旧地址保持兼容。
 - 燕窝移除旧 UUID 推送卡片，改成实际账号公网状态；手机在线状态来自公网设备心跳，局域网开关仅标为发现开关；端口使用实际配置，个人 WebDAV 仓库与账号同步分开说明。移除无依据的「上次刚刚」与实际只保存配置的「立即同步」文案。
 - Node/SQLite 共 6 项验证通过，涵盖多资源目录、全部快照、申请/批准缩小范围、只读、未选资源拒绝、撤销，以及原日历版本和删除语义。本地 Worker/D1 旧接入回归通过。
+
+
+### 22.1 公网与真机验收完成（2026-10-01）
+
+- `f205ab1` 已在 main，公网 `/v1/applications/access-resources` 和多资源邀请/确认接口可用；公网 Android 更新清单为 `android-v0.2.31`，APK 为 `yanzi-mobile-0.2.31.apk`。
+- 新增 `scripts/test-public-external-access.ps1`。公网真实账号回归已验证：资源清单 → 两资源邀请快照 → AI `scopes=all` 申请 → 账号侧缩小为仅便签只读 → 便签可读、未选日历 403 → 撤销授权后便签立即 403 → 邀请撤销，无遗留待确认申请。
+- 一加实体机 `cc.luoluoluo.yanzi.mobile.dev` 0.2.31-dev 已完成原生多资源确认：弹窗同时展示“便签 / notes.v1.json”和“日历 / calendar.v1.json”，核对码与公网申请一致；真机取消日历后点击“允许所选”，公网最终只发放便签只读 scope。此轮是实际手机 UI 点击确认，不是仅用 API 代替。
+- 真机应用中心“AI 数据清单 / 接入提示词”已验证只显示当前可授权的便签与日历，并能生成包含 resourceList、按任务选择 scopes、核对码确认、poll 领取限时令牌和修改前读最新版约束的提示词。
+- 验收时发现真实账号遗留一条 `real-account-storage-headless-* / roundtrip/state.json` 测试对象；先核对 objectId 与 extensionId/key 哈希一致后精确 tombstone。清理后公网授权清单从 3 项恢复为 2 项，未采用会误伤真实小程序的通用前缀过滤。
+- `cloudflare npm test` 6 项通过；`scripts/test-application-platform.ps1` 本地真实 Worker/D1 集成通过；`scripts/test-public-application-platform.ps1` 公网应用平台回归通过；新增公网多资源脚本的 API 自动确认模式与真机确认模式均通过。
+- 实体一加生产包仍为 0.2.26，未覆盖、未清数据；只操作 Dev 0.2.31-dev。未操作 K70，未绕过 Android 系统授权/安装流程。系统级厂商推送与强制停止后的唤醒能力仍不属于本轮验收范围。

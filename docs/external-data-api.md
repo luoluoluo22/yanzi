@@ -46,3 +46,22 @@ AI GET 接入地址及其 `resourceList` 得到资源清单；POST requests 的 
 - 当前授权通知每 5 秒检查一次，独立于聊天队列。手机需要燕子前台或消息前台服务运行、系统允许通知；尚未接入厂商系统推送，强制停止应用时不能保证弹窗。不会主动点亮或熄灭屏幕。
 
 验证：Node + SQLite 测试覆盖未批准不可访问、跨 key 拒绝、只读、撤销、到期、私人轮询、重复决定和日历记录版本/删除标记；`scripts/test-application-platform.ps1` 使用真实本地 Worker/D1 验证匿名申请与主账号确认流程。
+
+
+## 公网多资源回归
+
+真实公网回归入口：
+
+```powershell
+.\scripts\test-public-external-access.ps1 -Serial <实体设备序列号>
+```
+
+该脚本只从已登录的燕子 Dev 进程私有偏好中临时读取会话，不打印账号令牌。它验证两资源邀请快照、`scopes=all` 申请、批准时缩小范围、未选资源 403、撤销后令牌失效和清理待确认申请。
+
+需要验证真实手机逐项确认时：
+
+```powershell
+.\scripts\test-public-external-access.ps1 -Serial <实体设备序列号> -RequireDeviceApproval
+```
+
+脚本会等待手机原生授权页完成确认；验收时应至少取消一个 scope 再点“允许所选”，确保服务端最终令牌严格等于设备确认后的子集。历史 headless 诊断垃圾只可用 `-CleanStaleHeadlessDiagnostics` 清理；该开关仅匹配 `real-account-storage-headless-<数字> / roundtrip/state.json`，并在 tombstone 前核对对象哈希，避免误删正常业务数据。
