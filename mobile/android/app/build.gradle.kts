@@ -17,8 +17,8 @@ android {
         applicationId = "cc.luoluoluo.yanzi.mobile"
         minSdk = 26
         targetSdk = 35
-        versionCode = 31
-        versionName = "0.2.31"
+        versionCode = 32
+        versionName = "0.2.32"
         manifestPlaceholders["fcmEnabled"] = fcmEnabled.toString()
         if (fcmEnabled) {
             val config = pushConfigFile!!.readText().replace("\\", "\\\\").replace("\"", "\\\"").replace("\r", "").replace("\n", "")

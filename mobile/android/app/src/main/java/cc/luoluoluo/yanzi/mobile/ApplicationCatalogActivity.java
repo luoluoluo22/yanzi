@@ -22,16 +22,46 @@ public final class ApplicationCatalogActivity extends Activity {
     private SharedPreferences prefs; private LinearLayout list; private TextView status;
     private String accountId,baseUrl,token; private File pendingApk;
     @Override public void onCreate(Bundle saved) {
-        super.onCreate(saved);MobileNetworkRouting.initialize(this);
+        super.onCreate(saved);
+        MobileNetworkRouting.initialize(this);
         prefs=getSharedPreferences("yanzi-mobile",MODE_PRIVATE);
-        baseUrl=prefs.getString("baseUrl","https://sync.luoluoluo.cc.cd").replaceAll("/+$","");token=prefs.getString("token","");
-        LinearLayout root=new LinearLayout(this);root.setOrientation(1);root.setPadding(24,24,24,24);
-        TextView title=new TextView(this);title.setText("应用中心");title.setTextSize(24);root.addView(title);
-        status=new TextView(this);status.setText("账号应用跨设备可见；安装由这台手机确认。");root.addView(status);
-        Button refresh=new Button(this);refresh.setText("刷新应用");refresh.setOnClickListener(v->load());root.addView(refresh);
-        Button authorize=new Button(this);authorize.setText("授权开发者应用访问数据");authorize.setOnClickListener(v->authorize());root.addView(authorize);
-        Button connect=new Button(this);connect.setText("AI 数据清单 / 接入提示词");connect.setOnClickListener(v->createMultiInvitation());root.addView(connect);
-        ScrollView scroll=new ScrollView(this);list=new LinearLayout(this);list.setOrientation(1);scroll.addView(list);root.addView(scroll);setContentView(root);
+        baseUrl=prefs.getString("baseUrl","https://sync.luoluoluo.cc.cd").replaceAll("/+$","");
+        token=prefs.getString("token","");
+
+        LinearLayout root=new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(YanziUiKit.dp(this,16),YanziUiKit.dp(this,16),YanziUiKit.dp(this,16),YanziUiKit.dp(this,24));
+        root.setBackgroundColor(YanziUiKit.BG);
+
+        LinearLayout top=new LinearLayout(this);top.setOrientation(LinearLayout.HORIZONTAL);top.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        TextView back=YanziUiKit.secondaryButton(this,"‹",this::finish);
+        top.addView(back,new LinearLayout.LayoutParams(YanziUiKit.dp(this,42),YanziUiKit.dp(this,42)));
+        LinearLayout titleCopy=new LinearLayout(this);titleCopy.setOrientation(LinearLayout.VERTICAL);titleCopy.setPadding(YanziUiKit.dp(this,12),0,0,0);
+        titleCopy.addView(YanziUiKit.text(this,"应用中心",22,YanziUiKit.TEXT,true));
+        titleCopy.addView(YanziUiKit.text(this,"连接、获取并管理燕子应用",12,YanziUiKit.SECONDARY,false));
+        top.addView(titleCopy,new LinearLayout.LayoutParams(0,-2,1f));
+        root.addView(top,YanziUiKit.cardLp(this));
+
+        LinearLayout hero=YanziUiKit.tintedCard(this,android.graphics.Color.rgb(13,35,67),android.graphics.Color.rgb(38,76,124));
+        hero.addView(YanziUiKit.header(this,"一个入口，连接你的工具","账号应用跨设备可见；独立应用仍由每台手机确认安装","apps",YanziUiKit.BLUE));
+        status=YanziUiKit.text(this,"正在读取应用目录…",12,YanziUiKit.SECONDARY,false);
+        status.setPadding(0,YanziUiKit.dp(this,10),0,0);
+        hero.addView(status);
+        root.addView(hero,YanziUiKit.cardLp(this));
+
+        LinearLayout actions=new LinearLayout(this);actions.setOrientation(LinearLayout.HORIZONTAL);
+        actions.addView(YanziUiKit.actionTile(this,"refresh",YanziUiKit.GREEN,"刷新","更新目录",this::load),new LinearLayout.LayoutParams(0,-2,1f));
+        LinearLayout.LayoutParams a2=new LinearLayout.LayoutParams(0,-2,1f);a2.leftMargin=YanziUiKit.dp(this,7);
+        actions.addView(YanziUiKit.actionTile(this,"database-outline",YanziUiKit.PURPLE,"AI 数据","精确授权",()->startActivity(new Intent(this,AiDataAccessActivity.class))),a2);
+        LinearLayout.LayoutParams a3=new LinearLayout.LayoutParams(0,-2,1f);a3.leftMargin=YanziUiKit.dp(this,7);
+        actions.addView(YanziUiKit.actionTile(this,"key-outline",YanziUiKit.ORANGE,"开发者授权","1 小时令牌",this::authorize),a3);
+        root.addView(actions,YanziUiKit.cardLp(this));
+
+        root.addView(YanziUiKit.sectionLabel(this,"全部应用"));
+        list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);
+        root.addView(list);
+
+        ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.addView(root);setContentView(scroll);
         try{accountId=ExtensionStorageProvider.accountId(token);load();}catch(Exception e){status.setText("请先登录燕子账号。");}
     }
     private void checkAccount()throws Exception{
@@ -97,24 +127,45 @@ public final class ApplicationCatalogActivity extends Activity {
         checkAccount();ui(()->render(catalog.optJSONArray("applications"),library.optJSONArray("applications")));
     });}
     private void render(JSONArray apps,JSONArray selections){
-        list.removeAllViews();status.setText("内嵌应用跨设备获取；独立应用在每台手机确认安装。");
-        if(apps==null||apps.length()==0){status.setText("暂无已发布应用");return;}
+        list.removeAllViews();
+        status.setText("目录已刷新 · 内嵌应用可跨设备获取，独立应用在本机确认安装");
+        if(apps==null||apps.length()==0){
+            TextView empty=YanziUiKit.text(this,"暂无已发布应用",13,YanziUiKit.MUTED,false);
+            empty.setGravity(android.view.Gravity.CENTER);empty.setPadding(0,YanziUiKit.dp(this,28),0,YanziUiKit.dp(this,28));list.addView(empty);return;
+        }
         for(int i=0;i<apps.length();i++){
             JSONObject app=apps.optJSONObject(i);if(app==null)continue;
             String id=app.optString("applicationId"),kind=app.optString("kind");JSONObject selected=null;
             if(selections!=null)for(int j=0;j<selections.length();j++){JSONObject item=selections.optJSONObject(j);if(item!=null&&id.equals(item.optString("applicationId")))selected=item;}
             final JSONObject selection=selected;boolean enabled=selected!=null&&selected.optBoolean("enabled");
-            TextView text=new TextView(this);text.setPadding(0,24,0,4);text.setText(app.optString("name")+" · "+app.optString("version")+"\n"+app.optString("description")+"\n"+(enabled?"已加入账号":"未加入账号"));list.addView(text);
             Intent launch="android-apk".equals(kind)?getPackageManager().getLaunchIntentForPackage(app.optString("packageName")):null;
             boolean current=false;if(launch!=null)try{current=getPackageManager().getPackageInfo(app.optString("packageName"),0).getLongVersionCode()>=app.optLong("versionCode");}catch(Exception ignored){}
             final boolean installedCurrent=current;final Intent launchIntent=launch;
-            Button action=new Button(this);action.setText("mobile-js".equals(kind)?(enabled?"获取 / 更新应用":"获取并加入账号"):(current?"打开应用":"下载并安装"));
+
+            LinearLayout card=YanziUiKit.card(this);
+            LinearLayout head=new LinearLayout(this);head.setOrientation(LinearLayout.HORIZONTAL);head.setGravity(android.view.Gravity.CENTER_VERTICAL);
+            FrameLayout iconBox=new FrameLayout(this);iconBox.setBackground(YanziUiKit.bg(android.graphics.Color.rgb(22,40,62),15,YanziUiKit.STROKE,1));
+            iconBox.addView(YanziUiKit.icon(this,"apps",YanziUiKit.BLUE,24),new FrameLayout.LayoutParams(YanziUiKit.dp(this,24),YanziUiKit.dp(this,24),android.view.Gravity.CENTER));
+            LinearLayout.LayoutParams iconLp=new LinearLayout.LayoutParams(YanziUiKit.dp(this,48),YanziUiKit.dp(this,48));iconLp.rightMargin=YanziUiKit.dp(this,12);head.addView(iconBox,iconLp);
+            LinearLayout copy=new LinearLayout(this);copy.setOrientation(LinearLayout.VERTICAL);
+            copy.addView(YanziUiKit.text(this,app.optString("name")+"  "+app.optString("version"),16,YanziUiKit.TEXT,true));
+            copy.addView(YanziUiKit.text(this,app.optString("description"),12,YanziUiKit.SECONDARY,false));
+            String state=enabled?"已加入账号":(installedCurrent?"已安装":"可获取");
+            TextView stateTv=YanziUiKit.text(this,state,11,enabled?YanziUiKit.GREEN:YanziUiKit.MUTED,true);
+            copy.addView(stateTv);
+            head.addView(copy,new LinearLayout.LayoutParams(0,-2,1f));
+            card.addView(head);
+
+            String actionText="mobile-js".equals(kind)?(enabled?"获取 / 更新":"获取并加入账号"):(current?"打开应用":"下载并安装");
+            TextView action=YanziUiKit.primaryButton(this,actionText,null);
             action.setOnClickListener(v->{if(installedCurrent){startActivity(launchIntent);return;}action.setEnabled(false);work(()->{try{
                 if("mobile-js".equals(kind))installDefinition(app);else if("android-apk".equals(kind))downloadApk(app);else throw new IllegalStateException("不支持的应用类型");
                 if(!enabled)json("/v1/applications/library/"+id,new JSONObject().put("enabled",true).put("expectedRevision",selection==null?0:selection.optLong("revision")),true);
                 checkAccount();ui(()->status.setText("已加入账号，其他设备刷新后可见。"));
                 if("mobile-js".equals(kind))load();
-            }finally{ui(()->action.setEnabled(true));}});});list.addView(action);
+            }finally{ui(()->action.setEnabled(true));}});});
+            LinearLayout.LayoutParams ap=new LinearLayout.LayoutParams(-1,YanziUiKit.dp(this,40));ap.topMargin=YanziUiKit.dp(this,12);card.addView(action,ap);
+            list.addView(card,YanziUiKit.cardLp(this));
         }
     }
     private void installDefinition(JSONObject app)throws Exception{

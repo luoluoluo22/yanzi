@@ -77,6 +77,8 @@ import android.app.NotificationManager;
 
 public class FloatingWheelService extends Service {
     private static Context sContext;
+    private static FloatingWheelService sInstance;
+    private boolean appForegroundHidden;
 
     private static final String TAG = "YanziFloatingWheel";
     private static final String YANZI_SITE_URL = "https://yanzi.luoluoluo.cc.cd";
@@ -165,6 +167,7 @@ public class FloatingWheelService extends Service {
     public void onCreate() {
         super.onCreate();
         sContext = this;
+        sInstance = this;
         isRunning = true;
 
         prefs = getSharedPreferences("yanzi-mobile", Context.MODE_PRIVATE);
@@ -179,7 +182,7 @@ public class FloatingWheelService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         boolean enabled = prefs.getBoolean("floatingWheelEnabled", true);
-        if (enabled) {
+        if (enabled && !appForegroundHidden) {
             if (bubbleView == null) {
                 showBubble();
             }
@@ -195,6 +198,25 @@ public class FloatingWheelService extends Service {
         return START_STICKY;
     }
 
+    public static void setAppForeground(boolean foreground) {
+        FloatingWheelService service = sInstance;
+        if (service == null) return;
+        service.mainHandler.post(() -> {
+            service.appForegroundHidden = foreground;
+            if (foreground) {
+                service.closeOverlayUi();
+                if (service.bubbleView != null) {
+                    service.removeView(service.bubbleView);
+                    service.bubbleView = null;
+                }
+            } else if (service.prefs != null
+                    && service.prefs.getBoolean("floatingWheelEnabled", true)
+                    && service.bubbleView == null) {
+                service.showBubble();
+            }
+        });
+    }
+
     @Override
     public IBinder onBind(Intent intent) {
         return null;
@@ -203,6 +225,7 @@ public class FloatingWheelService extends Service {
     @Override
     public void onDestroy() {
         isRunning = false;
+        if (sInstance == this) sInstance = null;
         try {
             if (notificationServerSocket != null) notificationServerSocket.close();
             if (notificationThread != null) notificationThread.interrupt();

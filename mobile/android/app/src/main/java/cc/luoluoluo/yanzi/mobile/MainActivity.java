@@ -241,6 +241,9 @@ extends Activity {
     private LinearLayout mobileExtensionTabPage;
     private LinearLayout desktopExtensionTabPage;
     private LinearLayout profileTabPage;
+    private HomeDashboardView.Result homeDashboard;
+    private DeveloperDashboardView.Result developerDashboard;
+    private DesktopDashboardView.Result desktopDashboard;
     private android.widget.ImageView profileAvatarView;
     private android.widget.TextView profileNameView;
     private android.widget.TextView profileSubtextView;
@@ -633,6 +636,7 @@ extends Activity {
         UpdateManager.resumePendingInstall(this);
         try {
             this.startService(new Intent(this, FloatingWheelService.class));
+            this.getWindow().getDecorView().postDelayed(() -> FloatingWheelService.setAppForeground(true), 150L);
         } catch (IllegalStateException ex) {
             Log.w("YanziMessageBridge", "Floating service start deferred until next foreground resume");
         }
@@ -910,6 +914,7 @@ extends Activity {
     }
 
     protected void onPause() {
+        FloatingWheelService.setAppForeground(false);
         this.diagnosticRefreshHandler.removeCallbacks(this.diagnosticRefreshRunnable);
         this.autoCloudUpdateHandler.removeCallbacks(this.autoCloudUpdateRunnable);
         this.stopWakeListening(false);
@@ -1473,16 +1478,25 @@ extends Activity {
             this.prefs.edit().putString("aiSystemPrompt", DEFAULT_SYSTEM_PROMPT).apply();
         }
         this.aiTabPage.setOrientation(1);
-        this.aiTabPage.setBackgroundColor(Color.rgb((int)17, (int)17, (int)17));
+        this.aiTabPage.setBackgroundColor(ThemeConfig.COLOR_BACKGROUND);
         this.aiDrawerLayout = new DrawerLayout((Context)this);
         this.aiDrawerLayout.setFitsSystemWindows(true);
         android.widget.RelativeLayout mainContent = new android.widget.RelativeLayout((Context)this);
         LinearLayout topBar = new LinearLayout((Context)this);
         topBar.setId(10001);
         topBar.setOrientation(0);
-        topBar.setPadding(this.dp(16), this.dp(16), this.dp(16), this.dp(16));
+        topBar.setPadding(this.dp(16), this.dp(10), this.dp(16), this.dp(10));
         topBar.setGravity(16);
-        topBar.setBackgroundColor(Color.rgb(17, 17, 17));
+        topBar.setBackgroundColor(ThemeConfig.COLOR_BACKGROUND);
+
+        LinearLayout aiHeading = YanziUiKit.header(this, "AI 工作台", "提问、执行并调用你的数据", "creation", YanziUiKit.PURPLE);
+        topBar.addView((View)aiHeading, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -2, 1.0f));
+        TextView aiDataBtn = YanziUiKit.secondaryButton(this, "数据", () -> this.startActivity(new Intent(this, AiDataAccessActivity.class)));
+        LinearLayout.LayoutParams aiDataLp = new LinearLayout.LayoutParams(this.dp(58), this.dp(38));
+        aiDataLp.rightMargin = this.dp(7);
+        topBar.addView((View)aiDataBtn, (ViewGroup.LayoutParams)aiDataLp);
+        TextView aiHistoryBtn = YanziUiKit.secondaryButton(this, "历史", () -> this.aiDrawerLayout.openDrawer(Gravity.LEFT));
+        topBar.addView((View)aiHistoryBtn, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(58), this.dp(38)));
 
         android.widget.RelativeLayout.LayoutParams topParams = new android.widget.RelativeLayout.LayoutParams(-1, -2);
         topParams.addRule(android.widget.RelativeLayout.ALIGN_PARENT_TOP);
@@ -1492,6 +1506,7 @@ extends Activity {
         this.aiChatHistory = new LinearLayout((Context)this);
         this.aiChatHistory.setOrientation(1);
         this.aiChatHistory.setPadding(this.dp(16), this.dp(8), this.dp(16), this.dp(16));
+        chatScroll.setBackgroundColor(ThemeConfig.COLOR_BACKGROUND);
         chatScroll.addView((View)this.aiChatHistory);
 
         View.OnLongClickListener clearHistoryListener = v -> {
@@ -1534,7 +1549,7 @@ extends Activity {
 
         LinearLayout bottomShell = new LinearLayout((Context)this);
         bottomShell.setOrientation(1);
-        bottomShell.setBackgroundColor(Color.rgb((int)22, (int)22, (int)22));
+        bottomShell.setBackground(YanziUiKit.bg(Color.rgb(10, 21, 35), 18, YanziUiKit.STROKE, 1));
         this.ttsStopButton = this.button("停止朗读");
         this.ttsStopButton.setTextColor(Color.rgb((int)248, (int)250, (int)252));
         GradientDrawable stopTtsBg = new GradientDrawable();
@@ -1697,8 +1712,8 @@ extends Activity {
         this.mainScrollView = scrollView = new androidx.core.widget.NestedScrollView((Context)this);
         LinearLayout root = new LinearLayout((Context)this);
         root.setOrientation(1);
-        root.setPadding(this.dp(20), this.dp(24), this.dp(20), this.dp(24));
-        scrollView.addView((View)root);
+        root.setPadding(this.dp(16), this.dp(18), this.dp(16), this.dp(16));
+        scrollView.addView((View)root, (ViewGroup.LayoutParams)new android.widget.FrameLayout.LayoutParams(-1, -2));
         this.swipeRefresh = new SwipeRefreshLayout((Context)this) {
             private float startX;
             private float startY;
@@ -1720,12 +1735,23 @@ extends Activity {
                             return false;
                         }
 
-                        // 2. 增加下滑距离判定：下拉距离不到 30dp 时，不予拦截，给子 View 自主滚动机会
+                        // 2. 向上滑动永远交给内容滚动；SwipeRefresh 只处理从顶部向下拉。
+                        if (ev.getY() < startY) {
+                            return false;
+                        }
+
+                        // 3. 下拉距离不到 30dp 时，不予拦截，给子 View 自主滚动机会。
                         if (diffY < MainActivity.this.dp(30)) {
                             return false;
                         }
 
-                        // 3. 聊天页下拉应滚动消息，不触发全局刷新。
+                        // 4. 当前内容还能向上滚时，不应触发下拉刷新。
+                        if (MainActivity.this.mainScrollView != null
+                                && MainActivity.this.mainScrollView.canScrollVertically(-1)) {
+                            return false;
+                        }
+
+                        // 5. 聊天页下拉应滚动消息，不触发全局刷新。
                         if (MainActivity.this.desktopExtensionTabPage != null &&
                             MainActivity.this.desktopExtensionTabPage.getVisibility() == android.view.View.VISIBLE) {
                             if (MainActivity.this.currentSubTabIndex == 0) {
@@ -1772,94 +1798,39 @@ extends Activity {
         root.addView((View)this.yanmTabPage);
         root.addView((View)this.mobileExtensionTabPage);
         root.addView((View)this.profileTabPage);
-        LinearLayout yanmHeader = new LinearLayout((Context)this);
-        yanmHeader.setOrientation(LinearLayout.HORIZONTAL);
-        yanmHeader.setGravity(Gravity.CENTER_VERTICAL);
+        this.homeDashboard = HomeDashboardView.populate(
+                this,
+                this.yanmTabPage,
+                this.prefs,
+                () -> this.selectTab("ai"),
+                () -> this.startActivity(new Intent(this, ApplicationCatalogActivity.class)),
+                () -> this.startActivity(new Intent(this, AiDataAccessActivity.class)),
+                () -> this.selectTab("desktop"),
+                () -> this.selectTab("mobile"),
+                () -> Toast.makeText(this, "暂无需要处理的新通知", Toast.LENGTH_SHORT).show());
+        this.yanmList = this.homeDashboard.yanmList;
+        this.developerDashboard = DeveloperDashboardView.populate(
+                this,
+                this.mobileExtensionTabPage,
+                this.readLocalMobileExtensions().length(),
+                this::openNewMobileExtensionEditor,
+                () -> {
+                    this.syncMobileExtensionsFromCloud();
+                    if (this.developerDashboard != null) this.developerDashboard.sync.setText("同步中");
+                },
+                () -> this.startActivity(new Intent(this, ApplicationCatalogActivity.class)),
+                () -> this.selectMobileSubTab(1),
+                () -> this.selectMobileSubTab(2));
 
-        TextView yanmTitle = this.textView("\u71d5\u5e55", 28, -1, true);
-        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(0, -2, 1.0f);
-        yanmHeader.addView((View)yanmTitle, (ViewGroup.LayoutParams)titleParams);
-
-        Button btnSyncLog = new Button((Context)this);
-        btnSyncLog.setText((CharSequence)"\u540c\u6b65\u8bb0\u5f55");
-        btnSyncLog.setTextColor(Color.rgb(34, 211, 238));
-        btnSyncLog.setBackgroundColor(Color.TRANSPARENT);
-        btnSyncLog.setTextSize(14f);
-        btnSyncLog.setAllCaps(false);
-        this.yanmTabPage.addView((View)yanmHeader);
-
-        this.yanmTabPage.addView((View)this.textView("\u67e5\u770b\u548c\u64cd\u4f5c\u7535\u8111\u7aef\u540c\u6b65\u7684\u71d5\u5e55\u7ec4\u4ef6\u3002", 14, Color.rgb((int)182, (int)194, (int)214), false));
-        this.yanmList = new GridLayout((Context)this);
-        this.yanmList.setColumnCount(1);
-        this.yanmList.setAlignmentMode(0);
-        this.yanmList.setUseDefaultMargins(false);
-        this.yanmTabPage.addView((View)this.yanmList, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -2));
-
-        LinearLayout flatLogPanel = new LinearLayout((Context)this);
-        flatLogPanel.setOrientation(LinearLayout.VERTICAL);
-        flatLogPanel.setPadding(0, this.dp(16), 0, 0);
-
-        LinearLayout flatLogHeader = new LinearLayout((Context)this);
-        flatLogHeader.setOrientation(LinearLayout.HORIZONTAL);
-        flatLogHeader.setGravity(Gravity.CENTER_VERTICAL);
-        flatLogHeader.setPadding(0, 0, 0, this.dp(8));
-
-        TextView flatLogTitle = this.textView("\u540c\u6b65\u4e0e\u8fde\u63a5\u65e5\u5fd7", 16, ThemeConfig.COLOR_TEXT_PRIMARY, true);
-        flatLogHeader.addView((View)flatLogTitle, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -2, 1.0f));
-
-        Button btnCopyLog = this.button("\u590d\u5236");
-        btnCopyLog.setTextSize(12f);
-        btnCopyLog.setPadding(this.dp(8), this.dp(4), this.dp(8), this.dp(4));
-        btnCopyLog.setOnClickListener(v -> {
-            String logText = this.getYanmSyncLogs();
-            ClipboardManager manager = (ClipboardManager)this.getSystemService("clipboard");
-            if (manager != null) {
-                manager.setPrimaryClip(ClipData.newPlainText("logs", logText));
-                Toast.makeText(this.getApplicationContext(), "\u65e5\u5fd7\u5df2\u590d\u5236", Toast.LENGTH_SHORT).show();
-            }
-        });
-
-        Button btnClearLog = this.button("\u6e05\u7a7a");
-        btnClearLog.setTextSize(12f);
-        btnClearLog.setPadding(this.dp(8), this.dp(4), this.dp(8), this.dp(4));
-        btnClearLog.setOnClickListener(v -> {
-            MobileDiagnostics.clear((Context)this);
-            this.flatLogTv.setText("");
-            Toast.makeText(this.getApplicationContext(), "\u65e5\u5fd7\u5df2\u6e05\u7a7a", Toast.LENGTH_SHORT).show();
-        });
-
-        LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(this.dp(60), this.dp(32));
-        btnLp.leftMargin = this.dp(8);
-        flatLogHeader.addView((View)btnCopyLog, (ViewGroup.LayoutParams)btnLp);
-        flatLogHeader.addView((View)btnClearLog, (ViewGroup.LayoutParams)btnLp);
-        flatLogPanel.addView((View)flatLogHeader);
-
-        this.flatLogScrollView = new androidx.core.widget.NestedScrollView((Context)this);
-        this.flatLogScrollView.setBackgroundColor(ThemeConfig.COLOR_BACKGROUND);
-        this.flatLogScrollView.setPadding(this.dp(10), this.dp(10), this.dp(10), this.dp(10));
-
-        GradientDrawable gdLog = new GradientDrawable();
-        gdLog.setColor(ThemeConfig.COLOR_CARD_BACKGROUND);
-        gdLog.setCornerRadius((float)this.dp(8));
-        this.flatLogScrollView.setBackground((Drawable)gdLog);
-
-        this.flatLogTv = new TextView((Context)this);
-        this.flatLogTv.setTextSize(11f);
-        this.flatLogTv.setTextColor(ThemeConfig.COLOR_TEXT_SECONDARY);
-        this.flatLogTv.setTypeface(Typeface.MONOSPACE);
-        this.flatLogTv.setText((CharSequence)this.getYanmSyncLogs());
-        this.flatLogScrollView.addView((View)this.flatLogTv);
-
-        flatLogPanel.addView((View)this.flatLogScrollView, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, this.dp(180)));
-        this.yanmTabPage.addView((View)flatLogPanel);
         // 手机端子 Tab 栏
         this.mobileSubTabBar = new LinearLayout((Context)this);
         mobileSubTabBar.setOrientation(0);
         mobileSubTabBar.setGravity(16);
-        mobileSubTabBar.setPadding(this.dp(16), this.dp(16), this.dp(16), this.dp(8));
+        mobileSubTabBar.setPadding(this.dp(8), this.dp(6), this.dp(8), this.dp(6));
+        mobileSubTabBar.setBackground(YanziUiKit.bg(YanziUiKit.CARD_ALT, 16, YanziUiKit.STROKE, 1));
 
         this.btnShowMobileExtensions = new android.widget.Button((Context)this);
-        this.btnShowMobileExtensions.setText((CharSequence)"\u6269\u5c55"); // "扩展"
+        this.btnShowMobileExtensions.setText((CharSequence)"小程序");
         this.btnShowMobileExtensions.setTextColor(Color.rgb(148, 163, 184));
         this.btnShowMobileExtensions.setBackgroundColor(Color.TRANSPARENT);
         this.btnShowMobileExtensions.setPadding(this.dp(12), this.dp(8), this.dp(12), this.dp(8));
@@ -1980,22 +1951,18 @@ extends Activity {
         listHeader.setGravity(5); // Gravity.RIGHT is 5
         listHeader.setPadding(0, 0, 0, this.dp(12));
         Button applicationCenter = this.button("应用中心");
+        applicationCenter.setTextColor(YanziUiKit.TEXT);
+        applicationCenter.setBackground(YanziUiKit.bg(YanziUiKit.CARD_ALT, 14, YanziUiKit.STROKE, 1));
         applicationCenter.setOnClickListener(v -> startActivity(new Intent(this, ApplicationCatalogActivity.class)));
-        listHeader.addView(applicationCenter, new LinearLayout.LayoutParams(0, this.dp(40), 1.0f));
+        LinearLayout.LayoutParams appCenterLp = new LinearLayout.LayoutParams(0, this.dp(42), 1.0f);
+        appCenterLp.rightMargin = this.dp(8);
+        listHeader.addView(applicationCenter, appCenterLp);
 
-        // 加一个漂亮的“新建”按钮在主列表右上角
-        Button newExtBtn = this.button("\u65b0\u5efa\u6269\u5c55");
-        newExtBtn.setOnClickListener(v -> {
-            this.isEditingMobileExtension = true;
-            this.mobileExtensionInput.setText((CharSequence)this.defaultMobileExtensionJson());
-            this.updateMobileExtensionFieldsFromDraft();
-            // 在编辑状态下，隐藏 ViewPager，显示编辑界面
-            this.mobileViewPager.setVisibility(View.GONE);
-            if (this.mobileSubTabBar != null) this.mobileSubTabBar.setVisibility(View.GONE);
-            this.mobileExtensionEditorView.setVisibility(View.VISIBLE);
-            this.setStatus("\u65b0\u5efa\u6269\u5c55\u8349\u7a3f");
-        });
-        listHeader.addView((View)newExtBtn, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-2, this.dp(40)));
+        Button newExtBtn = this.button("新建小程序");
+        newExtBtn.setTextColor(Color.rgb(10, 37, 67));
+        newExtBtn.setBackground(YanziUiKit.bg(Color.rgb(200, 225, 255), 14, Color.TRANSPARENT, 0));
+        newExtBtn.setOnClickListener(v -> this.openNewMobileExtensionEditor());
+        listHeader.addView((View)newExtBtn, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(118), this.dp(42)));
         this.mobileExtensionListView.addView((View)listHeader);
 
         // 网格展示容器
@@ -2019,20 +1986,29 @@ extends Activity {
             this.setStatus("\u5df2\u8fd4\u56de\u624b\u673a\u6269\u5c55\u5217\u8868");
         });
         editorNavBar.addView((View)backBtn, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-2, this.dp(40)));
-        TextView navTitle = this.textView("  \u7f16\u8f91\u624b\u673a\u6269\u5c55", 18, -1, true);
+        TextView navTitle = this.textView("  编辑手机小程序", 18, -1, true);
         editorNavBar.addView((View)navTitle);
         this.mobileExtensionEditorView.addView((View)editorNavBar);
 
         this.buildMobileExtensionEditor(this.mobileExtensionEditorView);
+        this.desktopDashboard = DesktopDashboardView.populate(
+                this,
+                this.desktopExtensionTabPage,
+                () -> this.selectSubTab(0),
+                () -> this.selectSubTab(1),
+                () -> this.selectSubTab(2),
+                () -> this.selectSubTab(3));
+
         // 子 Tab 条
         LinearLayout subTabBar = new LinearLayout((Context)this);
         subTabBar.setOrientation(0);
         subTabBar.setGravity(16);
-        subTabBar.setPadding(this.dp(20), 0, this.dp(20), this.dp(12));
+        subTabBar.setPadding(this.dp(8), this.dp(6), this.dp(8), this.dp(6));
+        subTabBar.setBackground(YanziUiKit.bg(YanziUiKit.CARD_ALT, 16, YanziUiKit.STROKE, 1));
 
         this.btnShowChat = new Button((Context)this);
         this.btnShowChat.setText((CharSequence)"聊天");
-        this.btnShowChat.setTextColor(Color.rgb(34, 211, 238));
+        this.btnShowChat.setTextColor(YanziUiKit.BLUE);
         this.btnShowChat.setPadding(this.dp(12), this.dp(8), this.dp(12), this.dp(8));
         this.btnShowChat.setAllCaps(false);
         this.btnShowChat.setTextSize(13f);
@@ -2087,7 +2063,7 @@ extends Activity {
         this.tvDesktopConnectionStatus.setTextColor(Color.rgb(148, 163, 184));
         desktopHeader.addView((View)this.tvDesktopConnectionStatus);
 
-        this.desktopExtensionTabPage.addView((View)desktopHeader);
+        // Connection state still updates tvDesktopConnectionStatus; the new dashboard owns the visible header.
 
         this.offlineHintView = new LinearLayout((Context)this);
         this.offlineHintView.setOrientation(1);
@@ -2612,41 +2588,55 @@ extends Activity {
         Button accessibilityButton = this.button("\u65e0\u969c\u788d\u670d\u52a1");
 
         this.setupProfileHeader();
+
+        this.profileTabPage.addView((View)YanziUiKit.sectionLabel(this, "账号与同步"));
+        LinearLayout accountRow = YanziUiKit.row(this, "account", YanziUiKit.BLUE, "账号", "登录、切换账号与查看同步身份", this::showAccountSettingsDialog);
+        this.profileTabPage.addView((View)accountRow, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
+
         boolean autoUpdate = this.prefs.getBoolean("auto_cloud_update", false);
-        LinearLayout itemCloud = this.createSwitchListItem("\u542f\u52a8\u65f6\u81ea\u52a8\u540c\u6b65\u71d5\u5e55", autoUpdate, (buttonView, isChecked) -> {
+        LinearLayout itemCloud = YanziUiKit.switchRow(this, "cloud-sync-outline", YanziUiKit.GREEN, "自动同步燕幕", "启动后按设置频率更新", autoUpdate, (buttonView, isChecked) -> {
             this.prefs.edit().putBoolean("auto_cloud_update", isChecked).apply();
-            this.setStatus(isChecked ? "\u5df2\u542f\u7528\u542f\u52a8\u65f6\u81ea\u52a8\u540c\u6b65" : "\u5df2\u5173\u95ed\u542f\u52a8\u65f6\u81ea\u52a8\u540c\u6b65");
+            this.setStatus(isChecked ? "已启用自动同步" : "已关闭自动同步");
+            this.autoCloudUpdateHandler.removeCallbacks(this.autoCloudUpdateRunnable);
+            if (isChecked) this.autoCloudUpdateHandler.postDelayed(this.autoCloudUpdateRunnable, 1000L);
         });
+        this.profileTabPage.addView((View)itemCloud, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
 
-        LinearLayout group1 = this.createListGroup(itemCloud);
-        this.profileTabPage.addView((View)group1);
-
+        this.profileTabPage.addView((View)YanziUiKit.sectionLabel(this, "权限与服务"));
         boolean wheelEnabled = this.prefs.getBoolean("floatingWheelEnabled", true);
-        LinearLayout itemWheel = this.createSwitchListItem("\u60ac\u6d6e\u8f6e\u76d8", wheelEnabled, (buttonView, isChecked) -> {
+        LinearLayout itemWheel = YanziUiKit.switchRow(this, "gesture-tap-hold", YanziUiKit.PURPLE, "悬浮轮盘", "离开燕子后显示，燕子前台自动隐藏", wheelEnabled, (buttonView, isChecked) -> {
             this.prefs.edit().putBoolean("floatingWheelEnabled", isChecked).apply();
             this.startService(new Intent((Context)this, FloatingWheelService.class));
             if (isChecked) {
                 this.startFloatingWheel();
-                this.setStatus("\u60ac\u6d6e\u8f6e\u76d8\u5df2\u5f00\u542f\u3002");
-                this.overlayButton.setText((CharSequence)"\u5173\u95ed\u60ac\u6d6e\u8f6e\u76d8");
+                FloatingWheelService.setAppForeground(true);
+                this.setStatus("悬浮轮盘已开启。");
+                if (this.overlayButton != null) this.overlayButton.setText("关闭悬浮轮盘");
             } else {
-                this.setStatus("\u60ac\u6d6e\u8f6e\u76d8\u5df2\u5173\u95ed\u3002");
-                this.overlayButton.setText((CharSequence)"\u6253\u5f00\u60ac\u6d6e\u8f6e\u76d8");
+                this.setStatus("悬浮轮盘已关闭。");
+                if (this.overlayButton != null) this.overlayButton.setText("打开悬浮轮盘");
             }
         });
+        this.profileTabPage.addView((View)itemWheel, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
 
-        LinearLayout itemAccessibility = this.createListItem("\u65e0\u969c\u788d\u670d\u52a1", null, () -> this.openAccessibilitySettings());
+        LinearLayout notifyRow = YanziUiKit.row(this, "bell-outline", YanziUiKit.ORANGE, "通知设置", "消息、授权确认与后台提醒", this::openNotificationSettings);
+        this.profileTabPage.addView((View)notifyRow, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
+        LinearLayout itemAccessibility = YanziUiKit.row(this, "accessibility", YanziUiKit.BLUE, "无障碍服务", "为自动化与跨应用操作提供能力", this::openAccessibilitySettings);
+        this.profileTabPage.addView((View)itemAccessibility, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
+
+        this.profileTabPage.addView((View)YanziUiKit.sectionLabel(this, "数据与应用"));
+        LinearLayout dataAccessRow = YanziUiKit.row(this, "database-outline", YanziUiKit.PURPLE, "AI 数据接入", "选择数据、确认申请、管理有效授权", () -> this.startActivity(new Intent(this, AiDataAccessActivity.class)));
+        this.profileTabPage.addView((View)dataAccessRow, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
+        LinearLayout catalogRow = YanziUiKit.row(this, "apps", YanziUiKit.BLUE, "应用中心", "获取小程序与独立 Android 应用", () -> this.startActivity(new Intent(this, ApplicationCatalogActivity.class)));
+        this.profileTabPage.addView((View)catalogRow, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
 
         String currentVer = "0.2.18";
-        try {
-            currentVer = this.getPackageManager().getPackageInfo(this.getPackageName(), 0).versionName;
-        } catch (Exception ignored) {}
-        LinearLayout itemCheckUpdate = this.createListItem("\u68c0\u67e5\u66f4\u65b0", "v" + currentVer, () -> {
-            UpdateManager.checkUpdate(MainActivity.this, true);
-        });
+        try { currentVer = this.getPackageManager().getPackageInfo(this.getPackageName(), 0).versionName; } catch (Exception ignored) {}
+        final String versionLabel = currentVer;
+        LinearLayout itemCheckUpdate = YanziUiKit.row(this, "download-outline", YanziUiKit.GREEN, "检查更新", "当前 v" + versionLabel, () -> UpdateManager.checkUpdate(MainActivity.this, true));
+        this.profileTabPage.addView((View)itemCheckUpdate, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
 
-        LinearLayout group2 = this.createListGroup(itemWheel, itemAccessibility, itemCheckUpdate);
-        this.profileTabPage.addView((View)group2);
+        this.profileTabPage.addView((View)YanziUiKit.sectionLabel(this, "诊断"));
 
         LinearLayout runLogPanel = new LinearLayout((Context)this);
         runLogPanel.setOrientation(LinearLayout.VERTICAL);
@@ -2753,12 +2743,16 @@ extends Activity {
         LinearLayout tabs = new LinearLayout((Context)this);
         tabs.setOrientation(0);
         tabs.setGravity(16);
-        tabs.setPadding(this.dp(4), this.dp(2), this.dp(4), this.dp(2));
-        tabs.setBackgroundColor(ThemeConfig.COLOR_BACKGROUND);
-        this.yanmTabButton = this.tabButton("燕幕", "dashboard", "yanm");
-        this.mobileExtensionTabButton = this.tabButton("开发", "cellphone", "mobile");
-        this.aiTabButton = this.tabButton("AI", "chat", "ai");
-        this.desktopExtensionTabButton = this.tabButton("电脑", "laptop", "desktop");
+        tabs.setPadding(this.dp(8), this.dp(2), this.dp(8), this.dp(2));
+        GradientDrawable tabsBg = new GradientDrawable();
+        tabsBg.setColor(Color.rgb(7, 16, 29));
+        tabsBg.setCornerRadii(new float[]{this.dp(20), this.dp(20), this.dp(20), this.dp(20), 0, 0, 0, 0});
+        tabsBg.setStroke(this.dp(1), Color.rgb(25, 46, 70));
+        tabs.setBackground((Drawable)tabsBg);
+        this.yanmTabButton = this.tabButton("燕幕", "home", "yanm");
+        this.mobileExtensionTabButton = this.tabButton("开发", "code", "mobile");
+        this.aiTabButton = this.tabButton("AI", "creation", "ai");
+        this.desktopExtensionTabButton = this.tabButton("电脑", "monitor", "desktop");
         this.profileTabButton = this.tabButton("我的", "account", "profile");
         tabs.addView(this.yanmTabButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -1, 1.0f));
         tabs.addView(this.mobileExtensionTabButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -1, 1.0f));
@@ -2772,13 +2766,13 @@ extends Activity {
         LinearLayout container = new LinearLayout((Context)this);
         container.setOrientation(1);
         container.setGravity(17);
-        container.setPadding(0, this.dp(6), 0, this.dp(6));
+        container.setPadding(0, this.dp(4), 0, this.dp(3));
         container.setClickable(true);
         container.setFocusable(true);
         ImageView iconView = new ImageView((Context)this);
         Path path = MobileIconLibrary.resolveOrDefault(iconName);
         iconView.setImageDrawable(new PathDrawable(path, Color.WHITE));
-        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(this.dp(22), this.dp(22));
+        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(this.dp(20), this.dp(20));
         iconView.setLayoutParams((ViewGroup.LayoutParams)iconParams);
         TextView textView = new TextView((Context)this);
         textView.setText((CharSequence)text);
@@ -2832,8 +2826,11 @@ extends Activity {
         this.styleTabButton(this.aiTabButton, isAi);
         this.styleTabButton(this.desktopExtensionTabButton, isDesktop);
         this.styleTabButton(this.profileTabButton, isProfile);
-        if (isDesktop) {
+        if (isDesktop || isYanm) {
             this.checkConnectionAsync();
+        }
+        if (isAi) {
+            this.refreshSettings();
         }
         if (this.mainScrollView != null) {
             this.mainScrollView.post(() -> this.mainScrollView.smoothScrollTo(0, 0));
@@ -2858,7 +2855,7 @@ extends Activity {
         if (tabView == null) {
             return;
         }
-        int color = selected ? Color.rgb((int)34, (int)211, (int)238) : Color.rgb((int)100, (int)116, (int)139);
+        int color = selected ? Color.rgb(79, 140, 255) : Color.rgb(120, 137, 162);
         View[] tag = (View[])tabView.getTag();
         if (tag != null && tag.length == 2) {
             ImageView iconView = (ImageView)tag[0];
@@ -2867,8 +2864,8 @@ extends Activity {
             textView.setTextColor(color);
         }
         GradientDrawable background = new GradientDrawable();
-        background.setCornerRadius((float)this.dp(12));
-        background.setColor(selected ? Color.argb((int)20, (int)34, (int)211, (int)238) : 0);
+        background.setCornerRadius((float)this.dp(14));
+        background.setColor(selected ? Color.argb(10, 79, 140, 255) : Color.TRANSPARENT);
         tabView.setBackground((Drawable)background);
     }
 
@@ -2877,6 +2874,16 @@ extends Activity {
         this.textInput.requestFocus();
         this.scrollToView((View)this.textInput);
         this.showKeyboard((View)this.textInput);
+    }
+
+    private void openNewMobileExtensionEditor() {
+        this.isEditingMobileExtension = true;
+        this.mobileExtensionInput.setText((CharSequence)this.defaultMobileExtensionJson());
+        this.updateMobileExtensionFieldsFromDraft();
+        this.mobileViewPager.setVisibility(View.GONE);
+        if (this.mobileSubTabBar != null) this.mobileSubTabBar.setVisibility(View.GONE);
+        this.mobileExtensionEditorView.setVisibility(View.VISIBLE);
+        this.setStatus("新建小程序草稿");
     }
 
     private void buildMobileExtensionEditor(LinearLayout root) {
@@ -3108,6 +3115,21 @@ extends Activity {
         }, 250L);
     }
 
+    private void openNotificationSettings() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                && this.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            this.requestNotificationPermissionIfNeeded();
+            return;
+        }
+        try {
+            Intent intent = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS);
+            intent.putExtra(Settings.EXTRA_APP_PACKAGE, this.getPackageName());
+            this.startActivity(intent);
+        } catch (Exception ex) {
+            this.requestNotificationPermissionIfNeeded();
+        }
+    }
+
     private void startFloatingWheel() {
         if (!Settings.canDrawOverlays((Context)this)) {
             Intent intent = new Intent("android.settings.action.MANAGE_OVERLAY_PERMISSION", Uri.parse((String)("package:" + this.getPackageName())));
@@ -3326,8 +3348,9 @@ extends Activity {
         this.mobileExtensionGrid.removeAllViews();
 
         JSONArray array = this.readLocalMobileExtensions();
+        if (this.developerDashboard != null) this.developerDashboard.update(array.length(), "已同步");
         if (array.length() == 0) {
-            TextView emptyTv = this.textView("\u6682\u65e0\u672c\u673a\u6269\u5c55\u3002", 12, Color.rgb((int)148, (int)163, (int)184), false);
+            TextView emptyTv = this.textView("暂无本机小程序。", 12, Color.rgb((int)148, (int)163, (int)184), false);
             emptyTv.setPadding(this.dp(16), this.dp(16), this.dp(16), this.dp(16));
             this.mobileExtensionGrid.addView((View)emptyTv);
             return;
@@ -4849,8 +4872,8 @@ extends Activity {
             }
 
             android.graphics.drawable.GradientDrawable activeBg = new android.graphics.drawable.GradientDrawable();
-            activeBg.setCornerRadius((float)this.dp(8));
-            activeBg.setColor(Color.argb(20, 34, 211, 238));
+            activeBg.setCornerRadius((float)this.dp(12));
+            activeBg.setColor(Color.argb(32, 79, 140, 255));
 
             if (this.btnShowChat != null) {
                 this.btnShowChat.setTextColor(Color.rgb(148, 163, 184));
@@ -4871,12 +4894,12 @@ extends Activity {
 
             if (index == 0) {
                 if (this.btnShowChat != null) {
-                    this.btnShowChat.setTextColor(Color.rgb(34, 211, 238));
+                    this.btnShowChat.setTextColor(YanziUiKit.BLUE);
                     this.btnShowChat.setBackground((android.graphics.drawable.Drawable)activeBg);
                 }
             } else if (index == 1) {
                 if (this.btnShowExtensions != null) {
-                    this.btnShowExtensions.setTextColor(Color.rgb(34, 211, 238));
+                    this.btnShowExtensions.setTextColor(YanziUiKit.BLUE);
                     this.btnShowExtensions.setBackground((android.graphics.drawable.Drawable)activeBg);
                 }
                 if (changed) {
@@ -4884,7 +4907,7 @@ extends Activity {
                 }
             } else if (index == 2) {
                 if (this.btnShowFileManager != null) {
-                    this.btnShowFileManager.setTextColor(Color.rgb(34, 211, 238));
+                    this.btnShowFileManager.setTextColor(YanziUiKit.BLUE);
                     this.btnShowFileManager.setBackground((android.graphics.drawable.Drawable)activeBg);
                 }
                 if (this.currentPath == null) {
@@ -4892,7 +4915,7 @@ extends Activity {
                 }
             } else if (index == 3) {
                 if (this.btnShowShell != null) {
-                    this.btnShowShell.setTextColor(Color.rgb(34, 211, 238));
+                    this.btnShowShell.setTextColor(YanziUiKit.BLUE);
                     this.btnShowShell.setBackground((android.graphics.drawable.Drawable)activeBg);
                 }
             }
@@ -5006,6 +5029,12 @@ extends Activity {
     }
 
     private void updateConnectionUi() {
+        if (this.homeDashboard != null) {
+            this.homeDashboard.updateDesktopState(this.isDesktopConnected, this.desktopConnectionType);
+        }
+        if (this.desktopDashboard != null) {
+            this.desktopDashboard.update(this.isDesktopConnected, this.desktopConnectionType);
+        }
         if (this.desktopConnectionDot != null) {
             this.desktopConnectionDot.setVisibility(this.isDesktopConnected ? View.VISIBLE : View.GONE);
         }
@@ -5595,6 +5624,20 @@ extends Activity {
         });
     }
 
+    private void runAiQuickAction(String prompt, Runnable fallback) {
+        String aiBaseUrl = this.prefs.getString("aiBaseUrl", "").trim();
+        if (aiBaseUrl.isEmpty()) {
+            this.refreshSettings();
+            Toast.makeText(this, "尚未同步 AI 配置，已打开对应的真实功能。", Toast.LENGTH_SHORT).show();
+            if (fallback != null) fallback.run();
+            return;
+        }
+        if (this.aiChatInput != null) {
+            this.aiChatInput.setText((CharSequence)prompt);
+            this.sendAiChat();
+        }
+    }
+
     private void sendAiChat() {
         String text = this.aiChatInput.getText().toString().trim();
         if (text.isEmpty() && this.pendingAttachments.isEmpty()) {
@@ -5642,7 +5685,9 @@ extends Activity {
     private void sendAiChat(String text) {
         String aiBaseUrl = this.prefs.getString("aiBaseUrl", "");
         if (aiBaseUrl.isEmpty()) {
-            this.setStatus("\u8bf7\u5148\u8fde\u63a5 PC \u7aef\u540c\u6b65 AI \u914d\u7f6e\u3002");
+            this.refreshSettings();
+            this.addAiChatMessage("系统", "尚未同步到电脑端 AI 配置。已自动尝试刷新，请稍后再试；你也可以先使用“数据”管理授权。", Color.rgb(248, 180, 90), false);
+            this.aiChatInput.setText((CharSequence)"");
             return;
         }
         this.addAiChatMessage("\u6211", text, -1, true);
@@ -6543,33 +6588,68 @@ extends Activity {
 
     private void checkShowAiEmptyState() {
         if (this.aiMessagesHistory == null || this.aiMessagesHistory.length() == 0) {
-            String[] prompts;
             this.aiChatHistory.removeAllViews();
             this.aiEmptyStateContainer = new LinearLayout((Context)this);
-            this.aiEmptyStateContainer.setOrientation(1);
-            this.aiEmptyStateContainer.setGravity(17);
-            this.aiEmptyStateContainer.setPadding(0, this.dp(40), 0, this.dp(20));
-            TextView title = this.textView("\u71d5\u5b50", 20, -1, true);
-            title.setGravity(17);
-            this.aiEmptyStateContainer.addView((View)title, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -2));
-            TextView subtitle = this.textView("\u4f60\u53ef\u4ee5\u95ee\u6211\u4efb\u4f55\u95ee\u9898\uff0c\u6216\u8005\u6267\u884c\u672c\u673a\u6269\u5c55", 14, Color.rgb((int)156, (int)163, (int)175), false);
-            subtitle.setGravity(17);
-            subtitle.setPadding(0, this.dp(8), 0, this.dp(24));
-            this.aiEmptyStateContainer.addView((View)subtitle, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -2));
-            for (String p : prompts = new String[]{"\u67e5\u770b\u63d2\u4ef6\u5217\u8868", "\u67e5\u8be2\u8bbe\u5907\u72b6\u6001", "\u5199\u4e00\u6bb5\u6b22\u8fce\u8bed"}) {
-                Button btn = this.button(p);
-                btn.setBackgroundColor(Color.argb((int)80, (int)255, (int)255, (int)255));
-                btn.setTextColor(-1);
-                btn.setOnClickListener(v -> {
-                    if (this.aiChatInput != null) {
-                        this.aiChatInput.setText((CharSequence)p);
-                        this.sendAiChat();
-                    }
-                });
-                LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, this.dp(44));
-                params.bottomMargin = this.dp(12);
-                this.aiEmptyStateContainer.addView((View)btn, (ViewGroup.LayoutParams)params);
+            this.aiEmptyStateContainer.setOrientation(LinearLayout.VERTICAL);
+            this.aiEmptyStateContainer.setPadding(0, this.dp(10), 0, this.dp(18));
+
+            LinearLayout hero = YanziUiKit.tintedCard(this, Color.rgb(21,25,54), Color.rgb(55,48,102));
+            hero.addView(YanziUiKit.header(this, "AI 助手", "可以提问，也可以直接执行燕子里的真实能力", "creation", YanziUiKit.PURPLE));
+            TextView start = YanziUiKit.primaryButton(this, "开始对话", () -> {
+                if (this.aiChatInput != null) {
+                    this.aiChatInput.requestFocus();
+                    this.showKeyboard((View)this.aiChatInput);
+                }
+            });
+            LinearLayout.LayoutParams startLp = new LinearLayout.LayoutParams(-1, this.dp(42));
+            startLp.topMargin = this.dp(12);
+            hero.addView((View)start, (ViewGroup.LayoutParams)startLp);
+            this.aiEmptyStateContainer.addView((View)hero, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
+
+            this.aiEmptyStateContainer.addView((View)YanziUiKit.sectionLabel(this, "快捷能力"));
+            String[][] prompts = new String[][]{
+                {"查看插件列表", "列出我当前可以使用的电脑和手机小程序"},
+                {"查询设备状态", "查询我的电脑当前连接状态，并告诉我可以执行哪些操作"},
+                {"分析燕幕", "读取当前燕幕状态，概括最值得我关注的信息"},
+                {"整理今日事项", "结合可用的日历和便签数据，整理我今天值得关注的事项"}
+            };
+            int[] accents = new int[]{YanziUiKit.BLUE,YanziUiKit.GREEN,YanziUiKit.ORANGE,YanziUiKit.PURPLE};
+            String[] icons = new String[]{"apps","monitor","monitor-dashboard","calendar-month-outline"};
+            for (int row = 0; row < 2; row++) {
+                LinearLayout line = new LinearLayout((Context)this);
+                line.setOrientation(LinearLayout.HORIZONTAL);
+                for (int col = 0; col < 2; col++) {
+                    int idx = row * 2 + col;
+                    final int quickIndex = idx;
+                    final String prompt = prompts[idx][1];
+                    LinearLayout tile = YanziUiKit.actionTile(this, icons[idx], accents[idx], prompts[idx][0], "立即执行", () -> {
+                        Runnable fallback;
+                        if (quickIndex == 0) {
+                            fallback = () -> this.selectTab("mobile");
+                        } else if (quickIndex == 1) {
+                            fallback = () -> this.selectTab("desktop");
+                        } else if (quickIndex == 2) {
+                            fallback = () -> this.selectTab("yanm");
+                        } else {
+                            fallback = () -> this.startActivity(new Intent(this, AiDataAccessActivity.class));
+                        }
+                        this.runAiQuickAction(prompt, fallback);
+                    });
+                    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1.0f);
+                    if (col > 0) lp.leftMargin = this.dp(8);
+                    line.addView((View)tile, (ViewGroup.LayoutParams)lp);
+                }
+                LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(-1, -2);
+                rowLp.bottomMargin = this.dp(8);
+                this.aiEmptyStateContainer.addView((View)line, (ViewGroup.LayoutParams)rowLp);
             }
+
+            LinearLayout data = YanziUiKit.card(this);
+            LinearLayout dataHeader = YanziUiKit.header(this, "可用数据源", "便签、日历等数据由你逐项授权", "database-outline", YanziUiKit.BLUE);
+            dataHeader.addView((View)YanziUiKit.link(this, "管理", () -> this.startActivity(new Intent(this, AiDataAccessActivity.class))));
+            data.addView((View)dataHeader);
+            this.aiEmptyStateContainer.addView((View)data, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
+
             this.aiChatHistory.addView((View)this.aiEmptyStateContainer, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -2));
         }
     }
@@ -6966,6 +7046,9 @@ extends Activity {
         this.activeYanmWebViews.clear();
         this.yanmList.removeAllViews();
         JSONArray components = MainActivity.firstArray(yanm, "components", "Components");
+        if (this.homeDashboard != null) {
+            this.homeDashboard.updateYanmState(components == null ? 0 : components.length(), this.expandedComponentIds.size());
+        }
         if (components == null || components.length() == 0) {
             this.yanmList.addView((View)this.textView("\u6682\u65e0\u71d5\u5e55\u7ec4\u4ef6\u3002", 13, Color.rgb((int)148, (int)163, (int)184), false));
             return;
@@ -12093,8 +12176,8 @@ extends Activity {
 
         this.runOnUiThread(() -> {
             android.graphics.drawable.GradientDrawable activeBg = new android.graphics.drawable.GradientDrawable();
-            activeBg.setCornerRadius((float)this.dp(8));
-            activeBg.setColor(Color.argb(20, 34, 211, 238));
+            activeBg.setCornerRadius((float)this.dp(12));
+            activeBg.setColor(Color.argb(32, 79, 140, 255));
 
             if (this.btnShowMobileExtensions != null) {
                 this.btnShowMobileExtensions.setTextColor(Color.rgb(148, 163, 184));
@@ -12111,17 +12194,17 @@ extends Activity {
 
             if (index == 0) {
                 if (this.btnShowMobileExtensions != null) {
-                    this.btnShowMobileExtensions.setTextColor(Color.rgb(34, 211, 238));
+                    this.btnShowMobileExtensions.setTextColor(YanziUiKit.BLUE);
                     this.btnShowMobileExtensions.setBackground((android.graphics.drawable.Drawable)activeBg);
                 }
             } else if (index == 1) {
                 if (this.btnShowMobileDocs != null) {
-                    this.btnShowMobileDocs.setTextColor(Color.rgb(34, 211, 238));
+                    this.btnShowMobileDocs.setTextColor(YanziUiKit.BLUE);
                     this.btnShowMobileDocs.setBackground((android.graphics.drawable.Drawable)activeBg);
                 }
             } else if (index == 2) {
                 if (this.btnShowMobileShell != null) {
-                    this.btnShowMobileShell.setTextColor(Color.rgb(34, 211, 238));
+                    this.btnShowMobileShell.setTextColor(YanziUiKit.BLUE);
                     this.btnShowMobileShell.setBackground((android.graphics.drawable.Drawable)activeBg);
                 }
             }
@@ -12574,62 +12657,50 @@ extends Activity {
     }
 
     private void setupProfileHeader() {
+        this.profileTabPage.addView((View)YanziUiKit.header(this, "我的", "账号、同步、权限与设备设置", "account", YanziUiKit.BLUE), (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
+
+        LinearLayout card = YanziUiKit.tintedCard(this, Color.rgb(13,31,49), Color.rgb(35,66,100));
         LinearLayout header = new LinearLayout((Context)this);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(this.dp(8), this.dp(16), this.dp(8), this.dp(24));
         header.setClickable(true);
         header.setFocusable(true);
 
         this.profileAvatarView = new android.widget.ImageView((Context)this);
-        int avatarSize = this.dp(60);
+        int avatarSize = this.dp(56);
         LinearLayout.LayoutParams avatarParams = new LinearLayout.LayoutParams(avatarSize, avatarSize);
-        avatarParams.rightMargin = this.dp(16);
+        avatarParams.rightMargin = this.dp(14);
         this.profileAvatarView.setLayoutParams((ViewGroup.LayoutParams)avatarParams);
-
         int resId = this.getResources().getIdentifier("yanzi_launcher_bitmap", "drawable", this.getPackageName());
-        if (resId == 0) {
-            resId = this.getResources().getIdentifier("yanzi_launcher", "drawable", this.getPackageName());
-        }
-        if (resId == 0) {
-            resId = this.getResources().getIdentifier("ic_launcher", "drawable", this.getPackageName());
-        }
-        if (resId != 0) {
-            this.profileAvatarView.setImageResource(resId);
-        }
-
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
-            this.profileAvatarView.setClipToOutline(true);
-            this.profileAvatarView.setOutlineProvider(new android.view.ViewOutlineProvider() {
-                @Override
-                public void getOutline(View view, android.graphics.Outline outline) {
-                    outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), (float)MainActivity.this.dp(12));
-                }
-            });
-        }
+        if (resId == 0) resId = this.getResources().getIdentifier("yanzi_launcher", "drawable", this.getPackageName());
+        if (resId == 0) resId = this.getResources().getIdentifier("ic_launcher", "drawable", this.getPackageName());
+        if (resId != 0) this.profileAvatarView.setImageResource(resId);
 
         LinearLayout textLayout = new LinearLayout((Context)this);
         textLayout.setOrientation(LinearLayout.VERTICAL);
-
-        this.profileNameView = new android.widget.TextView((Context)this);
-        this.profileNameView.setTextSize(18f);
-        this.profileNameView.setTextColor(-1);
-        this.profileNameView.setTypeface(null, Typeface.BOLD);
-
-        this.profileSubtextView = new android.widget.TextView((Context)this);
-        this.profileSubtextView.setTextSize(13f);
-        this.profileSubtextView.setTextColor(Color.rgb(161, 161, 170));
+        this.profileNameView = YanziUiKit.text(this, "未登录", 18, YanziUiKit.TEXT, true);
+        this.profileSubtextView = YanziUiKit.text(this, "点击登录同步服务", 12, YanziUiKit.SECONDARY, false);
         this.profileSubtextView.setPadding(0, this.dp(4), 0, 0);
-
         textLayout.addView((View)this.profileNameView);
         textLayout.addView((View)this.profileSubtextView);
 
         header.addView((View)this.profileAvatarView);
         header.addView((View)textLayout, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -2, 1.0f));
-
+        TextView manage = YanziUiKit.link(this, "账号", this::showAccountSettingsDialog);
+        header.addView((View)manage);
         header.setOnClickListener(v -> this.showAccountSettingsDialog());
+        card.addView((View)header);
 
-        this.profileTabPage.addView((View)header);
+        LinearLayout states = new LinearLayout((Context)this);
+        states.setOrientation(LinearLayout.HORIZONTAL);
+        states.setPadding(0, this.dp(12), 0, 0);
+        states.addView((View)YanziUiKit.metric(this, this.prefs.getString("token","").trim().isEmpty() ? "未登录" : "已登录", "账号", this.prefs.getString("token","").trim().isEmpty()?YanziUiKit.ORANGE:YanziUiKit.GREEN), new LinearLayout.LayoutParams(0,-2,1f));
+        LinearLayout.LayoutParams s2 = new LinearLayout.LayoutParams(0,-2,1f); s2.leftMargin=this.dp(7);
+        states.addView((View)YanziUiKit.metric(this, this.prefs.getBoolean("auto_cloud_update",false) ? "自动" : "手动", "燕幕同步", YanziUiKit.BLUE), s2);
+        LinearLayout.LayoutParams s3 = new LinearLayout.LayoutParams(0,-2,1f); s3.leftMargin=this.dp(7);
+        states.addView((View)YanziUiKit.metric(this, this.prefs.getBoolean("floatingWheelEnabled",true) ? "开启" : "关闭", "悬浮轮盘", YanziUiKit.PURPLE), s3);
+        card.addView((View)states);
+        this.profileTabPage.addView((View)card, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
     }
 
     private void updateProfileHeader() {
@@ -12649,7 +12720,8 @@ extends Activity {
         }
         if (username != null && !username.trim().isEmpty()) {
             this.profileNameView.setText((CharSequence)username);
-            this.profileSubtextView.setVisibility(View.GONE);
+            this.profileSubtextView.setText((CharSequence)((email == null || email.trim().isEmpty() ? "燕子账号" : email) + " · 已同步"));
+            this.profileSubtextView.setVisibility(View.VISIBLE);
             this.profileAvatarView.setAlpha(1.0f);
         } else {
             this.profileNameView.setText((CharSequence)"\u672a\u767b\u5f55");
