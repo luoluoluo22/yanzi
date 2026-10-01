@@ -9440,7 +9440,10 @@ extends Activity {
         }
 
         static void registerDevice(String baseUrl, String token, String deviceId, String displayName) throws Exception {
-            JSONObject capabilities = new JSONObject().put("shareText", true).put("sendToDesktop", true);
+            JSONObject capabilities = new JSONObject().put("shareText", true).put("sendToDesktop", true)
+                    .put("receiveMobileMessages", true).put("receiveAttachments", true)
+                    .put("appVersion", BuildConfig.VERSION_NAME).put("versionCode", BuildConfig.VERSION_CODE)
+                    .put("packageName", BuildConfig.APPLICATION_ID).put("messageProtocol", 2);
             JSONObject payload = new JSONObject().put("deviceId", (Object)deviceId).put("platform", (Object)"android").put("displayName", (Object)displayName).put("capabilities", (Object)capabilities);
             YanziApiClient.postJson(baseUrl, "/v1/me/devices", payload, token, "\u8bbe\u5907\u6ce8\u518c");
         }

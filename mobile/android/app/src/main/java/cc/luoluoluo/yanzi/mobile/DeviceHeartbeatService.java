@@ -62,6 +62,8 @@ public class DeviceHeartbeatService extends Service {
                         .put("pushToken", prefs.getString("pushToken", ""))
                         .put("capabilities", new JSONObject().put("shareText", true).put("sendToDesktop", true)
                                 .put("receiveMobileMessages", true).put("receiveAttachments", true)
+                                .put("appVersion", BuildConfig.VERSION_NAME).put("versionCode", BuildConfig.VERSION_CODE)
+                                .put("packageName", BuildConfig.APPLICATION_ID).put("messageProtocol", 2)
                                 .put("pushProvider", prefs.getString("pushProvider", ""))
                                 .put("realtime", connected).put("notificationsEnabled", MobileEventNotifier.canNotify(this)));
                 MobileMessageClient.request(base, "/v1/me/devices", token, "POST", presence);
@@ -148,7 +150,7 @@ public class DeviceHeartbeatService extends Service {
                 } else if (!ack.has("success")) {
                     if (!MobileEventNotifier.notifyMessage(this, id, "YanziChat".equals(message.optString("title")) ? "电脑消息" : message.optString("title", "电脑消息"), message.optString("text", ""))) return;
                     SharedPreferences.Editor edit = prefs.edit().putLong(receipt, System.currentTimeMillis());
-                    if ("YanziChat".equals(message.optString("title")) || attachment) {
+                    if ("YanziChat".equals(message.optString("title")) || message.optJSONObject("payload") != null && message.optJSONObject("payload").optBoolean("accountChat") || attachment) {
                         JSONArray history;
                         try { history = new JSONArray(prefs.getString("desktop_chat_history", "[]")); } catch (Exception ex) { history = new JSONArray(); }
                         boolean recorded = false;
@@ -165,7 +167,7 @@ public class DeviceHeartbeatService extends Service {
                     old.sort((a, b) -> Long.compare(a.getValue() instanceof Long ? (Long)a.getValue() : 0, b.getValue() instanceof Long ? (Long)b.getValue() : 0));
                     for (int i = 0; i < old.size() - 2047; i++) edit.remove(old.get(i).getKey());
                     if (!edit.commit()) return;
-                    if ("YanziChat".equals(message.optString("title")) || attachment) MainActivity.onReceivedChatMessage(kind, content);
+                    if ("YanziChat".equals(message.optString("title")) || message.optJSONObject("payload") != null && message.optJSONObject("payload").optBoolean("accountChat") || attachment) MainActivity.onReceivedChatMessage(kind, content);
                     Log.i("YanziMessageBridge", attachment ? "Cloud attachment saved and verified" : "Cloud notification displayed");
                 }
             }

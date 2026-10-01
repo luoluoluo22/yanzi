@@ -41,8 +41,12 @@ export async function sendOfflinePush(env, userId, message) {
   const rows = (await env.DB.prepare('SELECT device_id, push_token, capabilities_json FROM user_devices WHERE user_id = ? AND platform = ? AND push_token IS NOT NULL')
     .bind(userId, 'android').all()).results || [];
   for (const row of rows) {
-    if (message.targetDeviceId && message.targetDeviceId !== row.device_id) continue;
-    if (!message.targetDeviceId && message.targetPlatform !== 'android') continue;
+    if (message.payload?.accountChat === true) {
+      if (row.device_id === message.sourceDeviceId) continue;
+    } else {
+      if (message.targetDeviceId && message.targetDeviceId !== row.device_id) continue;
+      if (!message.targetDeviceId && message.targetPlatform !== 'android') continue;
+    }
     try {
       if (env.DEVICE_RELAY && await env.DEVICE_RELAY.get(env.DEVICE_RELAY.idFromName(userId)).isConnected(row.device_id)) continue;
       const provider = JSON.parse(row.capabilities_json || '{}').pushProvider;

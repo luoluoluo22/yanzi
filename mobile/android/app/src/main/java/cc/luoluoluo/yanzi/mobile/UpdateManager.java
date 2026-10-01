@@ -36,6 +36,7 @@ import java.security.MessageDigest;
 
 public final class UpdateManager {
     private static final String GITHUB_RELEASES_API = "https://api.github.com/repos/luoluoluo22/yanzi/releases";
+    private static final String PUBLIC_RELEASES_API = "https://sync.luoluoluo.cc.cd/downloads/android/releases.json";
     
     // 实测在用户网络中极速且连接极其稳定的两个国内代理前缀
     private static final String ACCELERATOR_PRIMARY = "https://gh.ddlc.top/";
@@ -66,15 +67,24 @@ public final class UpdateManager {
                 HttpURLConnection conn = null;
                 try {
                     log(activity, "请求 GitHub API: " + GITHUB_RELEASES_API);
-                    URL url = new URL(GITHUB_RELEASES_API);
-                    conn = (HttpURLConnection) url.openConnection();
+                    URL url = new URL(PUBLIC_RELEASES_API);
+                    conn = MobileNetworkRouting.openCloudConnection(url);
                     conn.setRequestMethod("GET");
                     conn.setConnectTimeout(10000);
                     conn.setReadTimeout(10000);
                     conn.setRequestProperty("User-Agent", "YanziClient-Mobile/" + getLocalVersionName(activity));
+                    conn.setRequestProperty("X-Yanzi-Client", "mobile");
                     conn.setRequestProperty("Accept", "application/vnd.github+json");
 
                     int code = conn.getResponseCode();
+                    if (code != 200) {
+                        conn.disconnect();
+                        conn = (HttpURLConnection) new URL(GITHUB_RELEASES_API).openConnection();
+                        conn.setConnectTimeout(10000);
+                        conn.setReadTimeout(10000);
+                        conn.setRequestProperty("User-Agent", "YanziClient-Mobile/" + getLocalVersionName(activity));
+                        code = conn.getResponseCode();
+                    }
                     log(activity, "GitHub API 返回状态码: " + code);
                     if (code == 200) {
                         InputStream in = conn.getInputStream();
@@ -112,13 +122,14 @@ public final class UpdateManager {
                                 for (int j = 0; j < assets.length(); j++) {
                                     JSONObject asset = assets.getJSONObject(j);
                                     String assetName = asset.optString("name", "");
-                                    if (assetName.endsWith(".apk")) {
+                                    if (assetName.endsWith(".apk") && assetName.contains("-dev.apk") == activity.getPackageName().endsWith(".dev")) {
                                         apkDownloadUrl = asset.optString("browser_download_url", "");
                                         break;
                                     }
                                 }
                             }
 
+                            if (apkDownloadUrl.isEmpty() && activity.getPackageName().endsWith(".dev")) return;
                             if (apkDownloadUrl.isEmpty()) {
                                 apkDownloadUrl = "https://github.com/luoluoluo22/yanzi/releases/download/" + tag + "/yanzi-mobile-" + latestVersion + ".apk";
                             }
@@ -529,7 +540,10 @@ public final class UpdateManager {
         try {
             log(context, "建立下载连接: " + downloadUrl);
             URL url = new URL(downloadUrl);
-            conn = (HttpURLConnection) url.openConnection();
+            conn = downloadUrl.startsWith("https://sync.luoluoluo.cc.cd/")
+                    ? MobileNetworkRouting.openCloudConnection(url) : (HttpURLConnection) url.openConnection();
+            conn.setRequestProperty("User-Agent", "YanziClient-Mobile/" + getLocalVersionName(context));
+            conn.setRequestProperty("X-Yanzi-Client", "mobile");
             // 大文件下载，将连接超时增加到 20 秒，读取超时增加到 90 秒，防范中途闪断超时
             conn.setConnectTimeout(20000);
             conn.setReadTimeout(90000);
@@ -697,7 +711,12 @@ public final class UpdateManager {
     private static boolean isInstallableApk(Context context, File apkFile) {
         PackageInfo info = getArchivePackageInfo(context, apkFile);
         if (info == null) return false;
-        return context.getPackageName().equals(info.packageName);
+        if (!context.getPackageName().equals(info.packageName)) return false;
+        try {
+            PackageInfo installed = context.getPackageManager().getPackageInfo(context.getPackageName(), android.content.pm.PackageManager.GET_SIGNATURES);
+            if (info.versionCode <= installed.versionCode || info.signatures == null || installed.signatures == null) return false;
+            return java.util.Arrays.equals(info.signatures, installed.signatures);
+        } catch (Exception e) { return false; }
     }
 
     private static PackageInfo getArchivePackageInfo(Context context, File apkFile) {
@@ -706,7 +725,7 @@ public final class UpdateManager {
         }
 
         try {
-            return context.getPackageManager().getPackageArchiveInfo(apkFile.getAbsolutePath(), 0);
+            return context.getPackageManager().getPackageArchiveInfo(apkFile.getAbsolutePath(), android.content.pm.PackageManager.GET_SIGNATURES);
         } catch (Exception e) {
             log(context, "安装包解析校验异常: " + e.getMessage());
             return null;

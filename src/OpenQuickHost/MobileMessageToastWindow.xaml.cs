@@ -42,7 +42,7 @@ public partial class MobileMessageToastWindow : Window
     private void UpdateReceipt(string id, string status)
     {
         if (id != _lastCloudMessageId) return;
-        SendStatusText.Text = status == "acked" || status == "completed" ? "手机已接收" : status == "failed" ? "手机接收失败，请重试" : "已交云端，等待手机接收";
+        SendStatusText.Text = status == "acked" || status == "completed" ? "已有设备接收，其余设备会继续同步" : status == "failed" ? "有设备接收失败，请检查手机" : "已交云端，等待各设备接收";
     }
 
     public MobileMessageToastWindow()
@@ -87,7 +87,7 @@ public partial class MobileMessageToastWindow : Window
         var entries = ReadInboxHistory();
         var lastMobile = entries.FindLast(e => e.SourceDeviceName != "\u6211(\u7535\u8111)" && e.SourceDeviceName != "desktop");
         _replyDeviceId = lastMobile?.SourceDeviceId;
-        TitleText.Text = lastMobile != null ? lastMobile.SourceDeviceName : "\u624b\u673a\u804a\u5929"; // "手机聊天"
+        TitleText.Text = "账号消息 · 所有设备";
         
         if (entries.Count == 0)
         {
@@ -135,7 +135,7 @@ public partial class MobileMessageToastWindow : Window
         {
             if (sourceLabel != "\u6211(\u7535\u8111)" && sourceLabel != "desktop")
             {
-                TitleText.Text = sourceLabel;
+                TitleText.Text = "账号消息 · 所有设备";
             }
         }
 
@@ -812,7 +812,7 @@ public partial class MobileMessageToastWindow : Window
     {
         _sendError = "";
         var mobileIp = LanDiscoveryService.LastKnownMobileIp;
-        if (mobileIp != null)
+        if (mobileIp != null && !((System.Windows.Application.Current.MainWindow as MainWindow)?.CloudSyncClient?.HasCredential ?? false))
         {
         try
         {
@@ -874,11 +874,6 @@ public partial class MobileMessageToastWindow : Window
                 _sendError = "请先在电脑端登录同步账号，再通过公网发送。";
                 return false;
             }
-            if (string.IsNullOrWhiteSpace(_replyDeviceId) || !_replyDeviceId.StartsWith("android-", StringComparison.OrdinalIgnoreCase))
-            {
-                _sendError = "尚未确定接收手机，请先让手机向电脑发送一条消息。";
-                return false;
-            }
             var desktopId = DeviceIdentityStore.GetOrCreateDesktopDeviceId();
             await cloud.RegisterDeviceAsync(desktopId, "desktop", DeviceIdentityStore.GetDesktopDisplayName());
             object payload = new { source = "desktop-chat" };
@@ -890,12 +885,12 @@ public partial class MobileMessageToastWindow : Window
                     size = attachment.Size, sha256 = attachment.Sha256, contentType = attachment.ContentType };
             }
             var id = await cloud.SendDeviceMessageAsync(desktopId, "android", kind, "YanziChat", message,
-                targetDeviceId: _replyDeviceId, payload: payload);
+                targetDeviceId: null, payload: payload);
             if (string.IsNullOrEmpty(id)) throw new InvalidOperationException("云端未返回消息编号。");
             _sendStatus = "已交云端，等待手机接收";
             _lastCloudMessageId = id;
             var receipt = _receiptOwner?.GetMobileReceipt(id);
-            if (receipt == "acked" || receipt == "completed") _sendStatus = "手机已接收";
+            if (receipt == "acked" || receipt == "completed") _sendStatus = "已有设备接收，其余设备会继续同步";
             HostAssets.AppendLog($"Chat message queued by cloud: messageId={id}.");
             return true;
         }

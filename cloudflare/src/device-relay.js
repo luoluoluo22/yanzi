@@ -29,7 +29,9 @@ export class DeviceRelay extends DurableObject {
       const message = event.message;
       const matches = event.type === 'receipt'
         ? peer.deviceId === event.sourceDeviceId
-        : message.targetDeviceId ? peer.deviceId === message.targetDeviceId : peer.platform === message.targetPlatform;
+        : message.payload?.accountChat === true
+          ? peer.deviceId !== message.sourceDeviceId && ['android', 'desktop'].includes(peer.platform)
+          : message.targetDeviceId ? peer.deviceId === message.targetDeviceId : peer.platform === message.targetPlatform;
       if (!matches) continue;
       try {
         const body = JSON.stringify(event);

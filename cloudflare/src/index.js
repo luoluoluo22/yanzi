@@ -97,7 +97,9 @@ async function handleRequest(request, env, ctx) {
     const headers = new Headers();
     object.writeHttpMetadata(headers);
     headers.set("etag", object.httpEtag || "");
-    headers.set("Content-Type", "application/zip");
+    if (!headers.has("Content-Type")) headers.set("Content-Type", key.endsWith('.apk')
+      ? "application/vnd.android.package-archive" : key.endsWith('.json') ? "application/json; charset=utf-8" : "application/zip");
+    headers.set("Cache-Control", key.endsWith('releases.json') ? "no-store" : "public, max-age=3600");
     headers.set("Access-Control-Allow-Origin", "*");
     return new Response(object.body, { headers });
   }
@@ -2154,6 +2156,12 @@ async function handleRequest(request, env, ctx) {
     await ensureUser(env, auth.userId);
 
     const message = normalizeDeviceMessagePayload(payload);
+    delete message.payload.accountChat;
+    // Only user chat is shared. Commands retain their explicit device/platform routing.
+    if (['text', 'photo', 'file', 'screenshot'].includes(message.kind) &&
+        (message.title === 'YanziChat' || ['android', 'android-mobile', 'desktop-chat'].includes(message.payload.source))) {
+      message.payload.accountChat = true;
+    }
     if (message.payload.attachmentId) await ownedAttachment(env, auth.userId, message.payload.attachmentId);
     const clientId = payload.clientMessageId;
     if (clientId && (typeof clientId !== 'string' || !/^[a-zA-Z0-9_-]{8,100}$/.test(clientId)))
@@ -2179,6 +2187,8 @@ async function handleRequest(request, env, ctx) {
     }
 
     const now = isoNow();
+    if (message.payload.accountChat && !message.expiresAt)
+      message.expiresAt = new Date(Date.now() + 30 * 86400000).toISOString();
     const messageId = `msg_${randomHex(12)}`;
     const insertMessage = env.DB.prepare(
       `insert into device_messages (
@@ -2285,38 +2295,7 @@ async function handleRequest(request, env, ctx) {
         await sendSseMessage({ type: "connected" });
 
         while (!isClosed && Date.now() - startedAt < maxStreamDurationMs) {
-          const rows = await env.DB.prepare(
-            `select
-              message_id,
-              source_device_id,
-              target_device_id,
-              target_platform,
-              kind,
-              title,
-              body_text,
-              payload_json,
-              status,
-              created_at,
-              delivered_at,
-              acked_at,
-              expires_at
-            from device_messages
-            where user_id = ?
-              and status = 'pending'
-              and (expires_at is null or expires_at > ?)
-              and (
-                target_device_id = ?
-                or (
-                  target_device_id is null
-                  and target_platform = ?
-                )
-              )
-            order by created_at asc`
-          )
-            .bind(auth.userId, isoNow(), deviceId, device.platform)
-            .all();
-
-          const items = (rows.results ?? []).map(serializeDeviceMessageRecord);
+          const items = await getPendingDeviceMessageItems(env, auth.userId, deviceId, device.platform, 100);
           if (items.length > 0) {
             await sendSseMessage({ type: "messages", items });
 
@@ -2366,39 +2345,7 @@ async function handleRequest(request, env, ctx) {
     const device = await ensureOwnedDevice(env, auth.userId, deviceId);
     await touchDevice(env, auth.userId, deviceId);
 
-    const rows = await env.DB.prepare(
-      `select
-        message_id,
-        source_device_id,
-        target_device_id,
-        target_platform,
-        kind,
-        title,
-        body_text,
-        payload_json,
-        status,
-        created_at,
-        delivered_at,
-        acked_at,
-        expires_at
-      from device_messages
-      where user_id = ?
-        and status = 'pending'
-        and (expires_at is null or expires_at > ?)
-        and (
-          target_device_id = ?
-          or (
-            target_device_id is null
-            and target_platform = ?
-          )
-        )
-      order by created_at asc
-      limit ?`
-    )
-      .bind(auth.userId, isoNow(), deviceId, device.platform, limit)
-      .all();
-
-    const items = (rows.results ?? []).map(serializeDeviceMessageRecord);
+    const items = await getPendingDeviceMessageItems(env, auth.userId, deviceId, device.platform, limit);
     if (items.length > 0) {
       const deliveredAt = isoNow();
       await env.DB.prepare(
@@ -2430,9 +2377,12 @@ async function handleRequest(request, env, ctx) {
     await touchDevice(env, auth.userId, deviceId);
 
     const success = payload.success;
-    const ackMessage = await env.DB.prepare('SELECT source_device_id, target_device_id, target_platform FROM device_messages WHERE user_id = ? AND message_id = ?')
+    const ackMessage = await env.DB.prepare('SELECT source_device_id, target_device_id, target_platform, payload_json FROM device_messages WHERE user_id = ? AND message_id = ?')
       .bind(auth.userId, messageId).first();
-    if (!ackMessage || (ackMessage.target_device_id ? ackMessage.target_device_id !== deviceId : ackMessage.target_platform !== ackDevice.platform))
+    const accountChat = ackMessage && parseJsonObject(ackMessage.payload_json).accountChat === true;
+    if (!ackMessage || (accountChat
+      ? ackMessage.source_device_id === deviceId || !['android', 'desktop'].includes(ackDevice.platform)
+      : ackMessage.target_device_id ? ackMessage.target_device_id !== deviceId : ackMessage.target_platform !== ackDevice.platform))
       throw new HttpError(404, 'message_not_found', 'Message is not addressed to this device');
     const resultText = payload.result || "";
 
@@ -2463,6 +2413,12 @@ async function handleRequest(request, env, ctx) {
     }
 
     let result;
+    if (accountChat) {
+      await env.DB.prepare(`INSERT INTO account_chat_receipts (user_id, message_id, device_id, status, acked_at)
+        VALUES (?, ?, ?, ?, ?) ON CONFLICT(user_id, message_id, device_id)
+        DO UPDATE SET status = excluded.status, acked_at = excluded.acked_at`)
+        .bind(auth.userId, messageId, deviceId, newStatus, isoNow()).run();
+    }
     if (updatedPayloadJson) {
       result = await env.DB.prepare(
         `update device_messages
@@ -3069,36 +3025,19 @@ async function touchDevice(env, userId, deviceId) {
 
 async function getPendingDeviceMessageItems(env, userId, deviceId, platform, limit = 20) {
   const rows = await env.DB.prepare(
-    `select
-      message_id,
-      source_device_id,
-      target_device_id,
-      target_platform,
-      kind,
-      title,
-      body_text,
-      payload_json,
-      status,
-      created_at,
-      delivered_at,
-      acked_at,
-      expires_at
-    from device_messages
-    where user_id = ?
-      and status = 'pending'
-      and (expires_at is null or expires_at > ?)
-      and (
-        target_device_id = ?
-        or (
-          target_device_id is null
-          and target_platform = ?
-        )
-      )
-    order by created_at asc
-    limit ?`
-  )
-    .bind(userId, isoNow(), deviceId, platform, limit)
-    .all();
+    `SELECT m.* FROM device_messages m
+     WHERE m.user_id = ? AND (m.expires_at IS NULL OR m.expires_at > ?)
+       AND (
+         (json_extract(m.payload_json, '$.accountChat') = 1
+          AND m.source_device_id <> ? AND ? IN ('android', 'desktop')
+          AND NOT EXISTS (SELECT 1 FROM account_chat_receipts r
+            WHERE r.user_id = m.user_id AND r.message_id = m.message_id
+              AND r.device_id = ?))
+         OR (coalesce(json_extract(m.payload_json, '$.accountChat'), 0) <> 1
+          AND m.status = 'pending'
+          AND (m.target_device_id = ? OR (m.target_device_id IS NULL AND m.target_platform = ?)))
+       ) ORDER BY m.created_at ASC LIMIT ?`
+  ).bind(userId, isoNow(), deviceId, platform, deviceId, deviceId, platform, limit).all();
 
   return (rows.results ?? []).map(serializeDeviceMessageRecord);
 }
@@ -3140,6 +3079,7 @@ function serializeDeviceRecord(row, referenceNowMs = Date.now()) {
     platform: row.platform,
     displayName: row.display_name,
     capabilities: parseJsonObject(row.capabilities_json),
+    needsMessageUpgrade: row.platform === 'android' && !parseJsonObject(row.capabilities_json).receiveMobileMessages,
     lastSeenAt: row.last_seen_at,
     online,
     createdAt: row.created_at,

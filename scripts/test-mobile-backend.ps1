@@ -27,6 +27,7 @@ try {
     Invoke-RestMethod "$base/v1/me/devices" -Method POST -Headers @{Authorization="Bearer $token"} -ContentType 'application/json' -Body (@{deviceId=$device;platform='desktop';displayName='backend-test';capabilities=@{}} | ConvertTo-Json -Compress) | Out-Null
     [IO.File]::WriteAllText($fixturePath,(@{baseUrl=$base;token=$token;desktopDeviceId=$device} | ConvertTo-Json -Compress))
     & (Join-Path $PSScriptRoot 'test-mobile-attachments.ps1') -FixturePath $fixturePath
+    & (Join-Path $PSScriptRoot 'test-account-chat.ps1') -FixturePath $fixturePath
     [IO.File]::WriteAllText((Join-Path $root 'result.txt'),'MOBILE_BACKEND=PASSED')
     Write-Host 'MOBILE_BACKEND=PASSED'
 } finally {
