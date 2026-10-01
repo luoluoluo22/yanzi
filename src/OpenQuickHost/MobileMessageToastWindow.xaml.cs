@@ -10,6 +10,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Forms;
 using System.Windows.Input;
+using OpenQuickHost.Sync;
 
 namespace OpenQuickHost;
 
@@ -32,11 +33,25 @@ public partial class MobileMessageToastWindow : Window
     private readonly StringBuilder _conversationText = new();
     private string? _lastUrl;
     private DateTimeOffset? _lastMessageTime;
+    private string? _replyDeviceId;
+    private bool _sending;
+    private string _sendStatus = "";
+    private string _sendError = "";
+    private string? _lastCloudMessageId;
+    private MainWindow? _receiptOwner;
+    private void UpdateReceipt(string id, string status)
+    {
+        if (id != _lastCloudMessageId) return;
+        SendStatusText.Text = status == "acked" || status == "completed" ? "手机已接收" : status == "failed" ? "手机接收失败，请重试" : "已交云端，等待手机接收";
+    }
 
     public MobileMessageToastWindow()
     {
         InitializeComponent();
         LoadInboxHistory();
+        _receiptOwner = System.Windows.Application.Current.MainWindow as MainWindow;
+        if (_receiptOwner != null) _receiptOwner.MobileReceiptReceived += UpdateReceipt;
+        Closed += (_, _) => { if (_receiptOwner != null) _receiptOwner.MobileReceiptReceived -= UpdateReceipt; };
 
         Loaded += (_, _) =>
         {
@@ -56,8 +71,9 @@ public partial class MobileMessageToastWindow : Window
         };
     }
 
-    public void AppendMessage(string title, string messageText, string sourceDeviceId, DateTimeOffset receivedAt, string? screenshotDataUrl = null, string? screenshotFilePath = null)
+    public void AppendMessage(string title, string messageText, string sourceDeviceId, DateTimeOffset receivedAt, string? screenshotDataUrl = null, string? screenshotFilePath = null, string? replyDeviceId = null)
     {
+        if (!string.IsNullOrWhiteSpace(replyDeviceId)) _replyDeviceId = replyDeviceId;
         AppendMessageCore(title, messageText, sourceDeviceId, receivedAt, screenshotDataUrl, screenshotFilePath, updateHeader: true);
     }
 
@@ -70,6 +86,7 @@ public partial class MobileMessageToastWindow : Window
 
         var entries = ReadInboxHistory();
         var lastMobile = entries.FindLast(e => e.SourceDeviceName != "\u6211(\u7535\u8111)" && e.SourceDeviceName != "desktop");
+        _replyDeviceId = lastMobile?.SourceDeviceId;
         TitleText.Text = lastMobile != null ? lastMobile.SourceDeviceName : "\u624b\u673a\u804a\u5929"; // "手机聊天"
         
         if (entries.Count == 0)
@@ -171,12 +188,15 @@ public partial class MobileMessageToastWindow : Window
             HorizontalAlignment = isSelf ? System.Windows.HorizontalAlignment.Right : System.Windows.HorizontalAlignment.Left
         });
 
-        var screenshot = TryCreateScreenshotImage(screenshotDataUrl, screenshotFilePath, receivedAt);
+        var isFileAttachment = !string.IsNullOrWhiteSpace(screenshotFilePath) && File.Exists(screenshotFilePath)
+            && !new[] { ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico" }.Contains(Path.GetExtension(screenshotFilePath).ToLowerInvariant());
+        var screenshot = isFileAttachment ? (Image: (System.Windows.Controls.Image?)null, FilePath: screenshotFilePath)
+            : TryCreateScreenshotImage(screenshotDataUrl, screenshotFilePath, receivedAt);
         if (screenshot.Image != null)
         {
             panel.Children.Add(screenshot.Image);
         }
-        else if (!string.IsNullOrWhiteSpace(screenshotDataUrl) || !string.IsNullOrWhiteSpace(screenshotFilePath))
+        else if (!isFileAttachment && (!string.IsNullOrWhiteSpace(screenshotDataUrl) || !string.IsNullOrWhiteSpace(screenshotFilePath)))
         {
             panel.Children.Add(new TextBlock
             {
@@ -470,7 +490,8 @@ public partial class MobileMessageToastWindow : Window
                 MobileDeviceNameNormalizer.Normalize(source, ReadString(root, "sourceDeviceId")),
                 ReadReceivedAt(root),
                 string.IsNullOrWhiteSpace(screenshotDataUrl) ? null : screenshotDataUrl,
-                string.IsNullOrWhiteSpace(localFilePath) ? null : localFilePath);
+                string.IsNullOrWhiteSpace(localFilePath) ? null : localFilePath,
+                ReadString(root, "sourceDeviceId"));
         }
         catch (Exception ex)
         {
@@ -649,10 +670,14 @@ public partial class MobileMessageToastWindow : Window
     private async Task SendFileOrPhotoToMobileAsync(string filePath, bool isPhoto)
     {
         if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath)) return;
+        if (_sending) return;
 
         try
         {
             var fileName = Path.GetFileName(filePath);
+            _sending = true; SendButton.IsEnabled = false; AttachButton.IsEnabled = false;
+            SendStatusText.Text = "正在上传附件…";
+            if (new FileInfo(filePath).Length > 30L * 1024 * 1024) throw new IOException("附件不能超过 30 MB。");
             var fileBytes = await File.ReadAllBytesAsync(filePath);
             var base64Data = Convert.ToBase64String(fileBytes);
             var extension = Path.GetExtension(filePath).ToLowerInvariant();
@@ -667,7 +692,8 @@ public partial class MobileMessageToastWindow : Window
             var dataUrl = $"data:{mimeType};base64,{base64Data}";
 
             var kind = isPhoto ? "photo" : "file";
-            var sent = await SendMessageToMobileAsync(message: fileName, kind: kind, dataUrl: dataUrl);
+            var sent = await SendMessageToMobileAsync(message: fileName, kind: kind, dataUrl: dataUrl, filePath: filePath);
+            SendStatusText.Text = sent ? _sendStatus : _sendError;
             if (sent)
             {
                 var receivedAt = DateTimeOffset.Now;
@@ -707,7 +733,7 @@ public partial class MobileMessageToastWindow : Window
             }
             else
             {
-                System.Windows.MessageBox.Show("\u53d1\u9001\u5931\u8d25\uff0c\u624b\u673a\u53ef\u80fd\u672a\u5904\u4e8e\u5c40\u57df\u7f51\u76f4\u8fde\u72b6\u6001\u3002", "\u53d1\u9001\u5931\u8d25", MessageBoxButton.OK, MessageBoxImage.Warning);
+            SendStatusText.Text = _sendError;
             }
         }
         catch (Exception ex)
@@ -715,6 +741,7 @@ public partial class MobileMessageToastWindow : Window
             HostAssets.AppendLog($"Failed to process file send: {ex.Message}");
             System.Windows.MessageBox.Show($"发送失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
         }
+        finally { _sending = false; SendButton.IsEnabled = true; AttachButton.IsEnabled = true; }
     }
 
     private async void SendButton_Click(object sender, RoutedEventArgs e)
@@ -734,12 +761,19 @@ public partial class MobileMessageToastWindow : Window
     private async Task TriggerSendMessageAsync()
     {
         var text = InputTextBox.Text;
-        if (string.IsNullOrWhiteSpace(text)) return;
+        if (string.IsNullOrWhiteSpace(text) || _sending) return;
 
-        InputTextBox.Text = string.Empty;
-        var sent = await SendMessageToMobileAsync(text);
+        _sending = true;
+        SendButton.IsEnabled = false;
+        AttachButton.IsEnabled = false;
+        SendStatusText.Text = "正在发送…";
+        bool sent;
+        try { sent = await SendMessageToMobileAsync(text); }
+        finally { _sending = false; SendButton.IsEnabled = true; AttachButton.IsEnabled = true; }
+        SendStatusText.Text = sent ? _sendStatus : _sendError;
         if (sent)
         {
+            if (InputTextBox.Text == text) InputTextBox.Clear();
             var receivedAt = DateTimeOffset.Now;
             AddMessageBubble(text, "\u6211(\u7535\u8111)", receivedAt, null, null);
             
@@ -770,23 +804,22 @@ public partial class MobileMessageToastWindow : Window
         }
         else
         {
-            System.Windows.MessageBox.Show("\u6d88\u606f\u53d1\u9001\u5931\u8d25\uff0c\u624b\u673a\u53ef\u80fd\u672a\u5904\u4e8e\u5c40\u57df\u7f51\u76f4\u8fde\u72b6\u6001\u3002", "\u53d1\u9001\u5931\u8d25", MessageBoxButton.OK, MessageBoxImage.Warning);
+            SendStatusText.Text = _sendError;
         }
     }
 
-    private static async Task<bool> SendMessageToMobileAsync(string message, string kind = "text", string? dataUrl = null)
+    private async Task<bool> SendMessageToMobileAsync(string message, string kind = "text", string? dataUrl = null, string? filePath = null)
     {
+        _sendError = "";
         var mobileIp = LanDiscoveryService.LastKnownMobileIp;
-        if (mobileIp == null)
+        if (mobileIp != null)
         {
-            HostAssets.AppendLog("Send message skipped: mobile IP is not discovered.");
-            return false;
-        }
-
         try
         {
-            using var client = new System.Net.Http.HttpClient();
-            client.Timeout = TimeSpan.FromSeconds(10);
+            using var handler = new System.Net.Http.HttpClientHandler { UseProxy = false };
+            using var client = new System.Net.Http.HttpClient(handler);
+            client.Timeout = TimeSpan.FromSeconds(3);
+            client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", AppSettingsStore.Load().AgentApiToken);
             
             object payloadObj;
             if (kind == "photo")
@@ -822,14 +855,54 @@ public partial class MobileMessageToastWindow : Window
 
             var payload = JsonSerializer.Serialize(payloadObj);
             var content = new System.Net.Http.StringContent(payload, Encoding.UTF8, "application/json");
-            using var response = await client.PostAsync($"http://{mobileIp}:42981/", content);
+            using var response = await client.PostAsync($"http://{mobileIp}:{LanDiscoveryService.LastKnownMobileNotificationPort}/", content);
             response.EnsureSuccessStatusCode();
             HostAssets.AppendLog($"Message sent directly to mobile via LAN: IP={mobileIp}, content={message}, kind={kind}");
+            _sendStatus = "已通过直连发送";
             return true;
         }
         catch (Exception ex)
         {
-            HostAssets.AppendLog($"Failed to send message to mobile: {ex.Message}");
+            HostAssets.AppendLog($"Chat LAN unavailable; trying cloud: {ex.Message}");
+        }
+        }
+        try
+        {
+            var cloud = (System.Windows.Application.Current.MainWindow as MainWindow)?.CloudSyncClient;
+            if (cloud == null || !cloud.HasCredential)
+            {
+                _sendError = "请先在电脑端登录同步账号，再通过公网发送。";
+                return false;
+            }
+            if (string.IsNullOrWhiteSpace(_replyDeviceId) || !_replyDeviceId.StartsWith("android-", StringComparison.OrdinalIgnoreCase))
+            {
+                _sendError = "尚未确定接收手机，请先让手机向电脑发送一条消息。";
+                return false;
+            }
+            var desktopId = DeviceIdentityStore.GetOrCreateDesktopDeviceId();
+            await cloud.RegisterDeviceAsync(desktopId, "desktop", DeviceIdentityStore.GetDesktopDisplayName());
+            object payload = new { source = "desktop-chat" };
+            if (kind != "text")
+            {
+                if (string.IsNullOrEmpty(filePath)) throw new IOException("未选择附件。");
+                var attachment = await cloud.UploadMobileAttachmentAsync(filePath);
+                payload = new { source = "desktop-chat", attachmentId = attachment.AttachmentId, fileName = attachment.FileName,
+                    size = attachment.Size, sha256 = attachment.Sha256, contentType = attachment.ContentType };
+            }
+            var id = await cloud.SendDeviceMessageAsync(desktopId, "android", kind, "YanziChat", message,
+                targetDeviceId: _replyDeviceId, payload: payload);
+            if (string.IsNullOrEmpty(id)) throw new InvalidOperationException("云端未返回消息编号。");
+            _sendStatus = "已交云端，等待手机接收";
+            _lastCloudMessageId = id;
+            var receipt = _receiptOwner?.GetMobileReceipt(id);
+            if (receipt == "acked" || receipt == "completed") _sendStatus = "手机已接收";
+            HostAssets.AppendLog($"Chat message queued by cloud: messageId={id}.");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"Chat cloud send failed: {ex.GetType().Name}: {ex.Message}");
+            _sendError = "公网发送失败，请检查网络和同步账号后重试；消息内容已保留。";
             return false;
         }
     }
@@ -893,5 +966,6 @@ public partial class MobileMessageToastWindow : Window
         string SourceDeviceName,
         DateTimeOffset ReceivedAt,
         string? ScreenshotDataUrl,
-        string? LocalFilePath);
+        string? LocalFilePath,
+        string? SourceDeviceId);
 }

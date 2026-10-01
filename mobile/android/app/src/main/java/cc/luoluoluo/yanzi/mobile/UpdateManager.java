@@ -644,7 +644,7 @@ public final class UpdateManager {
             }
         }
 
-        Uri apkUri = FileProvider.getUriForFile(activity, "cc.luoluoluo.yanzi.mobile.fileprovider", apkFile);
+        Uri apkUri = FileProvider.getUriForFile(activity, BuildConfig.APPLICATION_ID + ".fileprovider", apkFile);
         Intent intent = new Intent(Intent.ACTION_VIEW);
         intent.setDataAndType(apkUri, "application/vnd.android.package-archive");
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);

@@ -61,7 +61,7 @@ public class LanDiscoveryManager {
             socket.setBroadcast(true);
             socket.setSoTimeout(TIMEOUT_MS);
 
-            byte[] sendData = DISCOVER_REQUEST.getBytes();
+            byte[] sendData = (DISCOVER_REQUEST + (BuildConfig.APPLICATION_ID.endsWith(".dev") ? ":42982" : ":42981")).getBytes(java.nio.charset.StandardCharsets.UTF_8);
             DatagramPacket sendPacket = new DatagramPacket(
                     sendData,
                     sendData.length,
@@ -76,7 +76,7 @@ public class LanDiscoveryManager {
             socket.receive(receivePacket);
 
             String response = new String(receivePacket.getData(), 0, receivePacket.getLength());
-            Log.d(TAG, "Received discovery response: " + response);
+            Log.d(TAG, "Received discovery response");
 
             JSONObject json = new JSONObject(response);
             String ip = json.optString("ip");

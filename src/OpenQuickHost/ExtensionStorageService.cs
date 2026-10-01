@@ -32,11 +32,24 @@ public static class ExtensionStorageService
 
         if (normalizedScope == ExtensionStorageScope.Both)
         {
+            QueueAccountReadRefresh(extensionId, normalizedKey, localPath);
             QueueCloudReadRefresh(extensionId, normalizedKey, localPath);
             if (File.Exists(localPath))
             {
                 var localValue = await File.ReadAllTextAsync(localPath, cancellationToken);
                 return new ExtensionStorageReadResult(true, localValue, "local", localPath);
+            }
+
+            var accountResult = await TryReadAccountDataAsync(extensionId, normalizedKey, cancellationToken);
+            if (accountResult.Available && !accountResult.Exists && accountResult.Revision > 0)
+            {
+                return new ExtensionStorageReadResult(false, null, "account-tombstone", localPath);
+            }
+            if (accountResult.Available && accountResult.Exists)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(localPath)!);
+                await File.WriteAllTextAsync(localPath, accountResult.Content ?? string.Empty, Encoding.UTF8, cancellationToken);
+                return new ExtensionStorageReadResult(true, accountResult.Content, "account", localPath);
             }
 
             var cloudResult = await TryReadCloudDataAsync(extensionId, normalizedKey, cancellationToken);
@@ -58,6 +71,25 @@ public static class ExtensionStorageService
 
         if (normalizedScope is ExtensionStorageScope.Cloud or ExtensionStorageScope.Both)
         {
+            var accountResult = await TryReadAccountDataAsync(extensionId, normalizedKey, cancellationToken);
+            if (accountResult.Available)
+            {
+                if (!accountResult.Exists)
+                {
+                    if (accountResult.Revision > 0)
+                    {
+                        if (File.Exists(localPath)) File.Delete(localPath);
+                        return new ExtensionStorageReadResult(false, null, "account-tombstone", localPath);
+                    }
+                }
+                else
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(localPath)!);
+                    await File.WriteAllTextAsync(localPath, accountResult.Content ?? string.Empty, Encoding.UTF8, cancellationToken);
+                    return new ExtensionStorageReadResult(true, accountResult.Content, "account", localPath);
+                }
+            }
+
             var cloudResult = await TryReadCloudDataAsync(extensionId, normalizedKey, cancellationToken);
             if (cloudResult.Value != null)
             {
@@ -125,33 +157,44 @@ public static class ExtensionStorageService
         string? cloudMessage = null;
         if (normalizedScope == ExtensionStorageScope.Both)
         {
+            QueueAccountWrite(extensionId, normalizedKey, content ?? string.Empty);
             ExtensionDataSyncStateStore.MarkPending(
                 extensionId,
                 normalizedKey,
                 ExtensionDataObjectStore.ComputeContentHash(content));
             QueueCloudWrite(extensionId, normalizedKey, content ?? string.Empty);
-            cloudMessage = "cloud write queued";
+            cloudMessage = "account cloud + personal backup queued";
         }
         else if (normalizedScope == ExtensionStorageScope.Cloud)
         {
-            ExtensionDataSyncStateStore.MarkPending(
-                extensionId,
-                normalizedKey,
-                ExtensionDataObjectStore.ComputeContentHash(content));
             try
             {
-                var result = await WriteCloudTextAsync(extensionId, normalizedKey, content ?? string.Empty, cancellationToken);
-                ExtensionDataSyncStateStore.MarkSynced(result.Value);
-                cloudSaved = true;
+                var accountResult = await AccountExtensionDataStore.WriteAsync(
+                    extensionId,
+                    normalizedKey,
+                    content ?? string.Empty,
+                    cancellationToken: cancellationToken);
+                if (accountResult.Available)
+                {
+                    cloudSaved = true;
+                    cloudMessage = "account cloud";
+                }
+                else
+                {
+                    ExtensionDataSyncStateStore.MarkPending(
+                        extensionId,
+                        normalizedKey,
+                        ExtensionDataObjectStore.ComputeContentHash(content));
+                    var result = await WriteCloudTextAsync(extensionId, normalizedKey, content ?? string.Empty, cancellationToken);
+                    ExtensionDataSyncStateStore.MarkSynced(result.Value);
+                    cloudSaved = true;
+                    cloudMessage = "personal backup fallback";
+                }
             }
             catch (Exception ex)
             {
-                ExtensionDataSyncStateStore.MarkFailed(extensionId, normalizedKey, ex.Message);
                 cloudMessage = ex.Message;
-                if (normalizedScope == ExtensionStorageScope.Cloud)
-                {
-                    throw;
-                }
+                throw;
             }
         }
 
@@ -173,37 +216,51 @@ public static class ExtensionStorageService
         string? cloudMessage = null;
         if (normalizedScope == ExtensionStorageScope.Both)
         {
+            QueueAccountWrite(extensionId, normalizedKey, string.Empty, deleted: true);
             ExtensionDataSyncStateStore.MarkPending(
                 extensionId,
                 normalizedKey,
                 ExtensionDataObjectStore.ComputeContentHash(string.Empty),
                 deleted: true);
             QueueCloudWrite(extensionId, normalizedKey, string.Empty, deleted: true);
-            cloudMessage = "cloud delete queued";
+            cloudMessage = "account cloud + personal backup delete queued";
         }
         else if (normalizedScope == ExtensionStorageScope.Cloud)
         {
-            ExtensionDataSyncStateStore.MarkPending(
+            var accountResult = await AccountExtensionDataStore.DeleteAsync(
                 extensionId,
                 normalizedKey,
-                ExtensionDataObjectStore.ComputeContentHash(string.Empty),
-                deleted: true);
-            try
+                cancellationToken: cancellationToken);
+            if (accountResult.Available)
             {
-                var settings = AppSettingsStore.Load();
-                if (!PersonalSyncBackendFactory.IsConfigured(settings))
-                {
-                    throw new InvalidOperationException("个人同步未完整配置，无法删除云端存储。");
-                }
-                var result = await new PersonalSyncService(settings)
-                    .DeleteExtensionDataAsync(extensionId, normalizedKey, cancellationToken);
-                ExtensionDataSyncStateStore.MarkSynced(result.Value);
                 cloudSaved = true;
+                cloudMessage = "account cloud";
             }
-            catch (Exception ex)
+            else
             {
-                ExtensionDataSyncStateStore.MarkFailed(extensionId, normalizedKey, ex.Message);
-                throw;
+                ExtensionDataSyncStateStore.MarkPending(
+                    extensionId,
+                    normalizedKey,
+                    ExtensionDataObjectStore.ComputeContentHash(string.Empty),
+                    deleted: true);
+                try
+                {
+                    var settings = AppSettingsStore.Load();
+                    if (!PersonalSyncBackendFactory.IsConfigured(settings))
+                    {
+                        throw new InvalidOperationException("账号云端不可用，且个人同步未完整配置，无法删除云端存储。");
+                    }
+                    var result = await new PersonalSyncService(settings)
+                        .DeleteExtensionDataAsync(extensionId, normalizedKey, cancellationToken);
+                    ExtensionDataSyncStateStore.MarkSynced(result.Value);
+                    cloudSaved = true;
+                    cloudMessage = "personal backup fallback";
+                }
+                catch (Exception ex)
+                {
+                    ExtensionDataSyncStateStore.MarkFailed(extensionId, normalizedKey, ex.Message);
+                    throw;
+                }
             }
         }
 
@@ -212,6 +269,134 @@ public static class ExtensionStorageService
             cloudSaved,
             normalizedScope.ToString().ToLowerInvariant(),
             cloudMessage);
+    }
+
+    private static void QueueAccountReadRefresh(string extensionId, string key, string localPath)
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var cts = new CancellationTokenSource(BackgroundCloudTimeout);
+                var accountResult = await TryReadAccountDataAsync(extensionId, key, cts.Token);
+                if (!accountResult.Available)
+                {
+                    return;
+                }
+
+                var legacyState = ExtensionDataSyncStateStore.Get(extensionId, key);
+                if (legacyState?.Pending == true || legacyState?.Conflict != null)
+                {
+                    return;
+                }
+
+                if (!accountResult.Exists)
+                {
+                    if (accountResult.Revision > 0 && File.Exists(localPath))
+                    {
+                        File.Delete(localPath);
+                    }
+                    return;
+                }
+
+                Directory.CreateDirectory(Path.GetDirectoryName(localPath)!);
+                await File.WriteAllTextAsync(
+                    localPath,
+                    accountResult.Content ?? string.Empty,
+                    Encoding.UTF8,
+                    cts.Token);
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog(
+                    $"Extension storage account refresh skipped: id={extensionId}, key={key}, error={ex.Message}");
+            }
+        });
+    }
+
+    private static void QueueAccountWrite(
+        string extensionId,
+        string key,
+        string content,
+        bool deleted = false)
+    {
+        _ = Task.Run(async () =>
+        {
+            var operationKey = $"account\0{extensionId}\0{key}";
+            var writeLock = CloudWriteLocks.GetOrAdd(
+                operationKey,
+                static _ => new SemaphoreSlim(1, 1));
+            await writeLock.WaitAsync();
+            try
+            {
+                Exception? lastError = null;
+                for (var attempt = 1; attempt <= 3; attempt++)
+                {
+                    try
+                    {
+                        using var cts = new CancellationTokenSource(BackgroundCloudTimeout);
+                        var result = deleted
+                            ? await AccountExtensionDataStore.DeleteAsync(
+                                extensionId,
+                                key,
+                                cancellationToken: cts.Token)
+                            : await AccountExtensionDataStore.WriteAsync(
+                                extensionId,
+                                key,
+                                content,
+                                cancellationToken: cts.Token);
+
+                        if (!result.Available)
+                        {
+                            return;
+                        }
+
+                        HostAssets.AppendLog(
+                            $"Extension storage account write completed: id={extensionId}, key={key}, revision={result.Revision}, deleted={deleted}");
+                        return;
+                    }
+                    catch (Exception ex)
+                    {
+                        lastError = ex;
+                        if (attempt < 3)
+                        {
+                            await Task.Delay(TimeSpan.FromMilliseconds(400 * attempt));
+                        }
+                    }
+                }
+
+                if (lastError != null)
+                {
+                    HostAssets.AppendLog(
+                        $"Extension storage account write deferred: id={extensionId}, key={key}, error={lastError.Message}");
+                }
+            }
+            finally
+            {
+                writeLock.Release();
+            }
+        });
+    }
+
+    private static async Task<AccountExtensionDataReadResult> TryReadAccountDataAsync(
+        string extensionId,
+        string key,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await AccountExtensionDataStore.TryReadAsync(
+                extensionId,
+                key,
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog(
+                $"Extension storage account read unavailable: id={extensionId}, key={key}, error={ex.Message}");
+            return AccountExtensionDataReadResult.Unavailable(
+                AccountExtensionDataStore.BuildObjectId(extensionId, key));
+        }
     }
 
     private static void QueueCloudReadRefresh(string extensionId, string key, string localPath)

@@ -82,7 +82,7 @@ public class FloatingWheelService extends Service {
     private static final String YANZI_SITE_URL = "https://yanzi.luoluoluo.cc.cd";
     private static final String DEFAULT_BASE_URL = "https://sync.luoluoluo.cc.cd";
     private static final String CLOUD_USER_AGENT = "YanziClient-Mobile/0.1.0";
-    public static final String ACTION_OPEN_WHEEL_FROM_GESTURE = "cc.luoluoluo.yanzi.mobile.OPEN_WHEEL_FROM_GESTURE";
+    public static final String ACTION_OPEN_WHEEL_FROM_GESTURE = BuildConfig.APPLICATION_ID + ".OPEN_WHEEL_FROM_GESTURE";
     private static final int BUBBLE_SIZE_DP = 58;
     private static final int BUBBLE_PADDING_DP = 12;
     private static final int EDGE_MARGIN_DP = 10;
@@ -1410,7 +1410,7 @@ public class FloatingWheelService extends Service {
     private void openMain(String action) {
         Intent intent = new Intent(this, MainActivity.class);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        intent.setAction("cc.luoluoluo.yanzi.mobile." + action);
+        intent.setAction(BuildConfig.APPLICATION_ID + "." + action);
         startActivity(intent);
     }
 
@@ -2008,7 +2008,7 @@ public class FloatingWheelService extends Service {
     private void startNotificationServer() {
         notificationThread = new Thread(() -> {
             try {
-                notificationServerSocket = new ServerSocket(42981);
+                notificationServerSocket = new ServerSocket(BuildConfig.APPLICATION_ID.endsWith(".dev") ? 42982 : 42981);
                 while (!Thread.currentThread().isInterrupted()) {
                     Socket client = notificationServerSocket.accept();
                     handleNotificationClient(client);
@@ -2022,40 +2022,49 @@ public class FloatingWheelService extends Service {
 
     private void handleNotificationClient(Socket client) {
         try {
-            BufferedReader in = new BufferedReader(new InputStreamReader(client.getInputStream(), StandardCharsets.UTF_8));
-            String firstLine = in.readLine();
-            if (firstLine == null) return;
-            
-            String method = "";
-            String path = "";
-            String[] parts = firstLine.split(" ");
-            if (parts.length >= 2) {
-                method = parts[0];
-                path = parts[1];
+            client.setSoTimeout(5000);
+            java.io.InputStream input = client.getInputStream();
+            java.io.ByteArrayOutputStream headers = new java.io.ByteArrayOutputStream();
+            int value;
+            while ((value = input.read()) != -1) {
+                headers.write(value);
+                if (headers.size() > 16384) throw new java.io.IOException("Headers too large");
+                byte[] h = headers.toByteArray();
+                int n = h.length;
+                if (n >= 4 && h[n-4] == 13 && h[n-3] == 10 && h[n-2] == 13 && h[n-1] == 10) break;
             }
-            
+            String[] headerLines = headers.toString("US-ASCII").split("\r\n");
+            String[] parts = headerLines[0].split(" ");
+            String method = parts.length > 0 ? parts[0] : "";
+            String path = parts.length > 1 ? parts[1] : "";
             int contentLength = 0;
-            String line;
-            while ((line = in.readLine()) != null && !line.isEmpty()) {
-                if (line.toLowerCase().startsWith("content-length:")) {
-                    contentLength = Integer.parseInt(line.substring(15).trim());
-                }
+            String authorization = "";
+            for (String line : headerLines) {
+                if (line.toLowerCase(java.util.Locale.ROOT).startsWith("content-length:")) contentLength = Integer.parseInt(line.substring(15).trim());
+                if (line.toLowerCase(java.util.Locale.ROOT).startsWith("authorization:")) authorization = line.substring(14).trim();
             }
-            
+            String expectedToken = LanDiscoveryManager.getLanApiToken(this);
+            if (expectedToken == null || expectedToken.isEmpty() || !java.security.MessageDigest.isEqual(
+                    ("Bearer " + expectedToken).getBytes(StandardCharsets.UTF_8), authorization.getBytes(StandardCharsets.UTF_8))) {
+                client.getOutputStream().write("HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".getBytes(StandardCharsets.US_ASCII));
+                return;
+            }
+            if (contentLength < 0 || contentLength > 16 * 1024 * 1024) throw new java.io.IOException("Body too large");
+            byte[] bodyBytes = new byte[contentLength];
+            int bodyCount = 0;
+            while (bodyCount < contentLength) {
+                int count = input.read(bodyBytes, bodyCount, contentLength - bodyCount);
+                if (count == -1) throw new java.io.EOFException("Incomplete body");
+                bodyCount += count;
+            }
+            String requestBody = new String(bodyBytes, StandardCharsets.UTF_8);
+
             if ("/v1/shell/run".equals(path) && "POST".equalsIgnoreCase(method)) {
                 JSONObject responseJson = new JSONObject();
                 if (contentLength > 0) {
-                    char[] bodyChars = new char[contentLength];
-                    int totalRead = 0;
-                    while (totalRead < contentLength) {
-                        int read = in.read(bodyChars, totalRead, contentLength - totalRead);
-                        if (read == -1) {
-                            break;
-                        }
-                        totalRead += read;
-                    }
+                    int totalRead = contentLength;
                     if (totalRead > 0) {
-                        String body = new String(bodyChars, 0, totalRead);
+                        String body = requestBody;
                         JSONObject json = new JSONObject(body);
                         String command = json.optString("command", "");
                         if (!command.isEmpty()) {
@@ -2090,17 +2099,9 @@ public class FloatingWheelService extends Service {
             }
             
             if (contentLength > 0) {
-                char[] bodyChars = new char[contentLength];
-                int totalRead = 0;
-                while (totalRead < contentLength) {
-                    int read = in.read(bodyChars, totalRead, contentLength - totalRead);
-                    if (read == -1) {
-                        break;
-                    }
-                    totalRead += read;
-                }
-                if (totalRead > 0) {
-                    String body = new String(bodyChars, 0, totalRead);
+                    int totalRead = contentLength;
+                    if (totalRead > 0) {
+                        String body = requestBody;
                     JSONObject json = new JSONObject(body);
                     String title = json.optString("title", "");
                     String text = json.optString("message", "");
@@ -2109,7 +2110,7 @@ public class FloatingWheelService extends Service {
                     }
                     
                     if ("YanziSync".equals(title) && "yanm_updated".equals(text)) {
-                        Intent syncIntent = new Intent("cc.luoluoluo.yanzi.mobile.SYNC_YANM");
+                        Intent syncIntent = new Intent(BuildConfig.APPLICATION_ID + ".SYNC_YANM");
                         this.sendBroadcast(syncIntent);
                     } else if ("YanziChat".equals(title)) {
                         String kind = json.optString("kind", "text");
@@ -2127,7 +2128,7 @@ public class FloatingWheelService extends Service {
                         }
                         
                         Log.d(TAG, "Received YanziChat message from PC: " + content + " (kind: " + kind + ")");
-                        Intent chatIntent = new Intent("cc.luoluoluo.yanzi.mobile.CHAT_MESSAGE");
+                        Intent chatIntent = new Intent(BuildConfig.APPLICATION_ID + ".CHAT_MESSAGE");
                         chatIntent.putExtra("message", content);
                         chatIntent.putExtra("kind", kind);
                         this.sendBroadcast(chatIntent);
@@ -2143,7 +2144,10 @@ public class FloatingWheelService extends Service {
                         if (title.isEmpty()) {
                             title = "Yanzi \u901a\u77e5"; // "Yanzi 通知"
                         }
-                        showNotification(title, text);
+                        if (!showNotification(title, text)) {
+                            client.getOutputStream().write("HTTP/1.1 409 Conflict\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".getBytes(StandardCharsets.US_ASCII));
+                            return;
+                        }
                     }
                 }
             }
@@ -2154,30 +2158,13 @@ public class FloatingWheelService extends Service {
             client.close();
         } catch (Exception e) {
             Log.e(TAG, "Handle client error", e);
+        } finally {
+            try { client.close(); } catch (Exception ignored) {}
         }
     }
 
-    private void showNotification(String title, String text) {
-        mainHandler.post(() -> {
-            NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-            if (nm != null) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    NotificationChannel channel = new NotificationChannel("yanzi_push", "燕子电脑推送", NotificationManager.IMPORTANCE_HIGH);
-                    nm.createNotificationChannel(channel);
-                }
-                Notification.Builder builder;
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    builder = new Notification.Builder(this, "yanzi_push");
-                } else {
-                    builder = new Notification.Builder(this);
-                }
-                builder.setSmallIcon(android.R.drawable.stat_notify_chat)
-                       .setContentTitle(title)
-                       .setContentText(text)
-                       .setAutoCancel(true);
-                nm.notify((int) System.currentTimeMillis(), builder.build());
-            }
-        });
+    private boolean showNotification(String title, String text) {
+        return MobileEventNotifier.notifyMessage(this, java.util.UUID.randomUUID().toString(), title, text);
     }
 
     private String saveBase64ToFile(String dataUrl, String defaultName) {

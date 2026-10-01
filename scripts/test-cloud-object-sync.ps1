@@ -84,6 +84,14 @@ try {
     $created = Invoke-RestMethod -Uri "$baseUrl/v1/sync/objects/$objectId" -Method Put -Headers $headers -ContentType "application/json" -Body $createBody
     if ($created.object.revision -le 0) { throw "Create did not return a positive revision." }
 
+    $createdReadback = Invoke-RestMethod -Uri "$baseUrl/v1/sync/objects/$objectId" -Method Get -Headers $headers
+    if (-not $createdReadback.object -or
+        $createdReadback.object.objectId -ne $objectId -or
+        $createdReadback.object.revision -ne $created.object.revision -or
+        [string]$createdReadback.object.payload.value -ne "first") {
+        throw "Single-object GET did not return the object created by PUT."
+    }
+
     $deviceBBody = @{
         schemaVersion = 1
         expectedRevision = $created.object.revision

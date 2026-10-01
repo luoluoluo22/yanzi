@@ -95,3 +95,81 @@
 
 
 
+
+
+---
+
+## 6. 自主开发与跨平台验证入口
+
+> [!IMPORTANT]
+> 后续 AI Agent 修改 Android 移动端、同步层或跨平台小程序能力前，**必须先阅读 `mobile/android/DEVELOPMENT_STATUS.md`**，以恢复当前真实实现、已验证结论、已知问题和下一步，不要仅依据旧 README 或历史聊天重新推断。
+>
+> 后续 AI Agent 修改桌面端、同步层或 Android 移动端时，优先使用仓库内统一脚本完成闭环，避免临时拼接命令导致 SDK、ADB 或测试设备不一致。
+
+- 全环境检查：`scripts\dev-check.ps1`
+  - 验证 Git/.NET/JDK/Node/Android SDK。
+  - 构建桌面解决方案与 Android APK。
+  - 运行 `Yanzi.SyncVerification`。
+- Android 模拟器：`scripts\dev-emulator.ps1`
+  - 默认使用专用 AVD `YanziApi30`。
+  - 真机与模拟器同时在线时，开发安装优先使用模拟器。
+  - `-Stop` 可关闭模拟器，`-WipeData` 可创建干净测试状态。
+- Android 开发闭环：`scripts\dev-android-loop.ps1`
+  - 构建、覆盖安装、启动、检查前台 Activity、UIAutomator 文本节点、logcat 和截图。
+  - 测试产物写入 `%TEMP%\YanziDev`，不得污染 Git 工作区。
+- 桌面开发闭环：`scripts\dev-desktop-loop.ps1`
+  - 构建、终止旧 Yanzi 进程并使用独立 Win32 进程启动新版本。
+- 完整回归入口：`scripts\dev-smoke.ps1`
+  - 依次执行环境检查、桌面/Android 构建、同步验证、Worker 语法检查、Android UI smoke、燕幕对象同步、小程序对象同步、Windows↔Android 共享存储测试。
+  - 集成测试结束后必须清空模拟器内的临时测试账号数据，再做一次 clean smoke，最后重新启动桌面燕子。
+- Android 破坏性集成测试默认只允许在 `emulator-*` 上执行：
+  - `scripts\test-android-object-sync.ps1`
+  - `scripts\test-mobile-extension-storage.ps1`
+  - `scripts\test-cross-platform-extension-storage.ps1`
+  - `scripts\test-mobile-extension-definition-sync.ps1`
+  - `scripts\test-unified-extension-catalog.ps1`
+  - 测试脚本必须自行清空测试 App 数据并注入临时本地 Worker 账号，保证测试间互不污染。
+  - 唯一真机例外是隔离包 `cc.luoluoluo.yanzi.mobile.dev`；必须通过 `scripts\test-real-phone-dev-object-sync.ps1` 或显式 `-AllowPhysicalDev` 进入，绝不能对生产包执行 `pm clear`。
+
+### 真实手机 Dev 隔离开发
+
+- 用户要求：日常真机回归默认不主动熄屏，避免亮屏后需要反复手动解锁。确需熄屏验证时，只在最终验收阶段执行一次；消息回归通过显式 `-IncludeFinalScreenOff` 开启。
+
+- Android 新增独立 `dev` build type：
+  - applicationId：`cc.luoluoluo.yanzi.mobile.dev`
+  - application label：`燕子 Dev`
+  - 与生产/历史包 `cc.luoluoluo.yanzi.mobile` 可同时安装。
+- 构建：`scripts\build-android-mvp.ps1 -Configuration dev`
+  - 输出：`mobile\android\app\build\manual-dev\yanzi-mobile-dev.apk`
+- 真机安装/启动 smoke：`scripts\dev-real-phone.ps1`
+  - 只安装/覆盖 `.dev` 包；
+  - 安装前后必须核对生产包版本与 APK 路径不变；
+  - 产物写入 `%TEMP%\YanziDev\real-phone`。
+- 真机 Object Sync：`scripts\test-real-phone-dev-object-sync.ps1`
+  - 使用 `adb reverse` 把真机 Dev 指向本机临时 Worker；
+  - 使用临时测试账号，不需要真实账号 Token，不访问线上同步数据；
+  - 结束时撤销 reverse、清空 Dev 测试数据并重新启动 Dev；
+  - 必须再次确认生产包未变化。
+- 广播 Action、Widget Action、taskAffinity 和 FileProvider authority 必须基于 `BuildConfig.APPLICATION_ID` / `${applicationId}`，禁止重新写死生产 applicationId，否则 Dev 与生产版会串扰。
+- 后台 `mobile-js` 运行时必须保持 WebView 强引用直到 `done/fail`，结束后主动 destroy；headless 路径调用状态/UI 更新时必须允许 View 尚未创建。
+
+### 统一小程序跨平台约定
+
+- **同一个小程序使用同一个 `extensionId`**，不要为 Android 另造一套身份。
+- Windows 包与手机 `mobile-js` 是同一小程序的不同 runtime：
+  - 手机存在 runtime 时，统一目录默认本机执行；
+  - 手机没有 runtime、但账号存在 Windows 小程序时，手机向电脑发送执行请求；
+  - 同时存在两个 runtime 时，长按可显式选择手机或电脑。
+- 手机小程序定义的账号权威数据使用 Object Sync：
+  - 索引：`mobileExtensions.index.v1`
+  - 定义：`mobileExtension.v1.<sha256(extensionId)>`
+  - 修改只写单个定义对象；删除使用 tombstone，并更新索引。
+  - Android `SharedPreferences.mobileExtensions` 与 Windows `MobileExtensionsJson` 只作为设备缓存/兼容数据，不作为账号权威来源。
+- 小程序业务数据统一使用：
+  - `extensionData.v1.<sha256(extensionId + "\0" + key)>`
+  - Windows 与 Android 必须共享同一个对象 ID、revision、409 冲突和 tombstone 语义。
+- 对象 payload 的跨语言字段名统一使用 **camelCase**；Android 读取历史数据时可兼容 PascalCase，但新写入不得继续制造 PascalCase 对象。
+- 手机定义读取必须先 GET 索引对象，再按索引精确 GET 定义对象；不要为了读取手机小程序扫描整页账号同步对象。
+- 本地 Worker 测试端口必须通过 `scripts\dev-test-worker.ps1` 清理完整 Wrangler 进程树，不能只终止 `workerd.exe`。
+
+真实手机上的已安装燕子可能使用不同 debug 签名。未经确认不得卸载、清除数据或替换真实手机上的正式/历史版本来解决签名冲突；默认使用专用模拟器进行反复安装与破坏性测试。

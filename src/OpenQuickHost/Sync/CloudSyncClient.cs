@@ -8,7 +8,7 @@ using System.Text.Json;
 
 namespace OpenQuickHost.Sync;
 
-public sealed class CloudSyncClient
+public sealed partial class CloudSyncClient
 {
     private readonly HttpClient _httpClient;
     private readonly HttpClient _directHttpClient;
@@ -594,6 +594,31 @@ public sealed class CloudSyncClient
             ?? new CloudSyncCapabilitiesResponse();
     }
 
+    public async Task<CloudSyncObjectRecord?> GetSyncObjectAsync(
+        string objectId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(objectId))
+        {
+            throw new ArgumentException("同步对象 ID 不能为空。", nameof(objectId));
+        }
+
+        await EnsureAuthenticatedAsync(cancellationToken);
+        using var request = CreateRequest(
+            HttpMethod.Get,
+            $"/v1/sync/objects/{Uri.EscapeDataString(objectId.Trim())}",
+            includeAuth: true);
+        using var response = await SendAsyncWithFallback(request, cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        await EnsureSuccessAsync(response, cancellationToken);
+        var result = await ReadAsync<CloudSyncObjectWriteResponse>(response, cancellationToken);
+        return result?.Object;
+    }
+
     public async Task<CloudSyncObjectListResponse> GetSyncChangesAsync(
         long sinceRevision,
         int limit = 200,
@@ -833,7 +858,8 @@ public sealed class CloudSyncClient
             kind,
             title,
             text,
-            payload = payload ?? new { }
+            payload = payload ?? new { },
+            clientMessageId = Guid.NewGuid().ToString("N")
         });
 
         using var request = CreateJsonRequest(HttpMethod.Post, "/v1/me/mobile/messages", body, includeAuth: true);

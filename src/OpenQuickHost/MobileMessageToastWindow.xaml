@@ -76,13 +76,15 @@
                 <TextBox x:Name="InputTextBox" Height="30" Background="{DynamicResource BrushInputBG}" Foreground="{DynamicResource BrushTextMain}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="6,2,6,2" KeyDown="InputTextBox_KeyDown" VerticalContentAlignment="Center"/>
             </DockPanel>
 
+            <StackPanel Grid.Row="3">
+            <TextBlock x:Name="SendStatusText" Margin="2,8,0,0" Foreground="{DynamicResource BrushTextMain}" TextWrapping="Wrap" />
             <TextBlock x:Name="UrlHintText"
-                       Grid.Row="3"
                        Margin="2,8,0,0"
                        Foreground="{DynamicResource BrushAccent}"
                        FontSize="{DynamicResource FontSizeSmallPlus}"
                        TextTrimming="CharacterEllipsis"
                        Visibility="Collapsed" />
+            </StackPanel>
 
             <DockPanel Grid.Row="4"
                         Margin="0,10,0,0"

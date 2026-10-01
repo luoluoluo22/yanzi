@@ -2,6 +2,18 @@ using System.Text.Json;
 using OpenQuickHost;
 using OpenQuickHost.Sync;
 
+if (args.Contains("--mobile-message-bridge"))
+{
+    await MobileMessageBridgeVerification.RunAsync(args);
+    return;
+}
+
+if (args.Contains("--account-extension-bridge"))
+{
+    await AccountExtensionBridgeVerification.RunAsync(args);
+    return;
+}
+
 if (args.Contains("--fresh-device-sync"))
 {
     await FreshDeviceSyncVerification.RunAsync();
@@ -499,7 +511,30 @@ static void VerifyExtensionDataObjects()
         rejectedTamper = true;
     }
     Assert(rejectedTamper, "Extension-data content hash validation accepted a tampered object.");
-    Console.WriteLine("Extension data verification passed: per-key revisions, immutable history references, stable paths, hash validation.");
+
+    var accountObjectId = AccountExtensionDataStore.BuildObjectId(
+        "private.notes",
+        "folders/today.json");
+    Assert(
+        accountObjectId == "extensionData.v1.6a8d75c74bfb4e2d8130ec7d7adbfe3e9580e9b77fa80410aa434517fea2537f",
+        "Windows account extension-data object ID no longer matches the cross-platform SHA-256 contract.");
+
+    var accountPayload = AccountExtensionDataStore.CreatePayloadElement(
+        "private.notes",
+        "folders/today.json",
+        "hello");
+    Assert(
+        accountPayload.TryGetProperty("extensionId", out var extensionIdProperty) &&
+        extensionIdProperty.GetString() == "private.notes" &&
+        accountPayload.TryGetProperty("key", out var keyProperty) &&
+        keyProperty.GetString() == "folders/today.json" &&
+        accountPayload.TryGetProperty("content", out var contentProperty) &&
+        contentProperty.GetString() == "hello" &&
+        accountPayload.TryGetProperty("contentHash", out _) &&
+        !accountPayload.TryGetProperty("ExtensionId", out _),
+        "Account extension-data payload must use the Android-compatible camelCase wire contract.");
+
+    Console.WriteLine("Extension data verification passed: per-key revisions, immutable history references, stable paths, hashes, cross-platform wire contract.");
 }
 
 static CloudQuickPanelConfigSnapshot CreateSnapshot() => new()

@@ -43,6 +43,18 @@ public static class HostAssets
         return new VerificationDataRootScope(() => _isolatedVerificationDataRootPath = previous);
     }
 
+    internal static IDisposable UseExistingDataRootForVerification(string path)
+    {
+        if (!Path.IsPathFullyQualified(path) || !Directory.Exists(path))
+        {
+            throw new ArgumentException("现有验证数据目录必须是已存在的绝对路径。", nameof(path));
+        }
+
+        var previous = _isolatedVerificationDataRootPath;
+        _isolatedVerificationDataRootPath = Path.GetFullPath(path);
+        return new VerificationDataRootScope(() => _isolatedVerificationDataRootPath = previous);
+    }
+
     private sealed class VerificationDataRootScope(Action restore) : IDisposable
     {
         public void Dispose() => restore();

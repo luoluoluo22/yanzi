@@ -32,6 +32,7 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import cc.luoluoluo.yanzi.mobile.BuildConfig;
 import cc.luoluoluo.yanzi.mobile.MainActivity;
 import cc.luoluoluo.yanzi.mobile.MobileIconLibrary;
 import cc.luoluoluo.yanzi.mobile.MobileDiagnostics;
@@ -40,8 +41,8 @@ import cc.luoluoluo.yanzi.mobile.MainActivity.YanziApiClient;
 
 public final class ExtensionsWidgetProvider extends AppWidgetProvider {
 
-    public static final String ACTION_RUN_EXT = "cc.luoluoluo.yanzi.mobile.widget.ACTION_RUN_EXT";
-    public static final String ACTION_REFRESH_EXT = "cc.luoluoluo.yanzi.mobile.widget.ACTION_REFRESH_EXT";
+    public static final String ACTION_RUN_EXT = BuildConfig.APPLICATION_ID + ".widget.ACTION_RUN_EXT";
+    public static final String ACTION_REFRESH_EXT = BuildConfig.APPLICATION_ID + ".widget.ACTION_REFRESH_EXT";
     private static final String CHANNEL_ID = "yanzi_widget_channel";
     private static final String TAG = "YanziExtWidget";
     private static final String PREF_LAST_TASKER_DIALOG_ID = "lastTaskerDialogId";

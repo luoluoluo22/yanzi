@@ -997,6 +997,7 @@ public partial class MainWindow
 
         HostAssets.AppendLog($"Mobile bridge started: reason={reason}, deviceId={_desktopDeviceId}.");
         StartDesktopPresenceHeartbeat(reason);
+        _mobileMessagePollTimer.Start();
         _ = PollMobileMessagesSafeAsync($"start-{reason}");
     }
 
@@ -1038,6 +1039,7 @@ public partial class MainWindow
                 cancellationToken: heartbeatTimeout.Token);
             _deviceRegistered = true;
             _desktopPresenceHeartbeatFailureCount = 0;
+            _desktopPresenceHeartbeatTimer.Interval = TimeSpan.FromSeconds(30);
 
             if (reason.StartsWith("start-", StringComparison.OrdinalIgnoreCase))
             {
@@ -1049,8 +1051,8 @@ public partial class MainWindow
             _desktopPresenceHeartbeatFailureCount = Math.Min(_desktopPresenceHeartbeatFailureCount + 1, 5);
             if (_desktopPresenceHeartbeatFailureCount >= 5)
             {
-                _desktopPresenceHeartbeatTimer.Stop();
-                HostAssets.AppendLog("Desktop presence heartbeat stopped after 5 failures; waiting for network change or next cloud refresh.");
+                _desktopPresenceHeartbeatTimer.Interval = TimeSpan.FromSeconds(120);
+                HostAssets.AppendDebug("Desktop presence heartbeat retry slowed after repeated transport failures.");
             }
 
             if (DateTimeOffset.UtcNow - _lastDesktopPresenceHeartbeatErrorLogAt > TimeSpan.FromMinutes(1))
@@ -1096,6 +1098,9 @@ public partial class MainWindow
             DateTimeOffset? connectedAtUtc = null;
             try
             {
+                try { await RunMobileWebSocketAsync(cancellationToken); consecutiveFailures = 0; continue; }
+                catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+                { HostAssets.AppendDebug($"Mobile realtime unavailable; SSE fallback: {ex.GetType().Name}"); }
                 HostAssets.AppendDebug("Mobile bridge establishing SSE connection to cloud...");
                 using var response = await _cloudSyncClient!.GetMobileMessagesEventsStreamAsync(_desktopDeviceId, cancellationToken);
                 using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -1188,8 +1193,7 @@ public partial class MainWindow
                 consecutiveFailures++;
                 if (consecutiveFailures >= 5)
                 {
-                    HostAssets.AppendLog("Mobile bridge SSE stopped after 5 failed connections; waiting for network change or next cloud refresh.");
-                    break;
+                    consecutiveFailures = 5;
                 }
 
                 var retrySeconds = Math.Min(5 * (1 << (consecutiveFailures - 1)), 60);
@@ -1283,7 +1287,33 @@ public partial class MainWindow
         return 0;
     }
 
+    private readonly SemaphoreSlim _mobileMessageExecutionLock = new(1, 1);
+    private readonly Dictionary<string, (bool hasResult, bool success, string output)> _mobileMessageResults = new();
+
     internal async Task<(bool hasResult, bool success, string output)> HandleMobileDeviceMessageAsync(DeviceMessageRecord message)
+    {
+        await _mobileMessageExecutionLock.WaitAsync();
+        try
+        {
+            var key = $"{SyncSessionStore.Load()?.UserId}:{message.SourceDeviceId}:{message.MessageId}";
+            if (_mobileMessageResults.TryGetValue(key, out var cached)) return cached;
+            var command = message.Kind == "run-shell" || message.Kind == "run-extension" || message.Kind.StartsWith("fs-", StringComparison.Ordinal);
+            var receiptPath = command ? GetMobileExecutionReceiptPath(key) : null;
+            if (receiptPath != null && File.Exists(receiptPath)) {
+                var saved = JsonSerializer.Deserialize<MobileExecutionReceipt>(File.ReadAllText(receiptPath))!;
+                return (true, saved.Completed && saved.Success, saved.Completed ? saved.Output : "上次执行被中断，未自动重复执行。请确认结果后重新发起。");
+            }
+            if (receiptPath != null) SaveMobileExecutionReceipt(receiptPath, new(false, false, ""));
+            var result = await ExecuteMobileDeviceMessageAsync(message);
+            if (receiptPath != null) SaveMobileExecutionReceipt(receiptPath, new(true, result.success, result.output));
+            if (_mobileMessageResults.Count >= 2048) _mobileMessageResults.Remove(_mobileMessageResults.Keys.First());
+            _mobileMessageResults[key] = result;
+            return result;
+        }
+        finally { _mobileMessageExecutionLock.Release(); }
+    }
+
+    private async Task<(bool hasResult, bool success, string output)> ExecuteMobileDeviceMessageAsync(DeviceMessageRecord message)
     {
         var title = string.IsNullOrWhiteSpace(message.Title) ? "手机发来消息" : message.Title.Trim();
         var text = string.IsNullOrWhiteSpace(message.Text) ? $"消息类型：{message.Kind}" : message.Text.Trim();
@@ -1291,11 +1321,7 @@ public partial class MainWindow
         var screenshotDataUrl = GetPayloadString(message, "screenshotDataUrl");
         var mobileAttachmentFilePath = await TryDownloadMobileScreenshotFromWebDavAsync(message);
 
-        var screenshotFilePath = IsMobileScreenshotMessage(message)
-
-            ? mobileAttachmentFilePath
-
-            : null;
+        var screenshotFilePath = mobileAttachmentFilePath;
         if (string.Equals(message.Kind, "screenshot", StringComparison.OrdinalIgnoreCase))
         {
             var payloadKeys = message.Payload.Count == 0
@@ -1371,7 +1397,7 @@ public partial class MainWindow
 
                 : $"已收到手机端消息，{clipboardMessage}。";
             SaveMobileInboxMessage(message, title, text, sourceLabel, screenshotDataUrl, screenshotFilePath);
-            ShowMobileMessageToast(title, text, sourceLabel, screenshotDataUrl, screenshotFilePath);
+            ShowMobileMessageToast(title, text, sourceLabel, screenshotDataUrl, screenshotFilePath, message.SourceDeviceId);
         });
 
         return (false, true, string.Empty);
@@ -1868,7 +1894,8 @@ public partial class MainWindow
 
     {
 
-        return string.Equals(message.Kind, "screenshot", StringComparison.OrdinalIgnoreCase);
+        return string.Equals(message.Kind, "screenshot", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(message.Kind, "photo", StringComparison.OrdinalIgnoreCase);
 
     }
 
@@ -1955,6 +1982,9 @@ public partial class MainWindow
 
     private async Task<string?> TryDownloadMobileScreenshotFromWebDavAsync(DeviceMessageRecord message)
     {
+        var attachmentId = GetPayloadString(message, "attachmentId");
+        if (!string.IsNullOrEmpty(attachmentId))
+            return await _cloudSyncClient!.DownloadMobileAttachmentAsync(attachmentId, HostAssets.ResolveDataDirectoryPath("mobile-attachments"));
         var remotePath = GetPayloadString(message, "webDavPath");
         if (string.IsNullOrWhiteSpace(remotePath))
         {
@@ -2155,14 +2185,14 @@ public partial class MainWindow
         }
     }
 
-    private void ShowMobileMessageToast(string title, string text, string sourceDeviceId, string? screenshotDataUrl = null, string? screenshotFilePath = null)
+    private void ShowMobileMessageToast(string title, string text, string sourceDeviceId, string? screenshotDataUrl = null, string? screenshotFilePath = null, string? replyDeviceId = null)
     {
         try
         {
             var sourceLabel = MobileDeviceNameNormalizer.Normalize(sourceDeviceId);
             if (_mobileMessageToastWindow is { IsVisible: true })
             {
-                _mobileMessageToastWindow.AppendMessage(title, text, sourceDeviceId, DateTimeOffset.Now, screenshotDataUrl, screenshotFilePath);
+                _mobileMessageToastWindow.AppendMessage(title, text, sourceDeviceId, DateTimeOffset.Now, screenshotDataUrl, screenshotFilePath, replyDeviceId);
                 
                 if (!_mobileMessageToastWindow.IsActive)
                 {

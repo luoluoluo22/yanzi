@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows;
@@ -65,8 +65,11 @@ public partial class App : WpfApplication
     private string? _lastUserActiveProcessPath;
     private ImageSource? _lastUserActiveProcessIcon;
 
+    internal bool IsVerificationHarness { get; set; }
+
     protected override void OnStartup(WpfStartupEventArgs e)
     {
+        if (IsVerificationHarness) return;
         // 运行端到端加密 E2EE 模块启动自检
         try
         {
@@ -733,9 +736,10 @@ public partial class App : WpfApplication
                         {
                             using var client = new System.Net.Http.HttpClient();
                             client.Timeout = TimeSpan.FromSeconds(3);
+                            client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", settings.AgentApiToken);
                             var payload = System.Text.Json.JsonSerializer.Serialize(new { title, message });
                             var content = new System.Net.Http.StringContent(payload, System.Text.Encoding.UTF8, "application/json");
-                            using var response = await client.PostAsync($"http://{mobileIp}:42981/", content);
+                            using var response = await client.PostAsync($"http://{mobileIp}:{LanDiscoveryService.LastKnownMobileNotificationPort}/", content);
                             response.EnsureSuccessStatusCode();
                             sentByLan = true;
                             HostAssets.AppendLog($"Push to mobile delivered by LAN: ip={mobileIp}, title={title}.");

@@ -19,6 +19,7 @@ public sealed class LanDiscoveryService : IDisposable
     private readonly string _agentApiToken;
     private CancellationTokenSource? _cts;
     public static IPAddress? LastKnownMobileIp { get; private set; }
+    public static int LastKnownMobileNotificationPort { get; private set; } = 42981;
 
     public LanDiscoveryService(int agentApiPort, string agentApiToken)
     {
@@ -52,9 +53,10 @@ public sealed class LanDiscoveryService : IDisposable
                 var result = await _udpClient.ReceiveAsync(token);
                 var requestText = Encoding.UTF8.GetString(result.Buffer);
                 
-                if (requestText == DiscoverRequest)
+                if (requestText == DiscoverRequest || requestText == DiscoverRequest + ":42981" || requestText == DiscoverRequest + ":42982")
                 {
                     LastKnownMobileIp = result.RemoteEndPoint.Address;
+                    LastKnownMobileNotificationPort = requestText.EndsWith(":42982", StringComparison.Ordinal) ? 42982 : 42981;
                     var ip = GetLocalIpForRemote(result.RemoteEndPoint.Address);
                     if (!string.IsNullOrEmpty(ip))
                     {
@@ -68,7 +70,7 @@ public sealed class LanDiscoveryService : IDisposable
                         var responseJson = JsonSerializer.Serialize(response);
                         var responseBytes = Encoding.UTF8.GetBytes(responseJson);
                         await _udpClient.SendAsync(responseBytes, responseBytes.Length, result.RemoteEndPoint);
-                        HostAssets.AppendLog($"LanDiscoveryService: Replied to {result.RemoteEndPoint} with {responseJson}");
+                        HostAssets.AppendLog("LanDiscoveryService: Discovery response sent.");
                     }
                 }
             }

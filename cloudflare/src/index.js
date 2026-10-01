@@ -1,5 +1,6 @@
-const mobilePollRateLimitMap = new Map();
-const mobilePollRateLimitMaxEntries = 5000;
+import { handleAttachments, ownedAttachment, cleanupAttachments, MessagingError } from './mobile-attachments.js';
+import { sendOfflinePush } from './mobile-push.js';
+export { DeviceRelay } from './device-relay.js';
 const TOKEN_TTL_SECONDS = 60 * 60 * 24 * 30;
 const DEVICE_ONLINE_WINDOW_MS = 2 * 60 * 1000;
 const PASSWORD_ITERATIONS = 100000;
@@ -49,11 +50,12 @@ const PUBLIC_STORE_EXTENSION_IDS_SQL = PUBLIC_STORE_EXTENSIONS
 
 
 export default {
-  async fetch(request, env) {
+  async scheduled(event, env, ctx) { ctx.waitUntil(cleanupAttachments(env)); },
+  async fetch(request, env, ctx) {
     try {
-      return await handleRequest(request, env);
+      return await handleRequest(request, env, ctx);
     } catch (error) {
-      if (error instanceof HttpError) {
+      if (error instanceof HttpError || error instanceof MessagingError) {
         return withCors(
           json(
             {
@@ -79,7 +81,7 @@ export default {
   }
 };
 
-async function handleRequest(request, env) {
+async function handleRequest(request, env, ctx) {
   const url = new URL(request.url);
 
   if (request.method === "OPTIONS") {
@@ -101,7 +103,7 @@ async function handleRequest(request, env) {
   }
 
   if (url.pathname === "/v1/debug/list-packages" && request.method === "GET") {
-    const list = await env.PACKAGES.list();
+    const list = await env.PACKAGES.list({ prefix: 'downloads/' });
     const keys = list.objects.map(obj => obj.key);
     return json({ count: keys.length, keys });
   }
@@ -875,6 +877,10 @@ async function handleRequest(request, env) {
       throw new HttpError(404, "sync_object_not_found", "sync object was not found");
     }
     return json({ ok: true, userId: auth.userId, object: result });
+  }
+  if (url.pathname.startsWith('/v1/me/mobile/attachments')) {
+    const auth = await requireAuth(request, env);
+    return handleAttachments(request, env, auth.userId);
   }
 
   if (syncObjectMatch && request.method === "PUT") {
@@ -2111,8 +2117,8 @@ async function handleRequest(request, env) {
       on conflict(device_id) do update set
         platform = excluded.platform,
         display_name = excluded.display_name,
-        push_token = excluded.push_token,
-        capabilities_json = excluded.capabilities_json,
+        push_token = coalesce(excluded.push_token, user_devices.push_token),
+        capabilities_json = json_patch(user_devices.capabilities_json, excluded.capabilities_json),
         last_seen_at = excluded.last_seen_at,
         updated_at = excluded.updated_at`
     )
@@ -2148,6 +2154,21 @@ async function handleRequest(request, env) {
     await ensureUser(env, auth.userId);
 
     const message = normalizeDeviceMessagePayload(payload);
+    if (message.payload.attachmentId) await ownedAttachment(env, auth.userId, message.payload.attachmentId);
+    const clientId = payload.clientMessageId;
+    if (clientId && (typeof clientId !== 'string' || !/^[a-zA-Z0-9_-]{8,100}$/.test(clientId)))
+      throw new HttpError(400, 'invalid_client_message_id', 'Invalid client message ID');
+    const requestHash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(message)))))
+      .map(x => x.toString(16).padStart(2, '0')).join('');
+    const existingMessage = async () => {
+      if (!clientId) return null;
+      const prior = await env.DB.prepare('SELECT message_id, request_hash FROM mobile_message_idempotency WHERE user_id = ? AND client_message_id = ?')
+        .bind(auth.userId, clientId).first();
+      if (prior && prior.request_hash !== requestHash) throw new HttpError(409, 'message_id_reused', 'Client message ID was reused with different content');
+      return prior;
+    };
+    const prior = await existingMessage();
+    if (prior) return json({ ok: true, messageId: prior.message_id, deduplicated: true });
     if (message.sourceDeviceId) {
       await ensureOwnedDevice(env, auth.userId, message.sourceDeviceId);
       await touchDevice(env, auth.userId, message.sourceDeviceId);
@@ -2159,7 +2180,7 @@ async function handleRequest(request, env) {
 
     const now = isoNow();
     const messageId = `msg_${randomHex(12)}`;
-    await env.DB.prepare(
+    const insertMessage = env.DB.prepare(
       `insert into device_messages (
         message_id,
         user_id,
@@ -2188,9 +2209,21 @@ async function handleRequest(request, env) {
         now,
         message.expiresAt
       )
-      .run();
-
-    await notifyDeviceRelay(env, auth.userId);
+      ;
+    try {
+      if (clientId) await env.DB.batch([insertMessage, env.DB.prepare('INSERT INTO mobile_message_idempotency VALUES (?, ?, ?, ?)')
+        .bind(auth.userId, clientId, messageId, requestHash)]);
+      else await insertMessage.run();
+    } catch (error) {
+      const raced = await existingMessage();
+      if (raced) return json({ ok: true, messageId: raced.message_id, deduplicated: true });
+      throw error;
+    }
+    const event = { type: 'message', userId: auth.userId, message: { messageId, sourceDeviceId: message.sourceDeviceId,
+      targetDeviceId: message.targetDeviceId, targetPlatform: message.targetPlatform, kind: message.kind,
+      title: message.title, text: message.bodyText, payload: message.payload, createdAt: now } };
+    await notifyDeviceRelay(env, auth.userId, event);
+    ctx.waitUntil(sendOfflinePush(env, auth.userId, event.message));
 
     return json({
       ok: true,
@@ -2204,13 +2237,17 @@ async function handleRequest(request, env) {
     const auth = await requireAuth(request, env);
     const deviceId = normalizeDeviceId(url.searchParams.get("deviceId"));
     await ensureUser(env, auth.userId);
-    await ensureOwnedDevice(env, auth.userId, deviceId);
+    const relayDevice = await ensureOwnedDevice(env, auth.userId, deviceId);
 
     if (!env.DEVICE_RELAY) {
       throw new HttpError(503, "relay_unavailable", "Device relay is not configured");
     }
 
-    return env.DEVICE_RELAY.getByName(auth.userId).fetch(request);
+    const relayHeaders = new Headers(request.headers);
+    relayHeaders.set('X-Yanzi-Relay-User', auth.userId);
+    relayHeaders.set('X-Yanzi-Relay-Device', deviceId);
+    relayHeaders.set('X-Yanzi-Relay-Platform', relayDevice.platform);
+    return env.DEVICE_RELAY.get(env.DEVICE_RELAY.idFromName(auth.userId)).fetch(new Request(request, { headers: relayHeaders }));
   }
 
   if (url.pathname === "/v1/me/mobile/messages/events" && request.method === "GET") {
@@ -2324,25 +2361,6 @@ async function handleRequest(request, env) {
     const auth = await requireAuth(request, env);
     const deviceId = normalizeDeviceId(url.searchParams.get("deviceId"));
 
-    const now = Date.now();
-    const rateLimitKey = `${auth.userId}:${deviceId}`;
-    const lastRequestTime = mobilePollRateLimitMap.get(rateLimitKey) || 0;
-    mobilePollRateLimitMap.set(rateLimitKey, now);
-    if (mobilePollRateLimitMap.size > mobilePollRateLimitMaxEntries) {
-      const oldestKey = mobilePollRateLimitMap.keys().next().value;
-      if (oldestKey !== undefined) {
-        mobilePollRateLimitMap.delete(oldestKey);
-      }
-    }
-    if (now - lastRequestTime < 3000) {
-      return json({
-        ok: true,
-        userId: auth.userId,
-        deviceId,
-        items: []
-      });
-    }
-
     const limit = normalizeMessageLimit(url.searchParams.get("limit"));
     await ensureUser(env, auth.userId);
     const device = await ensureOwnedDevice(env, auth.userId, deviceId);
@@ -2408,10 +2426,14 @@ async function handleRequest(request, env) {
     const payload = await readJson(request);
     const deviceId = normalizeDeviceId(payload.deviceId);
     await ensureUser(env, auth.userId);
-    await ensureOwnedDevice(env, auth.userId, deviceId);
+    const ackDevice = await ensureOwnedDevice(env, auth.userId, deviceId);
     await touchDevice(env, auth.userId, deviceId);
 
     const success = payload.success;
+    const ackMessage = await env.DB.prepare('SELECT source_device_id, target_device_id, target_platform FROM device_messages WHERE user_id = ? AND message_id = ?')
+      .bind(auth.userId, messageId).first();
+    if (!ackMessage || (ackMessage.target_device_id ? ackMessage.target_device_id !== deviceId : ackMessage.target_platform !== ackDevice.platform))
+      throw new HttpError(404, 'message_not_found', 'Message is not addressed to this device');
     const resultText = payload.result || "";
 
     let newStatus = "acked";
@@ -2445,27 +2467,31 @@ async function handleRequest(request, env) {
       result = await env.DB.prepare(
         `update device_messages
          set status = ?,
+             delivered_at = coalesce(delivered_at, ?),
              acked_at = ?,
              payload_json = ?
          where user_id = ?
            and message_id = ?
            and status = 'pending'`
       )
-        .bind(newStatus, isoNow(), updatedPayloadJson, auth.userId, messageId)
+        .bind(newStatus, isoNow(), isoNow(), updatedPayloadJson, auth.userId, messageId)
         .run();
     } else {
       result = await env.DB.prepare(
         `update device_messages
          set status = 'acked',
+             delivered_at = coalesce(delivered_at, ?),
              acked_at = ?
          where user_id = ?
            and message_id = ?
            and status = 'pending'`
       )
-        .bind(isoNow(), auth.userId, messageId)
+        .bind(isoNow(), isoNow(), auth.userId, messageId)
         .run();
     }
 
+    await notifyDeviceRelay(env, auth.userId, { type: 'receipt', userId: auth.userId, sourceDeviceId: ackMessage.source_device_id,
+      messageId, status: newStatus, serverNow: isoNow() });
     return json({
       ok: true,
       userId: auth.userId,
@@ -3092,19 +3118,16 @@ async function markDeviceMessagesDelivered(env, userId, items) {
     .run();
 }
 
-async function notifyDeviceRelay(env, userId) {
+async function notifyDeviceRelay(env, userId, event) {
   if (!env.DEVICE_RELAY) {
     return;
   }
 
   try {
-    await env.DEVICE_RELAY
-      .getByName(userId)
-      .fetch(new Request("https://device-relay.internal/internal/device-relay/notify", {
-        method: "POST"
-      }));
-  } catch {
+    await env.DEVICE_RELAY.get(env.DEVICE_RELAY.idFromName(userId)).publish(event);
+  } catch (error) {
     // The HTTP polling fallback will pick up pending messages if the relay is unavailable.
+    console.warn(JSON.stringify({ event: 'mobile_relay_fallback', error: error.name }));
   }
 }
 

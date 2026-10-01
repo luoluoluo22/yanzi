@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="cc.luoluoluo.yanzi.mobile">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <queries>
         <intent>
@@ -12,9 +11,12 @@
     </queries>
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
@@ -61,11 +63,16 @@
             android:name=".YanmComponentEditActivity"
             android:excludeFromRecents="true"
             android:exported="false"
-            android:taskAffinity="cc.luoluoluo.yanzi.mobile.widget"
+            android:taskAffinity="${applicationId}.widget"
             android:windowSoftInputMode="stateVisible|adjustResize" />
         <service
             android:name=".FloatingWheelService"
             android:exported="false" />
+        <service android:name=".DeviceHeartbeatService"
+            android:foregroundServiceType="remoteMessaging" android:exported="false" />
+        <service android:name=".FirebasePushService" android:enabled="${fcmEnabled}" android:exported="false">
+            <intent-filter><action android:name="com.google.firebase.MESSAGING_EVENT" /></intent-filter>
+        </service>
         <service
             android:name=".FloatingScreenshotService"
             android:exported="false" />
@@ -87,8 +94,8 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="cc.luoluoluo.yanzi.mobile.widget.ACTION_RUN_EXT" />
-                <action android:name="cc.luoluoluo.yanzi.mobile.widget.ACTION_REFRESH_EXT" />
+                <action android:name="${applicationId}.widget.ACTION_RUN_EXT" />
+                <action android:name="${applicationId}.widget.ACTION_REFRESH_EXT" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
@@ -101,7 +108,7 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="cc.luoluoluo.yanzi.mobile.widget.ACTION_REFRESH_YANM" />
+                <action android:name="${applicationId}.widget.ACTION_REFRESH_YANM" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
@@ -119,7 +126,7 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="cc.luoluoluo.yanzi.mobile.widget.ACTION_REFRESH_YANM_COMPONENT" />
+                <action android:name="${applicationId}.widget.ACTION_REFRESH_YANM_COMPONENT" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
@@ -129,7 +136,7 @@
         <!-- FileProvider for camera photos -->
         <provider
             android:name="androidx.core.content.FileProvider"
-            android:authorities="cc.luoluoluo.yanzi.mobile.fileprovider"
+            android:authorities="${applicationId}.fileprovider"
             android:exported="false"
             android:grantUriPermissions="true">
             <meta-data

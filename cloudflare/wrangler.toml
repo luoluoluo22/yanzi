@@ -1,6 +1,16 @@
 name = "yanzi-sync"
 main = "src/index.js"
 compatibility_date = "2026-04-23"
+[[durable_objects.bindings]]
+name = "DEVICE_RELAY"
+class_name = "DeviceRelay"
+
+[[migrations]]
+tag = "device-relay-v1"
+new_sqlite_classes = ["DeviceRelay"]
+
+[triggers]
+crons = ["*/30 * * * *"]
 [[d1_databases]]
 binding = "DB"
 database_name = "openquickhost-sync-db"
