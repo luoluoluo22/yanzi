@@ -2297,10 +2297,17 @@
                             <Grid Margin="0,5">
                                 <StackPanel>
                                     <TextBlock Text="燕窝 (Yan Nest) 万物互联" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="Bold"/>
-                                    <TextBlock Text="汇聚并调度局域网手机、浏览器、本地 API 接口和云同步平台。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                                    <TextBlock Text="连接手机、浏览器和 AI；分别管理本地服务、公网消息、小程序数据与个人备份。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0" TextWrapping="Wrap"/>
                                 </StackPanel>
                             </Grid>
 
+                            <Border Style="{StaticResource SurfaceCard}" Padding="14" Margin="0,12,0,12">
+                                <StackPanel>
+                                    <TextBlock Text="AI 数据接入" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
+                                    <TextBlock Text="一段提示词连接外部 AI：获取清单 → 申请所需数据 → 手机或电脑确认 → 限时访问。" Foreground="{DynamicResource BrushTextSec}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                                    <ContentControl x:Name="YanNestAccessContent" Loaded="YanNestAccessContent_Loaded" Foreground="{DynamicResource BrushTextMain}"/>
+                                </StackPanel>
+                            </Border>
                             <!-- 星网发散拓扑图 (支持悬浮 ToolTip) -->
                             <Border Background="#FF0F172A" CornerRadius="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Margin="0,12,0,0" Height="280" ClipToBounds="True">
                                 <Canvas Width="600" Height="280" HorizontalAlignment="Center" VerticalAlignment="Center">
@@ -2386,7 +2393,7 @@
                                                 <Setter Property="StrokeDashArray" Value="3,3"/>
                                                 <Setter Property="StrokeThickness" Value="1.5"/>
                                                 <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding EnableWanPush}" Value="True">
+                                                    <DataTrigger Binding="{Binding NestOnline}" Value="True">
                                                         <Setter Property="Stroke" Value="#FF22C55E"/>
                                                         <Setter Property="StrokeDashArray" Value="{x:Null}"/>
                                                         <Setter Property="StrokeThickness" Value="2"/>
@@ -2453,7 +2460,7 @@
                                         <Border.ToolTip>
                                             <ToolTip Background="#FF0F172A" BorderBrush="#FF475569" BorderThickness="1" Padding="10">
                                                 <StackPanel Width="220">
-                                                    <TextBlock Text="📱 手机助手" Foreground="White" FontWeight="Bold" FontSize="{DynamicResource FontSizeSmallPlus}"/>
+                                                    <TextBlock Text="📱 手机连接" Foreground="White" FontWeight="Bold" FontSize="{DynamicResource FontSizeSmallPlus}"/>
                                                     <TextBlock Text="当前状态：" Foreground="#FF94A3B8" FontSize="{DynamicResource FontSizeSmall}" Margin="0,6,0,0"/>
                                                     <TextBlock x:Name="MobileToolTipStatusText" Text="已禁用" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Bold" Margin="0,2,0,0" Foreground="#FF9CA3AF"/>
                                                     <TextBlock Text="说明：局域网手机互联桥梁。支持手机与电脑进行日常会话、将手机发送的文件存入电脑、通过手机直接启动电脑端的自动化脚本，或执行远程命令行。" Foreground="#FF64748B" FontSize="10.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
@@ -2476,7 +2483,7 @@
                                         </Border.Effect>
                                         <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                                             <Path Data="{local:IconGeometry cellphone}" Width="{DynamicResource FontSizeNormalPlus}" Height="{DynamicResource FontSizeNormalPlus}" Stretch="Uniform" HorizontalAlignment="Center" Fill="{DynamicResource BrushTextMain}"/>
-                                            <TextBlock Text="手机助手" Foreground="#FFE2E8F0" FontSize="9" Margin="0,2,0,0" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="手机连接" Foreground="#FFE2E8F0" FontSize="9" Margin="0,2,0,0" HorizontalAlignment="Center"/>
                                         </StackPanel>
                                     </Border>
 
@@ -2523,12 +2530,12 @@
                                                 <StackPanel Width="220">
                                                     <StackPanel Orientation="Horizontal">
                                                         <Path Data="{local:IconGeometry mdi:cloud-outline}" Fill="White" Width="12" Height="12" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                                                        <TextBlock Text="同步平台" Foreground="White" FontWeight="Bold" FontSize="{DynamicResource FontSizeSmallPlus}"/>
+                                                        <TextBlock Text="个人仓库" Foreground="White" FontWeight="Bold" FontSize="{DynamicResource FontSizeSmallPlus}"/>
                                                     </StackPanel>
                                                     <TextBlock Text="当前状态：" Foreground="#FF94A3B8" FontSize="{DynamicResource FontSizeSmall}" Margin="0,6,0,0"/>
                                                     <TextBlock Text="同步已启用" Foreground="#FF22C55E" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Bold" Margin="0,2,0,0" Visibility="{Binding EnablePersonalSync, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                                    <TextBlock Text="未启用" Foreground="#FF9CA3AF" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Bold" Margin="0,2,0,0" Visibility="{Binding EnablePersonalSync, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
-                                                    <TextBlock Text="说明：多设备偏好同步。基于 WebDav 协议将你的鼠标触控偏好、快捷小程序组、系统偏好设置备份并无缝漫游到你的其他电脑设备上。" Foreground="#FF64748B" FontSize="10.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                                                    <TextBlock Text="未连接" Foreground="#FF9CA3AF" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Bold" Margin="0,2,0,0" Visibility="{Binding EnablePersonalSync, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
+                                                    <TextBlock Text="个人 WebDAV 仓库用于配置备份与恢复；小程序共享数据和账号配置使用独立的账号同步。" Foreground="#FF64748B" FontSize="10.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
                                                 </StackPanel>
                                             </ToolTip>
                                         </Border.ToolTip>
@@ -2545,7 +2552,7 @@
                                         </Border.Style>
                                         <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                                             <Path Data="{local:IconGeometry cloud-outline}" Width="{DynamicResource FontSizeNormalPlus}" Height="{DynamicResource FontSizeNormalPlus}" Stretch="Uniform" HorizontalAlignment="Center" Fill="{DynamicResource BrushTextMain}"/>
-                                            <TextBlock Text="同步平台" Foreground="#FFE2E8F0" FontSize="9" Margin="0,2,0,0" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="个人仓库" Foreground="#FFE2E8F0" FontSize="9" Margin="0,2,0,0" HorizontalAlignment="Center"/>
                                         </StackPanel>
                                     </Border>
 
@@ -2556,12 +2563,12 @@
                                                 <StackPanel Width="220">
                                                     <StackPanel Orientation="Horizontal">
                                                         <Path Data="{local:IconGeometry mdi:cloud-sync-outline}" Fill="White" Width="12" Height="12" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                                                        <TextBlock Text="燕子云" Foreground="White" FontWeight="Bold" FontSize="{DynamicResource FontSizeSmallPlus}"/>
+                                                        <TextBlock Text="账号公网" Foreground="White" FontWeight="Bold" FontSize="{DynamicResource FontSizeSmallPlus}"/>
                                                     </StackPanel>
                                                     <TextBlock Text="当前状态：" Foreground="#FF94A3B8" FontSize="{DynamicResource FontSizeSmall}" Margin="0,6,0,0"/>
-                                                    <TextBlock Text="公网推送就绪" Foreground="#FF22C55E" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Bold" Margin="0,2,0,0" Visibility="{Binding EnableWanPush, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                                    <TextBlock Text="未启用" Foreground="#FF9CA3AF" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Bold" Margin="0,2,0,0" Visibility="{Binding EnableWanPush, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
-                                                    <TextBlock Text="说明：广域网消息中继。当手机与电脑处于不同网络（例如手机在使用 5G 蜂窝网络）时，使用云端通道确保消息推送和操作指令能即时送达电脑。" Foreground="#FF64748B" FontSize="10.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                                                    <TextBlock Text="账号公网可用" Foreground="#FF22C55E" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Bold" Margin="0,2,0,0" Visibility="{Binding NestOnline, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                    <TextBlock Text="未连接" Foreground="#FF9CA3AF" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Bold" Margin="0,2,0,0" Visibility="{Binding NestOnline, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
+                                                    <TextBlock Text="账号公网提供消息、附件、应用分发和授权数据接口。手机强制停止后通知送达仍依赖系统推送。" Foreground="#FF64748B" FontSize="10.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
                                                 </StackPanel>
                                             </ToolTip>
                                         </Border.ToolTip>
@@ -2569,7 +2576,7 @@
                                             <Style TargetType="Border">
                                                 <Setter Property="BorderBrush" Value="#FF475569"/>
                                                 <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding EnableWanPush}" Value="True">
+                                                    <DataTrigger Binding="{Binding NestOnline}" Value="True">
                                                         <Setter Property="BorderBrush" Value="#FF22C55E"/>
                                                         <Setter Property="Background" Value="#FF064E3B"/>
                                                     </DataTrigger>
@@ -2578,7 +2585,7 @@
                                         </Border.Style>
                                         <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                                             <Path Data="{local:IconGeometry cloud-sync-outline}" Width="{DynamicResource FontSizeNormalPlus}" Height="{DynamicResource FontSizeNormalPlus}" Stretch="Uniform" HorizontalAlignment="Center" Fill="{DynamicResource BrushTextMain}"/>
-                                            <TextBlock Text="燕子云" Foreground="#FFE2E8F0" FontSize="9" Margin="0,2,0,0" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="账号公网" Foreground="#FFE2E8F0" FontSize="9" Margin="0,2,0,0" HorizontalAlignment="Center"/>
                                         </StackPanel>
                                     </Border>
                                 </Canvas>
@@ -2601,7 +2608,7 @@
                                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                             <Ellipse x:Name="BrowserStatusDot" Width="6" Height="6" Fill="#FF9CA3AF" VerticalAlignment="Center"/>
                                             <TextBlock x:Name="BrowserStatusText" Text="未连接" Tag="Disconnected" Foreground="#FF9CA3AF" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Bold" Margin="6,0,0,0" VerticalAlignment="Center"/>
-                                            <TextBlock Text=" (53919)" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" Margin="4,0,0,0" VerticalAlignment="Center"/>
+                                            <TextBlock Text="{Binding AgentApiPort, StringFormat={} ({0})}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" Margin="4,0,0,0" VerticalAlignment="Center"/>
                                         </StackPanel>
                                     </StackPanel>
                                 </Border>
@@ -2611,11 +2618,11 @@
                                     <StackPanel>
                                         <Grid>
                                             <StackPanel Width="120" HorizontalAlignment="Left">
-                                                <TextBlock Text="📱 手机助手" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock Text="📱 手机连接" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
                                             </StackPanel>
                                             <CheckBox Style="{StaticResource RaycastSwitchStyle}" IsChecked="{Binding EnableLanSync, Mode=TwoWay}" Click="EnableLanSync_Click" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                                         </Grid>
-                                        <TextBlock Text="实现手机与电脑聊天、手机端执行电脑小程序、手机与电脑文件互传，以及在手机上安全运行电脑的命令行指令。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" TextWrapping="Wrap" Margin="0,8,0,0" Height="46"/>
+                                        <TextBlock Text="账号公网支持聊天、图片文件和小程序数据同步；此开关控制局域网设备发现。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" TextWrapping="Wrap" Margin="0,8,0,0" Height="46"/>
                                         <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,8,0,8"/>
                                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                             <Ellipse x:Name="MobileStatusDot" Width="6" Height="6" Fill="#FF9CA3AF" VerticalAlignment="Center"/>
@@ -2645,7 +2652,7 @@
                                             </Grid.ColumnDefinitions>
                                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                                 <Ellipse Width="6" Height="6" Fill="#FF22C55E" VerticalAlignment="Center" Visibility="{Binding EnableAgentApi, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                                <TextBlock Text="端口: 53919" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmall}" Margin="6,0,0,0" VerticalAlignment="Center" Visibility="{Binding EnableAgentApi, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                <TextBlock x:Name="NestApiStatus" Text="本地服务状态检查中" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmall}" Margin="6,0,0,0" VerticalAlignment="Center" Visibility="{Binding EnableAgentApi, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                                 <Ellipse Width="6" Height="6" Fill="#FF9CA3AF" VerticalAlignment="Center" Visibility="{Binding EnableAgentApi, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
                                                 <TextBlock Text="已禁用" Foreground="#FF9CA3AF" FontSize="{DynamicResource FontSizeSmall}" Margin="6,0,0,0" VerticalAlignment="Center" Visibility="{Binding EnableAgentApi, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
                                             </StackPanel>
@@ -2654,29 +2661,15 @@
                                     </StackPanel>
                                 </Border>
 
-                                <!-- 卡片 4：燕子云 -->
+                                <!-- 卡片 4：账号公网 -->
                                 <Border Style="{StaticResource SurfaceCard}" Padding="14" Margin="0,0,8,12" Height="170">
                                     <StackPanel>
-                                        <Grid>
-                                            <StackPanel Width="120" HorizontalAlignment="Left">
-                                                <StackPanel Orientation="Horizontal">
-                                                    <Path Data="{local:IconGeometry mdi:cloud-sync-outline}" Fill="{DynamicResource BrushTextMain}" Width="12" Height="12" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                                                    <TextBlock Text="燕子云" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-                                                </StackPanel>
-                                            </StackPanel>
-                                            <CheckBox Style="{StaticResource RaycastSwitchStyle}" IsChecked="{Binding EnableWanPush, Mode=TwoWay}" Click="SaveSettingsToggle_Click" HorizontalAlignment="Right" VerticalAlignment="Center"/>
-                                        </Grid>
-                                        <StackPanel Visibility="{Binding EnableWanPush, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                            <TextBox Style="{DynamicResource GlobalTextBoxStyle}" Text="{Binding WanPushUuid, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Height="28" Padding="6,0" FontSize="{DynamicResource FontSizeTiny}" Background="{DynamicResource BrushInputBG}" Foreground="{DynamicResource BrushTextMain}" BorderBrush="{DynamicResource BrushBorder}" Margin="0,6,0,0"/>
-                                            <StackPanel HorizontalAlignment="Right" VerticalAlignment="Center" Orientation="Horizontal" Margin="0,6,0,0" Visibility="{Binding IsWanPushSaveStatusVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                                <Ellipse Width="6" Height="6" Fill="#22C55E" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                                                <TextBlock Text="已保存" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" VerticalAlignment="Center"/>
-                                            </StackPanel>
-                                        </StackPanel>
-                                        <TextBlock Text="当手机与电脑不在同一个 Wi-Fi 时，通过加密通道实现远程接收通知与消息推送。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" TextWrapping="Wrap" Margin="0,8,0,0" Height="46" Visibility="{Binding EnableWanPush, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
+                                        <TextBlock Text="账号公网" Foreground="{DynamicResource BrushTextMain}" FontWeight="SemiBold"/>
+                                        <TextBlock Text="登录账号后连接公网消息、应用分发和小程序数据。无需填写旧推送 UUID。" Foreground="{DynamicResource BrushTextSec}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                                        <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,8,0,8"/>
+                                        <TextBlock x:Name="NestCloudStatus" Text="正在检查公网状态…" Foreground="{DynamicResource BrushTextSec}" TextWrapping="Wrap"/>
                                     </StackPanel>
                                 </Border>
-
                                 <!-- 卡片 5：同步平台 -->
                                 <Border Style="{StaticResource SurfaceCard}" Padding="14" Margin="0,0,8,12" Height="170">
                                     <StackPanel>
@@ -2684,20 +2677,20 @@
                                             <StackPanel Width="120" HorizontalAlignment="Left">
                                                 <StackPanel Orientation="Horizontal">
                                                     <Path Data="{local:IconGeometry mdi:cloud-outline}" Fill="{DynamicResource BrushTextMain}" Width="12" Height="12" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                                                    <TextBlock Text="同步平台" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock Text="个人仓库" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
                                                 </StackPanel>
                                             </StackPanel>
                                             <CheckBox Style="{StaticResource RaycastSwitchStyle}" IsChecked="{Binding EnablePersonalSync, Mode=TwoWay}" Click="SaveWebDavSettingsButton_Click" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                                         </Grid>
-                                        <TextBlock Text="利用个人云盘（如 WebDav）在多台电脑之间无缝同步鼠标小程序、面板组与系统偏好设置。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" TextWrapping="Wrap" Margin="0,8,0,0" Height="46"/>
+                                        <TextBlock Text="账号配置和小程序数据由燕子账号同步；此开关控制个人 WebDAV 仓库备份。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" TextWrapping="Wrap" Margin="0,8,0,0" Height="46"/>
                                         <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,8,0,8"/>
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*"/>
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
-                                            <TextBlock Text="上次: 刚刚" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" VerticalAlignment="Center" Visibility="{Binding EnablePersonalSync, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                            <Button Grid.Column="1" Content="立即同步" Style="{StaticResource SecondaryBtn}" Height="22" Padding="8,0" FontSize="{DynamicResource FontSizeTiny}" Click="SaveWebDavSettingsButton_Click" Visibility="{Binding EnablePersonalSync, Converter={StaticResource BooleanToVisibilityConverter}}" VerticalAlignment="Center"/>
+                                            <TextBlock Text="个人仓库备份" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" VerticalAlignment="Center" Visibility="{Binding EnablePersonalSync, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                            <Button Grid.Column="1" Content="保存配置" Style="{StaticResource SecondaryBtn}" Height="22" Padding="8,0" FontSize="{DynamicResource FontSizeTiny}" Click="SaveWebDavSettingsButton_Click" Visibility="{Binding EnablePersonalSync, Converter={StaticResource BooleanToVisibilityConverter}}" VerticalAlignment="Center"/>
                                             <TextBlock Text="未启用" Foreground="#FF9CA3AF" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Bold" VerticalAlignment="Center" Visibility="{Binding EnablePersonalSync, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
                                         </Grid>
                                     </StackPanel>
@@ -2708,7 +2701,7 @@
                             <Border Style="{StaticResource SurfaceCard}" Padding="14" Margin="0,2,0,20">
                                 <StackPanel>
                                     <TextBlock Text="说明" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
-                                    <TextBlock Text="{local:TermFormat '手机端与浏览器均通过 PC 端 [AppName] 53919 统一进行消息中转，交互动作完全在本地加密处理，保证安全。'}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                                    <TextBlock Text="局域网直连与账号公网是两条独立通道。公网传输使用 HTTPS，聊天可使用实时连接；授权请求约每 5 秒检查。外部 AI 仅能访问你确认的数据范围，不会获得本地 API 令牌或账号密码。手机强制停止后仍需系统推送才能保证通知到达。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" TextWrapping="Wrap" Margin="0,8,0,0"/>
                                 </StackPanel>
                             </Border>
                         </StackPanel>

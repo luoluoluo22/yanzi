@@ -30,7 +30,7 @@ public final class ApplicationCatalogActivity extends Activity {
         status=new TextView(this);status.setText("账号应用跨设备可见；安装由这台手机确认。");root.addView(status);
         Button refresh=new Button(this);refresh.setText("刷新应用");refresh.setOnClickListener(v->load());root.addView(refresh);
         Button authorize=new Button(this);authorize.setText("授权开发者应用访问数据");authorize.setOnClickListener(v->authorize());root.addView(authorize);
-        Button connect=new Button(this);connect.setText("复制 AI / 外部应用接入地址");connect.setOnClickListener(v->createInvitation());root.addView(connect);
+        Button connect=new Button(this);connect.setText("AI 数据清单 / 接入提示词");connect.setOnClickListener(v->createMultiInvitation());root.addView(connect);
         ScrollView scroll=new ScrollView(this);list=new LinearLayout(this);list.setOrientation(1);scroll.addView(list);root.addView(scroll);setContentView(root);
         try{accountId=ExtensionStorageProvider.accountId(token);load();}catch(Exception e){status.setText("请先登录燕子账号。");}
     }
@@ -70,6 +70,24 @@ public final class ApplicationCatalogActivity extends Activity {
                     .setNegativeButton("撤销地址",(dialog,which)->work(()->{json("/v1/applications/access-invites/"+result.getString("address").substring(result.getString("address").lastIndexOf('/')+1),null,true,"DELETE");ui(()->status.setText("接入地址已撤销"));})).show());
             })).show();
     }
+    private void createMultiInvitation(){work(()->{
+        JSONArray resources=json("/v1/applications/access-resources",null,true).getJSONArray("resources");checkAccount();
+        ui(()->{
+            LinearLayout form=new LinearLayout(this);form.setOrientation(1);java.util.List<CheckBox> choices=new java.util.ArrayList<>();
+            CheckBox all=new CheckBox(this);all.setText("全选当前清单");all.setChecked(true);form.addView(all);
+            LinearLayout rows=new LinearLayout(this);rows.setOrientation(1);ScrollView scroll=new ScrollView(this);scroll.addView(rows);form.addView(scroll,new LinearLayout.LayoutParams(-1,(int)(200*getResources().getDisplayMetrics().density)));
+            for(int i=0;i<resources.length();i++){JSONObject scope=resources.optJSONObject(i);CheckBox choice=new CheckBox(this);choice.setChecked(true);choice.setText(scope.optString("name")+" · "+scope.optString("key"));choices.add(choice);rows.addView(choice);}
+            all.setOnClickListener(v->{for(CheckBox c:choices)c.setChecked(all.isChecked());});
+            CheckBox writable=new CheckBox(this);writable.setText("允许申请增删改查（默认只读）");form.addView(writable);
+            new android.app.AlertDialog.Builder(this).setTitle("AI 可申请的数据清单").setMessage("只提供所选数据的目录。AI 可申请部分或全部，仍需你再次确认。地址有效 7 天。").setView(form).setNegativeButton("取消",null)
+                .setPositiveButton("生成提示词",(d,w)->{JSONArray selected=new JSONArray();for(int i=0;i<choices.size();i++)if(choices.get(i).isChecked())selected.put(resources.optJSONObject(i));work(()->{
+                    JSONObject result=json("/v1/applications/access-invites",new JSONObject().put("resources",selected).put("access",writable.isChecked()?"read-write":"read"),true,"POST");checkAccount();
+                    String address=result.getString("address"),prompt="请访问燕子数据接入地址："+address+"\n先 GET 地址和 resourceList 获取数据清单。根据我的任务只申请必要的 scopes；仅在我明确要求全部时申请 scopes=all。提交 clientName，告诉我核对码，等待手机或电脑确认，按 poll 领取限时授权，再调用返回的 resources 数据接口。修改前读取最新版本；未经我明确要求不要删除数据。";
+                    ui(()->new android.app.AlertDialog.Builder(this).setTitle("接入提示词已生成").setMessage(prompt).setPositiveButton("复制提示词",(dialog,which)->{android.content.ClipData clip=android.content.ClipData.newPlainText("燕子 AI 接入",prompt);android.os.PersistableBundle extras=new android.os.PersistableBundle();extras.putBoolean("android.content.extra.IS_SENSITIVE",true);clip.getDescription().setExtras(extras);((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(clip);})
+                        .setNegativeButton("撤销地址",(dialog,which)->work(()->{json("/v1/applications/access-invites/"+address.substring(address.lastIndexOf('/')+1),null,true,"DELETE");ui(()->status.setText("接入地址已撤销"));})).show());
+                });}).show();
+        });
+    });}
     @Override protected void onPause(){ExternalAccessManager.background(this);super.onPause();}
     private interface Task{void run()throws Exception;}
     private void work(Task task){executor.execute(()->{try{checkAccount();task.run();}catch(Exception e){ui(()->status.setText("操作失败："+e.getMessage()));}});}

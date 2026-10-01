@@ -1,5 +1,17 @@
 # 外部 AI / 应用在线数据接口
 
+## 燕窝多数据入口
+
+设置 → 燕窝 → 顶部「AI 数据接入」。先刷新并选择可申请的数据清单，再选择只读或增删改查，生成提示词。可复制提示词，或「复制并打开 AI」打开 ChatGPT 后粘贴发送；不会自动提交对话。手机应用中心同样提供清单和提示词。
+
+主账号 GET `/v1/applications/access-resources` 获取已发布数据声明及自己已有共享数据的元数据目录，不包含数据正文。POST `/v1/applications/access-invites` body 支持 `{ "resources": "all", "access": "read" }`，或明确 resources 数组，每项有 extensionId、key、access。全部仅包含生成地址时清单中的具体资源，后续新增的数据不会进入旧授权。
+
+AI GET 接入地址及其 `resourceList` 得到资源清单；POST requests 的 `scopes` 为所需资源数组，或 `"all"`。设备弹窗逐项显示并可取消选择。多资源申请批准时必须明确提交 scopes，旧客户端只会看到待确认申请，但无法用单资源的旧确认请求批准多资源权限。
+
+批准后响应 `resources` 数组为最终允许范围，每项含 access 和独立 data 地址。未确认项、未选 key 和未来新数据均返回 403。各项 access 为准；逐条接口只用于有 records-v1 schema 的资源，其余通过 document 接口及 SDK 操作。
+
+主账号 GET `/v1/applications/access-grants` 列出有效外部授权；DELETE `/v1/applications/access-grants/{requestId}` 立即撤销。燕窝「查看 / 撤销已授权应用」提供同样的操作。
+
 电脑托盘菜单「AI / 外部应用授权」或手机应用中心「复制 AI / 外部应用接入地址」创建资源地址。日历选择 `taskbar-calendar` / `calendar.v1.json`；默认只读，勾选后可申请增删改查。地址有效 7 天，拥有地址只能申请，无法读取数据。每次申请须由已登录电脑或手机确认，申请有效 5 分钟，批准的令牌有效 1 小时。
 
 把生成的完整 `https://sync.luoluoluo.cc.cd/connect/...` 地址交给能发 HTTP 请求的 AI。通用入口说明是 `https://sync.luoluoluo.cc.cd/ai`；通用入口不属于某个账号，不会弹授权窗口。

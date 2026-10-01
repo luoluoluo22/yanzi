@@ -44,6 +44,13 @@ export async function authorizeData(request,env,api,extensionId,key,write=false)
     const claims=await api.verifyToken(env,header.slice(7).trim());
     if (claims.type==='extension-access') {
       const grant=await api.read(env,claims.sub,'applicationGrant.v1.'+claims.grantId);
+      if(grant?.payload?.scopes){
+        if(grant.deleted||grant.payload.expiresAt<=Date.now()/1000)throw new api.HttpError(403,'scope_denied','Access denied or revoked');
+        const scope=grant.payload.scopes.find(s=>s.extensionId===extensionId&&s.key===key);
+        if(!scope)throw new api.HttpError(403,'scope_denied','Resource was not approved');
+        if(write&&scope.access!=='read-write')throw new api.HttpError(403,'read_only','Read-only resource');
+        return {userId:claims.sub};
+      }
       if (claims.extensionId!==extensionId || !grant || grant.deleted || grant.payload?.extensionId!==extensionId ||
           grant.payload.access!==claims.access || grant.payload.expiresAt<=Date.now()/1000 ||
           (grant.payload.key && (grant.payload.key!==key || claims.key!==key)))

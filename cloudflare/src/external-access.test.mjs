@@ -8,10 +8,13 @@ import {handleRecordApi} from './record-api.js';
 import {handleApplicationPlatform} from './application-platform.js';
 globalThis.crypto??=webcrypto;
 const migration=await readFile(new URL('../migrations/0020_external_access.sql',import.meta.url),'utf8');
+const scopeMigration=await readFile(new URL('../migrations/0021_external_access_scopes.sql',import.meta.url),'utf8');
 const profile=JSON.parse(await readFile(new URL('../../extensions/taskbar-calendar/api-schema.json',import.meta.url),'utf8'));
 class HttpError extends Error {constructor(status,code,message){super(message);this.status=status;this.code=code;}}
 function fixture(){
-  const db=new DatabaseSync(':memory:');db.exec(migration);
+  const db=new DatabaseSync(':memory:');db.exec(migration);db.exec(scopeMigration);
+  db.exec('CREATE TABLE user_sync_objects(user_id TEXT,object_id TEXT,deleted INTEGER,payload_json TEXT)');
+  db.prepare('INSERT INTO user_sync_objects VALUES(?,?,0,?)').run('owner-account','extensionData.v1.notes',JSON.stringify({extensionId:'quick-notes',key:'notes.v1.json'}));
   const objects=new Map(),tokens=new Map();let revision=0;
   const env={DB:{prepare(sql){const statement=db.prepare(sql);let params=[];return{bind(...p){params=p;return this;},async first(){return statement.get(...params)||null;},async all(){return{results:statement.all(...params)};},async run(){return{meta:statement.run(...params)};}}},async batch(statements){return Promise.all(statements.map(s=>s.run()));}},
     PACKAGES:{get:async()=>({size:4096,text:async()=>JSON.stringify({applications:[{applicationId:'taskbar-calendar',apiSchema:profile}]})})}};
@@ -65,4 +68,23 @@ test('read-only, rejected, expired, revoked invitations and grants cannot confer
   const denied=await pending(f,address,'read');await f.request('/v1/applications/access-requests/'+denied.requestId+'/decision','POST',{approve:false},'owner');assert.equal((await f.request(denied.poll.url,'GET',null,denied.requestSecret)).status,403);
   const expired=await pending(f,address,'read');f.db.prepare('UPDATE external_access_requests SET expires_at=0 WHERE request_id=?').run(expired.requestId);assert.equal((await f.request(expired.poll.url,'GET',null,expired.requestSecret)).status,410);
   const raw=address.split('/').at(-1);await f.request('/v1/applications/access-invites/'+raw,'DELETE',null,'owner');assert.equal((await f.request(address)).status,404);
+});
+test('list metadata, request subset or all snapshot; approval may narrow permissions; unselected and future resources denied',async()=>{
+  const f=fixture();const inventory=await(await f.request('/v1/applications/access-resources','GET',null,'owner')).json();assert.equal(inventory.resources.length,2);assert.equal(JSON.stringify(inventory).includes('content'),false);
+  const invitation=await(await f.request('/v1/applications/access-invites','POST',{resources:'all',access:'read-write'},'owner')).json();
+  const list=await(await f.request(invitation.address+'/resources')).json();assert.equal(list.resources.length,2);
+  let r=await f.request(invitation.address+'/requests','POST',{clientName:'AI',scopes:[{extensionId:'private',key:'secret'}]});assert.equal(r.status,403);
+  r=await f.request(invitation.address+'/requests','POST',{clientName:'AI',scopes:'all'});assert.equal(r.status,202);const p=await r.json();
+  const decision='/v1/applications/access-requests/'+p.requestId+'/decision';assert.equal((await f.request(decision,'POST',{approve:true},'owner')).status,400);
+  const allowed=[{extensionId:'taskbar-calendar',key:'calendar.v1.json',access:'read'}];assert.equal((await f.request(decision,'POST',{approve:true,scopes:allowed},'owner')).status,200);
+  const grant=await(await f.request(p.poll.url,'GET',null,p.requestSecret)).json();assert.equal(grant.resources.length,1);assert.equal(grant.resources[0].access,'read');
+  assert.equal((await f.request(grant.resources[0].data.records,'GET',null,grant.accessToken)).status,200);
+  assert.equal((await f.request(grant.resources[0].data.records,'POST',{title:'no',date:'2026-10-01'},grant.accessToken)).status,403);
+  assert.equal((await f.request('/v1/extension-data/quick-notes?key=notes.v1.json','GET',null,grant.accessToken)).status,403);
+  assert.equal((await f.request('/v1/extension-data/new-app?key=future.json','GET',null,grant.accessToken)).status,403);
+  const grants=await(await f.request('/v1/applications/access-grants','GET',null,'owner')).json();assert.equal(grants.grants.length,1);
+  assert.equal((await f.request('/v1/applications/access-grants/'+p.requestId,'DELETE',null,'owner')).status,200);
+  assert.equal((await f.request(grant.resources[0].data.records,'GET',null,grant.accessToken)).status,403);
+  r=await f.request(invitation.address+'/requests','POST',{clientName:'Subset AI',scopes:allowed});assert.equal(r.status,202);
+  const rows=await(await f.request('/v1/applications/access-requests','GET',null,'owner')).json();assert.equal(rows.requests[0].scopes.length,1);
 });

@@ -98,6 +98,7 @@ public sealed partial class LocalAgentApiServer : IDisposable
     // Exposed only inside the desktop application for its local Settings window.
     // Never serialize this into /docs or any unauthenticated API response.
     internal string TokenForSettings => _token;
+    internal bool IsListening => _listener.IsListening;
     private readonly Action<string?> _onMutated;
     private readonly Action? _onTriggerSync;
     private readonly Func<string, Task<(bool ok, string message)>>? _onPublishExtension;
