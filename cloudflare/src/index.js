@@ -1,5 +1,6 @@
 import { handleAttachments, ownedAttachment, cleanupAttachments, MessagingError } from './mobile-attachments.js';
 import { sendOfflinePush } from './mobile-push.js';
+import { handleApplicationPlatform } from './application-platform.js';
 export { DeviceRelay } from './device-relay.js';
 const TOKEN_TTL_SECONDS = 60 * 60 * 24 * 30;
 const DEVICE_ONLINE_WINDOW_MS = 2 * 60 * 1000;
@@ -87,6 +88,12 @@ async function handleRequest(request, env, ctx) {
   if (request.method === "OPTIONS") {
     return withCors(new Response(null, { status: 204 }));
   }
+
+  const applicationResponse = await handleApplicationPlatform(request, env, {
+    requireAuth, verifyToken, signToken, read: readUserSyncObject,
+    write: writeUserSyncObject, json, HttpError
+  });
+  if (applicationResponse) return applicationResponse;
 
   if (url.pathname.startsWith("/downloads/") && request.method === "GET") {
     const key = url.pathname.substring(1);
@@ -2654,7 +2661,7 @@ async function requireAuth(request, env) {
     const token = header.slice(7).trim();
     try {
       const payload = await verifyToken(env, token);
-      if (payload?.sub && payload?.username) {
+      if (payload?.sub && payload?.username && !payload.type) {
         return {
           userId: String(payload.sub),
           username: String(payload.username),

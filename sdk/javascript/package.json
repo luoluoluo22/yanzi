@@ -1,0 +1,1 @@
+{"name":"@yanzi/data","version":"0.1.0","type":"module","exports":"./yanzi-data.js","scripts":{"test":"node --test"},"private":true}

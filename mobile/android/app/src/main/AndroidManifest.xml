@@ -2,6 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <queries>
+        <intent><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent>
         <intent>
             <action android:name="android.intent.action.TTS_SERVICE" />
         </intent>
@@ -108,6 +109,7 @@
                 android:resource="@xml/widget_extensions_info" />
         </receiver>
 
+        <activity android:name=".ApplicationCatalogActivity" android:exported="false" />
         <!-- Yanm Widget Provider -->
         <receiver android:name=".widget.YanmWidgetProvider"
             android:label="燕幕组件列表 (2x4)"
