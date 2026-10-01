@@ -120,7 +120,8 @@ try {
         $crashPid=(@(& $adb -s $serial shell pidof $package)[0]).Trim()
         if ((@(& $adb -s $serial logcat --pid=$crashPid -d -t 300) -join "`n") -match 'FATAL EXCEPTION|ANR in') {throw 'Physical phone crashed during public verification'}
     }
-    [IO.File]::WriteAllText((Join-Path $artifact 'result.txt'),'PUBLIC_CHAT_WINDOW_TO_PHONE=PASSED')
+    $summary=if ($TextOnly) {'PUBLIC_CHAT_WINDOW_TO_PHONE=PASSED'} else {'PUBLIC_BIDIRECTIONAL_REALTIME_ATTACHMENTS_AND_RESTART=PASSED'}
+    [IO.File]::WriteAllText((Join-Path $artifact 'result.txt'),$summary)
 } finally {
     foreach ($id in $testAttachments) {
         try { PublicRequest "/v1/me/mobile/attachments/$id" 'DELETE' | Out-Null } catch { Write-Warning 'Temporary public attachment cleanup deferred.' }

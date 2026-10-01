@@ -24,17 +24,24 @@ FCM 开通后：
 
 ## 发布前置条件
 
-本轮尚未部署新后端。旧线上版本无法接收新附件 API，也未启用新的实时连接。
+2026-10-01 已通过 Git main 自动构建部署新后端。代码初次推送为 3bb3e0f，发布链路修正为 61acb66，两次 Cloudflare 构建均成功。线上 D1 0018 迁移已完成，DEVICE_RELAY 命名空间及每 30 分钟清理任务已确认生效，原有鉴权/邮件 Secret 绑定保留。
 
 必须先应用 D1 migrations/0018_mobile_attachments.sql，并部署 DEVICE_RELAY Durable Object 绑定和首次 device-relay-v1 迁移。后端发布遵守 .agents/AGENTS.md：仅 Git main 推送触发 Cloudflare Git 自动构建，禁止本地 wrangler deploy。上线后依据仓库要求处理已生效的 migration 配置。生产部署前需核对 Git 构建配置中的数据库迁移步骤；当前仓库没有对应自动迁移 workflow。
 
-先部署兼容旧客户端的后端，再发布新客户端，最后开通并验证系统推送。部署后需再跑实际公网、不同 Wi-Fi/蜂窝网络双向文字/图片/文件和延迟测试。当前本地真机结果不能作为海外公网时延证据。
+已在当前真实网络上验证 Windows 与 Android Dev 的公网通信；生产手机包仍保持原版本，未升级或清空。具体国产厂商推送、不同运营商/网络覆盖、Android 13/14+ 真机仍待额外配置与对应设备验收。
+
+发现旧 pre-push 配置会强制部署历史版本，已移除该行为，仅保留原有 Secret 同步。PC 在旧后端回退至 SSE 时，现在每两分钟重新尝试 WebSocket，避免后台发布后一直停留在旧通信模式。
+
+最终公网回归产物：%TEMP%\YanziDev\public-chat\59948230f72141d68bc291e5fa7c21d4。实际 WPF 聊天窗口无 IP、失效 IP 两种文字发送均成功；PC→手机及手机→PC 文件（约 600 KB）/图片均完成下载并验证 SHA256，两端 WebSocket 状态正常，手机进程重启后补收 pending 消息成功。全程未主动熄屏，临时云附件已清理。
+
+最终 10 条公网通知从服务端提交到手机 ACK 的中位耗时为 2934 ms，p95/样本最慢为 4371 ms。之前两组中位耗时为 2562/3253 ms，最慢一次为 6563 ms，并观察到手机 HTTP 超时后自动恢复。ACK 包含通知处理和回传网络开销，并非通知界面显示延迟。不能承诺微信级时延，也不能把网络波动直接归因于 Cloudflare 免费套餐。长连接消除了定期轮询等待，但当前网络路径仍有秒级抖动。
 
 ## 验证入口
 
 - scripts/test-real-phone-message-bridge.ps1：临时本地 Worker、真实 Windows 聊天窗口、实体 Android Dev；恢复原偏好并核对生产包不变。
   默认不主动熄屏；只有最终验收确需时，显式传入 -IncludeFinalScreenOff，在全部功能测试结束后执行一次。
 - scripts/test-mobile-attachments.ps1：校验错误、Range、删除、重复消息与 ID 冲突。
+- scripts/test-real-phone-public-chat.ps1：已有账号的公网双向附件、两端长连接、通知 ACK 延迟、进程重启补收；-TextOnly 可只跑两个文字入口。
 - node --experimental-default-type=module cloudflare/tests/mobile-push.test.mjs：真实 RSA JWT 签名验证、模拟服务商传输、无配置与失败分支。
 - FCM 可选构建已用临时无效配置编译成功，未请求真实推送服务；最终测试 APK 使用无 FCM 配置构建。
 
