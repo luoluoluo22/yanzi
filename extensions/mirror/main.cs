@@ -112,6 +112,8 @@ public sealed class MirrorService
 
     public bool IsRunning { get; private set; }
     public int ProcessId => Process.GetCurrentProcess().Id;
+    public string StorageFilePath => _storageFilePath;
+    public string StorageDirectory => System.IO.Path.GetDirectoryName(_storageFilePath) ?? string.Empty;
 
     private YanziActionContext? _context;
     private readonly TaskCompletionSource<bool> _stopTcs = new();
@@ -650,7 +652,50 @@ public sealed class MirrorWindow : Window
             VerticalAlignment = VerticalAlignment.Center
         };
 
-        var clearBtn = CreateActionButton("清空", () =>
+        var openDirBtn = CreateActionButton("打开目录", (b) =>
+        {
+            try
+            {
+                string filePath = _service.StorageFilePath;
+                string dirPath = _service.StorageDirectory;
+                if (File.Exists(filePath))
+                {
+                    Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{filePath}\"") { UseShellExecute = true });
+                }
+                else if (Directory.Exists(dirPath))
+                {
+                    Process.Start(new ProcessStartInfo("explorer.exe", dirPath) { UseShellExecute = true });
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"打开目录失败: {ex.Message}", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        });
+
+        var copyPathBtn = CreateActionButton("复制地址", (b) =>
+        {
+            try
+            {
+                Clipboard.SetText(_service.StorageFilePath);
+                b.Content = "已复制✓";
+                b.Foreground = new SolidColorBrush(Color.FromRgb(34, 197, 94));
+                var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1500) };
+                timer.Tick += (ts, te) =>
+                {
+                    b.Content = "复制地址";
+                    b.Foreground = new SolidColorBrush(Color.FromRgb(228, 228, 231));
+                    timer.Stop();
+                };
+                timer.Start();
+            }
+            catch
+            {
+                b.Content = "复制失败";
+            }
+        });
+
+        var clearBtn = CreateActionButton("清空", (b) =>
         {
             if (MessageBox.Show("确定要清空当前的注意力轨迹记录吗？", "清空确认", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
             {
@@ -658,7 +703,7 @@ public sealed class MirrorWindow : Window
             }
         });
 
-        var refreshBtn = CreateActionButton("刷新", () => RefreshData());
+        var refreshBtn = CreateActionButton("刷新", (b) => RefreshData());
 
         var closeBtn = new Button
         {
@@ -676,6 +721,8 @@ public sealed class MirrorWindow : Window
 
         actionStack.Children.Add(statusDot);
         actionStack.Children.Add(statusLabel);
+        actionStack.Children.Add(openDirBtn);
+        actionStack.Children.Add(copyPathBtn);
         actionStack.Children.Add(refreshBtn);
         actionStack.Children.Add(clearBtn);
         actionStack.Children.Add(closeBtn);
@@ -763,7 +810,7 @@ public sealed class MirrorWindow : Window
         return card;
     }
 
-    private Button CreateActionButton(string text, Action onClick)
+    private Button CreateActionButton(string text, Action<Button> onClick)
     {
         var btn = new Button
         {
@@ -776,7 +823,7 @@ public sealed class MirrorWindow : Window
             Cursor = Cursors.Hand,
             FontSize = 12
         };
-        btn.Click += (s, e) => onClick();
+        btn.Click += (s, e) => onClick(btn);
         return btn;
     }
 
