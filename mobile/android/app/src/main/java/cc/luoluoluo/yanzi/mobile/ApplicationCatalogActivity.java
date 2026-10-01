@@ -30,6 +30,7 @@ public final class ApplicationCatalogActivity extends Activity {
         status=new TextView(this);status.setText("账号应用跨设备可见；安装由这台手机确认。");root.addView(status);
         Button refresh=new Button(this);refresh.setText("刷新应用");refresh.setOnClickListener(v->load());root.addView(refresh);
         Button authorize=new Button(this);authorize.setText("授权开发者应用访问数据");authorize.setOnClickListener(v->authorize());root.addView(authorize);
+        Button connect=new Button(this);connect.setText("复制 AI / 外部应用接入地址");connect.setOnClickListener(v->createInvitation());root.addView(connect);
         ScrollView scroll=new ScrollView(this);list=new LinearLayout(this);list.setOrientation(1);scroll.addView(list);root.addView(scroll);setContentView(root);
         try{accountId=ExtensionStorageProvider.accountId(token);load();}catch(Exception e){status.setText("请先登录燕子账号。");}
     }
@@ -55,6 +56,21 @@ public final class ApplicationCatalogActivity extends Activity {
                 }).setNegativeButton("撤销",(d,w)->work(()->{json("/v1/applications/"+Uri.encode(id)+"/grants/"+grant.getString("grantId"),null,true,"DELETE");ui(()->status.setText("授权已撤销"));})).show());
             });}).show();
     }
+    private void createInvitation(){
+        LinearLayout form=new LinearLayout(this);form.setOrientation(1);
+        EditText extension=new EditText(this);extension.setText("taskbar-calendar");extension.setHint("小程序 ID");form.addView(extension);
+        EditText key=new EditText(this);key.setText("calendar.v1.json");key.setHint("数据文件 key");form.addView(key);
+        CheckBox writable=new CheckBox(this);writable.setText("允许申请增删改查（默认只读）");form.addView(writable);
+        new android.app.AlertDialog.Builder(this).setTitle("创建在线接入地址").setMessage("地址有效 7 天。把地址交给 AI，它申请后仍需你逐次确认；确认前不能访问数据。").setView(form)
+            .setNegativeButton("取消",null).setPositiveButton("创建",(d,w)->work(()->{
+                JSONObject input=new JSONObject().put("extensionId",extension.getText().toString().trim()).put("key",key.getText().toString().trim()).put("access",writable.isChecked()?"read-write":"read");
+                JSONObject result=json("/v1/applications/access-invites",input,true,"POST");checkAccount();
+                ui(()->new android.app.AlertDialog.Builder(this).setTitle("接入地址已生成").setMessage(result.optString("address"))
+                    .setPositiveButton("复制地址",(dialog,which)->{android.content.ClipData clip=android.content.ClipData.newPlainText("燕子接入地址",result.optString("address"));android.os.PersistableBundle extras=new android.os.PersistableBundle();extras.putBoolean("android.content.extra.IS_SENSITIVE",true);clip.getDescription().setExtras(extras);((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(clip);})
+                    .setNegativeButton("撤销地址",(dialog,which)->work(()->{json("/v1/applications/access-invites/"+result.getString("address").substring(result.getString("address").lastIndexOf('/')+1),null,true,"DELETE");ui(()->status.setText("接入地址已撤销"));})).show());
+            })).show();
+    }
+    @Override protected void onPause(){ExternalAccessManager.background(this);super.onPause();}
     private interface Task{void run()throws Exception;}
     private void work(Task task){executor.execute(()->{try{checkAccount();task.run();}catch(Exception e){ui(()->status.setText("操作失败："+e.getMessage()));}});}
     private void ui(Runnable action){runOnUiThread(()->{if(!isFinishing()&&!isDestroyed())action.run();});}
@@ -115,7 +131,7 @@ public final class ApplicationCatalogActivity extends Activity {
         pendingApk=null;Uri uri=FileProvider.getUriForFile(this,BuildConfig.APPLICATION_ID+".fileprovider",apk);
         startActivity(new Intent(Intent.ACTION_VIEW).setDataAndType(uri,"application/vnd.android.package-archive").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION));
     }
-    @Override protected void onResume(){super.onResume();if(pendingApk!=null&&getPackageManager().canRequestPackageInstalls())install(pendingApk);}
+    @Override protected void onResume(){super.onResume();ExternalAccessManager.foreground(this);if(pendingApk!=null&&getPackageManager().canRequestPackageInstalls())install(pendingApk);}
     @Override protected void onDestroy(){executor.shutdownNow();super.onDestroy();}
     private URL assetUrl(JSONObject app)throws Exception{
         URL url=new URL(new URL(baseUrl),app.getString("downloadPath")),base=new URL(baseUrl);

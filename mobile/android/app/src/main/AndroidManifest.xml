@@ -110,6 +110,7 @@
         </receiver>
 
         <activity android:name=".ApplicationCatalogActivity" android:exported="false" />
+        <activity android:name=".ExternalAccessActivity" android:exported="false" />
         <!-- Yanm Widget Provider -->
         <receiver android:name=".widget.YanmWidgetProvider"
             android:label="燕幕组件列表 (2x4)"

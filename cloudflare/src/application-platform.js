@@ -11,7 +11,7 @@ function identifier(value, ErrorType) {
     throw new ErrorType(400, 'invalid_application_id', 'Invalid application ID');
   return value;
 }
-async function body(request, ErrorType) {
+export async function applicationBody(request, ErrorType) {
   if (Number(request.headers.get('content-length')) > MAX_BODY)
     throw new ErrorType(413, 'payload_too_large', 'Payload too large');
   const reader = request.body?.getReader();
@@ -30,6 +30,29 @@ async function body(request, ErrorType) {
   catch { throw new ErrorType(400, 'invalid_json', 'Invalid JSON'); }
   if (!result || typeof result !== 'object' || Array.isArray(result)) throw new ErrorType(400, 'invalid_json', 'JSON object required');
   return result;
+}
+const body = applicationBody;
+export function normalizeDataKey(rawKey,E) {
+  if (!rawKey || rawKey.length > 200 || /[\u0000-\u001f]/.test(rawKey)) throw new E(400,'invalid_key','Invalid data key');
+  const segments=rawKey.replaceAll('\\','/').split('/').map(s=>s.trim()).filter(Boolean);
+  if (!segments.length || segments.some(s=>s==='.'||s==='..')) throw new E(400,'invalid_key','Invalid data key');
+  return segments.join('/');
+}
+export async function authorizeData(request,env,api,extensionId,key,write=false) {
+  const header=request.headers.get('authorization')||'';
+  if (header.startsWith('Bearer ')) {
+    const claims=await api.verifyToken(env,header.slice(7).trim());
+    if (claims.type==='extension-access') {
+      const grant=await api.read(env,claims.sub,'applicationGrant.v1.'+claims.grantId);
+      if (claims.extensionId!==extensionId || !grant || grant.deleted || grant.payload?.extensionId!==extensionId ||
+          grant.payload.access!==claims.access || grant.payload.expiresAt<=Date.now()/1000 ||
+          (grant.payload.key && (grant.payload.key!==key || claims.key!==key)))
+        throw new api.HttpError(403,'scope_denied','Access denied or revoked');
+      if (write && claims.access!=='read-write') throw new api.HttpError(403,'read_only','Read-only grant');
+      return {userId:claims.sub};
+    }
+  }
+  return api.requireAuth(request,env);
 }
 export async function handleApplicationPlatform(request, env, api) {
   const url = new URL(request.url), path = url.pathname, E = api.HttpError;
@@ -102,25 +125,9 @@ export async function handleApplicationPlatform(request, env, api) {
   const dataMatch = path.match(/^\/v1\/extension-data\/([a-z0-9-]+)$/);
   if (dataMatch) {
     const extensionId = identifier(dataMatch[1],E);
-    const token = request.headers.get('authorization')?.replace(/^Bearer /,'');
-    let auth;
-    if (token) {
-      const claims = await api.verifyToken(env,token);
-      if (claims.type === 'extension-access') {
-        const grant = await api.read(env,claims.sub,'applicationGrant.v1.' + claims.grantId);
-        if (claims.extensionId !== extensionId || !grant || grant.deleted || grant.payload?.extensionId !== extensionId ||
-            grant.payload.access !== claims.access || grant.payload.expiresAt <= Date.now()/1000)
-          throw new E(403,'scope_denied','Application access denied or revoked');
-        if (request.method !== 'GET' && claims.access !== 'read-write') throw new E(403,'read_only','Read-only grant');
-        auth = {userId:claims.sub};
-      }
-    }
-    auth ||= await api.requireAuth(request,env);
     const rawKey = url.searchParams.get('key');
-    if (!rawKey || rawKey.length > 200 || /[\u0000-\u001f]/.test(rawKey)) throw new E(400,'invalid_key','Invalid data key');
-    const segments = rawKey.replaceAll('\\','/').split('/').map(s=>s.trim()).filter(Boolean);
-    if (!segments.length || segments.some(s=>s==='.'||s==='..')) throw new E(400,'invalid_key','Invalid data key');
-    const key = segments.join('/');
+    const key = normalizeDataKey(rawKey,E);
+    const auth = await authorizeData(request,env,api,extensionId,key,request.method!=='GET');
     const id = await extensionObjectId(extensionId,key);
     if (request.method === 'GET') {
       const object = await api.read(env,auth.userId,id), payload = object?.payload;

@@ -44,6 +44,7 @@ public class DeviceHeartbeatService extends Service {
         return token.equals(prefs.getString("token", "")) && device.equals(prefs.getString("deviceId", ""));
     }
     private void tick() {
+        ExternalAccessManager.pollAsync(this);
         if (SystemClock.elapsedRealtime() < retryAt) return;
         String token = prefs.getString("token", "");
         String base = prefs.getString("baseUrl", "https://sync.luoluoluo.cc.cd").replaceAll("/+$", "");

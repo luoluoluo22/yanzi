@@ -40,5 +40,22 @@ try{
     if($library.applications[0].applicationId -ne 'taskbar-calendar'){throw 'Library selection missing'}
     Call ('/v1/applications/quick-notes/grants/'+$grant.grantId) 'DELETE'|Out-Null
     Denied {Call '/v1/extension-data/quick-notes?key=notes.v1.json' 'GET' $null $grant.accessToken} 403
-    Write-Host 'APPLICATION_PLATFORM_INTEGRATION_PASSED: legacy storage, account library, scoped grant, full-account denial, CAS and revocation'
+    $invite=Call '/v1/applications/access-invites' 'POST' @{extensionId='quick-notes';key='notes.v1.json';access='read-write'}
+    $path=([Uri]$invite.address).AbsolutePath
+    $discovery=Call $path 'GET' $null ''
+    if(-not $discovery.authorizationRequired){throw 'Discovery missing consent requirement'}
+    $pending=Call ($path+'/requests') 'POST' @{clientName='Local integration AI';access='read-write'} ''
+    $poll=([Uri]$pending.poll.url).AbsolutePath
+    $waiting=Call $poll 'GET' $null $pending.requestSecret
+    if($waiting.status -ne 'pending'){throw 'Unapproved request returned data'}
+    Denied {Call ('/v1/applications/access-requests/'+$pending.requestId+'/decision') 'POST' @{approve=$true} ''} 401
+    Call ('/v1/applications/access-requests/'+$pending.requestId+'/decision') 'POST' @{approve=$true}|Out-Null
+    Start-Sleep -Seconds 3
+    $approved=Call $poll 'GET' $null $pending.requestSecret
+    if($approved.status -ne 'approved'){throw 'Approved request did not yield scoped token'}
+    $external=Call '/v1/extension-data/quick-notes?key=notes.v1.json' 'GET' $null $approved.accessToken
+    if($external.content -ne 'integration-data'){throw 'External consent data read failed'}
+    Denied {Call '/v1/extension-data/quick-notes?key=other.json' 'GET' $null $approved.accessToken} 403
+    Denied {Call ('/v1/applications/access-requests/'+$pending.requestId+'/decision') 'POST' @{approve=$false}} 409
+    Write-Host 'APPLICATION_PLATFORM_INTEGRATION_PASSED: legacy storage, account library, scoped grant, consent discovery/polling/approval, key isolation, CAS and revocation'
 }finally{Stop-YanziLocalWorkerPort -Port $Port}

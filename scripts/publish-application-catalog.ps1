@@ -27,7 +27,7 @@ Copy-Item -LiteralPath $apk -Destination $calendarPath -Force
 $assets=@($definitionPath,$calendarPath)
 $apps=@(
     @{applicationId='quick-notes';name='便签';kind='mobile-js';version=$definition.version;description='内嵌便签，支持账号数据同步';minHostVersionCode=27;downloadPath="/downloads/applications/quick-notes-$($definition.version).json";size=(Get-Item $definitionPath).Length;sha256=(Get-FileHash $definitionPath -Algorithm SHA256).Hash.ToLowerInvariant()},
-    @{applicationId='taskbar-calendar';name='日历';kind='android-apk';version=$version;versionCode=$versionCode;description='独立日历，与电脑小程序双向同步';packageName='cc.luoluoluo.yanzi.calendar';minHostVersionCode=27;certificateSha256=$certificate;downloadPath="/downloads/applications/yanzi-calendar-$version.apk";size=(Get-Item $calendarPath).Length;sha256=(Get-FileHash $calendarPath -Algorithm SHA256).Hash.ToLowerInvariant()}
+    @{applicationId='taskbar-calendar';name='日历';kind='android-apk';version=$version;versionCode=$versionCode;description='独立日历，与电脑小程序双向同步';apiSchema=(Get-Content -Raw -LiteralPath (Join-Path $root 'extensions\taskbar-calendar\api-schema.json') | ConvertFrom-Json);packageName='cc.luoluoluo.yanzi.calendar';minHostVersionCode=27;certificateSha256=$certificate;downloadPath="/downloads/applications/yanzi-calendar-$version.apk";size=(Get-Item $calendarPath).Length;sha256=(Get-FileHash $calendarPath -Algorithm SHA256).Hash.ToLowerInvariant()}
 )
 # Preserve future independently published catalog entries.
 try {

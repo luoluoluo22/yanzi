@@ -52,6 +52,7 @@ public partial class App : WpfApplication
     private InputStateWindow? _inputStateWindow;
     private QuestWindow? _questWindow;
     private LocalAgentApiServer? _agentApiServer;
+    private ExternalAccessApprovalService? _externalAccessApproval;
     public LocalAgentApiServer? AgentApiServer => _agentApiServer;
     private LanDiscoveryService? _lanDiscoveryService;
     private SingleInstanceService? _singleInstanceService;
@@ -257,6 +258,13 @@ public partial class App : WpfApplication
 
             // 无论前台还是后台启动，都必须初始化后台核心服务（WebDAV、Everything、WindowBinding、鼠标手势等）
             window.InitializeBackgroundServices();
+            _externalAccessApproval = new ExternalAccessApprovalService();
+            if (Current.TryFindResource("TrayContextMenu") is System.Windows.Controls.ContextMenu accessMenu)
+            {
+                var accessItem = new System.Windows.Controls.MenuItem { Header = "AI / 外部应用授权" };
+                accessItem.Click += (_, _) => _externalAccessApproval?.ShowCenter();
+                accessMenu.Items.Add(accessItem);
+            }
             window.EnsureStandbyRadialMenu();
 
             bool explicitlyHidden = ShouldStartHidden(e.Args);
@@ -647,6 +655,7 @@ public partial class App : WpfApplication
             _singleInstanceService = null;
         }
 
+        _externalAccessApproval?.Dispose();
         base.OnExit(e);
     }
 

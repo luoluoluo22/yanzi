@@ -629,6 +629,7 @@ extends Activity {
 
     protected void onResume() {
         super.onResume();
+        ExternalAccessManager.foreground(this);
         UpdateManager.resumePendingInstall(this);
         try {
             this.startService(new Intent(this, FloatingWheelService.class));
@@ -923,6 +924,7 @@ extends Activity {
             this.unregisterReceiver(this.chatMessageReceiver);
         } catch (Exception ignored) {}
         super.onPause();
+        ExternalAccessManager.background(this);
     }
 
     @Override

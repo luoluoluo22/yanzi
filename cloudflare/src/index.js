@@ -1,6 +1,8 @@
 import { handleAttachments, ownedAttachment, cleanupAttachments, MessagingError } from './mobile-attachments.js';
 import { sendOfflinePush } from './mobile-push.js';
 import { handleApplicationPlatform } from './application-platform.js';
+import { handleExternalAccess, cleanupExternalAccess } from './external-access.js';
+import { handleRecordApi } from './record-api.js';
 export { DeviceRelay } from './device-relay.js';
 const TOKEN_TTL_SECONDS = 60 * 60 * 24 * 30;
 const DEVICE_ONLINE_WINDOW_MS = 2 * 60 * 1000;
@@ -51,7 +53,7 @@ const PUBLIC_STORE_EXTENSION_IDS_SQL = PUBLIC_STORE_EXTENSIONS
 
 
 export default {
-  async scheduled(event, env, ctx) { ctx.waitUntil(cleanupAttachments(env)); },
+  async scheduled(event, env, ctx) { ctx.waitUntil(cleanupAttachments(env)); ctx.waitUntil(cleanupExternalAccess(env)); },
   async fetch(request, env, ctx) {
     try {
       return await handleRequest(request, env, ctx);
@@ -89,10 +91,15 @@ async function handleRequest(request, env, ctx) {
     return withCors(new Response(null, { status: 204 }));
   }
 
-  const applicationResponse = await handleApplicationPlatform(request, env, {
+  const platformApi = {
     requireAuth, verifyToken, signToken, read: readUserSyncObject,
     write: writeUserSyncObject, json, HttpError
-  });
+  };
+  const externalResponse = await handleExternalAccess(request, env, platformApi);
+  if (externalResponse) return externalResponse;
+  const recordResponse = await handleRecordApi(request, env, platformApi);
+  if (recordResponse) return recordResponse;
+  const applicationResponse = await handleApplicationPlatform(request, env, platformApi);
   if (applicationResponse) return applicationResponse;
 
   if (url.pathname.startsWith("/downloads/") && request.method === "GET") {
@@ -5462,7 +5469,7 @@ function json(data, status = 200) {
 
 function withCors(response) {
   response.headers.set("access-control-allow-origin", "*");
-  response.headers.set("access-control-allow-methods", "GET,POST,PUT,DELETE,OPTIONS");
+  response.headers.set("access-control-allow-methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
   response.headers.set(
     "access-control-allow-headers",
     "content-type,authorization,accept,origin,x-yanzi-client,x-yanzi-client-version,x-api-version,x-client-version"
