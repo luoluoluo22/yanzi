@@ -111,16 +111,11 @@ $latestArgs = if ($Platform -eq "android") { @("--latest=false") } else { @() }
 $releaseTitle = if ($Platform -eq "android") { "Yanzi for Android $plainVersion" } else { "Yanzi $plainVersion" }
 
 if (-not $releaseExists) {
-    gh release create $tag `
-        --repo $Repo `
-        --target $Target `
-        --title $releaseTitle `
-        --notes-file $notesPath @latestArgs | Out-Host
+    $releaseArgs = @('release','create',$tag,'--repo',$Repo,'--target',$Target,'--title',$releaseTitle,'--notes-file',$notesPath) + $latestArgs
+    & gh @releaseArgs | Out-Host
 } else {
-    gh release edit $tag `
-        --repo $Repo `
-        --title $releaseTitle `
-        --notes-file $notesPath @latestArgs | Out-Host
+    $releaseArgs = @('release','edit',$tag,'--repo',$Repo,'--title',$releaseTitle,'--notes-file',$notesPath) + $latestArgs
+    & gh @releaseArgs | Out-Host
 }
 
 if ($LASTEXITCODE -ne 0) { throw "Failed to create or edit release; upload was not attempted." }

@@ -690,3 +690,12 @@ PC 聊天窗口的文字、照片、文件均可转云端；Android 照片和文
 - 日历声明 records-v1 schema，通用服务提供逐条 GET/POST/PATCH/DELETE，与原共享存储保持同一对象和版本语义；修改删除必须携带记录 expectedVersion。
 - 当前 Node/SQLite 授权与记录测试 5 项通过，真实本地 Worker/D1 集成通过。桌面构建并重启成功，Android Dev/release 构建成功，OnePlus Dev 0.2.30 安装 smoke 通过，正式 0.2.26 未变。公网和两端 UI 验证待发布后记录。
 - 接入协议与例子见 docs/external-data-api.md。尚未配置系统推送，强制停止手机应用后不保证授权通知到达；不主动息屏。
+
+### 21.1 公网验证完成
+
+- main 的 28437e2 已由 Cloudflare Git 自动构建成功部署；数据库 0020 已应用。目录公开 records-v1 schema；Android 0.2.30 正式 Release 和公网更新清单已发布。
+- 真实公网匿名申请同时触发电脑 WPF 弹窗与 OnePlus Dev 原生弹窗，核对码一致；手机点击允许后 AI 自动领取令牌，电脑弹窗自动关闭，待确认列表归零。
+- 公网逐条新增、修改、读取、删除临时日程成功；Windows 本地日历文件和真实手机 Dev 日历缓存均收到创建、修改、删除。测试前后三条原始日程完全一致；手机测试记录为 tombstone 且无待上传项。
+- 手机退到桌面后后台授权通知包含正确申请方与核对码。测试申请、令牌及邀请地址均已撤销；全程未息屏，未动 K70，正式 OnePlus 燕子仍为 0.2.26。
+- 公网实际下载主 APK 90,810,436 字节，SHA-256 与正式发布 APK 相同；GitHub Release 已发布并通过 UTF-8 JSON 更新中文说明。
+- computer-use 可读取电脑授权弹窗的全部字段，电脑点击工具遇到捕获几何/FrameArrived 限制，因此此次授权实际点击在手机完成；电脑主动批准路径由真实本地 Worker/D1 决策接口覆盖，未宣称电脑按钮真机点击通过。

@@ -23,7 +23,7 @@ $definition | Add-Member -NotePropertyName script -NotePropertyValue @{source=$s
 $definitionPath=Join-Path $output "quick-notes-$($definition.version).json"
 [IO.File]::WriteAllText($definitionPath,($definition | ConvertTo-Json -Depth 20),[Text.UTF8Encoding]::new($false))
 $calendarPath=Join-Path $output "yanzi-calendar-$version.apk"
-Copy-Item -LiteralPath $apk -Destination $calendarPath -Force
+if([IO.Path]::GetFullPath($apk) -ne [IO.Path]::GetFullPath($calendarPath)){Copy-Item -LiteralPath $apk -Destination $calendarPath -Force}
 $assets=@($definitionPath,$calendarPath)
 $apps=@(
     @{applicationId='quick-notes';name='便签';kind='mobile-js';version=$definition.version;description='内嵌便签，支持账号数据同步';minHostVersionCode=27;downloadPath="/downloads/applications/quick-notes-$($definition.version).json";size=(Get-Item $definitionPath).Length;sha256=(Get-FileHash $definitionPath -Algorithm SHA256).Hash.ToLowerInvariant()},
