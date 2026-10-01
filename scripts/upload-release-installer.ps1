@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$Version = "0.1.0",
     [string]$Platform = "windows", # windows 或 android
     [string]$Repo = "luoluoluo22/yanzi",
@@ -107,6 +107,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 $ErrorActionPreference = $oldEAP
 
+$latestArgs = if ($Platform -eq "android") { @("--latest=false") } else { @() }
 $releaseTitle = if ($Platform -eq "android") { "Yanzi for Android $plainVersion" } else { "Yanzi $plainVersion" }
 
 if (-not $releaseExists) {
@@ -114,13 +115,15 @@ if (-not $releaseExists) {
         --repo $Repo `
         --target $Target `
         --title $releaseTitle `
-        --notes-file $notesPath | Out-Host
+        --notes-file $notesPath @latestArgs | Out-Host
 } else {
     gh release edit $tag `
         --repo $Repo `
         --title $releaseTitle `
-        --notes-file $notesPath | Out-Host
+        --notes-file $notesPath @latestArgs | Out-Host
 }
+
+if ($LASTEXITCODE -ne 0) { throw "Failed to create or edit release; upload was not attempted." }
 
 $filesToUpload = if ($Platform -eq "android") {
     Get-ChildItem -Path $installerOutDir -File | Where-Object { $_.Name.Contains($plainVersion) -and $_.Name.EndsWith(".apk") }
@@ -163,7 +166,7 @@ foreach ($file in $filesToUpload) {
 }
 
 if (-not $Draft) {
-    gh release edit $tag --repo $Repo --draft=false | Out-Host
+    gh release edit $tag --repo $Repo --draft=false @latestArgs | Out-Host
 }
 
 $token = if ($GithubToken) { $GithubToken } elseif ($env:GITHUB_TOKEN) { $env:GITHUB_TOKEN } else { "" }
@@ -210,4 +213,7 @@ if (-not [string]::IsNullOrEmpty($token)) {
     }
 }
 
+if ($Platform -eq "android" -and -not $Draft) {
+    & (Join-Path $PSScriptRoot 'publish-mobile-update.ps1') -Version $plainVersion -ApkPath $installerSetupPath -Repo $Repo
+}
 gh release view $tag --repo $Repo --json tagName,name,isDraft,url,assets | Out-Host

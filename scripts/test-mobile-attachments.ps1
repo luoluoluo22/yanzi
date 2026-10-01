@@ -10,6 +10,10 @@ $sha.Dispose()
 $uploadHeaders = @{Authorization=$headers.Authorization;'X-Content-Sha256'=$hash}
 $uploaded = Invoke-RestMethod "$base/v1/me/mobile/attachments?name=verification.bin" -Method POST -Headers $uploadHeaders -ContentType 'application/octet-stream' -Body $bytes
 if ($uploaded.sha256 -ne $hash -or $uploaded.size -ne $bytes.Length) { throw 'Upload metadata mismatch' }
+$fileMessageBody=@{sourceDeviceId=$fixture.desktopDeviceId;targetPlatform='android';kind='file';title='YanziChat';text='expiry-test';payload=@{attachmentId=$uploaded.attachmentId};expiresAt=[DateTimeOffset]::UtcNow.AddDays(30).ToString('o');clientMessageId=[Guid]::NewGuid().ToString('N')} | ConvertTo-Json -Compress
+$fileMessage=Invoke-RestMethod "$base/v1/me/mobile/messages" -Method POST -Headers $headers -ContentType 'application/json' -Body $fileMessageBody
+$fileDetail=Invoke-RestMethod "$base/v1/me/mobile/messages/$($fileMessage.messageId)" -Headers $headers
+if ($fileDetail.expiresAt -ne $uploaded.expiresAt) {throw 'Queued attachment outlives its stored content'}
 $content = Invoke-WebRequest "$base/v1/me/mobile/attachments/$($uploaded.attachmentId)/content" -Headers (@{Authorization=$headers.Authorization;Range='bytes=10-29'})
 if ($content.StatusCode -ne 206 -or $content.Headers['Content-Range'] -ne "bytes 10-29/$($bytes.Length)") { throw 'Range metadata mismatch' }
 $actual = if ($content.Content -is [byte[]]) { $content.Content } else { [Text.Encoding]::UTF8.GetBytes($content.Content) }

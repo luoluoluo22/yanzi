@@ -2162,7 +2162,10 @@ async function handleRequest(request, env, ctx) {
         (message.title === 'YanziChat' || ['android', 'android-mobile', 'desktop-chat'].includes(message.payload.source))) {
       message.payload.accountChat = true;
     }
-    if (message.payload.attachmentId) await ownedAttachment(env, auth.userId, message.payload.attachmentId);
+    if (message.payload.attachmentId) {
+      const attachment = await ownedAttachment(env, auth.userId, message.payload.attachmentId);
+      if (!message.expiresAt || message.expiresAt > attachment.expires_at) message.expiresAt = attachment.expires_at;
+    }
     const clientId = payload.clientMessageId;
     if (clientId && (typeof clientId !== 'string' || !/^[a-zA-Z0-9_-]{8,100}$/.test(clientId)))
       throw new HttpError(400, 'invalid_client_message_id', 'Invalid client message ID');
