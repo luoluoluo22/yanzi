@@ -4,7 +4,7 @@
 
 应用目录、账号应用库、本机安装状态、业务数据是四个不同层次。账号应用库同步用户获取了哪些应用；每台手机自行确认安装 APK。便签使用 `mobile-js` 定义，在燕子内运行；日历使用独立 APK，继续对应电脑小程序 `taskbar-calendar`。
 
-燕子 Android 0.2.28 增加“应用中心”。旧手机先通过主应用更新渠道升级，之后可以获取便签、下载安装日历。便签获取时写入既有账号定义对象与索引，其他手机刷新小程序列表即可获得定义。获取不迁移、不清空业务数据。独立日历要求正式燕子至少 0.2.27；开发版日历仍连接开发版宿主，正式版连接正式版。
+燕子 Android 0.2.29 在手机开发页和电脑小程序页增加“应用中心”。旧手机先通过主应用更新渠道升级，之后可以获取便签、下载安装日历。便签获取时写入既有账号定义对象与索引，其他手机刷新小程序列表即可获得定义。获取不迁移、不清空业务数据。独立日历要求正式燕子至少 0.2.27；开发版日历仍连接开发版宿主，正式版连接正式版。
 
 ## 分发协议
 
@@ -48,4 +48,19 @@ if (result.status === 'conflict') showConflictDialog();
 
 ## 验证
 
+Android 共用 SDK 为 `mobile/android/data-sdk`，Release 产物是 AAR。`HostStorage` 用于与燕子同签名的独立应用；`ScopedCloudStorage` 用于其他开发者签名的应用，调用统一 HTTPS 数据接口；两者都实现 `YanziStorage`。`YanziDocument` 在 SharedPreferences 中按账号和小程序持久化草稿，提供 save/sync/resolve；sync 必须在后台线程执行，保存不会被网络请求阻塞。独立日历 0.1.1 已实际接入 HostStorage，保持原来的逐条事项合并规则。
+
+同签名伴生应用还需在 Manifest 声明 `<uses-permission android:name="宿主包名.permission.EXTENSION_STORAGE" />`，在 application 下声明 `<meta-data android:name="yanzi.extensionScopes" android:value="my-app" />`，并在 queries 中声明宿主包名。不同签名开发者使用 ScopedCloudStorage，不会获得宿主账号凭证。
+
+```java
+YanziStorage storage = new ScopedCloudStorage(baseUrl, "my-app", () -> approvedToken);
+JSONObject first = storage.read("data.json");
+YanziDocument document = new YanziDocument(storage, preferences, "my-app", "data.json", first.getString("accountId"));
+document.sync();
+document.save(jsonText);
+executor.execute(() -> { /* document.sync(); 按返回状态展示冲突或等待重试 */ });
+```
+
 `node --test cloudflare/src/application-platform.test.mjs sdk/javascript/yanzi-data.test.js` 验证作用域、只读、撤销、CAS、账号隔离、断网持久化及上传中再次编辑。`scripts/test-application-platform.ps1` 使用独立临时本地账号和 Worker 验证真实 JWT、D1 和旧同步接口隔离，不访问用户业务数据。
+
+Android 日历测试包含 3 项 instrumentation 测试，覆盖共用 SDK 草稿恢复和上传中编辑，以及日历逐条冲突与 Windows 往返。`scripts/test-public-application-platform.ps1` 仅读取真机 Dev 凭证到内存，验证公网目录下载哈希、限制访问和撤销。`scripts/test-second-device-application-library.ps1` 仅允许模拟器，Prepare/Verify/Cleanup 分别准备无缓存客户端、验证账号便签定义与应用选择、清理测试登录；不会清理物理手机。

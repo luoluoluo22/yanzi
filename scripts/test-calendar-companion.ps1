@@ -77,7 +77,7 @@ try {
     $result = @(& $adb -s $Serial shell am instrument -w -r -e accountId $user `
         "$calendarPackage.test/android.test.InstrumentationTestRunner") -join "`n"
     [IO.File]::WriteAllText((Join-Path $artifact 'instrumentation.txt'),$result,[Text.UTF8Encoding]::new($false))
-    if ($result -notmatch 'OK \(1 test\)') { throw "Calendar instrumentation failed: $result" }
+    if ($result -notmatch 'OK \(3 tests\)') { throw "Calendar instrumentation failed: $result" }
     $returned=Bridge 'read'
     $returnedDoc=$returned.content|ConvertFrom-Json
     if ($returnedDoc.records.'mobile-return'.item.Title -ne 'mobile-return' -or

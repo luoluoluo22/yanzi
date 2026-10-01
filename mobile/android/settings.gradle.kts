@@ -22,3 +22,4 @@ dependencyResolutionManagement {
 rootProject.name = "YanziMobile"
 include(":app")
 include(":calendar")
+include(":data-sdk")

@@ -666,3 +666,10 @@ PC 聊天窗口的文字、照片、文件均可转云端；Android 照片和文
 - JavaScript SDK 提供账号隔离的持久化草稿、CAS、断网恢复与显式冲突处理。授权暂为用户手动复制令牌，后续网页自动登录需要 OAuth/PKCE。
 - Node 4 项测试及本地真实 Worker/D1 集成测试通过；Dev/Release 构建通过，OnePlus Dev 安装验证通过，正式手机版本 0.2.26 保持不变。公网发布与应用中心下载验证继续执行。
 - 详见 docs/application-platform.md。
+
+### 20.1 最终接入与验证
+
+- 最终主应用 0.2.29 在开发页提供应用中心，获取后立即刷新；敏感授权令牌不进入剪贴板同步。独立日历 0.1.1 接入共用 Android data-sdk。
+- Android SDK 提供 HostStorage、ScopedCloudStorage、YanziDocument；跨平台 JavaScript SDK 同时可用于网页与 Node。
+- 日历和 Android SDK 共 3 项 instrumentation 测试通过，Windows/Android 往返与冲突验证通过；真实公网授权、撤销、两项下载哈希校验通过。
+- 无本地应用缓存的第二客户端（模拟器）已获取账号中的便签定义和应用库选择，验证跨设备分发。OnePlus 真机仅更新 Dev，正式燕子仍为 0.2.26，全程未息屏。

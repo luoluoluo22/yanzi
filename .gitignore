@@ -17,6 +17,7 @@ mobile/android/.gradle/
 mobile/android/local.properties
 mobile/android/app/build/
 mobile/android/calendar/build/
+mobile/android/data-sdk/build/
 
 *.user
 *.suo

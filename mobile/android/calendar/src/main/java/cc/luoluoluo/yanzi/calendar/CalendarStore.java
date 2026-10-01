@@ -1,8 +1,7 @@
 package cc.luoluoluo.yanzi.calendar;
 
 import android.content.*;
-import android.net.Uri;
-import android.os.Bundle;
+import cc.luoluoluo.yanzi.sdk.HostStorage;
 import org.json.*;
 import java.util.*;
 
@@ -13,11 +12,13 @@ final class CalendarStore {
     private final SharedPreferences prefs;
     interface Transport { JSONObject call(String method, String content, long revision) throws Exception; }
     private final Transport transport;
+    private final HostStorage sharedStorage;
     private String account;
     JSONObject records = new JSONObject(), pending = new JSONObject();
     CalendarStore(Context c) throws Exception { this(c, null); }
     CalendarStore(Context c, Transport transport) throws Exception {
         this.transport = transport;
+        this.sharedStorage = new HostStorage(c, BuildConfig.HOST_PACKAGE, "taskbar-calendar");
         context = c; prefs = c.getSharedPreferences("calendar", 0);
         account = prefs.getString("account", ""); load();
     }
@@ -53,16 +54,8 @@ final class CalendarStore {
     }
     private JSONObject call(String method, String content, long revision) throws Exception {
         if (transport != null) return transport.call(method, content, revision);
-        Bundle args = new Bundle(); args.putString("key", KEY);
-        args.putString("content", content); args.putLong("expectedRevision", revision);
-        args.putString("accountId", account);
-        Bundle out = context.getContentResolver().call(Uri.parse("content://" + BuildConfig.HOST_PACKAGE
-                + ".extension-storage"), method, "taskbar-calendar", args);
-        if (out == null) throw new IllegalStateException("燕子版本过旧，请更新燕子");
-        JSONObject result = new JSONObject(out.getString("result", "{}"));
-        if (!result.optBoolean("ok") && !result.optBoolean("conflict"))
-            throw new IllegalStateException(result.optString("error", "连接失败"));
-        return result;
+        return "read".equals(method) ? sharedStorage.read(KEY)
+                : sharedStorage.write(KEY, content, revision, account);
     }
     String sync() throws Exception {
         JSONObject read = call("read", "", 0);

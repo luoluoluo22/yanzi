@@ -49,7 +49,9 @@ public final class ApplicationCatalogActivity extends Activity {
                 JSONObject grant=json("/v1/applications/"+Uri.encode(id)+"/grants",input,true,"POST");checkAccount();
                 ui(()->new android.app.AlertDialog.Builder(this).setTitle("授权已创建").setMessage("有效期 1 小时。可复制专用令牌，或立即撤销这次授权。").setPositiveButton("复制专用令牌",(d,w)->{
                     android.content.ClipboardManager clipboard=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
-                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("燕子应用授权",grant.optString("accessToken")));
+                    android.content.ClipData clip=android.content.ClipData.newPlainText("燕子应用授权",grant.optString("accessToken"));
+                    android.os.PersistableBundle extras=new android.os.PersistableBundle();extras.putBoolean("android.content.extra.IS_SENSITIVE",true);clip.getDescription().setExtras(extras);
+                    clipboard.setPrimaryClip(clip);
                 }).setNegativeButton("撤销",(d,w)->work(()->{json("/v1/applications/"+Uri.encode(id)+"/grants/"+grant.getString("grantId"),null,true,"DELETE");ui(()->status.setText("授权已撤销"));})).show());
             });}).show();
     }
@@ -77,6 +79,7 @@ public final class ApplicationCatalogActivity extends Activity {
                 if("mobile-js".equals(kind))installDefinition(app);else if("android-apk".equals(kind))downloadApk(app);else throw new IllegalStateException("不支持的应用类型");
                 if(!enabled)json("/v1/applications/library/"+id,new JSONObject().put("enabled",true).put("expectedRevision",selection==null?0:selection.optLong("revision")),true);
                 checkAccount();ui(()->status.setText("已加入账号，其他设备刷新后可见。"));
+                if("mobile-js".equals(kind))load();
             }finally{ui(()->action.setEnabled(true));}});});list.addView(action);
         }
     }

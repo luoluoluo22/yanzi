@@ -11,8 +11,8 @@ android {
         applicationId = "cc.luoluoluo.yanzi.calendar"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.1.1"
         resValue("string", "app_name", "燕子日历")
         testInstrumentationRunner = "android.test.InstrumentationTestRunner"
         manifestPlaceholders["hostPackage"] = "cc.luoluoluo.yanzi.mobile"
@@ -45,3 +45,4 @@ android {
         }
     }
 }
+dependencies { implementation(project(":data-sdk")) }

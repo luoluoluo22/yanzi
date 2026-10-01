@@ -670,6 +670,7 @@ extends Activity {
         }
         this.updateProfileHeader();
         this.loadChatHistory();
+        this.renderLocalMobileExtensions();
     }
 
     private void syncClipboard() {
@@ -682,12 +683,15 @@ extends Activity {
 
                 final String[] localTextHolder = new String[]{""};
                 final boolean[] hasClipHolder = new boolean[]{false};
+                final boolean[] sensitiveClipHolder = new boolean[]{false};
                 this.runOnUiThread(() -> {
                     try {
                         android.content.ClipboardManager cm = (android.content.ClipboardManager) this.getSystemService(Context.CLIPBOARD_SERVICE);
                         if (cm != null && cm.hasPrimaryClip()) {
                             android.content.ClipData data = cm.getPrimaryClip();
-                            if (data != null && data.getItemCount() > 0) {
+                            sensitiveClipHolder[0] = data != null && data.getDescription().getExtras() != null
+                                    && data.getDescription().getExtras().getBoolean("android.content.extra.IS_SENSITIVE", false);
+                            if (!sensitiveClipHolder[0] && data != null && data.getItemCount() > 0) {
                                 CharSequence text = data.getItemAt(0).getText();
                                 if (text != null) {
                                     localTextHolder[0] = text.toString();
@@ -705,6 +709,7 @@ extends Activity {
                 }
 
                 String localText = localTextHolder[0];
+                if (sensitiveClipHolder[0]) return;
                 String lastSyncedText = this.prefs.getString("last_synced_clipboard", "");
 
                 boolean writeToPc = false;
@@ -1972,6 +1977,9 @@ extends Activity {
         listHeader.setOrientation(0);
         listHeader.setGravity(5); // Gravity.RIGHT is 5
         listHeader.setPadding(0, 0, 0, this.dp(12));
+        Button applicationCenter = this.button("应用中心");
+        applicationCenter.setOnClickListener(v -> startActivity(new Intent(this, ApplicationCatalogActivity.class)));
+        listHeader.addView(applicationCenter, new LinearLayout.LayoutParams(0, this.dp(40), 1.0f));
 
         // 加一个漂亮的“新建”按钮在主列表右上角
         Button newExtBtn = this.button("\u65b0\u5efa\u6269\u5c55");
@@ -4184,6 +4192,7 @@ extends Activity {
                 this.runOnUiThread(() -> {
                     this.cacheRemoteExtensions(loadedDesktopExtensions);
                     this.renderExtensions(unifiedExtensions);
+                    this.renderLocalMobileExtensions();
                     if (this.swipeRefresh != null) {
                         this.swipeRefresh.setRefreshing(false);
                     }

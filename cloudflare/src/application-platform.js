@@ -1,5 +1,6 @@
 const encoder = new TextEncoder();
 const MAX_CONTENT = 256 * 1024;
+const MAX_BODY = MAX_CONTENT * 6 + 8192;
 export async function extensionObjectId(extensionId, key) {
   const bytes = await crypto.subtle.digest('SHA-256', encoder.encode(extensionId + '\0' + key));
   return 'extensionData.v1.' + hex(bytes);
@@ -11,7 +12,7 @@ function identifier(value, ErrorType) {
   return value;
 }
 async function body(request, ErrorType) {
-  if (Number(request.headers.get('content-length')) > MAX_CONTENT + 8192)
+  if (Number(request.headers.get('content-length')) > MAX_BODY)
     throw new ErrorType(413, 'payload_too_large', 'Payload too large');
   const reader = request.body?.getReader();
   let size = 0; const chunks = [];
@@ -19,7 +20,7 @@ async function body(request, ErrorType) {
   while (true) {
     const {done, value} = await reader.read(); if (done) break;
     size += value.length;
-    if (size > MAX_CONTENT + 8192) { await reader.cancel(); throw new ErrorType(413, 'payload_too_large', 'Payload too large'); }
+    if (size > MAX_BODY) { await reader.cancel(); throw new ErrorType(413, 'payload_too_large', 'Payload too large'); }
     chunks.push(value);
   }
   const bytes = new Uint8Array(size); let offset = 0;
