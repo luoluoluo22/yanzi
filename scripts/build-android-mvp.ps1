@@ -1,7 +1,9 @@
 ﻿param(
     [string]$SdkPath = $env:ANDROID_HOME,
     [ValidateSet("debug", "dev", "release")]
-    [string]$Configuration = "debug"
+    [string]$Configuration = "debug",
+    [ValidateSet("app", "calendar")]
+    [string]$Module = "app"
 )
 
 $ErrorActionPreference = "Stop"
@@ -25,9 +27,9 @@ if (-not (Test-Path $GradleWrapper)) {
 }
 
 $task = switch ($Configuration) {
-    "release" { "app:assembleRelease" }
-    "dev" { "app:assembleDev" }
-    default { "app:assembleDebug" }
+    "release" { "${Module}:assembleRelease" }
+    "dev" { "${Module}:assembleDev" }
+    default { "${Module}:assembleDebug" }
 }
 $variant = $Configuration.ToLowerInvariant()
 
@@ -42,15 +44,16 @@ finally {
     Pop-Location
 }
 
-$sourceApk = Join-Path $AndroidRoot "app\build\outputs\apk\$variant\app-$variant.apk"
+$sourceApk = Join-Path $AndroidRoot "$Module\build\outputs\apk\$variant\$Module-$variant.apk"
 if (-not (Test-Path $sourceApk)) {
     throw "Gradle completed but APK was not found: $sourceApk"
 }
 
-$outputDir = Join-Path $AndroidRoot "app\build\manual-$variant"
+$outputDir = Join-Path $AndroidRoot "$Module\build\manual-$variant"
 New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
 
-$outputApk = Join-Path $outputDir "yanzi-mobile-$variant.apk"
+$artifactName = if ($Module -eq "calendar") { "yanzi-calendar" } else { "yanzi-mobile" }
+$outputApk = Join-Path $outputDir "$artifactName-$variant.apk"
 Copy-Item -LiteralPath $sourceApk -Destination $outputApk -Force
 
 Write-Host "Android APK built successfully."

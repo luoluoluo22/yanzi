@@ -60,13 +60,17 @@ internal static class AccountExtensionDataStore
         string key,
         string content,
         long? expectedRevision = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? expectedAccountId = null)
     {
         var normalizedExtensionId = ExtensionDataObjectStore.NormalizeExtensionId(extensionId);
         var normalizedKey = ExtensionDataObjectStore.NormalizeKey(key);
         var normalizedContent = content ?? string.Empty;
         var objectId = BuildObjectId(normalizedExtensionId, normalizedKey);
         var client = CreateClient();
+
+        if (expectedAccountId != null && client.CurrentUserId != expectedAccountId)
+            throw new InvalidOperationException("Account changed before storage write.");
 
         if (!CanAttemptAccountCloud(client))
         {

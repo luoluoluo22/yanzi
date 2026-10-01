@@ -10,6 +10,8 @@
         </intent>
     </queries>
 
+    <permission android:name="${applicationId}.permission.EXTENSION_STORAGE" android:protectionLevel="signature" />
+    <uses-permission android:name="${applicationId}.permission.EXTENSION_STORAGE" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CAMERA" />
@@ -37,6 +39,10 @@
         android:supportsRtl="true"
         android:usesCleartextTraffic="true"
         android:theme="@style/Theme.YanziMobile">
+        <provider android:name=".ExtensionStorageProvider"
+            android:authorities="${applicationId}.extension-storage"
+            android:exported="true"
+            android:permission="${applicationId}.permission.EXTENSION_STORAGE" />
         <activity
             android:name=".MainActivity"
             android:windowSoftInputMode="adjustResize"

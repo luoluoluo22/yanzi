@@ -1,7 +1,7 @@
 {
   "id": "taskbar-calendar",
   "name": "日历",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "category": "系统工具",
   "description": "替代 Windows 原生日历，支持右下角悬停触发与时钟点击拦截双模式，提供中国农历、节假日与日程展示及性能基准评测。",
   "keywords": [

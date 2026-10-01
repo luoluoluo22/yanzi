@@ -76,6 +76,14 @@
 
 ---
 
+### 2.3a 版本化账号存储
+
+`GET /v1/account-storage/{id}?key={key}` 返回 `ok / exists / revision / content / accountId`，通过已有账号 ObjectSync 读取。
+
+`PUT /v1/account-storage/{id}` 的请求体是 `{ "key": "...", "content": "...", "expectedRevision": 0, "accountId": "读取返回的账号ID" }`。明确要求版本和账号；同一版本并发写入返回 `409 conflict`，缺少版本返回 400，账号变化返回 409，未登录返回 503。内容最大 256 KiB。均需本地 Agent 认证。
+
+此接口不隐式修改扩展的本地文件，扩展自行维护离线日志和冲突处理。现有 `/v1/storage/{id}` 语义保持兼容。
+
 ### 2.4 查询扩展运行状态（已有接口，增强返回）
 * **路径**：`GET /v1/extensions/{id}/status`
 * **说明**：综合 API 任务与 `RunningExtensionRegistry` 的常驻实例，不再仅依赖 API 的执行任务是否完成。

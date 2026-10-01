@@ -3261,7 +3261,7 @@ extends Activity {
 
     private JSONArray readLocalMobileExtensions() {
         try {
-            return new JSONArray(this.prefs.getString("mobileExtensions", "[]"));
+            return this.withBundledMobileExtensions(new JSONArray(this.prefs.getString("mobileExtensions", "[]")));
         }
         catch (Exception ex) {
             return new JSONArray();
@@ -3269,6 +3269,8 @@ extends Activity {
     }
 
     private void upsertLocalMobileExtension(JSONObject json) throws Exception {
+        // An explicit edit becomes a user-owned definition; bundle updates must preserve it.
+        json.remove("bundled");
         String id = MainActivity.firstNonEmpty(json.optString("id"), "mobile-extension-" + System.currentTimeMillis());
         json.put("id", (Object)id);
         JSONArray array = this.readLocalMobileExtensions();
@@ -3805,6 +3807,32 @@ extends Activity {
         }, "yanzi-headless-storage-diagnostic");
         diagnosticThread.start();
     }
+
+    private JSONArray withBundledMobileExtensions(JSONArray definitions) {
+        try {
+            JSONArray merged = new JSONArray();
+            java.util.HashSet<String> ids = new java.util.HashSet<>();
+            for (int i = 0; i < definitions.length(); i++) {
+                JSONObject item = definitions.optJSONObject(i);
+                if (item != null && !item.optBoolean("bundled", false)) {
+                    ids.add(item.optString("id")); merged.put(item);
+                }
+            }
+            String[] files = getAssets().list("mobile-extensions");
+            if (files != null) for (String file : files) {
+                if (!file.endsWith(".json")) continue;
+                try (java.io.InputStream stream = getAssets().open("mobile-extensions/" + file)) {
+                    java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+                    byte[] buffer = new byte[4096]; int count;
+                    while ((count = stream.read(buffer)) != -1) bytes.write(buffer, 0, count);
+                    JSONObject item = new JSONObject(new String(bytes.toByteArray(), java.nio.charset.StandardCharsets.UTF_8));
+                    if (ids.add(item.getString("id"))) merged.put(item.put("bundled", true));
+                }
+            }
+            return merged;
+        } catch (Exception failure) { Log.w("YanziExtensions", "Bundled definitions unavailable"); }
+        return definitions;
+    }
     private void diagnoseAccountExtensionStorage(Intent intent) {
         String extensionId = intent.getStringExtra("test_extension_id");
         String key = intent.getStringExtra("test_key");
@@ -4129,9 +4157,9 @@ extends Activity {
                     if (state.optBoolean("initialized", false)) {
                         JSONArray accountDefinitions =
                                 state.optJSONArray("extensions");
-                        mobileDefinitions = accountDefinitions == null
+                        mobileDefinitions = this.withBundledMobileExtensions(accountDefinitions == null
                                 ? new JSONArray()
-                                : accountDefinitions;
+                                : accountDefinitions);
                         this.prefs.edit()
                                 .putString(
                                         "mobileExtensions",
@@ -8316,7 +8344,7 @@ extends Activity {
     }
 
     private String buildMobileScriptHtml(String source) {
-        return "<!doctype html><html><body><script>window.context={mobile:{toast:function(text){yanziMobileJsHost.toast(String(text||''));},sendToDesktop:function(text){yanziMobileJsHost.sendToDesktop(String(text||''));},done:function(text){yanziMobileJsHost.done(String(text||''));},fail:function(text){yanziMobileJsHost.fail(String(text||''));},getSharedText:function(){return yanziMobileJsHost.getSharedText();},getClipboardText:function(){return Promise.resolve(yanziMobileJsHost.getClipboardText());},setClipboardText:function(text){return Promise.resolve(yanziMobileJsHost.setClipboardText(String(text||'')));},openUrl:function(url){return Promise.resolve(yanziMobileJsHost.openUrl(String(url||'')));},pickPhoto:function(){return Promise.resolve(yanziMobileJsHost.pickPhoto());},readTextFile:function(name){return Promise.resolve(JSON.parse(yanziMobileJsHost.readTextFile(String(name||''))));},saveTextFile:function(name,text){return Promise.resolve(JSON.parse(yanziMobileJsHost.saveTextFile(String(name||''),String(text||''))));},appendTextFile:function(name,text){return Promise.resolve(JSON.parse(yanziMobileJsHost.appendTextFile(String(name||''),String(text||''))));},httpGet:function(url){return Promise.resolve(JSON.parse(yanziMobileJsHost.httpGet(String(url||''))));},httpPostJson:function(url,jsonText){return Promise.resolve(JSON.parse(yanziMobileJsHost.httpPostJson(String(url||''),String(jsonText||''))));},getBatteryLevel:function(){return yanziMobileJsHost.getBatteryLevel();},getScreenBrightness:function(){return yanziMobileJsHost.getScreenBrightness();},setScreenBrightness:function(val){yanziMobileJsHost.setScreenBrightness(Number(val||0));},getLocation:function(){return Promise.resolve(JSON.parse(yanziMobileJsHost.getLocation()));},listScriptFiles:function(){return Promise.resolve(JSON.parse(yanziMobileJsHost.listScriptFiles()));},deleteScriptFile:function(name){return Promise.resolve(JSON.parse(yanziMobileJsHost.deleteScriptFile(String(name||''))));}},storage:{readText:function(key){return Promise.resolve(JSON.parse(yanziMobileJsHost.storageReadText(String(key||''))));},writeText:function(key,text,expectedRevision){var rev=expectedRevision==null?-1:Number(expectedRevision);if(!isFinite(rev))rev=-1;return Promise.resolve(JSON.parse(yanziMobileJsHost.storageWriteText(String(key||''),String(text||''),rev)));},deleteText:function(key,expectedRevision){var rev=expectedRevision==null?-1:Number(expectedRevision);if(!isFinite(rev))rev=-1;return Promise.resolve(JSON.parse(yanziMobileJsHost.storageDeleteText(String(key||''),rev)));}}};async function __run(){try{" + source + "\n;if(typeof run==='function'){await run(window.context);}yanziMobileJsHost.done('\u811a\u672c\u6267\u884c\u5b8c\u6210');}catch(e){yanziMobileJsHost.fail(String(e&&e.message?e.message:e));}}__run();</script></body></html>";
+        return "<!doctype html><html><body><script>window.__yanziStorageCallbacks={};window.__yanziStorageReply=function(id,value){var cb=window.__yanziStorageCallbacks[id];if(cb){delete window.__yanziStorageCallbacks[id];cb(value);}};function __yanziStorage(op,key,text,revision){return new Promise(function(resolve){var id=String(Date.now())+Math.random();window.__yanziStorageCallbacks[id]=resolve;yanziMobileJsHost.storageRequest(id,op,String(key||''),String(text||''),revision);});}window.context={mobile:{getAccountId:function(){return yanziMobileJsHost.getAccountId();},toast:function(text){yanziMobileJsHost.toast(String(text||''));},sendToDesktop:function(text){yanziMobileJsHost.sendToDesktop(String(text||''));},done:function(text){yanziMobileJsHost.done(String(text||''));},fail:function(text){yanziMobileJsHost.fail(String(text||''));},getSharedText:function(){return yanziMobileJsHost.getSharedText();},getClipboardText:function(){return Promise.resolve(yanziMobileJsHost.getClipboardText());},setClipboardText:function(text){return Promise.resolve(yanziMobileJsHost.setClipboardText(String(text||'')));},openUrl:function(url){return Promise.resolve(yanziMobileJsHost.openUrl(String(url||'')));},pickPhoto:function(){return Promise.resolve(yanziMobileJsHost.pickPhoto());},readTextFile:function(name){return Promise.resolve(JSON.parse(yanziMobileJsHost.readTextFile(String(name||''))));},saveTextFile:function(name,text){return Promise.resolve(JSON.parse(yanziMobileJsHost.saveTextFile(String(name||''),String(text||''))));},appendTextFile:function(name,text){return Promise.resolve(JSON.parse(yanziMobileJsHost.appendTextFile(String(name||''),String(text||''))));},httpGet:function(url){return Promise.resolve(JSON.parse(yanziMobileJsHost.httpGet(String(url||''))));},httpPostJson:function(url,jsonText){return Promise.resolve(JSON.parse(yanziMobileJsHost.httpPostJson(String(url||''),String(jsonText||''))));},getBatteryLevel:function(){return yanziMobileJsHost.getBatteryLevel();},getScreenBrightness:function(){return yanziMobileJsHost.getScreenBrightness();},setScreenBrightness:function(val){yanziMobileJsHost.setScreenBrightness(Number(val||0));},getLocation:function(){return Promise.resolve(JSON.parse(yanziMobileJsHost.getLocation()));},listScriptFiles:function(){return Promise.resolve(JSON.parse(yanziMobileJsHost.listScriptFiles()));},deleteScriptFile:function(name){return Promise.resolve(JSON.parse(yanziMobileJsHost.deleteScriptFile(String(name||''))));}},storage:{readText:function(key){return __yanziStorage('read',key,'',0);},writeText:function(key,text,expectedRevision){var rev=expectedRevision==null?-1:Number(expectedRevision);if(!isFinite(rev))rev=-1;return __yanziStorage('write',key,text,rev);},deleteText:function(key,expectedRevision){var rev=expectedRevision==null?-1:Number(expectedRevision);if(!isFinite(rev))rev=-1;return __yanziStorage('delete',key,'',rev);}}};async function __run(){try{" + source + "\n;if(typeof run==='function'){await run(window.context);}yanziMobileJsHost.done('\u811a\u672c\u6267\u884c\u5b8c\u6210');}catch(e){yanziMobileJsHost.fail(String(e&&e.message?e.message:e));}}__run();</script></body></html>";
     }
 
     private void executeMobileScriptHeadless(String source, String taskName, ScriptCallback callback) {
@@ -8336,6 +8364,8 @@ extends Activity {
                 runner = new WebView((Context)this);
                 this.activeHeadlessMobileScriptRunners.put(runnerId, runner);
                 runner.getSettings().setJavaScriptEnabled(true);
+                runner.getSettings().setDomStorageEnabled(true);
+                WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG);
                 runner.addJavascriptInterface(
                         (Object)new MobileJsBridge(
                                 extensionId,
@@ -8348,6 +8378,28 @@ extends Activity {
                         "text/html",
                         "UTF-8",
                         null);
+                JSONObject definition = this.findLocalMobileExtensionDefinition(extensionId);
+                if (definition != null && "mobile-view".equals(definition.optString("uiMode"))) {
+                    runner.getSettings().setDomStorageEnabled(true);
+                    runner.setWebChromeClient(new android.webkit.WebChromeClient() {
+                        @Override public boolean onJsConfirm(WebView view, String url, String message, android.webkit.JsResult result) {
+                            new AlertDialog.Builder(MainActivity.this).setMessage(message)
+                                    .setPositiveButton("确认", (dialog, which) -> result.confirm())
+                                    .setNegativeButton("取消", (dialog, which) -> result.cancel())
+                                    .setOnCancelListener(dialog -> result.cancel()).show();
+                            return true;
+                        }
+                    });
+                    android.app.Dialog view = new android.app.Dialog(this);
+                    view.setTitle(taskName);
+                    view.setContentView(runner);
+                    view.setOnDismissListener(dialog -> {
+                        this.releaseHeadlessMobileScriptRunner(runnerId);
+                        if (callback != null) callback.onResult(taskName + "已关闭");
+                    });
+                    view.show();
+                    if (view.getWindow() != null) view.getWindow().setLayout(-1, -1);
+                }
             }
             catch (Exception e) {
                 this.releaseHeadlessMobileScriptRunner(runnerId);
@@ -8939,6 +8991,7 @@ extends Activity {
 
     private class MobileJsBridge {
         private final String extensionId;
+        private final String storageAccountId;
         private final String runnerId;
         private final java.util.concurrent.atomic.AtomicBoolean terminalDelivered =
                 new java.util.concurrent.atomic.AtomicBoolean(false);
@@ -8968,6 +9021,7 @@ extends Activity {
             this.extensionId = value.isEmpty() ? "mobile-direct-code" : value;
             this.callback = callback;
             this.runnerId = runnerId;
+            this.storageAccountId = this.getAccountId();
         }
 
         @JavascriptInterface
@@ -9080,6 +9134,37 @@ extends Activity {
             catch (Exception ex) {
                 return MainActivity.buildJsonErrorResult(ex.getMessage());
             }
+        }
+
+        @JavascriptInterface
+        public String getAccountId() {
+            try { return ExtensionStorageProvider.accountId(MainActivity.this.prefs.getString("token", "")); }
+            catch (Exception failure) { return ""; }
+        }
+
+        @JavascriptInterface
+        public void storageRequest(String requestId, String operation, String key, String content, long revision) {
+            final String account = this.storageAccountId;
+            MainActivity.this.executor.execute(() -> {
+                String result;
+                try {
+                    if (!account.equals(getAccountId())) throw new IllegalStateException("账号已切换");
+                    JSONObject value;
+                    if ("read".equals(operation)) value = this.readAccountStorage(key);
+                    else if ("write".equals(operation)) value = this.writeAccountStorage(key, content, revision, false);
+                    else if ("delete".equals(operation)) value = this.writeAccountStorage(key, "", revision, true);
+                    else throw new IllegalArgumentException("不支持的存储操作");
+                    if (!account.equals(getAccountId())) throw new IllegalStateException("账号已切换");
+                    result = value.toString();
+                } catch (Exception failure) { result = MainActivity.buildJsonErrorResult(failure.getMessage()); }
+                final String response = result;
+                MainActivity.this.runOnUiThread(() -> {
+                    WebView view = this.runnerId == null ? MainActivity.this.activeMobileScriptRunner
+                            : MainActivity.this.activeHeadlessMobileScriptRunners.get(this.runnerId);
+                    if (view != null && !this.terminalDelivered.get()) view.evaluateJavascript(
+                            "window.__yanziStorageReply(" + JSONObject.quote(requestId) + "," + response + ")", null);
+                });
+            });
         }
 
         @JavascriptInterface

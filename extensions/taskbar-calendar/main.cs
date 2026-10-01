@@ -104,6 +104,11 @@ public static class YanziAction
     private static async Task<string> HandleCommandForRunningServiceAsync(object service, string input, YanziActionContext context)
     {
         var svcType = service.GetType();
+        if (input.StartsWith("add-reminder:", StringComparison.OrdinalIgnoreCase)
+            || input.StartsWith("rename-reminder:", StringComparison.OrdinalIgnoreCase)
+            || input.StartsWith("delete-reminder:", StringComparison.OrdinalIgnoreCase)
+            || input == "sync-status" || input == "sync-use-cloud" || input == "sync-keep-local")
+            return svcType.GetMethod("Run", [typeof(string)])?.Invoke(service, [input]) as string ?? "日历命令未执行";
 
         if (string.Equals(input, "test", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(input, "benchmark", StringComparison.OrdinalIgnoreCase))
@@ -286,6 +291,7 @@ public class TaskbarCalendarService
         {
             if (!_initialized || _shouldStop) return;
             _shouldStop = true;
+            CalendarReminderManager.Instance.StopSync();
             _clockCache?.Stop();
             Post(_hookDispatcher, () => _hookDispatcher?.InvokeShutdown());
             Post(_uiDispatcher, () => _uiDispatcher?.InvokeShutdown());
@@ -470,6 +476,30 @@ public class TaskbarCalendarService
 
     public string Run(string input)
     {
+        if (input == "sync-status") return CalendarReminderManager.Instance.SyncStatus;
+        if (input == "sync-use-cloud" || input == "sync-keep-local")
+            return CalendarReminderManager.Instance.ResolveConflictsAsync(input == "sync-keep-local").GetAwaiter().GetResult();
+        if (input.StartsWith("add-reminder:", StringComparison.OrdinalIgnoreCase))
+        {
+            var parts = input["add-reminder:".Length..].Split('|', 2);
+            if (parts.Length != 2 || !DateTime.TryParse(parts[0], out var date) || string.IsNullOrWhiteSpace(parts[1]))
+                return "格式：add-reminder:YYYY-MM-DD|标题";
+            CalendarReminderManager.Instance.AddReminder(date, parts[1]);
+            return "待办已保存，等待账号同步";
+        }
+        if (input.StartsWith("rename-reminder:", StringComparison.OrdinalIgnoreCase))
+        {
+            var parts = input["rename-reminder:".Length..].Split('|', 2);
+            var item = parts.Length == 2 ? CalendarReminderManager.Instance.GetItemById(parts[0]) : null;
+            if (item == null || string.IsNullOrWhiteSpace(parts[1])) return "事项不存在或标题为空";
+            CalendarReminderManager.Instance.UpdateItem(item.Id, parts[1], item.IsAlarm, item.AlarmTime);
+            return "事项已更新，等待账号同步";
+        }
+        if (input.StartsWith("delete-reminder:", StringComparison.OrdinalIgnoreCase))
+        {
+            CalendarReminderManager.Instance.RemoveItemById(input["delete-reminder:".Length..].Trim());
+            return "事项已删除，等待账号同步";
+        }
         if (string.IsNullOrWhiteSpace(input))
         {
             ToggleCalendar();
@@ -1009,6 +1039,9 @@ public class CalendarReminderManager
     private readonly object _lock = new();
     private readonly List<CalendarReminderItem> _items = new();
     private string? _filePath;
+    private CalendarAccountSync? _accountSync;
+    private bool _applyingCloud;
+    public long DataVersion { get; private set; }
 
     public void Initialize(YanziActionContext? context)
     {
@@ -1016,7 +1049,7 @@ public class CalendarReminderManager
         {
             try
             {
-                string baseDir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OpenQuickHost", "ExtensionStorage", "taskbar-calendar");
+                string baseDir = context?.ExtensionDataDirectory ?? System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OpenQuickHost", "ExtensionStorage", "taskbar-calendar");
                 if (!System.IO.Directory.Exists(baseDir))
                 {
                     System.IO.Directory.CreateDirectory(baseDir);
@@ -1035,6 +1068,39 @@ public class CalendarReminderManager
                 }
             }
             catch { }
+            if (context != null && _filePath != null)
+            {
+                _accountSync?.Dispose();
+                try
+                {
+                    _accountSync = new CalendarAccountSync(context, _filePath, this);
+                    _accountSync.Track(_items);
+                }
+                catch (Exception ex)
+                {
+                    _accountSync?.Dispose(); _accountSync = null;
+                    context.Log("日历同步初始化失败，已保留本地事项：" + ex.GetType().Name);
+                }
+            }
+        }
+    }
+
+    public void StopSync() { _accountSync?.Dispose(); }
+    public string SyncStatus => _accountSync?.StatusText ?? "日历尚未启动";
+    public Task<string> ResolveConflictsAsync(bool keepLocal) => _accountSync?.ResolveConflictsAsync(keepLocal)
+        ?? Task.FromResult("日历尚未启动");
+    public void ApplyCloud(Func<List<CalendarReminderItem>> buildItems)
+    {
+        lock (_lock)
+        {
+            _applyingCloud = true;
+            try
+            {
+                var items = buildItems();
+                if (JsonSerializer.Serialize(_items) == JsonSerializer.Serialize(items)) return;
+                _items.Clear(); _items.AddRange(items); SaveInternal();
+            }
+            finally { _applyingCloud = false; }
         }
     }
 
@@ -1046,6 +1112,8 @@ public class CalendarReminderManager
             var options = new JsonSerializerOptions { WriteIndented = true };
             string json = JsonSerializer.Serialize(_items, options);
             System.IO.File.WriteAllText(_filePath, json, Encoding.UTF8);
+            DataVersion++;
+            if (!_applyingCloud) _accountSync?.Track(_items);
         }
         catch { }
     }
@@ -1219,6 +1287,188 @@ public class CalendarReminderManager
 /// <summary>
 /// 临近重大节点实体（用于倒计时计算）
 /// </summary>
+public sealed class CalendarAccountRecord
+{
+    public string version { get; set; } = "";
+    public bool deleted { get; set; }
+    public CalendarReminderItem? item { get; set; }
+}
+public sealed class CalendarAccountChange
+{
+    public string expected { get; set; } = "";
+    public CalendarAccountRecord record { get; set; } = new();
+}
+public sealed class CalendarAccountDocument
+{
+    public int schemaVersion { get; set; } = 1;
+    public Dictionary<string, CalendarAccountRecord> records { get; set; } = new();
+}
+public sealed class CalendarAccountJournal
+{
+    public string accountId { get; set; } = "";
+    public Dictionary<string, CalendarAccountRecord> records { get; set; } = new();
+    public Dictionary<string, CalendarAccountChange> pending { get; set; } = new();
+    public Dictionary<string, string> localItems { get; set; } = new();
+}
+public sealed class CalendarAccountSync : IDisposable
+{
+    private readonly object _gate = new();
+    private readonly YanziActionContext _context;
+    private readonly CalendarReminderManager _manager;
+    private readonly string _journalPath;
+    private readonly System.Threading.Timer _timer;
+    private readonly System.Net.Http.HttpClient _http;
+    private readonly CancellationTokenSource _stop = new();
+    private CalendarAccountJournal _state = new();
+    private int _busy;
+    private string _lastStatus = "";
+    private readonly HashSet<string> _conflictIds = new();
+    public string StatusText => _lastStatus;
+    public CalendarAccountSync(YanziActionContext context, string legacyPath, CalendarReminderManager manager)
+    {
+        _context = context; _manager = manager; _journalPath = legacyPath + ".sync.json";
+        if (File.Exists(_journalPath)) _state = JsonSerializer.Deserialize<CalendarAccountJournal>(File.ReadAllText(_journalPath))
+            ?? throw new InvalidOperationException("日历同步日志无法读取，已保留原文件");
+        // Keep a one-time original backup before the first cloud import.
+        if (File.Exists(legacyPath) && !File.Exists(legacyPath + ".before-sync.bak")) File.Copy(legacyPath, legacyPath + ".before-sync.bak");
+        _http = new System.Net.Http.HttpClient { BaseAddress = new Uri(context.AgentApiBaseUrl), Timeout = TimeSpan.FromSeconds(25) };
+        _http.DefaultRequestHeaders.Add("X-Yanzi-Token", context.AgentApiToken);
+        _timer = new System.Threading.Timer(_ => { _ = SynchronizeAsync(); }, null, 1500, 10000);
+    }
+    private void Persist()
+    {
+        var temp = _journalPath + ".tmp";
+        File.WriteAllText(temp, JsonSerializer.Serialize(_state), new UTF8Encoding(false));
+        File.Move(temp, _journalPath, true);
+    }
+    public void Track(IEnumerable<CalendarReminderItem> items)
+    {
+        lock (_gate)
+        {
+            var local = items.ToDictionary(item => item.Id, item => JsonSerializer.Serialize(item));
+            foreach (var id in local.Keys.Concat(_state.localItems.Keys).Distinct().ToList())
+            {
+                var exists = local.TryGetValue(id, out var json);
+                if (exists && _state.localItems.TryGetValue(id, out var prior) && json == prior) continue;
+                _state.records.TryGetValue(id, out var previous);
+                _state.pending.TryGetValue(id, out var pending);
+                var record = new CalendarAccountRecord { version = Guid.NewGuid().ToString("N"), deleted = !exists,
+                    item = exists ? JsonSerializer.Deserialize<CalendarReminderItem>(json!) : previous?.item };
+                _state.pending[id] = new CalendarAccountChange { expected = pending?.expected ?? previous?.version ?? "", record = record };
+                _state.records[id] = record;
+            }
+            _state.localItems = local; Persist();
+        }
+    }
+    private void Status(string value)
+    {
+        if (_lastStatus == value) return; _lastStatus = value;
+        _context.Log("日历同步：" + value);
+    }
+    private async Task SynchronizeAsync()
+    {
+        if (_stop.IsCancellationRequested || Interlocked.Exchange(ref _busy, 1) != 0) return;
+        try
+        {
+            using var response = await _http.GetAsync("/v1/account-storage/taskbar-calendar?key=calendar.v1.json", _stop.Token);
+            response.EnsureSuccessStatusCode();
+            using var read = JsonDocument.Parse(await response.Content.ReadAsStringAsync(_stop.Token));
+            var root = read.RootElement;
+            var account = root.GetProperty("accountId").GetString() ?? "";
+            if (account.Length == 0) throw new InvalidOperationException("未登录账号");
+            Dictionary<string, CalendarAccountChange> pending;
+            lock (_gate)
+            {
+                if (_state.accountId.Length > 0 && account != _state.accountId)
+                { Status("账号已切换，已暂停同步，原账号的本地数据已保留"); return; }
+                _state.accountId = account; Persist();
+                pending = JsonSerializer.Deserialize<Dictionary<string, CalendarAccountChange>>(JsonSerializer.Serialize(_state.pending))!;
+            }
+            var document = new CalendarAccountDocument();
+            if (root.GetProperty("exists").GetBoolean())
+            {
+                using var raw = JsonDocument.Parse(root.GetProperty("content").GetString()!);
+                if (!raw.RootElement.TryGetProperty("schemaVersion", out var schema) || schema.GetInt32() != 1
+                    || !raw.RootElement.TryGetProperty("records", out var records) || records.ValueKind != JsonValueKind.Object)
+                    throw new InvalidOperationException("不支持的日历格式");
+                document = JsonSerializer.Deserialize<CalendarAccountDocument>(raw.RootElement.GetRawText())!;
+            }
+            if (document.schemaVersion != 1 || document.records == null) throw new InvalidOperationException("不支持的日历格式");
+            if (document.records.Any(pair => string.IsNullOrEmpty(pair.Value.version)
+                || (!pair.Value.deleted && (pair.Value.item == null || pair.Value.item.Id != pair.Key))))
+                throw new InvalidOperationException("日历记录格式错误，已保留本地数据");
+            var accepted = new Dictionary<string, CalendarAccountChange>();
+            int conflicts = 0;
+            var conflictIds = new HashSet<string>();
+            foreach (var change in pending)
+            {
+                document.records.TryGetValue(change.Key, out var remote);
+                if ((remote?.version ?? "") == change.Value.record.version) { accepted[change.Key] = change.Value; continue; }
+                if ((remote?.version ?? "") != change.Value.expected) { conflicts++; conflictIds.Add(change.Key); continue; }
+                document.records[change.Key] = change.Value.record; accepted[change.Key] = change.Value;
+            }
+            if (accepted.Count > 0)
+            {
+                var body = JsonSerializer.Serialize(new { key = "calendar.v1.json", content = JsonSerializer.Serialize(document),
+                    expectedRevision = root.GetProperty("revision").GetInt64(), accountId = account });
+                using var write = await _http.PutAsync("/v1/account-storage/taskbar-calendar",
+                    new System.Net.Http.StringContent(body, Encoding.UTF8, "application/json"), _stop.Token);
+                if ((int)write.StatusCode == 409) { Status("云端版本变化，保留修改并稍后重试"); return; }
+                write.EnsureSuccessStatusCode();
+                using var saved = JsonDocument.Parse(await write.Content.ReadAsStringAsync(_stop.Token));
+                if (saved.RootElement.GetProperty("accountId").GetString() != account) { Status("账号已切换，保留修改"); return; }
+            }
+            _manager.ApplyCloud(() =>
+            {
+                lock (_gate)
+                {
+                    _stop.Token.ThrowIfCancellationRequested();
+                    foreach (var done in accepted)
+                    {
+                        if (!_state.pending.TryGetValue(done.Key, out var current)) continue;
+                        if (current.record.version == done.Value.record.version) _state.pending.Remove(done.Key);
+                        else if (current.expected == done.Value.expected) current.expected = done.Value.record.version;
+                    }
+                    _state.records = document.records;
+                    _conflictIds.Clear(); _conflictIds.UnionWith(conflictIds);
+                    foreach (var change in _state.pending) _state.records[change.Key] = change.Value.record;
+                    var items = _state.records.Values.Where(r => !r.deleted && r.item != null).Select(r => r.item!).ToList();
+                    _state.localItems = items.ToDictionary(i => i.Id, i => JsonSerializer.Serialize(i)); Persist();
+                    return items;
+                }
+            });
+            Status(conflicts > 0 ? $"{conflicts} 项同时被修改，本地修改已保留。输入 sync-use-cloud 或 sync-keep-local 处理电脑端冲突" : "已连接账号，待办和闹钟双向同步正常");
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { Status("暂不可用，离线修改已保留（" + ex.GetType().Name + "）"); }
+        finally { Interlocked.Exchange(ref _busy, 0); }
+    }
+    public void Dispose() { lock (_gate) { _stop.Cancel(); _timer.Dispose(); _http.Dispose(); } }
+    public async Task<string> ResolveConflictsAsync(bool keepLocal)
+    {
+        using var response = await _http.GetAsync("/v1/account-storage/taskbar-calendar?key=calendar.v1.json", _stop.Token);
+        response.EnsureSuccessStatusCode();
+        using var read = JsonDocument.Parse(await response.Content.ReadAsStringAsync(_stop.Token));
+        var root = read.RootElement;
+        var doc = root.GetProperty("exists").GetBoolean()
+            ? JsonSerializer.Deserialize<CalendarAccountDocument>(root.GetProperty("content").GetString()!)! : new CalendarAccountDocument();
+        lock (_gate)
+        {
+            if (root.GetProperty("accountId").GetString() != _state.accountId) return "账号已切换，未修改同步日志";
+            File.WriteAllText(_journalPath + ".conflicts.bak", JsonSerializer.Serialize(_state), Encoding.UTF8);
+            foreach (var id in _conflictIds)
+            {
+                if (!_state.pending.TryGetValue(id, out var change)) continue;
+                if (!keepLocal) _state.pending.Remove(id);
+                else { doc.records.TryGetValue(id, out var current); change.expected = current?.version ?? ""; }
+            }
+            // Preserve the local versions before an explicit resolution, including deletions.
+            Persist();
+        }
+        await SynchronizeAsync(); return StatusText;
+    }
+}
+
 public class UpcomingEventItem
 {
     public DateTime Date { get; set; }
@@ -3839,10 +4089,16 @@ public class CalendarWindow : Window
         RefreshCountdownPanel();
     }
 
+    private long _renderedDataVersion = -1;
     private void UpdateClock()
     {
         TaskbarCalendarService.Instance.RefreshPresentationState();
         UpdateNavHeader();
+        if (_renderedDataVersion != CalendarReminderManager.Instance.DataVersion)
+        {
+            _renderedDataVersion = CalendarReminderManager.Instance.DataVersion;
+            RenderMonthGrid(); RefreshRightPanel(_selectedDate); RefreshCountdownPanel();
+        }
 
         // 检查待响铃闹钟
         CalendarReminderManager.Instance.CheckPendingAlarms(TaskbarCalendarService.Instance.ActionContext, triggered =>

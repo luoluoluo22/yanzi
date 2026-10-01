@@ -1320,6 +1320,46 @@ public sealed partial class LocalAgentApiServer : IDisposable
                 return;
             }
 
+            // Versioned account storage is shared by all cross-platform extensions.
+            if (path.StartsWith("/v1/account-storage/", StringComparison.Ordinal))
+            {
+                var extensionId = Uri.UnescapeDataString(path["/v1/account-storage/".Length..]);
+                var accountId = new OpenQuickHost.Sync.CloudSyncClient(OpenQuickHost.Sync.SyncConfigLoader.Load()).CurrentUserId;
+                if (request.HttpMethod == "GET")
+                {
+                    var key = GetQueryString(request, "key");
+                    if (string.IsNullOrWhiteSpace(key)) { await WriteJsonAsync(response, 400, new { error = "key_required" }); return; }
+                    var value = await OpenQuickHost.Sync.AccountExtensionDataStore.TryReadAsync(extensionId, key);
+                    await WriteJsonAsync(response, value.Available ? 200 : 503,
+                        new { ok = value.Available, exists = value.Exists, revision = value.Revision, content = value.Content, accountId });
+                    return;
+                }
+                if (request.HttpMethod == "PUT")
+                {
+                    var payload = await ReadJsonBodyAsync(request);
+                    var key = GetString(payload, "key");
+                    if (string.IsNullOrWhiteSpace(key) || !payload.TryGetProperty("expectedRevision", out var rev)
+                        || !rev.TryGetInt64(out var expectedRevision) || expectedRevision < 0)
+                    { await WriteJsonAsync(response, 400, new { error = "key_and_revision_required" }); return; }
+                    var content = GetString(payload, "content") ?? string.Empty;
+                    if (Encoding.UTF8.GetByteCount(content) > 262144)
+                    { await WriteJsonAsync(response, 413, new { error = "content_too_large" }); return; }
+                    try
+                    {
+                        var expectedAccount = GetString(payload, "accountId");
+                        if (string.IsNullOrWhiteSpace(expectedAccount) || expectedAccount != accountId)
+                        { await WriteJsonAsync(response, 409, new { ok = false, error = "account_changed" }); return; }
+                        var value = await OpenQuickHost.Sync.AccountExtensionDataStore.WriteAsync(extensionId, key, content, expectedRevision,
+                            expectedAccountId: expectedAccount);
+                        await WriteJsonAsync(response, value.Available ? 200 : 503, new { ok = value.Available, revision = value.Revision, accountId });
+                    }
+                    catch (OpenQuickHost.Sync.CloudSyncRevisionConflictException conflict)
+                    { await WriteJsonAsync(response, 409, new { ok = false, conflict = true, currentRevision = conflict.CurrentRevision }); }
+                    return;
+                }
+                await WriteJsonAsync(response, 405, new { error = "method_not_allowed" }); return;
+            }
+
             if (request.HttpMethod == "GET" && path.StartsWith("/v1/storage/", StringComparison.Ordinal))
             {
                 var extensionId = Uri.UnescapeDataString(path["/v1/storage/".Length..]);

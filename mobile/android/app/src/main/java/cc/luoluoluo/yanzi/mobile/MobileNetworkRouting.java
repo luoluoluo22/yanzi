@@ -10,6 +10,8 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 
 final class MobileNetworkRouting {
+    private static Context applicationContext;
+    static void initialize(Context context) { applicationContext = context.getApplicationContext(); }
     private static final String TAG = "MobileNetworkRouting";
 
     private MobileNetworkRouting() {
@@ -25,7 +27,7 @@ final class MobileNetworkRouting {
     }
 
     static Network findPreferredDirectNetwork() {
-        Context context = MainActivity.sContext;
+        Context context = applicationContext != null ? applicationContext : MainActivity.sContext;
         if (context == null) {
             return null;
         }

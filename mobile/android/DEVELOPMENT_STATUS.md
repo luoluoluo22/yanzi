@@ -645,3 +645,15 @@ PC 聊天窗口的文字、照片、文件均可转云端；Android 照片和文
 0.2.26 另包含旧内联 screenshot 兼容、更新包签名/版本/SHA256 和安装权限返回续接，构建通过但最终安装/新兼容图片仍需验收。公网更新清单暂保持 0.2.25。发布脚本自动更新 R2 清单并保留 Windows latest，未来 APK 发布必须使用 scripts/upload-release-installer.ps1 / scripts/publish-mobile-update.ps1，不能只发 GitHub 而遗忘公网清单。
 
 后端回归通过：57759b6029a647c6b6f2e08dac416df8；真实 WPF 公网文字回归通过：198f4e814a9241eeaaaf58b77cf3f17a。一台实体一加上的正式/Dev 两实例独立 ACK，不等于两部实体手机验收。无主动熄屏、无数据清空；真实系统推送仍未开通。详情见 docs/mobile-account-chat-update-2026-10-01.md。
+
+## 19. 内置便签与独立日历（2026-10-01）
+
+本轮按用户选择实现两个模式：`quick-notes` 是燕子内可见 `mobile-js / mobile-view` 小程序；`cc.luoluoluo.yanzi.calendar` 是独立原生 Android 日历，Dev 包后缀 `.dev`。宿主升级到 0.2.27 增加通用签名权限 + extensionScopes 的存储 Provider，令牌不传给独立 APP。便签源文件和定义位于 `extensions/quick-notes`，Gradle 自动生成内置目录；存储调用改为异步，网络请求不阻塞便签编辑。
+
+电脑日历 1.1.0 保留旧事项 ID、原 JSON 与首次备份，通过账号 ObjectSync 的 `taskbar-calendar / calendar.v1.json` 同步。两端均有持久化待上传修改、记录版本、整体 expectedRevision 和删除墓碑。同事项冲突保留本地版本，提供显式处理；账号切换不交叉上传。Windows 宿主增加通用 `/v1/account-storage/{id}` 版本化读写接口，其他小程序也可复用。
+
+验证：Windows 构建/自动启动与日历动态编译重载通过；宿主与独立日历 Dev/Release 构建通过；模拟器集成测试验证 Windows↔Android 读写、CAS、记录冲突、离线草稿持久化及重连、删除、范围及签名权限拒绝。原 Windows↔Android 共享存储回归通过（含新异步桥接）。一加 Dev 真机公网完成日历手机新增→电脑、电脑改名→手机、电脑删除→手机，测试事项清理后原两条事项逐字段保持一致。便签草稿在结束进程后恢复，公网保存和删除可由 Windows API 核对。
+
+本轮开始设备检查时，一加正式包已是 0.2.26（此前停留 0.2.25 的记录属于历史状态）；本轮没有执行该正式版升级。仅覆盖 Dev 到 0.2.27-dev，正式版 0.2.26 路径和版本保持一致。正式 0.2.27 APK 已构建，尚未安装或发布，公网更新清单未改。
+
+边界：日历前台每 10 秒同步及保存后同步；独立日历关闭后的后台自动刷新、手机原生闹钟通知和系统日历写入尚未实现，闹钟由电脑端响铃。未做息屏测试、未操作 K70、未开通推送服务。操作、协议及完整验证见 `docs/mobile-notes-calendar-2026-10-01.md`；回归脚本为 `scripts/test-calendar-companion.ps1`，只能清理模拟器测试包。

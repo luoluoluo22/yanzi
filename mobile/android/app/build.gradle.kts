@@ -17,8 +17,8 @@ android {
         applicationId = "cc.luoluoluo.yanzi.mobile"
         minSdk = 26
         targetSdk = 35
-        versionCode = 26
-        versionName = "0.2.26"
+        versionCode = 27
+        versionName = "0.2.27"
         manifestPlaceholders["fcmEnabled"] = fcmEnabled.toString()
         if (fcmEnabled) {
             val config = pushConfigFile!!.readText().replace("\\", "\\\\").replace("\"", "\\\"").replace("\r", "").replace("\n", "")
@@ -92,3 +92,28 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.alphacephei:vosk-android:0.3.75")
 }
+
+// Bundle mobile definitions from extension-owned files; never duplicate script sources.
+val mobileExtensionRoot = rootProject.file("../../extensions")
+val bundledExtensions = layout.buildDirectory.dir("generated/bundled-extensions")
+val bundleMobileExtensions by tasks.registering {
+    inputs.files(fileTree(mobileExtensionRoot) { include("*/mobile.json", "*/mobile.js") })
+    outputs.dir(bundledExtensions)
+    doLast {
+        val assets = bundledExtensions.get().asFile.resolve("mobile-extensions")
+        assets.mkdirs()
+        mobileExtensionRoot.listFiles()?.filter { it.isDirectory }?.forEach { folder ->
+            val definition = folder.resolve("mobile.json")
+            if (definition.isFile) {
+                @Suppress("UNCHECKED_CAST")
+                val metadata = groovy.json.JsonSlurper().parse(definition) as MutableMap<String, Any>
+                val source = folder.resolve(metadata["entry"] as String).canonicalFile
+                require(source.toPath().startsWith(folder.canonicalFile.toPath())) { "Mobile entry outside extension" }
+                metadata["script"] = mapOf("source" to source.readText())
+                assets.resolve(folder.name + ".json").writeText(groovy.json.JsonOutput.toJson(metadata))
+            }
+        }
+    }
+}
+android.sourceSets.getByName("main").assets.srcDir(bundledExtensions)
+tasks.named("preBuild") { dependsOn(bundleMobileExtensions) }
