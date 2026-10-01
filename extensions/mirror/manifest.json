@@ -1,0 +1,52 @@
+{
+  "id": "mirror",
+  "name": "镜子",
+  "version": "1.0.0",
+  "category": "效率工具",
+  "description": "基于 Windows 系统级事件驱动静默记录前台窗口轨迹与注意力足迹，提供客观的个人行为数据镜像。",
+  "keywords": [
+    "镜子",
+    "mirror",
+    "注意力",
+    "专注",
+    "时间记录",
+    "前台窗口",
+    "行为镜像",
+    "时流"
+  ],
+  "openTarget": null,
+  "toggleWindow": true,
+  "queryPrefixes": [
+    "mirror",
+    "jz",
+    "jingzi"
+  ],
+  "queryTargetTemplate": null,
+  "icon": "mdi:mirror-rectangle",
+  "accentHex": "#FF06B6D4",
+  "hostedView": null,
+  "hostedViewV2": null,
+  "hostedViewXaml": null,
+  "app": null,
+  "globalShortcut": null,
+  "hotkeyBehavior": null,
+  "runtime": "csharp",
+  "uiMode": "native-window",
+  "entryMode": "entry",
+  "entry": "main.cs",
+  "permissions": [
+    "storage",
+    "context.read"
+  ],
+  "script": null,
+  "startup": {
+    "mode": "on_app_launch",
+    "schedule": null
+  },
+  "searchProvider": null,
+  "mouseGesture": null,
+  "workingDirectory": null,
+  "runAsAdmin": false,
+  "waitForExit": false,
+  "isPublished": true
+}
