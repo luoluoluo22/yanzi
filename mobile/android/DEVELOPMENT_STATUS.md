@@ -673,3 +673,11 @@ PC 聊天窗口的文字、照片、文件均可转云端；Android 照片和文
 - Android SDK 提供 HostStorage、ScopedCloudStorage、YanziDocument；跨平台 JavaScript SDK 同时可用于网页与 Node。
 - 日历和 Android SDK 共 3 项 instrumentation 测试通过，Windows/Android 往返与冲突验证通过；真实公网授权、撤销、两项下载哈希校验通过。
 - 无本地应用缓存的第二客户端（模拟器）已获取账号中的便签定义和应用库选择，验证跨设备分发。OnePlus 真机仅更新 Dev，正式燕子仍为 0.2.26，全程未息屏。
+
+### 20.2 公网发布闭环
+
+- 代码已推送 main，Cloudflare Git 构建 564f5c2 已成功部署；没有本地部署 Worker。
+- 公网更新清单为 android-v0.2.29，主 APK 实际下载及 SHA-256 校验通过。应用目录含便签 0.1.0 和独立日历 0.1.1。
+- GitHub platform-sdk-v0.1.0 已发布 Android AAR 与浏览器/Node ES module。
+- 模拟器通过应用中心下载日历 0.1.1，经过系统安装确认成功安装，首次打开显示已同步电脑日历；真机 Dev 日历 0.1.1 同样显示已同步。
+- 已清理模拟器中的测试账号登录与日历缓存。物理手机正式燕子仍为 0.2.26，需要用户正常确认主应用升级；未绕过系统安装流程，未息屏。

@@ -64,3 +64,12 @@ executor.execute(() -> { /* document.sync(); 按返回状态展示冲突或等�
 `node --test cloudflare/src/application-platform.test.mjs sdk/javascript/yanzi-data.test.js` 验证作用域、只读、撤销、CAS、账号隔离、断网持久化及上传中再次编辑。`scripts/test-application-platform.ps1` 使用独立临时本地账号和 Worker 验证真实 JWT、D1 和旧同步接口隔离，不访问用户业务数据。
 
 Android 日历测试包含 3 项 instrumentation 测试，覆盖共用 SDK 草稿恢复和上传中编辑，以及日历逐条冲突与 Windows 往返。`scripts/test-public-application-platform.ps1` 仅读取真机 Dev 凭证到内存，验证公网目录下载哈希、限制访问和撤销。`scripts/test-second-device-application-library.ps1` 仅允许模拟器，Prepare/Verify/Cleanup 分别准备无缓存客户端、验证账号便签定义与应用选择、清理测试登录；不会清理物理手机。
+
+## 已发布渠道
+
+- 主应用：https://sync.luoluoluo.cc.cd/downloads/android/yanzi-mobile-0.2.29.apk
+- 独立日历：https://sync.luoluoluo.cc.cd/downloads/applications/yanzi-calendar-0.1.1.apk
+- SDK：https://github.com/luoluoluo22/yanzi/releases/tag/platform-sdk-v0.1.0
+- 公共目录：https://sync.luoluoluo.cc.cd/v1/applications/catalog
+
+2026-10-01 已验证：真机 Dev 获取便签并加入账号；无本地应用缓存的第二客户端获取同一账号的便签定义和应用库选择；模拟器通过公网目录校验下载、系统确认安装日历 0.1.1，首次打开成功读取电脑日历；主应用 0.2.29 公网 APK 哈希一致。正式真机仍为 0.2.26，升级需用户正常确认。
