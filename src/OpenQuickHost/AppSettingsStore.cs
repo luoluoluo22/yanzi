@@ -205,7 +205,10 @@ public static class AppSettingsStore
         {
             if (!File.Exists(SettingsPath))
             {
-                var defaults = Normalize(new AppSettings());
+                var defaults = Normalize(new AppSettings
+                {
+                    HasShownInitialWelcomePanel = false
+                });
                 TryImportPlaintextCredentials(defaults);
                 UpdateCache(defaults);
                 return defaults;
@@ -998,6 +1001,12 @@ public sealed record AppSettings
     public bool ShowBlindOperationGuide { get; set; } = true;
 
     public bool CloseToTray { get; set; } = true;
+
+    /// <summary>
+    /// 是否已展示过首次启动欢迎/仓库面板。
+    /// 仅在全新安装且首次启动时为 false，展示一次后置为 true；后续启动默认静默进托盘，避免打扰老用户与开发调试。
+    /// </summary>
+    public bool HasShownInitialWelcomePanel { get; set; } = true;
 
     public bool EnableAutoUpdate { get; set; } = true;
 

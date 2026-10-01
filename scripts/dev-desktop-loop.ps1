@@ -1,4 +1,4 @@
-param(
+﻿param(
     [switch]$SkipBuild
 )
 
@@ -24,7 +24,7 @@ try {
     Start-Sleep -Milliseconds 500
 
     $result = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
-        CommandLine = '"' + $ExePath + '"'
+        CommandLine = '"' + $ExePath + '" --tray'
         CurrentDirectory = $ExeDir
     }
 

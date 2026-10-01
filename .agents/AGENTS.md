@@ -1,4 +1,4 @@
-# 燕子 (Yanzi) 项目 AI Agent 开发规范约束
+﻿# 燕子 (Yanzi) 项目 AI Agent 开发规范约束
 
 本文件定义了所有 AI Agent（包括 Antigravity、Gemini 等助手）在参与本项目开发、维护、编译及发布时，**必须严格遵守**的行为准则与技术规约。
 
@@ -71,7 +71,7 @@
 >      ```
 >    - 为防止进程受控制台生命周期回收影响，必须使用独立进程创建方式拉起可执行文件（兼容 Windows PowerShell 5.1）：
 >      ```powershell
->      Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = "F:\Desktop\kaifa\OpenQuickHost\src\OpenQuickHost\bin\Debug\net9.0-windows\Yanzi.exe"; CurrentDirectory = "F:\Desktop\kaifa\OpenQuickHost\src\OpenQuickHost\bin\Debug\net9.0-windows" }
+>      Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = "F:\Desktop\kaifa\OpenQuickHost\src\OpenQuickHost\bin\Debug\net9.0-windows\Yanzi.exe --tray"; CurrentDirectory = "F:\Desktop\kaifa\OpenQuickHost\src\OpenQuickHost\bin\Debug\net9.0-windows" }
 >      ```
 >      脱离终端作业独立运行，保证桌面窗口正常渲染且不阻塞命令行交互。
 
