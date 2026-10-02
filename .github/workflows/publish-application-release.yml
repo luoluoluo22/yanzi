@@ -6,6 +6,8 @@ on:
       - main
     paths:
       - "release-inputs/applications/**"
+      - ".github/workflows/publish-application-release.yml"
+      - "scripts/application-release-ci.py"
   workflow_dispatch:
 
 permissions:
@@ -26,18 +28,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android build tools
+      - name: Verify preinstalled Android build tools
         shell: bash
-        run: sdkmanager "build-tools;35.0.0"
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls -1 "$ANDROID_HOME/build-tools"
+          test -n "$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -type f -name aapt | head -n 1)"
+          test -n "$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -type f -name apksigner | head -n 1)"
 
       - name: Verify release input and prepare catalog
         shell: bash
