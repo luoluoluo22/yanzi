@@ -2170,6 +2170,8 @@ async function handleRequest(request, env, ctx) {
     await ensureUser(env, auth.userId);
 
     const message = normalizeDeviceMessagePayload(payload);
+    delete message.payload.authorization;
+    if (message.kind === 'capability.invoke') message.payload.authorization = { type: 'account-owner' };
     delete message.payload.accountChat;
     // Only user chat is shared. Commands retain their explicit device/platform routing.
     if (['text', 'photo', 'file', 'screenshot'].includes(message.kind) &&
