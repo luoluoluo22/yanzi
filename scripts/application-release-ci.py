@@ -54,10 +54,13 @@ def verify_apk(meta, apk):
     package_name, version_code, version_name = m.group(1), int(m.group(2)), m.group(3)
     if package_name != meta["packageName"] or version_code != int(meta["versionCode"]) or version_name != meta["version"]:
         raise SystemExit(f"APK identity mismatch: {package_name} {version_code} {version_name}")
-    certs = subprocess.check_output([apksigner, "verify", "--print-certs", str(apk)], text=True, errors="replace")
-    cm = re.search(r"Signer #1 certificate SHA-256 digest:\s*([a-fA-F0-9]+)", certs)
+    cert_run = subprocess.run([apksigner, "verify", "--print-certs", str(apk)], text=True, errors="replace", capture_output=True)
+    if cert_run.returncode != 0:
+        raise SystemExit("APK signature verification failed: " + (cert_run.stderr or cert_run.stdout).strip())
+    certs = (cert_run.stdout or "") + "\n" + (cert_run.stderr or "")
+    cm = re.search(r"certificate SHA-256 digest:\s*([a-fA-F0-9]+)", certs, re.IGNORECASE)
     if not cm:
-        raise SystemExit("APK certificate digest unavailable")
+        raise SystemExit("APK certificate digest unavailable; apksigner output: " + certs.strip()[:500])
     certificate = cm.group(1).lower()
     if certificate != meta["certificateSha256"].lower():
         raise SystemExit(f"APK certificate mismatch: {certificate}")
