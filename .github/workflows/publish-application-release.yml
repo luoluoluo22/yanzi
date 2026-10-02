@@ -1,0 +1,75 @@
+name: Publish application release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "release-inputs/applications/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: application-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_META: release-inputs/applications/yanzi-album.json
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android build tools
+        shell: bash
+        run: sdkmanager "build-tools;35.0.0"
+
+      - name: Verify release input and prepare catalog
+        shell: bash
+        run: python3 scripts/application-release-ci.py prepare "$RELEASE_META"
+
+      - name: Resolve artifact name
+        id: release
+        shell: bash
+        run: |
+          echo "apk=$(python3 -c 'import json; print(json.load(open(".artifacts/application-release/entry.json"))["downloadPath"].split("/")[-1])')" >> "$GITHUB_OUTPUT"
+          echo "apk_path=$(python3 -c 'import json; print(json.load(open("release-inputs/applications/yanzi-album.json"))["apkPath"])')" >> "$GITHUB_OUTPUT"
+
+      - name: Upload immutable APK
+        shell: bash
+        run: >
+          npx --yes wrangler@4 r2 object put
+          "openquickhost-sync-assets/downloads/applications/${{ steps.release.outputs.apk }}"
+          --file "${{ steps.release.outputs.apk_path }}"
+          --content-type application/vnd.android.package-archive
+          --remote
+          --config wrangler.jsonc
+
+      - name: Publish catalog
+        shell: bash
+        run: >
+          npx --yes wrangler@4 r2 object put
+          "openquickhost-sync-assets/downloads/applications/catalog.json"
+          --file ".artifacts/application-release/catalog.json"
+          --content-type application/json
+          --remote
+          --config wrangler.jsonc
+
+      - name: Verify public release
+        shell: bash
+        run: python3 scripts/application-release-ci.py verify "$RELEASE_META"

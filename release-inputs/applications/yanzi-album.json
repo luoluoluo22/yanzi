@@ -1,0 +1,12 @@
+{
+  "applicationId": "yanzi-album",
+  "name": "相册",
+  "kind": "android-apk",
+  "version": "0.2.0",
+  "versionCode": 2,
+  "description": "系统图库浏览、大图手势缩放、本地编辑、多选分享/删除、图片发送到电脑处理并回传作品",
+  "packageName": "cc.luoluoluo.yanzi.album",
+  "minHostVersionCode": 33,
+  "certificateSha256": "8a0ec0b84d1a05edcc89dd020bf81901f9ed7f083887db7c05201c59b31e1ee3",
+  "apkPath": "release-inputs/applications/yanzi-album-0.2.0.apk"
+}
