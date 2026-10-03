@@ -51,7 +51,7 @@
 - `test-real-phone-public-chat` 最终全量重跑通过：无 LAN/过时 LAN 的聊天窗口发送、10 次通知、双向图片与 600,000 字节文件的 SHA256、双方 WebSocket 在线、停止应用时保持 pending、重新启动后 ACK。通知服务端 ACK 中位数 2,430 ms，P95 2,543 ms；这衡量持久化确认，不等同于 UI 展示耗时。测试附件清理成功；此前一条遗留测试附件已精确核对哈希及创建时间并删除。
 - `dev-real-phone -SkipBuild -SkipInstall` 最终通过：24 个已渲染的应用文本节点、无 Fatal/ANR、正式包保留。界面截图保存在 `%TEMP%/YanziDev/real-phone/android-smoke.png`。修复 PowerShell 5.1 将 ADB pull 成功进度误作异常的问题。手机仍连接原公网账号，保留正式版和 Dev 用户数据；测试附件已删除，局域网测试收件历史保留作为持久化证据。
 
-公网验收产物：`%TEMP%/YanziDev/public-chat/50f99c4debdc40619d5ba720ac51342c`。局域网验收产物：`%TEMP%/YanziDev/lan-receive/9aa296eb50848edaf1ef9c82c504356`。
+公网验收产物：`%TEMP%/YanziDev/public-chat/50f99c4debdc40619d5ba720ac51342c`。局域网验收产物：`%TEMP%/YanziDev/lan-receive/9aa296eb508848edaf1ef9c82c504356`。
 
 真机桥产物：`%TEMP%/YanziDev/message-bridge/1458b7a6fb3147a7ba668614032088ad`。
 
