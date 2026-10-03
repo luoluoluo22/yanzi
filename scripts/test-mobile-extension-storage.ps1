@@ -11,14 +11,17 @@ $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "dev-test-worker.ps1")
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $ConfigPath = Join-Path $RepoRoot "cloudflare\wrangler.toml"
+$TestArtifact = Join-Path $env:TEMP ("YanziDev/test-mobile-extension-storage/" + [Guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Force -Path $TestArtifact | Out-Null
+$WorkerState = Join-Path $TestArtifact "worker-state"
 $Adb = "F:\SDK\platform-tools\adb.exe"
 $ExtensionId = "mobile-storage-integration"
 $StorageKey = "integration/state.json"
 $ResultKey = "integration/result.json"
 $Secret = "yanzi-mobile-storage-test"
-$WorkerLog = Join-Path $env:TEMP "yanzi-mobile-storage-worker.log"
-$WorkerError = Join-Path $env:TEMP "yanzi-mobile-storage-worker.err"
-$PrefsTemp = Join-Path $env:TEMP "yanzi-mobile-storage-prefs.xml"
+$WorkerLog = Join-Path $TestArtifact "yanzi-mobile-storage-worker.log"
+$WorkerError = Join-Path $TestArtifact "yanzi-mobile-storage-worker.err"
+$PrefsTemp = Join-Path $TestArtifact "yanzi-mobile-storage-prefs.xml"
 
 function ConvertTo-Base64Url([byte[]]$Bytes) {
     return [Convert]::ToBase64String($Bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_')
@@ -73,7 +76,7 @@ Stop-YanziLocalWorkerPort -Port $Port
 Remove-Item -LiteralPath $WorkerLog, $WorkerError -Force -ErrorAction SilentlyContinue
 Push-Location $RepoRoot
 try {
-    & npx.cmd wrangler d1 migrations apply openquickhost-sync-db --local --config $ConfigPath | Out-Null
+    & npx.cmd wrangler d1 migrations apply openquickhost-sync-db --local --persist-to $WorkerState --config $ConfigPath | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "Failed to apply local D1 migrations." }
 }
 finally {
@@ -97,7 +100,7 @@ $objectId = "extensionData.v1." + (Get-Sha256Hex ($ExtensionId + [char]0 + $Stor
 $resultObjectId = "extensionData.v1." + (Get-Sha256Hex ($ExtensionId + [char]0 + $ResultKey))
 
 $workerArgs = @(
-    "wrangler", "dev", "--local", "--ip", "0.0.0.0", "--port", $Port,
+    "wrangler", "dev", "--local", "--persist-to", $WorkerState, "--ip", "0.0.0.0", "--port", $Port,
     "--config", $ConfigPath,
     "--var", "AUTH_TOKEN_SECRET:$Secret",
     "--var", "SYNC_OBJECTS_AUTHORITATIVE:true"

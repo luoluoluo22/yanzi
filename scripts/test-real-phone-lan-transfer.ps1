@@ -1,4 +1,4 @@
-﻿param([switch]$AllowPhysicalDev, [switch]$ForceCloudFallback)
+﻿param([switch]$AllowPhysicalDev, [switch]$ForceCloudFallback, [string]$Serial = '')
 $ErrorActionPreference = 'Stop'
 if (-not $AllowPhysicalDev) { throw 'Use -AllowPhysicalDev to test only the isolated DEV package.' }
 if ([Threading.Thread]::CurrentThread.ApartmentState -ne 'STA') { throw 'Run with powershell -STA.' }
@@ -7,8 +7,12 @@ Add-Type -AssemblyName System.Drawing
 $adb = 'F:\SDK\platform-tools\adb.exe'
 $package = 'cc.luoluoluo.yanzi.mobile.dev'
 $serials = @(& $adb devices | Select-Object -Skip 1 | Where-Object { $_ -match '^\S+\s+device\s*$' } | ForEach-Object { ($_ -split '\s+')[0] })
-if ($serials.Count -ne 1) { throw 'One authorized phone is required.' }
-$serial = $serials[0]
+if (-not $Serial) {
+    if ($serials.Count -ne 1) { throw 'Multiple phones are connected; pass -Serial explicitly.' }
+    $Serial = $serials[0]
+}
+if ($serials -notcontains $Serial) { throw 'Selected physical phone is not connected.' }
+$serial = $Serial
 $productionBefore = (& $adb -s $serial shell pm path cc.luoluoluo.yanzi.mobile) -join ''
 $settings = Get-Content (Join-Path $env:LOCALAPPDATA 'OpenQuickHost\appsettings.local.json') -Raw | ConvertFrom-Json
 if (-not $settings.enableLanSync) { throw 'Enable desktop LAN sync first.' }

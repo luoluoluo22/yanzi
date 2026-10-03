@@ -102,6 +102,10 @@
     <PackageReference Include="Velopack" Version="1.2.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\Yanzi.Core\Yanzi.Core.csproj" />
+  </ItemGroup>
+
   <Target Name="CopyNativeWindowReferenceAssembliesForBuild" AfterTargets="Build">
     <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)..\..\scripts\copy-native-window-refs.ps1&quot; -OutputDir &quot;$(TargetDir)NativeWindowRefs&quot;" />
   </Target>

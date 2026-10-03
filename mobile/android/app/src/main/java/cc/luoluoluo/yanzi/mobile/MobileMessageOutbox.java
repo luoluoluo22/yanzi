@@ -12,7 +12,7 @@ final class MobileMessageOutbox {
     private static final Object gate = new Object();
     private static final java.util.concurrent.atomic.AtomicBoolean replaying = new java.util.concurrent.atomic.AtomicBoolean();
     private static File root(String base, String token) throws Exception {
-        Context context = MainActivity.sContext;
+        Context context = MobileApplicationContext.get();
         if (context == null) throw new IOException("outbox_context_unavailable");
         JSONObject claims = new JSONObject(new String(android.util.Base64.decode(token.split("\\.")[1],
             android.util.Base64.URL_SAFE | android.util.Base64.NO_WRAP | android.util.Base64.NO_PADDING), StandardCharsets.UTF_8));

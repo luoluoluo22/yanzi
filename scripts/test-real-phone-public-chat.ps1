@@ -1,10 +1,15 @@
-param([switch]$TextOnly)
+﻿param([switch]$TextOnly, [string]$Serial = '')
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $adb = 'F:\SDK\platform-tools\adb.exe'
 $serials = @(& $adb devices | Select-Object -Skip 1 | Where-Object { $_ -match '^\S+\s+device\s*$' -and $_ -notmatch '^emulator-' } | ForEach-Object { ($_ -split '\s+')[0] })
-if ($serials.Count -ne 1) { throw 'Exactly one physical phone is required.' }
-$serial = $serials[0]
+if (-not $Serial) {
+    if ($serials.Count -ne 1) { throw 'Multiple phones are connected; pass -Serial explicitly.' }
+    $Serial = $serials[0]
+}
+if ($serials -notcontains $Serial) { throw 'Selected physical phone is not connected.' }
+$serial = $Serial
+. (Join-Path $PSScriptRoot 'dev-phone-chat-snapshot.ps1')
 $package = 'cc.luoluoluo.yanzi.mobile.dev'
 [xml]$prefs = (@(& $adb -s $serial exec-out run-as $package cat shared_prefs/yanzi-mobile.xml) -join "`n")
 $target = [string](@($prefs.map.string | Where-Object {$_.name -eq 'deviceId'})[0].'#text')
@@ -57,9 +62,7 @@ try {
         $end = (Get-Date).AddSeconds(90)
         $received = $false
         do {
-            [xml]$phone = (@(& $adb -s $serial exec-out run-as $package cat shared_prefs/yanzi-mobile.xml) -join "`n")
-            $history = @($phone.map.string | Where-Object {$_.name -eq 'desktop_chat_history'})
-            if ($history.Count -gt 0 -and ([string]$history[0].'#text').Contains($marker)) {$received=$true;break}
+            if (Test-YanziPhoneChatMessage $adb $serial $package $marker $artifact) {$received=$true;break}
             Start-Sleep -Seconds 2
         } while ((Get-Date) -lt $end)
         if (-not $received) {throw 'Public message was not saved in phone chat history.'}

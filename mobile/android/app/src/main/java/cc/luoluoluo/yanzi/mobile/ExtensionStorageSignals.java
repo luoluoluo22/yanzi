@@ -10,7 +10,7 @@ final class ExtensionStorageSignals {
         c.getSharedPreferences("extension-subscribers",0).edit().putString(caller+"/"+extension,extension).apply();
     }
     static void publish(Context c,String base,String token,String device,String ext,String key,long revision) throws Exception {
-        MainActivity.sContext=c.getApplicationContext();
+        MobileApplicationContext.initialize(c);
         JSONObject message=new JSONObject().put("kind",KIND).put("sourceDeviceId",device)
             .put("targetPlatform","desktop").put("clientMessageId",java.util.UUID.randomUUID().toString())
             .put("payload",new JSONObject().put("extensionId",ext).put("key",key).put("revision",revision));

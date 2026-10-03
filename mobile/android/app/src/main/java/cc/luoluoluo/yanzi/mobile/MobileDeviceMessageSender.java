@@ -14,7 +14,7 @@ final class MobileDeviceMessageSender {
         payload.put("clientOperationId", envelope.getString("clientMessageId"));
         java.io.File saved = MobileMessageOutbox.save(base, token, envelope);
         JSONObject delivered = null;
-        String lan = LanDiscoveryManager.getLanBaseUrl(MainActivity.sContext);
+        String lan = LanDiscoveryManager.getLanBaseUrl(MobileApplicationContext.get());
         if (lan != null && !execution) {
             java.net.HttpURLConnection connection = null;
             try {

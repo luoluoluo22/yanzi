@@ -19,11 +19,11 @@ final class MobileNetworkRouting {
 
     static HttpURLConnection openLanConnection(URL url) throws Exception {
         if (url.getHost().equals("127.0.0.1") || url.getHost().equals("localhost")) return openLanPlainConnection(url);
-        Context context = applicationContext != null ? applicationContext : MainActivity.sContext;
+        Context context = applicationContext != null ? applicationContext : MobileApplicationContext.get();
         return new SecureLanConnection(url, SecureLanConnection.load(context, LanDiscoveryManager.getLanDeviceId(context)));
     }
     static HttpURLConnection openLanPlainConnection(URL url) throws Exception {
-        Context context = applicationContext != null ? applicationContext : MainActivity.sContext;
+        Context context = applicationContext != null ? applicationContext : MobileApplicationContext.get();
         if (context != null && !"127.0.0.1".equals(url.getHost()) && !"localhost".equals(url.getHost())) {
             ConnectivityManager manager = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
             if (manager != null) for (Network network : manager.getAllNetworks()) {
@@ -43,7 +43,7 @@ final class MobileNetworkRouting {
     }
 
     static void bindLanSocket(java.net.DatagramSocket socket) throws Exception {
-        Context context = applicationContext != null ? applicationContext : MainActivity.sContext;
+        Context context = applicationContext != null ? applicationContext : MobileApplicationContext.get();
         if (context == null) return;
         ConnectivityManager manager = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
         if (manager == null) return;
@@ -67,7 +67,7 @@ final class MobileNetworkRouting {
     }
 
     static Network findPreferredDirectNetwork() {
-        Context context = applicationContext != null ? applicationContext : MainActivity.sContext;
+        Context context = applicationContext != null ? applicationContext : MobileApplicationContext.get();
         if (context == null) {
             return null;
         }
@@ -92,6 +92,8 @@ final class MobileNetworkRouting {
                 return null;
             }
 
+            Network preferred = null;
+            int preferredScore = -1;
             for (Network network : manager.getAllNetworks()) {
                 NetworkCapabilities capabilities =
                         manager.getNetworkCapabilities(network);
@@ -110,9 +112,12 @@ final class MobileNetworkRouting {
                                         NetworkCapabilities.TRANSPORT_CELLULAR);
 
                 if (internet && notVpn && physical) {
-                    return network;
+                    int score = (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ? 10 : 0)
+                            + (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) ? 1 : 0);
+                    if (score > preferredScore) { preferred = network; preferredScore = score; }
                 }
             }
+            return preferred;
         }
         catch (Exception ex) {
             Log.w(

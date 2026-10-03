@@ -17,8 +17,8 @@ android {
         applicationId = "cc.luoluoluo.yanzi.mobile"
         minSdk = 26
         targetSdk = 35
-        versionCode = 36
-        versionName = "0.2.36"
+        versionCode = 42
+        versionName = "0.2.42"
         manifestPlaceholders["fcmEnabled"] = fcmEnabled.toString()
         if (fcmEnabled) {
             val config = pushConfigFile!!.readText().replace("\\", "\\\\").replace("\"", "\\\"").replace("\r", "").replace("\n", "")
@@ -85,6 +85,7 @@ android {
 }
 
 dependencies {
+    implementation(project(":data-sdk"))
     if (fcmEnabled) implementation("com.google.firebase:firebase-messaging:24.1.0")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")

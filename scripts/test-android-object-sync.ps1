@@ -7,11 +7,14 @@ $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "dev-test-worker.ps1")
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $ConfigPath = Join-Path $RepoRoot "cloudflare\wrangler.toml"
+$TestArtifact = Join-Path $env:TEMP ("YanziDev/test-android-object-sync/" + [Guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Force -Path $TestArtifact | Out-Null
+$WorkerState = Join-Path $TestArtifact "worker-state"
 $Adb = "F:\SDK\platform-tools\adb.exe"
 $Package = "cc.luoluoluo.yanzi.mobile"
 $Secret = "yanzi-android-object-sync-test"
-$LogPath = Join-Path $env:TEMP "yanzi-android-object-sync-worker.log"
-$ErrorPath = Join-Path $env:TEMP "yanzi-android-object-sync-worker.err"
+$LogPath = Join-Path $TestArtifact "yanzi-android-object-sync-worker.log"
+$ErrorPath = Join-Path $TestArtifact "yanzi-android-object-sync-worker.err"
 
 function ConvertTo-Base64Url([byte[]]$Bytes) {
     return [Convert]::ToBase64String($Bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_')
@@ -48,7 +51,7 @@ Stop-YanziLocalWorkerPort -Port $Port
 Remove-Item -LiteralPath $LogPath, $ErrorPath -Force -ErrorAction SilentlyContinue
 Push-Location $RepoRoot
 try {
-    & npx.cmd wrangler d1 migrations apply openquickhost-sync-db --local --config $ConfigPath | Out-Null
+    & npx.cmd wrangler d1 migrations apply openquickhost-sync-db --local --persist-to $WorkerState --config $ConfigPath | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "Failed to apply local D1 migrations." }
 }
 finally {
@@ -57,7 +60,7 @@ finally {
 
 $userId = "android-object-sync-$([Guid]::NewGuid().ToString('N'))"
 $token = New-TestToken $Secret $userId
-$workerArgs = @("wrangler", "dev", "--local", "--ip", "0.0.0.0", "--port", $Port, "--config", $ConfigPath, "--var", "AUTH_TOKEN_SECRET:$Secret", "--var", "SYNC_OBJECTS_AUTHORITATIVE:true")
+$workerArgs = @("wrangler", "dev", "--local", "--persist-to", $WorkerState, "--ip", "0.0.0.0", "--port", $Port, "--config", $ConfigPath, "--var", "AUTH_TOKEN_SECRET:$Secret", "--var", "SYNC_OBJECTS_AUTHORITATIVE:true")
 $worker = Start-Process -FilePath "npx.cmd" -ArgumentList $workerArgs -WorkingDirectory $RepoRoot -WindowStyle Hidden -RedirectStandardOutput $LogPath -RedirectStandardError $ErrorPath -PassThru
 
 try {

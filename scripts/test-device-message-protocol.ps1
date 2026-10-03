@@ -32,8 +32,14 @@ function Request([string]$Path,[string]$Method='GET',$Body=$null,[bool]$Authoriz
         $failure=$_.Exception
         while ($failure.InnerException -and -not $failure.Response) { $failure=$failure.InnerException }
         if (-not $failure.Response) { throw }
-        $reader=New-Object IO.StreamReader($failure.Response.GetResponseStream())
-        try { $raw=$reader.ReadToEnd() } finally { $reader.Dispose() }
+        if ($_.ErrorDetails.Message) {
+            $raw=$_.ErrorDetails.Message
+        } elseif ($failure.Response -is [System.Net.Http.HttpResponseMessage]) {
+            $raw=$failure.Response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+        } else {
+            $reader=New-Object IO.StreamReader($failure.Response.GetResponseStream())
+            try { $raw=$reader.ReadToEnd() } finally { $reader.Dispose() }
+        }
         if ([string]::IsNullOrWhiteSpace($raw) -and $_.ErrorDetails.Message) { $raw=$_.ErrorDetails.Message }
         return @{status=[int]$failure.Response.StatusCode;body=(ReadFixtureResponse $raw)}
     }

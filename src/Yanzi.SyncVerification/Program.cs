@@ -2,6 +2,12 @@ using System.Text.Json;
 using OpenQuickHost;
 using OpenQuickHost.Sync;
 
+if (args.Contains("--local-api-boundaries"))
+{
+    await LocalApiBoundaryVerification.RunAsync();
+    return;
+}
+
 if (args.Contains("--mobile-message-bridge"))
 {
     await MobileMessageBridgeVerification.RunAsync(args);

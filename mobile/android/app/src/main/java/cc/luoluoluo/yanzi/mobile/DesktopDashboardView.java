@@ -2,13 +2,13 @@ package cc.luoluoluo.yanzi.mobile;
 
 import android.app.Activity;
 import android.view.Gravity;
-import android.view.View;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
 final class DesktopDashboardView {
     static final String COMPUTER_ICON = "mdi:desktop-classic";
+
     private static final class ActionRef {
         final LinearLayout root;
         final ImageView icon;
@@ -30,11 +30,11 @@ final class DesktopDashboardView {
     }
 
     static final class Result {
-        final TextView state;
+        final ImageView stateIcon;
         final ActionRef[] actions;
 
-        Result(TextView state, ActionRef[] actions) {
-            this.state = state;
+        Result(ImageView stateIcon, ActionRef[] actions) {
+            this.stateIcon = stateIcon;
             this.actions = actions;
         }
 
@@ -45,14 +45,25 @@ final class DesktopDashboardView {
         }
 
         void update(boolean connected, String type) {
+            String iconName;
+            int color;
+            String description;
             if (!connected) {
-                state.setText("离线");
-                state.setTextColor(YanziUiKit.RED);
-                return;
+                iconName = "cloud-off-outline";
+                color = YanziUiKit.RED;
+                description = "离线";
+            } else if ("lan".equals(type)) {
+                iconName = "lan-connect";
+                color = YanziUiKit.GREEN;
+                description = "局域网";
+            } else {
+                iconName = "cloud-outline";
+                color = YanziUiKit.BLUE;
+                description = "云端";
             }
-            String channel = "lan".equals(type) ? "局域网" : "云端";
-            state.setText(channel);
-            state.setTextColor(YanziUiKit.GREEN);
+            stateIcon.setImageDrawable(new PathDrawable(
+                    MobileIconLibrary.resolveOrDefault(iconName), color));
+            stateIcon.setContentDescription(description);
         }
     }
 
@@ -76,20 +87,20 @@ final class DesktopDashboardView {
                 YanziUiKit.dp(a, 4),
                 YanziUiKit.dp(a, 14));
 
-        ImageView computer = YanziUiKit.icon(a, COMPUTER_ICON, YanziUiKit.TEXT, 28);
-        computer.setContentDescription("我的电脑");
-        computer.setClickable(true);
-        computer.setFocusable(true);
-        computer.setOnClickListener(v -> details.run());
-        TextView state = YanziUiKit.text(a, "检测中…", 12, YanziUiKit.SECONDARY, false);
-        LinearLayout.LayoutParams stateLp = new LinearLayout.LayoutParams(-2, -2);
-        stateLp.setMarginStart(YanziUiKit.dp(a, 12));
+        ImageView stateIcon = YanziUiKit.icon(a, "cloud-off-outline", YanziUiKit.MUTED, 28);
+        stateIcon.setContentDescription("检测连接状态");
+        stateIcon.setClickable(true);
+        stateIcon.setFocusable(true);
+        stateIcon.setOnClickListener(v -> details.run());
 
-        info.addView(computer, new LinearLayout.LayoutParams(
-                YanziUiKit.dp(a, 48), YanziUiKit.dp(a, 48)));
-        computer.setPadding(YanziUiKit.dp(a, 8), YanziUiKit.dp(a, 8),
-                YanziUiKit.dp(a, 8), YanziUiKit.dp(a, 8));
-        info.addView(state, stateLp);
+        LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(
+                YanziUiKit.dp(a, 48), YanziUiKit.dp(a, 48));
+        info.addView(stateIcon, iconLp);
+        stateIcon.setPadding(
+                YanziUiKit.dp(a, 8),
+                YanziUiKit.dp(a, 8),
+                YanziUiKit.dp(a, 8),
+                YanziUiKit.dp(a, 8));
         parent.addView(info);
 
         parent.addView(YanziUiKit.sectionLabel(a, "远程操作"));
@@ -112,7 +123,8 @@ final class DesktopDashboardView {
         toolsLp.bottomMargin = YanziUiKit.dp(a, 10);
         parent.addView(tools, toolsLp);
 
-        Result result = new Result(state, new ActionRef[]{chatAction, appAction, fileAction, shellAction});
+        Result result = new Result(stateIcon,
+                new ActionRef[]{chatAction, appAction, fileAction, shellAction});
         result.select(0);
         return result;
     }

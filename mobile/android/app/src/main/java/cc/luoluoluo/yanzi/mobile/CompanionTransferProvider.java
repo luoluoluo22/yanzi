@@ -5,6 +5,7 @@ import android.net.Uri;
 import android.os.*;
 import android.database.Cursor;
 import org.json.*;
+import cc.luoluoluo.yanzi.sdk.DeviceTargets;
 import java.io.*;
 import java.net.*;
 import java.util.*;
@@ -51,13 +52,12 @@ public final class CompanionTransferProvider extends ContentProvider {
                     JSONObject payload=value.optJSONObject("payload");
                     if(!"extension.handoff".equals(value.optString("kind"))||payload==null||!ext.equals(payload.optString("extensionId"))||!account.equals(payload.optString("accountId")))throw new SecurityException("Handoff scope denied");
                 } else {
-                    String target=args.getString("targetDeviceId",""),input=args.getString("input","");
+                    String input=args.getString("input","");
                     if(input.isEmpty()||input.length()>4096)throw new IOException("INVALID_INPUT");
-                    JSONArray devices=MobileMessageClient.requestWithoutQueue(base,"/v1/me/devices",token,"GET",null).getJSONArray("items");boolean found=false;
-                    for(int n=0;n<devices.length();n++){JSONObject peer=devices.getJSONObject(n);if(target.equals(peer.optString("deviceId"))&&peer.optString("platform").equals("desktop"))found=true;}
-                    if(!found)throw new IOException("TARGET_NOT_FOUND");
+                    JSONArray devices=MobileMessageClient.requestWithoutQueue(base,"/v1/me/devices",token,"GET",null).getJSONArray("items");
+                    String target=resolveDesktopTarget(devices,args.getString("targetDeviceId",""));
                     if(!account.equals(SecureLanConnection.currentAccount(c)))throw new IOException("ACCOUNT_CHANGED");
-                    MainActivity.sContext=c.getApplicationContext();String id=java.util.UUID.randomUUID().toString();
+                    MobileApplicationContext.initialize(c);String id=java.util.UUID.randomUUID().toString();
                     JSONObject envelope=new JSONObject().put("kind","extension.handoff").put("sourceDeviceId",prefs.getString("deviceId",""))
                         .put("targetDeviceId",target).put("targetPlatform","desktop").put("clientMessageId",id).put("expiresAt",java.time.Instant.now().plusSeconds(86400).toString())
                         .put("payload",new JSONObject().put("extensionId",ext).put("input",input).put("accountId",account).put("clientOperationId",id));
@@ -71,13 +71,15 @@ public final class CompanionTransferProvider extends ContentProvider {
                 String capability=args.getString("capability","");
                 ApplicationInfo app=c.getPackageManager().getApplicationInfo(getCallingPackage(),PackageManager.GET_META_DATA);
                 if(!Arrays.asList(app.metaData.getString("yanzi.workflowCapabilities","").split(",")).contains(capability))throw new SecurityException("Workflow scope denied");
-                if(record.exists()){value=read(record);if(!value.getString("capability").equals(capability)||!value.getString("targetDeviceId").equals(args.getString("targetDeviceId",""))||!value.getJSONObject("parameters").toString().equals(new JSONObject(args.getString("parameters","{}")).toString()))throw new IOException("JOB_ID_CONFLICT");schedule(c,record);}
+                JSONArray devices=MobileMessageClient.requestWithoutQueue(base,"/v1/me/devices",token,"GET",null).getJSONArray("items");
+                String target=resolveDesktopTarget(devices,args.getString("targetDeviceId",""));
+                if(record.exists()){value=read(record);if(!value.getString("capability").equals(capability)||!value.getString("targetDeviceId").equals(target)||!value.getJSONObject("parameters").toString().equals(new JSONObject(args.getString("parameters","{}")).toString()))throw new IOException("JOB_ID_CONFLICT");schedule(c,record);}
                 else {
                     Uri uri=Uri.parse(args.getString("uri",""));if(!uri.getScheme().equals("content"))throw new IOException("CONTENT_URI_REQUIRED");
                     File snapshot=new File(root(c),ext+"-"+id+".input");long total=0;
                     try(InputStream in=c.getContentResolver().openInputStream(uri);OutputStream out=new FileOutputStream(snapshot)){byte[]b=new byte[65536];int n;while((n=in.read(b))>0){total+=n;if(total>MobileAttachmentClient.LIMIT)throw new IOException("FILE_LIMIT_30_MB");out.write(b,0,n);}}
                     if(total==0)throw new IOException("EMPTY_FILE");
-                    value=new JSONObject().put("jobId",id).put("extensionId",ext).put("accountId",SecureLanConnection.currentAccount(c)).put("targetDeviceId",args.getString("targetDeviceId",""))
+                    value=new JSONObject().put("jobId",id).put("extensionId",ext).put("accountId",SecureLanConnection.currentAccount(c)).put("targetDeviceId",target)
                         .put("capability",capability).put("requestedTransport",args.getString("transport","auto")).put("parameters",new JSONObject(args.getString("parameters","{}"))).put("inputPath",snapshot.getAbsolutePath()).put("state","queued").put("createdAt",java.time.Instant.now().toString());
                     save(record,value);schedule(c,record);
                 }
@@ -88,6 +90,17 @@ public final class CompanionTransferProvider extends ContentProvider {
             value.remove("inputPath");value.remove("resultPath");value.put("ok",true);
             Bundle out=new Bundle();out.putString("result",value.toString());return out;
         }catch(SecurityException error){throw error;}catch(Exception error){Bundle out=new Bundle();out.putString("result",new JSONObject().toString());try{out.putString("result",new JSONObject().put("ok",false).put("error",error.getMessage()==null?error.getClass().getSimpleName():error.getMessage()).toString());}catch(Exception ignored){}return out;}
+    }
+    private static String resolveDesktopTarget(JSONArray devices,String requested)throws Exception {
+        if(requested!=null&&!requested.isEmpty()){
+            for(int n=0;n<devices.length();n++){JSONObject peer=devices.optJSONObject(n);if(peer!=null&&requested.equals(peer.optString("deviceId"))&&"desktop".equals(peer.optString("platform")))return requested;}
+            throw new IOException("TARGET_NOT_FOUND");
+        }
+        JSONObject unique=DeviceTargets.uniqueOnlineDesktop(devices);
+        if(unique!=null)return unique.getString("deviceId");
+        java.util.Set<String> active=new java.util.HashSet<>();
+        for(int n=0;n<devices.length();n++){JSONObject peer=devices.optJSONObject(n);if(peer==null||!"desktop".equals(peer.optString("platform"))||!peer.optBoolean("online"))continue;JSONObject caps=peer.optJSONObject("capabilities");if(caps!=null&&caps.optBoolean("disabled"))continue;String id=peer.optString("deviceId");if(!id.isEmpty())active.add(id);}
+        throw new IOException(active.isEmpty()?"TARGET_NOT_FOUND":"TARGET_REQUIRED");
     }
     static void resumePending(Context c){try{File[] files=root(c).listFiles();if(files!=null)for(File f:files)if(f.getName().endsWith(".json"))schedule(c,f);}catch(Exception ignored){}}
     private static void schedule(Context c,File record){if(RUNNING.size()>32||!RUNNING.add(record.getPath()))return;WORK.execute(()->{try{run(c,record);}catch(Exception error){try{JSONObject j=read(record);j.put("error",error.getMessage()==null?error.getClass().getSimpleName():error.getMessage());save(record,j);}catch(Exception ignored){}}finally{RUNNING.remove(record.getPath());}});}

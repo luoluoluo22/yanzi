@@ -1,1 +1,1 @@
-{"private":true,"type":"module","scripts":{"test":"node --test src/*.test.mjs"}}
+{"private":true,"type":"module","scripts":{"test":"node --test src/*.test.mjs tests/*.test.mjs"}}

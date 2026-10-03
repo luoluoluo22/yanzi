@@ -42,7 +42,7 @@ final class MobileLanChunks {
         }
         JSONObject result = request(base, path + "/commit", "POST", new byte[]{123,125}, "application/json");
         if (!result.optBoolean("success",result.optBoolean("ok"))) throw new Rejected("transfer_processing_failed");
-        MobileDiagnostics.append(MainActivity.sContext, "局域网分块传输确认: id=" + id + ", uploadedBytes=" + uploaded + ", blocks=" + missing.length());
+        MobileDiagnostics.append(MobileApplicationContext.get(), "局域网分块传输确认: id=" + id + ", uploadedBytes=" + uploaded + ", blocks=" + missing.length());
         return result.optString("messageId",id);
     }
     static JSONObject request(String base, String path, String method, byte[] bytes, String mime) throws Exception {

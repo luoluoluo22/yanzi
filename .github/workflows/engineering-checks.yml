@@ -1,0 +1,45 @@
+name: Engineering foundation regression
+on:
+  pull_request:
+  push:
+    branches: [main]
+    paths: ["src/**", "mobile/**", "cloudflare/**", "protocol/**", "sdk/**", "scripts/**", ".github/workflows/engineering-checks.yml"]
+jobs:
+  portable-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: "22"}
+      - uses: actions/setup-dotnet@v4
+        with: {dotnet-version: "9.0.x"}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: "17"}
+      - name: Worker and SDK user scenarios
+        run: node --test cloudflare/src/*.test.mjs cloudflare/tests/*.test.mjs protocol/sdk/*.test.mjs sdk/javascript/*.test.mjs
+      - name: Platform independent account and settings scenarios
+        run: dotnet run --project src/Yanzi.CoreVerification -c Release
+      - name: Android transport scenarios without an emulator
+        run: |
+          mkdir -p "$RUNNER_TEMP/yanzi-java"
+          javac -encoding UTF-8 -d "$RUNNER_TEMP/yanzi-java" mobile/android/app/src/main/java/cc/luoluoluo/yanzi/mobile/{CloudRequestRetry,HttpResponseBody}.java scripts/java/{CloudRequestRetryVerification,HttpResponseBodyVerification}.java
+          java -cp "$RUNNER_TEMP/yanzi-java" cc.luoluoluo.yanzi.mobile.CloudRequestRetryVerification
+          java -cp "$RUNNER_TEMP/yanzi-java" cc.luoluoluo.yanzi.mobile.HttpResponseBodyVerification
+  desktop-and-worker:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: "22"}
+      - uses: actions/setup-dotnet@v4
+        with: {dotnet-version: "9.0.x"}
+      - name: Desktop build
+        run: dotnet build OpenQuickHost.sln -c Debug -v:minimal
+      - name: Settings ownership and object conflict regression
+        run: dotnet run --project src/Yanzi.SyncVerification -c Debug
+      - name: Desktop transport regression
+        run: ./scripts/test-network-retry.ps1
+      - name: Local API authorization and route domains
+        run: dotnet run --project src/Yanzi.SyncVerification -c Debug -- --local-api-boundaries
+      - name: Migrated D1 device and SDK regression
+        run: ./scripts/test-device-network-foundation.ps1

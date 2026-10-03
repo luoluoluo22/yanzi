@@ -86,7 +86,7 @@ final class SecureLanConnection extends HttpURLConnection {
             .put("path", url.getFile()).put("method", method).put("contentType", contentType == null ? "application/json" : contentType);
         String hash = getRequestProperty("X-Content-Sha256"); if (hash != null) meta.put("sha256", hash);
         metadata = meta.toString(); nonce = randomNonce();
-        staged = File.createTempFile("lan-encrypted-", ".part", MainActivity.sContext.getCacheDir());
+        staged = File.createTempFile("lan-encrypted-", ".part", MobileApplicationContext.get().getCacheDir());
         stagedOutput = new CipherOutputStream(new FileOutputStream(staged), cipher(Cipher.ENCRYPT_MODE, key(pair), nonce, metadata));
     }
     @Override public OutputStream getOutputStream() throws IOException {

@@ -36,6 +36,13 @@ public class LanDiscoveryManager {
         return discoverSync(context, false);
     }
 
+    public static void resetDiscoveryBackoff() {
+        lastDiscoveryFailedTime = 0;
+        discoverySuspendedUntil = 0;
+        lastSuppressedLogTime = 0;
+        consecutiveDiscoveryFailures = 0;
+    }
+
     public static String discoverNow(Context context) {
         return discoverSync(context, true);
     }
@@ -92,21 +99,23 @@ public class LanDiscoveryManager {
             String selected = selectedPrefs.getString("lanDeviceId", "");
             try {
                 if (!SecureLanConnection.PROTOCOL.equals(json.optString("secureProtocol"))) continue;
-                // An explicitly selected available device wins; otherwise discover an account-authorized peer.
-                if (!selected.isEmpty() && !selected.equals(deviceId)) {
-                    try { SecureLanConnection.load(context, selected); continue; } catch (Exception stale) { }
-                }
                 SecureLanConnection.load(context, deviceId);
-            } catch (Exception unpaired) { continue; }
+            } catch (Exception unpaired) {
+                Log.d(TAG, "Discovery response rejected peer=" + deviceId + ": " + unpaired.getClass().getSimpleName() + ": " + unpaired.getMessage());
+                continue;
+            }
             if (!ip.isEmpty() && port > 0 && ip.equals(receivePacket.getAddress().getHostAddress())) {
                 String candidate = "http://" + ip + ":" + port;
-                SharedPreferences verifyPrefs = context.getSharedPreferences("YanziPrefs", Context.MODE_PRIVATE);
-                verifyPrefs.edit().putString("lanDeviceId", deviceId).commit();
-                java.net.HttpURLConnection probe = MobileNetworkRouting.openLanConnection(new java.net.URL(candidate + "/v1/me/devices/protocol?notificationPort=" + (BuildConfig.APPLICATION_ID.endsWith(".dev") ? 42982 : 42981)));
+                java.net.HttpURLConnection probe = new SecureLanConnection(new java.net.URL(candidate + "/v1/me/devices/protocol?notificationPort=" + (BuildConfig.APPLICATION_ID.endsWith(".dev") ? 42982 : 42981)), SecureLanConnection.load(context, deviceId));
                 try { probe.setConnectTimeout(1500); probe.setReadTimeout(2500); if (probe.getResponseCode() != 200) continue; }
+                catch (Exception failedPeer) {
+                    Log.d(TAG, "Authenticated LAN probe rejected peer=" + deviceId + " at " + candidate + ": " + failedPeer.getClass().getSimpleName() + ": " + failedPeer.getMessage());
+                    continue;
+                }
                 finally { probe.disconnect(); }
                 cachedLanBaseUrl = candidate;
                 cachedLanApiToken = token;
+                MainActivity.YanziApiClient.sLanFailedThisSession = false;
                 consecutiveDiscoveryFailures = 0;
                 discoverySuspendedUntil = 0;
                 lastDiscoveryFailedTime = 0;
@@ -163,7 +172,7 @@ public class LanDiscoveryManager {
     public static String getLanDeviceId(Context context) {
         return context == null ? "" : context.getSharedPreferences("YanziPrefs", Context.MODE_PRIVATE).getString("lanDeviceId", "");
     }
-    
+
     public static void clearLanBaseUrl(Context context) {
         cachedLanBaseUrl = null;
         cachedLanApiToken = null;

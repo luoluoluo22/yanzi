@@ -1,10 +1,11 @@
-﻿using System.Net;
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using Yanzi.Core;
 
 namespace OpenQuickHost.Sync;
 
@@ -20,6 +21,8 @@ public sealed partial class CloudSyncClient
     private readonly object _transportRetryLock = new();
     private int _consecutiveTransportFailures;
     private DateTimeOffset _transportRetryAfterUtc;
+    public AccountSyncCoordinator AccountCoordinator { get; }
+    private readonly SemaphoreSlim _authenticationLock = new(1, 1);
 
     public byte[]? E2eeMasterKey { get; private set; }
 
@@ -28,8 +31,9 @@ public sealed partial class CloudSyncClient
         return SyncCryptoService.DeriveKeys(password, email);
     }
 
-    public CloudSyncClient(SyncOptions options)
+    public CloudSyncClient(SyncOptions options, AccountSyncCoordinator? coordinator = null)
     {
+        AccountCoordinator = coordinator ?? new AccountSyncCoordinator();
         _options = options;
         _httpClient = CreateHttpClient(options.BaseUrl, useProxy: true, TimeSpan.FromSeconds(30));
         _directHttpClient = CreateHttpClient(options.BaseUrl, useProxy: false, TimeSpan.FromSeconds(30));
@@ -113,6 +117,14 @@ public sealed partial class CloudSyncClient
 
     public async Task EnsureAuthenticatedAsync(CancellationToken cancellationToken = default)
     {
+        var expectedGeneration = AccountCoordinator.Generation;
+        await _authenticationLock.WaitAsync(cancellationToken);
+        try { AccountCoordinator.RequireCurrent(expectedGeneration); await EnsureAuthenticatedCoreAsync(cancellationToken); }
+        finally { _authenticationLock.Release(); }
+    }
+
+    private async Task EnsureAuthenticatedCoreAsync(CancellationToken cancellationToken)
+    {
         if (HasValidSession())
         {
             if (E2eeMasterKey == null && HasCredential)
@@ -131,15 +143,14 @@ public sealed partial class CloudSyncClient
         }
 
         CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Authenticating with saved credential", ("email", _credential?.LoginEmail));
-        
+
         // 自动登录时，基于本地存储的凭据重新派生并缓存 E2eeMasterKey
         var keys = DeriveSyncKeys(_credential!.LoginEmail, _credential.Password);
         E2eeMasterKey = keys.MasterKey;
 
         // 这里传递明文密码，LoginAsync 内部会将其转为 LoginHash 进行网络传输
-        _session = await LoginAsync(_credential.LoginEmail, _credential.Password, cancellationToken);
-        SyncSessionStore.Save(_session);
-        CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Authentication completed", ("userId", _session.UserId), ("username", _session.Username));
+        var authenticated = await LoginAsync(_credential.LoginEmail, _credential.Password, cancellationToken);
+        CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Authentication completed", ("userId", authenticated.UserId), ("username", authenticated.Username));
     }
 
     public async Task<SendCodeResponse> SendRegistrationCodeAsync(string email, string username, CancellationToken cancellationToken = default)
@@ -158,6 +169,7 @@ public sealed partial class CloudSyncClient
 
     public async Task<SyncSession> RegisterAsync(string email, string username, string password, string code, CancellationToken cancellationToken = default)
     {
+        var generation = AccountCoordinator.Generation;
         if (string.IsNullOrWhiteSpace(password))
         {
             throw new InvalidOperationException("密码不能为空。");
@@ -172,7 +184,7 @@ public sealed partial class CloudSyncClient
         var normalizedCode = code.Trim();
 
         CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Register requested", ("email", email), ("username", username), ("passwordLength", normalizedPassword.Length), ("codeLength", normalizedCode.Length));
-        
+
         // 注册时派生并缓存 E2eeMasterKey
         var keys = DeriveSyncKeys(email, normalizedPassword);
         E2eeMasterKey = keys.MasterKey;
@@ -187,14 +199,15 @@ public sealed partial class CloudSyncClient
 
         using var response = await SendJsonAsync(HttpMethod.Post, "/v1/auth/register", payload, includeAuth: false, cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);
-        _session = await ReadSessionAsync(response, cancellationToken);
-        SyncSessionStore.Save(_session);
-        CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Register completed", ("userId", _session.UserId), ("username", _session.Username));
-        return _session;
+        var session = await ReadSessionAsync(response, cancellationToken);
+        AccountCoordinator.Commit(generation, () => { _session = session; SyncSessionStore.Save(session); });
+        CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Register completed", ("userId", session.UserId), ("username", session.Username));
+        return session;
     }
 
     public async Task<SyncSession> LoginAsync(string email, string password, CancellationToken cancellationToken = default)
     {
+        var generation = AccountCoordinator.Generation;
         CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Login requested", ("email", email), ("passwordLength", password?.Length ?? 0));
 
         var normalizedPassword = password ?? string.Empty;
@@ -220,10 +233,10 @@ public sealed partial class CloudSyncClient
         }
 
         await EnsureSuccessAsync(response, cancellationToken);
-        _session = await ReadSessionAsync(response, cancellationToken);
-        SyncSessionStore.Save(_session);
-        CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Login completed", ("userId", _session.UserId), ("username", _session.Username));
-        return _session;
+        var session = await ReadSessionAsync(response, cancellationToken);
+        AccountCoordinator.Commit(generation, () => { _session = session; SyncSessionStore.Save(session); });
+        CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Login completed", ("userId", session.UserId), ("username", session.Username));
+        return session;
     }
 
     public async Task<SendCodeResponse> SendPasswordResetCodeAsync(string email, CancellationToken cancellationToken = default)
@@ -241,6 +254,7 @@ public sealed partial class CloudSyncClient
 
     public async Task<SyncSession> ResetPasswordAsync(string email, string password, string code, CancellationToken cancellationToken = default)
     {
+        var generation = AccountCoordinator.Generation;
         if (string.IsNullOrWhiteSpace(password))
         {
             throw new InvalidOperationException("密码不能为空。");
@@ -255,7 +269,7 @@ public sealed partial class CloudSyncClient
         var normalizedCode = code.Trim();
 
         CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Reset password requested", ("email", email), ("passwordLength", normalizedPassword.Length), ("codeLength", normalizedCode.Length));
-        
+
         // 重置密码时派生并缓存 E2eeMasterKey
         var keys = DeriveSyncKeys(email, normalizedPassword);
         E2eeMasterKey = keys.MasterKey;
@@ -269,10 +283,10 @@ public sealed partial class CloudSyncClient
 
         using var response = await SendJsonAsync(HttpMethod.Post, "/v1/auth/reset-password", payload, includeAuth: false, cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);
-        _session = await ReadSessionAsync(response, cancellationToken);
-        SyncSessionStore.Save(_session);
-        CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Reset password completed", ("userId", _session.UserId), ("username", _session.Username));
-        return _session;
+        var session = await ReadSessionAsync(response, cancellationToken);
+        AccountCoordinator.Commit(generation, () => { _session = session; SyncSessionStore.Save(session); });
+        CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Reset password completed", ("userId", session.UserId), ("username", session.Username));
+        return session;
     }
 
     public async Task<HealthResponse?> GetHealthAsync(CancellationToken cancellationToken = default)
@@ -957,10 +971,12 @@ public sealed partial class CloudSyncClient
 
     public async Task<HttpResponseMessage> GetMobileMessagesEventsStreamAsync(string deviceId, CancellationToken cancellationToken)
     {
+        var generation = AccountCoordinator.Generation;
         ThrowIfTransportCoolingDown(cancellationToken);
         await EnsureAuthenticatedAsync(cancellationToken);
-        
-        var request = new HttpRequestMessage(HttpMethod.Get, $"/v1/me/mobile/messages/events?deviceId={Uri.EscapeDataString(deviceId)}");
+        AccountCoordinator.RequireCurrent(generation);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/v1/me/mobile/messages/events?deviceId={Uri.EscapeDataString(deviceId)}");
         request.Version = HttpVersion.Version11;
         request.VersionPolicy = HttpVersionPolicy.RequestVersionOrLower;
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
@@ -980,19 +996,21 @@ public sealed partial class CloudSyncClient
         {
             try
             {
-                using var attemptRequest = CloneRequest(request);
+                using var attemptRequest = await CloneRequestAsync(request, cancellationToken);
                 var response = await attempts[index].client.SendAsync(attemptRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-                response.EnsureSuccessStatusCode();
+                try { AccountCoordinator.RequireCurrent(generation); response.EnsureSuccessStatusCode(); }
+                catch { response.Dispose(); throw; }
                 ResetTransportBackoff();
                 return response;
             }
-            catch (Exception ex) when (IsRetryableTransportException(ex, cancellationToken) && index < attempts.Length - 1)
+            catch (Exception ex) when (AccountCoordinator.Generation == generation && IsRetryableTransportException(ex, cancellationToken) && index < attempts.Length - 1)
             {
                 lastError = ex;
                 await Task.Delay(TimeSpan.FromMilliseconds(250 * (index + 1)), cancellationToken);
             }
             catch (Exception ex)
             {
+                AccountCoordinator.RequireCurrent(generation);
                 lastError = ex;
                 var retryable = IsRetryableTransportException(ex, cancellationToken);
                 if (retryable)
@@ -1013,7 +1031,7 @@ public sealed partial class CloudSyncClient
         CancellationToken cancellationToken = default)
     {
         await EnsureAuthenticatedAsync(cancellationToken);
-        
+
         object bodyObj;
         if (success.HasValue)
         {
@@ -1190,99 +1208,7 @@ public sealed partial class CloudSyncClient
 
     private void ClearSession()
     {
-        _session = null;
-        SyncSessionStore.Clear();
-    }
-
-    private HttpRequestMessage CreateJsonRequest(HttpMethod method, string path, string body, bool includeAuth)
-    {
-        var request = CreateRequest(method, path, includeAuth);
-        request.Content = new StringContent(body, Encoding.UTF8, "application/json");
-        return request;
-    }
-
-    private HttpRequestMessage CreateRequest(HttpMethod method, string path, bool includeAuth)
-    {
-        var request = new HttpRequestMessage(method, path);
-        request.Version = HttpVersion.Version11;
-        request.VersionPolicy = HttpVersionPolicy.RequestVersionOrLower;
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        if (includeAuth && HasValidSession())
-        {
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _session!.AccessToken);
-        }
-
-        return request;
-    }
-
-    private async Task<HttpResponseMessage> SendJsonAsync(HttpMethod method, string path, object body, bool includeAuth, CancellationToken cancellationToken)
-    {
-        var request = CreateJsonRequest(method, path, JsonSerializer.Serialize(body), includeAuth);
-        return await SendAsyncWithFallback(request, cancellationToken);
-    }
-
-    private Task<HttpResponseMessage> SendAsyncWithFallback(HttpMethod method, string path, bool includeAuth, CancellationToken cancellationToken)
-    {
-        var request = CreateRequest(method, path, includeAuth);
-        return SendAsyncWithFallback(request, cancellationToken);
-    }
-
-    private async Task<HttpResponseMessage> SendAsyncWithFallback(HttpRequestMessage request, CancellationToken cancellationToken, bool largeTransfer = false)
-    {
-        ThrowIfTransportCoolingDown(cancellationToken);
-        Exception? lastError = null;
-        var attempts = largeTransfer
-            ? new (HttpClient client, string label)[]
-            {
-                (_largeTransferHttpClient, "proxy-large"),
-                (_directLargeTransferHttpClient, "direct-large"),
-                (_largeTransferHttpClient, "proxy-large-retry")
-            }
-            : new (HttpClient client, string label)[]
-            {
-                (_httpClient, "proxy"),
-                (_directHttpClient, "direct"),
-                (_httpClient, "proxy-retry")
-            };
-        var maxAttempts = IsIdempotentMethod(request.Method) ? attempts.Length : 1;
-
-        for (var index = 0; index < maxAttempts; index++)
-        {
-            try
-            {
-                using var attemptRequest = CloneRequest(request);
-                var response = await attempts[index].client.SendAsync(attemptRequest, cancellationToken);
-                ResetTransportBackoff();
-                return response;
-            }
-            catch (Exception ex) when (IsRetryableTransportException(ex, cancellationToken) && index < maxAttempts - 1)
-            {
-                lastError = ex;
-                CloudSyncDiagnostics.Log(
-                    "CloudSyncClient.Http",
-                    "Retryable request failure",
-                    ("method", request.Method.Method),
-                    ("uri", request.RequestUri?.ToString()),
-                    ("attempt", index + 1),
-                    ("channel", attempts[index].label),
-                    ("error", ex.Message));
-                await Task.Delay(TimeSpan.FromMilliseconds(250 * (index + 1)), cancellationToken);
-            }
-            catch (Exception ex) when (IsRetryableTransportException(ex, cancellationToken))
-            {
-                lastError = ex;
-                RegisterTransportFailure();
-                break;
-            }
-        }
-
-        CloudSyncDiagnostics.Log(
-            "CloudSyncClient.Http",
-            "Request failed after fallback",
-            ("method", request.Method.Method),
-            ("uri", request.RequestUri?.ToString()),
-            ("error", lastError?.Message));
-        throw lastError ?? new HttpRequestException("Cloud request failed before receiving a response.");
+        AccountCoordinator.Invalidate(() => { _session = null; SyncSessionStore.Clear(); });
     }
 
     private static object BuildManifestPayload(CommandItem command, string? iconOverride = null)
@@ -1331,130 +1257,6 @@ public sealed partial class CloudSyncClient
         };
     }
 
-    private static HttpClient CreateHttpClient(
-        string baseUrl,
-        bool useProxy,
-        TimeSpan timeout)
-    {
-        var handler = new HttpClientHandler
-        {
-            UseProxy = useProxy
-        };
-
-        var client = new HttpClient(handler)
-        {
-            BaseAddress = new Uri(baseUrl, UriKind.Absolute),
-            Timeout = timeout,
-            DefaultRequestVersion = HttpVersion.Version11,
-            DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrLower
-        };
-        client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("YanziClient-Desktop", "0.2.3"));
-        client.DefaultRequestHeaders.TryAddWithoutValidation("X-Yanzi-Client", "desktop");
-        client.DefaultRequestHeaders.TryAddWithoutValidation("X-Yanzi-Client-Version", "0.2.3");
-        return client;
-    }
-
-    private static bool IsRetryableTransportException(Exception ex, CancellationToken cancellationToken)
-    {
-        if (cancellationToken.IsCancellationRequested)
-        {
-            return false;
-        }
-
-        if (ex is HttpRequestException httpException && httpException.StatusCode == null)
-        {
-            return true;
-        }
-
-        if (ex is OperationCanceledException)
-        {
-            return true; // HttpClient timeout, rather than caller cancellation.
-        }
-
-        var message = ex.ToString();
-        return message.Contains("SSL connection could not be established", StringComparison.OrdinalIgnoreCase) ||
-               message.Contains("unexpected EOF", StringComparison.OrdinalIgnoreCase) ||
-               message.Contains("0 bytes from the transport stream", StringComparison.OrdinalIgnoreCase) ||
-               message.Contains("response ended prematurely", StringComparison.OrdinalIgnoreCase) ||
-               message.Contains("ResponseEnded", StringComparison.OrdinalIgnoreCase) ||
-               message.Contains("request was canceled", StringComparison.OrdinalIgnoreCase) ||
-               message.Contains("operation was canceled", StringComparison.OrdinalIgnoreCase) ||
-               message.Contains("timed out", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool IsIdempotentMethod(HttpMethod method) =>
-        method == HttpMethod.Get || method == HttpMethod.Head ||
-        method == HttpMethod.Put || method == HttpMethod.Delete ||
-        method == HttpMethod.Options;
-
-    private void ThrowIfTransportCoolingDown(CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        lock (_transportRetryLock)
-        {
-            if (DateTimeOffset.UtcNow < _transportRetryAfterUtc)
-            {
-                throw new HttpRequestException("网络连接暂时不可用，稍后自动重试。");
-            }
-        }
-    }
-
-    private void RegisterTransportFailure()
-    {
-        lock (_transportRetryLock)
-        {
-            _consecutiveTransportFailures = Math.Min(_consecutiveTransportFailures + 1, 8);
-            if (_consecutiveTransportFailures < 2)
-            {
-                return;
-            }
-
-            var delaySeconds = Math.Min(15 * (1 << Math.Min(_consecutiveTransportFailures - 2, 5)), 300);
-            _transportRetryAfterUtc = DateTimeOffset.UtcNow.AddSeconds(delaySeconds);
-            CloudSyncDiagnostics.Log("CloudSyncClient.Http", "Transport retry cooldown", ("seconds", delaySeconds), ("failures", _consecutiveTransportFailures));
-        }
-    }
-
-    private void ResetTransportBackoff()
-    {
-        lock (_transportRetryLock)
-        {
-            _consecutiveTransportFailures = 0;
-            _transportRetryAfterUtc = DateTimeOffset.MinValue;
-        }
-    }
-
-    public void ResumeTransportAfterNetworkChange() => ResetTransportBackoff();
-
-    private static HttpRequestMessage CloneRequest(HttpRequestMessage request)
-    {
-        var clone = new HttpRequestMessage(request.Method, request.RequestUri)
-        {
-            Version = request.Version,
-            VersionPolicy = request.VersionPolicy
-        };
-
-        foreach (var header in request.Headers)
-        {
-            clone.Headers.TryAddWithoutValidation(header.Key, header.Value);
-        }
-
-        if (request.Content == null)
-        {
-            return clone;
-        }
-
-        var bytes = request.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
-        var content = new ByteArrayContent(bytes);
-        foreach (var header in request.Content.Headers)
-        {
-            content.Headers.TryAddWithoutValidation(header.Key, header.Value);
-        }
-
-        clone.Content = content;
-        return clone;
-    }
-
     private static async Task<SyncSession> ReadSessionAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         var auth = await ReadAsync<AuthResponse>(response, cancellationToken)
@@ -1485,18 +1287,18 @@ public sealed partial class CloudSyncClient
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, "/v1/sync/webdav-config");
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _session!.AccessToken);
-            
+
             using var response = await _httpClient.SendAsync(request, cancellationToken);
-            
+
             if (response.StatusCode == HttpStatusCode.NotFound)
             {
                 // No WebDAV config on server
                 CloudSyncDiagnostics.Log("CloudSyncClient.Config", "Legacy WebDAV config endpoint returned not found");
                 return null;
             }
-            
+
             await EnsureSuccessAsync(response, cancellationToken);
-            
+
             var dto = await ReadAsync<WebDavConfigDto>(response, cancellationToken);
             CloudSyncDiagnostics.Log(
                 "CloudSyncClient.Config",

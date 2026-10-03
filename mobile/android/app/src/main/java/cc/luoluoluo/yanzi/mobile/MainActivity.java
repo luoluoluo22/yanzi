@@ -70,6 +70,7 @@
 package cc.luoluoluo.yanzi.mobile;
 
 import android.app.Activity;
+import static cc.luoluoluo.yanzi.mobile.MobileJson.*;
 import android.app.AlertDialog;
 import android.appwidget.AppWidgetManager;
 import android.content.ClipData;
@@ -181,7 +182,8 @@ public class MainActivity
 extends Activity {
     public static Context sContext;
     public static MainActivity sInstance;
-    private static final String DEFAULT_BASE_URL = "https://sync.luoluoluo.cc.cd";
+    public static volatile boolean sForeground;
+    private static final String DEFAULT_BASE_URL = MobileSessionStore.DEFAULT_BASE_URL;
     private static final String CACHE_REMOTE_EXTENSIONS = "cacheRemoteExtensionsJson";
     private static final String CACHE_YANM = "cacheYanmJson";
     private static final int REQUEST_PICK_PHOTO = 4101;
@@ -217,11 +219,16 @@ extends Activity {
         @Override
         public void onReceive(Context context, Intent intent) {
             String msg = intent.getStringExtra("message");
-            android.util.Log.i("MainActivity", "Received CHAT_MESSAGE broadcast, msg=" + msg);
+            String kind = intent.getStringExtra("kind");
+            String sourceDeviceId = intent.getStringExtra("sourceDeviceId");
+            String sourceDeviceName = intent.getStringExtra("sourceDeviceName");
+            long time = intent.getLongExtra("time", System.currentTimeMillis());
+            android.util.Log.i("MainActivity", "Received CHAT_MESSAGE broadcast, kind=" + kind + ", source=" + sourceDeviceName);
             if (msg != null) {
-                MainActivity.this.runOnUiThread(() -> {
-                    MainActivity.this.renderChatMessage("desktop", "text", msg, true);
-                });
+                MainActivity.this.runOnUiThread(() ->
+                        MainActivity.this.renderChatMessage("peer", kind == null ? "text" : kind, msg,
+                                time, sourceDeviceId == null ? "" : sourceDeviceId,
+                                sourceDeviceName == null ? "电脑" : sourceDeviceName, true));
             }
         }
     };
@@ -257,6 +264,7 @@ extends Activity {
     private View desktopExtensionTabButton;
     private View profileTabButton;
     private View desktopConnectionDot;
+    private long lastRenderedChatTimeMs = Long.MIN_VALUE;
     private android.os.Handler connectionCheckHandler;
     private Runnable connectionCheckRunnable;
     private boolean isDesktopConnected = false;
@@ -417,8 +425,7 @@ extends Activity {
     private android.view.GestureDetector tabGestureDetector;
 
     private final Map<String, WebView> activeYanmWebViews = new HashMap<String, WebView>();
-    private final Map<String, WebView> activeHeadlessMobileScriptRunners = new HashMap<String, WebView>();
-    private WebView activeMobileScriptRunner;
+    private final MobileWebViewRuntime scriptRuntime = new MobileWebViewRuntime();
     private View photoProgressView;
     private final Handler yanmSyncHandler = new Handler(Looper.getMainLooper());
     private final Handler diagnosticRefreshHandler = new Handler(Looper.getMainLooper());
@@ -684,6 +691,7 @@ extends Activity {
 
     protected void onResume() {
         super.onResume();
+        sForeground = true;
         ExternalAccessManager.foreground(this);
         UpdateManager.resumePendingInstall(this);
         try {
@@ -966,6 +974,7 @@ extends Activity {
     }
 
     protected void onPause() {
+        sForeground = false;
         FloatingWheelService.setAppForeground(false);
         this.diagnosticRefreshHandler.removeCallbacks(this.diagnosticRefreshRunnable);
         this.autoCloudUpdateHandler.removeCallbacks(this.autoCloudUpdateRunnable);
@@ -2116,7 +2125,7 @@ extends Activity {
         this.tvDesktopConnectionStatus.setTextSize(14f);
         this.tvDesktopConnectionStatus.setPadding(this.dp(8), this.dp(6), 0, 0);
         this.tvDesktopConnectionStatus.setTextColor(Color.rgb(148, 163, 184));
-        desktopHeader.addView((View)this.tvDesktopConnectionStatus);
+        this.tvDesktopConnectionStatus.setVisibility(View.GONE);
 
         // Connection state still updates tvDesktopConnectionStatus; the new dashboard owns the visible header.
 
@@ -2986,7 +2995,7 @@ extends Activity {
             this.mobileExtensionInput.setText((CharSequence)pretty);
             this.mobileExtensionInput.setSelection(pretty.length());
             this.updateMobileExtensionFieldsFromDraft();
-            this.updateMobileScriptResult("JSON \u683c\u5f0f\u6b63\u786e\uff1a" + MainActivity.firstNonEmpty(json.optString("name"), json.optString("id"), "\u672a\u547d\u540d\u6269\u5c55"), false);
+            this.updateMobileScriptResult("JSON \u683c\u5f0f\u6b63\u786e\uff1a" + MobileJson.firstNonEmpty(json.optString("name"), json.optString("id"), "\u672a\u547d\u540d\u6269\u5c55"), false);
             this.setStatus("\u5df2\u7c98\u8d34\u5e76\u68c0\u6d4b JSON \u683c\u5f0f\u3002");
         }
         catch (Exception ex) {
@@ -3000,7 +3009,7 @@ extends Activity {
         try {
             JSONObject json = this.parseDraftObject();
             if (updateResult) {
-                this.updateMobileScriptResult("JSON \u683c\u5f0f\u6b63\u786e\uff1a" + MainActivity.firstNonEmpty(json.optString("name"), json.optString("id"), "\u672a\u547d\u540d\u6269\u5c55"), false);
+                this.updateMobileScriptResult("JSON \u683c\u5f0f\u6b63\u786e\uff1a" + MobileJson.firstNonEmpty(json.optString("name"), json.optString("id"), "\u672a\u547d\u540d\u6269\u5c55"), false);
             }
             return true;
         }
@@ -3042,10 +3051,10 @@ extends Activity {
     private void updateMobileExtensionFieldsFromDraft() {
         try {
             JSONObject json = this.parseDraftObject();
-            this.mobileExtensionIdInput.setText((CharSequence)MainActivity.firstNonEmpty(json.optString("id"), "mobile-copy-shared-text"));
-            this.mobileExtensionNameInput.setText((CharSequence)MainActivity.firstNonEmpty(json.optString("name"), "\u590d\u5236\u5f53\u524d\u8f93\u5165"));
-            this.mobileExtensionDescriptionInput.setText((CharSequence)MainActivity.firstNonEmpty(json.optString("description"), "\u624b\u673a\u672c\u5730\u6269\u5c55"));
-            this.mobileExtensionIconInput.setText((CharSequence)MainActivity.firstNonEmpty(json.optString("icon"), "mdi:content-copy"));
+            this.mobileExtensionIdInput.setText((CharSequence)MobileJson.firstNonEmpty(json.optString("id"), "mobile-copy-shared-text"));
+            this.mobileExtensionNameInput.setText((CharSequence)MobileJson.firstNonEmpty(json.optString("name"), "\u590d\u5236\u5f53\u524d\u8f93\u5165"));
+            this.mobileExtensionDescriptionInput.setText((CharSequence)MobileJson.firstNonEmpty(json.optString("description"), "\u624b\u673a\u672c\u5730\u6269\u5c55"));
+            this.mobileExtensionIconInput.setText((CharSequence)MobileJson.firstNonEmpty(json.optString("icon"), "mdi:content-copy"));
         }
         catch (Exception exception) {
             // empty catch block
@@ -3053,7 +3062,7 @@ extends Activity {
     }
 
     private File resolveMobileScriptFile(String name) throws Exception {
-        String value = MainActivity.firstNonEmpty(name, "notes.txt").replace("\\", "_").replace("/", "_").replace("..", "_");
+        String value = MobileJson.firstNonEmpty(name, "notes.txt").replace("\\", "_").replace("/", "_").replace("..", "_");
         File dir = this.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS);
         if (dir == null) {
             dir = new File(this.getFilesDir(), "mobile-script-files");
@@ -3066,7 +3075,7 @@ extends Activity {
 
     private static String buildJsonErrorResult(String message) {
         try {
-            return new JSONObject().put("ok", false).put("error", (Object)MainActivity.firstNonEmpty(message, "unknown error")).toString();
+            return new JSONObject().put("ok", false).put("error", (Object)MobileJson.firstNonEmpty(message, "unknown error")).toString();
         }
         catch (Exception ignored) {
             return "{\"ok\":false,\"error\":\"unknown error\"}";
@@ -3171,12 +3180,12 @@ extends Activity {
                 this.mobileExtensionInput.setText(draft);
             }
 
-            String id = MainActivity.firstNonEmpty(inputId, "mobile-extension-draft");
-            String name = MainActivity.firstNonEmpty(inputName, "\u624b\u673a\u6269\u5c55\u8349\u7a3f");
+            String id = MobileJson.firstNonEmpty(inputId, "mobile-extension-draft");
+            String name = MobileJson.firstNonEmpty(inputName, "\u624b\u673a\u6269\u5c55\u8349\u7a3f");
             if (draft.trim().startsWith("{") && draft.trim().endsWith("}")) {
                 JSONObject json = new JSONObject(draft);
-                id = MainActivity.firstNonEmpty(json.optString("id"), id);
-                name = MainActivity.firstNonEmpty(json.optString("name"), json.optString("displayName"), name);
+                id = MobileJson.firstNonEmpty(json.optString("id"), id);
+                name = MobileJson.firstNonEmpty(json.optString("name"), json.optString("displayName"), name);
             }
             this.prefs.edit().putString("mobileExtensionDraft", draft).putString("mobileExtensionDraftId", id).putString("mobileExtensionDraftName", name).apply();
             if (draft.trim().startsWith("{") && draft.trim().endsWith("}")) {
@@ -3215,10 +3224,10 @@ extends Activity {
 
             this.prefs.edit().putString("mobileExtensionDraft", draft).apply();
             this.updateMobileExtensionFieldsFromDraft();
-            String runtimeExtensionId = MainActivity.firstNonEmpty(
+            String runtimeExtensionId = MobileJson.firstNonEmpty(
                     inputId, "mobile-extension-draft");
             if (draft.trim().startsWith("{") && draft.trim().endsWith("}")) {
-                runtimeExtensionId = MainActivity.firstNonEmpty(
+                runtimeExtensionId = MobileJson.firstNonEmpty(
                         new JSONObject(draft).optString("id"),
                         runtimeExtensionId);
             }
@@ -3227,7 +3236,7 @@ extends Activity {
                 throw new IllegalStateException("\u811a\u672c\u4e3a\u7a7a\u3002");
             }
             this.updateMobileScriptResult("\u6b63\u5728\u6d4b\u8bd5...", false);
-            this.activeMobileScriptRunner = runner = new WebView((Context)this);
+            this.scriptRuntime.active = runner = new WebView((Context)this);
             runner.getSettings().setJavaScriptEnabled(true);
             runner.addJavascriptInterface(
                     (Object)new MobileJsBridge(runtimeExtensionId),
@@ -3277,7 +3286,7 @@ extends Activity {
     private void upsertLocalMobileExtension(JSONObject json) throws Exception {
         // An explicit edit becomes a user-owned definition; bundle updates must preserve it.
         json.remove("bundled");
-        String id = MainActivity.firstNonEmpty(json.optString("id"), "mobile-extension-" + System.currentTimeMillis());
+        String id = MobileJson.firstNonEmpty(json.optString("id"), "mobile-extension-" + System.currentTimeMillis());
         json.put("id", (Object)id);
         JSONArray array = this.readLocalMobileExtensions();
         JSONArray next = new JSONArray();
@@ -3334,7 +3343,7 @@ extends Activity {
             JSONObject item = array.optJSONObject(i);
             if (item == null) continue;
             String id = item.optString("id");
-            String name = MainActivity.firstNonEmpty(item.optString("name"), item.optString("displayName"), id);
+            String name = MobileJson.firstNonEmpty(item.optString("name"), item.optString("displayName"), id);
 
             LinearLayout card = new LinearLayout((Context)this);
             card.setOrientation(1);
@@ -4271,13 +4280,13 @@ extends Activity {
                 if (extensionId.isEmpty()) continue;
 
                 RemoteExtension desktop = merged.get(extensionId);
-                String mobileName = MainActivity.firstNonEmpty(
+                String mobileName = MobileJson.firstNonEmpty(
                         definition.optString("name"),
                         definition.optString("displayName"),
                         extensionId);
                 String mobileDescription = definition.optString("description", "");
                 String mobileIcon = definition.optString("icon", "");
-                String mobileAccent = MainActivity.firstNonEmpty(
+                String mobileAccent = MobileJson.firstNonEmpty(
                         definition.optString("accentHex"),
                         definition.optString("accent_hex"));
 
@@ -4287,18 +4296,18 @@ extends Activity {
                                 extensionId,
                                 desktop == null
                                         ? mobileName
-                                        : MainActivity.firstNonEmpty(desktop.name, mobileName),
+                                        : MobileJson.firstNonEmpty(desktop.name, mobileName),
                                 desktop == null
                                         ? mobileDescription
-                                        : MainActivity.firstNonEmpty(
+                                        : MobileJson.firstNonEmpty(
                                                 desktop.description,
                                                 mobileDescription),
                                 desktop == null
                                         ? mobileIcon
-                                        : MainActivity.firstNonEmpty(desktop.icon, mobileIcon),
+                                        : MobileJson.firstNonEmpty(desktop.icon, mobileIcon),
                                 desktop == null
                                         ? mobileAccent
-                                        : MainActivity.firstNonEmpty(
+                                        : MobileJson.firstNonEmpty(
                                                 desktop.accentHex,
                                                 mobileAccent),
                                 desktop != null && desktop.hasDesktopRuntime,
@@ -4337,10 +4346,10 @@ extends Activity {
             for (int i = 0; i < array.length(); ++i) {
                 JSONObject item = array.optJSONObject(i);
                 if (item == null) continue;
-                String extensionId = MainActivity.firstNonEmpty(item.optString("extensionId"), item.optString("extension_id"), item.optString("ExtensionId"), item.optString("Extension_id"));
+                String extensionId = MobileJson.firstNonEmpty(item.optString("extensionId"), item.optString("extension_id"), item.optString("ExtensionId"), item.optString("Extension_id"));
                 if (extensionId.isEmpty()) continue;
-                String accentHex = MainActivity.firstNonEmpty(item.optString("accentHex"), item.optString("accent_hex"), item.optString("AccentHex"));
-                items.add(new RemoteExtension(extensionId, MainActivity.firstNonEmpty(item.optString("name"), item.optString("Name"), extensionId), MainActivity.firstNonEmpty(item.optString("description"), item.optString("Description")), MainActivity.firstNonEmpty(item.optString("icon"), item.optString("Icon")), accentHex));
+                String accentHex = MobileJson.firstNonEmpty(item.optString("accentHex"), item.optString("accent_hex"), item.optString("AccentHex"));
+                items.add(new RemoteExtension(extensionId, MobileJson.firstNonEmpty(item.optString("name"), item.optString("Name"), extensionId), MobileJson.firstNonEmpty(item.optString("description"), item.optString("Description")), MobileJson.firstNonEmpty(item.optString("icon"), item.optString("Icon")), accentHex));
             }
         }
         catch (Exception exception) {
@@ -4953,6 +4962,9 @@ extends Activity {
             if (lanBaseUrl == null) {
                 lanBaseUrl = cc.luoluoluo.yanzi.mobile.LanDiscoveryManager.cachedLanBaseUrl;
             }
+            if (lanBaseUrl == null && this.prefs != null) {
+                AccountLanConnections.refresh(this, this.normalizedBaseUrl(), this.prefs.getString("token", ""), this.deviceId);
+            }
             if (lanBaseUrl != null) {
                 try {
                     String cleanUrl = lanBaseUrl;
@@ -4964,16 +4976,22 @@ extends Activity {
                     conn.setRequestMethod("GET");
                     conn.setConnectTimeout(2000);
                     conn.setReadTimeout(2000);
-                    int code = conn.getResponseCode();
-                    if (code == 200) {
-                        connected = true;
-                        type = "lan";
-                    }
-                    conn.disconnect();
+                    try {
+                        int code = conn.getResponseCode();
+                        if (code == 200) {
+                            connected = true;
+                            type = "lan";
+                            YanziApiClient.sLanFailedThisSession = false;
+                        }
+                    } finally { conn.disconnect(); }
                 } catch (Exception e) {
                 }
             }
             if (!connected) {
+                if (lanBaseUrl != null) {
+                    LanDiscoveryManager.clearLanBaseUrl(this);
+                    AccountLanConnections.refresh(this, this.normalizedBaseUrl(), this.prefs.getString("token", ""), this.deviceId);
+                }
                 String token = this.prefs != null ? this.prefs.getString("token", "").trim() : "";
                 if (token.isEmpty()) {
                     offlineTitle = "请先登录账号";
@@ -5491,7 +5509,7 @@ extends Activity {
         new AlertDialog.Builder((Context)this).setTitle((CharSequence)"\u8c03\u6574\u7ec4\u4ef6\u987a\u5e8f").setItems(options, (dialog, which) -> {
             ArrayList<String> list = new ArrayList<String>();
             for (JSONObject comp : components) {
-                String id = MainActivity.firstNonEmpty(comp.optString("id"), comp.optString("Id"), comp.optString("title"), comp.optString("Title"), comp.optString("name"), comp.optString("Name"));
+                String id = MobileJson.firstNonEmpty(comp.optString("id"), comp.optString("Id"), comp.optString("title"), comp.optString("Title"), comp.optString("name"), comp.optString("Name"));
                 list.add(id);
             }
             String target = (String)list.remove(currentIndex);
@@ -5717,7 +5735,7 @@ extends Activity {
         String title = toolCall.optString("title", "");
         String html = toolCall.optString("html", "");
         String mode = toolCall.optString("mode", "");
-        String stateKey = MainActivity.firstNonEmpty(toolCall.optString("stateKey", ""), toolCall.optString("key", ""));
+        String stateKey = MobileJson.firstNonEmpty(toolCall.optString("stateKey", ""), toolCall.optString("key", ""));
         String value = toolCall.has("value") ? toolCall.optString("value", "") : "";
         String code = toolCall.optString("code", "");
         int htmlHash = html.isEmpty() ? 0 : html.hashCode();
@@ -5861,8 +5879,8 @@ extends Activity {
                         String yanmStr = this.prefs.getString(CACHE_YANM, "{}");
                         JSONObject yanmObj = new JSONObject(yanmStr);
                         JSONArray yanmList = new JSONArray();
-                        JSONArray components = MainActivity.firstArray(yanmObj, "components", "Components");
-                        JSONObject state = MainActivity.firstObject(yanmObj, "componentState", "ComponentState");
+                        JSONArray components = MobileJson.firstArray(yanmObj, "components", "Components");
+                        JSONObject state = MobileJson.firstObject(yanmObj, "componentState", "ComponentState");
                         if (state == null) {
                             state = new JSONObject();
                         }
@@ -6194,7 +6212,7 @@ extends Activity {
                                 }
                                 if ("view_yanm_state".equals(toolName)) {
                                     String id = toolCall.optString("id");
-                                    String stateKey = MainActivity.firstNonEmpty(toolCall.optString("stateKey", ""), toolCall.optString("key", ""));
+                                    String stateKey = MobileJson.firstNonEmpty(toolCall.optString("stateKey", ""), toolCall.optString("key", ""));
                                     this.runOnUiThread(() -> {
                                         try {
                                             this.addAiChatMessage("\u5de5\u5177\u8c03\u7528:view_yanm_state", content, Color.rgb((int)167, (int)243, (int)208), true);
@@ -6213,7 +6231,7 @@ extends Activity {
                                 }
                                 if ("update_yanm_state".equals(toolName)) {
                                     String id = toolCall.optString("id");
-                                    String stateKey = MainActivity.firstNonEmpty(toolCall.optString("stateKey", ""), toolCall.optString("key", ""));
+                                    String stateKey = MobileJson.firstNonEmpty(toolCall.optString("stateKey", ""), toolCall.optString("key", ""));
                                     String value = this.readAiToolString(toolCall, "value", "text", "content");
                                     this.runOnUiThread(() -> {
                                         this.addAiChatMessage("\u5de5\u5177\u8c03\u7528:update_yanm_state", content, Color.rgb((int)167, (int)243, (int)208), true);
@@ -6237,7 +6255,7 @@ extends Activity {
                                         try {
                                             JSONObject result;
                                             if (toolCall.has("value") || toolCall.has("stateKey") || toolCall.has("key")) {
-                                                String stateKey = MainActivity.firstNonEmpty(toolCall.optString("stateKey", ""), toolCall.optString("key", ""));
+                                                String stateKey = MobileJson.firstNonEmpty(toolCall.optString("stateKey", ""), toolCall.optString("key", ""));
                                                 String value = this.readAiToolString(toolCall, "value", "text", "content");
                                                 result = this.updateYanmStateFromAi(id, stateKey, value);
                                             } else {
@@ -6716,11 +6734,11 @@ extends Activity {
                         displayText = "\ud83d\udd27 \u4f7f\u7528\u5de5\u5177: execute_extension (id: " + toolCall.optString("id") + ")";
                     } else if ("view_yanm_state".equals(toolName)) {
                         String toolId = toolCall.optString("id");
-                        String stateKey = MainActivity.firstNonEmpty(toolCall.optString("stateKey", ""), toolCall.optString("key", ""));
+                        String stateKey = MobileJson.firstNonEmpty(toolCall.optString("stateKey", ""), toolCall.optString("key", ""));
                         displayText = "\ud83d\udd27 \u4f7f\u7528\u5de5\u5177: view_yanm_state" + (toolId.isEmpty() ? "" : " (id: " + toolId + ")") + (stateKey.isEmpty() ? "" : " (key: " + stateKey + ")");
                     } else if ("update_yanm_state".equals(toolName)) {
                         String toolId = toolCall.optString("id");
-                        String stateKey = MainActivity.firstNonEmpty(toolCall.optString("stateKey", ""), toolCall.optString("key", ""));
+                        String stateKey = MobileJson.firstNonEmpty(toolCall.optString("stateKey", ""), toolCall.optString("key", ""));
                         displayText = "\ud83d\udd27 \u4f7f\u7528\u5de5\u5177: update_yanm_state" + (toolId.isEmpty() ? "" : " (id: " + toolId + ")") + (stateKey.isEmpty() ? "" : " (key: " + stateKey + ")");
                     } else if ("update_yanm_component".equals(toolName)) {
                         displayText = "\ud83d\udd27 \u4f7f\u7528\u5de5\u5177: update_yanm_component (id: " + toolCall.optString("id") + ")";
@@ -6953,7 +6971,7 @@ extends Activity {
 
     private void renderYanm(JSONObject yanm) {
         this.currentYanmSnapshot = yanm;
-        this.currentYanmState = MainActivity.firstObject(yanm, "componentState", "ComponentState");
+        this.currentYanmState = MobileJson.firstObject(yanm, "componentState", "ComponentState");
         if (this.currentYanmState == null) {
             this.currentYanmState = new JSONObject();
             try {
@@ -6972,7 +6990,7 @@ extends Activity {
         }
         this.activeYanmWebViews.clear();
         this.yanmList.removeAllViews();
-        JSONArray components = MainActivity.firstArray(yanm, "components", "Components");
+        JSONArray components = MobileJson.firstArray(yanm, "components", "Components");
         if (this.homeDashboard != null) {
             this.homeDashboard.updateYanmState(components == null ? 0 : components.length(), this.expandedComponentIds.size());
         }
@@ -6985,7 +7003,7 @@ extends Activity {
         for (int i = 0; i < components.length(); ++i) {
             JSONObject comp = components.optJSONObject(i);
             if (comp == null) continue;
-            String compId = MainActivity.firstNonEmpty(comp.optString("id"), comp.optString("Id"), comp.optString("title"), comp.optString("Title"), comp.optString("name"), comp.optString("Name"), "comp_" + i);
+            String compId = MobileJson.firstNonEmpty(comp.optString("id"), comp.optString("Id"), comp.optString("title"), comp.optString("Title"), comp.optString("name"), comp.optString("Name"), "comp_" + i);
             int sortedIndex = this.sortedComponentIds.indexOf(compId);
             if (sortedIndex >= 0) {
                 sortedList.add(comp);
@@ -6994,8 +7012,8 @@ extends Activity {
             remainingList.add(comp);
         }
         sortedList.sort((c1, c2) -> {
-            String id1 = MainActivity.firstNonEmpty(c1.optString("id"), c1.optString("Id"), c1.optString("title"), c1.optString("Title"), c1.optString("name"), c1.optString("Name"));
-            String id2 = MainActivity.firstNonEmpty(c2.optString("id"), c2.optString("Id"), c2.optString("title"), c2.optString("Title"), c2.optString("name"), c2.optString("Name"));
+            String id1 = MobileJson.firstNonEmpty(c1.optString("id"), c1.optString("Id"), c1.optString("title"), c1.optString("Title"), c1.optString("name"), c1.optString("Name"));
+            String id2 = MobileJson.firstNonEmpty(c2.optString("id"), c2.optString("Id"), c2.optString("title"), c2.optString("Title"), c2.optString("name"), c2.optString("Name"));
             return Integer.compare(this.sortedComponentIds.indexOf(id1), this.sortedComponentIds.indexOf(id2));
         });
         ArrayList<JSONObject> finalComponents = new ArrayList<JSONObject>(sortedList);
@@ -7003,9 +7021,9 @@ extends Activity {
         int i = 0;
         while (i < finalComponents.size()) {
             JSONObject component = (JSONObject)finalComponents.get(i);
-            String title = MainActivity.firstNonEmpty(component.optString("title"), component.optString("Title"), component.optString("name"), component.optString("Name"), "\u7ec4\u4ef6 " + (i + 1));
-            String type = MainActivity.firstNonEmpty(component.optString("type"), component.optString("Type"), component.optString("kind"), component.optString("Kind"), "component");
-            String componentId = MainActivity.firstNonEmpty(component.optString("id"), component.optString("Id"), title);
+            String title = MobileJson.firstNonEmpty(component.optString("title"), component.optString("Title"), component.optString("name"), component.optString("Name"), "\u7ec4\u4ef6 " + (i + 1));
+            String type = MobileJson.firstNonEmpty(component.optString("type"), component.optString("Type"), component.optString("kind"), component.optString("Kind"), "component");
+            String componentId = MobileJson.firstNonEmpty(component.optString("id"), component.optString("Id"), title);
             LinearLayout card = this.card();
             card.setTag((Object)("yanm_comp_" + componentId));
             LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(-1, -2);
@@ -7016,7 +7034,7 @@ extends Activity {
             headerLayout.setGravity(16);
             TextView titleView = this.textView(title, 16, -1, true);
             headerLayout.addView((View)titleView, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -2, 1.0f));
-            String html = MainActivity.firstNonEmpty(component.optString("html"), component.optString("Html"), component.optString("markup"), component.optString("Markup"), component.optString("contentHtml"), component.optString("ContentHtml"));
+            String html = MobileJson.firstNonEmpty(component.optString("html"), component.optString("Html"), component.optString("markup"), component.optString("Markup"), component.optString("contentHtml"), component.optString("ContentHtml"));
             TextView arrowView = null;
             if (!html.isEmpty()) {
                 boolean isExpanded = this.expandedComponentIds.contains(componentId);
@@ -7225,28 +7243,7 @@ extends Activity {
         return MainActivity.buildDeviceDisplayName();
     }
 
-    static String buildDeviceDisplayName() {
-        String marketName = MainActivity.firstNonEmpty(MainActivity.getSystemProperty("ro.product.marketname"), MainActivity.getSystemProperty("ro.vendor.product.marketname"), MainActivity.getSystemProperty("ro.product.vendor.marketname"), MainActivity.getSystemProperty("ro.product.odm.marketname"), MainActivity.getSystemProperty("ro.config.marketing_name"));
-        if (!marketName.isEmpty()) {
-            return marketName;
-        }
-        String maker = Build.MANUFACTURER == null ? "" : Build.MANUFACTURER.trim();
-        String model = Build.MODEL == null ? "" : Build.MODEL.trim();
-        String name = (maker + " " + model).trim();
-        return name.trim().isEmpty() ? "Android \u624b\u673a" : name;
-    }
-
-    private static String getSystemProperty(String key) {
-        try {
-            Class<?> systemProperties = Class.forName("android.os.SystemProperties");
-            Method get = systemProperties.getMethod("get", String.class);
-            Object value = get.invoke(null, key);
-            return value == null ? "" : value.toString().trim();
-        }
-        catch (Exception ignored) {
-            return "";
-        }
-    }
+    static String buildDeviceDisplayName() { return MobileDeviceIdentity.buildDeviceDisplayName(); }
 
     private void setStatus(String status) {
         this.diagnosticLog.setLength(0);
@@ -7492,8 +7489,8 @@ extends Activity {
         if (id == null || id.trim().isEmpty()) {
             JSONObject result = new JSONObject();
             JSONArray items = new JSONArray();
-            JSONArray components = MainActivity.firstArray(yanm, "components", "Components");
-            JSONObject state = MainActivity.firstObject(yanm, "componentState", "ComponentState");
+            JSONArray components = MobileJson.firstArray(yanm, "components", "Components");
+            JSONObject state = MobileJson.firstObject(yanm, "componentState", "ComponentState");
             if (state == null) {
                 state = new JSONObject();
             }
@@ -7517,9 +7514,9 @@ extends Activity {
         if (index < 0) {
             throw new IllegalStateException("未找到 ID 或标题为 " + id + " 的燕幕组件。");
         }
-        JSONArray components = MainActivity.firstArray(yanm, "components", "Components");
+        JSONArray components = MobileJson.firstArray(yanm, "components", "Components");
         JSONObject component = components.optJSONObject(index);
-        JSONObject state = MainActivity.firstObject(yanm, "componentState", "ComponentState");
+        JSONObject state = MobileJson.firstObject(yanm, "componentState", "ComponentState");
         if (state == null) {
             state = new JSONObject();
         }
@@ -7533,7 +7530,7 @@ extends Activity {
     }
 
     private JSONObject buildYanmStateViewResult(JSONObject yanm, String id, String stateKey) throws Exception {
-        JSONObject state = MainActivity.firstObject(yanm, "componentState", "ComponentState");
+        JSONObject state = MobileJson.firstObject(yanm, "componentState", "ComponentState");
         if (state == null) {
             state = new JSONObject();
         }
@@ -7566,7 +7563,7 @@ extends Activity {
             if (index < 0) {
                 throw new IllegalStateException("未找到 ID 或标题为 " + trimmedId + " 的燕幕组件。");
             }
-            JSONArray components = MainActivity.firstArray(yanm, "components", "Components");
+            JSONArray components = MobileJson.firstArray(yanm, "components", "Components");
             component = components.optJSONObject(index);
             String componentId = MainActivity.getYanmComponentId(component, index);
             if (resolvedKey.isEmpty()) {
@@ -7610,7 +7607,7 @@ extends Activity {
             if (index < 0) {
                 throw new IllegalStateException("未找到 ID 或标题为 " + trimmedId + " 的燕幕组件。");
             }
-            JSONArray components = MainActivity.firstArray(yanm, "components", "Components");
+            JSONArray components = MobileJson.firstArray(yanm, "components", "Components");
             component = components.optJSONObject(index);
             String componentId = MainActivity.getYanmComponentId(component, index);
             if (resolvedKey.isEmpty()) {
@@ -7621,7 +7618,7 @@ extends Activity {
             throw new IllegalStateException("缺少 stateKey；修改燕幕正文必须指定 stateKey 或组件 id。");
         }
 
-        JSONObject state = MainActivity.firstObject(yanm, "componentState", "ComponentState");
+        JSONObject state = MobileJson.firstObject(yanm, "componentState", "ComponentState");
         if (state == null) {
             state = new JSONObject();
         }
@@ -7659,7 +7656,7 @@ extends Activity {
         if (index < 0) {
             throw new IllegalStateException("未找到 ID 或标题为 " + id + " 的燕幕组件。");
         }
-        JSONArray components = MainActivity.firstArray(yanm, "components", "Components");
+        JSONArray components = MobileJson.firstArray(yanm, "components", "Components");
         JSONObject component = components.optJSONObject(index);
         boolean titleChanged = false;
         boolean htmlChanged = false;
@@ -7688,7 +7685,7 @@ extends Activity {
     }
 
     private void commitYanmSnapshotFromAi(JSONObject yanm, String reason) throws Exception {
-        JSONObject state = MainActivity.firstObject(yanm, "componentState", "ComponentState");
+        JSONObject state = MobileJson.firstObject(yanm, "componentState", "ComponentState");
         if (state == null) {
             state = new JSONObject();
             yanm.put("componentState", (Object)state);
@@ -7703,7 +7700,7 @@ extends Activity {
     }
 
     private void commitYanmComponentStateFromAi(JSONObject yanm, String stateKey, String value, String reason) throws Exception {
-        JSONObject state = MainActivity.firstObject(yanm, "componentState", "ComponentState");
+        JSONObject state = MobileJson.firstObject(yanm, "componentState", "ComponentState");
         if (state == null) {
             state = new JSONObject();
             yanm.put("componentState", (Object)state);
@@ -7727,7 +7724,7 @@ extends Activity {
         JSONObject result = new JSONObject()
                 .put("id", (Object)componentId)
                 .put("title", (Object)title)
-                .put("type", (Object)MainActivity.firstNonEmpty(component.optString("type"), component.optString("Type"), component.optString("kind"), component.optString("Kind"), "component"))
+                .put("type", (Object)MobileJson.firstNonEmpty(component.optString("type"), component.optString("Type"), component.optString("kind"), component.optString("Kind"), "component"))
                 .put("stateKey", (Object)stateKey)
                 .put("stateLength", stateValue.length())
                 .put("hasHtml", !html.isEmpty())
@@ -7764,7 +7761,7 @@ extends Activity {
         if (yanm == null || componentIdOrTitle == null || componentIdOrTitle.trim().isEmpty()) {
             return -1;
         }
-        JSONArray components = MainActivity.firstArray(yanm, "components", "Components");
+        JSONArray components = MobileJson.firstArray(yanm, "components", "Components");
         if (components == null) {
             return -1;
         }
@@ -7784,7 +7781,7 @@ extends Activity {
     }
 
     private static String getYanmComponentId(JSONObject component, int index) {
-        return MainActivity.firstNonEmpty(
+        return MobileJson.firstNonEmpty(
                 component == null ? "" : component.optString("id"),
                 component == null ? "" : component.optString("Id"),
                 component == null ? "" : component.optString("title"),
@@ -7795,7 +7792,7 @@ extends Activity {
     }
 
     private static String getYanmComponentTitle(JSONObject component, int index) {
-        return MainActivity.firstNonEmpty(
+        return MobileJson.firstNonEmpty(
                 component == null ? "" : component.optString("title"),
                 component == null ? "" : component.optString("Title"),
                 component == null ? "" : component.optString("name"),
@@ -7804,7 +7801,7 @@ extends Activity {
     }
 
     private static String getYanmComponentHtml(JSONObject component) {
-        return MainActivity.firstNonEmpty(
+        return MobileJson.firstNonEmpty(
                 component == null ? "" : component.optString("html"),
                 component == null ? "" : component.optString("Html"),
                 component == null ? "" : component.optString("markup"),
@@ -8311,32 +8308,6 @@ extends Activity {
         return intent.getStringExtra("android.intent.extra.TEXT");
     }
 
-    private static String firstNonEmpty(String ... values) {
-        for (String value : values) {
-            if (value == null || value.trim().isEmpty()) continue;
-            return value.trim();
-        }
-        return "";
-    }
-
-    private static JSONArray firstArray(JSONObject object, String ... keys) {
-        for (String key : keys) {
-            JSONArray value = object.optJSONArray(key);
-            if (value == null) continue;
-            return value;
-        }
-        return null;
-    }
-
-    private static JSONObject firstObject(JSONObject object, String ... keys) {
-        for (String key : keys) {
-            JSONObject value = object.optJSONObject(key);
-            if (value == null) continue;
-            return value;
-        }
-        return null;
-    }
-
     private static String stripHtml(String html) {
         if (html == null) {
             return "";
@@ -8353,8 +8324,8 @@ extends Activity {
     }
 
     private static String summarizeYanmComponent(JSONObject component) {
-        String text = MainActivity.firstNonEmpty(component.optString("html"), component.optString("Html"), component.optString("markup"), component.optString("Markup"), component.optString("contentHtml"), component.optString("ContentHtml"), component.optString("text"), component.optString("Text"), component.optString("content"), component.optString("Content"), component.optString("note"), component.optString("Note"), component.optString("description"), component.optString("Description"));
-        if (text.isEmpty() && (text = MainActivity.firstNonEmpty(component.optString("title"), component.optString("Title"), component.optString("name"), component.optString("Name"), "")).isEmpty()) {
+        String text = MobileJson.firstNonEmpty(component.optString("html"), component.optString("Html"), component.optString("markup"), component.optString("Markup"), component.optString("contentHtml"), component.optString("ContentHtml"), component.optString("text"), component.optString("Text"), component.optString("content"), component.optString("Content"), component.optString("note"), component.optString("Note"), component.optString("description"), component.optString("Description"));
+        if (text.isEmpty() && (text = MobileJson.firstNonEmpty(component.optString("title"), component.optString("Title"), component.optString("name"), component.optString("Name"), "")).isEmpty()) {
             text = "\u65e0\u53ef\u7528\u5185\u5bb9";
         }
         text = MainActivity.stripHtml(text);
@@ -8392,7 +8363,7 @@ extends Activity {
             WebView runner = null;
             try {
                 runner = new WebView((Context)this);
-                this.activeHeadlessMobileScriptRunners.put(runnerId, runner);
+                this.scriptRuntime.headless.put(runnerId, runner);
                 runner.getSettings().setJavaScriptEnabled(true);
                 runner.getSettings().setDomStorageEnabled(true);
                 WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG);
@@ -8455,51 +8426,10 @@ extends Activity {
         }, 350L);
     }
 
-    private void releaseHeadlessMobileScriptRunner(String runnerId) {
-        if (runnerId == null || runnerId.trim().isEmpty()) {
-            return;
-        }
-        WebView runner = this.activeHeadlessMobileScriptRunners.remove(runnerId);
-        this.destroyMobileScriptRunner(runner);
-    }
-
-    private void releaseActiveMobileScriptRunner() {
-        WebView runner = this.activeMobileScriptRunner;
-        this.activeMobileScriptRunner = null;
-        this.destroyMobileScriptRunner(runner);
-    }
-
-    private void destroyMobileScriptRunner(WebView runner) {
-        if (runner == null) {
-            return;
-        }
-        try {
-            runner.removeJavascriptInterface("yanziMobileJsHost");
-        }
-        catch (Exception ignored) {
-        }
-        try {
-            runner.stopLoading();
-        }
-        catch (Exception ignored) {
-        }
-        try {
-            runner.destroy();
-        }
-        catch (Exception ignored) {
-        }
-    }
-
-    private void destroyAllMobileScriptRunners() {
-        this.releaseActiveMobileScriptRunner();
-        ArrayList<WebView> runners =
-                new ArrayList<WebView>(
-                        this.activeHeadlessMobileScriptRunners.values());
-        this.activeHeadlessMobileScriptRunners.clear();
-        for (WebView runner : runners) {
-            this.destroyMobileScriptRunner(runner);
-        }
-    }
+    private void releaseHeadlessMobileScriptRunner(String runnerId) { scriptRuntime.release(runnerId); }
+    private void releaseActiveMobileScriptRunner() { scriptRuntime.releaseActive(); }
+    private void destroyMobileScriptRunner(WebView runner) { MobileWebViewRuntime.destroy(runner); }
+    private void destroyAllMobileScriptRunners() { scriptRuntime.close(); }
 
     private void updateAllAppWidgets() {
         try {
@@ -8947,73 +8877,6 @@ extends Activity {
         public void onResult(String var1);
     }
 
-    private static final class RemoteExtension {
-        final String extensionId;
-        final String name;
-        final String description;
-        final String icon;
-        final String accentHex;
-        final boolean hasDesktopRuntime;
-        final boolean hasMobileRuntime;
-
-        RemoteExtension(
-                String extensionId,
-                String name,
-                String description,
-                String icon,
-                String accentHex) {
-            this(
-                    extensionId,
-                    name,
-                    description,
-                    icon,
-                    accentHex,
-                    true,
-                    false);
-        }
-
-        RemoteExtension(
-                String extensionId,
-                String name,
-                String description,
-                String icon,
-                String accentHex,
-                boolean hasDesktopRuntime,
-                boolean hasMobileRuntime) {
-            this.extensionId = extensionId;
-            this.name = name;
-            this.description = description;
-            this.icon = icon == null ? "" : icon;
-            this.accentHex = accentHex == null ? "" : accentHex;
-            this.hasDesktopRuntime = hasDesktopRuntime;
-            this.hasMobileRuntime = hasMobileRuntime;
-        }
-
-        RemoteExtension(String extensionId, String name, String description, String icon) {
-            this(extensionId, name, description, icon, "");
-        }
-
-        String runtimeLabel() {
-            if (this.hasMobileRuntime && this.hasDesktopRuntime) {
-                return "\u672c\u673a \u00b7 \u7535\u8111";
-            }
-            if (this.hasMobileRuntime) {
-                return "\u672c\u673a";
-            }
-            return "\u7535\u8111";
-        }
-
-        String iconText() {
-            String value = this.icon.trim();
-            if (value.startsWith("mdi:")) {
-                String namePart = value.substring(4).replace("-", " ").trim();
-                return namePart.isEmpty() ? "\u71d5" : namePart.substring(0, 1).toUpperCase(Locale.ROOT);
-            }
-            String base = this.name.trim().isEmpty() ? this.extensionId : this.name.trim();
-            return base.isEmpty() ? "\u71d5" : base.substring(0, 1).toUpperCase(Locale.ROOT);
-        }
-    }
-
     private static final class MobileExtensionTemplate {
         final String name;
         final String description;
@@ -9196,8 +9059,8 @@ extends Activity {
                 } catch (Exception failure) { result = MainActivity.buildJsonErrorResult(failure.getMessage()); }
                 final String response = result;
                 MainActivity.this.runOnUiThread(() -> {
-                    WebView view = this.runnerId == null ? MainActivity.this.activeMobileScriptRunner
-                            : MainActivity.this.activeHeadlessMobileScriptRunners.get(this.runnerId);
+                    WebView view = this.runnerId == null ? MainActivity.this.scriptRuntime.active
+                            : MainActivity.this.scriptRuntime.headless.get(this.runnerId);
                     if (view != null && !this.terminalDelivered.get()) view.evaluateJavascript(
                             "window.__yanziStorageReply(" + JSONObject.quote(requestId) + "," + response + ")", null);
                 });
@@ -9550,1275 +9413,8 @@ extends Activity {
         }
     }
 
-    public static final class YanziApiClient {
-        public static boolean sLanFailedThisSession = false;
-
-        static String login(String baseUrl, String email, String password) throws Exception {
-            return loginResponse(baseUrl, email, password).getString("accessToken");
-        }
-
-        static JSONObject loginResponse(String baseUrl, String email, String password) throws Exception {
-            JSONObject payload = new JSONObject().put("email", (Object)email).put("password", (Object)password);
-            return YanziApiClient.postJson(baseUrl, "/v1/auth/login", payload, null, "\u767b\u5f55");
-        }
-
-        static void registerDevice(String baseUrl, String token, String deviceId, String displayName) throws Exception {
-            JSONObject capabilities = new JSONObject().put("shareText", true).put("sendToDesktop", true)
-                    .put("receiveMobileMessages", true).put("receiveAttachments", true)
-                    .put("receiveAccountChat", true).put("deviceMessageProtocolVersions", new JSONArray().put(1))
-                    .put("receiveLanAttachments", true).put("maxAttachmentBytes", MobileAttachmentClient.LIMIT)
-                    .put("appVersion", BuildConfig.VERSION_NAME).put("versionCode", BuildConfig.VERSION_CODE)
-                    .put("packageName", BuildConfig.APPLICATION_ID).put("messageProtocol", 2);
-            JSONObject payload = new JSONObject().put("deviceId", (Object)deviceId).put("platform", (Object)"android").put("displayName", (Object)displayName).put("capabilities", (Object)capabilities);
-            YanziApiClient.postJson(baseUrl, "/v1/me/devices", payload, token, "\u8bbe\u5907\u6ce8\u518c");
-        }
-
-        static String sendTextToDesktop(String baseUrl, String token, String sourceDeviceId, String text) throws Exception {
-            JSONObject payload = new JSONObject().put("sourceDeviceId", (Object)sourceDeviceId).put("targetPlatform", (Object)"desktop").put("kind", (Object)"text").put("title", (Object)"\u624b\u673a\u53d1\u6765\u6d88\u606f").put("text", (Object)text).put("payload", (Object)new JSONObject().put("source", (Object)"android").put("sourceDeviceName", (Object)MainActivity.buildDeviceDisplayName()).put("createdAt", System.currentTimeMillis()));
-            return YanziApiClient.postJson(baseUrl, "/v1/me/mobile/messages", payload, token, "\u53d1\u9001\u6d88\u606f").optString("messageId", "unknown");
-        }
-
-        static String sendPhotoToDesktop(String baseUrl, String token, String sourceDeviceId, byte[] jpegBytes, int width, int height) throws Exception {
-            return MobileDesktopTransfer.sendBytes(MainActivity.sContext, baseUrl, token, sourceDeviceId, "photo",
-                    "photo-" + System.currentTimeMillis() + ".jpg", "image/jpeg", jpegBytes, "手机照片 " + width + "x" + height);
-        }
-
-        private static String postScreenshotDirectMessage(String baseUrl, String token, String sourceDeviceId, String screenshotDataUrl, int bytes, int width, int height) throws Exception {
-            JSONObject payload = new JSONObject().put("sourceDeviceId", (Object)sourceDeviceId).put("targetPlatform", (Object)"desktop").put("kind", (Object)"screenshot").put("title", (Object)"\u624b\u673a\u7167\u7247").put("text", (Object)("\u624b\u673a\u7167\u7247\uff1a" + width + "x" + height)).put("payload", (Object)new JSONObject().put("source", (Object)"android-mobile").put("sourceDeviceName", (Object)MainActivity.buildDeviceDisplayName()).put("screenshotMime", (Object)"image/jpeg").put("screenshotWidth", width).put("screenshotHeight", height).put("screenshotBytes", bytes).put("screenshotDataUrl", (Object)screenshotDataUrl).put("expiresAt", System.currentTimeMillis() + 2592000000L).put("createdAt", System.currentTimeMillis()));
-            return YanziApiClient.postJson(baseUrl, "/v1/me/mobile/messages", payload, token, "\u53d1\u9001\u7167\u7247").optString("messageId", "unknown");
-        }
-
-        private static WebDavConfig fetchWebDavConfig(String baseUrl, String token) throws Exception {
-            JSONObject json = YanziApiClient.getJson(baseUrl, "/v1/sync/webdav-config", token, "\u8bfb\u53d6 WebDAV");
-            WebDavConfig config = new WebDavConfig();
-            config.serverUrl = json.optString("serverUrl", "https://dav.jianguoyun.com/dav/");
-            config.rootPath = json.optString("rootPath", "/yanzi");
-            config.username = json.optString("username", "");
-            config.password = json.optString("password", "");
-            if (!json.optBoolean("enabled", false) || config.username.trim().isEmpty() || config.password.trim().isEmpty()) {
-                throw new IllegalStateException("\u8d26\u53f7\u672a\u914d\u7f6e\u53ef\u7528\u7684 WebDAV\u3002");
-            }
-            return config;
-        }
-
-        private static String uploadMobilePhotoToWebDav(WebDavConfig config, byte[] bytes) throws Exception {
-            String day = new SimpleDateFormat("yyyyMMdd", Locale.ROOT).format(new Date());
-            String fileName = "mobile-photo-" + day + "-" + UUID.randomUUID().toString().replace("-", "") + ".jpg";
-            YanziApiClient.putWebDavBytes(config, fileName, bytes, "image/jpeg");
-            return fileName;
-        }
-
-
-        private static void putWebDavBytes(WebDavConfig config, String relativePath, byte[] bytes, String contentType) throws Exception {
-            HttpURLConnection connection = YanziApiClient.openWebDav(config, relativePath);
-            connection.setRequestMethod("PUT");
-            connection.setConnectTimeout(15000);
-            connection.setReadTimeout(30000);
-            connection.setDoOutput(true);
-            connection.setRequestProperty("Content-Type", contentType);
-            connection.setFixedLengthStreamingMode(bytes.length);
-            connection.connect();
-            try (OutputStream output = connection.getOutputStream();){
-                output.write(bytes);
-            }
-            String body = YanziApiClient.readBody(connection);
-            if (connection.getResponseCode() < 200 || connection.getResponseCode() >= 300) {
-                throw new IllegalStateException("WebDAV \u4e0a\u4f20\u5931\u8d25\uff0cHTTP " + connection.getResponseCode() + "\uff1a" + body);
-            }
-        }
-
-        private static HttpURLConnection openWebDav(WebDavConfig config, String relativePath) throws Exception {
-            String root;
-            String server;
-            String string = server = config.serverUrl == null ? "" : config.serverUrl.trim();
-            if (!server.endsWith("/")) {
-                server = server + "/";
-            }
-            String string2 = root = config.rootPath == null ? "" : config.rootPath.trim();
-            if (!root.startsWith("/")) {
-                root = "/" + root;
-            }
-            if (!root.endsWith("/")) {
-                root = root + "/";
-            }
-            String path = root + relativePath;
-            while (path.contains("//")) {
-                path = path.replace("//", "/");
-            }
-            URL url = new URL(server + path.substring(1));
-            HttpURLConnection connection = (HttpURLConnection)url.openConnection();
-            connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36");
-            String userpass = (config.username == null ? "" : config.username) + ":" + (config.password == null ? "" : config.password);
-            String encoded = Base64.encodeToString((byte[])userpass.getBytes(StandardCharsets.UTF_8), (int)2);
-            connection.setRequestProperty("Authorization", "Basic " + encoded);
-            return connection;
-        }
-
-        public static String runExtensionOnDesktop(String baseUrl, String token, String sourceDeviceId, String sourceDeviceName, String extensionId, String inputText) throws Exception {
-            JSONObject payload = new JSONObject().put("sourceDeviceId", (Object)sourceDeviceId).put("targetPlatform", (Object)"desktop").put("kind", (Object)"run-extension").put("title", (Object)"\u624b\u673a\u8bf7\u6c42\u6267\u884c\u6269\u5c55").put("text", (Object)(inputText == null ? "" : inputText)).put("payload", (Object)new JSONObject().put("source", (Object)"android").put("sourceDeviceName", (Object)sourceDeviceName).put("extensionId", (Object)extensionId).put("createdAt", System.currentTimeMillis()));
-            return YanziApiClient.postJson(baseUrl, "/v1/me/mobile/messages", payload, token, "\u6267\u884c\u6269\u5c55").optString("messageId", "unknown");
-        }
-
-        public static JSONObject fetchMessageDetail(String baseUrl, String token, String messageId) throws Exception {
-            return YanziApiClient.getJson(baseUrl, "/v1/me/mobile/messages/" + YanziApiClient.encodePath(messageId), token, "\u83b7\u53d6\u6d88\u606f\u8be6\u60c5");
-        }
-
-        static List<RemoteExtension> fetchRunnableExtensions(String baseUrl, String token) throws Exception {
-            JSONObject payload = YanziApiClient.getJson(baseUrl, "/v1/me/extensions", token, "读取小程序列表");
-            JSONArray items = payload.optJSONArray("items");
-            ArrayList<RemoteExtension> result = new ArrayList<RemoteExtension>();
-            if (items == null) {
-                return result;
-            }
-
-            java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(8);
-            List<java.util.concurrent.Future<RemoteExtension>> futures = new ArrayList<java.util.concurrent.Future<RemoteExtension>>();
-
-            for (int i = 0; i < items.length(); ++i) {
-                JSONObject item = items.optJSONObject(i);
-                if (item == null || item.optInt("enabled", 1) == 0) continue;
-                final String extensionId = MainActivity.firstNonEmpty(new String[]{item.optString("extension_id"), item.optString("extensionId"), item.optString("ExtensionId"), item.optString("Extension_id")});
-                if (extensionId.isEmpty() || "yanzi-webdav-settings".equals(extensionId) || "yanzi-webdav-setting".equals(extensionId) || "yanzi-quickpanel-settings".equals(extensionId) || "yanzi-quickpanel-setting".equals(extensionId) || "yanzi-personal-sync-settings".equals(extensionId) || "yanzi-personal-sync-setting".equals(extensionId) || "yanzi-ai-settings".equals(extensionId) || "yanzi-ai-setting".equals(extensionId) || "yanzi-general-settings".equals(extensionId) || "yanzi-general-setting".equals(extensionId)) continue;
-                final RemoteExtension installedSummary = YanziApiClient.remoteExtensionFromInstalledItem(item, extensionId);
-
-                futures.add(pool.submit(new java.util.concurrent.Callable<RemoteExtension>() {
-                    @Override
-                    public RemoteExtension call() {
-                        try {
-                            JSONObject detail = YanziApiClient.getJson(baseUrl, "/v1/extensions/" + YanziApiClient.encodePath(extensionId), token, "读取小程序详情");
-                            JSONObject manifest = detail.optJSONObject("manifest");
-                            String name = MainActivity.firstNonEmpty(new String[]{detail.optString("display_name"), detail.optString("displayName"), detail.optString("DisplayName"), detail.optString("name"), detail.optString("Name"), manifest == null ? "" : manifest.optString("name"), manifest == null ? "" : manifest.optString("Name"), manifest == null ? "" : manifest.optString("display_name"), manifest == null ? "" : manifest.optString("displayName"), manifest == null ? "" : manifest.optString("DisplayName"), installedSummary.name, extensionId});
-                            String description = MainActivity.firstNonEmpty(new String[]{detail.optString("description"), detail.optString("Description"), manifest == null ? "" : manifest.optString("description"), manifest == null ? "" : manifest.optString("Description"), installedSummary.description});
-                            String icon = MainActivity.firstNonEmpty(new String[]{detail.optString("icon"), detail.optString("Icon"), manifest == null ? "" : manifest.optString("icon"), manifest == null ? "" : manifest.optString("Icon"), installedSummary.icon});
-                            String accentHex = MainActivity.firstNonEmpty(new String[]{detail.optString("accent_hex"), detail.optString("accentHex"), detail.optString("AccentHex"), manifest == null ? "" : manifest.optString("accent_hex"), manifest == null ? "" : manifest.optString("accentHex"), manifest == null ? "" : manifest.optString("AccentHex"), installedSummary.accentHex});
-                            return new RemoteExtension(extensionId, name, description, icon, accentHex);
-                        }
-                        catch (Exception ignored) {
-                            return installedSummary;
-                        }
-                    }
-                }));
-            }
-
-            for (java.util.concurrent.Future<RemoteExtension> future : futures) {
-                try {
-                    result.add(future.get());
-                }
-                catch (Exception ignored) {}
-            }
-            pool.shutdown();
-            return result;
-        }
-
-        private static RemoteExtension remoteExtensionFromInstalledItem(JSONObject item, String extensionId) {
-            JSONObject settings = null;
-            try {
-                String settingsJson = item.optString("settings_json", "");
-                if (!settingsJson.trim().isEmpty()) {
-                    settings = new JSONObject(settingsJson);
-                } else {
-                    settings = item.optJSONObject("settings");
-                }
-            }
-            catch (Exception ignored) {}
-            JSONObject manifest = settings == null ? null : settings.optJSONObject("manifest");
-            String name = MainActivity.firstNonEmpty(new String[]{
-                item.optString("display_name"), item.optString("displayName"), item.optString("name"),
-                settings == null ? "" : settings.optString("display_name"),
-                settings == null ? "" : settings.optString("displayName"),
-                settings == null ? "" : settings.optString("name"),
-                settings == null ? "" : settings.optString("title"),
-                manifest == null ? "" : manifest.optString("displayName"),
-                manifest == null ? "" : manifest.optString("name"),
-                extensionId
-            });
-            String description = MainActivity.firstNonEmpty(new String[]{
-                item.optString("description"),
-                settings == null ? "" : settings.optString("description"),
-                manifest == null ? "" : manifest.optString("description"),
-                "小程序详情暂不可用，仍可尝试远程执行。"
-            });
-            String icon = MainActivity.firstNonEmpty(new String[]{
-                item.optString("icon"),
-                settings == null ? "" : settings.optString("icon"),
-                manifest == null ? "" : manifest.optString("icon")
-            });
-            String accentHex = MainActivity.firstNonEmpty(new String[]{
-                item.optString("accent_hex"), item.optString("accentHex"),
-                settings == null ? "" : settings.optString("accent_hex"),
-                settings == null ? "" : settings.optString("accentHex"),
-                manifest == null ? "" : manifest.optString("accent_hex"),
-                manifest == null ? "" : manifest.optString("accentHex")
-            });
-            return new RemoteExtension(extensionId, name, description, icon, accentHex);
-        }
-
-        private static boolean objectSyncAvailable(String baseUrl, String token) throws Exception {
-            JSONObject capabilities = YanziApiClient.getJson(
-                    baseUrl,
-                    "/v1/sync/capabilities",
-                    token,
-                    "读取同步能力");
-            return capabilities.optBoolean("objectSyncAvailable", false);
-        }
-
-        private static HashMap<String, JSONObject> fetchSyncObjectMap(String baseUrl, String token) throws Exception {
-            JSONObject response = YanziApiClient.getJson(
-                    baseUrl,
-                    "/v1/sync/objects",
-                    token,
-                    "读取同步对象");
-            JSONArray objects = response.optJSONArray("objects");
-            if (objects == null) {
-                throw new IllegalStateException("云端对象列表为空。");
-            }
-
-            HashMap<String, JSONObject> objectMap = new HashMap<String, JSONObject>();
-            for (int i = 0; i < objects.length(); ++i) {
-                JSONObject item = objects.optJSONObject(i);
-                if (item == null) continue;
-                String objectId = item.optString("objectId", "").trim();
-                if (!objectId.isEmpty()) {
-                    objectMap.put(objectId, item);
-                }
-            }
-            return objectMap;
-        }
-
-        private static long syncObjectRevision(HashMap<String, JSONObject> objectMap, String objectId) {
-            JSONObject item = objectMap.get(objectId);
-            return item == null ? 0L : item.optLong("revision", 0L);
-        }
-
-        private static JSONObject putSyncObject(
-                String baseUrl,
-                String token,
-                String objectId,
-                long expectedRevision,
-                boolean deleted,
-                JSONObject payload,
-                String action) throws Exception {
-            JSONObject body = new JSONObject()
-                    .put("schemaVersion", 1)
-                    .put("expectedRevision", expectedRevision)
-                    .put("deleted", deleted)
-                    .put("payload", payload == null ? new JSONObject() : payload)
-                    .put("updatedByDeviceId", getDeviceIdStatic(sContext))
-                    .put("updatedByDeviceName", MainActivity.buildDeviceDisplayName());
-            JSONObject response = YanziApiClient.putJson(
-                    baseUrl,
-                    "/v1/sync/objects/" + YanziApiClient.encodePath(objectId),
-                    body,
-                    token,
-                    action);
-            JSONObject result = response.optJSONObject("object");
-            if (result == null) {
-                throw new IllegalStateException("云端未返回写入后的同步对象。");
-            }
-            return result;
-        }
-
-        private static String buildYanmStateObjectId(String stateKey) throws Exception {
-            String normalized = stateKey == null ? "" : stateKey.trim().toLowerCase(Locale.ROOT);
-            byte[] hash = MessageDigest.getInstance("SHA-256").digest(normalized.getBytes(StandardCharsets.UTF_8));
-            StringBuilder builder = new StringBuilder("yanm.componentState.");
-            for (byte value : hash) {
-                builder.append(String.format(Locale.ROOT, "%02x", value & 0xff));
-            }
-            return builder.toString();
-        }
-
-        private static JSONObject fetchYanmStateFromObjects(String baseUrl, String token) throws Exception {
-            JSONObject capabilities = YanziApiClient.getJson(
-                    baseUrl,
-                    "/v1/sync/capabilities",
-                    token,
-                    "读取同步能力");
-            if (!capabilities.optBoolean("objectSyncAvailable", false)) {
-                throw new IllegalStateException("云端尚未启用对象同步。");
-            }
-
-            JSONObject response = YanziApiClient.getJson(
-                    baseUrl,
-                    "/v1/sync/objects",
-                    token,
-                    "读取燕幕对象");
-            JSONArray objects = response.optJSONArray("objects");
-            if (objects == null) {
-                throw new IllegalStateException("云端对象列表为空。");
-            }
-
-            HashMap<String, JSONObject> objectMap = new HashMap<String, JSONObject>();
-            for (int i = 0; i < objects.length(); ++i) {
-                JSONObject item = objects.optJSONObject(i);
-                if (item == null) continue;
-                String objectId = item.optString("objectId", "").trim();
-                if (!objectId.isEmpty()) {
-                    objectMap.put(objectId, item);
-                }
-            }
-
-            JSONObject layoutObject = objectMap.get("yanm.layout");
-            if (layoutObject == null || layoutObject.optBoolean("deleted", false)) {
-                throw new IllegalStateException("云端没有可用的燕幕布局对象。");
-            }
-            JSONObject layoutPayload = layoutObject.optJSONObject("payload");
-            JSONObject settings = layoutPayload == null ? null : layoutPayload.optJSONObject("settings");
-            if (settings == null) {
-                throw new IllegalStateException("燕幕布局对象缺少 settings。");
-            }
-
-            JSONObject yanm = new JSONObject(settings.toString());
-            JSONObject componentState = new JSONObject();
-            JSONObject indexObject = objectMap.get("yanm.componentStateIndex");
-            if (indexObject != null && !indexObject.optBoolean("deleted", false)) {
-                JSONObject indexPayload = indexObject.optJSONObject("payload");
-                JSONArray stateObjectIds = indexPayload == null ? null : indexPayload.optJSONArray("stateObjectIds");
-                if (stateObjectIds != null) {
-                    for (int i = 0; i < stateObjectIds.length(); ++i) {
-                        String stateObjectId = stateObjectIds.optString(i, "").trim();
-                        if (stateObjectId.isEmpty()) continue;
-                        JSONObject stateObject = objectMap.get(stateObjectId);
-                        if (stateObject == null || stateObject.optBoolean("deleted", false)) continue;
-                        JSONObject statePayload = stateObject.optJSONObject("payload");
-                        if (statePayload == null) continue;
-                        String stateKey = statePayload.optString("stateKey", "").trim();
-                        if (stateKey.isEmpty()) continue;
-                        componentState.put(stateKey, statePayload.optString("value", ""));
-                    }
-                }
-            }
-            yanm.put("componentState", componentState);
-            return yanm;
-        }
-
-        static JSONObject fetchYanmState(String baseUrl, String token) throws Exception {
-            try {
-                JSONObject yanm = YanziApiClient.fetchYanmStateFromObjects(baseUrl, token);
-                if (sContext != null) {
-                    MobileDiagnostics.append(sContext, "燕幕读取使用统一对象同步协议。");
-                }
-                return yanm;
-            }
-            catch (Exception objectSyncError) {
-                Log.w("ApiClient", "Object-based Yanm read failed, falling back to legacy snapshot: " + objectSyncError.getMessage());
-                if (sContext != null) {
-                    MobileDiagnostics.append(sContext, "燕幕对象读取回退旧快照：" + objectSyncError.getMessage());
-                }
-            }
-
-            JSONObject payload = YanziApiClient.getJson(baseUrl, "/v1/me/yanm-state", token, "\u8bfb\u53d6\u71d5\u5e55");
-            JSONObject yanm = payload.optJSONObject("yanm");
-            if (yanm == null) {
-                throw new IllegalStateException("\u8d26\u53f7\u4e91\u7aef\u6ca1\u6709\u71d5\u5e55\u6570\u636e\u3002");
-            }
-            String viewUrl = payload.optString("viewUrl", "");
-            if (!viewUrl.isEmpty() && sContext != null) {
-                sContext.getSharedPreferences("yanzi-mobile", 0).edit().putString("yanm_view_url", viewUrl).apply();
-            }
-            return yanm;
-        }
-
-        static JSONObject fetchSettings(String baseUrl, String token) throws Exception {
-            JSONObject payload = YanziApiClient.getJson(baseUrl, "/v1/settings", token, "\u8bfb\u53d6\u914d\u7f6e");
-            JSONObject settings = payload.optJSONObject("settings");
-            if (settings == null) {
-                throw new IllegalStateException("\u672a\u80fd\u83b7\u53d6\u5230\u4e91\u7aef\u914d\u7f6e\u3002");
-            }
-            return settings;
-        }
-
-        private static boolean putYanmStateToObjects(String baseUrl, String token, JSONObject yanm) throws Exception {
-            if (!YanziApiClient.objectSyncAvailable(baseUrl, token)) {
-                return false;
-            }
-
-            HashMap<String, JSONObject> objectMap = YanziApiClient.fetchSyncObjectMap(baseUrl, token);
-            JSONObject layoutSettings = new JSONObject(yanm.toString());
-            JSONObject componentState = MainActivity.firstObject(layoutSettings, "componentState", "ComponentState");
-            if (componentState == null) {
-                componentState = new JSONObject();
-            }
-            layoutSettings.put("componentState", new JSONObject());
-
-            YanziApiClient.putSyncObject(
-                    baseUrl,
-                    token,
-                    "yanm.layout",
-                    YanziApiClient.syncObjectRevision(objectMap, "yanm.layout"),
-                    false,
-                    new JSONObject().put("settings", layoutSettings),
-                    "同步燕幕布局对象");
-
-            ArrayList<String> currentStateObjectIds = new ArrayList<String>();
-            Iterator<String> stateKeys = componentState.keys();
-            while (stateKeys.hasNext()) {
-                String stateKey = stateKeys.next();
-                if (stateKey == null || stateKey.trim().isEmpty()) continue;
-                String objectId = YanziApiClient.buildYanmStateObjectId(stateKey);
-                currentStateObjectIds.add(objectId);
-                YanziApiClient.putSyncObject(
-                        baseUrl,
-                        token,
-                        objectId,
-                        YanziApiClient.syncObjectRevision(objectMap, objectId),
-                        false,
-                        new JSONObject()
-                                .put("stateKey", stateKey.trim())
-                                .put("value", componentState.optString(stateKey, "")),
-                        "同步燕幕组件状态对象");
-            }
-            java.util.Collections.sort(currentStateObjectIds);
-
-            JSONObject oldIndexObject = objectMap.get("yanm.componentStateIndex");
-            JSONObject oldIndexPayload = oldIndexObject == null ? null : oldIndexObject.optJSONObject("payload");
-            JSONArray oldIds = oldIndexPayload == null ? null : oldIndexPayload.optJSONArray("stateObjectIds");
-            HashSet<String> currentIdSet = new HashSet<String>(currentStateObjectIds);
-            if (oldIds != null) {
-                for (int i = 0; i < oldIds.length(); ++i) {
-                    String oldId = oldIds.optString(i, "").trim();
-                    if (oldId.isEmpty() || currentIdSet.contains(oldId)) continue;
-                    JSONObject oldStateObject = objectMap.get(oldId);
-                    if (oldStateObject == null || oldStateObject.optBoolean("deleted", false)) continue;
-                    YanziApiClient.putSyncObject(
-                            baseUrl,
-                            token,
-                            oldId,
-                            YanziApiClient.syncObjectRevision(objectMap, oldId),
-                            true,
-                            new JSONObject(),
-                            "删除燕幕组件状态对象");
-                }
-            }
-
-            JSONArray stateObjectIds = new JSONArray();
-            for (String objectId : currentStateObjectIds) {
-                stateObjectIds.put(objectId);
-            }
-            YanziApiClient.putSyncObject(
-                    baseUrl,
-                    token,
-                    "yanm.componentStateIndex",
-                    YanziApiClient.syncObjectRevision(objectMap, "yanm.componentStateIndex"),
-                    false,
-                    new JSONObject().put("stateObjectIds", stateObjectIds),
-                    "同步燕幕组件状态索引");
-            return true;
-        }
-
-        private static boolean putYanmComponentStateToObjects(String baseUrl, String token, JSONObject componentState) throws Exception {
-            if (!YanziApiClient.objectSyncAvailable(baseUrl, token)) {
-                return false;
-            }
-
-            HashMap<String, JSONObject> objectMap = YanziApiClient.fetchSyncObjectMap(baseUrl, token);
-            JSONObject indexObject = objectMap.get("yanm.componentStateIndex");
-            JSONObject indexPayload = indexObject == null ? null : indexObject.optJSONObject("payload");
-            JSONArray existingIds = indexPayload == null ? null : indexPayload.optJSONArray("stateObjectIds");
-            HashSet<String> stateIds = new HashSet<String>();
-            if (existingIds != null) {
-                for (int i = 0; i < existingIds.length(); ++i) {
-                    String id = existingIds.optString(i, "").trim();
-                    if (!id.isEmpty()) stateIds.add(id);
-                }
-            }
-
-            boolean indexChanged = false;
-            Iterator<String> keys = componentState.keys();
-            while (keys.hasNext()) {
-                String stateKey = keys.next();
-                if (stateKey == null || stateKey.trim().isEmpty()) continue;
-                String objectId = YanziApiClient.buildYanmStateObjectId(stateKey);
-                YanziApiClient.putSyncObject(
-                        baseUrl,
-                        token,
-                        objectId,
-                        YanziApiClient.syncObjectRevision(objectMap, objectId),
-                        false,
-                        new JSONObject()
-                                .put("stateKey", stateKey.trim())
-                                .put("value", componentState.optString(stateKey, "")),
-                        "同步燕幕组件状态对象");
-                if (stateIds.add(objectId)) {
-                    indexChanged = true;
-                }
-            }
-
-            if (indexChanged || indexObject == null || indexObject.optBoolean("deleted", false)) {
-                ArrayList<String> sortedIds = new ArrayList<String>(stateIds);
-                java.util.Collections.sort(sortedIds);
-                JSONArray newIndex = new JSONArray();
-                for (String id : sortedIds) {
-                    newIndex.put(id);
-                }
-                YanziApiClient.putSyncObject(
-                        baseUrl,
-                        token,
-                        "yanm.componentStateIndex",
-                        YanziApiClient.syncObjectRevision(objectMap, "yanm.componentStateIndex"),
-                        false,
-                        new JSONObject().put("stateObjectIds", newIndex),
-                        "同步燕幕组件状态索引");
-            }
-            return true;
-        }
-
-        static JSONObject putYanmState(String baseUrl, String token, JSONObject yanm) throws Exception {
-            boolean objectWritten = YanziApiClient.putYanmStateToObjects(baseUrl, token, yanm);
-            JSONObject payload = new JSONObject()
-                    .put("updatedAtUtc", (Object)new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ROOT).format(new Date()))
-                    .put("yanm", (Object)yanm);
-
-            if (objectWritten) {
-                if (sContext != null) {
-                    MobileDiagnostics.append(sContext, "燕幕写入使用统一对象同步协议。");
-                }
-                try {
-                    YanziApiClient.putJson(baseUrl, "/v1/me/yanm-state", payload, token, "兼容镜像燕幕");
-                }
-                catch (Exception legacyMirrorError) {
-                    Log.w("ApiClient", "Legacy Yanm mirror failed after object write: " + legacyMirrorError.getMessage());
-                    if (sContext != null) {
-                        MobileDiagnostics.append(sContext, "燕幕对象已写入，旧快照镜像失败：" + legacyMirrorError.getMessage());
-                    }
-                }
-                return new JSONObject().put("ok", true).put("source", "object-sync");
-            }
-
-            JSONObject res = YanziApiClient.putJson(baseUrl, "/v1/me/yanm-state", payload, token, "\u540c\u6b65\u71d5\u5e55");
-            String viewUrl = res.optString("viewUrl", "");
-            if (!viewUrl.isEmpty() && sContext != null) {
-                sContext.getSharedPreferences("yanzi-mobile", 0).edit().putString("yanm_view_url", viewUrl).apply();
-            }
-            return res;
-        }
-
-        static JSONObject putYanmComponentState(String baseUrl, String token, JSONObject componentState) throws Exception {
-            boolean objectWritten = YanziApiClient.putYanmComponentStateToObjects(baseUrl, token, componentState);
-            JSONObject payload = new JSONObject()
-                    .put("updatedAtUtc", (Object)new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ROOT).format(new Date()))
-                    .put("componentState", (Object)componentState);
-
-            if (objectWritten) {
-                if (sContext != null) {
-                    MobileDiagnostics.append(sContext, "燕幕组件状态写入使用统一对象同步协议。");
-                }
-                try {
-                    YanziApiClient.putJson(baseUrl, "/v1/me/yanm-state/component-state", payload, token, "兼容镜像燕幕组件状态");
-                }
-                catch (Exception legacyMirrorError) {
-                    Log.w("ApiClient", "Legacy Yanm component-state mirror failed after object write: " + legacyMirrorError.getMessage());
-                    if (sContext != null) {
-                        MobileDiagnostics.append(sContext, "燕幕组件状态对象已写入，旧快照镜像失败：" + legacyMirrorError.getMessage());
-                    }
-                }
-                return new JSONObject().put("ok", true).put("source", "object-sync");
-            }
-
-            JSONObject res = YanziApiClient.putJson(baseUrl, "/v1/me/yanm-state/component-state", payload, token, "\u540c\u6b65\u71d5\u5e55\u540e\u7aef\u6570\u636e");
-            String viewUrl = res.optString("viewUrl", "");
-            if (!viewUrl.isEmpty() && sContext != null) {
-                sContext.getSharedPreferences("yanzi-mobile", 0).edit().putString("yanm_view_url", viewUrl).apply();
-            }
-            return res;
-        }
-
-        static String fetchPersonalConfig(String baseUrl, String token) throws Exception {
-            JSONObject payload = YanziApiClient.getJson(baseUrl, "/v1/sync/personal-config", token, "\u8bfb\u53d6\u540c\u6b65\u914d\u7f6e");
-            return payload.toString();
-        }
-
-        static String fetchMobileExtensions(String baseUrl, String token) throws Exception {
-            JSONObject payload = YanziApiClient.getJson(baseUrl, "/v1/me/mobile/extensions", token, "\u8bfb\u53d6\u624b\u673a\u6269\u5c55");
-            return payload.optString("extensions", "[]");
-        }
-
-        static void putMobileExtensions(String baseUrl, String token, String extensionsJson) throws Exception {
-            JSONObject payload = new JSONObject().put("extensions", (Object)extensionsJson);
-            YanziApiClient.putJson(baseUrl, "/v1/me/mobile/extensions", payload, token, "\u540c\u6b65\u624b\u673a\u6269\u5c55");
-        }
-
-        static byte[] getWebDavBytes(WebDavConfig config, String relativePath) throws Exception {
-            HttpURLConnection connection = YanziApiClient.openWebDav(config, relativePath);
-            connection.setRequestMethod("GET");
-            int status = connection.getResponseCode();
-            if (status == 404) {
-                return null;
-            }
-            if (status < 200 || status >= 300) {
-                throw new IllegalStateException("WebDAV GET failed: " + status);
-            }
-            InputStream is = connection.getInputStream();
-            ByteArrayOutputStream bos = new ByteArrayOutputStream();
-            byte[] buffer = new byte[8192];
-            int len;
-            while ((len = is.read(buffer)) != -1) {
-                bos.write(buffer, 0, len);
-            }
-            is.close();
-            return bos.toByteArray();
-        }
-
-        static String fetchFileFromGitHub(String token, String owner, String repo, String branch, String relativePath) throws Exception {
-            String urlStr = "https://api.github.com/repos/" + encodePath(owner) + "/" + encodePath(repo) + "/contents/" + encodePath(relativePath) + "?ref=" + encodePath(branch);
-            URL url = new URL(urlStr);
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            conn.setRequestMethod("GET");
-            conn.setRequestProperty("Authorization", "Bearer " + token.trim());
-            conn.setRequestProperty("Accept", "application/vnd.github.raw");
-            conn.setRequestProperty("User-Agent", "Yanzi-Mobile/0.1");
-
-            int code = conn.getResponseCode();
-            if (code == 404) {
-                return "[]";
-            }
-            if (code < 200 || code >= 300) {
-                throw new java.io.IOException("GitHub read failed: " + code);
-            }
-            InputStream is = conn.getInputStream();
-            ByteArrayOutputStream bos = new ByteArrayOutputStream();
-            byte[] buf = new byte[8192];
-            int len;
-            while ((len = is.read(buf)) != -1) {
-                bos.write(buf, 0, len);
-            }
-            is.close();
-            return bos.toString("UTF-8");
-        }
-
-        static void uploadFileToGitHub(String token, String owner, String repo, String branch, String relativePath, String content) throws Exception {
-            String sha = null;
-            String urlStr = "https://api.github.com/repos/" + encodePath(owner) + "/" + encodePath(repo) + "/contents/" + encodePath(relativePath) + "?ref=" + encodePath(branch);
-            URL url = new URL(urlStr);
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            conn.setRequestMethod("GET");
-            conn.setRequestProperty("Authorization", "Bearer " + token.trim());
-            conn.setRequestProperty("Accept", "application/json");
-            conn.setRequestProperty("User-Agent", "Yanzi-Mobile/0.1");
-
-            int code = conn.getResponseCode();
-            if (code == 200) {
-                InputStream is = conn.getInputStream();
-                ByteArrayOutputStream bos = new ByteArrayOutputStream();
-                byte[] buf = new byte[8192];
-                int len;
-                while ((len = is.read(buf)) != -1) {
-                    bos.write(buf, 0, len);
-                }
-                is.close();
-                JSONObject res = new JSONObject(bos.toString("UTF-8"));
-                sha = res.optString("sha", null);
-            }
-
-            HttpURLConnection putConn = (HttpURLConnection) new URL("https://api.github.com/repos/" + encodePath(owner) + "/" + encodePath(repo) + "/contents/" + encodePath(relativePath)).openConnection();
-            putConn.setRequestMethod("PUT");
-            putConn.setRequestProperty("Authorization", "Bearer " + token.trim());
-            putConn.setRequestProperty("Content-Type", "application/json");
-            putConn.setRequestProperty("User-Agent", "Yanzi-Mobile/0.1");
-            putConn.setDoOutput(true);
-
-            JSONObject payload = new JSONObject();
-            payload.put("message", "Sync mobile-extensions.json from Mobile");
-            String base64Content = Base64.encodeToString(content.getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
-            payload.put("content", base64Content);
-            if (sha != null) {
-                payload.put("sha", sha);
-            }
-            payload.put("branch", branch);
-
-            OutputStream os = putConn.getOutputStream();
-            os.write(payload.toString().getBytes(StandardCharsets.UTF_8));
-            os.flush();
-            os.close();
-
-            int putCode = putConn.getResponseCode();
-            if (putCode < 200 || putCode >= 300) {
-                throw new java.io.IOException("GitHub write failed: " + putCode);
-            }
-        }
-
-        static String fetchFileFromGitee(String token, String owner, String repo, String branch, String relativePath) throws Exception {
-            String urlStr = "https://gitee.com/api/v5/repos/" + encodePath(owner) + "/" + encodePath(repo) + "/contents/" + encodePath(relativePath) + "?access_token=" + token.trim() + "&ref=" + encodePath(branch);
-            URL url = new URL(urlStr);
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            conn.setRequestMethod("GET");
-            conn.setRequestProperty("User-Agent", "Yanzi-Mobile/0.1");
-
-            int code = conn.getResponseCode();
-            if (code == 404) {
-                return "[]";
-            }
-            if (code < 200 || code >= 300) {
-                throw new java.io.IOException("Gitee read failed: " + code);
-            }
-            InputStream is = conn.getInputStream();
-            ByteArrayOutputStream bos = new ByteArrayOutputStream();
-            byte[] buf = new byte[8192];
-            int len;
-            while ((len = is.read(buf)) != -1) {
-                bos.write(buf, 0, len);
-            }
-            is.close();
-            JSONObject res = new JSONObject(bos.toString("UTF-8"));
-            String contentBase64 = res.optString("content", "");
-            if (contentBase64.isEmpty()) {
-                return "[]";
-            }
-            byte[] decoded = Base64.decode(contentBase64, Base64.DEFAULT);
-            return new String(decoded, StandardCharsets.UTF_8);
-        }
-
-        static void uploadFileToGitee(String token, String owner, String repo, String branch, String relativePath, String content) throws Exception {
-            String sha = null;
-            String urlStr = "https://gitee.com/api/v5/repos/" + encodePath(owner) + "/" + encodePath(repo) + "/contents/" + encodePath(relativePath) + "?access_token=" + token.trim() + "&ref=" + encodePath(branch);
-            URL url = new URL(urlStr);
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            conn.setRequestMethod("GET");
-            conn.setRequestProperty("User-Agent", "Yanzi-Mobile/0.1");
-
-            int code = conn.getResponseCode();
-            if (code == 200) {
-                InputStream is = conn.getInputStream();
-                ByteArrayOutputStream bos = new ByteArrayOutputStream();
-                byte[] buf = new byte[8192];
-                int len;
-                while ((len = is.read(buf)) != -1) {
-                    bos.write(buf, 0, len);
-                }
-                is.close();
-                JSONObject res = new JSONObject(bos.toString("UTF-8"));
-                sha = res.optString("sha", null);
-            }
-
-            HttpURLConnection putConn = (HttpURLConnection) new URL("https://gitee.com/api/v5/repos/" + encodePath(owner) + "/" + encodePath(repo) + "/contents/" + encodePath(relativePath)).openConnection();
-            putConn.setRequestMethod("PUT");
-            putConn.setRequestProperty("Content-Type", "application/json");
-            putConn.setRequestProperty("User-Agent", "Yanzi-Mobile/0.1");
-            putConn.setDoOutput(true);
-
-            JSONObject payload = new JSONObject();
-            payload.put("access_token", token.trim());
-            payload.put("message", "Sync mobile-extensions.json from Mobile");
-            String base64Content = Base64.encodeToString(content.getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
-            payload.put("content", base64Content);
-            if (sha != null) {
-                payload.put("sha", sha);
-            }
-            payload.put("branch", branch);
-
-            OutputStream os = putConn.getOutputStream();
-            os.write(payload.toString().getBytes(StandardCharsets.UTF_8));
-            os.flush();
-            os.close();
-
-            int putCode = putConn.getResponseCode();
-            if (putCode < 200 || putCode >= 300) {
-                throw new java.io.IOException("Gitee write failed: " + putCode);
-            }
-        }
-
-        private static JSONObject putJson(String baseUrl, String path, JSONObject payload, String token, String action) throws Exception {
-            if (YanziApiClient.isDesktopLocalApi(path)) {
-                return YanziApiClient.requestDesktopLocalApi(path, token, action, "PUT", payload);
-            }
-            if (!sLanFailedThisSession && YanziApiClient.shouldUseLan(path)) {
-                String lanBaseUrl;
-                String string = lanBaseUrl = sContext != null ? LanDiscoveryManager.getLanBaseUrl(sContext) : LanDiscoveryManager.cachedLanBaseUrl;
-                if (lanBaseUrl != null) {
-                    try {
-                        String lanToken = sContext != null ? LanDiscoveryManager.getLanApiToken(sContext) : LanDiscoveryManager.cachedLanApiToken;
-                        int timeoutMs = 1500;
-                        if (path.contains("/shell/run") || path.contains("/fs/write") || path.contains("/fs/read")) {
-                            timeoutMs = 8000;
-                        }
-                        JSONObject result = YanziApiClient.doRequest(lanBaseUrl, path, lanToken != null ? lanToken : token, action, "PUT", payload, timeoutMs);
-                        YanziApiClient.handleLanSuccess(action, path);
-                        return result;
-                    }
-                    catch (Exception e) {
-                        YanziApiClient.handleLanFailure(action, e);
-                    }
-                }
-            }
-            return YanziApiClient.doRequest(baseUrl, path, token, action, "PUT", payload, 15000);
-        }
-
-        private static JSONObject postJson(String baseUrl, String path, JSONObject payload, String token, String action) throws Exception {
-            if ("/v1/me/mobile/messages".equals(path)) return MobileDeviceMessageSender.send(baseUrl, token, payload);
-            if ("/v1/me/mobile/messages".equals(path) && !payload.has("clientMessageId"))
-                payload.put("clientMessageId", java.util.UUID.randomUUID().toString());
-            if (YanziApiClient.isDesktopLocalApi(path)) {
-                return YanziApiClient.requestDesktopLocalApi(path, token, action, "POST", payload);
-            }
-            if (!sLanFailedThisSession && YanziApiClient.shouldUseLan(path)) {
-                String lanBaseUrl;
-                String string = lanBaseUrl = sContext != null ? LanDiscoveryManager.getLanBaseUrl(sContext) : LanDiscoveryManager.cachedLanBaseUrl;
-                if (lanBaseUrl != null) {
-                    try {
-                        String lanToken = sContext != null ? LanDiscoveryManager.getLanApiToken(sContext) : LanDiscoveryManager.cachedLanApiToken;
-                        int timeoutMs = 1500;
-                        if (path.contains("/shell/run") || path.contains("/fs/write") || path.contains("/fs/read")) {
-                            timeoutMs = 8000;
-                        }
-                        JSONObject result = YanziApiClient.doRequest(lanBaseUrl, path, lanToken != null ? lanToken : token, action, "POST", payload, timeoutMs);
-                        YanziApiClient.handleLanSuccess(action, path);
-                        return result;
-                    }
-                    catch (Exception e) {
-                        YanziApiClient.handleLanFailure(action, e);
-                    }
-                }
-            }
-            return YanziApiClient.doRequest(baseUrl, path, token, action, "POST", payload, 15000);
-        }
-
-        private static JSONObject getJson(String baseUrl, String path, String token, String action) throws Exception {
-            if (YanziApiClient.isDesktopLocalApi(path)) {
-                return YanziApiClient.requestDesktopLocalApi(path, token, action, "GET", null);
-            }
-            if (!sLanFailedThisSession && YanziApiClient.shouldUseLan(path)) {
-                String lanBaseUrl;
-                String string = lanBaseUrl = sContext != null ? LanDiscoveryManager.getLanBaseUrl(sContext) : LanDiscoveryManager.cachedLanBaseUrl;
-                if (lanBaseUrl != null) {
-                    try {
-                        String lanToken = sContext != null ? LanDiscoveryManager.getLanApiToken(sContext) : LanDiscoveryManager.cachedLanApiToken;
-                        int timeoutMs = 1500;
-                        if (path.contains("/shell/run") || path.contains("/fs/write") || path.contains("/fs/read")) {
-                            timeoutMs = 8000;
-                        }
-                        JSONObject result = YanziApiClient.doRequest(lanBaseUrl, path, lanToken != null ? lanToken : token, action, "GET", null, timeoutMs);
-                        YanziApiClient.handleLanSuccess(action, path);
-                        return result;
-                    }
-                    catch (Exception e) {
-                        YanziApiClient.handleLanFailure(action, e);
-                    }
-                }
-            }
-            return YanziApiClient.doRequest(baseUrl, path, token, action, "GET", null, 15000);
-        }
-
-        private static boolean shouldUseLan(String path) {
-            if (path.startsWith("/v1/auth/login")) {
-                return false;
-            }
-            if (path.startsWith("/v1/sync/")) {
-                return false;
-            }
-            return true;
-        }
-
-        private static boolean isDesktopLocalApi(String path) {
-            return path.startsWith("/v1/fs/") || path.equals("/v1/shell/run");
-        }
-
-        private static String getDeviceIdStatic(Context context) {
-            if (context != null) {
-                SharedPreferences p = context.getSharedPreferences("yanzi-mobile", 0);
-                String id = p.getString("deviceId", null);
-                if (id != null && !id.trim().isEmpty()) return id;
-                String created = "android-" + java.util.UUID.randomUUID();
-                p.edit().putString("deviceId", created).apply();
-                return created;
-            }
-            return "android-mobile-fallback";
-        }
-
-        private static String extractRelayResultPayload(JSONObject detail) {
-            if (detail == null) return "";
-            JSONObject payload = detail.optJSONObject("payload");
-            if (payload != null) {
-                JSONObject execResult = payload.optJSONObject("executionResult");
-                if (execResult != null) {
-                    String output = execResult.optString("output", "");
-                    if (!output.trim().isEmpty()) return output;
-                }
-                String payloadResp = payload.optString("responsePayload", payload.optString("output", ""));
-                if (!payloadResp.trim().isEmpty()) return payloadResp;
-            }
-            String resp = detail.optString("responsePayload", detail.optString("ackedOutput", detail.optString("result", "")));
-            if (!resp.trim().isEmpty()) return resp;
-            return "";
-        }
-
-        private static JSONObject requestCloudRelayApi(String path, String token, String action, String method, JSONObject payload) throws Exception {
-            long startTime = System.currentTimeMillis();
-            android.util.Log.i("YanziRelay", "==> [START] requestCloudRelayApi: path=" + path + ", action=" + action);
-            String baseUrl = "https://sync.luoluoluo.cc.cd";
-            String deviceId = getDeviceIdStatic(sContext);
-            String deviceName = MainActivity.buildDeviceDisplayName();
-            try {
-                YanziApiClient.registerDevice(baseUrl, token, deviceId, deviceName);
-                android.util.Log.i("YanziRelay", "--> Registered device: id=" + deviceId + " (" + (System.currentTimeMillis() - startTime) + "ms)");
-            } catch (Exception regEx) {
-                android.util.Log.w("YanziRelay", "--> Register device failed: " + regEx.getMessage());
-            }
-
-            String kind = "run-powershell";
-            if (path.startsWith("/v1/fs/list")) {
-                kind = "fs-list";
-            } else if (path.startsWith("/v1/fs/read")) {
-                kind = "fs-read";
-            } else if (path.startsWith("/v1/fs/write")) {
-                kind = "fs-write";
-            } else if (path.equals("/v1/shell/run")) {
-                kind = "run-powershell";
-            }
-
-            String cmdText = payload == null ? "" : payload.optString("command", payload.optString("text", ""));
-            JSONObject msgPayload = payload != null ? payload : new JSONObject().put("path", (Object)path);
-
-            JSONObject relayPayload = new JSONObject()
-                .put("sourceDeviceId", (Object)deviceId)
-                .put("targetPlatform", (Object)"desktop")
-                .put("kind", (Object)kind)
-                .put("title", (Object)action)
-                .put("text", (Object)cmdText)
-                .put("payload", (Object)msgPayload);
-
-            long postStart = System.currentTimeMillis();
-            String targetDeviceId = msgPayload.optString("targetDeviceId", LanDiscoveryManager.getLanDeviceId(sContext));
-            if (!targetDeviceId.isEmpty()) relayPayload.put("targetDeviceId", targetDeviceId);
-            relayPayload.put("clientMessageId", msgPayload.optString("clientOperationId", java.util.UUID.randomUUID().toString()));
-            JSONObject postRes = MobileMessageClient.request(baseUrl, "/v1/me/mobile/messages", token, "POST", relayPayload);
-            String messageId = postRes.optString("messageId", "");
-            android.util.Log.i("YanziRelay", "--> Post relay message OK: messageId=" + messageId + " (" + (System.currentTimeMillis() - postStart) + "ms)");
-
-            if (messageId.isEmpty()) {
-                throw new IllegalStateException("中继消息投递失败");
-            }
-
-            long pollStart = System.currentTimeMillis();
-            for (int attempt = 0; attempt < 35; attempt++) {
-                int sleepMs = attempt < 15 ? 150 : 350;
-                Thread.sleep(sleepMs);
-                try {
-                    JSONObject detail = MobileMessageClient.request(baseUrl, "/v1/me/mobile/messages/" + messageId, token, "GET", null);
-                    String status = detail.optString("status", "");
-                    String respPayload = extractRelayResultPayload(detail);
-                    android.util.Log.i("YanziRelay", "--> Poll attempt #" + attempt + ": status=" + status + ", payloadLength=" + respPayload.length() + " (" + (System.currentTimeMillis() - pollStart) + "ms)");
-
-                    if ("completed".equalsIgnoreCase(status) || "acked".equalsIgnoreCase(status) || "executed".equalsIgnoreCase(status) || !respPayload.isEmpty()) {
-                        if (!respPayload.trim().isEmpty()) {
-                            android.util.Log.i("YanziRelay", "<== [SUCCESS] Relay completed in " + (System.currentTimeMillis() - startTime) + "ms total!");
-                            try {
-                                return new JSONObject(respPayload);
-                            } catch (Exception e) {
-                                return new JSONObject().put("output", (Object)respPayload).put("exitCode", 0);
-                            }
-                        }
-                    }
-                } catch (Exception pollEx) {
-                    android.util.Log.w("YanziRelay", "--> Poll attempt #" + attempt + " error: " + pollEx.getMessage());
-                }
-            }
-            throw new IllegalStateException("远程设备未响应，请确认电脑处于在线状态。");
-        }
-
-        private static JSONObject requestDesktopLocalApi(String path, String token, String action, String method, JSONObject payload) throws Exception {
-            long lanStart = System.currentTimeMillis();
-            payload = payload == null ? new JSONObject().put("path", path) : new JSONObject(payload.toString());
-            if (!payload.has("clientOperationId")) payload.put("clientOperationId", java.util.UUID.randomUUID().toString());
-            String kind = path.startsWith("/v1/fs/list") ? "fs-list" : path.startsWith("/v1/fs/read") ? "fs-read" :
-                    path.startsWith("/v1/fs/write") ? "fs-write" : "run-powershell";
-            String lanBaseUrl = sContext != null ? LanDiscoveryManager.getLanBaseUrl(sContext) : LanDiscoveryManager.cachedLanBaseUrl;
-            android.util.Log.i("YanziRelay", "==> requestDesktopLocalApi: lanBaseUrl=" + lanBaseUrl);
-
-            if (lanBaseUrl != null && !lanBaseUrl.trim().isEmpty() && !lanBaseUrl.contains("127.0.0.1")) {
-                try {
-                    String lanToken = sContext != null ? LanDiscoveryManager.getLanApiToken(sContext) : LanDiscoveryManager.cachedLanApiToken;
-                    JSONObject message = new JSONObject().put("notificationPort", BuildConfig.APPLICATION_ID.endsWith(".dev") ? 42982 : 42981).put("clientMessageId", payload.getString("clientOperationId")).put("sourceDeviceId", getDeviceIdStatic(sContext)).put("targetPlatform", "desktop")
-                            .put("kind", kind).put("title", action).put("text", payload.optString("command", "")).put("payload", payload);
-                    JSONObject delivered = YanziApiClient.doRequest(lanBaseUrl, "/v1/me/mobile/messages",
-                            lanToken != null ? lanToken : token, action, "POST", message, 65000);
-                    if (!delivered.optBoolean("success")) throw new DesktopOperationRejected(delivered.optString("output", "电脑执行失败"));
-                    String output = delivered.optString("output", "");
-                    JSONObject result;
-                    try { result = new JSONObject(output); }
-                    catch (Exception ignored) { result = new JSONObject().put("output", output).put("exitCode", 0); }
-                    YanziApiClient.handleLanSuccess(action, path);
-                    android.util.Log.i("YanziRelay", "<== LAN Direct OK in " + (System.currentTimeMillis() - lanStart) + "ms");
-                    return result;
-                } catch (DesktopOperationRejected rejected) { throw rejected; }
-                catch (Exception e) {
-                    android.util.Log.i("YanziRelay", "--> LAN Direct failed (" + (System.currentTimeMillis() - lanStart) + "ms): " + e.getMessage());
-                    if (sContext != null) LanDiscoveryManager.clearLanBaseUrl(sContext);
-                }
-            }
-
-            android.util.Log.i("YanziRelay", "--> Fallback to Cloud Relay");
-            try {
-                return requestCloudRelayApi(path, token, action, method, payload);
-            } catch (Exception relayEx) {
-                throw new IllegalStateException("远程中继响应失败：" + relayEx.getMessage(), relayEx);
-            }
-        }
-
-        private static final class DesktopOperationRejected extends Exception {
-            DesktopOperationRejected(String message) { super(message); }
-        }
-
-        private static String toUserMessage(Exception ex) {
-            if (ex == null) {
-                return "未知错误";
-            }
-            String message = ex.getMessage();
-            if (message == null || message.trim().isEmpty()) {
-                message = ex.toString();
-            }
-            return message;
-        }
-
-        private static void handleLanSuccess(String action, String path) {
-            if (sContext != null) {
-                MobileDiagnostics.append(sContext, "\u5c40\u57df\u7f51\u76f4\u8fde\u6210\u529f(" + action + "): " + path);
-            }
-        }
-
-        private static void handleLanFailure(String action, Exception e) {
-            sLanFailedThisSession = true;
-            String message = e.getMessage() == null ? e.toString() : e.getMessage();
-            Log.w((String)"ApiClient", (String)("LAN fallback failed: " + message));
-            if (sContext != null) {
-                MobileDiagnostics.append(sContext, "\u5c40\u57df\u7f51\u76f4\u8fde\u5931\u8d25(" + action + ")\uff0c\u5df2\u56de\u9000\u516c\u7f51\uff1a" + message);
-                LanDiscoveryManager.clearLanBaseUrl(sContext);
-            } else {
-                LanDiscoveryManager.cachedLanBaseUrl = null;
-                LanDiscoveryManager.cachedLanApiToken = null;
-            }
-        }
-
-        private static JSONObject doRequest(String baseUrl, String path, String token, String action, String method, JSONObject payload, int timeoutMs) throws Exception {
-            try {
-                return YanziApiClient.doRequestOnce(
-                        baseUrl,
-                        path,
-                        token,
-                        action,
-                        method,
-                        payload,
-                        timeoutMs,
-                        null);
-            }
-            catch (Exception firstError) {
-                if (!YanziApiClient.shouldRetryOutsideVpn(path, method, firstError)) {
-                    throw firstError;
-                }
-
-                android.net.Network directNetwork =
-                        YanziApiClient.findUnderlyingInternetNetwork();
-                if (directNetwork == null) {
-                    throw firstError;
-                }
-
-                Log.w(
-                        "ApiClient",
-                        "Cloud request transport failed; retrying over underlying network: "
-                                + firstError.getMessage());
-
-                try {
-                    JSONObject result = YanziApiClient.doRequestOnce(
-                            baseUrl,
-                            path,
-                            token,
-                            action,
-                            method,
-                            payload,
-                            timeoutMs,
-                            directNetwork);
-                    Log.i(
-                            "ApiClient",
-                            "Underlying-network retry succeeded for " + path);
-                    return result;
-                }
-                catch (Exception retryError) {
-                    Log.w(
-                            "ApiClient",
-                            "Underlying-network retry failed: "
-                                    + retryError.getMessage());
-                    throw firstError;
-                }
-            }
-        }
-
-        private static JSONObject doRequestOnce(
-                String baseUrl,
-                String path,
-                String token,
-                String action,
-                String method,
-                JSONObject payload,
-                int timeoutMs,
-                android.net.Network network) throws Exception {
-
-            URL url = new URL(baseUrl + path);
-            HttpURLConnection connection = network == null
-                    ? (MobileNetworkRouting.isLanUrl(url) ? MobileNetworkRouting.openLanConnection(url) : (HttpURLConnection)url.openConnection())
-                    : (HttpURLConnection)network.openConnection(url);
-
-            try {
-                connection.setRequestMethod(method);
-                connection.setConnectTimeout(MobileNetworkRouting.isLanUrl(url) ? Math.min(1500, timeoutMs) : timeoutMs);
-                connection.setReadTimeout(timeoutMs);
-                connection.setRequestProperty("User-Agent", "YanziClient-Mobile/0.1.0");
-                connection.setRequestProperty("X-Yanzi-Client", "mobile");
-                connection.setRequestProperty("X-Yanzi-Client-Version", "0.1.0");
-                connection.setRequestProperty("Accept", "application/json");
-                if (payload != null) {
-                    connection.setDoOutput(true);
-                    connection.setRequestProperty(
-                            "Content-Type",
-                            "application/json; charset=utf-8");
-                }
-                if (token != null && !token.trim().isEmpty()) {
-                    connection.setRequestProperty("Authorization", "Bearer " + token);
-                }
-                if (payload != null) {
-                    try (OutputStreamWriter writer = new OutputStreamWriter(
-                            connection.getOutputStream(),
-                            StandardCharsets.UTF_8)) {
-                        writer.write(payload.toString());
-                    }
-                }
-
-                String body = YanziApiClient.readBody(connection);
-                int statusCode = connection.getResponseCode();
-                if (statusCode < 200 || statusCode >= 300) {
-                    String message = body;
-                    try {
-                        message = new JSONObject(body).optString("message", body);
-                    }
-                    catch (Exception ignored) {
-                    }
-                    throw new IllegalStateException(
-                            YanziApiClient.formatError(
-                                    action,
-                                    path,
-                                    statusCode,
-                                    message));
-                }
-                return body.trim().isEmpty()
-                        ? new JSONObject()
-                        : new JSONObject(body);
-            }
-            finally {
-                connection.disconnect();
-            }
-        }
-
-        private static boolean shouldRetryOutsideVpn(
-                String path,
-                String method,
-                Exception error) {
-            if (sContext == null || error == null) {
-                return false;
-            }
-
-            String upperMethod = method == null
-                    ? ""
-                    : method.trim().toUpperCase(java.util.Locale.ROOT);
-            boolean safeMethod =
-                    "GET".equals(upperMethod)
-                            || "PUT".equals(upperMethod)
-                            || ("POST".equals(upperMethod)
-                                    && (path.startsWith("/v1/auth/")
-                                            || "/v1/me/devices".equals(path)));
-            if (!safeMethod) {
-                return false;
-            }
-
-            Throwable current = error;
-            while (current != null) {
-                if (current instanceof java.io.IOException) {
-                    return true;
-                }
-                current = current.getCause();
-            }
-            return false;
-        }
-
-        private static android.net.Network findUnderlyingInternetNetwork() {
-            if (sContext == null) {
-                return null;
-            }
-
-            try {
-                android.net.ConnectivityManager manager =
-                        (android.net.ConnectivityManager)
-                                sContext.getSystemService(Context.CONNECTIVITY_SERVICE);
-                if (manager == null) {
-                    return null;
-                }
-
-                for (android.net.Network network : manager.getAllNetworks()) {
-                    android.net.NetworkCapabilities capabilities =
-                            manager.getNetworkCapabilities(network);
-                    if (capabilities == null) {
-                        continue;
-                    }
-
-                    boolean internet = capabilities.hasCapability(
-                            android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET);
-                    boolean notVpn = capabilities.hasCapability(
-                            android.net.NetworkCapabilities.NET_CAPABILITY_NOT_VPN);
-                    boolean physical =
-                            capabilities.hasTransport(
-                                    android.net.NetworkCapabilities.TRANSPORT_WIFI)
-                                    || capabilities.hasTransport(
-                                            android.net.NetworkCapabilities.TRANSPORT_CELLULAR);
-
-                    if (internet && notVpn && physical) {
-                        return network;
-                    }
-                }
-            }
-            catch (Exception ex) {
-                Log.w(
-                        "ApiClient",
-                        "Failed to locate underlying network: "
-                                + ex.getMessage());
-            }
-            return null;
-        }
-
-        private static String encodePath(String value) {
-            return value.replace(" ", "%20").replace("/", "%2F");
-        }
-
-        private static String formatError(String action, String path, int statusCode, String message) {
-            String trimmed;
-            String string = trimmed = message == null ? "" : message.trim();
-            if (statusCode == 404 && trimmed.toLowerCase().contains("route not found")) {
-                return action + "\u63a5\u53e3\u4e0d\u5b58\u5728\uff0c\u8bf7\u786e\u8ba4\u4e91\u7aef\u5730\u5740\u662f " + MainActivity.DEFAULT_BASE_URL + "\uff0c\u5e76\u786e\u8ba4 Worker \u5df2\u53d1\u5e03\u79fb\u52a8\u7aef\u63a5\u53e3\uff1a" + path;
-            }
-            if (trimmed.isEmpty()) {
-                return action + "\u5931\u8d25\uff0cHTTP " + statusCode;
-            }
-            return trimmed;
-        }
-
-        private static String readBody(HttpURLConnection connection) throws Exception {
-            InputStream stream = connection.getResponseCode() >= 200 && connection.getResponseCode() < 300 ? connection.getInputStream() : connection.getErrorStream();
-            StringBuilder builder = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8));){
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    builder.append(line);
-                }
-            }
-            return builder.toString();
-        }
-
-        private static final class WebDavConfig {
-            String serverUrl;
-            String rootPath;
-            String username;
-            String password;
-
-            private WebDavConfig() {
-            }
-        }
-    }
+    /** Compatibility facade; account and transport code lives outside the Activity. */
+    public static final class YanziApiClient extends MobileApiClient { }
 
     private static class AttachmentInfo {
         String name;
@@ -12856,14 +11452,21 @@ extends Activity {
     }
 
     private void sendPhotoToDesktopChat(Uri uri) {
-        this.setStatus("\u6b63\u5728\u5904\u7406\u7167\u7247...");
-        this.showPhotoProgress("\u6b63\u5728\u53d1\u9001\u7167\u7247...");
-        this.renderChatMessage("self", "photo", uri.toString(), true);
-        this.saveChatMessageToLocal("self", "photo", uri.toString());
+        this.setStatus("正在处理照片...");
+        this.showPhotoProgress("正在发送照片...");
 
         this.executor.execute(() -> {
             try {
                 byte[] jpegBytes = this.readJpegBytesFromUri(uri);
+                File stablePhoto = ChatHistoryStore.persistPhoto(this, jpegBytes);
+                String stablePath = stablePhoto.getAbsolutePath();
+                long sentAt = System.currentTimeMillis();
+                String localDeviceName = MainActivity.buildDeviceDisplayName();
+                this.runOnUiThread(() -> {
+                    this.renderChatMessage("self", "photo", stablePath, sentAt, this.deviceId, localDeviceName, true);
+                    this.saveChatMessageToLocal("self", "photo", stablePath, sentAt);
+                });
+
                 int[] size = MainActivity.readImageSizeFromJpegBytes(jpegBytes);
                 int width = size[0];
                 int height = size[1];
@@ -12874,22 +11477,20 @@ extends Activity {
                 try {
                     messageId = YanziApiClient.sendPhotoToDesktop(baseUrl, token, this.deviceId, jpegBytes, width, height);
                 } catch (Exception ex) {
-                    if (!MainActivity.isUnauthorized(ex)) {
-                        throw ex;
-                    }
+                    if (!MainActivity.isUnauthorized(ex)) throw ex;
                     token = this.refreshToken();
                     messageId = YanziApiClient.sendPhotoToDesktop(baseUrl, token, this.deviceId, jpegBytes, width, height);
                 }
                 final String finalMsgId = messageId;
                 this.runOnUiThread(() -> {
                     this.hidePhotoProgress();
-                    this.setStatus("\u7167\u7247\u5df2\u53d1\u9001\uff0cid=" + finalMsgId);
+                    this.setStatus("照片已发送，id=" + finalMsgId);
                 });
             } catch (Exception ex) {
                 this.runOnUiThread(() -> {
                     this.hidePhotoProgress();
-                    this.setStatus("\u53d1\u9001\u5931\u8d25\uff1a" + ex.getMessage());
-                    this.renderChatMessage("system", "text", "\u7167\u7247\u53d1\u9001\u5931\u8d25\uff1a" + ex.getMessage(), true);
+                    this.setStatus("发送失败：" + ex.getMessage());
+                    this.renderChatMessage("system", "text", "照片发送失败：" + ex.getMessage(), true);
                 });
             }
         });
@@ -12972,9 +11573,10 @@ extends Activity {
         if (text.isEmpty()) return;
 
         this.chatInputEditText.setText("");
-        this.setStatus("\u6b63\u5728\u53d1\u9001\u5230\u7535\u8111...");
-        this.renderChatMessage("self", "text", text, true);
-        this.saveChatMessageToLocal("self", "text", text);
+        this.setStatus("正在发送...");
+        long sentAt = System.currentTimeMillis();
+        this.renderChatMessage("self", "text", text, sentAt, this.deviceId, MainActivity.buildDeviceDisplayName(), true);
+        this.saveChatMessageToLocal("self", "text", text, sentAt);
 
         this.executor.execute(() -> {
             try {
@@ -13064,7 +11666,7 @@ extends Activity {
         voiceToggleParams.rightMargin = this.dp(8);
         inputRow.addView((View)this.chatVoiceToggleBtn, (ViewGroup.LayoutParams)voiceToggleParams);
 
-        this.chatInputEditText = this.input("发送给电脑...", "");
+        this.chatInputEditText = this.input("发送消息...", "");
         GradientDrawable inputBg = new GradientDrawable();
         inputBg.setColor(ThemeConfig.COLOR_CARD_BACKGROUND);
         inputBg.setCornerRadius((float)this.dp(8));
@@ -13205,77 +11807,43 @@ extends Activity {
     }
 
     private void saveChatMessageToLocal(String role, String kind, String content) {
-        if (isDevelopmentChatArtifact(kind, content)) return;
-        try {
-            String historyJson = this.prefs.getString("desktop_chat_history", "[]");
-            JSONArray arr = new JSONArray(historyJson);
-            JSONObject obj = new JSONObject();
-            obj.put("role", (Object)role);
-            obj.put("kind", (Object)kind);
-            obj.put("content", (Object)content);
-            obj.put("time", System.currentTimeMillis());
-            arr.put((Object)obj);
+        this.saveChatMessageToLocal(role, kind, content, System.currentTimeMillis());
+    }
 
-            if (arr.length() > 50) {
-                JSONArray newArr = new JSONArray();
-                for (int i = arr.length() - 50; i < arr.length(); ++i) {
-                    newArr.put(arr.get(i));
-                }
-                arr = newArr;
-            }
-            this.prefs.edit().putString("desktop_chat_history", arr.toString()).apply();
-        } catch (Exception ignored) {}
+    private void saveChatMessageToLocal(String role, String kind, String content, long time) {
+        MobileChatController.append(this, this.deviceId, role, kind, content, time);
     }
 
     private void loadChatHistory() {
         if (this.chatMessageListLayout == null) return;
         this.chatMessageListLayout.removeAllViews();
-        String historyJson = this.prefs.getString("desktop_chat_history", "[]");
-        try {
-            JSONArray arr = new JSONArray(historyJson);
-            JSONArray cleaned = new JSONArray();
-            boolean changed = false;
-            for (int i = 0; i < arr.length(); ++i) {
-                JSONObject obj = arr.getJSONObject(i);
-                String kind = obj.optString("kind");
-                String content = obj.optString("content");
-                if (isDevelopmentChatArtifact(kind, content)) {
-                    changed = true;
-                    continue;
-                }
-                cleaned.put(obj);
-                this.renderChatMessage(obj.optString("role"), kind, content, false);
-            }
-            if (changed) {
-                this.prefs.edit().putString("desktop_chat_history", cleaned.toString()).apply();
-            }
-        } catch (Exception e) {
-            android.util.Log.e("MainActivity", "loadChatHistory error", e);
+        this.lastRenderedChatTimeMs = Long.MIN_VALUE;
+        JSONArray arr = MobileChatController.load(this);
+        for (int i = 0; i < arr.length(); ++i) {
+            JSONObject obj = arr.optJSONObject(i);
+            if (obj == null) continue;
+            String kind = obj.optString("kind", "text");
+            String content = obj.optString("content", "");
+            if (MobileChatController.isDevelopmentChatArtifact(kind, content)) continue;
+            this.renderChatMessage(
+                    obj.optString("role", "peer"),
+                    kind,
+                    content,
+                    obj.optLong("time", System.currentTimeMillis()),
+                    obj.optString("sourceDeviceId", ""),
+                    obj.optString("sourceDeviceName", ""),
+                    false);
         }
-    }
-
-    private static boolean isDevelopmentChatArtifact(String kind, String content) {
-        if (content == null) return false;
-        String value = content.trim();
-        if ("text".equals(kind)) {
-            return value.startsWith("public-chat-test-")
-                    || value.startsWith("chat-e2e-test-")
-                    || value.startsWith("yanzi-chat-test-");
+        if (this.chatMessageListLayout.getParent() instanceof ScrollView) {
+            ScrollView sv = (ScrollView)this.chatMessageListLayout.getParent();
+            sv.post(() -> sv.fullScroll(View.FOCUS_DOWN));
         }
-        if ("file".equals(kind) || "photo".equals(kind)) {
-            String lower = value.toLowerCase(Locale.ROOT);
-            return lower.endsWith("public-verification.bin")
-                    || lower.endsWith("public-verification.png")
-                    || lower.endsWith("phone-verification.bin")
-                    || lower.endsWith("phone-verification.png")
-                    || lower.endsWith("verification-attachment");
-        }
-        return false;
     }
 
     public static void onReceivedChatMessage(String msg) {
-        onReceivedChatMessage("text", msg);
+        onReceivedChatMessage("text", msg, "", "电脑", System.currentTimeMillis());
     }
+
     public static void onAccountSnapshotChanged() {
         MainActivity activity = sInstance;
         if (activity != null) activity.runOnUiThread(() -> {
@@ -13286,18 +11854,44 @@ extends Activity {
     }
 
     public static void onReceivedChatMessage(String kind, String msg) {
-        android.util.Log.i("MainActivity", "onReceivedChatMessage static callback, kind=" + kind + ", msg=" + msg + ", sInstance=" + sInstance);
-        if (sInstance != null) {
-            sInstance.runOnUiThread(() -> {
-                sInstance.renderChatMessage("desktop", kind, msg, true);
+        onReceivedChatMessage(kind, msg, "", "电脑", System.currentTimeMillis());
+    }
+
+    public static void onReceivedChatMessage(String kind, String msg, String sourceDeviceId,
+                                             String sourceDeviceName, long time) {
+        android.util.Log.i("MainActivity", "onReceivedChatMessage, kind=" + kind +
+                ", source=" + sourceDeviceName + ", sInstance=" + sInstance);
+        MainActivity activity = sInstance;
+        if (activity != null) {
+            activity.runOnUiThread(() -> {
+                if (sInstance != activity || activity.isFinishing()) return;
+                activity.renderChatMessage("peer", kind, msg, time,
+                        sourceDeviceId == null ? "" : sourceDeviceId,
+                        sourceDeviceName == null || sourceDeviceName.trim().isEmpty() ? "其他设备" : sourceDeviceName,
+                        true);
             });
         }
     }
 
     private void renderChatMessage(String role, String kind, String content, boolean scrollToBottom) {
-        if (isDevelopmentChatArtifact(kind, content)) return;
+        String sourceName = "self".equals(role) ? MainActivity.buildDeviceDisplayName()
+                : ("system".equals(role) ? "" : "电脑");
+        this.renderChatMessage(role, kind, content, System.currentTimeMillis(),
+                "self".equals(role) ? this.deviceId : "", sourceName, scrollToBottom);
+    }
+
+    private void renderChatMessage(String role, String kind, String content, long time,
+                                   String sourceDeviceId, String sourceDeviceName,
+                                   boolean scrollToBottom) {
+        if (MobileChatController.isDevelopmentChatArtifact(kind, content)) return;
         this.runOnUiThread(() -> {
             if (this.chatMessageListLayout == null) return;
+
+            long messageTime = time > 0 ? time : System.currentTimeMillis();
+            if (ChatTimelinePolicy.shouldShowTime(this.lastRenderedChatTimeMs, messageTime)) {
+                this.appendChatTimeMarker(messageTime);
+            }
+            if (messageTime > this.lastRenderedChatTimeMs) this.lastRenderedChatTimeMs = messageTime;
 
             boolean isSelf = "self".equals(role);
             boolean isSystem = "system".equals(role);
@@ -13324,14 +11918,31 @@ extends Activity {
                 systemLp.leftMargin = this.dp(42);
                 systemLp.rightMargin = this.dp(42);
                 bubbleContainer.addView((View)systemText, (ViewGroup.LayoutParams)systemLp);
-
-                LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(-1, -2);
-                this.chatMessageListLayout.addView((View)bubbleContainer, (ViewGroup.LayoutParams)rowLp);
+                this.chatMessageListLayout.addView((View)bubbleContainer,
+                        (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -2));
                 if (scrollToBottom && this.chatMessageListLayout.getParent() instanceof ScrollView) {
                     ScrollView sv = (ScrollView)this.chatMessageListLayout.getParent();
                     sv.post(() -> sv.fullScroll(View.FOCUS_DOWN));
                 }
                 return;
+            }
+
+            LinearLayout messageColumn = new LinearLayout((Context)this);
+            messageColumn.setOrientation(LinearLayout.VERTICAL);
+            messageColumn.setGravity(isSelf ? Gravity.END : Gravity.START);
+
+            if (!isSelf) {
+                String labelValue = ChatHistoryStore.resolveDeviceName(
+                        this, sourceDeviceId, sourceDeviceName);
+                TextView sender = new TextView((Context)this);
+                sender.setText(labelValue);
+                sender.setTextSize(11f);
+                sender.setTextColor(Color.rgb(125, 138, 154));
+                sender.setMaxLines(1);
+                sender.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                LinearLayout.LayoutParams senderLp = new LinearLayout.LayoutParams(-2, -2);
+                senderLp.bottomMargin = this.dp(4);
+                messageColumn.addView(sender, senderLp);
             }
 
             LinearLayout bubble = new LinearLayout((Context)this);
@@ -13347,30 +11958,35 @@ extends Activity {
                     getResources().getDisplayMetrics().widthPixels - this.dp(118));
 
             if ("photo".equals(kind)) {
-                TextView label = new TextView((Context)this);
-                label.setText((CharSequence)"[照片]");
-                label.setTextColor(Color.WHITE);
-                label.setTextSize(13f);
-                label.setMaxWidth(maxBubbleWidth);
-                bubble.addView((View)label);
-
-                if (content.startsWith("content://") || content.startsWith("file://") || content.startsWith("/")) {
+                boolean shown = false;
+                if (content != null && (content.startsWith("content://") || content.startsWith("file://") || content.startsWith("/"))) {
                     try {
                         ImageView iv = new ImageView((Context)this);
-                        iv.setPadding(0, this.dp(5), 0, 0);
                         iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
-                        LinearLayout.LayoutParams imgLp = new LinearLayout.LayoutParams(this.dp(150), this.dp(150));
+                        LinearLayout.LayoutParams imgLp = new LinearLayout.LayoutParams(this.dp(170), this.dp(170));
                         iv.setLayoutParams((ViewGroup.LayoutParams)imgLp);
-                        iv.setImageURI(content.startsWith("/") ? Uri.fromFile(new java.io.File(content)) : Uri.parse(content));
-                        bubble.addView((View)iv);
+                        Uri imageUri = content.startsWith("/") ? Uri.fromFile(new java.io.File(content)) : Uri.parse(content);
+                        iv.setImageURI(imageUri);
+                        if (iv.getDrawable() != null) {
+                            bubble.addView((View)iv);
+                            shown = true;
+                        }
                     } catch (Exception ignored) {}
+                }
+                if (!shown) {
+                    TextView missing = new TextView((Context)this);
+                    missing.setText("照片不可用");
+                    missing.setTextColor(Color.rgb(203, 213, 225));
+                    missing.setTextSize(13f);
+                    missing.setMaxWidth(maxBubbleWidth);
+                    bubble.addView((View)missing);
                 }
             } else if ("file".equals(kind)) {
                 TextView fileLabel = new TextView((Context)this);
                 String fileName = content.startsWith("/")
                         ? new java.io.File(content).getName().replaceFirst("^att_[a-f0-9]{32}-", "")
                         : content;
-                fileLabel.setText((CharSequence)("文件 · " + fileName));
+                fileLabel.setText("文件 · " + fileName);
                 fileLabel.setTextColor(Color.WHITE);
                 fileLabel.setTextSize(14f);
                 fileLabel.setMaxWidth(maxBubbleWidth);
@@ -13378,9 +11994,7 @@ extends Activity {
                 if (content.startsWith("/")) bubble.setOnClickListener(v -> {
                     try {
                         Uri fileUri = androidx.core.content.FileProvider.getUriForFile(
-                                this,
-                                BuildConfig.APPLICATION_ID + ".fileprovider",
-                                new java.io.File(content));
+                                this, BuildConfig.APPLICATION_ID + ".fileprovider", new java.io.File(content));
                         startActivity(new Intent(Intent.ACTION_VIEW)
                                 .setDataAndType(fileUri, "application/octet-stream")
                                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION));
@@ -13410,14 +12024,9 @@ extends Activity {
                                     (android.content.ClipboardManager) MainActivity.this.getSystemService(Context.CLIPBOARD_SERVICE);
                             if (clipboard != null) {
                                 String clipText = content;
-                                if ("photo".equals(kind)) {
-                                    clipText = "[图片] " + content;
-                                } else if ("file".equals(kind)) {
-                                    clipText = "[文件] " + content;
-                                }
-                                android.content.ClipData clip =
-                                        android.content.ClipData.newPlainText("Copied Chat Message", clipText);
-                                clipboard.setPrimaryClip(clip);
+                                if ("photo".equals(kind)) clipText = "[图片] " + content;
+                                else if ("file".equals(kind)) clipText = "[文件] " + content;
+                                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Copied Chat Message", clipText));
                                 Toast.makeText(MainActivity.this, "消息已复制到剪贴板", Toast.LENGTH_SHORT).show();
                             }
                         } catch (Exception ex) {
@@ -13428,9 +12037,7 @@ extends Activity {
                                 .setTitle("提示")
                                 .setMessage("确定要清理全部聊天消息吗？")
                                 .setPositiveButton("确定", (dialog, which) -> {
-                                    MainActivity.this.prefs.edit()
-                                            .putString("desktop_chat_history", "[]")
-                                            .apply();
+                                    MobileChatController.clear(MainActivity.this);
                                     MainActivity.this.loadChatHistory();
                                     Toast.makeText(MainActivity.this, "聊天历史已清理", Toast.LENGTH_SHORT).show();
                                 })
@@ -13443,22 +12050,48 @@ extends Activity {
                 return true;
             });
 
-            LinearLayout.LayoutParams bubbleLp = new LinearLayout.LayoutParams(-2, -2);
-            if (isSelf) {
-                bubbleLp.leftMargin = this.dp(54);
-            } else {
-                bubbleLp.rightMargin = this.dp(54);
-            }
-            bubbleContainer.addView((View)bubble, (ViewGroup.LayoutParams)bubbleLp);
+            messageColumn.addView(bubble, new LinearLayout.LayoutParams(-2, -2));
+            LinearLayout.LayoutParams columnLp = new LinearLayout.LayoutParams(-2, -2);
+            if (isSelf) columnLp.leftMargin = this.dp(54);
+            else columnLp.rightMargin = this.dp(54);
+            bubbleContainer.addView((View)messageColumn, (ViewGroup.LayoutParams)columnLp);
 
-            LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(-1, -2);
-            this.chatMessageListLayout.addView((View)bubbleContainer, (ViewGroup.LayoutParams)rowLp);
+            this.chatMessageListLayout.addView((View)bubbleContainer,
+                    (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -2));
 
             if (scrollToBottom && this.chatMessageListLayout.getParent() instanceof ScrollView) {
                 ScrollView sv = (ScrollView)this.chatMessageListLayout.getParent();
                 sv.post(() -> sv.fullScroll(View.FOCUS_DOWN));
             }
         });
+    }
+
+    private void appendChatTimeMarker(long time) {
+        TextView marker = new TextView((Context)this);
+        marker.setText(formatChatMessageTime(time));
+        marker.setTextColor(Color.rgb(112, 126, 145));
+        marker.setTextSize(11f);
+        marker.setGravity(Gravity.CENTER);
+        marker.setPadding(this.dp(8), this.dp(9), this.dp(8), this.dp(4));
+        this.chatMessageListLayout.addView(marker,
+                new LinearLayout.LayoutParams(-1, -2));
+    }
+
+    private String formatChatMessageTime(long time) {
+        java.util.Calendar now = java.util.Calendar.getInstance();
+        java.util.Calendar value = java.util.Calendar.getInstance();
+        value.setTimeInMillis(time);
+        boolean sameDay = now.get(java.util.Calendar.YEAR) == value.get(java.util.Calendar.YEAR)
+                && now.get(java.util.Calendar.DAY_OF_YEAR) == value.get(java.util.Calendar.DAY_OF_YEAR);
+        if (sameDay) return new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date(time));
+        java.util.Calendar yesterday = (java.util.Calendar) now.clone();
+        yesterday.add(java.util.Calendar.DAY_OF_YEAR, -1);
+        boolean isYesterday = yesterday.get(java.util.Calendar.YEAR) == value.get(java.util.Calendar.YEAR)
+                && yesterday.get(java.util.Calendar.DAY_OF_YEAR) == value.get(java.util.Calendar.DAY_OF_YEAR);
+        if (isYesterday) return "昨天 " + new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date(time));
+        if (now.get(java.util.Calendar.YEAR) == value.get(java.util.Calendar.YEAR))
+            return new SimpleDateFormat("M月d日 HH:mm", Locale.getDefault()).format(new Date(time));
+        return new SimpleDateFormat("yyyy年M月d日 HH:mm", Locale.getDefault()).format(new Date(time));
     }
 
     private LinearLayout createSwitchListItem(String title, boolean checked, android.widget.CompoundButton.OnCheckedChangeListener listener) {

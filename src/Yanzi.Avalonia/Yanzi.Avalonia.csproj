@@ -28,6 +28,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Yanzi.Platform.Mac\Yanzi.Platform.Mac.csproj" />
     <ProjectReference Include="..\Yanzi.Shared\Yanzi.Shared.csproj" />
+    <ProjectReference Include="..\Yanzi.Core\Yanzi.Core.csproj" />
   </ItemGroup>
 
   <!-- macOS app icon and Info.plist -->

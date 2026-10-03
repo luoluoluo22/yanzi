@@ -2075,6 +2075,7 @@ public class FloatingWheelService extends Service {
                 if (line.toLowerCase(java.util.Locale.ROOT).startsWith("x-content-sha256:")) contentHash = line.substring(17).trim();
                 if (line.toLowerCase(java.util.Locale.ROOT).startsWith("x-yanzi-peer-device:")) peerDevice = line.substring(20).trim();
             }
+            final String chatPeerDevice = peerDevice;
             String expectedToken = LanDiscoveryManager.getLanApiToken(this);
             if (expectedToken == null || expectedToken.isEmpty()) {
                 android.content.SharedPreferences local = getSharedPreferences("YanziPrefs", MODE_PRIVATE);
@@ -2113,10 +2114,14 @@ public class FloatingWheelService extends Service {
             if (path.startsWith("/v1/lan/transfer-sessions/")) {
                 client.setSoTimeout(90000);
                 MobileLanTransferSessions.Reply reply = MobileLanTransferSessions.handle(this, method, path, peerDevice, input, contentLength, (kind, filePath) -> {
-                    saveChatMessageToPrefs(kind, filePath);
+                    long receivedAt = System.currentTimeMillis();
+                    String sourceName = peerDisplayName(chatPeerDevice);
+                    saveChatMessageToPrefs(kind, filePath, chatPeerDevice, sourceName, receivedAt);
                     Intent chat = new Intent(BuildConfig.APPLICATION_ID + ".CHAT_MESSAGE");
-                    chat.putExtra("message", filePath).putExtra("kind", kind); sendBroadcast(chat);
-                    MainActivity.onReceivedChatMessage(kind, filePath);
+                    chat.putExtra("message", filePath).putExtra("kind", kind)
+                            .putExtra("sourceDeviceId", chatPeerDevice).putExtra("sourceDeviceName", sourceName)
+                            .putExtra("time", receivedAt);
+                    sendBroadcast(chat);
                 });
                 byte[] data = reply.body.toString().getBytes(StandardCharsets.UTF_8);
                 client.getOutputStream().write(("HTTP/1.1 " + reply.status + " Result\r\nContent-Type: application/json\r\nContent-Length: " + data.length + "\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
@@ -2125,11 +2130,14 @@ public class FloatingWheelService extends Service {
             if ("POST".equals(method) && path.startsWith("/v1/lan/transfers/")) {
                 client.setSoTimeout(90000);
                 JSONObject received = MobileDesktopTransfer.receiveFromDesktop(this, input, path, contentLength, contentHash, (kind, filePath) -> {
-                    saveChatMessageToPrefs(kind, filePath);
+                    long receivedAt = System.currentTimeMillis();
+                    String sourceName = peerDisplayName(chatPeerDevice);
+                    saveChatMessageToPrefs(kind, filePath, chatPeerDevice, sourceName, receivedAt);
                     Intent chat = new Intent(BuildConfig.APPLICATION_ID + ".CHAT_MESSAGE");
-                    chat.putExtra("message", filePath).putExtra("kind", kind);
+                    chat.putExtra("message", filePath).putExtra("kind", kind)
+                            .putExtra("sourceDeviceId", chatPeerDevice).putExtra("sourceDeviceName", sourceName)
+                            .putExtra("time", receivedAt);
                     sendBroadcast(chat);
-                    MainActivity.onReceivedChatMessage(kind, filePath);
                 });
                 byte[] data = received.toString().getBytes(StandardCharsets.UTF_8);
                 client.getOutputStream().write(("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " + data.length + "\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
@@ -2176,7 +2184,7 @@ public class FloatingWheelService extends Service {
                     responseJson.put("output", "Content-Length is required");
                     responseJson.put("exitCode", -1);
                 }
-                
+
                 String respBody = responseJson.toString();
                 byte[] respBytes = respBody.getBytes(StandardCharsets.UTF_8);
                 client.getOutputStream().write(("HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: " + respBytes.length + "\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.UTF_8));
@@ -2185,7 +2193,7 @@ public class FloatingWheelService extends Service {
                 client.close();
                 return;
             }
-            
+
             if (contentLength > 0) {
                     int totalRead = contentLength;
                     if (totalRead > 0) {
@@ -2196,7 +2204,7 @@ public class FloatingWheelService extends Service {
                     if (text.isEmpty()) {
                         text = json.optString("body", "");
                     }
-                    
+
                     if ("YanziSync".equals(title) && "yanm_updated".equals(text)) {
                         Intent syncIntent = new Intent(BuildConfig.APPLICATION_ID + ".SYNC_YANM");
                         this.sendBroadcast(syncIntent);
@@ -2226,20 +2234,23 @@ public class FloatingWheelService extends Service {
                             String fileName = json.optString("fileName", "file_" + System.currentTimeMillis());
                             content = this.saveBase64ToFile(dataUrl, fileName);
                         }
-                        
+
                         Log.d(TAG, "Received YanziChat message from PC: " + content + " (kind: " + kind + ")");
+                        String sourceId = json.optString("sourceDeviceId", peerDevice == null ? "" : peerDevice);
+                        JSONObject messagePayload = json.optJSONObject("payload");
+                        String sourceName = json.optString("sourceDeviceName", "");
+                        if (sourceName.isEmpty() && messagePayload != null) sourceName = messagePayload.optString("sourceDeviceName", "");
+                        if (sourceName.isEmpty()) sourceName = peerDisplayName(sourceId);
+                        long receivedAt = ChatHistoryStore.messageTime(json);
+                        this.saveChatMessageToPrefs(kind, content, sourceId, sourceName, receivedAt);
                         Intent chatIntent = new Intent(BuildConfig.APPLICATION_ID + ".CHAT_MESSAGE");
                         chatIntent.putExtra("message", content);
                         chatIntent.putExtra("kind", kind);
+                        chatIntent.putExtra("sourceDeviceId", sourceId);
+                        chatIntent.putExtra("sourceDeviceName", sourceName);
+                        chatIntent.putExtra("time", receivedAt);
                         this.sendBroadcast(chatIntent);
-                        Log.d(TAG, "Sent CHAT_MESSAGE broadcast for: " + content);
-                        this.saveChatMessageToPrefs(kind, content);
-                        Log.d(TAG, "Saved chat message to prefs");
-                        try {
-                            MainActivity.onReceivedChatMessage(kind, content);
-                        } catch (Exception e) {
-                            Log.e(TAG, "Failed to deliver chat message directly", e);
-                        }
+                        Log.d(TAG, "Saved and broadcast chat message from " + sourceName);
                         if (logicalId.matches("[a-f0-9]{32}"))
                             if (!inboxPrefs.edit().putString("lanTransfer." + logicalId, new JSONObject().put("state", "completed").put("savedAt", System.currentTimeMillis()).toString()).commit()) throw new java.io.IOException("inbox_result_commit_failed");
                         }
@@ -2255,7 +2266,7 @@ public class FloatingWheelService extends Service {
                     }
                 }
             }
-            
+
             OutputStreamWriter out = new OutputStreamWriter(client.getOutputStream(), StandardCharsets.UTF_8);
             out.write("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok");
             out.flush();
@@ -2278,7 +2289,7 @@ public class FloatingWheelService extends Service {
             }
             String base64Data = dataUrl.substring(dataUrl.indexOf(",") + 1);
             byte[] bytes = android.util.Base64.decode(base64Data, android.util.Base64.DEFAULT);
-            
+
             java.io.File downloadDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS);
             if (!downloadDir.exists()) {
                 downloadDir.mkdirs();
@@ -2296,7 +2307,7 @@ public class FloatingWheelService extends Service {
                 outFile = new java.io.File(downloadDir, nameWithoutExt + "_" + count + ext);
                 count++;
             }
-            
+
             java.io.FileOutputStream fos = new java.io.FileOutputStream(outFile);
             fos.write(bytes);
             fos.close();
@@ -2307,29 +2318,22 @@ public class FloatingWheelService extends Service {
         }
     }
 
-    private void saveChatMessageToPrefs(String kind, String content) {
+    private void saveChatMessageToPrefs(String kind, String content, String sourceDeviceId,
+                                        String sourceDeviceName, long time) {
+        ChatHistoryStore.append(this, ChatHistoryStore.message(
+                "peer", kind, content, time, "", sourceDeviceId, sourceDeviceName));
+    }
+
+    private String peerDisplayName(String deviceId) {
+        if (deviceId == null || deviceId.isEmpty()) return "电脑";
         try {
-            android.content.SharedPreferences prefs = this.getSharedPreferences("yanzi-mobile", Context.MODE_PRIVATE);
-            String historyJson = prefs.getString("desktop_chat_history", "[]");
-            org.json.JSONArray arr = new org.json.JSONArray(historyJson);
-            org.json.JSONObject obj = new org.json.JSONObject();
-            obj.put("role", (Object)"desktop");
-            obj.put("kind", (Object)kind);
-            obj.put("content", (Object)content);
-            obj.put("time", System.currentTimeMillis());
-            arr.put((Object)obj);
-            
-            if (arr.length() > 50) {
-                org.json.JSONArray newArr = new org.json.JSONArray();
-                for (int i = arr.length() - 50; i < arr.length(); ++i) {
-                    newArr.put(arr.get(i));
-                }
-                arr = newArr;
-            }
-            prefs.edit().putString("desktop_chat_history", arr.toString()).apply();
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to save chat message to prefs", e);
-        }
+            JSONObject pair = SecureLanConnection.load(this, deviceId);
+            String name = pair.optString("desktopName", "");
+            if (name.isEmpty()) name = pair.optString("displayName", "");
+            if (name.isEmpty()) name = pair.optString("peerName", "");
+            if (!name.isEmpty()) return name;
+        } catch (Exception ignored) {}
+        return deviceId.startsWith("desktop-") ? "电脑" : deviceId;
     }
 
     public static String executeShellCommand(String command, int[] exitCodeOut) {
@@ -2338,13 +2342,13 @@ public class FloatingWheelService extends Service {
         Process process = null;
         try {
             process = Runtime.getRuntime().exec(new String[]{"/system/bin/sh", "-c", command});
-            
+
             final StringBuilder stdout = new StringBuilder();
             final StringBuilder stderr = new StringBuilder();
-            
+
             final java.io.InputStream is = process.getInputStream();
             final java.io.InputStream es = process.getErrorStream();
-            
+
             Thread outThread = new Thread(() -> {
                 try (BufferedReader reader = new BufferedReader(new java.io.InputStreamReader(is, java.nio.charset.StandardCharsets.UTF_8))) {
                     String line;
@@ -2359,7 +2363,7 @@ public class FloatingWheelService extends Service {
                     }
                 } catch (Exception ignored) {}
             });
-            
+
             Thread errThread = new Thread(() -> {
                 try (BufferedReader reader = new BufferedReader(new java.io.InputStreamReader(es, java.nio.charset.StandardCharsets.UTF_8))) {
                     String line;
@@ -2374,10 +2378,10 @@ public class FloatingWheelService extends Service {
                     }
                 } catch (Exception ignored) {}
             });
-            
+
             outThread.start();
             errThread.start();
-            
+
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
                 boolean finished = process.waitFor(15, java.util.concurrent.TimeUnit.SECONDS);
                 if (finished) {
@@ -2392,10 +2396,10 @@ public class FloatingWheelService extends Service {
             } else {
                 exitCode = process.waitFor();
             }
-            
+
             outThread.join(1000);
             errThread.join(1000);
-            
+
             synchronized (stdout) {
                 output.append(stdout);
             }
@@ -2407,7 +2411,7 @@ public class FloatingWheelService extends Service {
                     output.append("标准错误输出:\n").append(stderr);
                 }
             }
-            
+
         } catch (Exception e) {
             output.append("\n[错误] 执行异常: ").append(e.getMessage()).append("\n");
             exitCode = -1;

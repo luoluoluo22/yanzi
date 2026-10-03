@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Interop;
@@ -133,7 +133,7 @@ public partial class AppExtensionWindow : Window
         if (!_definition.BridgeApis.Contains("handoff")) throw new InvalidOperationException("未声明 handoff 桥接权限");
         var client = new Sync.CloudSyncClient(Sync.SyncConfigLoader.Load());
         var peers = await client.ListPeerDevicesAsync();
-        return new { accountId = client.CurrentUserId, items = peers.Where(p => p.Platform == "desktop").Select(p => new { deviceId = p.DeviceId, displayName = p.DisplayName, online = p.Online }) };
+        return new { accountId = client.CurrentUserId, items = peers.Where(p => p.Platform is "desktop" or "android").Select(p => new { deviceId = p.DeviceId, displayName = p.DisplayName, platform = p.Platform, online = p.Online }) };
     }
     private async Task<object?> HandoffOpenAsync(JsonElement parameters)
     {
@@ -144,9 +144,11 @@ public partial class AppExtensionWindow : Window
         if (input.Length > 4096 || GetString(parameters, "accountId", true) != client.CurrentUserId) throw new InvalidOperationException("账号已切换或打开参数过长");
         var peers = await client.ListPeerDevicesAsync();
         if (Sync.SyncSessionStore.Load()?.UserId != client.CurrentUserId) throw new InvalidOperationException("账号已切换");
-        if (!peers.Any(p => p.DeviceId == target && p.Platform == "desktop")) throw new InvalidOperationException("目标电脑不存在");
-        if (target == Sync.DeviceIdentityStore.GetOrCreateDesktopDeviceId()) return new { opened = true, output = await OpenResourceAsync(_command, input) };
-        var id = await client.SendDeviceMessageAsync(Sync.DeviceIdentityStore.GetOrCreateDesktopDeviceId(), "desktop", "extension.handoff", "", "", target,
+        var peer = peers.FirstOrDefault(p => p.DeviceId == target && p.Platform is "desktop" or "android")
+            ?? throw new InvalidOperationException("目标设备不存在");
+        if (peer.Platform == "desktop" && target == Sync.DeviceIdentityStore.GetOrCreateDesktopDeviceId())
+            return new { opened = true, output = await OpenResourceAsync(_command, input) };
+        var id = await client.SendDeviceMessageAsync(Sync.DeviceIdentityStore.GetOrCreateDesktopDeviceId(), peer.Platform, "extension.handoff", "", "", target,
             new { extensionId = _command.ExtensionId, input, accountId = client.CurrentUserId, clientOperationId = Guid.NewGuid().ToString() }, expiresAt: DateTimeOffset.UtcNow.AddDays(1));
         return new { queued = true, messageId = id };
     }

@@ -1,10 +1,12 @@
-param(
+﻿param(
     [switch]$SkipEnvironmentCheck,
     [switch]$SkipIntegrationTests
 )
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
+$integrationDirty = $false
+$serial = @()
 
 Push-Location $ProjectRoot
 try {
@@ -14,6 +16,9 @@ try {
             throw "Development environment check failed."
         }
     }
+
+    & ".\scripts\test-communication-foundation.ps1"
+    if ($LASTEXITCODE -ne 0) { throw "Communication foundation regression failed." }
 
     $serialOutput = & ".\scripts\dev-emulator.ps1"
     if ($LASTEXITCODE -ne 0) {
@@ -33,6 +38,7 @@ try {
     }
 
     if (-not $SkipIntegrationTests) {
+        $integrationDirty = $true
         Write-Host ""
         Write-Host "Running Android object-sync integration tests..."
         & ".\scripts\test-android-object-sync.ps1" -Serial $serial[0]
@@ -55,6 +61,7 @@ try {
         & "F:\SDK\platform-tools\adb.exe" -s $serial[0] shell pm clear cc.luoluoluo.yanzi.mobile | Out-Null
         & ".\scripts\dev-android-loop.ps1" -SkipBuild -Serial $serial[0]
         if ($LASTEXITCODE -ne 0) { throw "Post-test Android clean smoke test failed." }
+        $integrationDirty = $false
     }
 
     Write-Host ""
@@ -68,5 +75,13 @@ try {
     Write-Host "Yanzi full development smoke test PASSED."
 }
 finally {
-    Pop-Location
+    try {
+        if ($integrationDirty -and $serial.Count -gt 0 -and $serial[0] -match '^emulator-\d+$') {
+            & "F:\SDK\platform-tools\adb.exe" -s $serial[0] shell pm clear cc.luoluoluo.yanzi.mobile | Out-Null
+            & ".\scripts\dev-android-loop.ps1" -SkipBuild -Serial $serial[0]
+        }
+    } finally {
+        & ".\scripts\dev-desktop-loop.ps1" -SkipBuild
+        Pop-Location
+    }
 }

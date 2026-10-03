@@ -35,7 +35,7 @@ public class DeviceHeartbeatService extends Service {
     @Override public void onCreate() {
         super.onCreate();
         prefs = getSharedPreferences("yanzi-mobile", MODE_PRIVATE);
-        MainActivity.sContext = getApplicationContext();
+        MobileApplicationContext.initialize(getApplicationContext());
         MobileNotificationManager.ensureChannels(this);
         PendingIntent open = PendingIntent.getActivity(this, 0, new Intent(this, MainActivity.class),
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
@@ -185,6 +185,20 @@ public class DeviceHeartbeatService extends Service {
             MobileMessageClient.request(base,"/v1/me/mobile/messages/"+id+"/ack",token,"POST",ack.put("success",true));
             return;
         }
+        if (ExtensionHandoffSignals.KIND.equals(kind)) {
+            if (!prefs.contains(receipt)) {
+                JSONObject payload=message.optJSONObject("payload");
+                try {
+                    JSONObject handoff=ExtensionHandoffSignals.deliver(this,SecureLanConnection.currentAccount(this),payload);
+                    if(!prefs.edit().putLong(receipt,System.currentTimeMillis()).commit())return;
+                    ack.put("success",true).put("result",handoff);
+                } catch(Exception error) {
+                    ack.put("success",false).put("result",error.getMessage()==null?error.getClass().getSimpleName():error.getMessage());
+                }
+            } else ack.put("success",true).put("result",new JSONObject().put("opened",true));
+            MobileMessageClient.request(base,"/v1/me/mobile/messages/"+id+"/ack",token,"POST",ack);
+            return;
+        }
         if ("capability.invoke".equals(kind)) {
             handleCapability(base, token, device, message);
             return;
@@ -225,29 +239,29 @@ public class DeviceHeartbeatService extends Service {
                 if (!"notify".equals(kind) && !"text".equals(kind) && !attachment) {
                     ack.put("success", false).put("result", "Unsupported mobile message kind: " + kind);
                 } else if (!ack.has("success")) {
-                    if (!MobileEventNotifier.notifyMessage(this, id, "YanziChat".equals(message.optString("title")) ? "电脑消息" : message.optString("title", "电脑消息"), message.optString("text", ""))) return;
+                    boolean accountChat = "YanziChat".equals(message.optString("title"))
+                            || message.optJSONObject("payload") != null && message.optJSONObject("payload").optBoolean("accountChat")
+                            || attachment;
+                    String chatSourceId = message.optString("sourceDeviceId", "");
+                    String chatSourceName = ChatHistoryStore.sourceDeviceName(
+                            this, message, chatSourceId.startsWith("desktop-") ? "电脑" : chatSourceId);
+                    long chatTime = ChatHistoryStore.messageTime(message);
+                    String notificationTitle = accountChat ? chatSourceName : message.optString("title", "燕子");
+                    if (!MobileEventNotifier.notifyMessage(this, id, notificationTitle, message.optString("text", ""))) return;
                     SharedPreferences.Editor edit = prefs.edit().putLong(receipt, System.currentTimeMillis());
                     if (attachment && transferId.matches("[a-f0-9]{32}"))
                         edit.putString(transferKey, new JSONObject().put("sha256", transferPayload.optString("sha256")).put("path", content).put("savedAt", System.currentTimeMillis()).toString());
-                    if ("YanziChat".equals(message.optString("title")) || message.optJSONObject("payload") != null && message.optJSONObject("payload").optBoolean("accountChat") || attachment) {
-                        JSONArray history;
-                        try { history = new JSONArray(prefs.getString("desktop_chat_history", "[]")); } catch (Exception ex) { history = new JSONArray(); }
-                        boolean recorded = false;
-                        for (int i = 0; i < history.length(); i++)
-                            if (history.optJSONObject(i) != null && id.equals(history.optJSONObject(i).optString("messageId"))) recorded = true;
-                        if (!recorded) history.put(new JSONObject().put("role", "desktop").put("kind", kind)
-                                .put("content", content).put("time", System.currentTimeMillis()).put("messageId", id)
-                                .put("sourceDeviceId", message.optString("sourceDeviceId")));
-                        JSONArray bounded = new JSONArray();
-                        for (int i = Math.max(0, history.length() - 50); i < history.length(); i++) bounded.put(history.get(i));
-                        edit.putString("desktop_chat_history", bounded.toString());
+                    if (accountChat) {
+                        ChatHistoryStore.append(this, ChatHistoryStore.message(
+                                "peer", kind, content, chatTime, id, chatSourceId, chatSourceName));
                     }
                     java.util.List<java.util.Map.Entry<String, ?>> old = new java.util.ArrayList<>();
                     for (java.util.Map.Entry<String, ?> entry : prefs.getAll().entrySet()) if (entry.getKey().startsWith("messageReceipt.")) old.add(entry);
                     for (java.util.Map.Entry<String, ?> entry : old)
                         if (entry.getValue() instanceof Long && (Long)entry.getValue() < System.currentTimeMillis() - 30L * 86400000) edit.remove(entry.getKey());
                     if (!edit.commit()) return;
-                    if ("YanziChat".equals(message.optString("title")) || message.optJSONObject("payload") != null && message.optJSONObject("payload").optBoolean("accountChat") || attachment) MainActivity.onReceivedChatMessage(kind, content);
+                    if (accountChat) MainActivity.onReceivedChatMessage(
+                            kind, content, chatSourceId, chatSourceName, chatTime);
                     Log.i("YanziMessageBridge", attachment ? "Cloud attachment saved and verified" : "Cloud notification displayed");
                 }
             }

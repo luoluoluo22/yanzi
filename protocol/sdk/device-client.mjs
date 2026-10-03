@@ -6,6 +6,9 @@ export const isExecution = kind => /^(run-|fs-)/.test(kind) || kind === 'capabil
 export const canonicalJson = value => Array.isArray(value) ? '[' + value.map(canonicalJson).join(',') + ']' :
   value && typeof value === 'object' ? '{' + Object.keys(value).sort().map(key => JSON.stringify(key) + ':' + canonicalJson(value[key])).join(',') + '}' : JSON.stringify(value);
 
+// A duplicate arriving while a local effect is still running is not a crashed execution.
+const activeInboxes = new WeakMap();
+
 export class DeviceClient {
   constructor({baseUrl, accountId, deviceId, platform, displayName, capabilities = {}, store, getToken,
     fetchImpl = fetch, receive, execute, now = () => Date.now()}) {
@@ -24,7 +27,13 @@ export class DeviceClient {
       const response = await this.fetchImpl(this.baseUrl + path, {method, signal:timeout.signal,
         headers:{Authorization:'Bearer ' + await this.getToken(), 'Content-Type':'application/json'},
         body:body === undefined ? undefined : JSON.stringify(body)});
-      const result = await response.json();
+      let result;
+      try { result = await response.json(); }
+      catch {
+        throw new DeviceProtocolError(response.ok ? 'invalid_response' : 'http_error', response.status);
+      }
+      if (!result || typeof result !== 'object' || Array.isArray(result))
+        throw new DeviceProtocolError('invalid_response', response.status);
       if (!response.ok) throw new DeviceProtocolError(result.error || 'http_error', response.status, result.details);
       return result;
     } finally { clearTimeout(timer); }
@@ -50,6 +59,7 @@ export class DeviceClient {
       if (Date.parse(envelope.expiresAt) > this.now() + 300000) throw new DeviceProtocolError('execution_deadline_too_long', 400);
     }
     else envelope.expiresAt ||= new Date(this.now() + 30 * 86400000).toISOString();
+    if (!Number.isFinite(Date.parse(envelope.expiresAt))) throw new DeviceProtocolError('invalid_expiration', 400);
     if (previous && canonicalJson(previous.envelope) !== canonicalJson(envelope)) throw new DeviceProtocolError('message_id_reused', 409);
     if (!previous) {
       if ((await this.store.list(this.prefix + 'outbox/', 10000)).filter(([, item]) => item.state === 'queued').length >= 1000) throw new DeviceProtocolError('outbox_quota_exceeded');
@@ -70,9 +80,11 @@ export class DeviceClient {
         }
         try {
           const result = await this.request('/v1/me/mobile/messages', 'POST', item.envelope);
+          if (typeof result.messageId !== 'string' || !result.messageId)
+            throw new DeviceProtocolError('invalid_response');
           await this.store.set(key, {...item, state:'accepted', messageId:result.messageId, updatedAt:this.now()});
         } catch (error) {
-          const retry = !error.status || error.status === 429 || error.status >= 500 || error.status === 401;
+          const retry = !error.status || error.code === 'invalid_response' || error.status === 429 || error.status >= 500 || error.status === 401;
           const attempts = item.attempts + 1;
           await this.store.set(key, {...item, state:retry ? 'queued' : 'failed', errorCode:error.code || 'transport_unavailable', attempts,
             updatedAt:this.now(), nextAttemptAt:this.now() + Math.min(60000, 1000 * 2 ** Math.min(attempts, 6))});
@@ -100,6 +112,17 @@ export class DeviceClient {
     return this.request('/v1/me/mobile/messages/' + encodeURIComponent(message.messageId) + '/ack', 'POST', body);
   }
   async consume(message) {
+    let active = activeInboxes.get(this.store);
+    if (!active) { active = new Map(); activeInboxes.set(this.store, active); }
+    const logical = message.operationId || message.clientMessageId || message.payload?.clientOperationId || message.payload?.clientTransferId || message.messageId;
+    const key = this.prefix + 'inbox/' + message.sourceDeviceId + '/' + logical;
+    if (message.targetDeviceId && message.targetDeviceId !== this.deviceId) throw new DeviceProtocolError('wrong_target');
+    if (active.has(key)) return active.get(key);
+    const pending = this.consumeOnce(message);
+    active.set(key, pending);
+    try { return await pending; } finally { active.delete(key); }
+  }
+  async consumeOnce(message) {
     if (message.targetDeviceId && message.targetDeviceId !== this.deviceId) throw new DeviceProtocolError('wrong_target');
     const logical = message.operationId || message.clientMessageId || message.payload?.clientOperationId || message.payload?.clientTransferId || message.messageId;
     const key = this.prefix + 'inbox/' + message.sourceDeviceId + '/' + logical;
@@ -125,10 +148,11 @@ export class DeviceClient {
         saved = {...saved, state:['cancelled', 'expired'].includes(claim.status) ? claim.status : 'unknown', errorCode:'execution_result_unknown'};
         await this.store.set(key, saved); await this.ack(message, saved); return saved;
       }
-      if (Date.parse(claim.expiresAt) <= this.now()) {
+      if (!Number.isFinite(Date.parse(claim.expiresAt)) || Date.parse(claim.expiresAt) <= this.now()) {
         saved = {...saved, state:'expired', errorCode:'message_expired'}; await this.store.set(key, saved); await this.ack(message, saved); return saved;
       }
     } else {
+      if (!this.receive) throw new DeviceProtocolError('receive_adapter_required');
       saved = {...saved, state:'executing'};
       if (!await this.store.compareExchange(key, 'saved', saved)) return {state:'unknown', errorCode:'execution_result_unknown'};
     }

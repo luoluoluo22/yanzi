@@ -6,14 +6,17 @@
 $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $ConfigPath = Join-Path $RepoRoot "cloudflare\wrangler.toml"
+$TestArtifact = Join-Path $env:TEMP ("YanziDev/test-unified-extension-catalog/" + [Guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Force -Path $TestArtifact | Out-Null
+$WorkerState = Join-Path $TestArtifact "worker-state"
 $Adb = "F:\SDK\platform-tools\adb.exe"
 $Package = "cc.luoluoluo.yanzi.mobile"
 $ExtensionId = "unified-mobile-only"
 $StorageKey = "catalog/result.txt"
 $Secret = "yanzi-unified-catalog-test"
-$WorkerLog = Join-Path $env:TEMP "yanzi-unified-catalog-worker.log"
-$WorkerError = Join-Path $env:TEMP "yanzi-unified-catalog-worker.err"
-$PrefsTemp = Join-Path $env:TEMP "yanzi-unified-catalog-prefs.xml"
+$WorkerLog = Join-Path $TestArtifact "yanzi-unified-catalog-worker.log"
+$WorkerError = Join-Path $TestArtifact "yanzi-unified-catalog-worker.err"
+$PrefsTemp = Join-Path $TestArtifact "yanzi-unified-catalog-prefs.xml"
 
 . (Join-Path $PSScriptRoot "dev-test-worker.ps1")
 
@@ -78,7 +81,7 @@ Stop-YanziLocalWorkerPort -Port $Port
 Remove-Item -LiteralPath $WorkerLog, $WorkerError -Force -ErrorAction SilentlyContinue
 Push-Location $RepoRoot
 try {
-    & npx.cmd wrangler d1 migrations apply openquickhost-sync-db --local --config $ConfigPath | Out-Null
+    & npx.cmd wrangler d1 migrations apply openquickhost-sync-db --local --persist-to $WorkerState --config $ConfigPath | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "Failed to apply local D1 migrations." }
 }
 finally { Pop-Location }
@@ -92,7 +95,7 @@ $definitionObjectId = "mobileExtension.v1." + (Get-Sha256Hex $ExtensionId)
 $resultObjectId = "extensionData.v1." + (Get-Sha256Hex ($ExtensionId + [char]0 + $StorageKey))
 
 $workerArgs = @(
-    "wrangler", "dev", "--local", "--ip", "0.0.0.0", "--port", $Port,
+    "wrangler", "dev", "--local", "--persist-to", $WorkerState, "--ip", "0.0.0.0", "--port", $Port,
     "--config", $ConfigPath,
     "--var", "AUTH_TOKEN_SECRET:$Secret",
     "--var", "SYNC_OBJECTS_AUTHORITATIVE:true"

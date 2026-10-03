@@ -1,18 +1,22 @@
-param(
+﻿param(
     [int]$Port = 8799,
     [ValidateSet("true", "false")]
     [string]$AuthorityMode = "true"
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "dev-test-worker.ps1")
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $configPath = Join-Path $repoRoot "cloudflare\wrangler.toml"
 $testSecret = "yanzi-local-object-sync-test"
-$logPath = Join-Path $env:TEMP "yanzi-cloud-object-sync-test.log"
-$errorPath = Join-Path $env:TEMP "yanzi-cloud-object-sync-test.err"
-Remove-Item -LiteralPath $logPath, $errorPath -Force -ErrorAction SilentlyContinue
+$artifact = Join-Path $env:TEMP ("YanziDev/cloud-object-sync/" + [Guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Force -Path $artifact | Out-Null
+$statePath = Join-Path $artifact "worker-state"
+$logPath = Join-Path $artifact "worker.log"
+$errorPath = Join-Path $artifact "worker.err"
+Stop-YanziLocalWorkerPort -Port $Port
 
-& npx.cmd wrangler d1 migrations apply openquickhost-sync-db --local --config $configPath | Out-Null
+& npx.cmd wrangler d1 migrations apply openquickhost-sync-db --local --persist-to $statePath --config $configPath | Out-Null
 if ($LASTEXITCODE -ne 0) {
     throw "Failed to apply local D1 migrations before protocol test."
 }
@@ -37,7 +41,7 @@ $objectsAuthoritative = $AuthorityMode -eq "true"
 $authoritativeValue = $AuthorityMode
 $worker = Start-Process `
     -FilePath "npx.cmd" `
-    -ArgumentList @("wrangler", "dev", "--local", "--port", $Port, "--config", $configPath, "--var", "AUTH_TOKEN_SECRET:$testSecret", "--var", "SYNC_OBJECTS_AUTHORITATIVE:$authoritativeValue") `
+    -ArgumentList @("wrangler", "dev", "--local", "--persist-to", $statePath, "--port", $Port, "--config", $configPath, "--var", "AUTH_TOKEN_SECRET:$testSecret", "--var", "SYNC_OBJECTS_AUTHORITATIVE:$authoritativeValue") `
     -WorkingDirectory $repoRoot `
     -WindowStyle Hidden `
     -RedirectStandardOutput $logPath `
@@ -254,7 +258,9 @@ try {
     Write-Output "Cloud object sync protocol test passed: authoritative=$authoritativeValue, create=$($created.object.revision), deviceB=$($deviceB.object.revision), retry=$($updated.object.revision), restore=$($restored.object.revision), history=4, yanmPatch=preserved, aiSecrets=scrubbed, repoSecrets=scrubbed, conflict=409+$($conflictDetails.details.currentRevision), invalidToken=401"
 }
 finally {
+    Stop-YanziLocalWorkerPort -Port $Port
     if (-not $worker.HasExited) {
         & taskkill /PID $worker.Id /T /F | Out-Null
     }
+    Write-Output "Artifacts: $artifact"
 }

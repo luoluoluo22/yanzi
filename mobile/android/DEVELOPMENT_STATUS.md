@@ -6,6 +6,14 @@
 
 ---
 
+## 2026-10-03 工程基础与通信回归
+
+工程评估与完整测试记录见 [工程基础评估](../../docs/engineering-foundation-review-2026-10-03.md)。新增 `MobileApiTransport` / `HttpResponseBody`，前后台共用有上限的 UTF-8 响应读取，空错误流安全处理；云端与加密 LAN 由调用方明确选择，修复私网云 Worker 被误判为 LAN 后出现 `pair_required`。VPN 兜底使用安全请求列表，PUT/认证写入不自动重放，超限响应和线程中断不重试。
+
+桌面消息桥与 HTTP 传输分文件；Worker 设备参数/HTTP 错误/JSON 读取分模块；SDK 补齐并发收件、非法期限、无接收器和非 JSON 网关响应处理。`scripts/test-communication-foundation.ps1` 已接入 `dev-smoke.ps1`。
+
+验证：33 项 Node 场景、Java 响应/重试、桌面网络恢复、两轮各 85 项多设备协议、实际 SDK 文件能力、附件/账号聊天、两种云对象权威模式，以及完整模拟器跨端回归通过。完整模拟器回归后清空测试账号并完成 clean smoke。真机生产包未操作；云端未部署。本节不表示大文件已全部完成服务化，也不替代真机后台与 macOS 验收。
+
 ## 2026-10-03 更新通道修复与正式发布
 
 燕子 0.2.36 / 笔记 0.1.4（code 5）。更新检测对连接重置、响应读取失败、HTTP 错误和无效 JSON 增加最多四次请求：公网清单直连/系统路径，再 GitHub 直连/系统路径；每次关闭连接并限制清单 2 MiB。公网 APK 下载失败后换系统路径重试，安装前继续验证包名、版本、签名和已知 SHA-256。7 项故障注入测试通过，宿主 Dev/Release、笔记 Release/lintDev 通过。正式包证书与旧版 0.2.32 及线上笔记一致。
@@ -810,3 +818,11 @@ PC 聊天窗口的文字、照片、文件均可转云端；Android 照片和文
 - 本地 `app-release.apk` SHA256 为 `7B665FDD3CD16172A59C25018FD99358B6D0E6789EE3C0B27FEA1191C457BB0F`，与公网 `yanzi-mobile-0.2.31.apk` 完全一致；公网包解析为 `cc.luoluoluo.yanzi.mobile` / versionCode 31 / versionName 0.2.31。
 - 刚构建的 `app-dev.apk` 已通过 `adb install -r` 覆盖到一加实体机，仅更新 `cc.luoluoluo.yanzi.mobile.dev`，保留原登录数据；重启后仍为 0.2.31-dev，账号会话存在，应用中心 AI 数据清单仍只显示便签与日历。
 - 生产包 `cc.luoluoluo.yanzi.mobile` 仍保持 0.2.26，未覆盖、未清数据。
+
+## 2026-10-03 工程基础整改继续执行
+
+- API 已移出 MainActivity，新增 MobileSessionStore / MobileObjectRepository / MobileYanmController / MobileChatController / MobileWebViewRuntime；后台 Context 由 YanziApplication 初始化。
+- 对象快照超过 1000 项继续分页；会话失效错误不触发路由重试；云请求与加密 LAN 显式区分。
+- 新的工程 CI 和独立 Worker state 已接入；五项模拟器集成与清理后的干净 smoke 通过。
+- 真机脚本支持显式 Serial，聊天验收读取 SQLite；保留正式包与原有 Dev 偏好。
+- 执行及最终部署验收记录：`docs/engineering-foundation-implementation-2026-10-03.md`。

@@ -15,7 +15,7 @@ final class MobileMessageClient {
         if ("POST".equals(method) && "/v1/me/mobile/messages".equals(path) && payload != null && !payload.has("clientMessageId"))
             payload.put("clientMessageId", java.util.UUID.randomUUID().toString());
         java.io.File saved = null;
-        if ("POST".equals(method) && "/v1/me/mobile/messages".equals(path) && payload != null && MainActivity.sContext != null && !(BuildConfig.DEBUG && token.equals("disposable-cloud-transfer-test"))) {
+        if ("POST".equals(method) && "/v1/me/mobile/messages".equals(path) && payload != null && MobileApplicationContext.get() != null && !(BuildConfig.DEBUG && token.equals("disposable-cloud-transfer-test"))) {
             String kind = payload.optString("kind");
             if ((kind.startsWith("run-") || kind.startsWith("fs-") || kind.equals("capability.invoke")) && !payload.has("expiresAt"))
                 payload.put("expiresAt", java.time.Instant.now().plusSeconds(120).toString());
@@ -26,7 +26,13 @@ final class MobileMessageClient {
         return response;
     }
     static JSONObject requestWithoutQueue(String base, String path, String token, String method, JSONObject payload) throws Exception {
-        HttpURLConnection connection = MobileNetworkRouting.openCloudConnection(new URL(base + path));
+        boolean safe = CloudRequestRetry.safe(method, path, payload != null && !payload.optString("clientMessageId").isEmpty());
+        return CloudRequestRetry.execute(safe, systemRoute -> requestOnce(base, path, token, method, payload, systemRoute));
+    }
+    private static JSONObject requestOnce(String base, String path, String token, String method, JSONObject payload, boolean systemRoute) throws Exception {
+        URL url = new URL(base + path);
+        if (systemRoute) android.util.Log.i("YanziCloudRetry", "Retrying safe cloud request on system route: " + path);
+        HttpURLConnection connection = systemRoute ? (HttpURLConnection)url.openConnection() : MobileNetworkRouting.openCloudConnection(url);
         try {
             connection.setConnectTimeout(8000); connection.setReadTimeout(8000);
             connection.setRequestMethod(method);
@@ -42,15 +48,8 @@ final class MobileMessageClient {
             }
             int status = connection.getResponseCode();
             if (status < 200 || status >= 300) throw new HttpFailure(status);
-            try (InputStream input = connection.getInputStream(); java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream()) {
-                byte[] bytes = new byte[4096]; int count;
-                while ((count = input.read(bytes)) != -1) {
-                    buffer.write(bytes, 0, count);
-                    if (buffer.size() > 2000000) throw new java.io.IOException("Response too large");
-                }
-                String body = buffer.toString("UTF-8");
-                return body.trim().isEmpty() ? new JSONObject() : new JSONObject(body);
-            }
+            String body = HttpResponseBody.read(connection.getInputStream(), 2000000);
+            return body.trim().isEmpty() ? new JSONObject() : new JSONObject(body);
         } finally { connection.disconnect(); }
     }
 }

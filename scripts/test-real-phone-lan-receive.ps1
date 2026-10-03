@@ -1,11 +1,15 @@
-﻿param([switch]$AllowPhysicalDev)
+﻿param([switch]$AllowPhysicalDev, [string]$Serial = '')
 $ErrorActionPreference = 'Stop'
 if (-not $AllowPhysicalDev) { throw 'Use -AllowPhysicalDev for the isolated DEV phone receiver.' }
 $adb = 'F:\SDK\platform-tools\adb.exe'
 $package = 'cc.luoluoluo.yanzi.mobile.dev'
 $serials = @(& $adb devices | Select-Object -Skip 1 | Where-Object { $_ -match '^\S+\s+device\s*$' } | ForEach-Object { ($_ -split '\s+')[0] })
-if ($serials.Count -ne 1) { throw 'One authorized phone is required.' }
-$serial = $serials[0]
+if (-not $Serial) {
+    if ($serials.Count -ne 1) { throw 'Multiple phones are connected; pass -Serial explicitly.' }
+    $Serial = $serials[0]
+}
+if ($serials -notcontains $Serial) { throw 'Selected physical phone is not connected.' }
+$serial = $Serial
 function AdbChecked([string[]]$Arguments) {
     $saved = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
     try { $value = & $adb -s $serial @Arguments 2>&1 } finally { $ErrorActionPreference = $saved }

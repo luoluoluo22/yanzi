@@ -1,4 +1,4 @@
-﻿param([int]$Port = 8811, [switch]$SkipBuild, [switch]$IncludeFinalScreenOff, [switch]$VerifyAccountLan, [switch]$CapabilitiesOnly, [switch]$VerifyAlbumWorkflow)
+﻿param([int]$Port = 8811, [switch]$SkipBuild, [switch]$IncludeFinalScreenOff, [switch]$VerifyAccountLan, [switch]$CapabilitiesOnly, [switch]$VerifyAlbumWorkflow, [string]$Serial = '')
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
 $clipboardSnapshot = New-Object System.Windows.Forms.DataObject
@@ -18,8 +18,12 @@ $adb = 'F:\SDK\platform-tools\adb.exe'
 $package = 'cc.luoluoluo.yanzi.mobile.dev'
 $activity = 'cc.luoluoluo.yanzi.mobile.MainActivity'
 $serials = @(& $adb devices | Select-Object -Skip 1 | Where-Object { $_ -match '^\S+\s+device\s*$' -and $_ -notmatch '^emulator-' } | ForEach-Object { ($_ -split '\s+')[0] })
-if ($serials.Count -ne 1) { throw 'Exactly one authorized physical phone is required.' }
-$serial = $serials[0]
+if (-not $Serial) {
+    if ($serials.Count -ne 1) { throw 'Multiple phones are connected; pass -Serial explicitly.' }
+    $Serial = $serials[0]
+}
+if ($serials -notcontains $Serial) { throw 'Selected physical phone is not connected.' }
+$serial = $Serial
 $artifact = Join-Path $env:TEMP ('YanziDev\message-bridge\' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force -Path $artifact | Out-Null
 $desktopRoot = Join-Path $artifact 'desktop'

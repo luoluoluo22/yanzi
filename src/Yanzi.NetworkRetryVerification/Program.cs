@@ -42,7 +42,18 @@ catch (OperationCanceledException)
     Assert(postProxy.Calls == 1 && postDirect.Calls == 0, "Caller cancellation must not issue a request.");
 }
 
-Console.WriteLine("Network retry verification passed: bounded fallback, cooldown, recovery, non-replayed POST, cancellation.");
+foreach (var succeed in new[] { false, true })
+{
+    var staleProxy = new StubHandler { Succeed = succeed };
+    var staleDirect = new StubHandler { Succeed = true };
+    var staleClient = CreateClient(staleProxy, staleDirect);
+    staleProxy.OnSend = () => staleClient.AccountCoordinator.Invalidate();
+    try { using var staleResponse = await SendAsync(staleClient, HttpMethod.Get); throw new Exception("Old-session response survived logout."); }
+    catch (OperationCanceledException) { }
+    catch (HttpRequestException) when (!succeed) { }
+    Assert(staleProxy.Calls == 1 && staleDirect.Calls == 0, "Old session retried after logout.");
+}
+Console.WriteLine("Network retry verification passed: bounded fallback, cooldown, recovery, non-replayed POST, cancellation, stale-session rejection.");
 
 static CloudSyncClient CreateClient(StubHandler proxy, StubHandler direct)
 {
@@ -57,9 +68,9 @@ static CloudSyncClient CreateClient(StubHandler proxy, StubHandler direct)
 static async Task<HttpResponseMessage> SendAsync(CloudSyncClient client, HttpMethod method, CancellationToken cancellationToken = default)
 {
     var sendMethod = typeof(CloudSyncClient).GetMethod("SendAsyncWithFallback", BindingFlags.Instance | BindingFlags.NonPublic,
-        binder: null, types: [typeof(HttpRequestMessage), typeof(CancellationToken)], modifiers: null)!;
+        binder: null, types: [typeof(HttpRequestMessage), typeof(CancellationToken), typeof(bool)], modifiers: null)!;
     using var request = new HttpRequestMessage(method, "http://127.0.0.1:1/retry-test");
-    var task = (Task<HttpResponseMessage>)sendMethod.Invoke(client, [request, cancellationToken])!;
+    var task = (Task<HttpResponseMessage>)sendMethod.Invoke(client, [request, cancellationToken, false])!;
     return await task;
 }
 
@@ -84,10 +95,12 @@ sealed class StubHandler : HttpMessageHandler
 {
     public int Calls { get; private set; }
     public bool Succeed { get; set; }
+    public Action? OnSend { get; set; }
 
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         Calls++;
+        OnSend?.Invoke();
         if (Succeed)
         {
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));

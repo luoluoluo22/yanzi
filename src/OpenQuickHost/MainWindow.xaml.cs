@@ -367,7 +367,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         LocalExtensionCatalog.EnsureSampleExtension();
         if (_syncOptions.IsConfigured)
         {
-            _cloudSyncClient = new CloudSyncClient(_syncOptions);
+            _cloudSyncClient = new CloudSyncClient(_syncOptions, _accountObjectSyncLock);
         }
 
         _backgroundWebDavSyncTimer = new DispatcherTimer
@@ -640,12 +640,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
 
             ApplyFilter(SearchBox.Text);
-            
+
             if (wasAiMode && !IsAiChatMode)
             {
                 // 从 AI Chat 模式切换到其他模式时，恢复窗口尺寸
                 RestoreDefaultWindowSize();
-                if (!IsStoreMode) 
+                if (!IsStoreMode)
                 {
                     SetSearchScopePopupOpen(true);
                 }
@@ -785,13 +785,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             // 保存当前窗口的顶部中心点
             var centerX = Left + Width / 2;
             var centerY = Top;
-            
+
             // 先恢复最小约束，再恢复默认窗口大小，避免 AI 模式较大的 MinWidth 把 Width 卡住
             MinWidth = _defaultMinWindowWidth;
             MinHeight = _defaultMinWindowHeight;
             Width = _defaultWindowWidth;
             Height = _defaultWindowHeight;
-            
+
             // 根据新尺寸重新计算位置，保持顶部中心不变
             Left = centerX - Width / 2;
             Top = centerY;
@@ -876,7 +876,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                         var targetOffset = relativePoint.Y + (container.ActualHeight / 2) - 85;
                         if (targetOffset < 30) targetOffset = 30;
                         if (targetOffset > ActualHeight - 200) targetOffset = ActualHeight - 200;
-                        
+
                         CapsGuidePopup.VerticalOffset = targetOffset;
                     }
                     catch
@@ -2455,8 +2455,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var isAltDown = Keyboard.Modifiers.HasFlag(ModifierKeys.Alt);
         var isShiftDown = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
 
-        if (e.Key == Key.Left || 
-            e.Key == Key.Escape || 
+        if (e.Key == Key.Left ||
+            e.Key == Key.Escape ||
             (e.Key == Key.Tab && isShiftDown) ||
             (isAltDown && (actualKey == Key.A || actualKey == Key.H)))
         {
@@ -2782,7 +2782,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         // 1. 应用/本地可执行文件专属操作
         var isAppTarget = !isExtensionLike && hasValidLocalTarget && !IsInternalCommand(resolved);
-        var isExecutable = isAppTarget && File.Exists(target) && 
+        var isExecutable = isAppTarget && File.Exists(target) &&
                            (target.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ||
                             target.EndsWith(".bat", StringComparison.OrdinalIgnoreCase) ||
                             target.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase) ||
@@ -2828,7 +2828,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                                    ToggleAppStartupMenuItem.Visibility == Visibility.Visible;
 
         // 2. 小程序/燕语专属管理操作与快捷键设置
-        var canSetShortcut = !IsInternalCommand(resolved) && 
+        var canSetShortcut = !IsInternalCommand(resolved) &&
                              (isLocalExtension || resolved.Source == CommandSource.Application || resolved.Source == CommandSource.Local);
         SetCommandShortcutMenuItem.IsEnabled = canSetShortcut;
         SetCommandShortcutMenuItem.Visibility = canSetShortcut ? Visibility.Visible : Visibility.Collapsed;
@@ -3567,7 +3567,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             HostAssets.AppendLog($"Triggering download for cloud extension: {runnable.Title}");
             LastRunMessage = $"正在安装{BrandTerms.Current.MiniApp}：{runnable.Title} ...";
-            _ = InstallStoreExtensionAsync(runnable.ExtensionId).ContinueWith(t => 
+            _ = InstallStoreExtensionAsync(runnable.ExtensionId).ContinueWith(t =>
             {
                 if (t.IsCompletedSuccessfully)
                 {
@@ -5058,9 +5058,9 @@ public sealed class CommandItem : INotifyPropertyChanged
         {
             VectorIcon = null;
         }
-        
+
         VectorIconBrush = AccentBrushCache.GetVectorColor(iconReference);
-        
+
         Startup = startup;
         LaunchArguments = launchArguments;
         WorkingDirectory = workingDirectory;
@@ -5297,10 +5297,10 @@ public sealed class CommandItem : INotifyPropertyChanged
 
     public bool IsCloud => Source == CommandSource.Cloud;
 
-    public string InstallCountLabel => InstallCount >= 1000000 
-        ? $"{(double)InstallCount / 1000000:F1}M" 
-        : (InstallCount >= 1000 
-            ? $"{(double)InstallCount / 1000:F1}K" 
+    public string InstallCountLabel => InstallCount >= 1000000
+        ? $"{(double)InstallCount / 1000000:F1}M"
+        : (InstallCount >= 1000
+            ? $"{(double)InstallCount / 1000:F1}K"
             : InstallCount.ToString());
 
     public string RatingLabel => Rating > 0 ? Rating.ToString("F1") : "4.8";

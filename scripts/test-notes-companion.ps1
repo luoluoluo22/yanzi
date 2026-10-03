@@ -88,7 +88,7 @@ try {
     $result = @(& $adb -s $Serial shell am instrument -w -r -e accountId $user -e targetDeviceId $desktopDevice -e class 'cc.luoluoluo.yanzi.notes.HostRoundtripTest,cc.luoluoluo.yanzi.notes.NotesSyncTest' `
         "$notesPackage.test/android.test.InstrumentationTestRunner") -join "`n"
     [IO.File]::WriteAllText((Join-Path $artifact 'instrumentation.txt'),$result,[Text.UTF8Encoding]::new($false))
-    if ($result -notmatch 'OK \(5 tests\)') { throw "Notes instrumentation failed: $result" }
+    if ($result -notmatch 'OK \(6 tests\)') { throw "Notes instrumentation failed: $result" }
     $capture=[Diagnostics.ProcessStartInfo]::new($adb,"-s $Serial exec-out run-as $notesPackage cat files/notes-editor-qa.png")
     $capture.UseShellExecute=$false;$capture.CreateNoWindow=$true;$capture.RedirectStandardOutput=$true
     $captureProcess=[Diagnostics.Process]::Start($capture)
