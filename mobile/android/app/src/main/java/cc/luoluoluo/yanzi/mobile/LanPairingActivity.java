@@ -6,6 +6,8 @@ import org.json.JSONObject;
 /** Account login grants connectivity; this screen only shows connection status. */
 public final class LanPairingActivity extends Activity {
     private TextView status;
+    private BusyButton refreshBusy;
+    private boolean probing;
     private final android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
     private final Runnable update = new Runnable() {
         @Override public void run() { showStatus(); handler.postDelayed(this, 1000); }
@@ -22,6 +24,7 @@ public final class LanPairingActivity extends Activity {
         status.setPadding(0,padding,0,padding); status.setLineSpacing(YanziUiKit.dp(this, 6),1f); root.addView(status);
         TextView help = YanziUiKit.text(this, "同账号设备自动连接，局域网可用时优先直连。\n连接通道表示电脑可达，不代表消息、文件或小程序数据已全部同步。", 13, YanziUiKit.SECONDARY, false); root.addView(help);
         Button refresh = new Button(this); refresh.setText("重新检测"); root.addView(refresh);
+        refreshBusy = new BusyButton(refresh);
         refresh.setOnClickListener(v -> {
             android.content.SharedPreferences prefs = getSharedPreferences("yanzi-mobile", 0);
             String token = prefs.getString("token", ""), device = prefs.getString("deviceId", "");
@@ -36,6 +39,9 @@ public final class LanPairingActivity extends Activity {
     @Override protected void onPause() { handler.removeCallbacks(update); super.onPause(); }
 
     private void probe(boolean discover) {
+        if (probing) return;
+        probing = true;
+        refreshBusy.begin("正在检测…");
         verifiedLan = ""; probeStatus = "正在检测直连";
         new Thread(() -> {
             try {
@@ -48,6 +54,7 @@ public final class LanPairingActivity extends Activity {
                     else probeStatus = "直连检测未通过";
                 } finally { connection.disconnect(); }
             } catch (Exception error) { probeStatus = "直连暂不可用"; }
+            finally { runOnUiThread(() -> { probing = false; refreshBusy.finish(); if (!isFinishing() && !isDestroyed()) showStatus(); }); }
         }, "YanziConnectionDetails").start();
     }
 

@@ -21,6 +21,8 @@ public final class ApplicationCatalogActivity extends Activity {
     private final ExecutorService executor=Executors.newSingleThreadExecutor();
     private SharedPreferences prefs; private LinearLayout list; private TextView status;
     private String accountId,baseUrl,token; private File pendingApk;
+    private BusyButton refreshBusy; private boolean working;
+    private final java.util.List<TextView> actionButtons=new java.util.ArrayList<>();
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
         MobileNetworkRouting.initialize(this);
@@ -40,7 +42,7 @@ public final class ApplicationCatalogActivity extends Activity {
         titleCopy.addView(YanziUiKit.text(this,"应用中心",22,YanziUiKit.TEXT,true));
         titleCopy.addView(YanziUiKit.text(this,"连接、获取并管理燕子应用",12,YanziUiKit.SECONDARY,false));
         top.addView(titleCopy,new LinearLayout.LayoutParams(0,-2,1f));
-        top.addView(YanziUiKit.link(this,"刷新",this::load));
+        TextView refresh=YanziUiKit.link(this,"刷新",this::load);refreshBusy=new BusyButton(refresh);top.addView(refresh);
         root.addView(top,YanziUiKit.cardLp(this));
 
         status=YanziUiKit.text(this,"正在读取应用目录…",11,YanziUiKit.MUTED,false);
@@ -58,14 +60,23 @@ public final class ApplicationCatalogActivity extends Activity {
         if(!accountId.equals(ExtensionStorageProvider.accountId(prefs.getString("token",""))))throw new IllegalStateException("账号已切换，请重新打开应用中心");
     }
     private interface Task { void run() throws Exception; }
-    private void work(Task task){executor.execute(()->{try{checkAccount();task.run();}catch(Exception e){ui(()->status.setText("操作失败："+e.getMessage()));}});}
+    private void work(Task task, BusyButton action, String message){
+        if(working)return;
+        working=true;setActionsEnabled(false);refreshBusy.begin("正在处理…");if(action!=null)action.begin(message);
+        status.setText(message);
+        executor.execute(()->{try{checkAccount();task.run();}catch(Exception e){ui(()->status.setText("操作失败："+e.getMessage()));}
+            finally{ui(()->{working=false;setActionsEnabled(true);refreshBusy.finish();if(action!=null)action.finish();});}});
+    }
+    private void setActionsEnabled(boolean enabled){for(TextView button:actionButtons){button.setEnabled(enabled);button.setAlpha(enabled?1f:0.55f);}}
     private void ui(Runnable action){runOnUiThread(()->{if(!isFinishing()&&!isDestroyed())action.run();});}
-    private void load(){if(accountId==null)return;work(()->{
+    private void load(){if(accountId==null)return;work(this::readCatalog,null,"正在刷新目录…");}
+    private void readCatalog()throws Exception{
         JSONObject catalog=json("/v1/applications/catalog",null,false),library=json("/v1/applications/library",null,true);
         checkAccount();ui(()->render(catalog.optJSONArray("applications"),library.optJSONArray("applications")));
-    });}
+    }
     private void render(JSONArray apps,JSONArray selections){
         list.removeAllViews();
+        actionButtons.clear();
         status.setText("目录已刷新 · 内嵌应用可跨设备获取，独立应用在本机确认安装");
         if(apps==null||apps.length()==0){
             TextView empty=YanziUiKit.text(this,"暂无已发布应用",13,YanziUiKit.MUTED,false);
@@ -96,12 +107,14 @@ public final class ApplicationCatalogActivity extends Activity {
 
             String actionText="mobile-js".equals(kind)?(enabled?"获取 / 更新":"获取并加入账号"):(current?"打开应用":"下载并安装");
             TextView action=YanziUiKit.primaryButton(this,actionText,null);
-            action.setOnClickListener(v->{if(installedCurrent){startActivity(launchIntent);return;}action.setEnabled(false);work(()->{try{
+            actionButtons.add(action);if(working){action.setEnabled(false);action.setAlpha(0.55f);}
+            BusyButton actionBusy=new BusyButton(action);
+            action.setOnClickListener(v->{if(installedCurrent){startActivity(launchIntent);return;}work(()->{
                 if("mobile-js".equals(kind))installDefinition(app);else if("android-apk".equals(kind))downloadApk(app);else throw new IllegalStateException("不支持的应用类型");
                 if(!enabled)json("/v1/applications/library/"+id,new JSONObject().put("enabled",true).put("expectedRevision",selection==null?0:selection.optLong("revision")),true);
                 checkAccount();ui(()->status.setText("已加入账号，其他设备刷新后可见。"));
-                if("mobile-js".equals(kind))load();
-            }finally{ui(()->action.setEnabled(true));}});});
+                if("mobile-js".equals(kind))readCatalog();
+            },actionBusy,"mobile-js".equals(kind)?"正在获取…":"正在下载…");});
             LinearLayout.LayoutParams ap=new LinearLayout.LayoutParams(-1,YanziUiKit.dp(this,40));ap.topMargin=YanziUiKit.dp(this,12);card.addView(action,ap);
             list.addView(card,YanziUiKit.cardLp(this));
         }

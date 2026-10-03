@@ -22,11 +22,19 @@ public final class EnvironmentSettingsActivity extends Activity {
     }
     private void validate() throws Exception { if(!accountScope.equals(MobileEnvironment.scope(this,id))) throw new IllegalStateException("账号已切换，请重新打开小程序"); }
     private void work(Task action) {
+        work(action, null);
+    }
+    private void work(Task action, BusyButton button) {
         status.setText("处理中…定位最多等待 20 秒");
         MobileEnvironment.WORK.execute(()->{
             try { validate(); action.run(); runOnUiThread(this::refresh); }
             catch(Exception e) { runOnUiThread(()->{if(!isFinishing()){refresh();status.append("\n"+e.getMessage());}}); }
+            finally { if(button!=null)runOnUiThread(button::finish); }
         });
+    }
+    private void taskButton(LinearLayout root,String title,Task action) {
+        Button b=new Button(this);b.setText(title);BusyButton busy=new BusyButton(b);
+        b.setOnClickListener(v->{if(busy.begin("正在检测…"))work(action,busy);});root.addView(b);
     }
     private void button(LinearLayout root,String title,Runnable action) {
         Button b=new Button(this); b.setText(title);b.setOnClickListener(v->action.run());root.addView(b);
@@ -58,8 +66,8 @@ public final class EnvironmentSettingsActivity extends Activity {
             new AlertDialog.Builder(this).setTitle("后台定位说明").setMessage("启用后，位置小程序在后台尝试每 15 分钟检测环境。可随时关闭；系统可能延迟。请在系统权限页面选择始终允许定位。")
                 .setPositiveButton("打开系统设置",(d,w)->startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,android.net.Uri.parse("package:"+getPackageName())))).setNegativeButton("取消",null).show();
         });
-        button(root,"立即检测并上报",()->work(()->MobileEnvironment.collect(this,id,false,false)));
-        button(root,"将当前位置设为家",()->work(()->MobileEnvironment.collect(this,id,false,true)));
+        taskButton(root,"立即检测并上报",()->MobileEnvironment.collect(this,id,false,false));
+        taskButton(root,"将当前位置设为家",()->MobileEnvironment.collect(this,id,false,true));
         EditText radius=new EditText(this);radius.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);radius.setHint("家的范围（米，50—5000）");radius.setText(String.valueOf(cfg.optInt("radius",200)));root.addView(radius);
         button(root,"保存家的范围",()->{try{validate();int metres=Integer.parseInt(radius.getText().toString());if(metres<50||metres>5000)throw new IllegalArgumentException("范围须为 50—5000 米");JSONObject settings=MobileEnvironment.config(this,id);settings.put("radius",metres);MobileEnvironment.saveConfig(this,id,settings);refresh();}catch(Exception e){status.setText(e.getMessage());}});
         button(root,"删除家的位置",()->{try{validate();JSONObject settings=MobileEnvironment.config(this,id);settings.remove("homeLatitude");settings.remove("homeLongitude");MobileEnvironment.saveConfig(this,id,settings);refresh();}catch(Exception e){status.setText(e.getMessage());}});

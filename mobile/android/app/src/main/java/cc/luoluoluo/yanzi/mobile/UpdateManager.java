@@ -38,19 +38,15 @@ public final class UpdateManager {
     private static final String GITHUB_RELEASES_API = "https://api.github.com/repos/luoluoluo22/yanzi/releases";
     private static final String PUBLIC_RELEASES_API = "https://sync.luoluoluo.cc.cd/downloads/android/releases.json";
     
-    // 实测在用户网络中极速且连接极其稳定的两个国内代理前缀
-    private static final String ACCELERATOR_PRIMARY = "https://gh.ddlc.top/";
-    private static final String ACCELERATOR_SECONDARY = "https://ghfast.top/";
-    
-    // 备用域名替换 (KKGitHub)
-    private static final String DOMAIN_KK = "kkgithub.com";
-
     private static final String PREFS_NAME = "yanzi_update_prefs";
     private static final String KEY_DOWNLOADED_VERSION = "downloaded_version";
     private static final String KEY_IS_DOWNLOADING = "is_downloading";
     private static final String KEY_DOWNLOAD_STARTED_AT = "download_started_at";
-    private static final long STALE_DOWNLOAD_TIMEOUT_MS = 30L * 60L * 1000L;
 
+    private static final java.util.concurrent.atomic.AtomicBoolean checking = new java.util.concurrent.atomic.AtomicBoolean();
+    private static final java.util.concurrent.atomic.AtomicBoolean downloading = new java.util.concurrent.atomic.AtomicBoolean();
+    private static final java.util.List<BusyButton> checkingButtons = new java.util.ArrayList<>();
+    private static volatile boolean manualCheckRequested;
     private static volatile boolean isDownloadCanceled = false;
     private static volatile boolean pendingInstallPermission = false;
     private static final java.util.concurrent.ConcurrentHashMap<String, String> updateHashes = new java.util.concurrent.ConcurrentHashMap<>();
@@ -66,8 +62,19 @@ public final class UpdateManager {
      * 异步检测新版本（公网清单与 GitHub 备用源）
      */
     public static void checkUpdate(final Activity activity, final boolean isManual) {
-        if (activity == null || activity.isFinishing()) return;
+        checkUpdate(activity, isManual, null);
+    }
 
+    static void checkUpdate(final Activity activity, final boolean isManual, final BusyButton button) {
+        if (activity == null || activity.isFinishing() || activity.isDestroyed()) return;
+        if (!checking.compareAndSet(false, true)) {
+            if (isManual) manualCheckRequested = true;
+            if (button != null && button.begin("正在检查更新…")) checkingButtons.add(button);
+            if (isManual) Toast.makeText(activity, "正在检查更新，请稍候", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        manualCheckRequested = isManual;
+        if (button != null && button.begin("正在检查更新…")) checkingButtons.add(button);
         log(activity, "开始检查更新 (" + (isManual ? "手动" : "后台自动") + ")...");
 
         AsyncTask.THREAD_POOL_EXECUTOR.execute(new Runnable() {
@@ -129,7 +136,8 @@ public final class UpdateManager {
                             new Handler(Looper.getMainLooper()).post(new Runnable() {
                                 @Override
                                 public void run() {
-                                    if (activity.isFinishing()) return;
+                                    if (activity.isFinishing() || activity.isDestroyed()) return;
+                                    boolean manualCheck = isManual || manualCheckRequested;
                                     String currentVersion = getLocalVersionName(activity);
                                     log(activity, "版本比对: 当前本地 v" + currentVersion + " , 目标最新 v" + latestVersion);
                                     
@@ -138,7 +146,7 @@ public final class UpdateManager {
                                             log(activity, "检测到本地已存在最新版缓存包，直接弹窗安装。");
                                             showInstallReadyDialog(activity, latestVersion);
                                         } else {
-                                            if (isManual) {
+                                            if (manualCheck) {
                                                 showUpdateDialog(activity, latestVersion, finalDownloadUrl, notes);
                                             } else {
                                                 log(activity, "静默检查触发，开始后台静默下载。");
@@ -147,8 +155,8 @@ public final class UpdateManager {
                                         }
                                     } else {
                                         log(activity, "当前已是最新版本，无需更新。");
-                                        cleanCacheApk(activity);
-                                        if (isManual) {
+                                        if (!downloading.get()) cleanCacheApk(activity);
+                                        if (manualCheck) {
                                             Toast.makeText(activity, "当前已是最新版本 (" + currentVersion + ")", Toast.LENGTH_SHORT).show();
                                         }
                                     }
@@ -162,10 +170,17 @@ public final class UpdateManager {
                     new Handler(Looper.getMainLooper()).post(new Runnable() {
                         @Override
                         public void run() {
-                            if (isManual && !activity.isFinishing()) {
+                            if ((isManual || manualCheckRequested) && !activity.isFinishing() && !activity.isDestroyed()) {
                                 Toast.makeText(activity, "检查更新失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
                             }
                         }
+                    });
+                } finally {
+                    new Handler(Looper.getMainLooper()).post(() -> {
+                        checking.set(false);
+                        manualCheckRequested = false;
+                        for (BusyButton pending : checkingButtons) pending.finish();
+                        checkingButtons.clear();
                     });
                 }
             }
@@ -173,6 +188,7 @@ public final class UpdateManager {
     }
 
     private static boolean isApkAlreadyDownloaded(Context context, String latestVersion) {
+        if (downloading.get()) return false;
         File apkFile = new File(context.getCacheDir(), "yanzi_update.apk");
         if (!apkFile.exists()) return false;
 
@@ -323,7 +339,7 @@ public final class UpdateManager {
             public void onClick(View v) {
                 dialog.dismiss();
                 if (downloadUrl.toLowerCase().endsWith(".apk") || downloadUrl.contains("/releases/download/")) {
-                    downloadAndInstallApk(activity, downloadUrl);
+                    downloadAndInstallApk(activity, latestVersion, downloadUrl);
                 } else {
                     openInBrowser(activity, downloadUrl);
                 }
@@ -338,7 +354,11 @@ public final class UpdateManager {
     /**
      * 前台下载实现 (优化了下载源的排序和 Socket 超时设置)
      */
-    private static void downloadAndInstallApk(final Activity activity, final String originalDownloadUrl) {
+    private static void downloadAndInstallApk(final Activity activity, final String latestVersion, final String originalDownloadUrl) {
+        if (!downloading.compareAndSet(false, true)) {
+            Toast.makeText(activity, "更新包正在下载，请稍候", Toast.LENGTH_SHORT).show();
+            return;
+        }
         isDownloadCanceled = false;
         log(activity, "用户触发立即更新，启动前台下载线程。");
 
@@ -363,50 +383,24 @@ public final class UpdateManager {
             public void run() {
                 File apkFile = new File(activity.getCacheDir(), "yanzi_update.apk");
                 boolean success = false;
-
-                // 尝试 1: ddlc.top 镜像 (实测 566 kB/s，极度稳定无超时)
-                if (originalDownloadUrl.contains("github.com/")) {
-                    String firstUrl = ACCELERATOR_PRIMARY + originalDownloadUrl;
-                    log(activity, "尝试 1: 通过 gh.ddlc.top 下载, 链接: " + firstUrl);
-                    updateProgressMessage(activity, progressDialog, "使用首选高速节点下载中...");
-                    success = performDownload(activity, firstUrl, apkFile, progressDialog);
-                }
-
-                // 尝试 2: ghfast.top 镜像 (实测 419 kB/s，极度稳定)
-                if (!success && !isDownloadCanceled && originalDownloadUrl.contains("github.com/")) {
-                    String secondUrl = ACCELERATOR_SECONDARY + originalDownloadUrl;
-                    log(activity, "尝试 2: 通过 ghfast.top 下载, 链接: " + secondUrl);
-                    updateProgressMessage(activity, progressDialog, "使用备用高速节点下载中...");
-                    success = performDownload(activity, secondUrl, apkFile, progressDialog);
-                }
-
-                // 尝试 3: kkgithub 域名替换 (3.1 MB/s，易偶发性闪断)
-                if (!success && !isDownloadCanceled && originalDownloadUrl.contains("github.com/")) {
-                    String thirdUrl = originalDownloadUrl.replace("github.com", DOMAIN_KK);
-                    log(activity, "尝试 3: 通过 kkgithub 替换域名下载, 链接: " + thirdUrl);
-                    updateProgressMessage(activity, progressDialog, "尝试使用极速节点下载中...");
-                    success = performDownload(activity, thirdUrl, apkFile, progressDialog);
-                }
-
-                // 尝试 4: 直连 (最后兜底)
-                if (!success && !isDownloadCanceled) {
-                    log(activity, "尝试 4: 镜像均失效，尝试原址直连, 链接: " + originalDownloadUrl);
-                    updateProgressMessage(activity, progressDialog, "降级为直连官方下载...");
-                    success = performDownload(activity, originalDownloadUrl, apkFile, progressDialog);
-                }
-
+                try { success = downloadFromNodes(activity, latestVersion, originalDownloadUrl, apkFile, progressDialog); }
+                catch (Exception e) { log(activity, "更新下载异常: " + e.getMessage()); }
                 final boolean finalSuccess = success;
+                if (isDownloadCanceled) cleanCacheApk(activity);
+                else if (success) activity.getSharedPreferences(PREFS_NAME, 0).edit()
+                        .putString(KEY_DOWNLOADED_VERSION, latestVersion).apply();
                 new Handler(Looper.getMainLooper()).post(new Runnable() {
                     @Override
                     public void run() {
-                        if (!activity.isFinishing()) {
+                        try {
+                        if (!activity.isFinishing() && !activity.isDestroyed()) {
                             progressDialog.dismiss();
                             if (isDownloadCanceled) {
                                 cleanCacheApk(activity);
                                 return;
                             }
                             if (finalSuccess) {
-                                if (!isInstallableApk(activity, apkFile)) {
+                                if (!apkFile.exists()) {
                                     log(activity, "更新包下载完成但无法解析，已删除坏包。");
                                     cleanCacheApk(activity);
                                     Toast.makeText(activity, "更新包校验失败，已为您跳转浏览器下载", Toast.LENGTH_LONG).show();
@@ -418,13 +412,14 @@ public final class UpdateManager {
                                 activity.getSharedPreferences(PREFS_NAME, 0).edit()
                                         .putString(KEY_DOWNLOADED_VERSION, getDownloadedVersionFromApk(activity, apkFile))
                                         .apply();
-                                installApk(activity, apkFile);
+                                installVerifiedApk(activity, apkFile);
                             } else {
                                 log(activity, "应用内更新包下载失败。");
                                 Toast.makeText(activity, "下载失败，已为您跳转浏览器下载", Toast.LENGTH_LONG).show();
                                 openInBrowser(activity, originalDownloadUrl);
                             }
                         }
+                        } finally { downloading.set(false); }
                     }
                 });
             }
@@ -435,23 +430,9 @@ public final class UpdateManager {
      * 后台静默下载
      */
     private static void startSilentDownload(final Activity activity, final String latestVersion, final String downloadUrl) {
+        if (!downloading.compareAndSet(false, true)) return;
+        isDownloadCanceled = false;
         final SharedPreferences prefs = activity.getSharedPreferences(PREFS_NAME, 0);
-        if (prefs.getBoolean(KEY_IS_DOWNLOADING, false)) {
-            long startedAt = prefs.getLong(KEY_DOWNLOAD_STARTED_AT, 0L);
-            long elapsed = startedAt <= 0L ? Long.MAX_VALUE : System.currentTimeMillis() - startedAt;
-            if (elapsed < STALE_DOWNLOAD_TIMEOUT_MS) {
-                log(activity, "已有静默更新下载任务正在进行，跳过重复启动。elapsedMs=" + elapsed);
-                return;
-            }
-
-            log(activity, "检测到过期的静默下载标记，重置后重新下载。elapsedMs=" + elapsed);
-            prefs.edit()
-                    .putBoolean(KEY_IS_DOWNLOADING, false)
-                    .remove(KEY_DOWNLOAD_STARTED_AT)
-                    .apply();
-            cleanCacheApk(activity);
-        }
-
         prefs.edit()
                 .putBoolean(KEY_IS_DOWNLOADING, true)
                 .putLong(KEY_DOWNLOAD_STARTED_AT, System.currentTimeMillis())
@@ -462,26 +443,10 @@ public final class UpdateManager {
             @Override
             public void run() {
                 File apkFile = new File(activity.getCacheDir(), "yanzi_update.apk");
-                boolean success = false;
+                try {
+                boolean success = downloadFromNodes(activity, latestVersion, downloadUrl, apkFile, null);
 
-                // 尝试 1: ddlc.top
-                if (downloadUrl.contains("github.com/")) {
-                    success = performDownload(activity, ACCELERATOR_PRIMARY + downloadUrl, apkFile, null);
-                }
-                // 尝试 2: ghfast
-                if (!success && downloadUrl.contains("github.com/")) {
-                    success = performDownload(activity, ACCELERATOR_SECONDARY + downloadUrl, apkFile, null);
-                }
-                // 尝试 3: kkgithub
-                if (!success && downloadUrl.contains("github.com/")) {
-                    success = performDownload(activity, downloadUrl.replace("github.com", DOMAIN_KK), apkFile, null);
-                }
-                // 尝试 4: 直连
-                if (!success) {
-                    success = performDownload(activity, downloadUrl, apkFile, null);
-                }
-
-                if (success && isInstallableApk(activity, apkFile)) {
+                if (success) {
                     log(activity, "静默更新包下载成功并通过解析校验。");
                     prefs.edit()
                             .putString(KEY_DOWNLOADED_VERSION, latestVersion)
@@ -492,34 +457,40 @@ public final class UpdateManager {
                     new Handler(Looper.getMainLooper()).post(new Runnable() {
                         @Override
                         public void run() {
-                            if (!activity.isFinishing()) {
+                            if (!activity.isFinishing() && !activity.isDestroyed()) {
                                 showInstallReadyDialog(activity, latestVersion);
                             }
                         }
                     });
                 } else {
-                    if (success) {
-                        log(activity, "静默更新包下载完成但无法解析，已删除坏包。");
-                        cleanCacheApk(activity);
-                    } else {
-                        log(activity, "静默更新包下载失败。");
-                    }
-                    prefs.edit()
-                            .putBoolean(KEY_IS_DOWNLOADING, false)
-                            .remove(KEY_DOWNLOAD_STARTED_AT)
-                            .apply();
+                    log(activity, "静默更新包下载失败。");
+                }
+                } catch (Exception e) { log(activity, "静默更新异常: " + e.getMessage());
+                } finally {
+                    prefs.edit().putBoolean(KEY_IS_DOWNLOADING, false).remove(KEY_DOWNLOAD_STARTED_AT).apply();
+                    downloading.set(false);
                 }
             }
         });
     }
 
-    /**
-     * 底层网络下载核心（针对 88M 大文件加大了超时保护时间）
-     */
-    private static boolean performDownload(Context context, String downloadUrl, File targetFile, final ProgressDialog progressDialog) {
-        if (performDownloadAttempt(context, downloadUrl, targetFile, progressDialog, false)) return true;
-        return !isDownloadCanceled && downloadUrl.startsWith("https://sync.luoluoluo.cc.cd/")
-                && performDownloadAttempt(context, downloadUrl, targetFile, progressDialog, true);
+    /** Shared foreground/background node selection and package validation. */
+    private static boolean downloadFromNodes(Context context, String latestVersion, String original, File target, ProgressDialog dialog) {
+        updateProgressMessage(context, dialog, "正在检测可用下载节点…");
+        java.util.List<UpdateDownloadNodes.Node> nodes = UpdateDownloadNodes.select(original,
+                (url, systemRoute) -> systemRoute ? (HttpURLConnection) url.openConnection() : MobileNetworkRouting.openCloudConnection(url),
+                () -> isDownloadCanceled, message -> log(context, message));
+        for (UpdateDownloadNodes.Node node : nodes) {
+            if (isDownloadCanceled) return false;
+            updateProgressMessage(context, dialog, "使用" + node.name + "下载中…");
+            if (performDownloadAttempt(context, node.url, target, dialog, node.systemRoute)) {
+                PackageInfo archive = getArchivePackageInfo(context, target);
+                if (archive != null && latestVersion.equals(archive.versionName) && isInstallableApk(context, target)) return true;
+                log(context, "节点安装包校验失败，继续尝试其他可用节点: " + node.name);
+                target.delete();
+            }
+        }
+        return false;
     }
 
     private static boolean performDownloadAttempt(Context context, String downloadUrl, File targetFile,
@@ -536,14 +507,14 @@ public final class UpdateManager {
             conn.setRequestProperty("User-Agent", "YanziClient-Mobile/" + getLocalVersionName(context));
             conn.setRequestProperty("X-Yanzi-Client", "mobile");
             conn.setRequestProperty("Connection", "close");
-            // 大文件下载，将连接超时增加到 20 秒，读取超时增加到 90 秒，防范中途闪断超时
-            conn.setConnectTimeout(20000);
-            conn.setReadTimeout(90000);
+            // A stalled node must fail promptly so another validated route can take over.
+            conn.setConnectTimeout(8000);
+            conn.setReadTimeout(20000);
             conn.connect();
 
             int code = conn.getResponseCode();
             log(context, "下载连接响应状态码: " + code);
-            if (code != 200 && code != 206) {
+            if (code != 200) {
                 log(context, "无效的状态码，连接终止");
                 return false;
             }
@@ -552,7 +523,8 @@ public final class UpdateManager {
             String contentType = conn.getContentType();
             log(context, "更新文件大小: " + fileLength + " 字节");
             log(context, "更新文件类型: " + contentType);
-            if (fileLength > 0 && fileLength < 1024 * 1024) {
+            if (contentType != null && (contentType.toLowerCase(java.util.Locale.ROOT).contains("text/") || contentType.toLowerCase(java.util.Locale.ROOT).contains("json"))) return false;
+            if (fileLength > 0 && (fileLength < 1024 * 1024 || fileLength > 200 * 1024 * 1024)) {
                 log(context, "下载内容过小，疑似错误页，连接终止");
                 return false;
             }
@@ -566,8 +538,9 @@ public final class UpdateManager {
             }
             out = new FileOutputStream(tempFile);
 
-            byte[] data = new byte[4096];
+            byte[] data = new byte[65536];
             long total = 0;
+            int lastProgress = -1;
             int count;
             while ((count = in.read(data)) != -1) {
                 if (isDownloadCanceled) {
@@ -575,8 +548,10 @@ public final class UpdateManager {
                     return false;
                 }
                 total += count;
-                if (fileLength > 0 && progressDialog != null) {
-                    final int progress = (int) (total * 100 / fileLength);
+                if (total > 200L * 1024 * 1024) return false;
+                final int progress = fileLength > 0 ? (int) (total * 100 / fileLength) : 0;
+                if (fileLength > 0 && progressDialog != null && progress != lastProgress) {
+                    lastProgress = progress;
                     new Handler(Looper.getMainLooper()).post(new Runnable() {
                         @Override
                         public void run() {
@@ -626,6 +601,7 @@ public final class UpdateManager {
         new Handler(Looper.getMainLooper()).post(new Runnable() {
             @Override
             public void run() {
+                dialog.setProgress(0);
                 dialog.setMessage(message);
             }
         });
@@ -633,12 +609,29 @@ public final class UpdateManager {
 
     private static void installApk(Activity activity, File apkFile) {
         if (apkFile == null || !apkFile.exists()) return;
-        if (!isInstallableApk(activity, apkFile)) {
-            cleanCacheApk(activity);
-            Toast.makeText(activity, "安装包解析失败，请重新下载最新版", Toast.LENGTH_LONG).show();
+        if (activity.isFinishing() || activity.isDestroyed()) return;
+        if (!downloading.compareAndSet(false, true)) {
+            Toast.makeText(activity, "更新包正在处理，请稍候", Toast.LENGTH_SHORT).show();
             return;
         }
+        ProgressDialog preparing = ProgressDialog.show(activity, "准备安装", "正在校验安装包…", true, false);
+        AsyncTask.THREAD_POOL_EXECUTOR.execute(() -> {
+            boolean valid = isInstallableApk(activity, apkFile);
+            new Handler(Looper.getMainLooper()).post(() -> {
+                try {
+                    if (activity.isFinishing() || activity.isDestroyed()) return;
+                    preparing.dismiss();
+                    if (valid) installVerifiedApk(activity, apkFile);
+                    else {
+                        cleanCacheApk(activity);
+                        Toast.makeText(activity, "安装包校验失败，请重新下载最新版", Toast.LENGTH_LONG).show();
+                    }
+                } finally { downloading.set(false); }
+            });
+        });
+    }
 
+    private static void installVerifiedApk(Activity activity, File apkFile) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             if (!activity.getPackageManager().canRequestPackageInstalls()) {
                 log(activity, "安装权限缺失，引导用户前往系统授权面页。");

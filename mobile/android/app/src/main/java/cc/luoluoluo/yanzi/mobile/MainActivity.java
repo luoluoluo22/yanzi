@@ -2694,7 +2694,9 @@ extends Activity {
         String currentVer = "0.2.18";
         try { currentVer = this.getPackageManager().getPackageInfo(this.getPackageName(), 0).versionName; } catch (Exception ignored) {}
         final String versionLabel = currentVer;
-        LinearLayout itemCheckUpdate = YanziUiKit.row(this, "download-outline", YanziUiKit.GREEN, "检查更新", "当前 v" + versionLabel, () -> UpdateManager.checkUpdate(MainActivity.this, true));
+        LinearLayout itemCheckUpdate = YanziUiKit.row(this, "download-outline", YanziUiKit.GREEN, "检查更新", "当前 v" + versionLabel, null);
+        BusyButton checkUpdateBusy = new BusyButton(itemCheckUpdate);
+        itemCheckUpdate.setOnClickListener(v -> UpdateManager.checkUpdate(MainActivity.this, true, checkUpdateBusy));
         this.profileTabPage.addView((View)itemCheckUpdate, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
 
         shell.addView((View)this.swipeRefresh, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, 0, 1.0f));

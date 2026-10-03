@@ -21,8 +21,8 @@ final class UpdateManifestClient {
             for (int route = 0; route < 2; route++) {
                 HttpURLConnection connection = null;
                 try {
-                    logger.log("Update source: " + source + " route=" + (route == 0 ? "direct" : "system"));
-                    connection = connections.open(new URL(source), route == 1);
+                    logger.log("Update source: " + source + " route=" + (route == 0 ? "system" : "direct"));
+                    connection = connections.open(new URL(source), route == 0);
                     connection.setConnectTimeout(10000);
                     connection.setReadTimeout(10000);
                     connection.setRequestProperty("User-Agent", userAgent);

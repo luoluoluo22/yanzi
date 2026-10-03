@@ -38,7 +38,9 @@ public final class UpdateManifestClientVerification {
                 }, body -> { if (!body.equals("[]")) throw new IOException("Malformed manifest"); }, message -> {});
         if (!result.equals("[]") || position[0] != responses.length) throw new AssertionError(name);
         for (Response response : responses) if (!response.disconnected) throw new AssertionError("Connection leak");
-        if (responses.length > 2 && !attempts.get(2).equals("backup.invalid:false")) throw new AssertionError("No source fallback");
+        if (responses.length > 2 && !attempts.get(2).equals("backup.invalid:true")) throw new AssertionError("No source fallback");
+        if (!attempts.get(0).equals("primary.invalid:true")) throw new AssertionError("System/VPN must be first");
+        if (responses.length > 1 && !attempts.get(1).equals("primary.invalid:false")) throw new AssertionError("Physical route fallback missing");
         System.out.println("PASS " + name);
     }
     static Response response(int status, String body, boolean reset) throws Exception {
