@@ -41,6 +41,12 @@ D1 只存每账号/设备/小程序的一行最新状态；原子序号更新拒
 - Windows Debug 构建、设置/同步验证与 14 项 Local API 边界验证通过；用户目录 C# 小程序通过真实运行接口成功打开窗口。
 - 一加 Dev 0.2.43 已安装，正常小程序入口与账号定义同步验证通过；定位默认关闭，未用 adb 在实体机静默授予定位。生产 0.2.42 的版本与 APK 路径一致。
 
-完整真机消息桥、公网回归与本次云端发布结果在验收结束后补充。Cloudflare 上一提交自动构建已 terminated，不能据此说新接口已在线；本次严格走 main push → Auto Builds，禁用本地直接部署。
+完整真机消息桥通过（产物 `%TEMP%/YanziDev/message-bridge/714a0dc0bc8047a4bcbdd1b9c5d0d3a0`）：后台心跳、实际 5 分钟补偿且不改写未变化数据、删除传播、通知拒绝/重新允许、断线重连、双向聊天、文件/图片字节、重复消息、LAN 鉴权、进程重启待发恢复、实际 120 秒在线窗口过期及上线恢复。修复通知恢复后等待下一轮低频补偿的问题：有意义的设备状态变化触发立即收件补查。10 条本地 Worker/真机消息确认中位数 55.5 ms、p95 82 ms；仅代表该测试链路。测试结束恢复 Dev 原账号/服务器/设置与通知权限，生产包不变。
+
+公网“无 LAN”和“失效 LAN 回退”聊天通过，产物 `%TEMP%/YanziDev/public-chat/23541339a5f34e2aae603a8eaab14b50`。`scripts/test-public-device-environment.ps1` 对当前账号 Dev 设备的唯一测试命名空间写入合成未知状态（不采集真实定位），最新状态、默认不传坐标、停止、旧请求 409 均通过，最后清除敏感快照并保留短期防重放 tombstone。
+
+公网外部授权回归通过：4 项资源发现、邀请快照 2 项、申请全部、批准 1 项只读、未选资源拒绝、grant 撤销。该轮由测试客户端批准自身合成申请，`deviceApproval=False`，不能当成实体手机点击授权或通知延迟验收。
+
+功能提交 `b9d2ffe9a8bd66d1197a0d04c1eaf2ebab7054c9` 经 main push → Cloudflare Auto Builds 成功，构建 `88becc2f-a94f-4c91-9686-971d9d4f5ee7`；公网健康检查 `deviceEnvironmentProtocol=1`，实际完整账号环境 GET 200、`Cache-Control: no-store`。GitHub [工程检查 37114681750](https://github.com/luoluoluo22/yanzi/actions/runs/37114681750) 的 Linux 与 Windows 两个任务均 success，含新增环境 Worker/D1 回归。未使用本地直接部署。
 
 尚未验收：真机定位授权后的 GPS/网络定位精度、实际重启、24 小时采样延迟/耗电、息屏/Doze/厂商杀后台。未实现及时模式、Wi-Fi 家绑定、围栏或自动设备切换。不得用亮屏 smoke 或减少请求的理论比例代替这些验收。
