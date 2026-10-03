@@ -39,3 +39,11 @@
 - 发布入口：GitHub `android-v0.2.46` 与公网 `/downloads/android/yanzi-mobile-0.2.46.apk`；公开清单继续使用现有 R2 发布脚本，无 Worker 手动部署。
 
 本轮没有断点续传；切换节点会重新下载。小样本能筛掉当时不可用的节点，但不能保证后续整段传输不会断开。
+
+## 发布确认（2026-10-04）
+
+代码提交 `edef88fc6a6676caf3bb7e10cf179a2de9157eee` 已推送 main，GitHub `android-v0.2.46` 指向该提交且不是草稿。APK 资产大小与 SHA256 匹配，中文说明已通过 UTF-8 REST 更新。R2 APK 和公开更新清单均已发布；独立下载完整 `90883440` 字节的公开 APK（本次电脑网络约 7.88 秒），SHA256 与本地测试包完全一致。
+
+发布后的 0.2.46 样本再次确认云端、GitHub、ghfast 字节一致；ddlc 429、kkgithub TLS 主机名不匹配。独立证据为 `%TEMP%/YanziDev/update-046/public-release-verification.json` 和 `nodes-public-046.json`。
+
+用户更新地址：[Android 0.2.46 APK](https://sync.luoluoluo.cc.cd/downloads/android/yanzi-mobile-0.2.46.apk)。一加实体机最终为 Dev 0.2.46-dev，现有生产 0.2.45 安装保持；未安装生产包或清除用户数据。
