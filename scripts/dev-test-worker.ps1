@@ -1,15 +1,17 @@
+function Test-YanziWorkerProcess {
+    param($Process, [string]$ConfigPath = (Join-Path (Split-Path -Parent $PSScriptRoot) 'cloudflare/wrangler.toml'))
+    if (-not $Process) { return $false }
+    $commandLine = ([string]$Process.CommandLine).Replace('/', '\')
+    $config = [IO.Path]::GetFullPath($ConfigPath).Replace('/', '\')
+    return $commandLine -match 'wrangler.*\bdev\b' -and
+        $commandLine -match ([regex]::Escape($config) + '(?=["\s]|$)')
+}
+
 function Stop-YanziLocalWorkerPort {
     param(
         [Parameter(Mandatory = $true)]
         [int]$Port
     )
-
-    function Is-YanziWorkerProcess($process) {
-        if (-not $process) { return $false }
-        $commandLine = [string]$process.CommandLine
-        return $commandLine -match "wrangler.*\bdev\b" -and
-               $commandLine -match "OpenQuickHost[\\/]cloudflare[\\/]wrangler\.toml"
-    }
 
     $listeners = @(Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue)
     foreach ($listener in $listeners) {
@@ -21,7 +23,7 @@ function Stop-YanziLocalWorkerPort {
             $candidate = Get-CimInstance Win32_Process -Filter "ProcessId=$($owner.ParentProcessId)" -ErrorAction SilentlyContinue
         }
 
-        if (-not (Is-YanziWorkerProcess $candidate)) {
+        if (-not (Test-YanziWorkerProcess $candidate)) {
             throw "Port $Port is occupied by an unrelated process: $($owner.Name) PID=$($owner.ProcessId)"
         }
 
@@ -29,7 +31,7 @@ function Stop-YanziLocalWorkerPort {
         for ($depth = 0; $depth -lt 8; $depth++) {
             if (-not $root.ParentProcessId) { break }
             $parent = Get-CimInstance Win32_Process -Filter "ProcessId=$($root.ParentProcessId)" -ErrorAction SilentlyContinue
-            if (-not (Is-YanziWorkerProcess $parent)) { break }
+            if (-not (Test-YanziWorkerProcess $parent)) { break }
             $root = $parent
         }
 

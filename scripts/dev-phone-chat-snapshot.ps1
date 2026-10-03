@@ -12,7 +12,7 @@
         if ($entries.Count -eq 0) { return $false }
         tar -xf $archive -C $snapshot @entries
         if ($LASTEXITCODE -ne 0) { return $false }
-        $found = & node (Join-Path $PSScriptRoot 'node/check-phone-chat.mjs') (Join-Path $snapshot 'databases/yanzi-chat-history.db') $Marker 2>$null
+        $found = & node --no-warnings (Join-Path $PSScriptRoot 'node/check-phone-chat.mjs') (Join-Path $snapshot 'databases/yanzi-chat-history.db') $Marker 2>$null
         return $found -eq 'true'
     } finally {
         foreach ($name in @('yanzi-chat-history.db','yanzi-chat-history.db-wal','yanzi-chat-history.db-shm')) {
