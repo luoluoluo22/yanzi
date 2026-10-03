@@ -116,20 +116,27 @@ public final class ApplicationCatalogActivity extends Activity {
     }
     private void downloadApk(JSONObject app)throws Exception{
         if(BuildConfig.VERSION_CODE<app.optInt("minHostVersionCode",0))throw new IllegalStateException("请先更新燕子主应用");
-        ui(()->status.setText("正在下载并校验…"));HttpURLConnection c=connection(assetUrl(app));
-        File target=new File(getCacheDir(),"application-"+app.getString("applicationId")+".apk");MessageDigest digest=MessageDigest.getInstance("SHA-256");long count=0;
+        ui(()->status.setText("正在下载并校验…"));
+        File target=new File(getCacheDir(),"application-"+app.getString("applicationId")+".apk");
         try{
-            if(c.getResponseCode()!=200)throw new IOException("下载服务不可用");
-            try(InputStream in=c.getInputStream();FileOutputStream out=new FileOutputStream(target)){
-                byte[] b=new byte[65536];int n;while((n=in.read(b))!=-1){count+=n;if(count>200L*1024*1024)throw new IOException("安装包过大");digest.update(b,0,n);out.write(b,0,n);}
-            }
-            if(count!=app.getLong("size")||!hex(digest.digest()).equals(app.getString("sha256")))throw new IOException("下载校验失败");
+            String hash=CloudRequestRetry.systemFirst(true,systemRoute->{
+                checkAccount();HttpURLConnection c=connection(assetUrl(app),systemRoute);
+                MessageDigest digest=MessageDigest.getInstance("SHA-256");long count=0;
+                try{
+                    if(c.getResponseCode()!=200)throw new IllegalStateException("下载失败，HTTP "+c.getResponseCode());
+                    try(InputStream in=c.getInputStream();FileOutputStream out=new FileOutputStream(target)){
+                        byte[] b=new byte[65536];int n;while((n=in.read(b))!=-1){count+=n;if(count>200L*1024*1024)throw new HttpResponseBody.TooLarge();digest.update(b,0,n);out.write(b,0,n);}
+                    }
+                    checkAccount();return hex(digest.digest());
+                }finally{c.disconnect();}
+            });
+            if(target.length()!=app.getLong("size")||!hash.equals(app.getString("sha256")))throw new IOException("下载校验失败");
             PackageInfo apk=getPackageManager().getPackageArchiveInfo(target.getAbsolutePath(),android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES);
             if(apk==null||!apk.packageName.equals(app.getString("packageName"))||apk.getLongVersionCode()!=app.getLong("versionCode"))throw new IOException("安装包身份不匹配");
             String signer=hex(MessageDigest.getInstance("SHA-256").digest(apk.signingInfo.getApkContentsSigners()[0].toByteArray()));
             if(!signer.equals(app.getString("certificateSha256")))throw new IOException("应用签名不匹配");
             checkAccount();ui(()->install(target));
-        }catch(Exception e){target.delete();throw e;}finally{c.disconnect();}
+        }catch(Exception e){target.delete();throw e;}
     }
     private void install(File apk){pendingApk=apk;
         if(!getPackageManager().canRequestPackageInstalls()){
@@ -144,27 +151,31 @@ public final class ApplicationCatalogActivity extends Activity {
         URL url=new URL(new URL(baseUrl),app.getString("downloadPath")),base=new URL(baseUrl);
         if(!url.getProtocol().equals("https")||!url.getHost().equals(base.getHost())||url.getPort()!=base.getPort()||!url.getPath().startsWith("/downloads/applications/"))throw new IOException("下载地址无效");return url;
     }
-    private static HttpURLConnection connection(URL url)throws Exception{
-        HttpURLConnection c=MobileNetworkRouting.openCloudConnection(url);c.setInstanceFollowRedirects(false);c.setConnectTimeout(15000);c.setReadTimeout(30000);return c;
+    private static HttpURLConnection connection(URL url,boolean systemRoute)throws Exception{
+        HttpURLConnection c=systemRoute?(HttpURLConnection)url.openConnection():MobileNetworkRouting.openCloudConnection(url);c.setInstanceFollowRedirects(false);c.setConnectTimeout(15000);c.setReadTimeout(30000);c.setRequestProperty("User-Agent","YanziClient-Mobile/"+BuildConfig.VERSION_NAME);return c;
     }
     private byte[] download(JSONObject app,int limit)throws Exception{
-        HttpURLConnection c=connection(assetUrl(app));try{if(c.getResponseCode()!=200)throw new IOException("下载失败");byte[] b=read(c.getInputStream(),limit);
-            if(b.length!=app.getLong("size")||!hex(MessageDigest.getInstance("SHA-256").digest(b)).equals(app.getString("sha256")))throw new IOException("应用校验失败");return b;
-        }finally{c.disconnect();}
+        URL url=assetUrl(app);
+        byte[] b=CloudRequestRetry.systemFirst(true,systemRoute->{checkAccount();HttpURLConnection c=connection(url,systemRoute);
+            try{if(c.getResponseCode()!=200)throw new IllegalStateException("下载失败，HTTP "+c.getResponseCode());return read(c.getInputStream(),limit);}finally{c.disconnect();}});
+        checkAccount();if(b.length!=app.getLong("size")||!hex(MessageDigest.getInstance("SHA-256").digest(b)).equals(app.getString("sha256")))throw new IOException("应用校验失败");return b;
     }
     private JSONObject json(String path,JSONObject input,boolean authenticated)throws Exception{
         return json(path,input,authenticated,input==null?"GET":"PUT");
     }
     private JSONObject json(String path,JSONObject input,boolean authenticated,String method)throws Exception{
-        HttpURLConnection c=connection(new URL(baseUrl+path));if(authenticated)c.setRequestProperty("Authorization","Bearer "+token);
+        return CloudRequestRetry.systemFirst("GET".equals(method),systemRoute->jsonOnce(path,input,authenticated,method,systemRoute));
+    }
+    private JSONObject jsonOnce(String path,JSONObject input,boolean authenticated,String method,boolean systemRoute)throws Exception{
+        checkAccount();HttpURLConnection c=connection(new URL(baseUrl+path),systemRoute);if(authenticated)c.setRequestProperty("Authorization","Bearer "+token);
         c.setRequestMethod(method);
         try{if(input!=null){c.setDoOutput(true);c.setRequestProperty("Content-Type","application/json");try(OutputStream out=c.getOutputStream()){out.write(input.toString().getBytes(StandardCharsets.UTF_8));}}
-            int code=c.getResponseCode();if(code!=200)throw new IOException(code==401?"登录已过期，请返回燕子重新登录":"服务返回 "+code);
-            return new JSONObject(new String(read(c.getInputStream(),128*1024),StandardCharsets.UTF_8));
+            int code=c.getResponseCode();if(code!=200)throw new IllegalStateException(code==401?"登录已过期，请返回燕子重新登录":"服务返回 "+code);
+            JSONObject value=new JSONObject(new String(read(c.getInputStream(),128*1024),StandardCharsets.UTF_8));checkAccount();return value;
         }finally{c.disconnect();}
     }
     private static byte[] read(InputStream stream,int limit)throws Exception{
-        try(InputStream in=stream;ByteArrayOutputStream out=new ByteArrayOutputStream()){byte[] b=new byte[4096];int n;while((n=in.read(b))!=-1){if(out.size()+n>limit)throw new IOException("响应过大");out.write(b,0,n);}return out.toByteArray();}
+        try(InputStream in=stream;ByteArrayOutputStream out=new ByteArrayOutputStream()){byte[] b=new byte[4096];int n;while((n=in.read(b))!=-1){if(out.size()+n>limit)throw new HttpResponseBody.TooLarge();out.write(b,0,n);}return out.toByteArray();}
     }
     private static String hex(byte[] b){StringBuilder s=new StringBuilder();for(byte v:b)s.append(String.format(java.util.Locale.ROOT,"%02x",v&255));return s.toString();}
 }

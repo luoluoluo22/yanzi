@@ -4,6 +4,12 @@ import java.net.SocketException;
 
 public final class CloudRequestRetryVerification {
     public static void main(String[] args) throws Exception {
+        int[] systemAttempts={0};
+        String systemResult=CloudRequestRetry.systemFirst(true,system->{systemAttempts[0]++;if(system)throw new SocketException("VPN reset");return "physical";});
+        if(!"physical".equals(systemResult)||systemAttempts[0]!=2)throw new AssertionError("System-first read fallback missing");
+        systemAttempts[0]=0;
+        try {CloudRequestRetry.systemFirst(false,system->{systemAttempts[0]++;if(!system)throw new AssertionError("Write bypassed VPN");throw new SocketException("write reset");});throw new AssertionError("Write replayed");}
+        catch(SocketException expected){if(systemAttempts[0]!=1)throw new AssertionError("Ambiguous write replayed");}
         int[] attempts={0};
         String result=CloudRequestRetry.execute(true, system -> {attempts[0]++;if(!system)throw new SocketException("Connection reset");return "ok";});
         if(!"ok".equals(result)||attempts[0]!=2)throw new AssertionError("No route fallback");

@@ -2,9 +2,6 @@ package cc.luoluoluo.yanzi.mobile;
 
 import org.json.JSONObject;
 
-import java.io.BufferedReader;
-import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -265,14 +262,23 @@ final class MobileExtensionStorageClient {
             String token,
             String method,
             JSONObject payload) throws Exception {
+        MobileSessionStore.Snapshot session = MobileSessionStore.snapshot(MobileApplicationContext.get());
+        return CloudRequestRetry.systemFirst("GET".equals(method),
+                systemRoute -> requestOnce(baseUrl,path,token,method,payload,systemRoute,session));
+    }
+
+    private static HttpResult requestOnce(String baseUrl,String path,String token,String method,
+                                         JSONObject payload,boolean systemRoute,MobileSessionStore.Snapshot session) throws Exception {
         String root = baseUrl == null ? "" : baseUrl.trim();
         while (root.endsWith("/")) {
             root = root.substring(0, root.length() - 1);
         }
 
-        HttpURLConnection connection =
-                MobileNetworkRouting.openCloudConnection(
-                        new URL(root + path));
+        session.requireCurrent();
+        URL url=new URL(root+path);
+        HttpURLConnection connection = systemRoute ? (HttpURLConnection)url.openConnection()
+                : MobileNetworkRouting.openCloudConnection(url);
+        try {
         connection.setRequestMethod(method);
         connection.setConnectTimeout(15000);
         connection.setReadTimeout(15000);
@@ -295,29 +301,10 @@ final class MobileExtensionStorageClient {
         }
 
         int statusCode = connection.getResponseCode();
-        String body = readBody(connection, statusCode);
-        connection.disconnect();
+        String body = HttpResponseBody.read(connection);
+        session.requireCurrent();
         return new HttpResult(statusCode, body);
-    }
-
-    private static String readBody(
-            HttpURLConnection connection,
-            int statusCode) throws Exception {
-
-        InputStream stream = statusCode >= 200 && statusCode < 300
-                ? connection.getInputStream()
-                : connection.getErrorStream();
-        if (stream == null) return "";
-
-        StringBuilder builder = new StringBuilder();
-        try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(stream, StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                builder.append(line);
-            }
-        }
-        return builder.toString();
+        } finally {connection.disconnect();}
     }
 
     private static JSONObject parseObject(String body) throws Exception {

@@ -6,6 +6,10 @@
 
 ---
 
+## 2026-10-03 Android 0.2.44 网络修复
+
+应用中心目录/下载与宿主小程序云存储优先使用系统网络（包含 VPN），安全读取在传输失败时最多切换一次物理网络，写入不自动重放。笔记使用宿主 HostStorage，更新主 APP 即获得修复。Dev/Release 构建、Java 故障注入、正式包模拟器升级数据保留与最新 Dev 小程序实际云对象读写通过。红米 K70 的用户现场 5G＋VPN 仍待更新后验收，详情见 [发布验证记录](../../docs/mobile-vpn-network-release-2026-10-03.md)。
+
 ## 2026-10-03 位置首版与后台请求优化
 
 新增通用 `device.environment` 原生桥接、独立设置 Activity、LocationManager 限时采集与 15 分钟持久 JobScheduler。用户小程序 `yanzi-location` 在用户 Extensions 目录开发，账号定义通过现有 Object Sync 单对象/CAS 和索引同步；主项目没有该 ID 的业务分支。家的坐标与原生任务设置仅本机保存、按账号/设备/小程序隔离并排除系统备份。默认不采集、不共享精确坐标；前后台权限分别说明。最新快照使用单独 D1 表，不进入带历史的同步对象，默认 TTL 24 小时，支持停止 tombstone 和旧序号保护。

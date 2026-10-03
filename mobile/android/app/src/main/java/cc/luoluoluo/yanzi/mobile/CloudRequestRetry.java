@@ -7,6 +7,10 @@ final class CloudRequestRetry {
         SessionChanged() { super("account_session_changed"); }
     }
     interface Request<T> { T run(boolean systemRoute) throws Exception; }
+    // Respect the user's VPN for these facades; only safe reads may try a physical network.
+    static <T> T systemFirst(boolean safe, Request<T> request) throws Exception {
+        return execute(safe, fallback -> request.run(!fallback));
+    }
     static boolean safe(String method, String path, boolean stableMessageId) {
         return "GET".equals(method) || "POST".equals(method) &&
                 ("/v1/me/devices".equals(path) || "/v1/me/devices/lan-links".equals(path)
