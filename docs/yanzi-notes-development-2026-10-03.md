@@ -53,3 +53,17 @@ NotesStore 新增按 deleted 状态查询，恢复仍走既有记录版本 CAS �
 线上旧消息不包含 authorization，初次真实云端请求被严格检查拒绝，已修正为经当前账号 authenticated /me message lookup 校验源/指定目标/账号/原输入；有 grant 时仍限定 account-owner。未手动部署 Worker，不需要后端变更。重试真机真实 cloud handoff 1 项通过（14.662 秒，完成回执）；Dev 两包已安装打开，生产包 code26 未变。初次 USB 中断后重连并以 push install 完成。
 
 验证：桌面 0 errors；Android app/notes Dev、Release、notes lintDev 通过；Node 7 项；隔离模拟器 UI/Provider/同步 5 项加后台事件/outbox 回归，产物 `%TEMP%/YanziNotesTest-c5b0e162cdd94b608685573d6dee6b27`。`scripts/test-notes-handoff.ps1` 验证真实编辑器/path、重复请求复用持久回执、错误账号、不存在笔记、过期拒绝。PhysicalHandoffTest 只显式调用真实 Provider，不清数据、不创建笔记、不写 fixture，云端 completed 回执已通过。正式应用中心尚未发布此迭代。
+
+
+## 正式发布：2026-10-03
+
+燕子 Android 0.2.36 与燕子笔记 0.1.4（versionCode 5）已正式发布。笔记应用中心最低宿主 versionCode 36；包含深色首页、全屏详情、已删除、事件驱动同步和指定电脑接续。接续需要电脑运行当前新版宿主及桌面笔记 0.2.4。
+
+- 主应用 Release：https://github.com/luoluoluo22/yanzi/releases/tag/android-v0.2.36
+- 主应用正式 APK：https://sync.luoluoluo.cc.cd/downloads/android/yanzi-mobile-0.2.36.apk
+- 笔记正式 APK：https://sync.luoluoluo.cc.cd/downloads/applications/yanzi-notes-0.1.4.apk
+- CI：https://github.com/luoluoluo22/yanzi/actions/runs/37089496316（success）
+
+两项正式下载 SHA-256 与本地 Release 包一致。笔记 SHA-256：52d2d025bdb54e28483cdd4d78925eadce13f9e40e201c457c2dff1dd0f86efb。便签、日历和相册目录版本保留，未覆盖真机正式应用。笔记业务源码仍在用户扩展目录；Git 中只增加签名正式 APK 发布输入及元数据，发布脚本保留 dataKeys。
+
+宿主更新检测现在处理 Connection reset、读取失败、HTTP 错误及无效 JSON，有限切换网络路径与 GitHub 备用源；公网 APK 下载失败后切换系统路径，继续执行哈希/包名/签名校验。旧版客户端不能被远端清单直接修复重试逻辑，仍无法检测时可下载上面的主应用 APK 覆盖升级，无需卸载。
