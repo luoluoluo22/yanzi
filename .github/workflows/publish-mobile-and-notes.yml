@@ -26,6 +26,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Apply device protocol database migrations
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_D1_API_TOKEN }}
         run: npx --yes wrangler@4 d1 migrations apply openquickhost-sync-db --remote --config cloudflare/wrangler.toml
       - name: Download and validate mobile release
         run: |
