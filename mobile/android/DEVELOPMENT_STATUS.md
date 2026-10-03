@@ -826,3 +826,9 @@ PC 聊天窗口的文字、照片、文件均可转云端；Android 照片和文
 - 新的工程 CI 和独立 Worker state 已接入；五项模拟器集成与清理后的干净 smoke 通过。
 - 真机脚本支持显式 Serial，聊天验收读取 SQLite；保留正式包与原有 Dev 偏好。
 - 执行及最终部署验收记录：`docs/engineering-foundation-implementation-2026-10-03.md`。
+### 2026-10-03 云端与一加 Dev 最终验收
+
+- main 的工程整改已由 Cloudflare Builds 自动部署，生产健康接口 foundationRevision 为 `2026-10-03-domains-v1`；GitHub Linux/Windows 工程 CI 均通过。
+- 一加安装当前 `0.2.42-dev / versionCode 42`，正式 `0.2.42` 安装路径与版本保持；不清正式或 Dev 用户数据。最终 UI 渲染、无 Fatal/ANR 检查通过。
+- 完整真机消息桥、公网账号对象（UTF-8、CAS、历史、tombstone）、公网双向聊天/图片/文件 SHA256 与进程重启补收、局域网分块 ACK 丢失恢复与重复发送持久化去重全部通过。
+- 测试结束已恢复 Dev 的原公网账号/配对设置，删除临时公网附件和临时凭据副本，桌面开发程序恢复运行；精确验收证据见整改执行记录。

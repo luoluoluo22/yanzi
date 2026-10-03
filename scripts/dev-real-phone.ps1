@@ -1,6 +1,7 @@
-param(
+﻿param(
     [string]$Serial = "",
     [switch]$SkipBuild,
+    [switch]$SkipInstall,
     [switch]$NoScreenshot
 )
 
@@ -83,10 +84,12 @@ if (-not (Test-Path $Apk)) {
     throw "Dev APK not found: $Apk"
 }
 
-Write-Host "Installing DEV package only: $DevPackage"
-& $Adb -s $Serial install -r $Apk
-if ($LASTEXITCODE -ne 0) {
-    throw "Dev APK install failed. Production Yanzi was not modified."
+if (-not $SkipInstall) {
+    Write-Host "Installing DEV package only: $DevPackage"
+    & $Adb -s $Serial install -r $Apk
+    if ($LASTEXITCODE -ne 0) {
+        throw "Dev APK install failed. Production Yanzi was not modified."
+    }
 }
 
 $productionAfterInstall = Get-PackageSnapshot $ProductionPackage
@@ -122,6 +125,34 @@ Write-Host $focusText
 if ($focusText -notmatch [regex]::Escape($DevPackage)) {
     throw "Yanzi Dev did not become the foreground app."
 }
+
+# A focused Activity can still be on its blank launch frame. Verify rendered app content.
+New-Item -ItemType Directory -Force -Path $ArtifactRoot | Out-Null
+$uiRemote = '/sdcard/yanzi-dev-smoke-ui.xml'
+$uiLocal = Join-Path $ArtifactRoot 'android-ui.xml'
+$uiDeadline = (Get-Date).AddSeconds(25)
+$visibleAppNodes = 0
+do {
+    $nativePreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { & $Adb -s $Serial shell uiautomator dump $uiRemote 2>$null | Out-Null }
+    finally { $ErrorActionPreference = $nativePreference }
+    if ($LASTEXITCODE -eq 0) {
+        $ErrorActionPreference = 'Continue'
+        try { & $Adb -s $Serial pull $uiRemote $uiLocal 2>$null | Out-Null }
+        finally { $ErrorActionPreference = $nativePreference }
+        if ($LASTEXITCODE -eq 0 -and (Test-Path $uiLocal)) {
+            [xml]$ui = Get-Content $uiLocal -Raw -Encoding UTF8
+            $visibleAppNodes = @($ui.SelectNodes('//node') | Where-Object {
+                $_.package -eq $DevPackage -and -not [string]::IsNullOrWhiteSpace($_.text)
+            }).Count
+        }
+    }
+    if ($visibleAppNodes -ge 3) { break }
+    Start-Sleep -Milliseconds 500
+} while ((Get-Date) -lt $uiDeadline)
+if ($visibleAppNodes -lt 3) { throw 'Dev Activity focused but its content did not render.' }
+Write-Host "Rendered Dev UI text nodes: $visibleAppNodes"
 
 $appPid = (& $Adb -s $Serial shell pidof $DevPackage 2>$null).Trim()
 New-Item -ItemType Directory -Force -Path $ArtifactRoot | Out-Null

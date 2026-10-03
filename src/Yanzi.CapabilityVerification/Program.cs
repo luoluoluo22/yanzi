@@ -21,6 +21,9 @@ if (args.Length == 2 && args[0] == "--send-mobile-lan")
 {
     using var config = JsonDocument.Parse(await File.ReadAllTextAsync(args[1]));
     var value = config.RootElement;
+    using var isolatedRoot = value.TryGetProperty("dataRoot", out var dataRoot)
+        ? (IDisposable)typeof(HostAssets).GetMethod("UseExistingDataRootForVerification", BindingFlags.Static | BindingFlags.NonPublic)!
+            .Invoke(null, [dataRoot.GetString()!])! : null;
     if (value.TryGetProperty("peerDeviceId", out var peerId))
         YanziPeerRegistry.ObserveAuthenticated(peerId.GetString()!, IPAddress.Parse(value.GetProperty("ip").GetString()!),
             value.GetProperty("port").GetInt32(), "Isolated Dev receive fixture");

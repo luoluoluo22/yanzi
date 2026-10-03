@@ -1,4 +1,4 @@
-﻿function Test-YanziPhoneChatMessage([string]$Adb, [string]$Serial, [string]$Package, [string]$Marker, [string]$ArtifactRoot) {
+﻿function Test-YanziPhoneChatMessage([string]$Adb, [string]$Serial, [string]$Package, [string]$Marker, [string]$ArtifactRoot, [switch]$Contains, [int]$ExpectedCount = 0) {
     if ($Package -ne 'cc.luoluoluo.yanzi.mobile.dev') { throw 'Chat verification requires the isolated Dev package.' }
     $snapshot = Join-Path $ArtifactRoot ('chat-snapshot-' + [Guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Force -Path $snapshot | Out-Null
@@ -12,7 +12,8 @@
         if ($entries.Count -eq 0) { return $false }
         tar -xf $archive -C $snapshot @entries
         if ($LASTEXITCODE -ne 0) { return $false }
-        $found = & node --no-warnings (Join-Path $PSScriptRoot 'node/check-phone-chat.mjs') (Join-Path $snapshot 'databases/yanzi-chat-history.db') $Marker 2>$null
+        $mode = if ($Contains) { 'contains' } else { 'exact' }
+        $found = & node --no-warnings (Join-Path $PSScriptRoot 'node/check-phone-chat.mjs') (Join-Path $snapshot 'databases/yanzi-chat-history.db') $Marker $mode $ExpectedCount 2>$null
         return $found -eq 'true'
     } finally {
         foreach ($name in @('yanzi-chat-history.db','yanzi-chat-history.db-wal','yanzi-chat-history.db-shm')) {

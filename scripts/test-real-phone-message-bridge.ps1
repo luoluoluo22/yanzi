@@ -1,4 +1,4 @@
-﻿param([int]$Port = 8811, [switch]$SkipBuild, [switch]$IncludeFinalScreenOff, [switch]$VerifyAccountLan, [switch]$CapabilitiesOnly, [switch]$VerifyAlbumWorkflow, [string]$Serial = '')
+﻿param([int]$Port = 8811, [switch]$SkipBuild, [switch]$IncludeFinalScreenOff, [switch]$VerifyAccountLan, [switch]$CapabilitiesOnly, [switch]$VerifyAlbumWorkflow, [string]$Serial = '', [switch]$SkipInstall)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
 $clipboardSnapshot = New-Object System.Windows.Forms.DataObject
@@ -13,6 +13,7 @@ if ($null -ne $clipboardOriginal) {
     }
 }
 . (Join-Path $PSScriptRoot 'dev-test-worker.ps1')
+. (Join-Path $PSScriptRoot 'dev-phone-chat-snapshot.ps1')
 $repo = Split-Path -Parent $PSScriptRoot
 $adb = 'F:\SDK\platform-tools\adb.exe'
 $package = 'cc.luoluoluo.yanzi.mobile.dev'
@@ -110,7 +111,11 @@ if (-not $SkipBuild) {
     dotnet build (Join-Path $repo 'src\Yanzi.SyncVerification\Yanzi.SyncVerification.csproj') -p:BuildProjectReferences=false -p:SkipStopRunningApp=true -v:q
     if ($LASTEXITCODE -ne 0) { throw 'Windows verification build failed.' }
 }
-AdbChecked @('install','-r',(Join-Path $repo 'mobile\android\app\build\manual-dev\yanzi-mobile-dev.apk')) | Out-Null
+if (-not $SkipInstall) {
+    AdbChecked @('install','-r',(Join-Path $repo 'mobile\android\app\build\manual-dev\yanzi-mobile-dev.apk')) | Out-Null
+} else {
+    if (-not ((AdbChecked @('shell','pm','path',$package)) -match '^package:')) { throw 'Dev package is not installed.' }
+}
 AdbChecked @('shell','am','force-stop',$package) | Out-Null
 AdbChecked @('shell','run-as',$package,'mkdir','-p','shared_prefs') | Out-Null
 SaveBinaryOutput "exec-out run-as $package tar -cf - shared_prefs" $backup
@@ -314,11 +319,7 @@ try {
         $chatResult = Get-Content $chatResultPath -Raw | ConvertFrom-Json
         if ($chatResult.PSObject.Properties['error'] -or $chatResult.input -ne '' -or -not $chatResult.status) { throw 'Chat window did not enqueue cloud message successfully.' }
         WaitUntil {
-            [xml]$chatPrefs = (@(& $adb -s $serial exec-out run-as $package cat shared_prefs/yanzi-mobile.xml) -join "`n")
-            $historyNodes = @($chatPrefs.map.string | Where-Object {$_.name -eq 'desktop_chat_history'})
-            if ($historyNodes.Count -eq 0) { return $false }
-            $history = [string]$historyNodes[0].'#text'
-            $history.Contains($chatText)
+            Test-YanziPhoneChatMessage $adb $serial $package $chatText $artifact
         } 'CHAT_WINDOW_TO_PHONE_HISTORY'
     }
     WaitUntil { (Get-Content (Join-Path $desktopRoot 'logs\host.log') -Raw) -match 'Mobile bridge realtime connected' } 'WINDOWS_WEBSOCKET_CONNECTED'
@@ -330,7 +331,7 @@ try {
         $latencies += ([DateTimeOffset]$detail.ackedAt - [DateTimeOffset]$detail.createdAt).TotalMilliseconds
     }
     $ordered = @($latencies | Sort-Object)
-    [IO.File]::WriteAllText((Join-Path $artifact 'latency.json'), (@{sampleCount=10;medianMs=$ordered[5];p95Ms=$ordered[9];samplesMs=$latencies} | ConvertTo-Json))
+    [IO.File]::WriteAllText((Join-Path $artifact 'latency.json'), (@{sampleCount=10;medianMs=(($ordered[4]+$ordered[5])/2);p95Ms=$ordered[9];samplesMs=$latencies} | ConvertTo-Json))
     foreach ($photo in @($false,$true)) {
         $name = if ($photo) { 'pc-verification.png' } else { 'pc-verification.bin' }
         $filePath = Join-Path $artifact $name

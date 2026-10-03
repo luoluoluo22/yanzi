@@ -78,7 +78,7 @@ try {
             $latencies+=([DateTimeOffset]$detail.ackedAt-[DateTimeOffset]$detail.createdAt).TotalMilliseconds
         }
         $ordered=@($latencies | Sort-Object)
-        [IO.File]::WriteAllText((Join-Path $artifact 'latency.json'),(@{sampleCount=10;medianMs=$ordered[5];p95Ms=$ordered[9];samplesMs=$latencies} | ConvertTo-Json))
+        [IO.File]::WriteAllText((Join-Path $artifact 'latency.json'),(@{sampleCount=10;medianMs=(($ordered[4]+$ordered[5])/2);p95Ms=$ordered[9];samplesMs=$latencies} | ConvertTo-Json))
         foreach ($photo in @($false,$true)) {
             $name=if ($photo) {'public-verification.png'} else {'public-verification.bin'}
             $filePath=Join-Path $artifact $name
@@ -95,17 +95,29 @@ try {
             $testAttachments.Add($detail.payload.attachmentId)
             $attachmentId=$detail.payload.attachmentId
             WaitPublic { (PublicRequest ("/v1/me/mobile/messages/"+$result.messageId)).status -eq 'acked' } 'PUBLIC_ATTACHMENT_PHONE_ACK'
-            WaitPublic { (@(& $adb -s $serial shell run-as $package sh -c ('"sha256sum files/mobile-attachments/'+$attachmentId+'* 2>/dev/null"')) -join "`n").Contains($hash) } 'PUBLIC_PC_TO_PHONE_ATTACHMENT_HASH'
+            WaitPublic {
+                $names = @(& $adb -s $serial shell run-as $package ls files/mobile-attachments)
+                $hashes = @($names | Where-Object { $_ -match '^[a-zA-Z0-9_.-]+$' -and $_.StartsWith($attachmentId+'-') -and $_.EndsWith($name) } | ForEach-Object {
+                    & $adb -s $serial shell run-as $package sha256sum ('files/mobile-attachments/'+$_)
+                }) -join "`n"
+                $hashes.Contains($hash)
+            } 'PUBLIC_PC_TO_PHONE_ATTACHMENT_HASH'
             & $adb -s $serial push $filePath /data/local/tmp/verification-attachment | Out-Null
             & $adb -s $serial shell run-as $package mkdir -p cache | Out-Null
             & $adb -s $serial shell run-as $package cp /data/local/tmp/verification-attachment cache/verification-attachment | Out-Null
             $kind=if ($photo) {'photo'} else {'file'}
+            $beforeMessageIds=@(Get-Content (Join-Path $existing 'mobile-inbox.jsonl') | ForEach-Object { try { ($_ | ConvertFrom-Json).messageId } catch {} })
             $beforeFiles=@(Get-ChildItem (Join-Path $existing 'mobile-attachments') -File -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName)
             & $adb -s $serial shell am start -f 0x10008000 -n "$package/cc.luoluoluo.yanzi.mobile.MainActivity" --es verify_message_kind $kind --es verify_message_text public-attachment-roundtrip | Out-Null
             WaitPublic {
                 $files=@(Get-ChildItem (Join-Path $existing 'mobile-attachments') -File -ErrorAction SilentlyContinue | Where-Object {$_.Extension -ne '.part'})
                 @($files | Where-Object { $beforeFiles -notcontains $_.FullName -and (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -eq $hash }).Count -gt 0
             } 'PUBLIC_PHONE_TO_PC_ATTACHMENT_HASH'
+            WaitPublic {
+                @(Get-Content (Join-Path $existing 'mobile-inbox.jsonl') | ForEach-Object { try { $_ | ConvertFrom-Json } catch {} } | Where-Object {
+                    $beforeMessageIds -notcontains $_.messageId -and $_.text -eq 'public-attachment-roundtrip' -and $_.payload.sha256 -eq $hash
+                }).Count -gt 0
+            } 'PUBLIC_PHONE_ATTACHMENT_INBOX_RECORD'
             $incoming=Get-Content (Join-Path $existing 'mobile-inbox.jsonl') | ForEach-Object { try { $_ | ConvertFrom-Json } catch {} } | Where-Object {$_.text -eq 'public-attachment-roundtrip' -and $_.payload.sha256 -eq $hash} | Select-Object -Last 1
             if ($incoming -and $incoming.payload.attachmentId) { $testAttachments.Add($incoming.payload.attachmentId) }
         }
@@ -126,8 +138,17 @@ try {
     $summary=if ($TextOnly) {'PUBLIC_CHAT_WINDOW_TO_PHONE=PASSED'} else {'PUBLIC_BIDIRECTIONAL_REALTIME_ATTACHMENTS_AND_RESTART=PASSED'}
     [IO.File]::WriteAllText((Join-Path $artifact 'result.txt'),$summary)
 } finally {
-    foreach ($id in $testAttachments) {
-        try { PublicRequest "/v1/me/mobile/attachments/$id" 'DELETE' | Out-Null } catch { Write-Warning 'Temporary public attachment cleanup deferred.' }
+    $cleanupFailed = $false
+    foreach ($id in @($testAttachments | Select-Object -Unique)) {
+        $removed = $false
+        foreach ($attempt in 1..3) {
+            try { PublicRequest "/v1/me/mobile/attachments/$id" 'DELETE' | Out-Null; $removed = $true; break }
+            catch {
+                if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq 404) { $removed = $true; break }
+                if ($attempt -lt 3) { Start-Sleep -Milliseconds (500*$attempt) }
+            }
+        }
+        if (-not $removed) { $cleanupFailed = $true; Write-Warning 'Temporary public attachment cleanup failed.' }
     }
     if ($process -and -not $process.HasExited) {
         New-Item -ItemType File -Force (Join-Path $root 'stop') | Out-Null
@@ -137,4 +158,5 @@ try {
         Remove-Item -LiteralPath (Join-Path $root $name) -Force -ErrorAction SilentlyContinue
     }
     Write-Host "Artifacts: $artifact"
+    if ($cleanupFailed) { throw 'Public test completed but attachment cleanup failed.' }
 }
