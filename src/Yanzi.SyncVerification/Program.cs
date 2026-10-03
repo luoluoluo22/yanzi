@@ -2,6 +2,12 @@ using System.Text.Json;
 using OpenQuickHost;
 using OpenQuickHost.Sync;
 
+if (args.Length == 2 && args[0] == "--release-readiness")
+{
+    await ReleaseReadinessVerification.RunAsync(args[1]);
+    return;
+}
+
 if (args.Contains("--local-api-boundaries"))
 {
     await LocalApiBoundaryVerification.RunAsync();
@@ -31,6 +37,7 @@ if (args.Contains("--fresh-account-sync"))
     return;
 }
 
+ReleaseReadinessVerification.VerifyUninstallDataRetention();
 VerifyExtensionPackageStability();
 if (args.Contains("--package-stability")) return;
 VerifySyncArchitectureSafety();

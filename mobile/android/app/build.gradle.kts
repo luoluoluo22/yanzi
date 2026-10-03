@@ -1,6 +1,9 @@
 plugins {
     id("com.android.application")
 }
+providers.gradleProperty("YANZI_ANDROID_BUILD_ROOT").orNull?.let {
+    layout.buildDirectory.set(file(it))
+}
 val pushConfigPath = providers.gradleProperty("YANZI_FCM_CONFIG").orNull ?: System.getenv("YANZI_FCM_CONFIG")
 val pushConfigFile = pushConfigPath?.let { file(it) }
 val fcmEnabled = pushConfigFile?.isFile == true
@@ -19,6 +22,15 @@ android {
         targetSdk = 35
         versionCode = 42
         versionName = "0.2.42"
+        providers.gradleProperty("YANZI_ANDROID_VERSION_CODE").orNull?.let {
+            val candidate = it.toIntOrNull()
+            require(candidate != null && candidate > 0) { "Invalid candidate Android version code" }
+            versionCode = candidate
+        }
+        providers.gradleProperty("YANZI_ANDROID_VERSION_NAME").orNull?.let {
+            require(it.matches(Regex("[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?"))) { "Invalid candidate Android version name" }
+            versionName = it
+        }
         manifestPlaceholders["fcmEnabled"] = fcmEnabled.toString()
         if (fcmEnabled) {
             val config = pushConfigFile!!.readText().replace("\\", "\\\\").replace("\"", "\\\"").replace("\r", "").replace("\n", "")

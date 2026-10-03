@@ -832,3 +832,11 @@ PC 聊天窗口的文字、照片、文件均可转云端；Android 照片和文
 - 一加安装当前 `0.2.42-dev / versionCode 42`，正式 `0.2.42` 安装路径与版本保持；不清正式或 Dev 用户数据。最终 UI 渲染、无 Fatal/ANR 检查通过。
 - 完整真机消息桥、公网账号对象（UTF-8、CAS、历史、tombstone）、公网双向聊天/图片/文件 SHA256 与进程重启补收、局域网分块 ACK 丢失恢复与重复发送持久化去重全部通过。
 - 测试结束已恢复 Dev 的原公网账号/配对设置，删除临时公网附件和临时凭据副本，桌面开发程序恢复运行；精确验收证据见整改执行记录。
+
+### 2026-10-03 Release 升级与回滚准备
+
+- `build-android-mvp.ps1` 支持独立 ArtifactRoot / VersionCode / VersionName；候选 Release 为 43 / 0.2.43-rc.1，默认源码版本仍是 42 / 0.2.42。默认 Dev 独立构建验证仍为 0.2.42-dev。
+- 新增 emulator-only 的 `scripts/test-android-release-upgrade.py`：历史 0.2.36 → 候选覆盖升级 → 同版重装 → 降级旧版启动 → 再升级；75 条中文多行历史精确迁入 SQLite，无重复，离线测试会话、设备 ID、偏好和 1 MiB 本地文件哈希保留。
+- root/userdebug 模拟器允许 `-d`，不代表生产手机可直接降级；正式回滚宜发布更高 versionCode 的修复版。脚本 finally 清理临时账号并启动干净 Release。
+- 候选仍沿用历史 Android Debug 证书以保持覆盖兼容；Release signing 环境未显式配置。实体一加正式和 Dev 的 0.2.42 安装均未改变，本轮不发布正式 APK。
+- 详细产物、哈希、Windows 更新/数据兼容和 Cloudflare Builds 平台故障状态：`docs/release-readiness-2026-10-03.md`。

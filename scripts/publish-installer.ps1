@@ -3,7 +3,10 @@
     [string]$Runtime = "win-x64",
     [string]$Version = "0.1.0",
     [switch]$SkipInstaller,
-    [string]$GithubToken = ""
+    [string]$GithubToken = "",
+    [string]$ArtifactRoot = "",
+    [switch]$SkipBaselineDownload,
+    [switch]$KeepHistoricalPackages
 )
 
 $ErrorActionPreference = "Stop"
@@ -19,8 +22,17 @@ if ([string]::IsNullOrEmpty($Version) -or $Version -eq "0.1.0") {
     }
 }
 
-$publishDir = Join-Path $root ".artifacts\publish\$Runtime"
-$installerOutDir = Join-Path $root ".artifacts\installer"
+if ($Version -notmatch '^(\d+\.\d+\.\d+)(?:-[0-9A-Za-z.-]+)?$') {
+    throw "Version must be major.minor.patch with an optional prerelease suffix."
+}
+$assemblyVersion = $Matches[1] + '.0'
+if ([string]::IsNullOrWhiteSpace($ArtifactRoot)) { $ArtifactRoot = Join-Path $root '.artifacts' }
+$ArtifactRoot = [IO.Path]::GetFullPath($ArtifactRoot)
+$publishDir = [IO.Path]::GetFullPath((Join-Path $ArtifactRoot "publish\$Runtime"))
+$installerOutDir = Join-Path $ArtifactRoot 'installer'
+if (-not $publishDir.StartsWith($ArtifactRoot.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'Publish directory must be inside the artifact root.'
+}
 
 function Assert-PayloadFile {
     param(
@@ -47,7 +59,7 @@ function Assert-PayloadDirectory {
 }
 
 if (Test-Path $publishDir) {
-    Remove-Item -Path $publishDir -Recurse -Force
+    Remove-Item -LiteralPath $publishDir -Recurse -Force
 }
 if (-not (Test-Path $installerOutDir)) {
     New-Item -ItemType Directory -Force -Path $installerOutDir | Out-Null
@@ -63,20 +75,23 @@ $publishArgs = @(
     "--source", "https://repo.huaweicloud.com/repository/nuget/v3/index.json",
     "-p:Version=$Version",
     "-p:InformationalVersion=$Version",
-    "-p:FileVersion=$Version.0",
-    "-p:AssemblyVersion=$Version.0",
+    "-p:FileVersion=$assemblyVersion",
+    "-p:AssemblyVersion=$assemblyVersion",
     "-p:PublishSingleFile=false",
     "-p:SatelliteResourceLanguages=zh-Hans",
     "-p:DebugType=None",
     "-p:DebugSymbols=false",
     "-p:CETCompat=false",
+    "-p:SkipStopRunningApp=true",
     "-o", $publishDir
 )
 dotnet @publishArgs
+if ($LASTEXITCODE -ne 0) { throw 'Desktop publish failed.' }
 
 Write-Host "Verifying installer payload..."
 Assert-PayloadFile "Yanzi.exe"
 Assert-PayloadFile "Yanzi.dll"
+Assert-PayloadFile "Yanzi.Core.dll"
 Assert-PayloadFile "Yanzi.deps.json"
 Assert-PayloadFile "Yanzi.runtimeconfig.json"
 Assert-PayloadFile "coreclr.dll"
@@ -138,7 +153,7 @@ if (-not $SkipInstaller) {
         }
     }
 
-    if (-not $hasLocalPreviousReleases) {
+    if (-not $hasLocalPreviousReleases -and -not $SkipBaselineDownload) {
         Write-Host "No local previous releases found. Downloading from GitHub for delta generation..."
         $downloadArgs = @("download", "github", "--repoUrl", "https://github.com/luoluoluo22/yanzi", "--outputDir", $installerOutDir)
         if ($GithubToken) {
@@ -153,7 +168,9 @@ if (-not $SkipInstaller) {
         }
     }
 
-    Get-ChildItem -Path $installerOutDir -File | Where-Object { $_.Name -match [regex]::Escape($cleanVer) } | Remove-Item -Force -ErrorAction SilentlyContinue
+    foreach ($name in @("Yanzi-$cleanVer-full.nupkg", "Yanzi-$cleanVer-delta.nupkg", "Yanzi-win-Setup-$cleanVer.exe", "Yanzi-win-Portable-$cleanVer.zip")) {
+        Remove-Item -LiteralPath (Join-Path $installerOutDir $name) -Force -ErrorAction SilentlyContinue
+    }
     if (Test-Path $releasesFile) {
         $lines = Get-Content $releasesFile | Where-Object { $_ -notmatch [regex]::Escape($cleanVer) }
         Set-Content -Path $releasesFile -Value $lines
@@ -182,34 +199,29 @@ if (-not $SkipInstaller) {
         Rename-Item -Path $setupFile -NewName "Yanzi-win-Setup-$Version.exe" -Force
     }
 
-    Write-Host "Creating portable ZIP archive..."
-    $rawZip = Join-Path $installerOutDir "Yanzi-win-Portable.zip"
-    if (Test-Path $rawZip) {
-        Remove-Item -Path $rawZip -Force
-    }
-    Compress-Archive -Path "$publishDir\*" -DestinationPath $rawZip -Force
-
+    # Keep Velopack's portable layout, updater and .portable marker.
     $zipFile = Join-Path $installerOutDir "Yanzi-win-Portable.zip"
-    if (Test-Path $zipFile) {
-        Rename-Item -Path $zipFile -NewName "Yanzi-win-Portable-$Version.zip" -Force
-    }
+    if (-not (Test-Path $zipFile)) { throw 'Velopack portable package is missing.' }
+    Rename-Item -LiteralPath $zipFile -NewName "Yanzi-win-Portable-$Version.zip" -Force
 
     # 智能保留最近 2 个版本的 full.nupkg 作为下次本地增量基准，仅清理历史旧 exe/zip 和过期 delta 包
-    Write-Host "Cleaning up historical packages in output directory..."
-    $cleanVersion = $Version.TrimStart("vV")
-    Get-ChildItem -Path $installerOutDir -File | Where-Object {
-        ($_.Extension -in @(".exe", ".zip")) -and ($_.Name -notmatch [regex]::Escape($cleanVersion))
-    } | Remove-Item -Force -ErrorAction SilentlyContinue
+    if (-not $KeepHistoricalPackages) {
+        Write-Host "Cleaning up historical packages in output directory..."
+        $cleanVersion = $Version.TrimStart("vV")
+        Get-ChildItem -Path $installerOutDir -File | Where-Object {
+            ($_.Extension -in @(".exe", ".zip")) -and ($_.Name -notmatch [regex]::Escape($cleanVersion))
+        } | Remove-Item -Force -ErrorAction SilentlyContinue
 
-    Get-ChildItem -Path $installerOutDir -File -Filter "*-delta.nupkg" | Where-Object {
-        $_.Name -notmatch [regex]::Escape($cleanVersion)
-    } | Remove-Item -Force -ErrorAction SilentlyContinue
+        Get-ChildItem -Path $installerOutDir -File -Filter "*-delta.nupkg" | Where-Object {
+            $_.Name -notmatch [regex]::Escape($cleanVersion)
+        } | Remove-Item -Force -ErrorAction SilentlyContinue
 
-    $fullPackages = Get-ChildItem -Path $installerOutDir -File -Filter "*-full.nupkg" | Sort-Object LastWriteTime -Descending
-    if ($fullPackages.Count -gt 2) {
-        $fullPackages | Select-Object -Skip 2 | ForEach-Object {
-            Write-Host "Pruning aged baseline full package: $($_.Name)"
-            Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue
+        $fullPackages = Get-ChildItem -Path $installerOutDir -File -Filter "*-full.nupkg" | Sort-Object LastWriteTime -Descending
+        if ($fullPackages.Count -gt 2) {
+            $fullPackages | Select-Object -Skip 2 | ForEach-Object {
+                Write-Host "Pruning aged baseline full package: $($_.Name)"
+                Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue
+            }
         }
     }
 

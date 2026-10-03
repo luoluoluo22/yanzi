@@ -3,7 +3,10 @@
     [ValidateSet("debug", "dev", "release")]
     [string]$Configuration = "debug",
     [ValidateSet("app", "calendar", "album", "notes")]
-    [string]$Module = "app"
+    [string]$Module = "app",
+    [int]$VersionCode = 0,
+    [string]$VersionName = "",
+    [string]$ArtifactRoot = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -32,10 +35,24 @@ $task = switch ($Configuration) {
     default { "${Module}:assembleDebug" }
 }
 $variant = $Configuration.ToLowerInvariant()
+$versionArgs = @()
+if ($VersionCode -lt 0) { throw 'VersionCode must be positive or zero to use the project version.' }
+if ($VersionCode -gt 0) { $versionArgs += "-PYANZI_ANDROID_VERSION_CODE=$VersionCode" }
+if ($VersionName) {
+    if ($VersionName -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') { throw 'Invalid Android version name.' }
+    $versionArgs += "-PYANZI_ANDROID_VERSION_NAME=$VersionName"
+}
+if ($Module -ne 'app' -and $versionArgs.Count) { throw 'Candidate version overrides only apply to the main app.' }
+$candidateBuildRoot = ''
+if ($ArtifactRoot) {
+    if ($Module -ne 'app') { throw 'An isolated artifact root only applies to the main app.' }
+    $candidateBuildRoot = Join-Path ([IO.Path]::GetFullPath($ArtifactRoot)) 'android\app'
+    $versionArgs += "-PYANZI_ANDROID_BUILD_ROOT=$candidateBuildRoot"
+}
 
 Push-Location $AndroidRoot
 try {
-    & $GradleWrapper $task --no-daemon
+    & $GradleWrapper $task @versionArgs --no-daemon
     if ($LASTEXITCODE -ne 0) {
         throw "Gradle build failed: $LASTEXITCODE"
     }
@@ -45,12 +62,13 @@ finally {
 }
 
 $moduleRoot = if ($Module -in @('album','notes')) { Join-Path $env:LOCALAPPDATA ('OpenQuickHost\Extensions\yanzi-' + $Module + '\android') } else { Join-Path $AndroidRoot $Module }
-$sourceApk = Join-Path $moduleRoot "build\outputs\apk\$variant\$Module-$variant.apk"
+$moduleBuildRoot = if ($candidateBuildRoot) { $candidateBuildRoot } else { Join-Path $moduleRoot 'build' }
+$sourceApk = Join-Path $moduleBuildRoot "outputs\apk\$variant\$Module-$variant.apk"
 if (-not (Test-Path $sourceApk)) {
     throw "Gradle completed but APK was not found: $sourceApk"
 }
 
-$outputDir = Join-Path $moduleRoot "build\manual-$variant"
+$outputDir = Join-Path $moduleBuildRoot "manual-$variant"
 New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
 
 $artifactName = if ($Module -eq "calendar") { "yanzi-calendar" } elseif ($Module -in @('album','notes')) { 'yanzi-' + $Module } else { "yanzi-mobile" }
