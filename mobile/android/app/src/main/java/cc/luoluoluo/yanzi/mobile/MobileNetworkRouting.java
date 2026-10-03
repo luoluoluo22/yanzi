@@ -42,6 +42,22 @@ final class MobileNetworkRouting {
                 || host.startsWith("10.") || host.matches("172\\.(1[6-9]|2[0-9]|3[01])\\..*");
     }
 
+    static String lanNetworkKey() {
+        Context context = applicationContext != null ? applicationContext : MobileApplicationContext.get();
+        if (context == null) return "";
+        ConnectivityManager manager = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (manager == null) return "";
+        for (Network network : manager.getAllNetworks()) {
+            NetworkCapabilities caps = manager.getNetworkCapabilities(network);
+            if (caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+                    && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)) {
+                android.net.LinkProperties links = manager.getLinkProperties(network);
+                return network.toString() + ":" + (links == null ? "" : links.getLinkAddresses().toString());
+            }
+        }
+        return "";
+    }
+
     static void bindLanSocket(java.net.DatagramSocket socket) throws Exception {
         Context context = applicationContext != null ? applicationContext : MobileApplicationContext.get();
         if (context == null) return;

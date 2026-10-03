@@ -691,6 +691,10 @@ extends Activity {
 
     protected void onResume() {
         super.onResume();
+        // The isolated transfer fixture owns its temporary pairing; background account
+        // refresh must not replace it while the encrypted transfer is in progress.
+        if (BuildConfig.DEBUG && BuildConfig.APPLICATION_ID.endsWith(".dev")
+                && getIntent().getBooleanExtra("verify_desktop_lan", false)) return;
         sForeground = true;
         ExternalAccessManager.foreground(this);
         UpdateManager.resumePendingInstall(this);
@@ -4953,46 +4957,24 @@ extends Activity {
         });
     }
 
+    private final java.util.concurrent.atomic.AtomicBoolean connectionCheckBusy = new java.util.concurrent.atomic.AtomicBoolean();
+
     private void checkConnectionAsync() {
+        if (!connectionCheckBusy.compareAndSet(false, true)) return;
         this.executor.execute(() -> {
+            try {
+            MobileSessionStore.Snapshot connectionSession = MobileSessionStore.snapshot(this);
             boolean connected = false;
             String type = "";
             String offlineTitle = "电脑端未上线";
             String offlineDesc = "请确认电脑端程序已开启并在运行中";
-            String lanBaseUrl = cc.luoluoluo.yanzi.mobile.LanDiscoveryManager.getLanBaseUrl((Context)this);
-            if (lanBaseUrl == null) {
-                lanBaseUrl = cc.luoluoluo.yanzi.mobile.LanDiscoveryManager.cachedLanBaseUrl;
-            }
-            if (lanBaseUrl == null && this.prefs != null) {
-                AccountLanConnections.refresh(this, this.normalizedBaseUrl(), this.prefs.getString("token", ""), this.deviceId);
-            }
-            if (lanBaseUrl != null) {
-                try {
-                    String cleanUrl = lanBaseUrl;
-                    if (cleanUrl.endsWith("/")) {
-                        cleanUrl = cleanUrl.substring(0, cleanUrl.length() - 1);
-                    }
-                    java.net.URL url = new java.net.URL(cleanUrl + "/v1/me/devices/protocol");
-                    java.net.HttpURLConnection conn = MobileNetworkRouting.openLanConnection(url);
-                    conn.setRequestMethod("GET");
-                    conn.setConnectTimeout(2000);
-                    conn.setReadTimeout(2000);
-                    try {
-                        int code = conn.getResponseCode();
-                        if (code == 200) {
-                            connected = true;
-                            type = "lan";
-                            YanziApiClient.sLanFailedThisSession = false;
-                        }
-                    } finally { conn.disconnect(); }
-                } catch (Exception e) {
-                }
+            LanConnectionHealth.Status lanStatus = LanDiscoveryManager.checkHealth(this);
+            if (lanStatus != LanConnectionHealth.Status.UNAVAILABLE) {
+                connected = true;
+                type = lanStatus == LanConnectionHealth.Status.AVAILABLE ? "lan" : "reconnecting";
             }
             if (!connected) {
-                if (lanBaseUrl != null) {
-                    LanDiscoveryManager.clearLanBaseUrl(this);
-                    AccountLanConnections.refresh(this, this.normalizedBaseUrl(), this.prefs.getString("token", ""), this.deviceId);
-                }
+                AccountLanConnections.refresh(this, this.normalizedBaseUrl(), this.prefs.getString("token", ""), this.deviceId);
                 String token = this.prefs != null ? this.prefs.getString("token", "").trim() : "";
                 if (token.isEmpty()) {
                     offlineTitle = "请先登录账号";
@@ -5018,12 +5000,14 @@ extends Activity {
             final String finalOfflineTitle = offlineTitle;
             final String finalOfflineDesc = offlineDesc;
             this.runOnUiThread(() -> {
+                try { connectionSession.requireCurrent(); } catch (Exception changed) { return; }
                 this.isDesktopConnected = finalConnected;
                 this.desktopConnectionType = finalType;
                 this.desktopOfflineTitle = finalOfflineTitle;
                 this.desktopOfflineDesc = finalOfflineDesc;
                 this.updateConnectionUi();
             });
+            } finally { connectionCheckBusy.set(false); }
         });
     }
 
@@ -5042,7 +5026,10 @@ extends Activity {
                 this.mainDesktopContentLayout.setVisibility(View.VISIBLE);
             }
             if (this.tvDesktopConnectionStatus != null) {
-                if ("lan".equals(this.desktopConnectionType)) {
+                if ("reconnecting".equals(this.desktopConnectionType)) {
+                    this.tvDesktopConnectionStatus.setText(" (局域网重连中)");
+                    this.tvDesktopConnectionStatus.setTextColor(Color.rgb(245, 158, 11));
+                } else if ("lan".equals(this.desktopConnectionType)) {
                     this.tvDesktopConnectionStatus.setText(" (局域网)");
                     this.tvDesktopConnectionStatus.setTextColor(Color.rgb(34, 197, 94));
                 } else {

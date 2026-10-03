@@ -1861,6 +1861,7 @@ public class FloatingWheelService extends Service {
     }
 
     private static void handleLanSuccess(String action) {
+        LanDiscoveryManager.noteSuccess();
         if (sContext != null) {
             MobileDiagnostics.append(sContext, "局域网直连成功(" + action + ")");
         }
@@ -1871,10 +1872,9 @@ public class FloatingWheelService extends Service {
         android.util.Log.w("FloatingWheelService", "LAN fallback failed: " + message);
         if (sContext != null) {
             MobileDiagnostics.append(sContext, "局域网直连失败(" + action + ")，已回退公网：" + message);
-            LanDiscoveryManager.clearLanBaseUrl(sContext);
+            LanDiscoveryManager.noteTransportFailure(e);
         } else {
-            LanDiscoveryManager.cachedLanBaseUrl = null;
-            LanDiscoveryManager.cachedLanApiToken = null;
+            LanDiscoveryManager.noteTransportFailure(e);
         }
     }
 

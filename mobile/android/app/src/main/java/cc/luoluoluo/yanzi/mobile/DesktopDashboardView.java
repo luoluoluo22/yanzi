@@ -52,6 +52,10 @@ final class DesktopDashboardView {
                 iconName = "cloud-off-outline";
                 color = YanziUiKit.RED;
                 description = "离线";
+            } else if ("reconnecting".equals(type)) {
+                iconName = "lan-connect";
+                color = YanziUiKit.ORANGE;
+                description = "局域网重连中";
             } else if ("lan".equals(type)) {
                 iconName = "lan-connect";
                 color = YanziUiKit.GREEN;

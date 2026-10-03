@@ -62,9 +62,8 @@ final class AccountLanConnections {
                     }
                 }
                 editor.commit();
-                LanDiscoveryManager.resetDiscoveryBackoff();
                 status = items.length() == 0 ? "账号下暂无可连接的其他设备" : "已取得同账号设备连接信息，正在检测直连";
-                String lan = LanDiscoveryManager.discoverNow(context);
+                String lan = LanDiscoveryManager.discoverSync(context);
                 if (items.length() > 0) status = lan == null ? "已取得连接信息，局域网直连尚未建立" : "同账号局域网直连已建立";
             } catch (Exception error) {
                 if (error instanceof MobileMessageClient.HttpFailure) {

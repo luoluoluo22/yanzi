@@ -131,7 +131,7 @@ final class MobileDesktopTransfer {
                 android.util.Log.w("YanziSecureLan", "LAN upload failed", error);
                 MobileDiagnostics.append(context, "局域网文件直传失败，回退云端: " + error.getClass().getSimpleName()
                         + ", durationMs=" + (System.currentTimeMillis() - start) + ", id=" + id);
-                LanDiscoveryManager.clearLanBaseUrl(context);
+                LanDiscoveryManager.noteTransportFailure(error);
             } finally { if (connection != null) connection.disconnect(); }
         }
         if (queued == null && lanMessageId != null) return lanMessageId;

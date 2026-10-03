@@ -9,6 +9,7 @@ val pushConfigFile = pushConfigPath?.let { file(it) }
 val fcmEnabled = pushConfigFile?.isFile == true
 
 android {
+    testBuildType = "dev"
     namespace = "cc.luoluoluo.yanzi.mobile"
     compileSdk = 35
 
@@ -17,11 +18,12 @@ android {
     }
 
     defaultConfig {
+        testInstrumentationRunner = "cc.luoluoluo.yanzi.mobile.LanRecoveryTest"
         applicationId = "cc.luoluoluo.yanzi.mobile"
         minSdk = 26
         targetSdk = 35
-        versionCode = 44
-        versionName = "0.2.44"
+        versionCode = 45
+        versionName = "0.2.45"
         providers.gradleProperty("YANZI_ANDROID_VERSION_CODE").orNull?.let {
             val candidate = it.toIntOrNull()
             require(candidate != null && candidate > 0) { "Invalid candidate Android version code" }

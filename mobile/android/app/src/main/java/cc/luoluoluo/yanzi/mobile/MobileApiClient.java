@@ -706,7 +706,7 @@ class MobileApiClient {
                 } catch (DesktopOperationRejected rejected) { throw rejected; }
                 catch (Exception e) {
                     android.util.Log.i("YanziRelay", "--> LAN Direct failed (" + (System.currentTimeMillis() - lanStart) + "ms): " + e.getMessage());
-                    if (MobileApplicationContext.get() != null) LanDiscoveryManager.clearLanBaseUrl(MobileApplicationContext.get());
+                    LanDiscoveryManager.noteTransportFailure(e);
                 }
             }
 
@@ -734,21 +734,18 @@ class MobileApiClient {
         }
 
         static void handleLanSuccess(String action, String path) {
+            LanDiscoveryManager.noteSuccess();
             if (MobileApplicationContext.get() != null) {
                 MobileDiagnostics.append(MobileApplicationContext.get(), "\u5c40\u57df\u7f51\u76f4\u8fde\u6210\u529f(" + action + "): " + path);
             }
         }
 
         static void handleLanFailure(String action, Exception e) {
-            sLanFailedThisSession = true;
+            LanDiscoveryManager.noteTransportFailure(e);
             String message = e.getMessage() == null ? e.toString() : e.getMessage();
             Log.w((String)"ApiClient", (String)("LAN fallback failed: " + message));
             if (MobileApplicationContext.get() != null) {
                 MobileDiagnostics.append(MobileApplicationContext.get(), "\u5c40\u57df\u7f51\u76f4\u8fde\u5931\u8d25(" + action + ")\uff0c\u5df2\u56de\u9000\u516c\u7f51\uff1a" + message);
-                LanDiscoveryManager.clearLanBaseUrl(MobileApplicationContext.get());
-            } else {
-                LanDiscoveryManager.cachedLanBaseUrl = null;
-                LanDiscoveryManager.cachedLanApiToken = null;
             }
         }
 
