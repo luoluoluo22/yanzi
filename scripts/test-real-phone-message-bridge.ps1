@@ -231,7 +231,7 @@ try {
         if (-not $denied) { throw 'Companion accepted invalid checksum.' }
         Write-Host 'ALBUM_LARGE_IMAGE_CHUNKS_OFFSET_AND_CHECKSUM_REJECTION=PASSED'
     }
-    WaitUntil { @((Request '/v1/me/devices').items | Where-Object {$_.deviceId -eq $device})[0].lastSeenAt -ne $seenBefore } 'BACKGROUND_HEARTBEAT_ADVANCED'
+    WaitUntil { @((Request '/v1/me/devices').items | Where-Object {$_.deviceId -eq $device})[0].lastSeenAt -ne $seenBefore } 'BACKGROUND_HEARTBEAT_ADVANCED' 85
     $state = InvokePhoneCapability 'mobile.status.get'
     if ($state.deviceId -ne $device -or $state.revision -lt 1 -or $state.value.battery.percent -lt 0 -or -not $state.collectedAt) { throw 'Real phone state snapshot is incomplete.' }
     $catalog = InvokePhoneCapability 'mobile.capabilities.list'
@@ -284,7 +284,7 @@ try {
         $current = InvokePhoneCapability 'mobile.sync.status'
         if ($current.lastChangedAt -ne $beforeSync.lastChangedAt) { throw 'Unchanged polling incorrectly reported changed data.' }
         $current.lastCheckedAt -ne $beforeSync.lastCheckedAt -and $current.revision -eq $beforeSync.revision
-    } 'PERIODIC_SYNC_WITHOUT_REWRITING_UNCHANGED_DATA' 90
+    } 'PERIODIC_SYNC_WITHOUT_REWRITING_UNCHANGED_DATA' 325
     Request ('/v1/sync/objects/'+$syncObjectId) 'PUT' @{schemaVersion=1;expectedRevision=$syncWrite.object.revision;deviceId=$desktopDevice;deviceName='Fixture desktop';deleted=$true;payload=@{}} | Out-Null
     WaitUntil {
         $result = InvokePhoneCapability 'mobile.data.read' @{objectId=$syncObjectId}

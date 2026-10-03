@@ -1,5 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 import { DEVICE_MESSAGE_PROTOCOL, messageMatchesDevice } from './device-message-protocol.js';
+import { isAccountWakeEvent } from './device-relay-events.js';
 
 // One coordination object per account. Messages remain durable in D1, not in sockets.
 export class DeviceRelay extends DurableObject {
@@ -44,7 +45,7 @@ export class DeviceRelay extends DurableObject {
         continue;
       }
       const message = event.message;
-      const matches = event.type === 'sync-ready' ? true : event.type === 'receipt'
+      const matches = isAccountWakeEvent(event) ? true : event.type === 'receipt'
         ? peer.deviceId === event.sourceDeviceId
         : messageMatchesDevice(message, peer);
       if (!matches) continue;

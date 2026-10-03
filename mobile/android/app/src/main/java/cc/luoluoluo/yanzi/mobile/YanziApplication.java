@@ -5,5 +5,6 @@ public final class YanziApplication extends android.app.Application {
         super.onCreate();
         MobileApplicationContext.initialize(this);
         MobileNetworkRouting.initialize(this);
+        MobileEnvironment.schedule(this);
     }
 }

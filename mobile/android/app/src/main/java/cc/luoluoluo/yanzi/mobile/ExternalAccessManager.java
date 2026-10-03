@@ -15,14 +15,15 @@ public final class ExternalAccessManager {
     private static final Set<String> shown=new HashSet<>();
     private static long nextPoll; private static boolean busy;
     private static String session="";
-    public static synchronized void foreground(Activity activity){foreground=new WeakReference<>(activity);pollAsync(activity);}
+    public static synchronized void foreground(Activity activity){foreground=new WeakReference<>(activity);nextPoll=0;pollAsync(activity);}
+    public static synchronized void invalidate(Context context){nextPoll=0;pollAsync(context);}
     public static synchronized void background(Activity activity){if(foreground.get()==activity)foreground.clear();}
     public static synchronized void pollAsync(Context source){
         if(busy||SystemClock.elapsedRealtime()<nextPoll)return;
         Context context=source.getApplicationContext();
         SharedPreferences prefs=context.getSharedPreferences("yanzi-mobile",Context.MODE_PRIVATE);
         String token=prefs.getString("token","");if(token.isEmpty())return;
-        busy=true;nextPoll=SystemClock.elapsedRealtime()+5000;
+        busy=true;nextPoll=SystemClock.elapsedRealtime()+(foreground.get()!=null?15000:60000);
         worker.execute(()->{try{
             String base=prefs.getString("baseUrl","https://sync.luoluoluo.cc.cd");
             JSONObject result=MobileMessageClient.request(base,"/v1/applications/access-requests",token,"GET",null);

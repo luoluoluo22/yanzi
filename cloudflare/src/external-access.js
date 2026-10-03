@@ -107,6 +107,9 @@ export async function handleExternalAccess(request,env,api){
         AND (SELECT count(*) FROM external_access_requests WHERE invite_hash=? AND created_at>?)<3`)
         .bind(id,inviteHash,invite.user_id,invite.extension_id,invite.data_key,access,clientName,userCode,await hash(secret),time,time+300,scopes?JSON.stringify(scopes):null,invite.user_id,time,inviteHash,time-60).run();
       if(!result.meta.changes)throw new E(429,'request_limit','Too many authorization requests; retry later');
+      if(env.DEVICE_RELAY)try {
+        await env.DEVICE_RELAY.get(env.DEVICE_RELAY.idFromName(invite.user_id)).publish({type:'external-access-ready',userId:invite.user_id});
+      }catch{ /* Durable request remains available to compensation polling. */ }
       return response(api,{ok:true,status:'pending',requestId:id,requestSecret:secret,userCode,expiresAt:time+300,pollIntervalSeconds:3,
         poll:{method:'GET',url:url.origin+'/v1/external-access/requests/'+id,headers:{Authorization:'Bearer '+secret}}},202);
     }

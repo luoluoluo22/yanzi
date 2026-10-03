@@ -3319,6 +3319,7 @@ extends Activity {
         }
         this.prefs.edit().putString("mobileExtensions", next.toString()).apply();
         this.renderLocalMobileExtensions();
+        MobileEnvironment.WORK.execute(()->{try{if(MobileEnvironment.config(this,id).optBoolean("enabled"))MobileEnvironment.disable(this,id);}catch(Exception ignored){}});
         this.setStatus("\u5df2\u5220\u9664\u624b\u673a\u6269\u5c55\uff1a" + id);
         this.deleteMobileExtensionDefinitionFromAccount(id);
         this.pushMobileExtensionsToCloud();
@@ -8345,7 +8346,7 @@ extends Activity {
     }
 
     private String buildMobileScriptHtml(String source) {
-        return "<!doctype html><html><body><script>window.__yanziStorageCallbacks={};window.__yanziStorageReply=function(id,value){var cb=window.__yanziStorageCallbacks[id];if(cb){delete window.__yanziStorageCallbacks[id];cb(value);}};function __yanziStorage(op,key,text,revision){return new Promise(function(resolve){var id=String(Date.now())+Math.random();window.__yanziStorageCallbacks[id]=resolve;yanziMobileJsHost.storageRequest(id,op,String(key||''),String(text||''),revision);});}window.context={mobile:{getAccountId:function(){return yanziMobileJsHost.getAccountId();},toast:function(text){yanziMobileJsHost.toast(String(text||''));},sendToDesktop:function(text){yanziMobileJsHost.sendToDesktop(String(text||''));},done:function(text){yanziMobileJsHost.done(String(text||''));},fail:function(text){yanziMobileJsHost.fail(String(text||''));},getSharedText:function(){return yanziMobileJsHost.getSharedText();},getClipboardText:function(){return Promise.resolve(yanziMobileJsHost.getClipboardText());},setClipboardText:function(text){return Promise.resolve(yanziMobileJsHost.setClipboardText(String(text||'')));},openUrl:function(url){return Promise.resolve(yanziMobileJsHost.openUrl(String(url||'')));},pickPhoto:function(){return Promise.resolve(yanziMobileJsHost.pickPhoto());},readTextFile:function(name){return Promise.resolve(JSON.parse(yanziMobileJsHost.readTextFile(String(name||''))));},saveTextFile:function(name,text){return Promise.resolve(JSON.parse(yanziMobileJsHost.saveTextFile(String(name||''),String(text||''))));},appendTextFile:function(name,text){return Promise.resolve(JSON.parse(yanziMobileJsHost.appendTextFile(String(name||''),String(text||''))));},httpGet:function(url){return Promise.resolve(JSON.parse(yanziMobileJsHost.httpGet(String(url||''))));},httpPostJson:function(url,jsonText){return Promise.resolve(JSON.parse(yanziMobileJsHost.httpPostJson(String(url||''),String(jsonText||''))));},getBatteryLevel:function(){return yanziMobileJsHost.getBatteryLevel();},getScreenBrightness:function(){return yanziMobileJsHost.getScreenBrightness();},setScreenBrightness:function(val){yanziMobileJsHost.setScreenBrightness(Number(val||0));},getLocation:function(){return Promise.resolve(JSON.parse(yanziMobileJsHost.getLocation()));},listScriptFiles:function(){return Promise.resolve(JSON.parse(yanziMobileJsHost.listScriptFiles()));},deleteScriptFile:function(name){return Promise.resolve(JSON.parse(yanziMobileJsHost.deleteScriptFile(String(name||''))));}},storage:{readText:function(key){return __yanziStorage('read',key,'',0);},writeText:function(key,text,expectedRevision){var rev=expectedRevision==null?-1:Number(expectedRevision);if(!isFinite(rev))rev=-1;return __yanziStorage('write',key,text,rev);},deleteText:function(key,expectedRevision){var rev=expectedRevision==null?-1:Number(expectedRevision);if(!isFinite(rev))rev=-1;return __yanziStorage('delete',key,'',rev);}}};async function __run(){try{" + source + "\n;if(typeof run==='function'){await run(window.context);}yanziMobileJsHost.done('\u811a\u672c\u6267\u884c\u5b8c\u6210');}catch(e){yanziMobileJsHost.fail(String(e&&e.message?e.message:e));}}__run();</script></body></html>";
+        return "<!doctype html><html><body><script>window.__yanziStorageCallbacks={};window.__yanziStorageReply=function(id,value){var cb=window.__yanziStorageCallbacks[id];if(cb){delete window.__yanziStorageCallbacks[id];cb(value);}};function __yanziStorage(op,key,text,revision){return new Promise(function(resolve){var id=String(Date.now())+Math.random();window.__yanziStorageCallbacks[id]=resolve;yanziMobileJsHost.storageRequest(id,op,String(key||''),String(text||''),revision);});}window.context={mobile:{openEnvironmentSettings:function(){yanziMobileJsHost.openEnvironmentSettings();},getAccountId:function(){return yanziMobileJsHost.getAccountId();},toast:function(text){yanziMobileJsHost.toast(String(text||''));},sendToDesktop:function(text){yanziMobileJsHost.sendToDesktop(String(text||''));},done:function(text){yanziMobileJsHost.done(String(text||''));},fail:function(text){yanziMobileJsHost.fail(String(text||''));},getSharedText:function(){return yanziMobileJsHost.getSharedText();},getClipboardText:function(){return Promise.resolve(yanziMobileJsHost.getClipboardText());},setClipboardText:function(text){return Promise.resolve(yanziMobileJsHost.setClipboardText(String(text||'')));},openUrl:function(url){return Promise.resolve(yanziMobileJsHost.openUrl(String(url||'')));},pickPhoto:function(){return Promise.resolve(yanziMobileJsHost.pickPhoto());},readTextFile:function(name){return Promise.resolve(JSON.parse(yanziMobileJsHost.readTextFile(String(name||''))));},saveTextFile:function(name,text){return Promise.resolve(JSON.parse(yanziMobileJsHost.saveTextFile(String(name||''),String(text||''))));},appendTextFile:function(name,text){return Promise.resolve(JSON.parse(yanziMobileJsHost.appendTextFile(String(name||''),String(text||''))));},httpGet:function(url){return Promise.resolve(JSON.parse(yanziMobileJsHost.httpGet(String(url||''))));},httpPostJson:function(url,jsonText){return Promise.resolve(JSON.parse(yanziMobileJsHost.httpPostJson(String(url||''),String(jsonText||''))));},getBatteryLevel:function(){return yanziMobileJsHost.getBatteryLevel();},getScreenBrightness:function(){return yanziMobileJsHost.getScreenBrightness();},setScreenBrightness:function(val){yanziMobileJsHost.setScreenBrightness(Number(val||0));},getLocation:function(){return Promise.resolve(JSON.parse(yanziMobileJsHost.getLocation()));},listScriptFiles:function(){return Promise.resolve(JSON.parse(yanziMobileJsHost.listScriptFiles()));},deleteScriptFile:function(name){return Promise.resolve(JSON.parse(yanziMobileJsHost.deleteScriptFile(String(name||''))));}},storage:{readText:function(key){return __yanziStorage('read',key,'',0);},writeText:function(key,text,expectedRevision){var rev=expectedRevision==null?-1:Number(expectedRevision);if(!isFinite(rev))rev=-1;return __yanziStorage('write',key,text,rev);},deleteText:function(key,expectedRevision){var rev=expectedRevision==null?-1:Number(expectedRevision);if(!isFinite(rev))rev=-1;return __yanziStorage('delete',key,'',rev);}}};async function __run(){try{" + source + "\n;if(typeof run==='function'){await run(window.context);}yanziMobileJsHost.done('\u811a\u672c\u6267\u884c\u5b8c\u6210');}catch(e){yanziMobileJsHost.fail(String(e&&e.message?e.message:e));}}__run();</script></body></html>";
     }
 
     private void executeMobileScriptHeadless(String source, String taskName, ScriptCallback callback) {
@@ -8928,6 +8929,28 @@ extends Activity {
         public void toast(String text) {
             MainActivity.this.appendMobileShellLog("[API] toast: " + text);
             MainActivity.this.runOnUiThread(() -> Toast.makeText((Context)MainActivity.this, (CharSequence)text, (int)0).show());
+        }
+
+        @JavascriptInterface
+        public void openEnvironmentSettings() {
+            MainActivity.this.runOnUiThread(() -> {
+                try {
+                    if (MainActivity.this.isFinishing() || MainActivity.this.isDestroyed()
+                        || !storageAccountId.equals(getAccountId())) throw new IllegalStateException("请在当前账号前台打开小程序");
+                    boolean allowed = false;
+                    JSONArray definitions = MainActivity.this.readLocalMobileExtensions();
+                    for (int i=0;i<definitions.length();i++) {
+                        JSONObject definition=definitions.optJSONObject(i);
+                        if(definition!=null && extensionId.equals(definition.optString("id"))) {
+                            JSONArray permissions=definition.optJSONArray("permissions");
+                            if(permissions!=null)for(int j=0;j<permissions.length();j++)
+                                if("device.environment".equals(permissions.optString(j)))allowed=true;
+                        }
+                    }
+                    if(!allowed)throw new SecurityException("小程序未声明 device.environment 能力");
+                    MainActivity.this.startActivity(new Intent(MainActivity.this,EnvironmentSettingsActivity.class).putExtra("extensionId",extensionId));
+                } catch(Exception e) { Toast.makeText(MainActivity.this,e.getMessage(),Toast.LENGTH_LONG).show(); }
+            });
         }
 
         @JavascriptInterface

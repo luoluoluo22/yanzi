@@ -10,7 +10,7 @@ final class MobileRealtimeClient {
     private WebSocket socket;
     void connect(String base, String token, String device, Listener listener) throws Exception {
         close();
-        OkHttpClient.Builder builder = new OkHttpClient.Builder().pingInterval(20, TimeUnit.SECONDS)
+        OkHttpClient.Builder builder = new OkHttpClient.Builder().pingInterval(60, TimeUnit.SECONDS)
                 .connectTimeout(10, TimeUnit.SECONDS).readTimeout(0, TimeUnit.SECONDS);
         Network direct = MobileNetworkRouting.findPreferredDirectNetwork();
         if (direct != null) builder.socketFactory(direct.getSocketFactory()).dns(host -> java.util.Arrays.asList(direct.getAllByName(host)));

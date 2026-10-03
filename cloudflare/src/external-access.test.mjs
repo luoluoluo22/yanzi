@@ -28,11 +28,20 @@ function fixture(){
     const req=new Request(path.startsWith('https:')?path:'https://test'+path,{method,headers:token?{authorization:'Bearer '+token}:{},...(body?{body:JSON.stringify(body)}:{})});
     return await handleExternalAccess(req,env,api)||await handleRecordApi(req,env,api)||await handleApplicationPlatform(req,env,api);
   }catch(e){if(e.status)return Response.json({error:e.code},{status:e.status});throw e;}}
-  return{request,db,objects,tokens};
+  return{request,db,objects,tokens,env};
 }
 async function invite(f,access='read-write'){const result=await f.request('/v1/applications/access-invites','POST',{extensionId:'taskbar-calendar',key:'calendar.v1.json',access},'owner');assert.equal(result.status,200);return(await result.json()).address;}
 async function pending(f,address,access='read-write'){const result=await f.request(address+'/requests','POST',{clientName:'Test AI',access});assert.equal(result.status,202);return result.json();}
 async function approve(f,p){assert.equal((await f.request('/v1/applications/access-requests/'+p.requestId+'/decision','POST',{approve:true},'owner')).status,200);const result=await f.request(p.poll.url,'GET',null,p.requestSecret);assert.equal(result.status,200);return result.json();}
+test('pending authorization wakes the owner without secrets and survives realtime failure',async()=>{
+  const f=fixture(),address=await invite(f),events=[];
+  f.env.DEVICE_RELAY={idFromName:user=>user,get:user=>({publish:async event=>{assert.equal(user,'owner-account');events.push(event);}})};
+  await pending(f,address);
+  assert.deepEqual(events,[{type:'external-access-ready',userId:'owner-account'}]);
+  f.env.DEVICE_RELAY.get=()=>({publish:async()=>{throw new Error('offline');}});
+  await pending(f,address);
+  assert.equal(f.db.prepare('SELECT count(*) AS n FROM external_access_requests').get().n,2);
+});
 test('discovery requires no credentials and never creates requests; private polling, owner-only consent, first device wins',async()=>{
   const f=fixture(),address=await invite(f);assert.equal((await f.request(address)).status,200);assert.equal(f.db.prepare('SELECT count(*) AS n FROM external_access_requests').get().n,0);
   const p=await pending(f,address);

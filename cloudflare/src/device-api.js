@@ -1,7 +1,10 @@
+import { handleEnvironment } from './device-environment.js';
 // Domain implementation; dependencies are supplied by the composition root.
 export function createDeviceApi(api) {
   const { DEVICE_MESSAGE_PROTOCOL, HttpError, acceptsAccountChat, accountLanLink, canonicalMessageJson, deviceNetworkLocation, ensureOwnedDevice, ensureUser, executionDeadline, expireDeviceCommands, getPendingDeviceMessageItems, isAccountChat, isExecutionMessage, isoNow, json, messageMatchesDevice, normalizeDeviceId, normalizeDeviceMessagePayload, normalizeDevicePayload, normalizeMessageId, normalizeMessageLimit, normalizeShortText, notifyDeviceRelay, ownedAttachment, parseJsonObject, randomHex, readJson, requireAuth, sendOfflinePush, serializeDeviceMessageRecord, serializeDeviceRecord, signToken, touchDevice, traceContext } = api;
 async function handleDeviceApi(request, env, ctx) {
+  const environment = await handleEnvironment(request, env, api);
+  if (environment) return environment;
   const url = new URL(request.url);
   if (url.pathname === "/v1/me/devices" && request.method === "GET") {
     const auth = await requireAuth(request, env);

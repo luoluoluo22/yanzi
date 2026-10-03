@@ -14,13 +14,19 @@ public sealed partial class LocalAgentApiServer
         var parts = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
         var listDevices = request.HttpMethod == "GET" && path == "/v1/me/devices";
         var readResult = request.HttpMethod == "GET" && parts.Length == 6 && parts[0] == "v1" && parts[1] == "me" && parts[2] == "devices" && parts[4] == "results";
-        if (!listDevices && !readResult && (parts.Length != 5 || parts[0] != "v1" || parts[1] != "me" || parts[2] != "devices" ||
+        var readEnvironment = request.HttpMethod == "GET" && parts.Length == 6 && parts[0] == "v1" && parts[1] == "me" && parts[2] == "devices" && parts[4] == "environment";
+        if (!listDevices && !readResult && !readEnvironment && (parts.Length != 5 || parts[0] != "v1" || parts[1] != "me" || parts[2] != "devices" ||
             parts[4] is not ("state" or "capabilities" or "invoke"))) return false;
         var app = System.Windows.Application.Current;
         var cloud = app == null ? null : await app.Dispatcher.InvokeAsync(() => (app.MainWindow as MainWindow)?.CloudSyncClient);
         if (cloud?.HasCredential != true) { await WriteJsonAsync(response, 401, new { error = "account_login_required" }); return true; }
         if (listDevices) { await WriteJsonAsync(response, 200, new { items = await cloud.ListPeerDevicesAsync() }); return true; }
         var deviceId = Uri.UnescapeDataString(parts[3]);
+        if (readEnvironment)
+        {
+            await WriteJsonAsync(response, 200, await cloud.GetPeerEnvironmentAsync(deviceId, Uri.UnescapeDataString(parts[5])));
+            return true;
+        }
         if (readResult)
         {
             var message = await cloud.GetDeviceMessageAsync(Uri.UnescapeDataString(parts[5]));

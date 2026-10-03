@@ -26,6 +26,13 @@ public class DeviceHeartbeatService extends Service {
     private volatile int generation;
     private String session = "";
     private int failures;
+    private int connectionFailures;
+    private final java.util.concurrent.atomic.AtomicBoolean wakeQueued=new java.util.concurrent.atomic.AtomicBoolean();
+    private void wakeSoon() {
+        if(worker.isShutdown() || !wakeQueued.compareAndSet(false,true))return;
+        try {worker.schedule(()->{wakeQueued.set(false);tick();},1,TimeUnit.SECONDS);}
+        catch(RejectedExecutionException ignored){wakeQueued.set(false);}
+    }
     public static void startIfLoggedIn(Context context) {
         if (!context.getSharedPreferences("yanzi-mobile", MODE_PRIVATE).getString("token", "").isEmpty()) {
             try { context.startForegroundService(new Intent(context, DeviceHeartbeatService.class)); }
@@ -50,7 +57,7 @@ public class DeviceHeartbeatService extends Service {
                 .build();
         if (Build.VERSION.SDK_INT >= 34) startForeground(41001, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING);
         else startForeground(41001, notification);
-        worker.scheduleWithFixedDelay(this::tick, 0, 1, TimeUnit.SECONDS);
+        worker.scheduleWithFixedDelay(this::tick, 0, 5, TimeUnit.SECONDS);
     }
     private boolean valid(String token, String device) {
         return token.equals(prefs.getString("token", "")) && device.equals(prefs.getString("deviceId", ""));
@@ -67,23 +74,24 @@ public class DeviceHeartbeatService extends Service {
         if (!current.equals(session)) {
             session = current; heartbeat = 0; pollAt = 0; reconnectAt = 0; syncAt = 0; stateRevision = -1;
             generation++; connected = false; connecting = false; realtime.close();
+            MobileEnvironment.schedule(this);
         }
         try {
             long now = SystemClock.elapsedRealtime();
             if (now >= stateAt) {
                 long revision = MobileDeviceCapabilities.snapshot(this).getLong("revision");
-                if (revision != stateRevision) { stateRevision = revision; heartbeat = 0; }
-                stateAt = now + 5000;
+                if (revision != stateRevision) { stateRevision = revision; heartbeat = 0; pollAt = 0; }
+                stateAt = now + 15000;
             }
             if (now >= syncAt && syncBusy.compareAndSet(false, true)) {
-                syncAt = now + 60000;
+                syncAt = now + BackgroundCadence.syncInterval(connected);
                 synchronizer.execute(() -> {
                     try { MobileAccountSync.synchronize(this, base, token, device); }
                     catch (Exception error) { Log.w("YanziDeviceSync", "Incremental sync deferred: " + error.getClass().getSimpleName()); }
                     finally { syncBusy.set(false); }
                 });
             }
-            if (heartbeat == 0 || now - heartbeat >= 30000) {
+            if (heartbeat == 0 || now - heartbeat >= BackgroundCadence.HEARTBEAT_MS) {
                 JSONObject presence = DeviceStatusReporter.buildPresencePayload(device)
                         .put("displayName", Build.MANUFACTURER + " " + Build.MODEL)
                         .put("pushToken", prefs.getString("pushToken", ""))
@@ -116,22 +124,26 @@ public class DeviceHeartbeatService extends Service {
                     public void connected() {
                         if (generation != stamp) return;
                         connected = true; connecting = false; pollAt = 0;
+                        connectionFailures=0;
                         syncAt = 0;
+                        wakeSoon();
                         ExtensionStorageSignals.reconnected(DeviceHeartbeatService.this, token);
+                        MobileEnvironment.retryPending(DeviceHeartbeatService.this);
                         Log.i("YanziMessageBridge", "Realtime connected");
                     }
                     public void disconnected() {
                         if (generation != stamp) return;
                         connected = false; connecting = false;
-                        reconnectAt = SystemClock.elapsedRealtime() + 5000;
+                        reconnectAt = SystemClock.elapsedRealtime() + BackgroundCadence.reconnectDelay(++connectionFailures);
                         Log.i("YanziMessageBridge", "Realtime reconnect scheduled");
                     }
                     public void event(JSONObject event) {
                         if (generation != stamp || !valid(token, device)) return;
                         String type = event.optString("type");
-                        if ("sync-ready".equals(type)) syncAt = Math.min(syncAt, SystemClock.elapsedRealtime() + 3000);
+                        if ("sync-ready".equals(type)) {syncAt = Math.min(syncAt, SystemClock.elapsedRealtime() + 1000);wakeSoon();}
+                        if ("external-access-ready".equals(type)) {ExternalAccessManager.invalidate(DeviceHeartbeatService.this);wakeSoon();}
                         if ("message".equals(type)) dispatch(base, token, device, event.optJSONObject("message"));
-                        else if ("ready".equals(type) || "messages-ready".equals(type)) pollAt = 0;
+                        else if ("ready".equals(type) || "messages-ready".equals(type)) {pollAt = 0;wakeSoon();}
                     }
                 });
             }
@@ -140,7 +152,7 @@ public class DeviceHeartbeatService extends Service {
                         + java.net.URLEncoder.encode(device, "UTF-8") + "&limit=20", token, "GET", null).optJSONArray("items");
                 if (valid(token, device) && items != null)
                     for (int i = 0; i < items.length(); i++) dispatch(base, token, device, items.getJSONObject(i));
-                pollAt = SystemClock.elapsedRealtime() + (connected ? 30000 : 5000);
+                pollAt = SystemClock.elapsedRealtime() + BackgroundCadence.pollInterval(connected);
             }
             failures = 0; retryAt = 0;
         } catch (MobileMessageClient.HttpFailure ex) {

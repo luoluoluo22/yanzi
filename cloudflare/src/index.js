@@ -1,4 +1,5 @@
 import { createSyncApi } from './sync-api.js';
+import { cleanupEnvironment } from './device-environment.js';
 import { createDeviceApi } from './device-api.js';
 import { createDeviceRepository } from './device-repository.js';
 import { createSyncObjectRepository } from './sync-object-repository.js';
@@ -64,7 +65,7 @@ const PUBLIC_STORE_EXTENSION_IDS_SQL = PUBLIC_STORE_EXTENSIONS
 
 
 export default {
-  async scheduled(event, env, ctx) { ctx.waitUntil(cleanupAttachments(env)); ctx.waitUntil(cleanupExternalAccess(env)); },
+  async scheduled(event, env, ctx) { ctx.waitUntil(cleanupAttachments(env)); ctx.waitUntil(cleanupExternalAccess(env)); ctx.waitUntil(cleanupEnvironment(env)); },
   async fetch(request, env, ctx) {
     try {
       return await handleRequest(request, env, ctx);
@@ -141,7 +142,7 @@ async function handleRequest(request, env, ctx) {
 
   if (url.pathname === "/health") {
     const result = await env.DB.prepare("select datetime('now') as now").first();
-    return json({ ok: true, now: result?.now ?? null, foundationRevision: "2026-10-03-domains-v1" });
+    return json({ ok: true, now: result?.now ?? null, foundationRevision: "2026-10-03-domains-v1", deviceEnvironmentProtocol: 1 });
   }
 
   if (url.pathname === "/v1/auth/register" && request.method === "POST") {

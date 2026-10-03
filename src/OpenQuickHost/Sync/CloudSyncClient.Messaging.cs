@@ -64,6 +64,15 @@ public sealed partial class CloudSyncClient
             if (peer.GetProperty("deviceId").GetString() == deviceId) return peer.Clone();
         return null;
     }
+    public async Task<JsonElement> GetPeerEnvironmentAsync(string deviceId, string extensionId, CancellationToken cancellationToken = default)
+    {
+        await EnsureAuthenticatedAsync(cancellationToken);
+        using var request = CreateRequest(HttpMethod.Get, "/v1/me/devices/" + Uri.EscapeDataString(deviceId) + "/environment/" + Uri.EscapeDataString(extensionId), true);
+        using var response = await SendAsyncWithFallback(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+        return document.RootElement.Clone();
+    }
     public async Task RemovePeerDeviceAsync(string deviceId, CancellationToken cancellationToken = default)
     {
         await EnsureAuthenticatedAsync(cancellationToken);

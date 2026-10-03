@@ -25,6 +25,8 @@ jobs:
           javac -encoding UTF-8 -d "$RUNNER_TEMP/yanzi-java" mobile/android/app/src/main/java/cc/luoluoluo/yanzi/mobile/{CloudRequestRetry,HttpResponseBody}.java scripts/java/{CloudRequestRetryVerification,HttpResponseBodyVerification}.java
           java -cp "$RUNNER_TEMP/yanzi-java" cc.luoluoluo.yanzi.mobile.CloudRequestRetryVerification
           java -cp "$RUNNER_TEMP/yanzi-java" cc.luoluoluo.yanzi.mobile.HttpResponseBodyVerification
+          javac -encoding UTF-8 -d "$RUNNER_TEMP/yanzi-java" mobile/android/app/src/main/java/cc/luoluoluo/yanzi/mobile/{EnvironmentPolicy,BackgroundCadence}.java scripts/java/EnvironmentPolicyVerification.java
+          java -cp "$RUNNER_TEMP/yanzi-java" cc.luoluoluo.yanzi.mobile.EnvironmentPolicyVerification
   desktop-and-worker:
     runs-on: windows-latest
     steps:
@@ -45,3 +47,4 @@ jobs:
         run: |
           ./scripts/test-worker-ownership.ps1
           ./scripts/test-device-network-foundation.ps1
+          ./scripts/test-device-environment.ps1

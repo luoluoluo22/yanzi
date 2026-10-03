@@ -72,6 +72,7 @@ final class MobileAccountSync {
             if (definitions != null) cache.putString("mobileExtensions",definitions.getJSONArray("extensions").toString());
             if (layout != null) cache.putString("cacheYanmJson",layout.toString());
             if (!cache.commit() || !edit.commit()) throw new java.io.IOException("sync_commit_failed");
+            if (definitions != null) MobileEnvironment.retryPending(context);
             if (changed) MainActivity.onAccountSnapshotChanged();
         } catch (Exception error) {
             state.edit().putString("error",error instanceof MobileMessageClient.HttpFailure ? "HTTP "+((MobileMessageClient.HttpFailure)error).status : error.getClass().getSimpleName()).commit();
