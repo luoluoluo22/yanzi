@@ -21,6 +21,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <supports-screens
@@ -44,6 +45,8 @@
             android:authorities="${applicationId}.extension-storage"
             android:exported="true"
             android:permission="${applicationId}.permission.EXTENSION_STORAGE" />
+        <activity android:name=".LanPairingActivity" android:exported="false" />
+        <provider android:name=".CompanionTransferProvider" android:authorities="${applicationId}.companion-transfer" android:exported="true" android:permission="${applicationId}.permission.EXTENSION_STORAGE" />
         <activity
             android:name=".MainActivity"
             android:windowSoftInputMode="adjustResize"

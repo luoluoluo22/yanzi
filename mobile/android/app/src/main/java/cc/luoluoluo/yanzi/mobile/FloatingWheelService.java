@@ -113,6 +113,9 @@ public class FloatingWheelService extends Service {
     private boolean wheelTracking;
     private ServerSocket notificationServerSocket;
     private Thread notificationThread;
+    private final java.util.concurrent.ThreadPoolExecutor lanWorkers = new java.util.concurrent.ThreadPoolExecutor(
+        8, 8, 30, java.util.concurrent.TimeUnit.SECONDS, new java.util.concurrent.ArrayBlockingQueue<Runnable>(16));
+    private final java.util.concurrent.Semaphore encryptedLanCapacity = new java.util.concurrent.Semaphore(3);
     private boolean ignoreBubbleGestureUntilUp;
     private Runnable pendingLongPress;
     private Runnable pendingSlotMenu;
@@ -235,6 +238,7 @@ public class FloatingWheelService extends Service {
         removeView(progressView);
         removeView(bubbleView);
         executor.shutdownNow();
+        lanWorkers.shutdownNow();
         super.onDestroy();
     }
 
@@ -408,7 +412,7 @@ public class FloatingWheelService extends Service {
         items.add(new WheelItem("screenshot", "mdi:camera", "发截图", () -> sendScreenshotToDesktop()));
         items.add(new WheelItem("pick-photo", "mdi:image", "发照片", () -> openMain("pick-photo")));
         items.add(new WheelItem("open-yanzi-site", "mdi:web", "官网", () -> openUrl(YANZI_SITE_URL)));
-        items.add(new WheelItem("extensions", "mdi:monitor-dashboard", "远程扩展", () -> openMain("extensions")));
+        items.add(new WheelItem("extensions", "mdi:monitor-dashboard", "电脑小程序", () -> openMain("extensions")));
         items.add(new WheelItem("yanm", "mdi:monitor-dashboard", "燕幕", () -> openMain("yanm")));
 
         WheelItem[] outerSlots = new WheelItem[6];
@@ -419,7 +423,7 @@ public class FloatingWheelService extends Service {
                 continue;
             }
             String id = firstNonEmpty(extension.optString("id"), "mobile-extension-" + i);
-            String name = firstNonEmpty(extension.optString("name"), extension.optString("displayName"), "本机扩展");
+            String name = firstNonEmpty(extension.optString("name"), extension.optString("displayName"), "手机小程序");
             String icon = firstNonEmpty(extension.optString("icon"), firstGlyph(name));
             String json = extension.toString();
             int slot = extension.optInt("_wheelSlot", -1);
@@ -463,7 +467,7 @@ public class FloatingWheelService extends Service {
         edit.setOnClickListener(v -> {
             WheelItem item = currentSectorWheel == null ? null : currentSectorWheel.selectedItem();
             if (item == null || item.json == null || !item.id.startsWith("local:")) {
-                toast("先选中一个本机扩展");
+                toast("先选中一个手机小程序");
                 return;
             }
             pauseBubbleGestureForPanel();
@@ -472,7 +476,7 @@ public class FloatingWheelService extends Service {
         delete.setOnClickListener(v -> {
             WheelItem item = currentSectorWheel == null ? null : currentSectorWheel.selectedItem();
             if (item == null || item.json == null || !item.id.startsWith("local:")) {
-                toast("先选中一个本机扩展");
+                toast("先选中一个手机小程序");
                 return;
             }
             deleteMobileExtension(item.id.substring("local:".length()));
@@ -508,7 +512,7 @@ public class FloatingWheelService extends Service {
             }
             return array;
         } catch (Exception ex) {
-            log("读取手机扩展列表失败：" + ex.getMessage());
+            log("读取手机小程序列表失败：" + ex.getMessage());
             return new JSONArray();
         }
     }
@@ -545,9 +549,9 @@ public class FloatingWheelService extends Service {
             .putString("mobileExtensions", next.toString())
             .putString("mobileExtensionDraft", json.toString(2))
             .putString("mobileExtensionDraftId", id)
-            .putString("mobileExtensionDraftName", firstNonEmpty(json.optString("name"), json.optString("displayName"), "手机扩展"))
+            .putString("mobileExtensionDraftName", firstNonEmpty(json.optString("name"), json.optString("displayName"), "手机小程序"))
             .apply();
-        log("手机扩展已保存到槽位：id=" + id + " count=" + next.length());
+        log("手机小程序已保存到槽位：id=" + id + " count=" + next.length());
     }
 
     private void deleteMobileExtension(String id) {
@@ -560,8 +564,8 @@ public class FloatingWheelService extends Service {
             }
         }
         prefs.edit().putString("mobileExtensions", next.toString()).apply();
-        log("手机扩展已删除：id=" + id + " count=" + next.length());
-        toast("已删除扩展");
+        log("手机小程序已删除：id=" + id + " count=" + next.length());
+        toast("已删除小程序");
     }
 
     private void runMobileExtensionJson(String jsonText) {
@@ -589,15 +593,15 @@ public class FloatingWheelService extends Service {
                 "httpGet:function(url){return Promise.resolve(JSON.parse(yanziMobileJsHost.unsupported('httpGet')));}," +
                 "httpPostJson:function(url,jsonText){return Promise.resolve(JSON.parse(yanziMobileJsHost.unsupported('httpPostJson')));}" +
                 "}};" +
-                "async function __run(){try{" + source + "\n;if(typeof run==='function'){await run(window.context);}yanziMobileJsHost.done('扩展执行完成');}" +
+                "async function __run(){try{" + source + "\n;if(typeof run==='function'){await run(window.context);}yanziMobileJsHost.done('小程序执行完成');}" +
                 "catch(e){yanziMobileJsHost.fail(String(e&&e.message?e.message:e));}}" +
                 "__run();" +
                 "</script></body></html>";
             runner.loadDataWithBaseURL("http://localhost/", html, "text/html", "UTF-8", null);
-            log("手机扩展开始执行。");
+            log("手机小程序开始执行。");
         } catch (Exception ex) {
-            log("手机扩展执行失败：" + ex.getMessage());
-            toast("扩展执行失败：" + ex.getMessage());
+            log("手机小程序执行失败：" + ex.getMessage());
+            toast("小程序执行失败：" + ex.getMessage());
         }
     }
 
@@ -621,14 +625,14 @@ public class FloatingWheelService extends Service {
 
         @JavascriptInterface
         public void done(String message) {
-            log("手机扩展执行完成：" + message);
+            log("手机小程序执行完成：" + message);
             FloatingWheelService.this.toast(message);
         }
 
         @JavascriptInterface
         public void fail(String message) {
-            log("手机扩展执行失败：" + message);
-            FloatingWheelService.this.toast("扩展执行失败：" + message);
+            log("手机小程序执行失败：" + message);
+            FloatingWheelService.this.toast("小程序执行失败：" + message);
         }
 
         @JavascriptInterface
@@ -682,7 +686,7 @@ public class FloatingWheelService extends Service {
 
     private static String shortLabel(String value) {
         if (value == null || value.trim().isEmpty()) {
-            return "扩展";
+            return "小程序";
         }
         String trimmed = value.trim();
         return trimmed.length() > 3 ? trimmed.substring(0, 3) : trimmed;
@@ -1071,8 +1075,8 @@ public class FloatingWheelService extends Service {
 
     private void showMobileExtensionPanel(String initialJson, int preferredSlot) {
         LinearLayout panel = overlayPanel();
-        panel.addView(panelTitle("添加手机扩展"));
-        EditText input = panelInput("粘贴手机扩展 JSON", firstNonEmpty(initialJson, prefs.getString("mobileExtensionDraft", ""), defaultMobileExtensionJson()), 8);
+        panel.addView(panelTitle("添加手机小程序"));
+        EditText input = panelInput("粘贴手机小程序 JSON", firstNonEmpty(initialJson, prefs.getString("mobileExtensionDraft", ""), defaultMobileExtensionJson()), 8);
         panel.addView(input, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
         TextView result = new TextView(this);
         result.setText("粘贴后会自动检测 JSON 格式。");
@@ -1084,8 +1088,8 @@ public class FloatingWheelService extends Service {
 
         LinearLayout buttons = row();
         Button paste = panelButton("粘贴JSON");
-        Button test = panelButton("测试扩展");
-        Button save = panelButton("保存扩展");
+        Button test = panelButton("测试小程序");
+        Button save = panelButton("保存小程序");
         Button close = panelButton("关闭");
         buttons.addView(paste, new LinearLayout.LayoutParams(0, dp(42), 1));
         buttons.addView(test, new LinearLayout.LayoutParams(0, dp(42), 1));
@@ -1104,7 +1108,7 @@ public class FloatingWheelService extends Service {
                 String pretty = json.toString(2);
                 input.setText(pretty);
                 input.setSelection(pretty.length());
-                result.setText("JSON 格式正确：" + firstNonEmpty(json.optString("name"), json.optString("id"), "未命名扩展"));
+                result.setText("JSON 格式正确：" + firstNonEmpty(json.optString("name"), json.optString("id"), "未命名小程序"));
                 result.setTextColor(Color.rgb(125, 211, 252));
             } catch (Exception ex) {
                 input.setText("");
@@ -1115,7 +1119,7 @@ public class FloatingWheelService extends Service {
         test.setOnClickListener(v -> {
             try {
                 JSONObject json = new JSONObject(input.getText().toString().trim());
-                result.setText("测试通过：" + firstNonEmpty(json.optString("name"), json.optString("id"), "未命名扩展"));
+                result.setText("测试通过：" + firstNonEmpty(json.optString("name"), json.optString("id"), "未命名小程序"));
                 result.setTextColor(Color.rgb(125, 211, 252));
             } catch (Exception ex) {
                 result.setText("测试失败：" + ex.getMessage());
@@ -1125,9 +1129,9 @@ public class FloatingWheelService extends Service {
         save.setOnClickListener(v -> {
             try {
                 JSONObject json = new JSONObject(input.getText().toString().trim());
-                String name = firstNonEmpty(json.optString("name"), json.optString("displayName"), "手机扩展");
+                String name = firstNonEmpty(json.optString("name"), json.optString("displayName"), "手机小程序");
                 upsertMobileExtension(json, preferredSlot);
-                toast("已保存扩展：" + name);
+                toast("已保存小程序：" + name);
                 closePanel();
             } catch (Exception ex) {
                 result.setText("保存失败：" + ex.getMessage());
@@ -1141,8 +1145,8 @@ public class FloatingWheelService extends Service {
 
     private void showMobileExtensionManagePanel(WheelItem item) {
         LinearLayout panel = overlayPanel();
-        panel.addView(panelTitle("扩展操作"));
-        panel.addView(textView("扩展：" + item.label, 14, Color.WHITE, true));
+        panel.addView(panelTitle("小程序操作"));
+        panel.addView(textView("小程序：" + item.label, 14, Color.WHITE, true));
         LinearLayout buttons = row();
         Button edit = panelButton("编辑");
         Button delete = panelButton("删除");
@@ -1329,7 +1333,7 @@ public class FloatingWheelService extends Service {
             return;
         }
 
-        // 1. 关闭燕环圆环菜单和扩展面板
+        // 1. 关闭燕环圆环菜单和小程序面板
         closeOverlayUi();
         // 2. 彻底隐藏悬浮球气泡，确保背景无干扰
         if (bubbleView != null) {
@@ -1404,7 +1408,6 @@ public class FloatingWheelService extends Service {
                 log("截图：准备发送，bytes=" + imageBytes.length + "。");
                 String messageId;
                 try {
-                    registerDevice(baseUrl, token, deviceId, buildDeviceName());
                     messageId = sendScreenshotMessage(baseUrl, token, deviceId, screenshotDataUrl, imageBytes, width, height);
                 } catch (Exception ex) {
                     if (!isUnauthorized(ex)) {
@@ -1412,10 +1415,9 @@ public class FloatingWheelService extends Service {
                     }
                     log("截图：Token 过期，刷新后重试。");
                     token = refreshToken();
-                    registerDevice(baseUrl, token, deviceId, buildDeviceName());
                     messageId = sendScreenshotMessage(baseUrl, token, deviceId, screenshotDataUrl, imageBytes, width, height);
                 }
-                log("截图：消息已发送到云端，messageId=" + messageId + "。");
+                log("截图：消息已发送，messageId=" + messageId + "。");
                 toast("截图已发送到电脑：" + messageId);
                 hideProgress();
             } catch (Exception ex) {
@@ -1427,7 +1429,8 @@ public class FloatingWheelService extends Service {
     }
 
     private String sendScreenshotMessage(String baseUrl, String token, String deviceId, String screenshotDataUrl, byte[] imageBytes, int width, int height) throws Exception {
-        return postScreenshotDirectMessage(baseUrl, token, deviceId, screenshotDataUrl, imageBytes.length, width, height);
+        return MobileDesktopTransfer.sendBytes(this, baseUrl, token, deviceId, "photo",
+                "screenshot-" + System.currentTimeMillis() + ".jpg", "image/jpeg", imageBytes, "手机截图 " + width + "x" + height);
     }
 
     private void openMain(String action) {
@@ -1651,7 +1654,7 @@ public class FloatingWheelService extends Service {
     }
 
     private static String mobileExtensionPrompt() {
-        return "你正在为燕子移动端编写手机扩展。只允许输出 JSON，不要解释。\n" +
+        return "你正在为燕子移动端编写手机小程序。只允许输出 JSON，不要解释。\n" +
             "运行时使用 runtime=\"mobile-js\"，不要使用 C#、PowerShell、Windows 路径、WPF 或桌面 API。\n" +
             "优先设计本机可执行能力，再按需补充发到电脑。可用 permissions：clipboard.read、clipboard.write、browser.open、file.read、file.write、http.request、desktop.message、share.text。\n" +
             "脚本入口使用 async function run(context)。可调用 context.mobile.toast(text)、getSharedText()、getClipboardText()、setClipboardText(text)、openUrl(url)、readTextFile(name)、saveTextFile(name,text)、appendTextFile(name,text)、httpGet(url)、httpPostJson(url,jsonText)、sendToDesktop(text)。";
@@ -1819,6 +1822,7 @@ public class FloatingWheelService extends Service {
     }
 
     private static JSONObject postJson(String baseUrl, String path, JSONObject payload, String token) throws Exception {
+        if ("/v1/me/mobile/messages".equals(path)) return MobileDeviceMessageSender.send(baseUrl, token, payload);
         if (shouldUseLan(path)) {
             String lanBaseUrl = sContext != null ? LanDiscoveryManager.getLanBaseUrl(sContext) : LanDiscoveryManager.cachedLanBaseUrl;
             if (lanBaseUrl != null) {
@@ -2034,7 +2038,8 @@ public class FloatingWheelService extends Service {
                 notificationServerSocket = new ServerSocket(BuildConfig.APPLICATION_ID.endsWith(".dev") ? 42982 : 42981);
                 while (!Thread.currentThread().isInterrupted()) {
                     Socket client = notificationServerSocket.accept();
-                    handleNotificationClient(client);
+                    try { lanWorkers.execute(() -> handleNotificationClient(client)); }
+                    catch (java.util.concurrent.RejectedExecutionException busy) { client.close(); }
                 }
             } catch (Exception e) {
                 Log.e(TAG, "Notification server error", e);
@@ -2062,14 +2067,74 @@ public class FloatingWheelService extends Service {
             String path = parts.length > 1 ? parts[1] : "";
             int contentLength = 0;
             String authorization = "";
+            String contentHash = "";
+            String peerDevice = "";
             for (String line : headerLines) {
                 if (line.toLowerCase(java.util.Locale.ROOT).startsWith("content-length:")) contentLength = Integer.parseInt(line.substring(15).trim());
                 if (line.toLowerCase(java.util.Locale.ROOT).startsWith("authorization:")) authorization = line.substring(14).trim();
+                if (line.toLowerCase(java.util.Locale.ROOT).startsWith("x-content-sha256:")) contentHash = line.substring(17).trim();
+                if (line.toLowerCase(java.util.Locale.ROOT).startsWith("x-yanzi-peer-device:")) peerDevice = line.substring(20).trim();
             }
             String expectedToken = LanDiscoveryManager.getLanApiToken(this);
+            if (expectedToken == null || expectedToken.isEmpty()) {
+                android.content.SharedPreferences local = getSharedPreferences("YanziPrefs", MODE_PRIVATE);
+                expectedToken = local.getString("nativeLocalToken", "");
+                if (expectedToken.isEmpty()) { expectedToken = java.util.UUID.randomUUID().toString(); local.edit().putString("nativeLocalToken", expectedToken).commit(); }
+            }
+            if ("POST".equals(method) && path.equals("/v1/lan/secure")) {
+                client.setSoTimeout(90000);
+                if (!encryptedLanCapacity.tryAcquire()) {
+                    client.getOutputStream().write("HTTP/1.1 429 Too Many Requests\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".getBytes(StandardCharsets.US_ASCII)); return;
+                }
+                try { if (SecureLanReceiver.handle(this, client, path, headerLines, input, contentLength, expectedToken)) return; }
+                finally { encryptedLanCapacity.release(); }
+            }
+            if (!client.getInetAddress().isLoopbackAddress()) {
+                client.getOutputStream().write("HTTP/1.1 426 Upgrade Required\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".getBytes(StandardCharsets.US_ASCII));
+                return;
+            }
             if (expectedToken == null || expectedToken.isEmpty() || !java.security.MessageDigest.isEqual(
                     ("Bearer " + expectedToken).getBytes(StandardCharsets.UTF_8), authorization.getBytes(StandardCharsets.UTF_8))) {
                 client.getOutputStream().write("HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".getBytes(StandardCharsets.US_ASCII));
+                return;
+            }
+            if ("POST".equals(method) && path.equals("/v1/mobile/capabilities/invoke")) {
+                if (contentLength < 2 || contentLength > 65536) throw new java.io.IOException("invalid_capability_request");
+                byte[] body = new byte[contentLength]; int read = 0;
+                while (read < contentLength) { int count = input.read(body,read,contentLength-read); if (count < 0) throw new java.io.EOFException(); read+=count; }
+                JSONObject requestBody = new JSONObject(new String(body,StandardCharsets.UTF_8));
+                JSONObject reply; int status;
+                try { reply = new JSONObject().put("ok",true).put("result",MobileDeviceCapabilities.invoke(this,requestBody.getString("name"),requestBody.optJSONObject("arguments"))); status=200; }
+                catch (Exception error) { reply=new JSONObject().put("ok",false).put("error",error.getMessage()); status=400; }
+                byte[] data = reply.toString().getBytes(StandardCharsets.UTF_8);
+                client.getOutputStream().write(("HTTP/1.1 "+status+" Result\r\nContent-Type: application/json\r\nContent-Length: "+data.length+"\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
+                client.getOutputStream().write(data); client.getOutputStream().flush(); return;
+            }
+            if (path.startsWith("/v1/lan/transfer-sessions/")) {
+                client.setSoTimeout(90000);
+                MobileLanTransferSessions.Reply reply = MobileLanTransferSessions.handle(this, method, path, peerDevice, input, contentLength, (kind, filePath) -> {
+                    saveChatMessageToPrefs(kind, filePath);
+                    Intent chat = new Intent(BuildConfig.APPLICATION_ID + ".CHAT_MESSAGE");
+                    chat.putExtra("message", filePath).putExtra("kind", kind); sendBroadcast(chat);
+                    MainActivity.onReceivedChatMessage(kind, filePath);
+                });
+                byte[] data = reply.body.toString().getBytes(StandardCharsets.UTF_8);
+                client.getOutputStream().write(("HTTP/1.1 " + reply.status + " Result\r\nContent-Type: application/json\r\nContent-Length: " + data.length + "\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
+                client.getOutputStream().write(data); client.getOutputStream().flush(); return;
+            }
+            if ("POST".equals(method) && path.startsWith("/v1/lan/transfers/")) {
+                client.setSoTimeout(90000);
+                JSONObject received = MobileDesktopTransfer.receiveFromDesktop(this, input, path, contentLength, contentHash, (kind, filePath) -> {
+                    saveChatMessageToPrefs(kind, filePath);
+                    Intent chat = new Intent(BuildConfig.APPLICATION_ID + ".CHAT_MESSAGE");
+                    chat.putExtra("message", filePath).putExtra("kind", kind);
+                    sendBroadcast(chat);
+                    MainActivity.onReceivedChatMessage(kind, filePath);
+                });
+                byte[] data = received.toString().getBytes(StandardCharsets.UTF_8);
+                client.getOutputStream().write(("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " + data.length + "\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
+                client.getOutputStream().write(data);
+                client.getOutputStream().flush();
                 return;
             }
             if (contentLength < 0 || contentLength > 16 * 1024 * 1024) throw new java.io.IOException("Body too large");
@@ -2136,6 +2201,18 @@ public class FloatingWheelService extends Service {
                         Intent syncIntent = new Intent(BuildConfig.APPLICATION_ID + ".SYNC_YANM");
                         this.sendBroadcast(syncIntent);
                     } else if ("YanziChat".equals(title)) {
+                        synchronized (MobileDesktopTransfer.deliveryLock) {
+                        int receiptCount = MobileDesktopTransfer.cleanupReceipts(this);
+                        String logicalId = json.optString("clientMessageId");
+                        android.content.SharedPreferences inboxPrefs = getSharedPreferences("yanzi-mobile", MODE_PRIVATE);
+                        boolean duplicate = logicalId.matches("[a-f0-9]{32}") && inboxPrefs.contains("lanTransfer." + logicalId);
+                        if (duplicate && new JSONObject(inboxPrefs.getString("lanTransfer." + logicalId, "{}")).optString("state").equals("executing")) {
+                            client.getOutputStream().write("HTTP/1.1 409 Conflict\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".getBytes(StandardCharsets.US_ASCII)); return;
+                        }
+                        if (!duplicate) {
+                        if (receiptCount >= 10000) throw new java.io.IOException("inbox_quota_exceeded");
+                        if (logicalId.matches("[a-f0-9]{32}") && !inboxPrefs.edit().putString("lanTransfer." + logicalId,
+                            new JSONObject().put("state", "executing").put("savedAt", System.currentTimeMillis()).toString()).commit()) throw new java.io.IOException("inbox_commit_failed");
                         String kind = json.optString("kind", "text");
                         String content = text;
                         if ("photo".equals(kind) && json.has("screenshotDataUrl")) {
@@ -2162,6 +2239,10 @@ public class FloatingWheelService extends Service {
                             MainActivity.onReceivedChatMessage(kind, content);
                         } catch (Exception e) {
                             Log.e(TAG, "Failed to deliver chat message directly", e);
+                        }
+                        if (logicalId.matches("[a-f0-9]{32}"))
+                            if (!inboxPrefs.edit().putString("lanTransfer." + logicalId, new JSONObject().put("state", "completed").put("savedAt", System.currentTimeMillis()).toString()).commit()) throw new java.io.IOException("inbox_result_commit_failed");
+                        }
                         }
                     } else {
                         if (title.isEmpty()) {

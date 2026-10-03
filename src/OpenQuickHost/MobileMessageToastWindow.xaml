@@ -31,14 +31,16 @@
 
             <DockPanel Grid.Row="0"
                         LastChildFill="False">
-                <TextBlock x:Name="TitleText"
-                           Text="手机"
-                           Foreground="{DynamicResource BrushTextMain}"
-                           FontSize="17"
-                           FontWeight="SemiBold"
-                           VerticalAlignment="Center"
-                           TextTrimming="CharacterEllipsis"
-                           DockPanel.Dock="Left" />
+                <Button DockPanel.Dock="Left" MaxWidth="210" Height="32"
+                        Style="{StaticResource SecondaryBtn}" Padding="6,0" Click="DeviceSwitcher_Click"
+                        ToolTip="切换目标设备，查看上线记录或删除设备">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock x:Name="TitleText" Text="所有设备" MaxWidth="170"
+                                   FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text=" ▾" />
+                    </StackPanel>
+                </Button>
+                <ComboBox x:Name="TargetDevicePicker" Visibility="Collapsed" />
                 
                 <Button DockPanel.Dock="Right"
                         Width="30"

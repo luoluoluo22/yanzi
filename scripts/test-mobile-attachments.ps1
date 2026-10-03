@@ -14,7 +14,18 @@ $fileMessageBody=@{sourceDeviceId=$fixture.desktopDeviceId;targetPlatform='andro
 $fileMessage=Invoke-RestMethod "$base/v1/me/mobile/messages" -Method POST -Headers $headers -ContentType 'application/json' -Body $fileMessageBody
 $fileDetail=Invoke-RestMethod "$base/v1/me/mobile/messages/$($fileMessage.messageId)" -Headers $headers
 if ($fileDetail.expiresAt -ne $uploaded.expiresAt) {throw 'Queued attachment outlives its stored content'}
-$content = Invoke-WebRequest "$base/v1/me/mobile/attachments/$($uploaded.attachmentId)/content" -Headers (@{Authorization=$headers.Authorization;Range='bytes=10-29'})
+function RequestRange([string]$Range) {
+    $request = [Net.HttpWebRequest]::Create("$base/v1/me/mobile/attachments/$($uploaded.attachmentId)/content")
+    $request.Headers['Authorization'] = $headers.Authorization
+    if ($Range -eq 'partial') { $request.AddRange(10,29) } else { $request.AddRange(99999999) }
+    $response = $request.GetResponse()
+    try {
+        $buffer = New-Object IO.MemoryStream
+        try { $response.GetResponseStream().CopyTo($buffer); $body = $buffer.ToArray() } finally { $buffer.Dispose() }
+        return @{StatusCode=[int]$response.StatusCode;Headers=$response.Headers;Content=$body}
+    } finally { $response.Dispose() }
+}
+$content = RequestRange 'partial'
 if ($content.StatusCode -ne 206 -or $content.Headers['Content-Range'] -ne "bytes 10-29/$($bytes.Length)") { throw 'Range metadata mismatch' }
 $actual = if ($content.Content -is [byte[]]) { $content.Content } else { [Text.Encoding]::UTF8.GetBytes($content.Content) }
 if ([Convert]::ToBase64String($actual) -ne [Convert]::ToBase64String($bytes[10..29])) { throw 'Range bytes mismatch' }
@@ -24,7 +35,11 @@ $second = Invoke-RestMethod "$base/v1/me/mobile/messages" -Method POST -Headers 
 if ($first.messageId -ne $second.messageId -or -not $second.deduplicated) { throw 'Idempotency mismatch' }
 function ExpectFailure([int]$Status, [scriptblock]$Action) {
     try { & $Action | Out-Null; throw 'Expected request failure' }
-    catch { if (-not $_.Exception.Response -or [int]$_.Exception.Response.StatusCode -ne $Status) { throw } }
+    catch {
+        $failure = $_.Exception
+        while ($failure.InnerException -and -not $failure.Response) { $failure = $failure.InnerException }
+        if (-not $failure.Response -or [int]$failure.Response.StatusCode -ne $Status) { throw }
+    }
 }
 if ($base -match '^http://127\.0\.0\.1:') {
     function EncodeJwt([byte[]]$data) { [Convert]::ToBase64String($data).TrimEnd('=').Replace('+','-').Replace('/','_') }
@@ -36,7 +51,7 @@ if ($base -match '^http://127\.0\.0\.1:') {
     ExpectFailure 404 { Invoke-RestMethod "$base/v1/me/mobile/attachments/$($uploaded.attachmentId)/content" -Headers @{Authorization="Bearer $foreignToken"} }
 }
 ExpectFailure 409 { Invoke-RestMethod "$base/v1/me/mobile/messages" -Method POST -Headers $headers -ContentType 'application/json' -Body $payload.Replace('repeat','different') }
-ExpectFailure 416 { Invoke-RestMethod "$base/v1/me/mobile/attachments/$($uploaded.attachmentId)/content" -Headers @{Authorization=$headers.Authorization;Range='bytes=99999999-'} }
+ExpectFailure 416 { RequestRange 'invalid' }
 ExpectFailure 400 { Invoke-RestMethod "$base/v1/me/mobile/attachments?name=bad.bin" -Method POST -Headers @{Authorization=$headers.Authorization;'X-Content-Sha256'=('0'*64)} -ContentType 'application/octet-stream' -Body $bytes }
 $publicList = Invoke-RestMethod "$base/v1/debug/list-packages"
 if (@($publicList.keys | Where-Object { $_ -like 'private-mobile/*' }).Count -gt 0) { throw 'Private attachment key exposed' }

@@ -1,4 +1,4 @@
-﻿# 燕子 (Yanzi) 项目 AI Agent 开发规范约束
+# 燕子 (Yanzi) 项目 AI Agent 开发规范约束
 
 本文件定义了所有 AI Agent（包括 Antigravity、Gemini 等助手）在参与本项目开发、维护、编译及发布时，**必须严格遵守**的行为准则与技术规约。
 
@@ -92,6 +92,13 @@
 > 2. **UNIX 静默交互哲学**：高频触发的快捷类小程序，**成功执行一律静默（不弹通知、不弹确认窗）**；只有当执行异常、文件不存在、启动失败时，才调用桌面通知报警。
 > 3. **API 自动化测试入参规范**：调用 `POST /v1/extensions/{id}/run` 进行本地测试时，JSON Body 传递的输入参数字段名必须为 **`input`**（小写），切勿写错为 `inputText`。
 > 4. **精炼命名规范（轮盘与背包呈现）**：小程序名称必须简练利落，**最长建议不超过 6 个字，以 2 ~ 4 个字为最佳**（如“日历”、“截图”、“智能识别”）。由于小程序会在【轮盘背包（Backpack）】和【燕环（RadialMenu）】槽位中高频呈现，过长的名称会导致扇区槽位内文字拥挤排版、折行重叠或被省略号截断。
+> 5. **物理位置绝对规范（严禁在 Git 仓库内开发小程序）**：
+>    - **唯一合法物理位置**：所有用户级、自用或新开发的小程序，其代码、脚本与 `manifest.json` **必须且只能保存在用户本地数据目录**：
+>      `%LOCALAPPDATA%\OpenQuickHost\Extensions\<extensionId>\`
+>      （绝对路径示例：`C:\Users\Administrator\AppData\Local\OpenQuickHost\Extensions\<id>\`）；
+>    - **专属业务持久化数据**：小程序运行时产生的所有数据文件必须存放在：
+>      `%LOCALAPPDATA%\OpenQuickHost\ExtensionStorage\<extensionId>\`（或通过 `context.ExtensionDataDirectory` 读写）；
+>    - **严禁污染 Git 代码树**：**严禁在 Git 仓库工程树内（如根目录或 `extensions/` 目录下）创建、存放或提交任何自用小程序代码**！燕子仓库保持宿主框架的纯净，所有小程序的编写、调试与热加载，一律且唯一在 `%LOCALAPPDATA%\OpenQuickHost\Extensions\` 下闭环进行。
 
 
 

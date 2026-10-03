@@ -48,6 +48,14 @@ if (-not $status.authenticated -or -not $status.remembered) { throw 'Remembered 
 $programs = Invoke-RestMethod -Uri "$base/v1/extensions" -WebSession $session -TimeoutSec 8
 if ($null -eq $programs.items) { throw 'Program list response is missing.' }
 Write-Output "Remembered-cookie program discovery: HTTP 200, count=$(@($programs.items).Count)."
+if (@($programs.items | Where-Object { $null -eq $_.capabilities }).Count -gt 0) { throw 'Program capability association is missing.' }
+$catalog = Invoke-RestMethod -Uri "$base/v1/agent/catalog" -WebSession $session -TimeoutSec 8
+if ($catalog.schemaVersion -ne '1.0' -or $catalog.extensions.Count -ne $programs.items.Count) { throw 'Unified catalog does not match installed programs.' }
+$openapi = Invoke-RestMethod -Uri "$base/v1/agent/openapi.json" -WebSession $session -TimeoutSec 8
+if ($openapi.openapi -ne '3.1.0' -or ($openapi | ConvertTo-Json -Depth 30).Contains($token)) { throw 'OpenAPI credential or version check failed.' }
+$time = Invoke-RestMethod -Uri "$base/v1/capabilities/invoke" -Method Post -ContentType 'application/json' -Body '{"name":"system.time.now","payload":{}}' -WebSession $session -TimeoutSec 8
+if (-not $time.success -or -not $time.data.utc) { throw 'Cookie-authenticated console invocation failed.' }
+Write-Output 'Cookie-authenticated AI catalog, OpenAPI and real time invocation: PASS.'
 
 # Use a fresh session containing ONLY the signed cookie (no login headers).
 $cookieOnly = New-Object Microsoft.PowerShell.Commands.WebRequestSession

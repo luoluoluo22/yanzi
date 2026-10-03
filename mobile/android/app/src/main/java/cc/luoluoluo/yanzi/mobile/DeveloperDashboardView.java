@@ -1,60 +1,122 @@
 package cc.luoluoluo.yanzi.mobile;
 
 import android.app.Activity;
-import android.graphics.Color;
 import android.view.Gravity;
-import android.view.ViewGroup;
-import android.widget.*;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 
 final class DeveloperDashboardView {
-    static final class Result {
-        final TextView count;
-        final TextView sync;
-        Result(TextView count, TextView sync){this.count=count;this.sync=sync;}
-        void update(int value, String syncText){count.setText(String.valueOf(value));sync.setText(syncText);}
+    private static final class ActionRef {
+        final LinearLayout root;
+        final ImageView icon;
+        final TextView label;
+        final int accent;
+
+        ActionRef(LinearLayout root, ImageView icon, TextView label, int accent) {
+            this.root = root;
+            this.icon = icon;
+            this.label = label;
+            this.accent = accent;
+        }
+
+        void setActive(boolean active) {
+            int color = active ? accent : YanziUiKit.MUTED;
+            icon.setColorFilter(color);
+            label.setTextColor(color);
+        }
     }
-    private DeveloperDashboardView(){}
 
-    static Result populate(Activity a, LinearLayout parent, int extensionCount,
-                           Runnable create, Runnable sync, Runnable appCenter,
-                           Runnable docs, Runnable terminal) {
-        LinearLayout head=YanziUiKit.header(a,"开发","构建、调试与管理手机小程序","code",YanziUiKit.BLUE);
-        parent.addView(head,YanziUiKit.cardLp(a));
+    static final class Result {
+        final ActionRef miniPrograms;
+        final ActionRef catalog;
+        final ActionRef docs;
+        final ActionRef terminal;
 
-        LinearLayout hero=YanziUiKit.tintedCard(a,Color.rgb(13,35,67),Color.rgb(38,76,124));
-        LinearLayout top=new LinearLayout(a);top.setOrientation(LinearLayout.HORIZONTAL);top.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout copy=new LinearLayout(a);copy.setOrientation(LinearLayout.VERTICAL);
-        copy.addView(YanziUiKit.text(a,"快速创建小程序",20,YanziUiKit.TEXT,true));
-        copy.addView(YanziUiKit.text(a,"从模板开始，保存后立即同步并运行",12,YanziUiKit.SECONDARY,false));
-        top.addView(copy,new LinearLayout.LayoutParams(0,-2,1f));
-        TextView createBtn=YanziUiKit.primaryButton(a,"新建小程序",create);
-        top.addView(createBtn,new LinearLayout.LayoutParams(YanziUiKit.dp(a,112),YanziUiKit.dp(a,40)));
-        hero.addView(top);
+        Result(ActionRef miniPrograms, ActionRef catalog, ActionRef docs, ActionRef terminal) {
+            this.miniPrograms = miniPrograms;
+            this.catalog = catalog;
+            this.docs = docs;
+            this.terminal = terminal;
+        }
 
-        LinearLayout metrics=new LinearLayout(a);metrics.setOrientation(LinearLayout.HORIZONTAL);metrics.setPadding(0,YanziUiKit.dp(a,12),0,0);
-        LinearLayout m1=YanziUiKit.metric(a,String.valueOf(extensionCount),"本机小程序",YanziUiKit.BLUE);
-        LinearLayout m2=YanziUiKit.metric(a,"热重载","开发模式",YanziUiKit.PURPLE);
-        LinearLayout m3=YanziUiKit.metric(a,"云端","同步通道",YanziUiKit.GREEN);
-        TextView count=(TextView)m1.getChildAt(0);
-        TextView syncTv=(TextView)m3.getChildAt(0);
-        metrics.addView(m1,new LinearLayout.LayoutParams(0,-2,1f));
-        LinearLayout.LayoutParams gap=new LinearLayout.LayoutParams(0,-2,1f);gap.leftMargin=YanziUiKit.dp(a,7);metrics.addView(m2,gap);
-        LinearLayout.LayoutParams gap2=new LinearLayout.LayoutParams(0,-2,1f);gap2.leftMargin=YanziUiKit.dp(a,7);metrics.addView(m3,gap2);
-        hero.addView(metrics);
-        parent.addView(hero,YanziUiKit.cardLp(a));
+        void selectWorkspace(int mobileSubTabIndex) {
+            miniPrograms.setActive(mobileSubTabIndex == 0);
+            catalog.setActive(false);
+            docs.setActive(mobileSubTabIndex == 1);
+            terminal.setActive(mobileSubTabIndex == 2);
+        }
+    }
 
-        parent.addView(YanziUiKit.sectionLabel(a,"开发工具"));
-        LinearLayout tools=new LinearLayout(a);tools.setOrientation(LinearLayout.HORIZONTAL);
-        tools.addView(YanziUiKit.actionTile(a,"sync",YanziUiKit.GREEN,"同步","账号小程序",sync),new LinearLayout.LayoutParams(0,-2,1f));
-        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-2,1f);lp.leftMargin=YanziUiKit.dp(a,7);
-        tools.addView(YanziUiKit.actionTile(a,"apps",YanziUiKit.BLUE,"应用中心","获取与发布",appCenter),lp);
-        LinearLayout.LayoutParams lp2=new LinearLayout.LayoutParams(0,-2,1f);lp2.leftMargin=YanziUiKit.dp(a,7);
-        tools.addView(YanziUiKit.actionTile(a,"file-document-outline",YanziUiKit.ORANGE,"文档","API 参考",docs),lp2);
-        LinearLayout.LayoutParams lp3=new LinearLayout.LayoutParams(0,-2,1f);lp3.leftMargin=YanziUiKit.dp(a,7);
-        tools.addView(YanziUiKit.actionTile(a,"console",YanziUiKit.PURPLE,"终端","运行 JS",terminal),lp3);
-        LinearLayout.LayoutParams toolWrap=YanziUiKit.cardLp(a);
-        parent.addView(tools,toolWrap);
-        parent.addView(YanziUiKit.sectionLabel(a,"工作区"));
-        return new Result(count,syncTv);
+    private DeveloperDashboardView() {}
+
+    static Result populate(
+            Activity a,
+            LinearLayout parent,
+            Runnable miniPrograms,
+            Runnable catalog,
+            Runnable docs,
+            Runnable terminal) {
+
+        parent.addView(YanziUiKit.sectionLabel(a, "开发工具"));
+
+        LinearLayout tools = new LinearLayout(a);
+        tools.setOrientation(LinearLayout.HORIZONTAL);
+        tools.setGravity(Gravity.CENTER_VERTICAL);
+
+        ActionRef mini = flatAction(a, "apps", YanziUiKit.BLUE, "小程序", miniPrograms);
+        ActionRef store = flatAction(a, "view-grid-outline", YanziUiKit.GREEN, "应用中心", catalog);
+        ActionRef doc = flatAction(a, "file-document-outline", YanziUiKit.ORANGE, "文档", docs);
+        ActionRef shell = flatAction(a, "console", YanziUiKit.PURPLE, "终端", terminal);
+
+        tools.addView(mini.root, weighted());
+        tools.addView(store.root, weighted());
+        tools.addView(doc.root, weighted());
+        tools.addView(shell.root, weighted());
+
+        LinearLayout.LayoutParams toolsLp = new LinearLayout.LayoutParams(-1, -2);
+        toolsLp.bottomMargin = YanziUiKit.dp(a, 8);
+        parent.addView(tools, toolsLp);
+
+        Result result = new Result(mini, store, doc, shell);
+        result.selectWorkspace(0);
+        return result;
+    }
+
+    private static ActionRef flatAction(
+            Activity a,
+            String iconName,
+            int accent,
+            String title,
+            Runnable action) {
+
+        LinearLayout item = new LinearLayout(a);
+        item.setOrientation(LinearLayout.VERTICAL);
+        item.setGravity(Gravity.CENTER);
+        item.setPadding(
+                YanziUiKit.dp(a, 4),
+                YanziUiKit.dp(a, 10),
+                YanziUiKit.dp(a, 4),
+                YanziUiKit.dp(a, 10));
+        item.setClickable(true);
+        item.setFocusable(true);
+        if (action != null) item.setOnClickListener(v -> action.run());
+
+        ImageView icon = YanziUiKit.icon(a, iconName, YanziUiKit.MUTED, 27);
+        item.addView(icon, new LinearLayout.LayoutParams(
+                YanziUiKit.dp(a, 32),
+                YanziUiKit.dp(a, 32)));
+
+        TextView label = YanziUiKit.text(a, title, 12, YanziUiKit.MUTED, true);
+        label.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams labelLp = new LinearLayout.LayoutParams(-2, -2);
+        labelLp.topMargin = YanziUiKit.dp(a, 7);
+        item.addView(label, labelLp);
+
+        return new ActionRef(item, icon, label, accent);
+    }
+
+    private static LinearLayout.LayoutParams weighted() {
+        return new LinearLayout.LayoutParams(0, -2, 1f);
     }
 }

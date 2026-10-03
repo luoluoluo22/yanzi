@@ -42,7 +42,7 @@ public class LanDiscoveryManager {
 
     private static synchronized String discoverSync(Context context, boolean force) {
         long now = System.currentTimeMillis();
-        if (now < discoverySuspendedUntil) {
+        if (!force && now < discoverySuspendedUntil) {
             long remainingSeconds = Math.max(1, (discoverySuspendedUntil - now + 999) / 1000);
             Log.d(TAG, "Discovery is suspended, skip broadcast");
             if (now - lastSuppressedLogTime > SUPPRESSED_LOG_COOL_DOWN_MS) {
@@ -58,6 +58,7 @@ public class LanDiscoveryManager {
         DatagramSocket socket = null;
         try {
             socket = new DatagramSocket();
+            MobileNetworkRouting.bindLanSocket(socket);
             socket.setBroadcast(true);
             socket.setSoTimeout(TIMEOUT_MS);
 
@@ -73,6 +74,9 @@ public class LanDiscoveryManager {
 
             byte[] recvBuf = new byte[1024];
             DatagramPacket receivePacket = new DatagramPacket(recvBuf, recvBuf.length);
+            long discoveryDeadline = System.currentTimeMillis() + TIMEOUT_MS;
+            while (true) {
+            socket.setSoTimeout((int)Math.max(1, discoveryDeadline - System.currentTimeMillis()));
             socket.receive(receivePacket);
 
             String response = new String(receivePacket.getData(), 0, receivePacket.getLength());
@@ -81,10 +85,27 @@ public class LanDiscoveryManager {
             JSONObject json = new JSONObject(response);
             String ip = json.optString("ip");
             int port = json.optInt("port");
-            String token = json.optString("token");
+            String token = "";
+            String deviceId = json.optString("deviceId");
 
-            if (!ip.isEmpty() && port > 0) {
-                cachedLanBaseUrl = "http://" + ip + ":" + port;
+            SharedPreferences selectedPrefs = context.getSharedPreferences("YanziPrefs", Context.MODE_PRIVATE);
+            String selected = selectedPrefs.getString("lanDeviceId", "");
+            try {
+                if (!SecureLanConnection.PROTOCOL.equals(json.optString("secureProtocol"))) continue;
+                // An explicitly selected available device wins; otherwise discover an account-authorized peer.
+                if (!selected.isEmpty() && !selected.equals(deviceId)) {
+                    try { SecureLanConnection.load(context, selected); continue; } catch (Exception stale) { }
+                }
+                SecureLanConnection.load(context, deviceId);
+            } catch (Exception unpaired) { continue; }
+            if (!ip.isEmpty() && port > 0 && ip.equals(receivePacket.getAddress().getHostAddress())) {
+                String candidate = "http://" + ip + ":" + port;
+                SharedPreferences verifyPrefs = context.getSharedPreferences("YanziPrefs", Context.MODE_PRIVATE);
+                verifyPrefs.edit().putString("lanDeviceId", deviceId).commit();
+                java.net.HttpURLConnection probe = MobileNetworkRouting.openLanConnection(new java.net.URL(candidate + "/v1/me/devices/protocol?notificationPort=" + (BuildConfig.APPLICATION_ID.endsWith(".dev") ? 42982 : 42981)));
+                try { probe.setConnectTimeout(1500); probe.setReadTimeout(2500); if (probe.getResponseCode() != 200) continue; }
+                finally { probe.disconnect(); }
+                cachedLanBaseUrl = candidate;
                 cachedLanApiToken = token;
                 consecutiveDiscoveryFailures = 0;
                 discoverySuspendedUntil = 0;
@@ -93,10 +114,12 @@ public class LanDiscoveryManager {
                 prefs.edit()
                      .putString("lanBaseUrl", cachedLanBaseUrl)
                      .putString("lanApiToken", cachedLanApiToken)
+                     .putString("lanDeviceId", deviceId)
                      .apply();
                 Log.i(TAG, "Saved LAN Base URL: " + cachedLanBaseUrl);
                 MobileDiagnostics.append(context, "局域网直连就绪: " + ip);
                 return cachedLanBaseUrl;
+            }
             }
 
         } catch (Exception e) {
@@ -135,6 +158,10 @@ public class LanDiscoveryManager {
         SharedPreferences prefs = context.getSharedPreferences("YanziPrefs", Context.MODE_PRIVATE);
         cachedLanApiToken = prefs.getString("lanApiToken", null);
         return cachedLanApiToken;
+    }
+
+    public static String getLanDeviceId(Context context) {
+        return context == null ? "" : context.getSharedPreferences("YanziPrefs", Context.MODE_PRIVATE).getString("lanDeviceId", "");
     }
     
     public static void clearLanBaseUrl(Context context) {

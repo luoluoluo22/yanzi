@@ -17,6 +17,43 @@
 
 ## 2. 小程序管理接口
 
+### 手机末端能力
+
+伴随应用的文件工作流可调用真实宿主能力 `files.workflow.run`，指定 `jobId`、`transferId`（LAN）或 `attachmentId`（云端）、下游 `capability`、`parameters`。相册小程序启动后提供 `album.process`。认证后的文件上传/读取为 `PUT/GET /v1/companion/files/{ticket}`，GET 支持 `offset`；大文件分块为 `/v1/companion/transfer-sessions/{id}`。详见 [相册与通用文件工作流](yanzi-album-development-2026-10-02.md)。
+
+通过现有认证读取 `GET /v1/me/devices` 选择同账号手机，再读取 `GET /v1/me/devices/{deviceId}/state`（最近状态快照）或 `GET /v1/me/devices/{deviceId}/capabilities`（真实能力目录）。立即调用使用 `POST /v1/me/devices/{deviceId}/invoke`，请求体为 `{"name":"mobile.status.get","arguments":{}}`，优先加密局域网，失败后使用云端设备消息。
+
+目前提供手机状态、能力目录、燕子文件目录/小文件读取、小程序元数据、同步进度和同步对象读取 7 项只读能力。缓存与实时结果、LAN/cloud 返回格式及大文件边界见 [手机末端能力与自动同步](yanzi-mobile-endpoint-sync-2026-10-02.md)。
+
+### 能力网络接口
+
+AI 可先通过认证读取 `GET /v1/agent/catalog`。目录关联本机已安装的小程序与对应能力，包含 `id/title/runtime/isRunning/runEndpoint/capabilities`，宿主能力在 `hostCapabilities` 中。每项能力包含名称、描述、提供者、版本、输入输出 Schema、权限和 `available`。未运行小程序的 manifest 声明仍可被发现，但只有绑定了实际 Handler 的能力才标记 `available: true`。
+
+| 接口 | 用途 |
+| --- | --- |
+| `GET /v1/agent/catalog` | AI 统一发现目录，返回所有已安装小程序及其能力 |
+| `GET /v1/agent/openapi.json` | OpenAPI 3.1 文档，描述发现、启动与调用协议，不包含 Token |
+| `GET /v1/extensions/{id}/capabilities` | 指定小程序的声明/注册能力；不存在返回 404 |
+
+`GET /v1/extensions` 也新增 `capabilities` 字段，兼容已有字段。没有声明或注册能力的小程序返回空数组，不伪造可调用接口。上述接口沿用 Bearer / X-Yanzi-Token 认证；目录不会开放匿名访问。
+
+AI 使用流程：读取目录 → 选定能力并检查 `inputSchema` → 若尚不可用，经用户授权调用对应 `runEndpoint`，随后重新查询 → 使用 `POST /v1/capabilities/invoke` 传递 `name/payload` → 检查 `success/data/errorCode`。启动请求完成不等于能力已经注册。
+
+本地网页 `/docs` 增加“AI 能力目录与调用”：登录后自动读取目录，可筛选提供者、查看已安装小程序和能力数量、展开契约、编辑 JSON 参数并实际调用，还可启动未运行的提供者、读取 OpenAPI、复制不含 Token 的目录及查看调用记录。未注册能力禁用调用按钮，退出登录会清空能力目录。
+
+以下接口均要求现有本地 Agent 认证：
+
+| 方法与路径 | 用途 |
+| --- | --- |
+| `GET /v1/capabilities` | 返回 `{ "capabilities": [...] }`，每项包含名称、描述、提供者、版本、输入输出 Schema、所需权限 |
+| `GET /v1/capabilities/{name}` | 查询能力描述；不存在返回 404 |
+| `POST /v1/capabilities/invoke` | 统一调用：`{ "name": "system.time.now", "payload": {} }` |
+| `GET /v1/capabilities/calls` | 返回 `{ "calls": [...] }`，最近最多 1000 条调用记录 |
+
+调用响应为 `{ "success": true, "data": ..., "error": null, "errorCode": null }`；失败为 `success: false`，包含可读 `error` 和 `errorCode`。参数错误返回 400，未知能力返回 404，权限拒绝返回 403，执行异常返回 500。已鉴权的本地 Agent 使用管理权限，但仍验证参数。请求体中的调用者或权限字段不会改变授权。
+
+WebView 小程序可使用 `yanzi.capability.list()`、`yanzi.capability.describe(name)` 和 `yanzi.capability.invoke(name, payload)`。调用权限来自该小程序的 manifest 声明，失败时 Promise reject。
+
 ### 2.1 获取已安装小程序列表
 * **路径**：`GET /v1/extensions`
 * **说明**：扫描并返回本地 `%LOCALAPPDATA%\OpenQuickHost\Extensions` 中已安装的所有扩展及其元数据。
@@ -257,3 +294,36 @@ $response = Invoke-RestMethod -Uri "http://127.0.0.1:53919/v1/extensions/smart-a
 
 Write-Host "Success: $($response.success), Output: $($response.output)"
 ```
+
+## 7. 局域网二进制附件直传
+
+设备消息协议发现：鉴权后 `GET /v1/me/devices/protocol`，返回协议版本、传输和路由方式及大小限制。完整约定见 `yanzi-device-message-protocol-v1.md`。本地消息显式未知版本返回 426；指向其他设备 ID 的请求返回 404，不在本机执行。
+
+电脑和手机均支持内层 `POST /v1/lan/transfers/{transferId}`。外部请求经同账号自动连接后的 AES-GCM `POST /v1/lan/secure` 封装；不在局域网发送全权 Bearer Token。localhost 原生内部转发保留本地鉴权。`transferId` 为不带横线的 UUID（32 位十六进制）。
+
+- 查询参数：`kind=photo|file`、URL 编码的 `name`；手机发电脑另需 `sourceDeviceId`，可附 `sourceDeviceName`。
+- 请求头：`Content-Length`、`X-Content-Sha256`（64 位十六进制）、适当的 `Content-Type`。
+- Body：原始文件字节；上限 30 MiB，不使用 Base64。
+- 成功返回 `success: true`；电脑另返回 `messageId`、`output`、`transport: "lan"`。相同已完成传输重试返回 `deduplicated: true`。
+- 桌面端元数据或校验和错误返回 400，ID 内容冲突返回 409，超限返回 413。
+
+网络错误可使用相同 `clientTransferId` 回退云端。业务失败和完整性校验失败不能作为重复执行的理由。
+
+手机远程文件和终端操作优先发送到桌面 `POST /v1/me/mobile/messages`，`kind` 分别为 `fs-list`、`fs-read`、`fs-write`、`run-powershell`。在 `payload.clientOperationId` 传入稳定 UUID，以便局域网重试和云端回退共享执行记录。接口返回真实处理结果；文件不存在等业务失败直接呈现给调用方。
+
+### 7.1 配对与分块会话
+
+电脑本机 `/docs` 鉴权后可打开 `/pair` 查看同账号连接状态。当前用户流程只需两端登录同一账号，不要求复制设备 ID 或密钥。原本机 POST/GET/DELETE `/v1/me/devices/pairs` 管理接口为兼容及测试保留；默认后台自动调用云端 POST `/v1/me/devices/lan-links`，不接受受限网页凭据，密钥不展示在页面。
+
+
+≥2 MiB 使用内层 `/v1/lan/transfer-sessions/{UUIDN}`：POST 清单、GET 缺块、PUT `.../blocks/{index}` 保存 1 MiB 块、POST `.../commit` 完整性校验并提交、DELETE 取消活动会话。重试保持 ID，已保存块不重复发送，已完成提交返回原结果。外层身份和权限验证后才访问对应会话。
+
+### 7.2 网页和新设备的受限云端调用
+
+云端账号所有者通过 `POST /v1/me/devices/{id}/credentials` 授予 applicationId/scopes/targetDeviceIds/fileRoots/lifetimeSeconds。网页获准单个能力后不能借路由执行终端或越过文件根目录。凭据查询不返回 Token，支持撤销。接入及逐设备回执、期限、取消、claim 和 trace 详见 [协议 v1](yanzi-device-message-protocol-v1.md) 与 [SDK 示例](../protocol/sdk/README.md)。本机能力目录和 schema 仍由现有 `/v1/capabilities` 及公开注册目录接口提供。
+
+### WebView 应用的版本化存储桥接
+
+`yanzi.storage.get(key,{scope:"local"})` 读取本地文件而不触发云端刷新；`accountRead(key)` 返回 ok/exists/revision/content/accountId；`accountWrite(key,content,expectedRevision,accountId)` 使用 CAS，冲突返回 conflict。key 自动加入当前应用 storage.namespace，身份固定当前 extensionId。写入上限 256 KiB，拒绝缺少版本和账号切换。所有 WebView 应用可复用，业务合并在扩展中实现。
+
+`POST /v1/extensions/{id}/run` 对有 app 配置的 WebView 应用创建或激活独立窗口，返回 `{ok:true,success:true,opened:true}`，opened 不代表业务同步完成。

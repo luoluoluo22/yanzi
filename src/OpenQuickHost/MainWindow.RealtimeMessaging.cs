@@ -26,6 +26,7 @@ public partial class MainWindow
         using var socket = await _cloudSyncClient!.ConnectDeviceRelayAsync(_desktopDeviceId!, cancellationToken);
         await Dispatcher.InvokeAsync(() => _mobileMessagePollTimer.Interval = TimeSpan.FromSeconds(30));
         HostAssets.AppendLog("Mobile bridge realtime connected.");
+        await Dispatcher.InvokeAsync(AppExtensionWindow.NotifyAccountConnected);
         await PollMobileMessagesSafeAsync("websocket-resync");
         var buffer = new byte[16384];
         try

@@ -89,7 +89,7 @@ public final class ExtensionsWidgetProvider extends AppWidgetProvider {
         RemoteExtensionItem[] slots = new RemoteExtensionItem[4];
         java.util.Set<String> assignedIds = new java.util.HashSet<>();
 
-        // 1. 第一步：优先把用户指定的扩展放到对应槽位
+        // 1. 第一步：优先把用户指定的小程序放到对应槽位
         for (int i = 0; i < Math.min(4, orderedIds.size()); i++) {
             String targetId = orderedIds.get(i);
             if (targetId != null && !targetId.trim().isEmpty()) {
@@ -103,7 +103,7 @@ public final class ExtensionsWidgetProvider extends AppWidgetProvider {
             }
         }
 
-        // 2. 第二步：剩下的空槽位由其它没有被指定的扩展按默认顺序填满
+        // 2. 第二步：剩下的空槽位由其它没有被指定的小程序按默认顺序填满
         int extIndex = 0;
         for (int i = 0; i < 4; i++) {
             if (slots[i] == null) {
@@ -143,7 +143,7 @@ public final class ExtensionsWidgetProvider extends AppWidgetProvider {
                 views.setViewVisibility(R.id.widget_empty_text, android.view.View.GONE);
                 views.setViewVisibility(R.id.widget_grid_container, android.view.View.VISIBLE);
 
-                // 渲染前4个扩展到 2x2 布局
+                // 渲染前4个小程序到 2x2 布局
                 int[] itemLayouts = {
                         R.id.widget_ext_item_1,
                         R.id.widget_ext_item_2,
@@ -194,7 +194,7 @@ public final class ExtensionsWidgetProvider extends AppWidgetProvider {
                         // 仅绑定到外层 Item 容器，子控件不设点击，事件自然穿透到底座触发
                         views.setOnClickPendingIntent(itemLayoutId, runPI);
                     } else {
-                        // 如果没有足够的扩展，隐藏多余卡片
+                        // 如果没有足够的小程序，隐藏多余卡片
                         views.setViewVisibility(itemLayoutId, android.view.View.INVISIBLE);
                     }
                 }
@@ -229,14 +229,14 @@ public final class ExtensionsWidgetProvider extends AppWidgetProvider {
             }
 
             if (extId != null && !extId.trim().isEmpty()) {
-                log(context, "准备执行扩展：id=" + extId + ", name=" + extName + ", inputLength=" + extInput.length());
+                log(context, "准备执行小程序：id=" + extId + ", name=" + extName + ", inputLength=" + extInput.length());
                 showToast(context, "燕子收到请求：" + extName);
                 runExtensionInBackground(context, extId, extName, extInput);
             } else {
                 String message = "执行失败：Tasker 意图缺少 ext_id。extras=" + describeExtras(intent);
                 log(context, message);
                 showToast(context, "执行失败：缺少 ext_id");
-                sendSimpleNotification(context, "燕子扩展触发失败", "Tasker 意图缺少 ext_id，请检查 Extra。");
+                sendSimpleNotification(context, "燕子小程序触发失败", "Tasker 意图缺少 ext_id，请检查 Extra。");
             }
         } else if (ACTION_REFRESH_EXT.equals(action)) {
             // 刷新广播：触发 MainActivity 的数据拉取逻辑（若 App 已运行），或者直接用 AppWidgetManager 刷新小部件本身
@@ -255,7 +255,7 @@ public final class ExtensionsWidgetProvider extends AppWidgetProvider {
             String deviceId = prefs.getString("deviceId", null);
 
             if (baseUrl == null || token == null || deviceId == null) {
-                log(context, "扩展执行失败：缺少登录态，baseUrl=" + (baseUrl != null) + ", token=" + (token != null) + ", deviceId=" + (deviceId != null));
+                log(context, "小程序执行失败：缺少登录态，baseUrl=" + (baseUrl != null) + ", token=" + (token != null) + ", deviceId=" + (deviceId != null));
                 showToast(context, "执行失败：请先打开 App 登录账号。");
                 return;
             }
@@ -278,7 +278,7 @@ public final class ExtensionsWidgetProvider extends AppWidgetProvider {
                 String messageId = MainActivity.YanziApiClient.runExtensionOnDesktop(
                         baseUrl, token, deviceId, deviceName, extId, extInput);
 
-                log(context, "扩展执行请求已发送：id=" + extId + ", messageId=" + messageId);
+                log(context, "小程序执行请求已发送：id=" + extId + ", messageId=" + messageId);
                 showToast(context, "请求已发送，开始检测执行状态...");
 
                 // 2. 轮询查询结果
@@ -329,7 +329,7 @@ public final class ExtensionsWidgetProvider extends AppWidgetProvider {
                 sendResultNotification(context, extName, statusResult, execOutput);
 
             } catch (Exception ex) {
-                log(context, "扩展执行请求失败：" + ex.getMessage());
+                log(context, "小程序执行请求失败：" + ex.getMessage());
                 sendResultNotification(context, extName, "failed", ex.getMessage());
             }
         }).start();
@@ -367,16 +367,16 @@ public final class ExtensionsWidgetProvider extends AppWidgetProvider {
         String title;
         String text;
         if ("completed".equals(status)) {
-            title = "扩展执行成功：" + extName;
+            title = "小程序执行成功：" + extName;
             text = output.trim().isEmpty() ? "命令在电脑端已顺利执行完毕。" : output;
         } else if ("failed".equals(status)) {
-            title = "扩展执行失败：" + extName;
+            title = "小程序执行失败：" + extName;
             text = output.trim().isEmpty() ? "执行中返回了错误状态。" : output;
         } else if ("acked".equals(status)) {
-            title = "扩展已执行完成：" + extName;
-            text = "扩展指令已送达电脑端运行。";
+            title = "小程序已执行完成：" + extName;
+            text = "小程序指令已送达电脑端运行。";
         } else {
-            title = "扩展执行超时：" + extName;
+            title = "小程序执行超时：" + extName;
             text = "未能在20秒内获取到状态反馈，请检查电脑端是否离线。";
         }
 

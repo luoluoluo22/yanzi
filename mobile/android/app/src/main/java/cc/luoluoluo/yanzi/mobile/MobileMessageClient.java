@@ -14,6 +14,18 @@ final class MobileMessageClient {
     static JSONObject request(String base, String path, String token, String method, JSONObject payload) throws Exception {
         if ("POST".equals(method) && "/v1/me/mobile/messages".equals(path) && payload != null && !payload.has("clientMessageId"))
             payload.put("clientMessageId", java.util.UUID.randomUUID().toString());
+        java.io.File saved = null;
+        if ("POST".equals(method) && "/v1/me/mobile/messages".equals(path) && payload != null && MainActivity.sContext != null && !(BuildConfig.DEBUG && token.equals("disposable-cloud-transfer-test"))) {
+            String kind = payload.optString("kind");
+            if ((kind.startsWith("run-") || kind.startsWith("fs-") || kind.equals("capability.invoke")) && !payload.has("expiresAt"))
+                payload.put("expiresAt", java.time.Instant.now().plusSeconds(120).toString());
+            saved = MobileMessageOutbox.save(base, token, payload);
+        }
+        JSONObject response = requestWithoutQueue(base, path, token, method, payload);
+        MobileMessageOutbox.complete(saved);
+        return response;
+    }
+    static JSONObject requestWithoutQueue(String base, String path, String token, String method, JSONObject payload) throws Exception {
         HttpURLConnection connection = MobileNetworkRouting.openCloudConnection(new URL(base + path));
         try {
             connection.setConnectTimeout(8000); connection.setReadTimeout(8000);

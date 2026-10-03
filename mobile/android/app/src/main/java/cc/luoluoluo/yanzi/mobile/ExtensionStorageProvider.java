@@ -27,6 +27,7 @@ public final class ExtensionStorageProvider extends ContentProvider {
             String scopes = app.metaData == null ? "" : app.metaData.getString("yanzi.extensionScopes", "");
             if (extensionId == null || !java.util.Arrays.asList(scopes.split(",")).contains(extensionId))
                 throw new SecurityException("Extension scope denied");
+            ExtensionStorageSignals.subscribe(context, caller, extensionId);
             if (args == null || !("read".equals(method) || "write".equals(method)))
                 return result(new JSONObject().put("ok", false).put("error", "INVALID_REQUEST"));
             String key = args.getString("key", "");
@@ -64,6 +65,10 @@ public final class ExtensionStorageProvider extends ContentProvider {
                 return result(new JSONObject().put("ok", false).put("error", "ACCOUNT_CHANGED"));
             // Opaque account identity prevents cached data crossing accounts; it is not a credential.
             value.put("accountId", accountId(token));
+            if ("write".equals(method) && value.optBoolean("ok") && !value.optBoolean("conflict")) {
+                try { ExtensionStorageSignals.publish(context,base,token,prefs.getString("deviceId",""),extensionId,key,value.optLong("revision")); }
+                catch (Exception deferred) { android.util.Log.w("YanziCompanion", "Invalidation queued for retry"); }
+            }
             return result(value);
         } catch (SecurityException denied) { throw denied; }
         catch (Exception failure) {

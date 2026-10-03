@@ -22,8 +22,12 @@ public final class MobileNotificationManager {
             );
             sync.setDescription("云同步、设备状态和小程序事件通知");
             manager.createNotificationChannel(sync);
-            manager.createNotificationChannel(new NotificationChannel(CHANNEL_CONNECTION,
-                    "跨端消息连接", NotificationManager.IMPORTANCE_LOW));
+            NotificationChannel connection = new NotificationChannel(
+                    CHANNEL_CONNECTION,
+                    "燕子实时连接",
+                    NotificationManager.IMPORTANCE_LOW);
+            connection.setDescription("保持手机与电脑的实时消息连接");
+            manager.createNotificationChannel(connection);
         }
     }
 }

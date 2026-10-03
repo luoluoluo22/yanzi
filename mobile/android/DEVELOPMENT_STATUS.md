@@ -1,8 +1,92 @@
 # 燕子 Android / 手机端开发状态
 
-> 更新时间：2026-09-30  
+> 更新时间：2026-10-02
 > 适用范围：`mobile/android`、账号 Object Sync、Windows ↔ Android 跨端小程序数据、真实手机 Dev 开发闭环。  
 > 本文记录“当前真实状态”，规则类约束仍以 `.agents/AGENTS.md` 为准。
+
+---
+
+## 2026-10-03 更新通道修复与正式发布准备
+
+燕子 0.2.36 / 笔记 0.1.4（code 5）。更新检测对连接重置、响应读取失败、HTTP 错误和无效 JSON 增加最多四次请求：公网清单直连/系统路径，再 GitHub 直连/系统路径；每次关闭连接并限制清单 2 MiB。公网 APK 下载失败后换系统路径重试，安装前继续验证包名、版本、签名和已知 SHA-256。7 项故障注入测试通过，宿主 Dev/Release、笔记 Release/lintDev 通过。正式包证书与旧版 0.2.32 及线上笔记一致。
+
+本次检查并修复受限 LAN 配对权限升级、跨扩展接续状态访问、删除设备路由、撤销凭据实时连接、终态回调和永久拒绝队列；桌面/同步/能力/LAN/传输/Outbox、Worker 12 项、SDK 9 项、本地协议 85 项两轮与模拟器笔记 5 项及后台事件往返通过。主应用完整 lintDev 仍有 152 项已有代码错误，不声称全量 Lint 通过。用户附件与 UI 备份保留本机但不提交。发布通过 GitHub Release 和 GitHub CI，不手动部署 Worker；正式渠道结果待后续发布记录确认。
+
+## 2026-10-03 当前笔记指定电脑接续
+
+笔记 0.1.4 / 手机宿主 0.2.35 / 桌面适配 0.2.4。手机更多和桌面左下“在电脑上打开”选择同账号 desktop，先保存同步，指定设备、24 小时有效期、离线上线处理与完成回执。通用 Provider/WebView handoff 接口，业务仍在用户扩展。Node 7 项、隔离 instrumentation 5 项加后台无轮询/outbox、桌面真实 editor/path/重复/隔离/过期、真机经正式 cloud 发送与完成回执 1 项通过。Dev 两包已安装打开，生产 0.2.26 保留。线上旧消息缺少 grant 已通过 authenticated /me message ownership lookup 兼容，无 Worker 手动部署，正式应用中心未更新。见开发文档最新章节。
+
+## 2026-10-03 当前笔记全屏详情与已删除
+
+笔记 0.1.3：全屏可滚动编辑、返回保存/稍后继续草稿、时间与字数、分享/保存/更多；首页标题与按钮同排，底部已删除替代同步，墓碑只读详情与确认恢复。桌面适配 0.2.3 保留删除正文以供恢复。Dev/Release/lintDev、Node 4 项、隔离 UI/同步 4 项及后台唤醒/无轮询/outbox 全通过，QA passed，最新产物 bded8cec8bf54f9f8b75d78df614ac47。正式应用中心尚未更新。
+
+## 2026-10-03 当前笔记 UI 与事件驱动同步
+
+用户选择最新参考图第一版，已实现 native 炭黑/暖黄搜索、目录分类、双列卡片、新建、深色编辑，notes 0.1.2。用户明确反对 10 秒轮询：现已移除手机 10 秒、15 分钟 periodic 和桌面 10 秒/30 秒 tick；通用宿主用 extension-storage.changed 元数据消息触发对端拉取，复用现有通道，打开/重连/失败补偿保留。手机主 app 0.2.34、桌面笔记 0.2.2。Dev 两包已安装到一加，正式包 0.2.26 保留；正式应用中心依旧笔记 0.1.1，当前测试改版未发布正式渠道。UI/同步/事件唤醒/闲置无轮询/第二次通知/签名广播限制/后台 outbox 均通过，QA passed，详见 docs/yanzi-notes-development-2026-10-03.md 当前章节。
+
+## 2026-10-03 笔记后台同步和 UI 方案
+
+笔记手机 0.1.1 已在应用中心发布并下载核对哈希。后台 JobScheduler 联网/周期 15 分钟、持久 outbox、进程回收后的下载与上传测试通过；电脑 app.runInBackground 通用声明及宿主 30 秒 tick，笔记 0.2.1 自动启动和关闭隐藏。Android Dev/Release/lintDev、Node 3 项、隔离原有 3 项和后台 outbox 1 项通过。UI 三版图已生成保存在用户笔记 design-options，等待用户选择后实施。真机 Dev 升级被自动审批拒绝，未覆盖。具体见开发文档的后台章节。
+
+## 2026-10-03 独立燕子笔记
+
+手机 notes 0.1.0 已发布应用中心，正式 APK 下载哈希复核通过，只新增 yanzi-notes 项，保留线上相册/日历版本。业务源码在用户 yanzi-notes/android，桌面 NoteGen 同目录适配同步，不把笔记业务放进宿主。宿主补通用 WebView 账号 CAS 存储与 local 读取选项；手机复用同签名 extension-storage Provider。共享 notes/sync.v1.json，Markdown 路径与正文、记录冲突、删除墓碑、离线修改/草稿恢复、账号隔离。Windows→Android→Windows 3 项隔离 instrumentation、Node 2 项测试、Dev/Release/lintDev 和桌面构建通过。一加仅安装笔记 Dev，正式燕子不变。前台同步、256 KiB 集合上限、附件和 Markdown 富文本预览未实现。详细状态见 docs/yanzi-notes-development-2026-10-03.md。
+## 2026-10-02 相册深色 UI 改版
+
+已按用户选择的第二版深色设计改为原生深灰/青柠界面、错落图库、底部三项导航、选择发送栏与处理方式弹窗。权限/选图/刷新等收进菜单；任务/作品/弹窗同主题，按可见区域解码缩略图。最终 UI instrumentation 1 项通过，Dev/Release 与 lintDev 通过；跨端回归产物 `6ebe7fdb58d24656852a3b6d0ed1a4eb`，图片 2 项、UI 1 项、大图校验、83 项协议与同步均通过。手机配置恢复、生产包保留、桌面重启通过。相册 Dev 已更新；正式应用中心仍未发布。视觉记录在用户目录 `yanzi-album/design-qa.md`，最终截图 `%TEMP%/YanziDev/album-dark-ui-final/`。
+
+## 2026-10-02 独立相册与图片工作流
+
+手机主应用升至 0.2.33（Dev/Release 构建通过），增加通用 `CompanionTransferProvider`：同签名 + extensionScopes + workflowCapabilities，凭据不出宿主；任务按账号/服务器隔离，私有原图快照、指定电脑、LAN 优先与云端设备消息回执，结果只读 URI。Windows 增加 `files.workflow.run`、受认证文件票据与按账号隔离分块会话。≥2 MiB 复用 1 MiB 缺失块续传，回传支持 offset 与最终 SHA 校验，任务结果持久化去重/参数冲突/结果未知处理。
+
+独立相册 `cc.luoluoluo.yanzi.album` / `.dev`，按日历模式开发，源码遵守用户小程序目录规则，位于 `%LOCALAPPDATA%/OpenQuickHost/Extensions/yanzi-album/`，仓库只保存通用宿主能力、构建/发布/验证入口与文档。Android 支持系统图库授权、系统选图及分享、多选、按相册筛选、日期展示、加载更多、电脑/处理方式选择、任务与作品、自动 MediaStore 保存与分享；提交时启动前台保存服务，退到后台仍保存回传作品，完成后停止。Windows 相册注册 `album.process`，提供缩放、质量压缩、黑白、JPEG 导出与 EXIF 方向规范化；保持原件，桌面查看处理作品。
+
+真机最终图片测试 2 项 instrumentation 均通过，覆盖五组 >2 MiB 的 4000×2000 实际 PNG 工作流（LAN/云端、缩放/压缩/黑白/JPEG）、EXIF 90 度 → 400×800 回传、前台/后台系统图库保存、原图 SHA 不变、重复请求及跨应用 scope 拒绝；分块/offset 字节与错误哈希拒绝通过。同期 83 项设备协议、手机能力/增量/定时/删除同步检查通过。产物：`%TEMP%/YanziDev/message-bridge/3a28e1a98e764178a3c9b091c2385db0`，前一轮大图结果 `d90b10614b9b463ab51410120e56102e`。配置/正式服务器恢复、生产包保留与桌面重启检查均通过。相册 Dev/Release 及 lintDev 通过；真机 Android 11，较新 Android 后台限制仍需对应版本设备验收。独立测试清理只匹配保留的隔离账号 ID 和任务文件名，已删除记录不盲删旧 MediaStore ID，另一个清理 instrumentation 检查通过。
+
+应用中心准备相册 0.1.0 记录、APK 签名/哈希和最低宿主 33；隔离 R2 + Worker 的目录发现、APK 下载与哈希校验通过。交付文件在 `.artifacts/application-catalog/`：相册 APK、主应用 0.2.33 APK、桌面小程序 ZIP、完整源码 ZIP、catalog.json。正式应用中心和主应用更新渠道尚未发布，未覆盖手机生产包；不能把本地验收当作线上已上架。当前桌面可发现 `album.process` 与 `files.workflow.run`。
+
+详细接口、安装依赖、源码位置与边界见 [相册开发与交付](../../docs/yanzi-album-development-2026-10-02.md)。
+
+## 2026-10-02 手机末端能力与统一增量同步
+
+按状态快照 → 能力调用 → 连接同步 → 定时同步顺序实现原生后台基础：`MobileDeviceCapabilities` 发布 7 项只读能力；`DeviceHeartbeatService` 每 5 秒采集变化、30 秒发布心跳，并独立调度 `MobileAccountSync`。启动/实时重连立即检查账号对象，每 60 秒增量检查；Worker `sync-ready` 提示合并到约 3 秒检查。对象与游标持久化、账号/服务器隔离、版本去重、删除 tombstone，燕幕及账号小程序定义刷新到现有缓存与视图。无变化仅更新最近检查时间，不误报最近更新。
+
+桌面增加受现有令牌保护的 `/v1/me/devices/{deviceId}/state|capabilities|invoke`，读取缓存或调用手机原生能力，调用优先加密 LAN，网络失败后云端 claim/ACK/结果恢复。云端结果先写持久缓存后 ACK。手机连接详情展示具体同步内容、最近检查和最近更新。文件能力限定燕子 Documents，读取上限 64 KiB；大文件继续附件协议，不随状态心跳上传。
+
+协议、参数、运行限制和验证入口见 [手机末端能力与自动同步](../../docs/yanzi-mobile-endpoint-sync-2026-10-02.md)。正式 Worker 未发布实时提示变更；60 秒增量轮询不依赖提示。
+
+真机完整回归通过：83 项设备协议检查；7 项目录、后台状态/文件读取、Agent API 加密 LAN 调用；增量对象、无变化定时检查、删除传播、路径穿越拒绝；双向中文消息、图片及二进制附件字节校验、断线与进程恢复、120 秒实际离线过期。产物：`%TEMP%/YanziDev/message-bridge/6ea2fc97b5ff431aa9f86e2ea15659cf`。`DEV_SERVER_ADDRESS_RESTORED`、`PRODUCTION_PRESERVED` 和 `DEV_PREFERENCES_RESTORED=True` 均通过，正式服务器地址恢复；桌面重启通过。桌面 / Android Dev 构建 0 错误，Worker Node 12 项测试通过。
+
+最终针对性回归 `-CapabilitiesOnly -VerifyAccountLan` 通过：Agent API 同账号设备发现、目录与快照、加密 LAN 调用、移除隔离测试 LAN 记录后的云端调用及按目标结果查询；原生文件字节、增量/定时/删除同步与越界拒绝再次通过。产物：`%TEMP%/YanziDev/message-bridge/97b9f4b0776f419f9a21bb7a44927054`。配置恢复、正式地址和生产包保留检查通过，桌面 PID 23508 已启动。
+
+## 2026-10-02 手机电脑页简化
+
+设备管理补齐：Windows 手机消息窗口将目标切换移到左上角，菜单显示简短设备名（同名加短尾号）、在线状态、最近活动、首次登记、网络地区，右侧提供逐设备删除。云端列表不再与历史本地记录无条件合并；云端不可达时才明确回退本地记录。Worker 删除将设备设为停用，撤销设备凭据、取消待发送的指定目标请求并断开实时连接；旧心跳不能重新登记。Windows / Android 成功刷新账号自动连接列表后清理失效直连授权。位置由 Cloudflare 请求地区提供，历史没有采集则显示“未记录”；不是 GPS 或登录地点历史。后端需通过 Git / Cloudflare CI 发布后，正式环境的删除和新地区数据才会生效。
+
+验证：桌面及 Android Dev 构建 0 错误，Dev 覆盖安装真机，生产包未变化。Worker Node 12 项检查通过；隔离 Worker 协议 83 项检查连续两轮及通用 SDK 端到端通过，覆盖未登录/跨账号删除拒绝、删除后旧心跳拒绝、消息读取拒绝和凭据撤销。产物：`%TEMP%/YanziDev/device-foundation/520529923616462fb5821276fe69426a`。桌面应用已重新启动；当前 computer-use 未取得可操作的燕子窗口，菜单视觉验收尚未完成，不将编译通过等同于截图验收。未删除真实账号中的历史设备。
+
+后续调整：顶部仅显示“云端 / 局域网 / 离线”，删除“在线”和没有数据同步依据的“已同步”。左上电脑图标可点击打开连接详情，显示通道、真实 Wi-Fi IPv4（排除 VPN）、直连检测、已授权设备数量和账号连接接口状态，可重新检测。主页面和详情的局域网确认均使用加密协议探测成功（HTTP 200），不再把裸 `/health` 或 HTTP 401 视为已直连。
+
+当前真机阻碍：手机 `192.168.1.72/24`、电脑 `192.168.1.100/24`；正式账号服务 `/v1/me/devices/lan-links` 在真实登录下返回 HTTP 404，手机有效直连授权为 0，因此回退云端。自动连接后端代码尚未在正式服务生效，须通过项目规定的 Git / Cloudflare CI 发布，不能用手动导入密钥或假显示局域网替代。
+
+电脑页移除“同账号设备连接”按钮，继续由后台自动连接。顶部以 SVG 路径电脑图标替代“我的电脑”文字，连接状态在图标右侧同一行显示；图标保留“我的电脑”无障碍描述。底部电脑入口使用相同电脑图标。
+
+验证：Dev APK 构建通过，覆盖安装真机 Dev 并启动；UIAutomator 确认连接按钮为 0、顶部状态为“在线 · 云端 · 已同步”，截图确认上下均为电脑图标。生产包版本及 APK 路径保持不变。图标使用 `mdi:desktop-classic` 显式引用，避免普通名称推断为方格图标。
+
+## 2026-10-02 Dev 登录地址残留修复
+
+用户登录提示无法连接 8811，检查真机 Dev 的 baseUrl 仍为本地测试地址 `http://127.0.0.1:8811`，测试 Worker 已关闭。已恢复 `https://sync.luoluoluo.cc.cd` 并重启 Dev，线上 health 返回正常。未清除应用数据或改动生产包。桥接测试恢复偏好前后清理测试遗留的 SharedPreferences `.bak`，并在重新启动后核对服务器地址与测试前一致，防止 `.bak` 覆盖恢复后的 XML。
+
+## 2026-10-02 多设备基础协议补齐（当前状态）
+
+Windows 与 Android 的当前连接方式为同账号自动连接：登录后后台从账号服务取得设备连接信息并完成加密握手，无需设备 ID、配对码或复制密钥。手机电脑页直接显示连接状态，电脑 `/pair` 显示状态、提供刷新。UDP 不公开 Token；登录其他账号无法取得连接信息；受限网页凭据不能取得全权设备连接。加密、账号隔离与系统密钥保护在后台保留。桌面新安装默认启用局域网，已有配置中明确关闭的设置仍保持。
+
+
+照片、截图、普通文件先保存私有 Outbox 快照，再优先局域网发送；成功后仍云端补投账号消息，使其他在线或离线设备能够同步。≥2 MiB 分块续传，只补未确认的 1 MiB 块。远程文件列表、读取、写入和终端同样优先已配对的目标电脑；命令固定目标、短期限、原子认领及持久去重，结果未知不会自动重做。
+
+多设备目标、按设备 ACK、稳定 ID/trace、分页恢复、受限网页凭据、接收空间预检查与清理、浏览器/Node 通用 SDK 已实现。隔离 Worker 73 项协议检查（两电脑两手机及新设备）、22 项 Worker/SDK Node 检查和真机云端完整回归通过。真实硬件是一台 Windows 加一台 OnePlus GM1900 Dev；生产包保持不变。云端变更尚未部署，新版 APK 自动建立同账号 LAN 连接（需云端支持 `/v1/me/devices/lan-links`）。
+
+实现和最终测试记录见 `docs/yanzi-device-network-audit-2026-10-02.md`、`docs/yanzi-device-message-protocol-v1.md`、`docs/yanzi-lan-transfer-progress-2026-10-02.md`。以下原有章节保留历史阶段记录；新协议状态以本节为准。
 
 ---
 

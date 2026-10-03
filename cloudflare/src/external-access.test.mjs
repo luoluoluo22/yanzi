@@ -9,7 +9,7 @@ import {handleApplicationPlatform} from './application-platform.js';
 globalThis.crypto??=webcrypto;
 const migration=await readFile(new URL('../migrations/0020_external_access.sql',import.meta.url),'utf8');
 const scopeMigration=await readFile(new URL('../migrations/0021_external_access_scopes.sql',import.meta.url),'utf8');
-const profile=JSON.parse(await readFile(new URL('../../extensions/taskbar-calendar/api-schema.json',import.meta.url),'utf8'));
+const profile=JSON.parse(await readFile(new URL('../tests/fixtures/calendar-record-schema.json',import.meta.url),'utf8'));
 class HttpError extends Error {constructor(status,code,message){super(message);this.status=status;this.code=code;}}
 function fixture(){
   const db=new DatabaseSync(':memory:');db.exec(migration);db.exec(scopeMigration);

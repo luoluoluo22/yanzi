@@ -795,6 +795,7 @@ public static class YanziAction
             EntryMode = manifest.EntryMode,
             Entry = manifest.Entry,
             Permissions = manifest.Permissions,
+            Provides = manifest.Provides,
             Script = manifest.Script,
             Startup = manifest.Startup,
             SearchProvider = manifest.SearchProvider,
@@ -1189,6 +1190,9 @@ public sealed record LocalExtensionManifest
 
     public string[]? Permissions { get; init; }
 
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<YanziCapabilityDeclaration>? Provides { get; init; }
+
     public LocalExtensionInlineScriptManifest? Script { get; init; }
 
     public LocalExtensionStartupManifest? Startup { get; init; }
@@ -1219,6 +1223,8 @@ public sealed class LocalExtensionAppManifest
 
     public bool? SingleInstance { get; init; }
 
+    public bool? RunInBackground { get; init; }
+
     public LocalExtensionHostedViewWindowManifest? Window { get; init; }
 
     public LocalExtensionAppStorageManifest? Storage { get; init; }
@@ -1240,7 +1246,8 @@ public sealed class LocalExtensionAppManifest
             Storage?.Engine ?? "files",
             Storage?.Sync ?? "webdav",
             Storage?.Namespace,
-            Bridge?.Apis ?? []);
+            Bridge?.Apis ?? [],
+            RunInBackground ?? false);
     }
 }
 

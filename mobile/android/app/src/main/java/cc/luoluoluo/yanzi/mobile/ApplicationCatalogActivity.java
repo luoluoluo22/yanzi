@@ -40,24 +40,14 @@ public final class ApplicationCatalogActivity extends Activity {
         titleCopy.addView(YanziUiKit.text(this,"应用中心",22,YanziUiKit.TEXT,true));
         titleCopy.addView(YanziUiKit.text(this,"连接、获取并管理燕子应用",12,YanziUiKit.SECONDARY,false));
         top.addView(titleCopy,new LinearLayout.LayoutParams(0,-2,1f));
+        top.addView(YanziUiKit.link(this,"刷新",this::load));
         root.addView(top,YanziUiKit.cardLp(this));
 
-        LinearLayout hero=YanziUiKit.tintedCard(this,android.graphics.Color.rgb(13,35,67),android.graphics.Color.rgb(38,76,124));
-        hero.addView(YanziUiKit.header(this,"一个入口，连接你的工具","账号应用跨设备可见；独立应用仍由每台手机确认安装","apps",YanziUiKit.BLUE));
-        status=YanziUiKit.text(this,"正在读取应用目录…",12,YanziUiKit.SECONDARY,false);
-        status.setPadding(0,YanziUiKit.dp(this,10),0,0);
-        hero.addView(status);
-        root.addView(hero,YanziUiKit.cardLp(this));
+        status=YanziUiKit.text(this,"正在读取应用目录…",11,YanziUiKit.MUTED,false);
+        status.setPadding(YanziUiKit.dp(this,3),0,0,YanziUiKit.dp(this,8));
+        root.addView(status);
 
-        LinearLayout actions=new LinearLayout(this);actions.setOrientation(LinearLayout.HORIZONTAL);
-        actions.addView(YanziUiKit.actionTile(this,"refresh",YanziUiKit.GREEN,"刷新","更新目录",this::load),new LinearLayout.LayoutParams(0,-2,1f));
-        LinearLayout.LayoutParams a2=new LinearLayout.LayoutParams(0,-2,1f);a2.leftMargin=YanziUiKit.dp(this,7);
-        actions.addView(YanziUiKit.actionTile(this,"database-outline",YanziUiKit.PURPLE,"AI 数据","精确授权",()->startActivity(new Intent(this,AiDataAccessActivity.class))),a2);
-        LinearLayout.LayoutParams a3=new LinearLayout.LayoutParams(0,-2,1f);a3.leftMargin=YanziUiKit.dp(this,7);
-        actions.addView(YanziUiKit.actionTile(this,"key-outline",YanziUiKit.ORANGE,"开发者授权","1 小时令牌",this::authorize),a3);
-        root.addView(actions,YanziUiKit.cardLp(this));
-
-        root.addView(YanziUiKit.sectionLabel(this,"全部应用"));
+        root.addView(YanziUiKit.sectionLabel(this,"可获取应用"));
         list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);
         root.addView(list);
 
@@ -67,59 +57,7 @@ public final class ApplicationCatalogActivity extends Activity {
     private void checkAccount()throws Exception{
         if(!accountId.equals(ExtensionStorageProvider.accountId(prefs.getString("token",""))))throw new IllegalStateException("账号已切换，请重新打开应用中心");
     }
-    private void authorize(){
-        LinearLayout form=new LinearLayout(this);form.setOrientation(1);
-        EditText extension=new EditText(this);extension.setHint("小程序 ID，例如 quick-notes");form.addView(extension);
-        EditText client=new EditText(this);client.setHint("应用名称，例如我的网页便签");form.addView(client);
-        CheckBox writable=new CheckBox(this);writable.setText("允许修改数据（默认只读）");form.addView(writable);
-        new android.app.AlertDialog.Builder(this).setTitle("授权指定小程序数据").setMessage("此授权有效 1 小时，只开放所填写的小程序。确认后复制访问令牌给你信任的应用。").setView(form)
-            .setNegativeButton("取消",null).setPositiveButton("授权",(dialog,which)->{
-                String id=extension.getText().toString().trim(),clientName=client.getText().toString().trim(),access=writable.isChecked()?"read-write":"read";
-                work(()->{
-                JSONObject input=new JSONObject().put("userConsent",true).put("clientName",clientName).put("access",access);
-                JSONObject grant=json("/v1/applications/"+Uri.encode(id)+"/grants",input,true,"POST");checkAccount();
-                ui(()->new android.app.AlertDialog.Builder(this).setTitle("授权已创建").setMessage("有效期 1 小时。可复制专用令牌，或立即撤销这次授权。").setPositiveButton("复制专用令牌",(d,w)->{
-                    android.content.ClipboardManager clipboard=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
-                    android.content.ClipData clip=android.content.ClipData.newPlainText("燕子应用授权",grant.optString("accessToken"));
-                    android.os.PersistableBundle extras=new android.os.PersistableBundle();extras.putBoolean("android.content.extra.IS_SENSITIVE",true);clip.getDescription().setExtras(extras);
-                    clipboard.setPrimaryClip(clip);
-                }).setNegativeButton("撤销",(d,w)->work(()->{json("/v1/applications/"+Uri.encode(id)+"/grants/"+grant.getString("grantId"),null,true,"DELETE");ui(()->status.setText("授权已撤销"));})).show());
-            });}).show();
-    }
-    private void createInvitation(){
-        LinearLayout form=new LinearLayout(this);form.setOrientation(1);
-        EditText extension=new EditText(this);extension.setText("taskbar-calendar");extension.setHint("小程序 ID");form.addView(extension);
-        EditText key=new EditText(this);key.setText("calendar.v1.json");key.setHint("数据文件 key");form.addView(key);
-        CheckBox writable=new CheckBox(this);writable.setText("允许申请增删改查（默认只读）");form.addView(writable);
-        new android.app.AlertDialog.Builder(this).setTitle("创建在线接入地址").setMessage("地址有效 7 天。把地址交给 AI，它申请后仍需你逐次确认；确认前不能访问数据。").setView(form)
-            .setNegativeButton("取消",null).setPositiveButton("创建",(d,w)->work(()->{
-                JSONObject input=new JSONObject().put("extensionId",extension.getText().toString().trim()).put("key",key.getText().toString().trim()).put("access",writable.isChecked()?"read-write":"read");
-                JSONObject result=json("/v1/applications/access-invites",input,true,"POST");checkAccount();
-                ui(()->new android.app.AlertDialog.Builder(this).setTitle("接入地址已生成").setMessage(result.optString("address"))
-                    .setPositiveButton("复制地址",(dialog,which)->{android.content.ClipData clip=android.content.ClipData.newPlainText("燕子接入地址",result.optString("address"));android.os.PersistableBundle extras=new android.os.PersistableBundle();extras.putBoolean("android.content.extra.IS_SENSITIVE",true);clip.getDescription().setExtras(extras);((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(clip);})
-                    .setNegativeButton("撤销地址",(dialog,which)->work(()->{json("/v1/applications/access-invites/"+result.getString("address").substring(result.getString("address").lastIndexOf('/')+1),null,true,"DELETE");ui(()->status.setText("接入地址已撤销"));})).show());
-            })).show();
-    }
-    private void createMultiInvitation(){work(()->{
-        JSONArray resources=json("/v1/applications/access-resources",null,true).getJSONArray("resources");checkAccount();
-        ui(()->{
-            LinearLayout form=new LinearLayout(this);form.setOrientation(1);java.util.List<CheckBox> choices=new java.util.ArrayList<>();
-            CheckBox all=new CheckBox(this);all.setText("全选当前清单");all.setChecked(true);form.addView(all);
-            LinearLayout rows=new LinearLayout(this);rows.setOrientation(1);ScrollView scroll=new ScrollView(this);scroll.addView(rows);form.addView(scroll,new LinearLayout.LayoutParams(-1,(int)(200*getResources().getDisplayMetrics().density)));
-            for(int i=0;i<resources.length();i++){JSONObject scope=resources.optJSONObject(i);CheckBox choice=new CheckBox(this);choice.setChecked(true);choice.setText(scope.optString("name")+" · "+scope.optString("key"));choices.add(choice);rows.addView(choice);}
-            all.setOnClickListener(v->{for(CheckBox c:choices)c.setChecked(all.isChecked());});
-            CheckBox writable=new CheckBox(this);writable.setText("允许申请增删改查（默认只读）");form.addView(writable);
-            new android.app.AlertDialog.Builder(this).setTitle("AI 可申请的数据清单").setMessage("只提供所选数据的目录。AI 可申请部分或全部，仍需你再次确认。地址有效 7 天。").setView(form).setNegativeButton("取消",null)
-                .setPositiveButton("生成提示词",(d,w)->{JSONArray selected=new JSONArray();for(int i=0;i<choices.size();i++)if(choices.get(i).isChecked())selected.put(resources.optJSONObject(i));work(()->{
-                    JSONObject result=json("/v1/applications/access-invites",new JSONObject().put("resources",selected).put("access",writable.isChecked()?"read-write":"read"),true,"POST");checkAccount();
-                    String address=result.getString("address"),prompt="请访问燕子数据接入地址："+address+"\n先 GET 地址和 resourceList 获取数据清单。根据我的任务只申请必要的 scopes；仅在我明确要求全部时申请 scopes=all。提交 clientName，告诉我核对码，等待手机或电脑确认，按 poll 领取限时授权，再调用返回的 resources 数据接口。修改前读取最新版本；未经我明确要求不要删除数据。";
-                    ui(()->new android.app.AlertDialog.Builder(this).setTitle("接入提示词已生成").setMessage(prompt).setPositiveButton("复制提示词",(dialog,which)->{android.content.ClipData clip=android.content.ClipData.newPlainText("燕子 AI 接入",prompt);android.os.PersistableBundle extras=new android.os.PersistableBundle();extras.putBoolean("android.content.extra.IS_SENSITIVE",true);clip.getDescription().setExtras(extras);((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(clip);})
-                        .setNegativeButton("撤销地址",(dialog,which)->work(()->{json("/v1/applications/access-invites/"+address.substring(address.lastIndexOf('/')+1),null,true,"DELETE");ui(()->status.setText("接入地址已撤销"));})).show());
-                });}).show();
-        });
-    });}
-    @Override protected void onPause(){ExternalAccessManager.background(this);super.onPause();}
-    private interface Task{void run()throws Exception;}
+    private interface Task { void run() throws Exception; }
     private void work(Task task){executor.execute(()->{try{checkAccount();task.run();}catch(Exception e){ui(()->status.setText("操作失败："+e.getMessage()));}});}
     private void ui(Runnable action){runOnUiThread(()->{if(!isFinishing()&&!isDestroyed())action.run();});}
     private void load(){if(accountId==null)return;work(()->{

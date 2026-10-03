@@ -148,6 +148,7 @@ public sealed partial class LocalAgentApiServer : IDisposable
 
     public void Start()
     {
+        YanziBuiltinCapabilityRegistration.Register();
         _listener.Start();
         _loopTask = Task.Run(ListenLoopAsync);
         HostAssets.AppendLog($"Local Agent API started at {_prefix}");
@@ -229,6 +230,12 @@ public sealed partial class LocalAgentApiServer : IDisposable
                 path = "/";
             }
 
+            if (await TrySecureLanAsync(request, response, path)) return;
+            if (request.RemoteEndPoint is { } remotePeer && !System.Net.IPAddress.IsLoopback(remotePeer.Address))
+            {
+                await WriteJsonAsync(response, 426, new { error = "encrypted_lan_required", protocol = "yanzi.lan.aead.v1" });
+                return;
+            }
             if (request.HttpMethod == "OPTIONS")
             {
                 response.StatusCode = 204;
@@ -476,7 +483,25 @@ public sealed partial class LocalAgentApiServer : IDisposable
                 await WriteJsonAsync(response, 401, new { error = "unauthorized" });
                 return;
             }
+            if (request.HttpMethod == "GET" && path == "/v1/me/devices/peers")
+            {
+                await WriteJsonAsync(response, 200, new { items = YanziPeerRegistry.List() });
+                return;
+            }
+            if (await TryHandleMobileDeviceApiAsync(request, response, path)) return;
+            if (await TryCompanionFiles(request, response, path)) return;
+            if (request.HttpMethod == "GET" && path == "/v1/me/devices/protocol")
+            {
+                await WriteJsonAsync(response, 200, YanziDeviceMessageProtocol.Describe());
+                return;
+            }
             if (await TryHandleConsoleSessionApiAsync(request, response, path))
+                return;
+            if (await TryPairingApiAsync(request, response, path)) return;
+            if (await TryHandleCapabilityApiAsync(request, response, path))
+                return;
+            if (await TryTransferSessionsAsync(request, response, path)) return;
+            if (await TryHandleLanTransferApiAsync(request, response, path))
                 return;
 
             // UI capture and interaction endpoints are scoped to an installed extension.
@@ -1028,8 +1053,25 @@ public sealed partial class LocalAgentApiServer : IDisposable
                 var payload = await ReadJsonBodyAsync(request);
 
                 var sourceDeviceId = GetString(payload, "sourceDeviceId");
+                if (payload.TryGetProperty("protocolVersion", out var protocolVersion) &&
+                    (protocolVersion.ValueKind != JsonValueKind.Number || !protocolVersion.TryGetInt32(out var version) || version != YanziDeviceMessageProtocol.Version))
+                {
+                    await WriteJsonAsync(response, 426, new { error = "unsupported_message_protocol",
+                        details = new { supportedVersions = new[] { YanziDeviceMessageProtocol.Version } } });
+                    return;
+                }
+                var targetDeviceId = GetString(payload, "targetDeviceId");
+                if (!string.IsNullOrEmpty(targetDeviceId) && targetDeviceId != DeviceIdentityStore.GetOrCreateDesktopDeviceId())
+                {
+                    await WriteJsonAsync(response, 404, new { error = "target_device_not_found" });
+                    return;
+                }
                 if (!string.IsNullOrEmpty(sourceDeviceId))
                 {
+                    if (request.RemoteEndPoint is { } remote && !IPAddress.IsLoopback(remote.Address))
+                        YanziPeerRegistry.ObserveAuthenticated(sourceDeviceId, remote.Address,
+                            payload.TryGetProperty("notificationPort", out var notificationPort) && notificationPort.TryGetInt32(out var advertisedPort) ? advertisedPort : 42981,
+                            GetString(payload, "sourceDeviceName") ?? sourceDeviceId);
                     LastKnownMobileDeviceModel = MobileDeviceNameNormalizer.Normalize(sourceDeviceId);
                     MobileDeviceConnected?.Invoke(LastKnownMobileDeviceModel);
                 }
@@ -1038,12 +1080,15 @@ public sealed partial class LocalAgentApiServer : IDisposable
                 var message = new DeviceMessageRecord
                 {
                     MessageId = messageId,
+                    TraceId = GetString(payload, "traceId") ?? GetString(payload, "clientMessageId"),
                     SourceDeviceId = sourceDeviceId ?? "lan",
+                    TargetDeviceId = targetDeviceId,
                     TargetPlatform = GetString(payload, "targetPlatform") ?? "desktop",
-                    Kind = GetString(payload, "kind") ?? "text",
+                    Kind = (GetString(payload, "kind") ?? "text").ToLowerInvariant(),
                     Title = GetString(payload, "title") ?? "局域网消息",
                     Text = GetString(payload, "text") ?? "",
-                    CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(),
+                    CreatedAt = DateTimeOffset.UtcNow.ToString("O"),
+                    ExpiresAt = GetString(payload, "expiresAt") ?? DateTimeOffset.UtcNow.AddMinutes(2).ToString("O"),
                     Payload = new Dictionary<string, JsonElement>()
                 };
 
@@ -1055,6 +1100,12 @@ public sealed partial class LocalAgentApiServer : IDisposable
                     }
                 }
 
+                message.Payload["authorization"] = JsonSerializer.SerializeToElement(request.Headers["X-Yanzi-Capability-Grant"] is { } capGrant ?
+                    (object)new {type = "lan-pair", capability = capGrant} : new {type = request.Headers["X-Yanzi-Pair-Authority"] ?? "account-owner"});
+                var logicalId = GetString(payload, "clientMessageId");
+                if (!string.IsNullOrWhiteSpace(logicalId) &&
+                    !message.Payload.ContainsKey("clientOperationId"))
+                    message.Payload["clientOperationId"] = JsonSerializer.SerializeToElement(logicalId);
                 var result = await _onMobileMessage(message);
                 var completedMessage = CreateLocalMobileMessageDetail(message, result.success, result.output);
                 _localMobileMessages[messageId] = completedMessage;
@@ -1124,6 +1175,22 @@ public sealed partial class LocalAgentApiServer : IDisposable
                 if (_runningTasks.ContainsKey(id))
                 {
                     await WriteJsonAsync(response, 400, new { error = "already_running" });
+                    return;
+                }
+
+                // WebView applications share the same authenticated launch endpoint as scripts.
+                if (command.App != null)
+                {
+                    try
+                    {
+                        await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+                        {
+                            if (!AppExtensionWindow.TryActivateExisting(command))
+                                new AppExtensionWindow(command, input, "agent-api").Show();
+                        });
+                        await WriteJsonAsync(response, 200, new { ok = true, success = true, opened = true });
+                    }
+                    catch (Exception ex) { await WriteJsonAsync(response, 500, new { ok = false, error = ex.Message }); }
                     return;
                 }
 
@@ -1953,7 +2020,8 @@ public sealed partial class LocalAgentApiServer : IDisposable
             globalShortcut = x.GlobalShortcut,
             runtime = x.Runtime,
             entry = x.EntryPoint,
-            permissions = x.Permissions
+            permissions = x.Permissions,
+            capabilities = YanziAgentCapabilityCatalog.ForExtension(x)
         };
     }
 
@@ -2409,6 +2477,17 @@ public sealed partial class LocalAgentApiServer : IDisposable
             font-family: 'Consolas', monospace;
             font-size: 12px;
         }
+        .capability-contract { max-height: 280px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+        .catalog-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        .catalog-table th, .catalog-table td { padding: 9px; border-bottom: 1px solid var(--border-color); text-align: left; overflow-wrap: anywhere; }
+        .catalog-scroll { max-height: 260px; overflow: auto; margin-top: 12px; }
+        .capability-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+        button:disabled { opacity: .45; cursor: not-allowed; }
+        @media (max-width: 1000px) {
+            .container { grid-template-columns: minmax(0, 1fr); }
+            .sidebar { position: static; height: auto; }
+            .panel-response { min-height: 220px; }
+        }
     </style>
 </head>
 <body>
@@ -2431,6 +2510,52 @@ public sealed partial class LocalAgentApiServer : IDisposable
                     <div class="card-body">
                         <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">检查 API 监听器是否运行正常。</p>
                         <button class="btn-send" onclick="testHealth()">发送请求</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="api-section" id="capability-console">
+                <h3 class="api-section-title">AI 能力目录与调用</h3>
+                <p><a href="/pair" target="_blank" rel="noopener">同账号设备连接状态</a>（请先完成下方控制台鉴权）</p>
+                <div class="card expanded">
+                    <div class="card-header" onclick="toggleCard(this)">
+                        <span class="method get">目录</span>
+                        <span class="path">/v1/agent/catalog</span>
+                        <span class="desc">小程序及对应能力</span>
+                    </div>
+                    <div class="card-body">
+                        <p style="font-size:13px;color:var(--text-muted)">读取本机实际安装的小程序、能力契约和可用状态。选择能力，填写参数后可直接调用。</p>
+                        <div class="capability-actions">
+                            <button class="btn-send" onclick="refreshCapabilityCatalog(true)">刷新能力目录</button>
+                            <button class="btn-send" onclick="sendRequest('GET', '/v1/agent/openapi.json')">读取 AI 接口规范</button>
+                            <button class="btn-send" id="copy-capability-catalog" onclick="copyCapabilityCatalog()" disabled>复制 AI 能力目录</button>
+                            <button class="btn-send" onclick="sendRequest('GET', '/v1/capabilities/calls')">查看调用记录</button>
+                        </div>
+                        <p id="capability-load-state" role="status" aria-live="polite" style="font-size:12px;color:var(--text-muted)">请先验证本地 API 身份</p>
+                        <details>
+                            <summary>已安装小程序及对应能力</summary>
+                            <div class="catalog-scroll">
+                                <table class="catalog-table"><thead><tr><th>小程序</th><th>运行状态</th><th>可用 / 声明能力</th></tr></thead><tbody id="capability-programs"></tbody></table>
+                            </div>
+                        </details>
+                        <div class="form-group">
+                            <label for="capability-provider">能力提供者</label>
+                            <select class="form-control" id="capability-provider" onchange="filterCapabilityOptions()" disabled><option value="">请先读取能力目录</option></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="capability-name">对应能力</label>
+                            <select class="form-control" id="capability-name" onchange="onSelectedCapabilityChanged()" disabled><option value="">请选择能力</option></select>
+                        </div>
+                        <p id="capability-availability" role="status" aria-live="polite" style="font-size:12px;color:var(--text-muted)">尚未选择能力</p>
+                        <details open><summary>能力说明、输入输出 Schema 与权限</summary><pre class="capability-contract" id="capability-contract">选择能力后显示契约。</pre></details>
+                        <div class="form-group">
+                            <label for="capability-payload">调用参数（JSON，按照 inputSchema 填写）</label>
+                            <textarea class="form-control" id="capability-payload" rows="5" spellcheck="false">{}</textarea>
+                        </div>
+                        <div class="capability-actions">
+                            <button class="btn-send" id="invoke-capability" onclick="testInvokeCapability()" disabled>调用所选能力</button>
+                            <button class="btn-send" id="start-capability-provider" onclick="startCapabilityProvider()" disabled>启动提供小程序</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -2709,6 +2834,157 @@ public sealed partial class LocalAgentApiServer : IDisposable
             ]
         }, null, 2);
         let activePrograms = [];
+        let capabilityCatalog = null;
+        let filteredCapabilities = [];
+        let capabilityCatalogRequest = 0;
+
+        function resetCapabilityCatalog(message) {
+            ++capabilityCatalogRequest;
+            capabilityCatalog = null;
+            filteredCapabilities = [];
+            document.getElementById('capability-provider').replaceChildren(new Option('请先读取能力目录', ''));
+            document.getElementById('capability-provider').disabled = true;
+            document.getElementById('capability-name').replaceChildren(new Option('请选择能力', ''));
+            document.getElementById('capability-name').disabled = true;
+            document.getElementById('capability-programs').replaceChildren();
+            document.getElementById('capability-contract').textContent = '选择能力后显示契约。';
+            document.getElementById('capability-availability').textContent = '尚未选择能力';
+            document.getElementById('capability-load-state').textContent = message;
+            document.getElementById('capability-payload').value = '{}';
+            for (const id of ['invoke-capability', 'start-capability-provider', 'copy-capability-catalog'])
+                document.getElementById(id).disabled = true;
+        }
+
+        async function refreshCapabilityCatalog(showInMonitor = false) {
+            const requestId = ++capabilityCatalogRequest;
+            const token = document.getElementById('api-token').value.trim();
+            document.getElementById('capability-load-state').textContent = '正在读取能力目录…';
+            try {
+                const response = await fetch('/v1/agent/catalog', {
+                    headers: token ? {'X-Yanzi-Token': token} : {}, credentials: 'same-origin', cache: 'no-store'
+                });
+                const data = await response.json();
+                if (requestId !== capabilityCatalogRequest) return;
+                if (!response.ok) {
+                    if (showInMonitor) showResponse(response.status, data);
+                    throw new Error(response.status === 401 ? '请先验证本地 API 身份' : 'HTTP ' + response.status);
+                }
+                capabilityCatalog = data;
+                const provider = document.getElementById('capability-provider');
+                const oldProvider = provider.value;
+                provider.replaceChildren(new Option('全部小程序与宿主能力', ''), new Option('宿主内置能力', 'host:'));
+                const rows = document.getElementById('capability-programs');
+                rows.replaceChildren();
+                for (const program of data.extensions) {
+                    const capabilities = program.capabilities || [];
+                    provider.add(new Option((program.title || program.id) + ' · ' + capabilities.length + ' 项能力', 'extension:' + program.id));
+                    const row = document.createElement('tr');
+                    const title = document.createElement('td');
+                    const button = document.createElement('button');
+                    button.className = 'btn-action';
+                    button.textContent = program.title || program.id;
+                    button.title = program.id;
+                    button.addEventListener('click', () => { provider.value = 'extension:' + program.id; filterCapabilityOptions(); });
+                    title.appendChild(button);
+                    const state = document.createElement('td');
+                    state.textContent = program.isRunning ? '运行中' : '未运行';
+                    const count = document.createElement('td');
+                    count.textContent = capabilities.filter(x => x.available).length + ' / ' + capabilities.length;
+                    row.append(title, state, count);
+                    rows.appendChild(row);
+                }
+                provider.disabled = false;
+                if (Array.from(provider.options).some(x => x.value === oldProvider)) provider.value = oldProvider;
+                document.getElementById('copy-capability-catalog').disabled = false;
+                const total = data.extensions.flatMap(x => x.capabilities || []).concat(data.hostCapabilities || []);
+                document.getElementById('capability-load-state').textContent =
+                    data.extensions.length + ' 个小程序 · ' + total.filter(x => x.available).length + ' 项当前可调用能力';
+                filterCapabilityOptions();
+                if (showInMonitor) showResponse(200, data);
+            } catch (error) {
+                if (requestId === capabilityCatalogRequest) resetCapabilityCatalog('读取失败：' + error.message);
+            }
+        }
+
+        function filterCapabilityOptions() {
+            const selector = document.getElementById('capability-name');
+            const oldName = selector.value;
+            const provider = document.getElementById('capability-provider').value;
+            const catalog = capabilityCatalog;
+            filteredCapabilities = catalog ?
+                (provider === 'host:' ? catalog.hostCapabilities :
+                 provider.startsWith('extension:') ? catalog.extensions.find(x => x.id === provider.slice(10))?.capabilities || [] :
+                 catalog.extensions.flatMap(x => x.capabilities || []).concat(catalog.hostCapabilities || [])) : [];
+            selector.replaceChildren(new Option(filteredCapabilities.length ? '请选择能力' : '该提供者尚未声明能力', ''));
+            for (const capability of filteredCapabilities) {
+                selector.add(new Option(capability.name + ' · ' + (capability.available ? '可调用' : '尚未注册'), capabilitySelectionKey(capability)));
+            }
+            selector.disabled = filteredCapabilities.length === 0;
+            if (filteredCapabilities.some(x => capabilitySelectionKey(x) === oldName)) selector.value = oldName;
+            onSelectedCapabilityChanged();
+        }
+
+        function capabilitySelectionKey(capability) {
+            return JSON.stringify([capability.providerExtensionId, capability.name]);
+        }
+
+        function selectedCapability() {
+            return filteredCapabilities.find(x => capabilitySelectionKey(x) === document.getElementById('capability-name').value);
+        }
+
+        function capabilitySample(schema, depth = 0) {
+            if (depth > 5) return null;
+            if (schema.default !== undefined) return schema.default;
+            if (schema.examples?.length) return schema.examples[0];
+            if (schema.enum?.length) return schema.enum[0];
+            if (schema.type === 'object') {
+                const value = {};
+                for (const key of schema.required || []) value[key] = capabilitySample(schema.properties?.[key] || {}, depth + 1);
+                return value;
+            }
+            if (schema.type === 'array') return [];
+            if (schema.type === 'boolean') return false;
+            if (schema.type === 'integer' || schema.type === 'number') return 0;
+            if (schema.type === 'string') return '';
+            return {};
+        }
+
+        function onSelectedCapabilityChanged() {
+            const capability = selectedCapability();
+            const provider = capabilityCatalog?.extensions.find(x => x.id === capability?.providerExtensionId);
+            document.getElementById('capability-contract').textContent = capability ? JSON.stringify(capability, null, 2) : '选择能力后显示契约。';
+            document.getElementById('capability-availability').textContent = !capability ? '尚未选择能力' :
+                capability.available ? '当前可调用 · 提供者：' + capability.providerExtensionId :
+                '尚未注册。可启动提供小程序后刷新目录；运行中的提供者需要实际注册 Handler。';
+            document.getElementById('capability-payload').value = JSON.stringify(capabilitySample(capability?.inputSchema || {}), null, 2);
+            document.getElementById('invoke-capability').disabled = !capability?.available;
+            document.getElementById('start-capability-provider').disabled = !provider || provider.isRunning || capability.available;
+        }
+
+        async function testInvokeCapability() {
+            const capability = selectedCapability();
+            if (!capability?.available) return;
+            let payload;
+            try { payload = JSON.parse(document.getElementById('capability-payload').value); }
+            catch { return showResponse(400, {error: '调用参数必须是有效 JSON'}); }
+            await sendRequest('POST', '/v1/capabilities/invoke', {name: capability.name, payload});
+        }
+
+        async function startCapabilityProvider() {
+            const capability = selectedCapability();
+            const provider = capabilityCatalog?.extensions.find(x => x.id === capability?.providerExtensionId);
+            if (!provider || provider.isRunning) return;
+            const result = await sendRequest('POST', provider.runEndpoint, {input: '', launchSource: 'app-startup'});
+            if (result?.success) await refreshCapabilityCatalog();
+        }
+
+        async function copyCapabilityCatalog() {
+            if (!capabilityCatalog) return;
+            try {
+                await navigator.clipboard.writeText(JSON.stringify(capabilityCatalog, null, 2));
+                document.getElementById('capability-load-state').textContent = '已复制 AI 能力目录（不含 Token）';
+            } catch { document.getElementById('capability-load-state').textContent = '复制失败，请使用刷新能力目录后的响应内容。'; }
+        }
 
         function setAuthState(message, success = false) {
             const status = document.getElementById('console-auth-state');
@@ -2780,6 +3056,7 @@ public sealed partial class LocalAgentApiServer : IDisposable
         }
 
         function resetInstalledPrograms(message) {
+            resetCapabilityCatalog(message);
             activePrograms = [];
             const selector = document.getElementById('ui-ext-id');
             selector.replaceChildren(new Option('请先读取已安装小程序', ''));
@@ -2832,6 +3109,7 @@ public sealed partial class LocalAgentApiServer : IDisposable
                     selector.value = oldSelection;
                 status.textContent = '已读取 ' + activePrograms.length + ' 个小程序';
                 setAuthState('本机 API 已登录，可以直接操作已安装小程序。', true);
+                await refreshCapabilityCatalog();
                 if (showInMonitor) showResponse(200, {ok: true, items: activePrograms});
             } catch (error) {
                 resetInstalledPrograms('读取失败');
@@ -2876,8 +3154,10 @@ public sealed partial class LocalAgentApiServer : IDisposable
                 try { data = JSON.parse(raw); }
                 catch { data = raw; }
                 showResponse(response.status, data, duration);
-                if (response.status === 401)
+                if (response.status === 401) {
+                    resetInstalledPrograms('身份验证失效');
                     setAuthState('尚未登录或 Token 已失效；请到燕子设置中获取当前 Token。');
+                }
                 return response.ok ? data : null;
             } catch (error) {
                 showResponse(0, '请求失败：' + error.message,

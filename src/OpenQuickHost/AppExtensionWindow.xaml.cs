@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Interop;
@@ -29,7 +29,9 @@ public partial class AppExtensionWindow : Window
     private const int ResizeBorderThicknessDips = 8;
     private static readonly object SingleInstanceGate = new();
     private static readonly Dictionary<string, WeakReference<AppExtensionWindow>> SingleInstanceWindows = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly HashSet<AppExtensionWindow> BackgroundWindows = [];
     private readonly CommandItem _command;
+    private TaskCompletionSource<bool> _navigationReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly string _initialInput;
     private readonly string _launchSource;
     private readonly AppExtensionDefinition _definition;
@@ -50,9 +52,19 @@ public partial class AppExtensionWindow : Window
         Loaded += AppExtensionWindow_Loaded;
         SourceInitialized += AppExtensionWindow_SourceInitialized;
         Closed += AppExtensionWindow_Closed;
+        if (_definition.RunInBackground)
+        {
+            BackgroundWindows.Add(this);
+            Closing += (_, e) => {
+                if (System.Windows.Application.Current.MainWindow is MainWindow { AllowClose: true } || Dispatcher.HasShutdownStarted) return;
+                e.Cancel = true;
+                Hide();
+            };
+            if (launchSource == "app-startup") { WindowState = WindowState.Minimized; ShowActivated = false; ShowInTaskbar = false; }
+        }
     }
 
-    public static bool TryActivateExisting(CommandItem command)
+    public static bool TryActivateExisting(CommandItem command, bool activate = true)
     {
         var definition = command.App;
         if (definition == null || !definition.SingleInstance)
@@ -66,7 +78,7 @@ public partial class AppExtensionWindow : Window
         {
             if (SingleInstanceWindows.TryGetValue(windowKey, out var reference) &&
                 reference.TryGetTarget(out var trackedWindow) &&
-                trackedWindow.IsLoaded)
+                (trackedWindow.IsLoaded || BackgroundWindows.Contains(trackedWindow)))
             {
                 existingWindow = trackedWindow;
             }
@@ -81,14 +93,106 @@ public partial class AppExtensionWindow : Window
             return false;
         }
 
-        existingWindow.Dispatcher.Invoke(existingWindow.BringToFront);
+        if (activate) existingWindow.Dispatcher.Invoke(existingWindow.BringToFront);
         return true;
+    }
+
+    // Generic resource handoff: the extension owns input validation and navigation.
+    public static async Task<string> OpenResourceAsync(CommandItem command, string input)
+    {
+        AppExtensionWindow? window = TrackedWindows().FirstOrDefault(w => w._command.ExtensionId == command.ExtensionId);
+        if (window == null) { window = new AppExtensionWindow(command, "", "handoff"); window.Show(); }
+        else window.BringToFront();
+        if (!command.App!.BridgeApis.Contains("handoff")) throw new InvalidOperationException("此小程序尚未支持接续打开");
+        if (!await window._navigationReady.Task.WaitAsync(TimeSpan.FromSeconds(30))) throw new InvalidOperationException("小程序页面加载失败");
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+        var expression = "(async()=>{for(let n=0;n<100&&!window.yanzi?.handoffHandler;n++)await new Promise(r=>setTimeout(r,100));if(!window.yanzi?.handoffHandler)throw Error('小程序打开接口未就绪');return await window.yanzi.handoffHandler(" + JsonSerializer.Serialize(input) + ");})()";
+        var json = await window.Browser.CoreWebView2.CallDevToolsProtocolMethodAsync("Runtime.evaluate", JsonSerializer.Serialize(new { expression, awaitPromise = true, returnByValue = true })).WaitAsync(TimeSpan.FromSeconds(45));
+        using var result = JsonDocument.Parse(json);
+        if (result.RootElement.TryGetProperty("exceptionDetails", out var error)) throw new InvalidOperationException(error.ToString());
+        var value = result.RootElement.GetProperty("result").GetProperty("value");
+        if (value.ValueKind == JsonValueKind.Object && value.TryGetProperty("navigate", out var redirect))
+        {
+            var root = Path.GetDirectoryName(window.ResolveEntryPath())!;
+            var destination = Path.GetFullPath(Path.Combine(root, redirect.GetString() ?? ""));
+            if (!destination.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) || !destination.EndsWith(".html", StringComparison.OrdinalIgnoreCase) || !File.Exists(destination)) throw new InvalidOperationException("小程序页面路径无效");
+            window.Browser.CoreWebView2.Navigate(new Uri(destination).AbsoluteUri);
+            await Task.Delay(100);
+            if (!await window._navigationReady.Task.WaitAsync(TimeSpan.FromSeconds(30))) throw new InvalidOperationException("小程序页面加载失败");
+            continue;
+        }
+        window.BringToFront();
+        return value.ToString();
+        }
+        throw new InvalidOperationException("小程序页面重定向过多");
+    }
+
+    private async Task<object?> HandoffDevicesAsync()
+    {
+        if (!_definition.BridgeApis.Contains("handoff")) throw new InvalidOperationException("未声明 handoff 桥接权限");
+        var client = new Sync.CloudSyncClient(Sync.SyncConfigLoader.Load());
+        var peers = await client.ListPeerDevicesAsync();
+        return new { accountId = client.CurrentUserId, items = peers.Where(p => p.Platform == "desktop").Select(p => new { deviceId = p.DeviceId, displayName = p.DisplayName, online = p.Online }) };
+    }
+    private async Task<object?> HandoffOpenAsync(JsonElement parameters)
+    {
+        if (!_definition.BridgeApis.Contains("handoff")) throw new InvalidOperationException("未声明 handoff 桥接权限");
+        var target = GetString(parameters, "targetDeviceId", true)!;
+        var input = GetString(parameters, "input", true)!;
+        var client = new Sync.CloudSyncClient(Sync.SyncConfigLoader.Load());
+        if (input.Length > 4096 || GetString(parameters, "accountId", true) != client.CurrentUserId) throw new InvalidOperationException("账号已切换或打开参数过长");
+        var peers = await client.ListPeerDevicesAsync();
+        if (Sync.SyncSessionStore.Load()?.UserId != client.CurrentUserId) throw new InvalidOperationException("账号已切换");
+        if (!peers.Any(p => p.DeviceId == target && p.Platform == "desktop")) throw new InvalidOperationException("目标电脑不存在");
+        if (target == Sync.DeviceIdentityStore.GetOrCreateDesktopDeviceId()) return new { opened = true, output = await OpenResourceAsync(_command, input) };
+        var id = await client.SendDeviceMessageAsync(Sync.DeviceIdentityStore.GetOrCreateDesktopDeviceId(), "desktop", "extension.handoff", "", "", target,
+            new { extensionId = _command.ExtensionId, input, accountId = client.CurrentUserId, clientOperationId = Guid.NewGuid().ToString() }, expiresAt: DateTimeOffset.UtcNow.AddDays(1));
+        return new { queued = true, messageId = id };
+    }
+    private async Task<object?> HandoffStatusAsync(JsonElement parameters)
+    {
+        if (!_definition.BridgeApis.Contains("handoff")) throw new InvalidOperationException("未声明 handoff 桥接权限");
+        var client = new Sync.CloudSyncClient(Sync.SyncConfigLoader.Load());
+        if (GetString(parameters, "accountId", true) != client.CurrentUserId) throw new InvalidOperationException("账号已切换");
+        var message = await client.GetDeviceMessageAsync(GetString(parameters, "messageId", true)!);
+        if (message == null || !message.Payload.TryGetValue("extensionId", out var extension) || extension.GetString() != _command.ExtensionId) throw new InvalidOperationException("接续请求不存在");
+        return new { status = message.Status, payload = message.Payload };
+    }
+
+    public static void NotifyStorageChanged(string extensionId, string key)
+    {
+        foreach (var window in TrackedWindows().Where(w => w._command.ExtensionId.Equals(extensionId, StringComparison.OrdinalIgnoreCase)))
+            window.DispatchStorageEvent("yanzi:storage-changed", new { key });
+    }
+
+    public static void NotifyAccountConnected()
+    {
+        foreach (var window in TrackedWindows()) window.DispatchStorageEvent("yanzi:account-connected", new { });
+    }
+
+    private static AppExtensionWindow[] TrackedWindows()
+    {
+        lock (SingleInstanceGate)
+            return BackgroundWindows.Concat(SingleInstanceWindows.Values.Select(r => r.TryGetTarget(out var w) ? w : null)
+                .OfType<AppExtensionWindow>()).Distinct().ToArray();
+    }
+
+    private async void DispatchStorageEvent(string name, object detail)
+    {
+        if (Browser.CoreWebView2 == null || !_definition.BridgeApis.Contains("storage")) return;
+        try { await Browser.ExecuteScriptAsync($"window.dispatchEvent(new CustomEvent({JsonSerializer.Serialize(name)},{{detail:{JsonSerializer.Serialize(detail)}}}))"); }
+        catch (Exception ex) { HostAssets.AppendLog($"Storage event delivery deferred: {ex.GetType().Name}"); }
     }
 
     private async void AppExtensionWindow_Loaded(object sender, RoutedEventArgs e)
     {
         Loaded -= AppExtensionWindow_Loaded;
         await InitializeAsync();
+        if (_definition.RunInBackground)
+        {
+            if (_launchSource == "app-startup") { Hide(); WindowState = WindowState.Normal; }
+        }
     }
 
     private void AppExtensionWindow_SourceInitialized(object? sender, EventArgs e)
@@ -110,6 +214,8 @@ public partial class AppExtensionWindow : Window
 
     private void AppExtensionWindow_Closed(object? sender, EventArgs e)
     {
+        BackgroundWindows.Remove(this);
+        Browser.Dispose();
         if (!_definition.SingleInstance)
         {
             return;
@@ -157,6 +263,7 @@ public partial class AppExtensionWindow : Window
 
     private void Browser_NavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
     {
+        _navigationReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
         HostAssets.AppendLog(
             $"AppExtensionWindow navigation starting: id={_command.ExtensionId}, uri={e.Uri}, userInitiated={e.IsUserInitiated}, redirected={e.IsRedirected}.");
         ErrorPanel.Visibility = Visibility.Collapsed;
@@ -168,6 +275,7 @@ public partial class AppExtensionWindow : Window
     {
         HostAssets.AppendLog(
             $"AppExtensionWindow navigation completed: id={_command.ExtensionId}, success={e.IsSuccess}, status={e.WebErrorStatus}, uri={Browser.Source}.");
+        _navigationReady.TrySetResult(e.IsSuccess);
         Browser.Visibility = Visibility.Visible;
         LoadingPanel.Visibility = Visibility.Collapsed;
     }
@@ -397,11 +505,19 @@ public partial class AppExtensionWindow : Window
           });
           window.yanzi = {
             context,
+            handoff: { devices: () => call('handoff.devices'), open: (targetDeviceId, input, accountId) => call('handoff.open', { targetDeviceId, input, accountId }), status: (messageId, accountId) => call('handoff.status', { messageId, accountId }) },
             storage: {
-              get: key => call('storage.get', { key }),
+              get: (key, options) => call('storage.get', { key, scope: options && options.scope }),
+              accountRead: key => call('storage.accountRead', { key }),
+              accountWrite: (key, content, expectedRevision, accountId) => call('storage.accountWrite', { key, content, expectedRevision, accountId }),
               put: (key, content, options) => call('storage.put', { key, content, scope: options && options.scope }),
               list: prefix => call('storage.list', { prefix }),
               delete: key => call('storage.delete', { key })
+            },
+            capability: {
+              list: () => call('capability.list'),
+              describe: name => call('capability.describe', { name }),
+              invoke: (name, payload) => call('capability.invoke', { name, payload })
             },
             sync: {
               status: () => call('sync.status'),
@@ -506,10 +622,19 @@ public partial class AppExtensionWindow : Window
     {
         return method switch
         {
+            "handoff.devices" => await HandoffDevicesAsync(),
+            "handoff.open" => await HandoffOpenAsync(parameters),
+            "handoff.status" => await HandoffStatusAsync(parameters),
             "storage.get" => await StorageGetAsync(parameters),
+            "storage.accountRead" => await AccountStorageAsync(parameters, false),
+            "storage.accountWrite" => await AccountStorageAsync(parameters, true),
             "storage.put" => await StoragePutAsync(parameters),
             "storage.list" => StorageList(parameters),
             "storage.delete" => StorageDelete(parameters),
+            "capability.list" => CapabilityList(),
+            "capability.describe" => YanziCapabilityQueryService.Describe(GetString(parameters, "name", required: true)!)
+                ?? throw new InvalidOperationException("能力不存在"),
+            "capability.invoke" => await CapabilityInvokeAsync(parameters),
             "sync.status" => SyncStatus(),
             "sync.now" => SyncNow(),
             "env.get" => EnvGet(parameters),
@@ -527,13 +652,42 @@ public partial class AppExtensionWindow : Window
     private async Task<object?> StorageGetAsync(JsonElement parameters)
     {
         var key = BuildStorageKey(GetString(parameters, "key", required: true));
-        var result = await ExtensionStorageService.ReadTextAsync(_command.ExtensionId, key, "both");
+        var result = await ExtensionStorageService.ReadTextAsync(_command.ExtensionId, key, GetString(parameters, "scope") ?? "both");
         return new
         {
             found = result.Found,
             content = result.Content ?? string.Empty,
             source = result.Source
         };
+    }
+
+    // Versioned account bridge for any WebView companion, scoped to its own identity/namespace.
+    private async Task<object?> AccountStorageAsync(JsonElement parameters, bool write)
+    {
+        var key = BuildStorageKey(GetString(parameters, "key", required: true));
+        var accountId = new Sync.CloudSyncClient(Sync.SyncConfigLoader.Load()).CurrentUserId;
+        if (string.IsNullOrWhiteSpace(accountId)) throw new InvalidOperationException("请先登录燕子账号");
+        if (!write)
+        {
+            var value = await Sync.AccountExtensionDataStore.TryReadAsync(_command.ExtensionId, key);
+            if (!value.Available) throw new InvalidOperationException("账号同步暂不可用");
+            if (new Sync.CloudSyncClient(Sync.SyncConfigLoader.Load()).CurrentUserId != accountId)
+                throw new InvalidOperationException("账号已切换，未读取旧账号数据");
+            return new { ok = true, exists = value.Exists, revision = value.Revision, content = value.Content, accountId };
+        }
+        var content = GetString(parameters, "content") ?? "";
+        if (System.Text.Encoding.UTF8.GetByteCount(content) > 262144) throw new InvalidOperationException("同步对象超过 256 KiB");
+        if (!parameters.TryGetProperty("expectedRevision", out var revision) || !revision.TryGetInt64(out var expectedRevision) || expectedRevision < 0)
+            throw new InvalidOperationException("expectedRevision 必填");
+        var expectedAccount = GetString(parameters, "accountId", required: true);
+        if (expectedAccount != accountId) throw new InvalidOperationException("账号已切换，未写入");
+        try
+        {
+            var value = await Sync.AccountExtensionDataStore.WriteAsync(_command.ExtensionId, key, content, expectedRevision, expectedAccountId: expectedAccount);
+            if (!value.Available) throw new InvalidOperationException("账号同步暂不可用");
+            return new { ok = true, revision = value.Revision, accountId };
+        }
+        catch (Sync.CloudSyncRevisionConflictException) { return new { ok = false, conflict = true, accountId }; }
     }
 
     private async Task<object?> StoragePutAsync(JsonElement parameters)
@@ -584,6 +738,26 @@ public partial class AppExtensionWindow : Window
         }
 
         return new { ok = true };
+    }
+
+    private object CapabilityList()
+    {
+        return new
+        {
+            capabilities = YanziCapabilityRegistry.List()
+        };
+    }
+
+    private async Task<object?> CapabilityInvokeAsync(JsonElement parameters)
+    {
+        var name = GetString(parameters, "name", required: true)!;
+        var payload = parameters.ValueKind == JsonValueKind.Object && parameters.TryGetProperty("payload", out var payloadElement)
+            ? (object)payloadElement.Clone()
+            : null;
+        var result = await YanziCapabilityInvocationService.InvokeAsync(name, payload,
+            new YanziCapabilityCaller(_command.ExtensionId, _command.Permissions));
+        if (!result.Success) throw new InvalidOperationException(result.Error);
+        return result.Data;
     }
 
     private object SyncStatus()
@@ -786,6 +960,8 @@ public partial class AppExtensionWindow : Window
 
     private void BringToFront()
     {
+        ShowInTaskbar = true;
+        ShowActivated = true;
         if (WindowState == WindowState.Minimized)
         {
             WindowState = WindowState.Normal;

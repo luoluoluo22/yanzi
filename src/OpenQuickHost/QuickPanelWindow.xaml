@@ -422,6 +422,33 @@
             <!-- Sidebar Background & Border -->
             <Border Grid.Column="0" Grid.RowSpan="4" BorderBrush="#1AFFFFFF" BorderThickness="0,0,1,0" Padding="0,8"/>
 
+            <!-- Sidebar Warehouse Button (Row 0: Top-Left) -->
+            <Border Grid.Column="0" Grid.Row="0" VerticalAlignment="Center" HorizontalAlignment="Center">
+                <Button x:Name="WarehouseButton"
+                        Style="{StaticResource SidebarButtonStyle}"
+                        Width="32"
+                        Height="32"
+                        ToolTip="{local:TermFormat '打开{Warehouse}'}"
+                        Click="WarehouseButton_Click">
+                    <Viewbox Width="16" Height="16">
+                        <Path Data="{local:IconGeometry warehouse}"
+                              Fill="{DynamicResource BrushTextMain}"
+                              Stretch="Uniform"
+                              Opacity="0.85">
+                            <Path.Style>
+                                <Style TargetType="Path">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
+                                            <Setter Property="Opacity" Value="1.0"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Path.Style>
+                        </Path>
+                    </Viewbox>
+                </Button>
+            </Border>
+
             <!-- Sidebar Global Groups (Row 1) -->
             <Border Grid.Column="0" Grid.Row="1" VerticalAlignment="Top" Margin="0,4,0,0">
                 <StackPanel HorizontalAlignment="Center">

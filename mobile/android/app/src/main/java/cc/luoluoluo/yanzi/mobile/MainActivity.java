@@ -233,6 +233,7 @@ extends Activity {
     private TextView mobileExtensionSectionTitle;
     private TextView mobileExtensionTestResult;
     private LinearLayout mobileExtensionListView;
+    private TextView mobileExtensionListTitle;
     private LinearLayout mobileExtensionEditorView;
     private GridLayout mobileExtensionGrid;
     private LinearLayout extensionList;
@@ -460,6 +461,57 @@ extends Activity {
 
     protected void onCreate(Bundle savedInstanceState) {
         if (this.getIntent() != null) {
+            if (BuildConfig.DEBUG && BuildConfig.APPLICATION_ID.endsWith(".dev")
+                    && this.getIntent().getBooleanExtra("verify_desktop_lan", false)) {
+                super.onCreate(savedInstanceState);
+                sContext = getApplicationContext();
+                this.prefs = this.getSharedPreferences("yanzi-mobile", MODE_PRIVATE);
+                this.deviceId = this.getOrCreateDeviceId();
+                new Thread(() -> {
+                    JSONObject report = new JSONObject();
+                    try {
+                        File configFile = new File(getFilesDir(), "lan-verification.json");
+                        JSONObject config = new JSONObject(new String(java.nio.file.Files.readAllBytes(configFile.toPath()), StandardCharsets.UTF_8));
+                        DeviceProtocolVectors.verify(sContext);
+                        if (config.has("securePair")) SecureLanConnection.importPair(sContext, config.getJSONObject("securePair"));
+                        LanDiscoveryManager.cachedLanBaseUrl = config.getString("lanBaseUrl");
+                        LanDiscoveryManager.cachedLanApiToken = config.getString("lanToken");
+                        org.json.JSONArray results = new org.json.JSONArray();
+                        org.json.JSONArray steps = config.getJSONArray("steps");
+                        for (int i = 0; i < steps.length(); i++) {
+                            if (config.optBoolean("forceLanFailure", false)) LanDiscoveryManager.cachedLanBaseUrl = config.getString("lanBaseUrl");
+                            JSONObject step = steps.getJSONObject(i);
+                            long start = System.currentTimeMillis();
+                            JSONObject result = new JSONObject().put("kind", step.getString("kind"));
+                            try {
+                                String kind = step.getString("kind");
+                                if (kind.equals("file") || kind.equals("photo")) {
+                                    File file = new File(getFilesDir(), step.getString("phoneFile"));
+                                    String id = MobileDesktopTransfer.sendFile(sContext, config.getString("cloudBaseUrl"),
+                                            config.getString("cloudToken"), this.deviceId, kind, step.getString("name"),
+                                            kind.equals("photo") ? "image/jpeg" : "application/octet-stream", file, "LAN verification");
+                                    result.put("messageId", id);
+                                } else {
+                                    result.put("response", YanziApiClient.requestDesktopLocalApi(step.getString("path"),
+                                            config.getString("cloudToken"), "LAN verification", "POST", step.getJSONObject("payload")));
+                                }
+                                result.put("success", true);
+                            } catch (Exception ex) { result.put("success", false).put("error", ex.getClass().getSimpleName()).put("detail", ex.getMessage()); }
+                            result.put("durationMs", System.currentTimeMillis() - start);
+                            results.put(result);
+                        }
+                        report.put("results", results);
+                    } catch (Exception ex) {
+                        try { report.put("error", ex.getClass().getSimpleName()); } catch (Exception ignored) { }
+                    } finally {
+                        try (OutputStream output = new FileOutputStream(new File(getFilesDir(), "lan-verification-result.json"))) {
+                            output.write(report.toString().getBytes(StandardCharsets.UTF_8));
+                        } catch (Exception ignored) { }
+                        runOnUiThread(this::finish);
+                    }
+                }).start();
+                return;
+            }
             if (BuildConfig.DEBUG && BuildConfig.APPLICATION_ID.endsWith(".dev")
                     && this.getIntent().hasExtra("verify_message_text")) {
                 super.onCreate(savedInstanceState);
@@ -1485,18 +1537,28 @@ extends Activity {
         LinearLayout topBar = new LinearLayout((Context)this);
         topBar.setId(10001);
         topBar.setOrientation(0);
-        topBar.setPadding(this.dp(16), this.dp(10), this.dp(16), this.dp(10));
+        topBar.setPadding(this.dp(12), this.dp(4), this.dp(12), this.dp(2));
         topBar.setGravity(16);
         topBar.setBackgroundColor(ThemeConfig.COLOR_BACKGROUND);
 
-        LinearLayout aiHeading = YanziUiKit.header(this, "AI 工作台", "提问、执行并调用你的数据", "creation", YanziUiKit.PURPLE);
-        topBar.addView((View)aiHeading, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -2, 1.0f));
-        TextView aiDataBtn = YanziUiKit.secondaryButton(this, "数据", () -> this.startActivity(new Intent(this, AiDataAccessActivity.class)));
-        LinearLayout.LayoutParams aiDataLp = new LinearLayout.LayoutParams(this.dp(58), this.dp(38));
-        aiDataLp.rightMargin = this.dp(7);
-        topBar.addView((View)aiDataBtn, (ViewGroup.LayoutParams)aiDataLp);
-        TextView aiHistoryBtn = YanziUiKit.secondaryButton(this, "历史", () -> this.aiDrawerLayout.openDrawer(Gravity.LEFT));
-        topBar.addView((View)aiHistoryBtn, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(58), this.dp(38)));
+        View aiToolbarSpacer = new View((Context)this);
+        topBar.addView(aiToolbarSpacer, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, 1, 1.0f));
+
+        TextView aiDataBtn = YanziUiKit.text(this, "数据", 13, YanziUiKit.SECONDARY, true);
+        aiDataBtn.setGravity(Gravity.CENTER);
+        aiDataBtn.setPadding(this.dp(12), this.dp(8), this.dp(12), this.dp(8));
+        aiDataBtn.setClickable(true);
+        aiDataBtn.setFocusable(true);
+        aiDataBtn.setOnClickListener(v -> this.startActivity(new Intent(this, AiDataAccessActivity.class)));
+        topBar.addView((View)aiDataBtn);
+
+        TextView aiHistoryBtn = YanziUiKit.text(this, "历史", 13, YanziUiKit.SECONDARY, true);
+        aiHistoryBtn.setGravity(Gravity.CENTER);
+        aiHistoryBtn.setPadding(this.dp(12), this.dp(8), this.dp(12), this.dp(8));
+        aiHistoryBtn.setClickable(true);
+        aiHistoryBtn.setFocusable(true);
+        aiHistoryBtn.setOnClickListener(v -> this.aiDrawerLayout.openDrawer(Gravity.LEFT));
+        topBar.addView((View)aiHistoryBtn);
 
         android.widget.RelativeLayout.LayoutParams topParams = new android.widget.RelativeLayout.LayoutParams(-1, -2);
         topParams.addRule(android.widget.RelativeLayout.ALIGN_PARENT_TOP);
@@ -1643,7 +1705,7 @@ extends Activity {
         speakParams.rightMargin = this.dp(4);
         bottomArea.addView((View)this.holdToSpeakBtn, (ViewGroup.LayoutParams)speakParams);
 
-        this.aiChatInput = this.multiInput("\u7535\u8111\u6269\u5c55 | \u624b\u673a\u6269\u5c55 | \u71d5\u5e55", "");
+        this.aiChatInput = this.multiInput("告诉燕子你要做什么…", "");
         this.aiChatInput.setTextSize(14.0f);
         this.aiChatInput.setBackground(null);
         this.aiChatInput.setPadding(this.dp(12), this.dp(10), this.dp(12), this.dp(10));
@@ -1677,6 +1739,7 @@ extends Activity {
         this.aiSendButtonDefaultBackground = this.aiSendButton.getBackground();
         this.aiSendButton.setOnClickListener(v -> this.handleAiSendButtonClick());
         bottomArea.addView((View)this.aiSendButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(70), this.dp(48)));
+        bottomShell.addView((View)bottomArea, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -2));
         bottomShell.setId(10002);
         android.widget.RelativeLayout.LayoutParams bottomParams = new android.widget.RelativeLayout.LayoutParams(-1, -2);
         bottomParams.addRule(android.widget.RelativeLayout.ALIGN_PARENT_BOTTOM);
@@ -1800,24 +1863,12 @@ extends Activity {
         root.addView((View)this.profileTabPage);
         this.homeDashboard = HomeDashboardView.populate(
                 this,
-                this.yanmTabPage,
-                this.prefs,
-                () -> this.selectTab("ai"),
-                () -> this.startActivity(new Intent(this, ApplicationCatalogActivity.class)),
-                () -> this.startActivity(new Intent(this, AiDataAccessActivity.class)),
-                () -> this.selectTab("desktop"),
-                () -> this.selectTab("mobile"),
-                () -> Toast.makeText(this, "暂无需要处理的新通知", Toast.LENGTH_SHORT).show());
+                this.yanmTabPage);
         this.yanmList = this.homeDashboard.yanmList;
         this.developerDashboard = DeveloperDashboardView.populate(
                 this,
                 this.mobileExtensionTabPage,
-                this.readLocalMobileExtensions().length(),
-                this::openNewMobileExtensionEditor,
-                () -> {
-                    this.syncMobileExtensionsFromCloud();
-                    if (this.developerDashboard != null) this.developerDashboard.sync.setText("同步中");
-                },
+                () -> this.selectMobileSubTab(0),
                 () -> this.startActivity(new Intent(this, ApplicationCatalogActivity.class)),
                 () -> this.selectMobileSubTab(1),
                 () -> this.selectMobileSubTab(2));
@@ -1863,11 +1914,32 @@ extends Activity {
         this.btnShowMobileDocs.setOnClickListener(v -> this.selectMobileSubTab(1));
         this.btnShowMobileShell.setOnClickListener(v -> this.selectMobileSubTab(2));
 
-        this.mobileExtensionTabPage.addView((View)mobileSubTabBar);
 
         this.mobileExtensionListView = new LinearLayout((Context)this);
         this.mobileExtensionListView.setOrientation(1);
         this.mobileExtensionListView.setPadding(this.dp(16), this.dp(8), this.dp(16), this.dp(16));
+
+        LinearLayout miniProgramHeader = new LinearLayout((Context)this);
+        miniProgramHeader.setOrientation(LinearLayout.HORIZONTAL);
+        miniProgramHeader.setGravity(Gravity.CENTER_VERTICAL);
+        miniProgramHeader.setPadding(0, this.dp(4), 0, this.dp(10));
+        this.mobileExtensionListTitle = YanziUiKit.text(
+                this,
+                "本机小程序 · " + this.readLocalMobileExtensions().length(),
+                13,
+                YanziUiKit.SECONDARY,
+                true);
+        miniProgramHeader.addView(
+                this.mobileExtensionListTitle,
+                new LinearLayout.LayoutParams(0, -2, 1f));
+
+        TextView newMiniProgram = YanziUiKit.text(this, "+ 新建小程序", 13, YanziUiKit.BLUE, true);
+        newMiniProgram.setPadding(this.dp(10), this.dp(8), 0, this.dp(8));
+        newMiniProgram.setClickable(true);
+        newMiniProgram.setFocusable(true);
+        newMiniProgram.setOnClickListener(v -> this.openNewMobileExtensionEditor());
+        miniProgramHeader.addView(newMiniProgram);
+        this.mobileExtensionListView.addView(miniProgramHeader);
 
         this.mobileExtensionEditorView = new LinearLayout((Context)this);
         this.mobileExtensionEditorView.setOrientation(1);
@@ -1945,26 +2017,6 @@ extends Activity {
         // 默认选中第一个子 Tab
         this.selectMobileSubTab(0);
 
-        // 渲染 List 页面头部 (移除了大标题，只保留新建按钮，置右排布)
-        LinearLayout listHeader = new LinearLayout((Context)this);
-        listHeader.setOrientation(0);
-        listHeader.setGravity(5); // Gravity.RIGHT is 5
-        listHeader.setPadding(0, 0, 0, this.dp(12));
-        Button applicationCenter = this.button("应用中心");
-        applicationCenter.setTextColor(YanziUiKit.TEXT);
-        applicationCenter.setBackground(YanziUiKit.bg(YanziUiKit.CARD_ALT, 14, YanziUiKit.STROKE, 1));
-        applicationCenter.setOnClickListener(v -> startActivity(new Intent(this, ApplicationCatalogActivity.class)));
-        LinearLayout.LayoutParams appCenterLp = new LinearLayout.LayoutParams(0, this.dp(42), 1.0f);
-        appCenterLp.rightMargin = this.dp(8);
-        listHeader.addView(applicationCenter, appCenterLp);
-
-        Button newExtBtn = this.button("新建小程序");
-        newExtBtn.setTextColor(Color.rgb(10, 37, 67));
-        newExtBtn.setBackground(YanziUiKit.bg(Color.rgb(200, 225, 255), 14, Color.TRANSPARENT, 0));
-        newExtBtn.setOnClickListener(v -> this.openNewMobileExtensionEditor());
-        listHeader.addView((View)newExtBtn, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(118), this.dp(42)));
-        this.mobileExtensionListView.addView((View)listHeader);
-
         // 网格展示容器
         this.mobileExtensionGrid = new GridLayout((Context)this);
         this.mobileExtensionGrid.setColumnCount(4); // 4 列网格
@@ -1982,8 +2034,7 @@ extends Activity {
             this.isEditingMobileExtension = false;
             this.mobileExtensionEditorView.setVisibility(View.GONE);
             this.mobileViewPager.setVisibility(View.VISIBLE);
-            if (this.mobileSubTabBar != null) this.mobileSubTabBar.setVisibility(View.VISIBLE);
-            this.setStatus("\u5df2\u8fd4\u56de\u624b\u673a\u6269\u5c55\u5217\u8868");
+            this.setStatus("已返回手机小程序列表");
         });
         editorNavBar.addView((View)backBtn, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-2, this.dp(40)));
         TextView navTitle = this.textView("  编辑手机小程序", 18, -1, true);
@@ -1997,7 +2048,11 @@ extends Activity {
                 () -> this.selectSubTab(0),
                 () -> this.selectSubTab(1),
                 () -> this.selectSubTab(2),
-                () -> this.selectSubTab(3));
+                () -> this.selectSubTab(3),
+                () -> this.startActivity(new Intent(this, LanPairingActivity.class)
+                        .putExtra("connectionType", this.desktopConnectionType)
+                        .putExtra("connected", this.isDesktopConnected)
+                        .putExtra("offlineReason", this.desktopOfflineDesc)));
 
         // 子 Tab 条
         LinearLayout subTabBar = new LinearLayout((Context)this);
@@ -2090,7 +2145,6 @@ extends Activity {
         this.mainDesktopContentLayout = new LinearLayout((Context)this);
         this.mainDesktopContentLayout.setOrientation(1);
         this.mainDesktopContentLayout.setVisibility(0);
-        this.mainDesktopContentLayout.addView((View)subTabBar);
         this.desktopExtensionTabPage.addView((View)this.mainDesktopContentLayout, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, 0, 1.0f));
 
         LinearLayout extensionsContainer = new LinearLayout((Context)this);
@@ -2589,12 +2643,10 @@ extends Activity {
 
         this.setupProfileHeader();
 
-        this.profileTabPage.addView((View)YanziUiKit.sectionLabel(this, "账号与同步"));
-        LinearLayout accountRow = YanziUiKit.row(this, "account", YanziUiKit.BLUE, "账号", "登录、切换账号与查看同步身份", this::showAccountSettingsDialog);
-        this.profileTabPage.addView((View)accountRow, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
+        this.profileTabPage.addView((View)YanziUiKit.sectionLabel(this, "同步与权限"));
 
         boolean autoUpdate = this.prefs.getBoolean("auto_cloud_update", false);
-        LinearLayout itemCloud = YanziUiKit.switchRow(this, "cloud-sync-outline", YanziUiKit.GREEN, "自动同步燕幕", "启动后按设置频率更新", autoUpdate, (buttonView, isChecked) -> {
+        LinearLayout itemCloud = YanziUiKit.switchRow(this, "cloud-sync-outline", YanziUiKit.GREEN, "自动同步燕幕", "保持手机与电脑的燕幕状态一致", autoUpdate, (buttonView, isChecked) -> {
             this.prefs.edit().putBoolean("auto_cloud_update", isChecked).apply();
             this.setStatus(isChecked ? "已启用自动同步" : "已关闭自动同步");
             this.autoCloudUpdateHandler.removeCallbacks(this.autoCloudUpdateRunnable);
@@ -2602,7 +2654,6 @@ extends Activity {
         });
         this.profileTabPage.addView((View)itemCloud, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
 
-        this.profileTabPage.addView((View)YanziUiKit.sectionLabel(this, "权限与服务"));
         boolean wheelEnabled = this.prefs.getBoolean("floatingWheelEnabled", true);
         LinearLayout itemWheel = YanziUiKit.switchRow(this, "gesture-tap-hold", YanziUiKit.PURPLE, "悬浮轮盘", "离开燕子后显示，燕子前台自动隐藏", wheelEnabled, (buttonView, isChecked) -> {
             this.prefs.edit().putBoolean("floatingWheelEnabled", isChecked).apply();
@@ -2619,16 +2670,13 @@ extends Activity {
         });
         this.profileTabPage.addView((View)itemWheel, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
 
-        LinearLayout notifyRow = YanziUiKit.row(this, "bell-outline", YanziUiKit.ORANGE, "通知设置", "消息、授权确认与后台提醒", this::openNotificationSettings);
+        LinearLayout notifyRow = YanziUiKit.row(this, "bell-outline", YanziUiKit.ORANGE, "通知", "授权确认与后台提醒", this::openNotificationSettings);
         this.profileTabPage.addView((View)notifyRow, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
-        LinearLayout itemAccessibility = YanziUiKit.row(this, "accessibility", YanziUiKit.BLUE, "无障碍服务", "为自动化与跨应用操作提供能力", this::openAccessibilitySettings);
+
+        LinearLayout itemAccessibility = YanziUiKit.row(this, "accessibility", YanziUiKit.BLUE, "无障碍服务", "只在自动化需要时开启", this::openAccessibilitySettings);
         this.profileTabPage.addView((View)itemAccessibility, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
 
-        this.profileTabPage.addView((View)YanziUiKit.sectionLabel(this, "数据与应用"));
-        LinearLayout dataAccessRow = YanziUiKit.row(this, "database-outline", YanziUiKit.PURPLE, "AI 数据接入", "选择数据、确认申请、管理有效授权", () -> this.startActivity(new Intent(this, AiDataAccessActivity.class)));
-        this.profileTabPage.addView((View)dataAccessRow, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
-        LinearLayout catalogRow = YanziUiKit.row(this, "apps", YanziUiKit.BLUE, "应用中心", "获取小程序与独立 Android 应用", () -> this.startActivity(new Intent(this, ApplicationCatalogActivity.class)));
-        this.profileTabPage.addView((View)catalogRow, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
+        this.profileTabPage.addView((View)YanziUiKit.sectionLabel(this, "关于"));
 
         String currentVer = "0.2.18";
         try { currentVer = this.getPackageManager().getPackageInfo(this.getPackageName(), 0).versionName; } catch (Exception ignored) {}
@@ -2636,80 +2684,6 @@ extends Activity {
         LinearLayout itemCheckUpdate = YanziUiKit.row(this, "download-outline", YanziUiKit.GREEN, "检查更新", "当前 v" + versionLabel, () -> UpdateManager.checkUpdate(MainActivity.this, true));
         this.profileTabPage.addView((View)itemCheckUpdate, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
 
-        this.profileTabPage.addView((View)YanziUiKit.sectionLabel(this, "诊断"));
-
-        LinearLayout runLogPanel = new LinearLayout((Context)this);
-        runLogPanel.setOrientation(LinearLayout.VERTICAL);
-        runLogPanel.setPadding(0, this.dp(16), 0, 0);
-
-        LinearLayout runLogHeader = new LinearLayout((Context)this);
-        runLogHeader.setOrientation(LinearLayout.HORIZONTAL);
-        runLogHeader.setGravity(Gravity.CENTER_VERTICAL);
-        runLogHeader.setPadding(0, 0, 0, this.dp(8));
-
-        TextView runLogTitle = this.textView("\u8fd0\u884c\u65e5\u5fd7", 16, ThemeConfig.COLOR_TEXT_PRIMARY, true);
-        runLogHeader.addView((View)runLogTitle, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -2, 1.0f));
-
-        Button btnCopyRunLog = this.button("\u590d\u5236");
-        btnCopyRunLog.setTextSize(12f);
-        btnCopyRunLog.setPadding(this.dp(8), this.dp(4), this.dp(8), this.dp(4));
-        btnCopyRunLog.setOnClickListener(v -> {
-            this.copyDiagnostics();
-            Toast.makeText(this.getApplicationContext(), "\u65e5\u5fd7\u5df2\u590d\u5236", Toast.LENGTH_SHORT).show();
-        });
-
-        Button btnClearRunLog = this.button("\u6e05\u7a7a");
-        btnClearRunLog.setTextSize(12f);
-        btnClearRunLog.setPadding(this.dp(8), this.dp(4), this.dp(8), this.dp(4));
-        btnClearRunLog.setOnClickListener(v -> {
-            this.diagnosticLog.setLength(0);
-            MobileDiagnostics.clear((Context)this);
-            this.statusText.setText((CharSequence)"");
-            this.setStatus("\u65e5\u5fd7\u5df2\u6e05\u7a7a\u3002");
-            Toast.makeText(this.getApplicationContext(), "\u65e5\u5fd7\u5df2\u6e05\u7a7a", Toast.LENGTH_SHORT).show();
-        });
-
-        LinearLayout.LayoutParams runBtnLp = new LinearLayout.LayoutParams(this.dp(60), this.dp(32));
-        runBtnLp.leftMargin = this.dp(8);
-        runLogHeader.addView((View)btnCopyRunLog, (ViewGroup.LayoutParams)runBtnLp);
-        runLogHeader.addView((View)btnClearRunLog, (ViewGroup.LayoutParams)runBtnLp);
-        runLogPanel.addView((View)runLogHeader);
-
-        androidx.core.widget.NestedScrollView runLogScroll = new androidx.core.widget.NestedScrollView((Context)this);
-        runLogScroll.setBackgroundColor(ThemeConfig.COLOR_BACKGROUND);
-        runLogScroll.setPadding(this.dp(10), this.dp(10), this.dp(10), this.dp(10));
-
-        GradientDrawable gdRunLog = new GradientDrawable();
-        gdRunLog.setColor(ThemeConfig.COLOR_CARD_BACKGROUND);
-        gdRunLog.setCornerRadius((float)this.dp(8));
-        runLogScroll.setBackground((Drawable)gdRunLog);
-
-        this.statusText.setTextSize(11f);
-        this.statusText.setTextColor(ThemeConfig.COLOR_TEXT_SECONDARY);
-        this.statusText.setTypeface(Typeface.MONOSPACE);
-        this.statusText.setText((CharSequence)this.diagnosticLog.toString());
-        runLogScroll.addView((View)this.statusText);
-
-        runLogPanel.addView((View)runLogScroll, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, this.dp(150)));
-        this.profileTabPage.addView((View)runLogPanel);
-
-        TextView tvAbout = new TextView((Context)this);
-        tvAbout.setTextSize(12f);
-        tvAbout.setTextColor(Color.rgb(100, 116, 139));
-        tvAbout.setGravity(Gravity.CENTER);
-
-        long installTime = 0L;
-        try {
-            installTime = this.getPackageManager().getPackageInfo((String)this.getPackageName(), (int)0).lastUpdateTime;
-        } catch (Exception e) {}
-        String timeStr = "";
-        if (installTime > 0L) {
-            timeStr = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(new Date(installTime));
-        }
-        String aboutText = "\u8bbe\u5907 ID: " + this.deviceId + "\n\u7f16\u8bd1\u5b89\u88c5: " + timeStr;
-        tvAbout.setText((CharSequence)aboutText);
-        tvAbout.setPadding(0, this.dp(16), 0, this.dp(24));
-        this.profileTabPage.addView((View)tvAbout);
         shell.addView((View)this.swipeRefresh, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, 0, 1.0f));
         this.setupAiTabPage();
         this.loadAiHistory();
@@ -2717,7 +2691,7 @@ extends Activity {
         shell.addView((View)this.desktopExtensionTabPage, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, 0, 1.0f));
         shell.addView((View)this.buildBottomTabs(), (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, this.dp(64)));
         this.setContentView((View)shell);
-        this.selectTab("yanm");
+        this.selectTab("desktop");
         this.setStatus(this.prefs.getString("token", "").trim().isEmpty() ? "\u8bf7\u5148\u767b\u5f55\u71d5\u5b50\u8d26\u53f7\u3002" : "\u5df2\u52a0\u8f7d\u672c\u5730\u767b\u5f55\u6001\u3002");
         this.renderCachedYanm();
         if (!this.prefs.getString("token", "").trim().isEmpty()) {
@@ -2752,12 +2726,12 @@ extends Activity {
         this.yanmTabButton = this.tabButton("燕幕", "home", "yanm");
         this.mobileExtensionTabButton = this.tabButton("开发", "code", "mobile");
         this.aiTabButton = this.tabButton("AI", "creation", "ai");
-        this.desktopExtensionTabButton = this.tabButton("电脑", "monitor", "desktop");
+        this.desktopExtensionTabButton = this.tabButton("电脑", DesktopDashboardView.COMPUTER_ICON, "desktop");
         this.profileTabButton = this.tabButton("我的", "account", "profile");
-        tabs.addView(this.yanmTabButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -1, 1.0f));
+        tabs.addView(this.desktopExtensionTabButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -1, 1.0f));
         tabs.addView(this.mobileExtensionTabButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -1, 1.0f));
         tabs.addView(this.aiTabButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -1, 1.0f));
-        tabs.addView(this.desktopExtensionTabButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -1, 1.0f));
+        tabs.addView(this.yanmTabButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -1, 1.0f));
         tabs.addView(this.profileTabButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -1, 1.0f));
         return tabs;
     }
@@ -2901,8 +2875,8 @@ extends Activity {
         LinearLayout.LayoutParams helperParams = new LinearLayout.LayoutParams(-1, -2);
         helperParams.setMargins(0, this.dp(8), 0, this.dp(8));
         helperPanel.setLayoutParams((ViewGroup.LayoutParams)helperParams);
-        this.mobileExtensionIdInput = this.input("\u6269\u5c55 ID", "mobile-copy-shared-text");
-        this.mobileExtensionNameInput = this.input("\u6269\u5c55\u540d\u79f0", "\u590d\u5236\u5f53\u524d\u8f93\u5165");
+        this.mobileExtensionIdInput = this.input("小程序 ID", "mobile-copy-shared-text");
+        this.mobileExtensionNameInput = this.input("小程序名称", "\u590d\u5236\u5f53\u524d\u8f93\u5165");
         this.mobileExtensionIconInput = this.input("\u56fe\u6807", "mdi:content-copy");
         this.mobileExtensionDescriptionInput = this.multiInput("\u63cf\u8ff0", "\u628a\u5f53\u524d\u8f93\u5165\u6846\u5185\u5bb9\u590d\u5236\u5230\u624b\u673a\u526a\u8d34\u677f\u3002");
         this.mobileExtensionDescriptionInput.setMinLines(3);
@@ -2910,7 +2884,7 @@ extends Activity {
         helperPanel.addView((View)this.mobileExtensionNameInput);
         helperPanel.addView((View)this.mobileExtensionIconInput);
         helperPanel.addView((View)this.mobileExtensionDescriptionInput);
-        Button saveDraftButton = this.button("\u4fdd\u5b58\u6269\u5c55");
+        Button saveDraftButton = this.button("保存小程序");
         helperPanel.addView((View)saveDraftButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, this.dp(42)));
         root.addView((View)helperPanel);
 
@@ -2920,15 +2894,15 @@ extends Activity {
         codeParams.setMargins(0, this.dp(8), 0, this.dp(8));
         codePanel.setLayoutParams((ViewGroup.LayoutParams)codeParams);
         codePanel.addView((View)this.textView("JSON \u533a", 16, -1, true));
-        this.mobileExtensionInput = this.multiInput("\u624b\u673a\u6269\u5c55 JSON / mobile-js", this.prefs.getString("mobileExtensionDraft", this.defaultMobileExtensionJson()));
+        this.mobileExtensionInput = this.multiInput("手机小程序 JSON / mobile-js", this.prefs.getString("mobileExtensionDraft", this.defaultMobileExtensionJson()));
         this.mobileExtensionInput.setMinLines(18);
         codePanel.addView((View)this.mobileExtensionInput, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -2));
         Button pasteJsonButton = this.button("\u4e00\u952e\u7c98\u8d34 JSON");
         codePanel.addView((View)pasteJsonButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, this.dp(42)));
         LinearLayout bottomActions = new LinearLayout((Context)this);
         bottomActions.setOrientation(0);
-        Button testButton = this.button("\u6d4b\u8bd5\u6269\u5c55");
-        Button runButton = this.button("\u4fdd\u5b58\u6269\u5c55");
+        Button testButton = this.button("测试小程序");
+        Button runButton = this.button("保存小程序");
         bottomActions.addView((View)testButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, this.dp(44), 1.0f));
         bottomActions.addView((View)runButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, this.dp(44), 1.0f));
         codePanel.addView((View)bottomActions);
@@ -3348,7 +3322,7 @@ extends Activity {
         this.mobileExtensionGrid.removeAllViews();
 
         JSONArray array = this.readLocalMobileExtensions();
-        if (this.developerDashboard != null) this.developerDashboard.update(array.length(), "已同步");
+        if (this.mobileExtensionListTitle != null) this.mobileExtensionListTitle.setText("本机小程序 · " + array.length());
         if (array.length() == 0) {
             TextView emptyTv = this.textView("暂无本机小程序。", 12, Color.rgb((int)148, (int)163, (int)184), false);
             emptyTv.setPadding(this.dp(16), this.dp(16), this.dp(16), this.dp(16));
@@ -4068,7 +4042,6 @@ extends Activity {
                 String baseUrl = this.normalizedBaseUrl();
                 String token = this.requireToken();
                 try {
-                    YanziApiClient.registerDevice(baseUrl, token, this.deviceId, this.buildDeviceName());
                     messageId = YanziApiClient.sendPhotoToDesktop(baseUrl, token, this.deviceId, jpegBytes, width, height);
                 }
                 catch (Exception ex) {
@@ -4076,13 +4049,12 @@ extends Activity {
                         throw ex;
                     }
                     token = this.refreshToken();
-                    YanziApiClient.registerDevice(baseUrl, token, this.deviceId, this.buildDeviceName());
                     messageId = YanziApiClient.sendPhotoToDesktop(baseUrl, token, this.deviceId, jpegBytes, width, height);
                 }
                 String sentMessageId = messageId;
                 this.runOnUiThread(() -> {
                     this.hidePhotoProgress();
-                    this.setStatus("\u7167\u7247\u5df2\u53d1\u9001\u5230\u4e91\u7aef\uff0cmessageId=" + sentMessageId + "\u3002\u7b49\u5f85\u7535\u8111\u63a5\u6536\u3002");
+                    this.setStatus("\u7167\u7247\u5df2\u53d1\u9001\uff0cmessageId=" + sentMessageId + "\u3002\u7b49\u5f85\u7535\u8111\u63a5\u6536\u3002");
                 });
             }
             catch (Exception ex) {
@@ -4700,6 +4672,9 @@ extends Activity {
                             finished = true;
                             break;
                         }
+                        if ("unknown".equals(status) || "expired".equals(status) || "cancelled".equals(status)) {
+                            statusResult = status; execOutput = "结果待确认或请求已结束；未自动重复执行，请在目标设备确认。"; finished = true; break;
+                        }
                         if ("failed".equals(status)) {
                             JSONObject execRes;
                             statusResult = "failed";
@@ -4734,6 +4709,8 @@ extends Activity {
                     if ("completed".equals(finalStatus)) {
                         new AlertDialog.Builder((Context)this).setTitle((CharSequence)"\u6267\u884c\u6210\u529f").setMessage((CharSequence)("\u6269\u5c55 [" + extension.name + "] \u6267\u884c\u6210\u529f\uff01\n\n\u8fd4\u56de\u7ed3\u679c\uff1a\n" + finalOutput)).setPositiveButton((CharSequence)"\u786e\u5b9a", null).show();
                         this.setStatus("\u6269\u5c55\u6267\u884c\u6210\u529f\uff1a" + extension.name);
+                    } else if ("unknown".equals(finalStatus) || "expired".equals(finalStatus) || "cancelled".equals(finalStatus)) {
+                        Toast.makeText(this.getApplicationContext(), finalOutput, Toast.LENGTH_LONG).show();
                     } else if ("failed".equals(finalStatus)) {
                         new AlertDialog.Builder((Context)this).setTitle((CharSequence)"\u6267\u884c\u5931\u8d25").setMessage((CharSequence)("\u6269\u5c55 [" + extension.name + "] \u6267\u884c\u5931\u8d25\uff01\n\n\u9519\u8bef\u4fe1\u606f\uff1a\n" + finalOutput)).setPositiveButton((CharSequence)"\u786e\u5b9a", null).show();
                         this.setStatus("\u6269\u5c55\u6267\u884c\u5931\u8d25\uff1a" + extension.name);
@@ -4867,6 +4844,9 @@ extends Activity {
         this.currentSubTabIndex = index;
 
         this.runOnUiThread(() -> {
+            if (this.desktopDashboard != null) {
+                this.desktopDashboard.select(index);
+            }
             if (this.desktopViewPager != null && this.desktopViewPager.getCurrentItem() != index) {
                 this.desktopViewPager.setCurrentItem(index, true);
             }
@@ -4979,13 +4959,13 @@ extends Activity {
                     if (cleanUrl.endsWith("/")) {
                         cleanUrl = cleanUrl.substring(0, cleanUrl.length() - 1);
                     }
-                    java.net.URL url = new java.net.URL(cleanUrl + "/health");
-                    java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+                    java.net.URL url = new java.net.URL(cleanUrl + "/v1/me/devices/protocol");
+                    java.net.HttpURLConnection conn = MobileNetworkRouting.openLanConnection(url);
                     conn.setRequestMethod("GET");
                     conn.setConnectTimeout(2000);
                     conn.setReadTimeout(2000);
                     int code = conn.getResponseCode();
-                    if (code == 200 || code == 401) {
+                    if (code == 200) {
                         connected = true;
                         type = "lan";
                     }
@@ -5029,9 +5009,6 @@ extends Activity {
     }
 
     private void updateConnectionUi() {
-        if (this.homeDashboard != null) {
-            this.homeDashboard.updateDesktopState(this.isDesktopConnected, this.desktopConnectionType);
-        }
         if (this.desktopDashboard != null) {
             this.desktopDashboard.update(this.isDesktopConnected, this.desktopConnectionType);
         }
@@ -5622,20 +5599,6 @@ extends Activity {
             this.setAiLoadingState(false);
             this.addAiChatMessage("\u7cfb\u7edf", "\u5df2\u53d6\u6d88 AI \u56de\u590d\u3002", Color.rgb((int)156, (int)163, (int)175), false);
         });
-    }
-
-    private void runAiQuickAction(String prompt, Runnable fallback) {
-        String aiBaseUrl = this.prefs.getString("aiBaseUrl", "").trim();
-        if (aiBaseUrl.isEmpty()) {
-            this.refreshSettings();
-            Toast.makeText(this, "尚未同步 AI 配置，已打开对应的真实功能。", Toast.LENGTH_SHORT).show();
-            if (fallback != null) fallback.run();
-            return;
-        }
-        if (this.aiChatInput != null) {
-            this.aiChatInput.setText((CharSequence)prompt);
-            this.sendAiChat();
-        }
     }
 
     private void sendAiChat() {
@@ -6591,64 +6554,28 @@ extends Activity {
             this.aiChatHistory.removeAllViews();
             this.aiEmptyStateContainer = new LinearLayout((Context)this);
             this.aiEmptyStateContainer.setOrientation(LinearLayout.VERTICAL);
-            this.aiEmptyStateContainer.setPadding(0, this.dp(10), 0, this.dp(18));
+            this.aiEmptyStateContainer.setGravity(Gravity.CENTER_HORIZONTAL);
+            this.aiEmptyStateContainer.setPadding(this.dp(18), this.dp(36), this.dp(18), this.dp(12));
 
-            LinearLayout hero = YanziUiKit.tintedCard(this, Color.rgb(21,25,54), Color.rgb(55,48,102));
-            hero.addView(YanziUiKit.header(this, "AI 助手", "可以提问，也可以直接执行燕子里的真实能力", "creation", YanziUiKit.PURPLE));
-            TextView start = YanziUiKit.primaryButton(this, "开始对话", () -> {
-                if (this.aiChatInput != null) {
-                    this.aiChatInput.requestFocus();
-                    this.showKeyboard((View)this.aiChatInput);
-                }
-            });
-            LinearLayout.LayoutParams startLp = new LinearLayout.LayoutParams(-1, this.dp(42));
-            startLp.topMargin = this.dp(12);
-            hero.addView((View)start, (ViewGroup.LayoutParams)startLp);
-            this.aiEmptyStateContainer.addView((View)hero, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
+            TextView title = YanziUiKit.text(
+                    this,
+                    "有什么要做的？",
+                    20,
+                    YanziUiKit.TEXT,
+                    true);
+            title.setGravity(Gravity.CENTER);
+            this.aiEmptyStateContainer.addView((View)title);
 
-            this.aiEmptyStateContainer.addView((View)YanziUiKit.sectionLabel(this, "快捷能力"));
-            String[][] prompts = new String[][]{
-                {"查看插件列表", "列出我当前可以使用的电脑和手机小程序"},
-                {"查询设备状态", "查询我的电脑当前连接状态，并告诉我可以执行哪些操作"},
-                {"分析燕幕", "读取当前燕幕状态，概括最值得我关注的信息"},
-                {"整理今日事项", "结合可用的日历和便签数据，整理我今天值得关注的事项"}
-            };
-            int[] accents = new int[]{YanziUiKit.BLUE,YanziUiKit.GREEN,YanziUiKit.ORANGE,YanziUiKit.PURPLE};
-            String[] icons = new String[]{"apps","monitor","monitor-dashboard","calendar-month-outline"};
-            for (int row = 0; row < 2; row++) {
-                LinearLayout line = new LinearLayout((Context)this);
-                line.setOrientation(LinearLayout.HORIZONTAL);
-                for (int col = 0; col < 2; col++) {
-                    int idx = row * 2 + col;
-                    final int quickIndex = idx;
-                    final String prompt = prompts[idx][1];
-                    LinearLayout tile = YanziUiKit.actionTile(this, icons[idx], accents[idx], prompts[idx][0], "立即执行", () -> {
-                        Runnable fallback;
-                        if (quickIndex == 0) {
-                            fallback = () -> this.selectTab("mobile");
-                        } else if (quickIndex == 1) {
-                            fallback = () -> this.selectTab("desktop");
-                        } else if (quickIndex == 2) {
-                            fallback = () -> this.selectTab("yanm");
-                        } else {
-                            fallback = () -> this.startActivity(new Intent(this, AiDataAccessActivity.class));
-                        }
-                        this.runAiQuickAction(prompt, fallback);
-                    });
-                    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1.0f);
-                    if (col > 0) lp.leftMargin = this.dp(8);
-                    line.addView((View)tile, (ViewGroup.LayoutParams)lp);
-                }
-                LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(-1, -2);
-                rowLp.bottomMargin = this.dp(8);
-                this.aiEmptyStateContainer.addView((View)line, (ViewGroup.LayoutParams)rowLp);
-            }
-
-            LinearLayout data = YanziUiKit.card(this);
-            LinearLayout dataHeader = YanziUiKit.header(this, "可用数据源", "便签、日历等数据由你逐项授权", "database-outline", YanziUiKit.BLUE);
-            dataHeader.addView((View)YanziUiKit.link(this, "管理", () -> this.startActivity(new Intent(this, AiDataAccessActivity.class))));
-            data.addView((View)dataHeader);
-            this.aiEmptyStateContainer.addView((View)data, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
+            TextView hint = YanziUiKit.text(
+                    this,
+                    "可以整理安排、查看电脑状态、处理便签内容。需要数据时，燕子只会使用你已授权的范围。",
+                    12,
+                    YanziUiKit.SECONDARY,
+                    false);
+            hint.setGravity(Gravity.CENTER);
+            LinearLayout.LayoutParams hintLp = new LinearLayout.LayoutParams(-1, -2);
+            hintLp.topMargin = this.dp(8);
+            this.aiEmptyStateContainer.addView((View)hint, (ViewGroup.LayoutParams)hintLp);
 
             this.aiChatHistory.addView((View)this.aiEmptyStateContainer, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -2));
         }
@@ -7298,7 +7225,7 @@ extends Activity {
         return MainActivity.buildDeviceDisplayName();
     }
 
-    private static String buildDeviceDisplayName() {
+    static String buildDeviceDisplayName() {
         String marketName = MainActivity.firstNonEmpty(MainActivity.getSystemProperty("ro.product.marketname"), MainActivity.getSystemProperty("ro.vendor.product.marketname"), MainActivity.getSystemProperty("ro.product.vendor.marketname"), MainActivity.getSystemProperty("ro.product.odm.marketname"), MainActivity.getSystemProperty("ro.config.marketing_name"));
         if (!marketName.isEmpty()) {
             return marketName;
@@ -8944,6 +8871,9 @@ extends Activity {
                             finished = true;
                             break;
                         }
+                        if ("unknown".equals(status) || "expired".equals(status) || "cancelled".equals(status)) {
+                            statusResult = status; execOutput = "结果待确认或请求已结束；未自动重复执行，请在目标设备确认。"; finished = true; break;
+                        }
                         if ("failed".equals(status)) {
                             JSONObject execRes;
                             statusResult = "failed";
@@ -8981,6 +8911,8 @@ extends Activity {
                             showMsg = showMsg + "\n\u7ed3\u679c: " + (cleanOut.length() > 60 ? cleanOut.substring(0, 60) + "..." : cleanOut);
                         }
                         Toast.makeText((Context)this.getApplicationContext(), (CharSequence)showMsg, (int)1).show();
+                    } else if ("unknown".equals(finalStatus) || "expired".equals(finalStatus) || "cancelled".equals(finalStatus)) {
+                        Toast.makeText(this.getApplicationContext(), finalOutput, Toast.LENGTH_LONG).show();
                     } else if ("failed".equals(finalStatus)) {
                         Toast.makeText((Context)this.getApplicationContext(), (CharSequence)("\u6269\u5c55 [" + extensionName + "] \u6267\u884c\u5931\u8d25\uff01\n\u9519\u8bef: " + finalOutput), (int)1).show();
                     } else if ("acked".equals(finalStatus)) {
@@ -8990,6 +8922,8 @@ extends Activity {
                     if (callback != null) {
                         if ("completed".equals(finalStatus)) {
                             callback.onResult(finalOutput.isEmpty() ? "\u6267\u884c\u6210\u529f\u65e0\u8f93\u51fa" : finalOutput);
+                        } else if ("unknown".equals(finalStatus) || "expired".equals(finalStatus) || "cancelled".equals(finalStatus)) {
+                            callback.onResult("状态: " + finalStatus + "\n" + finalOutput);
                         } else if ("failed".equals(finalStatus)) {
                             callback.onResult("\u6267\u884c\u5931\u8d25\uff1a" + finalOutput);
                         } else {
@@ -9631,6 +9565,8 @@ extends Activity {
         static void registerDevice(String baseUrl, String token, String deviceId, String displayName) throws Exception {
             JSONObject capabilities = new JSONObject().put("shareText", true).put("sendToDesktop", true)
                     .put("receiveMobileMessages", true).put("receiveAttachments", true)
+                    .put("receiveAccountChat", true).put("deviceMessageProtocolVersions", new JSONArray().put(1))
+                    .put("receiveLanAttachments", true).put("maxAttachmentBytes", MobileAttachmentClient.LIMIT)
                     .put("appVersion", BuildConfig.VERSION_NAME).put("versionCode", BuildConfig.VERSION_CODE)
                     .put("packageName", BuildConfig.APPLICATION_ID).put("messageProtocol", 2);
             JSONObject payload = new JSONObject().put("deviceId", (Object)deviceId).put("platform", (Object)"android").put("displayName", (Object)displayName).put("capabilities", (Object)capabilities);
@@ -9643,12 +9579,8 @@ extends Activity {
         }
 
         static String sendPhotoToDesktop(String baseUrl, String token, String sourceDeviceId, byte[] jpegBytes, int width, int height) throws Exception {
-            JSONObject attachment = MobileAttachmentClient.uploadBytes(MainActivity.sContext, baseUrl, token,
-                    "photo-" + System.currentTimeMillis() + ".jpg", "image/jpeg", jpegBytes);
-            attachment.put("sourceDeviceName", MainActivity.buildDeviceDisplayName());
-            return MobileMessageClient.request(baseUrl, "/v1/me/mobile/messages", token, "POST", new JSONObject()
-                    .put("sourceDeviceId", sourceDeviceId).put("targetPlatform", "desktop").put("kind", "photo")
-                    .put("title", "手机照片").put("text", "手机照片 " + width + "x" + height).put("payload", attachment)).getString("messageId");
+            return MobileDesktopTransfer.sendBytes(MainActivity.sContext, baseUrl, token, sourceDeviceId, "photo",
+                    "photo-" + System.currentTimeMillis() + ".jpg", "image/jpeg", jpegBytes, "手机照片 " + width + "x" + height);
         }
 
         private static String postScreenshotDirectMessage(String baseUrl, String token, String sourceDeviceId, String screenshotDataUrl, int bytes, int width, int height) throws Exception {
@@ -9732,7 +9664,7 @@ extends Activity {
         }
 
         static List<RemoteExtension> fetchRunnableExtensions(String baseUrl, String token) throws Exception {
-            JSONObject payload = YanziApiClient.getJson(baseUrl, "/v1/me/extensions", token, "读取扩展列表");
+            JSONObject payload = YanziApiClient.getJson(baseUrl, "/v1/me/extensions", token, "读取小程序列表");
             JSONArray items = payload.optJSONArray("items");
             ArrayList<RemoteExtension> result = new ArrayList<RemoteExtension>();
             if (items == null) {
@@ -9753,7 +9685,7 @@ extends Activity {
                     @Override
                     public RemoteExtension call() {
                         try {
-                            JSONObject detail = YanziApiClient.getJson(baseUrl, "/v1/extensions/" + YanziApiClient.encodePath(extensionId), token, "读取扩展详情");
+                            JSONObject detail = YanziApiClient.getJson(baseUrl, "/v1/extensions/" + YanziApiClient.encodePath(extensionId), token, "读取小程序详情");
                             JSONObject manifest = detail.optJSONObject("manifest");
                             String name = MainActivity.firstNonEmpty(new String[]{detail.optString("display_name"), detail.optString("displayName"), detail.optString("DisplayName"), detail.optString("name"), detail.optString("Name"), manifest == null ? "" : manifest.optString("name"), manifest == null ? "" : manifest.optString("Name"), manifest == null ? "" : manifest.optString("display_name"), manifest == null ? "" : manifest.optString("displayName"), manifest == null ? "" : manifest.optString("DisplayName"), installedSummary.name, extensionId});
                             String description = MainActivity.firstNonEmpty(new String[]{detail.optString("description"), detail.optString("Description"), manifest == null ? "" : manifest.optString("description"), manifest == null ? "" : manifest.optString("Description"), installedSummary.description});
@@ -9804,7 +9736,7 @@ extends Activity {
                 item.optString("description"),
                 settings == null ? "" : settings.optString("description"),
                 manifest == null ? "" : manifest.optString("description"),
-                "扩展详情暂不可用，仍可尝试远程执行。"
+                "小程序详情暂不可用，仍可尝试远程执行。"
             });
             String icon = MainActivity.firstNonEmpty(new String[]{
                 item.optString("icon"),
@@ -10412,6 +10344,7 @@ extends Activity {
         }
 
         private static JSONObject postJson(String baseUrl, String path, JSONObject payload, String token, String action) throws Exception {
+            if ("/v1/me/mobile/messages".equals(path)) return MobileDeviceMessageSender.send(baseUrl, token, payload);
             if ("/v1/me/mobile/messages".equals(path) && !payload.has("clientMessageId"))
                 payload.put("clientMessageId", java.util.UUID.randomUUID().toString());
             if (YanziApiClient.isDesktopLocalApi(path)) {
@@ -10544,7 +10477,10 @@ extends Activity {
                 .put("payload", (Object)msgPayload);
 
             long postStart = System.currentTimeMillis();
-            JSONObject postRes = YanziApiClient.postJson(baseUrl, "/v1/me/mobile/messages", relayPayload, token, action);
+            String targetDeviceId = msgPayload.optString("targetDeviceId", LanDiscoveryManager.getLanDeviceId(sContext));
+            if (!targetDeviceId.isEmpty()) relayPayload.put("targetDeviceId", targetDeviceId);
+            relayPayload.put("clientMessageId", msgPayload.optString("clientOperationId", java.util.UUID.randomUUID().toString()));
+            JSONObject postRes = MobileMessageClient.request(baseUrl, "/v1/me/mobile/messages", token, "POST", relayPayload);
             String messageId = postRes.optString("messageId", "");
             android.util.Log.i("YanziRelay", "--> Post relay message OK: messageId=" + messageId + " (" + (System.currentTimeMillis() - postStart) + "ms)");
 
@@ -10557,7 +10493,7 @@ extends Activity {
                 int sleepMs = attempt < 15 ? 150 : 350;
                 Thread.sleep(sleepMs);
                 try {
-                    JSONObject detail = fetchMessageDetail(baseUrl, token, messageId);
+                    JSONObject detail = MobileMessageClient.request(baseUrl, "/v1/me/mobile/messages/" + messageId, token, "GET", null);
                     String status = detail.optString("status", "");
                     String respPayload = extractRelayResultPayload(detail);
                     android.util.Log.i("YanziRelay", "--> Poll attempt #" + attempt + ": status=" + status + ", payloadLength=" + respPayload.length() + " (" + (System.currentTimeMillis() - pollStart) + "ms)");
@@ -10581,18 +10517,30 @@ extends Activity {
 
         private static JSONObject requestDesktopLocalApi(String path, String token, String action, String method, JSONObject payload) throws Exception {
             long lanStart = System.currentTimeMillis();
+            payload = payload == null ? new JSONObject().put("path", path) : new JSONObject(payload.toString());
+            if (!payload.has("clientOperationId")) payload.put("clientOperationId", java.util.UUID.randomUUID().toString());
+            String kind = path.startsWith("/v1/fs/list") ? "fs-list" : path.startsWith("/v1/fs/read") ? "fs-read" :
+                    path.startsWith("/v1/fs/write") ? "fs-write" : "run-powershell";
             String lanBaseUrl = sContext != null ? LanDiscoveryManager.getLanBaseUrl(sContext) : LanDiscoveryManager.cachedLanBaseUrl;
             android.util.Log.i("YanziRelay", "==> requestDesktopLocalApi: lanBaseUrl=" + lanBaseUrl);
 
             if (lanBaseUrl != null && !lanBaseUrl.trim().isEmpty() && !lanBaseUrl.contains("127.0.0.1")) {
                 try {
                     String lanToken = sContext != null ? LanDiscoveryManager.getLanApiToken(sContext) : LanDiscoveryManager.cachedLanApiToken;
-                    int timeoutMs = 800;
-                    JSONObject result = YanziApiClient.doRequest(lanBaseUrl, path, lanToken != null ? lanToken : token, action, method, payload, timeoutMs);
+                    JSONObject message = new JSONObject().put("notificationPort", BuildConfig.APPLICATION_ID.endsWith(".dev") ? 42982 : 42981).put("clientMessageId", payload.getString("clientOperationId")).put("sourceDeviceId", getDeviceIdStatic(sContext)).put("targetPlatform", "desktop")
+                            .put("kind", kind).put("title", action).put("text", payload.optString("command", "")).put("payload", payload);
+                    JSONObject delivered = YanziApiClient.doRequest(lanBaseUrl, "/v1/me/mobile/messages",
+                            lanToken != null ? lanToken : token, action, "POST", message, 65000);
+                    if (!delivered.optBoolean("success")) throw new DesktopOperationRejected(delivered.optString("output", "电脑执行失败"));
+                    String output = delivered.optString("output", "");
+                    JSONObject result;
+                    try { result = new JSONObject(output); }
+                    catch (Exception ignored) { result = new JSONObject().put("output", output).put("exitCode", 0); }
                     YanziApiClient.handleLanSuccess(action, path);
                     android.util.Log.i("YanziRelay", "<== LAN Direct OK in " + (System.currentTimeMillis() - lanStart) + "ms");
                     return result;
-                } catch (Exception e) {
+                } catch (DesktopOperationRejected rejected) { throw rejected; }
+                catch (Exception e) {
                     android.util.Log.i("YanziRelay", "--> LAN Direct failed (" + (System.currentTimeMillis() - lanStart) + "ms): " + e.getMessage());
                     if (sContext != null) LanDiscoveryManager.clearLanBaseUrl(sContext);
                 }
@@ -10604,6 +10552,10 @@ extends Activity {
             } catch (Exception relayEx) {
                 throw new IllegalStateException("远程中继响应失败：" + relayEx.getMessage(), relayEx);
             }
+        }
+
+        private static final class DesktopOperationRejected extends Exception {
+            DesktopOperationRejected(String message) { super(message); }
         }
 
         private static String toUserMessage(Exception ex) {
@@ -10701,12 +10653,12 @@ extends Activity {
 
             URL url = new URL(baseUrl + path);
             HttpURLConnection connection = network == null
-                    ? (HttpURLConnection)url.openConnection()
+                    ? (MobileNetworkRouting.isLanUrl(url) ? MobileNetworkRouting.openLanConnection(url) : (HttpURLConnection)url.openConnection())
                     : (HttpURLConnection)network.openConnection(url);
 
             try {
                 connection.setRequestMethod(method);
-                connection.setConnectTimeout(timeoutMs);
+                connection.setConnectTimeout(MobileNetworkRouting.isLanUrl(url) ? Math.min(1500, timeoutMs) : timeoutMs);
                 connection.setReadTimeout(timeoutMs);
                 connection.setRequestProperty("User-Agent", "YanziClient-Mobile/0.1.0");
                 connection.setRequestProperty("X-Yanzi-Client", "mobile");
@@ -12175,6 +12127,10 @@ extends Activity {
         this.currentMobileSubTab = index;
 
         this.runOnUiThread(() -> {
+            if (this.developerDashboard != null) {
+                this.developerDashboard.selectWorkspace(index);
+            }
+
             android.graphics.drawable.GradientDrawable activeBg = new android.graphics.drawable.GradientDrawable();
             activeBg.setCornerRadius((float)this.dp(12));
             activeBg.setColor(Color.argb(32, 79, 140, 255));
@@ -12229,7 +12185,7 @@ extends Activity {
     }
 
     private void buildMobileDocsView(LinearLayout container) {
-        TextView descText = this.textView("\u624b\u673a\u6269\u5c55\u57fa\u4e8e\u8f6b\u91cf\u7ea7 JavaScript \u73af\u5883\u6267\u884c\u3002\u60a8\u53ef\u4ee5\u5728\u811a\u672c\u7684 async function run(context) \u4e2d\u8c03\u7528\u4ee5\u4e0b context.mobile API\u3002", 13, Color.rgb(182, 194, 214), false);
+        TextView descText = this.textView("手机小程序基于轻量级 JavaScript 环境执行。你可以在脚本的 async function run(context) 中调用以下 context.mobile API。", 13, Color.rgb(182, 194, 214), false);
         descText.setPadding(0, this.dp(4), 0, this.dp(12));
         container.addView((View)descText);
 
@@ -12315,7 +12271,7 @@ extends Activity {
     }
 
     private void buildMobileShellView(LinearLayout container) {
-        TextView descText = this.textView("\u5728\u6b64\u53ef\u76f2\u63a5\u7f16\u5199\u5e76\u8fd0\u884c JS \u811a\u672c\uff0c\u6216\u67e5\u770b\u6269\u5c55\u7684 API \u8c03\u7528\u65e5\u5fd7\u3002", 13, Color.rgb(182, 194, 214), false);
+        TextView descText = this.textView("在此可以直接编写并运行 JS 脚本，也可以查看小程序的 API 调用日志。", 13, Color.rgb(182, 194, 214), false);
         descText.setPadding(0, this.dp(4), 0, this.dp(12));
         container.addView((View)descText);
 
@@ -12657,8 +12613,6 @@ extends Activity {
     }
 
     private void setupProfileHeader() {
-        this.profileTabPage.addView((View)YanziUiKit.header(this, "我的", "账号、同步、权限与设备设置", "account", YanziUiKit.BLUE), (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
-
         LinearLayout card = YanziUiKit.tintedCard(this, Color.rgb(13,31,49), Color.rgb(35,66,100));
         LinearLayout header = new LinearLayout((Context)this);
         header.setOrientation(LinearLayout.HORIZONTAL);
@@ -12691,15 +12645,6 @@ extends Activity {
         header.setOnClickListener(v -> this.showAccountSettingsDialog());
         card.addView((View)header);
 
-        LinearLayout states = new LinearLayout((Context)this);
-        states.setOrientation(LinearLayout.HORIZONTAL);
-        states.setPadding(0, this.dp(12), 0, 0);
-        states.addView((View)YanziUiKit.metric(this, this.prefs.getString("token","").trim().isEmpty() ? "未登录" : "已登录", "账号", this.prefs.getString("token","").trim().isEmpty()?YanziUiKit.ORANGE:YanziUiKit.GREEN), new LinearLayout.LayoutParams(0,-2,1f));
-        LinearLayout.LayoutParams s2 = new LinearLayout.LayoutParams(0,-2,1f); s2.leftMargin=this.dp(7);
-        states.addView((View)YanziUiKit.metric(this, this.prefs.getBoolean("auto_cloud_update",false) ? "自动" : "手动", "燕幕同步", YanziUiKit.BLUE), s2);
-        LinearLayout.LayoutParams s3 = new LinearLayout.LayoutParams(0,-2,1f); s3.leftMargin=this.dp(7);
-        states.addView((View)YanziUiKit.metric(this, this.prefs.getBoolean("floatingWheelEnabled",true) ? "开启" : "关闭", "悬浮轮盘", YanziUiKit.PURPLE), s3);
-        card.addView((View)states);
         this.profileTabPage.addView((View)card, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
     }
 
@@ -12927,14 +12872,12 @@ extends Activity {
                 String token = this.requireToken();
                 String messageId;
                 try {
-                    YanziApiClient.registerDevice(baseUrl, token, this.deviceId, this.buildDeviceName());
                     messageId = YanziApiClient.sendPhotoToDesktop(baseUrl, token, this.deviceId, jpegBytes, width, height);
                 } catch (Exception ex) {
                     if (!MainActivity.isUnauthorized(ex)) {
                         throw ex;
                     }
                     token = this.refreshToken();
-                    YanziApiClient.registerDevice(baseUrl, token, this.deviceId, this.buildDeviceName());
                     messageId = YanziApiClient.sendPhotoToDesktop(baseUrl, token, this.deviceId, jpegBytes, width, height);
                 }
                 final String finalMsgId = messageId;
@@ -12986,46 +12929,28 @@ extends Activity {
                     throw new IllegalStateException("\u4e0d\u652f\u6301\u53d1\u9001\u8d85\u8fc7 30MB \u7684\u5927\u6587\u4ef6");
                 }
 
-                java.io.InputStream inputStream = this.getContentResolver().openInputStream(uri);
-                if (inputStream == null) {
-                    throw new java.io.IOException("\u65e0\u6cd5\u6253\u5f00\u8f93\u5165\u6d41");
-                }
-                java.io.ByteArrayOutputStream byteBuffer = new java.io.ByteArrayOutputStream();
-                byte[] buffer = new byte[8192];
-                int len;
-                while ((len = inputStream.read(buffer)) != -1) {
-                    byteBuffer.write(buffer, 0, len);
-                }
-                inputStream.close();
-                byte[] bytes = byteBuffer.toByteArray();
-
                 String baseUrl = this.normalizedBaseUrl();
                 String token = this.requireToken();
-                JSONObject uploadedAttachment = MobileAttachmentClient.uploadBytes(this, baseUrl, token, finalFileName, "application/octet-stream", bytes);
+                String messageId;
+                File stagedFile = File.createTempFile("desktop-file-", ".tmp", getCacheDir());
+                try {
+                    try (InputStream input = getContentResolver().openInputStream(uri); OutputStream output = new FileOutputStream(stagedFile)) {
+                        if (input == null) throw new java.io.IOException("无法打开文件");
+                        byte[] buffer = new byte[65536]; int count; long total = 0;
+                        while ((count = input.read(buffer)) > 0) {
+                            total += count;
+                            if (total > MobileAttachmentClient.LIMIT) throw new java.io.IOException("文件不能超过 30 MB");
+                            output.write(buffer, 0, count);
+                        }
+                    }
+                    messageId = MobileDesktopTransfer.sendFile(this, baseUrl, token, this.deviceId,
+                            "file", finalFileName, "application/octet-stream", stagedFile, "手机文件：" + finalFileName);
+                } finally { stagedFile.delete(); }
 
                 this.runOnUiThread(() -> {
                     this.renderChatMessage("self", "file", finalFileName, true);
                     this.saveChatMessageToLocal("self", "file", finalFileName);
                 });
-
-                JSONObject payload = new JSONObject();
-                payload.put("sourceDeviceId", (Object)this.deviceId);
-                payload.put("targetPlatform", (Object)"desktop");
-                payload.put("kind", (Object)"file");
-                payload.put("title", (Object)finalFileName);
-                payload.put("text", (Object)("\u624b\u673a\u6587\u4ef6\uff1a" + finalFileName));
-
-                JSONObject innerPayload = new JSONObject();
-                innerPayload.put("source", (Object)"android");
-                innerPayload.put("sourceDeviceName", (Object)MainActivity.buildDeviceDisplayName());
-                innerPayload.put("createdAt", System.currentTimeMillis());
-                innerPayload.put("attachmentId", uploadedAttachment.getString("attachmentId"));
-                innerPayload.put("fileName", uploadedAttachment.getString("fileName"));
-                innerPayload.put("sha256", uploadedAttachment.getString("sha256"));
-                innerPayload.put("size", uploadedAttachment.getLong("size"));
-                payload.put("payload", (Object)innerPayload);
-
-                String messageId = YanziApiClient.postJson(baseUrl, "/v1/me/mobile/messages", payload, token, "\u53d1\u9001\u6587\u4ef6").optString("messageId", "unknown");
 
                 this.runOnUiThread(() -> {
                     this.hidePhotoProgress();
@@ -13104,7 +13029,7 @@ extends Activity {
         });
         this.chatMessageListLayout = new LinearLayout((Context)this);
         this.chatMessageListLayout.setOrientation(LinearLayout.VERTICAL);
-        this.chatMessageListLayout.setPadding(0, this.dp(8), 0, this.dp(8));
+        this.chatMessageListLayout.setPadding(this.dp(14), this.dp(12), this.dp(14), this.dp(12));
         scroll.addView((View)this.chatMessageListLayout, (ViewGroup.LayoutParams)new FrameLayout.LayoutParams(-1, -1));
 
         LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, 0, 1.0f);
@@ -13280,6 +13205,7 @@ extends Activity {
     }
 
     private void saveChatMessageToLocal(String role, String kind, String content) {
+        if (isDevelopmentChatArtifact(kind, content)) return;
         try {
             String historyJson = this.prefs.getString("desktop_chat_history", "[]");
             JSONArray arr = new JSONArray(historyJson);
@@ -13302,24 +13228,61 @@ extends Activity {
     }
 
     private void loadChatHistory() {
-        android.util.Log.i("MainActivity", "loadChatHistory: chatMessageListLayout=" + this.chatMessageListLayout);
         if (this.chatMessageListLayout == null) return;
         this.chatMessageListLayout.removeAllViews();
         String historyJson = this.prefs.getString("desktop_chat_history", "[]");
-        android.util.Log.i("MainActivity", "loadChatHistory: historyJson=" + historyJson);
         try {
             JSONArray arr = new JSONArray(historyJson);
+            JSONArray cleaned = new JSONArray();
+            boolean changed = false;
             for (int i = 0; i < arr.length(); ++i) {
                 JSONObject obj = arr.getJSONObject(i);
-                this.renderChatMessage(obj.optString("role"), obj.optString("kind"), obj.optString("content"), false);
+                String kind = obj.optString("kind");
+                String content = obj.optString("content");
+                if (isDevelopmentChatArtifact(kind, content)) {
+                    changed = true;
+                    continue;
+                }
+                cleaned.put(obj);
+                this.renderChatMessage(obj.optString("role"), kind, content, false);
+            }
+            if (changed) {
+                this.prefs.edit().putString("desktop_chat_history", cleaned.toString()).apply();
             }
         } catch (Exception e) {
             android.util.Log.e("MainActivity", "loadChatHistory error", e);
         }
     }
 
+    private static boolean isDevelopmentChatArtifact(String kind, String content) {
+        if (content == null) return false;
+        String value = content.trim();
+        if ("text".equals(kind)) {
+            return value.startsWith("public-chat-test-")
+                    || value.startsWith("chat-e2e-test-")
+                    || value.startsWith("yanzi-chat-test-");
+        }
+        if ("file".equals(kind) || "photo".equals(kind)) {
+            String lower = value.toLowerCase(Locale.ROOT);
+            return lower.endsWith("public-verification.bin")
+                    || lower.endsWith("public-verification.png")
+                    || lower.endsWith("phone-verification.bin")
+                    || lower.endsWith("phone-verification.png")
+                    || lower.endsWith("verification-attachment");
+        }
+        return false;
+    }
+
     public static void onReceivedChatMessage(String msg) {
         onReceivedChatMessage("text", msg);
+    }
+    public static void onAccountSnapshotChanged() {
+        MainActivity activity = sInstance;
+        if (activity != null) activity.runOnUiThread(() -> {
+            if (sInstance != activity || activity.isFinishing()) return;
+            if (activity.yanmList != null) activity.renderCachedYanm();
+            activity.updateAllAppWidgets();
+        });
     }
 
     public static void onReceivedChatMessage(String kind, String msg) {
@@ -13332,37 +13295,71 @@ extends Activity {
     }
 
     private void renderChatMessage(String role, String kind, String content, boolean scrollToBottom) {
+        if (isDevelopmentChatArtifact(kind, content)) return;
         this.runOnUiThread(() -> {
             if (this.chatMessageListLayout == null) return;
 
+            boolean isSelf = "self".equals(role);
+            boolean isSystem = "system".equals(role);
+
             LinearLayout bubbleContainer = new LinearLayout((Context)this);
             bubbleContainer.setOrientation(LinearLayout.HORIZONTAL);
-            bubbleContainer.setPadding(0, this.dp(4), 0, this.dp(4));
+            bubbleContainer.setGravity(isSystem ? Gravity.CENTER : (isSelf ? Gravity.END : Gravity.START));
+            bubbleContainer.setPadding(0, this.dp(5), 0, this.dp(5));
 
-            boolean isSelf = "self".equals(role);
-            bubbleContainer.setGravity(isSelf ? Gravity.END : Gravity.START);
+            if (isSystem) {
+                TextView systemText = new TextView((Context)this);
+                systemText.setText((CharSequence)content);
+                systemText.setTextColor(ThemeConfig.COLOR_TEXT_SECONDARY);
+                systemText.setTextSize(12f);
+                systemText.setGravity(Gravity.CENTER);
+                systemText.setPadding(this.dp(10), this.dp(5), this.dp(10), this.dp(5));
+
+                GradientDrawable systemBg = new GradientDrawable();
+                systemBg.setColor(Color.rgb(20, 28, 39));
+                systemBg.setCornerRadius((float)this.dp(10));
+                systemText.setBackground((Drawable)systemBg);
+
+                LinearLayout.LayoutParams systemLp = new LinearLayout.LayoutParams(-2, -2);
+                systemLp.leftMargin = this.dp(42);
+                systemLp.rightMargin = this.dp(42);
+                bubbleContainer.addView((View)systemText, (ViewGroup.LayoutParams)systemLp);
+
+                LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(-1, -2);
+                this.chatMessageListLayout.addView((View)bubbleContainer, (ViewGroup.LayoutParams)rowLp);
+                if (scrollToBottom && this.chatMessageListLayout.getParent() instanceof ScrollView) {
+                    ScrollView sv = (ScrollView)this.chatMessageListLayout.getParent();
+                    sv.post(() -> sv.fullScroll(View.FOCUS_DOWN));
+                }
+                return;
+            }
 
             LinearLayout bubble = new LinearLayout((Context)this);
             bubble.setOrientation(LinearLayout.VERTICAL);
-            bubble.setPadding(this.dp(12), this.dp(8), this.dp(12), this.dp(8));
+            bubble.setPadding(this.dp(13), this.dp(9), this.dp(13), this.dp(9));
 
             GradientDrawable gd = new GradientDrawable();
-            gd.setColor(isSelf ? Color.rgb(30, 41, 59) : ThemeConfig.COLOR_CARD_BACKGROUND);
-            gd.setCornerRadius((float)this.dp(12));
+            gd.setColor(isSelf ? Color.rgb(44, 126, 79) : Color.rgb(24, 34, 48));
+            gd.setCornerRadius((float)this.dp(11));
             bubble.setBackground((Drawable)gd);
+
+            int maxBubbleWidth = Math.max(this.dp(180),
+                    getResources().getDisplayMetrics().widthPixels - this.dp(118));
 
             if ("photo".equals(kind)) {
                 TextView label = new TextView((Context)this);
-                label.setText((CharSequence)"[\u7167\u7247]");
-                label.setTextColor(ThemeConfig.COLOR_TEXT_PRIMARY);
-                label.setTextSize(14f);
+                label.setText((CharSequence)"[照片]");
+                label.setTextColor(Color.WHITE);
+                label.setTextSize(13f);
+                label.setMaxWidth(maxBubbleWidth);
                 bubble.addView((View)label);
 
                 if (content.startsWith("content://") || content.startsWith("file://") || content.startsWith("/")) {
                     try {
                         ImageView iv = new ImageView((Context)this);
-                        iv.setPadding(0, this.dp(4), 0, 0);
-                        LinearLayout.LayoutParams imgLp = new LinearLayout.LayoutParams(this.dp(120), this.dp(120));
+                        iv.setPadding(0, this.dp(5), 0, 0);
+                        iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                        LinearLayout.LayoutParams imgLp = new LinearLayout.LayoutParams(this.dp(150), this.dp(150));
                         iv.setLayoutParams((ViewGroup.LayoutParams)imgLp);
                         iv.setImageURI(content.startsWith("/") ? Uri.fromFile(new java.io.File(content)) : Uri.parse(content));
                         bubble.addView((View)iv);
@@ -13370,21 +13367,34 @@ extends Activity {
                 }
             } else if ("file".equals(kind)) {
                 TextView fileLabel = new TextView((Context)this);
-                fileLabel.setText((CharSequence)("[\u6587\u4ef6] " + (content.startsWith("/") ? new java.io.File(content).getName().replaceFirst("^att_[a-f0-9]{32}-", "") : content)));
-                fileLabel.setTextColor(ThemeConfig.COLOR_TEXT_PRIMARY);
+                String fileName = content.startsWith("/")
+                        ? new java.io.File(content).getName().replaceFirst("^att_[a-f0-9]{32}-", "")
+                        : content;
+                fileLabel.setText((CharSequence)("文件 · " + fileName));
+                fileLabel.setTextColor(Color.WHITE);
                 fileLabel.setTextSize(14f);
+                fileLabel.setMaxWidth(maxBubbleWidth);
                 bubble.addView((View)fileLabel);
                 if (content.startsWith("/")) bubble.setOnClickListener(v -> {
                     try {
-                        Uri fileUri = androidx.core.content.FileProvider.getUriForFile(this, BuildConfig.APPLICATION_ID + ".fileprovider", new java.io.File(content));
-                        startActivity(new Intent(Intent.ACTION_VIEW).setDataAndType(fileUri, "application/octet-stream").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION));
-                    } catch (Exception ex) { Toast.makeText(this, "没有可打开此文件的应用", Toast.LENGTH_SHORT).show(); }
+                        Uri fileUri = androidx.core.content.FileProvider.getUriForFile(
+                                this,
+                                BuildConfig.APPLICATION_ID + ".fileprovider",
+                                new java.io.File(content));
+                        startActivity(new Intent(Intent.ACTION_VIEW)
+                                .setDataAndType(fileUri, "application/octet-stream")
+                                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION));
+                    } catch (Exception ex) {
+                        Toast.makeText(this, "没有可打开此文件的应用", Toast.LENGTH_SHORT).show();
+                    }
                 });
             } else {
                 TextView text = new TextView((Context)this);
                 text.setText((CharSequence)content);
-                text.setTextColor(ThemeConfig.COLOR_TEXT_PRIMARY);
-                text.setTextSize(14f);
+                text.setTextColor(Color.WHITE);
+                text.setTextSize(15f);
+                text.setLineSpacing(0f, 1.08f);
+                text.setMaxWidth(maxBubbleWidth);
                 bubble.addView((View)text);
             }
 
@@ -13396,7 +13406,8 @@ extends Activity {
                     int id = item.getItemId();
                     if (id == 1) {
                         try {
-                            android.content.ClipboardManager clipboard = (android.content.ClipboardManager) MainActivity.this.getSystemService(Context.CLIPBOARD_SERVICE);
+                            android.content.ClipboardManager clipboard =
+                                    (android.content.ClipboardManager) MainActivity.this.getSystemService(Context.CLIPBOARD_SERVICE);
                             if (clipboard != null) {
                                 String clipText = content;
                                 if ("photo".equals(kind)) {
@@ -13404,7 +13415,8 @@ extends Activity {
                                 } else if ("file".equals(kind)) {
                                     clipText = "[文件] " + content;
                                 }
-                                android.content.ClipData clip = android.content.ClipData.newPlainText("Copied Chat Message", clipText);
+                                android.content.ClipData clip =
+                                        android.content.ClipData.newPlainText("Copied Chat Message", clipText);
                                 clipboard.setPrimaryClip(clip);
                                 Toast.makeText(MainActivity.this, "消息已复制到剪贴板", Toast.LENGTH_SHORT).show();
                             }
@@ -13413,15 +13425,17 @@ extends Activity {
                         }
                     } else if (id == 2) {
                         new android.app.AlertDialog.Builder((Context)MainActivity.this)
-                            .setTitle("提示")
-                            .setMessage("确定要清理全部聊天消息吗？")
-                            .setPositiveButton("确定", (dialog, which) -> {
-                                MainActivity.this.prefs.edit().putString("desktop_chat_history", "[]").apply();
-                                MainActivity.this.loadChatHistory();
-                                Toast.makeText(MainActivity.this, "聊天历史已清理", Toast.LENGTH_SHORT).show();
-                            })
-                            .setNegativeButton("取消", null)
-                            .show();
+                                .setTitle("提示")
+                                .setMessage("确定要清理全部聊天消息吗？")
+                                .setPositiveButton("确定", (dialog, which) -> {
+                                    MainActivity.this.prefs.edit()
+                                            .putString("desktop_chat_history", "[]")
+                                            .apply();
+                                    MainActivity.this.loadChatHistory();
+                                    Toast.makeText(MainActivity.this, "聊天历史已清理", Toast.LENGTH_SHORT).show();
+                                })
+                                .setNegativeButton("取消", null)
+                                .show();
                     }
                     return true;
                 });
@@ -13429,20 +13443,20 @@ extends Activity {
                 return true;
             });
 
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+            LinearLayout.LayoutParams bubbleLp = new LinearLayout.LayoutParams(-2, -2);
             if (isSelf) {
-                lp.leftMargin = this.dp(60);
+                bubbleLp.leftMargin = this.dp(54);
             } else {
-                lp.rightMargin = this.dp(60);
+                bubbleLp.rightMargin = this.dp(54);
             }
-            bubbleContainer.addView((View)bubble, (ViewGroup.LayoutParams)lp);
-            this.chatMessageListLayout.addView((View)bubbleContainer);
+            bubbleContainer.addView((View)bubble, (ViewGroup.LayoutParams)bubbleLp);
 
-            if (scrollToBottom) {
-                if (this.chatMessageListLayout.getParent() instanceof ScrollView) {
-                    ScrollView sv = (ScrollView)this.chatMessageListLayout.getParent();
-                    sv.post(() -> sv.fullScroll(View.FOCUS_DOWN));
-                }
+            LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(-1, -2);
+            this.chatMessageListLayout.addView((View)bubbleContainer, (ViewGroup.LayoutParams)rowLp);
+
+            if (scrollToBottom && this.chatMessageListLayout.getParent() instanceof ScrollView) {
+                ScrollView sv = (ScrollView)this.chatMessageListLayout.getParent();
+                sv.post(() -> sv.fullScroll(View.FOCUS_DOWN));
             }
         });
     }
@@ -13467,4 +13481,3 @@ extends Activity {
         return row;
     }
 }
-

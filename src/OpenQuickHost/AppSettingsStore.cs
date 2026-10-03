@@ -372,6 +372,7 @@ public static class AppSettingsStore
         settings.DisabledExtensionIds ??= [];
         settings.RecentlyAddedExtensionIds ??= [];
         settings.UnreadNewExtensionIds ??= [];
+        settings.KnownExtensionIds ??= [];
         settings.CompletedQuestIds ??= [];
         settings.UnlockedBadges ??= [];
         settings.YarnSelect ??= new YarnSelectSettings();
@@ -1066,6 +1067,8 @@ public QuickPanelMouseTriggerSettings QuickPanelMouseTriggers { get; set; } = ne
 
     public List<string> UnreadNewExtensionIds { get; set; } = new();
 
+    public List<string> KnownExtensionIds { get; set; } = new();
+
     public int AchievementPoints { get; set; } = 0;
 
     public bool HasOpenedBackpack { get; set; } = false;
@@ -1084,7 +1087,7 @@ public QuickPanelMouseTriggerSettings QuickPanelMouseTriggers { get; set; } = ne
 
     public string WanPushUuid { get; set; } = System.Guid.NewGuid().ToString("N");
 
-    public bool EnableLanSync { get; set; } = false;
+    public bool EnableLanSync { get; set; } = true;
 
     public bool EnableBrowserHelper { get; set; } = true;
 

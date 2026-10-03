@@ -19,6 +19,8 @@ public final class AiDataAccessActivity extends Activity {
     private LinearLayout resourcesBox;
     private LinearLayout requestsBox;
     private LinearLayout grantsBox;
+    private TextView requestsLabel;
+    private TextView grantsLabel;
     private TextView status;
     private Switch writableSwitch;
     private final List<CheckBox> resourceChecks = new ArrayList<>();
@@ -50,17 +52,6 @@ public final class AiDataAccessActivity extends Activity {
         top.addView(refresh);
         root.addView(top,YanziUiKit.cardLp(this));
 
-        LinearLayout flow = YanziUiKit.tintedCard(this, Color.rgb(22,26,56), Color.rgb(57,49,104));
-        flow.addView(YanziUiKit.header(this,"三步完成授权","AI 申请前只看到目录，真正读取仍需你确认","creation",YanziUiKit.PURPLE));
-        LinearLayout steps = new LinearLayout(this); steps.setOrientation(LinearLayout.HORIZONTAL); steps.setPadding(0,YanziUiKit.dp(this,12),0,0);
-        steps.addView(YanziUiKit.actionTile(this,"apps",YanziUiKit.BLUE,"1. 选择数据","只给必要范围",null),new LinearLayout.LayoutParams(0,-2,1f));
-        LinearLayout.LayoutParams s2=new LinearLayout.LayoutParams(0,-2,1f);s2.leftMargin=YanziUiKit.dp(this,7);
-        steps.addView(YanziUiKit.actionTile(this,"shield-check-outline",YanziUiKit.PURPLE,"2. 手机确认","核对申请码",null),s2);
-        LinearLayout.LayoutParams s3=new LinearLayout.LayoutParams(0,-2,1f);s3.leftMargin=YanziUiKit.dp(this,7);
-        steps.addView(YanziUiKit.actionTile(this,"database-outline",YanziUiKit.GREEN,"3. 限时访问","随时可撤销",null),s3);
-        flow.addView(steps);
-        root.addView(flow,YanziUiKit.cardLp(this));
-
         LinearLayout dataCard = YanziUiKit.card(this);
         LinearLayout dataHeader = YanziUiKit.header(this,"AI 可申请的数据","默认全部选中，你可以逐项取消","database-outline",YanziUiKit.BLUE);
         dataCard.addView(dataHeader);
@@ -76,17 +67,15 @@ public final class AiDataAccessActivity extends Activity {
         dataCard.addView(generate,new LinearLayout.LayoutParams(-1,YanziUiKit.dp(this,44)));
         root.addView(dataCard,YanziUiKit.cardLp(this));
 
-        root.addView(YanziUiKit.sectionLabel(this,"待确认申请"));
+        requestsLabel = YanziUiKit.sectionLabel(this,"待确认申请");
+        root.addView(requestsLabel);
         requestsBox = new LinearLayout(this); requestsBox.setOrientation(LinearLayout.VERTICAL);
         root.addView(requestsBox,YanziUiKit.cardLp(this));
 
-        root.addView(YanziUiKit.sectionLabel(this,"当前有效授权"));
+        grantsLabel = YanziUiKit.sectionLabel(this,"当前有效授权");
+        root.addView(grantsLabel);
         grantsBox = new LinearLayout(this); grantsBox.setOrientation(LinearLayout.VERTICAL);
         root.addView(grantsBox,YanziUiKit.cardLp(this));
-
-        LinearLayout privacy = YanziUiKit.tintedCard(this,Color.rgb(12,36,42),Color.rgb(29,76,76));
-        privacy.addView(YanziUiKit.header(this,"隐私与控制","可部分授权 · 限时令牌 · 随时撤销 · 修改前读取最新版","shield-check-outline",YanziUiKit.GREEN));
-        root.addView(privacy,YanziUiKit.cardLp(this));
 
         status = YanziUiKit.text(this,"正在读取数据清单…",11,YanziUiKit.MUTED,false);
         status.setGravity(Gravity.CENTER);
@@ -151,9 +140,11 @@ public final class AiDataAccessActivity extends Activity {
             JSONObject scope=rows.optJSONObject(i); if(scope==null)continue;
             CheckBox box=new CheckBox(this);
             box.setChecked(true);
-            String resourceName = scope.optString("name", "").trim();
-            if (resourceName.isEmpty()) resourceName = friendlyResourceName(scope.optString("extensionId"));
-            box.setText(resourceName + "\n" + scope.optString("key"));
+            String extensionId = scope.optString("extensionId", "").trim();
+            String resourceName = friendlyResourceName(extensionId);
+            String providedName = scope.optString("name", "").trim();
+            if (resourceName.equals(extensionId) && !providedName.isEmpty()) resourceName = providedName;
+            box.setText(resourceName + "\n" + friendlyResourceDetail(extensionId, scope.optString("key")));
             box.setTextColor(YanziUiKit.TEXT);
             box.setTextSize(13f);
             box.setPadding(YanziUiKit.dp(this,8),YanziUiKit.dp(this,8),YanziUiKit.dp(this,8),YanziUiKit.dp(this,8));
@@ -165,7 +156,10 @@ public final class AiDataAccessActivity extends Activity {
 
     private void renderRequests(JSONArray rows) {
         requestsBox.removeAllViews();
-        if(rows.length()==0){requestsBox.addView(emptyRow("当前没有待确认申请"));return;}
+        boolean visible = rows.length() > 0;
+        requestsLabel.setVisibility(visible ? View.VISIBLE : View.GONE);
+        requestsBox.setVisibility(visible ? View.VISIBLE : View.GONE);
+        if(!visible)return;
         for(int i=0;i<rows.length();i++){
             JSONObject row=rows.optJSONObject(i); if(row==null)continue;
             JSONArray scopes=row.optJSONArray("scopes");
@@ -181,7 +175,10 @@ public final class AiDataAccessActivity extends Activity {
 
     private void renderGrants(JSONArray rows) {
         grantsBox.removeAllViews();
-        if(rows.length()==0){grantsBox.addView(emptyRow("暂无有效授权"));return;}
+        boolean visible = rows.length() > 0;
+        grantsLabel.setVisibility(visible ? View.VISIBLE : View.GONE);
+        grantsBox.setVisibility(visible ? View.VISIBLE : View.GONE);
+        if(!visible)return;
         for(int i=0;i<rows.length();i++){
             JSONObject row=rows.optJSONObject(i); if(row==null)continue;
             JSONArray scopes=row.optJSONArray("scopes");
@@ -204,14 +201,15 @@ public final class AiDataAccessActivity extends Activity {
     private String friendlyResourceName(String extensionId) {
         if ("quick-notes".equals(extensionId)) return "便签";
         if ("taskbar-calendar".equals(extensionId)) return "日历";
-        if ("clipboard-history".equals(extensionId)) return "剪贴板";
+        if ("clipboard-history".equals(extensionId)) return "剪贴板收藏";
         return extensionId == null || extensionId.trim().isEmpty() ? "小程序数据" : extensionId;
     }
 
-    private TextView emptyRow(String value) {
-        TextView v=YanziUiKit.text(this,value,12,YanziUiKit.MUTED,false);
-        v.setGravity(Gravity.CENTER);v.setPadding(0,YanziUiKit.dp(this,18),0,YanziUiKit.dp(this,18));
-        return v;
+    private String friendlyResourceDetail(String extensionId, String key) {
+        if ("quick-notes".equals(extensionId)) return "便签数据";
+        if ("taskbar-calendar".equals(extensionId)) return "日历数据";
+        if ("clipboard-history".equals(extensionId)) return "收藏与分组数据";
+        return key == null || key.trim().isEmpty() ? "小程序数据" : key;
     }
 
     private void createInvitation() {

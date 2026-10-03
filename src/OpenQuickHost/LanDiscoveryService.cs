@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Linq;
 using System.Net;
@@ -55,17 +55,19 @@ public sealed class LanDiscoveryService : IDisposable
                 
                 if (requestText == DiscoverRequest || requestText == DiscoverRequest + ":42981" || requestText == DiscoverRequest + ":42982")
                 {
-                    LastKnownMobileIp = result.RemoteEndPoint.Address;
-                    LastKnownMobileNotificationPort = requestText.EndsWith(":42982", StringComparison.Ordinal) ? 42982 : 42981;
+                    // Public discovery is never evidence of an authenticated peer.
                     var ip = GetLocalIpForRemote(result.RemoteEndPoint.Address);
                     if (!string.IsNullOrEmpty(ip))
                     {
                         var response = new
                         {
                             device_id = Environment.MachineName,
+                            deviceId = OpenQuickHost.Sync.DeviceIdentityStore.GetOrCreateDesktopDeviceId(),
+                            protocolVersion = YanziDeviceMessageProtocol.Version,
                             ip = ip,
                             port = _agentApiPort,
-                            token = _agentApiToken
+                            secureProtocol = "yanzi.lan.aead.v1",
+                            pairingRequired = true
                         };
                         var responseJson = JsonSerializer.Serialize(response);
                         var responseBytes = Encoding.UTF8.GetBytes(responseJson);

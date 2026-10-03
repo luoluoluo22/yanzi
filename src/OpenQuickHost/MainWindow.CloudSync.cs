@@ -1037,6 +1037,8 @@ public partial class MainWindow
                 DeviceIdentityStore.GetDesktopDisplayName(),
                 BuildDesktopDeviceCapabilities(),
                 cancellationToken: heartbeatTimeout.Token);
+            try { await _cloudSyncClient.SyncAccountLanLinksAsync(_desktopDeviceId, heartbeatTimeout.Token); }
+            catch (Exception error) { HostAssets.AppendLog("Account LAN refresh deferred: " + error.GetType().Name); }
             _deviceRegistered = true;
             _desktopPresenceHeartbeatFailureCount = 0;
             _desktopPresenceHeartbeatTimer.Interval = TimeSpan.FromSeconds(30);
@@ -1074,6 +1076,12 @@ public partial class MainWindow
             app = "yanzi-desktop",
             os = Environment.OSVersion.VersionString,
             receiveMobileMessages = true,
+            receiveAccountChat = true,
+            deviceMessageProtocolVersions = new[] { YanziDeviceMessageProtocol.Version },
+            receiveLanAttachments = true,
+            autoAccountLan = true,
+            lanPort = AppSettingsStore.LoadCached().AgentApiPort,
+            maxAttachmentBytes = 30 * 1024 * 1024,
             pushToMobile = true
         };
     }
@@ -1253,6 +1261,12 @@ public partial class MainWindow
                 _deviceRegistered = true;
             }
 
+            var replayClient = _cloudSyncClient;
+            var replayToken = _mobileMessageBridgeCts?.Token ?? CancellationToken.None;
+            _ = Task.Run(async () => {
+                try { await replayClient.ReplayDeviceOutboxAsync(replayToken); }
+                catch (Exception error) { HostAssets.AppendLog("Device outbox retry deferred: " + error.GetType().Name); }
+            });
             var messages = await _cloudSyncClient.GetPendingDeviceMessagesAsync(_desktopDeviceId, limit: 20, cancellationToken: pollTimeout.Token);
             if (messages.Count > 0)
             {
@@ -1302,13 +1316,32 @@ public partial class MainWindow
         await _mobileMessageExecutionLock.WaitAsync();
         try
         {
-            var key = $"{SyncSessionStore.Load()?.UserId}:{message.SourceDeviceId}:{message.MessageId}";
+            using var trace = YanziOperationTrace.Push(message.TraceId);
+            var stableId = GetPayloadString(message, "clientOperationId");
+            if (string.IsNullOrEmpty(stableId) && message.Kind is "photo" or "file")
+                stableId = GetPayloadString(message, "clientTransferId");
+            var key = $"{SyncSessionStore.Load()?.UserId}:{message.SourceDeviceId}:{(Guid.TryParse(stableId, out _) ? stableId : message.MessageId)}";
             if (_mobileMessageResults.TryGetValue(key, out var cached)) return cached;
-            var command = message.Kind == "run-shell" || message.Kind == "run-extension" || message.Kind.StartsWith("fs-", StringComparison.Ordinal);
-            var receiptPath = command ? GetMobileExecutionReceiptPath(key) : null;
+            var command = YanziDeviceMessageProtocol.IsExecution(message.Kind);
+            var receiptPath = command || Guid.TryParse(stableId, out _) ? GetMobileExecutionReceiptPath(key) : null;
             if (receiptPath != null && File.Exists(receiptPath)) {
                 var saved = JsonSerializer.Deserialize<MobileExecutionReceipt>(File.ReadAllText(receiptPath))!;
-                return (true, saved.Completed && saved.Success, saved.Completed ? saved.Output : "上次执行被中断，未自动重复执行。请确认结果后重新发起。");
+                return (true, saved.Completed && saved.Success, saved.Completed ? saved.Output : "execution_result_unknown: 上次执行被中断，未自动重复执行。请确认结果后重新发起。");
+            }
+            if (command)
+            {
+                var created = DateTimeOffset.TryParse(message.CreatedAt, out var timestamp) ? timestamp :
+                    long.TryParse(message.CreatedAt, out var millis) ? DateTimeOffset.FromUnixTimeMilliseconds(millis) : DateTimeOffset.MinValue;
+                var deadline = DateTimeOffset.TryParse(message.ExpiresAt, out var supplied) ? supplied : created.AddMinutes(2);
+                if (deadline <= DateTimeOffset.UtcNow || message.Status is "cancelled" or "expired")
+                    return (true, false, "message_expired: 执行期限已过或请求已取消，未执行。");
+                // Only upgraded cloud envelopes have claims. Legacy server and LAN retain local durable deduplication.
+                if (message.MessageId.StartsWith("msg_", StringComparison.Ordinal) && message.Payload.ContainsKey("messageContext"))
+                {
+                    if (_cloudSyncClient == null || !await _cloudSyncClient.ClaimDeviceMessageAsync(message.MessageId,
+                        DeviceIdentityStore.GetOrCreateDesktopDeviceId()))
+                        throw new InvalidOperationException("execution_result_unknown: 未取得执行权，禁止自动重做。");
+                }
             }
             if (receiptPath != null) SaveMobileExecutionReceipt(receiptPath, new(false, false, ""));
             var result = await ExecuteMobileDeviceMessageAsync(message);
@@ -1322,6 +1355,43 @@ public partial class MainWindow
 
     private async Task<(bool hasResult, bool success, string output)> ExecuteMobileDeviceMessageAsync(DeviceMessageRecord message)
     {
+        if (message.Kind == "extension.handoff")
+        {
+            if (GetPayloadString(message, "accountId") != SyncSessionStore.Load()?.UserId)
+                return (true, false, "permission_denied: 接续打开仅允许同账号设备");
+            if (message.Payload.TryGetValue("authorization", out var grant))
+            {
+                if (grant.GetProperty("type").GetString() != "account-owner") return (true, false, "permission_denied: 接续打开仅允许账号所有者");
+            }
+            else
+            {
+                // Legacy cloud does not add grants. Verify ownership through authenticated /me message lookup.
+                var verified = _cloudSyncClient == null ? null : await _cloudSyncClient.GetDeviceMessageAsync(message.MessageId);
+                if (verified == null || verified.Kind != "extension.handoff" || verified.SourceDeviceId != message.SourceDeviceId ||
+                    verified.TargetDeviceId != DeviceIdentityStore.GetOrCreateDesktopDeviceId() ||
+                    GetPayloadString(verified, "accountId") != SyncSessionStore.Load()?.UserId ||
+                    GetPayloadString(verified, "extensionId") != GetPayloadString(message, "extensionId") ||
+                    GetPayloadString(verified, "input") != GetPayloadString(message, "input"))
+                    return (true, false, "permission_denied: 未能确认请求属于当前账号");
+            }
+            if (DateTimeOffset.TryParse(message.ExpiresAt, out var expires) && expires <= DateTimeOffset.UtcNow)
+                return (true, false, "请求已过期");
+            var extensionId = GetPayloadString(message, "extensionId") ?? "";
+            var input = GetPayloadString(message, "input") ?? "";
+            if (input.Length > 4096 || !_localExtensionIndex.TryGetValue(extensionId, out var command) || command.App == null || !IsExtensionEnabled(extensionId) || !command.App.BridgeApis.Contains("handoff"))
+                return (true, false, "目标电脑未安装或未启用支持接续的小程序");
+            try { var output = await (await Dispatcher.InvokeAsync(() => AppExtensionWindow.OpenResourceAsync(command, input))); return (true, true, output); }
+            catch (Exception error) { return (true, false, error.Message); }
+        }
+        if (message.Kind == "extension-storage.changed")
+        {
+            var extensionId = GetPayloadString(message, "extensionId");
+            var key = GetPayloadString(message, "key");
+            if (string.IsNullOrWhiteSpace(extensionId) || string.IsNullOrWhiteSpace(key))
+                return (true, false, "invalid_storage_hint");
+            await Dispatcher.InvokeAsync(() => AppExtensionWindow.NotifyStorageChanged(extensionId, key));
+            return (true, true, "storage_hint_delivered");
+        }
         var title = string.IsNullOrWhiteSpace(message.Title) ? "手机发来消息" : message.Title.Trim();
         var text = string.IsNullOrWhiteSpace(message.Text) ? $"消息类型：{message.Kind}" : message.Text.Trim();
         var sourceLabel = GetMobileSourceLabel(message);
@@ -1338,8 +1408,22 @@ public partial class MainWindow
                 $"Mobile screenshot payload: id={message.MessageId}, keys={payloadKeys}, hasDataUrl={!string.IsNullOrWhiteSpace(screenshotDataUrl)}, webDavPath={GetPayloadString(message, "webDavPath") ?? "(none)"}, localFile={mobileAttachmentFilePath ?? "(none)"}.");
         }
         HostAssets.AppendLog(
-            $"Mobile bridge message: id={message.MessageId}, source={sourceLabel}, kind={message.Kind}, text={trimForLog(text)}");
+            $"Mobile bridge message: id={message.MessageId}, trace={YanziOperationTrace.Current}, source={sourceLabel}, kind={message.Kind}, text={trimForLog(text)}");
 
+        if (message.Kind == "capability.invoke")
+        {
+            var name = GetPayloadString(message, "name") ?? "";
+            if (!YanziCapabilityRegistry.TryGet(name, out var definition) || definition == null)
+                return (true, false, "capability_not_found");
+            if (!message.Payload.TryGetValue("authorization", out var authorization)) return (true, false, "permission_denied");
+            var type = authorization.GetProperty("type").GetString();
+            if (type != "account-owner" && !(type == "device-grant" && authorization.GetProperty("scopes").EnumerateArray().Any(x => x.GetString() == "capability.invoke:" + name)) &&
+                !(type == "lan-pair" && authorization.GetProperty("capability").GetString() == name)) return (true, false, "permission_denied");
+            var result = await YanziCapabilityInvocationService.InvokeAsync(name,
+                message.Payload.TryGetValue("payload", out var input) ? input.Clone() : null,
+                new YanziCapabilityCaller("device:" + message.SourceDeviceId, definition.Permissions));
+            return (true, result.Success, JsonSerializer.Serialize(result, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+        }
         if (string.Equals(message.Kind, "run-extension", StringComparison.OrdinalIgnoreCase))
         {
             if (message.Payload.TryGetValue("extensionId", out var extensionElement))
@@ -1387,6 +1471,12 @@ public partial class MainWindow
             string.Equals(message.Kind, "fs-read", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(message.Kind, "fs-write", StringComparison.OrdinalIgnoreCase))
         {
+            if (message.Payload.TryGetValue("authorization", out var fileAuthorization) && fileAuthorization.GetProperty("type").GetString() == "device-grant")
+            {
+                var roots = fileAuthorization.TryGetProperty("fileRoots", out var rootArray) ? rootArray.EnumerateArray().Select(x => x.GetString() ?? "").ToArray() : [];
+                if (!YanziDeviceResourceAuthorization.AllowsFile(GetPayloadString(message, "path") ?? "", roots))
+                    return (true, false, "permission_denied: 目标文件或目录链接越出授权目录。");
+            }
             var jsonPayload = JsonSerializer.Serialize(message.Payload);
             using var doc = JsonDocument.Parse(jsonPayload);
             var fsResult = ExecuteMobileFsOperation(message.Kind.ToLowerInvariant(), doc.RootElement);
@@ -1442,7 +1532,13 @@ public partial class MainWindow
             process.BeginErrorReadLine();
 
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-            await process.WaitForExitAsync(cts.Token);
+            try { await process.WaitForExitAsync(cts.Token); }
+            catch (OperationCanceledException)
+            {
+                process.Kill(true);
+                await process.WaitForExitAsync();
+                return (false, "命令执行超时（15 秒），进程已停止。", -1);
+            }
 
             var outText = outputBuilder.ToString().Trim();
             var errText = errorBuilder.ToString().Trim();
@@ -1492,29 +1588,31 @@ public partial class MainWindow
                     }
                 }
 
-                return (true, JsonSerializer.Serialize(new { currentPath = path, items }));
+                return (true, JsonSerializer.Serialize(new { ok = true, currentPath = path, items }));
             }
             else if (kind == "fs-read")
             {
-                var path = payload.TryGetProperty("path", out var p) ? p.GetString() ?? string.Empty : string.Empty;
+                var path = ResolveFsPath(payload.TryGetProperty("path", out var p) ? p.GetString() ?? string.Empty : string.Empty);
                 if (!File.Exists(path))
                 {
                     return (false, JsonSerializer.Serialize(new { error = $"文件不存在: {path}" }));
                 }
+                if (new FileInfo(path).Length > 10 * 1024 * 1024)
+                    return (false, JsonSerializer.Serialize(new { error = "文件过大，读取上限为 10 MB" }));
                 var ext = Path.GetExtension(path).ToLowerInvariant();
                 bool isImage = ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".gif" || ext == ".webp" || ext == ".bmp" || ext == ".ico";
                 if (isImage)
                 {
                     var bytes = File.ReadAllBytes(path);
                     var base64 = Convert.ToBase64String(bytes);
-                    return (true, JsonSerializer.Serialize(new { path, content = base64, isBase64 = true, ext }));
+                    return (true, JsonSerializer.Serialize(new { ok = true, path, content = base64, isBase64 = true, ext }));
                 }
                 var content = File.ReadAllText(path);
-                return (true, JsonSerializer.Serialize(new { path, content, isBase64 = false, ext }));
+                return (true, JsonSerializer.Serialize(new { ok = true, path, content, isBase64 = false, ext }));
             }
             else if (kind == "fs-write")
             {
-                var path = payload.TryGetProperty("path", out var p) ? p.GetString() ?? string.Empty : string.Empty;
+                var path = ResolveFsPath(payload.TryGetProperty("path", out var p) ? p.GetString() ?? string.Empty : string.Empty);
                 var content = payload.TryGetProperty("content", out var c) ? c.GetString() ?? string.Empty : string.Empty;
                 if (string.IsNullOrWhiteSpace(path))
                 {
@@ -1525,7 +1623,9 @@ public partial class MainWindow
                 {
                     Directory.CreateDirectory(dir);
                 }
-                File.WriteAllText(path, content);
+                if (payload.TryGetProperty("base64", out var encoded) && encoded.ValueKind == JsonValueKind.True)
+                    File.WriteAllBytes(path, Convert.FromBase64String(content));
+                else File.WriteAllText(path, content);
                 return (true, JsonSerializer.Serialize(new { path, ok = true }));
             }
         }
@@ -1989,6 +2089,8 @@ public partial class MainWindow
 
     private async Task<string?> TryDownloadMobileScreenshotFromWebDavAsync(DeviceMessageRecord message)
     {
+        var lanAttachmentId = GetPayloadString(message, "lanAttachmentId");
+        if (!string.IsNullOrEmpty(lanAttachmentId)) return YanziLanTransferStore.Resolve(lanAttachmentId);
         var attachmentId = GetPayloadString(message, "attachmentId");
         if (!string.IsNullOrEmpty(attachmentId))
             return await _cloudSyncClient!.DownloadMobileAttachmentAsync(attachmentId, HostAssets.ResolveDataDirectoryPath("mobile-attachments"));

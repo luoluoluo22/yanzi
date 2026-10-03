@@ -57,6 +57,12 @@ public static class YanziAction
 
 ## 4. `YanziActionContext` 核心属性与方法
 
+### 跨小程序能力网络
+
+`context.Capabilities` 提供 `Register(name, handler)`、`InvokeAsync(name, payload)`、`ListAsync()`、`DescribeAsync(name)`。常驻 C# 小程序在 manifest `provides` 中声明契约，并在实际运行时注册 Handler；调用另一个 Provider 所需权限由调用方 manifest `permissions` 提供，宿主注入身份与权限。能力在运行时结束时注销，重载后重新绑定。
+
+Handler 类型是 `Func<JsonElement, Task<object?>>`，调用结果为 `JsonElement`，输入和输出均检查契约。详情与真实剪贴板/日历实例见 [真实能力接入与验收](yanzi-capability-runtime-integration-2026-10-02.md)。
+
 ### 4.1 核心上下文属性
 
 | 属性名 | 类型 | 说明 |

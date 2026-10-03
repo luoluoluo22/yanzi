@@ -8,6 +8,7 @@ import java.security.MessageDigest;
 
 final class MobileAttachmentClient {
     static final long LIMIT = 30L * 1024 * 1024;
+    static String hashString(String value) throws Exception {byte[] hash=MessageDigest.getInstance("SHA-256").digest(value.getBytes("UTF-8"));StringBuilder result=new StringBuilder();for(byte b:hash)result.append(String.format(java.util.Locale.ROOT,"%02x",b&255));return result.toString();}
     static File saveLegacyPhoto(Context context, String messageId, String dataUrl) throws Exception {
         if (dataUrl.length() > LIMIT * 4 / 3 + 256 || !dataUrl.matches("(?s)^data:image/(png|jpeg);base64,.*"))
             throw new IOException("Invalid legacy image");
@@ -15,6 +16,7 @@ final class MobileAttachmentClient {
         if (bytes.length == 0 || bytes.length > LIMIT) throw new IOException("Legacy image too large");
         File folder = new File(context.getFilesDir(), "mobile-attachments");
         if (!folder.isDirectory() && !folder.mkdirs()) throw new IOException("Cannot create attachment folder");
+        preflight(folder, bytes.length);
         File file = new File(folder, "legacy-" + Integer.toHexString(messageId.hashCode()) + (dataUrl.startsWith("data:image/png") ? ".png" : ".jpg"));
         try (OutputStream output = new FileOutputStream(file)) { output.write(bytes); }
         return file;
@@ -77,6 +79,7 @@ final class MobileAttachmentClient {
         File partial = new File(target.getPath() + ".part");
         long offset = partial.exists() ? partial.length() : 0;
         if (offset >= size) { partial.delete(); offset = 0; }
+        preflight(directory, size - offset);
         HttpURLConnection connection = MobileNetworkRouting.openCloudConnection(new URL(base + "/v1/me/mobile/attachments/" + id + "/content"));
         try {
             configure(connection, token);
@@ -90,10 +93,22 @@ final class MobileAttachmentClient {
                     total += count; if (total > size) throw new IOException("附件响应超过声明大小"); output.write(buffer, 0, count);
                 }
             }
+            if (partial.length() < size) throw new IOException("transfer_incomplete_resume_retained");
             if (partial.length() != size || !hash(partial).equals(expected)) { partial.delete(); throw new IOException("附件校验失败"); }
             if (target.exists()) target.delete();
             if (!partial.renameTo(target)) throw new IOException("附件保存失败");
             return target;
         } finally { connection.disconnect(); }
+    }
+    static synchronized void preflight(File folder, long additional) throws IOException {
+        long occupied = 0, now = System.currentTimeMillis(); File[] files = folder.listFiles();
+        if (files != null) for (File file : files) if (file.isFile()) {
+            String name = file.getName();
+            if ((name.startsWith("att_") || name.startsWith("lan-") || name.startsWith("legacy-")) &&
+                file.lastModified() < now - (name.endsWith(".part") ? 86400000L : 30L * 86400000)) file.delete();
+            occupied += file.length();
+        }
+        if (occupied + additional > 300L * 1048576) throw new IOException("transfer_quota_exceeded");
+        if (folder.getUsableSpace() < additional + 10L * 1048576) throw new IOException("storage_exhausted");
     }
 }

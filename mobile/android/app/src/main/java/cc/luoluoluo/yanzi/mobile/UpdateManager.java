@@ -63,7 +63,7 @@ public final class UpdateManager {
     }
 
     /**
-     * 异步检测新版本（直接请求 GitHub API）
+     * 异步检测新版本（公网清单与 GitHub 备用源）
      */
     public static void checkUpdate(final Activity activity, final boolean isManual) {
         if (activity == null || activity.isFinishing()) return;
@@ -73,40 +73,17 @@ public final class UpdateManager {
         AsyncTask.THREAD_POOL_EXECUTOR.execute(new Runnable() {
             @Override
             public void run() {
-                HttpURLConnection conn = null;
                 try {
                     log(activity, "请求公网更新清单: " + PUBLIC_RELEASES_API);
-                    URL url = new URL(PUBLIC_RELEASES_API);
-                    conn = MobileNetworkRouting.openCloudConnection(url);
-                    conn.setRequestMethod("GET");
-                    conn.setConnectTimeout(10000);
-                    conn.setReadTimeout(10000);
-                    conn.setRequestProperty("User-Agent", "YanziClient-Mobile/" + getLocalVersionName(activity));
-                    conn.setRequestProperty("X-Yanzi-Client", "mobile");
-                    conn.setRequestProperty("Accept", "application/vnd.github+json");
-
-                    int code = conn.getResponseCode();
-                    if (code != 200) {
-                        conn.disconnect();
-                        conn = (HttpURLConnection) new URL(GITHUB_RELEASES_API).openConnection();
-                        conn.setConnectTimeout(10000);
-                        conn.setReadTimeout(10000);
-                        conn.setRequestProperty("User-Agent", "YanziClient-Mobile/" + getLocalVersionName(activity));
-                        code = conn.getResponseCode();
-                    }
-                    log(activity, "GitHub API 返回状态码: " + code);
-                    if (code == 200) {
-                        InputStream in = conn.getInputStream();
-                        byte[] buffer = new byte[4096];
-                        int read;
-                    java.io.ByteArrayOutputStream sb = new java.io.ByteArrayOutputStream();
-                        while ((read = in.read(buffer)) != -1) {
-                            if (sb.size() + read > 2 * 1024 * 1024) throw new java.io.IOException("更新清单过大");
-                            sb.write(buffer, 0, read);
-                        }
-                        in.close();
-
-                        JSONArray releases = new JSONArray(sb.toString("UTF-8"));
+                    String manifest = UpdateManifestClient.fetch(
+                            new String[]{PUBLIC_RELEASES_API, GITHUB_RELEASES_API},
+                            "YanziClient-Mobile/" + getLocalVersionName(activity),
+                            (url, systemRoute) -> systemRoute
+                                    ? (HttpURLConnection) url.openConnection()
+                                    : MobileNetworkRouting.openCloudConnection(url),
+                            body -> { new JSONArray(body); },
+                            message -> log(activity, message));
+                    JSONArray releases = new JSONArray(manifest);
                         JSONObject latestAndroidRelease = null;
                         
                         for (int i = 0; i < releases.length(); i++) {
@@ -178,11 +155,8 @@ public final class UpdateManager {
                                 }
                             });
                         } else {
-                            throw new Exception("GitHub 上未找到匹配的 Android 发发版");
+                            throw new Exception("更新清单未找到匹配的 Android 发布版");
                         }
-                    } else {
-                        throw new Exception("HTTP " + code);
-                    }
                 } catch (final Exception e) {
                     log(activity, "更新检测异常: " + e.getMessage());
                     new Handler(Looper.getMainLooper()).post(new Runnable() {
@@ -193,8 +167,6 @@ public final class UpdateManager {
                             }
                         }
                     });
-                } finally {
-                    if (conn != null) conn.disconnect();
                 }
             }
         });
@@ -545,6 +517,13 @@ public final class UpdateManager {
      * 底层网络下载核心（针对 88M 大文件加大了超时保护时间）
      */
     private static boolean performDownload(Context context, String downloadUrl, File targetFile, final ProgressDialog progressDialog) {
+        if (performDownloadAttempt(context, downloadUrl, targetFile, progressDialog, false)) return true;
+        return !isDownloadCanceled && downloadUrl.startsWith("https://sync.luoluoluo.cc.cd/")
+                && performDownloadAttempt(context, downloadUrl, targetFile, progressDialog, true);
+    }
+
+    private static boolean performDownloadAttempt(Context context, String downloadUrl, File targetFile,
+                                                  ProgressDialog progressDialog, boolean systemRoute) {
         HttpURLConnection conn = null;
         FileOutputStream out = null;
         InputStream in = null;
@@ -552,10 +531,11 @@ public final class UpdateManager {
         try {
             log(context, "建立下载连接: " + downloadUrl);
             URL url = new URL(downloadUrl);
-            conn = downloadUrl.startsWith("https://sync.luoluoluo.cc.cd/")
+            conn = !systemRoute && downloadUrl.startsWith("https://sync.luoluoluo.cc.cd/")
                     ? MobileNetworkRouting.openCloudConnection(url) : (HttpURLConnection) url.openConnection();
             conn.setRequestProperty("User-Agent", "YanziClient-Mobile/" + getLocalVersionName(context));
             conn.setRequestProperty("X-Yanzi-Client", "mobile");
+            conn.setRequestProperty("Connection", "close");
             // 大文件下载，将连接超时增加到 20 秒，读取超时增加到 90 秒，防范中途闪断超时
             conn.setConnectTimeout(20000);
             conn.setReadTimeout(90000);

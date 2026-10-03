@@ -1126,6 +1126,18 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private void WarehouseButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (IsEditMode)
+        {
+            IsEditMode = false;
+        }
+
+        _wasActivatedForInput = false;
+        HidePanel();
+        _mainWindow.ShowPanel();
+    }
+
     private void SettingsButton_Click(object sender, RoutedEventArgs e)
     {
         HidePanelIfAllowed();

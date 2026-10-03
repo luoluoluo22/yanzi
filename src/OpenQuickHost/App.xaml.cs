@@ -218,7 +218,8 @@ public partial class App : WpfApplication
 
         // 3. 只有抢占到 Mutex 的唯一主实例，才进行后续复杂的环境配置初始化
         TrySetProcessDpiAwareness();
-        base.OnStartup(e);
+        base.OnStartup(e);
+        YanziBuiltinCapabilityRegistration.Register();
         
         // 绑定未处理异常捕获，开始进入核心初始化阶段
         DispatcherUnhandledException += App_DispatcherUnhandledException;

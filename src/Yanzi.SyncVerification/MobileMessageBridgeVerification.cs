@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Reflection;
 using System.Text.Json;
 using System.Windows.Threading;
@@ -21,6 +21,11 @@ internal static class MobileMessageBridgeVerification
                 var useExistingAccount = data.TryGetProperty("useExistingAccount", out var existingAccount) && existingAccount.GetBoolean();
                 using var scope = useExistingAccount ? HostAssets.UseExistingDataRootForVerification(root) : HostAssets.UseIsolatedDataRootForVerification(root);
                 Directory.CreateDirectory(root);
+                if (data.TryGetProperty("verifyAlbumWorkflow", out var albumFlag) && albumFlag.GetBoolean()) {
+                    var source=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"OpenQuickHost","Extensions","yanzi-album");
+                    var target=Path.Combine(root,"Extensions","yanzi-album");Directory.CreateDirectory(target);
+                    foreach(var name in new[]{"main.cs","manifest.json"})File.Copy(Path.Combine(source,name),Path.Combine(target,name));
+                }
                 var baseUrl = data.GetProperty("baseUrl").GetString()!;
                 var client = new CloudSyncClient(new SyncOptions { BaseUrl = baseUrl });
                 if (!useExistingAccount) {
@@ -32,6 +37,11 @@ internal static class MobileMessageBridgeVerification
                 });
                 }
                 File.WriteAllText(SyncConfigLoader.ConfigPath, JsonSerializer.Serialize(new { baseUrl }));
+                var verifyAccountLan = data.TryGetProperty("verifyAccountLan", out var accountLanFlag) && accountLanFlag.GetBoolean();
+                if (verifyAccountLan) {
+                    var settings = AppSettingsStore.Load(); settings.EnableLanSync = true; settings.AgentApiPort = 42994;
+                    AppSettingsStore.Save(settings);
+                }
                 var app = new App { IsVerificationHarness = true };
                 app.InitializeComponent();
                 var window = new MainWindow();
@@ -41,6 +51,10 @@ internal static class MobileMessageBridgeVerification
                 }));
                 typeof(MainWindow).GetField("_desktopDeviceId", BindingFlags.Instance | BindingFlags.NonPublic)!
                     .SetValue(window, data.GetProperty("desktopDeviceId").GetString()!);
+                using var lanServer = verifyAccountLan ? new LocalAgentApiServer("http://*:42994/", "account-lan-verification", _ => {},
+                    onMobileMessage: async message => { var result = await window.HandleMobileDeviceMessageAsync(message); return (result.success, result.output); }) : null;
+                using var discovery = verifyAccountLan ? new LanDiscoveryService(42994, "account-lan-verification") : null;
+                lanServer?.Start(); discovery?.Start();
                 var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
                 bool sendingChat = false;
                 timer.Tick += async (_, _) => {
@@ -77,7 +91,7 @@ internal static class MobileMessageBridgeVerification
                     try {
                         var marker = Path.Combine(root, "execute-once.txt");
                         var message = new DeviceMessageRecord {
-                            MessageId = "dedup-test", SourceDeviceId = "android-bridge-test", Kind = "run-shell",
+                            MessageId = "dedup-test", SourceDeviceId = "android-bridge-test", Kind = "run-shell", CreatedAt = DateTimeOffset.UtcNow.ToString("O"),
                             Text = $"Add-Content -LiteralPath '{marker.Replace("'", "''")}' -Value 'once'"
                         };
                         var results = await Task.WhenAll(window.HandleMobileDeviceMessageAsync(message), window.HandleMobileDeviceMessageAsync(message));

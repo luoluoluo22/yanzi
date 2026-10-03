@@ -847,9 +847,17 @@ public sealed partial class CloudSyncClient
         string text,
         string? targetDeviceId = null,
         object? payload = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? clientMessageId = null,
+        DateTimeOffset? expiresAt = null)
     {
         await EnsureAuthenticatedAsync(cancellationToken);
+        clientMessageId ??= Guid.NewGuid().ToString("N");
+        if (expiresAt == null && DeviceMessageOutbox.ReadSaved(CurrentUserId!, clientMessageId) is { } previous)
+        {
+            using var savedEnvelope = JsonDocument.Parse(previous);
+            if (savedEnvelope.RootElement.TryGetProperty("expiresAt", out var savedExpiry) && savedExpiry.ValueKind == JsonValueKind.String && DateTimeOffset.TryParse(savedExpiry.GetString(), out var deadline)) expiresAt = deadline;
+        }
         var body = JsonSerializer.Serialize(new
         {
             sourceDeviceId,
@@ -859,14 +867,92 @@ public sealed partial class CloudSyncClient
             title,
             text,
             payload = payload ?? new { },
-            clientMessageId = Guid.NewGuid().ToString("N")
+            clientMessageId,
+            expiresAt = (expiresAt ?? (YanziDeviceMessageProtocol.IsExecution(kind) ? DateTimeOffset.UtcNow.AddMinutes(2) : DateTimeOffset.UtcNow.AddDays(30))).ToString("O")
         });
+        var saved = DeviceMessageOutbox.Save(CurrentUserId!, clientMessageId, body);
+        string id;
+        try { id = await SendSavedDeviceMessageAsync(body, cancellationToken); }
+        catch (DeviceMessageRejectedException) { DeviceMessageOutbox.Fail(saved); throw; }
+        DeviceMessageOutbox.Complete(saved);
+        return id;
+    }
 
+    private async Task<string> SendSavedDeviceMessageAsync(string body, CancellationToken cancellationToken)
+    {
         using var request = CreateJsonRequest(HttpMethod.Post, "/v1/me/mobile/messages", body, includeAuth: true);
         using var response = await SendAsyncWithFallback(request, cancellationToken);
+        if ((int)response.StatusCode is 400 or 403 or 404 or 409 or 410 or 413 or 426)
+            throw new DeviceMessageRejectedException((int)response.StatusCode);
         await EnsureSuccessAsync(response, cancellationToken);
         var result = await ReadAsync<DeviceMessageCreateResponse>(response, cancellationToken);
         return result?.MessageId ?? string.Empty;
+    }
+
+    private readonly SemaphoreSlim _chatDeliveryGate = new(1, 1);
+    public async Task<string> DeliverChatJobAsync(DesktopChatJob job, CancellationToken cancellationToken = default)
+    {
+        await _chatDeliveryGate.WaitAsync(cancellationToken);
+        try
+        {
+        await EnsureAuthenticatedAsync(cancellationToken);
+        job = DesktopChatOutbox.Find(job) ?? throw new InvalidOperationException("outbox_job_missing");
+        if (job.CompletedMessageId != null) return job.CompletedMessageId;
+        if (job.Account != CurrentUserId) throw new InvalidOperationException("outbox_account_mismatch");
+        if (DateTimeOffset.UtcNow - job.CreatedAt > TimeSpan.FromDays(30))
+        { DesktopChatOutbox.Complete(job); throw new InvalidOperationException("message_expired"); }
+        await RegisterDeviceAsync(job.Source, "desktop", DeviceIdentityStore.GetDesktopDisplayName(), cancellationToken: cancellationToken);
+        if (job.FilePath != null && job.Attachment == null)
+        {
+            job = job with { Attachment = await UploadMobileAttachmentAsync(job.FilePath, cancellationToken) };
+            DesktopChatOutbox.Save(job);
+        }
+        object payload = job.Attachment is { } attachment ? new {
+            source = "desktop-chat", attachmentId = attachment.AttachmentId, fileName = attachment.FileName,
+            size = attachment.Size, sha256 = attachment.Sha256, contentType = attachment.ContentType,
+            clientTransferId = job.Id, clientOperationId = job.Id
+        } : new { source = "desktop-chat", clientTransferId = job.Id, clientOperationId = job.Id };
+        var id = await SendDeviceMessageAsync(job.Source, "android", job.Kind, "YanziChat", job.Text,
+            targetDeviceId: job.TargetDeviceId, payload: payload, cancellationToken: cancellationToken, clientMessageId: job.Id, expiresAt: job.CreatedAt.AddDays(30));
+        DesktopChatOutbox.Complete(job, id);
+        return id;
+        } finally { _chatDeliveryGate.Release(); }
+    }
+
+    private readonly SemaphoreSlim _outboxReplay = new(1, 1);
+    public async Task ReplayDeviceOutboxAsync(CancellationToken cancellationToken = default)
+    {
+        if (!await _outboxReplay.WaitAsync(0, cancellationToken)) return;
+        try
+        {
+            await EnsureAuthenticatedAsync(cancellationToken);
+            foreach (var job in DesktopChatOutbox.Pending(CurrentUserId!))
+                try { await DeliverChatJobAsync(job, cancellationToken); }
+                catch (DeviceMessageRejectedException error) { DesktopChatOutbox.Complete(job, "rejected:" + error.StatusCode); HostAssets.AppendLog("Chat outbox terminal rejection: " + error.StatusCode); }
+            foreach (var path in DeviceMessageOutbox.Pending(CurrentUserId!))
+            {
+                var body = File.ReadAllText(path);
+                using var document = JsonDocument.Parse(body);
+                if (document.RootElement.TryGetProperty("expiresAt", out var expiry) && expiry.ValueKind == JsonValueKind.String &&
+                    DateTimeOffset.TryParse(expiry.GetString(), out var deadline) && deadline <= DateTimeOffset.UtcNow)
+                { DeviceMessageOutbox.Complete(path); HostAssets.AppendLog("Device outbox command expired before sending."); continue; }
+                try { await SendSavedDeviceMessageAsync(body, cancellationToken); }
+                catch (DeviceMessageRejectedException error) { DeviceMessageOutbox.Fail(path); HostAssets.AppendLog("Device outbox terminal rejection: " + error.StatusCode); continue; }
+                DeviceMessageOutbox.Complete(path);
+            }
+        }
+        finally { _outboxReplay.Release(); }
+    }
+
+    public async Task<bool> ClaimDeviceMessageAsync(string messageId, string deviceId, CancellationToken cancellationToken = default)
+    {
+        await EnsureAuthenticatedAsync(cancellationToken);
+        using var request = CreateJsonRequest(HttpMethod.Post, $"/v1/me/mobile/messages/{Uri.EscapeDataString(messageId)}/claim",
+            JsonSerializer.Serialize(new { deviceId }), includeAuth: true);
+        using var response = await SendAsyncWithFallback(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+        return document.RootElement.GetProperty("acquired").GetBoolean();
     }
 
     public async Task<HttpResponseMessage> GetMobileMessagesEventsStreamAsync(string deviceId, CancellationToken cancellationToken)
@@ -935,6 +1021,7 @@ public sealed partial class CloudSyncClient
             {
                 deviceId,
                 success = success.Value,
+                resultState = result?.StartsWith("execution_result_unknown", StringComparison.Ordinal) == true ? "unknown" : "executed",
                 result = result ?? string.Empty
             };
         }
@@ -1553,6 +1640,14 @@ public sealed class DeviceMessageCreateResponse
 
 public sealed class DeviceMessageRecord
 {
+    public List<DeviceMessageReceipt> Receipts { get; set; } = [];
+    public int ProtocolVersion { get; set; } = YanziDeviceMessageProtocol.Version;
+    public long? Sequence { get; set; }
+    public string? ClientMessageId { get; set; }
+    public string? OperationId { get; set; }
+    public string? TraceId { get; set; }
+    public string? CorrelationId { get; set; }
+    public string? CausationId { get; set; }
     public string MessageId { get; set; } = string.Empty;
 
     public string? SourceDeviceId { get; set; }
@@ -1583,3 +1678,5 @@ public sealed class DeviceMessageRecord
 
     public string? ExpiresAt { get; set; }
 }
+
+public sealed record DeviceMessageReceipt(string DeviceId, string DisplayName, string Status, string AckedAt);

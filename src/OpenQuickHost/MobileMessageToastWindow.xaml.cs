@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Text.Json;
@@ -39,10 +39,97 @@ public partial class MobileMessageToastWindow : Window
     private string _sendError = "";
     private string? _lastCloudMessageId;
     private MainWindow? _receiptOwner;
-    private void UpdateReceipt(string id, string status)
+    private sealed record ChatTarget(string? Id, string Label, string Detail = "") { public override string ToString() => Label; }
+    private static string DeviceLabel(string name, string platform)
+    {
+        var label = MobileDeviceNameNormalizer.Normalize(name, platform == "desktop" ? "电脑" : "手机");
+        if (label.StartsWith("Windows · ", StringComparison.OrdinalIgnoreCase)) label = label[10..].Trim();
+        return label.Length > 28 ? label[..28] + "…" : label;
+    }
+    private static string DeviceTime(string? value) => DateTimeOffset.TryParse(value, out var time)
+        ? time.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : "未记录";
+    private async Task LoadTargetsAsync()
+    {
+        var selected = (TargetDevicePicker.SelectedItem as ChatTarget)?.Id;
+        var targets = new List<ChatTarget> { new(null, "所有设备", "发送账号消息，所有设备分别接收") };
+        var own = DeviceIdentityStore.GetOrCreateDesktopDeviceId();
+        try {
+            var cloud = (System.Windows.Application.Current.MainWindow as MainWindow)?.CloudSyncClient;
+            if (cloud?.HasCredential != true) throw new InvalidOperationException("请登录账号查看设备");
+            foreach (var peer in await cloud.ListPeerDevicesAsync())
+                if (peer.DeviceId != own)
+                    targets.Add(new(peer.DeviceId, DeviceLabel(peer.DisplayName, peer.Platform),
+                        (peer.Online ? "在线" : "离线") + " · " + (peer.Platform == "desktop" ? "电脑" : peer.Platform == "android" ? "手机" : peer.Platform)
+                        + "\n最近活动：" + DeviceTime(peer.LastSeenAt) + "\n首次登记：" + DeviceTime(peer.CreatedAt)
+                        + "\n网络地区：" + (string.IsNullOrWhiteSpace(peer.LastLocation) ? "未记录" : peer.LastLocation)));
+        } catch (Exception error) {
+            HostAssets.AppendLog("Device target list unavailable: " + error.Message);
+            foreach (var peer in YanziPeerRegistry.List().Where(x => x.DeviceId != own))
+                targets.Add(new(peer.DeviceId, DeviceLabel(peer.DisplayName, peer.Platform), "本地记录 · 云端状态未确认\n最近直连：" + DeviceTime(peer.VerifiedAt.ToString("O"))));
+            _deviceListWarning = "云端设备列表暂不可用，当前仅显示本地记录。";
+        }
+        foreach (var group in targets.Where(x => x.Id != null).GroupBy(x => x.Label).Where(x => x.Count() > 1).ToArray())
+            foreach (var item in group.ToArray()) targets[targets.IndexOf(item)] = item with { Label = item.Label + " · " + item.Id![Math.Max(0, item.Id!.Length - 4)..] };
+        targets = targets.Take(1).Concat(targets.Skip(1).OrderByDescending(x => x.Detail.StartsWith("在线")).ThenBy(x => x.Label)).ToList();
+        TargetDevicePicker.Items.Clear(); foreach (var target in targets) TargetDevicePicker.Items.Add(target);
+        TargetDevicePicker.SelectedItem = targets.FirstOrDefault(x => x.Id == selected) ?? targets[0];
+        TitleText.Text = ((ChatTarget)TargetDevicePicker.SelectedItem).Label;
+    }
+    private string? _deviceListWarning;
+    private async void DeviceSwitcher_Click(object sender, RoutedEventArgs e)
+    {
+        _deviceListWarning = null;
+        await LoadTargetsAsync();
+        var menu = new System.Windows.Controls.ContextMenu { MaxHeight = 520, MinWidth = 330,
+            PlacementTarget = (System.Windows.Controls.Button)sender, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
+        if (_deviceListWarning != null) menu.Items.Add(new System.Windows.Controls.MenuItem { Header = _deviceListWarning, IsEnabled = false });
+        foreach (var target in TargetDevicePicker.Items.Cast<ChatTarget>())
+        {
+            var row = new Grid { Width = 340, Margin = new Thickness(0, 4, 0, 4) };
+            row.ColumnDefinitions.Add(new ColumnDefinition()); row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var text = new StackPanel();
+            text.Children.Add(new TextBlock { Text = target.Label, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
+            text.Children.Add(new TextBlock { Text = target.Detail, FontSize = 11, Opacity = .72, Margin = new Thickness(0, 4, 8, 0), TextWrapping = TextWrapping.Wrap });
+            row.Children.Add(text);
+            var item = new System.Windows.Controls.MenuItem { Header = row,
+                ToolTip = target.Id == null ? target.Detail : target.Label + "\n设备标识：" + target.Id,
+                IsCheckable = true, IsChecked = (TargetDevicePicker.SelectedItem as ChatTarget)?.Id == target.Id };
+            item.Click += (_, _) => { TargetDevicePicker.SelectedItem = target; TitleText.Text = target.Label; };
+            if (target.Id != null)
+            {
+                var remove = new System.Windows.Controls.Button { Content = "删除", Padding = new Thickness(8, 4, 8, 4),
+                    VerticalAlignment = System.Windows.VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
+                Grid.SetColumn(remove, 1); row.Children.Add(remove);
+                remove.Click += async (_, args) => {
+                    args.Handled = true; menu.IsOpen = false;
+                    if (System.Windows.MessageBox.Show(this, "删除“" + target.Label + "”的设备登记并停用该设备的消息和直连授权？\n设备上的文件不会被删除。", "删除设备", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+                    try {
+                        var cloud = (System.Windows.Application.Current.MainWindow as MainWindow)?.CloudSyncClient ?? throw new InvalidOperationException("请先登录账号");
+                        await cloud.RemovePeerDeviceAsync(target.Id);
+                        foreach (var pair in YanziLanPairing.List().Where(x => x.DeviceId == target.Id)) YanziLanPairing.Revoke(pair.PairId);
+                        YanziPeerRegistry.Remove(target.Id);
+                        await LoadTargetsAsync(); SendStatusText.Text = "已删除设备“" + target.Label + "”。";
+                    } catch (Exception error) { SendStatusText.Text = "删除未完成：" + error.Message; }
+                };
+            }
+            menu.Items.Add(item);
+        }
+        menu.IsOpen = true;
+    }
+    private async void UpdateReceipt(string id, string status)
     {
         if (id != _lastCloudMessageId) return;
-        SendStatusText.Text = status == "acked" || status == "completed" ? "已有设备接收，其余设备会继续同步" : status == "failed" ? "有设备接收失败，请检查手机" : "已交云端，等待各设备接收";
+        SendStatusText.Text = status == "unknown" ? "目标设备结果待确认，请先在该设备检查，避免重复发送。" :
+            status is "cancelled" or "expired" ? "请求已取消或过期。" : status is "acked" or "completed" ? "已有设备接收，其余设备会继续同步" : status == "failed" ? "有设备接收失败，请检查该设备" : "已交云端，等待各设备接收";
+        try {
+            var cloud = _receiptOwner?.CloudSyncClient;
+            if (cloud == null) return;
+            var detail = await cloud.GetDeviceMessageAsync(id);
+            if (id != _lastCloudMessageId || detail?.Receipts.Count is not > 0) return;
+            string Label(string state) => state switch {"acked" or "completed" => "已接收", "failed" => "失败", "unknown" => "结果待确认", _ => state};
+            SendStatusText.Text = string.Join("；", detail.Receipts.Take(4).Select(x => (string.IsNullOrEmpty(x.DisplayName) ? x.DeviceId : x.DisplayName) + "：" + Label(x.Status))) +
+                (detail.Receipts.Count > 4 ? $"；另有 {detail.Receipts.Count - 4} 台回执" : "");
+        } catch (Exception error) { HostAssets.AppendLog("Device receipts refresh deferred: " + error.GetType().Name); }
     }
 
     public MobileMessageToastWindow()
@@ -53,9 +140,10 @@ public partial class MobileMessageToastWindow : Window
         if (_receiptOwner != null) _receiptOwner.MobileReceiptReceived += UpdateReceipt;
         Closed += (_, _) => { if (_receiptOwner != null) _receiptOwner.MobileReceiptReceived -= UpdateReceipt; };
 
-        Loaded += (_, _) =>
+        Loaded += async (_, _) =>
         {
             PositionBottomRight();
+            await LoadTargetsAsync();
         };
     }
 
@@ -65,9 +153,10 @@ public partial class MobileMessageToastWindow : Window
         TitleText.Text = string.IsNullOrWhiteSpace(title) ? "手机发来消息" : title.Trim();
         AppendMessageCore(title, messageText, sourceDeviceId, receivedAt, screenshotDataUrl, screenshotFilePath, updateHeader: true);
 
-        Loaded += (_, _) =>
+        Loaded += async (_, _) =>
         {
             PositionBottomRight();
+            await LoadTargetsAsync();
         };
     }
 
@@ -87,7 +176,7 @@ public partial class MobileMessageToastWindow : Window
         var entries = ReadInboxHistory();
         var lastMobile = entries.FindLast(e => e.SourceDeviceName != "\u6211(\u7535\u8111)" && e.SourceDeviceName != "desktop");
         _replyDeviceId = lastMobile?.SourceDeviceId;
-        TitleText.Text = "账号消息 · 所有设备";
+        TitleText.Text = (TargetDevicePicker.SelectedItem as ChatTarget)?.Label ?? "所有设备";
         
         if (entries.Count == 0)
         {
@@ -135,7 +224,7 @@ public partial class MobileMessageToastWindow : Window
         {
             if (sourceLabel != "\u6211(\u7535\u8111)" && sourceLabel != "desktop")
             {
-                TitleText.Text = "账号消息 · 所有设备";
+                TitleText.Text = (TargetDevicePicker.SelectedItem as ChatTarget)?.Label ?? "所有设备";
             }
         }
 
@@ -678,18 +767,7 @@ public partial class MobileMessageToastWindow : Window
             _sending = true; SendButton.IsEnabled = false; AttachButton.IsEnabled = false;
             SendStatusText.Text = "正在上传附件…";
             if (new FileInfo(filePath).Length > 30L * 1024 * 1024) throw new IOException("附件不能超过 30 MB。");
-            var fileBytes = await File.ReadAllBytesAsync(filePath);
-            var base64Data = Convert.ToBase64String(fileBytes);
-            var extension = Path.GetExtension(filePath).ToLowerInvariant();
-            var mimeType = extension switch
-            {
-                ".jpg" or ".jpeg" => "image/jpeg",
-                ".png" => "image/png",
-                ".gif" => "image/gif",
-                ".bmp" => "image/bmp",
-                _ => "application/octet-stream"
-            };
-            var dataUrl = $"data:{mimeType};base64,{base64Data}";
+            string? dataUrl = null;
 
             var kind = isPhoto ? "photo" : "file";
             var sent = await SendMessageToMobileAsync(message: fileName, kind: kind, dataUrl: dataUrl, filePath: filePath);
@@ -811,12 +889,37 @@ public partial class MobileMessageToastWindow : Window
     private async Task<bool> SendMessageToMobileAsync(string message, string kind = "text", string? dataUrl = null, string? filePath = null)
     {
         _sendError = "";
-        var mobileIp = LanDiscoveryService.LastKnownMobileIp;
-        if (mobileIp != null && !((System.Windows.Application.Current.MainWindow as MainWindow)?.CloudSyncClient?.HasCredential ?? false))
+        var transferId = Guid.NewGuid().ToString("N");
+        bool lanReceived = false;
+        var syncClient = (System.Windows.Application.Current.MainWindow as MainWindow)?.CloudSyncClient;
+        DesktopChatJob? queued = null;
+        if (syncClient?.CurrentUserId is { } account)
+        {
+            try {
+                queued = DesktopChatOutbox.Enqueue(account, DeviceIdentityStore.GetOrCreateDesktopDeviceId(), transferId, kind, message, filePath, (TargetDevicePicker.SelectedItem as ChatTarget)?.Id);
+                filePath = queued.FilePath;
+            } catch (Exception error) { _sendError = "保存发件消息失败：" + error.Message; return false; }
+        }
+        var selectedTarget = queued?.TargetDeviceId ?? (TargetDevicePicker.SelectedItem as ChatTarget)?.Id;
+        var peer = YanziPeerRegistry.Resolve(selectedTarget);
+        var mobileIp = peer != null ? System.Net.IPAddress.Parse(peer.Address) :
+            YanziPeerRegistry.List().Count == 0 ? LanDiscoveryService.LastKnownMobileIp : null;
+        var mobilePort = peer?.Port ?? LanDiscoveryService.LastKnownMobileNotificationPort;
+        if (mobileIp != null)
         {
         try
         {
-            using var handler = new System.Net.Http.HttpClientHandler { UseProxy = false };
+            if (kind is "file" or "photo")
+            {
+                if (string.IsNullOrEmpty(filePath)) throw new IOException("未选择附件。");
+                await YanziLanMobileTransfer.SendAsync(mobileIp, mobilePort,
+                    AppSettingsStore.Load().AgentApiToken, filePath, kind, transferId);
+                _sendStatus = "已通过局域网发送，手机已确认接收";
+                lanReceived = true;
+            }
+            if (!lanReceived)
+            {
+            using var handler = new SecureLanHttpHandler();
             using var client = new System.Net.Http.HttpClient(handler);
             client.Timeout = TimeSpan.FromSeconds(3);
             client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", AppSettingsStore.Load().AgentApiToken);
@@ -849,17 +952,19 @@ public partial class MobileMessageToastWindow : Window
                 {
                     title = "YanziChat",
                     message = message,
+                    clientMessageId = transferId,
                     kind = kind
                 };
             }
 
             var payload = JsonSerializer.Serialize(payloadObj);
             var content = new System.Net.Http.StringContent(payload, Encoding.UTF8, "application/json");
-            using var response = await client.PostAsync($"http://{mobileIp}:{LanDiscoveryService.LastKnownMobileNotificationPort}/", content);
+            using var response = await client.PostAsync($"http://{mobileIp}:{mobilePort}/", content);
             response.EnsureSuccessStatusCode();
             HostAssets.AppendLog($"Message sent directly to mobile via LAN: IP={mobileIp}, content={message}, kind={kind}");
             _sendStatus = "已通过直连发送";
-            return true;
+            lanReceived = true;
+            }
         }
         catch (Exception ex)
         {
@@ -872,20 +977,10 @@ public partial class MobileMessageToastWindow : Window
             if (cloud == null || !cloud.HasCredential)
             {
                 _sendError = "请先在电脑端登录同步账号，再通过公网发送。";
-                return false;
+                return lanReceived;
             }
-            var desktopId = DeviceIdentityStore.GetOrCreateDesktopDeviceId();
-            await cloud.RegisterDeviceAsync(desktopId, "desktop", DeviceIdentityStore.GetDesktopDisplayName());
-            object payload = new { source = "desktop-chat" };
-            if (kind != "text")
-            {
-                if (string.IsNullOrEmpty(filePath)) throw new IOException("未选择附件。");
-                var attachment = await cloud.UploadMobileAttachmentAsync(filePath);
-                payload = new { source = "desktop-chat", attachmentId = attachment.AttachmentId, fileName = attachment.FileName,
-                    size = attachment.Size, sha256 = attachment.Sha256, contentType = attachment.ContentType };
-            }
-            var id = await cloud.SendDeviceMessageAsync(desktopId, "android", kind, "YanziChat", message,
-                targetDeviceId: null, payload: payload);
+            queued ??= DesktopChatOutbox.Enqueue(cloud.CurrentUserId!, DeviceIdentityStore.GetOrCreateDesktopDeviceId(), transferId, kind, message, filePath, selectedTarget);
+            var id = await cloud.DeliverChatJobAsync(queued);
             if (string.IsNullOrEmpty(id)) throw new InvalidOperationException("云端未返回消息编号。");
             _sendStatus = "已交云端，等待手机接收";
             _lastCloudMessageId = id;
@@ -898,6 +993,7 @@ public partial class MobileMessageToastWindow : Window
         {
             HostAssets.AppendLog($"Chat cloud send failed: {ex.GetType().Name}: {ex.Message}");
             _sendError = "公网发送失败，请检查网络和同步账号后重试；消息内容已保留。";
+            if (lanReceived || queued != null) { _sendStatus = lanReceived ? "局域网已接收，账号同步待重试" : "已保存到发件队列，联网后自动发送"; return true; }
             return false;
         }
     }

@@ -123,6 +123,7 @@ internal static class SyncCoverageCatalog
         yield return Device(nameof(AppSettings.WebDavSyncManuallyDisabled), "本机显式停用状态，防止云配置重新开启。");
         yield return Device(nameof(AppSettings.RecentlyAddedExtensionIds), "本机商店提示状态。");
         yield return Device(nameof(AppSettings.UnreadNewExtensionIds), "本机未读提示状态。");
+        yield return Device(nameof(AppSettings.KnownExtensionIds), "本机已发现的小程序集合，用于判断新增提示。");
         yield return Device(nameof(AppSettings.LegacyCleanupDismissed), "本机迁移提示状态。");
         yield return Device(nameof(AppSettings.SettingsWindowLeft), "本机窗口几何信息。");
         yield return Device(nameof(AppSettings.SettingsWindowTop), "本机窗口几何信息。");
@@ -146,6 +147,7 @@ internal static class SyncCoverageCatalog
         yield return Device(nameof(AppSettings.MouseGestureEnableWheelActions), "本机鼠标硬件与滚轮操作偏好。");
         yield return Device(nameof(AppSettings.ShowBlindOperationGuide), "本机操作引导显示状态。");
         yield return Device(nameof(AppSettings.HasOpenedBackpack), "本机新手引导进度。");
+        yield return Device(nameof(AppSettings.HasShownInitialWelcomePanel), "本机首次启动引导进度。");
         yield return Device(nameof(AppSettings.LauncherResultViewMode), "本机搜索窗口展示方式。");
         yield return Device(nameof(AppSettings.AchievementPoints), "本地成就记录，尚未建立账号成就合并协议。");
         yield return Device(nameof(AppSettings.CompletedQuestIds), "本地任务记录，尚未建立账号成就合并协议。");

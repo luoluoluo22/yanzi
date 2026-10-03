@@ -3,78 +3,78 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using System.Windows.Shell;
 
 namespace Yanzi.Capture;
 
 public sealed class PinWindow : Window
 {
+    private const double MinScale = 0.10;
+    private const double MaxScale = 4.00;
+    private const double WheelScaleStep = 1.10;
+
+    private readonly double _imageWidth;
+    private readonly double _imageHeight;
+    private double _scale;
+
     public PinWindow(BitmapSource bitmap)
     {
         Title = "燕子贴图";
-        Width = Math.Min(720, Math.Max(260, bitmap.PixelWidth));
-        Height = Math.Min(520, Math.Max(180, bitmap.PixelHeight));
+
+        _imageWidth = Math.Max(1, bitmap.Width);
+        _imageHeight = Math.Max(1, bitmap.Height);
+        _scale = Math.Min(1.0, Math.Min(720 / _imageWidth, 520 / _imageHeight));
+
+        Width = _imageWidth * _scale;
+        Height = _imageHeight * _scale;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         WindowStyle = WindowStyle.None;
-        ResizeMode = ResizeMode.CanResizeWithGrip;
+        ResizeMode = ResizeMode.NoResize;
         Topmost = true;
         ShowInTaskbar = false;
+        AllowsTransparency = true;
         Background = Brushes.Transparent;
 
-        WindowChrome.SetWindowChrome(this, new WindowChrome
-        {
-            CaptionHeight = 0,
-            ResizeBorderThickness = new Thickness(6),
-            CornerRadius = new CornerRadius(12),
-            GlassFrameThickness = new Thickness(0),
-            UseAeroCaptionButtons = false
-        });
-
-        var border = new Border
-        {
-            Background = Brush("#111318"),
-            CornerRadius = new CornerRadius(12),
-            BorderBrush = Brush("#404752"),
-            BorderThickness = new Thickness(1),
-            Padding = new Thickness(5)
-        };
-
-        var grid = new Grid();
-        grid.Children.Add(new Image
+        Content = new Image
         {
             Source = bitmap,
-            Stretch = Stretch.Uniform,
+            Stretch = Stretch.Fill,
             SnapsToDevicePixels = true
-        });
-
-        var close = new Button
-        {
-            Content = "×",
-            Width = 30,
-            Height = 30,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            VerticalAlignment = VerticalAlignment.Top,
-            Margin = new Thickness(8),
-            Background = Brush("#CC171A20"),
-            Foreground = Brushes.White,
-            BorderThickness = new Thickness(0),
-            FontSize = 18,
-            Cursor = Cursors.Hand,
-            ToolTip = "关闭贴图"
         };
-        close.Click += (_, _) => Close();
-        grid.Children.Add(close);
-        border.Child = grid;
-        Content = border;
+
+        PreviewMouseWheel += (_, e) =>
+        {
+            var factor = e.Delta > 0 ? WheelScaleStep : 1.0 / WheelScaleStep;
+            var nextScale = Math.Clamp(_scale * factor, MinScale, MaxScale);
+            if (Math.Abs(nextScale - _scale) < 0.0001)
+            {
+                e.Handled = true;
+                return;
+            }
+
+            var pointer = e.GetPosition(this);
+            var anchorX = ActualWidth > 0 ? pointer.X / ActualWidth : 0.5;
+            var anchorY = ActualHeight > 0 ? pointer.Y / ActualHeight : 0.5;
+
+            var nextWidth = _imageWidth * nextScale;
+            var nextHeight = _imageHeight * nextScale;
+
+            Left += pointer.X - (anchorX * nextWidth);
+            Top += pointer.Y - (anchorY * nextHeight);
+            Width = nextWidth;
+            Height = nextHeight;
+            _scale = nextScale;
+
+            e.Handled = true;
+        };
 
         MouseLeftButtonDown += (_, e) =>
         {
-            if (e.OriginalSource is Button) return;
             if (e.ClickCount == 2)
             {
                 Close();
                 return;
             }
+
             try { DragMove(); } catch { }
         };
 
@@ -84,7 +84,4 @@ public sealed class PinWindow : Window
                 Close();
         };
     }
-
-    private static SolidColorBrush Brush(string hex) =>
-        (SolidColorBrush)new BrushConverter().ConvertFromString(hex)!;
 }

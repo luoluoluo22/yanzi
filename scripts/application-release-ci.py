@@ -92,6 +92,8 @@ def prepare(meta_path):
         "size": size,
         "sha256": digest,
     }
+    if "dataKeys" in meta:
+        entry["dataKeys"] = meta["dataKeys"]
     apps.append(entry)
     catalog = {
         "schemaVersion": 1,

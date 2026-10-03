@@ -20,13 +20,19 @@
 
 ## 2. 扩展目录结构与组织规范
 
-扩展统一存放在用户本地应用数据目录下：
-`%LOCALAPPDATA%\OpenQuickHost\Extensions\<extension-id>\`
+> [!CAUTION]
+> **绝对物理开发位置规范（严禁存放于 Git 仓库代码树内）**
+> 1. **唯一合法开发与运行位置**：所有用户自用、新开发与维护的燕子小程序，其所有源码文件（`manifest.json`, `main.cs`, `main.ps1` 等）**必须且只能位于本地应用数据目录**：
+>    `%LOCALAPPDATA%\OpenQuickHost\Extensions\<extension-id>\`
+>    （实际绝对路径：`C:\Users\<用户名>\AppData\Local\OpenQuickHost\Extensions\<extension-id>\`）
+> 2. **业务持久化数据目录**：小程序运行时由 `context.ExtensionDataDirectory` 提供的持久化存储路径位于：
+>    `%LOCALAPPDATA%\OpenQuickHost\ExtensionStorage\<extension-id>\`
+> 3. **严禁在 Git 仓库中创建小程序**：**严禁在宿主 Git 仓库代码树内（如根目录或 `extensions/` 目录下）创建或存放自用小程序**！燕子宿主仓库保持独立与纯净，所有小程序的开发测试与热重载，均直接在 `%LOCALAPPDATA%\OpenQuickHost\Extensions\` 下闭环进行。
 
 ### 2.1 推荐工程目录结构
 
 ```text
-Extensions/
+%LOCALAPPDATA%\OpenQuickHost\Extensions\
 └── smart-action/                     # 扩展根目录，目录名必须与 id 保持一致 (kebab-case)
     ├── manifest.json                 # 扩展元数据与配置声明（必须）
     ├── main.cs                       # C# 主业务源码文件（C# 扩展推荐入口）
@@ -56,6 +62,7 @@ Extensions/
 | `entry` | `string` | 条件 | 当 `entryMode` 为 `"entry"` 时的入口文件名 | `"main.cs"` |
 | `script` | `object` | 条件 | 当 `entryMode` 为 `"inline"` 时的内联脚本对象 `{"source": "..."}` | `null` |
 | `permissions`| `string[]`| 否 | 声明权限数组，宿主据此注入能力：`"clipboard"`, `"context.read"`, `"storage"` | `["clipboard", "context.read"]` |
+| `provides` | `object[]` | 否 | C# 小程序提供的能力声明，每项含 `name/description/version/permissions/inputSchema/outputSchema`，实际 Handler 由 `context.Capabilities.Register` 注册 | 见 [真实能力接入](yanzi-capability-runtime-integration-2026-10-02.md) |
 | `uiMode` | `string` | 否 | 界面展现模式：`null`（无界面脚本）、`"native-window"`（托管原生窗口）、`"console-keep"`（保持控制台） | `null` |
 | `runAsAdmin` | `bool` | 否 | 是否以管理员提权（UAC）启动，默认 `false` | `false` |
 | `waitForExit`| `bool` | 否 | 是否等待脚本进程完全退出才返回，默认 `false` | `false` |
@@ -131,3 +138,14 @@ if (string.IsNullOrWhiteSpace(targetFile) && string.IsNullOrWhiteSpace(targetTex
 * [ ] 成功执行无通知打扰，异常抛出有友好错误提示；
 * [ ] 使用 LocalAgentApi 模拟 `input` 参数端对端验证通过；
 * [ ] 扩展根目录下无冗余临时文件或遗留 pdb 锁。
+
+### WebView 应用可选后台运行
+
+app.runInBackground 默认为 false。设为 true 时关闭窗口改为隐藏，直到宿主退出才释放 WebView。可结合 startup.mode=on_app_launch 静默启动；账号存储写入后发送 extension-storage.changed 元数据消息，经现有燕子消息通道派发到对端；WebView 监听 yanzi:storage-changed（detail.key 为含 namespace 的完整键），重连补偿监听 yanzi:account-connected。无固定后台 tick，扩展自主处理事件合并与异常退避。此声明会持续占用 WebView 内存，扩展应做重入保护，宿主退出/电脑休眠期间不执行。
+
+
+### 通用跨设备接续（WebView / Android companion）
+
+WebView 在 app.bridge.apis 声明 handoff，可调用 yanzi.handoff.devices()、open(targetDeviceId,input,accountId)、status(messageId,accountId)。发送限定当前 extensionId 和同账号 desktop，24 小时有效期；接收提供 async yanzi.handoffHandler(input)，完成打开后返回业务结果才确认成功。需要切换页可返回 {navigate:"core/main.html"}（仅 extension entry 根内现有 HTML），宿主待加载后重新派发原参数。业务自行校验资源路径、账号和冲突，勿在 host 写业务导航代码。
+
+Android companion 使用同签名 companion-transfer Provider，声明 yanzi.extensionScopes 与 yanzi.handoff=true；handoff 参数为 targetDeviceId/input/accountId，handoff-status 为 messageId/accountId。发送自身 scope，主 app 保留凭据，持久 outbox；指定电脑离线时等待上线，不能远程开机。接收限定账号所有者或经认证云端消息归属证明；确认回执不等于发送入队。不要为业务接续引入额外轮询。

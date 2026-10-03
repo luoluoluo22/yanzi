@@ -91,7 +91,8 @@ internal static class AccountExtensionBridgeVerification
 
         if (operation == "write")
         {
-            var content = Require(args, "--content");
+            var contentFile = Optional(args, "--content-file");
+            var content = contentFile == null ? Require(args, "--content") : await File.ReadAllTextAsync(contentFile);
             var expectedText = Optional(args, "--expected-revision");
             long? expectedRevision = string.IsNullOrWhiteSpace(expectedText)
                 ? null

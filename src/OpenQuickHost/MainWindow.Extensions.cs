@@ -188,6 +188,11 @@ public partial class MainWindow
         var settings = AppSettingsStore.Load();
         settings.RecentlyAddedExtensionIds ??= [];
         settings.UnreadNewExtensionIds ??= [];
+        settings.KnownExtensionIds ??= [];
+        if (!settings.KnownExtensionIds.Contains(extensionId, StringComparer.OrdinalIgnoreCase))
+        {
+            settings.KnownExtensionIds.Add(extensionId);
+        }
         settings.RecentlyAddedExtensionIds.RemoveAll(id => id.Equals(extensionId, StringComparison.OrdinalIgnoreCase));
         settings.UnreadNewExtensionIds.RemoveAll(id => id.Equals(extensionId, StringComparison.OrdinalIgnoreCase));
         settings.RecentlyAddedExtensionIds.Insert(0, extensionId);
@@ -204,7 +209,7 @@ public partial class MainWindow
 
         AppSettingsStore.Save(settings);
         _appSettings = settings;
-        _windowBoundExtensionsService.Reload(_appSettings.WindowBindings);
+        _windowBoundExtensionsService?.Reload(_appSettings.WindowBindings);
     }
 
     private void RemoveExtensionUiTracking(string extensionId)
@@ -218,8 +223,10 @@ public partial class MainWindow
         var changed = false;
         settings.RecentlyAddedExtensionIds ??= [];
         settings.UnreadNewExtensionIds ??= [];
+        settings.KnownExtensionIds ??= [];
         changed |= settings.RecentlyAddedExtensionIds.RemoveAll(id => id.Equals(extensionId, StringComparison.OrdinalIgnoreCase)) > 0;
         changed |= settings.UnreadNewExtensionIds.RemoveAll(id => id.Equals(extensionId, StringComparison.OrdinalIgnoreCase)) > 0;
+        changed |= settings.KnownExtensionIds.RemoveAll(id => id.Equals(extensionId, StringComparison.OrdinalIgnoreCase)) > 0;
         if (!changed)
         {
             return;
@@ -227,7 +234,74 @@ public partial class MainWindow
 
         AppSettingsStore.Save(settings);
         _appSettings = settings;
-        _windowBoundExtensionsService.Reload(_appSettings.WindowBindings);
+        _windowBoundExtensionsService?.Reload(_appSettings.WindowBindings);
+    }
+
+    public void SyncNewlyDiscoveredLocalExtensions(IEnumerable<CommandItem> commands)
+    {
+        var localCommands = commands
+            .Where(static x => x.Source == CommandSource.LocalExtension && !string.IsNullOrWhiteSpace(x.ExtensionId))
+            .ToList();
+        if (localCommands.Count == 0)
+        {
+            return;
+        }
+
+        var settings = AppSettingsStore.Load();
+        settings.KnownExtensionIds ??= [];
+        settings.RecentlyAddedExtensionIds ??= [];
+        settings.UnreadNewExtensionIds ??= [];
+
+        var currentLocalIds = localCommands
+            .Select(static x => x.ExtensionId)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var changed = false;
+
+        if (settings.KnownExtensionIds.Count == 0)
+        {
+            // 首次引入已知列表基准（或全新纯净安装）：将当前磁盘全部已有扩展登记为基准
+            settings.KnownExtensionIds = new List<string>(currentLocalIds);
+            changed = true;
+        }
+        else
+        {
+            // 找出当前磁盘存在但尚未在 KnownExtensionIds 中记录的全新扩展
+            var newlyDiscoveredIds = currentLocalIds
+                .Where(id => !settings.KnownExtensionIds.Contains(id, StringComparer.OrdinalIgnoreCase))
+                .ToList();
+
+            if (newlyDiscoveredIds.Count > 0)
+            {
+                changed = true;
+                foreach (var newId in newlyDiscoveredIds)
+                {
+                    settings.KnownExtensionIds.Add(newId);
+                    settings.RecentlyAddedExtensionIds.RemoveAll(id => id.Equals(newId, StringComparison.OrdinalIgnoreCase));
+                    settings.UnreadNewExtensionIds.RemoveAll(id => id.Equals(newId, StringComparison.OrdinalIgnoreCase));
+                    settings.RecentlyAddedExtensionIds.Insert(0, newId);
+                    settings.UnreadNewExtensionIds.Insert(0, newId);
+                }
+
+                if (settings.RecentlyAddedExtensionIds.Count > 50)
+                {
+                    settings.RecentlyAddedExtensionIds = settings.RecentlyAddedExtensionIds.Take(50).ToList();
+                }
+
+                if (settings.UnreadNewExtensionIds.Count > 50)
+                {
+                    settings.UnreadNewExtensionIds = settings.UnreadNewExtensionIds.Take(50).ToList();
+                }
+            }
+        }
+
+        if (changed)
+        {
+            AppSettingsStore.Save(settings);
+            _appSettings = settings;
+            _windowBoundExtensionsService?.Reload(_appSettings.WindowBindings);
+        }
     }
 
     private void ApplyNewExtensionState(CommandItem command)
@@ -2601,6 +2675,8 @@ public partial class MainWindow
 
     private void ReplaceLocalExtensions(IReadOnlyList<CommandItem> commands, string? statusText)
     {
+        SyncNewlyDiscoveredLocalExtensions(commands);
+
         // Refresh all cached launcher, wheel and quick-panel command entries in
         // one UI-thread pass. A live extension instance remains running; only
         // subsequent launches use the new manifest/source.

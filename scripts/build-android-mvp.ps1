@@ -2,7 +2,7 @@
     [string]$SdkPath = $env:ANDROID_HOME,
     [ValidateSet("debug", "dev", "release")]
     [string]$Configuration = "debug",
-    [ValidateSet("app", "calendar")]
+    [ValidateSet("app", "calendar", "album", "notes")]
     [string]$Module = "app"
 )
 
@@ -44,15 +44,16 @@ finally {
     Pop-Location
 }
 
-$sourceApk = Join-Path $AndroidRoot "$Module\build\outputs\apk\$variant\$Module-$variant.apk"
+$moduleRoot = if ($Module -in @('album','notes')) { Join-Path $env:LOCALAPPDATA ('OpenQuickHost\Extensions\yanzi-' + $Module + '\android') } else { Join-Path $AndroidRoot $Module }
+$sourceApk = Join-Path $moduleRoot "build\outputs\apk\$variant\$Module-$variant.apk"
 if (-not (Test-Path $sourceApk)) {
     throw "Gradle completed but APK was not found: $sourceApk"
 }
 
-$outputDir = Join-Path $AndroidRoot "$Module\build\manual-$variant"
+$outputDir = Join-Path $moduleRoot "build\manual-$variant"
 New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
 
-$artifactName = if ($Module -eq "calendar") { "yanzi-calendar" } else { "yanzi-mobile" }
+$artifactName = if ($Module -eq "calendar") { "yanzi-calendar" } elseif ($Module -in @('album','notes')) { 'yanzi-' + $Module } else { "yanzi-mobile" }
 $outputApk = Join-Path $outputDir "$artifactName-$variant.apk"
 Copy-Item -LiteralPath $sourceApk -Destination $outputApk -Force
 

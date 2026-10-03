@@ -1,56 +1,156 @@
 package cc.luoluoluo.yanzi.mobile;
 
 import android.app.Activity;
-import android.graphics.Color;
 import android.view.Gravity;
-import android.widget.*;
+import android.view.View;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 
 final class DesktopDashboardView {
-    static final class Result {
-        final TextView status, channel, sync;
-        Result(TextView status, TextView channel, TextView sync){this.status=status;this.channel=channel;this.sync=sync;}
-        void update(boolean connected,String type){
-            status.setText(connected?"在线运行":"当前离线");
-            status.setTextColor(connected?YanziUiKit.GREEN:YanziUiKit.RED);
-            channel.setText(connected?("lan".equals(type)?"局域网":"云端"):"—");
-            sync.setText(connected?"已同步":"待连接");
+    static final String COMPUTER_ICON = "mdi:desktop-classic";
+    private static final class ActionRef {
+        final LinearLayout root;
+        final ImageView icon;
+        final TextView label;
+        final int accent;
+
+        ActionRef(LinearLayout root, ImageView icon, TextView label, int accent) {
+            this.root = root;
+            this.icon = icon;
+            this.label = label;
+            this.accent = accent;
+        }
+
+        void setActive(boolean active) {
+            int color = active ? accent : YanziUiKit.MUTED;
+            icon.setColorFilter(color);
+            label.setTextColor(color);
         }
     }
-    private DesktopDashboardView(){}
 
-    static Result populate(Activity a, LinearLayout parent, Runnable chat, Runnable apps, Runnable files, Runnable shell) {
-        parent.addView(YanziUiKit.header(a,"电脑","远程连接与控制你的桌面端燕子","monitor",YanziUiKit.BLUE),YanziUiKit.cardLp(a));
-        LinearLayout hero=YanziUiKit.tintedCard(a,Color.rgb(13,31,49),Color.rgb(35,66,100));
-        LinearLayout title=new LinearLayout(a);title.setOrientation(LinearLayout.HORIZONTAL);title.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout copy=new LinearLayout(a);copy.setOrientation(LinearLayout.VERTICAL);
-        copy.addView(YanziUiKit.text(a,"我的电脑",19,YanziUiKit.TEXT,true));
-        TextView status=YanziUiKit.text(a,"检测中…",12,YanziUiKit.SECONDARY,true);copy.addView(status);
-        title.addView(copy,new LinearLayout.LayoutParams(0,-2,1f));
-        TextView badge=YanziUiKit.text(a,"●",18,YanziUiKit.GREEN,true);title.addView(badge);
-        hero.addView(title);
-        LinearLayout metrics=new LinearLayout(a);metrics.setOrientation(LinearLayout.HORIZONTAL);metrics.setPadding(0,YanziUiKit.dp(a,12),0,0);
-        TextView ch=YanziUiKit.text(a,"检测中",15,YanziUiKit.BLUE,true);ch.setGravity(Gravity.CENTER);
-        TextView sy=YanziUiKit.text(a,"检测中",15,YanziUiKit.GREEN,true);sy.setGravity(Gravity.CENTER);
-        LinearLayout m1=YanziUiKit.metric(a,"实时","连接状态",YanziUiKit.BLUE);
-        LinearLayout m2=YanziUiKit.metric(a,"—","通道",YanziUiKit.PURPLE);
-        LinearLayout m3=YanziUiKit.metric(a,"—","同步",YanziUiKit.GREEN);
-        ((TextView)m2.getChildAt(0)).setTag("channel");
-        ((TextView)m3.getChildAt(0)).setTag("sync");
-        metrics.addView(m1,new LinearLayout.LayoutParams(0,-2,1f));
-        LinearLayout.LayoutParams g1=new LinearLayout.LayoutParams(0,-2,1f);g1.leftMargin=YanziUiKit.dp(a,7);metrics.addView(m2,g1);
-        LinearLayout.LayoutParams g2=new LinearLayout.LayoutParams(0,-2,1f);g2.leftMargin=YanziUiKit.dp(a,7);metrics.addView(m3,g2);
-        ch=(TextView)m2.getChildAt(0);sy=(TextView)m3.getChildAt(0);
-        hero.addView(metrics);
-        parent.addView(hero,YanziUiKit.cardLp(a));
+    static final class Result {
+        final TextView state;
+        final ActionRef[] actions;
 
-        parent.addView(YanziUiKit.sectionLabel(a,"远程操作"));
-        LinearLayout tools=new LinearLayout(a);tools.setOrientation(LinearLayout.HORIZONTAL);
-        tools.addView(YanziUiKit.actionTile(a,"chat",YanziUiKit.BLUE,"聊天","文字与附件",chat),new LinearLayout.LayoutParams(0,-2,1f));
-        LinearLayout.LayoutParams p1=new LinearLayout.LayoutParams(0,-2,1f);p1.leftMargin=YanziUiKit.dp(a,7);tools.addView(YanziUiKit.actionTile(a,"apps",YanziUiKit.PURPLE,"小程序","远程运行",apps),p1);
-        LinearLayout.LayoutParams p2=new LinearLayout.LayoutParams(0,-2,1f);p2.leftMargin=YanziUiKit.dp(a,7);tools.addView(YanziUiKit.actionTile(a,"folder-outline",YanziUiKit.ORANGE,"文件","浏览与传输",files),p2);
-        LinearLayout.LayoutParams p3=new LinearLayout.LayoutParams(0,-2,1f);p3.leftMargin=YanziUiKit.dp(a,7);tools.addView(YanziUiKit.actionTile(a,"console",YanziUiKit.GREEN,"终端","PowerShell",shell),p3);
-        parent.addView(tools,YanziUiKit.cardLp(a));
-        parent.addView(YanziUiKit.sectionLabel(a,"电脑工作区"));
-        return new Result(status,ch,sy);
+        Result(TextView state, ActionRef[] actions) {
+            this.state = state;
+            this.actions = actions;
+        }
+
+        void select(int index) {
+            for (int i = 0; i < actions.length; i++) {
+                actions[i].setActive(i == index);
+            }
+        }
+
+        void update(boolean connected, String type) {
+            if (!connected) {
+                state.setText("离线");
+                state.setTextColor(YanziUiKit.RED);
+                return;
+            }
+            String channel = "lan".equals(type) ? "局域网" : "云端";
+            state.setText(channel);
+            state.setTextColor(YanziUiKit.GREEN);
+        }
+    }
+
+    private DesktopDashboardView() {}
+
+    static Result populate(
+            Activity a,
+            LinearLayout parent,
+            Runnable chat,
+            Runnable apps,
+            Runnable files,
+            Runnable shell,
+            Runnable details) {
+
+        LinearLayout info = new LinearLayout(a);
+        info.setOrientation(LinearLayout.HORIZONTAL);
+        info.setGravity(Gravity.CENTER_VERTICAL);
+        info.setPadding(
+                YanziUiKit.dp(a, 4),
+                YanziUiKit.dp(a, 6),
+                YanziUiKit.dp(a, 4),
+                YanziUiKit.dp(a, 14));
+
+        ImageView computer = YanziUiKit.icon(a, COMPUTER_ICON, YanziUiKit.TEXT, 28);
+        computer.setContentDescription("我的电脑");
+        computer.setClickable(true);
+        computer.setFocusable(true);
+        computer.setOnClickListener(v -> details.run());
+        TextView state = YanziUiKit.text(a, "检测中…", 12, YanziUiKit.SECONDARY, false);
+        LinearLayout.LayoutParams stateLp = new LinearLayout.LayoutParams(-2, -2);
+        stateLp.setMarginStart(YanziUiKit.dp(a, 12));
+
+        info.addView(computer, new LinearLayout.LayoutParams(
+                YanziUiKit.dp(a, 48), YanziUiKit.dp(a, 48)));
+        computer.setPadding(YanziUiKit.dp(a, 8), YanziUiKit.dp(a, 8),
+                YanziUiKit.dp(a, 8), YanziUiKit.dp(a, 8));
+        info.addView(state, stateLp);
+        parent.addView(info);
+
+        parent.addView(YanziUiKit.sectionLabel(a, "远程操作"));
+
+        LinearLayout tools = new LinearLayout(a);
+        tools.setOrientation(LinearLayout.HORIZONTAL);
+        tools.setGravity(Gravity.CENTER_VERTICAL);
+
+        ActionRef chatAction = flatAction(a, "chat", YanziUiKit.BLUE, "聊天", chat);
+        ActionRef appAction = flatAction(a, "apps", YanziUiKit.PURPLE, "小程序", apps);
+        ActionRef fileAction = flatAction(a, "folder-outline", YanziUiKit.ORANGE, "文件", files);
+        ActionRef shellAction = flatAction(a, "console", YanziUiKit.GREEN, "终端", shell);
+
+        tools.addView(chatAction.root, weighted());
+        tools.addView(appAction.root, weighted());
+        tools.addView(fileAction.root, weighted());
+        tools.addView(shellAction.root, weighted());
+
+        LinearLayout.LayoutParams toolsLp = new LinearLayout.LayoutParams(-1, -2);
+        toolsLp.bottomMargin = YanziUiKit.dp(a, 10);
+        parent.addView(tools, toolsLp);
+
+        Result result = new Result(state, new ActionRef[]{chatAction, appAction, fileAction, shellAction});
+        result.select(0);
+        return result;
+    }
+
+    private static ActionRef flatAction(
+            Activity a,
+            String iconName,
+            int accent,
+            String title,
+            Runnable action) {
+
+        LinearLayout item = new LinearLayout(a);
+        item.setOrientation(LinearLayout.VERTICAL);
+        item.setGravity(Gravity.CENTER);
+        item.setPadding(
+                YanziUiKit.dp(a, 4),
+                YanziUiKit.dp(a, 10),
+                YanziUiKit.dp(a, 4),
+                YanziUiKit.dp(a, 10));
+        item.setClickable(true);
+        item.setFocusable(true);
+        if (action != null) item.setOnClickListener(v -> action.run());
+
+        ImageView icon = YanziUiKit.icon(a, iconName, accent, 27);
+        item.addView(icon, new LinearLayout.LayoutParams(
+                YanziUiKit.dp(a, 32),
+                YanziUiKit.dp(a, 32)));
+
+        TextView label = YanziUiKit.text(a, title, 12, YanziUiKit.TEXT, true);
+        label.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams labelLp = new LinearLayout.LayoutParams(-2, -2);
+        labelLp.topMargin = YanziUiKit.dp(a, 7);
+        item.addView(label, labelLp);
+
+        return new ActionRef(item, icon, label, accent);
+    }
+
+    private static LinearLayout.LayoutParams weighted() {
+        return new LinearLayout.LayoutParams(0, -2, 1f);
     }
 }

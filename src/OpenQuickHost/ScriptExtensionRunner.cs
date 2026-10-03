@@ -19,7 +19,7 @@ namespace OpenQuickHost;
 
 public static class ScriptExtensionRunner
 {
-    private const string CSharpCacheVersion = "v12";
+    private const string CSharpCacheVersion = "v13";
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> CSharpBuildLocks = new(StringComparer.OrdinalIgnoreCase);
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> ExtensionLaunchLocks = new(StringComparer.OrdinalIgnoreCase);
 
@@ -1176,6 +1176,7 @@ public static class ScriptExtensionRunner
         var environmentSnapshot = CaptureRuntimeEnvironmentSnapshot();
         var originalDirectory = Directory.GetCurrentDirectory();
         var loadContext = new AssemblyLoadContext($"yanzi-inprocess-{Guid.NewGuid():N}", isCollectible: true);
+        using var capabilitySession = new YanziExtensionCapabilitySession(command);
 
         loadContext.Resolving += (_, assemblyName) =>
         {
@@ -1237,7 +1238,7 @@ public static class ScriptExtensionRunner
                 }
             }
 
-            var runtimeContext = CreateInProcessRuntimeContext(assembly, context, stateUpdatePath);
+            var runtimeContext = CreateInProcessRuntimeContext(assembly, context, stateUpdatePath, capabilitySession);
             var runMethod = FindYanziActionRunMethod(assembly, runtimeContext.GetType());
             ready.TrySetResult(null);
 
@@ -1263,6 +1264,7 @@ public static class ScriptExtensionRunner
 
             Directory.SetCurrentDirectory(originalDirectory);
             RestoreRuntimeEnvironmentSnapshot(environmentSnapshot);
+            capabilitySession.Dispose();
             if (loadContext.IsCollectible)
             {
                 loadContext.Unload();
@@ -1309,7 +1311,8 @@ public static class ScriptExtensionRunner
     private static object CreateInProcessRuntimeContext(
         Assembly assembly,
         ScriptExecutionContext context,
-        string stateUpdatePath)
+        string stateUpdatePath,
+        YanziExtensionCapabilitySession capabilitySession)
     {
         var contextType = assembly.GetType(
             "OpenQuickHost.CSharpRuntime.YanziActionContext",
@@ -1350,6 +1353,21 @@ public static class ScriptExtensionRunner
             getRegisteredProperty.SetValue(runtimeContext, proxyGetDelegate);
         }
 
+        // Precompiled extensions may carry an older context contract. New APIs are optional.
+        var registerCapabilityProperty = contextType.GetProperty("RegisterCapabilityJson", BindingFlags.Instance | BindingFlags.Public);
+        if (registerCapabilityProperty?.CanWrite == true &&
+            registerCapabilityProperty.PropertyType == typeof(Action<string, Func<string, Task<string>>>))
+        {
+            registerCapabilityProperty.SetValue(runtimeContext,
+                (Action<string, Func<string, Task<string>>>)capabilitySession.Register);
+        }
+        var invokeCapabilityProperty = contextType.GetProperty("InvokeCapabilityJson", BindingFlags.Instance | BindingFlags.Public);
+        if (invokeCapabilityProperty?.CanWrite == true &&
+            invokeCapabilityProperty.PropertyType == typeof(Func<string, Task<string>>))
+        {
+            invokeCapabilityProperty.SetValue(runtimeContext,
+                (Func<string, Task<string>>)capabilitySession.Invoke);
+        }
         return runtimeContext;
     }
 
@@ -1855,6 +1873,45 @@ public static class ScriptExtensionRunner
             public string StateUpdatePath { get; set; } = Environment.GetEnvironmentVariable("YANZI_STATE_UPDATES_PATH") ?? string.Empty;
             public Action<string, object>? RegisterObject { get; set; }
             public Func<string, object?>? GetRegisteredObject { get; set; }
+            public Action<string, Func<string, Task<string>>>? RegisterCapabilityJson { get; set; }
+            public Func<string, Task<string>>? InvokeCapabilityJson { get; set; }
+            private YanziCapabilityClient? _capabilities;
+            [System.Text.Json.Serialization.JsonIgnore]
+            public YanziCapabilityClient Capabilities => _capabilities ??= new YanziCapabilityClient(this);
+
+            public sealed class YanziCapabilityClient
+            {
+                private readonly YanziActionContext _context;
+                private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);
+                public YanziCapabilityClient(YanziActionContext context) => _context = context;
+
+                public void Register(string name, Func<JsonElement, Task<object?>> handler)
+                {
+                    var register = _context.RegisterCapabilityJson
+                        ?? throw new InvalidOperationException("当前运行时未连接能力注册接口");
+                    register(name, async json =>
+                    {
+                        using var document = JsonDocument.Parse(json);
+                        var result = await handler(document.RootElement.Clone()).ConfigureAwait(false);
+                        return JsonSerializer.Serialize(result, Options);
+                    });
+                }
+
+                public async Task<JsonElement> InvokeAsync(string name, object? payload = null)
+                {
+                    var invoke = _context.InvokeCapabilityJson
+                        ?? throw new InvalidOperationException("当前运行时未连接能力调用接口");
+                    var json = await invoke(JsonSerializer.Serialize(new { name, payload }, Options)).ConfigureAwait(false);
+                    using var document = JsonDocument.Parse(json);
+                    var result = document.RootElement;
+                    if (!result.GetProperty("success").GetBoolean())
+                        throw new InvalidOperationException(result.GetProperty("error").GetString());
+                    return result.GetProperty("data").Clone();
+                }
+
+                public Task<JsonElement> ListAsync() => InvokeAsync("capability.list");
+                public Task<JsonElement> DescribeAsync(string name) => InvokeAsync("capability.describe", new { name });
+            }
 
             public void Log(string message)
             {

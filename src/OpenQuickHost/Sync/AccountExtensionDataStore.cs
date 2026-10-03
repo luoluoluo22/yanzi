@@ -96,6 +96,13 @@ internal static class AccountExtensionDataStore
             DeviceIdentityStore.GetDesktopDisplayName(),
             cancellationToken);
 
+        try
+        {
+            await client.SendDeviceMessageAsync(DeviceIdentityStore.GetOrCreateDesktopDeviceId(), "android",
+                "extension-storage.changed", "", "", payload: new { extensionId = normalizedExtensionId,
+                    key = normalizedKey, revision = saved.Revision }, cancellationToken: cancellationToken);
+        }
+        catch (Exception ex) { HostAssets.AppendLog($"Storage invalidation delivery deferred: {ex.GetType().Name}"); }
         return new AccountExtensionDataWriteResult(true, objectId, saved.Revision, saved);
     }
 

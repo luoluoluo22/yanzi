@@ -1,0 +1,49 @@
+name: Publish mobile and notes
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Published Android GitHub release version
+        required: true
+        default: '0.2.36'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: application-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ inputs.version }}
+      GH_TOKEN: ${{ github.token }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      NOTES_META: release-inputs/applications/yanzi-notes.json
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply device protocol database migrations
+        run: npx --yes wrangler@4 d1 migrations apply openquickhost-sync-db --remote --config cloudflare/wrangler.toml
+      - name: Download and validate mobile release
+        run: |
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          mkdir -p .artifacts/mobile-release
+          gh release download "android-v$VERSION" --repo "$GITHUB_REPOSITORY" --pattern "yanzi-mobile-$VERSION.apk" --dir .artifacts/mobile-release
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/android-v$VERSION" > .artifacts/mobile-release/release.json
+          python3 scripts/mobile-release-ci.py prepare "$VERSION"
+      - name: Upload mobile APK and update manifest
+        run: |
+          npx --yes wrangler@4 r2 object put "openquickhost-sync-assets/downloads/android/yanzi-mobile-$VERSION.apk" --file ".artifacts/mobile-release/yanzi-mobile-$VERSION.apk" --content-type application/vnd.android.package-archive --remote --config wrangler.jsonc
+          npx --yes wrangler@4 r2 object put openquickhost-sync-assets/downloads/android/releases.json --file .artifacts/mobile-release/releases.json --content-type application/json --remote --config wrangler.jsonc
+          python3 scripts/mobile-release-ci.py verify "$VERSION"
+      - name: Validate and publish notes companion
+        run: |
+          python3 scripts/application-release-ci.py prepare "$NOTES_META"
+          APK_PATH=$(python3 -c 'import json,os; print(json.load(open(os.environ["NOTES_META"]))["apkPath"])')
+          APK_NAME=$(basename "$APK_PATH")
+          npx --yes wrangler@4 r2 object put "openquickhost-sync-assets/downloads/applications/$APK_NAME" --file "$APK_PATH" --content-type application/vnd.android.package-archive --remote --config wrangler.jsonc
+          npx --yes wrangler@4 r2 object put openquickhost-sync-assets/downloads/applications/catalog.json --file .artifacts/application-release/catalog.json --content-type application/json --remote --config wrangler.jsonc
+          python3 scripts/application-release-ci.py verify "$NOTES_META"

@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -422,6 +422,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _allCommands = CreateSeedCommands();
         _allCommands.AddRange(LocalExtensionCatalog.LoadCommands());
         _allCommands.AddRange(CreateInstalledApplicationCommands());
+        SyncNewlyDiscoveredLocalExtensions(_allCommands);
 
         var customShortcuts = AppSettingsStore.Load().CustomCommandShortcuts ?? new(StringComparer.OrdinalIgnoreCase);
         foreach (var cmd in _allCommands.Where(static x => x.Source != CommandSource.LocalExtension))
@@ -3405,7 +3406,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (runnable.App != null)
         {
             RecordCommandUsage(runnable);
-            if (AppExtensionWindow.TryActivateExisting(runnable))
+            if (AppExtensionWindow.TryActivateExisting(runnable,
+                activate: !(runnable.App.RunInBackground && launchSource == "app-startup")))
             {
                 HostAssets.AppendRecent(runnable.Title);
                 LastRunMessage = $"已激活应用{BrandTerms.Current.MiniApp}：{runnable.Title}";
@@ -3414,7 +3416,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             var window = new AppExtensionWindow(runnable, explicitInput, launchSource)
             {
-                ShowInTaskbar = true
+                ShowInTaskbar = !(runnable.App.RunInBackground && launchSource == "app-startup")
             };
 
             if (runnable.ExtensionDirectoryPath != null && runnable.ExtensionDirectoryPath.Contains("_temp_run_"))
@@ -5480,7 +5482,8 @@ public sealed record AppExtensionDefinition(
     string StorageEngine,
     string Sync,
     string? Namespace,
-    IReadOnlyList<string> BridgeApis);
+    IReadOnlyList<string> BridgeApis,
+    bool RunInBackground = false);
 
 public enum CommandSource
 {

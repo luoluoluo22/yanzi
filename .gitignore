@@ -63,8 +63,15 @@ env.md
 *.secret*
 .tmp-repro/
 
+# Local conversation attachments and UI snapshots
+.codex-remote-attachments/
+mobile/android/.ui-backup-*/
+
 licenses_*.txt
 licenses_output.txt
 
 cards_*.txt
 *.license.txt
+
+# Python validation caches
+__pycache__/
