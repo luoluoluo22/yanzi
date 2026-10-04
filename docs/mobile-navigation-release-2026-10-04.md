@@ -16,4 +16,6 @@ Dev and release compilation passed, including release lintVital. Release package
 Release APK bytes: 7229629
 SHA256: 57298202f541e968b89e62ead91fac2ac110c51dff9aa8e736eca34a01d45fc4
 
-Public release/update upload verification is appended after publication.
+Published GitHub Release android-v0.2.48 and the R2 APP update manifest. The complete public APK download matched both the local APK and GitHub asset SHA256: 57298202f541e968b89e62ead91fac2ac110c51dff9aa8e736eca34a01d45fc4. Public manifest points to android-v0.2.48 with draft=false; APK size is 7,229,629 bytes.
+
+The final 0.2.48-dev desktop execution suite passed APP/LAN calendar execution (d76b8348434a42ddbec7b4a372a76a19), cloud execution (msg_3aaf3724a480b60a0d55ca08), removed-registration detection/background rejection, and isolated credential cleanup. Latest Dev remains installed; production phone APK was not overwritten.
