@@ -54,7 +54,6 @@ final class DeveloperDashboardView {
             Runnable catalog,
             Runnable terminal) {
 
-        parent.addView(YanziUiKit.sectionLabel(a, "手机应用与工具"));
 
         LinearLayout tools = new LinearLayout(a);
         tools.setOrientation(LinearLayout.HORIZONTAL);

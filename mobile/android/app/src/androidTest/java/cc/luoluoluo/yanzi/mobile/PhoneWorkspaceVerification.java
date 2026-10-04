@@ -26,21 +26,36 @@ final class PhoneWorkspaceVerification {
             require(mobile.getCurrentItem()==1&&mobile.getAdapter().getCount()==3,"Phone store workspace selected");
             Object store=field(screen,"applicationStore");View content=(View)field(store,"content");
             require(descendant(content,mobile),"Store is embedded in phone pager");
-            require(contains(content,"应用商店"),"Real store content");
+            require(!contains(content,"应用商店"),"No duplicate store title");
+            View storeRoot=((android.widget.ScrollView)content).getChildAt(0);
+            require(((android.graphics.drawable.ColorDrawable)storeRoot.getBackground()).getColor()==YanziUiKit.BG,"Dark store surface");
             View phone=(View)field(screen,"mobileExtensionTabPage");
             require(!contains(phone,"文档"),"Documentation removed");
+            require(!contains(phone,"手机应用与工具"),"Workspace caption removed");
             call(screen,"selectMobileSubTab",int.class,0);
-            require(descendant((View)field(screen,"extensionsContainer"),phone),"Unified extensions belong to phone");
+            require(descendant((View)field(screen,"mobileExtensionGrid"),phone),"Phone owns local-only grid");
+            require(!descendant((View)field(screen,"extensionsContainer"),phone),"Desktop list excluded from phone");
             View desktop=(View)field(screen,"desktopExtensionTabPage");
-            require(!contains(desktop,"小程序"),"Desktop shortcut removed");
-            require(((androidx.viewpager.widget.ViewPager)field(screen,"desktopViewPager")).getAdapter().getCount()==3,"Desktop retains chat/files/terminal");
+            require(contains(desktop,"小程序"),"Desktop shortcut restored");
+            require(((androidx.viewpager.widget.ViewPager)field(screen,"desktopViewPager")).getAdapter().getCount()==4,"Desktop retains chat/programs/files/terminal");
             call(screen,"selectTab",String.class,"desktop");call(screen,"selectSubTab",int.class,2);
-            require(((androidx.viewpager.widget.ViewPager)field(screen,"desktopViewPager")).getCurrentItem()==1,"Files mapping preserved");
-            call(screen,"selectSubTab",int.class,3);require(((androidx.viewpager.widget.ViewPager)field(screen,"desktopViewPager")).getCurrentItem()==2,"Terminal mapping preserved");
-            call(screen,"selectSubTab",int.class,1);require("mobile".equals(field(screen,"selectedTab"))&&mobile.getCurrentItem()==0,"Legacy extension navigation redirects to phone");
+            require(((androidx.viewpager.widget.ViewPager)field(screen,"desktopViewPager")).getCurrentItem()==2,"Files mapping preserved");
+            call(screen,"selectSubTab",int.class,3);require(((androidx.viewpager.widget.ViewPager)field(screen,"desktopViewPager")).getCurrentItem()==3,"Terminal mapping preserved");
+            call(screen,"selectSubTab",int.class,1);require("desktop".equals(field(screen,"selectedTab")),"Desktop programs remain on desktop");
+            @SuppressWarnings("unchecked") java.util.List<RemoteExtension> original=(java.util.List<RemoteExtension>)field(screen,"currentDesktopExtensions");
+            android.widget.EditText search=(android.widget.EditText)field(screen,"searchDesktopExtensionsInput");String query=search.getText().toString();
+            java.lang.reflect.Method render=MainActivity.class.getDeclaredMethod("renderExtensions",java.util.List.class);render.setAccessible(true);
+            try{
+                search.setText("");
+                render.invoke(screen,java.util.Arrays.asList(new RemoteExtension("fixture-pc","Desktop fixture","","apps","",true,false),new RemoteExtension("fixture-phone","Phone-only fixture","","apps","",false,true),new RemoteExtension("fixture-both","Dual fixture","","apps","",true,true)));
+                View list=(View)field(screen,"extensionList");
+                require(contains(list,"Desktop fixture")&&contains(list,"Dual fixture")&&!contains(list,"Phone-only fixture"),"Desktop filters out phone-only runtimes");
+                require(!contains(list,"电脑"),"Redundant desktop-only label removed");
+            }finally{render.invoke(screen,original);search.setText(query);}
+            call(screen,"selectTab",String.class,"mobile");
             call(screen,"selectMobileSubTab",int.class,1);
         }catch(Throwable e){failed[0]=e;}});
         if(failed[0]!=null)throw new AssertionError(failed[0]);
-        result.putString("stream","PHONE_WORKSPACE=PASSED (embedded store, unified extensions, removed docs, desktop page mapping, legacy navigation)");test.finish(Activity.RESULT_OK,result);
+        result.putString("stream","PHONE_WORKSPACE=PASSED (dark embedded store, separate runtimes, no duplicate title/caption, desktop filters and navigation)");test.finish(Activity.RESULT_OK,result);
     }catch(Throwable e){result.putString("stream",android.util.Log.getStackTraceString(e));test.finish(Activity.RESULT_CANCELED,result);}}
 }

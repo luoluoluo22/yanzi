@@ -1450,9 +1450,9 @@ extends Activity {
         }
         String action = intent.getAction();
         if (action.endsWith(".extensions")) {
-            this.selectTab("mobile");
-            this.selectMobileSubTab(0);
-            this.setStatus("\u5df2\u8fdb\u5165\u5c0f\u7a0b\u5e8f\u3002\u6709\u624b\u673a\u8fd0\u884c\u65f6\u65f6\u4f18\u5148\u672c\u673a\u6267\u884c\uff0c\u5426\u5219\u53d1\u9001\u5230\u7535\u8111\u3002");
+            this.selectTab("desktop");
+            this.selectSubTab(1);
+            this.setStatus("已进入电脑小程序，点击即可在电脑运行。");
             this.refreshExtensions(true);
             this.scrollToView((View)this.extensionList);
         } else if (action.endsWith(".pick-photo")) {
@@ -1868,7 +1868,7 @@ extends Activity {
                 }
                 this.refreshExtensions();
             } else if (this.mobileExtensionTabPage != null && this.mobileExtensionTabPage.getVisibility() == 0) {
-                this.refreshExtensions(true);
+                this.syncMobileExtensionsFromCloud();
                 this.swipeRefresh.postDelayed(() -> this.swipeRefresh.setRefreshing(false), 800L);
             } else {
                 this.swipeRefresh.setRefreshing(false);
@@ -2166,6 +2166,7 @@ extends Activity {
 
         final List<View> pages = new java.util.ArrayList<>();
         pages.add(chatContainer);
+        pages.add(extensionsContainer);
         pages.add(fileManagerContainer);
         pages.add(shellContainer);
 
@@ -2196,7 +2197,7 @@ extends Activity {
 
             @Override
             public void onPageSelected(int position) {
-                MainActivity.this.selectSubTab(position==0?0:position+1);
+                MainActivity.this.selectSubTab(position);
             }
 
             @Override
@@ -2262,10 +2263,6 @@ extends Activity {
 
         LinearLayout.LayoutParams extScrollParams = new LinearLayout.LayoutParams(-1, 0, 1.0f);
         extensionsContainer.addView((View)extensionsScrollView, (ViewGroup.LayoutParams)extScrollParams);
-        this.mobileExtensionListView.removeAllViews();
-        this.mobileExtensionListTitle.setText("全部小程序");
-        this.mobileExtensionListView.addView(miniProgramHeader);
-        this.mobileExtensionListView.addView(extensionsContainer,new LinearLayout.LayoutParams(-1,0,1f));
         this.renderCachedExtensions();
 
         // YanShell UI (Termux-style)
@@ -2813,7 +2810,7 @@ extends Activity {
         if (isDesktop || isYanm) {
             this.checkConnectionAsync();
         }
-        if(isMobile){this.selectMobileSubTab(this.currentMobileSubTab);if(this.currentMobileSubTab==0)this.refreshExtensions(true);}
+        if(isMobile){this.selectMobileSubTab(this.currentMobileSubTab);if(this.currentMobileSubTab==0)this.syncMobileExtensionsFromCloud();}
         if (isAi) {
             this.refreshSettings();
         }
@@ -3335,7 +3332,7 @@ extends Activity {
         this.mobileExtensionGrid.removeAllViews();
 
         JSONArray array = this.readLocalMobileExtensions();
-        if (this.mobileExtensionListTitle != null) this.mobileExtensionListTitle.setText("全部小程序");
+        if (this.mobileExtensionListTitle != null) this.mobileExtensionListTitle.setText("本机小程序 · " + array.length());
         if (array.length() == 0) {
             TextView emptyTv = this.textView("暂无本机小程序。", 12, Color.rgb((int)148, (int)163, (int)184), false);
             emptyTv.setPadding(this.dp(16), this.dp(16), this.dp(16), this.dp(16));
@@ -4371,13 +4368,10 @@ extends Activity {
         this.currentDesktopExtensions = extensions;
         String query = this.searchDesktopExtensionsInput != null && this.searchDesktopExtensionsInput.getText() != null ? this.searchDesktopExtensionsInput.getText().toString().trim().toLowerCase() : "";
         ArrayList<RemoteExtension> filtered = new ArrayList<RemoteExtension>();
-        if (query.isEmpty()) {
-            filtered.addAll(extensions);
-        } else {
-            for (RemoteExtension e : extensions) {
-                if ((e.name == null || !e.name.toLowerCase().contains(query)) && (e.description == null || !e.description.toLowerCase().contains(query))) continue;
-                filtered.add(e);
-            }
+        for(RemoteExtension e:extensions){
+            if(!e.hasDesktopRuntime)continue;
+            if(!query.isEmpty()&&(e.name==null||!e.name.toLowerCase().contains(query))&&(e.description==null||!e.description.toLowerCase().contains(query)))continue;
+            filtered.add(e);
         }
         this.extensionList.removeAllViews();
         if (filtered.isEmpty()) {
@@ -4400,7 +4394,7 @@ extends Activity {
             LinearLayout card = this.iconCard();
             card.setGravity(17);
             card.setOnClickListener(
-                    v -> this.runUnifiedExtension(extension, (View)card));
+                    v -> this.runRemoteExtension(extension, (View)card));
             card.setOnLongClickListener(v -> {
                 this.showUnifiedExtensionActions(
                         extension,
@@ -4444,17 +4438,6 @@ extends Activity {
             LinearLayout.LayoutParams nameParams = new LinearLayout.LayoutParams(-1, -2);
             nameParams.gravity = 1;
             card.addView((View)name, (ViewGroup.LayoutParams)nameParams);
-
-            TextView runtime = this.textView(
-                    extension.runtimeLabel(),
-                    9,
-                    Color.rgb((int)100, (int)116, (int)139),
-                    false);
-            runtime.setGravity(17);
-            runtime.setPadding(0, 0, 0, 0);
-            if(!"电脑".equals(extension.runtimeLabel()))card.addView(
-                    (View)runtime,
-                    (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -2));
 
             grid.addView((View)card);
         }
@@ -4888,7 +4871,6 @@ extends Activity {
     }
 
     private void selectSubTab(int index) {
-        if(index==1){this.selectTab("mobile");this.selectMobileSubTab(0);return;}
         if (index < 0 || index > 3) return;
         boolean changed = this.currentSubTabIndex != index;
         this.currentSubTabIndex = index;
@@ -4897,8 +4879,8 @@ extends Activity {
             if (this.desktopDashboard != null) {
                 this.desktopDashboard.select(index);
             }
-            if (this.desktopViewPager != null && this.desktopViewPager.getCurrentItem() != (index==0?0:index-1)) {
-                this.desktopViewPager.setCurrentItem(index==0?0:index-1, true);
+            if (this.desktopViewPager != null && this.desktopViewPager.getCurrentItem() != index) {
+                this.desktopViewPager.setCurrentItem(index, true);
             }
 
             android.graphics.drawable.GradientDrawable activeBg = new android.graphics.drawable.GradientDrawable();
@@ -4956,8 +4938,7 @@ extends Activity {
 
     private void adjustViewPagerHeight() {
         if (this.desktopViewPager == null) return;
-        int position = this.desktopViewPager.getCurrentItem();
-        int index=position==0?0:position+1;
+        int index = this.desktopViewPager.getCurrentItem();
         View view = null;
         if (index == 0) {
             view = this.chatContainerLayout;
@@ -10812,7 +10793,7 @@ extends Activity {
         boolean changed=this.currentMobileSubTab!=index;
         this.currentMobileSubTab = index;
         this.updateSwipeRefreshEnabledForCurrentView();
-        if(index==0&&this.extensionList!=null&&changed)this.refreshExtensions(true);
+        if(index==0&&this.mobileExtensionGrid!=null&&changed)this.syncMobileExtensionsFromCloud();
         if(index==1&&this.applicationStore!=null)this.applicationStore.show();
 
         this.runOnUiThread(() -> {

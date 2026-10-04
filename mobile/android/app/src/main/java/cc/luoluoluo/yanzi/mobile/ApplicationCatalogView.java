@@ -33,7 +33,7 @@ final class ApplicationCatalogView {
     private EditText search;
     private String category="推荐";
     private final java.util.Map<String,TextView> tabs=new java.util.LinkedHashMap<>();
-    private static final int INK=0xff202624, SUB=0xff79847e, ACCENT=0xff159775, LINE=0xffe9efec;
+    private static final int INK=YanziUiKit.TEXT, SUB=YanziUiKit.SECONDARY, ACCENT=YanziUiKit.GREEN, LINE=YanziUiKit.STROKE;
     android.view.View createView() {
         MobileNetworkRouting.initialize(activity);
         prefs=activity.getSharedPreferences("yanzi-mobile",android.content.Context.MODE_PRIVATE);
@@ -43,32 +43,34 @@ final class ApplicationCatalogView {
         LinearLayout root=new LinearLayout(activity);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(YanziUiKit.dp(activity,16),YanziUiKit.dp(activity,16),YanziUiKit.dp(activity,16),YanziUiKit.dp(activity,24));
-        root.setBackgroundColor(android.graphics.Color.WHITE);
+        root.setBackgroundColor(YanziUiKit.BG);
         if(!embedded){
-        activity.getWindow().setStatusBarColor(android.graphics.Color.WHITE);
-        activity.getWindow().setNavigationBarColor(android.graphics.Color.WHITE);
-        activity.getWindow().getDecorView().setSystemUiVisibility(android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|android.view.View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
+        activity.getWindow().setStatusBarColor(YanziUiKit.BG);
+        activity.getWindow().setNavigationBarColor(YanziUiKit.BG);
+        activity.getWindow().getDecorView().setSystemUiVisibility(0);
         }
 
         LinearLayout top=new LinearLayout(activity);top.setOrientation(LinearLayout.HORIZONTAL);top.setGravity(android.view.Gravity.CENTER_VERTICAL);
         TextView back=YanziUiKit.secondaryButton(activity,"‹",activity::finish);
-        back.setTextColor(INK);back.setBackground(YanziUiKit.bg(0xfff5f8f6,14,LINE,1));back.setContentDescription("返回");
+        back.setTextColor(INK);back.setBackground(YanziUiKit.bg(YanziUiKit.CARD,14,LINE,1));back.setContentDescription("返回");
         if(!embedded)top.addView(back,new LinearLayout.LayoutParams(YanziUiKit.dp(activity,42),YanziUiKit.dp(activity,42)));
         LinearLayout titleCopy=new LinearLayout(activity);titleCopy.setOrientation(LinearLayout.VERTICAL);titleCopy.setPadding(YanziUiKit.dp(activity,12),0,0,0);
         titleCopy.addView(YanziUiKit.text(activity,"应用商店",22,INK,true));
         titleCopy.addView(YanziUiKit.text(activity,"发现好用的燕子应用",12,SUB,false));
         top.addView(titleCopy,new LinearLayout.LayoutParams(0,-2,1f));
-        TextView refresh=YanziUiKit.text(activity,"刷新",13,ACCENT,true);refresh.setGravity(android.view.Gravity.CENTER);refresh.setPadding(YanziUiKit.dp(activity,8),0,YanziUiKit.dp(activity,8),0);refresh.setOnClickListener(v->load());refreshBusy=new BusyButton(refresh);top.addView(refresh,new LinearLayout.LayoutParams(-2,YanziUiKit.dp(activity,44)));
-        root.addView(top,YanziUiKit.cardLp(activity));
+        TextView refresh=YanziUiKit.text(activity,"刷新",13,ACCENT,true);refresh.setGravity(android.view.Gravity.CENTER);refresh.setPadding(YanziUiKit.dp(activity,8),0,YanziUiKit.dp(activity,8),0);refresh.setOnClickListener(v->load());refreshBusy=new BusyButton(refresh);if(!embedded)top.addView(refresh,new LinearLayout.LayoutParams(-2,YanziUiKit.dp(activity,44)));
+        if(!embedded)root.addView(top,YanziUiKit.cardLp(activity));
 
         LinearLayout searchRow=new LinearLayout(activity);searchRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
         searchRow.setPadding(YanziUiKit.dp(activity,12),0,YanziUiKit.dp(activity,8),0);
-        searchRow.setBackground(YanziUiKit.bg(0xfff5f8f6,16,LINE,1));
+        searchRow.setBackground(YanziUiKit.bg(YanziUiKit.CARD,16,LINE,1));
         searchRow.addView(YanziUiKit.icon(activity,"search",SUB,22));
         search=new EditText(activity);search.setSingleLine(true);search.setTextSize(15);search.setTextColor(INK);search.setHintTextColor(SUB);
         search.setHint("搜索应用、功能");search.setBackgroundColor(android.graphics.Color.TRANSPARENT);
         search.setPadding(YanziUiKit.dp(activity,10),0,0,0);search.setContentDescription("搜索应用");
-        searchRow.addView(search,new LinearLayout.LayoutParams(0,YanziUiKit.dp(activity,48),1f));root.addView(searchRow,YanziUiKit.cardLp(activity));
+        searchRow.addView(search,new LinearLayout.LayoutParams(0,YanziUiKit.dp(activity,48),1f));
+        if(embedded)searchRow.addView(refresh,new LinearLayout.LayoutParams(-2,YanziUiKit.dp(activity,48)));
+        root.addView(searchRow,YanziUiKit.cardLp(activity));
         search.addTextChangedListener(new android.text.TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int c,int f){} public void onTextChanged(CharSequence s,int a,int b,int c){renderStore();} public void afterTextChanged(android.text.Editable e){}});
         LinearLayout nav=new LinearLayout(activity);
         for(String name:new String[]{"推荐","工具","图文","我的"}){
@@ -145,7 +147,7 @@ final class ApplicationCatalogView {
         final boolean installedCurrent=current;final Intent launchIntent=launch;
         String label="mobile-js".equals(kind)?(enabled?"更新":"获取"):(current?"打开":launch!=null?"更新":"安装");
         TextView action=YanziUiKit.text(activity,label,14,ACCENT,true);action.setGravity(android.view.Gravity.CENTER);
-        action.setBackground(YanziUiKit.bg(0xffffffff,22,0xffa2d4c3,1));action.setClickable(true);action.setFocusable(true);
+        action.setBackground(YanziUiKit.bg(YanziUiKit.CARD,22,ACCENT,1));action.setClickable(true);action.setFocusable(true);
         action.setContentDescription(app.optString("name")+"："+label);actionButtons.add(action);action.setEnabled(!working);action.setAlpha(working?0.55f:1f);
         BusyButton actionBusy=new BusyButton(action);
         action.setOnClickListener(v->{if(installedCurrent){activity.startActivity(launchIntent);return;}work(()->{
@@ -169,7 +171,7 @@ final class ApplicationCatalogView {
         for(java.util.Map.Entry<String,TextView> entry:tabs.entrySet()){
             boolean active=entry.getKey().equals(category);TextView tab=entry.getValue();tab.setTextColor(active?INK:SUB);
             tab.setTypeface(active?android.graphics.Typeface.DEFAULT_BOLD:android.graphics.Typeface.DEFAULT);
-            tab.setBackground(YanziUiKit.bg(active?0xffeaf6f0:0xffffffff,12,0,0));tab.setSelected(active);
+            tab.setBackground(YanziUiKit.bg(active?YanziUiKit.CARD_ALT:YanziUiKit.BG,12,0,0));tab.setSelected(active);
         }
         if(catalogApps==null)return;
         String query=search.getText().toString().trim().toLowerCase(java.util.Locale.ROOT);
