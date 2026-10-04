@@ -185,7 +185,7 @@ final class ApplicationCatalogView {
             java.util.List<JSONObject> featured=new java.util.ArrayList<>();
             for(String id:new String[]{"yanzi-files","yanzi-stream","yanzi-cards","yanzi-album","yanzi-notes"})for(JSONObject app:visible)if(id.equals(app.optString("applicationId")))featured.add(app);
             if(featured.isEmpty())featured.addAll(visible.subList(0,Math.min(5,visible.size())));
-            int width=Math.max(80,Math.min(100,(int)(activity.getResources().getDisplayMetrics().widthPixels/activity.getResources().getDisplayMetrics().density-32)/4));
+            int width=Math.max(80,Math.min(100,(int)(activity.getResources().getDisplayMetrics().widthPixels/activity.getResources().getDisplayMetrics().density-(embedded?64:32))/4));
             for(JSONObject app:featured){
                 LinearLayout tile=new LinearLayout(activity);tile.setOrientation(LinearLayout.VERTICAL);tile.setGravity(android.view.Gravity.CENTER_HORIZONTAL);
                 android.view.View icon=appIcon(app,60);icon.setOnClickListener(v->details(app));tile.addView(icon);

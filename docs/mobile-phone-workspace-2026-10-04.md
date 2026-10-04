@@ -18,7 +18,7 @@
 - OnePlus 0.2.49-dev DesktopExecutionVerification：APP_ROUTE 与 CLOUD_ROUTE 日历实际执行均 completed；临时设备删除检测与后台禁止重新登记通过，临时登记已清理，现有登录保持。
 - 一加仅覆盖 Dev；正式 0.2.48 的版本和 codePath 不变，不清用户数据，不操作 K70，不绕过系统安装确认。
 - 正式 APK：cc.luoluoluo.yanzi.mobile / code49 / 0.2.49；证书 8a0ec0b84d1a05edcc89dd020bf81901f9ed7f083887db7c05201c59b31e1ee3，与历史生产签名一致。
-- APK SHA256 aff91b4330484f110ae1a561a098e3c8864d6ca87f1797b88c5e0b2627219215。
+- APK SHA256 f65b13c41a2742f7573ef0a5fd0aa834683759e1c1dd051877781b287d8bbeef。
 - 全局 lintDev 的历史推送/其他界面错误仍存在；上次完整 lint 商店类没有 errors，本次 Release lintVital 已成功，未以 UI 修改处理无关业务。
 
 ## 发布路径
