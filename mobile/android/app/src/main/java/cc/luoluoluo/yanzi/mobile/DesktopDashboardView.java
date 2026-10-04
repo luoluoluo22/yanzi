@@ -33,7 +33,7 @@ final class DesktopDashboardView {
         final ActionRef[] actions;
         Result(ActionRef[] actions) { this.actions = actions; }
         void select(int index) {
-            for (int i = 0; i < actions.length; i++) actions[i].setActive(i == index);
+            for (int i = 0; i < actions.length; i++) {if(actions[i]!=null)actions[i].setActive(i == index);};
         }
     }
 
@@ -52,12 +52,10 @@ final class DesktopDashboardView {
         tools.setGravity(Gravity.CENTER_VERTICAL);
 
         ActionRef chatAction = flatAction(a, "chat", YanziUiKit.BLUE, "聊天", chat);
-        ActionRef appAction = flatAction(a, "apps", YanziUiKit.PURPLE, "小程序", apps);
         ActionRef fileAction = flatAction(a, "folder-outline", YanziUiKit.ORANGE, "文件", files);
         ActionRef shellAction = flatAction(a, "console", YanziUiKit.GREEN, "终端", shell);
 
         tools.addView(chatAction.root, weighted());
-        tools.addView(appAction.root, weighted());
         tools.addView(fileAction.root, weighted());
         tools.addView(shellAction.root, weighted());
 
@@ -65,7 +63,7 @@ final class DesktopDashboardView {
         toolsLp.bottomMargin = YanziUiKit.dp(a, 10);
         parent.addView(tools, toolsLp);
 
-        Result result = new Result(new ActionRef[]{chatAction, appAction, fileAction, shellAction});
+        Result result = new Result(new ActionRef[]{chatAction, null, fileAction, shellAction});
         result.select(0);
         return result;
     }

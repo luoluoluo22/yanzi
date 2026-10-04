@@ -251,6 +251,7 @@ extends Activity {
     private LinearLayout profileTabPage;
     private HomeDashboardView.Result homeDashboard;
     private DeveloperDashboardView.Result developerDashboard;
+    private ApplicationCatalogView applicationStore;
     private DesktopDashboardView.Result desktopDashboard;
     private View bottomTabs;
     private String selectedTab = "";
@@ -694,6 +695,7 @@ extends Activity {
 
     protected void onResume() {
         super.onResume();
+        if(this.applicationStore!=null)this.applicationStore.resume();
         // The isolated transfer fixture owns its temporary pairing; background account
         // refresh must not replace it while the encrypted transfer is in progress.
         if (BuildConfig.DEBUG && BuildConfig.APPLICATION_ID.endsWith(".dev")
@@ -1004,6 +1006,7 @@ extends Activity {
 
     @Override
     protected void onDestroy() {
+        if(this.applicationStore!=null)this.applicationStore.close();
         try {
             this.unregisterReceiver(this.screenshotReceiver);
         } catch (Exception e) {}
@@ -1447,8 +1450,8 @@ extends Activity {
         }
         String action = intent.getAction();
         if (action.endsWith(".extensions")) {
-            this.selectTab("desktop");
-            this.selectSubTab(1);
+            this.selectTab("mobile");
+            this.selectMobileSubTab(0);
             this.setStatus("\u5df2\u8fdb\u5165\u5c0f\u7a0b\u5e8f\u3002\u6709\u624b\u673a\u8fd0\u884c\u65f6\u65f6\u4f18\u5148\u672c\u673a\u6267\u884c\uff0c\u5426\u5219\u53d1\u9001\u5230\u7535\u8111\u3002");
             this.refreshExtensions(true);
             this.scrollToView((View)this.extensionList);
@@ -1865,7 +1868,7 @@ extends Activity {
                 }
                 this.refreshExtensions();
             } else if (this.mobileExtensionTabPage != null && this.mobileExtensionTabPage.getVisibility() == 0) {
-                this.syncMobileExtensionsFromCloud();
+                this.refreshExtensions(true);
                 this.swipeRefresh.postDelayed(() -> this.swipeRefresh.setRefreshing(false), 800L);
             } else {
                 this.swipeRefresh.setRefreshing(false);
@@ -1887,7 +1890,6 @@ extends Activity {
                 this,
                 this.mobileExtensionTabPage,
                 () -> this.selectMobileSubTab(0),
-                () -> this.startActivity(new Intent(this, ApplicationCatalogActivity.class)),
                 () -> this.selectMobileSubTab(1),
                 () -> this.selectMobileSubTab(2));
 
@@ -1906,14 +1908,6 @@ extends Activity {
         this.btnShowMobileExtensions.setAllCaps(false);
         this.btnShowMobileExtensions.setTextSize(13f);
 
-        this.btnShowMobileDocs = new android.widget.Button((Context)this);
-        this.btnShowMobileDocs.setText((CharSequence)"\u6587\u6863"); // "文档"
-        this.btnShowMobileDocs.setTextColor(Color.rgb(148, 163, 184));
-        this.btnShowMobileDocs.setBackgroundColor(Color.TRANSPARENT);
-        this.btnShowMobileDocs.setPadding(this.dp(12), this.dp(8), this.dp(12), this.dp(8));
-        this.btnShowMobileDocs.setAllCaps(false);
-        this.btnShowMobileDocs.setTextSize(13f);
-
         this.btnShowMobileShell = new android.widget.Button((Context)this);
         this.btnShowMobileShell.setText((CharSequence)"\u624b\u673a\u7ec8\u7aef"); // "手机终端"
         this.btnShowMobileShell.setTextColor(Color.rgb(148, 163, 184));
@@ -1925,11 +1919,9 @@ extends Activity {
         LinearLayout.LayoutParams mobileBtnParams = new LinearLayout.LayoutParams(-2, this.dp(36));
         mobileBtnParams.rightMargin = this.dp(8);
         mobileSubTabBar.addView((View)this.btnShowMobileExtensions, (ViewGroup.LayoutParams)mobileBtnParams);
-        mobileSubTabBar.addView((View)this.btnShowMobileDocs, (ViewGroup.LayoutParams)mobileBtnParams);
         mobileSubTabBar.addView((View)this.btnShowMobileShell, (ViewGroup.LayoutParams)mobileBtnParams);
 
         this.btnShowMobileExtensions.setOnClickListener(v -> this.selectMobileSubTab(0));
-        this.btnShowMobileDocs.setOnClickListener(v -> this.selectMobileSubTab(1));
         this.btnShowMobileShell.setOnClickListener(v -> this.selectMobileSubTab(2));
 
 
@@ -1964,14 +1956,8 @@ extends Activity {
         this.mobileExtensionEditorView.setPadding(this.dp(6), this.dp(12), this.dp(6), this.dp(12));
         this.mobileExtensionEditorView.setVisibility(View.GONE);
 
-        this.mobileDocsScrollView = new androidx.core.widget.NestedScrollView((Context)this);
-        this.mobileDocsScrollView.setNestedScrollingEnabled(true);
-        this.mobileDocsScrollView.setPadding(this.dp(16), this.dp(8), this.dp(16), this.dp(16));
-
-        this.mobileDocsContainer = new android.widget.LinearLayout((Context)this);
-        this.mobileDocsContainer.setOrientation(1);
-        this.mobileDocsScrollView.addView((View)this.mobileDocsContainer, (ViewGroup.LayoutParams)new android.widget.FrameLayout.LayoutParams(-1, -2));
-
+        this.applicationStore=new ApplicationCatalogView(this,true);
+        View storePage=this.applicationStore.createView();
         this.mobileShellContainer = new android.widget.LinearLayout((Context)this);
         this.mobileShellContainer.setOrientation(1);
         this.mobileShellContainer.setPadding(this.dp(16), this.dp(8), this.dp(16), this.dp(16));
@@ -1982,7 +1968,7 @@ extends Activity {
 
         final java.util.List<View> mobilePages = new java.util.ArrayList<>();
         mobilePages.add(this.mobileExtensionListView);
-        mobilePages.add(this.mobileDocsScrollView);
+        mobilePages.add(storePage);
         mobilePages.add(this.mobileShellContainer);
 
         this.mobileViewPager.setAdapter(new androidx.viewpager.widget.PagerAdapter() {
@@ -2028,7 +2014,7 @@ extends Activity {
         this.mobileExtensionTabPage.addView((View)this.mobileExtensionEditorView);
 
         // 渲染文档内容
-        this.buildMobileDocsView(this.mobileDocsContainer);
+        // Documentation is no longer a phone workspace.
         // 渲染终端内容
         this.buildMobileShellView(this.mobileShellContainer);
 
@@ -2123,8 +2109,7 @@ extends Activity {
         desktopHeader.setGravity(16);
         desktopHeader.setPadding(this.dp(20), this.dp(24), this.dp(20), this.dp(10));
 
-        TextView tvTitle = this.textView("电脑", 28, -1, true);
-        desktopHeader.addView((View)tvTitle);
+
 
         this.tvDesktopConnectionStatus = new TextView((Context)this);
         this.tvDesktopConnectionStatus.setTextSize(14f);
@@ -2181,7 +2166,6 @@ extends Activity {
 
         final List<View> pages = new java.util.ArrayList<>();
         pages.add(chatContainer);
-        pages.add(extensionsContainer);
         pages.add(fileManagerContainer);
         pages.add(shellContainer);
 
@@ -2212,7 +2196,7 @@ extends Activity {
 
             @Override
             public void onPageSelected(int position) {
-                MainActivity.this.selectSubTab(position);
+                MainActivity.this.selectSubTab(position==0?0:position+1);
             }
 
             @Override
@@ -2278,6 +2262,10 @@ extends Activity {
 
         LinearLayout.LayoutParams extScrollParams = new LinearLayout.LayoutParams(-1, 0, 1.0f);
         extensionsContainer.addView((View)extensionsScrollView, (ViewGroup.LayoutParams)extScrollParams);
+        this.mobileExtensionListView.removeAllViews();
+        this.mobileExtensionListTitle.setText("全部小程序");
+        this.mobileExtensionListView.addView(miniProgramHeader);
+        this.mobileExtensionListView.addView(extensionsContainer,new LinearLayout.LayoutParams(-1,0,1f));
         this.renderCachedExtensions();
 
         // YanShell UI (Termux-style)
@@ -2825,6 +2813,7 @@ extends Activity {
         if (isDesktop || isYanm) {
             this.checkConnectionAsync();
         }
+        if(isMobile){this.selectMobileSubTab(this.currentMobileSubTab);if(this.currentMobileSubTab==0)this.refreshExtensions(true);}
         if (isAi) {
             this.refreshSettings();
         }
@@ -2841,8 +2830,9 @@ extends Activity {
         boolean isDesktopChat = this.desktopExtensionTabPage != null
             && this.desktopExtensionTabPage.getVisibility() == View.VISIBLE
             && this.currentSubTabIndex == 0;
-        this.swipeRefresh.setEnabled(!isDesktopChat);
-        if (isDesktopChat) {
+        boolean isStore=this.mobileExtensionTabPage!=null&&this.mobileExtensionTabPage.getVisibility()==View.VISIBLE&&this.currentMobileSubTab==1;
+        this.swipeRefresh.setEnabled(!isDesktopChat&&!isStore);
+        if (isDesktopChat||isStore) {
             this.swipeRefresh.setRefreshing(false);
         }
     }
@@ -3345,7 +3335,7 @@ extends Activity {
         this.mobileExtensionGrid.removeAllViews();
 
         JSONArray array = this.readLocalMobileExtensions();
-        if (this.mobileExtensionListTitle != null) this.mobileExtensionListTitle.setText("本机小程序 · " + array.length());
+        if (this.mobileExtensionListTitle != null) this.mobileExtensionListTitle.setText("全部小程序");
         if (array.length() == 0) {
             TextView emptyTv = this.textView("暂无本机小程序。", 12, Color.rgb((int)148, (int)163, (int)184), false);
             emptyTv.setPadding(this.dp(16), this.dp(16), this.dp(16), this.dp(16));
@@ -4462,7 +4452,7 @@ extends Activity {
                     false);
             runtime.setGravity(17);
             runtime.setPadding(0, 0, 0, 0);
-            card.addView(
+            if(!"电脑".equals(extension.runtimeLabel()))card.addView(
                     (View)runtime,
                     (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -2));
 
@@ -4898,6 +4888,7 @@ extends Activity {
     }
 
     private void selectSubTab(int index) {
+        if(index==1){this.selectTab("mobile");this.selectMobileSubTab(0);return;}
         if (index < 0 || index > 3) return;
         boolean changed = this.currentSubTabIndex != index;
         this.currentSubTabIndex = index;
@@ -4906,8 +4897,8 @@ extends Activity {
             if (this.desktopDashboard != null) {
                 this.desktopDashboard.select(index);
             }
-            if (this.desktopViewPager != null && this.desktopViewPager.getCurrentItem() != index) {
-                this.desktopViewPager.setCurrentItem(index, true);
+            if (this.desktopViewPager != null && this.desktopViewPager.getCurrentItem() != (index==0?0:index-1)) {
+                this.desktopViewPager.setCurrentItem(index==0?0:index-1, true);
             }
 
             android.graphics.drawable.GradientDrawable activeBg = new android.graphics.drawable.GradientDrawable();
@@ -4965,7 +4956,8 @@ extends Activity {
 
     private void adjustViewPagerHeight() {
         if (this.desktopViewPager == null) return;
-        int index = this.desktopViewPager.getCurrentItem();
+        int position = this.desktopViewPager.getCurrentItem();
+        int index=position==0?0:position+1;
         View view = null;
         if (index == 0) {
             view = this.chatContainerLayout;
@@ -10817,7 +10809,11 @@ extends Activity {
 
     private void selectMobileSubTab(int index) {
         if (index < 0 || index > 2) return;
+        boolean changed=this.currentMobileSubTab!=index;
         this.currentMobileSubTab = index;
+        this.updateSwipeRefreshEnabledForCurrentView();
+        if(index==0&&this.extensionList!=null&&changed)this.refreshExtensions(true);
+        if(index==1&&this.applicationStore!=null)this.applicationStore.show();
 
         this.runOnUiThread(() -> {
             if (this.developerDashboard != null) {

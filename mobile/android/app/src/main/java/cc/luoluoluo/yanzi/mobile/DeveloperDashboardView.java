@@ -30,20 +30,17 @@ final class DeveloperDashboardView {
     static final class Result {
         final ActionRef miniPrograms;
         final ActionRef catalog;
-        final ActionRef docs;
         final ActionRef terminal;
 
-        Result(ActionRef miniPrograms, ActionRef catalog, ActionRef docs, ActionRef terminal) {
+        Result(ActionRef miniPrograms, ActionRef catalog, ActionRef terminal) {
             this.miniPrograms = miniPrograms;
             this.catalog = catalog;
-            this.docs = docs;
             this.terminal = terminal;
         }
 
         void selectWorkspace(int mobileSubTabIndex) {
             miniPrograms.setActive(mobileSubTabIndex == 0);
-            catalog.setActive(false);
-            docs.setActive(mobileSubTabIndex == 1);
+            catalog.setActive(mobileSubTabIndex == 1);
             terminal.setActive(mobileSubTabIndex == 2);
         }
     }
@@ -55,7 +52,6 @@ final class DeveloperDashboardView {
             LinearLayout parent,
             Runnable miniPrograms,
             Runnable catalog,
-            Runnable docs,
             Runnable terminal) {
 
         parent.addView(YanziUiKit.sectionLabel(a, "手机应用与工具"));
@@ -65,20 +61,18 @@ final class DeveloperDashboardView {
         tools.setGravity(Gravity.CENTER_VERTICAL);
 
         ActionRef mini = flatAction(a, "apps", YanziUiKit.BLUE, "小程序", miniPrograms);
-        ActionRef store = flatAction(a, "view-grid-outline", YanziUiKit.GREEN, "应用中心", catalog);
-        ActionRef doc = flatAction(a, "file-document-outline", YanziUiKit.ORANGE, "文档", docs);
+        ActionRef store = flatAction(a, "view-grid-outline", YanziUiKit.GREEN, "应用商店", catalog);
         ActionRef shell = flatAction(a, "console", YanziUiKit.PURPLE, "终端", terminal);
 
         tools.addView(mini.root, weighted());
         tools.addView(store.root, weighted());
-        tools.addView(doc.root, weighted());
         tools.addView(shell.root, weighted());
 
         LinearLayout.LayoutParams toolsLp = new LinearLayout.LayoutParams(-1, -2);
         toolsLp.bottomMargin = YanziUiKit.dp(a, 8);
         parent.addView(tools, toolsLp);
 
-        Result result = new Result(mini, store, doc, shell);
+        Result result = new Result(mini, store, shell);
         result.selectWorkspace(0);
         return result;
     }
