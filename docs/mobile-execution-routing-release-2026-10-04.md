@@ -11,3 +11,11 @@
 APK 大小 90883444 字节；SHA256 47e11d683370cb8d1cc27dbf9d69930694a5887f1f56737eb4a1d8eb16d9d78e。证书 SHA256 8a0ec0b84d1a05edcc89dd020bf81901f9ed7f083887db7c05201c59b31e1ee3。
 
 真实用户网络上的电脑小程序执行由用户升级后复测；本地与隔离测试不能代替现场结论。Worker 路由修复通过 main 推送触发 Git 集成发布，不执行本地 Worker 部署。
+
+## 发布与真机验证完成
+
+2026-10-04：代码提交 c7b5227 已推送 main，Workers Builds: yanzi-sync 成功。GitHub android-v0.2.47 已正式发布（非草稿、非预发布），资产大小和摘要一致；R2 手机 APK 与更新清单已发布。独立完整下载公开 APK，SHA256 与本地构建及公开清单一致。
+
+一加 81f7e66d 的隔离 Dev 真机回归 `test-real-phone-message-bridge.ps1 -SkipBuild -CapabilitiesOnly` 通过：85 项设备协议检查、前后台消息 ACK、后台心跳、文件字节校验、增量与周期同步、删除墓碑及路径越界拒绝。结束时 DEV_SERVER_ADDRESS_RESTORED、PRODUCTION_PRESERVED、DEV_PREFERENCES_RESTORED=True 均通过。测试产物：`%TEMP%/YanziDev/message-bridge/f7f344d18ecf48deb0f48ff524862d74`。Dev 已覆盖升级到 0.2.47-dev；真实手机正式包保持 0.2.45，不清除用户数据。桌面已重新启动。
+
+更新入口：https://sync.luoluoluo.cc.cd/downloads/android/yanzi-mobile-0.2.47.apk 。本次隔离回归没有操作用户电脑小程序业务，原始 409 场景仍由用户在真实账号和网络中升级后验收。
