@@ -77,6 +77,13 @@ def prepare(meta_path):
     meta, apk = load_meta(meta_path)
     digest, size = verify_apk(meta, apk)
     existing = fetch_json(CATALOG_URL)
+    current = next((a for a in existing.get("applications", []) if a.get("applicationId") == meta["applicationId"]), None)
+    if current:
+        published_code = int(current.get("versionCode", -1))
+        if published_code > int(meta["versionCode"]):
+            raise SystemExit("Refusing to downgrade a published companion")
+        if published_code == int(meta["versionCode"]) and current.get("sha256") != digest:
+            raise SystemExit("Published versionCode already has a different APK; bump the companion version")
     apps = [a for a in existing.get("applications", []) if a.get("applicationId") != meta["applicationId"]]
     entry = {
         "applicationId": meta["applicationId"],

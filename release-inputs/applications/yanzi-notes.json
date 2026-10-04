@@ -2,14 +2,14 @@
   "applicationId": "yanzi-notes",
   "name": "笔记",
   "kind": "android-apk",
-  "version": "0.1.4",
-  "versionCode": 5,
-  "description": "深色笔记、全屏编辑、已删除、事件驱动同步与指定电脑接续；接续需新版电脑燕子",
+  "version": "0.1.5",
+  "versionCode": 6,
+  "description": "深色笔记、全屏编辑、已删除、事件驱动同步与指定电脑接续；接续需新版电脑燕子；仅一台活跃电脑时直接接续",
   "packageName": "cc.luoluoluo.yanzi.notes",
-  "minHostVersionCode": 36,
+  "minHostVersionCode": 37,
   "certificateSha256": "8a0ec0b84d1a05edcc89dd020bf81901f9ed7f083887db7c05201c59b31e1ee3",
   "dataKeys": [
     "notes/sync.v1.json"
   ],
-  "apkPath": "release-inputs/applications/yanzi-notes-0.1.4.apk"
+  "apkPath": "release-inputs/applications/yanzi-notes-0.1.5.apk"
 }
