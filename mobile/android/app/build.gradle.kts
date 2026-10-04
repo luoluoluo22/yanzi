@@ -23,8 +23,8 @@ android {
         applicationId = "cc.luoluoluo.yanzi.mobile"
         minSdk = 26
         targetSdk = 35
-        versionCode = 47
-        versionName = "0.2.47"
+        versionCode = 48
+        versionName = "0.2.48"
         providers.gradleProperty("YANZI_ANDROID_VERSION_CODE").orNull?.let {
             val candidate = it.toIntOrNull()
             require(candidate != null && candidate > 0) { "Invalid candidate Android version code" }
@@ -84,7 +84,7 @@ android {
 
     buildTypes {
         getByName("release") {
-            buildConfigField("boolean", "BUNDLED_WAKE_MODEL", "true")
+            buildConfigField("boolean", "BUNDLED_WAKE_MODEL", bundledWakeModel.toString())
             signingConfig = signingConfigs.getByName("release")
         }
 
@@ -137,8 +137,8 @@ val bundleMobileExtensions by tasks.registering {
 android.sourceSets.getByName("main").assets.srcDir(bundledExtensions)
 tasks.named("preBuild") { dependsOn(bundleMobileExtensions) }
 
-// Development builds can opt in with -PYANZI_BUNDLE_WAKE_MODEL=true.
-tasks.matching { it.name == "mergeDevAssets" || it.name == "mergeDebugAssets" }.configureEach {
+// Voice-enabled builds can opt in with -PYANZI_BUNDLE_WAKE_MODEL=true.
+tasks.matching { it.name in listOf("mergeDevAssets", "mergeDebugAssets", "mergeReleaseAssets") }.configureEach {
     inputs.property("bundledWakeModel", bundledWakeModel)
     doLast {
         if (!bundledWakeModel) outputs.files.files.forEach { root ->
@@ -149,7 +149,7 @@ tasks.matching { it.name == "mergeDevAssets" || it.name == "mergeDebugAssets" }.
 
 androidComponents {
     onVariants(selector().all()) { variant ->
-        if (variant.buildType != "release" && !bundledWakeModel) {
+        if (!bundledWakeModel) {
             variant.packaging.jniLibs.excludes.add("**/libvosk.so")
         }
     }

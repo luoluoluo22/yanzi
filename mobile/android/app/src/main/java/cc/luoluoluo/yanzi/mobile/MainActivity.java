@@ -252,6 +252,9 @@ extends Activity {
     private HomeDashboardView.Result homeDashboard;
     private DeveloperDashboardView.Result developerDashboard;
     private DesktopDashboardView.Result desktopDashboard;
+    private View bottomTabs;
+    private String selectedTab = "";
+    private int pendingMessageSends;
     private android.widget.ImageView profileAvatarView;
     private android.widget.TextView profileNameView;
     private android.widget.TextView profileSubtextView;
@@ -2063,11 +2066,7 @@ extends Activity {
                 () -> this.selectSubTab(0),
                 () -> this.selectSubTab(1),
                 () -> this.selectSubTab(2),
-                () -> this.selectSubTab(3),
-                () -> this.startActivity(new Intent(this, LanPairingActivity.class)
-                        .putExtra("connectionType", this.desktopConnectionType)
-                        .putExtra("connected", this.isDesktopConnected)
-                        .putExtra("offlineReason", this.desktopOfflineDesc)));
+                () -> this.selectSubTab(3));
 
         // 子 Tab 条
         LinearLayout subTabBar = new LinearLayout((Context)this);
@@ -2706,7 +2705,8 @@ extends Activity {
         this.loadAiHistory();
         shell.addView((View)this.aiTabPage, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, 0, 1.0f));
         shell.addView((View)this.desktopExtensionTabPage, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, 0, 1.0f));
-        shell.addView((View)this.buildBottomTabs(), (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, this.dp(64)));
+        this.bottomTabs = this.buildBottomTabs();
+        shell.addView(this.bottomTabs, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, this.dp(64)));
         this.setContentView((View)shell);
         this.selectTab("desktop");
         this.setStatus(this.prefs.getString("token", "").trim().isEmpty() ? "\u8bf7\u5148\u767b\u5f55\u71d5\u5b50\u8d26\u53f7\u3002" : "\u5df2\u52a0\u8f7d\u672c\u5730\u767b\u5f55\u6001\u3002");
@@ -2793,7 +2793,10 @@ extends Activity {
         }
         container.addView((View)textView);
         container.setTag((Object)new View[]{iconView, textView});
-        container.setOnClickListener(v -> this.selectTab(key));
+        container.setOnClickListener(v -> {
+            if ("desktop".equals(key) && "desktop".equals(selectedTab)) showDesktopConnectionDetails();
+            else selectTab(key);
+        });
         return container;
     }
 
@@ -2801,6 +2804,7 @@ extends Activity {
         if (this.yanmTabPage == null || this.mobileExtensionTabPage == null || this.desktopExtensionTabPage == null || this.profileTabPage == null || this.aiTabPage == null) {
             return;
         }
+        this.selectedTab = key;
         boolean isYanm = "yanm".equals(key);
         boolean isMobile = "mobile".equals(key);
         boolean isAi = "ai".equals(key);
@@ -2817,6 +2821,7 @@ extends Activity {
         this.styleTabButton(this.aiTabButton, isAi);
         this.styleTabButton(this.desktopExtensionTabButton, isDesktop);
         this.styleTabButton(this.profileTabButton, isProfile);
+        updateDesktopTabConnection();
         if (isDesktop || isYanm) {
             this.checkConnectionAsync();
         }
@@ -4019,6 +4024,7 @@ extends Activity {
 
     private void sendTextValueToDesktop(String text, String pendingStatus) {
         this.setStatus(pendingStatus);
+        beginMessageSend();
         this.executor.execute(() -> {
             try {
                 String messageId;
@@ -4041,7 +4047,7 @@ extends Activity {
             }
             catch (Exception ex) {
                 this.runOnUiThread(() -> this.setStatus("\u53d1\u9001\u5931\u8d25\uff1a" + ex.getMessage()));
-            }
+            } finally { finishMessageSend(); }
         });
     }
 
@@ -4060,6 +4066,7 @@ extends Activity {
     private void sendPhotoToDesktop(Uri uri) {
         this.setStatus("\u6b63\u5728\u5904\u7406\u7167\u7247...");
         this.showPhotoProgress("\u6b63\u5728\u53d1\u9001\u7167\u7247...");
+        beginMessageSend();
         this.executor.execute(() -> {
             try {
                 String messageId;
@@ -4090,7 +4097,7 @@ extends Activity {
                     this.hidePhotoProgress();
                     this.setStatus("\u7167\u7247\u53d1\u9001\u5931\u8d25\uff1a" + ex.getMessage());
                 });
-            }
+            } finally { finishMessageSend(); }
         });
     }
 
@@ -5049,13 +5056,48 @@ extends Activity {
         });
     }
 
+    private void showDesktopConnectionDetails() {
+        startActivity(new Intent(this, LanPairingActivity.class)
+                .putExtra("connectionType", desktopConnectionType)
+                .putExtra("connected", isDesktopConnected)
+                .putExtra("offlineReason", desktopOfflineDesc));
+    }
+
+    private void updateDesktopTabConnection() {
+        if (desktopExtensionTabButton == null) return;
+        String type = !isDesktopConnected ? "offline" : desktopConnectionType;
+        String icon = "lan".equals(type) || "reconnecting".equals(type) ? "lan-connect"
+                : "cloud".equals(type) ? "cloud-outline" : "cloud-off-outline";
+        int color = "lan".equals(type) ? YanziUiKit.GREEN : "reconnecting".equals(type) ? YanziUiKit.ORANGE
+                : "cloud".equals(type) ? YanziUiKit.BLUE : YanziUiKit.RED;
+        String state = "lan".equals(type) ? "局域网在线" : "reconnecting".equals(type) ? "局域网重连中"
+                : "cloud".equals(type) ? "云端在线" : "离线";
+        View[] views = (View[]) desktopExtensionTabButton.getTag();
+        ((ImageView) views[0]).setImageDrawable(new PathDrawable(MobileIconLibrary.resolveOrDefault(icon), color));
+        ((ImageView) views[0]).setColorFilter(color);
+        desktopExtensionTabButton.setContentDescription("电脑，" + state + ("desktop".equals(selectedTab) ? "，再次点击查看连接详情" : ""));
+        if (desktopConnectionDot != null) {
+            desktopConnectionDot.setVisibility(View.VISIBLE);
+            GradientDrawable dot = new GradientDrawable();
+            dot.setShape(GradientDrawable.OVAL); dot.setColor(color);
+            desktopConnectionDot.setBackground(dot);
+        }
+    }
+
+    private void beginMessageSend() {
+        runOnUiThread(() -> { pendingMessageSends++; updateBottomTabsVisibility(); });
+    }
+
+    private void finishMessageSend() {
+        runOnUiThread(() -> { pendingMessageSends = Math.max(0, pendingMessageSends - 1); updateBottomTabsVisibility(); });
+    }
+
+    private void updateBottomTabsVisibility() {
+        if (bottomTabs != null) bottomTabs.setVisibility(pendingMessageSends > 0 || isAiLoading ? View.GONE : View.VISIBLE);
+    }
+
     private void updateConnectionUi() {
-        if (this.desktopDashboard != null) {
-            this.desktopDashboard.update(this.isDesktopConnected, this.desktopConnectionType);
-        }
-        if (this.desktopConnectionDot != null) {
-            this.desktopConnectionDot.setVisibility(this.isDesktopConnected ? View.VISIBLE : View.GONE);
-        }
+        updateDesktopTabConnection();
         if (this.isDesktopConnected) {
             if (this.offlineHintView != null) {
                 this.offlineHintView.setVisibility(View.GONE);
@@ -5608,6 +5650,7 @@ extends Activity {
 
     private void setAiLoadingState(boolean loading) {
         this.isAiLoading = loading;
+        updateBottomTabsVisibility();
         if (this.aiSendButton != null) {
             if (loading) {
                 this.aiSendButton.setBackground(this.createStopIconDrawable());
@@ -11509,6 +11552,7 @@ extends Activity {
         this.setStatus("正在处理照片...");
         this.showPhotoProgress("正在发送照片...");
 
+        beginMessageSend();
         this.executor.execute(() -> {
             try {
                 byte[] jpegBytes = this.readJpegBytesFromUri(uri);
@@ -11546,7 +11590,7 @@ extends Activity {
                     this.setStatus("发送失败：" + ex.getMessage());
                     this.renderChatMessage("system", "text", "照片发送失败：" + ex.getMessage(), true);
                 });
-            }
+            } finally { finishMessageSend(); }
         });
     }
 
@@ -11554,6 +11598,7 @@ extends Activity {
         this.setStatus("\u6b63\u5728\u5904\u7406\u6587\u4ef6...");
         this.showPhotoProgress("\u6b63\u5728\u53d1\u9001\u6587\u4ef6...");
 
+        beginMessageSend();
         this.executor.execute(() -> {
             try {
                 String fileName = "file_" + System.currentTimeMillis();
@@ -11617,7 +11662,7 @@ extends Activity {
                     this.setStatus("\u53d1\u9001\u5931\u8d25\uff1a" + ex.getMessage());
                     this.renderChatMessage("system", "text", "\u6587\u4ef6\u53d1\u9001\u5931\u8d25\uff1a" + ex.getMessage(), true);
                 });
-            }
+            } finally { finishMessageSend(); }
         });
     }
 
@@ -11632,6 +11677,7 @@ extends Activity {
         this.renderChatMessage("self", "text", text, sentAt, this.deviceId, MainActivity.buildDeviceDisplayName(), true);
         this.saveChatMessageToLocal("self", "text", text, sentAt);
 
+        beginMessageSend();
         this.executor.execute(() -> {
             try {
                 String baseUrl = this.normalizedBaseUrl();
@@ -11655,7 +11701,7 @@ extends Activity {
                     this.setStatus("\u53d1\u9001\u5931\u8d25\uff1a" + ex.getMessage());
                     this.renderChatMessage("system", "text", "\u53d1\u9001\u5931\u8d25\uff1a" + ex.getMessage(), true);
                 });
-            }
+            } finally { finishMessageSend(); }
         });
     }
 

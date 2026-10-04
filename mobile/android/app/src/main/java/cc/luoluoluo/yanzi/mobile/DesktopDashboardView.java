@@ -30,44 +30,10 @@ final class DesktopDashboardView {
     }
 
     static final class Result {
-        final ImageView stateIcon;
         final ActionRef[] actions;
-
-        Result(ImageView stateIcon, ActionRef[] actions) {
-            this.stateIcon = stateIcon;
-            this.actions = actions;
-        }
-
+        Result(ActionRef[] actions) { this.actions = actions; }
         void select(int index) {
-            for (int i = 0; i < actions.length; i++) {
-                actions[i].setActive(i == index);
-            }
-        }
-
-        void update(boolean connected, String type) {
-            String iconName;
-            int color;
-            String description;
-            if (!connected) {
-                iconName = "cloud-off-outline";
-                color = YanziUiKit.RED;
-                description = "离线";
-            } else if ("reconnecting".equals(type)) {
-                iconName = "lan-connect";
-                color = YanziUiKit.ORANGE;
-                description = "局域网重连中";
-            } else if ("lan".equals(type)) {
-                iconName = "lan-connect";
-                color = YanziUiKit.GREEN;
-                description = "局域网";
-            } else {
-                iconName = "cloud-outline";
-                color = YanziUiKit.BLUE;
-                description = "云端";
-            }
-            stateIcon.setImageDrawable(new PathDrawable(
-                    MobileIconLibrary.resolveOrDefault(iconName), color));
-            stateIcon.setContentDescription(description);
+            for (int i = 0; i < actions.length; i++) actions[i].setActive(i == index);
         }
     }
 
@@ -79,35 +45,7 @@ final class DesktopDashboardView {
             Runnable chat,
             Runnable apps,
             Runnable files,
-            Runnable shell,
-            Runnable details) {
-
-        LinearLayout info = new LinearLayout(a);
-        info.setOrientation(LinearLayout.HORIZONTAL);
-        info.setGravity(Gravity.CENTER_VERTICAL);
-        info.setPadding(
-                YanziUiKit.dp(a, 4),
-                YanziUiKit.dp(a, 6),
-                YanziUiKit.dp(a, 4),
-                YanziUiKit.dp(a, 14));
-
-        ImageView stateIcon = YanziUiKit.icon(a, "cloud-off-outline", YanziUiKit.MUTED, 28);
-        stateIcon.setContentDescription("检测连接状态");
-        stateIcon.setClickable(true);
-        stateIcon.setFocusable(true);
-        stateIcon.setOnClickListener(v -> details.run());
-
-        LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(
-                YanziUiKit.dp(a, 48), YanziUiKit.dp(a, 48));
-        info.addView(stateIcon, iconLp);
-        stateIcon.setPadding(
-                YanziUiKit.dp(a, 8),
-                YanziUiKit.dp(a, 8),
-                YanziUiKit.dp(a, 8),
-                YanziUiKit.dp(a, 8));
-        parent.addView(info);
-
-        parent.addView(YanziUiKit.sectionLabel(a, "远程操作"));
+            Runnable shell) {
 
         LinearLayout tools = new LinearLayout(a);
         tools.setOrientation(LinearLayout.HORIZONTAL);
@@ -127,8 +65,7 @@ final class DesktopDashboardView {
         toolsLp.bottomMargin = YanziUiKit.dp(a, 10);
         parent.addView(tools, toolsLp);
 
-        Result result = new Result(stateIcon,
-                new ActionRef[]{chatAction, appAction, fileAction, shellAction});
+        Result result = new Result(new ActionRef[]{chatAction, appAction, fileAction, shellAction});
         result.select(0);
         return result;
     }
