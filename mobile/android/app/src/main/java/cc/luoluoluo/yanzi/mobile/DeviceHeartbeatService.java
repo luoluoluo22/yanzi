@@ -156,6 +156,14 @@ public class DeviceHeartbeatService extends Service {
             }
             failures = 0; retryAt = 0;
         } catch (MobileMessageClient.HttpFailure ex) {
+            if (ex.status == 403 || ex.status == 404) {
+                try {
+                    MobileDeviceSession.requireRegistered(base, token, device);
+                } catch (MobileApiClient.MissingSourceDeviceException removed) {
+                    if (valid(token, device)) MobileDeviceSession.clearRemovedLogin(this);
+                    return;
+                } catch (Exception unavailable) { /* Only confirmed removal invalidates login. */ }
+            }
             if (ex.status == 401) {
                 try {
                     String email = prefs.getString("email", ""), password = prefs.getString("password", "");

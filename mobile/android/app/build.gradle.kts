@@ -6,6 +6,7 @@ providers.gradleProperty("YANZI_ANDROID_BUILD_ROOT").orNull?.let {
 }
 val pushConfigPath = providers.gradleProperty("YANZI_FCM_CONFIG").orNull ?: System.getenv("YANZI_FCM_CONFIG")
 val pushConfigFile = pushConfigPath?.let { file(it) }
+val bundledWakeModel = providers.gradleProperty("YANZI_BUNDLE_WAKE_MODEL").orNull?.toBooleanStrictOrNull() ?: false
 val fcmEnabled = pushConfigFile?.isFile == true
 
 android {
@@ -83,13 +84,16 @@ android {
 
     buildTypes {
         getByName("release") {
+            buildConfigField("boolean", "BUNDLED_WAKE_MODEL", "true")
             signingConfig = signingConfigs.getByName("release")
         }
 
+        getByName("debug") { buildConfigField("boolean", "BUNDLED_WAKE_MODEL", bundledWakeModel.toString()) }
         create("dev") {
             initWith(getByName("debug"))
             applicationIdSuffix = ".dev"
             versionNameSuffix = "-dev"
+            buildConfigField("boolean", "BUNDLED_WAKE_MODEL", bundledWakeModel.toString())
             isDebuggable = true
             signingConfig = signingConfigs.getByName("devStable")
             matchingFallbacks += listOf("debug")
@@ -132,3 +136,21 @@ val bundleMobileExtensions by tasks.registering {
 }
 android.sourceSets.getByName("main").assets.srcDir(bundledExtensions)
 tasks.named("preBuild") { dependsOn(bundleMobileExtensions) }
+
+// Development builds can opt in with -PYANZI_BUNDLE_WAKE_MODEL=true.
+tasks.matching { it.name == "mergeDevAssets" || it.name == "mergeDebugAssets" }.configureEach {
+    inputs.property("bundledWakeModel", bundledWakeModel)
+    doLast {
+        if (!bundledWakeModel) outputs.files.files.forEach { root ->
+            if (root.isDirectory) root.walkTopDown().filter { it.isDirectory && it.name == "vosk-model-small-cn-0.22" }.toList().forEach { it.deleteRecursively() }
+        }
+    }
+}
+
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        if (variant.buildType != "release" && !bundledWakeModel) {
+            variant.packaging.jniLibs.excludes.add("**/libvosk.so")
+        }
+    }
+}

@@ -704,6 +704,8 @@ extends Activity {
         } catch (IllegalStateException ex) {
             Log.w("YanziMessageBridge", "Floating service start deferred until next foreground resume");
         }
+        if (prefs.getBoolean("deviceLoginRemoved", false)) handleRemovedDeviceSession();
+        verifyDeviceSessionOnEntry();
         DeviceHeartbeatService.startIfLoggedIn(this);
         if (this.overlayButton != null) {
             this.overlayButton.setText((CharSequence)(FloatingWheelService.isRunning ? "\u5173\u95ed\u60ac\u6d6e\u8f6e\u76d8" : "\u6253\u5f00\u60ac\u6d6e\u8f6e\u76d8"));
@@ -3565,16 +3567,29 @@ extends Activity {
             });
 
             try {
+                String previousDeviceId = this.deviceId;
+                this.prefs.edit().putString("email", email).commit();
+                String registeredDeviceId = MobileDeviceIdentity.stableDeviceId(this);
                 YanziApiClient.registerDevice(
                         baseUrl,
                         finalToken,
-                        this.deviceId,
-                        this.buildDeviceName());
+                        registeredDeviceId,
+                        this.buildDeviceName(), true);
+                this.deviceId = registeredDeviceId;
+                this.prefs.edit().putString("deviceId", registeredDeviceId).commit();
+                if (!previousDeviceId.equals(registeredDeviceId)) {
+                    try {
+                        MobileMessageClient.requestWithoutQueue(baseUrl, "/v1/me/devices/" + previousDeviceId, finalToken, "DELETE", null);
+                    } catch (Exception ignored) {
+                        Log.w("YanziSession", "Old installation registration cleanup deferred");
+                    }
+                }
                 this.prefs.edit()
                         .putString("baseUrl", baseUrl)
                         .putString("email", email)
                         .putString("password", password)
                         .putString("token", finalToken)
+                        .remove("deviceLoginRemoved")
                         .putString("username", finalUsername)
                         .apply();
                 Log.i("MainActivity", "Account login and device registration succeeded.");
@@ -3598,8 +3613,8 @@ extends Activity {
                 this.prefs.edit()
                         .putString("baseUrl", baseUrl)
                         .putString("email", email)
-                        .putString("password", password)
-                        .putString("token", finalToken)
+                        .remove("password")
+                        .remove("token")
                         .putString("username", finalUsername)
                         .apply();
                 Log.w(
@@ -3611,15 +3626,12 @@ extends Activity {
                             "登录成功，但设备注册失败：" + message);
                     DeviceHeartbeatService.startIfLoggedIn(this);
                     this.setAccountLoginFeedback(
-                            "登录成功；设备注册失败，仍可继续同步。",
-                            false);
+                            "设备注册失败，请重新登录。",
+                            true);
                     this.setLoginBusy(false);
                     this.refreshExtensions();
                     this.refreshYanm();
                     this.updateProfileHeader();
-                    if (MainActivity.this.accountDialog != null) {
-                        MainActivity.this.accountDialog.dismiss();
-                    }
                 });
             }
         });
@@ -4734,7 +4746,7 @@ extends Activity {
                 restoreUi.run();
                 this.runOnUiThread(() -> {
                     if (ex instanceof MobileApiClient.MissingSourceDeviceException) {
-                        showReconnectDeviceDialog(() -> runRemoteExtension(extension, cardView));
+                        handleRemovedDeviceSession();
                     } else {
                         new AlertDialog.Builder((Context)this).setTitle((CharSequence)"\u53d1\u9001\u8bf7\u6c42\u5931\u8d25").setMessage((CharSequence)ex.getMessage()).setPositiveButton((CharSequence)"\u786e\u5b9a", null).show();
                     }
@@ -4744,22 +4756,33 @@ extends Activity {
         });
     }
 
-    private void showReconnectDeviceDialog(Runnable retry) {
-        new AlertDialog.Builder(this).setTitle("本机登记已被删除")
-                .setMessage("这台手机当前安装的设备登记已被移除。电脑请求尚未发送。\n\n重新连接将恢复本机的消息和直连授权；其他已删除设备不会恢复。")
-                .setNegativeButton("取消", null)
-                .setPositiveButton("重新连接并执行", (dialog, which) -> executor.execute(() -> {
-                    try {
-                        String base = normalizedBaseUrl();
-                        String token = requireToken();
-                        YanziApiClient.registerDevice(base, token, deviceId, buildDeviceName(), true);
-                        DeviceHeartbeatService.startIfLoggedIn(this);
-                        runOnUiThread(retry);
-                    } catch (Exception error) {
-                        runOnUiThread(() -> new AlertDialog.Builder(this).setTitle("重新连接失败")
-                                .setMessage(error.getMessage()).setPositiveButton("确定", null).show());
-                    }
-                })).show();
+    private void verifyDeviceSessionOnEntry() {
+        final String token = prefs.getString("token", "");
+        final String source = deviceId;
+        if (token.isEmpty()) return;
+        executor.execute(() -> {
+            try {
+                MobileDeviceSession.requireRegistered(normalizedBaseUrl(), token, source);
+            } catch (MobileApiClient.MissingSourceDeviceException removed) {
+                runOnUiThread(() -> {
+                    if (token.equals(prefs.getString("token", "")) || prefs.getBoolean("deviceLoginRemoved", false)) handleRemovedDeviceSession();
+                });
+            } catch (Exception unavailable) {
+                Log.w("YanziSession", "Device validation deferred: " + unavailable.getClass().getSimpleName());
+            }
+        });
+    }
+
+    private void handleRemovedDeviceSession() {
+        if (prefs.getString("token", "").isEmpty() && !prefs.getBoolean("deviceLoginRemoved", false)) return;
+        MobileDeviceSession.clearRemovedLogin(this);
+        prefs.edit().remove("deviceLoginRemoved").apply();
+        updateProfileHeader();
+        setStatus("本机已被移除，请重新登录。");
+        if (accountDialog != null) accountDialog.dismiss();
+        new AlertDialog.Builder(this).setTitle("本机已被移除")
+                .setMessage("此设备已从账号中删除，登录状态已退出。请重新登录后再连接电脑。")
+                .setPositiveButton("重新登录", (dialog, which) -> showAccountSettingsDialog()).show();
     }
 
     private void refreshYanm() {
@@ -7237,7 +7260,7 @@ extends Activity {
         if (existing != null && !existing.trim().isEmpty()) {
             return existing;
         }
-        String created = "android-" + UUID.randomUUID();
+        String created = MobileDeviceIdentity.stableDeviceId(this);
         this.prefs.edit().putString("deviceId", created).apply();
         return created;
     }
@@ -9923,6 +9946,12 @@ extends Activity {
     }
 
     private void startWakeListening() {
+        if (!BuildConfig.BUNDLED_WAKE_MODEL) {
+            isWakeListeningEnabled = false;
+            updateWakeToggleButton();
+            Toast.makeText(this, "精简开发版暂未打包离线唤醒模型", Toast.LENGTH_SHORT).show();
+            return;
+        }
         if (!this.isWakeListeningEnabled || this.isWakeListeningActive || this.isWakeModelLoading || this.isWakeTriggeredSpeech || this.isWakeTriggeredSpeechSessionActive) {
             return;
         }

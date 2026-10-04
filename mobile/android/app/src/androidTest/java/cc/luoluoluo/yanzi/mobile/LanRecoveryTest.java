@@ -14,6 +14,7 @@ public final class LanRecoveryTest extends Instrumentation {
     @Override public void onCreate(Bundle arguments) { super.onCreate(arguments); this.arguments=arguments; start(); }
     @Override public void onStart() {
         if ("update".equals(arguments.getString("suite"))) { UpdateFeedbackTest.run(this, "true".equals(arguments.getString("probeNetwork"))); return; }
+        if ("desktop-execution".equals(arguments.getString("suite"))) { DesktopExecutionVerification.run(this, arguments); return; }
         Bundle result = new Bundle();
         try {
             try { setUp(); testOutageRetainsAddressAndRecoversWithoutBroadcast(); } finally { tearDown(); }

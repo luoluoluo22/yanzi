@@ -19,3 +19,17 @@ APK 大小 90883444 字节；SHA256 47e11d683370cb8d1cc27dbf9d69930694a5887f1f56
 一加 81f7e66d 的隔离 Dev 真机回归 `test-real-phone-message-bridge.ps1 -SkipBuild -CapabilitiesOnly` 通过：85 项设备协议检查、前后台消息 ACK、后台心跳、文件字节校验、增量与周期同步、删除墓碑及路径越界拒绝。结束时 DEV_SERVER_ADDRESS_RESTORED、PRODUCTION_PRESERVED、DEV_PREFERENCES_RESTORED=True 均通过。测试产物：`%TEMP%/YanziDev/message-bridge/f7f344d18ecf48deb0f48ff524862d74`。Dev 已覆盖升级到 0.2.47-dev；真实手机正式包保持 0.2.45，不清除用户数据。桌面已重新启动。
 
 更新入口：https://sync.luoluoluo.cc.cd/downloads/android/yanzi-mobile-0.2.47.apk 。本次隔离回归没有操作用户电脑小程序业务，原始 409 场景仍由用户在真实账号和网络中升级后验收。
+
+
+## Dev 404 follow-up and device removal semantics
+
+The physical OnePlus Dev registration had been deleted from account device management. An execution request using that source ID returned `404 device_not_found`. The UI now checks registration on foreground entry and clears token/password when removal is confirmed. Transient network failures do not log the user out. Background registration remains forbidden for removed devices; only an explicit successful account login requests re-enrollment.
+
+New login derives an account-scoped SHA-256 device ID from Android `ANDROID_ID` and the normalized account email. It retires the previous registration held by this installation after successful enrollment. Existing authenticated sessions retain their current registration until the next explicit login. Reinstallation under the same signing key, Android user, device and account derives the same ID. Factory reset, another system user or a changed signing key can change the Android ID. Old orphan records cannot be safely matched by model name alone.
+
+Dev/debug builds default to excluding the offline Chinese Vosk wake model and `libvosk.so`. The wake feature reports that it is unavailable in the slim development build; ordinary system speech input remains available. Opt in with `-PYANZI_BUNDLE_WAKE_MODEL=true`; release retains the voice assets. APK contents were checked for zero wake-model files and zero Vosk native libraries. If an old incremental APK retains unused ZIP padding after changing packaging, remove the single generated APK and rebuild to compact it.
+
+Physical verification uses the actual Android client via the isolated Dev instrumentation runner, selecting only `taskbar-calendar` and empty input. First run confirmed terminal success for the app/LAN route `d0b2146a2de14ab7ad9e0d703e8b7528` and cloud route `msg_7da665b9666f6c428b32dad9`; desktop logs corroborate execution. Additional disposable-registration checks verify removal rejection without deleting user devices. Production app installation is unchanged.
+
+
+Final physical run passed all four assertions: APP/LAN `ada6b9fa458044d3b7178b35c8532b5d`, cloud `msg_a2ee67138127eda77b55cd98`, removed registration detected/background re-enrollment rejected, and login token/password cleared using the isolated test context. Desktop logs confirm both calendar requests. One intermediate run coincided with desktop restart: the command completed after the test's 35-second wait had ended; its eventual terminal success was checked before retesting, with no duplicate resend of that request. Installed final Dev APK is 9,064,046 bytes (about 9.1 MB). Formal 0.2.47 release artifacts remain the earlier published build.

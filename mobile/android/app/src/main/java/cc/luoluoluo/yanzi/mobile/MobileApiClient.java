@@ -165,7 +165,7 @@ class MobileApiClient {
         }
 
         static final class MissingSourceDeviceException extends Exception {
-            MissingSourceDeviceException() { super("本机的设备登记已被删除，请重新连接本机后再执行。电脑执行请求尚未发送。"); }
+            MissingSourceDeviceException() { super("本机已从账号中删除，请重新登录后再执行。电脑执行请求尚未发送。"); }
         }
 
         private static String resolveDesktopTargetDeviceId(String baseUrl, String token, String sourceDeviceId) throws Exception {

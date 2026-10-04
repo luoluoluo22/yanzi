@@ -1,3 +1,12 @@
+## 2026-10-04：Dev 404、本机移除和精简包
+
+- 404 已实机定位：Dev 的 sourceDeviceId 登记被用户删除，服务器返回 device_not_found。
+- APP 前台进入检查登记；确认本机移除后清除 token/password，提示重新登录。网络暂时失败不会退出账号。后台不可复活已删除登记。
+- 只有显式账号登录会重新登记；使用 Android ANDROID_ID 与账号邮箱的哈希生成稳定身份，成功后清理本次安装的旧 ID。旧的已登录会话到下次登录才迁移，不能按手机型号自动合并历史记录。
+- Dev/debug 默认不打包 Vosk 离线唤醒模型和 libvosk.so。可用 -PYANZI_BUNDLE_WAKE_MODEL=true 恢复；release 保留。普通语音输入保留。
+- 新增 desktop-execution 仪表测试套件，显式 allowPhysicalDev=true，只允许执行无输入的 taskbar-calendar，覆盖实际 APP 路由、公网路由、临时设备移除拒绝、隔离登录凭据清除。
+- 最终实机四项全部通过：APP/局域网执行日历、公网执行日历、移除登记拒绝后台恢复、清除登录 token/password。最终精简 Dev APK 9,064,046 字节，已覆盖安装一加真机，正式版未改。详见 docs/mobile-execution-routing-release-2026-10-04.md。
+
 # 燕子 Android / 手机端开发状态
 
 > 更新时间：2026-10-03
