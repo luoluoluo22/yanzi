@@ -42,6 +42,10 @@ class MobileApiClient {
         }
 
         static void registerDevice(String baseUrl, String token, String deviceId, String displayName) throws Exception {
+            registerDevice(baseUrl, token, deviceId, displayName, false);
+        }
+
+        static void registerDevice(String baseUrl, String token, String deviceId, String displayName, boolean reconnectRemoved) throws Exception {
             JSONObject capabilities = new JSONObject().put("shareText", true).put("sendToDesktop", true)
                     .put("receiveMobileMessages", true).put("receiveAttachments", true)
                     .put("receiveAccountChat", true).put("deviceMessageProtocolVersions", new JSONArray().put(1))
@@ -50,6 +54,7 @@ class MobileApiClient {
                     .put("appVersion", BuildConfig.VERSION_NAME).put("versionCode", BuildConfig.VERSION_CODE)
                     .put("packageName", BuildConfig.APPLICATION_ID).put("messageProtocol", 2);
             JSONObject payload = new JSONObject().put("deviceId", (Object)deviceId).put("platform", (Object)"android").put("displayName", (Object)displayName).put("capabilities", (Object)capabilities);
+            if (reconnectRemoved) payload.put("reactivateRemovedDevice", true);
             MobileApiClient.postJson(baseUrl, "/v1/me/devices", payload, token, "\u8bbe\u5907\u6ce8\u518c");
         }
 
@@ -145,7 +150,7 @@ class MobileApiClient {
 
         public static String runExtensionOnDesktop(String baseUrl, String token, String sourceDeviceId, String sourceDeviceName, String extensionId, String inputText) throws Exception {
             JSONObject payload = new JSONObject().put("sourceDeviceId", (Object)sourceDeviceId).put("targetPlatform", (Object)"desktop").put("kind", (Object)"run-extension").put("title", (Object)"\u624b\u673a\u8bf7\u6c42\u6267\u884c\u6269\u5c55").put("text", (Object)(inputText == null ? "" : inputText)).put("payload", (Object)new JSONObject().put("source", (Object)"android").put("sourceDeviceName", (Object)sourceDeviceName).put("extensionId", (Object)extensionId).put("createdAt", System.currentTimeMillis()));
-            String targetDeviceId = MobileApiClient.resolveDesktopTargetDeviceId(baseUrl, token);
+            String targetDeviceId = MobileApiClient.resolveDesktopTargetDeviceId(baseUrl, token, sourceDeviceId);
             if (!targetDeviceId.isEmpty()) payload.put("targetDeviceId", targetDeviceId);
             JSONObject response = MobileApiClient.postJson(baseUrl, "/v1/me/mobile/messages", payload, token, "\u6267\u884c\u6269\u5c55");
             String messageId = response.optString("messageId", "unknown");
@@ -159,7 +164,26 @@ class MobileApiClient {
             return messageId;
         }
 
-        private static String resolveDesktopTargetDeviceId(String baseUrl, String token) {
+        static final class MissingSourceDeviceException extends Exception {
+            MissingSourceDeviceException() { super("本机的设备登记已被删除，请重新连接本机后再执行。电脑执行请求尚未发送。"); }
+        }
+
+        private static String resolveDesktopTargetDeviceId(String baseUrl, String token, String sourceDeviceId) throws Exception {
+            JSONArray items = null;
+            java.io.IOException networkError = null;
+            try {
+                JSONObject devices = MobileMessageClient.requestWithoutQueue(baseUrl, "/v1/me/devices", token, "GET", null);
+                items = devices.optJSONArray("items");
+                if (items == null) throw new org.json.JSONException("设备列表响应无效，请稍后重试。");
+            } catch (java.io.IOException unavailable) { networkError = unavailable; }
+            if (items != null) {
+                boolean sourcePresent = false;
+                for (int i = 0; i < items.length(); i++) {
+                    JSONObject device = items.optJSONObject(i);
+                    if (device != null && sourceDeviceId.equals(device.optString("deviceId"))) sourcePresent = true;
+                }
+                if (!sourcePresent) throw new MissingSourceDeviceException();
+            }
             Context context = MobileApplicationContext.get();
             if (context != null) {
                 try {
@@ -172,15 +196,9 @@ class MobileApiClient {
                 catch (Exception ignored) {
                 }
             }
-            try {
-                JSONObject devices = MobileMessageClient.requestWithoutQueue(baseUrl, "/v1/me/devices", token, "GET", null);
-                JSONArray items = devices.optJSONArray("items");
-                JSONObject target = items == null ? null : DeviceTargets.uniqueOnlineDesktop(items);
-                return target == null ? "" : target.optString("deviceId", "").trim();
-            }
-            catch (Exception ignored) {
-                return "";
-            }
+            if (items == null) throw networkError;
+            JSONObject target = DeviceTargets.uniqueOnlineDesktop(items);
+            return target == null ? "" : target.optString("deviceId", "").trim();
         }
 
         public static JSONObject fetchMessageDetail(String baseUrl, String token, String messageId) throws Exception {

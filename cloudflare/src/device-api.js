@@ -60,9 +60,13 @@ async function handleDeviceApi(request, env, ctx) {
     if (existingDeviceOwner && String(existingDeviceOwner.user_id) !== auth.userId) {
       throw new HttpError(409, "device_id_taken", "Device ID is already bound to another account");
     }
-    if (parseJsonObject(existingDeviceOwner?.capabilities_json).disabled === true)
+    const reactivate = payload.reactivateRemovedDevice === true;
+    if (reactivate && auth.grant)
+      throw new HttpError(403, 'account_owner_required', 'Account login is required to reconnect a removed device');
+    if (parseJsonObject(existingDeviceOwner?.capabilities_json).disabled === true && !reactivate)
       throw new HttpError(403, 'device_removed', 'This device registration has been removed');
     delete device.capabilities.disabled;
+    if (reactivate) device.capabilities.disabled = false;
     delete device.capabilities.networkLocation;
     const location = deviceNetworkLocation(request);
     if (location) device.capabilities.networkLocation = location;

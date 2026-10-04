@@ -4733,11 +4733,33 @@ extends Activity {
             catch (Exception ex) {
                 restoreUi.run();
                 this.runOnUiThread(() -> {
-                    new AlertDialog.Builder((Context)this).setTitle((CharSequence)"\u53d1\u9001\u8bf7\u6c42\u5931\u8d25").setMessage((CharSequence)ex.getMessage()).setPositiveButton((CharSequence)"\u786e\u5b9a", null).show();
+                    if (ex instanceof MobileApiClient.MissingSourceDeviceException) {
+                        showReconnectDeviceDialog(() -> runRemoteExtension(extension, cardView));
+                    } else {
+                        new AlertDialog.Builder((Context)this).setTitle((CharSequence)"\u53d1\u9001\u8bf7\u6c42\u5931\u8d25").setMessage((CharSequence)ex.getMessage()).setPositiveButton((CharSequence)"\u786e\u5b9a", null).show();
+                    }
                     this.setStatus("\u6269\u5c55\u6267\u884c\u53d1\u9001\u5931\u8d25\uff1a" + ex.getMessage());
                 });
             }
         });
+    }
+
+    private void showReconnectDeviceDialog(Runnable retry) {
+        new AlertDialog.Builder(this).setTitle("本机登记已被删除")
+                .setMessage("这台手机当前安装的设备登记已被移除。电脑请求尚未发送。\n\n重新连接将恢复本机的消息和直连授权；其他已删除设备不会恢复。")
+                .setNegativeButton("取消", null)
+                .setPositiveButton("重新连接并执行", (dialog, which) -> executor.execute(() -> {
+                    try {
+                        String base = normalizedBaseUrl();
+                        String token = requireToken();
+                        YanziApiClient.registerDevice(base, token, deviceId, buildDeviceName(), true);
+                        DeviceHeartbeatService.startIfLoggedIn(this);
+                        runOnUiThread(retry);
+                    } catch (Exception error) {
+                        runOnUiThread(() -> new AlertDialog.Builder(this).setTitle("重新连接失败")
+                                .setMessage(error.getMessage()).setPositiveButton("确定", null).show());
+                    }
+                })).show();
     }
 
     private void refreshYanm() {
