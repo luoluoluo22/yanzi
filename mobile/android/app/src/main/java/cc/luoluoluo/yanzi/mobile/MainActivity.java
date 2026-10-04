@@ -3351,9 +3351,9 @@ extends Activity {
             card.setGravity(17);
 
             GridLayout.LayoutParams params = new GridLayout.LayoutParams();
-            params.width = this.dp(80);
+            params.width = Math.max(this.dp(56),(this.getResources().getDisplayMetrics().widthPixels-this.dp(64))/4-this.dp(8));
             params.height = this.dp(110);
-            params.setMargins(this.dp(8), this.dp(8), this.dp(8), this.dp(8));
+            params.setMargins(this.dp(4), this.dp(8), this.dp(4), this.dp(8));
             card.setLayoutParams((ViewGroup.LayoutParams)params);
 
             String iconName = item.optString("icon", "mdi:play");

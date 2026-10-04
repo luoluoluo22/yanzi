@@ -35,6 +35,8 @@ final class PhoneWorkspaceVerification {
             call(screen,"selectMobileSubTab",int.class,0);
             require(descendant((View)field(screen,"mobileExtensionGrid"),phone),"Phone owns local-only grid");
             require(!descendant((View)field(screen,"extensionsContainer"),phone),"Desktop list excluded from phone");
+            android.widget.GridLayout localGrid=(android.widget.GridLayout)field(screen,"mobileExtensionGrid");
+            if(localGrid.getChildCount()>1&&localGrid.getWidth()>0)for(int i=0;i<localGrid.getChildCount();i++)require(localGrid.getChildAt(i).getRight()<=localGrid.getWidth(),"Local grid fits viewport");
             View desktop=(View)field(screen,"desktopExtensionTabPage");
             require(contains(desktop,"小程序"),"Desktop shortcut restored");
             require(((androidx.viewpager.widget.ViewPager)field(screen,"desktopViewPager")).getAdapter().getCount()==4,"Desktop retains chat/programs/files/terminal");
