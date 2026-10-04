@@ -1,4 +1,12 @@
 import { handleEnvironment } from './device-environment.js';
+export function selectImplicitExecutionTarget(rows, isOnline) {
+  const candidates = Array.isArray(rows) ? rows : [];
+  const online = candidates.filter(item => isOnline(item));
+  if (online.length === 1) return online[0];
+  if (online.length === 0 && candidates.length === 1) return candidates[0];
+  return null;
+}
+
 // Domain implementation; dependencies are supplied by the composition root.
 export function createDeviceApi(api) {
   const { DEVICE_MESSAGE_PROTOCOL, HttpError, acceptsAccountChat, accountLanLink, canonicalMessageJson, deviceNetworkLocation, ensureOwnedDevice, ensureUser, executionDeadline, expireDeviceCommands, getPendingDeviceMessageItems, isAccountChat, isExecutionMessage, isoNow, json, messageMatchesDevice, normalizeDeviceId, normalizeDeviceMessagePayload, normalizeDevicePayload, normalizeMessageId, normalizeMessageLimit, normalizeShortText, notifyDeviceRelay, ownedAttachment, parseJsonObject, randomHex, readJson, requireAuth, sendOfflinePush, serializeDeviceMessageRecord, serializeDeviceRecord, signToken, touchDevice, traceContext } = api;
@@ -240,12 +248,18 @@ async function handleDeviceApi(request, env, ctx) {
     if (message.targetDeviceId) {
       await ensureOwnedDevice(env, auth.userId, message.targetDeviceId);
     } else if (isExecutionMessage(message.kind)) {
-      const targets = (await env.DB.prepare("SELECT device_id FROM user_devices WHERE user_id = ? AND platform = ? AND coalesce(json_extract(capabilities_json, '$.disabled'), 0) <> 1")
+      const targets = (await env.DB.prepare(`SELECT device_id, platform, display_name, capabilities_json, last_seen_at, created_at, updated_at
+        FROM user_devices WHERE user_id = ? AND platform = ? AND coalesce(json_extract(capabilities_json, '$.disabled'), 0) <> 1`)
         .bind(auth.userId, message.targetPlatform).all()).results || [];
-      if (targets.length !== 1)
+      const target = selectImplicitExecutionTarget(targets, item => serializeDeviceRecord(item).online);
+      if (!target) {
+        const onlineCandidateDeviceIds = targets
+          .filter(item => serializeDeviceRecord(item).online)
+          .map(item => item.device_id);
         throw new HttpError(409, 'target_device_required', 'Execution requests require one explicit target device',
-          { targetPlatform: message.targetPlatform, candidateDeviceIds: targets.map(item => item.device_id) });
-      message.targetDeviceId = targets[0].device_id;
+          { targetPlatform: message.targetPlatform, candidateDeviceIds: targets.map(item => item.device_id), onlineCandidateDeviceIds });
+      }
+      message.targetDeviceId = target.device_id;
       message.targetPlatform = null;
     }
 

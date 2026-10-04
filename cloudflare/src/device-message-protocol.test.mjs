@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { DEVICE_MESSAGE_PROTOCOL, acceptsAccountChat, isAccountChat,
   messageMatchesDevice, isExecutionMessage, canonicalMessageJson } from './device-message-protocol.js';
 import { sendOfflinePush } from './mobile-push.js';
+import { selectImplicitExecutionTarget } from './device-api.js';
 
 test('an explicit device always wins over legacy account chat metadata', () => {
   const message = {sourceDeviceId:'phone-a',targetDeviceId:'desktop-a',targetPlatform:'android',payload:{accountChat:true}};
@@ -28,6 +29,15 @@ test('platform routing cannot override a device target; commands are identified 
     assert.equal(isExecutionMessage(kind),true);
   for(const kind of ['text','photo','file','notify']) assert.equal(isExecutionMessage(kind),false);
 });
+test('implicit command routing prefers the only online desktop over stale registrations', () => {
+  const current={device_id:'desktop-current',online:true};
+  const stale={device_id:'desktop-stale',online:false};
+  assert.equal(selectImplicitExecutionTarget([current,stale], x=>x.online)?.device_id,'desktop-current');
+  assert.equal(selectImplicitExecutionTarget([current,{device_id:'desktop-other',online:true}], x=>x.online),null);
+  assert.equal(selectImplicitExecutionTarget([stale], x=>x.online)?.device_id,'desktop-stale');
+  assert.equal(selectImplicitExecutionTarget([stale,{device_id:'desktop-old',online:false}], x=>x.online),null);
+});
+
 test('idempotency ignores object key order but preserves values and array order', () => {
   assert.equal(canonicalMessageJson({b:{z:1,a:2},a:['x','y']}),canonicalMessageJson({a:['x','y'],b:{a:2,z:1}}));
   assert.notEqual(canonicalMessageJson({a:['x','y']}),canonicalMessageJson({a:['y','x']}));

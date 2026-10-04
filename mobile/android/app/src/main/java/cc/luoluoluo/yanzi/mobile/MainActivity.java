@@ -2739,7 +2739,7 @@ extends Activity {
         tabsBg.setStroke(this.dp(1), Color.rgb(25, 46, 70));
         tabs.setBackground((Drawable)tabsBg);
         this.yanmTabButton = this.tabButton("燕幕", "home", "yanm");
-        this.mobileExtensionTabButton = this.tabButton("开发", "code", "mobile");
+        this.mobileExtensionTabButton = this.tabButton("手机", "cellphone", "mobile");
         this.aiTabButton = this.tabButton("AI", "creation", "ai");
         this.desktopExtensionTabButton = this.tabButton("电脑", DesktopDashboardView.COMPUTER_ICON, "desktop");
         this.profileTabButton = this.tabButton("我的", "account", "profile");
@@ -4325,13 +4325,6 @@ extends Activity {
         return new ArrayList<RemoteExtension>(merged.values());
     }
 
-    private void addApplicationCatalogEntry() {
-        android.widget.Button button = new android.widget.Button(this);
-        button.setText("应用中心 · 获取与更新应用");
-        button.setOnClickListener(v -> startActivity(new Intent(this, ApplicationCatalogActivity.class)));
-        this.extensionList.addView(button);
-    }
-
     private void cacheRemoteExtensions(List<RemoteExtension> extensions) {
         try {
             JSONArray array = new JSONArray();
@@ -4379,7 +4372,6 @@ extends Activity {
         }
         this.extensionList.removeAllViews();
         if (filtered.isEmpty()) {
-            this.addApplicationCatalogEntry();
             this.extensionList.addView((View)this.textView(
                     "\u6682\u65e0\u53ef\u7528\u5c0f\u7a0b\u5e8f\u3002",
                     13,
@@ -4388,7 +4380,6 @@ extends Activity {
             return;
         }
         this.extensionList.setGravity(Gravity.CENTER_HORIZONTAL);
-        this.addApplicationCatalogEntry();
         GridLayout grid = new GridLayout((Context)this);
         grid.setColumnCount(4);
         LinearLayout.LayoutParams gridParams = new LinearLayout.LayoutParams(-2, -2);

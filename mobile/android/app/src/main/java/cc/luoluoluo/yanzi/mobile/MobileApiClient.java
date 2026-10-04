@@ -23,11 +23,14 @@ import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ConcurrentHashMap;
+import cc.luoluoluo.yanzi.sdk.DeviceTargets;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 class MobileApiClient {
         public static boolean sLanFailedThisSession = false;
+        private static final ConcurrentHashMap<String, JSONObject> sImmediateMessageResults = new ConcurrentHashMap<>();
 
         static String login(String baseUrl, String email, String password) throws Exception {
             return loginResponse(baseUrl, email, password).getString("accessToken");
@@ -142,10 +145,47 @@ class MobileApiClient {
 
         public static String runExtensionOnDesktop(String baseUrl, String token, String sourceDeviceId, String sourceDeviceName, String extensionId, String inputText) throws Exception {
             JSONObject payload = new JSONObject().put("sourceDeviceId", (Object)sourceDeviceId).put("targetPlatform", (Object)"desktop").put("kind", (Object)"run-extension").put("title", (Object)"\u624b\u673a\u8bf7\u6c42\u6267\u884c\u6269\u5c55").put("text", (Object)(inputText == null ? "" : inputText)).put("payload", (Object)new JSONObject().put("source", (Object)"android").put("sourceDeviceName", (Object)sourceDeviceName).put("extensionId", (Object)extensionId).put("createdAt", System.currentTimeMillis()));
-            return MobileApiClient.postJson(baseUrl, "/v1/me/mobile/messages", payload, token, "\u6267\u884c\u6269\u5c55").optString("messageId", "unknown");
+            String targetDeviceId = MobileApiClient.resolveDesktopTargetDeviceId(baseUrl, token);
+            if (!targetDeviceId.isEmpty()) payload.put("targetDeviceId", targetDeviceId);
+            JSONObject response = MobileApiClient.postJson(baseUrl, "/v1/me/mobile/messages", payload, token, "\u6267\u884c\u6269\u5c55");
+            String messageId = response.optString("messageId", "unknown");
+            if ("lan".equals(response.optString("_transport")) && !"unknown".equals(messageId)) {
+                JSONObject executionResult = new JSONObject().put("output", response.optString("output", ""));
+                JSONObject detail = new JSONObject()
+                        .put("status", response.optBoolean("success") ? "completed" : "failed")
+                        .put("payload", new JSONObject().put("executionResult", executionResult));
+                sImmediateMessageResults.put(messageId, detail);
+            }
+            return messageId;
+        }
+
+        private static String resolveDesktopTargetDeviceId(String baseUrl, String token) {
+            Context context = MobileApplicationContext.get();
+            if (context != null) {
+                try {
+                    String pairedDeviceId = LanDiscoveryManager.getLanDeviceId(context);
+                    if (pairedDeviceId != null && !pairedDeviceId.trim().isEmpty()
+                            && LanDiscoveryManager.checkHealth(context) == LanConnectionHealth.Status.AVAILABLE) {
+                        return pairedDeviceId.trim();
+                    }
+                }
+                catch (Exception ignored) {
+                }
+            }
+            try {
+                JSONObject devices = MobileMessageClient.requestWithoutQueue(baseUrl, "/v1/me/devices", token, "GET", null);
+                JSONArray items = devices.optJSONArray("items");
+                JSONObject target = items == null ? null : DeviceTargets.uniqueOnlineDesktop(items);
+                return target == null ? "" : target.optString("deviceId", "").trim();
+            }
+            catch (Exception ignored) {
+                return "";
+            }
         }
 
         public static JSONObject fetchMessageDetail(String baseUrl, String token, String messageId) throws Exception {
+            JSONObject immediate = sImmediateMessageResults.remove(messageId);
+            if (immediate != null) return immediate;
             return MobileApiClient.getJson(baseUrl, "/v1/me/mobile/messages/" + MobileApiClient.encodePath(messageId), token, "\u83b7\u53d6\u6d88\u606f\u8be6\u60c5");
         }
 

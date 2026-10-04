@@ -15,12 +15,12 @@ final class MobileDeviceMessageSender {
         java.io.File saved = MobileMessageOutbox.save(base, token, envelope);
         JSONObject delivered = null;
         String lan = LanDiscoveryManager.getLanBaseUrl(MobileApplicationContext.get());
-        if (lan != null && !execution) {
+        if (lan != null) {
             java.net.HttpURLConnection connection = null;
             try {
                 envelope.put("notificationPort", BuildConfig.APPLICATION_ID.endsWith(".dev") ? 42982 : 42981);
                 connection = MobileNetworkRouting.openLanConnection(new java.net.URL(lan + "/v1/me/mobile/messages"));
-                connection.setRequestMethod("POST"); connection.setDoOutput(true); connection.setConnectTimeout(1500); connection.setReadTimeout(8000);
+                connection.setRequestMethod("POST"); connection.setDoOutput(true); connection.setConnectTimeout(1500); connection.setReadTimeout(execution ? 25000 : 8000);
                 connection.setRequestProperty("Content-Type", "application/json");
                 try (java.io.OutputStream output = connection.getOutputStream()) { output.write(envelope.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8)); }
                 if (connection.getResponseCode() == 200) {
@@ -32,6 +32,12 @@ final class MobileDeviceMessageSender {
             } catch (Exception ignored) { /* The durable cloud queue remains authoritative. */ }
             finally { if (connection != null) connection.disconnect(); }
             envelope.remove("notificationPort");
+            if (execution && delivered != null) {
+                MobileMessageOutbox.complete(saved);
+                LanDiscoveryManager.noteSuccess();
+                delivered.put("_transport", "lan");
+                return delivered;
+            }
         }
         try {
             JSONObject response = MobileMessageClient.requestWithoutQueue(base, "/v1/me/mobile/messages", token, "POST", envelope);
