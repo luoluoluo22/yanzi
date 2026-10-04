@@ -1,0 +1,12 @@
+{
+  "certificateSha256": "8a0ec0b84d1a05edcc89dd020bf81901f9ed7f083887db7c05201c59b31e1ee3",
+  "version": "0.1.0",
+  "packageName": "cc.luoluoluo.yanzi.cards",
+  "name": "燕记",
+  "apkPath": "release-inputs/applications/yanzi-cards-0.1.0.apk",
+  "kind": "android-apk",
+  "applicationId": "yanzi-cards",
+  "description": "个人图文内容空间：示例笔记、图文编辑、图片添加、草稿、收藏与多选删除；AI 文字生成需同账号电脑安装对应内容服务并连接 ChatGPT 工作台；当前内容本地保存",
+  "versionCode": 1,
+  "minHostVersionCode": 42
+}
