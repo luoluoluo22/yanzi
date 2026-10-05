@@ -837,21 +837,29 @@ public sealed partial class CloudSyncClient
         await EnsureSuccessAsync(response, cancellationToken);
     }
 
+    public async Task<DeviceMessageListResponse> GetPendingDeviceMessagePageAsync(
+        string deviceId,
+        long after = 0,
+        int limit = 20,
+        CancellationToken cancellationToken = default)
+    {
+        if (after < 0) throw new ArgumentOutOfRangeException(nameof(after));
+        await EnsureAuthenticatedAsync(cancellationToken);
+        using var request = CreateRequest(
+            HttpMethod.Get,
+            $"/v1/me/mobile/messages?deviceId={Uri.EscapeDataString(deviceId)}&limit={limit}&after={after}",
+            includeAuth: true);
+        using var response = await SendAsyncWithFallback(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return await ReadAsync<DeviceMessageListResponse>(response, cancellationToken)
+            ?? new DeviceMessageListResponse { DeviceId = deviceId, NextCursor = after, HighWater = after };
+    }
+
     public async Task<IReadOnlyList<DeviceMessageRecord>> GetPendingDeviceMessagesAsync(
         string deviceId,
         int limit = 20,
         CancellationToken cancellationToken = default)
-    {
-        await EnsureAuthenticatedAsync(cancellationToken);
-        using var request = CreateRequest(
-            HttpMethod.Get,
-            $"/v1/me/mobile/messages?deviceId={Uri.EscapeDataString(deviceId)}&limit={limit}",
-            includeAuth: true);
-        using var response = await SendAsyncWithFallback(request, cancellationToken);
-        await EnsureSuccessAsync(response, cancellationToken);
-        var payload = await ReadAsync<DeviceMessageListResponse>(response, cancellationToken);
-        return payload?.Items ?? [];
-    }
+        => (await GetPendingDeviceMessagePageAsync(deviceId, 0, limit, cancellationToken)).Items;
 
     public async Task<string> SendDeviceMessageAsync(
         string sourceDeviceId,
@@ -1431,6 +1439,14 @@ public sealed class DeviceMessageListResponse
     public string? DeviceId { get; set; }
 
     public List<DeviceMessageRecord> Items { get; set; } = [];
+
+    public long NextCursor { get; set; }
+
+    public long HighWater { get; set; }
+
+    public bool CursorReset { get; set; }
+
+    public bool HasMore { get; set; }
 }
 
 public sealed class DeviceMessageCreateResponse

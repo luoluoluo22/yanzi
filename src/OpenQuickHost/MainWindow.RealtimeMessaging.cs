@@ -24,8 +24,8 @@ public partial class MainWindow
     private async Task RunMobileWebSocketAsync(CancellationToken cancellationToken)
     {
         using var socket = await _cloudSyncClient!.ConnectDeviceRelayAsync(_desktopDeviceId!, cancellationToken);
-        await Dispatcher.InvokeAsync(() => _mobileMessagePollTimer.Interval = TimeSpan.FromSeconds(30));
-        HostAssets.AppendLog("Mobile bridge realtime connected.");
+        await Dispatcher.InvokeAsync(() => _mobileMessagePollTimer.Stop());
+        HostAssets.AppendLog("Mobile bridge realtime connected; periodic D1 polling suspended.");
         await Dispatcher.InvokeAsync(AppExtensionWindow.NotifyAccountConnected);
         await PollMobileMessagesSafeAsync("websocket-resync");
         var buffer = new byte[16384];
@@ -66,6 +66,13 @@ public partial class MainWindow
                 }
             }
         }
-        finally { await Dispatcher.InvokeAsync(() => _mobileMessagePollTimer.Interval = TimeSpan.FromSeconds(5)); }
+        finally
+        {
+            await Dispatcher.InvokeAsync(() =>
+            {
+                _mobileMessagePollTimer.Interval = TimeSpan.FromSeconds(60);
+                _mobileMessagePollTimer.Start();
+            });
+        }
     }
 }

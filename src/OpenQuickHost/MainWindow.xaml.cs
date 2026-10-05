@@ -399,13 +399,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         _desktopPresenceHeartbeatTimer = new DispatcherTimer
         {
-            Interval = TimeSpan.FromSeconds(30)
+            Interval = TimeSpan.FromSeconds(60)
         };
         _desktopPresenceHeartbeatTimer.Tick += async (_, _) => await SendDesktopPresenceHeartbeatSafeAsync("timer");
 
         _mobileMessagePollTimer = new DispatcherTimer
         {
-            Interval = TimeSpan.FromSeconds(5)
+            Interval = TimeSpan.FromSeconds(60)
         };
         _mobileMessagePollTimer.Tick += MobileMessagePollTimer_Tick;
 

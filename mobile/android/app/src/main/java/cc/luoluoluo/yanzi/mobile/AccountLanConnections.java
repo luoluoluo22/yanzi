@@ -9,11 +9,14 @@ final class AccountLanConnections {
     static volatile String status = "等待获取同账号设备连接信息";
     private static String lastSession = "";
     private static long lastAttempt;
-    static synchronized void refresh(Context context, String base, String token, String device) {
+    static void refresh(Context context, String base, String token, String device) {
+        refresh(context, base, token, device, true);
+    }
+    static synchronized void refresh(Context context, String base, String token, String device, boolean ensureRegistration) {
         if (token.isEmpty() || device.isEmpty()) return;
         String session = base + "\n" + token + "\n" + device;
         long now = android.os.SystemClock.elapsedRealtime();
-        if (session.equals(lastSession) && now - lastAttempt < 30000) return;
+        if (session.equals(lastSession) && now - lastAttempt < 120000) return;
         if (!busy.compareAndSet(false, true)) return;
         lastSession = session; lastAttempt = now;
         status = "正在获取同账号设备连接信息";
@@ -25,10 +28,12 @@ final class AccountLanConnections {
                 // Foreground reconnect also works if the OS has stopped the heartbeat service.
                 JSONObject capabilities = new JSONObject().put("autoAccountLan", true)
                         .put("lanPort", BuildConfig.APPLICATION_ID.endsWith(".dev") ? 42982 : 42981);
-                MobileMessageClient.requestWithoutQueue(base, "/v1/me/devices", token, "POST",
-                        new JSONObject().put("deviceId", device).put("platform", "android")
-                                .put("displayName", android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL)
-                                .put("capabilities", capabilities));
+                if (ensureRegistration) {
+                    MobileMessageClient.requestWithoutQueue(base, "/v1/me/devices", token, "POST",
+                            new JSONObject().put("deviceId", device).put("platform", "android")
+                                    .put("displayName", android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL)
+                                    .put("capabilities", capabilities));
+                }
                 JSONObject response = MobileMessageClient.requestWithoutQueue(base, "/v1/me/devices/lan-links", token, "POST", new JSONObject().put("deviceId", device));
                 if (!token.equals(login.getString("token", "")) || !device.equals(login.getString("deviceId", "")) ||
                     !base.equals(login.getString("baseUrl", "https://sync.luoluoluo.cc.cd").replaceAll("/+$", "")) ||

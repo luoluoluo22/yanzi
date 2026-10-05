@@ -11,7 +11,7 @@ async function ensureUser(env, userId) {
   await env.DB.prepare(
     `insert into users (user_id, created_at, updated_at)
      values (?, ?, ?)
-     on conflict(user_id) do update set updated_at = excluded.updated_at`
+     on conflict(user_id) do nothing`
   )
     .bind(userId, isoNow(), isoNow())
     .run();
@@ -73,7 +73,6 @@ async function getUserSyncRevision(env, userId) {
 }
 
 async function readUserSyncObjects(env, userId, sinceRevision, limit) {
-  await ensureUser(env, userId);
   const currentRevision = await getUserSyncRevision(env, userId);
   const rows = await env.DB.prepare(
     `select object_id, schema_version, object_revision, updated_at,
@@ -95,7 +94,6 @@ async function readUserSyncObjects(env, userId, sinceRevision, limit) {
 
 async function readUserSyncObject(env, userId, objectId) {
   const db = getSyncDatabase(env);
-  await ensureUser(env, userId);
   const row = await db.prepare(
     `select object_id, schema_version, object_revision, updated_at,
             updated_by_device_id, updated_by_device_name, deleted, payload_json
@@ -106,7 +104,6 @@ async function readUserSyncObject(env, userId, objectId) {
 }
 
 async function readUserSyncObjectHistory(env, userId, objectId, beforeRevision, limit) {
-  await ensureUser(env, userId);
   const rows = await env.DB.prepare(
     `select object_id, revision, schema_version, updated_at,
             updated_by_device_id, updated_by_device_name, deleted, payload_json,
