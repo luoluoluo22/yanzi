@@ -35,27 +35,95 @@ async function touchDevice(env, userId, deviceId, request) {
     .run();
 }
 
-async function getPendingDeviceMessageItems(env, userId, deviceId, platform, limit = 20, capabilities = {}, after = 0) {
-  await ensureOwnedDevice(env, userId, deviceId);
-  await expireDeviceCommands(env, userId);
-  const rows = await env.DB.prepare(
-    `SELECT m.*, q.sequence FROM device_messages m JOIN device_message_sequence q ON q.message_id = m.message_id
-     WHERE m.user_id = ? AND q.sequence > ? AND (m.expires_at IS NULL OR m.expires_at > ?)
-       AND (
-         (m.target_device_id IS NULL AND json_extract(m.payload_json, '$.accountChat') = 1
-          AND m.source_device_id <> ? AND ?
-          AND NOT EXISTS (SELECT 1 FROM account_chat_receipts r
-            WHERE r.user_id = m.user_id AND r.message_id = m.message_id
-              AND r.device_id = ?))
-         OR ((m.target_device_id IS NOT NULL OR coalesce(json_extract(m.payload_json, '$.accountChat'), 0) <> 1)
-          AND m.status = 'pending'
-          AND (m.target_device_id = ? OR (m.target_device_id IS NULL AND m.target_platform = ?)))
-       ) ORDER BY q.sequence ASC LIMIT ?`
-  ).bind(userId, after, isoNow(), deviceId,
-    acceptsAccountChat({platform,capabilities}) ? 1 : 0,
-    deviceId, deviceId, platform, limit).all();
+async function getDeviceMessageHighWater(env, userId) {
+  const row = await env.DB.prepare(
+    `SELECT sequence FROM device_message_sequence
+     WHERE user_id = ? ORDER BY sequence DESC LIMIT 1`
+  ).bind(userId).first();
+  return Number(row?.sequence || 0);
+}
 
-  return (rows.results ?? []).map(serializeDeviceMessageRecord);
+async function getPendingDeviceMessagePage(env, userId, deviceId, platform, limit = 20, capabilities = {}, after = 0, cursorProvided = true) {
+  const highWater = await getDeviceMessageHighWater(env, userId);
+  const effectiveAfter = after > highWater ? 0 : after;
+  const upperBound = highWater;
+  const acceptsChat = acceptsAccountChat({ platform, capabilities }) ? 1 : 0;
+  let rows;
+
+  if (cursorProvided) {
+    rows = await env.DB.prepare(
+      `SELECT m.*, q.sequence
+       FROM device_message_sequence q
+       JOIN device_messages m ON m.user_id = q.user_id AND m.message_id = q.message_id
+       WHERE q.user_id = ? AND q.sequence > ? AND q.sequence <= ?
+         AND (m.expires_at IS NULL OR m.expires_at > ?)
+         AND (
+           (m.target_device_id IS NULL AND json_extract(m.payload_json, '$.accountChat') = 1
+            AND m.source_device_id <> ? AND ?
+            AND NOT EXISTS (SELECT 1 FROM account_chat_receipts r
+              WHERE r.user_id = m.user_id AND r.message_id = m.message_id
+                AND r.device_id = ?))
+           OR ((m.target_device_id IS NOT NULL OR coalesce(json_extract(m.payload_json, '$.accountChat'), 0) <> 1)
+            AND m.status = 'pending'
+            AND (m.target_device_id = ? OR (m.target_device_id IS NULL AND m.target_platform = ?)))
+         )
+       ORDER BY q.sequence ASC LIMIT ?`
+    ).bind(
+      userId, effectiveAfter, upperBound, isoNow(), deviceId, acceptsChat,
+      deviceId, deviceId, platform, limit + 1
+    ).all();
+  } else {
+    // Compatibility path for pre-cursor clients. Query only currently
+    // deliverable rows instead of replay-scanning the entire account history.
+    rows = await env.DB.prepare(
+      `SELECT * FROM (
+         SELECT m.*, q.sequence
+         FROM device_messages m
+         JOIN device_message_sequence q ON q.user_id = m.user_id AND q.message_id = m.message_id
+         WHERE m.user_id = ? AND q.sequence <= ? AND m.status = 'pending'
+           AND m.target_device_id = ?
+           AND (m.expires_at IS NULL OR m.expires_at > ?)
+         UNION ALL
+         SELECT m.*, q.sequence
+         FROM device_messages m
+         JOIN device_message_sequence q ON q.user_id = m.user_id AND q.message_id = m.message_id
+         WHERE m.user_id = ? AND q.sequence <= ? AND m.status = 'pending'
+           AND m.target_device_id IS NULL AND m.target_platform = ?
+           AND coalesce(json_extract(m.payload_json, '$.accountChat'), 0) <> 1
+           AND (m.expires_at IS NULL OR m.expires_at > ?)
+         UNION ALL
+         SELECT m.*, q.sequence
+         FROM device_messages m
+         JOIN device_message_sequence q ON q.user_id = m.user_id AND q.message_id = m.message_id
+         WHERE m.user_id = ? AND q.sequence <= ? AND m.target_device_id IS NULL
+           AND json_extract(m.payload_json, '$.accountChat') = 1
+           AND m.source_device_id <> ? AND ?
+           AND (m.expires_at IS NULL OR m.expires_at > ?)
+           AND NOT EXISTS (SELECT 1 FROM account_chat_receipts r
+             WHERE r.user_id = m.user_id AND r.message_id = m.message_id
+               AND r.device_id = ?)
+       ) ORDER BY sequence ASC LIMIT ?`
+    ).bind(
+      userId, upperBound, deviceId, isoNow(),
+      userId, upperBound, platform, isoNow(),
+      userId, upperBound, deviceId, acceptsChat, isoNow(), deviceId,
+      limit + 1
+    ).all();
+  }
+
+  const allItems = (rows.results ?? []).map(serializeDeviceMessageRecord);
+  const hasMore = allItems.length > limit;
+  const items = hasMore ? allItems.slice(0, limit) : allItems;
+  const nextCursor = hasMore && items.length
+    ? Number(items[items.length - 1].sequence || effectiveAfter)
+    : highWater;
+  return { items, nextCursor, hasMore, highWater, cursorReset: effectiveAfter !== after };
+}
+
+async function getPendingDeviceMessageItems(env, userId, deviceId, platform, limit = 20, capabilities = {}, after = 0) {
+  return (await getPendingDeviceMessagePage(
+    env, userId, deviceId, platform, limit, capabilities, after, true
+  )).items;
 }
 
 async function markDeviceMessagesDelivered(env, userId, items) {
@@ -147,5 +215,5 @@ async function expireDeviceCommands(env, userId) {
 }
 
 
-  return { ensureOwnedDevice, touchDevice, getPendingDeviceMessageItems, markDeviceMessagesDelivered, notifyDeviceRelay, serializeDeviceRecord, deviceNetworkLocation, serializeDeviceMessageRecord, parseJsonObject, expireDeviceCommands };
+  return { ensureOwnedDevice, touchDevice, getPendingDeviceMessagePage, getPendingDeviceMessageItems, markDeviceMessagesDelivered, notifyDeviceRelay, serializeDeviceRecord, deviceNetworkLocation, serializeDeviceMessageRecord, parseJsonObject, expireDeviceCommands };
 }

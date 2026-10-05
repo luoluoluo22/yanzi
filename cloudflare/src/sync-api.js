@@ -4,8 +4,7 @@ export function createSyncApi(api) {
 async function handleSyncApi(request, env, ctx) {
   const url = new URL(request.url);
   if (url.pathname === "/v1/sync/capabilities" && request.method === "GET") {
-    const auth = await requireAuth(request, env);
-    await ensureUser(env, auth.userId);
+    await requireAuth(request, env);
     const table = await env.DB.prepare(
       `select name from sqlite_master where type = 'table' and name = 'user_sync_objects'`
     ).first();

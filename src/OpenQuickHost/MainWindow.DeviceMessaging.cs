@@ -20,6 +20,7 @@ public partial class MainWindow
     private static readonly object MobileMessageBridgeLock = new();
     private bool _deviceRegistered;
     private DateTimeOffset _lastDesktopPresenceHeartbeatErrorLogAt = DateTimeOffset.MinValue;
+    private DateTimeOffset _lastAccountLanRefreshAt = DateTimeOffset.MinValue;
     private int _desktopPresenceHeartbeatFailureCount;
 
     private void StartMobileMessageBridge(string reason)
@@ -91,11 +92,19 @@ public partial class MainWindow
                 DeviceIdentityStore.GetDesktopDisplayName(),
                 BuildDesktopDeviceCapabilities(),
                 cancellationToken: heartbeatTimeout.Token);
-            try { await _cloudSyncClient.SyncAccountLanLinksAsync(_desktopDeviceId, heartbeatTimeout.Token); }
-            catch (Exception error) { HostAssets.AppendLog("Account LAN refresh deferred: " + error.GetType().Name); }
+            if (reason.StartsWith("start-", StringComparison.OrdinalIgnoreCase) ||
+                DateTimeOffset.UtcNow - _lastAccountLanRefreshAt >= TimeSpan.FromMinutes(5))
+            {
+                try
+                {
+                    await _cloudSyncClient.SyncAccountLanLinksAsync(_desktopDeviceId, heartbeatTimeout.Token);
+                    _lastAccountLanRefreshAt = DateTimeOffset.UtcNow;
+                }
+                catch (Exception error) { HostAssets.AppendLog("Account LAN refresh deferred: " + error.GetType().Name); }
+            }
             _deviceRegistered = true;
             _desktopPresenceHeartbeatFailureCount = 0;
-            _desktopPresenceHeartbeatTimer.Interval = TimeSpan.FromSeconds(30);
+            _desktopPresenceHeartbeatTimer.Interval = TimeSpan.FromSeconds(60);
 
             if (reason.StartsWith("start-", StringComparison.OrdinalIgnoreCase))
             {
@@ -321,31 +330,47 @@ public partial class MainWindow
                 try { await replayClient.ReplayDeviceOutboxAsync(replayToken); }
                 catch (Exception error) { HostAssets.AppendLog("Device outbox retry deferred: " + error.GetType().Name); }
             });
-            var messages = await _cloudSyncClient.GetPendingDeviceMessagesAsync(_desktopDeviceId, limit: 20, cancellationToken: pollTimeout.Token);
-            if (messages.Count > 0)
+            var accountId = _cloudSyncClient.CurrentUserId ?? throw new InvalidOperationException("Cloud account is not authenticated.");
+            var cursor = DeviceMessageCursorStore.Read(accountId, _desktopDeviceId);
+            var total = 0;
+            for (var pageIndex = 0; pageIndex < 20; pageIndex++)
             {
-                HostAssets.AppendLog($"Mobile bridge received messages: reason={reason}, count={messages.Count}.");
-            }
-            else if (DateTimeOffset.UtcNow - _lastMobileMessageEmptyLogAt > TimeSpan.FromMinutes(1))
-            {
-                _lastMobileMessageEmptyLogAt = DateTimeOffset.UtcNow;
-                HostAssets.AppendLog($"Mobile bridge poll ok: reason={reason}, count=0, deviceId={_desktopDeviceId}.");
-            }
+                var page = await _cloudSyncClient.GetPendingDeviceMessagePageAsync(
+                    _desktopDeviceId, cursor, limit: 20, cancellationToken: pollTimeout.Token);
+                if (page.Items.Count > 0)
+                {
+                    HostAssets.AppendLog($"Mobile bridge received messages: reason={reason}, count={page.Items.Count}, cursor={cursor}->{page.NextCursor}.");
+                }
+                else if (DateTimeOffset.UtcNow - _lastMobileMessageEmptyLogAt > TimeSpan.FromMinutes(1))
+                {
+                    _lastMobileMessageEmptyLogAt = DateTimeOffset.UtcNow;
+                    HostAssets.AppendLog($"Mobile bridge poll ok: reason={reason}, count=0, cursor={cursor}->{page.NextCursor}, deviceId={_desktopDeviceId}.");
+                }
 
-            foreach (var message in messages)
-            {
-                var res = await HandleMobileDeviceMessageAsync(message);
-                if (res.hasResult)
+                foreach (var message in page.Items)
                 {
-                    await _cloudSyncClient.AckDeviceMessageAsync(message.MessageId, _desktopDeviceId, res.success, res.output, cancellationToken: pollTimeout.Token);
+                    var res = await HandleMobileDeviceMessageAsync(message);
+                    if (res.hasResult)
+                    {
+                        await _cloudSyncClient.AckDeviceMessageAsync(message.MessageId, _desktopDeviceId, res.success, res.output, cancellationToken: pollTimeout.Token);
+                    }
+                    else
+                    {
+                        await _cloudSyncClient.AckDeviceMessageAsync(message.MessageId, _desktopDeviceId, cancellationToken: pollTimeout.Token);
+                    }
+                    total++;
+                    HostAssets.AppendLog($"Mobile bridge acked message: id={message.MessageId}, deviceId={_desktopDeviceId}.");
                 }
-                else
+
+                if (page.NextCursor != cursor)
                 {
-                    await _cloudSyncClient.AckDeviceMessageAsync(message.MessageId, _desktopDeviceId, cancellationToken: pollTimeout.Token);
+                    cursor = page.NextCursor;
+                    DeviceMessageCursorStore.Write(accountId, _desktopDeviceId, cursor);
                 }
-                HostAssets.AppendLog($"Mobile bridge acked message: id={message.MessageId}, deviceId={_desktopDeviceId}.");
+                if (!page.HasMore) break;
+                if (page.Items.Count == 0) throw new InvalidDataException("Message cursor page reported hasMore without items.");
             }
-            return messages.Count;
+            return total;
         }
         catch (OperationCanceledException ex)
         {

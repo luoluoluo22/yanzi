@@ -28,6 +28,18 @@ public class DeviceHeartbeatService extends Service {
     private int failures;
     private int connectionFailures;
     private final java.util.concurrent.atomic.AtomicBoolean wakeQueued=new java.util.concurrent.atomic.AtomicBoolean();
+    private static String messageCursorKey(String base, String device) {
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256").digest((base + "\n" + device).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder value = new StringBuilder("messageCursor.");
+            for (byte b : digest) value.append(String.format(java.util.Locale.ROOT, "%02x", b & 255));
+            return value.toString();
+        } catch (Exception error) { throw new IllegalStateException(error); }
+    }
+    private long messageCursor(String base, String device) { return Math.max(0, prefs.getLong(messageCursorKey(base, device), 0)); }
+    private void saveMessageCursor(String base, String device, long cursor) {
+        if (cursor >= 0) prefs.edit().putLong(messageCursorKey(base, device), cursor).commit();
+    }
     private void wakeSoon() {
         if(worker.isShutdown() || !wakeQueued.compareAndSet(false,true))return;
         try {worker.schedule(()->{wakeQueued.set(false);tick();},1,TimeUnit.SECONDS);}
@@ -80,7 +92,7 @@ public class DeviceHeartbeatService extends Service {
             long now = SystemClock.elapsedRealtime();
             if (now >= stateAt) {
                 long revision = MobileDeviceCapabilities.snapshot(this).getLong("revision");
-                if (revision != stateRevision) { stateRevision = revision; heartbeat = 0; pollAt = 0; }
+                if (revision != stateRevision) { stateRevision = revision; heartbeat = 0; }
                 stateAt = now + 15000;
             }
             if (now >= syncAt && syncBusy.compareAndSet(false, true)) {
@@ -107,7 +119,7 @@ public class DeviceHeartbeatService extends Service {
                                 .put("pushProvider", prefs.getString("pushProvider", ""))
                                 .put("realtime", connected).put("notificationsEnabled", MobileEventNotifier.canNotify(this)));
                 MobileMessageClient.request(base, "/v1/me/devices", token, "POST", presence);
-                AccountLanConnections.refresh(this, base, token, device);
+                AccountLanConnections.refresh(this, base, token, device, false);
                 MobileDesktopTransfer.cleanupReceipts(this);
                 if (outgoingBusy.compareAndSet(false, true)) outgoing.execute(() -> {
                     try { MobileMessageOutbox.replay(base, token); }
@@ -148,11 +160,19 @@ public class DeviceHeartbeatService extends Service {
                 });
             }
             if (SystemClock.elapsedRealtime() >= pollAt) {
-                JSONArray items = MobileMessageClient.request(base, "/v1/me/mobile/messages?deviceId="
-                        + java.net.URLEncoder.encode(device, "UTF-8") + "&limit=20", token, "GET", null).optJSONArray("items");
+                long cursor = messageCursor(base, device);
+                JSONObject page = MobileMessageClient.request(base, "/v1/me/mobile/messages?deviceId="
+                        + java.net.URLEncoder.encode(device, "UTF-8") + "&limit=20&after=" + cursor, token, "GET", null);
+                JSONArray items = page.optJSONArray("items");
+                int count = items == null ? 0 : items.length();
                 if (valid(token, device) && items != null)
                     for (int i = 0; i < items.length(); i++) dispatch(base, token, device, items.getJSONObject(i));
-                pollAt = SystemClock.elapsedRealtime() + BackgroundCadence.pollInterval(connected);
+                // Only an empty page is safe to checkpoint because delivery/ACK runs asynchronously.
+                // A non-empty page is retried after one minute; local receipts make the delivery idempotent.
+                if (valid(token, device) && count == 0) saveMessageCursor(base, device, page.optLong("nextCursor", cursor));
+                pollAt = SystemClock.elapsedRealtime() + (count > 0
+                        ? BackgroundCadence.deliveryRetryInterval()
+                        : BackgroundCadence.pollInterval(connected));
             }
             failures = 0; retryAt = 0;
         } catch (MobileMessageClient.HttpFailure ex) {
@@ -185,7 +205,10 @@ public class DeviceHeartbeatService extends Service {
         if (!inflight.add(key)) return;
         try { receivers.execute(() -> {
             try { deliver(base, token, device, message); }
-            catch (Exception ex) { Log.w("YanziMessageBridge", "Delivery deferred: " + ex.getClass().getSimpleName()); pollAt = 0; }
+            catch (Exception ex) {
+                Log.w("YanziMessageBridge", "Delivery deferred: " + ex.getClass().getSimpleName());
+                pollAt = SystemClock.elapsedRealtime() + BackgroundCadence.deliveryRetryInterval();
+            }
             finally { inflight.remove(key); }
         }); } catch (RejectedExecutionException ex) { inflight.remove(key); }
     }

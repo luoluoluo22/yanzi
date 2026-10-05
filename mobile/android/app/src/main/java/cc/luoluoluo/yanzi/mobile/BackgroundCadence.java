@@ -3,6 +3,7 @@ package cc.luoluoluo.yanzi.mobile;
 final class BackgroundCadence {
     static final long HEARTBEAT_MS=60000;
     static long syncInterval(boolean realtime) { return realtime?300000:60000; }
-    static long pollInterval(boolean realtime) { return realtime?300000:5000; }
+    static long pollInterval(boolean realtime) { return realtime?900000:60000; }
+    static long deliveryRetryInterval() { return 60000; }
     static long reconnectDelay(int failures) { return Math.min(60000,1000L*(1L<<Math.min(6,Math.max(0,failures)))); }
 }

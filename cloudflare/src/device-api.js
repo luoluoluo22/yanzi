@@ -9,14 +9,13 @@ export function selectImplicitExecutionTarget(rows, isOnline) {
 
 // Domain implementation; dependencies are supplied by the composition root.
 export function createDeviceApi(api) {
-  const { DEVICE_MESSAGE_PROTOCOL, HttpError, acceptsAccountChat, accountLanLink, canonicalMessageJson, deviceNetworkLocation, ensureOwnedDevice, ensureUser, executionDeadline, expireDeviceCommands, getPendingDeviceMessageItems, isAccountChat, isExecutionMessage, isoNow, json, messageMatchesDevice, normalizeDeviceId, normalizeDeviceMessagePayload, normalizeDevicePayload, normalizeMessageId, normalizeMessageLimit, normalizeShortText, notifyDeviceRelay, ownedAttachment, parseJsonObject, randomHex, readJson, requireAuth, sendOfflinePush, serializeDeviceMessageRecord, serializeDeviceRecord, signToken, touchDevice, traceContext } = api;
+  const { DEVICE_MESSAGE_PROTOCOL, HttpError, acceptsAccountChat, accountLanLink, canonicalMessageJson, deviceNetworkLocation, ensureOwnedDevice, ensureUser, executionDeadline, expireDeviceCommands, getPendingDeviceMessagePage, getPendingDeviceMessageItems, isAccountChat, isExecutionMessage, isoNow, json, messageMatchesDevice, normalizeDeviceId, normalizeDeviceMessagePayload, normalizeDevicePayload, normalizeMessageId, normalizeMessageLimit, normalizeShortText, notifyDeviceRelay, ownedAttachment, parseJsonObject, randomHex, readJson, requireAuth, sendOfflinePush, serializeDeviceMessageRecord, serializeDeviceRecord, signToken, touchDevice, traceContext } = api;
 async function handleDeviceApi(request, env, ctx) {
   const environment = await handleEnvironment(request, env, api);
   if (environment) return environment;
   const url = new URL(request.url);
   if (url.pathname === "/v1/me/devices" && request.method === "GET") {
     const auth = await requireAuth(request, env);
-    await ensureUser(env, auth.userId);
 
     const rows = await env.DB.prepare(
       `select
@@ -336,7 +335,6 @@ async function handleDeviceApi(request, env, ctx) {
   if (url.pathname === "/v1/me/mobile/messages/ws" && request.method === "GET") {
     const auth = await requireAuth(request, env);
     const deviceId = normalizeDeviceId(url.searchParams.get("deviceId"));
-    await ensureUser(env, auth.userId);
     const relayDevice = await ensureOwnedDevice(env, auth.userId, deviceId);
 
     if (!env.DEVICE_RELAY) {
@@ -357,66 +355,34 @@ async function handleDeviceApi(request, env, ctx) {
   if (url.pathname === "/v1/me/mobile/messages/events" && request.method === "GET") {
     const auth = await requireAuth(request, env);
     const deviceId = normalizeDeviceId(url.searchParams.get("deviceId"));
-    await ensureUser(env, auth.userId);
-    const device = await ensureOwnedDevice(env, auth.userId, deviceId);
-    await touchDevice(env, auth.userId, deviceId, request);
+    await ensureOwnedDevice(env, auth.userId, deviceId);
 
+    // Compatibility SSE is signal-only. Durable delivery is recovered through
+    // the cursor HTTP endpoint; the former two-second D1 loop amplified rows_read.
     const { readable, writable } = new TransformStream();
     const writer = writable.getWriter();
     const encoder = new TextEncoder();
-
     let isClosed = false;
 
     request.signal.addEventListener("abort", () => {
       isClosed = true;
     });
 
-    const sendSseMessage = async (data) => {
-      try {
-        await writer.write(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
-      } catch (err) {
-        isClosed = true;
-      }
-    };
-
-    const pollIntervalMs = 2000;
     const maxStreamDurationMs = 30 * 60 * 1000;
     const startedAt = Date.now();
     const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
     (async () => {
       try {
-        await sendSseMessage({ type: "connected" });
-
+        await writer.write(encoder.encode(`data: ${JSON.stringify({ type: "connected", recovery: "cursor-http" })}\n\n`));
         while (!isClosed && Date.now() - startedAt < maxStreamDurationMs) {
-          const items = await getPendingDeviceMessageItems(env, auth.userId, deviceId, device.platform, 100, device.capabilities);
-          if (items.length > 0) {
-            await sendSseMessage({ type: "messages", items });
-
-            const deliveredAt = isoNow();
-            await env.DB.prepare(
-              `update device_messages
-               set delivered_at = coalesce(delivered_at, ?)
-               where user_id = ?
-                 and message_id in (${items.map(() => "?").join(",")})`
-            )
-              .bind(deliveredAt, auth.userId, ...items.map((item) => item.messageId))
-              .run();
-          }
-
-          if (isClosed || Date.now() - startedAt >= maxStreamDurationMs) {
-            break;
-          }
-
-          await sleep(pollIntervalMs);
+          await sleep(30000);
+          if (!isClosed) await writer.write(encoder.encode(`: keepalive\n\n`));
         }
-      } catch (err) {
-        // SSE loop exception
-      } finally {
+      } catch {
         isClosed = true;
-        try {
-          await writer.close();
-        } catch (e) {}
+      } finally {
+        try { await writer.close(); } catch {}
       }
     })();
 
@@ -433,26 +399,25 @@ async function handleDeviceApi(request, env, ctx) {
   if (url.pathname === "/v1/me/mobile/messages" && request.method === "GET") {
     const auth = await requireAuth(request, env);
     const deviceId = normalizeDeviceId(url.searchParams.get("deviceId"));
-
     const limit = normalizeMessageLimit(url.searchParams.get("limit"));
-    await ensureUser(env, auth.userId);
     const device = await ensureOwnedDevice(env, auth.userId, deviceId);
-    await touchDevice(env, auth.userId, deviceId, request);
 
-    const after = Number(url.searchParams.get('after') || 0);
-    if (!Number.isSafeInteger(after) || after < 0) throw new HttpError(400, 'invalid_cursor', 'after must be a nonnegative integer');
-    const items = await getPendingDeviceMessageItems(env, auth.userId, deviceId, device.platform, limit + 1, device.capabilities, after);
-    const hasMore = items.length > limit;
-    if (hasMore) items.pop();
-    if (items.length > 0) {
+    const cursorProvided = url.searchParams.has("after");
+    const after = Number(url.searchParams.get("after") || 0);
+    if (!Number.isSafeInteger(after) || after < 0) throw new HttpError(400, "invalid_cursor", "after must be a nonnegative integer");
+
+    const page = await getPendingDeviceMessagePage(
+      env, auth.userId, deviceId, device.platform, limit, device.capabilities, after, cursorProvided
+    );
+    if (page.items.length > 0) {
       const deliveredAt = isoNow();
       await env.DB.prepare(
         `update device_messages
          set delivered_at = coalesce(delivered_at, ?)
          where user_id = ?
-           and message_id in (${items.map(() => "?").join(",")})`
+           and message_id in (${page.items.map(() => "?").join(",")})`
       )
-        .bind(deliveredAt, auth.userId, ...items.map((item) => item.messageId))
+        .bind(deliveredAt, auth.userId, ...page.items.map((item) => item.messageId))
         .run();
     }
 
@@ -460,9 +425,11 @@ async function handleDeviceApi(request, env, ctx) {
       ok: true,
       userId: auth.userId,
       deviceId,
-      items,
-      nextCursor: items.length ? items[items.length - 1].sequence : after,
-      hasMore,
+      items: page.items,
+      nextCursor: page.nextCursor,
+      highWater: page.highWater,
+      cursorReset: page.cursorReset,
+      hasMore: page.hasMore,
       serverNow: isoNow()
     });
   }
@@ -607,7 +574,6 @@ async function handleDeviceApi(request, env, ctx) {
   if (singleMessageMatch && request.method === "GET") {
     const auth = await requireAuth(request, env);
     const messageId = normalizeMessageId(decodeURIComponent(singleMessageMatch[1]));
-    await ensureUser(env, auth.userId);
 
     await expireDeviceCommands(env, auth.userId);
     const row = await env.DB.prepare(
