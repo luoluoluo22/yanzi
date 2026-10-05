@@ -1,0 +1,74 @@
+name: Deploy Cloudflare backend
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "cloudflare/**"
+      - "wrangler.jsonc"
+      - ".github/workflows/deploy-cloudflare.yml"
+  push:
+    branches: [main]
+    paths:
+      - "cloudflare/**"
+      - "wrangler.jsonc"
+      - ".github/workflows/deploy-cloudflare.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-production
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check Worker source
+        run: |
+          node --check cloudflare/src/index.js
+          node --check cloudflare/src/device-api.js
+          node --check cloudflare/src/device-repository.js
+          node --check cloudflare/src/sync-api.js
+          node --check cloudflare/src/sync-object-repository.js
+      - name: Validate Wrangler bundle
+        run: npx --yes wrangler@4 deploy --dry-run --outdir .artifacts/cloudflare-dry-run --config cloudflare/wrangler.toml
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply remote D1 migrations
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_D1_API_TOKEN }}
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN"
+          npx --yes wrangler@4 d1 migrations apply openquickhost-sync-db --remote --config cloudflare/wrangler.toml
+          npx --yes wrangler@4 d1 migrations list openquickhost-sync-db --remote --config cloudflare/wrangler.toml
+      - name: Deploy Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN"
+          npx --yes wrangler@4 deploy --config cloudflare/wrangler.toml
+      - name: Verify production health
+        run: |
+          for attempt in 1 2 3 4 5 6; do
+            body="$(curl --fail --silent --show-error --max-time 15 https://sync.luoluoluo.cc.cd/health || true)"
+            if echo "$body" | grep -q '"ok":true'; then
+              echo "$body"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Production health check failed." >&2
+          exit 1
