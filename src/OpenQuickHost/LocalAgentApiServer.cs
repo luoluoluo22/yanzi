@@ -22,6 +22,86 @@ public sealed partial class LocalAgentApiServer : IDisposable
     public static event Action<string>? MobileDeviceConnected;
 
     private static readonly ConcurrentDictionary<string, TaskCompletionSource<JsonElement>> _pendingBrowserTasks = new(StringComparer.OrdinalIgnoreCase);
+    private readonly SemaphoreSlim _browserSendGate = new(1, 1);
+
+    public async Task<(bool success, string taskId, string status, string? message, JsonElement? data)> RunBrowserTaskAsync(
+        IReadOnlyDictionary<string, object?> payload,
+        int timeoutSeconds = 30)
+    {
+        var browserSocket = _activeBrowserSocket;
+        if (browserSocket == null || browserSocket.State != WebSocketState.Open)
+            return (false, "", "unavailable", "燕子浏览器助手未连接。", null);
+
+        timeoutSeconds = Math.Clamp(timeoutSeconds, 5, 120);
+        var taskId = Guid.NewGuid().ToString("N");
+        var taskPayload = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var pair in payload)
+            taskPayload[pair.Key] = pair.Value;
+
+        taskPayload["type"] = "task_request";
+        taskPayload["taskId"] = taskId;
+        if (!taskPayload.ContainsKey("action"))
+            taskPayload["action"] = "workflow";
+
+        var tcs = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _pendingBrowserTasks[taskId] = tcs;
+
+        try
+        {
+            var sendBuffer = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(taskPayload));
+            await _browserSendGate.WaitAsync(_cts.Token);
+            try
+            {
+                browserSocket = _activeBrowserSocket;
+                if (browserSocket == null || browserSocket.State != WebSocketState.Open)
+                    return (false, taskId, "unavailable", "燕子浏览器助手连接已断开。", null);
+
+                await browserSocket.SendAsync(
+                    new ArraySegment<byte>(sendBuffer),
+                    WebSocketMessageType.Text,
+                    true,
+                    _cts.Token);
+            }
+            finally
+            {
+                _browserSendGate.Release();
+            }
+
+            using var delayCts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
+            var completed = await Task.WhenAny(
+                tcs.Task,
+                Task.Delay(Timeout.Infinite, delayCts.Token));
+
+            if (completed != tcs.Task)
+                return (false, taskId, "timeout", $"浏览器任务超过 {timeoutSeconds} 秒未返回。", null);
+
+            var result = await tcs.Task;
+            var status = result.TryGetProperty("status", out var statusProp)
+                ? statusProp.GetString() ?? ""
+                : "";
+            var message = result.TryGetProperty("message", out var messageProp)
+                ? messageProp.GetString()
+                : null;
+            JsonElement? data = result.TryGetProperty("data", out var dataProp)
+                ? dataProp.Clone()
+                : null;
+
+            return (
+                string.Equals(status, "success", StringComparison.OrdinalIgnoreCase),
+                taskId,
+                status,
+                message,
+                data);
+        }
+        catch (Exception ex)
+        {
+            return (false, taskId, "error", ex.Message, null);
+        }
+        finally
+        {
+            _pendingBrowserTasks.TryRemove(taskId, out _);
+        }
+    }
 
     public async Task<(bool success, string? jsonResult, string? error)> RunBrowserAiPromptTransferAsync(
         string prompt,
@@ -302,6 +382,53 @@ public sealed partial class LocalAgentApiServer : IDisposable
                 else
                 {
                     await WriteJsonAsync(response, 400, new { error = "websocket_required" });
+                }
+                return;
+            }
+
+            if (request.HttpMethod == "POST" && path == "/v1/browser/reload")
+            {
+                if (!IsAuthorized(request))
+                {
+                    await WriteJsonAsync(response, 401, new { error = "unauthorized" });
+                    return;
+                }
+
+                var browserSocket = _activeBrowserSocket;
+                if (browserSocket == null || browserSocket.State != WebSocketState.Open)
+                {
+                    await WriteJsonAsync(response, 503, new { error = "browser_extension_not_connected" });
+                    return;
+                }
+
+                var requestId = Guid.NewGuid().ToString("N");
+                var payload = JsonSerializer.Serialize(new
+                {
+                    type = "browser_extension_reload",
+                    requestId
+                });
+
+                try
+                {
+                    var sendBuffer = Encoding.UTF8.GetBytes(payload);
+                    await browserSocket.SendAsync(
+                        new ArraySegment<byte>(sendBuffer),
+                        WebSocketMessageType.Text,
+                        true,
+                        _cts.Token);
+                    HostAssets.AppendLog($"[LocalAgentApi] Browser extension reload requested: requestId={requestId}, browser={ConnectedBrowserName}");
+                    await WriteJsonAsync(response, 202, new
+                    {
+                        ok = true,
+                        status = "accepted",
+                        requestId,
+                        browser = ConnectedBrowserName
+                    });
+                }
+                catch (Exception ex)
+                {
+                    HostAssets.AppendLog($"[LocalAgentApi] Browser extension reload dispatch failed: {ex.Message}");
+                    await WriteJsonAsync(response, 500, new { error = "failed_to_send_reload: " + ex.Message });
                 }
                 return;
             }
@@ -1976,6 +2103,130 @@ public sealed partial class LocalAgentApiServer : IDisposable
         return html.Replace("__YANZI_TOKEN__", string.Empty);
     }
 
+    private async Task SendBrowserWebAppStorageResponseAsync(WebSocket webSocket, object payload)
+    {
+        if (webSocket.State != WebSocketState.Open)
+        {
+            return;
+        }
+
+        var bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload));
+        await webSocket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, _cts.Token);
+    }
+
+    private async Task HandleBrowserWebAppStorageMessageAsync(
+        WebSocket webSocket,
+        JsonElement json,
+        string messageType,
+        int socketId)
+    {
+        var requestId = json.TryGetProperty("requestId", out var requestIdProp)
+            ? requestIdProp.GetString() ?? string.Empty
+            : string.Empty;
+        var appId = json.TryGetProperty("appId", out var appIdProp)
+            ? appIdProp.GetString() ?? string.Empty
+            : string.Empty;
+        var key = json.TryGetProperty("key", out var keyProp)
+            ? keyProp.GetString() ?? string.Empty
+            : string.Empty;
+
+        if (string.IsNullOrWhiteSpace(requestId) ||
+            string.IsNullOrWhiteSpace(appId) ||
+            string.IsNullOrWhiteSpace(key))
+        {
+            await SendBrowserWebAppStorageResponseAsync(webSocket, new
+            {
+                type = "webapp_storage_response",
+                requestId,
+                operation = messageType,
+                ok = false,
+                available = false,
+                error = "requestId/appId/key is required"
+            });
+            return;
+        }
+
+        var extensionId = "browser.webapp." + appId.Trim();
+
+        try
+        {
+            if (messageType == "webapp_storage_get")
+            {
+                var result = await AccountExtensionDataStore.TryReadAsync(extensionId, key, _cts.Token);
+                await SendBrowserWebAppStorageResponseAsync(webSocket, new
+                {
+                    type = "webapp_storage_response",
+                    requestId,
+                    operation = "get",
+                    ok = true,
+                    available = result.Available,
+                    exists = result.Exists,
+                    revision = result.Revision,
+                    content = result.Content
+                });
+                return;
+            }
+
+            if (messageType == "webapp_storage_put")
+            {
+                var content = json.TryGetProperty("content", out var contentProp)
+                    ? contentProp.GetString() ?? string.Empty
+                    : string.Empty;
+                if (Encoding.UTF8.GetByteCount(content) > 2 * 1024 * 1024)
+                {
+                    throw new InvalidOperationException("网页小程序单项同步数据不能超过 2MB。");
+                }
+
+                var result = await AccountExtensionDataStore.WriteAsync(
+                    extensionId,
+                    key,
+                    content,
+                    cancellationToken: _cts.Token);
+                await SendBrowserWebAppStorageResponseAsync(webSocket, new
+                {
+                    type = "webapp_storage_response",
+                    requestId,
+                    operation = "put",
+                    ok = true,
+                    available = result.Available,
+                    revision = result.Revision
+                });
+                HostAssets.AppendLog($"[BrowserWS #{socketId}] Web app cloud data saved: app={appId}, key={key}, revision={result.Revision}");
+                return;
+            }
+
+            if (messageType == "webapp_storage_delete")
+            {
+                var result = await AccountExtensionDataStore.DeleteAsync(
+                    extensionId,
+                    key,
+                    cancellationToken: _cts.Token);
+                await SendBrowserWebAppStorageResponseAsync(webSocket, new
+                {
+                    type = "webapp_storage_response",
+                    requestId,
+                    operation = "delete",
+                    ok = true,
+                    available = result.Available,
+                    revision = result.Revision
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"[BrowserWS #{socketId}] Web app storage error: {ex.Message}");
+            await SendBrowserWebAppStorageResponseAsync(webSocket, new
+            {
+                type = "webapp_storage_response",
+                requestId,
+                operation = messageType,
+                ok = false,
+                available = true,
+                error = ex.Message
+            });
+        }
+    }
+
     private async Task HandleBrowserWebSocketLoopAsync(WebSocket webSocket, int socketId, string browserName)
     {
         var buffer = new byte[1024 * 64];
@@ -2021,6 +2272,31 @@ public sealed partial class LocalAgentApiServer : IDisposable
                             else if (msgType == "register")
                             {
                                 HostAssets.AppendLog($"[BrowserWS #{socketId}] Registered successfully from {browserName}.");
+                            }
+                            else if (msgType is "webapp_storage_get" or "webapp_storage_put" or "webapp_storage_delete")
+                            {
+                                await HandleBrowserWebAppStorageMessageAsync(webSocket, json, msgType, socketId);
+                            }
+                            else if (msgType == "browser_extension_reload_ack")
+                            {
+                                var requestId = json.TryGetProperty("requestId", out var reloadRequestId)
+                                    ? reloadRequestId.GetString() ?? string.Empty
+                                    : string.Empty;
+                                var version = json.TryGetProperty("version", out var reloadVersion)
+                                    ? reloadVersion.GetString() ?? string.Empty
+                                    : string.Empty;
+                                HostAssets.AppendLog($"[BrowserWS #{socketId}] Browser extension reload ACK: requestId={requestId}, version={version}");
+                            }
+                            else if (msgType == "browser_extension_runtime_ready")
+                            {
+                                var version = json.TryGetProperty("version", out var runtimeVersion)
+                                    ? runtimeVersion.GetString() ?? string.Empty
+                                    : string.Empty;
+                                var refreshedTabs = json.TryGetProperty("refreshedWebAppTabs", out var refreshedTabsProp) &&
+                                                    refreshedTabsProp.TryGetInt32(out var refreshedTabCount)
+                                    ? refreshedTabCount
+                                    : 0;
+                                HostAssets.AppendLog($"[BrowserWS #{socketId}] Browser extension runtime ready: version={version}, refreshedWebAppTabs={refreshedTabs}");
                             }
                             else if (msgType == "task_response")
                             {

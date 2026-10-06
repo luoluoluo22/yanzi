@@ -1191,6 +1191,9 @@ public sealed record LocalExtensionManifest
     public string[]? Permissions { get; init; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string[]? Requires { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<YanziCapabilityDeclaration>? Provides { get; init; }
 
     public LocalExtensionInlineScriptManifest? Script { get; init; }

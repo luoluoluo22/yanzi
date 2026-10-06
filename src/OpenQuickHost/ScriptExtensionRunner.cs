@@ -112,6 +112,30 @@ public static class ScriptExtensionRunner
         Action<string>? onOutputLine,
         CancellationToken cancellationToken = default)
     {
+        if (HostRuntimeProfile.IsShell)
+        {
+            try
+            {
+                var executionId = Guid.NewGuid();
+                using var cancelRequest = cancellationToken.Register(() => RuntimeConnection.Queue("script.cancel", new { executionId }));
+                var response = await RuntimeRpc.CallAsync("script.execute", new
+                { id = command.ExtensionId, input = inputText, source = launchSource, state,
+                    executionId, preview = launchSource == "extension-editor-test" ? RuntimeCommandDescriptor.FromCommand(command) : null },
+                    cancellationToken, requestTimeout: TimeSpan.FromHours(12));
+                var result = response.Deserialize<ScriptExecutionResult>(RuntimeRpc.Json)!;
+                if (onOutputLine != null && !string.IsNullOrEmpty(result.Output))
+                    foreach (var line in result.Output.Split('\n')) onOutputLine(line);
+                return result;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return new ScriptExecutionResult(false, string.Empty, "执行已取消。", -1, IsCancelled: true);
+            }
+            catch (Exception ex)
+            {
+                return new ScriptExecutionResult(false, string.Empty, "Runtime 执行失败：" + ex.Message, -1);
+            }
+        }
         if (string.IsNullOrWhiteSpace(command.ExtensionId))
         {
             return await ExecuteCoreAsync(command, inputText, launchSource, state, onOutputLine, cancellationToken);
@@ -141,6 +165,18 @@ public static class ScriptExtensionRunner
         if (!CanExecute(command))
         {
             return new ScriptExecutionResult(false, string.Empty, "扩展没有可执行脚本入口。", -1);
+        }
+
+        var requirementResolution = await YanziCapabilityRequirementResolver
+            .EnsureForCommandAsync(command, cancellationToken)
+            .ConfigureAwait(false);
+        if (!requirementResolution.Success)
+        {
+            return new ScriptExecutionResult(
+                false,
+                string.Empty,
+                $"小程序依赖未满足：{requirementResolution.Error}",
+                -1);
         }
 
         if (RunningExtensionRegistry.IsRunning(command.ExtensionId))

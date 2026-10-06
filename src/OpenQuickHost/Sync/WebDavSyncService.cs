@@ -900,6 +900,12 @@ public sealed class WebDavSyncService
         if (snapshot.PreferManualExtensionEditor != null) settings.PreferManualExtensionEditor = incoming.PreferManualExtensionEditor;
         if (snapshot.EnableEverything != null) settings.EnableEverything = incoming.EnableEverything;
         settings.LauncherHotkey = incoming.LauncherHotkey;
+        if (snapshot.AppShortcutBindings != null)
+        {
+            settings.AppShortcutBindings = new Dictionary<string, string>(
+                incoming.AppShortcutBindings,
+                StringComparer.OrdinalIgnoreCase);
+        }
         settings.LaunchAtStartup = incoming.LaunchAtStartup;
         settings.RefreshCloudOnStartup = incoming.RefreshCloudOnStartup;
         settings.CloseToTray = incoming.CloseToTray;

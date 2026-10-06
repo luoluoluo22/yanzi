@@ -16,7 +16,50 @@ void Check(bool condition, string message)
 if (args.Length == 1 && args[0] == "--secure-lan") { await SecureLanVerification.RunAsync(); return; }
 if (args.Length == 1 && args[0] == "--transfer-sessions") { await TransferSessionsVerification.RunAsync(); return; }
 if (args.Length == 1 && args[0] == "--outbox") { await OutboxVerification.RunAsync(); return; }
+if (args.Length == 1 && args[0] == "--chat-capability") { await ChatCapabilityVerification.RunAsync(); return; }
 YanziBuiltinCapabilityRegistration.Register();
+if (args.Length == 1 && args[0] == "--dependency-status")
+{
+    foreach (var dependency in new[] { "git", "python", "node", "ffmpeg" })
+    {
+        var status = await YanziSystemDependencyProvider.GetStatusAsync(dependency);
+        Console.WriteLine(JsonSerializer.Serialize(status));
+    }
+    return;
+}
+if (args.Length == 2 && args[0] == "--inspect-local-extension")
+{
+    var command = OpenQuickHost.Sync.LocalExtensionCatalog.LoadCommands()
+        .FirstOrDefault(item => item.ExtensionId.Equals(args[1], StringComparison.OrdinalIgnoreCase));
+    Console.WriteLine(command == null
+        ? "{\"found\":false}"
+        : JsonSerializer.Serialize(new
+        {
+            found = true,
+            id = command.ExtensionId,
+            title = command.Title,
+            runtime = command.Runtime,
+            uiMode = command.UiMode,
+            entry = command.EntryPoint,
+            permissions = command.Permissions
+        }));
+    if (command == null) Environment.ExitCode = 1;
+    return;
+}
+if (args.Length == 2 && args[0] == "--compile-extension")
+{
+    var extensionDirectory = Path.GetFullPath(args[1]);
+    var command = new CommandItem(
+        glyph: "T", title: "Compile fixture", subtitle: "", category: "test",
+        accentHex: "#64748B", openTarget: null, keywords: Array.Empty<string>(),
+        extensionId: "compile-fixture", extensionDirectoryPath: extensionDirectory,
+        runtime: "csharp", uiMode: "native-window", entryPoint: "CapabilityLab.cs",
+        permissions: new[] { "system.install" }, entryMode: "entry");
+    var result = await ScriptExtensionRunner.PreparePortableAssetsAsync(command);
+    Console.WriteLine(JsonSerializer.Serialize(result));
+    if (!result.Success) Environment.ExitCode = 1;
+    return;
+}
 if (args.Length == 2 && args[0] == "--send-mobile-lan")
 {
     using var config = JsonDocument.Parse(await File.ReadAllTextAsync(args[1]));
@@ -60,6 +103,93 @@ if (args.Length == 1 && args[0] == "--console-fixture")
     Console.ReadLine();
     return;
 }
+// System dependency requirements: manifests declare what they need; host providers resolve it.
+Check(YanziCapabilityRegistry.Contains("dependency.list") &&
+      YanziCapabilityRegistry.Contains("dependency.status") &&
+      YanziCapabilityRegistry.Contains("dependency.progress") &&
+      YanziCapabilityRegistry.Contains("dependency.ensure"),
+    "Host dependency capabilities must be registered.");
+Check(YanziCapabilityRequirementResolver.TryParse("git>=2.40", out var gitRequirement, out _) &&
+      gitRequirement.Name == "git" &&
+      gitRequirement.MinimumVersion != null &&
+      gitRequirement.MinimumVersion.Major == 2 &&
+      gitRequirement.MinimumVersion.Minor == 40,
+    "requires must support a minimum Git version.");
+Check(!YanziCapabilityRequirementResolver.TryParse("git=>2.40", out _, out _),
+    "Malformed requires expressions must be rejected.");
+var knownDependencies = JsonSerializer.SerializeToElement(YanziSystemDependencyProvider.ListKnown());
+var knownNames = knownDependencies.EnumerateArray()
+    .Select(item => item.GetProperty("name").GetString())
+    .Where(name => name != null)
+    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+Check(new[] { "git", "python", "node", "ffmpeg" }.All(knownNames.Contains),
+    "Host dependency provider must advertise Git, Python, Node.js and FFmpeg.");
+
+foreach (var dependency in new[] { "git", "python", "node", "ffmpeg" })
+{
+    var status = await YanziSystemDependencyProvider.GetStatusAsync(dependency);
+    Check(status.Name == dependency &&
+          (status.Provider == "system" || status.Provider.StartsWith("winget:", StringComparison.Ordinal)),
+        $"Dependency status must resolve provider metadata for {dependency} without installing it.");
+}
+
+Check(YanziSystemDependencyProvider.CanHandle("python3") &&
+      YanziSystemDependencyProvider.NormalizeName("python3") == "python" &&
+      YanziSystemDependencyProvider.CanHandle("nodejs") &&
+      YanziSystemDependencyProvider.NormalizeName("nodejs") == "node",
+    "Runtime aliases must normalize to their canonical dependency names.");
+
+var dependencyStatus = await YanziCapabilityInvocationService.InvokeAsync(
+    "dependency.status", new { name = "python>=3.12" });
+Check(dependencyStatus.Success, "dependency.status must be callable without installation side effects.");
+var initialProgress = await YanziCapabilityInvocationService.InvokeAsync(
+    "dependency.progress", new { name = "python>=3.12" });
+Check(initialProgress.Success, "dependency.progress must be readable without installation permission.");
+
+var safeEnsureCaller = new YanziCapabilityCaller(
+    "dependency-verification",
+    new[] { "system.install" });
+var safeEnsure = await YanziCapabilityInvocationService.InvokeAsync(
+    "dependency.ensure",
+    new { name = "python>=3.12" },
+    safeEnsureCaller);
+Check(safeEnsure.Success,
+    "dependency.ensure must complete for an already satisfied dependency.");
+
+var completedProgress = await YanziCapabilityInvocationService.InvokeAsync(
+    "dependency.progress", new { name = "python>=3.12" });
+var completedProgressElement = JsonSerializer.SerializeToElement(
+    completedProgress.Data,
+    new JsonSerializerOptions(JsonSerializerDefaults.Web));
+Check(completedProgress.Success &&
+      completedProgressElement.GetProperty("state").GetString() == "completed" &&
+      completedProgressElement.GetProperty("percent").GetInt32() == 100,
+    "dependency.progress must reach completed/100 after a satisfied ensure.");
+
+var dependencyEnsureDenied = await YanziCapabilityInvocationService.InvokeAsync(
+    "dependency.ensure", new { name = "git" });
+Check(!dependencyEnsureDenied.Success && dependencyEnsureDenied.ErrorCode == "permission_denied",
+    "dependency.ensure must require system.install permission before installation.");
+
+var requiresDirectory = Path.Combine(Path.GetTempPath(), "yanzi-requires-" + Guid.NewGuid().ToString("N"));
+Directory.CreateDirectory(requiresDirectory);
+try
+{
+    await File.WriteAllTextAsync(Path.Combine(requiresDirectory, "manifest.json"),
+        "{\"id\":\"verification-requires\",\"name\":\"Requires\",\"requires\":[\"git\",\"python>=3.12\",\"node>=22\",\"ffmpeg>=8\"]}");
+    var requiresCommand = new CommandItem(
+        glyph: "T", title: "Requires", subtitle: "", category: "test",
+        accentHex: "#FF000000", openTarget: null, keywords: Array.Empty<string>(),
+        extensionId: "verification-requires", extensionDirectoryPath: requiresDirectory);
+    var declaredRequirements = YanziCapabilityRequirementResolver.GetRequirements(requiresCommand);
+    Check(declaredRequirements.SequenceEqual(new[] { "git", "python>=3.12", "node>=22", "ffmpeg>=8" }),
+        "Mini-app manifest requires must preserve all declared host dependencies.");
+}
+finally
+{
+    Directory.Delete(requiresDirectory, recursive: true);
+}
+
 // Use the capture extension's actual old context contract as a backward compatibility fixture.
 var legacyDirectory = Path.Combine(Path.GetTempPath(), "yanzi-legacy-context-" + Guid.NewGuid().ToString("N"));
 var legacyCommand = new CommandItem(glyph: "T", title: "Legacy runtime", subtitle: "", category: "test",

@@ -2293,6 +2293,7 @@
                         </StackPanel>
 
                         <StackPanel x:Name="YanwoSectionRoot" Visibility="{Binding IsYanwoSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <Button Content="任务中心＋数据恢复" Click="ShowTaskRecoveryButton_Click" HorizontalAlignment="Left" Margin="0,0,0,12" Padding="14,8"/>
                             <!-- 头部说明 -->
                             <Grid Margin="0,5">
                                 <StackPanel>
@@ -2306,6 +2307,51 @@
                                     <TextBlock Text="AI 数据接入" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
                                     <TextBlock Text="一段提示词连接外部 AI：获取清单 → 申请所需数据 → 手机或电脑确认 → 限时访问。" Foreground="{DynamicResource BrushTextSec}" TextWrapping="Wrap" Margin="0,6,0,0"/>
                                     <ContentControl x:Name="YanNestAccessContent" Loaded="YanNestAccessContent_Loaded" Foreground="{DynamicResource BrushTextMain}"/>
+                                </StackPanel>
+                            </Border>
+                            <Border Style="{StaticResource SurfaceCard}" Padding="14" Margin="0,0,0,12">
+                                <StackPanel>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="AI 能力调用" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
+                                            <TextBlock Text="让外部 AI 发现并调用燕子及小程序提供的能力，例如发送到手机、创建日程、截图或控制设备。"
+                                                       Foreground="{DynamicResource BrushTextSec}" TextWrapping="Wrap" Margin="0,6,16,0"/>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
+                                            <Ellipse x:Name="AiCapabilityStatusDot" Width="7" Height="7" Fill="#FF9CA3AF" VerticalAlignment="Center"/>
+                                            <TextBlock x:Name="AiCapabilityStatusText" Text="正在检查" Foreground="#FF9CA3AF"
+                                                       FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Grid>
+                                    <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,12,0,10"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock x:Name="AiCapabilitySummaryText"
+                                                       Text="正在读取燕子能力目录…"
+                                                       Foreground="{DynamicResource BrushTextMain}"
+                                                       FontSize="{DynamicResource FontSizeSmallPlus}"
+                                                       TextWrapping="Wrap"/>
+                                            <TextBlock Text="能力来自燕子宿主和已安装小程序；安装、卸载或启动小程序后会自动变化。调用沿用本地 Agent API 的身份验证。"
+                                                       Foreground="{DynamicResource BrushTextSec}"
+                                                       FontSize="{DynamicResource FontSizeSmall}"
+                                                       TextWrapping="Wrap"
+                                                       Margin="0,5,16,0"/>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Button Content="刷新能力" Style="{StaticResource SecondaryBtn}" Height="28" Padding="10,0"
+                                                    Click="RefreshAiCapabilities_Click"/>
+                                            <Button x:Name="AiCapabilityManageButton" Content="管理能力" Style="{StaticResource SecondaryBtn}" Height="28"
+                                                    Padding="10,0" Margin="8,0,0,0" Click="OpenAiCapabilitiesButton_Click" IsEnabled="False"/>
+                                        </StackPanel>
+                                    </Grid>
                                 </StackPanel>
                             </Border>
                             <!-- 星网发散拓扑图 (支持悬浮 ToolTip) -->
@@ -2668,6 +2714,10 @@
                                         <TextBlock Text="登录账号后连接公网消息、应用分发和小程序数据。无需填写旧推送 UUID。" Foreground="{DynamicResource BrushTextSec}" TextWrapping="Wrap" Margin="0,8,0,0"/>
                                         <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,8,0,8"/>
                                         <TextBlock x:Name="NestCloudStatus" Text="正在检查公网状态…" Foreground="{DynamicResource BrushTextSec}" TextWrapping="Wrap"/>
+                                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                            <Button x:Name="NestDeviceManagementButton" Content="设备管理 ▾" Style="{StaticResource SecondaryBtn}" Padding="8,3" Click="NestDeviceManagement_Click"/>
+                                            <Button x:Name="NestSignOutButton" Content="退出本机登录" Style="{StaticResource SecondaryBtn}" Padding="8,3" Margin="8,0,0,0" Click="NestSignOut_Click" IsEnabled="False"/>
+                                        </StackPanel>
                                     </StackPanel>
                                 </Border>
                                 <!-- 卡片 5：同步平台 -->
@@ -2696,6 +2746,47 @@
                                     </StackPanel>
                                 </Border>
                             </UniformGrid>
+
+                            <Border x:Name="NestDevicePanel" Style="{StaticResource SurfaceCard}" Padding="14" Margin="0,2,0,12" Visibility="Collapsed">
+                                <StackPanel>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="设备管理" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
+                                            <TextBlock x:Name="NestDeviceSummary" Text="正在读取设备…" Foreground="{DynamicResource BrushTextSec}" TextWrapping="Wrap" Margin="0,6,12,0"/>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
+                                            <Button x:Name="NestDeviceRefreshButton" Content="刷新" Style="{StaticResource SecondaryBtn}" Padding="10,4" Click="NestDeviceRefresh_Click"/>
+                                            <Button x:Name="NestDeviceBatchButton" Content="一键删除" Style="{StaticResource SecondaryBtn}" Padding="10,4" Margin="8,0,0,0" Click="NestDeviceBatch_Click"/>
+                                        </StackPanel>
+                                    </Grid>
+                                    <StackPanel x:Name="NestDeviceSelectionBar" Orientation="Horizontal" Margin="0,10,0,0" Visibility="Collapsed">
+                                        <Button Content="全选其他设备" Style="{StaticResource SecondaryBtn}" Padding="8,4" Click="NestDeviceSelectAll_Click"/>
+                                        <Button Content="仅选离线记录" Style="{StaticResource SecondaryBtn}" Padding="8,4" Margin="8,0,0,0" Click="NestDeviceSelectOffline_Click"/>
+                                        <Button x:Name="NestDeviceDeleteSelectedButton" Content="删除选中 (0)" Style="{StaticResource SecondaryBtn}" Padding="8,4" Margin="8,0,0,0" Click="NestDeviceDeleteSelected_Click" IsEnabled="False"/>
+                                    </StackPanel>
+                                    <TextBlock Text="按设备标识统计登记记录，包含离线历史记录。同名设备可能来自重装或独立安装，名称相同不代表标识相同。删除将停用该记录的消息和直连授权，设备上的文件会保留。" Foreground="{DynamicResource BrushTextSec}" TextWrapping="Wrap" Margin="0,8,0,4"/>
+                                    <ItemsControl x:Name="NestDeviceList">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,1,0,0" Padding="0,12" Margin="0,4,0,0">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                        <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" IsEnabled="{Binding CanSelect}" Visibility="{Binding NestSelectionVisibility, RelativeSource={RelativeSource AncestorType=Window}}" Margin="0,0,12,0" VerticalAlignment="Center" Checked="NestDeviceSelectionChanged" Unchecked="NestDeviceSelectionChanged" AutomationProperties.Name="{Binding Name}"/>
+                                                        <StackPanel Grid.Column="1" Margin="0,0,12,0">
+                                                            <TextBlock Text="{Binding Name}" Foreground="{DynamicResource BrushTextMain}" FontWeight="SemiBold" TextWrapping="Wrap" ToolTip="{Binding DeviceId}"/>
+                                                            <TextBlock Text="{Binding Status}" Foreground="{Binding StatusBrush}" Margin="0,4,0,0"/>
+                                                            <TextBlock Text="{Binding Detail}" Foreground="{DynamicResource BrushTextSec}" TextWrapping="Wrap" Margin="0,4,0,0" FontSize="{DynamicResource FontSizeSmall}"/>
+                                                        </StackPanel>
+                                                        <Button Grid.Column="2" Content="{Binding ActionLabel}" Tag="{Binding}" Style="{StaticResource SecondaryBtn}" Padding="10,4" VerticalAlignment="Center" Click="NestDeviceAction_Click"/>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <TextBlock x:Name="NestDeviceActionStatus" Foreground="{DynamicResource BrushTextSec}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                                </StackPanel>
+                            </Border>
 
                             <!-- 说明 -->
                             <Border Style="{StaticResource SurfaceCard}" Padding="14" Margin="0,2,0,20">

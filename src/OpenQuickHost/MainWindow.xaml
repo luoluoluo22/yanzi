@@ -786,6 +786,20 @@
                                     <Path Data="{local:IconGeometry open-folder}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
                                 </MenuItem.Icon>
                             </MenuItem>
+                            <MenuItem x:Name="InstallKnownAppMenuItem"
+                                      Header="安装应用"
+                                      Click="InstallKnownAppMenuItem_Click">
+                                <MenuItem.Icon>
+                                    <Path Data="{local:IconGeometry download}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
+                                </MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem x:Name="OpenAppDownloadPageMenuItem"
+                                      Header="官方下载页"
+                                      Click="OpenAppDownloadPageMenuItem_Click">
+                                <MenuItem.Icon>
+                                    <Path Data="{local:IconGeometry link}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
+                                </MenuItem.Icon>
+                            </MenuItem>
                             <MenuItem x:Name="CopyAppMenu"
                                       Header="复制">
                                 <MenuItem.Icon>
@@ -923,6 +937,13 @@
                                         <Path Data="{local:IconGeometry paste}" Fill="#A0FFFFFF" Stretch="Uniform" Width="14" Height="14" />
                                     </MenuItem.Icon>
                                 </MenuItem>
+                            </MenuItem>
+                            <MenuItem x:Name="CopyExtensionDirectoryPathMenuItem"
+                                      Header="复制路径"
+                                      Click="CopyExtensionDirectoryPathMenuItem_Click">
+                                <MenuItem.Icon>
+                                    <Path Data="{local:IconGeometry copy}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
+                                </MenuItem.Icon>
                             </MenuItem>
                             <Separator x:Name="ExtensionActionsSeparator" />
 

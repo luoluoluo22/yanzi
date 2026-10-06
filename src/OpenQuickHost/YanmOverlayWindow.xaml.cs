@@ -687,7 +687,7 @@ public partial class YanmOverlayWindow : Window
 
         var userDataFolder = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "OpenQuickHost",
+            HostRuntimeProfile.DataDirectoryName,
             "YanmWebView2");
         Directory.CreateDirectory(userDataFolder);
         _webView2Environment = await CoreWebView2Environment.CreateAsync(browserExecutableFolder: null, userDataFolder: userDataFolder);

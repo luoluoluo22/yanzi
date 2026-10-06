@@ -13,12 +13,15 @@ Common fields:
   "icon": "mdi:puzzle-outline",
   "accentHex": "#FF10B981",
   "globalShortcut": "Ctrl+Alt+T",
-  "hotkeyBehavior": "show-view"
+  "hotkeyBehavior": "show-view",
+  "requires": ["git"]
 }
 ```
 
 - `icon`: supports full `mdi:name`, `app:name`, relative image paths, absolute paths, or HTTPS image URLs.
 - `accentHex`: optional button/card color in launcher, quick panel, and radial menu. Use `#RRGGBB` or `#AARRGGBB`.
+- `requires`: declares capabilities/runtime dependencies the mini-app needs. The host resolves these before launch. Automatic system providers currently support `git`, `python`, `node`, and `ffmpeg`, including minimum versions such as `python>=3.12`, `node>=22`, and `ffmpeg>=8`.
+- `provides`: declares capabilities exported by this mini-app to Yanzi's capability network. Do not use `provides` for dependencies.
 
 JSON extension example:
 

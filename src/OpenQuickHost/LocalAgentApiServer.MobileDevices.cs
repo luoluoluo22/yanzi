@@ -55,7 +55,8 @@ public sealed partial class LocalAgentApiServer
         var input = await ReadJsonBodyAsync(request);
         var name = GetString(input, "name") ?? "";
         var arguments = input.TryGetProperty("arguments", out var args) ? args.Clone() : JsonSerializer.SerializeToElement(new { });
-        var supported = new[] { "mobile.status.get", "mobile.capabilities.list", "mobile.files.list", "mobile.files.read", "mobile.extensions.list", "mobile.sync.status", "mobile.data.read" };
+        var supported = new[] { "mobile.status.get", "mobile.capabilities.list", "mobile.files.list", "mobile.files.read", "mobile.extensions.list", "mobile.sync.status", "mobile.data.read",
+            "mobile.apps.list", "mobile.apps.info", "mobile.apps.open", "mobile.apps.openUri", "mobile.apps.shareText", "mobile.apps.settings" };
         if (!supported.Contains(name)) { await WriteJsonAsync(response, 400, new { error = "unsupported_mobile_capability" }); return true; }
         var target = await cloud.GetPeerDescriptorAsync(deviceId);
         if (target == null || target.Value.GetProperty("platform").GetString() != "android") { await WriteJsonAsync(response, 404, new { error = "mobile_device_not_found" }); return true; }

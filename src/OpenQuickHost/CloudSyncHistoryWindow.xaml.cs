@@ -1,3 +1,4 @@
+using System.IO;
 ﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
@@ -15,6 +16,8 @@ public partial class CloudSyncHistoryWindow : Window, INotifyPropertyChanged
     private readonly MainWindow _mainWindow;
     private readonly CloudSyncClient _client;
     private long _currentObjectRevision;
+    private readonly string _account;
+    private readonly Dictionary<long, CloudSyncObjectHistoryRecord> _records = new();
     private string _statusText = "正在读取历史...";
 
     public CloudSyncHistoryWindow(
@@ -27,6 +30,7 @@ public partial class CloudSyncHistoryWindow : Window, INotifyPropertyChanged
         InitializeComponent();
         _mainWindow = mainWindow;
         _client = client;
+        _account = client.TaskJournalAccount;
         ObjectId = objectId;
         DisplayName = displayName;
         _currentObjectRevision = currentObjectRevision;
@@ -60,11 +64,12 @@ public partial class CloudSyncHistoryWindow : Window, INotifyPropertyChanged
         try
         {
             StatusText = "正在读取历史备份记录...";
+            RequireAccount();
+            var current = await _client.GetSyncObjectAsync(ObjectId) ?? throw new InvalidDataException("当前数据不存在");
             var response = await _client.GetSyncObjectHistoryAsync(ObjectId, limit: 100);
-            if (response.Versions.Count > 0)
-            {
-                _currentObjectRevision = response.Versions.Max(static version => version.Revision);
-            }
+            RequireAccount();
+            _records.Clear(); foreach (var record in response.Versions) _records[record.Revision] = record;
+            _currentObjectRevision = current.Revision;
 
             Versions.Clear();
             foreach (var version in response.Versions)
@@ -95,9 +100,14 @@ public partial class CloudSyncHistoryWindow : Window, INotifyPropertyChanged
             return;
         }
 
+        if (!_records.TryGetValue(version.Revision, out var historical)) return;
+        var preview = new System.Windows.Controls.TextBox { Text = historical.Payload.ToString(), IsReadOnly = true, TextWrapping = TextWrapping.Wrap, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Margin = new Thickness(16) };
+        var previewWindow = new Window { Title = $"{DisplayName} · 历史版本 {version.Revision}", Width = 680, Height = 440, Owner = this, Content = preview };
+        previewWindow.ShowDialog();
+        try { RequireAccount(); } catch (Exception error) { StatusText = error.Message; return; }
         var confirmation = MessageBox.Show(
             this,
-            $"将“{DisplayName}”恢复到 版本 {version.Revision}？\n\n恢复会生成一个新版本，现有版本和历史记录都不会删除。",
+            $"将“{DisplayName}”恢复到 版本 {version.Revision}？\n\n将恢复整个数据对象，可能包含多条笔记或设置。恢复会生成一个新版本，现有版本和历史记录都不会删除。",
             "确认恢复同步版本",
             MessageBoxButton.YesNo,
             MessageBoxImage.Question);
@@ -109,6 +119,7 @@ public partial class CloudSyncHistoryWindow : Window, INotifyPropertyChanged
         button.IsEnabled = false;
         try
         {
+            RequireAccount();
             StatusText = $"正在恢复 版本 {version.Revision}...";
             var restored = await _mainWindow.RestoreCloudObjectVersionAsync(
                 ObjectId,
@@ -124,14 +135,16 @@ public partial class CloudSyncHistoryWindow : Window, INotifyPropertyChanged
         }
         catch (Exception ex)
         {
-            StatusText = $"恢复失败：{ex.Message}。请刷新历史后重试，避免覆盖其他设备的新修改。";
             await LoadHistoryAsync();
+            StatusText = $"恢复失败：{ex.Message}。请重新预览后重试，避免覆盖其他设备的新修改。";
         }
         finally
         {
             button.IsEnabled = true;
         }
     }
+
+    private void RequireAccount() { if (_client.CurrentUserId == null || _client.TaskJournalAccount != _account) throw new InvalidOperationException("账号已改变，请重新打开历史窗口。"); }
 
     private async Task RunWithButtonDisabledAsync(object sender, Func<Task> action)
     {

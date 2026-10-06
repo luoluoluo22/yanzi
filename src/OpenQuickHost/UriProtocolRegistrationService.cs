@@ -7,6 +7,7 @@ public static class UriProtocolRegistrationService
 {
     public static void EnsureRegistered(string executablePath)
     {
+        if (HostRuntimeProfile.IsDevelopment || HostRuntimeProfile.IsRuntime) return;
         if (string.IsNullOrWhiteSpace(executablePath) || !File.Exists(executablePath))
         {
             return;
@@ -25,6 +26,7 @@ public static class UriProtocolRegistrationService
 
     public static void Unregister()
     {
+        if (HostRuntimeProfile.IsDevelopment || HostRuntimeProfile.IsRuntime) return;
         try
         {
             Registry.CurrentUser.DeleteSubKeyTree(@"Software\Classes\yanzi", throwOnMissingSubKey: false);

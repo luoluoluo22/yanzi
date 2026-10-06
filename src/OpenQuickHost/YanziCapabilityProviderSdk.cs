@@ -27,7 +27,8 @@ public static class YanziCapabilityProviderSdk
             {
                 Name = provider.Name.Trim(), ProviderExtensionId = extensionId, Description = provider.Description,
                 Version = provider.Version, InputSchema = provider.InputSchema.Clone(), OutputSchema = provider.OutputSchema.Clone(),
-                Permissions = provider.Permissions.ToArray(), Handler = provider.Handler
+                Permissions = provider.Permissions.ToArray(), Audience = provider.Audience, Category = provider.Category,
+                RiskLevel = provider.RiskLevel, RequiresConfirmation = provider.RequiresConfirmation, Handler = provider.Handler
             });
         }
     }
@@ -41,5 +42,9 @@ public sealed class YanziCapabilityProviderDefinition
     public System.Text.Json.JsonElement InputSchema { get; init; } = YanziCapabilitySchema.Any;
     public System.Text.Json.JsonElement OutputSchema { get; init; } = YanziCapabilitySchema.Any;
     public IReadOnlyList<string> Permissions { get; init; } = Array.Empty<string>();
+    public string Audience { get; init; } = "user";
+    public string Category { get; init; } = "general";
+    public string RiskLevel { get; init; } = "low";
+    public bool RequiresConfirmation { get; init; }
     public Func<object?, Task<object?>> Handler { get; init; } = _ => Task.FromResult<object?>(null);
 }

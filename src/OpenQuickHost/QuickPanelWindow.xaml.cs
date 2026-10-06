@@ -2919,11 +2919,20 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             }
 
             HidePanelIfAllowed();
-            if (_wasActivatedForInput && _previousForegroundWindow != IntPtr.Zero)
+            var opensHostWindow = command.App != null || command.HostedView != null;
+            if (!opensHostWindow && _wasActivatedForInput && _previousForegroundWindow != IntPtr.Zero)
             {
                 var restored = NativeMethods.SetForegroundWindow(_previousForegroundWindow);
                 HostAssets.AppendLog($"Quick panel execute: restored previous foreground={restored}, {DescribeWindow(_previousForegroundWindow)}.");
                 RestorePreviousFocus("execute");
+            }
+            else if (opensHostWindow)
+            {
+                // Do not hand focus back to the previous application immediately before
+                // opening a host-owned window. Windows foreground-lock rules can then
+                // reject AppExtensionWindow.SetForegroundWindow(), leaving the mini-app
+                // visible only after a second taskbar click.
+                HostAssets.AppendLog($"Quick panel execute: foreground restore skipped for host window, extension={command.ExtensionId}.");
             }
 
             var input = string.Empty;
@@ -4293,6 +4302,25 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
             !string.IsNullOrWhiteSpace(message))
         {
             System.Windows.MessageBox.Show(this, message, "打开目录失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private void CopyExtensionDirectoryPath_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem { CommandParameter: SlotViewModel { Command: not null } vm } ||
+            !vm.CanCopyExtensionPath)
+        {
+            return;
+        }
+
+        if (_mainWindow.TryCopyExtensionDirectoryPath(vm.Command!.ExtensionId, out var message))
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(message))
+        {
+            System.Windows.MessageBox.Show(this, message, "复制路径失败", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 
@@ -6310,6 +6338,7 @@ public class SlotViewModel : INotifyPropertyChanged
     public string PublishMenuHeader => IsPublishedInStore ? "更新到商店" : "发布到商店";
     public bool CanShowStoreLink => !IsFolder && _command?.Source == CommandSource.LocalExtension && IsPublishedInStore;
     public bool CanOpenDirectory => (CanEdit && !string.IsNullOrWhiteSpace(_command?.ExtensionDirectoryPath)) || (MainWindow.IsQuickNoteCommand(_command) && !string.IsNullOrWhiteSpace(_command?.OpenTarget));
+    public bool CanCopyExtensionPath => !IsFolder && _command?.Source == CommandSource.LocalExtension && !string.IsNullOrWhiteSpace(_command.ExtensionDirectoryPath);
     public bool CanRemoveFromFixedSlots => _item != null;
     public bool CanDeleteExtension => !IsFolder && _command?.Source == CommandSource.LocalExtension;
     public bool CanRename => IsFolder || (IsOccupied && _command != null);
@@ -6548,6 +6577,7 @@ public class SlotViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(PublishMenuHeader));
         OnPropertyChanged(nameof(CanShowStoreLink));
         OnPropertyChanged(nameof(CanOpenDirectory));
+        OnPropertyChanged(nameof(CanCopyExtensionPath));
         OnPropertyChanged(nameof(CanRemoveFromFixedSlots));
         OnPropertyChanged(nameof(HasFolderBadge));
         OnPropertyChanged(nameof(FolderBadgeText));

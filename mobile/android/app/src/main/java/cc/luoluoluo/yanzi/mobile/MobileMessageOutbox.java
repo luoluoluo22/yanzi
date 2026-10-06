@@ -30,6 +30,7 @@ final class MobileMessageOutbox {
             String body = envelope.toString();
             if (target.exists()) {
                 if (!read(target).toString().equals(body)) throw new IOException("message_id_reused");
+                MobileTaskJournal.saved(base, token, envelope);
                 return target;
             }
             File[] existing = root.listFiles((dir, name) -> name.endsWith(".json"));
@@ -39,6 +40,7 @@ final class MobileMessageOutbox {
                 output.write(body.getBytes(StandardCharsets.UTF_8)); output.getFD().sync();
             }
             if (!temporary.renameTo(target)) throw new IOException("outbox_commit_failed");
+            MobileTaskJournal.saved(base, token, envelope);
             return target;
         }
     }

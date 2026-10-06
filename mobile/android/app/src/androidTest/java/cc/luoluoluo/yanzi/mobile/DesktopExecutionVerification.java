@@ -29,6 +29,10 @@ final class DesktopExecutionVerification {
                 throw new AssertionError("Device identity changed without reinstall");
             String id = MobileApiClient.runExtensionOnDesktop(base, token, source, MobileDeviceIdentity.buildDeviceDisplayName(), extension, "");
             awaitCompleted(base, token, id);
+            boolean persisted = false;
+            for (JSONObject receipt : MobileTaskJournal.list(base, token)) if (id.equals(receipt.optString("messageId")) && "completed".equals(receipt.optString("status"))) persisted = true;
+            if (!persisted) throw new AssertionError("Original execution receipt not persisted in task center");
+            evidence.append("TASK_CENTER_ORIGINAL_RESULT=PASSED\n");
             evidence.append("APP_ROUTE=PASSED id=").append(id).append("\n");
             JSONObject desktop = DeviceTargets.uniqueOnlineDesktop(MobileMessageClient.requestWithoutQueue(base, "/v1/me/devices", token, "GET", null).getJSONArray("items"));
             if (desktop == null) throw new AssertionError("One online desktop required");

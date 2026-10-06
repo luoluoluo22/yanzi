@@ -204,7 +204,10 @@ class MobileApiClient {
         public static JSONObject fetchMessageDetail(String baseUrl, String token, String messageId) throws Exception {
             JSONObject immediate = sImmediateMessageResults.remove(messageId);
             if (immediate != null) return immediate;
-            return MobileApiClient.getJson(baseUrl, "/v1/me/mobile/messages/" + MobileApiClient.encodePath(messageId), token, "\u83b7\u53d6\u6d88\u606f\u8be6\u60c5");
+            JSONObject detail = MobileApiClient.getJson(baseUrl, "/v1/me/mobile/messages/" + MobileApiClient.encodePath(messageId), token, "获取消息详情");
+            try { MobileTaskJournal.observed(baseUrl, token, messageId, detail.optJSONObject("message") == null ? detail : detail.getJSONObject("message")); }
+            catch (Exception ignored) { android.util.Log.w("YanziTasks", "Receipt journal update failed"); }
+            return detail;
         }
 
         static List<RemoteExtension> fetchRunnableExtensions(String baseUrl, String token) throws Exception {

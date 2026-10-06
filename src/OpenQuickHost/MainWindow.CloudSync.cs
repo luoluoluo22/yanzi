@@ -80,6 +80,12 @@ public partial class MainWindow
 
     public async Task RefreshCloudStateAsync(bool allowLoginPrompt = true)
     {
+        if (HostRuntimeProfile.IsShell && RuntimeConnection.IsConnected)
+        {
+            await RuntimeRpc.CallAsync("cloud.refresh");
+            await RuntimeConnection.RefreshCatalogAsync();
+            return;
+        }
         if (!Dispatcher.CheckAccess())
         {
             await await Dispatcher.InvokeAsync(() => RefreshCloudStateAsync(allowLoginPrompt));
@@ -646,6 +652,7 @@ public partial class MainWindow
         try
         {
             await _cloudSyncClient.EnsureAuthenticatedAsync();
+            if (HostRuntimeProfile.IsShell && _cloudSyncClient.E2eeMasterKey != null) RuntimeConnection.Queue("auth.key", new { account = _cloudSyncClient.CurrentUserId, key = _cloudSyncClient.E2eeMasterKey });
             OnPropertyChanged(nameof(SyncSummaryText));
             CloudSyncDiagnostics.Log("MainWindow.Auth", "Ensure authenticated completed", ("authState", CloudSyncDiagnostics.DescribeAuthState(_cloudSyncClient)));
             return true;
@@ -667,6 +674,7 @@ public partial class MainWindow
             if (ShowLoginDialog(FormatExceptionMessage(ex)))
             {
                 await _cloudSyncClient.EnsureAuthenticatedAsync();
+            if (HostRuntimeProfile.IsShell && _cloudSyncClient.E2eeMasterKey != null) RuntimeConnection.Queue("auth.key", new { account = _cloudSyncClient.CurrentUserId, key = _cloudSyncClient.E2eeMasterKey });
                 OnPropertyChanged(nameof(SyncSummaryText));
                 CloudSyncDiagnostics.Log("MainWindow.Auth", "Ensure authenticated recovered through login dialog", ("authState", CloudSyncDiagnostics.DescribeAuthState(_cloudSyncClient)));
                 return true;
@@ -729,6 +737,7 @@ public partial class MainWindow
             {
                 _cloudSyncClient.SetCredential(email, password, dialog.RememberCredential);
                 await _cloudSyncClient.EnsureAuthenticatedAsync();
+            if (HostRuntimeProfile.IsShell && _cloudSyncClient.E2eeMasterKey != null) RuntimeConnection.Queue("auth.key", new { account = _cloudSyncClient.CurrentUserId, key = _cloudSyncClient.E2eeMasterKey });
             };
             Window? activeWindow = null;
             foreach (Window win in System.Windows.Application.Current.Windows)
@@ -862,6 +871,7 @@ public partial class MainWindow
 
     private void ScheduleSilentCloudReconnect(string reason, bool immediate = false)
     {
+        if (!HostRuntimeProfile.OwnsBackgroundServices) return;
         if (_cloudSyncClient == null || !_cloudSyncClient.HasCredential || !_appSettings.RefreshCloudOnStartup)
         {
             return;
@@ -993,6 +1003,7 @@ public partial class MainWindow
 
     private void StartBackgroundWebDavSync()
     {
+        if (!HostRuntimeProfile.OwnsBackgroundServices) return;
         var settings = AppSettingsStore.Load();
         if (settings.PersonalSyncAutoSyncDelaySeconds > 0 &&
             PersonalSyncBackendFactory.IsConfigured(settings) &&
@@ -1004,6 +1015,7 @@ public partial class MainWindow
 
     internal void QueueBackgroundWebDavSync(string reason, bool forceImmediate = false)
     {
+        if (HostRuntimeProfile.IsShell) { if (!HostRuntimeProfile.IsDevelopment) RuntimeConnection.Queue("sync.queue"); return; }
         var settings = AppSettingsStore.Load();
         if (!PersonalSyncBackendFactory.IsConfigured(settings))
         {
@@ -1211,6 +1223,7 @@ public partial class MainWindow
 
     public void SyncLocalExtensionsToCloud(bool forceImmediate = false)
     {
+        if (HostRuntimeProfile.IsShell) { if (!HostRuntimeProfile.IsDevelopment) RuntimeConnection.Queue("sync.queue"); return; }
         if (_cloudSyncClient == null || !_cloudSyncClient.HasCredential)
         {
             return;
@@ -1272,6 +1285,7 @@ public partial class MainWindow
 
     private void RunLocalExtensionsAccountSync()
     {
+        if (!HostRuntimeProfile.OwnsBackgroundServices) return;
         if (_cloudSyncClient == null || !_cloudSyncClient.HasCredential)
             return;
 
@@ -1658,11 +1672,12 @@ public partial class MainWindow
 
     private void StartExtensionContentWatcher()
     {
+        if (!HostRuntimeProfile.OwnsBackgroundServices) return;
         _lastCatalogContentSignature = GetCatalogContentSignature();
         _extensionCatalogRefreshTimer.Tick += (_, _) =>
         {
             _extensionCatalogRefreshTimer.Stop();
-            if (!IsLoaded || Dispatcher.HasShutdownStarted || _isReplacingLocalExtensions)
+            if ((!IsLoaded && !HostRuntimeProfile.IsRuntime) || Dispatcher.HasShutdownStarted || _isReplacingLocalExtensions)
                 return;
             var current = GetCatalogContentSignature();
             if (string.IsNullOrEmpty(current) || current == _lastCatalogContentSignature)
@@ -2052,6 +2067,7 @@ public partial class MainWindow
         }
 
         await _cloudSyncClient.EnsureAuthenticatedAsync();
+            if (HostRuntimeProfile.IsShell && _cloudSyncClient.E2eeMasterKey != null) RuntimeConnection.Queue("auth.key", new { account = _cloudSyncClient.CurrentUserId, key = _cloudSyncClient.E2eeMasterKey });
         var settings = AppSettingsStore.Load();
         var sync = settings.PersonalSync ?? new PersonalSyncSettings();
         var secrets = PersonalSyncSecretStore.Load();
@@ -2197,6 +2213,7 @@ public partial class MainWindow
             snapshot.PreferManualExtensionEditor != null && settings.PreferManualExtensionEditor != incoming.PreferManualExtensionEditor ||
             snapshot.EnableEverything != null && settings.EnableEverything != incoming.EnableEverything ||
             !string.Equals(settings.LauncherHotkey, incoming.LauncherHotkey, StringComparison.Ordinal) ||
+            snapshot.AppShortcutBindings != null && !AreJsonPayloadsEqual(settings.AppShortcutBindings, incoming.AppShortcutBindings) ||
             settings.LaunchAtStartup != incoming.LaunchAtStartup ||
             settings.RefreshCloudOnStartup != incoming.RefreshCloudOnStartup ||
             settings.CloseToTray != incoming.CloseToTray ||
@@ -2354,6 +2371,12 @@ public partial class MainWindow
             settings.EnableEverything = incoming.EnableEverything;
         }
         settings.LauncherHotkey = incoming.LauncherHotkey;
+        if (snapshot.AppShortcutBindings != null)
+        {
+            settings.AppShortcutBindings = new Dictionary<string, string>(
+                incoming.AppShortcutBindings,
+                StringComparer.OrdinalIgnoreCase);
+        }
         settings.LaunchAtStartup = incoming.LaunchAtStartup;
         settings.RefreshCloudOnStartup = incoming.RefreshCloudOnStartup;
         settings.CloseToTray = incoming.CloseToTray;
@@ -2431,6 +2454,7 @@ public partial class MainWindow
         }
 
         await _cloudSyncClient.EnsureAuthenticatedAsync();
+            if (HostRuntimeProfile.IsShell && _cloudSyncClient.E2eeMasterKey != null) RuntimeConnection.Queue("auth.key", new { account = _cloudSyncClient.CurrentUserId, key = _cloudSyncClient.E2eeMasterKey });
         var settings = AppSettingsStore.Load();
         var localSnapshot = CloudQuickPanelConfigSnapshot.FromSettings(settings);
         if (CloudQuickPanelConfigSnapshot.IsInitialDefaultSnapshot(localSnapshot))
@@ -2914,6 +2938,7 @@ public partial class MainWindow
         }
 
         await _cloudSyncClient.EnsureAuthenticatedAsync();
+            if (HostRuntimeProfile.IsShell && _cloudSyncClient.E2eeMasterKey != null) RuntimeConnection.Queue("auth.key", new { account = _cloudSyncClient.CurrentUserId, key = _cloudSyncClient.E2eeMasterKey });
         var settings = AppSettingsStore.Load();
         settings.Yanm ??= new YanmSettings();
         settings.Yanm.ComponentState ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -3432,6 +3457,7 @@ public partial class MainWindow
         try
         {
             await _cloudSyncClient.EnsureAuthenticatedAsync();
+            if (HostRuntimeProfile.IsShell && _cloudSyncClient.E2eeMasterKey != null) RuntimeConnection.Queue("auth.key", new { account = _cloudSyncClient.CurrentUserId, key = _cloudSyncClient.E2eeMasterKey });
             var capabilities = await TryGetCloudSyncCapabilitiesAsync();
             if (capabilities?.ObjectSyncAvailable == true)
             {
@@ -3988,6 +4014,7 @@ public partial class MainWindow
             }
 
             await _cloudSyncClient.EnsureAuthenticatedAsync();
+            if (HostRuntimeProfile.IsShell && _cloudSyncClient.E2eeMasterKey != null) RuntimeConnection.Queue("auth.key", new { account = _cloudSyncClient.CurrentUserId, key = _cloudSyncClient.E2eeMasterKey });
             OnPropertyChanged(nameof(SyncSummaryText));
             SyncStatus = "已登录，可进行云同步。";
             HostAssets.AppendLog("PromptLoginFromSettingsAsync: authentication succeeded, pulling cloud configs.");
@@ -4239,6 +4266,7 @@ public partial class MainWindow
             }
 
             await _cloudSyncClient.EnsureAuthenticatedAsync();
+            if (HostRuntimeProfile.IsShell && _cloudSyncClient.E2eeMasterKey != null) RuntimeConnection.Queue("auth.key", new { account = _cloudSyncClient.CurrentUserId, key = _cloudSyncClient.E2eeMasterKey });
             var envelope = new LauncherConfigObjectEnvelope
             {
                 SchemaVersion = conflict.LocalSchemaVersion,
@@ -4459,6 +4487,7 @@ public partial class MainWindow
 
     public void RefreshAppSettings()
     {
+        if (HostRuntimeProfile.IsShell && !HostRuntimeProfile.IsDevelopment) RuntimeConnection.Queue("settings.refresh");
         var settings = AppSettingsStore.Load();
         _appSettings = settings;
         _windowBoundExtensionsService.Reload(_appSettings.WindowBindings);

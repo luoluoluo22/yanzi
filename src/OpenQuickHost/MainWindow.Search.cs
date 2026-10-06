@@ -1146,12 +1146,20 @@ public partial class MainWindow
             else if (isCustomConfigurable)
             {
                 _appSettings.CustomCommandShortcuts ??= new(StringComparer.OrdinalIgnoreCase);
+                _appSettings.AppShortcutBindings ??= new(StringComparer.OrdinalIgnoreCase);
+                KnownApplicationCatalog.TryGetByExtensionId(resolved.ExtensionId, out var knownApplication);
+
                 if (string.IsNullOrWhiteSpace(newShortcut))
                 {
                     _appSettings.CustomCommandShortcuts.Remove(resolved.ExtensionId);
                     if (!string.IsNullOrWhiteSpace(resolved.OpenTarget))
                     {
                         _appSettings.CustomCommandShortcuts.Remove(resolved.OpenTarget);
+                    }
+
+                    if (knownApplication != null)
+                    {
+                        _appSettings.AppShortcutBindings.Remove(knownApplication.Id);
                     }
                 }
                 else
@@ -1161,8 +1169,14 @@ public partial class MainWindow
                     {
                         _appSettings.CustomCommandShortcuts[resolved.OpenTarget] = newShortcut;
                     }
+
+                    if (knownApplication != null)
+                    {
+                        _appSettings.AppShortcutBindings[knownApplication.Id] = newShortcut;
+                    }
                 }
 
+                _appSettings.LauncherConfigUpdatedAtUtc = DateTime.UtcNow.ToString("O");
                 AppSettingsStore.Save(_appSettings);
 
                 foreach (var cmd in _allCommands.Where(x => x.ExtensionId.Equals(resolved.ExtensionId, StringComparison.OrdinalIgnoreCase)))

@@ -132,7 +132,9 @@ internal static class SyncCoverageCatalog
         yield return Device(nameof(AppSettings.LastTestArgument), "本机调试输入历史。");
         yield return Device(nameof(AppSettings.LastExtensionEditorTab), "小程序编辑器上次偏好 Tab。");
         yield return Device(nameof(AppSettings.MobileExtensionsJson), "本机移动端代理缓存。");
-        yield return Device(nameof(AppSettings.CustomCommandShortcuts), "本机应用与命令自定义快捷键绑定。");
+        yield return Account(nameof(AppSettings.AppShortcutBindings), SyncPayloadPolicy.FullPayload,
+            "常用应用使用稳定应用身份同步快捷键，不同步本机 exe 路径。");
+        yield return Device(nameof(AppSettings.CustomCommandShortcuts), "本机路径型应用与命令快捷键兼容映射，不跨设备同步。");
 
         yield return Device(nameof(AppSettings.QuickPanelRowCount), "旧版网格尺寸，按本机屏幕迁移。");
         yield return Device(nameof(AppSettings.QuickPanelGlobalRowCount), "本机屏幕对应的背包网格尺寸。");

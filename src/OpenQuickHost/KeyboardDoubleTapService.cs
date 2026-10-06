@@ -118,6 +118,7 @@ public static class KeyboardDoubleTapService
         Action? onWinRelease = null,
         Action? onWinDoubleTap = null)
     {
+        if (!HostRuntimeProfile.GlobalListenersEnabled) return;
         if (IsRunning)
         {
             HostAssets.AppendLog("Keyboard double tap: start skipped because hook is already running.");

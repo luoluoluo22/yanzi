@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "apps": [
+    {
+      "id": "xiaohongshu.filter",
+      "name": "小红书屏蔽",
+      "description": "支持作者/关键词/单篇笔记过滤，并记录打开笔记的兴趣行为数据；同时允许燕子自定义卡片混入小红书瀑布流。",
+      "version": "0.7.5",
+      "category": "内容控制",
+      "matches": ["https://www.xiaohongshu.com/*"],
+      "contentScript": "webapps/xiaohongshu-filter/content.js",
+      "defaultInstalled": true,
+      "syncKeys": ["rules", "settings", "noteStats", "customCards"],
+      "capabilities": ["悬浮一键屏蔽作者", "标题选词屏蔽", "作者选中屏蔽", "关键词管理", "屏蔽开关", "屏蔽列表", "单篇笔记屏蔽", "动态瀑布流过滤", "笔记打开统计", "阅读停留时长", "兴趣数据建模", "自定义卡片植入", "本地笔记动态补货", "30条批量补货", "兴趣主题定制", "悬浮我喜欢/我不感兴趣反馈", "自由评价反馈", "选中文字精细反馈", "自有笔记免屏蔽", "ChatGPT个性化生成", "自定义卡片点击反馈", "燕子云同步"]
+    },
+    {
+      "id": "douyin.filter",
+      "name": "抖音屏蔽",
+      "description": "按标题、话题标签、作者、直播类型、商品卡和广告标签跳过不想看的抖音内容。",
+      "version": "0.2.9",
+      "category": "内容控制",
+      "matches": ["https://www.douyin.com/*"],
+      "contentScript": "webapps/douyin-filter/content.js",
+      "defaultInstalled": true,
+      "syncKeys": ["rules", "settings"],
+      "capabilities": ["标题关键词过滤", "话题标签过滤", "作者关键词过滤", "直播类型识别", "商品卡识别", "广告标签识别", "命中词红色高亮", "观察诊断面板", "侧栏原生Switch", "即时自动跳过", "失败重试", "燕子云同步"]
+    }
+  ]
+}

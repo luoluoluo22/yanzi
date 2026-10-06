@@ -27,9 +27,9 @@ public static class HostAssets
     public static string RootPath => DataRootPath;
 
     public static string DataRootPath =>
-        _isolatedVerificationDataRootPath ?? Path.Combine(
+        _isolatedVerificationDataRootPath ?? HostRuntimeProfile.RuntimeDataRoot ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "OpenQuickHost");
+            HostRuntimeProfile.DataDirectoryName);
 
     internal static IDisposable UseIsolatedDataRootForVerification(string path)
     {
@@ -78,7 +78,7 @@ public static class HostAssets
 
     public static string LogsPath => ResolveDataDirectoryPath("logs");
 
-    public static string HostLogPath => Path.Combine(LogsPath, "host.log");
+    public static string HostLogPath => Path.Combine(LogsPath, HostRuntimeProfile.IsRuntime ? "runtime.log" : "shell.log");
 
     public static string DevDebugLogPath => Path.Combine(LogsPath, "dev-debug.log");
 
@@ -437,6 +437,7 @@ public static class HostAssets
 
     private static void MigrateLegacyFile(string fileName)
     {
+        if (HostRuntimeProfile.IsDevelopment || HostRuntimeProfile.RuntimeDataRoot != null) return;
         var legacyPath = Path.Combine(InstallRootPath, fileName);
         var targetPath = Path.Combine(DataRootPath, fileName);
         if (!File.Exists(legacyPath) || File.Exists(targetPath))
@@ -457,6 +458,7 @@ public static class HostAssets
 
     private static void MigrateLegacyDirectory(string directoryName)
     {
+        if (HostRuntimeProfile.IsDevelopment || HostRuntimeProfile.RuntimeDataRoot != null) return;
         var legacyPath = Path.Combine(InstallRootPath, directoryName);
         var targetPath = Path.Combine(DataRootPath, directoryName);
         if (!Directory.Exists(legacyPath) || Directory.Exists(targetPath))

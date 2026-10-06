@@ -11,6 +11,7 @@ public static class RunningExtensionRegistry
 
     public static IReadOnlyList<RunningExtensionInfo> GetSnapshot()
     {
+        if (HostRuntimeProfile.IsShell && RuntimeConnection.IsConnected) return RuntimeConnection.Running;
         List<Guid>? staleIds = null;
         List<RunningExtensionInfo> snapshot;
 
@@ -200,6 +201,16 @@ public static class RunningExtensionRegistry
 
     public static bool TryTerminate(Guid instanceId, out string message)
     {
+        if (HostRuntimeProfile.IsShell && RuntimeConnection.IsConnected)
+        {
+            try
+            {
+                var response = RuntimeRpc.CallAsync("running.stop", new { instanceId }).GetAwaiter().GetResult();
+                message = response.GetProperty("message").GetString() ?? "已提交结束请求。";
+                return response.GetProperty("success").GetBoolean();
+            }
+            catch (Exception ex) { message = ex.Message; return false; }
+        }
         RunningExtensionEntry? entry;
         lock (Gate)
         {

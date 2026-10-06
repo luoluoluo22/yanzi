@@ -50,6 +50,7 @@ public sealed class VelopackUpdateService
 
     public void InitializeManager(UpdateChannelMode mode)
     {
+        if (HostRuntimeProfile.IsDevelopment) return;
         try
         {
             _currentChannelMode = mode;
@@ -224,6 +225,7 @@ public sealed class VelopackUpdateService
     /// </summary>
     public void ApplyAndRestart(UpdateInfo updateInfo)
     {
+        if (HostRuntimeProfile.IsDevelopment) return;
         if (_updateManager == null || updateInfo == null)
         {
             HostAssets.AppendLog("VelopackUpdateService: ApplyAndRestart aborted (manager or updateInfo is null).");
@@ -247,6 +249,7 @@ public sealed class VelopackUpdateService
     /// </summary>
     public async Task StartSilentUpdateCheckAndDownloadAsync()
     {
+        if (!HostRuntimeProfile.OwnsBackgroundServices) return;
         // 1. 用户配置检查
         var settings = AppSettingsStore.Load();
         if (!settings.EnableAutoUpdate)

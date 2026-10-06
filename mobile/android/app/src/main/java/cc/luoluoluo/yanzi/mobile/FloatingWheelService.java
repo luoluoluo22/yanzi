@@ -2322,6 +2322,12 @@ public class FloatingWheelService extends Service {
                                         String sourceDeviceName, long time) {
         ChatHistoryStore.append(this, ChatHistoryStore.message(
                 "peer", kind, content, time, "", sourceDeviceId, sourceDeviceName));
+        try {
+            String preview = "photo".equals(kind) ? "[图片]" : "file".equals(kind) ? "[文件]" : content;
+            MobileEventNotifier.notifyChatMessage(this, java.util.UUID.randomUUID().toString(), sourceDeviceName, preview);
+        } catch (Exception error) {
+            Log.w(TAG, "Chat notification deferred", error);
+        }
     }
 
     private String peerDisplayName(String deviceId) {

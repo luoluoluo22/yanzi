@@ -24,3 +24,7 @@
 ## 发布路径
 
 仅提交本次 Android 源码、测试、版本与本文档，主目录其他工作保留。使用 GitHub Release android-v0.2.49 和现有 Publish mobile and notes CI 发布公开 APK/更新清单；不进行本地 Worker 部署。
+
+## 公开发布结果
+
+GitHub android-v0.2.49 与公开更新清单均已发布；Publish mobile and notes 37185687290 全部成功。mobile-release-ci.py 的公开 APK 实际下载校验通过（PUBLIC_MOBILE_VERIFIED=0.2.49），GitHub 与公开 APK SHA256 均为 f65b13c41a2742f7573ef0a5fd0aa834683759e1c1dd051877781b287d8bbeef，大小 7,233,729 字节。发布源码提交 081f4b81de17287dd8860b0eb69fc48743581733。

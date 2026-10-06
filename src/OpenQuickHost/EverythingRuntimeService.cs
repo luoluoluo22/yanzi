@@ -30,6 +30,7 @@ public static class EverythingRuntimeService
 
     public static bool ShowInteractiveSetup()
     {
+        if (!HostRuntimeProfile.OwnsBackgroundServices) return false;
         var runtimeExecutablePath = GetBundledRuntimeExecutablePath();
         if (!File.Exists(runtimeExecutablePath))
         {
@@ -59,6 +60,7 @@ public static class EverythingRuntimeService
 
     public static bool EnsureRunning()
     {
+        if (!HostRuntimeProfile.OwnsBackgroundServices) return EverythingSearchService.IsIpcReachable();
         lock (SyncLock)
         {
             // 1. 如果系统上已有可用 Everything（如用户已开机运行 Everything 1.5/1.4），直接复用，无需重复拉起
@@ -96,6 +98,7 @@ public static class EverythingRuntimeService
 
     public static void RebuildDatabaseAndRestart()
     {
+        if (!HostRuntimeProfile.OwnsBackgroundServices) return;
         lock (SyncLock)
         {
             StopOwnedRuntime();
@@ -165,6 +168,7 @@ public static class EverythingRuntimeService
 
     public static void StopOwnedRuntime()
     {
+        if (!HostRuntimeProfile.OwnsBackgroundServices) return;
         int? processId;
         lock (SyncLock)
         {
@@ -200,6 +204,7 @@ public static class EverythingRuntimeService
 
     public static void KillAllYanziEverythingProcesses()
     {
+        if (!HostRuntimeProfile.OwnsBackgroundServices) return;
         try
         {
             var processes = Process.GetProcessesByName("Everything");
@@ -208,9 +213,8 @@ public static class EverythingRuntimeService
                 try
                 {
                     var path = process.MainModule?.FileName;
-                    if (path != null && (path.Contains("Yanzi", StringComparison.OrdinalIgnoreCase) ||
-                                         path.Contains("OpenQuickHost", StringComparison.OrdinalIgnoreCase) ||
-                                         path.Contains("EverythingRuntime", StringComparison.OrdinalIgnoreCase)))
+                    if (path != null && string.Equals(Path.GetFullPath(path),
+                        Path.GetFullPath(GetBundledRuntimeExecutablePath()), StringComparison.OrdinalIgnoreCase))
                     {
                         process.Kill();
                         try { process.WaitForExit(1000); } catch { }

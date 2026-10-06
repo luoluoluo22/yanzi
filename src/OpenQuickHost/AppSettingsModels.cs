@@ -160,6 +160,8 @@ public QuickPanelMouseTriggerSettings QuickPanelMouseTriggers { get; set; } = ne
 
     public Dictionary<string, string> CustomCommandShortcuts { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
+    public Dictionary<string, string> AppShortcutBindings { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
     public bool LegacyCleanupDismissed { get; set; } = false;
 
     public string LauncherConfigUpdatedAtUtc { get; set; } = string.Empty;

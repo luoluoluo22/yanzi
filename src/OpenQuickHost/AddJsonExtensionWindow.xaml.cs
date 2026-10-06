@@ -2983,6 +2983,7 @@ public partial class AddJsonExtensionWindow : Window
         {
             var tempDirectory = Path.Combine(Path.GetTempPath(), "yanzi-extension-test", Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(tempDirectory);
+            File.WriteAllText(Path.Combine(tempDirectory, "manifest.json"), normalizedJson, new UTF8Encoding(false));
             try
             {
                 var command = BuildTestCommand(manifest, tempDirectory);
@@ -3022,6 +3023,7 @@ public partial class AddJsonExtensionWindow : Window
 
             var tempDirectory = Path.Combine(Path.GetTempPath(), "yanzi-extension-test", Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(tempDirectory);
+            File.WriteAllText(Path.Combine(tempDirectory, "manifest.json"), normalizedJson, new UTF8Encoding(false));
 
             if (!isInline)
             {
@@ -3142,6 +3144,7 @@ public partial class AddJsonExtensionWindow : Window
         {
             var tempDirectory = Path.Combine(Path.GetTempPath(), "yanzi-extension-test", Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(tempDirectory);
+            File.WriteAllText(Path.Combine(tempDirectory, "manifest.json"), normalizedJson, new UTF8Encoding(false));
             try
             {
                 var command = BuildTestCommand(manifest, tempDirectory);
@@ -3537,6 +3540,8 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("- 宿主 context 只提供管家能力：InputText、LaunchSource、ExtensionDirectory、ExtensionDataDirectory、Now、Permissions、State、SetStateAsync、Storage、ViewState、UpdateView。其它功能请用 C# / PowerShell / Windows 原生能力实现。");
         builder.AppendLine("- 如果需要向绑定的手机端发送横幅通知，请向本机的燕子服务发送 HTTP POST 请求到 http://127.0.0.1:{端口}/v1/notify（默认端口 53919，Header 需携带 Authorization: Bearer yanzi-local-dev-token），Body 格式为 {\"title\":\"标题\",\"body\":\"内容\"}，且必须使用绝对标准的 UTF-8 编码字节流发送，否则手机上会显示 ??? 乱码。");
         builder.AppendLine();
+        builder.AppendLine(YanziCapabilityRequirementResolver.BuildAuthoringPrompt());
+        builder.AppendLine();
         builder.AppendLine("选择策略：");
         builder.AppendLine("- 能用 openTarget 或 queryTargetTemplate 完成就不要写脚本。");
         builder.AppendLine("- 系统配置和命令行自动化优先 PowerShell；复杂应用逻辑和窗口工具优先 C#。");
@@ -3554,7 +3559,7 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("- 只返回一个 ```json 代码块，不要解释，不要额外文字。");
         builder.AppendLine("- JSON 必须能被 System.Text.Json 解析；不要写注释、尾随逗号或 null 字段。");
         builder.AppendLine("- 新建小程序只需 name 和实现功能所需的字段；id 由程序在保存时生成，version 默认 0.1.0，分类、描述和关键词按需提供。");
-        builder.AppendLine("- 常用字段：icon、accentHex、openTarget、queryPrefixes、queryTargetTemplate、runtime、entryMode、entry、permissions、script.source、hostedViewXaml、uiMode。");
+        builder.AppendLine("- 常用字段：icon、accentHex、openTarget、queryPrefixes、queryTargetTemplate、runtime、entryMode、entry、permissions、requires、provides、script.source、hostedViewXaml、uiMode。");
         builder.AppendLine("- accentHex 支持 #RRGGBB 或 #AARRGGBB。");
         builder.AppendLine();
         builder.AppendLine("最小示例：");
@@ -4964,7 +4969,7 @@ Write-Output "说明：这是模板输出，后续可以替换为真实翻译 AP
         {
             var userDataFolder = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "OpenQuickHost",
+                HostRuntimeProfile.DataDirectoryName,
                 "JsonEditorWebView2");
             Directory.CreateDirectory(userDataFolder);
             var env = await CoreWebView2Environment.CreateAsync(null, userDataFolder);
@@ -5008,7 +5013,7 @@ Write-Output "说明：这是模板输出，后续可以替换为真实翻译 AP
         {
             var userDataFolder2 = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "OpenQuickHost",
+                HostRuntimeProfile.DataDirectoryName,
                 "ScriptEditorWebView2");
             Directory.CreateDirectory(userDataFolder2);
             var env2 = await CoreWebView2Environment.CreateAsync(null, userDataFolder2);

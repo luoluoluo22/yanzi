@@ -1,0 +1,17 @@
+{
+  "name": "world-model-3d",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 4177",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "d3-force-3d": "^3.0.6",
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "vite": "^7.1.7"
+  }
+}

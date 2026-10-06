@@ -10,6 +10,8 @@ namespace OpenQuickHost;
 public static class YanziFileWorkflow
 {
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> Locks = new();
+    private static readonly ConcurrentDictionary<string, OnDemandProviderState> OnDemandProviders =
+        new(StringComparer.OrdinalIgnoreCase);
     public const long Limit = 30L * 1024 * 1024;
     public static string Root => HostAssets.ResolveDataDirectoryPath("companion-files/" + Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(SyncSessionStore.Load()?.UserId ?? "local"))));
     public static string Ticket(string id) {
@@ -21,7 +23,7 @@ public static class YanziFileWorkflow
         return await app.Dispatcher.InvokeAsync(() => (app.MainWindow as MainWindow)?.CloudSyncClient ?? throw new InvalidOperationException("account_login_required"));
     }
     public static IEnumerable<YanziCapabilityProviderDefinition> Providers() {
-        yield return new() { Name="files.workflow.run", Description="将附件交给小程序处理，返回可校验的文件结果", Permissions=["files.workflow"],
+        yield return new() { Name="files.workflow.run", Description="将附件交给小程序处理，返回可校验的文件结果", Audience="system", Category="workflow", Permissions=["files.workflow"],
             InputSchema=YanziCapabilitySchema.Parse("{\"type\":\"object\",\"properties\":{\"jobId\":{\"type\":\"string\"},\"transferId\":{\"type\":\"string\"},\"attachmentId\":{\"type\":\"string\"},\"capability\":{\"type\":\"string\"},\"parameters\":{\"type\":\"object\"}},\"required\":[\"jobId\",\"capability\"]}"),
             OutputSchema=YanziCapabilitySchema.Parse("{\"type\":\"object\"}"), Handler=p=>Run((JsonElement)p!) };
     }
@@ -50,7 +52,8 @@ public static class YanziFileWorkflow
                 }
                 throw new IOException("workflow_result_unknown");
             }
-            if (!YanziCapabilityRegistry.Contains(capability) || capability=="files.workflow.run") throw new IOException("workflow_not_running");
+            if (capability=="files.workflow.run") throw new IOException("workflow_recursive_capability");
+            await using var providerLease = await AcquireProviderAsync(capability);
             var outputDir=Path.Combine(root,job); Directory.CreateDirectory(outputDir);
             await File.WriteAllTextAsync(ledger,JsonSerializer.Serialize(new{signature,state="processing"}));
             var invoked=await YanziCapabilityInvocationService.InvokeAsync(capability,new {inputPath=input,outputDirectory=outputDir,parameters},YanziCapabilityCaller.LocalAgent);
@@ -65,5 +68,154 @@ public static class YanziFileWorkflow
             var temporary=ledger+".tmp"; await File.WriteAllTextAsync(temporary,JsonSerializer.Serialize(new{signature,state="completed",result})); File.Move(temporary,ledger,true);
             return result;
         } finally { gate.Release(); }
+    }
+
+    internal static async Task<IAsyncDisposable> AcquireProviderAsync(string capability)
+    {
+        var state = OnDemandProviders.GetOrAdd(capability, _ => new OnDemandProviderState());
+        await state.Gate.WaitAsync();
+        try
+        {
+            if (YanziCapabilityRegistry.Contains(capability))
+            {
+                state.Users++;
+                return new OnDemandProviderLease(capability, state);
+            }
+
+            var command = LocalExtensionCatalog.LoadCommands()
+                .FirstOrDefault(candidate => YanziAgentCapabilityCatalog.ForExtension(candidate)
+                    .Any(item => string.Equals(item.Name, capability, StringComparison.OrdinalIgnoreCase)));
+            if (command == null)
+            {
+                throw new IOException("workflow_provider_not_installed");
+            }
+
+            var beforeIds = RunningExtensionRegistry.GetSnapshot()
+                .Where(item => string.Equals(item.ExtensionId, command.ExtensionId, StringComparison.OrdinalIgnoreCase))
+                .Select(item => item.InstanceId)
+                .ToHashSet();
+
+            using var startupTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            var started = await ScriptExtensionRunner.ExecuteAsync(
+                command,
+                inputText: null,
+                launchSource: "capability-on-demand",
+                cancellationToken: startupTimeout.Token);
+            if (!started.Success)
+            {
+                throw new IOException("workflow_provider_start_failed: " + started.Error);
+            }
+
+            for (var attempt = 0; attempt < 100 && !YanziCapabilityRegistry.Contains(capability); attempt++)
+            {
+                await Task.Delay(50);
+            }
+            if (!YanziCapabilityRegistry.Contains(capability))
+            {
+                throw new IOException("workflow_provider_registration_timeout");
+            }
+
+            var owned = RunningExtensionRegistry.GetSnapshot()
+                .FirstOrDefault(item =>
+                    string.Equals(item.ExtensionId, command.ExtensionId, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(item.LaunchSource, "capability-on-demand", StringComparison.OrdinalIgnoreCase) &&
+                    !beforeIds.Contains(item.InstanceId));
+
+            state.ExtensionId = command.ExtensionId;
+            state.OwnedInstanceId = owned?.InstanceId;
+            state.Users++;
+            HostAssets.AppendLog(
+                $"On-demand capability provider ready: capability={capability}, provider={command.ExtensionId}, ownedInstance={state.OwnedInstanceId}");
+            return new OnDemandProviderLease(capability, state);
+        }
+        finally
+        {
+            state.Gate.Release();
+        }
+    }
+
+    private static bool ShouldRetainOnDemandProvider(string? extensionId)
+    {
+        if (string.IsNullOrWhiteSpace(extensionId))
+        {
+            return false;
+        }
+
+        try
+        {
+            if (!HostObjectRegistry.TryGetObject($"{extensionId}-window", out var hostObject) || hostObject == null)
+            {
+                return false;
+            }
+
+            var property = hostObject.GetType().GetProperty("RetainAfterOnDemand");
+            return property?.GetValue(hostObject) is bool retain && retain;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private sealed class OnDemandProviderState
+    {
+        public SemaphoreSlim Gate { get; } = new(1, 1);
+        public int Users { get; set; }
+        public Guid? OwnedInstanceId { get; set; }
+        public string? ExtensionId { get; set; }
+    }
+
+    private sealed class OnDemandProviderLease : IAsyncDisposable
+    {
+        private readonly string _capability;
+        private OnDemandProviderState? _state;
+
+        public OnDemandProviderLease(string capability, OnDemandProviderState state)
+        {
+            _capability = capability;
+            _state = state;
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            var state = Interlocked.Exchange(ref _state, null);
+            if (state == null)
+            {
+                return;
+            }
+
+            await state.Gate.WaitAsync();
+            try
+            {
+                state.Users = Math.Max(0, state.Users - 1);
+                if (state.Users != 0 || state.OwnedInstanceId == null)
+                {
+                    return;
+                }
+
+                if (ShouldRetainOnDemandProvider(state.ExtensionId))
+                {
+                    HostAssets.AppendLog(
+                        $"On-demand capability provider promoted to user session: capability={_capability}, provider={state.ExtensionId}");
+                    state.OwnedInstanceId = null;
+                    return;
+                }
+
+                var instanceId = state.OwnedInstanceId.Value;
+                state.OwnedInstanceId = null;
+                RunningExtensionRegistry.TryTerminate(instanceId, out var stopMessage);
+                HostAssets.AppendLog(
+                    $"On-demand capability provider release: capability={_capability}, provider={state.ExtensionId}, result={stopMessage}");
+
+                for (var attempt = 0; attempt < 40 && YanziCapabilityRegistry.Contains(_capability); attempt++)
+                {
+                    await Task.Delay(50);
+                }
+            }
+            finally
+            {
+                state.Gate.Release();
+            }
+        }
     }
 }

@@ -80,6 +80,14 @@ internal static class AppSettingsMigration
         settings.RecentlyAddedExtensionIds ??= [];
         settings.UnreadNewExtensionIds ??= [];
         settings.KnownExtensionIds ??= [];
+        settings.CustomCommandShortcuts ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        settings.AppShortcutBindings ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        settings.AppShortcutBindings = settings.AppShortcutBindings
+            .Where(static pair => !string.IsNullOrWhiteSpace(pair.Key) && !string.IsNullOrWhiteSpace(pair.Value))
+            .ToDictionary(
+                static pair => pair.Key.Trim(),
+                static pair => pair.Value.Trim(),
+                StringComparer.OrdinalIgnoreCase);
         settings.CompletedQuestIds ??= [];
         settings.UnlockedBadges ??= [];
         settings.YarnSelect ??= new YarnSelectSettings();

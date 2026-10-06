@@ -605,6 +605,7 @@ public partial class MainWindow
 
     public void ShowPanel()
     {
+        if (HostRuntimeProfile.IsRuntime) { SharedRuntimeHost.Current?.RequestShell("launcher.show"); return; }
         var activeHwnd = Win32Native.GetForegroundWindow();
         if (activeHwnd != IntPtr.Zero && !WindowSensorHelper.IsCurrentProcessWindow(activeHwnd))
         {
@@ -641,11 +642,13 @@ public partial class MainWindow
 
     public void ShowMousePanel()
     {
+        if (HostRuntimeProfile.IsRuntime) { SharedRuntimeHost.Current?.RequestShell("mouse.show"); return; }
         _quickPanel?.ShowAtMouse();
     }
 
     public void HideMousePanel()
     {
+        if (HostRuntimeProfile.IsRuntime) { SharedRuntimeHost.Current?.RequestShell("mouse.hide"); return; }
         _quickPanel?.Hide();
     }
 
@@ -669,6 +672,7 @@ public partial class MainWindow
 
     private void StartStartupExtensions()
     {
+        if (!HostRuntimeProfile.OwnsBackgroundServices) return;
         _ = Task.Run(async () =>
         {
             // 给软件一点初始化时间
@@ -729,7 +733,8 @@ public partial class MainWindow
     /// </summary>
     public void NotifyScheduleChanged(string extensionId, string? schedule)
     {
-        _extensionScheduler?.RefreshExtension(extensionId, schedule);
+        if (HostRuntimeProfile.IsShell) RuntimeConnection.Queue("scheduler.refresh", new { id = extensionId, schedule });
+        else _extensionScheduler?.RefreshExtension(extensionId, schedule);
     }
 
     public void EnsureStandbyRadialMenu()
@@ -1535,6 +1540,7 @@ public partial class MainWindow
 
     public void PauseListenerServices()
     {
+        if (HostRuntimeProfile.IsShell) { _listenerServicesPaused = true; RuntimeConnection.Queue("listeners.pause"); return; }
         _listenerServicesPaused = true;
         StopMousePanelService();
         KeyboardDoubleTapService.Stop();
@@ -1552,6 +1558,7 @@ public partial class MainWindow
 
     public void ResumeListenerServices()
     {
+        if (HostRuntimeProfile.IsShell) { _listenerServicesPaused = false; RuntimeConnection.Queue("listeners.resume"); return; }
         _listenerServicesPaused = false;
         InputHookService.ReloadSettings();
         StartMousePanelService();
@@ -1694,6 +1701,7 @@ public partial class MainWindow
 
     public void TogglePanelVisibility()
     {
+        if (HostRuntimeProfile.IsRuntime) { SharedRuntimeHost.Current?.RequestShell("launcher.toggle"); return; }
         if (IsVisible)
         {
             HideToTray();
@@ -2125,6 +2133,7 @@ public partial class MainWindow
 
     private void RefreshExtensionHotkeys()
     {
+        if (!HostRuntimeProfile.GlobalListenersEnabled) return;
         if (_source == null)
         {
             return;
@@ -2301,6 +2310,7 @@ public partial class MainWindow
 
     private bool RefreshLauncherHotkeyRegistration()
     {
+        if (!HostRuntimeProfile.GlobalListenersEnabled) return true;
         if (_source == null)
         {
             return false;
@@ -2342,6 +2352,7 @@ public partial class MainWindow
 
     private bool RefreshYanmHotkeyRegistration()
     {
+        if (!HostRuntimeProfile.GlobalListenersEnabled) return true;
         if (_source == null)
         {
             return false;
@@ -2375,6 +2386,7 @@ public partial class MainWindow
 
     private bool RefreshRadialHotkeyRegistration()
     {
+        if (!HostRuntimeProfile.GlobalListenersEnabled) return true;
         if (_source == null)
         {
             return false;
@@ -2408,6 +2420,7 @@ public partial class MainWindow
 
     private bool RefreshWindowSnapAssistHotkeyRegistration()
     {
+        if (!HostRuntimeProfile.GlobalListenersEnabled) return true;
         if (_source == null)
         {
             return false;
@@ -3169,6 +3182,30 @@ public partial class MainWindow
             UseShellExecute = true
         });
         return true;
+    }
+
+    public bool TryCopyExtensionDirectoryPath(string extensionId, out string message)
+    {
+        message = string.Empty;
+        if (!_localExtensionIndex.TryGetValue(extensionId, out var command) ||
+            string.IsNullOrWhiteSpace(command.ExtensionDirectoryPath) ||
+            !Directory.Exists(command.ExtensionDirectoryPath))
+        {
+            message = "小程序目录不存在。";
+            return false;
+        }
+
+        try
+        {
+            ClipboardService.SetText(command.ExtensionDirectoryPath!);
+            message = $"已复制路径：{command.ExtensionDirectoryPath}";
+            return true;
+        }
+        catch (Exception ex)
+        {
+            message = $"复制路径失败：{FormatExceptionMessage(ex)}";
+            return false;
+        }
     }
 
     public Task<(bool ok, string message)> UpdateExtensionShortcutFromSettingsAsync(string extensionId, string? shortcut)

@@ -1,3 +1,25 @@
+## 2026-10-04 息屏接收链候选 0.2.55
+
+已补 30 秒有界接收唤醒锁、ready 拉取优先、应用层 ping/pong 与 120 秒活性失效重连、Push 即时拉取和服务端假在线仍 Push。Dev/Release/lintVital、模拟器锁/活性 12 项与原消息处理、Worker 7 项通过。仅模拟器安装，K70 未连接；FCM 构建未配置、小米 Push 未接入，用户无企业资质，Worker 未部署，息屏实时性未验收。详见 docs/mobile-wake-chain-2026-10-04.md。
+
+## 2026-10-04 桌面正式聊天 Capability 闭环
+
+已把 `chat.send` / `chat.status` 注册为内置能力，正式 Agent 目录可发现并调用；支持 K70 本地别名、原图附件、指定设备 ACK、超时保留 messageId。修复能力客户端与后台发件箱重放并发上传导致 409。新原图 923,587 字节经正式调用完成，`msg_b014f19db8b8bda8cb136c00` 在 22:53:25.336 收到 K70 ACK。契约和回归记录见 `docs/chat-capability-2026-10-04.md`。本轮未修改 Android APK；此前息屏接收延迟仍未修复，不要把本轮能力闭环验收视作息屏实时性通过。
+
+## 2026-10-04：聊天通知（本地 0.2.54）
+
+独立聊天 HIGH 通道、默认声音/双段振动、消息类别和私密锁屏；云端/LAN 聊天共用，一般事件保留 sync。我的 → 消息通知展示系统状态，提供通道/应用/声音设置和本机测试。K70 同签名保留数据升级，HyperOS 悬浮/振动开关已开启，锁屏隐藏内容；实际横幅和系统振动 finished 通过。用户切回响铃、在聊天类别选定铃声后确认提示音可听；最终 sound 为具体系统媒体 URI。新通道初始化解析系统当前默认铃声，已有通道保留用户选择。模拟器真实通知路由/去重/设置包名/重要级别保留及附件/禁通知/ACK/续传回归通过。
+
+**息屏实时验收失败**：msg_8d3b778f378c2c58bf73695a 明确 Dozing 后入队，超过一分钟仍未拉取；前台服务和进程在，亮屏后最终保存/通知并于22:09:53 ACK。不能声称息屏秒到。待定位 CPU/网络与厂商后台调度，未接小米推送/焦点通知，未发布。详情 docs/mobile-chat-notifications-2026-10-04.md。
+
+## 2026-10-04：K70 蜂窝＋VPN 附件与 ACK 路线修复（本地 0.2.53）
+
+用户复测原图 msg_4dd0da6651246a9d2c86af61 在 0.2.52 pending，实机日志明确是附件内容 TLS Connection reset，下载修复后又出现 ACK 的同类错误。附件 metadata/content GET 和幂等 ACK 统一系统路线优先、传输失败一次物理路线兜底；内容保留 .part/Range、206 范围验证和 SHA-256。原消息最终 21:37:35 acked，同原图的新消息 msg_50d4834d0bb3ad7ace8ee7a9 于 21:38:20 acked，服务器耗时 4.4 秒；K70 蜂窝＋VPN、云端聊天图片可见，未用 LAN/inlinePhoto。0.2.53 保留数据覆盖安装。Dev/Release/lintVital、原生内容中断续传和 ACK 丢失重试验证通过。未发布或推送，未实测息屏/半断线。详见 docs/k70-cellular-attachment-fix-2026-10-04.md。此前 Wi-Fi 成功不代表蜂窝网络已验收。
+
+## 2026-10-04：K70 云端收图可靠性修复（本地 0.2.52）
+
+K70 经用户同意从 0.2.51 保留数据覆盖到本地 0.2.52。心跳/维护/实时连接异常隔离，实时状态补偿轮询 30 秒；聊天落库和 receipt 不再依赖通知，ACK/下载增加 messageId 日志。明确 attachment_not_found 提交失败回执，避免历史缺失附件无限重试。模拟器原生下载/SHA-256/禁通知/ACK 失败重试/去重/缺失附件验证通过，Dev/Release 构建和 lintVital 通过。K70 禁通知收图 acked、无附件 mobile.status.get completed，正式账号/聊天保留，通知已恢复。未做 K70 半断线/息屏实测，未实现只读 peek 队列，未发布或推送。详见 docs/k70-message-delivery-fix-2026-10-04.md。
+
 ## 2026-10-04：笔记应用中心补发 0.1.5
 
 - 线上目录和一加正式笔记仍是 0.1.4/code 5；该版本卡片菜单未包含“在电脑上打开”。本地 0.1.5 未提交发布，主 APP 升级不会更新独立笔记 APK。
@@ -890,3 +912,55 @@ PC 聊天窗口的文字、照片、文件均可转云端；Android 照片和文
 - root/userdebug 模拟器允许 `-d`，不代表生产手机可直接降级；正式回滚宜发布更高 versionCode 的修复版。脚本 finally 清理临时账号并启动干净 Release。
 - 候选仍沿用历史 Android Debug 证书以保持覆盖兼容；Release signing 环境未显式配置。实体一加正式和 Dev 的 0.2.42 安装均未改变，本轮不发布正式 APK。
 - 详细产物、哈希、Windows 更新/数据兼容和 Cloudflare Builds 平台故障状态：`docs/release-readiness-2026-10-03.md`。
+
+
+### 2026-10-04 笔记统一由燕子账号同步
+
+- 用户明确要求关闭 NoteGen 仓库双向同步，统一由燕子同步。仅修改 `%LOCALAPPDATA%/OpenQuickHost/Extensions/yanzi-notes` 桌面适配，manifest 0.2.5；未修改宿主、手机 APK 或云端协议。
+- 同步配置页使用燕子真实状态和手动 flush/冲突入口。旧仓库管理器的上传、拉取、远端删除、批量及自动队列、账号检查、仓库配置上传下载 UI、记录/标签仓库操作均停用。Store 读取时锁定同步开关，Gitee 等原令牌/仓库配置和远端内容保留。
+- 默认文件存储为 local；笔记 Markdown 继续通过账号 notes/sync.v1.json 的 CAS/逐篇版本/墓碑同步。记录、标签、附件和编辑器配置未扩展到手机同步协议，不能宣称所有 NoteGen 数据已跨端同步。
+- 21 项 Node 回归通过；真实导出页面 Edge headless 界面验证通过，页面异常 0、旧仓库请求 0；emulator-5554 本地 Worker 的 test-notes-companion 全套集成通过，临时账号已清理；test-notes-handoff 真实桌面通过（首轮导航中的 WebView 暂态错误，待导航完成重跑通过）。
+- 只读核对当前账号云快照 revision 958：电脑本地 9 篇正文全部匹配，差异 0、缺失 0。模拟器集成使用隔离账号，没有修改真机/生产笔记或仓库。
+- 详细扩展内文档 README-mobile-sync.md；修改前备份位于 `%TEMP%/YanziNotesSyncBackup-20261004-110110`。
+
+
+### 2026-10-04 相册原图钉在桌面
+
+- 修改仅在用户目录yanzi-album：Windows0.1.2、Android0.2.2/code4。发送新增“钉在桌面（原图）”，单张/多选复用album.process与files.workflow.run，不修改宿主或Worker。
+- 右上角置顶、不抢焦点悬浮宫格，可拖动/滚动，双击系统打开，右键复制文件/图片/路径或定位目录、复制全部；关闭/移除不删除图片。展示文件保存在ExtensionStorage/yanzi-album/桌面钉图，工作流输出仍在受限任务目录。EXIF用于缩略图，不改原件；仅剩悬浮窗时关闭会退出临时处理器。
+- 钉图任务不重复保存手机图库，完成显示“已钉在电脑桌面”。Dev、Release、AndroidTest、lintDev构建通过。一加隔离账号/本地Worker的2项真实图片回归覆盖原处理、EXIF、LAN/cloud原图钉图；85项协议、大图offset/checksum、后台对象同步等既有回归通过。
+- WPF3张/5张宫格已截图核对，复制全部5个有效文件并恢复剪贴板。真实桌面本地ticket验证按需启动、任务后保留、关闭释放服务通过。主应用Dev偏好恢复、生产包保留、桌面重启，最终相册Dev0.2.2已安装启动。
+- 正式APK已构建，应用中心尚未发布0.2.2；cloud链路使用本地隔离Worker，未操作线上真实照片/账号对象。4张合成钉图与额外本地测试tickets清理被自动审批拒绝（blocked by policy），保留并记录，未尝试绕过。细节见用户目录pin-desktop-development.md，集成产物%TEMP%/YanziDev/message-bridge/4fa85c99781b422b874f039edaf4098a。
+
+### 2026-10-04 相册回传作品多选与删除修复
+
+- 用户目录 yanzi-album Android 0.2.3/code5：作品支持选择/长按多选/全选/批量删除，单张删除共用永久删除流程，成功立即更新作品与图库缓存，失败项保留并显示原因。
+- 原流程只移入回收站且作品仍取 saved-results；现删除手机 MediaStore 文件，accountId:jobId 的 deleted-results 标记与同步锁阻止 Activity/Service completed 扫描重新生成。原图、电脑处理输出与桌面钉图保留；任务历史显示“作品已删除”。
+- Dev/Release/AndroidTest/lintDev 通过；API30 模拟器最终 3 项 instrumentation 全过，覆盖多选/取消/实际文件移除/重建/防重新生成/全选/部分失败/外部删除及图库导航、图片缩放。仅合成图片删除，测试自清理。
+- 一加只覆盖安装并启动相册 0.2.3-dev，正式相册 version/codePath 前后一致，无清数据、无真实照片删除。正式 APK 构建但未发布应用中心；详细验证位于扩展内 works-delete-development.md，备份 %TEMP%/YanziAlbumDeleteBackup-20261004-115026。
+### 2026-10-04 应用中心改为应用商店
+
+- 手机入口与独立目录页统一显示“应用商店”。参考用户提供的商店排布：白底/绿色操作、顶部搜索、推荐/工具/图文/我的分类、推荐应用横向排列、图标/简要介绍/版本大小/右侧安装按钮的紧凑列表；完整介绍点开查看。没有添加虚构下载量、评分或榜单。
+- 使用线上目录与原账号应用库；保留 SHA256、包名、版本、签名验证及 Android 系统安装确认。安装后回到页面重算本机打开/更新状态。包信息读取兼容 API26/27；拒绝签名缺失和非单签名包。
+- app:assembleDev 与 app:assembleDevAndroidTest 成功；API30 模拟器 ApplicationStoreVerification 两轮通过，覆盖推荐区、分类、组合搜索、空结果及账号已获取应用过滤，不下载、不安装、不写账号数据。
+- 一加只覆盖安装燕子 Dev 0.2.48-dev，正式 0.2.48 版本与 codePath 前后一致；真实线上 7 个应用加载及简介详情弹窗点击验证完成。截图 %TEMP%/yanzi-store-phone.png。未发布正式主 APK。
+- lintDev 全局仍被原有 FirebasePushService 缺失、MainActivity/浮窗布局等错误阻断；本次改动的两个商店类没有 lint errors。没有借 UI 改动修改推送或其他业务代码。
+### 2026-10-04 0.2.49 手机工作区与内嵌应用商店
+
+- 商店提取为主 Activity 内 ApplicationCatalogView，手机 Tab 子页直接加载；兼容 Activity 仍可独立使用，但主导航不再启动新界面。手机页面保留小程序、商店、终端，文档入口移除。
+- 手机与电脑小程序统一目录移到手机页，保留手机优先及电脑执行；电脑页只保留聊天、文件、终端，旧小程序入口转到手机页；电脑单运行时的重复“电脑”标注移除。
+- 模拟器商店筛选/搜索与工作区回归通过，一加 0.2.49-dev 嵌入页面及导航通过；真实日历 APP_ROUTE/CLOUD_ROUTE 都 completed。正式一加仍为 0.2.48，版本与安装路径不变，用户账号数据保持。
+- 独立 worktree Release 与 lintVitalRelease 成功；历史兼容签名 8a0e...1ee3；最终 SHA256 f65b13c41a2742f7573ef0a5fd0aa834683759e1c1dd051877781b287d8bbeef。
+- 源码 main 081f4b81de17287dd8860b0eb69fc48743581733；GitHub android-v0.2.49 已发布，Publish mobile and notes 37185687290 成功，公网更新清单已为 0.2.49。公开 APK 校验结果另见 docs/mobile-phone-workspace-2026-10-04.md。
+- 真机最终截图 %TEMP%/yanzi-store-embedded-049.png。未手动 Worker deploy，其他开发变更未纳入提交。
+### 2026-10-04 0.2.51 用户澄清分区与深色商店
+
+- 0.2.49 把整个统一目录移至手机页不符合用户原意；现手机本机小程序与电脑小程序恢复分别放在手机/电脑 Tab。电脑目录过滤手机单运行时，电脑卡片明确远程执行，重复运行位置标签移除；旧快捷入口仍去电脑。
+- 商店继续内嵌在手机 Tab，改用统一深色；移除内嵌重复标题与“手机应用与工具”。文档入口继续移除。手机本机网格修复原固定宽度裁切，四列按可用宽度排列。
+- 0.2.50 的分类/深色、模拟器及真机回归、APP_ROUTE/CLOUD_ROUTE completed 均通过；0.2.51 额外通过真机网格边界回归和四列截图。正式 Release/lintVital 构建成功，历史兼容签名保持，正式实体机 0.2.48 codePath/version 未动。
+- 最终发布为 0.2.51/code51，main f0772b37e0f6ca6fcd0fcd9c097ca0e2dc38c190；发布 CI 37186397863 success，公开 APK 实际下载校验通过，SHA256 2b7eb905c65d256fa9f95f5bc9f3426b4fa3b50ef7c69b300fd1a018170e3543。现有用户数据保留。
+- 详细记录 docs/mobile-store-runtime-correction-2026-10-04.md；一加已安装 Dev 0.2.51-dev，正式更新由用户正常安装确认。0.2.50 先上传后发现网格裁切，未覆盖同版本 APK，使用 0.2.51 修正。
+
+## 2026-10-04：任务中心＋数据恢复首版
+
+手机“我的”与电脑“燕窝”增加统一入口。任务回执按账号＋服务器持久化，保留原操作/目标及结果，终态不回退，超时待确认，查询不重新提交。手机接入现有对象历史/CAS 恢复，关联布局索引对象引导电脑端恢复。任务、重启、真实 D1 删除恢复/409 验证通过；Dev 候选 0.2.52，尚未公开发布。完整范围及限制见 `docs/task-center-data-recovery-2026-10-04.md`。

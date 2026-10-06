@@ -30,7 +30,7 @@ public sealed partial class LocalAgentApiServer
         new(StringComparer.OrdinalIgnoreCase);
     private static readonly string UiCaptureRoot = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "OpenQuickHost", "AgentCaptures");
+        HostRuntimeProfile.DataDirectoryName, "AgentCaptures");
 
     private delegate bool EnumWindowsCallback(IntPtr hwnd, IntPtr data);
     [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowsCallback callback, IntPtr data);

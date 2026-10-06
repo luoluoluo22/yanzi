@@ -12,6 +12,7 @@ public sealed class ExtensionSchedulerService
     private readonly Dictionary<string, DateTime> _nextRunTimes = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _runningExtensions = new(StringComparer.OrdinalIgnoreCase);
     private bool _started;
+    public bool IsStarted => _started;
 
     public ExtensionSchedulerService(MainWindow mainWindow)
     {
@@ -28,6 +29,7 @@ public sealed class ExtensionSchedulerService
     /// </summary>
     public void Start()
     {
+        if (!HostRuntimeProfile.OwnsBackgroundServices) return;
         if (_started) return;
         _started = true;
 

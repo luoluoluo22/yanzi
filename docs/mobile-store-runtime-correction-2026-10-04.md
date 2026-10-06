@@ -17,3 +17,5 @@
 - 使用 GitHub android-v0.2.51 与现有 Publish mobile and notes CI 更新公开 APK/更新清单，不手动部署 Worker；其他本地变更不进入本次提交。
 
 - 真机额外检查发现原固定列宽裁切第四项，0.2.51 按可用宽度计算四列；最终真机网格视口边界回归通过，四个本机小程序完整呈现。0.2.50 已上传后不覆盖同版本 APK，使用更高版本修正。
+
+公开结果：main f0772b37e0f6ca6fcd0fcd9c097ca0e2dc38c190；GitHub android-v0.2.51 与更新清单已发布，Publish mobile and notes 37186397863 success；实际公开 APK 下载校验 PUBLIC_MOBILE_VERIFIED=0.2.51。大小 7,233,725 字节，SHA256 与正式包/GitHub 完全一致。最终截图 %TEMP%/yanzi-store-dark-051.png、yanzi-local-programs-051.png、yanzi-desktop-programs-051.png。

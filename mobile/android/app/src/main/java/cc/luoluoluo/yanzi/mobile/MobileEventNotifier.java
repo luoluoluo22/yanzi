@@ -7,9 +7,7 @@ import android.content.Intent;
 import android.os.Build;
 import androidx.core.app.NotificationCompat;
 
-/**
- * Unified entry for future cloud event notifications.
- */
+/** Shared posting helpers; chat and general events have separate user controls. */
 public final class MobileEventNotifier {
     private MobileEventNotifier() {}
 
@@ -18,6 +16,14 @@ public final class MobileEventNotifier {
     }
 
     public static boolean canNotify(Context context) {
+        return canNotify(context, MobileNotificationManager.CHANNEL_SYNC);
+    }
+
+    public static boolean canNotifyChat(Context context) {
+        return canNotify(context, MobileNotificationManager.CHANNEL_CHAT);
+    }
+
+    private static boolean canNotify(Context context, String channelId) {
         NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
         if (manager == null || !manager.areNotificationsEnabled()) return false;
         android.app.AppOpsManager operations = (android.app.AppOpsManager) context.getSystemService(Context.APP_OPS_SERVICE);
@@ -28,31 +34,43 @@ public final class MobileEventNotifier {
         }
         if (Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
                 != android.content.pm.PackageManager.PERMISSION_GRANTED) return false;
-        android.app.NotificationChannel channel = manager.getNotificationChannel(MobileNotificationManager.CHANNEL_SYNC);
+        android.app.NotificationChannel channel = manager.getNotificationChannel(channelId);
         return channel == null || channel.getImportance() != NotificationManager.IMPORTANCE_NONE;
     }
 
     public static boolean notifyMessage(Context context, String id, String title, String message) {
+        return post(context, id, title, message, false);
+    }
+
+    public static boolean notifyChatMessage(Context context, String id, String title, String message) {
+        return post(context, id, title, message, true);
+    }
+
+    private static boolean post(Context context, String id, String title, String message, boolean chat) {
         MobileNotificationManager.ensureChannels(context);
-        if (!canNotify(context)) return false;
-        NotificationManager manager = (NotificationManager)
-                context.getSystemService(Context.NOTIFICATION_SERVICE);
+        String channel = chat ? MobileNotificationManager.CHANNEL_CHAT : MobileNotificationManager.CHANNEL_SYNC;
+        if (!canNotify(context, channel)) return false;
+        NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
         if (manager == null) return false;
-
-        PendingIntent open = PendingIntent.getActivity(context, 0, new Intent(context, MainActivity.class),
+        Intent intent = new Intent(context, MainActivity.class);
+        PendingIntent open = PendingIntent.getActivity(context, chat ? 41003 : 41002, intent,
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(
-                context, MobileNotificationManager.CHANNEL_SYNC)
-                .setSmallIcon(android.R.drawable.ic_popup_sync)
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, channel)
+                .setSmallIcon(android.R.drawable.ic_dialog_email)
                 .setContentTitle(title)
                 .setContentText(message)
                 .setStyle(new NotificationCompat.BigTextStyle().bigText(message))
                 .setContentIntent(open)
                 .setOnlyAlertOnce(true)
                 .setAutoCancel(true);
-
+        if (chat) {
+            builder.setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                    .setPriority(NotificationCompat.PRIORITY_HIGH)
+                    .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+                    .setDefaults(NotificationCompat.DEFAULT_SOUND | NotificationCompat.DEFAULT_VIBRATE);
+        }
         manager.notify(id, 41002, builder.build());
+        android.util.Log.i("YanziNotification", "messageId=" + id + " channel=" + channel + " posted=true");
         return true;
     }
 }

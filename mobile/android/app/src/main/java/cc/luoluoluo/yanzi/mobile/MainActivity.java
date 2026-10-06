@@ -2642,6 +2642,8 @@ extends Activity {
 
         this.setupProfileHeader();
 
+        this.profileTabPage.addView(YanziUiKit.row(this, "clipboard-check-outline", YanziUiKit.BLUE, "任务中心＋数据恢复", "查询执行结果、预览并恢复云端历史", () -> startActivity(new Intent(this, TaskRecoveryActivity.class))), YanziUiKit.cardLp(this));
+
         this.profileTabPage.addView((View)YanziUiKit.sectionLabel(this, "同步与权限"));
 
         boolean autoUpdate = this.prefs.getBoolean("auto_cloud_update", false);
@@ -2669,7 +2671,7 @@ extends Activity {
         });
         this.profileTabPage.addView((View)itemWheel, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
 
-        LinearLayout notifyRow = YanziUiKit.row(this, "bell-outline", YanziUiKit.ORANGE, "通知", "授权确认与后台提醒", this::openNotificationSettings);
+        LinearLayout notifyRow = YanziUiKit.row(this, "bell-outline", YanziUiKit.ORANGE, "消息通知", "声音、振动、横幅与锁屏提醒", this::openNotificationSettings);
         this.profileTabPage.addView((View)notifyRow, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
 
         LinearLayout itemAccessibility = YanziUiKit.row(this, "accessibility", YanziUiKit.BLUE, "无障碍服务", "只在自动化需要时开启", this::openAccessibilitySettings);
@@ -3099,18 +3101,7 @@ extends Activity {
     }
 
     private void openNotificationSettings() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-                && this.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            this.requestNotificationPermissionIfNeeded();
-            return;
-        }
-        try {
-            Intent intent = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS);
-            intent.putExtra(Settings.EXTRA_APP_PACKAGE, this.getPackageName());
-            this.startActivity(intent);
-        } catch (Exception ex) {
-            this.requestNotificationPermissionIfNeeded();
-        }
+        this.startActivity(new Intent(this, NotificationSettingsActivity.class));
     }
 
     private void startFloatingWheel() {

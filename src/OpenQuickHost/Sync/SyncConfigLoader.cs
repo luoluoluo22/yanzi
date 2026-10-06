@@ -12,6 +12,8 @@ public static class SyncConfigLoader
 
     public static SyncOptions Load()
     {
+        // Never attach a development process to the production cloud account.
+        if (HostRuntimeProfile.IsDevelopment) return new SyncOptions { BaseUrl = string.Empty };
         if (!File.Exists(ConfigPath))
         {
             return new SyncOptions();

@@ -1,0 +1,1 @@
+{"name":"yanzi-chatgpt-bridge","version":"0.2.0","private":true,"type":"module","scripts":{"start":"node server.mjs","test":"node --test test/*.test.mjs"},"dependencies":{"ws":"^8.18.3"},"engines":{"node":">=22"},"devDependencies":{"@sinonjs/fake-timers":"^15.4.0","jsdom":"^29.1.1"}}

@@ -1,5 +1,7 @@
 using System.IO;
 using System.Text.RegularExpressions;
+using System.Diagnostics;
+using Microsoft.Win32;
 
 namespace OpenQuickHost;
 
@@ -38,6 +40,7 @@ internal static class InstalledApplicationCatalog
                 $"InstalledApplicationCatalog root scanned: path={root}, recurse={scanRoot.Recurse}, files={scanResult.ScannedFiles}, skippedDirectories={scanResult.SkippedDirectories}, acceptedSoFar={rawEntries.Count}.");
         }
 
+        ScanRegistryApplications(rawEntries);
         ScanAppsFolder(rawEntries);
 
         var finalResults = DeduplicateAndRefine(rawEntries);
@@ -84,9 +87,41 @@ internal static class InstalledApplicationCatalog
             }
         }
 
-        // 阶段二：标题清洗与副本编号智能微调（例如 Visual Studio 2022 (2) -> Visual Studio 2022）
-        var refinedEntries = new List<InstalledApplicationEntry>(uniqueByCommand.Count);
+        // 阶段一半：同标题 + 同物理 exe 视为同一个应用入口。
+        // 开始菜单常会额外带 --scene=startmenu 等上下文参数；不能因此重复显示一次。
+        var executableIdentityGroups = new Dictionary<string, List<InstalledApplicationEntry>>(StringComparer.OrdinalIgnoreCase);
+        var uniqueByExecutableIdentity = new List<InstalledApplicationEntry>();
         foreach (var entry in uniqueByCommand)
+        {
+            if (!string.IsNullOrWhiteSpace(entry.DisplayPath) &&
+                entry.DisplayPath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            {
+                var key = $"{entry.NormalizedTitle}|{entry.NormalizedDisplayPath}";
+                if (!executableIdentityGroups.TryGetValue(key, out var list))
+                {
+                    list = new List<InstalledApplicationEntry>();
+                    executableIdentityGroups[key] = list;
+                }
+                list.Add(entry);
+            }
+            else
+            {
+                uniqueByExecutableIdentity.Add(entry);
+            }
+        }
+
+        foreach (var group in executableIdentityGroups.Values)
+        {
+            var best = group
+                .OrderByDescending(entry => CalculateEntryQuality(entry) +
+                    (string.IsNullOrWhiteSpace(entry.Arguments) ? 20 : 0))
+                .First();
+            uniqueByExecutableIdentity.Add(best);
+        }
+
+        // 阶段二：标题清洗与副本编号智能微调（例如 Visual Studio 2022 (2) -> Visual Studio 2022）
+        var refinedEntries = new List<InstalledApplicationEntry>(uniqueByExecutableIdentity.Count);
+        foreach (var entry in uniqueByExecutableIdentity)
         {
             var refinedTitle = RefineDuplicateTitle(entry, uniqueByCommand);
             if (!string.Equals(refinedTitle, entry.Title, StringComparison.Ordinal))
@@ -99,7 +134,9 @@ internal static class InstalledApplicationCatalog
             }
         }
 
-        // 阶段三：同名（Title）完全重复去重（例如两个 Python 3.12、两个 Tuanjie）
+        // 阶段三：同名但不同启动目标的应用必须共存。
+        // 过去这里按 Title 只保留一项，会把新版/旧版微信、多个 IDE 版本等错误合并。
+        // 现在保留质量最高的一项作为自然名称，其余条目加可读后缀并使用路径稳定 ID。
         var titleGroups = new Dictionary<string, List<InstalledApplicationEntry>>(StringComparer.OrdinalIgnoreCase);
         foreach (var entry in refinedEntries)
         {
@@ -118,11 +155,21 @@ internal static class InstalledApplicationCatalog
             if (group.Count == 1)
             {
                 uniqueByTitle.Add(group[0]);
+                continue;
             }
-            else
+
+            var ordered = group
+                .OrderByDescending(CalculateEntryQuality)
+                .ThenBy(entry => entry.DisplayPath, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            uniqueByTitle.Add(ordered[0]);
+            for (var index = 1; index < ordered.Length; index++)
             {
-                var best = group.OrderByDescending(CalculateEntryQuality).First();
-                uniqueByTitle.Add(best);
+                var variant = ordered[index];
+                var variantTitle = BuildVariantTitle(ordered[0], variant, index + 1);
+                var variantId = $"app-{ComputeStableId(variantTitle, variant.DisplayPath, variant.LaunchTarget + "|" + variant.NormalizedArguments)}";
+                uniqueByTitle.Add(WithTitleAndId(variant, variantTitle, variantId));
             }
         }
 
@@ -214,10 +261,24 @@ internal static class InstalledApplicationCatalog
             score += 5;
         }
 
-        // 优先有参数的项（针对同名项，带参数通常是完整配置）
+        // 已知应用的 ExecutableNames 顺序代表推荐优先级。
+        // 例如微信优先 Weixin.exe（新版），WeChat.exe（旧版）仍保留为可选版本。
+        var known = KnownApplicationCatalog.Match(entry.Title, entry.DisplayPath);
+        var executableName = Path.GetFileName(entry.DisplayPath);
+        if (known != null && !string.IsNullOrWhiteSpace(executableName))
+        {
+            var preferredIndex = known.ExecutableNames
+                .Select((name, index) => new { name, index })
+                .FirstOrDefault(item => executableName.Equals(item.name, StringComparison.OrdinalIgnoreCase))
+                ?.index ?? -1;
+            if (preferredIndex >= 0)
+                score += Math.Max(10, 60 - preferredIndex * 15);
+        }
+
+        // 参数有时代表完整配置，但只作为轻量信号；同 exe 的去重阶段优先裸启动入口。
         if (!string.IsNullOrWhiteSpace(entry.Arguments))
         {
-            score += 10;
+            score += 5;
         }
 
         // 标题越简洁优雅得分稍高
@@ -281,16 +342,59 @@ internal static class InstalledApplicationCatalog
     }
 
     private static InstalledApplicationEntry WithTitle(InstalledApplicationEntry source, string newTitle)
+        => WithTitleAndId(source, newTitle, source.ExtensionId);
+
+    private static InstalledApplicationEntry WithTitleAndId(
+        InstalledApplicationEntry source,
+        string newTitle,
+        string extensionId)
     {
-        return CreateEntry(
-            title: newTitle,
-            launchTarget: source.LaunchTarget,
-            displayPath: source.DisplayPath,
-            iconPath: source.IconPath,
-            sourcePath: source.DisplayPath,
-            arguments: source.Arguments,
-            workingDirectory: source.WorkingDirectory
-        );
+        var aliases = source.Keywords
+            .Append(source.Title)
+            .Append(newTitle)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return new InstalledApplicationEntry(
+            extensionId,
+            newTitle,
+            source.Subtitle,
+            source.LaunchTarget,
+            source.DisplayPath,
+            source.IconPath,
+            aliases,
+            source.Arguments,
+            source.WorkingDirectory);
+    }
+
+    private static string BuildVariantTitle(
+        InstalledApplicationEntry primary,
+        InstalledApplicationEntry variant,
+        int ordinal)
+    {
+        var primaryExe = Path.GetFileNameWithoutExtension(primary.DisplayPath);
+        var variantExe = Path.GetFileNameWithoutExtension(variant.DisplayPath);
+
+        if (primary.Title.Equals("微信", StringComparison.OrdinalIgnoreCase))
+        {
+            if (variantExe.Equals("WeChat", StringComparison.OrdinalIgnoreCase))
+                return "微信 (旧版)";
+            if (variantExe.Equals("Weixin", StringComparison.OrdinalIgnoreCase))
+                return "微信 (新版)";
+        }
+
+        if (!string.IsNullOrWhiteSpace(variantExe) &&
+            !variantExe.Equals(variant.Title, StringComparison.OrdinalIgnoreCase) &&
+            !variantExe.Equals(primaryExe, StringComparison.OrdinalIgnoreCase))
+            return $"{variant.Title} ({variantExe})";
+
+        var parent = Path.GetDirectoryName(variant.DisplayPath);
+        var parentName = string.IsNullOrWhiteSpace(parent) ? null : new DirectoryInfo(parent).Name;
+        if (!string.IsNullOrWhiteSpace(parentName) &&
+            !parentName.Equals(variant.Title, StringComparison.OrdinalIgnoreCase))
+            return $"{variant.Title} ({parentName})";
+
+        return $"{variant.Title} (版本 {ordinal})";
     }
 
     private static void ScanAppsFolder(List<InstalledApplicationEntry> results)
@@ -349,8 +453,24 @@ internal static class InstalledApplicationCatalog
                     // 3. 处理本地物理路径或 Windows 虚拟文件夹路径
                     if (path.StartsWith("{") || path.Contains('\\') || path.Contains('/'))
                     {
-                        // 若本地物理文件/目录存在，说明是本地桌面程序，常规扫描已处理或将处理，避免重复
-                        if (File.Exists(path) || Directory.Exists(path))
+                        // AppsFolder 可能直接暴露物理 exe，但该程序不一定有开始菜单快捷方式。
+                        // 物理 exe 直接纳入，后续按启动命令统一去重。
+                        if (File.Exists(path))
+                        {
+                            var physicalExt = Path.GetExtension(path);
+                            if (IsSupportedEntryExtension(physicalExt) && !ShouldExcludeTarget(path))
+                            {
+                                results.Add(CreateEntry(
+                                    title: name,
+                                    launchTarget: path,
+                                    displayPath: path,
+                                    iconPath: path,
+                                    sourcePath: path));
+                            }
+                            continue;
+                        }
+
+                        if (Directory.Exists(path))
                         {
                             continue;
                         }
@@ -410,6 +530,171 @@ internal static class InstalledApplicationCatalog
         }
     }
 
+
+    private static void ScanRegistryApplications(List<InstalledApplicationEntry> results)
+    {
+        var before = results.Count;
+        foreach (var hive in new[] { RegistryHive.LocalMachine, RegistryHive.CurrentUser })
+        {
+            foreach (var view in new[] { RegistryView.Registry64, RegistryView.Registry32 })
+            {
+                try
+                {
+                    using var baseKey = RegistryKey.OpenBaseKey(hive, view);
+                    ScanRegistryAppPaths(baseKey, results);
+                    ScanRegistryUninstall(baseKey, results);
+                }
+                catch (Exception ex)
+                {
+                    HostAssets.AppendLog($"Registry application scan skipped: hive={hive}, view={view}, error={ex.Message}");
+                }
+            }
+        }
+
+        HostAssets.AppendLog($"InstalledApplicationCatalog registry scan: added={results.Count - before}.");
+    }
+
+    private static void ScanRegistryAppPaths(RegistryKey baseKey, List<InstalledApplicationEntry> results)
+    {
+        using var root = baseKey.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\App Paths");
+        if (root == null) return;
+
+        foreach (var subKeyName in root.GetSubKeyNames())
+        {
+            try
+            {
+                using var key = root.OpenSubKey(subKeyName);
+                var executable = NormalizeRegistryExecutable(key?.GetValue(null) as string);
+                if (string.IsNullOrWhiteSpace(executable) || !File.Exists(executable) ||
+                    !string.Equals(Path.GetExtension(executable), ".exe", StringComparison.OrdinalIgnoreCase) ||
+                    ShouldExcludeTarget(executable))
+                    continue;
+
+                var known = KnownApplicationCatalog.Match(null, executable);
+                var title = known?.DisplayName ?? TryGetProductName(executable) ?? Path.GetFileNameWithoutExtension(executable);
+                if (string.IsNullOrWhiteSpace(title) || ShouldExcludeTitle(title))
+                    continue;
+
+                results.Add(CreateEntry(
+                    title,
+                    executable,
+                    executable,
+                    executable,
+                    $"registry:app-paths:{subKeyName}"));
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    private static void ScanRegistryUninstall(RegistryKey baseKey, List<InstalledApplicationEntry> results)
+    {
+        using var root = baseKey.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall");
+        if (root == null) return;
+
+        foreach (var subKeyName in root.GetSubKeyNames())
+        {
+            try
+            {
+                using var key = root.OpenSubKey(subKeyName);
+                var title = (key?.GetValue("DisplayName") as string)?.Trim();
+                if (string.IsNullOrWhiteSpace(title) || ShouldExcludeTitle(title))
+                    continue;
+
+                var executable = NormalizeRegistryExecutable(key?.GetValue("DisplayIcon") as string);
+                var installLocation = NormalizeRegistryDirectory(key?.GetValue("InstallLocation") as string);
+
+                if (string.IsNullOrWhiteSpace(executable) || !File.Exists(executable) ||
+                    !string.Equals(Path.GetExtension(executable), ".exe", StringComparison.OrdinalIgnoreCase) ||
+                    ShouldExcludeTarget(executable))
+                {
+                    executable = ResolveKnownExecutableFromInstallLocation(title, installLocation);
+                }
+
+                if (string.IsNullOrWhiteSpace(executable) || !File.Exists(executable))
+                    continue;
+
+                results.Add(CreateEntry(
+                    title,
+                    executable,
+                    executable,
+                    executable,
+                    $"registry:uninstall:{subKeyName}",
+                    workingDirectory: Path.GetDirectoryName(executable)));
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    private static string? ResolveKnownExecutableFromInstallLocation(string title, string? installLocation)
+    {
+        if (string.IsNullOrWhiteSpace(installLocation) || !Directory.Exists(installLocation))
+            return null;
+
+        var known = KnownApplicationCatalog.Match(title, null);
+        if (known != null)
+        {
+            foreach (var executableName in known.ExecutableNames)
+            {
+                var candidate = Path.Combine(installLocation, executableName);
+                if (File.Exists(candidate))
+                    return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    private static string? NormalizeRegistryExecutable(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        var value = Environment.ExpandEnvironmentVariables(raw.Trim());
+
+        if (value.StartsWith('"'))
+        {
+            var endQuote = value.IndexOf('"', 1);
+            if (endQuote > 1)
+                value = value[1..endQuote];
+        }
+        else
+        {
+            var comma = value.IndexOf(',');
+            if (comma > 0)
+                value = value[..comma];
+
+            var exe = value.IndexOf(".exe", StringComparison.OrdinalIgnoreCase);
+            if (exe >= 0)
+                value = value[..(exe + 4)];
+        }
+
+        value = value.Trim().Trim('"');
+        try { return Path.GetFullPath(value); }
+        catch { return null; }
+    }
+
+    private static string? NormalizeRegistryDirectory(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        var value = Environment.ExpandEnvironmentVariables(raw.Trim().Trim('"'));
+        try { return Path.GetFullPath(value); }
+        catch { return null; }
+    }
+
+    private static string? TryGetProductName(string executable)
+    {
+        try
+        {
+            var info = FileVersionInfo.GetVersionInfo(executable);
+            return string.IsNullOrWhiteSpace(info.ProductName) ? null : info.ProductName.Trim();
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     private static ApplicationScanResult EnumerateSupportedFiles(string root, bool recurse)
     {
@@ -699,8 +984,16 @@ internal static class InstalledApplicationCatalog
         string? arguments = null,
         string? workingDirectory = null)
     {
-        var aliases = BuildAliases(title, displayPath, arguments);
-        var extensionId = $"app-{ComputeStableId(title, displayPath, sourcePath)}";
+        var knownApplication = KnownApplicationCatalog.Match(title, displayPath);
+        var aliases = BuildAliases(title, displayPath, arguments).ToList();
+        if (knownApplication != null)
+        {
+            aliases.AddRange(knownApplication.Keywords);
+            aliases.AddRange(knownApplication.TitleAliases);
+        }
+
+        var extensionId = knownApplication?.ExtensionId
+            ?? $"app-{ComputeStableId(title, displayPath, sourcePath)}";
         var subtitle = displayPath;
 
         return new InstalledApplicationEntry(
@@ -710,7 +1003,7 @@ internal static class InstalledApplicationCatalog
             launchTarget,
             displayPath,
             iconPath,
-            aliases,
+            aliases.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
             arguments?.Trim(),
             workingDirectory?.Trim());
     }

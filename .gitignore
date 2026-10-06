@@ -9,6 +9,7 @@ artifacts/
 .wrangler/
 cloudflare/.wrangler/
 cloudflare/node_modules/
+tools/chatgpt-bridge/node_modules/
 website/downloads/*.zip
 !website/downloads/open-yanzi-github.zip
 !website/downloads/open-yanzi-homepage.zip
@@ -75,3 +76,6 @@ cards_*.txt
 
 # Python validation caches
 __pycache__/
+
+# JavaScript dependencies
+**/node_modules/

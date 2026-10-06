@@ -9,6 +9,9 @@ $ExePath = Join-Path $ExeDir "Yanzi.exe"
 
 Push-Location $ProjectRoot
 try {
+    # Stop only this checkout's executable, before building files it may have locked.
+    & (Join-Path $PSScriptRoot "stop-desktop-build-process.ps1") -ExecutablePath $ExePath
+
     if (-not $SkipBuild) {
         dotnet build ".\src\OpenQuickHost\OpenQuickHost.csproj" -c Debug -v:minimal
         if ($LASTEXITCODE -ne 0) {
@@ -20,11 +23,8 @@ try {
         throw "Desktop executable not found: $ExePath"
     }
 
-    Stop-Process -Name Yanzi -Force -ErrorAction SilentlyContinue
-    Start-Sleep -Milliseconds 500
-
     $result = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
-        CommandLine = '"' + $ExePath + '" --tray'
+        CommandLine = '"' + $ExePath + '" --dev --tray'
         CurrentDirectory = $ExeDir
     }
 
@@ -33,7 +33,7 @@ try {
     }
 
     Start-Sleep -Seconds 2
-    $process = Get-Process -Name Yanzi -ErrorAction SilentlyContinue | Select-Object -First 1
+    $process = Get-Process -Id $result.ProcessId -ErrorAction SilentlyContinue
     if (-not $process) {
         throw "Yanzi process did not remain running after launch."
     }

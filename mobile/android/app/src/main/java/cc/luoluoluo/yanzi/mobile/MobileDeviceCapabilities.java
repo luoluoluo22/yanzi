@@ -12,10 +12,22 @@ final class MobileDeviceCapabilities {
     static JSONArray catalog() throws Exception {
         JSONArray items = new JSONArray();
         for (String name : new String[]{"mobile.status.get", "mobile.capabilities.list", "mobile.files.list", "mobile.files.read", "mobile.extensions.list", "mobile.sync.status", "mobile.data.read"})
-            items.put(new JSONObject().put("name", name).put("version", 1).put("available", true)
-                    .put("readOnly", true).put("scope", "capability.invoke:" + name)
-                    .put("parameters", name.equals("mobile.files.read") ? new JSONArray().put("name") : name.equals("mobile.data.read") ? new JSONArray().put("objectId") : new JSONArray()));
+            items.put(descriptor(name, true,
+                    name.equals("mobile.files.read") ? new JSONArray().put("name") :
+                    name.equals("mobile.data.read") ? new JSONArray().put("objectId") : new JSONArray()));
+        items.put(descriptor("mobile.apps.list", true, new JSONArray()));
+        items.put(descriptor("mobile.apps.info", true, new JSONArray().put("app")));
+        items.put(descriptor("mobile.apps.open", false, new JSONArray().put("app")));
+        items.put(descriptor("mobile.apps.openUri", false, new JSONArray().put("uri").put("app")));
+        items.put(descriptor("mobile.apps.shareText", false, new JSONArray().put("text").put("app")));
+        items.put(descriptor("mobile.apps.settings", false, new JSONArray().put("app")));
         return items;
+    }
+
+    private static JSONObject descriptor(String name, boolean readOnly, JSONArray parameters) throws Exception {
+        return new JSONObject().put("name", name).put("version", 1).put("available", true)
+                .put("readOnly", readOnly).put("scope", "capability.invoke:" + name)
+                .put("parameters", parameters);
     }
 
     static synchronized JSONObject snapshot(Context context) throws Exception {
@@ -93,6 +105,13 @@ final class MobileDeviceCapabilities {
                 }
                 return new JSONObject().put("scope","yanzi-documents").put("items",items);
             }
+            case "mobile.apps.list":
+            case "mobile.apps.info":
+            case "mobile.apps.open":
+            case "mobile.apps.openUri":
+            case "mobile.apps.shareText":
+            case "mobile.apps.settings":
+                return MobileAppCapabilities.invoke(context, name, arguments);
             case "mobile.files.read": {
                 String fileName = arguments.getString("name");
                 if (fileName.isEmpty() || fileName.contains("/") || fileName.contains("\\") || fileName.equals(".") || fileName.equals("..")) throw new IOException("file_scope_denied");

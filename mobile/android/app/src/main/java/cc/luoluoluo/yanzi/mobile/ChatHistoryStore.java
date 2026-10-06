@@ -92,6 +92,16 @@ final class ChatHistoryStore extends SQLiteOpenHelper {
         }
     }
 
+    static boolean containsMessage(Context context, String messageId) {
+        synchronized (LOCK) {
+            try (Cursor cursor = get(context).getReadableDatabase().rawQuery(
+                    "SELECT 1 FROM chat_messages WHERE account_id=? AND message_id=? LIMIT 1",
+                    new String[]{currentAccount(context), messageId})) {
+                return cursor.moveToFirst();
+            }
+        }
+    }
+
     static JSONArray load(Context context) {
         synchronized (LOCK) {
             JSONArray result = new JSONArray();

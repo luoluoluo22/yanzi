@@ -55,6 +55,16 @@ internal static class OutboxVerification
             using var accepted = JsonDocument.Parse(acceptedBody!);
             Check(accepted.RootElement.GetProperty("targetDeviceId").GetString() == "phone-target" && accepted.RootElement.GetProperty("clientMessageId").GetString() == job.Id, "target and logical identity preserved across restart");
             Check(DesktopChatOutbox.Pending("other-account").Count == 0, "another account cannot replay job");
+            // A capability client and the resident replay client may observe one job.
+            // Both must receive the same ID, with exactly one upload and one message POST.
+            acceptedBody = null;
+            var uploadBaseline = uploads; var postBaseline = posts;
+            File.WriteAllBytes(original, bytes);
+            var concurrentJob = DesktopChatOutbox.Enqueue("outbox-account", "desktop-outbox", Guid.NewGuid().ToString("N"), "file", "concurrent capability and replay", original, "phone-target");
+            var concurrentResults = await Task.WhenAll(new CloudSyncClient(options).DeliverChatJobAsync(concurrentJob),
+                new CloudSyncClient(options).DeliverChatJobAsync(concurrentJob));
+            Check(concurrentResults.All(x => x == "msg_fixture_stable") && uploads == uploadBaseline + 1 && posts == postBaseline + 1,
+                "separate clients serialize the same durable job without duplicate attachments or changed envelopes");
             Console.WriteLine($"DESKTOP_OUTBOX_OFFLINE_RESTART_LOST_ACCEPTANCE_AND_ATTACHMENT_REUSE=PASSED; checks={checks}");
         } finally { lifetime.Cancel(); http.Stop(); await fixture; }
     }

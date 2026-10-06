@@ -164,6 +164,18 @@ try {
         throw "Restore provenance was not recorded in history."
     }
 
+    $deleteBody = @{ schemaVersion = 1; expectedRevision = $restored.object.revision; deleted = $true; payload = @{} } | ConvertTo-Json -Compress
+    $deleted = Invoke-RestMethod -Uri "$baseUrl/v1/sync/objects/$objectId" -Method Put -Headers $headers -ContentType "application/json" -Body $deleteBody
+    $recoverDeletedBody = @{ expectedRevision = $deleted.object.revision; restoreRevision = $created.object.revision } | ConvertTo-Json -Compress
+    $recoveredDeleted = Invoke-RestMethod -Uri "$baseUrl/v1/sync/objects/$objectId/restore" -Method Post -Headers $headers -ContentType "application/json" -Body $recoverDeletedBody
+    if ($recoveredDeleted.object.deleted -or $recoveredDeleted.object.payload.value -ne "first" -or $recoveredDeleted.object.revision -ne $deleted.object.revision + 1) { throw "Deleted content recovery did not produce a live new version." }
+    $staleRestoreStatus = 0
+    try { Invoke-RestMethod -Uri "$baseUrl/v1/sync/objects/$objectId/restore" -Method Post -Headers $headers -ContentType "application/json" -Body $recoverDeletedBody | Out-Null }
+    catch { $staleRestoreStatus = [int]$_.Exception.Response.StatusCode }
+    if ($staleRestoreStatus -ne 409) { throw "Stale restore must return 409 without overwriting recovered content." }
+    $afterStaleRestore = Invoke-RestMethod -Uri "$baseUrl/v1/sync/objects/$objectId" -Headers $headers
+    if ($afterStaleRestore.object.revision -ne $recoveredDeleted.object.revision) { throw "Rejected stale restore consumed a revision." }
+
     $yanmBody = @{
         updatedAtUtc = [DateTime]::UtcNow.ToString("O")
         yanm = @{
@@ -255,7 +267,7 @@ try {
     }
     if ($invalidStatus -ne 401) { throw "Expected invalid token signature 401, got $invalidStatus." }
 
-    Write-Output "Cloud object sync protocol test passed: authoritative=$authoritativeValue, create=$($created.object.revision), deviceB=$($deviceB.object.revision), retry=$($updated.object.revision), restore=$($restored.object.revision), history=4, yanmPatch=preserved, aiSecrets=scrubbed, repoSecrets=scrubbed, conflict=409+$($conflictDetails.details.currentRevision), invalidToken=401"
+    Write-Output "Cloud object sync protocol test passed: authoritative=$authoritativeValue, create=$($created.object.revision), deviceB=$($deviceB.object.revision), retry=$($updated.object.revision), restore=$($restored.object.revision), history=4, deletedRecovery=passed, staleRestore=409, yanmPatch=preserved, aiSecrets=scrubbed, repoSecrets=scrubbed, conflict=409+$($conflictDetails.details.currentRevision), invalidToken=401"
 }
 finally {
     Stop-YanziLocalWorkerPort -Port $Port

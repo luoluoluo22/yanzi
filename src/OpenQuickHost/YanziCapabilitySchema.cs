@@ -43,6 +43,10 @@ public static class YanziCapabilitySchema
                     if (value.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
                         throw new ArgumentException("Schema additionalProperties 必须是布尔值");
                     break;
+                case "minimum": case "maximum":
+                    if (value.ValueKind != JsonValueKind.Number || !value.TryGetDecimal(out _))
+                        throw new ArgumentException("Schema 数值边界必须为有限数值");
+                    break;
                 case "minLength":
                     if (value.ValueKind != JsonValueKind.Number || !value.TryGetInt32(out var min) || min < 0)
                         throw new ArgumentException("Schema minLength 必须是非负整数");
@@ -72,6 +76,13 @@ public static class YanziCapabilitySchema
                 _ => throw new ArgumentException($"不支持的 Schema 类型：{type}")
             };
             if (!valid) throw new ArgumentException($"{path} 必须为 {type.GetString()}");
+        }
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetDecimal(out var numeric))
+        {
+            if (schema.TryGetProperty("minimum", out var minimum) && numeric < minimum.GetDecimal())
+                throw new ArgumentException($"{path} 小于允许下限");
+            if (schema.TryGetProperty("maximum", out var maximum) && numeric > maximum.GetDecimal())
+                throw new ArgumentException($"{path} 大于允许上限");
         }
         if (schema.TryGetProperty("enum", out var choices) &&
             !choices.EnumerateArray().Any(choice => JsonElement.DeepEquals(choice, value)))

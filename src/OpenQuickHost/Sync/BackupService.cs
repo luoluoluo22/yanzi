@@ -225,6 +225,7 @@ public static class BackupService
     /// </summary>
     public static void RunAutoBackupIfNeeded()
     {
+        if (!HostRuntimeProfile.OwnsBackgroundServices) return;
         try
         {
             var settings = AppSettingsStore.Load();

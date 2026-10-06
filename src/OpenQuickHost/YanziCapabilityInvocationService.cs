@@ -1,4 +1,5 @@
-﻿using System.Text.Json;
+using System.IO;
+using System.Text.Json;
 
 namespace OpenQuickHost;
 
@@ -13,16 +14,33 @@ public static class YanziCapabilityInvocationService
         using var trace = YanziOperationTrace.Push();
         caller ??= YanziCapabilityCaller.Anonymous;
         capabilityName = capabilityName?.Trim() ?? string.Empty;
-        var provider = FindProvider(capabilityName);
         var previousPath = InvocationPath.Value ?? Array.Empty<string>();
+        string provider = "unknown";
+        IAsyncDisposable? providerLease = null;
 
         try
         {
-            if (string.IsNullOrWhiteSpace(capabilityName)) throw new ArgumentException("能力名称不能为空");
+            if (string.IsNullOrWhiteSpace(capabilityName))
+                throw new ArgumentException("能力名称不能为空");
             if (previousPath.Length >= 16 || previousPath.Contains(capabilityName, StringComparer.OrdinalIgnoreCase))
                 throw new InvalidOperationException($"能力调用存在循环或超过嵌套上限：{string.Join(" -> ", previousPath.Append(capabilityName))}");
+
             if (!YanziCapabilityRegistry.Contains(capabilityName))
-                throw new KeyNotFoundException($"未知燕子能力：{capabilityName}");
+            {
+                try
+                {
+                    providerLease = await YanziFileWorkflow.AcquireProviderAsync(capabilityName);
+                }
+                catch (IOException ex) when (ex.Message.StartsWith("workflow_provider_not_installed", StringComparison.Ordinal))
+                {
+                    throw new KeyNotFoundException($"未知燕子能力：{capabilityName}", ex);
+                }
+            }
+
+            if (!YanziCapabilityRegistry.Contains(capabilityName))
+                throw new KeyNotFoundException($"能力提供者未能注册：{capabilityName}");
+
+            provider = FindProvider(capabilityName);
             InvocationPath.Value = previousPath.Append(capabilityName).ToArray();
             var result = await YanziCapabilityRegistry.InvokeAsync(capabilityName, payload, caller);
             YanziCapabilityCallLog.Add(capabilityName, provider, true, caller.Id);
@@ -40,7 +58,18 @@ public static class YanziCapabilityInvocationService
             YanziCapabilityCallLog.Add(capabilityName, provider, false, caller.Id, code);
             return YanziCapabilityInvocationResult.Failed(ex.Message, code, YanziOperationTrace.Current);
         }
-        finally { InvocationPath.Value = previousPath; }
+        finally
+        {
+            InvocationPath.Value = previousPath;
+            if (providerLease != null)
+            {
+                try { await providerLease.DisposeAsync(); }
+                catch (Exception ex)
+                {
+                    HostAssets.AppendLog($"Capability provider release failed: {capabilityName}: {ex.Message}");
+                }
+            }
+        }
     }
 
     private static string FindProvider(string capabilityName)
@@ -82,7 +111,9 @@ public sealed class YanziCapabilityInvocationResult
     public string? Error { get; init; }
     public string? ErrorCode { get; init; }
 
-    public static YanziCapabilityInvocationResult Ok(object? data, string? traceId = null) => new() { Success = true, Data = data, TraceId = traceId };
+    public static YanziCapabilityInvocationResult Ok(object? data, string? traceId = null)
+        => new() { Success = true, Data = data, TraceId = traceId };
+
     public static YanziCapabilityInvocationResult Failed(string error, string errorCode = "invocation_failed", string? traceId = null)
         => new() { Success = false, Error = error, ErrorCode = errorCode, TraceId = traceId };
 }

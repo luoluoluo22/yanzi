@@ -36,6 +36,7 @@ final class MobileDeviceMessageSender {
                 MobileMessageOutbox.complete(saved);
                 LanDiscoveryManager.noteSuccess();
                 delivered.put("_transport", "lan");
+                MobileTaskJournal.accepted(base, token, envelope, delivered);
                 return delivered;
             }
         }

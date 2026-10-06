@@ -92,3 +92,32 @@ powershell -STA -NoProfile -ExecutionPolicy Bypass -File scripts/test-capability
 本地 `/docs` 网页登录后自动读取目录，支持筛选提供者、查看输入输出 Schema 与权限、生成必填参数模板、编辑 JSON 并调用、启动提供者、复制无 Token 目录及读取调用日志。没有能力的小程序显示 0 项，能力名称相同时用提供者 ID 区分选择项。
 
 本次验证：基础接口 39 项通过；真实运行时 35 项通过，包含两个提供者的目录关联和停止后的不可用状态；控制台 Cookie 认证、目录、OpenAPI 与时间调用通过。隔离浏览器使用独立测试凭据验证目录加载、筛选、契约、未注册能力禁用、参数 JSON 错误和实际时间调用。不会将用户 Token 写入网页或测试日志。
+
+
+## 2026-10-03：系统依赖 Provider 扩展为 Git / Python / Node.js / FFmpeg
+
+`manifest.json` 的 `requires` 继续保持“小程序只声明需要什么、宿主负责准备”的边界。本轮将原先 Git 特例重构为统一系统依赖 Provider：
+
+- `git`：WinGet `Git.Git`
+- `python` / `python3`：默认 WinGet `Python.Python.3.14`，支持最低版本判断
+- `node` / `nodejs`：默认 WinGet `OpenJS.NodeJS.LTS`；最低版本超过 LTS major 时切换 Current
+- `ffmpeg`：WinGet `Gyan.FFmpeg`
+
+统一流程为：发现可执行文件 → 读取实际版本 → 比较 `>=` 最低版本 → 缺失或版本过低时 WinGet 安装 → 刷新当前进程 PATH → 再次发现和版本校验。多个小程序同时请求同一依赖时仍由 Resolver 按 canonical name 加锁，避免重复安装。
+
+AI 系统提示词、小程序生成提示词、manifest 参考与开发规范均已更新。小程序可以直接声明：
+
+```json
+"requires": ["git", "python>=3.12", "node>=22", "ffmpeg>=8"]
+```
+
+本机真实 Provider 检测结果：Git 2.53.0、Python 3.12.9、Node 22.17.1、FFmpeg 7.1.1。能力回归为 62 checks passed。
+
+
+## 2026-10-03：能力实验室小程序
+
+新增 `prototypes/capability-lab` 并部署到本机 Extensions 的 `capability-lab`。该小程序用于观察和验证宿主基础依赖 Provider，因此故意不在自身 manifest 中预声明 Git/Python/Node/FFmpeg 的 requires，而是使用 `system.install` 权限主动调用 `dependency.status / dependency.progress / dependency.ensure`，从而在界面中展示检测、安装、PATH 刷新、版本验证与完成/失败阶段。
+
+宿主新增只读能力 `dependency.progress`；当前进度阶段为 checking / installing / verifying / completed / failed，并提供百分比阶段进度。普通业务小程序仍应优先使用 manifest.requires 自动补齐依赖。
+
+能力实验室包含四组真实实验：Python 纯标准库 Mandelbrot、Node.js 并行 SHA-256 链、FFmpeg 合成测试视频与截帧、Git 临时时间胶囊提交。原型通过燕子动态 C# 编译器编译；四组脚本冒烟测试全部通过；正式 Extensions 目录经 LocalExtensionCatalog 解析成功并再次编译成功。

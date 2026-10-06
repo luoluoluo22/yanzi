@@ -68,7 +68,7 @@ final class MobileAttachmentClient {
     }
     static File download(Context context, String base, String token, String id) throws Exception {
         if (!id.matches("att_[a-f0-9]{32}")) throw new IOException("无效附件编号");
-        JSONObject metadata = MobileMessageClient.request(base, "/v1/me/mobile/attachments/" + id, token, "GET", null);
+        JSONObject metadata = MobileMessageClient.readSystemFirst(base, "/v1/me/mobile/attachments/" + id, token);
         long size = metadata.getLong("size");
         if (size <= 0 || size > LIMIT) throw new IOException("附件大小超限");
         String name = metadata.getString("fileName").replaceAll("[\\\\/\\x00-\\x1f]", "_");
@@ -76,17 +76,31 @@ final class MobileAttachmentClient {
         File target = new File(directory, id + "-" + name);
         String expected = metadata.getString("sha256");
         if (target.exists() && target.length() == size && hash(target).equals(expected)) return target;
+        return CloudRequestRetry.systemFirst(true,
+                systemRoute -> downloadContent(base, token, id, size, expected, directory, target, systemRoute));
+    }
+    private static File downloadContent(String base, String token, String id, long size, String expected,
+                                        File directory, File target, boolean systemRoute) throws Exception {
         File partial = new File(target.getPath() + ".part");
         long offset = partial.exists() ? partial.length() : 0;
         if (offset >= size) { partial.delete(); offset = 0; }
         preflight(directory, size - offset);
-        HttpURLConnection connection = MobileNetworkRouting.openCloudConnection(new URL(base + "/v1/me/mobile/attachments/" + id + "/content"));
+        URL url = new URL(base + "/v1/me/mobile/attachments/" + id + "/content");
+        android.util.Log.i("YanziAttachment", "attachmentId=" + id + " stage=content_request route="
+                + (systemRoute ? "system" : "physical") + " offset=" + offset);
+        HttpURLConnection connection = systemRoute ? (HttpURLConnection)url.openConnection()
+                : MobileNetworkRouting.openCloudConnection(url);
         try {
             configure(connection, token);
             if (offset > 0) connection.setRequestProperty("Range", "bytes=" + offset + "-");
             int status = connection.getResponseCode();
             if (status != 200 && status != 206) throw new MobileMessageClient.HttpFailure(status);
             if (status == 200) offset = 0;
+            else {
+                String range = connection.getHeaderField("Content-Range");
+                if (range == null || !range.startsWith("bytes " + offset + "-") || !range.endsWith("/" + size))
+                    throw new IOException("invalid_attachment_content_range");
+            }
             try (InputStream input = connection.getInputStream(); OutputStream output = new FileOutputStream(partial, offset > 0)) {
                 byte[] buffer = new byte[65536]; int count; long total = offset;
                 while ((count = input.read(buffer)) > 0) {

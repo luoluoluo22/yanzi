@@ -102,6 +102,27 @@ public final class CompanionTransferProvider extends ContentProvider {
         for(int n=0;n<devices.length();n++){JSONObject peer=devices.optJSONObject(n);if(peer==null||!"desktop".equals(peer.optString("platform"))||!peer.optBoolean("online"))continue;JSONObject caps=peer.optJSONObject("capabilities");if(caps!=null&&caps.optBoolean("disabled"))continue;String id=peer.optString("deviceId");if(!id.isEmpty())active.add(id);}
         throw new IOException(active.isEmpty()?"TARGET_NOT_FOUND":"TARGET_REQUIRED");
     }
+    // Task center reads existing jobs; it never schedules a new invocation.
+    static java.util.List<JSONObject> taskSnapshots(Context c) throws Exception {
+        java.util.List<JSONObject> tasks=new java.util.ArrayList<>();
+        File[] files=root(c).listFiles((d,n)->n.endsWith(".json"));
+        if(files!=null) for(File file:files) {
+            JSONObject job=read(file); String state=job.optString("state");
+            String status=state.equals("completed")?"completed":state.equals("failed")?"failed":state.equals("queued")?"queued":"executing";
+            long created=java.time.Instant.parse(job.getString("createdAt")).toEpochMilli();
+            tasks.add(new JSONObject().put("id",job.getString("jobId")).put("companionJobId",job.getString("jobId"))
+                .put("extensionId",job.getString("extensionId")).put("kind","文件处理").put("title",job.getString("extensionId")+" · "+job.optString("capability"))
+                .put("status",status).put("target",job.getString("targetDeviceId")).put("createdAt",created)
+                .put("messageId",job.optString("messageId")).put("error",job.optString("error"))
+                .put("result",job.has("result")?MobileTaskJournal.clip(job.getJSONObject("result").toString()):""));
+        }
+        return tasks;
+    }
+    static void queryExistingTask(Context c,String extensionId,String id) throws Exception {
+        File file=job(c,extensionId,id);JSONObject value=read(file);
+        // Query/resume receiving a result is safe; submitting a queued job is owned by its original application.
+        if(value.has("messageId")||value.has("result")) run(c,file);
+    }
     static void resumePending(Context c){try{File[] files=root(c).listFiles();if(files!=null)for(File f:files)if(f.getName().endsWith(".json"))schedule(c,f);}catch(Exception ignored){}}
     private static void schedule(Context c,File record){if(RUNNING.size()>32||!RUNNING.add(record.getPath()))return;WORK.execute(()->{try{run(c,record);}catch(Exception error){try{JSONObject j=read(record);j.put("error",error.getMessage()==null?error.getClass().getSimpleName():error.getMessage());save(record,j);}catch(Exception ignored){}}finally{RUNNING.remove(record.getPath());}});}
     private static void run(Context c,File record)throws Exception {

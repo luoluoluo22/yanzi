@@ -3876,6 +3876,23 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private void OpenAiCapabilitiesButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var port = _settings.AgentApiPort;
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = $"http://127.0.0.1:{port}/docs#capability-console",
+                UseShellExecute = true
+            });
+        }
+        catch (System.Exception ex)
+        {
+            System.Windows.MessageBox.Show($"无法打开能力管理: {ex.Message}");
+        }
+    }
+
     private void HotkeyRecorderBorder_MouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
         if (sender is Border border)
@@ -6886,6 +6903,12 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private async void AcceptRemoteAccountSyncConflictButton_Click(object sender, RoutedEventArgs e)
     {
         await ResolveAccountSyncConflictFromButtonAsync(sender, useLocalVersion: false);
+    }
+
+    private void ShowTaskRecoveryButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_mainWindow.CloudSyncClient is not { CurrentUserId: not null } client) { SyncStatusText = "请先登录燕子账号。"; return; }
+        new TaskRecoveryWindow(_mainWindow, client) { Owner = this }.Show();
     }
 
     private void ShowAccountSyncHistoryButton_Click(object sender, RoutedEventArgs e)

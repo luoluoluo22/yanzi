@@ -44,7 +44,8 @@ export async function sendOfflinePush(env, userId, message) {
   for (const row of rows) {
     if (!messageMatchesDevice(message, {deviceId: row.device_id, platform: 'android'})) continue;
     try {
-      if (env.DEVICE_RELAY && await env.DEVICE_RELAY.get(env.DEVICE_RELAY.idFromName(userId)).isConnected(row.device_id)) continue;
+      // A retained socket does not prove that a sleeping phone is consuming frames.
+      // Send the small wakeup signal even when the relay still reports connected.
       const provider = JSON.parse(row.capabilities_json || '{}').pushProvider;
       const status = await sendProviderPush(env, provider, row.push_token, message.messageId);
       console.log(JSON.stringify({ event: 'mobile_push', messageId: message.messageId, status }));

@@ -43,6 +43,36 @@ public sealed partial class CloudSyncClient
         _credential = SecureCredentialStore.Load();
     }
 
+    private DateTime _sessionDiskTime;
+    private DateTime _credentialDiskTime;
+    public void AdoptRuntimeEncryptionKey(string account, byte[] key)
+    {
+        if (CurrentUserId != account || key.Length != 32) throw new InvalidOperationException("账号状态已变化。");
+        E2eeMasterKey = key.ToArray();
+    }
+    public async Task ReloadPersistedSessionAsync()
+    {
+        var sessionTime = File.GetLastWriteTimeUtc(SyncSessionStore.SessionPath);
+        var credentialTime = File.GetLastWriteTimeUtc(SecureCredentialStore.CredentialPath);
+        if (sessionTime == _sessionDiskTime && credentialTime == _credentialDiskTime) return;
+        await _authenticationLock.WaitAsync();
+        try
+        {
+            var session = SyncSessionStore.Load();
+            var credential = SecureCredentialStore.Load();
+            var accountChanged = session?.UserId != _session?.UserId;
+            if (accountChanged || session?.AccessToken != _session?.AccessToken)
+                AccountCoordinator.Invalidate();
+            _session = session;
+            _credential = credential;
+            E2eeMasterKey = credential != null ? DeriveSyncKeys(credential.LoginEmail, credential.Password).MasterKey
+                : accountChanged || session == null ? null : E2eeMasterKey;
+            _sessionDiskTime = sessionTime;
+            _credentialDiskTime = credentialTime;
+        }
+        finally { _authenticationLock.Release(); }
+    }
+
     public string CurrentUserLabel =>
         _session != null
             ? $"{_session.Username} ({_session.UserId})"
@@ -51,6 +81,7 @@ public sealed partial class CloudSyncClient
                 : "未登录";
 
     public string? CurrentUserId => _session?.UserId;
+    internal string TaskJournalAccount => _options.BaseUrl.TrimEnd('/') + "\n" + CurrentUserId;
 
     public bool HasCredential => !string.IsNullOrWhiteSpace(_credential?.LoginEmail) && !string.IsNullOrWhiteSpace(_credential?.Password);
 
@@ -859,7 +890,12 @@ public sealed partial class CloudSyncClient
         string deviceId,
         int limit = 20,
         CancellationToken cancellationToken = default)
-        => (await GetPendingDeviceMessagePageAsync(deviceId, 0, limit, cancellationToken)).Items;
+    {
+        var items = (await GetPendingDeviceMessagePageAsync(deviceId, 0, limit, cancellationToken)).Items;
+        var taskAccount = TaskJournalAccount;
+        foreach (var message in items) PlatformTaskJournal.Observed(taskAccount, message);
+        return items;
+    }
 
     public async Task<string> SendDeviceMessageAsync(
         string sourceDeviceId,
@@ -874,6 +910,7 @@ public sealed partial class CloudSyncClient
         DateTimeOffset? expiresAt = null)
     {
         await EnsureAuthenticatedAsync(cancellationToken);
+        var taskAccount = TaskJournalAccount;
         clientMessageId ??= Guid.NewGuid().ToString("N");
         if (expiresAt == null && DeviceMessageOutbox.ReadSaved(CurrentUserId!, clientMessageId) is { } previous)
         {
@@ -893,25 +930,31 @@ public sealed partial class CloudSyncClient
             expiresAt = (expiresAt ?? (YanziDeviceMessageProtocol.IsExecution(kind) ? DateTimeOffset.UtcNow.AddMinutes(2) : DateTimeOffset.UtcNow.AddDays(30))).ToString("O")
         });
         var saved = DeviceMessageOutbox.Save(CurrentUserId!, clientMessageId, body);
+        PlatformTaskJournal.Envelope(taskAccount, body);
         string id;
         try { id = await SendSavedDeviceMessageAsync(body, cancellationToken); }
-        catch (DeviceMessageRejectedException) { DeviceMessageOutbox.Fail(saved); throw; }
+        catch (DeviceMessageRejectedException error) { PlatformTaskJournal.Envelope(taskAccount, body, status: "failed", result: "HTTP " + error.StatusCode); DeviceMessageOutbox.Fail(saved); throw; }
+        catch (Exception error) { PlatformTaskJournal.Envelope(taskAccount, body, status: "unknown", result: error.Message); throw; }
         DeviceMessageOutbox.Complete(saved);
         return id;
     }
 
     private async Task<string> SendSavedDeviceMessageAsync(string body, CancellationToken cancellationToken)
     {
+        var taskAccount = TaskJournalAccount;
         using var request = CreateJsonRequest(HttpMethod.Post, "/v1/me/mobile/messages", body, includeAuth: true);
         using var response = await SendAsyncWithFallback(request, cancellationToken);
         if ((int)response.StatusCode is 400 or 403 or 404 or 409 or 410 or 413 or 426)
             throw new DeviceMessageRejectedException((int)response.StatusCode);
         await EnsureSuccessAsync(response, cancellationToken);
         var result = await ReadAsync<DeviceMessageCreateResponse>(response, cancellationToken);
+        PlatformTaskJournal.Envelope(taskAccount, body, result?.MessageId, "submitted");
         return result?.MessageId ?? string.Empty;
     }
 
-    private readonly SemaphoreSlim _chatDeliveryGate = new(1, 1);
+    // Capability invocations and background replay use different client instances.
+    // Serialize their durable jobs before uploading or constructing an envelope.
+    private static readonly SemaphoreSlim _chatDeliveryGate = new(1, 1);
     public async Task<string> DeliverChatJobAsync(DesktopChatJob job, CancellationToken cancellationToken = default)
     {
         await _chatDeliveryGate.WaitAsync(cancellationToken);
@@ -957,13 +1000,24 @@ public sealed partial class CloudSyncClient
                 using var document = JsonDocument.Parse(body);
                 if (document.RootElement.TryGetProperty("expiresAt", out var expiry) && expiry.ValueKind == JsonValueKind.String &&
                     DateTimeOffset.TryParse(expiry.GetString(), out var deadline) && deadline <= DateTimeOffset.UtcNow)
-                { DeviceMessageOutbox.Complete(path); HostAssets.AppendLog("Device outbox command expired before sending."); continue; }
+                { PlatformTaskJournal.Envelope(TaskJournalAccount, body, status: "expired"); DeviceMessageOutbox.Complete(path); HostAssets.AppendLog("Device outbox command expired before sending."); continue; }
                 try { await SendSavedDeviceMessageAsync(body, cancellationToken); }
-                catch (DeviceMessageRejectedException error) { DeviceMessageOutbox.Fail(path); HostAssets.AppendLog("Device outbox terminal rejection: " + error.StatusCode); continue; }
+                catch (DeviceMessageRejectedException error) { PlatformTaskJournal.Envelope(TaskJournalAccount, body, status: "failed", result: "HTTP " + error.StatusCode); DeviceMessageOutbox.Fail(path); HostAssets.AppendLog("Device outbox terminal rejection: " + error.StatusCode); continue; }
                 DeviceMessageOutbox.Complete(path);
             }
         }
         finally { _outboxReplay.Release(); }
+    }
+
+    public async Task<DeviceMessageRecord> QueryTaskMessageAsync(string id, CancellationToken cancellationToken = default)
+    {
+        await EnsureAuthenticatedAsync(cancellationToken);
+        var taskAccount = TaskJournalAccount;
+        using var request=CreateRequest(HttpMethod.Get,$"/v1/me/mobile/messages/{Uri.EscapeDataString(id)}",includeAuth:true);
+        using var response=await SendAsyncWithFallback(request,cancellationToken);
+        await EnsureSuccessAsync(response,cancellationToken);
+        var message=await ReadAsync<DeviceMessageRecord>(response,cancellationToken) ?? throw new InvalidDataException("任务响应无效");
+        PlatformTaskJournal.Observed(taskAccount,message); return message;
     }
 
     public async Task<bool> ClaimDeviceMessageAsync(string messageId, string deviceId, CancellationToken cancellationToken = default)

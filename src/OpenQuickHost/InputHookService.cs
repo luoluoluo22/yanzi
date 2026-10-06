@@ -187,6 +187,7 @@ public class InputHookService
         Action? onWindowSnapMove = null,
         Action? onWindowSnapRelease = null)
     {
+        if (!HostRuntimeProfile.GlobalListenersEnabled) return;
         _onShowPanel = onLongPress;
         _onLongPressRelease = onLongPressRelease;
         _onShowRadial = onRadial;

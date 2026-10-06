@@ -88,6 +88,14 @@ $publishArgs = @(
 dotnet @publishArgs
 if ($LASTEXITCODE -ne 0) { throw 'Desktop publish failed.' }
 
+$runtimePublishArgs = $publishArgs.Clone()
+$runtimePublishArgs[1] = Join-Path $root 'src\Yanzi.Runtime\Yanzi.Runtime.csproj'
+$runtimePublishArgs[$runtimePublishArgs.Length - 1] = Join-Path $publishDir 'Runtime'
+dotnet @runtimePublishArgs
+if ($LASTEXITCODE -ne 0) { throw 'Shared Runtime publish failed.' }
+Assert-PayloadFile 'Runtime\Yanzi.Runtime.exe'
+Assert-PayloadFile 'Runtime\Yanzi.dll'
+
 Write-Host "Verifying installer payload..."
 Assert-PayloadFile "Yanzi.exe"
 Assert-PayloadFile "Yanzi.dll"

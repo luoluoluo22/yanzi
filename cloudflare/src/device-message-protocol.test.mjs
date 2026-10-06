@@ -44,12 +44,17 @@ test('idempotency ignores object key order but preserves values and array order'
   assert.notEqual(canonicalMessageJson({a:1}),canonicalMessageJson({a:'1'}));
   assert.deepEqual(DEVICE_MESSAGE_PROTOCOL.supportedVersions,[1]);
 });
-test('offline push uses the same explicit-device routing even for legacy chat records',async () => {
+test('push uses explicit-device routing even when the retained relay reports connected',async () => {
   const sent=[];
   const env={DB:{prepare:()=>({bind:()=>({all:async()=>({results:[
     {device_id:'phone-a',push_token:'a',capabilities_json:'{}'},
-    {device_id:'phone-b',push_token:'b',capabilities_json:'{}'}]})})})},
+    {device_id:'phone-b',push_token:'b',capabilities_json:'{"pushProvider":"webhook"}'}]})})})},
+    PUSH_WEBHOOK_URL:'https://push.example.test', PUSH_WEBHOOK_TOKEN:'fixture',
     DEVICE_RELAY:{idFromName:user=>user,get:()=>({isConnected:async device=>{sent.push(device);return true;}})}};
-  await sendOfflinePush(env,'user',{targetDeviceId:'phone-b',payload:{accountChat:true},messageId:'test'});
-  assert.deepEqual(sent,['phone-b']);
+  const originalFetch=globalThis.fetch;
+  globalThis.fetch=async(url,options)=>{sent.push(JSON.parse(options.body).token);return Response.json({ok:true});};
+  try {
+    await sendOfflinePush(env,'user',{targetDeviceId:'phone-b',payload:{accountChat:true},messageId:'test'});
+    assert.deepEqual(sent,['b']);
+  } finally {globalThis.fetch=originalFetch;}
 });

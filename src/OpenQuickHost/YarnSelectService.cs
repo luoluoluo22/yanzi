@@ -63,6 +63,7 @@ public static class YarnSelectService
 
     public static void Start(Action<YarnSelectActionRequest> onAction)
     {
+        if (!HostRuntimeProfile.GlobalListenersEnabled) return;
         if (_isRunning)
         {
             HostAssets.AppendLog("YarnSelect: start skipped because hook is already running.");

@@ -25,6 +25,7 @@ public partial class MainWindow
 
     private void StartMobileMessageBridge(string reason)
     {
+        if (!HostRuntimeProfile.OwnsBackgroundServices) return;
         if (_cloudSyncClient == null || !_cloudSyncClient.HasCredential)
         {
             HostAssets.AppendLog($"Mobile bridge skipped: reason={reason}, hasClient={_cloudSyncClient != null}, hasCredential={_cloudSyncClient?.HasCredential == true}.");
@@ -58,6 +59,7 @@ public partial class MainWindow
 
     private void StartDesktopPresenceHeartbeat(string reason)
     {
+        if (!HostRuntimeProfile.OwnsBackgroundServices) return;
         if (_cloudSyncClient == null || !_cloudSyncClient.HasCredential)
         {
             return;
@@ -423,7 +425,14 @@ public partial class MainWindow
                 }
             }
             if (receiptPath != null) SaveMobileExecutionReceipt(receiptPath, new(false, false, ""));
+            var taskAccount = _cloudSyncClient?.CurrentUserId is not null ? _cloudSyncClient.TaskJournalAccount : null;
+            if (taskAccount is not null) { message.Status = "executing"; PlatformTaskJournal.Observed(taskAccount, message); }
             var result = await ExecuteMobileDeviceMessageAsync(message);
+            if (taskAccount is not null) {
+                message.Status = result.hasResult ? (result.success ? "completed" : "failed") : "acked";
+                message.Payload["executionResult"] = JsonSerializer.SerializeToElement(new { output = result.output });
+                PlatformTaskJournal.Observed(taskAccount, message);
+            }
             if (receiptPath != null) SaveMobileExecutionReceipt(receiptPath, new(true, result.success, result.output));
             if (_mobileMessageResults.Count >= 2048) _mobileMessageResults.Remove(_mobileMessageResults.Keys.First());
             _mobileMessageResults[key] = result;
@@ -1350,18 +1359,22 @@ public partial class MainWindow
         }
     }
 
-    public void ShowMobileInboxWindow()
+    public void ShowMobileInboxWindow(string? preferredDeviceId = null)
     {
         try
         {
+            QuickPanelWindow.HasUnreadMessages = false;
+
             if (_mobileMessageToastWindow is { IsVisible: true })
             {
                 _mobileMessageToastWindow.LoadInboxHistory();
+                _mobileMessageToastWindow.PreferTargetDevice(preferredDeviceId);
                 _mobileMessageToastWindow.Activate();
                 return;
             }
 
             _mobileMessageToastWindow = new MobileMessageToastWindow();
+            _mobileMessageToastWindow.PreferTargetDevice(preferredDeviceId);
             _mobileMessageToastWindow.Closed += (_, _) => _mobileMessageToastWindow = null;
             _mobileMessageToastWindow.ShowActivated = true;
             _mobileMessageToastWindow.Show();
@@ -1391,7 +1404,12 @@ public partial class MainWindow
 
             QuickPanelWindow.HasUnreadMessages = true;
 
-            var notificationCard = new MobileMessageNotificationCard(sourceLabel, text);
+            var notificationCard = new MobileMessageNotificationCard(
+                sourceLabel,
+                text,
+                replyDeviceId,
+                screenshotDataUrl,
+                screenshotFilePath);
             notificationCard.Show();
         }
         catch (Exception ex)

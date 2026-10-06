@@ -2,6 +2,8 @@ using System.Text.Json;
 using OpenQuickHost;
 using OpenQuickHost.Sync;
 
+if (args.Contains("--task-recovery")) { PlatformTaskVerification.Run(); return; }
+
 if (args.Length == 2 && args[0] == "--release-readiness")
 {
     await ReleaseReadinessVerification.RunAsync(args[1]);
@@ -47,6 +49,7 @@ VerifyBackpackResponsiveness();
 if (args.Contains("--backpack-safety")) return;
 VerifySearchInteractionSafety();
 VerifyQuickWindowSwitchSafety();
+VerifyKnownApplicationCatalog();
 if (args.Contains("--interaction-safety")) return;
 VerifySyncPackageSafety();
 if (args.Contains("--sync-safety")) return;
@@ -71,6 +74,8 @@ var roundTrip = AccountConfigObjectStore.Apply(new CloudQuickPanelConfigSnapshot
 Assert(roundTrip != null, "Dynamic object round trip returned null.");
 Assert(roundTrip!.QuickPanelGlobalGroups.Select(static item => item.Id).SequenceEqual(["g1", "g2"]), "Global group order or IDs changed during round trip.");
 Assert(roundTrip.QuickPanelContextGroups.Single().Id == "c1", "Context group was not restored.");
+Assert(roundTrip.AppShortcutBindings?.TryGetValue("wechat", out var wechatShortcut) == true && wechatShortcut == "Alt+W",
+    "Stable application shortcut bindings must survive account object round trip.");
 Assert(roundTrip.RadialMenu?.Pages.Select(static item => item.Id).SequenceEqual(["r1", "r2"]) == true, "Radial page order or IDs changed during round trip.");
 
 var initialMap = initialWrites.ToDictionary(static item => item.ObjectId, StringComparer.OrdinalIgnoreCase);
@@ -564,6 +569,10 @@ static CloudQuickPanelConfigSnapshot CreateSnapshot() => new()
     ],
     SelectedQuickPanelGlobalGroupId = "g1",
     SelectedQuickPanelContextGroupId = "c1",
+    AppShortcutBindings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["wechat"] = "Alt+W"
+    },
     RadialMenu = new RadialMenuSettings
     {
         SelectedPageId = "r1",
@@ -580,6 +589,22 @@ static T Clone<T>(T value) => JsonSerializer.Deserialize<T>(JsonSerializer.Seria
 static void Assert(bool condition, string message)
 {
     if (!condition) throw new InvalidOperationException(message);
+}
+
+static void VerifyKnownApplicationCatalog()
+{
+    var wechat = KnownApplicationCatalog.Match("微信", @"C:\Program Files (x86)\Tencent\WeChat\WeChat.exe");
+    Assert(wechat?.Id == "wechat", "WeChat must resolve to a stable application identity.");
+    Assert(wechat?.ExtensionId == "app-known-wechat", "WeChat stable command ID changed unexpectedly.");
+
+    Assert(KnownApplicationCatalog.TryGetById("7zip", out var sevenZip), "7-Zip must exist in the trusted application catalog.");
+    var placeholder = KnownApplicationCatalog.CreatePlaceholder(sevenZip);
+    Assert(placeholder.ExtensionId == "app-known-7zip" &&
+           placeholder.LaunchTarget == "yanzi-app:7zip" &&
+           placeholder.Subtitle.Contains("未安装", StringComparison.Ordinal),
+        "Missing trusted applications must produce an installable placeholder instead of a machine-specific path.");
+
+    Console.WriteLine("Known application catalog verification passed: stable identity and install placeholder.");
 }
 
 static void VerifySyncPackageSafety()

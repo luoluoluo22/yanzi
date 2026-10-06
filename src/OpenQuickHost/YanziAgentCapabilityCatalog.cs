@@ -23,7 +23,8 @@ public static class YanziAgentCapabilityCatalog
         {
             result[declaration.Name.Trim()] = new YanziAgentCapabilityDescriptor(declaration.Name.Trim(),
                 declaration.Description, command.ExtensionId, declaration.Version, declaration.InputSchema,
-                declaration.OutputSchema, declaration.Permissions ?? [], false);
+                declaration.OutputSchema, declaration.Permissions ?? [], false, true, declaration.Audience,
+                declaration.Category, declaration.RiskLevel, declaration.RequiresConfirmation);
         }
         foreach (var capability in YanziCapabilityRegistry.List().Where(x =>
                      string.Equals(x.ProviderExtensionId, command.ExtensionId, StringComparison.OrdinalIgnoreCase)))
@@ -33,7 +34,8 @@ public static class YanziAgentCapabilityCatalog
 
     public static YanziAgentCapabilityDescriptor FromRegistered(YanziCapabilityDescriptor capability)
         => new(capability.Name, capability.Description, capability.ProviderExtensionId, capability.Version,
-            capability.InputSchema, capability.OutputSchema, capability.Permissions, true);
+            capability.InputSchema, capability.OutputSchema, capability.Permissions, true, false, capability.Audience,
+            capability.Category, capability.RiskLevel, capability.RequiresConfirmation);
 
     public static object Create()
     {
@@ -48,6 +50,7 @@ public static class YanziAgentCapabilityCatalog
             {
                 id = x.ExtensionId, title = x.Title, description = x.Subtitle, version = x.DeclaredVersion,
                 runtime = x.Runtime, permissions = x.Permissions, isRunning = running.Contains(x.ExtensionId),
+                requires = YanziCapabilityRequirementResolver.GetRequirements(x),
                 runEndpoint = $"/v1/extensions/{Uri.EscapeDataString(x.ExtensionId)}/run",
                 capabilities = ForExtension(x)
             }).ToArray(),
@@ -67,7 +70,7 @@ public static class YanziAgentCapabilityCatalog
         return new
         {
             openapi = "3.1.0",
-            info = new { title = "Yanzi Agent capability API", version = "1.0", description = "先读取能力目录，再按 inputSchema 调用 available=true 的能力。提供者未运行时，显式启动对应小程序并重新查询。" },
+            info = new { title = "Yanzi Agent capability API", version = "1.0", description = "先读取能力目录，再按 inputSchema 调用 available=true 或 onDemand=true 的能力。onDemand 能力会由燕子自动启动对应小程序提供者。" },
             servers = new[] { new { url = baseUrl } },
             security = new object[] { new Dictionary<string, string[]> { ["bearerAuth"] = [] }, new Dictionary<string, string[]> { ["apiToken"] = [] } },
             components = new
@@ -143,4 +146,6 @@ public static class YanziAgentCapabilityCatalog
 }
 
 public sealed record YanziAgentCapabilityDescriptor(string Name, string Description, string ProviderExtensionId,
-    string Version, JsonElement InputSchema, JsonElement OutputSchema, IReadOnlyList<string> Permissions, bool Available);
+    string Version, JsonElement InputSchema, JsonElement OutputSchema, IReadOnlyList<string> Permissions, bool Available,
+    bool OnDemand = false, string Audience = "user", string Category = "general", string RiskLevel = "low",
+    bool RequiresConfirmation = false);

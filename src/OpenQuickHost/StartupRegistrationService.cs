@@ -5,10 +5,11 @@ namespace OpenQuickHost;
 public static class StartupRegistrationService
 {
     private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    private const string ValueName = "Yanzi";
+    private static string ValueName => HostRuntimeProfile.IsRuntime ? "Yanzi.Runtime" : "Yanzi";
 
     public static bool IsEnabled()
     {
+        if (HostRuntimeProfile.IsDevelopment || HostRuntimeProfile.RuntimeDataRoot != null) return false;
         using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, writable: false);
         var value = key?.GetValue(ValueName) as string;
         return !string.IsNullOrWhiteSpace(value);
@@ -16,6 +17,7 @@ public static class StartupRegistrationService
 
     public static void Apply(bool enabled)
     {
+        if (HostRuntimeProfile.IsDevelopment || HostRuntimeProfile.RuntimeDataRoot != null) return;
         using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, writable: true)
             ?? Registry.CurrentUser.CreateSubKey(RunKeyPath);
 
@@ -39,6 +41,6 @@ public static class StartupRegistrationService
             throw new InvalidOperationException("无法确定当前程序路径，不能设置开机自启。");
         }
 
-        return $"\"{processPath}\" --tray";
+        return $"\"{processPath}\" {(HostRuntimeProfile.IsRuntime ? "--runtime --tray" : "--tray")}";
     }
 }

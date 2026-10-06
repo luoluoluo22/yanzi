@@ -1443,7 +1443,8 @@ public partial class MainWindow
         }
         var extListJson = JsonSerializer.Serialize(extList);
 
-        var finalPrompt = "【系统指令（严格遵守）】\n" + basePrompt + 
+        var finalPrompt = "【系统指令（严格遵守）】\n" + basePrompt +
+                          "\n\n" + YanziCapabilityRequirementResolver.BuildAuthoringPrompt() +
                           "\n当前可用小程序有:\n" + extListJson;
 
         var messages = new List<object>

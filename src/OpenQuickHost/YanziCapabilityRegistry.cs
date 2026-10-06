@@ -5,7 +5,7 @@ namespace OpenQuickHost;
 
 /// <summary>
 /// 燕子能力注册中心。
-/// 能力不是宿主写死，而由运行中的小程序动态注册。
+/// 能力可以由宿主提供，也可以由运行中的小程序动态注册。
 /// 小程序安装/启动后可以声明自己提供的能力，其他小程序和 AI 可以发现并调用。
 /// </summary>
 public static class YanziCapabilityRegistry
@@ -26,7 +26,9 @@ public static class YanziCapabilityRegistry
             Name = Normalize(capability.Name), ProviderExtensionId = capability.ProviderExtensionId,
             Description = capability.Description, Version = capability.Version,
             InputSchema = capability.InputSchema.Clone(), OutputSchema = capability.OutputSchema.Clone(),
-            Permissions = Array.AsReadOnly(capability.Permissions.ToArray()), Handler = capability.Handler
+            Permissions = Array.AsReadOnly(capability.Permissions.ToArray()), Audience = capability.Audience,
+            Category = capability.Category, RiskLevel = capability.RiskLevel,
+            RequiresConfirmation = capability.RequiresConfirmation, Handler = capability.Handler
         };
     }
 
@@ -98,7 +100,8 @@ public static class YanziCapabilityRegistry
         return Capabilities.Values
             .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
             .Select(x => new YanziCapabilityDescriptor(x.Name, x.Description, x.ProviderExtensionId,
-                x.Version, x.InputSchema, x.OutputSchema, x.Permissions))
+                x.Version, x.InputSchema, x.OutputSchema, x.Permissions, x.Audience, x.Category,
+                x.RiskLevel, x.RequiresConfirmation))
             .ToArray();
     }
 
@@ -114,11 +117,16 @@ public sealed class YanziCapabilityDefinition
     public JsonElement InputSchema { get; init; } = YanziCapabilitySchema.Any;
     public JsonElement OutputSchema { get; init; } = YanziCapabilitySchema.Any;
     public IReadOnlyList<string> Permissions { get; init; } = Array.Empty<string>();
+    public string Audience { get; init; } = "user";
+    public string Category { get; init; } = "general";
+    public string RiskLevel { get; init; } = "low";
+    public bool RequiresConfirmation { get; init; }
     public required Func<object?, Task<object?>> Handler { get; init; }
 }
 
 public sealed record YanziCapabilityDescriptor(string Name, string Description, string ProviderExtensionId,
-    string Version, JsonElement InputSchema, JsonElement OutputSchema, IReadOnlyList<string> Permissions);
+    string Version, JsonElement InputSchema, JsonElement OutputSchema, IReadOnlyList<string> Permissions,
+    string Audience = "user", string Category = "general", string RiskLevel = "low", bool RequiresConfirmation = false);
 
 public sealed record YanziCapabilityCaller(string Id, IReadOnlyList<string> Permissions, bool IsTrusted = false)
 {

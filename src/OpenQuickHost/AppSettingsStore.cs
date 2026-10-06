@@ -38,6 +38,12 @@ public static class AppSettingsStore
         6. run_extension: 运行并同步等待某个扩展的执行结果。参数: id (扩展ID)，input (可选，传递给扩展 of 输入参数文本)。
         7. stop_extension: 停止运行中的某个常驻扩展实例。参数: id (扩展ID)。
 
+        【小程序基础能力依赖】
+        - 如果小程序需要宿主可准备的基础环境，在 manifest 顶层声明 requires，例如 "requires": ["python>=3.12", "node>=22", "ffmpeg>=8"]。
+        - requires 表示“小程序需要什么”；provides 表示“小程序提供什么能力”。
+        - 不要在每个小程序里重复写 Git / Python / Node.js / FFmpeg 的下载与安装逻辑。燕子运行前会自动检测，已有且版本满足则跳过，否则由宿主 Provider 准备并再次验证。
+        - 当前宿主自动准备：git、python、node、ffmpeg。
+
         【创建/设计本地扩展核心规范与策略】
         AI 在调用 `create_extension` 时，参数 `manifest` 必须是一个合法的 JSON 字符串。
         1. **选择最简策略**：
@@ -201,6 +207,7 @@ public static class AppSettingsStore
 
     public static AppSettings Load()
     {
+        using var processLock = SettingsProcessLock.Enter(HostAssets.DataRootPath);
         lock (SettingsIoLock)
         {
             if (!File.Exists(SettingsPath))
@@ -273,6 +280,7 @@ public static class AppSettingsStore
 
     public static AppSettings Update(Func<AppSettings, AppSettings> edit)
     {
+        using var processLock = SettingsProcessLock.Enter(HostAssets.DataRootPath);
         lock (SettingsIoLock)
         {
             var settings = Normalize(edit(Load()));
@@ -283,6 +291,7 @@ public static class AppSettingsStore
 
     public static void Save(AppSettings settings)
     {
+        using var processLock = SettingsProcessLock.Enter(HostAssets.DataRootPath);
         lock (SettingsIoLock)
         {
             settings = Normalize(settings);
@@ -312,5 +321,5 @@ public static class AppSettingsStore
     private static readonly JsonSerializerOptions JsonOptions = JsonDefaults.CamelCaseIndented;
 
     internal static int NormalizeLongPressMilliseconds(int milliseconds) => AppSettingsMigration.NormalizeLongPressMilliseconds(milliseconds);
-    private static AppSettings Normalize(AppSettings settings) => AppSettingsMigration.Normalize(settings);
+    private static AppSettings Normalize(AppSettings settings) => HostRuntimeProfile.ApplySettings(AppSettingsMigration.Normalize(settings));
 }

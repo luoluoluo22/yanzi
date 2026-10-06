@@ -1,0 +1,18 @@
+{
+  "id": "capability-lab",
+  "name": "能力实验室",
+  "version": "0.1.0",
+  "category": "开发工具",
+  "description": "查看燕子宿主基础能力的状态、准备进度，并用真实脚本验证 Git、Python、Node.js 与 FFmpeg。",
+  "keywords": ["能力", "依赖", "Git", "Python", "Node", "FFmpeg", "实验"],
+  "icon": "mdi:flask-outline",
+  "accentHex": "#64748B",
+  "runtime": "csharp",
+  "uiMode": "native-window",
+  "entryMode": "entry",
+  "entry": "CapabilityLab.cs",
+  "permissions": ["system.install"],
+  "toggleWindow": false,
+  "runAsAdmin": false,
+  "waitForExit": false
+}

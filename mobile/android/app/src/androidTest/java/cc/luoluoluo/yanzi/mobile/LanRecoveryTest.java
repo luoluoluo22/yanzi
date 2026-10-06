@@ -13,7 +13,15 @@ public final class LanRecoveryTest extends Instrumentation {
     private Bundle arguments;
     @Override public void onCreate(Bundle arguments) { super.onCreate(arguments); this.arguments=arguments; start(); }
     @Override public void onStart() {
+        if ("wake-chain".equals(arguments.getString("suite"))) { WakeChainVerification.run(this); return; }
+        if ("chat-notification".equals(arguments.getString("suite"))) { ChatNotificationVerification.run(this); return; }
+        if ("message-delivery".equals(arguments.getString("suite"))) { MessageDeliveryVerification.run(this); return; }
+        if ("task-query-original".equals(arguments.getString("suite"))) { TaskRecoveryVerification.queryOriginal(this, arguments); return; }
+        if ("task-recovery-ui".equals(arguments.getString("suite"))) { TaskRecoveryVerification.verifyUi(this, arguments); return; }
+        if ("task-recovery-restart".equals(arguments.getString("suite"))) { TaskRecoveryVerification.verifyRestart(this); return; }
+        if ("task-recovery".equals(arguments.getString("suite"))) { TaskRecoveryVerification.run(this); return; }
         if ("application-store".equals(arguments.getString("suite"))) { ApplicationStoreVerification.run(this); return; }
+        if ("mobile-app-capabilities".equals(arguments.getString("suite"))) { MobileAppCapabilityVerification.run(this); return; }
         if ("phone-workspace".equals(arguments.getString("suite"))) { PhoneWorkspaceVerification.run(this); return; }
         if ("update".equals(arguments.getString("suite"))) { UpdateFeedbackTest.run(this, "true".equals(arguments.getString("probeNetwork"))); return; }
         if ("desktop-execution".equals(arguments.getString("suite"))) { DesktopExecutionVerification.run(this, arguments); return; }

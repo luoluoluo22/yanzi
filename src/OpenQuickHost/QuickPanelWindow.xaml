@@ -144,6 +144,12 @@
                 </MenuItem.Icon>
             </MenuItem>
             </MenuItem>
+            <MenuItem Header="复制路径" Click="CopyExtensionDirectoryPath_Click" CommandParameter="{Binding}"
+                      Visibility="{Binding CanCopyExtensionPath, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <MenuItem.Icon>
+                    <Path Data="{local:IconGeometry copy}" Fill="#A0FFFFFF" Stretch="Uniform" Width="16" Height="16" />
+                </MenuItem.Icon>
+            </MenuItem>
             <MenuItem Header="移除与删除" Visibility="{Binding CanRemoveFromFixedSlots, Converter={StaticResource BooleanToVisibilityConverter}}">
             <MenuItem Header="移除" Click="RemoveExtension_Click" CommandParameter="{Binding}"
                       Visibility="{Binding CanRemoveFromFixedSlots, Converter={StaticResource BooleanToVisibilityConverter}}">

@@ -34,6 +34,7 @@ public partial class MobileMessageToastWindow : Window
     private string? _lastUrl;
     private DateTimeOffset? _lastMessageTime;
     private string? _replyDeviceId;
+    private string? _preferredTargetDeviceId;
     private bool _sending;
     private string _sendStatus = "";
     private string _sendError = "";
@@ -50,7 +51,7 @@ public partial class MobileMessageToastWindow : Window
         ? time.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : "未记录";
     private async Task LoadTargetsAsync()
     {
-        var selected = (TargetDevicePicker.SelectedItem as ChatTarget)?.Id;
+        var selected = _preferredTargetDeviceId ?? (TargetDevicePicker.SelectedItem as ChatTarget)?.Id;
         var targets = new List<ChatTarget> { new(null, "所有设备", "发送账号消息，所有设备分别接收") };
         var own = DeviceIdentityStore.GetOrCreateDesktopDeviceId();
         try {
@@ -74,6 +75,7 @@ public partial class MobileMessageToastWindow : Window
         TargetDevicePicker.Items.Clear(); foreach (var target in targets) TargetDevicePicker.Items.Add(target);
         TargetDevicePicker.SelectedItem = targets.FirstOrDefault(x => x.Id == selected) ?? targets[0];
         TitleText.Text = ((ChatTarget)TargetDevicePicker.SelectedItem).Label;
+        _preferredTargetDeviceId = null;
     }
     private string? _deviceListWarning;
     private async void DeviceSwitcher_Click(object sender, RoutedEventArgs e)
@@ -160,6 +162,23 @@ public partial class MobileMessageToastWindow : Window
         };
     }
 
+    public void PreferTargetDevice(string? deviceId)
+    {
+        if (string.IsNullOrWhiteSpace(deviceId))
+        {
+            return;
+        }
+
+        _preferredTargetDeviceId = deviceId;
+        var target = TargetDevicePicker.Items.Cast<ChatTarget>()
+            .FirstOrDefault(item => string.Equals(item.Id, deviceId, StringComparison.Ordinal));
+        if (target != null)
+        {
+            TargetDevicePicker.SelectedItem = target;
+            TitleText.Text = target.Label;
+            _preferredTargetDeviceId = null;
+        }
+    }
     public void AppendMessage(string title, string messageText, string sourceDeviceId, DateTimeOffset receivedAt, string? screenshotDataUrl = null, string? screenshotFilePath = null, string? replyDeviceId = null)
     {
         if (!string.IsNullOrWhiteSpace(replyDeviceId)) _replyDeviceId = replyDeviceId;

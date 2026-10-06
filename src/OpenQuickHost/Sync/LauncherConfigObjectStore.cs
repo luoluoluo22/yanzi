@@ -65,6 +65,7 @@ internal static class LauncherConfigObjectStore
             Create("settings.hotkeys", updatedAt, sourceDeviceId, sourceDeviceName, new LauncherHotkeySettingsPayload
             {
                 LauncherHotkey = snapshot.LauncherHotkey,
+                AppShortcutBindings = snapshot.AppShortcutBindings,
                 WindowSnapAssistHotkey = snapshot.WindowSnapAssistHotkey
             }),
             Create("settings.mouseTriggers", updatedAt, sourceDeviceId, sourceDeviceName, new LauncherMouseTriggerSettingsPayload
@@ -404,6 +405,7 @@ internal static class LauncherConfigObjectStore
                     var hotkeys = envelope.Payload.Deserialize<LauncherHotkeySettingsPayload>(JsonOptions);
                     if (hotkeys == null) return false;
                     snapshot.LauncherHotkey = hotkeys.LauncherHotkey ?? snapshot.LauncherHotkey;
+                    snapshot.AppShortcutBindings = hotkeys.AppShortcutBindings ?? snapshot.AppShortcutBindings;
                     snapshot.WindowSnapAssistHotkey = hotkeys.WindowSnapAssistHotkey ?? snapshot.WindowSnapAssistHotkey;
                     return true;
                 case "settings.mouseTriggers":
@@ -681,6 +683,7 @@ internal sealed class LauncherAiSettingsPayload
 internal sealed class LauncherHotkeySettingsPayload
 {
     public string? LauncherHotkey { get; set; }
+    public Dictionary<string, string>? AppShortcutBindings { get; set; }
     public string? WindowSnapAssistHotkey { get; set; }
 }
 

@@ -337,6 +337,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         Instance = this;
         InitializeComponent();
+        if (HostRuntimeProfile.IsDevelopment) Title = HostRuntimeProfile.DisplayName;
         AddHandler(Keyboard.PreviewKeyDownEvent, new System.Windows.Input.KeyEventHandler((s, e) =>
         {
             if (e.Key == Key.Escape && _quickPanel?.IsEditMode == true)
@@ -353,7 +354,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 return;
             }
         }), handledEventsToo: true);
-        CleanAllTemporaryExtensions();
+        if (HostRuntimeProfile.OwnsBackgroundServices) CleanAllTemporaryExtensions();
         UpdateFooterMenuHint(isMenuOpen: false);
         _defaultWindowWidth = Width;
         _defaultWindowHeight = Height;
@@ -502,10 +503,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // 但取消的 Closing 照样触发事件；停了之后托盘常驻却所有触发器失效直到重启。
         // 真正的退出清理在 MainWindow_Closing 的 AllowClose 分支与 App.OnExit。
 
-        NetworkChange.NetworkAvailabilityChanged += NetworkChange_NetworkAvailabilityChanged;
-        NetworkChange.NetworkAddressChanged += NetworkChange_NetworkAddressChanged;
+        if (HostRuntimeProfile.OwnsBackgroundServices) NetworkChange.NetworkAvailabilityChanged += NetworkChange_NetworkAvailabilityChanged;
+        if (HostRuntimeProfile.OwnsBackgroundServices) NetworkChange.NetworkAddressChanged += NetworkChange_NetworkAddressChanged;
         Microsoft.Win32.SystemEvents.DisplaySettingsChanged += SystemEvents_DisplaySettingsChanged;
-        RegisterSystemPowerAndSessionWatchdog();
+        if (HostRuntimeProfile.OwnsBackgroundServices) RegisterSystemPowerAndSessionWatchdog();
 
         RunningExtensionRegistry.Changed += RunningExtensionRegistry_Changed;
         Closed += (s, e) =>
@@ -1269,6 +1270,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public void InitializeBackgroundServices()
     {
+        if (!HostRuntimeProfile.OwnsBackgroundServices) return;
         if (_isBackgroundServicesInitialized) return;
         _isBackgroundServicesInitialized = true;
 
@@ -1979,6 +1981,58 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private async void InstallKnownAppMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        var command = GetCommandFromMenuItem(sender) ?? SelectedCommand;
+        if (command == null) return;
+
+        var resolved = ResolveRunnableCommand(command);
+        if (!KnownApplicationCatalog.TryGetByExtensionId(resolved.ExtensionId, out var definition))
+        {
+            return;
+        }
+
+        CloseActiveContextMenu();
+        LastRunMessage = $"正在安装 {definition.DisplayName}…";
+        SyncStatus = $"安装来源：winget / {definition.WingetPackageId}";
+
+        var result = await KnownApplicationInstallerService.EnsureInstalledAsync(definition);
+        LastRunMessage = result.Message;
+        SyncStatus = string.IsNullOrWhiteSpace(result.Details)
+            ? result.Message
+            : $"{result.Message} {result.Details}";
+
+        if (result.Success)
+        {
+            await LoadInstalledApplicationsAsync();
+            ApplyFilter(SearchBox.Text);
+        }
+    }
+
+    private void OpenAppDownloadPageMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        var command = GetCommandFromMenuItem(sender) ?? SelectedCommand;
+        if (command == null) return;
+
+        var resolved = ResolveRunnableCommand(command);
+        if (!KnownApplicationCatalog.TryGetByExtensionId(resolved.ExtensionId, out var definition))
+        {
+            return;
+        }
+
+        try
+        {
+            KnownApplicationInstallerService.OpenOfficialDownloadPage(definition);
+            LastRunMessage = $"已打开 {definition.DisplayName} 官方下载页。";
+            CloseActiveContextMenu();
+        }
+        catch (Exception ex)
+        {
+            LastRunMessage = $"打开官方下载页失败：{FormatExceptionMessage(ex)}";
+            HostAssets.AppendLog($"Open known app official page failed: app={definition.Id}, error={ex}");
+        }
+    }
+
     private void CopyAppPathMenuItem_Click(object sender, RoutedEventArgs e)
     {
         var command = GetCommandFromMenuItem(sender) ?? SelectedCommand;
@@ -2202,6 +2256,28 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             !string.IsNullOrWhiteSpace(message))
         {
             System.Windows.MessageBox.Show(this, message, "打开目录失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private void CopyExtensionDirectoryPathMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        var command = GetCommandFromMenuItem(sender) ?? SelectedCommand;
+        var resolved = command == null ? null : ResolveRunnableCommand(command);
+        if (resolved == null || resolved.Source != CommandSource.LocalExtension || string.IsNullOrEmpty(resolved.ExtensionId))
+        {
+            return;
+        }
+
+        if (TryCopyExtensionDirectoryPath(resolved.ExtensionId, out var message))
+        {
+            SyncStatus = message;
+            LastRunMessage = message;
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(message))
+        {
+            System.Windows.MessageBox.Show(this, message, "复制路径失败", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 
@@ -2482,40 +2558,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var isAltDown = Keyboard.Modifiers.HasFlag(ModifierKeys.Alt);
         var isCtrlDown = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
 
-        // 1. Alt + WSAD / HJKL 极客全盲操导航 (与输入框所有的 Ctrl+A/C/V/Z 编辑快捷键 100% 零冲突)
-        if (isAltDown && !isCtrlDown)
-        {
-            switch (actualKey)
-            {
-                case Key.W: // 上
-                case Key.K:
-                    MoveSelection(-1);
-                    e.Handled = true;
-                    return true;
-
-                case Key.S: // 下
-                case Key.J:
-                    MoveSelection(1);
-                    e.Handled = true;
-                    return true;
-
-                case Key.A: // 左 (返回搜索输入框)
-                case Key.H:
-                    SearchBox.Focus();
-                    SearchBox.CaretIndex = SearchBox.Text.Length;
-                    e.Handled = true;
-                    return true;
-
-                case Key.D: // 右 (打开操作菜单)
-                case Key.L:
-                    var origin = SearchBox.IsKeyboardFocusWithin ? CommandActionsMenuOrigin.SearchBox : CommandActionsMenuOrigin.ResultsList;
-                    OpenCommandActionsMenu(origin);
-                    e.Handled = true;
-                    return true;
-            }
-        }
-
-        // 2. Ctrl + J / K (Vim 经典上下切项，在文本框中无任何冲突)
+        // Ctrl + J / K (Vim 经典上下切项，在文本框中无任何冲突)
         if (isCtrlDown && !isAltDown)
         {
             if (actualKey == Key.K)
@@ -2782,6 +2825,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         // 1. 应用/本地可执行文件专属操作
         var isAppTarget = !isExtensionLike && hasValidLocalTarget && !IsInternalCommand(resolved);
+        KnownApplicationDefinition? knownApplication = null;
+        if (resolved.Source == CommandSource.Application &&
+            KnownApplicationCatalog.TryGetByExtensionId(resolved.ExtensionId, out var matchedKnownApplication))
+        {
+            knownApplication = matchedKnownApplication;
+        }
+        var isKnownApp = knownApplication != null;
+        var isMissingKnownApp = isKnownApp && KnownApplicationCatalog.IsInstallPlaceholder(target);
         var isExecutable = isAppTarget && File.Exists(target) &&
                            (target.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ||
                             target.EndsWith(".bat", StringComparison.OrdinalIgnoreCase) ||
@@ -2794,7 +2845,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OpenAppFileLocationMenuItem.Visibility = isAppTarget ? Visibility.Visible : Visibility.Collapsed;
         OpenAppFileLocationMenuItem.IsEnabled = isAppTarget;
 
-        var isAppCopyVisible = (!isExtensionLike && !string.IsNullOrWhiteSpace(target) && !IsInternalCommand(resolved));
+        InstallKnownAppMenuItem.Visibility = isMissingKnownApp ? Visibility.Visible : Visibility.Collapsed;
+        InstallKnownAppMenuItem.IsEnabled = isMissingKnownApp;
+        InstallKnownAppMenuItem.Header = isMissingKnownApp && knownApplication != null
+            ? $"安装 {knownApplication.DisplayName}"
+            : "安装应用";
+
+        OpenAppDownloadPageMenuItem.Visibility = isKnownApp ? Visibility.Visible : Visibility.Collapsed;
+        OpenAppDownloadPageMenuItem.IsEnabled = isKnownApp;
+        OpenAppDownloadPageMenuItem.Header = isKnownApp && knownApplication != null
+            ? $"{knownApplication.DisplayName} 官方下载页"
+            : "官方下载页";
+
+        var isAppCopyVisible = (!isExtensionLike && !isMissingKnownApp && !string.IsNullOrWhiteSpace(target) && !IsInternalCommand(resolved));
         CopyAppMenu.Visibility = isAppCopyVisible ? Visibility.Visible : Visibility.Collapsed;
         CopyAppMenu.IsEnabled = isAppCopyVisible;
         CopyAppPathMenuItem.Visibility = isAppCopyVisible ? Visibility.Visible : Visibility.Collapsed;
@@ -2824,6 +2887,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         var hasVisibleAppActions = RunAsAdminMenuItem.Visibility == Visibility.Visible ||
                                    OpenAppFileLocationMenuItem.Visibility == Visibility.Visible ||
+                                   InstallKnownAppMenuItem.Visibility == Visibility.Visible ||
+                                   OpenAppDownloadPageMenuItem.Visibility == Visibility.Visible ||
                                    CopyAppMenu.Visibility == Visibility.Visible ||
                                    ToggleAppStartupMenuItem.Visibility == Visibility.Visible;
 
@@ -2877,6 +2942,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OpenExtensionDirectoryMenuItem.Visibility = isLocalExtension ? Visibility.Visible : Visibility.Collapsed;
         OpenExtensionDirectoryMenuItem.IsEnabled = isLocalExtension;
 
+        CopyExtensionDirectoryPathMenuItem.Visibility = isLocalExtension ? Visibility.Visible : Visibility.Collapsed;
+        CopyExtensionDirectoryPathMenuItem.IsEnabled = isLocalExtension;
+
         CopyExtensionMenuItem.Visibility = isExtensionLike ? Visibility.Visible : Visibility.Collapsed;
         CopyExtensionMenuItem.IsEnabled = isExtensionLike;
 
@@ -2903,13 +2971,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                                          DeleteExtensionMenuItem.Visibility == Visibility.Visible ||
                                          TerminateExtensionMenuItem.Visibility == Visibility.Visible ||
                                          ToggleYanyuEnabledMenuItem.Visibility == Visibility.Visible ||
+                                         CopyExtensionDirectoryPathMenuItem.Visibility == Visibility.Visible ||
                                          ManageExtensionMenu.Visibility == Visibility.Visible;
 
         // 4. 通用快捷操作
         AddToQuickPanelMenuItem.Visibility = Visibility.Visible;
         AddToQuickPanelMenuItem.IsEnabled = true;
 
-        var canCreateShortcut = resolved.OpenTarget is { Length: > 0 } && !IsInternalCommand(resolved);
+        var canCreateShortcut = resolved.OpenTarget is { Length: > 0 } &&
+                                !isMissingKnownApp &&
+                                !IsInternalCommand(resolved);
         CreateDesktopShortcutMenuItem.Visibility = canCreateShortcut ? Visibility.Visible : Visibility.Collapsed;
         CreateDesktopShortcutMenuItem.IsEnabled = canCreateShortcut;
 
@@ -2939,6 +3010,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         RunAsAdminMenuItem.CommandParameter = command;
         OpenAppFileLocationMenuItem.CommandParameter = command;
+        InstallKnownAppMenuItem.CommandParameter = command;
+        OpenAppDownloadPageMenuItem.CommandParameter = command;
         CopyAppMenu.CommandParameter = command;
         CopyAppPathMenuItem.CommandParameter = command;
         CopyAppNameMenuItem.CommandParameter = command;
@@ -2957,6 +3030,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         TerminateExtensionMenuItem.CommandParameter = command;
         ManageExtensionMenu.CommandParameter = command;
         OpenExtensionDirectoryMenuItem.CommandParameter = command;
+        CopyExtensionDirectoryPathMenuItem.CommandParameter = command;
         ToggleYanyuEnabledMenuItem.CommandParameter = command;
         CopyExtensionMenuItem.CommandParameter = command;
         CutExtensionMenuItem.CommandParameter = command;
@@ -3388,6 +3462,29 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async Task ExecuteCommandAsync(CommandItem runnable, string? explicitInput = null, string launchSource = "launcher")
     {
+        if (HostRuntimeProfile.IsRuntime && runnable.HostedView != null)
+        {
+            SharedRuntimeHost.Current?.RequestShell("command.ui", runnable.ExtensionId);
+            return;
+        }
+        if (HostRuntimeProfile.IsShell && runnable.HostedView == null && (ScriptExtensionRunner.CanExecute(runnable) || runnable.App != null))
+        {
+            await ExecuteThroughRuntimeAsync(runnable, explicitInput, launchSource);
+            return;
+        }
+        var requirements = YanziCapabilityRequirementResolver.GetRequirements(runnable);
+        if (requirements.Count > 0)
+        {
+            LastRunMessage = $"正在准备{BrandTerms.Current.MiniApp}依赖：{string.Join("、", requirements)}";
+            var resolution = await YanziCapabilityRequirementResolver.EnsureForCommandAsync(runnable);
+            if (!resolution.Success)
+            {
+                LastRunMessage = $"无法启动{BrandTerms.Current.MiniApp}“{runnable.Title}”：{resolution.Error}";
+                HostAssets.AppendLog($"Extension dependency resolution failed: id={runnable.ExtensionId}, error={resolution.Error}");
+                return;
+            }
+        }
+
         if (IsQuickNoteCommand(runnable))
         {
             RecordCommandUsage(runnable);
@@ -3406,6 +3503,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (runnable.App != null)
         {
             RecordCommandUsage(runnable);
+            if (string.Equals(launchSource, "launcher", StringComparison.OrdinalIgnoreCase))
+            {
+                // Hide launcher first so a preloaded single-instance WebView can reliably become foreground.
+                HideToTray();
+            }
+
             if (AppExtensionWindow.TryActivateExisting(runnable,
                 activate: !(runnable.App.RunInBackground && launchSource == "app-startup")))
             {
@@ -3508,6 +3611,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
+        if (await TryExecuteKnownApplicationAsync(runnable, launchSource))
+        {
+            return;
+        }
+
         var executionTarget = BuildExecutionTarget(runnable, explicitInput ?? SearchBox.Text, allowRawQuery: hasExternalInput);
         if (executionTarget is { Length: > 0 })
         {
@@ -3579,6 +3687,61 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         HostAssets.AppendLog($"Command has no executable target: {runnable.Title}");
         LastRunMessage = $"当前命令没有 openTarget，也没有脚本入口：{runnable.Title}";
+    }
+
+    private async Task<bool> TryExecuteKnownApplicationAsync(CommandItem runnable, string launchSource)
+    {
+        if (runnable.Source != CommandSource.Application ||
+            !KnownApplicationCatalog.TryGetByExtensionId(runnable.ExtensionId, out var definition) ||
+            !KnownApplicationCatalog.IsInstallPlaceholder(runnable.OpenTarget))
+        {
+            return false;
+        }
+
+        LastRunMessage = $"正在准备 {definition.DisplayName}：当前电脑未安装，燕子将自动安装…";
+        SyncStatus = $"正在通过 winget 安装 {definition.DisplayName}…";
+        HostAssets.AppendLog(
+            $"Known app launch requested while missing: app={definition.Id}, source={launchSource}, shortcut={runnable.GlobalShortcut ?? string.Empty}.");
+
+        var installResult = await KnownApplicationInstallerService.EnsureInstalledAsync(definition);
+        if (!installResult.Success || installResult.InstalledEntry == null)
+        {
+            LastRunMessage = installResult.Message;
+            SyncStatus = string.IsNullOrWhiteSpace(installResult.Details)
+                ? installResult.Message
+                : $"{installResult.Message} {installResult.Details}";
+            return true;
+        }
+
+        var installed = installResult.InstalledEntry;
+        try
+        {
+            if (string.Equals(launchSource, "launcher", StringComparison.OrdinalIgnoreCase))
+            {
+                HideToTray();
+            }
+
+            var launchResult = QuickWindowSwitchService.ExecuteToggleOrLaunch(
+                installed.LaunchTarget,
+                installed.Arguments,
+                string.IsNullOrWhiteSpace(installed.WorkingDirectory) ? null : installed.WorkingDirectory,
+                definition.DisplayName,
+                _previousForegroundWindow);
+
+            RecordCommandUsage(runnable);
+            HostAssets.AppendRecent(definition.DisplayName);
+            LastRunMessage = launchResult.Message;
+            SyncStatus = installResult.Message;
+            _ = LoadInstalledApplicationsAsync();
+        }
+        catch (Exception ex)
+        {
+            LastRunMessage = $"已安装 {definition.DisplayName}，但首次启动失败：{ex.Message}";
+            SyncStatus = LastRunMessage;
+            HostAssets.AppendLog($"Known app first launch failed: app={definition.Id}, error={ex}");
+        }
+
+        return true;
     }
 
     private void OpenQueryCommandInLauncher(CommandItem command)
@@ -3731,9 +3894,27 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         try
         {
-            var entries = InstalledApplicationCatalog.Load();
-            HostAssets.AppendLog($"Installed applications loaded: count={entries.Count}.");
-            var customShortcuts = AppSettingsStore.Load().CustomCommandShortcuts ?? new(StringComparer.OrdinalIgnoreCase);
+            var entries = InstalledApplicationCatalog.Load().ToList();
+            var installedKnownIds = entries
+                .Select(static entry => entry.ExtensionId)
+                .Where(static id => KnownApplicationCatalog.TryGetByExtensionId(id, out _))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var definition in KnownApplicationCatalog.All)
+            {
+                if (!installedKnownIds.Contains(definition.ExtensionId))
+                {
+                    entries.Add(KnownApplicationCatalog.CreatePlaceholder(definition));
+                }
+            }
+
+            HostAssets.AppendLog(
+                $"Installed applications loaded: installed={entries.Count - (KnownApplicationCatalog.All.Count - installedKnownIds.Count)}, knownPlaceholders={KnownApplicationCatalog.All.Count - installedKnownIds.Count}, visibleCandidates={entries.Count}.");
+
+            var settings = AppSettingsStore.Load();
+            var customShortcuts = settings.CustomCommandShortcuts ?? new(StringComparer.OrdinalIgnoreCase);
+            var appShortcutBindings = settings.AppShortcutBindings ?? new(StringComparer.OrdinalIgnoreCase);
+            var shortcutMigrationChanged = false;
             var startupSnapshot = AppManagementHelper.GetStartupSnapshot();
             var seenKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var resultList = new List<CommandItem>();
@@ -3746,8 +3927,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     continue;
                 }
 
+                KnownApplicationCatalog.TryGetByExtensionId(entry.ExtensionId, out var knownApplication);
+
                 string? shortcut = null;
-                if (customShortcuts.TryGetValue(entry.ExtensionId, out var s) && !string.IsNullOrWhiteSpace(s))
+                if (knownApplication != null &&
+                    appShortcutBindings.TryGetValue(knownApplication.Id, out var stableShortcut) &&
+                    !string.IsNullOrWhiteSpace(stableShortcut))
+                {
+                    shortcut = stableShortcut;
+                }
+                else if (customShortcuts.TryGetValue(entry.ExtensionId, out var s) && !string.IsNullOrWhiteSpace(s))
                 {
                     shortcut = s;
                 }
@@ -3756,6 +3945,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     shortcut = s2;
                 }
 
+                if (knownApplication != null &&
+                    !string.IsNullOrWhiteSpace(shortcut) &&
+                    !appShortcutBindings.TryGetValue(knownApplication.Id, out var existingStableShortcut))
+                {
+                    appShortcutBindings[knownApplication.Id] = shortcut;
+                    shortcutMigrationChanged = true;
+                    HostAssets.AppendLog(
+                        $"Known app shortcut migrated to stable identity: app={knownApplication.Id}, shortcut={shortcut}.");
+                }
+
+                var isInstallPlaceholder = KnownApplicationCatalog.IsInstallPlaceholder(entry.LaunchTarget);
                 var item = new CommandItem(
                     glyph: InferApplicationGlyph(entry.Title),
                     title: entry.Title,
@@ -3766,12 +3966,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     keywords: entry.Keywords,
                     source: CommandSource.Application,
                     extensionId: entry.ExtensionId,
-                    iconReference: entry.IconPath,
+                    iconReference: isInstallPlaceholder ? "mdi:download" : entry.IconPath,
                     launchArguments: entry.Arguments,
                     workingDirectory: entry.WorkingDirectory,
                     globalShortcut: shortcut);
-                item.IsStartupEnabled = startupSnapshot.IsStartup(entry.LaunchTarget, entry.Title);
+                if (!isInstallPlaceholder)
+                {
+                    item.IsStartupEnabled = startupSnapshot.IsStartup(entry.LaunchTarget, entry.Title);
+                }
                 resultList.Add(item);
+            }
+
+            if (shortcutMigrationChanged)
+            {
+                settings.AppShortcutBindings = appShortcutBindings;
+                settings.LauncherConfigUpdatedAtUtc = DateTime.UtcNow.ToString("O");
+                AppSettingsStore.Save(settings);
             }
 
             return resultList;
@@ -4482,6 +4692,10 @@ public sealed class CloudQuickPanelConfigSnapshot
     [JsonPropertyName("launcherHotkey")]
     public string LauncherHotkey { get; set; } = "Alt+Space";
 
+    [JsonPropertyName("appShortcutBindings")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, string>? AppShortcutBindings { get; set; }
+
     [JsonPropertyName("launchAtStartup")]
     public bool LaunchAtStartup { get; set; } = true;
 
@@ -4604,6 +4818,9 @@ public sealed class CloudQuickPanelConfigSnapshot
             PreferManualExtensionEditor = settings.PreferManualExtensionEditor,
             EnableEverything = settings.EnableEverything,
             LauncherHotkey = settings.LauncherHotkey,
+            AppShortcutBindings = new Dictionary<string, string>(
+                settings.AppShortcutBindings ?? new Dictionary<string, string>(),
+                StringComparer.OrdinalIgnoreCase),
             LaunchAtStartup = settings.LaunchAtStartup,
             RefreshCloudOnStartup = settings.RefreshCloudOnStartup,
             CloseToTray = settings.CloseToTray,
@@ -4663,6 +4880,9 @@ public sealed class CloudQuickPanelConfigSnapshot
             PreferManualExtensionEditor = PreferManualExtensionEditor ?? false,
             EnableEverything = EnableEverything ?? true,
             LauncherHotkey = LauncherHotkey,
+            AppShortcutBindings = AppShortcutBindings == null
+                ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, string>(AppShortcutBindings, StringComparer.OrdinalIgnoreCase),
             LaunchAtStartup = LaunchAtStartup,
             RefreshCloudOnStartup = RefreshCloudOnStartup,
             CloseToTray = CloseToTray,
@@ -4722,6 +4942,7 @@ public sealed class CloudQuickPanelConfigSnapshot
                HasQuickPanelGroupContent(snapshot.QuickPanelContextGroups) ||
                snapshot.GlobalFavoriteExtensionIds.Count > 0 ||
                snapshot.ContextFavoriteExtensionIds.Count > 0 ||
+               (snapshot.AppShortcutBindings?.Count ?? 0) > 0 ||
                snapshot.DisabledExtensionIds.Count > 0 ||
                snapshot.PinnedSearchScopeCommandIds.Count > 0 ||
                (snapshot.SearchScopeConfigs?.Any(static item => !item.IsVisible || item.IsPinned) ?? false) ||

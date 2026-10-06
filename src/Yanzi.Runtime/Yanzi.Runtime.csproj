@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>Yanzi.Runtime</AssemblyName>
+    <ApplicationIcon>..\OpenQuickHost\yanzi.ico</ApplicationIcon>
+    <ApplicationManifest>..\OpenQuickHost\app.manifest</ApplicationManifest>
+    <StartupObject>Yanzi.Runtime.Program</StartupObject>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\OpenQuickHost\OpenQuickHost.csproj" />
+  </ItemGroup>
+  <Target Name="CopyRuntimeNativeReferences" AfterTargets="Build">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)..\..\scripts\copy-native-window-refs.ps1&quot; -OutputDir &quot;$(TargetDir)NativeWindowRefs&quot;" />
+  </Target>
+</Project>
