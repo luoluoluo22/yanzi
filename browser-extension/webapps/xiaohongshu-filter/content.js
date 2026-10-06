@@ -778,6 +778,134 @@
         font-size: 11px !important;
       }
 
+      .yanzi-xhs-interest-tabs {
+        display: flex !important;
+        gap: 4px !important;
+        margin: 0 0 12px !important;
+        padding: 3px !important;
+        border-radius: 10px !important;
+        background: rgba(255,255,255,.055) !important;
+      }
+      .yanzi-xhs-interest-tab {
+        flex: 1 1 0 !important;
+        min-height: 32px !important;
+        border: 0 !important;
+        border-radius: 8px !important;
+        background: transparent !important;
+        color: #a1a1aa !important;
+        font: 600 12px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+        cursor: pointer !important;
+      }
+      .yanzi-xhs-interest-tab[data-active="1"] {
+        background: rgba(255,255,255,.11) !important;
+        color: #fff !important;
+      }
+      .yanzi-xhs-interest-section[hidden] {
+        display: none !important;
+      }
+      .yanzi-xhs-history-summary {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        gap: 10px !important;
+        margin: 0 0 9px !important;
+        color: #a1a1aa !important;
+        font-size: 11px !important;
+      }
+      .yanzi-xhs-history-filters {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        gap: 6px !important;
+        margin-bottom: 10px !important;
+      }
+      .yanzi-xhs-history-filter {
+        min-height: 27px !important;
+        padding: 0 9px !important;
+        border: 1px solid rgba(255,255,255,.10) !important;
+        border-radius: 999px !important;
+        background: rgba(255,255,255,.055) !important;
+        color: #a1a1aa !important;
+        font: 11px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+        cursor: pointer !important;
+      }
+      .yanzi-xhs-history-filter[data-active="1"] {
+        border-color: rgba(255,255,255,.24) !important;
+        background: rgba(255,255,255,.13) !important;
+        color: #fff !important;
+      }
+      .yanzi-xhs-history-list {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 8px !important;
+        min-height: 120px !important;
+        max-height: 430px !important;
+        overflow-y: auto !important;
+        padding-right: 2px !important;
+      }
+      .yanzi-xhs-history-item {
+        padding: 10px 11px !important;
+        border: 1px solid rgba(255,255,255,.085) !important;
+        border-radius: 11px !important;
+        background: rgba(255,255,255,.045) !important;
+      }
+      .yanzi-xhs-history-item-head {
+        display: flex !important;
+        align-items: flex-start !important;
+        justify-content: space-between !important;
+        gap: 9px !important;
+      }
+      .yanzi-xhs-history-item-title {
+        min-width: 0 !important;
+        flex: 1 1 auto !important;
+        color: #f4f4f5 !important;
+        font-size: 12.5px !important;
+        font-weight: 650 !important;
+        line-height: 1.45 !important;
+      }
+      .yanzi-xhs-history-badge {
+        flex: 0 0 auto !important;
+        padding: 3px 7px !important;
+        border-radius: 999px !important;
+        font-size: 10px !important;
+        line-height: 1.2 !important;
+        white-space: nowrap !important;
+      }
+      .yanzi-xhs-history-badge[data-feedback="like"] {
+        background: rgba(255,36,66,.16) !important;
+        color: #ff8b9c !important;
+      }
+      .yanzi-xhs-history-badge[data-feedback="dislike"] {
+        background: rgba(161,161,170,.14) !important;
+        color: #c5c5cc !important;
+      }
+      .yanzi-xhs-history-badge[data-feedback="none"] {
+        background: rgba(255,255,255,.065) !important;
+        color: #8b8b93 !important;
+      }
+      .yanzi-xhs-history-item-body {
+        margin-top: 6px !important;
+        color: #b6b6be !important;
+        font-size: 11.5px !important;
+        line-height: 1.55 !important;
+        display: -webkit-box !important;
+        -webkit-line-clamp: 3 !important;
+        -webkit-box-orient: vertical !important;
+        overflow: hidden !important;
+      }
+      .yanzi-xhs-history-item-meta {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        gap: 5px 9px !important;
+        margin-top: 7px !important;
+        color: #777780 !important;
+        font-size: 10.5px !important;
+      }
+      .yanzi-xhs-history-empty {
+        padding: 24px 12px !important;
+        text-align: center !important;
+        color: #777780 !important;
+        font-size: 12px !important;
+      }
       .yanzi-xhs-selection-popover {
         position: fixed !important;
         z-index: 2147483647 !important;
@@ -1895,6 +2023,7 @@
     });
 
     await persistLocalFeedState();
+    renderInterestPanel();
 
     document.querySelectorAll(
       '.yanzi-xhs-custom-card[data-card-id="' +
@@ -1961,6 +2090,7 @@
     });
 
     await persistLocalFeedState();
+    renderInterestPanel();
     return true;
   }
 

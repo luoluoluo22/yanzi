@@ -18,6 +18,79 @@ public sealed partial class LocalAgentApiServer : IDisposable
     public bool IsBrowserConnected => _activeBrowserSocket != null && _activeBrowserSocket.State == WebSocketState.Open;
     public string ConnectedBrowserName { get; private set; } = "";
 
+    private static readonly (string ProcessName, string DisplayName)[] SupportedBrowserProcesses =
+    [
+        ("msedge", "Edge"),
+        ("chrome", "Chrome"),
+        ("firefox", "Firefox"),
+        ("brave", "Brave"),
+        ("opera", "Opera"),
+        ("vivaldi", "Vivaldi")
+    ];
+    private static readonly object BrowserProcessCacheLock = new();
+    private static string[] _cachedRunningBrowserNames = [];
+    private static long _browserProcessCacheExpiresAt;
+
+    public static IReadOnlyList<string> GetRunningBrowserNames()
+    {
+        var now = Environment.TickCount64;
+        lock (BrowserProcessCacheLock)
+        {
+            if (now < _browserProcessCacheExpiresAt)
+                return _cachedRunningBrowserNames;
+
+            var result = new List<string>();
+            foreach (var (processName, displayName) in SupportedBrowserProcesses)
+            {
+                System.Diagnostics.Process[] processes = [];
+                try
+                {
+                    processes = System.Diagnostics.Process.GetProcessesByName(processName);
+                    if (processes.Length > 0)
+                        result.Add(displayName);
+                }
+                catch
+                {
+                    // Process enumeration can fail transiently; treat that browser as unknown/not detected.
+                }
+                finally
+                {
+                    foreach (var process in processes)
+                    {
+                        try { process.Dispose(); } catch { }
+                    }
+                }
+            }
+
+            _cachedRunningBrowserNames = result.ToArray();
+            _browserProcessCacheExpiresAt = now + 2000;
+            return _cachedRunningBrowserNames;
+        }
+    }
+
+    public bool IsSupportedBrowserRunning => GetRunningBrowserNames().Count > 0;
+
+    private object BuildBrowserUnavailableResponse()
+    {
+        var runningBrowsers = GetRunningBrowserNames();
+        var browserRunning = runningBrowsers.Count > 0;
+        HostAssets.AppendLog(browserRunning
+            ? $"[LocalAgentApi] Browser unavailable: browser_extension_not_connected, detected={string.Join(",", runningBrowsers)}"
+            : "[LocalAgentApi] Browser unavailable: browser_not_running, no supported browser process detected.");
+
+        return new
+        {
+            error = browserRunning
+                ? "browser_extension_not_connected"
+                : "browser_not_running",
+            message = browserRunning
+                ? $"检测到 {string.Join("、", runningBrowsers)} 正在运行，但燕子浏览器助手未连接。"
+                : "未检测到已运行的受支持浏览器，请先打开 Edge、Chrome 或其他已安装燕子浏览器助手的浏览器。",
+            browserRunning,
+            extensionConnected = false,
+            detectedBrowsers = runningBrowsers
+        };
+    }
     public static string LastKnownMobileDeviceModel { get; set; } = "";
     public static event Action<string>? MobileDeviceConnected;
 
@@ -30,7 +103,13 @@ public sealed partial class LocalAgentApiServer : IDisposable
     {
         var browserSocket = _activeBrowserSocket;
         if (browserSocket == null || browserSocket.State != WebSocketState.Open)
-            return (false, "", "unavailable", "燕子浏览器助手未连接。", null);
+        {
+            var runningBrowsers = GetRunningBrowserNames();
+            var message = runningBrowsers.Count > 0
+                ? $"检测到 {string.Join("、", runningBrowsers)} 正在运行，但燕子浏览器助手未连接。"
+                : "未检测到已运行的受支持浏览器，请先打开浏览器。";
+            return (false, "", "unavailable", message, null);
+        }
 
         timeoutSeconds = Math.Clamp(timeoutSeconds, 5, 120);
         var taskId = Guid.NewGuid().ToString("N");
@@ -386,6 +465,38 @@ public sealed partial class LocalAgentApiServer : IDisposable
                 return;
             }
 
+            if (request.HttpMethod == "GET" && path == "/v1/browser/status")
+            {
+                if (!IsAuthorized(request))
+                {
+                    await WriteJsonAsync(response, 401, new { error = "unauthorized" });
+                    return;
+                }
+
+                var extensionConnected = IsBrowserConnected;
+                var runningBrowsers = extensionConnected
+                    ? (IReadOnlyList<string>)(string.IsNullOrWhiteSpace(ConnectedBrowserName)
+                        ? Array.Empty<string>()
+                        : new[] { ConnectedBrowserName })
+                    : GetRunningBrowserNames();
+                var browserRunning = extensionConnected || runningBrowsers.Count > 0;
+                var state = extensionConnected
+                    ? "connected"
+                    : browserRunning
+                        ? "browser_extension_not_connected"
+                        : "browser_not_running";
+
+                await WriteJsonAsync(response, 200, new
+                {
+                    ok = true,
+                    state,
+                    browserRunning,
+                    extensionConnected,
+                    connectedBrowser = extensionConnected ? ConnectedBrowserName : "",
+                    detectedBrowsers = runningBrowsers
+                });
+                return;
+            }
             if (request.HttpMethod == "POST" && path == "/v1/browser/reload")
             {
                 if (!IsAuthorized(request))
@@ -397,7 +508,7 @@ public sealed partial class LocalAgentApiServer : IDisposable
                 var browserSocket = _activeBrowserSocket;
                 if (browserSocket == null || browserSocket.State != WebSocketState.Open)
                 {
-                    await WriteJsonAsync(response, 503, new { error = "browser_extension_not_connected" });
+                    await WriteJsonAsync(response, 503, BuildBrowserUnavailableResponse());
                     return;
                 }
 
@@ -443,7 +554,7 @@ public sealed partial class LocalAgentApiServer : IDisposable
 
                 if (_activeBrowserSocket == null || _activeBrowserSocket.State != WebSocketState.Open)
                 {
-                    await WriteJsonAsync(response, 503, new { error = "browser_extension_not_connected" });
+                    await WriteJsonAsync(response, 503, BuildBrowserUnavailableResponse());
                     return;
                 }
 

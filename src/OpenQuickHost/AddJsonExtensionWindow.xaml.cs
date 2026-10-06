@@ -39,6 +39,7 @@ public partial class AddJsonExtensionWindow : Window
     private static readonly MediaBrush BorderStrongBrush = CreateBrush("#1FFFFFFF");
     private static readonly MediaBrush GreenBrush = CreateBrush("#FF34D399");
     private static readonly MediaBrush RedBrush = CreateBrush("#FFF87171");
+    private static readonly MediaBrush AmberBrush = CreateBrush("#FFFBBF24");
     private static readonly MediaBrush Text2Brush = CreateBrush("#FF9090A8");
     private static readonly MediaBrush Text3Brush = CreateBrush("#FF5A5A72");
 
@@ -445,6 +446,10 @@ public partial class AddJsonExtensionWindow : Window
         var agentServer = ((App)System.Windows.Application.Current).AgentApiServer;
         bool isConnected = agentServer != null && agentServer.IsBrowserConnected;
         string browserName = agentServer?.ConnectedBrowserName ?? "";
+        var runningBrowsers = isConnected
+            ? Array.Empty<string>()
+            : LocalAgentApiServer.GetRunningBrowserNames();
+        bool browserRunning = runningBrowsers.Count > 0;
 
         // 1. 刷新顶部状态胶囊与呼吸指示灯
         if (BrowserStatusDot != null && BrowserStatusText != null && BrowserConnectionStatusBadge != null)
@@ -457,13 +462,21 @@ public partial class AddJsonExtensionWindow : Window
                 BrowserConnectionStatusBadge.Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x18, 0x22, 0xC5, 0x5E));
                 BrowserConnectionStatusBadge.BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x33, 0x22, 0xC5, 0x5E));
             }
+            else if (browserRunning)
+            {
+                BrowserStatusDot.Fill = AmberBrush;
+                BrowserStatusText.Text = $"{string.Join(" / ", runningBrowsers)} 已启动，助手未连接";
+                BrowserStatusText.Foreground = AmberBrush;
+                BrowserConnectionStatusBadge.Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x18, 0xFB, 0xBF, 0x24));
+                BrowserConnectionStatusBadge.BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x33, 0xFB, 0xBF, 0x24));
+            }
             else
             {
-                BrowserStatusDot.Fill = RedBrush;
-                BrowserStatusText.Text = "浏览器助手未连接";
-                BrowserStatusText.Foreground = RedBrush;
-                BrowserConnectionStatusBadge.Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x1A, 0xF8, 0x71, 0x71));
-                BrowserConnectionStatusBadge.BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x33, 0xF8, 0x71, 0x71));
+                BrowserStatusDot.Fill = Text3Brush;
+                BrowserStatusText.Text = "浏览器未启动";
+                BrowserStatusText.Foreground = Text2Brush;
+                BrowserConnectionStatusBadge.Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x12, 0x90, 0x90, 0xA8));
+                BrowserConnectionStatusBadge.BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x24, 0x90, 0x90, 0xA8));
             }
         }
 
@@ -487,11 +500,22 @@ public partial class AddJsonExtensionWindow : Window
     {
         var agentServer = ((App)System.Windows.Application.Current).AgentApiServer;
         bool isConnected = agentServer != null && agentServer.IsBrowserConnected;
+        var runningBrowsers = LocalAgentApiServer.GetRunningBrowserNames();
+        bool browserRunning = runningBrowsers.Count > 0;
+
         if (isConnected)
         {
             System.Windows.MessageBox.Show(
                 $"燕子浏览器助手当前已正常连接并就绪 ({agentServer?.ConnectedBrowserName ?? "已连接"})。\n\n本地端口：53919\n在 AI 对话框发送需求后，将自动通过浏览器助手与网页端协同生成小程序。",
                 "浏览器助手连接正常",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }
+        else if (!browserRunning)
+        {
+            System.Windows.MessageBox.Show(
+                "当前没有检测到已运行的 Edge、Chrome 或其他受支持浏览器。\n\n请先打开浏览器。若燕子浏览器助手已经安装，浏览器启动后会自动尝试连接桌面端。",
+                "浏览器未启动",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
         }
@@ -503,8 +527,8 @@ public partial class AddJsonExtensionWindow : Window
                 BrowserExtensionGuideBanner.Visibility = Visibility.Visible;
             }
             System.Windows.MessageBox.Show(
-                "燕子浏览器助手目前未与桌面端建立连接。\n\n请按以下步骤操作：\n1. 打开 Chrome 或 Edge 浏览器扩展管理页 (chrome://extensions 或 edge://extensions)；\n2. 点击燕子浏览器助手的【🔄 重新加载】按钮；\n3. 点击浏览器右上角的“燕子浏览器助手”图标 ->【重新连接服务】。\n\n连接成功后本指示灯将实时变为绿色 🟢。",
-                "浏览器助手未连接",
+                $"检测到 {string.Join("、", runningBrowsers)} 正在运行，但燕子浏览器助手没有连接到桌面端。\n\n请打开浏览器扩展管理页，确认燕子浏览器助手已启用；必要时点击【重新加载】或在助手面板中选择【重新连接服务】。",
+                "浏览器已启动，助手未连接",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
         }
