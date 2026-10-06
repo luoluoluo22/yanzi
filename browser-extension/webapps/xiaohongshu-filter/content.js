@@ -2166,6 +2166,52 @@
     updateInterestNavButton();
   }
 
+  function localFeedHistoryItems() {
+    return (localFeedState.notes || [])
+      .filter(note => note?.source === "chatgpt")
+      .slice()
+      .sort((a, b) =>
+        Number(b.createdAt || b.updatedAt || 0) -
+        Number(a.createdAt || a.updatedAt || 0)
+      );
+  }
+
+  function localFeedSelectionFeedbackSummary(noteId) {
+    const items = (localFeedState.feedback || [])
+      .filter(item =>
+        item.noteId === noteId &&
+        item.scope === "selection"
+      );
+
+    return {
+      total: items.length,
+      likes: items.filter(item => item.value === "like").length,
+      dislikes: items.filter(item => item.value === "dislike").length
+    };
+  }
+
+  function formatLocalFeedHistoryTime(value) {
+    const time = Number(value || 0);
+    if (!time) return "";
+    try {
+      return new Date(time).toLocaleString("zh-CN", {
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false
+      });
+    } catch {
+      return "";
+    }
+  }
+
+  function localFeedHistoryStateLabel(note) {
+    if (note?.seenAt || note?.state === "seen") return "已看";
+    if (note?.state === "assigned") return "已预埋";
+    return "待展示";
+  }
+
   function ensureInterestPanel() {
     let panel = document.querySelector(".yanzi-xhs-interest-panel");
     if (panel) return panel;
@@ -2173,22 +2219,43 @@
     panel = document.createElement("div");
     panel.className = "yanzi-xhs-interest-panel";
     panel.hidden = true;
-    panel.innerHTML = `
-      <div class="yanzi-xhs-interest-head">
-        <strong>兴趣主题</strong>
-        <button type="button" class="yanzi-xhs-interest-close" aria-label="关闭">×</button>
-      </div>
-      <p class="yanzi-xhs-interest-help">决定下一轮 AI 笔记的主要内容。留空时会跨领域探索，不再默认偏向开发或 AI。</p>
-      <div class="yanzi-xhs-interest-chips"></div>
-      <div class="yanzi-xhs-interest-input-row">
-        <input class="yanzi-xhs-interest-input" type="text" maxlength="120" placeholder="例如：摄影、社会观察、汽车、投资">
-        <button type="button" class="yanzi-xhs-interest-add">添加</button>
-      </div>
-      <div class="yanzi-xhs-interest-foot">
-        <span class="yanzi-xhs-interest-status"></span>
-        <button type="button" class="yanzi-xhs-interest-clear">清空</button>
-      </div>
-    `;
+    panel.dataset.view = "topics";
+    panel.dataset.historyFilter = "all";
+    panel.innerHTML = [
+      '<div class="yanzi-xhs-interest-head">',
+      '<strong>兴趣与历史</strong>',
+      '<button type="button" class="yanzi-xhs-interest-close" aria-label="关闭">×</button>',
+      '</div>',
+      '<div class="yanzi-xhs-interest-tabs">',
+      '<button type="button" class="yanzi-xhs-interest-tab" data-view="topics" data-active="1">兴趣主题</button>',
+      '<button type="button" class="yanzi-xhs-interest-tab" data-view="history" data-active="0">历史笔记</button>',
+      '</div>',
+      '<div class="yanzi-xhs-interest-section" data-section="topics">',
+      '<p class="yanzi-xhs-interest-help">决定下一轮 AI 笔记的主要内容。留空时会跨领域探索，不再默认偏向开发或 AI。</p>',
+      '<div class="yanzi-xhs-interest-chips"></div>',
+      '<div class="yanzi-xhs-interest-input-row">',
+      '<input class="yanzi-xhs-interest-input" type="text" maxlength="120" placeholder="例如：摄影、社会观察、汽车、投资">',
+      '<button type="button" class="yanzi-xhs-interest-add">添加</button>',
+      '</div>',
+      '<div class="yanzi-xhs-interest-foot">',
+      '<span class="yanzi-xhs-interest-status"></span>',
+      '<button type="button" class="yanzi-xhs-interest-clear">清空</button>',
+      '</div>',
+      '</div>',
+      '<div class="yanzi-xhs-interest-section" data-section="history" hidden>',
+      '<div class="yanzi-xhs-history-summary">',
+      '<span class="yanzi-xhs-history-summary-text"></span>',
+      '<span>最多保留 ' + LOCAL_FEED_MAX_NOTES + ' 篇</span>',
+      '</div>',
+      '<div class="yanzi-xhs-history-filters">',
+      '<button type="button" class="yanzi-xhs-history-filter" data-filter="all" data-active="1">全部</button>',
+      '<button type="button" class="yanzi-xhs-history-filter" data-filter="like" data-active="0">感兴趣</button>',
+      '<button type="button" class="yanzi-xhs-history-filter" data-filter="dislike" data-active="0">不感兴趣</button>',
+      '<button type="button" class="yanzi-xhs-history-filter" data-filter="none" data-active="0">未反馈</button>',
+      '</div>',
+      '<div class="yanzi-xhs-history-list"></div>',
+      '</div>'
+    ].join("");
 
     const addFromInput = async () => {
       const input = panel.querySelector(".yanzi-xhs-interest-input");
@@ -2206,8 +2273,25 @@
       input.focus();
     };
 
+    const showView = view => {
+      const next = view === "history" ? "history" : "topics";
+      panel.dataset.view = next;
+      panel.querySelectorAll(".yanzi-xhs-interest-tab").forEach(button => {
+        button.dataset.active = button.dataset.view === next ? "1" : "0";
+      });
+      panel.querySelectorAll(".yanzi-xhs-interest-section").forEach(section => {
+        section.hidden = section.dataset.section !== next;
+      });
+      renderInterestPanel();
+    };
+
     panel.querySelector(".yanzi-xhs-interest-close").addEventListener("click", () => {
       panel.hidden = true;
+    });
+    panel.querySelectorAll(".yanzi-xhs-interest-tab").forEach(button => {
+      button.addEventListener("click", () => {
+        showView(button.dataset.view);
+      });
     });
     panel.querySelector(".yanzi-xhs-interest-add").addEventListener("click", () => {
       void addFromInput();
@@ -2219,6 +2303,12 @@
     });
     panel.querySelector(".yanzi-xhs-interest-clear").addEventListener("click", () => {
       void updateLocalFeedInterests([]);
+    });
+    panel.querySelectorAll(".yanzi-xhs-history-filter").forEach(button => {
+      button.addEventListener("click", () => {
+        panel.dataset.historyFilter = button.dataset.filter || "all";
+        renderInterestPanel();
+      });
     });
 
     document.documentElement.appendChild(panel);
@@ -2267,8 +2357,118 @@
 
     panel.querySelector(".yanzi-xhs-interest-status").textContent =
       interests.length
-        ? `已设置 ${interests.length} 个主题 · 下一轮补货生效`
+        ? "已设置 " + interests.length + " 个主题 · 下一轮补货生效"
         : "未设置主题";
+
+    const history = localFeedHistoryItems();
+    const likeCount = history.filter(note =>
+      localFeedFeedbackFor(note.id) === "like"
+    ).length;
+    const dislikeCount = history.filter(note =>
+      localFeedFeedbackFor(note.id) === "dislike"
+    ).length;
+    const noneCount = Math.max(0, history.length - likeCount - dislikeCount);
+
+    const historyTab = panel.querySelector(
+      '.yanzi-xhs-interest-tab[data-view="history"]'
+    );
+    historyTab.textContent = history.length
+      ? "历史笔记 " + history.length
+      : "历史笔记";
+
+    panel.querySelector(".yanzi-xhs-history-summary-text").textContent =
+      "共 " + history.length +
+      " 篇 · 感兴趣 " + likeCount +
+      " · 不感兴趣 " + dislikeCount +
+      " · 未反馈 " + noneCount;
+
+    const filter = panel.dataset.historyFilter || "all";
+    panel.querySelectorAll(".yanzi-xhs-history-filter").forEach(button => {
+      button.dataset.active = button.dataset.filter === filter ? "1" : "0";
+    });
+
+    const filtered = history.filter(note => {
+      if (filter === "all") return true;
+      const feedback = localFeedFeedbackFor(note.id) || "none";
+      return feedback === filter;
+    });
+
+    const list = panel.querySelector(".yanzi-xhs-history-list");
+    list.replaceChildren();
+
+    if (!filtered.length) {
+      const empty = document.createElement("div");
+      empty.className = "yanzi-xhs-history-empty";
+      empty.textContent = history.length
+        ? "这个分类暂时没有笔记"
+        : "还没有 AI 生成的历史笔记";
+      list.appendChild(empty);
+      return;
+    }
+
+    for (const note of filtered) {
+      const feedback = localFeedFeedbackFor(note.id) || "none";
+      const selectionSummary = localFeedSelectionFeedbackSummary(note.id);
+
+      const item = document.createElement("div");
+      item.className = "yanzi-xhs-history-item";
+
+      const head = document.createElement("div");
+      head.className = "yanzi-xhs-history-item-head";
+
+      const title = document.createElement("div");
+      title.className = "yanzi-xhs-history-item-title";
+      title.textContent = note.title || "无标题";
+
+      const badge = document.createElement("span");
+      badge.className = "yanzi-xhs-history-badge";
+      badge.dataset.feedback = feedback;
+      badge.textContent = feedback === "like"
+        ? "感兴趣"
+        : feedback === "dislike"
+          ? "不感兴趣"
+          : "未反馈";
+
+      head.appendChild(title);
+      head.appendChild(badge);
+      item.appendChild(head);
+
+      if (note.body) {
+        const body = document.createElement("div");
+        body.className = "yanzi-xhs-history-item-body";
+        body.textContent = note.body;
+        item.appendChild(body);
+      }
+
+      const meta = document.createElement("div");
+      meta.className = "yanzi-xhs-history-item-meta";
+
+      const values = [
+        note.topic ? "主题：" + note.topic : "",
+        formatLocalFeedHistoryTime(note.createdAt),
+        localFeedHistoryStateLabel(note)
+      ].filter(Boolean);
+
+      if (selectionSummary.total) {
+        let selectionText = "局部反馈 " + selectionSummary.total + " 条";
+        if (selectionSummary.likes) {
+          selectionText += " · 感兴趣 " + selectionSummary.likes;
+        }
+        if (selectionSummary.dislikes) {
+          selectionText += " · 不感兴趣 " + selectionSummary.dislikes;
+        }
+        values.push(selectionText);
+      }
+
+      for (const value of values) {
+        const span = document.createElement("span");
+        span.textContent = value;
+        meta.appendChild(span);
+      }
+
+      item.appendChild(meta);
+      list.appendChild(item);
+    }
   }
 
   function findMessageNavItem() {
@@ -4286,6 +4486,85 @@
         }
       }
 
+      let debugInterestTest = null;
+      if (message.debugInterestTest) {
+        const panel = ensureInterestPanel();
+        const wasHidden = panel.hidden;
+        const previousView = panel.dataset.view || "topics";
+        const previousFilter = panel.dataset.historyFilter || "all";
+
+        try {
+          renderInterestPanel();
+          panel.hidden = false;
+          panel.querySelector(
+            '.yanzi-xhs-interest-tab[data-view="history"]'
+          )?.click();
+
+          debugInterestTest = {
+            ok: true,
+            view: panel.dataset.view || "",
+            historyTabText: normalizeText(
+              panel.querySelector(
+                '.yanzi-xhs-interest-tab[data-view="history"]'
+              )?.textContent
+            ),
+            summary: normalizeText(
+              panel.querySelector(
+                ".yanzi-xhs-history-summary-text"
+              )?.textContent
+            ),
+            filters: Array.from(
+              panel.querySelectorAll(".yanzi-xhs-history-filter")
+            ).map(button => ({
+              text: normalizeText(button.textContent),
+              filter: button.dataset.filter || "",
+              active: button.dataset.active === "1"
+            })),
+            itemCount: panel.querySelectorAll(
+              ".yanzi-xhs-history-item"
+            ).length,
+            firstItem: (() => {
+              const item = panel.querySelector(".yanzi-xhs-history-item");
+              return item ? {
+                title: normalizeText(
+                  item.querySelector(
+                    ".yanzi-xhs-history-item-title"
+                  )?.textContent
+                ),
+                badge: normalizeText(
+                  item.querySelector(
+                    ".yanzi-xhs-history-badge"
+                  )?.textContent
+                ),
+                body: normalizeText(
+                  item.querySelector(
+                    ".yanzi-xhs-history-item-body"
+                  )?.textContent
+                ),
+                meta: normalizeText(
+                  item.querySelector(
+                    ".yanzi-xhs-history-item-meta"
+                  )?.textContent
+                )
+              } : null;
+            })()
+          };
+        } catch (error) {
+          debugInterestTest = {
+            ok: false,
+            error: error?.message || String(error)
+          };
+        } finally {
+          panel.dataset.historyFilter = previousFilter;
+          panel.querySelector(
+            '.yanzi-xhs-interest-tab[data-view="' +
+            previousView +
+            '"]'
+          )?.click();
+          panel.hidden = wasHidden;
+        }
+      }
+
       let debugSelectionTest = null;
       if (message.debugSelectionTest) {
         const kind = message.debugSelectionTest.kind === "author" ? "author" : "title";
@@ -4442,7 +4721,7 @@
       sendResponse({
         ok: true,
         appId: APP_ID,
-        version: "0.7.5",
+        version: "0.7.7",
         enabled,
         filteringEnabled,
         url: location.href,
@@ -4558,6 +4837,7 @@
           visibleSince: activeNoteSession.visibleSince || 0
         } : null,
         debugLayoutTest,
+        debugInterestTest,
         debugSelectionTest,
         debugLocalFeedTest
       });

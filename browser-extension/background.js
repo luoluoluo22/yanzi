@@ -284,6 +284,7 @@ async function handleWebAppProbeTask(task) {
             type: "yanzi_webapp_probe",
             appId,
             debugLayoutTest: task.debugLayoutTest || null,
+            debugInterestTest: task.debugInterestTest || null,
             debugSelectionTest: task.debugSelectionTest || null,
             debugLocalFeedTest: task.debugLocalFeedTest || null,
             debugSkipTest: task.debugSkipTest || null,

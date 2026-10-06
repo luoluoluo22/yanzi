@@ -5,7 +5,7 @@
       "id": "xiaohongshu.filter",
       "name": "小红书屏蔽",
       "description": "支持作者/关键词/单篇笔记过滤，并记录打开笔记的兴趣行为数据；同时允许燕子自定义卡片混入小红书瀑布流。",
-      "version": "0.7.5",
+      "version": "0.7.7",
       "category": "内容控制",
       "matches": ["https://www.xiaohongshu.com/*"],
       "contentScript": "webapps/xiaohongshu-filter/content.js",
