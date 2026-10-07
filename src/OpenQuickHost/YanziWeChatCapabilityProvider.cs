@@ -210,7 +210,7 @@ public static class YanziWeChatCapabilityProvider
                         scale = Math.Round(scale, 4)
                     },
                     capturePath = cached.CapturePath,
-                    layoutVersion = "weixin-win-v6",
+                    layoutVersion = "weixin-win-v7",
                     regions = cached.Regions.Clone(),
                     uiObjects = cached.UiObjects.Clone(),
                     navigation = cached.Navigation.Clone(),
@@ -250,6 +250,9 @@ public static class YanziWeChatCapabilityProvider
             var analysisWatch = Stopwatch.StartNew();
             var uiObjects = BuildFixedUiObjects(window.Rect.Width, window.Rect.Height, scale, regions);
             var navigation = AnalyzeNavigationState(visualBitmap, uiObjects, scale);
+            var effectiveUiObjects = navigation.IsChatView
+                ? uiObjects
+                : uiObjects.Where(item => item.Kind is "windowControl" or "profileAvatar" or "navigationItem" or "navigationUtility").ToArray();
             var mappedLines = new List<object>();
             var grouped = regions.ToDictionary(region => region.Id, _ => new List<string>(), StringComparer.OrdinalIgnoreCase);
 
@@ -265,7 +268,7 @@ public static class YanziWeChatCapabilityProvider
                     var region = regions.FirstOrDefault(item => item.Contains(centerX, centerY))
                         ?? new LayoutRegion("unknown", "未归类", 0, 0, window.Rect.Width, window.Rect.Height);
                     var text = ReadJsonString(line, "text") ?? string.Empty;
-                    var role = ClassifyOcrRole(region, uiObjects, text, x, y, width, height, scale);
+                    var role = ClassifyOcrRole(region, effectiveUiObjects, text, x, y, width, height, scale, navigation.IsChatView);
                     if (!string.IsNullOrWhiteSpace(text)
                         && ShouldIncludeInRegionText(role)
                         && grouped.TryGetValue(region.Id, out var texts))
@@ -292,7 +295,7 @@ public static class YanziWeChatCapabilityProvider
             var regionDtos = regions.Select(region => new
             {
                 id = region.Id,
-                label = region.Label,
+                label = GetRegionLabel(region, navigation),
                 x = region.X,
                 y = region.Y,
                 width = region.Width,
@@ -326,7 +329,7 @@ public static class YanziWeChatCapabilityProvider
             analysisWatch.Stop();
             var analyzedAtUtc = DateTimeOffset.UtcNow;
             var regionElement = JsonSerializer.SerializeToElement(regionDtos).Clone();
-            var uiObjectElement = JsonSerializer.SerializeToElement(uiObjects.Select(ToUiObjectDto).ToArray()).Clone();
+            var uiObjectElement = JsonSerializer.SerializeToElement(effectiveUiObjects.Select(ToUiObjectDto).ToArray()).Clone();
             var navigationElement = JsonSerializer.SerializeToElement(ToNavigationDto(navigation)).Clone();
             var conversationElement = JsonSerializer.SerializeToElement(conversations).Clone();
             var messageObjectElement = JsonSerializer.SerializeToElement(messageObjects).Clone();
@@ -368,9 +371,9 @@ public static class YanziWeChatCapabilityProvider
                     scale = Math.Round(scale, 4)
                 },
                 capturePath,
-                layoutVersion = "weixin-win-v6",
+                layoutVersion = "weixin-win-v7",
                 regions = regionDtos,
-                uiObjects = uiObjects.Select(ToUiObjectDto).ToArray(),
+                uiObjects = effectiveUiObjects.Select(ToUiObjectDto).ToArray(),
                 navigation = ToNavigationDto(navigation),
                 conversations,
                 messageObjects,
@@ -840,6 +843,50 @@ public static class YanziWeChatCapabilityProvider
         }
         return count;
     }
+    private static string GetRegionLabel(LayoutRegion region, NavigationAnalysis navigation)
+    {
+        if (navigation.IsChatView)
+            return region.Label;
+
+        if (region.Id is "chrome" or "navigation" or "search")
+            return region.Label;
+
+        return navigation.Active switch
+        {
+            "contacts" => region.Id switch
+            {
+                "conversationList" => "联系人列表",
+                "chatHeader" => "联系人标题区",
+                "messageList" => "联系人内容区",
+                "composer" => "联系人内容区",
+                _ => region.Label
+            },
+            "favorites" => region.Id switch
+            {
+                "conversationList" => "收藏分类",
+                "chatHeader" => "收藏标题区",
+                "messageList" => "收藏内容区",
+                "composer" => "收藏内容区",
+                _ => region.Label
+            },
+            "moments" => region.Id switch
+            {
+                "conversationList" => "发现列表",
+                "chatHeader" => "发现标题区",
+                "messageList" => "发现内容区",
+                "composer" => "发现内容区",
+                _ => region.Label
+            },
+            _ => region.Id switch
+            {
+                "conversationList" => "主列表区",
+                "chatHeader" => "内容标题区",
+                "messageList" => "内容区",
+                "composer" => "内容区",
+                _ => region.Label
+            }
+        };
+    }
     private static string ClassifyOcrRole(
         LayoutRegion region,
         IReadOnlyList<VisualObject> uiObjects,
@@ -848,7 +895,8 @@ public static class YanziWeChatCapabilityProvider
         double y,
         double width,
         double height,
-        double scale)
+        double scale,
+        bool isChatView)
     {
         int Dip(double value) => Math.Max(1, (int)Math.Round(value * scale));
         var centerX = x + width / 2d;
@@ -856,6 +904,12 @@ public static class YanziWeChatCapabilityProvider
 
         if (uiObjects.Any(item => item.Contains(centerX, centerY)))
             return "controlIcon";
+
+        if (!isChatView
+            && region.Id is "conversationList" or "chatHeader" or "messageList" or "composer")
+        {
+            return "contentText";
+        }
 
         if (string.Equals(region.Id, "conversationList", StringComparison.Ordinal))
         {
