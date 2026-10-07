@@ -54,6 +54,7 @@ public partial class App : WpfApplication
     private LocalAgentApiServer? _agentApiServer;
     private ExternalAccessApprovalService? _externalAccessApproval;
     public LocalAgentApiServer? AgentApiServer => _agentApiServer;
+    internal void NotifyExternalAccessReady() => _externalAccessApproval?.Wake();
     private LanDiscoveryService? _lanDiscoveryService;
     private SingleInstanceService? _singleInstanceService;
     private SharedRuntimeHost? _sharedRuntimeHost;

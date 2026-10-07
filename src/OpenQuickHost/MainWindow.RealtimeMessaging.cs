@@ -55,6 +55,21 @@ public partial class MainWindow
                     else await _cloudSyncClient.AckDeviceMessageAsync(message.MessageId, _desktopDeviceId!, cancellationToken: cancellationToken);
                 }
                 else if (type == "messages-ready" || type == "ready") await PollMobileMessagesSafeAsync("websocket-hint");
+                else if (type == "external-access-ready")
+                {
+                    await Dispatcher.InvokeAsync(() => (System.Windows.Application.Current as App)?.NotifyExternalAccessReady());
+                }
+                else if (type == "sync-ready")
+                {
+                    var updatedByDeviceId = root.TryGetProperty("updatedByDeviceId", out var updatedByElement)
+                        ? updatedByElement.GetString()
+                        : null;
+                    if (string.IsNullOrWhiteSpace(updatedByDeviceId) ||
+                        !string.Equals(updatedByDeviceId, _desktopDeviceId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        ExtensionStorageService.NotifyAccountCloudChanged();
+                    }
+                }
                 else if (type == "receipt")
                 {
                     var id = root.GetProperty("messageId").GetString()!;

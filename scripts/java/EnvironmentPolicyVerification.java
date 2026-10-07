@@ -12,9 +12,10 @@ public final class EnvironmentPolicyVerification {
         check(!EnvironmentPolicy.fresh(500000,1),"future cache");
         check(EnvironmentPolicy.fresh(400000,500000),"fresh cache");
         check(BackgroundCadence.HEARTBEAT_MS<120000,"presence within server window");
-        check(BackgroundCadence.syncInterval(true)==300000,"realtime compensation");
+        check(BackgroundCadence.MAINTENANCE_MS==300000,"maintenance budget");
+        check(BackgroundCadence.syncInterval(true)==900000,"realtime compensation");
         check(BackgroundCadence.syncInterval(false)==60000,"disconnected sync fallback");
-        check(BackgroundCadence.pollInterval(true)==900000,"realtime reconciliation");
+        check(BackgroundCadence.pollInterval(true)==1800000,"realtime reconciliation");
         check(BackgroundCadence.pollInterval(false)==60000,"disconnected message recovery");
         check(BackgroundCadence.deliveryRetryInterval()==60000,"delivery retry budget");
         check(BackgroundCadence.reconnectDelay(50)==60000,"reconnect cap");

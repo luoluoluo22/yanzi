@@ -8,7 +8,9 @@ namespace OpenQuickHost;
 public static class ExtensionStorageService
 {
     private static readonly TimeSpan BackgroundCloudTimeout = TimeSpan.FromSeconds(8);
+    private const long AccountReadRefreshIntervalMs = 60_000;
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> CloudWriteLocks = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly ConcurrentDictionary<string, long> AccountReadRefreshDueAt = new(StringComparer.OrdinalIgnoreCase);
 
     public static string StorageRootPath => HostAssets.ResolveDataDirectoryPath("ExtensionStorage");
 
@@ -271,8 +273,28 @@ public static class ExtensionStorageService
             cloudMessage);
     }
 
+    internal static void NotifyAccountCloudChanged() => AccountReadRefreshDueAt.Clear();
+
+    private static bool ReserveAccountReadRefresh(string extensionId, string key)
+    {
+        var accountId = SyncSessionStore.Load()?.UserId ?? string.Empty;
+        var operationKey = accountId + "\0" + extensionId + "\0" + key;
+        var now = Environment.TickCount64;
+        while (true)
+        {
+            if (AccountReadRefreshDueAt.TryGetValue(operationKey, out var dueAt))
+            {
+                if (now < dueAt) return false;
+                if (AccountReadRefreshDueAt.TryUpdate(operationKey, now + AccountReadRefreshIntervalMs, dueAt)) return true;
+                continue;
+            }
+            if (AccountReadRefreshDueAt.TryAdd(operationKey, now + AccountReadRefreshIntervalMs)) return true;
+        }
+    }
+
     private static void QueueAccountReadRefresh(string extensionId, string key, string localPath)
     {
+        if (!ReserveAccountReadRefresh(extensionId, key)) return;
         _ = Task.Run(async () =>
         {
             try

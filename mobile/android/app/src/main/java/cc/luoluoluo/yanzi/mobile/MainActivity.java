@@ -4966,7 +4966,12 @@ extends Activity {
         });
     }
 
+    private static final long CLOUD_PRESENCE_REFRESH_MS = 30000L;
+    private static final long CLOUD_PRESENCE_RETRY_MS = 15000L;
     private final java.util.concurrent.atomic.AtomicBoolean connectionCheckBusy = new java.util.concurrent.atomic.AtomicBoolean();
+    private DesktopCloudPresence cachedDesktopCloudPresence;
+    private long nextDesktopCloudPresenceRefreshAt;
+    private String cachedDesktopCloudPresenceSession = "";
 
     private void checkConnectionAsync() {
         if (!connectionCheckBusy.compareAndSet(false, true)) return;
@@ -4989,8 +4994,29 @@ extends Activity {
                     offlineTitle = "请先登录账号";
                     offlineDesc = "登录后才能通过云端设备表确认电脑端是否在线。";
                 } else {
-                    try {
-                        DesktopCloudPresence presence = this.fetchDesktopCloudPresence(this.normalizedBaseUrl(), token);
+                    String baseUrl = this.normalizedBaseUrl();
+                    String cloudSession = baseUrl + "\n" + token;
+                    long now = android.os.SystemClock.elapsedRealtime();
+                    if (!cloudSession.equals(this.cachedDesktopCloudPresenceSession)) {
+                        this.cachedDesktopCloudPresenceSession = cloudSession;
+                        this.cachedDesktopCloudPresence = null;
+                        this.nextDesktopCloudPresenceRefreshAt = 0L;
+                    }
+                    DesktopCloudPresence presence = this.cachedDesktopCloudPresence;
+                    if (presence == null || now >= this.nextDesktopCloudPresenceRefreshAt) {
+                        try {
+                            presence = this.fetchDesktopCloudPresence(baseUrl, token);
+                            this.cachedDesktopCloudPresence = presence;
+                            this.nextDesktopCloudPresenceRefreshAt = now + CLOUD_PRESENCE_REFRESH_MS;
+                        } catch (Exception e) {
+                            this.nextDesktopCloudPresenceRefreshAt = now + CLOUD_PRESENCE_RETRY_MS;
+                            if (presence == null) {
+                                offlineTitle = "云端不可达";
+                                offlineDesc = "无法确认电脑端是否启动：" + MainActivity.shortMessage(e);
+                            }
+                        }
+                    }
+                    if (presence != null) {
                         if (presence.online) {
                             connected = true;
                             type = "cloud";
@@ -4998,9 +5024,6 @@ extends Activity {
                             offlineTitle = presence.title;
                             offlineDesc = presence.description;
                         }
-                    } catch (Exception e) {
-                        offlineTitle = "云端不可达";
-                        offlineDesc = "无法确认电脑端是否启动：" + MainActivity.shortMessage(e);
                     }
                 }
             }

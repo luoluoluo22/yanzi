@@ -16,14 +16,28 @@ namespace OpenQuickHost;
 /// <summary>Account-scoped consent prompts; no extension-specific synchronization logic.</summary>
 internal sealed class ExternalAccessApprovalService : IDisposable
 {
-    private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromSeconds(5) };
+    private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMinutes(1) };
     private readonly HashSet<string> shown = new();
     private CloudSyncClient? client;
     private string? account;
     private bool busy;
     private bool disposed;
     private Window? prompt;
-    public ExternalAccessApprovalService() { timer.Tick += async (_, _) => await PollAsync(); timer.Start(); }
+    public ExternalAccessApprovalService()
+    {
+        timer.Tick += async (_, _) => await PollAsync();
+        timer.Start();
+        _ = PollAsync();
+    }
+
+    public void Wake()
+    {
+        if (disposed) return;
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher == null) return;
+        if (dispatcher.CheckAccess()) _ = PollAsync();
+        else _ = dispatcher.InvokeAsync(async () => await PollAsync());
+    }
     private CloudSyncClient GetClient()
     {
         var user = SyncSessionStore.Load()?.UserId;
