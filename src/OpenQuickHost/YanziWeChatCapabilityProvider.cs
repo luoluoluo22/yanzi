@@ -166,7 +166,7 @@ public static class YanziWeChatCapabilityProvider
             var scale = dpi / 96d;
             var regions = BuildLayoutRegions(window.Rect.Width, window.Rect.Height, scale);
             var monitoredRegions = regions
-                .Where(region => region.Id is "conversationList" or "chatHeader" or "messageList")
+                .Where(region => region.Id is "navigation" or "conversationList" or "chatHeader" or "messageList")
                 .ToArray();
 
             var captureWatch = Stopwatch.StartNew();
@@ -210,9 +210,10 @@ public static class YanziWeChatCapabilityProvider
                         scale = Math.Round(scale, 4)
                     },
                     capturePath = cached.CapturePath,
-                    layoutVersion = "weixin-win-v5",
+                    layoutVersion = "weixin-win-v6",
                     regions = cached.Regions.Clone(),
                     uiObjects = cached.UiObjects.Clone(),
+                    navigation = cached.Navigation.Clone(),
                     conversations = cached.Conversations.Clone(),
                     messageObjects = cached.MessageObjects.Clone(),
                     text = cached.Text,
@@ -248,6 +249,7 @@ public static class YanziWeChatCapabilityProvider
 
             var analysisWatch = Stopwatch.StartNew();
             var uiObjects = BuildFixedUiObjects(window.Rect.Width, window.Rect.Height, scale, regions);
+            var navigation = AnalyzeNavigationState(visualBitmap, uiObjects, scale);
             var mappedLines = new List<object>();
             var grouped = regions.ToDictionary(region => region.Id, _ => new List<string>(), StringComparer.OrdinalIgnoreCase);
 
@@ -302,8 +304,12 @@ public static class YanziWeChatCapabilityProvider
             var conversationRegion = regions.First(region => string.Equals(region.Id, "conversationList", StringComparison.Ordinal));
             var messageRegion = regions.First(region => string.Equals(region.Id, "messageList", StringComparison.Ordinal));
             var ocrInfos = ExtractOcrLines(ocr);
-            var conversations = BuildConversationRows(visualBitmap, conversationRegion, ocrInfos, scale);
-            var messageObjects = BuildMessageObjects(visualBitmap, messageRegion, ocrInfos, scale);
+            var conversations = navigation.IsChatView
+                ? BuildConversationRows(visualBitmap, conversationRegion, ocrInfos, scale)
+                : Array.Empty<object>();
+            var messageObjects = navigation.IsChatView
+                ? BuildMessageObjects(visualBitmap, messageRegion, ocrInfos, scale)
+                : Array.Empty<object>();
 
             var fullText = ocr.TryGetProperty("text", out var fullTextProperty)
                 ? fullTextProperty.GetString() ?? string.Empty
@@ -321,6 +327,7 @@ public static class YanziWeChatCapabilityProvider
             var analyzedAtUtc = DateTimeOffset.UtcNow;
             var regionElement = JsonSerializer.SerializeToElement(regionDtos).Clone();
             var uiObjectElement = JsonSerializer.SerializeToElement(uiObjects.Select(ToUiObjectDto).ToArray()).Clone();
+            var navigationElement = JsonSerializer.SerializeToElement(ToNavigationDto(navigation)).Clone();
             var conversationElement = JsonSerializer.SerializeToElement(conversations).Clone();
             var messageObjectElement = JsonSerializer.SerializeToElement(messageObjects).Clone();
             var lineElement = JsonSerializer.SerializeToElement(mappedLines.ToArray()).Clone();
@@ -335,6 +342,7 @@ public static class YanziWeChatCapabilityProvider
                 fingerprints,
                 regionElement,
                 uiObjectElement,
+                navigationElement,
                 conversationElement,
                 messageObjectElement,
                 lineElement,
@@ -360,9 +368,10 @@ public static class YanziWeChatCapabilityProvider
                     scale = Math.Round(scale, 4)
                 },
                 capturePath,
-                layoutVersion = "weixin-win-v5",
+                layoutVersion = "weixin-win-v6",
                 regions = regionDtos,
                 uiObjects = uiObjects.Select(ToUiObjectDto).ToArray(),
+                navigation = ToNavigationDto(navigation),
                 conversations,
                 messageObjects,
                 text = fullText,
@@ -499,6 +508,7 @@ public static class YanziWeChatCapabilityProvider
     private static double ChangeThreshold(string regionId)
         => regionId switch
         {
+            "navigation" => 0.003,
             "messageList" => 0.003,
             "conversationList" => 0.004,
             "chatHeader" => 0.004,
@@ -608,6 +618,7 @@ public static class YanziWeChatCapabilityProvider
     {
         int Dip(double value) => Math.Max(1, (int)Math.Round(value * scale));
         var chrome = regions.First(region => string.Equals(region.Id, "chrome", StringComparison.Ordinal));
+        var navigation = regions.First(region => string.Equals(region.Id, "navigation", StringComparison.Ordinal));
         var chatHeader = regions.First(region => string.Equals(region.Id, "chatHeader", StringComparison.Ordinal));
         var composer = regions.First(region => string.Equals(region.Id, "composer", StringComparison.Ordinal));
         var items = new List<VisualObject>();
@@ -615,6 +626,21 @@ public static class YanziWeChatCapabilityProvider
         void Add(string id, string kind, string label, string regionId, Rectangle rect)
             => items.Add(new VisualObject(id, kind, label, regionId, ClampRect(rect, new Size(width, height))));
 
+        // 左侧微信导航栏。图标本身不是文字，位置固定；当前激活项由绿色视觉状态判断。
+        Add("nav.profile", "profileAvatar", "我的头像", navigation.Id,
+            new Rectangle(navigation.X + Dip(18), navigation.Y + Dip(11), Dip(40), Dip(40)));
+        Add("nav.chat", "navigationItem", "聊天", navigation.Id,
+            new Rectangle(navigation.X + Dip(17), navigation.Y + Dip(61), Dip(42), Dip(42)));
+        Add("nav.contacts", "navigationItem", "联系人", navigation.Id,
+            new Rectangle(navigation.X + Dip(17), navigation.Y + Dip(110), Dip(42), Dip(42)));
+        Add("nav.favorites", "navigationItem", "收藏", navigation.Id,
+            new Rectangle(navigation.X + Dip(17), navigation.Y + Dip(159), Dip(42), Dip(42)));
+        Add("nav.moments", "navigationItem", "朋友圈", navigation.Id,
+            new Rectangle(navigation.X + Dip(17), navigation.Y + Dip(208), Dip(42), Dip(42)));
+        Add("nav.phone", "navigationUtility", "手机", navigation.Id,
+            new Rectangle(navigation.X + Dip(17), Math.Max(navigation.Y, height - Dip(110)), Dip(42), Dip(42)));
+        Add("nav.settings", "navigationUtility", "设置", navigation.Id,
+            new Rectangle(navigation.X + Dip(17), Math.Max(navigation.Y, height - Dip(61)), Dip(42), Dip(42)));
         // 窗口右上角固定控件。它们是图标，不应该交给 OCR 当成 Y/X/1 等字符。
         Add("window.pin", "windowControl", "置顶", chrome.Id,
             new Rectangle(width - Dip(174), chrome.Y, Dip(32), chrome.Height));
@@ -669,6 +695,151 @@ public static class YanziWeChatCapabilityProvider
             }
         };
 
+    private static NavigationAnalysis AnalyzeNavigationState(
+        Bitmap bitmap,
+        IReadOnlyList<VisualObject> uiObjects,
+        double scale)
+    {
+        var profile = uiObjects.First(item => string.Equals(item.Id, "nav.profile", StringComparison.Ordinal));
+        var itemObjects = uiObjects
+            .Where(item => item.Kind is "navigationItem" or "navigationUtility")
+            .ToArray();
+
+        var items = new List<NavigationItemAnalysis>();
+        foreach (var item in itemObjects)
+        {
+            var greenRatio = CountWechatGreenPixels(bitmap, item.Bounds)
+                / (double)Math.Max(1, item.Bounds.Width * item.Bounds.Height);
+            var redRatio = CountWechatRedPixels(bitmap, item.Bounds)
+                / (double)Math.Max(1, item.Bounds.Width * item.Bounds.Height);
+
+            items.Add(new NavigationItemAnalysis(
+                Id: item.Id["nav.".Length..],
+                Label: item.Label,
+                Kind: item.Kind,
+                Bounds: item.Bounds,
+                GreenRatio: greenRatio,
+                RedRatio: redRatio,
+                Active: false,
+                Confidence: 0));
+        }
+
+        var mainItems = items
+            .Where(item => string.Equals(item.Kind, "navigationItem", StringComparison.Ordinal))
+            .OrderByDescending(item => item.GreenRatio)
+            .ToArray();
+
+        string active = "unknown";
+        string activeLabel = "未知";
+        var stateConfidence = 0d;
+
+        if (mainItems.Length > 0)
+        {
+            var first = mainItems[0];
+            var secondRatio = mainItems.Length > 1 ? mainItems[1].GreenRatio : 0d;
+
+            // 新版微信当前主导航使用绿色图标表示选中。实测聊天态约 0.23，
+            // 非选中项接近 0；这里留出较大版本/缩放余量。
+            if (first.GreenRatio >= 0.025 && first.GreenRatio - secondRatio >= 0.012)
+            {
+                active = first.Id;
+                activeLabel = first.Label;
+                stateConfidence = Math.Clamp(
+                    0.72 + Math.Min(0.18, first.GreenRatio * 0.8)
+                         + Math.Min(0.10, (first.GreenRatio - secondRatio) * 1.5),
+                    0.72,
+                    0.99);
+            }
+        }
+
+        for (var i = 0; i < items.Count; i++)
+        {
+            var item = items[i];
+            var isActive = string.Equals(item.Id, active, StringComparison.Ordinal);
+            var confidence = isActive
+                ? stateConfidence
+                : Math.Clamp(0.75 + Math.Min(0.2, Math.Max(0, 0.025 - item.GreenRatio) * 5), 0.75, 0.95);
+            items[i] = item with { Active = isActive, Confidence = confidence };
+        }
+
+        var profileEdgeCount = CountVisualEdges(bitmap, profile.Bounds);
+        var profileEdgeRatio = profileEdgeCount
+            / (double)Math.Max(1, profile.Bounds.Width * profile.Bounds.Height);
+        var profileConfidence = Math.Clamp(0.72 + profileEdgeRatio * 1.6, 0.72, 0.99);
+
+        return new NavigationAnalysis(
+            Active: active,
+            ActiveLabel: activeLabel,
+            IsChatView: string.Equals(active, "chat", StringComparison.Ordinal),
+            Confidence: stateConfidence,
+            ProfileBounds: profile.Bounds,
+            ProfileConfidence: profileConfidence,
+            Items: items.ToArray());
+    }
+
+    private static object ToNavigationDto(NavigationAnalysis navigation)
+        => new
+        {
+            active = navigation.Active,
+            activeLabel = navigation.ActiveLabel,
+            isChatView = navigation.IsChatView,
+            confidence = Math.Round(navigation.Confidence, 3),
+            profileAvatar = new
+            {
+                label = "我的头像",
+                bounds = new
+                {
+                    x = navigation.ProfileBounds.X,
+                    y = navigation.ProfileBounds.Y,
+                    width = navigation.ProfileBounds.Width,
+                    height = navigation.ProfileBounds.Height
+                },
+                confidence = Math.Round(navigation.ProfileConfidence, 3),
+                method = "fixed_slot_visual_presence"
+            },
+            items = navigation.Items.Select(item => new
+            {
+                id = item.Id,
+                label = item.Label,
+                kind = item.Kind,
+                active = item.Active,
+                confidence = Math.Round(item.Confidence, 3),
+                bounds = new
+                {
+                    x = item.Bounds.X,
+                    y = item.Bounds.Y,
+                    width = item.Bounds.Width,
+                    height = item.Bounds.Height
+                },
+                evidence = new
+                {
+                    greenRatio = Math.Round(item.GreenRatio, 4),
+                    redRatio = Math.Round(item.RedRatio, 4),
+                    method = item.Kind == "navigationItem"
+                        ? "wechat_green_active_state"
+                        : "fixed_navigation_utility"
+                }
+            }).ToArray()
+        };
+
+    private static int CountWechatGreenPixels(Bitmap bitmap, Rectangle rect)
+    {
+        var count = 0;
+        for (var y = rect.Top; y < rect.Bottom; y++)
+        {
+            for (var x = rect.Left; x < rect.Right; x++)
+            {
+                var color = bitmap.GetPixel(x, y);
+                if (color.G >= 105
+                    && color.G - color.R >= 30
+                    && color.G - color.B >= 18)
+                {
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
     private static string ClassifyOcrRole(
         LayoutRegion region,
         IReadOnlyList<VisualObject> uiObjects,
@@ -1755,6 +1926,7 @@ public static class YanziWeChatCapabilityProvider
         Dictionary<string, VisualFingerprint> Fingerprints,
         JsonElement Regions,
         JsonElement UiObjects,
+        JsonElement Navigation,
         JsonElement Conversations,
         JsonElement MessageObjects,
         JsonElement Lines,
@@ -1770,6 +1942,24 @@ public static class YanziWeChatCapabilityProvider
         int Components,
         double Confidence);
 
+    private sealed record NavigationItemAnalysis(
+        string Id,
+        string Label,
+        string Kind,
+        Rectangle Bounds,
+        double GreenRatio,
+        double RedRatio,
+        bool Active,
+        double Confidence);
+
+    private sealed record NavigationAnalysis(
+        string Active,
+        string ActiveLabel,
+        bool IsChatView,
+        double Confidence,
+        Rectangle ProfileBounds,
+        double ProfileConfidence,
+        NavigationItemAnalysis[] Items);
     private sealed record VisualObject(
         string Id,
         string Kind,
