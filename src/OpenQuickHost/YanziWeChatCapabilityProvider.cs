@@ -149,8 +149,9 @@ public static class YanziWeChatCapabilityProvider
             var regions = BuildLayoutRegions(window.Rect.Width, window.Rect.Height, scale);
 
             var capturePath = GetLayoutCapturePath();
-            using (var bitmap = CaptureWindowBackground(window))
-                bitmap.Save(capturePath, ImageFormat.Png);
+            using var capturedBitmap = CaptureWindowBackground(window);
+            capturedBitmap.Save(capturePath, ImageFormat.Png);
+            using var visualBitmap = new Bitmap(capturedBitmap);
 
             var ocrRaw = await YanziCapabilityRegistry.InvokeAsync(
                 "ocr.recognize",
@@ -208,7 +209,6 @@ public static class YanziWeChatCapabilityProvider
             }).ToArray();
 
             var conversationRegion = regions.First(region => string.Equals(region.Id, "conversationList", StringComparison.Ordinal));
-            using var visualBitmap = new Bitmap(capturePath);
             var ocrInfos = ExtractOcrLines(ocr);
             var conversations = BuildConversationRows(visualBitmap, conversationRegion, ocrInfos, scale);
 
