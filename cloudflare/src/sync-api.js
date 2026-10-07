@@ -105,7 +105,7 @@ async function handleSyncApi(request, env, ctx) {
     const objectId = normalizeSyncObjectId(decodeURIComponent(syncObjectMatch[1]));
     const payload = await readJson(request);
     const result = await writeUserSyncObject(env, auth.userId, objectId, payload);
-    ctx.waitUntil(notifyDeviceRelay(env, auth.userId, {type:'sync-ready', userId:auth.userId, revision:result.revision}));
+    ctx.waitUntil(notifyDeviceRelay(env, auth.userId, {type:'sync-ready', userId:auth.userId, revision:result.revision, updatedByDeviceId:payload.updatedByDeviceId || null}));
     return json({ ok: true, userId: auth.userId, object: result });
   }
 

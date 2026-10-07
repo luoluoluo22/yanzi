@@ -13,6 +13,8 @@ public final class ExternalAccessManager {
     private static final ExecutorService worker=Executors.newSingleThreadExecutor();
     private static WeakReference<Activity> foreground=new WeakReference<>(null);
     private static final Set<String> shown=new HashSet<>();
+    private static final long FOREGROUND_POLL_MS=60000;
+    private static final long BACKGROUND_POLL_MS=300000;
     private static long nextPoll; private static boolean busy;
     private static String session="";
     public static synchronized void foreground(Activity activity){foreground=new WeakReference<>(activity);nextPoll=0;pollAsync(activity);}
@@ -23,7 +25,7 @@ public final class ExternalAccessManager {
         Context context=source.getApplicationContext();
         SharedPreferences prefs=context.getSharedPreferences("yanzi-mobile",Context.MODE_PRIVATE);
         String token=prefs.getString("token","");if(token.isEmpty())return;
-        busy=true;nextPoll=SystemClock.elapsedRealtime()+(foreground.get()!=null?15000:60000);
+        busy=true;nextPoll=SystemClock.elapsedRealtime()+(foreground.get()!=null?FOREGROUND_POLL_MS:BACKGROUND_POLL_MS);
         worker.execute(()->{try{
             String base=prefs.getString("baseUrl","https://sync.luoluoluo.cc.cd");
             JSONObject result=MobileMessageClient.request(base,"/v1/applications/access-requests",token,"GET",null);
