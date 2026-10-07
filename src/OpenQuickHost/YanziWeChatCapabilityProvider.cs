@@ -32,6 +32,7 @@ public static class YanziWeChatCapabilityProvider
         "##......##.",
         ".#######.##"
     ];
+    private static LayoutAnalysisCache? _layoutAnalysisCache;
     private static IntPtr _lastFileTransferWindow;
     private static ulong _lastFileTransferTitleHash;
     private static bool _hasFileTransferTitleHash;
@@ -90,7 +91,7 @@ public static class YanziWeChatCapabilityProvider
             Description = "后台截取新版微信主窗口，调用燕子 OCR，并将文字按导航、搜索、会话列表、会话标题、消息区和输入区分组；供微信标注与监听校准使用。",
             Permissions = ["application.read", "screen.capture", "file.read"],
             Category = "wechat",
-            InputSchema = YanziCapabilitySchema.Parse("""{"type":"object","properties":{"includeLines":{"type":"boolean"}},"additionalProperties":false}"""),
+            InputSchema = YanziCapabilitySchema.Parse("""{"type":"object","properties":{"includeLines":{"type":"boolean"},"forceAnalysis":{"type":"boolean"}},"additionalProperties":false}"""),
             OutputSchema = YanziCapabilitySchema.Parse("""{"type":"object"}"""),
             Handler = InspectLayoutAsync
         };
@@ -146,10 +147,13 @@ public static class YanziWeChatCapabilityProvider
         var input = (JsonElement)payload!;
         var includeLines = !input.TryGetProperty("includeLines", out var include)
             || include.ValueKind != JsonValueKind.False;
+        var forceAnalysis = input.TryGetProperty("forceAnalysis", out var force)
+            && force.ValueKind == JsonValueKind.True;
 
         await LayoutGate.WaitAsync();
         try
         {
+            var totalWatch = Stopwatch.StartNew();
             var window = FindBestWindow() ?? throw new InvalidOperationException("未找到可见的新版微信窗口。");
             if (!window.LooksLikeMain)
                 throw new InvalidOperationException($"微信尚未进入主界面：{window.Rect.Width}x{window.Rect.Height}。");
@@ -161,20 +165,88 @@ public static class YanziWeChatCapabilityProvider
             var dpi = GetWindowDpi(window.Handle);
             var scale = dpi / 96d;
             var regions = BuildLayoutRegions(window.Rect.Width, window.Rect.Height, scale);
+            var monitoredRegions = regions
+                .Where(region => region.Id is "conversationList" or "chatHeader" or "messageList")
+                .ToArray();
+
+            var captureWatch = Stopwatch.StartNew();
+            using var capturedBitmap = CaptureWindowBackground(window);
+            captureWatch.Stop();
+
+            var compareWatch = Stopwatch.StartNew();
+            var fingerprints = BuildVisualFingerprints(capturedBitmap, monitoredRegions, scale);
+            var change = CompareVisualFingerprints(
+                _layoutAnalysisCache,
+                window.Handle,
+                window.Rect.Width,
+                window.Rect.Height,
+                dpi,
+                fingerprints);
+            compareWatch.Stop();
+
+            var canReuse = !forceAnalysis
+                && _layoutAnalysisCache != null
+                && change.Compatible
+                && !change.HasMeaningfulChange;
+
+            if (canReuse)
+            {
+                var cached = _layoutAnalysisCache!;
+                totalWatch.Stop();
+                return new
+                {
+                    state = "main",
+                    capturedAtUtc = DateTimeOffset.UtcNow,
+                    analyzedAtUtc = cached.AnalyzedAtUtc,
+                    processId = window.ProcessId,
+                    window = new
+                    {
+                        handle = window.Handle.ToInt64(),
+                        left = window.Rect.Left,
+                        top = window.Rect.Top,
+                        width = window.Rect.Width,
+                        height = window.Rect.Height,
+                        dpi,
+                        scale = Math.Round(scale, 4)
+                    },
+                    capturePath = cached.CapturePath,
+                    layoutVersion = "weixin-win-v4",
+                    regions = cached.Regions.Clone(),
+                    uiObjects = cached.UiObjects.Clone(),
+                    conversations = cached.Conversations.Clone(),
+                    messageObjects = cached.MessageObjects.Clone(),
+                    text = cached.Text,
+                    detectedCount = cached.DetectedCount,
+                    elapsedMs = cached.OcrElapsedMs,
+                    lines = includeLines ? cached.Lines.Clone() : JsonSerializer.SerializeToElement(Array.Empty<object>()),
+                    changeDetection = BuildChangeDetectionDto(change, reused: true, ocrSkipped: true, forceAnalysis),
+                    timings = new
+                    {
+                        captureMs = Math.Round(captureWatch.Elapsed.TotalMilliseconds, 2),
+                        compareMs = Math.Round(compareWatch.Elapsed.TotalMilliseconds, 2),
+                        ocrMs = 0d,
+                        analysisMs = 0d,
+                        totalMs = Math.Round(totalWatch.Elapsed.TotalMilliseconds, 2)
+                    }
+                };
+            }
 
             var capturePath = GetLayoutCapturePath();
-            using var capturedBitmap = CaptureWindowBackground(window);
             capturedBitmap.Save(capturePath, ImageFormat.Png);
             using var visualBitmap = new Bitmap(capturedBitmap);
 
+            var ocrWatch = Stopwatch.StartNew();
             var ocrRaw = await YanziCapabilityRegistry.InvokeAsync(
                 "ocr.recognize",
                 new { imagePath = capturePath, includeLines = true },
                 YanziCapabilityCaller.LocalAgent);
+            ocrWatch.Stop();
+
             var ocr = ocrRaw is JsonElement element
                 ? element.Clone()
                 : JsonSerializer.SerializeToElement(ocrRaw);
 
+            var analysisWatch = Stopwatch.StartNew();
             var uiObjects = BuildFixedUiObjects(window.Rect.Width, window.Rect.Height, scale, regions);
             var mappedLines = new List<object>();
             var grouped = regions.ToDictionary(region => region.Id, _ => new List<string>(), StringComparer.OrdinalIgnoreCase);
@@ -198,6 +270,7 @@ public static class YanziWeChatCapabilityProvider
                     {
                         texts.Add(text);
                     }
+
                     mappedLines.Add(new
                     {
                         text,
@@ -232,10 +305,49 @@ public static class YanziWeChatCapabilityProvider
             var conversations = BuildConversationRows(visualBitmap, conversationRegion, ocrInfos, scale);
             var messageObjects = BuildMessageObjects(visualBitmap, messageRegion, ocrInfos, scale);
 
+            var fullText = ocr.TryGetProperty("text", out var fullTextProperty)
+                ? fullTextProperty.GetString() ?? string.Empty
+                : string.Empty;
+            var detectedCount = ocr.TryGetProperty("detectedCount", out var count)
+                && count.TryGetInt32(out var detected)
+                    ? detected
+                    : mappedLines.Count;
+            var ocrElapsedMs = ocr.TryGetProperty("elapsedMs", out var elapsed)
+                && elapsed.TryGetDouble(out var ms)
+                    ? ms
+                    : (double?)null;
+
+            analysisWatch.Stop();
+            var analyzedAtUtc = DateTimeOffset.UtcNow;
+            var regionElement = JsonSerializer.SerializeToElement(regionDtos).Clone();
+            var uiObjectElement = JsonSerializer.SerializeToElement(uiObjects.Select(ToUiObjectDto).ToArray()).Clone();
+            var conversationElement = JsonSerializer.SerializeToElement(conversations).Clone();
+            var messageObjectElement = JsonSerializer.SerializeToElement(messageObjects).Clone();
+            var lineElement = JsonSerializer.SerializeToElement(mappedLines.ToArray()).Clone();
+
+            _layoutAnalysisCache = new LayoutAnalysisCache(
+                window.Handle,
+                window.Rect.Width,
+                window.Rect.Height,
+                dpi,
+                analyzedAtUtc,
+                capturePath,
+                fingerprints,
+                regionElement,
+                uiObjectElement,
+                conversationElement,
+                messageObjectElement,
+                lineElement,
+                fullText,
+                detectedCount,
+                ocrElapsedMs);
+
+            totalWatch.Stop();
             return new
             {
                 state = "main",
                 capturedAtUtc = DateTimeOffset.UtcNow,
+                analyzedAtUtc,
                 processId = window.ProcessId,
                 window = new
                 {
@@ -248,15 +360,24 @@ public static class YanziWeChatCapabilityProvider
                     scale = Math.Round(scale, 4)
                 },
                 capturePath,
-                layoutVersion = "weixin-win-v3",
+                layoutVersion = "weixin-win-v4",
                 regions = regionDtos,
                 uiObjects = uiObjects.Select(ToUiObjectDto).ToArray(),
                 conversations,
                 messageObjects,
-                text = ocr.TryGetProperty("text", out var fullText) ? fullText.GetString() ?? string.Empty : string.Empty,
-                detectedCount = ocr.TryGetProperty("detectedCount", out var count) && count.TryGetInt32(out var detected) ? detected : mappedLines.Count,
-                elapsedMs = ocr.TryGetProperty("elapsedMs", out var elapsed) && elapsed.TryGetDouble(out var ms) ? ms : (double?)null,
-                lines = includeLines ? mappedLines.ToArray() : Array.Empty<object>()
+                text = fullText,
+                detectedCount,
+                elapsedMs = ocrElapsedMs,
+                lines = includeLines ? mappedLines.ToArray() : Array.Empty<object>(),
+                changeDetection = BuildChangeDetectionDto(change, reused: false, ocrSkipped: false, forceAnalysis),
+                timings = new
+                {
+                    captureMs = Math.Round(captureWatch.Elapsed.TotalMilliseconds, 2),
+                    compareMs = Math.Round(compareWatch.Elapsed.TotalMilliseconds, 2),
+                    ocrMs = Math.Round(ocrWatch.Elapsed.TotalMilliseconds, 2),
+                    analysisMs = Math.Round(analysisWatch.Elapsed.TotalMilliseconds, 2),
+                    totalMs = Math.Round(totalWatch.Elapsed.TotalMilliseconds, 2)
+                }
             };
         }
         finally
@@ -264,7 +385,147 @@ public static class YanziWeChatCapabilityProvider
             LayoutGate.Release();
         }
     }
+    private static Dictionary<string, VisualFingerprint> BuildVisualFingerprints(
+        Bitmap bitmap,
+        IReadOnlyList<LayoutRegion> regions,
+        double scale)
+    {
+        var result = new Dictionary<string, VisualFingerprint>(StringComparer.OrdinalIgnoreCase);
+        var step = Math.Max(4, (int)Math.Round(6 * scale));
 
+        foreach (var region in regions)
+        {
+            var rect = ClampRect(new Rectangle(region.X, region.Y, region.Width, region.Height), bitmap.Size);
+            var samples = new List<byte>(Math.Max(16, rect.Width * rect.Height / Math.Max(1, step * step) * 3));
+
+            for (var y = rect.Top + step / 2; y < rect.Bottom; y += step)
+            {
+                for (var x = rect.Left + step / 2; x < rect.Right; x += step)
+                {
+                    var color = bitmap.GetPixel(x, y);
+                    samples.Add((byte)(color.R & 0xF8));
+                    samples.Add((byte)(color.G & 0xF8));
+                    samples.Add((byte)(color.B & 0xF8));
+                }
+            }
+
+            result[region.Id] = new VisualFingerprint(
+                region.Id,
+                rect.Width,
+                rect.Height,
+                step,
+                samples.ToArray());
+        }
+
+        return result;
+    }
+
+    private static LayoutChangeSummary CompareVisualFingerprints(
+        LayoutAnalysisCache? cache,
+        IntPtr handle,
+        int width,
+        int height,
+        uint dpi,
+        IReadOnlyDictionary<string, VisualFingerprint> current)
+    {
+        if (cache == null)
+        {
+            return new LayoutChangeSummary(
+                Compatible: false,
+                HasMeaningfulChange: true,
+                Reason: "cold_start",
+                Regions: current.Values
+                    .Select(item => new LayoutRegionChange(item.RegionId, 1d, ChangeThreshold(item.RegionId), true))
+                    .ToArray());
+        }
+
+        if (cache.Handle != handle
+            || cache.Width != width
+            || cache.Height != height
+            || cache.Dpi != dpi)
+        {
+            return new LayoutChangeSummary(
+                Compatible: false,
+                HasMeaningfulChange: true,
+                Reason: "window_context_changed",
+                Regions: current.Values
+                    .Select(item => new LayoutRegionChange(item.RegionId, 1d, ChangeThreshold(item.RegionId), true))
+                    .ToArray());
+        }
+
+        var changes = new List<LayoutRegionChange>();
+        foreach (var pair in current)
+        {
+            var threshold = ChangeThreshold(pair.Key);
+            if (!cache.Fingerprints.TryGetValue(pair.Key, out var previous)
+                || previous.Width != pair.Value.Width
+                || previous.Height != pair.Value.Height
+                || previous.Step != pair.Value.Step
+                || previous.Samples.Length != pair.Value.Samples.Length)
+            {
+                changes.Add(new LayoutRegionChange(pair.Key, 1d, threshold, true));
+                continue;
+            }
+
+            var sampleCount = pair.Value.Samples.Length / 3;
+            if (sampleCount == 0)
+            {
+                changes.Add(new LayoutRegionChange(pair.Key, 0d, threshold, false));
+                continue;
+            }
+
+            var changed = 0;
+            for (var i = 0; i + 2 < pair.Value.Samples.Length; i += 3)
+            {
+                var delta = Math.Abs(pair.Value.Samples[i] - previous.Samples[i])
+                    + Math.Abs(pair.Value.Samples[i + 1] - previous.Samples[i + 1])
+                    + Math.Abs(pair.Value.Samples[i + 2] - previous.Samples[i + 2]);
+                if (delta >= 48)
+                    changed++;
+            }
+
+            var ratio = changed / (double)sampleCount;
+            changes.Add(new LayoutRegionChange(pair.Key, ratio, threshold, ratio >= threshold));
+        }
+
+        var meaningful = changes.Any(item => item.Changed);
+        return new LayoutChangeSummary(
+            Compatible: true,
+            HasMeaningfulChange: meaningful,
+            Reason: meaningful ? "visual_change" : "stable",
+            Regions: changes.ToArray());
+    }
+
+    private static double ChangeThreshold(string regionId)
+        => regionId switch
+        {
+            "messageList" => 0.003,
+            "conversationList" => 0.004,
+            "chatHeader" => 0.004,
+            _ => 0.005
+        };
+
+    private static object BuildChangeDetectionDto(
+        LayoutChangeSummary change,
+        bool reused,
+        bool ocrSkipped,
+        bool forceAnalysis)
+        => new
+        {
+            reused,
+            ocrSkipped,
+            forced = forceAnalysis,
+            compatible = change.Compatible,
+            meaningfulChange = change.HasMeaningfulChange,
+            reason = forceAnalysis ? "forced" : change.Reason,
+            regions = change.Regions.Select(item => new
+            {
+                id = item.RegionId,
+                ratio = Math.Round(item.Ratio, 6),
+                threshold = item.Threshold,
+                changed = item.Changed
+            }).ToArray()
+        };
     private static uint GetWindowDpi(IntPtr hwnd)
     {
         try
@@ -1289,6 +1550,41 @@ public static class YanziWeChatCapabilityProvider
             ? property.GetString()
             : null;
 
+    private sealed record VisualFingerprint(
+        string RegionId,
+        int Width,
+        int Height,
+        int Step,
+        byte[] Samples);
+
+    private sealed record LayoutRegionChange(
+        string RegionId,
+        double Ratio,
+        double Threshold,
+        bool Changed);
+
+    private sealed record LayoutChangeSummary(
+        bool Compatible,
+        bool HasMeaningfulChange,
+        string Reason,
+        LayoutRegionChange[] Regions);
+
+    private sealed record LayoutAnalysisCache(
+        IntPtr Handle,
+        int Width,
+        int Height,
+        uint Dpi,
+        DateTimeOffset AnalyzedAtUtc,
+        string CapturePath,
+        Dictionary<string, VisualFingerprint> Fingerprints,
+        JsonElement Regions,
+        JsonElement UiObjects,
+        JsonElement Conversations,
+        JsonElement MessageObjects,
+        JsonElement Lines,
+        string Text,
+        int DetectedCount,
+        double? OcrElapsedMs);
     private sealed record MuteShapeAnalysis(
         bool IsMatch,
         double Score,
