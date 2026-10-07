@@ -18,6 +18,20 @@ public static class YanziWeChatCapabilityProvider
 {
     private static readonly SemaphoreSlim Gate = new(1, 1);
     private static readonly SemaphoreSlim LayoutGate = new(1, 1);
+    private static readonly string[] MuteIconTemplate =
+    [
+        "....##.....",
+        "##.####....",
+        ".###..##...",
+        "..##...#...",
+        ".####..##..",
+        ".##.##.##..",
+        ".##..####..",
+        ".##...###..",
+        ".#.....##..",
+        "##......##.",
+        ".#######.##"
+    ];
     private static IntPtr _lastFileTransferWindow;
     private static ulong _lastFileTransferTitleHash;
     private static bool _hasFileTransferTitleHash;
@@ -161,6 +175,7 @@ public static class YanziWeChatCapabilityProvider
                 ? element.Clone()
                 : JsonSerializer.SerializeToElement(ocrRaw);
 
+            var uiObjects = BuildFixedUiObjects(window.Rect.Width, window.Rect.Height, scale, regions);
             var mappedLines = new List<object>();
             var grouped = regions.ToDictionary(region => region.Id, _ => new List<string>(), StringComparer.OrdinalIgnoreCase);
 
@@ -176,10 +191,13 @@ public static class YanziWeChatCapabilityProvider
                     var region = regions.FirstOrDefault(item => item.Contains(centerX, centerY))
                         ?? new LayoutRegion("unknown", "未归类", 0, 0, window.Rect.Width, window.Rect.Height);
                     var text = ReadJsonString(line, "text") ?? string.Empty;
-                    if (!string.IsNullOrWhiteSpace(text) && grouped.TryGetValue(region.Id, out var texts))
+                    var role = ClassifyOcrRole(region, uiObjects, text, x, y, width, height, scale);
+                    if (!string.IsNullOrWhiteSpace(text)
+                        && ShouldIncludeInRegionText(role)
+                        && grouped.TryGetValue(region.Id, out var texts))
+                    {
                         texts.Add(text);
-
-                    var role = ClassifyOcrRole(region, text, x, y, width, height, scale);
+                    }
                     mappedLines.Add(new
                     {
                         text,
@@ -209,8 +227,10 @@ public static class YanziWeChatCapabilityProvider
             }).ToArray();
 
             var conversationRegion = regions.First(region => string.Equals(region.Id, "conversationList", StringComparison.Ordinal));
+            var messageRegion = regions.First(region => string.Equals(region.Id, "messageList", StringComparison.Ordinal));
             var ocrInfos = ExtractOcrLines(ocr);
             var conversations = BuildConversationRows(visualBitmap, conversationRegion, ocrInfos, scale);
+            var messageObjects = BuildMessageObjects(visualBitmap, messageRegion, ocrInfos, scale);
 
             return new
             {
@@ -228,9 +248,11 @@ public static class YanziWeChatCapabilityProvider
                     scale = Math.Round(scale, 4)
                 },
                 capturePath,
-                layoutVersion = "weixin-win-v2",
+                layoutVersion = "weixin-win-v3",
                 regions = regionDtos,
+                uiObjects = uiObjects.Select(ToUiObjectDto).ToArray(),
                 conversations,
+                messageObjects,
                 text = ocr.TryGetProperty("text", out var fullText) ? fullText.GetString() ?? string.Empty : string.Empty,
                 detectedCount = ocr.TryGetProperty("detectedCount", out var count) && count.TryGetInt32(out var detected) ? detected : mappedLines.Count,
                 elapsedMs = ocr.TryGetProperty("elapsedMs", out var elapsed) && elapsed.TryGetDouble(out var ms) ? ms : (double?)null,
@@ -317,8 +339,78 @@ public static class YanziWeChatCapabilityProvider
         return bitmap;
     }
 
+    private static VisualObject[] BuildFixedUiObjects(
+        int width,
+        int height,
+        double scale,
+        IReadOnlyList<LayoutRegion> regions)
+    {
+        int Dip(double value) => Math.Max(1, (int)Math.Round(value * scale));
+        var chrome = regions.First(region => string.Equals(region.Id, "chrome", StringComparison.Ordinal));
+        var chatHeader = regions.First(region => string.Equals(region.Id, "chatHeader", StringComparison.Ordinal));
+        var composer = regions.First(region => string.Equals(region.Id, "composer", StringComparison.Ordinal));
+        var items = new List<VisualObject>();
+
+        void Add(string id, string kind, string label, string regionId, Rectangle rect)
+            => items.Add(new VisualObject(id, kind, label, regionId, ClampRect(rect, new Size(width, height))));
+
+        // 窗口右上角固定控件。它们是图标，不应该交给 OCR 当成 Y/X/1 等字符。
+        Add("window.pin", "windowControl", "置顶", chrome.Id,
+            new Rectangle(width - Dip(174), chrome.Y, Dip(32), chrome.Height));
+        Add("window.minimize", "windowControl", "最小化", chrome.Id,
+            new Rectangle(width - Dip(134), chrome.Y, Dip(36), chrome.Height));
+        Add("window.maximize", "windowControl", "最大化/还原", chrome.Id,
+            new Rectangle(width - Dip(92), chrome.Y, Dip(38), chrome.Height));
+        Add("window.close", "windowControl", "关闭", chrome.Id,
+            new Rectangle(width - Dip(48), chrome.Y, Dip(46), chrome.Height));
+
+        // 会话标题右侧操作按钮。
+        Add("chat.actions", "headerControl", "聊天菜单", chatHeader.Id,
+            new Rectangle(chatHeader.X + chatHeader.Width - Dip(144), chatHeader.Y + Dip(7), Dip(45), chatHeader.Height - Dip(10)));
+        Add("chat.call", "headerControl", "通话", chatHeader.Id,
+            new Rectangle(chatHeader.X + chatHeader.Width - Dip(94), chatHeader.Y + Dip(7), Dip(42), chatHeader.Height - Dip(10)));
+        Add("chat.more", "headerControl", "更多", chatHeader.Id,
+            new Rectangle(chatHeader.X + chatHeader.Width - Dip(50), chatHeader.Y + Dip(7), Dip(48), chatHeader.Height - Dip(10)));
+
+        // 输入区底部工具栏。按当前微信 Windows UI 的 DIP 尺寸固定锚定。
+        var toolY = composer.Y + composer.Height - Dip(49);
+        Add("composer.emoji", "composerControl", "表情", composer.Id,
+            new Rectangle(composer.X + Dip(15), toolY, Dip(34), Dip(40)));
+        Add("composer.favorite", "composerControl", "收藏", composer.Id,
+            new Rectangle(composer.X + Dip(50), toolY, Dip(38), Dip(40)));
+        Add("composer.file", "composerControl", "文件", composer.Id,
+            new Rectangle(composer.X + Dip(86), toolY, Dip(38), Dip(40)));
+        Add("composer.screenshot", "composerControl", "截图/剪贴", composer.Id,
+            new Rectangle(composer.X + Dip(124), toolY, Dip(48), Dip(40)));
+        Add("composer.speechInput", "composerControl", "语音识别", composer.Id,
+            new Rectangle(composer.X + Dip(172), toolY, Dip(40), Dip(40)));
+        Add("composer.voiceMode", "composerControl", "语音模式", composer.Id,
+            new Rectangle(composer.X + composer.Width - Dip(116), toolY, Dip(42), Dip(40)));
+        Add("composer.send", "composerControl", "发送", composer.Id,
+            new Rectangle(composer.X + composer.Width - Dip(74), toolY, Dip(70), Dip(40)));
+
+        return items.ToArray();
+    }
+
+    private static object ToUiObjectDto(VisualObject item)
+        => new
+        {
+            id = item.Id,
+            kind = item.Kind,
+            label = item.Label,
+            regionId = item.RegionId,
+            bounds = new
+            {
+                x = item.Bounds.X,
+                y = item.Bounds.Y,
+                width = item.Bounds.Width,
+                height = item.Bounds.Height
+            }
+        };
+
     private static string ClassifyOcrRole(
         LayoutRegion region,
+        IReadOnlyList<VisualObject> uiObjects,
         string text,
         double x,
         double y,
@@ -326,34 +418,237 @@ public static class YanziWeChatCapabilityProvider
         double height,
         double scale)
     {
-        if (!string.Equals(region.Id, "conversationList", StringComparison.Ordinal))
-            return "text";
-
         int Dip(double value) => Math.Max(1, (int)Math.Round(value * scale));
         var centerX = x + width / 2d;
         var centerY = y + height / 2d;
-        var rowHeight = Dip(64);
-        var rowOffset = ((int)Math.Round(centerY) - region.Y) % rowHeight;
-        if (rowOffset < 0)
-            rowOffset += rowHeight;
 
-        if (centerX >= region.X + region.Width - Dip(45)
-            && rowOffset >= Dip(27)
-            && !LooksLikeConversationTime(text))
+        if (uiObjects.Any(item => item.Contains(centerX, centerY)))
+            return "controlIcon";
+
+        if (string.Equals(region.Id, "conversationList", StringComparison.Ordinal))
         {
-            return "iconCandidate";
+            var rowHeight = Dip(64);
+            var rowOffset = ((int)Math.Round(centerY) - region.Y) % rowHeight;
+            if (rowOffset < 0)
+                rowOffset += rowHeight;
+
+            if (centerX >= region.X + region.Width - Dip(45)
+                && rowOffset >= Dip(27)
+                && !LooksLikeConversationTime(text))
+            {
+                return "iconCandidate";
+            }
+
+            if (centerX < region.X + Dip(52))
+                return "avatarVisual";
+
+            if (rowOffset < Dip(31))
+                return LooksLikeConversationTime(text) || centerX >= region.X + region.Width - Dip(78)
+                    ? "time"
+                    : "title";
+
+            return "preview";
         }
 
-        if (centerX < region.X + Dip(52))
-            return "avatarVisual";
+        if (string.Equals(region.Id, "messageList", StringComparison.Ordinal))
+        {
+            if (LooksLikeVoiceDuration(text))
+                return "voiceDuration";
 
-        if (rowOffset < Dip(31))
-            return LooksLikeConversationTime(text) || centerX >= region.X + region.Width - Dip(78)
-                ? "time"
-                : "title";
+            if (LooksLikeMessageSystemTime(text, centerX, region, scale))
+                return "systemTime";
 
-        return "preview";
+            if (centerX < region.X + Dip(64))
+                return "avatarVisual";
+
+            return "messageText";
+        }
+
+        return "text";
     }
+
+    private static bool LooksLikeVoiceDuration(string text)
+        => Regex.IsMatch(
+            text.Trim(),
+            @"^\d{1,3}\s*(?:[″""”']|秒)$",
+            RegexOptions.CultureInvariant);
+
+    private static bool LooksLikeMessageSystemTime(string text, double centerX, LayoutRegion region, double scale)
+    {
+        var nearCenter = Math.Abs(centerX - (region.X + region.Width / 2d)) <= 115d * scale;
+        if (!nearCenter)
+            return false;
+
+        return Regex.IsMatch(
+            text.Trim(),
+            @"^(?:(?:\d{1,2}月\d{1,2}日\s*)?(?:星期[一二三四五六日天]\s*)?\d{1,2}:\d{2}|\d{1,2}月\d{1,2}日|昨天|今天|星期[一二三四五六日天])$",
+            RegexOptions.CultureInvariant);
+    }
+
+    private static object[] BuildMessageObjects(
+        Bitmap bitmap,
+        LayoutRegion region,
+        IReadOnlyList<OcrLineInfo> lines,
+        double scale)
+    {
+        int Dip(double value) => Math.Max(1, (int)Math.Round(value * scale));
+        var result = new List<object>();
+        var avatarBounds = DetectIncomingAvatarBounds(bitmap, region, scale);
+
+        var avatarIndex = 0;
+        foreach (var bounds in avatarBounds)
+        {
+            result.Add(new
+            {
+                id = $"message.avatar.incoming.{avatarIndex++}",
+                kind = "avatar.incoming",
+                label = "聊天对象头像",
+                bounds = new { x = bounds.X, y = bounds.Y, width = bounds.Width, height = bounds.Height },
+                confidence = 0.82
+            });
+        }
+
+        var voiceIndex = 0;
+        foreach (var line in lines.Where(line =>
+                     line.X + line.Width / 2d >= region.X
+                     && line.X + line.Width / 2d < region.X + region.Width
+                     && line.Y + line.Height / 2d >= region.Y
+                     && line.Y + line.Height / 2d < region.Y + region.Height
+                     && LooksLikeVoiceDuration(line.Text)))
+        {
+            var incoming = line.X + line.Width / 2d < region.X + region.Width * 0.62;
+            var y = Math.Max(region.Y, (int)Math.Round(line.Y - Dip(12)));
+            var h = Dip(42);
+            Rectangle bounds;
+            if (incoming)
+            {
+                bounds = ClampRect(
+                    new Rectangle(
+                        region.X + Dip(62),
+                        y,
+                        Math.Min(Dip(168), region.Width - Dip(68)),
+                        h),
+                    bitmap.Size);
+            }
+            else
+            {
+                bounds = ClampRect(
+                    new Rectangle(
+                        Math.Max(region.X, (int)Math.Round(line.X - Dip(135))),
+                        y,
+                        Dip(165),
+                        h),
+                    bitmap.Size);
+            }
+
+            var seconds = Regex.Match(line.Text, @"\d{1,3}").Value;
+            result.Add(new
+            {
+                id = $"message.voice.{voiceIndex++}",
+                kind = "message.voice",
+                label = "语音消息",
+                direction = incoming ? "incoming" : "outgoing",
+                durationSeconds = int.TryParse(seconds, out var parsed) ? parsed : (int?)null,
+                bounds = new { x = bounds.X, y = bounds.Y, width = bounds.Width, height = bounds.Height },
+                sourceText = line.Text,
+                confidence = 0.9
+            });
+        }
+
+        var systemTimeIndex = 0;
+        foreach (var line in lines.Where(line =>
+                     line.X + line.Width / 2d >= region.X
+                     && line.X + line.Width / 2d < region.X + region.Width
+                     && line.Y + line.Height / 2d >= region.Y
+                     && line.Y + line.Height / 2d < region.Y + region.Height
+                     && LooksLikeMessageSystemTime(line.Text, line.X + line.Width / 2d, region, scale)))
+        {
+            result.Add(new
+            {
+                id = $"message.systemTime.{systemTimeIndex++}",
+                kind = "message.systemTime",
+                label = "系统时间",
+                text = line.Text,
+                bounds = new
+                {
+                    x = (int)Math.Round(line.X),
+                    y = (int)Math.Round(line.Y),
+                    width = (int)Math.Round(line.Width),
+                    height = (int)Math.Round(line.Height)
+                },
+                confidence = 0.95
+            });
+        }
+
+        return result.ToArray();
+    }
+
+    private static Rectangle[] DetectIncomingAvatarBounds(Bitmap bitmap, LayoutRegion region, double scale)
+    {
+        int Dip(double value) => Math.Max(1, (int)Math.Round(value * scale));
+        var strip = ClampRect(
+            new Rectangle(region.X + Dip(12), region.Y + Dip(2), Dip(48), Math.Max(1, region.Height - Dip(4))),
+            bitmap.Size);
+        var backgroundProbe = ClampRect(
+            new Rectangle(region.X + Dip(2), region.Y + Dip(6), Dip(8), Math.Max(1, region.Height - Dip(12))),
+            bitmap.Size);
+        var background = SampleAverageColor(bitmap, backgroundProbe);
+
+        var spans = new List<(int Start, int End)>();
+        var start = -1;
+        var lastActive = -1;
+        var gap = 0;
+        var maxGap = Dip(3);
+
+        for (var y = strip.Top; y < strip.Bottom; y++)
+        {
+            var changed = 0;
+            for (var x = strip.Left; x < strip.Right; x++)
+            {
+                var color = bitmap.GetPixel(x, y);
+                var delta = Math.Abs(color.R - background.R)
+                    + Math.Abs(color.G - background.G)
+                    + Math.Abs(color.B - background.B);
+                if (delta >= 58)
+                    changed++;
+            }
+
+            var active = changed >= Math.Max(4, (int)Math.Round(strip.Width * 0.2));
+            if (active)
+            {
+                if (start < 0)
+                    start = y;
+                lastActive = y;
+                gap = 0;
+            }
+            else if (start >= 0)
+            {
+                gap++;
+                if (gap > maxGap)
+                {
+                    spans.Add((start, lastActive));
+                    start = -1;
+                    lastActive = -1;
+                    gap = 0;
+                }
+            }
+        }
+
+        if (start >= 0 && lastActive >= start)
+            spans.Add((start, lastActive));
+
+        return spans
+            .Select(span => new Rectangle(
+                strip.Left,
+                span.Start,
+                strip.Width,
+                span.End - span.Start + 1))
+            .Where(rect => rect.Height >= Dip(24) && rect.Height <= Dip(52))
+            .ToArray();
+    }
+
+    private static bool ShouldIncludeInRegionText(string role)
+        => role is "text" or "title" or "time" or "preview" or "messageText" or "systemTime";
 
     private static OcrLineInfo[] ExtractOcrLines(JsonElement ocr)
     {
@@ -495,11 +790,9 @@ public static class YanziWeChatCapabilityProvider
             var muteBox = ClampRect(
                 new Rectangle(statusLeft, top + Dip(34), Math.Max(1, statusRight - statusLeft), Dip(24)),
                 bitmap.Size);
-            var muteEdgeRatio = CountVisualEdges(bitmap, muteBox) / (double)Math.Max(1, muteBox.Width * muteBox.Height);
-            var muted = muteEdgeRatio >= 0.045;
-            var mutedConfidence = muted
-                ? Math.Clamp((muteEdgeRatio - 0.025) / 0.075, 0.5, 1)
-                : Math.Clamp((0.045 - muteEdgeRatio) / 0.045, 0.3, 0.9);
+            var muteShape = AnalyzeMuteIconShape(bitmap, muteBox, scale);
+            var muted = muteShape.IsMatch;
+            var mutedConfidence = muteShape.Confidence;
 
             rows.Add(new ConversationRowAnalysis
             {
@@ -517,7 +810,11 @@ public static class YanziWeChatCapabilityProvider
                 UnreadRedRatio = unreadRedRatio,
                 Muted = muted,
                 MutedConfidence = mutedConfidence,
-                MuteEdgeRatio = muteEdgeRatio,
+                MuteShapeScore = muteShape.Score,
+                MuteLargestComponent = muteShape.LargestPixels,
+                MuteComponentWidth = muteShape.Width,
+                MuteComponentHeight = muteShape.Height,
+                MuteComponentCount = muteShape.Components,
                 Selected = selected,
                 SelectedConfidence = selectedConfidence,
                 BackgroundR = background.R,
@@ -583,13 +880,17 @@ public static class YanziWeChatCapabilityProvider
             evidence = new
             {
                 unreadRedRatio = Math.Round(row.UnreadRedRatio, 4),
-                muteEdgeRatio = Math.Round(row.MuteEdgeRatio, 4),
+                muteShapeScore = Math.Round(row.MuteShapeScore, 4),
+                muteLargestComponent = row.MuteLargestComponent,
+                muteComponentWidth = row.MuteComponentWidth,
+                muteComponentHeight = row.MuteComponentHeight,
+                muteComponentCount = row.MuteComponentCount,
                 background = new { r = row.BackgroundR, g = row.BackgroundG, b = row.BackgroundB },
                 backgroundDistance = row.BackgroundDistance,
                 methods = new
                 {
                     unread = "avatar_badge_red_pixels",
-                    muted = "fixed_status_slot_visual_edges",
+                    muted = "mute_icon_connected_component_shape",
                     pinned = "top_prefix_background_style",
                     selected = "row_background_green_state"
                 }
@@ -688,6 +989,240 @@ public static class YanziWeChatCapabilityProvider
         return count;
     }
 
+    private static MuteShapeAnalysis AnalyzeMuteIconShape(Bitmap bitmap, Rectangle rect, double scale)
+    {
+        if (rect.Width <= 0 || rect.Height <= 0)
+            return new MuteShapeAnalysis(false, 0, 0, 0, 0, 0, 0.92);
+
+        var normalizedWidth = Math.Max(1, (int)Math.Round(rect.Width / Math.Max(0.5, scale)));
+        var normalizedHeight = Math.Max(1, (int)Math.Round(rect.Height / Math.Max(0.5, scale)));
+
+        var reds = new List<int>(rect.Width * rect.Height);
+        var greens = new List<int>(rect.Width * rect.Height);
+        var blues = new List<int>(rect.Width * rect.Height);
+        for (var y = rect.Top; y < rect.Bottom; y++)
+        {
+            for (var x = rect.Left; x < rect.Right; x++)
+            {
+                var color = bitmap.GetPixel(x, y);
+                reds.Add(color.R);
+                greens.Add(color.G);
+                blues.Add(color.B);
+            }
+        }
+
+        static int Median(List<int> values)
+        {
+            values.Sort();
+            return values.Count == 0 ? 0 : values[values.Count / 2];
+        }
+
+        var backgroundR = Median(reds);
+        var backgroundG = Median(greens);
+        var backgroundB = Median(blues);
+        var mask = new bool[normalizedHeight, normalizedWidth];
+
+        for (var ny = 0; ny < normalizedHeight; ny++)
+        {
+            var sourceY = rect.Top + Math.Clamp(
+                (int)Math.Round((ny + 0.5) * rect.Height / normalizedHeight - 0.5),
+                0,
+                rect.Height - 1);
+
+            for (var nx = 0; nx < normalizedWidth; nx++)
+            {
+                var sourceX = rect.Left + Math.Clamp(
+                    (int)Math.Round((nx + 0.5) * rect.Width / normalizedWidth - 0.5),
+                    0,
+                    rect.Width - 1);
+
+                var color = bitmap.GetPixel(sourceX, sourceY);
+                var delta = Math.Abs(color.R - backgroundR)
+                    + Math.Abs(color.G - backgroundG)
+                    + Math.Abs(color.B - backgroundB);
+                mask[ny, nx] = delta >= 45;
+            }
+        }
+
+        var seen = new bool[normalizedHeight, normalizedWidth];
+        var components = 0;
+        var largestPixels = 0;
+        var largestWidth = 0;
+        var largestHeight = 0;
+
+        for (var sy = 0; sy < normalizedHeight; sy++)
+        {
+            for (var sx = 0; sx < normalizedWidth; sx++)
+            {
+                if (!mask[sy, sx] || seen[sy, sx])
+                    continue;
+
+                components++;
+                var queue = new Queue<Point>();
+                queue.Enqueue(new Point(sx, sy));
+                seen[sy, sx] = true;
+
+                var pixels = 0;
+                var minX = sx;
+                var maxX = sx;
+                var minY = sy;
+                var maxY = sy;
+
+                while (queue.Count > 0)
+                {
+                    var point = queue.Dequeue();
+                    pixels++;
+                    minX = Math.Min(minX, point.X);
+                    maxX = Math.Max(maxX, point.X);
+                    minY = Math.Min(minY, point.Y);
+                    maxY = Math.Max(maxY, point.Y);
+
+                    for (var dy = -1; dy <= 1; dy++)
+                    {
+                        for (var dx = -1; dx <= 1; dx++)
+                        {
+                            if (dx == 0 && dy == 0)
+                                continue;
+
+                            var nx = point.X + dx;
+                            var ny = point.Y + dy;
+                            if (nx < 0 || nx >= normalizedWidth || ny < 0 || ny >= normalizedHeight)
+                                continue;
+                            if (!mask[ny, nx] || seen[ny, nx])
+                                continue;
+
+                            seen[ny, nx] = true;
+                            queue.Enqueue(new Point(nx, ny));
+                        }
+                    }
+                }
+
+                if (pixels > largestPixels)
+                {
+                    largestPixels = pixels;
+                    largestWidth = maxX - minX + 1;
+                    largestHeight = maxY - minY + 1;
+                }
+            }
+        }
+
+        var isMatch = largestPixels >= 28
+            && largestWidth is >= 9 and <= 15
+            && largestHeight is >= 5 and <= 15;
+
+        var pixelScore = Math.Clamp((largestPixels - 20) / 45d, 0, 1);
+        var widthScore = Math.Clamp(1d - Math.Abs(largestWidth - 11) / 8d, 0, 1);
+        var heightScore = Math.Clamp(1d - Math.Abs(largestHeight - 9) / 10d, 0, 1);
+        var score = 0.45 * pixelScore + 0.35 * widthScore + 0.20 * heightScore;
+        if (!isMatch)
+            score = Math.Min(score, 0.59);
+
+        var confidence = isMatch
+            ? Math.Clamp(0.72 + score * 0.28, 0.72, 1)
+            : Math.Clamp(0.55 + (1 - score) * 0.35, 0.55, 0.92);
+
+        return new MuteShapeAnalysis(
+            isMatch,
+            score,
+            largestPixels,
+            largestWidth,
+            largestHeight,
+            components,
+            confidence);
+    }
+
+    private static double ComputeMuteTemplateScore(Bitmap bitmap, Rectangle rect, double scale)
+    {
+        if (rect.Width <= 0 || rect.Height <= 0)
+            return 0;
+
+        var normalizedWidth = Math.Max(MuteIconTemplate[0].Length, (int)Math.Round(rect.Width / Math.Max(0.5, scale)));
+        var normalizedHeight = Math.Max(MuteIconTemplate.Length, (int)Math.Round(rect.Height / Math.Max(0.5, scale)));
+
+        var reds = new List<int>(rect.Width * rect.Height);
+        var greens = new List<int>(rect.Width * rect.Height);
+        var blues = new List<int>(rect.Width * rect.Height);
+        for (var y = rect.Top; y < rect.Bottom; y++)
+        {
+            for (var x = rect.Left; x < rect.Right; x++)
+            {
+                var color = bitmap.GetPixel(x, y);
+                reds.Add(color.R);
+                greens.Add(color.G);
+                blues.Add(color.B);
+            }
+        }
+
+        static int Median(List<int> values)
+        {
+            values.Sort();
+            return values.Count == 0 ? 0 : values[values.Count / 2];
+        }
+
+        var backgroundR = Median(reds);
+        var backgroundG = Median(greens);
+        var backgroundB = Median(blues);
+        var mask = new bool[normalizedHeight, normalizedWidth];
+
+        for (var ny = 0; ny < normalizedHeight; ny++)
+        {
+            var sourceY = rect.Top + Math.Clamp(
+                (int)Math.Round((ny + 0.5) * rect.Height / normalizedHeight - 0.5),
+                0,
+                rect.Height - 1);
+
+            for (var nx = 0; nx < normalizedWidth; nx++)
+            {
+                var sourceX = rect.Left + Math.Clamp(
+                    (int)Math.Round((nx + 0.5) * rect.Width / normalizedWidth - 0.5),
+                    0,
+                    rect.Width - 1);
+
+                var color = bitmap.GetPixel(sourceX, sourceY);
+                var delta = Math.Abs(color.R - backgroundR)
+                    + Math.Abs(color.G - backgroundG)
+                    + Math.Abs(color.B - backgroundB);
+                mask[ny, nx] = delta >= 45;
+            }
+        }
+
+        var templateHeight = MuteIconTemplate.Length;
+        var templateWidth = MuteIconTemplate[0].Length;
+        var templatePixels = MuteIconTemplate.Sum(row => row.Count(ch => ch == '#'));
+        var best = 0d;
+
+        for (var offsetY = 0; offsetY <= normalizedHeight - templateHeight; offsetY++)
+        {
+            for (var offsetX = 0; offsetX <= normalizedWidth - templateWidth; offsetX++)
+            {
+                var intersection = 0;
+                var candidatePixels = 0;
+
+                for (var y = 0; y < templateHeight; y++)
+                {
+                    for (var x = 0; x < templateWidth; x++)
+                    {
+                        var candidate = mask[offsetY + y, offsetX + x];
+                        if (candidate)
+                            candidatePixels++;
+
+                        if (candidate && MuteIconTemplate[y][x] == '#')
+                            intersection++;
+                    }
+                }
+
+                if (candidatePixels == 0)
+                    continue;
+
+                var score = 2d * intersection / (templatePixels + candidatePixels);
+                if (score > best)
+                    best = score;
+            }
+        }
+
+        return best;
+    }
+
     private static int CountVisualEdges(Bitmap bitmap, Rectangle rect)
     {
         var count = 0;
@@ -754,6 +1289,26 @@ public static class YanziWeChatCapabilityProvider
             ? property.GetString()
             : null;
 
+    private sealed record MuteShapeAnalysis(
+        bool IsMatch,
+        double Score,
+        int LargestPixels,
+        int Width,
+        int Height,
+        int Components,
+        double Confidence);
+
+    private sealed record VisualObject(
+        string Id,
+        string Kind,
+        string Label,
+        string RegionId,
+        Rectangle Bounds)
+    {
+        public bool Contains(double x, double y)
+            => x >= Bounds.Left && x < Bounds.Right && y >= Bounds.Top && y < Bounds.Bottom;
+    }
+
     private sealed record OcrLineInfo(string Text, double X, double Y, double Width, double Height);
 
     private sealed class ConversationRowAnalysis
@@ -772,7 +1327,11 @@ public static class YanziWeChatCapabilityProvider
         public double UnreadRedRatio { get; init; }
         public bool Muted { get; init; }
         public double MutedConfidence { get; init; }
-        public double MuteEdgeRatio { get; init; }
+        public double MuteShapeScore { get; init; }
+        public int MuteLargestComponent { get; init; }
+        public int MuteComponentWidth { get; init; }
+        public int MuteComponentHeight { get; init; }
+        public int MuteComponentCount { get; init; }
         public bool Selected { get; init; }
         public double SelectedConfidence { get; init; }
         public bool Pinned { get; set; }
