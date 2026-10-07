@@ -369,6 +369,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (_syncOptions.IsConfigured)
         {
             _cloudSyncClient = new CloudSyncClient(_syncOptions, _accountObjectSyncLock);
+            AccountEnvironmentSecretVault.Attach(_cloudSyncClient);
         }
 
         _backgroundWebDavSyncTimer = new DispatcherTimer

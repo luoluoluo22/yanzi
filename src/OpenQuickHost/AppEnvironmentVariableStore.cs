@@ -1,6 +1,7 @@
 using System.IO;
 using System.Security.Cryptography;
 using System.Text.Json;
+using OpenQuickHost.Sync;
 
 namespace OpenQuickHost;
 
@@ -47,9 +48,18 @@ public static class AppEnvironmentVariableStore
 
     public static void Save(IEnumerable<AppEnvironmentVariableSettings> variables)
     {
+        var previous = SnapshotSecretValuesForVault();
+        var materialized = variables.ToArray();
         var settings = AppSettingsStore.Load();
-        settings.EnvironmentVariables = PrepareSyncedValues(variables);
+        settings.EnvironmentVariables = PrepareSyncedValues(materialized);
         AppSettingsStore.Save(settings);
+        var current = SnapshotSecretValuesForVault();
+        var changedNames = current
+            .Where(pair => !previous.TryGetValue(pair.Key, out var oldValue) || !string.Equals(oldValue, pair.Value, StringComparison.Ordinal))
+            .Select(static pair => pair.Key)
+            .ToArray();
+        var deletedNames = previous.Keys.Except(current.Keys, StringComparer.OrdinalIgnoreCase).ToArray();
+        AccountEnvironmentSecretVault.QueueUploadFromLocal(changedNames, deletedNames);
     }
 
     /// <summary>
@@ -89,7 +99,8 @@ public static class AppEnvironmentVariableStore
 
     /// <summary>
     /// Applies synchronized names/descriptions while retaining protected values already
-    /// present on this device. Secret values are intentionally not cloud-synchronized.
+    /// present on this device. Secret values are synchronized separately through the
+    /// account E2EE secret vault and never written to settings.json.
     /// </summary>
     public static List<AppEnvironmentVariableSettings> PrepareSyncedMetadata(IEnumerable<AppEnvironmentVariableSettings> variables)
     {
@@ -153,6 +164,44 @@ public static class AppEnvironmentVariableStore
         return !string.IsNullOrWhiteSpace(normalized) &&
                !normalized.Contains('=') &&
                !ReservedNames.Contains(normalized);
+    }
+
+    internal static Dictionary<string, string> SnapshotSecretValuesForVault()
+    {
+        return LoadSecretValues()
+            .Where(static pair => IsValidEnvironmentName(pair.Key))
+            .ToDictionary(static pair => NormalizeName(pair.Key), static pair => pair.Value ?? string.Empty, StringComparer.OrdinalIgnoreCase);
+    }
+
+    internal static void ApplySecretValuesFromVault(IReadOnlyDictionary<string, string> values)
+    {
+        var sanitized = values
+            .Where(static pair => IsValidEnvironmentName(pair.Key))
+            .ToDictionary(static pair => NormalizeName(pair.Key), static pair => pair.Value ?? string.Empty, StringComparer.OrdinalIgnoreCase);
+        SaveSecretValues(sanitized);
+
+        var settings = AppSettingsStore.Load();
+        var metadata = settings.EnvironmentVariables
+            .Where(static item => IsValidEnvironmentName(item.Name))
+            .GroupBy(static item => NormalizeName(item.Name), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(static group => group.Key, static group => group.Last(), StringComparer.OrdinalIgnoreCase);
+        foreach (var name in sanitized.Keys)
+        {
+            if (!metadata.ContainsKey(name))
+            {
+                metadata[name] = new AppEnvironmentVariableSettings { Name = name, Value = string.Empty };
+            }
+        }
+        settings.EnvironmentVariables = metadata.Values
+            .OrderBy(static item => item.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(static item => new AppEnvironmentVariableSettings
+            {
+                Name = NormalizeName(item.Name),
+                Value = string.Empty,
+                Description = item.Description ?? string.Empty
+            })
+            .ToList();
+        AppSettingsStore.Save(settings);
     }
 
     private static Dictionary<string, string> LoadSecretValues()
