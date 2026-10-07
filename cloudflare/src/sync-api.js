@@ -1,6 +1,6 @@
 // Domain implementation; dependencies are supplied by the composition root.
 export function createSyncApi(api) {
-  const { HttpError, ensureUser, getUserWebDavConfig, getYanmStateViewUrl, handleAttachments, isoNow, json, normalizeOptionalIsoDate, normalizeSyncObjectId, normalizeSyncRevision, normalizeYanmComponentStatePatch, notifyDeviceRelay, patchYanmComponentStateForUser, readJson, readUserSyncObject, readUserSyncObjectHistory, readUserSyncObjects, readYanmStateForUser, requireAuth, writeUserSyncObject, writeYanmStateForUser } = api;
+  const { HttpError, ensureUser, getUserWebDavConfig, getYanmStateViewUrl, handleAttachments, hmacSha256, isoNow, json, normalizeOptionalIsoDate, normalizeSyncObjectId, normalizeSyncRevision, normalizeYanmComponentStatePatch, notifyDeviceRelay, patchYanmComponentStateForUser, readJson, readUserSyncObject, readUserSyncObjectHistory, readUserSyncObjects, readYanmStateForUser, requireAuth, writeUserSyncObject, writeYanmStateForUser } = api;
 async function handleSyncApi(request, env, ctx) {
   const url = new URL(request.url);
   if (url.pathname === "/v1/sync/capabilities" && request.method === "GET") {
@@ -24,6 +24,16 @@ async function handleSyncApi(request, env, ctx) {
       legacySnapshotWriteRequired: !objectsAuthoritative,
       maxObjectPayloadBytes: 1024 * 1024
     });
+  }
+
+  if (url.pathname === "/v1/sync/vault-key" && request.method === "GET") {
+    const auth = await requireAuth(request, env);
+    const recoverySecret = String(env.VAULT_RECOVERY_SECRET || env.AUTH_TOKEN_SECRET || "").trim();
+    if (!recoverySecret) throw new HttpError(503, "vault_recovery_unavailable", "Secret vault recovery is unavailable");
+    const key = await hmacSha256(recoverySecret, `yanzi-secret-vault-recovery-v1:${auth.userId}`);
+    const response = json({ ok: true, version: 1, key });
+    response.headers.set("cache-control", "no-store");
+    return response;
   }
 
   if (url.pathname === "/v1/sync/objects" && request.method === "GET") {
@@ -105,7 +115,7 @@ async function handleSyncApi(request, env, ctx) {
     const objectId = normalizeSyncObjectId(decodeURIComponent(syncObjectMatch[1]));
     const payload = await readJson(request);
     const result = await writeUserSyncObject(env, auth.userId, objectId, payload);
-    ctx.waitUntil(notifyDeviceRelay(env, auth.userId, {type:'sync-ready', userId:auth.userId, revision:result.revision, updatedByDeviceId:payload.updatedByDeviceId || null}));
+    ctx.waitUntil(notifyDeviceRelay(env, auth.userId, {type:'sync-ready', userId:auth.userId, revision:result.revision, objectId, updatedByDeviceId:payload.updatedByDeviceId || null}));
     return json({ ok: true, userId: auth.userId, object: result });
   }
 

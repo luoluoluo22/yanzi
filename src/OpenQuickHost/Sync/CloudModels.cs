@@ -422,6 +422,15 @@ public sealed class CloudSyncObjectListResponse
     public IReadOnlyList<CloudSyncObjectRecord> Objects { get; init; } = [];
 }
 
+public sealed class SecretVaultKeyResponse
+{
+    public bool Ok { get; init; }
+
+    public int Version { get; init; }
+
+    public string Key { get; init; } = string.Empty;
+}
+
 public sealed class CloudSyncCapabilitiesResponse
 {
     public bool Ok { get; init; }

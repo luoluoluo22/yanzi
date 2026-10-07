@@ -23,6 +23,10 @@ public sealed partial class CloudSyncClient
     private DateTimeOffset _transportRetryAfterUtc;
     public AccountSyncCoordinator AccountCoordinator { get; }
     private readonly SemaphoreSlim _authenticationLock = new(1, 1);
+    private readonly object _secretVaultRecoveryKeyLock = new();
+    private byte[]? _secretVaultRecoveryKey;
+    private string? _secretVaultRecoveryKeyAccount;
+    private DateTimeOffset _secretVaultRecoveryKeyExpiresAtUtc;
 
     public byte[]? E2eeMasterKey { get; private set; }
 
@@ -61,6 +65,7 @@ public sealed partial class CloudSyncClient
             var session = SyncSessionStore.Load();
             var credential = SecureCredentialStore.Load();
             var accountChanged = session?.UserId != _session?.UserId;
+            if (accountChanged) ClearSecretVaultRecoveryKey();
             if (accountChanged || session?.AccessToken != _session?.AccessToken)
                 AccountCoordinator.Invalidate();
             _session = session;
@@ -232,6 +237,7 @@ public sealed partial class CloudSyncClient
         await EnsureSuccessAsync(response, cancellationToken);
         var session = await ReadSessionAsync(response, cancellationToken);
         AccountCoordinator.Commit(generation, () => { _session = session; SyncSessionStore.Save(session); });
+        await AccountEnvironmentSecretVault.RestoreAfterAuthenticationAsync(this, cancellationToken);
         CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Register completed", ("userId", session.UserId), ("username", session.Username));
         return session;
     }
@@ -266,6 +272,7 @@ public sealed partial class CloudSyncClient
         await EnsureSuccessAsync(response, cancellationToken);
         var session = await ReadSessionAsync(response, cancellationToken);
         AccountCoordinator.Commit(generation, () => { _session = session; SyncSessionStore.Save(session); });
+        await AccountEnvironmentSecretVault.RestoreAfterAuthenticationAsync(this, cancellationToken);
         CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Login completed", ("userId", session.UserId), ("username", session.Username));
         return session;
     }
@@ -296,6 +303,7 @@ public sealed partial class CloudSyncClient
             throw new InvalidOperationException("验证码不能为空。");
         }
 
+        var previousMasterKey = E2eeMasterKey?.ToArray();
         var normalizedPassword = password.Trim();
         var normalizedCode = code.Trim();
 
@@ -316,6 +324,8 @@ public sealed partial class CloudSyncClient
         await EnsureSuccessAsync(response, cancellationToken);
         var session = await ReadSessionAsync(response, cancellationToken);
         AccountCoordinator.Commit(generation, () => { _session = session; SyncSessionStore.Save(session); });
+        await AccountEnvironmentSecretVault.RewrapAfterPasswordChangeAsync(this, previousMasterKey, keys.MasterKey, cancellationToken);
+        await AccountEnvironmentSecretVault.RestoreAfterAuthenticationAsync(this, cancellationToken);
         CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Reset password completed", ("userId", session.UserId), ("username", session.Username));
         return session;
     }
@@ -617,6 +627,38 @@ public sealed partial class CloudSyncClient
             includeAuth: true);
         using var response = await SendAsyncWithFallback(request, cancellationToken);
         response.EnsureSuccessStatusCode();
+    }
+
+    internal async Task<byte[]> GetSecretVaultRecoveryKeyAsync(CancellationToken cancellationToken = default)
+    {
+        await EnsureAuthenticatedAsync(cancellationToken);
+        var accountId = CurrentUserId ?? throw new InvalidOperationException("当前账号未登录。");
+        lock (_secretVaultRecoveryKeyLock)
+        {
+            if (string.Equals(_secretVaultRecoveryKeyAccount, accountId, StringComparison.Ordinal) &&
+                _secretVaultRecoveryKey is { Length: 32 } cached &&
+                _secretVaultRecoveryKeyExpiresAtUtc > DateTimeOffset.UtcNow)
+                return cached.ToArray();
+        }
+
+        using var request = CreateRequest(HttpMethod.Get, "/v1/sync/vault-key", includeAuth: true);
+        using var response = await SendAsyncWithFallback(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        var payload = await ReadAsync<SecretVaultKeyResponse>(response, cancellationToken)
+            ?? throw new InvalidDataException("云端未返回凭证库恢复密钥。");
+        if (!payload.Ok || payload.Version != 1 || string.IsNullOrWhiteSpace(payload.Key))
+            throw new InvalidDataException("云端凭证库恢复密钥无效。");
+        var normalized = payload.Key.Replace('-', '+').Replace('_', '/');
+        normalized = normalized.PadRight(normalized.Length + ((4 - normalized.Length % 4) % 4), '=');
+        var key = Convert.FromBase64String(normalized);
+        if (key.Length != 32) throw new InvalidDataException("云端凭证库恢复密钥长度无效。");
+        lock (_secretVaultRecoveryKeyLock)
+        {
+            _secretVaultRecoveryKeyAccount = accountId;
+            _secretVaultRecoveryKey = key.ToArray();
+            _secretVaultRecoveryKeyExpiresAtUtc = DateTimeOffset.UtcNow.AddMinutes(30);
+        }
+        return key;
     }
 
     public async Task<CloudSyncObjectListResponse> GetSyncObjectsAsync(CancellationToken cancellationToken = default)
@@ -1270,7 +1312,20 @@ public sealed partial class CloudSyncClient
 
     private void ClearSession()
     {
+        ClearSecretVaultRecoveryKey();
         AccountCoordinator.Invalidate(() => { _session = null; SyncSessionStore.Clear(); });
+    }
+
+    private void ClearSecretVaultRecoveryKey()
+    {
+        lock (_secretVaultRecoveryKeyLock)
+        {
+            if (_secretVaultRecoveryKey != null)
+                System.Security.Cryptography.CryptographicOperations.ZeroMemory(_secretVaultRecoveryKey);
+            _secretVaultRecoveryKey = null;
+            _secretVaultRecoveryKeyAccount = null;
+            _secretVaultRecoveryKeyExpiresAtUtc = default;
+        }
     }
 
     private static object BuildManifestPayload(CommandItem command, string? iconOverride = null)

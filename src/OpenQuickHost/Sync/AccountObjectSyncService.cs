@@ -15,6 +15,10 @@ internal sealed class AccountObjectSyncService(IAccountObjectRepository<CloudSyn
         }
 
         var generation = _coordinator.Generation;
+        state.Objects.Remove(AccountEnvironmentSecretVault.ObjectId);
+        state.PendingOperations.Remove(AccountEnvironmentSecretVault.ObjectId);
+        state.PendingObjectIds.Remove(AccountEnvironmentSecretVault.ObjectId);
+        state.Conflicts.Remove(AccountEnvironmentSecretVault.ObjectId);
         // Older clients advanced the download cursor after PUT, potentially skipping other devices' edits.
         var cursor = state.DownloadCursorValidated ? state.LastSyncedRevision : 0;
         var replaceSnapshot = cursor == 0 || state.Objects.Count == 0;
@@ -42,6 +46,7 @@ internal sealed class AccountObjectSyncService(IAccountObjectRepository<CloudSyn
                 replaceSnapshot = false;
                 foreach (var item in page.Objects)
                 {
+                    if (AccountEnvironmentSecretVault.IsManagedObjectId(item.ObjectId)) continue;
                     if (!state.Objects.TryGetValue(item.ObjectId, out var known) || item.Revision >= known.Revision)
                         state.Objects[item.ObjectId] = CloudObjectSyncCacheEntry.FromRecord(item);
                 }
