@@ -788,7 +788,7 @@ public static class YanziWeChatCapabilityProvider
                 : Math.Clamp((0.045 - unreadRedRatio) / 0.045, 0.35, 0.9);
 
             var muteBox = ClampRect(
-                new Rectangle(statusLeft, top + Dip(34), Math.Max(1, statusRight - statusLeft), Dip(24)),
+                new Rectangle(statusLeft, top + Dip(27), Math.Max(1, statusRight - statusLeft), Dip(32)),
                 bitmap.Size);
             var muteShape = AnalyzeMuteIconShape(bitmap, muteBox, scale);
             var muted = muteShape.IsMatch;
