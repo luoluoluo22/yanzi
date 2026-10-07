@@ -4,6 +4,7 @@ using System.Drawing.Imaging;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Forms = System.Windows.Forms;
 
 namespace OpenQuickHost;
@@ -177,9 +178,11 @@ public static class YanziWeChatCapabilityProvider
                     if (!string.IsNullOrWhiteSpace(text) && grouped.TryGetValue(region.Id, out var texts))
                         texts.Add(text);
 
+                    var role = ClassifyOcrRole(region, text, x, y, width, height, scale);
                     mappedLines.Add(new
                     {
                         text,
+                        role,
                         regionId = region.Id,
                         regionLabel = region.Label,
                         box = new { x, y, width, height },
@@ -204,6 +207,11 @@ public static class YanziWeChatCapabilityProvider
                 lineCount = grouped.TryGetValue(region.Id, out var items) ? items.Count : 0
             }).ToArray();
 
+            var conversationRegion = regions.First(region => string.Equals(region.Id, "conversationList", StringComparison.Ordinal));
+            using var visualBitmap = new Bitmap(capturePath);
+            var ocrInfos = ExtractOcrLines(ocr);
+            var conversations = BuildConversationRows(visualBitmap, conversationRegion, ocrInfos, scale);
+
             return new
             {
                 state = "main",
@@ -220,8 +228,9 @@ public static class YanziWeChatCapabilityProvider
                     scale = Math.Round(scale, 4)
                 },
                 capturePath,
-                layoutVersion = "weixin-win-v1",
+                layoutVersion = "weixin-win-v2",
                 regions = regionDtos,
+                conversations,
                 text = ocr.TryGetProperty("text", out var fullText) ? fullText.GetString() ?? string.Empty : string.Empty,
                 detectedCount = ocr.TryGetProperty("detectedCount", out var count) && count.TryGetInt32(out var detected) ? detected : mappedLines.Count,
                 elapsedMs = ocr.TryGetProperty("elapsedMs", out var elapsed) && elapsed.TryGetDouble(out var ms) ? ms : (double?)null,
@@ -308,6 +317,413 @@ public static class YanziWeChatCapabilityProvider
         return bitmap;
     }
 
+    private static string ClassifyOcrRole(
+        LayoutRegion region,
+        string text,
+        double x,
+        double y,
+        double width,
+        double height,
+        double scale)
+    {
+        if (!string.Equals(region.Id, "conversationList", StringComparison.Ordinal))
+            return "text";
+
+        int Dip(double value) => Math.Max(1, (int)Math.Round(value * scale));
+        var centerX = x + width / 2d;
+        var centerY = y + height / 2d;
+        var rowHeight = Dip(64);
+        var rowOffset = ((int)Math.Round(centerY) - region.Y) % rowHeight;
+        if (rowOffset < 0)
+            rowOffset += rowHeight;
+
+        if (centerX >= region.X + region.Width - Dip(45)
+            && rowOffset >= Dip(27)
+            && !LooksLikeConversationTime(text))
+        {
+            return "iconCandidate";
+        }
+
+        if (centerX < region.X + Dip(52))
+            return "avatarVisual";
+
+        if (rowOffset < Dip(31))
+            return LooksLikeConversationTime(text) || centerX >= region.X + region.Width - Dip(78)
+                ? "time"
+                : "title";
+
+        return "preview";
+    }
+
+    private static OcrLineInfo[] ExtractOcrLines(JsonElement ocr)
+    {
+        if (!ocr.TryGetProperty("lines", out var lines) || lines.ValueKind != JsonValueKind.Array)
+            return [];
+
+        var result = new List<OcrLineInfo>();
+        foreach (var line in lines.EnumerateArray())
+        {
+            if (!TryReadOcrBox(line, out var x, out var y, out var width, out var height))
+                continue;
+
+            result.Add(new OcrLineInfo(
+                ReadJsonString(line, "text") ?? string.Empty,
+                x,
+                y,
+                width,
+                height));
+        }
+
+        return result.ToArray();
+    }
+
+    private static object[] BuildConversationRows(
+        Bitmap bitmap,
+        LayoutRegion region,
+        IReadOnlyList<OcrLineInfo> allLines,
+        double scale)
+    {
+        int Dip(double value) => Math.Max(1, (int)Math.Round(value * scale));
+        var rowHeight = Dip(64);
+        var textLeft = region.X + Dip(55);
+        var statusLeft = region.X + region.Width - Dip(29);
+        var statusRight = region.X + region.Width - Dip(7);
+        var unreadLeft = region.X + Dip(36);
+        var unreadRight = region.X + Dip(60);
+        var rows = new List<ConversationRowAnalysis>();
+
+        var maxRows = (int)Math.Ceiling(region.Height / (double)rowHeight);
+        for (var index = 0; index < maxRows; index++)
+        {
+            var top = region.Y + index * rowHeight;
+            if (top >= region.Y + region.Height || top >= bitmap.Height)
+                break;
+
+            var bottom = Math.Min(region.Y + region.Height, Math.Min(bitmap.Height, top + rowHeight));
+            var height = bottom - top;
+            if (height < Dip(24))
+                continue;
+
+            var rowLines = allLines
+                .Where(line =>
+                {
+                    var centerX = line.X + line.Width / 2d;
+                    var centerY = line.Y + line.Height / 2d;
+                    return centerX >= region.X
+                        && centerX < region.X + region.Width
+                        && centerY >= top
+                        && centerY < bottom;
+                })
+                .OrderBy(line => line.Y)
+                .ThenBy(line => line.X)
+                .ToArray();
+
+            if (rowLines.Length == 0)
+                continue;
+
+            var upper = rowLines
+                .Where(line => line.X >= textLeft - Dip(3) && line.Y + line.Height / 2d < top + Dip(31))
+                .ToArray();
+            var lower = rowLines
+                .Where(line =>
+                    line.X >= textLeft - Dip(3)
+                    && line.Y + line.Height / 2d >= top + Dip(24)
+                    && line.X < statusLeft + Dip(2))
+                .ToArray();
+
+            var time = string.Empty;
+            var titleParts = new List<string>();
+            foreach (var line in upper)
+            {
+                var text = line.Text.Trim();
+                if (string.IsNullOrWhiteSpace(text))
+                    continue;
+
+                var split = SplitTrailingConversationTime(text);
+                if (!string.IsNullOrWhiteSpace(split.Time))
+                {
+                    if (string.IsNullOrWhiteSpace(time))
+                        time = split.Time;
+                    if (!string.IsNullOrWhiteSpace(split.Remaining))
+                        titleParts.Add(split.Remaining);
+                    continue;
+                }
+
+                if (LooksLikeConversationTime(text) || line.X >= region.X + region.Width - Dip(78))
+                {
+                    if (string.IsNullOrWhiteSpace(time))
+                        time = text;
+                    continue;
+                }
+
+                titleParts.Add(text);
+            }
+
+            var title = string.Join(" ", titleParts).Trim();
+            var previewParts = lower
+                .Select(line => line.Text.Trim())
+                .Where(text => !string.IsNullOrWhiteSpace(text))
+                .Where(text => !LooksLikeIconOcrNoise(text))
+                .ToArray();
+            var preview = string.Join(" ", previewParts).Trim();
+
+            if (string.IsNullOrWhiteSpace(title) && string.IsNullOrWhiteSpace(preview))
+                continue;
+
+            var backgroundRect = ClampRect(
+                new Rectangle(region.X + Dip(1), top + Dip(6), Dip(8), Math.Max(1, height - Dip(12))),
+                bitmap.Size);
+            var background = SampleAverageColor(bitmap, backgroundRect);
+
+            var selected = background.G - background.R >= 48
+                && background.G - background.B >= 28
+                && background.G >= 90;
+            var selectedConfidence = selected
+                ? Math.Clamp((background.G - Math.Max(background.R, background.B)) / 95d, 0.55, 1)
+                : Math.Clamp((30d - Math.Max(0, background.G - Math.Max(background.R, background.B))) / 30d, 0.25, 0.85);
+
+            var unreadBox = ClampRect(
+                new Rectangle(unreadLeft, top + Dip(1), Math.Max(1, unreadRight - unreadLeft), Dip(24)),
+                bitmap.Size);
+            var unreadRedRatio = CountWechatRedPixels(bitmap, unreadBox) / (double)Math.Max(1, unreadBox.Width * unreadBox.Height);
+            var unread = unreadRedRatio >= 0.045;
+            var unreadCount = ParseUnreadCount(preview);
+            var unreadConfidence = unread
+                ? Math.Clamp((unreadRedRatio - 0.025) / 0.09, 0.55, 1)
+                : Math.Clamp((0.045 - unreadRedRatio) / 0.045, 0.35, 0.9);
+
+            var muteBox = ClampRect(
+                new Rectangle(statusLeft, top + Dip(34), Math.Max(1, statusRight - statusLeft), Dip(24)),
+                bitmap.Size);
+            var muteEdgeRatio = CountVisualEdges(bitmap, muteBox) / (double)Math.Max(1, muteBox.Width * muteBox.Height);
+            var muted = muteEdgeRatio >= 0.045;
+            var mutedConfidence = muted
+                ? Math.Clamp((muteEdgeRatio - 0.025) / 0.075, 0.5, 1)
+                : Math.Clamp((0.045 - muteEdgeRatio) / 0.045, 0.3, 0.9);
+
+            rows.Add(new ConversationRowAnalysis
+            {
+                Index = index,
+                X = region.X,
+                Y = top,
+                Width = region.Width,
+                Height = height,
+                Title = title,
+                Preview = preview,
+                Time = time,
+                Unread = unread,
+                UnreadCount = unreadCount,
+                UnreadConfidence = unreadConfidence,
+                UnreadRedRatio = unreadRedRatio,
+                Muted = muted,
+                MutedConfidence = mutedConfidence,
+                MuteEdgeRatio = muteEdgeRatio,
+                Selected = selected,
+                SelectedConfidence = selectedConfidence,
+                BackgroundR = background.R,
+                BackgroundG = background.G,
+                BackgroundB = background.B,
+                UnreadBox = unreadBox,
+                MuteBox = muteBox
+            });
+        }
+
+        if (rows.Count == 0)
+            return [];
+
+        var baseline = MedianColor(rows
+            .Where(row => !row.Selected)
+            .Select(row => (row.BackgroundR, row.BackgroundG, row.BackgroundB))
+            .ToArray());
+
+        var pinPrefixActive = true;
+        foreach (var row in rows)
+        {
+            var distance = Math.Abs(row.BackgroundR - baseline.R)
+                + Math.Abs(row.BackgroundG - baseline.G)
+                + Math.Abs(row.BackgroundB - baseline.B);
+            row.BackgroundDistance = distance;
+
+            var neutralBackground = Math.Max(row.BackgroundR, Math.Max(row.BackgroundG, row.BackgroundB))
+                - Math.Min(row.BackgroundR, Math.Min(row.BackgroundG, row.BackgroundB)) <= 28;
+            var pinStyle = !row.Selected && neutralBackground && distance >= 24;
+
+            if (!pinPrefixActive || !pinStyle)
+            {
+                row.Pinned = false;
+                row.PinnedConfidence = pinStyle ? 0.35 : 0.75;
+                pinPrefixActive = false;
+            }
+            else
+            {
+                row.Pinned = true;
+                row.PinnedConfidence = Math.Clamp((distance - 16) / 42d, 0.5, 0.95);
+            }
+        }
+
+        return rows.Select(row => (object)new
+        {
+            index = row.Index,
+            bounds = new { x = row.X, y = row.Y, width = row.Width, height = row.Height },
+            title = row.Title,
+            preview = row.Preview,
+            time = row.Time,
+            unread = row.Unread,
+            unreadCount = row.UnreadCount,
+            muted = row.Muted,
+            pinned = row.Pinned,
+            selected = row.Selected,
+            confidence = new
+            {
+                unread = Math.Round(row.UnreadConfidence, 3),
+                muted = Math.Round(row.MutedConfidence, 3),
+                pinned = Math.Round(row.PinnedConfidence, 3),
+                selected = Math.Round(row.SelectedConfidence, 3)
+            },
+            evidence = new
+            {
+                unreadRedRatio = Math.Round(row.UnreadRedRatio, 4),
+                muteEdgeRatio = Math.Round(row.MuteEdgeRatio, 4),
+                background = new { r = row.BackgroundR, g = row.BackgroundG, b = row.BackgroundB },
+                backgroundDistance = row.BackgroundDistance,
+                methods = new
+                {
+                    unread = "avatar_badge_red_pixels",
+                    muted = "fixed_status_slot_visual_edges",
+                    pinned = "top_prefix_background_style",
+                    selected = "row_background_green_state"
+                }
+            },
+            slots = new
+            {
+                unread = new { x = row.UnreadBox.X, y = row.UnreadBox.Y, width = row.UnreadBox.Width, height = row.UnreadBox.Height },
+                muted = new { x = row.MuteBox.X, y = row.MuteBox.Y, width = row.MuteBox.Width, height = row.MuteBox.Height }
+            }
+        }).ToArray();
+    }
+
+    private static (string Remaining, string Time) SplitTrailingConversationTime(string text)
+    {
+        var match = Regex.Match(
+            text,
+            @"^(?<body>.*?)(?<time>(?:昨天\s*)?\d{1,2}:\d{2}|星期[一二三四五六日天]|周[一二三四五六日天]|\d{1,2}/\d{1,2})$",
+            RegexOptions.CultureInvariant);
+        if (!match.Success)
+            return (text, string.Empty);
+
+        return (match.Groups["body"].Value.Trim(), match.Groups["time"].Value.Trim());
+    }
+
+    private static bool LooksLikeConversationTime(string text)
+        => Regex.IsMatch(
+            text.Trim(),
+            @"^(?:(?:昨天\s*)?\d{1,2}:\d{2}|星期[一二三四五六日天]|周[一二三四五六日天]|\d{1,2}/\d{1,2})$",
+            RegexOptions.CultureInvariant);
+
+    private static bool LooksLikeIconOcrNoise(string text)
+    {
+        var trimmed = text.Trim();
+        if (trimmed.Length == 0 || trimmed.Length > 4)
+            return false;
+        if (LooksLikeConversationTime(trimmed))
+            return false;
+        if (Regex.IsMatch(trimmed, @"^[\p{IsCJKUnifiedIdeographs}A-Za-z0-9]+$", RegexOptions.CultureInvariant))
+            return false;
+        return true;
+    }
+
+    private static int? ParseUnreadCount(string preview)
+    {
+        var match = Regex.Match(preview, @"^\[(?<count>\d+)条\]", RegexOptions.CultureInvariant);
+        return match.Success && int.TryParse(match.Groups["count"].Value, out var count) ? count : null;
+    }
+
+    private static Rectangle ClampRect(Rectangle rect, Size bounds)
+    {
+        var left = Math.Clamp(rect.Left, 0, Math.Max(0, bounds.Width - 1));
+        var top = Math.Clamp(rect.Top, 0, Math.Max(0, bounds.Height - 1));
+        var right = Math.Clamp(rect.Right, left + 1, bounds.Width);
+        var bottom = Math.Clamp(rect.Bottom, top + 1, bounds.Height);
+        return Rectangle.FromLTRB(left, top, right, bottom);
+    }
+
+    private static (int R, int G, int B) SampleAverageColor(Bitmap bitmap, Rectangle rect)
+    {
+        long r = 0, g = 0, b = 0, count = 0;
+        for (var y = rect.Top; y < rect.Bottom; y++)
+        {
+            for (var x = rect.Left; x < rect.Right; x++)
+            {
+                var color = bitmap.GetPixel(x, y);
+                r += color.R;
+                g += color.G;
+                b += color.B;
+                count++;
+            }
+        }
+
+        if (count == 0)
+            return (0, 0, 0);
+        return ((int)(r / count), (int)(g / count), (int)(b / count));
+    }
+
+    private static int CountWechatRedPixels(Bitmap bitmap, Rectangle rect)
+    {
+        var count = 0;
+        for (var y = rect.Top; y < rect.Bottom; y++)
+        {
+            for (var x = rect.Left; x < rect.Right; x++)
+            {
+                var color = bitmap.GetPixel(x, y);
+                if (color.R >= 175
+                    && color.G <= 115
+                    && color.B <= 115
+                    && color.R - color.G >= 75
+                    && color.R - color.B >= 75)
+                {
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
+
+    private static int CountVisualEdges(Bitmap bitmap, Rectangle rect)
+    {
+        var count = 0;
+        for (var y = rect.Top; y < rect.Bottom; y++)
+        {
+            for (var x = rect.Left; x < rect.Right - 1; x++)
+            {
+                var first = bitmap.GetPixel(x, y);
+                var second = bitmap.GetPixel(x + 1, y);
+                var delta = Math.Abs(first.R - second.R)
+                    + Math.Abs(first.G - second.G)
+                    + Math.Abs(first.B - second.B);
+                if (delta >= 45)
+                    count++;
+            }
+        }
+        return count;
+    }
+
+    private static (int R, int G, int B) MedianColor((int R, int G, int B)[] colors)
+    {
+        if (colors.Length == 0)
+            return (0, 0, 0);
+
+        static int Median(int[] values)
+        {
+            Array.Sort(values);
+            return values[values.Length / 2];
+        }
+
+        return (
+            Median(colors.Select(color => color.R).ToArray()),
+            Median(colors.Select(color => color.G).ToArray()),
+            Median(colors.Select(color => color.B).ToArray()));
+    }
+
     private static bool TryReadOcrBox(JsonElement line, out double x, out double y, out double width, out double height)
     {
         x = y = width = height = 0;
@@ -337,6 +753,37 @@ public static class YanziWeChatCapabilityProvider
         => element.TryGetProperty(name, out var property) && property.ValueKind == JsonValueKind.String
             ? property.GetString()
             : null;
+
+    private sealed record OcrLineInfo(string Text, double X, double Y, double Width, double Height);
+
+    private sealed class ConversationRowAnalysis
+    {
+        public int Index { get; init; }
+        public int X { get; init; }
+        public int Y { get; init; }
+        public int Width { get; init; }
+        public int Height { get; init; }
+        public string Title { get; init; } = string.Empty;
+        public string Preview { get; init; } = string.Empty;
+        public string Time { get; init; } = string.Empty;
+        public bool Unread { get; init; }
+        public int? UnreadCount { get; init; }
+        public double UnreadConfidence { get; init; }
+        public double UnreadRedRatio { get; init; }
+        public bool Muted { get; init; }
+        public double MutedConfidence { get; init; }
+        public double MuteEdgeRatio { get; init; }
+        public bool Selected { get; init; }
+        public double SelectedConfidence { get; init; }
+        public bool Pinned { get; set; }
+        public double PinnedConfidence { get; set; }
+        public int BackgroundR { get; init; }
+        public int BackgroundG { get; init; }
+        public int BackgroundB { get; init; }
+        public int BackgroundDistance { get; set; }
+        public Rectangle UnreadBox { get; init; }
+        public Rectangle MuteBox { get; init; }
+    }
 
     private sealed record LayoutRegion(string Id, string Label, int X, int Y, int Width, int Height)
     {
