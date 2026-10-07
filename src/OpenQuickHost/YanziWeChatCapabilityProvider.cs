@@ -210,7 +210,7 @@ public static class YanziWeChatCapabilityProvider
                         scale = Math.Round(scale, 4)
                     },
                     capturePath = cached.CapturePath,
-                    layoutVersion = "weixin-win-v4",
+                    layoutVersion = "weixin-win-v5",
                     regions = cached.Regions.Clone(),
                     uiObjects = cached.UiObjects.Clone(),
                     conversations = cached.Conversations.Clone(),
@@ -360,7 +360,7 @@ public static class YanziWeChatCapabilityProvider
                     scale = Math.Round(scale, 4)
                 },
                 capturePath,
-                layoutVersion = "weixin-win-v4",
+                layoutVersion = "weixin-win-v5",
                 regions = regionDtos,
                 uiObjects = uiObjects.Select(ToUiObjectDto).ToArray(),
                 conversations,
@@ -940,25 +940,18 @@ public static class YanziWeChatCapabilityProvider
         double scale)
     {
         int Dip(double value) => Math.Max(1, (int)Math.Round(value * scale));
-        var rowHeight = Dip(64);
         var textLeft = region.X + Dip(55);
         var statusLeft = region.X + region.Width - Dip(29);
         var statusRight = region.X + region.Width - Dip(7);
-        var unreadLeft = region.X + Dip(36);
-        var unreadRight = region.X + Dip(60);
         var rows = new List<ConversationRowAnalysis>();
+        var anchors = DetectConversationRowAnchors(bitmap, region, scale);
 
-        var maxRows = (int)Math.Ceiling(region.Height / (double)rowHeight);
-        for (var index = 0; index < maxRows; index++)
+        for (var index = 0; index < anchors.Length; index++)
         {
-            var top = region.Y + index * rowHeight;
-            if (top >= region.Y + region.Height || top >= bitmap.Height)
-                break;
-
-            var bottom = Math.Min(region.Y + region.Height, Math.Min(bitmap.Height, top + rowHeight));
-            var height = bottom - top;
-            if (height < Dip(24))
-                continue;
+            var anchor = anchors[index];
+            var top = anchor.RowBounds.Top;
+            var bottom = anchor.RowBounds.Bottom;
+            var height = anchor.RowBounds.Height;
 
             var rowLines = allLines
                 .Where(line =>
@@ -974,16 +967,15 @@ public static class YanziWeChatCapabilityProvider
                 .ThenBy(line => line.X)
                 .ToArray();
 
-            if (rowLines.Length == 0)
-                continue;
-
+            var upperSplit = top + height * 0.49;
+            var lowerStart = top + Math.Min(height * 0.38, Dip(25));
             var upper = rowLines
-                .Where(line => line.X >= textLeft - Dip(3) && line.Y + line.Height / 2d < top + Dip(31))
+                .Where(line => line.X >= textLeft - Dip(3) && line.Y + line.Height / 2d < upperSplit)
                 .ToArray();
             var lower = rowLines
                 .Where(line =>
                     line.X >= textLeft - Dip(3)
-                    && line.Y + line.Height / 2d >= top + Dip(24)
+                    && line.Y + line.Height / 2d >= lowerStart
                     && line.X < statusLeft + Dip(2))
                 .ToArray();
 
@@ -1023,9 +1015,8 @@ public static class YanziWeChatCapabilityProvider
                 .ToArray();
             var preview = string.Join(" ", previewParts).Trim();
 
-            if (string.IsNullOrWhiteSpace(title) && string.IsNullOrWhiteSpace(preview))
-                continue;
-
+            // 头像是会话行的视觉锚点；即使某一帧 OCR 没读到文字，也保留该行，
+            // 避免因为 OCR 波动造成会话列表结构抖动。
             var backgroundRect = ClampRect(
                 new Rectangle(region.X + Dip(1), top + Dip(6), Dip(8), Math.Max(1, height - Dip(12))),
                 bitmap.Size);
@@ -1039,17 +1030,25 @@ public static class YanziWeChatCapabilityProvider
                 : Math.Clamp((30d - Math.Max(0, background.G - Math.Max(background.R, background.B))) / 30d, 0.25, 0.85);
 
             var unreadBox = ClampRect(
-                new Rectangle(unreadLeft, top + Dip(1), Math.Max(1, unreadRight - unreadLeft), Dip(24)),
+                new Rectangle(
+                    anchor.AvatarBounds.Right - Dip(10),
+                    anchor.AvatarBounds.Top - Dip(8),
+                    Dip(20),
+                    Dip(20)),
                 bitmap.Size);
             var unreadRedRatio = CountWechatRedPixels(bitmap, unreadBox) / (double)Math.Max(1, unreadBox.Width * unreadBox.Height);
-            var unread = unreadRedRatio >= 0.045;
+            var unread = unreadRedRatio >= 0.035;
             var unreadCount = ParseUnreadCount(preview);
             var unreadConfidence = unread
-                ? Math.Clamp((unreadRedRatio - 0.025) / 0.09, 0.55, 1)
-                : Math.Clamp((0.045 - unreadRedRatio) / 0.045, 0.35, 0.9);
+                ? Math.Clamp((unreadRedRatio - 0.02) / 0.09, 0.55, 1)
+                : Math.Clamp((0.035 - unreadRedRatio) / 0.035, 0.35, 0.9);
 
             var muteBox = ClampRect(
-                new Rectangle(statusLeft, top + Dip(27), Math.Max(1, statusRight - statusLeft), Dip(32)),
+                new Rectangle(
+                    statusLeft,
+                    top + Math.Max(Dip(24), height - Dip(38)),
+                    Math.Max(1, statusRight - statusLeft),
+                    Dip(32)),
                 bitmap.Size);
             var muteShape = AnalyzeMuteIconShape(bitmap, muteBox, scale);
             var muted = muteShape.IsMatch;
@@ -1058,10 +1057,13 @@ public static class YanziWeChatCapabilityProvider
             rows.Add(new ConversationRowAnalysis
             {
                 Index = index,
-                X = region.X,
-                Y = top,
-                Width = region.Width,
-                Height = height,
+                X = anchor.RowBounds.X,
+                Y = anchor.RowBounds.Y,
+                Width = anchor.RowBounds.Width,
+                Height = anchor.RowBounds.Height,
+                AvatarBox = anchor.AvatarBounds,
+                AvatarConfidence = anchor.Confidence,
+                RowAnchorConfidence = anchor.Confidence,
                 Title = title,
                 Preview = preview,
                 Time = time,
@@ -1123,6 +1125,18 @@ public static class YanziWeChatCapabilityProvider
         {
             index = row.Index,
             bounds = new { x = row.X, y = row.Y, width = row.Width, height = row.Height },
+            avatar = new
+            {
+                bounds = new
+                {
+                    x = row.AvatarBox.X,
+                    y = row.AvatarBox.Y,
+                    width = row.AvatarBox.Width,
+                    height = row.AvatarBox.Height
+                },
+                confidence = Math.Round(row.AvatarConfidence, 3),
+                method = "visual_avatar_anchor"
+            },
             title = row.Title,
             preview = row.Preview,
             time = row.Time,
@@ -1133,6 +1147,7 @@ public static class YanziWeChatCapabilityProvider
             selected = row.Selected,
             confidence = new
             {
+                rowAnchor = Math.Round(row.RowAnchorConfidence, 3),
                 unread = Math.Round(row.UnreadConfidence, 3),
                 muted = Math.Round(row.MutedConfidence, 3),
                 pinned = Math.Round(row.PinnedConfidence, 3),
@@ -1150,6 +1165,8 @@ public static class YanziWeChatCapabilityProvider
                 backgroundDistance = row.BackgroundDistance,
                 methods = new
                 {
+                    row = "conversation_avatar_visual_anchor",
+                    avatar = "conversation_avatar_visual_anchor",
                     unread = "avatar_badge_red_pixels",
                     muted = "mute_icon_connected_component_shape",
                     pinned = "top_prefix_background_style",
@@ -1164,6 +1181,165 @@ public static class YanziWeChatCapabilityProvider
         }).ToArray();
     }
 
+    private static ConversationRowAnchor[] DetectConversationRowAnchors(
+        Bitmap bitmap,
+        LayoutRegion region,
+        double scale)
+    {
+        int Dip(double value) => Math.Max(1, (int)Math.Round(value * scale));
+        var regionBottom = Math.Min(bitmap.Height, region.Y + region.Height);
+        var backgroundLeft = region.X + Dip(1);
+        var backgroundRight = Math.Min(region.X + region.Width, region.X + Dip(7));
+        var avatarScanLeft = region.X + Dip(10);
+        var avatarScanRight = Math.Min(region.X + region.Width, region.X + Dip(54));
+        var expectedAvatarBodyHeight = Dip(36);
+        var avatarSize = Dip(40);
+        var nominalRowHeight = Dip(65);
+        var maxGap = Dip(2);
+
+        var spans = new List<(int Start, int End, double Strength)>();
+        int? spanStart = null;
+        var lastActive = -1;
+        var gap = 0;
+        double strengthTotal = 0;
+        var activeLines = 0;
+
+        for (var y = region.Y; y < regionBottom; y++)
+        {
+            long br = 0, bg = 0, bb = 0;
+            var backgroundCount = 0;
+            for (var x = backgroundLeft; x < backgroundRight; x++)
+            {
+                var color = bitmap.GetPixel(x, y);
+                br += color.R;
+                bg += color.G;
+                bb += color.B;
+                backgroundCount++;
+            }
+
+            if (backgroundCount == 0)
+                continue;
+
+            var baseR = br / (double)backgroundCount;
+            var baseG = bg / (double)backgroundCount;
+            var baseB = bb / (double)backgroundCount;
+            var changed = 0;
+            var scanWidth = Math.Max(1, avatarScanRight - avatarScanLeft);
+
+            for (var x = avatarScanLeft; x < avatarScanRight; x++)
+            {
+                var color = bitmap.GetPixel(x, y);
+                var delta = Math.Abs(color.R - baseR)
+                    + Math.Abs(color.G - baseG)
+                    + Math.Abs(color.B - baseB);
+                if (delta >= 60)
+                    changed++;
+            }
+
+            var active = changed >= Math.Max(Dip(7), (int)Math.Round(scanWidth * 0.20));
+            if (active)
+            {
+                if (!spanStart.HasValue)
+                    spanStart = y;
+                lastActive = y;
+                gap = 0;
+                strengthTotal += changed / (double)scanWidth;
+                activeLines++;
+            }
+            else if (spanStart.HasValue)
+            {
+                gap++;
+                if (gap > maxGap)
+                {
+                    spans.Add((
+                        spanStart.Value,
+                        lastActive,
+                        activeLines == 0 ? 0 : strengthTotal / activeLines));
+                    spanStart = null;
+                    lastActive = -1;
+                    gap = 0;
+                    strengthTotal = 0;
+                    activeLines = 0;
+                }
+            }
+        }
+
+        if (spanStart.HasValue && lastActive >= spanStart.Value)
+        {
+            spans.Add((
+                spanStart.Value,
+                lastActive,
+                activeLines == 0 ? 0 : strengthTotal / activeLines));
+        }
+
+        var candidates = spans
+            .Select(span =>
+            {
+                var visibleHeight = span.End - span.Start + 1;
+                var centerY = (span.Start + span.End) / 2d;
+                return new
+                {
+                    span.Start,
+                    span.End,
+                    VisibleHeight = visibleHeight,
+                    CenterY = centerY,
+                    span.Strength
+                };
+            })
+            // 顶部/底部被滚动裁掉的头像通常只剩几像素到二十多像素；
+            // 只把接近完整头像主体高度的候选作为会话锚点。
+            .Where(item => item.VisibleHeight >= Dip(28) && item.VisibleHeight <= Dip(48))
+            .OrderBy(item => item.CenterY)
+            .ToArray();
+
+        if (candidates.Length == 0)
+            return [];
+
+        var anchors = new List<ConversationRowAnchor>();
+        for (var i = 0; i < candidates.Length; i++)
+        {
+            var candidate = candidates[i];
+            var top = i == 0
+                ? (int)Math.Round(candidate.CenterY - nominalRowHeight / 2d)
+                : (int)Math.Round((candidates[i - 1].CenterY + candidate.CenterY) / 2d);
+            var bottom = i == candidates.Length - 1
+                ? (int)Math.Round(candidate.CenterY + nominalRowHeight / 2d)
+                : (int)Math.Round((candidate.CenterY + candidates[i + 1].CenterY) / 2d);
+
+            // 只保留完整出现在可视会话区里的行。
+            if (top < region.Y || bottom > regionBottom)
+                continue;
+
+            var rowBounds = new Rectangle(
+                region.X,
+                top,
+                region.Width,
+                Math.Max(Dip(50), bottom - top));
+
+            var avatarBounds = ClampRect(
+                new Rectangle(
+                    region.X + Dip(12),
+                    (int)Math.Round(candidate.CenterY - avatarSize / 2d),
+                    avatarSize,
+                    avatarSize),
+                bitmap.Size);
+
+            var heightScore = Math.Clamp(
+                1d - Math.Abs(candidate.VisibleHeight - expectedAvatarBodyHeight) / (double)Math.Max(1, Dip(18)),
+                0,
+                1);
+            var strengthScore = Math.Clamp((candidate.Strength - 0.18) / 0.48, 0, 1);
+            var confidence = Math.Clamp(0.68 + heightScore * 0.20 + strengthScore * 0.12, 0.68, 0.99);
+
+            anchors.Add(new ConversationRowAnchor(
+                rowBounds,
+                avatarBounds,
+                candidate.CenterY,
+                confidence));
+        }
+
+        return anchors.ToArray();
+    }
     private static (string Remaining, string Time) SplitTrailingConversationTime(string text)
     {
         var match = Regex.Match(
@@ -1607,6 +1783,12 @@ public static class YanziWeChatCapabilityProvider
 
     private sealed record OcrLineInfo(string Text, double X, double Y, double Width, double Height);
 
+    private sealed record ConversationRowAnchor(
+        Rectangle RowBounds,
+        Rectangle AvatarBounds,
+        double CenterY,
+        double Confidence);
+
     private sealed class ConversationRowAnalysis
     {
         public int Index { get; init; }
@@ -1614,6 +1796,9 @@ public static class YanziWeChatCapabilityProvider
         public int Y { get; init; }
         public int Width { get; init; }
         public int Height { get; init; }
+        public Rectangle AvatarBox { get; init; }
+        public double AvatarConfidence { get; init; }
+        public double RowAnchorConfidence { get; init; }
         public string Title { get; init; } = string.Empty;
         public string Preview { get; init; } = string.Empty;
         public string Time { get; init; } = string.Empty;
