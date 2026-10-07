@@ -16,6 +16,7 @@ namespace OpenQuickHost;
 public static class YanziWeChatCapabilityProvider
 {
     private static readonly SemaphoreSlim Gate = new(1, 1);
+    private static readonly SemaphoreSlim LayoutGate = new(1, 1);
     private static IntPtr _lastFileTransferWindow;
     private static ulong _lastFileTransferTitleHash;
     private static bool _hasFileTransferTitleHash;
@@ -35,6 +36,8 @@ public static class YanziWeChatCapabilityProvider
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] private static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extraInfo);
+    [DllImport("user32.dll")] private static extern bool PrintWindow(IntPtr hwnd, IntPtr hdc, uint flags);
+    [DllImport("user32.dll")] private static extern uint GetDpiForWindow(IntPtr hwnd);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct NativeRect
@@ -64,6 +67,17 @@ public static class YanziWeChatCapabilityProvider
             InputSchema = YanziCapabilitySchema.EmptyObject,
             OutputSchema = YanziCapabilitySchema.Parse("""{"type":"object"}"""),
             Handler = StatusAsync
+        };
+
+        yield return new()
+        {
+            Name = "wechat.layout.inspect",
+            Description = "后台截取新版微信主窗口，调用燕子 OCR，并将文字按导航、搜索、会话列表、会话标题、消息区和输入区分组；供微信标注与监听校准使用。",
+            Permissions = ["application.read", "screen.capture", "file.read"],
+            Category = "wechat",
+            InputSchema = YanziCapabilitySchema.Parse("""{"type":"object","properties":{"includeLines":{"type":"boolean"}},"additionalProperties":false}"""),
+            OutputSchema = YanziCapabilitySchema.Parse("""{"type":"object"}"""),
+            Handler = InspectLayoutAsync
         };
 
         yield return new()
@@ -107,8 +121,227 @@ public static class YanziWeChatCapabilityProvider
             state = window.LooksLikeMain ? "main" : window.LooksLikeLogin ? "login" : "unknown",
             loggedIn = window.LooksLikeMain,
             processId = window.ProcessId,
-            window = new { width = window.Rect.Width, height = window.Rect.Height }
+            window = new { left = window.Rect.Left, top = window.Rect.Top, width = window.Rect.Width, height = window.Rect.Height, dpi = GetWindowDpi(window.Handle) }
         });
+    }
+
+
+    private static async Task<object?> InspectLayoutAsync(object? payload)
+    {
+        var input = (JsonElement)payload!;
+        var includeLines = !input.TryGetProperty("includeLines", out var include)
+            || include.ValueKind != JsonValueKind.False;
+
+        await LayoutGate.WaitAsync();
+        try
+        {
+            var window = FindBestWindow() ?? throw new InvalidOperationException("未找到可见的新版微信窗口。");
+            if (!window.LooksLikeMain)
+                throw new InvalidOperationException($"微信尚未进入主界面：{window.Rect.Width}x{window.Rect.Height}。");
+
+            if (!GetWindowRect(window.Handle, out var currentRect))
+                throw new InvalidOperationException("无法读取微信主窗口位置。");
+            window = window with { Rect = currentRect };
+
+            var dpi = GetWindowDpi(window.Handle);
+            var scale = dpi / 96d;
+            var regions = BuildLayoutRegions(window.Rect.Width, window.Rect.Height, scale);
+
+            var capturePath = GetLayoutCapturePath();
+            using (var bitmap = CaptureWindowBackground(window))
+                bitmap.Save(capturePath, ImageFormat.Png);
+
+            var ocrRaw = await YanziCapabilityRegistry.InvokeAsync(
+                "ocr.recognize",
+                new { imagePath = capturePath, includeLines = true },
+                YanziCapabilityCaller.LocalAgent);
+            var ocr = ocrRaw is JsonElement element
+                ? element.Clone()
+                : JsonSerializer.SerializeToElement(ocrRaw);
+
+            var mappedLines = new List<object>();
+            var grouped = regions.ToDictionary(region => region.Id, _ => new List<string>(), StringComparer.OrdinalIgnoreCase);
+
+            if (ocr.TryGetProperty("lines", out var lines) && lines.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var line in lines.EnumerateArray())
+                {
+                    if (!TryReadOcrBox(line, out var x, out var y, out var width, out var height))
+                        continue;
+
+                    var centerX = x + width / 2d;
+                    var centerY = y + height / 2d;
+                    var region = regions.FirstOrDefault(item => item.Contains(centerX, centerY))
+                        ?? new LayoutRegion("unknown", "未归类", 0, 0, window.Rect.Width, window.Rect.Height);
+                    var text = ReadJsonString(line, "text") ?? string.Empty;
+                    if (!string.IsNullOrWhiteSpace(text) && grouped.TryGetValue(region.Id, out var texts))
+                        texts.Add(text);
+
+                    mappedLines.Add(new
+                    {
+                        text,
+                        regionId = region.Id,
+                        regionLabel = region.Label,
+                        box = new { x, y, width, height },
+                        polygon = line.TryGetProperty("polygon", out var polygon) ? polygon.Clone() : default(JsonElement),
+                        recognitionScore = ReadJsonDouble(line, "recognitionScore"),
+                        recognitionScoreScale = ReadJsonString(line, "recognitionScoreScale"),
+                        classificationConfidence = ReadJsonDouble(line, "classificationConfidence"),
+                        rotationDegrees = ReadJsonInt(line, "rotationDegrees")
+                    });
+                }
+            }
+
+            var regionDtos = regions.Select(region => new
+            {
+                id = region.Id,
+                label = region.Label,
+                x = region.X,
+                y = region.Y,
+                width = region.Width,
+                height = region.Height,
+                text = grouped.TryGetValue(region.Id, out var texts) ? string.Join(Environment.NewLine, texts) : string.Empty,
+                lineCount = grouped.TryGetValue(region.Id, out var items) ? items.Count : 0
+            }).ToArray();
+
+            return new
+            {
+                state = "main",
+                capturedAtUtc = DateTimeOffset.UtcNow,
+                processId = window.ProcessId,
+                window = new
+                {
+                    handle = window.Handle.ToInt64(),
+                    left = window.Rect.Left,
+                    top = window.Rect.Top,
+                    width = window.Rect.Width,
+                    height = window.Rect.Height,
+                    dpi,
+                    scale = Math.Round(scale, 4)
+                },
+                capturePath,
+                layoutVersion = "weixin-win-v1",
+                regions = regionDtos,
+                text = ocr.TryGetProperty("text", out var fullText) ? fullText.GetString() ?? string.Empty : string.Empty,
+                detectedCount = ocr.TryGetProperty("detectedCount", out var count) && count.TryGetInt32(out var detected) ? detected : mappedLines.Count,
+                elapsedMs = ocr.TryGetProperty("elapsedMs", out var elapsed) && elapsed.TryGetDouble(out var ms) ? ms : (double?)null,
+                lines = includeLines ? mappedLines.ToArray() : Array.Empty<object>()
+            };
+        }
+        finally
+        {
+            LayoutGate.Release();
+        }
+    }
+
+    private static uint GetWindowDpi(IntPtr hwnd)
+    {
+        try
+        {
+            var dpi = GetDpiForWindow(hwnd);
+            return dpi is >= 72 and <= 768 ? dpi : 96;
+        }
+        catch
+        {
+            return 96;
+        }
+    }
+
+    private static LayoutRegion[] BuildLayoutRegions(int width, int height, double scale)
+    {
+        int Dip(double value) => Math.Max(1, (int)Math.Round(value * scale));
+        var chrome = Math.Clamp(Dip(32), 1, Math.Max(1, height - 1));
+        var nav = Math.Clamp(Dip(68), 1, Math.Max(1, width - 1));
+        var conversations = Math.Clamp(Dip(239), 1, Math.Max(1, width - nav));
+        var splitX = Math.Clamp(nav + conversations, nav + 1, Math.Max(nav + 1, width - 1));
+        var strip = Math.Clamp(Dip(50), 1, Math.Max(1, height - chrome));
+        var contentTop = Math.Clamp(chrome + strip, chrome + 1, Math.Max(chrome + 1, height - 1));
+        var composerHeight = Math.Clamp(Dip(152), 1, Math.Max(1, height - contentTop));
+        var composerTop = Math.Clamp(height - composerHeight, contentTop, height);
+
+        return
+        [
+            new("chrome", "窗口栏", 0, 0, width, chrome),
+            new("navigation", "导航栏", 0, chrome, nav, Math.Max(0, height - chrome)),
+            new("search", "搜索区", nav, chrome, Math.Max(0, splitX - nav), Math.Max(0, contentTop - chrome)),
+            new("conversationList", "会话列表", nav, contentTop, Math.Max(0, splitX - nav), Math.Max(0, height - contentTop)),
+            new("chatHeader", "会话标题", splitX, chrome, Math.Max(0, width - splitX), Math.Max(0, contentTop - chrome)),
+            new("messageList", "消息区", splitX, contentTop, Math.Max(0, width - splitX), Math.Max(0, composerTop - contentTop)),
+            new("composer", "输入区", splitX, composerTop, Math.Max(0, width - splitX), Math.Max(0, height - composerTop))
+        ];
+    }
+
+    private static string GetLayoutCapturePath()
+    {
+        var directory = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            HostRuntimeProfile.DataDirectoryName,
+            "WeChatCaptures");
+        Directory.CreateDirectory(directory);
+        return Path.Combine(directory, "wechat-layout-current.png");
+    }
+
+    private static Bitmap CaptureWindowBackground(WeChatWindow window)
+    {
+        if (!GetWindowRect(window.Handle, out var rect) || rect.Width < 1 || rect.Height < 1)
+            throw new InvalidOperationException("微信窗口尺寸不可用。");
+
+        var bitmap = new Bitmap(rect.Width, rect.Height, PixelFormat.Format32bppArgb);
+        using var graphics = Graphics.FromImage(bitmap);
+        var hdc = graphics.GetHdc();
+        bool captured;
+        try
+        {
+            captured = PrintWindow(window.Handle, hdc, 2) || PrintWindow(window.Handle, hdc, 0);
+        }
+        finally
+        {
+            graphics.ReleaseHdc(hdc);
+        }
+
+        if (!captured)
+        {
+            bitmap.Dispose();
+            throw new InvalidOperationException("微信后台窗口截图失败。");
+        }
+
+        return bitmap;
+    }
+
+    private static bool TryReadOcrBox(JsonElement line, out double x, out double y, out double width, out double height)
+    {
+        x = y = width = height = 0;
+        if (!line.TryGetProperty("box", out var box) || box.ValueKind != JsonValueKind.Object)
+            return false;
+        return TryReadJsonDouble(box, "x", out x)
+            && TryReadJsonDouble(box, "y", out y)
+            && TryReadJsonDouble(box, "width", out width)
+            && TryReadJsonDouble(box, "height", out height);
+    }
+
+    private static bool TryReadJsonDouble(JsonElement element, string name, out double value)
+    {
+        value = 0;
+        return element.TryGetProperty(name, out var property)
+            && property.ValueKind == JsonValueKind.Number
+            && property.TryGetDouble(out value);
+    }
+
+    private static double? ReadJsonDouble(JsonElement element, string name)
+        => TryReadJsonDouble(element, name, out var value) ? value : null;
+
+    private static int? ReadJsonInt(JsonElement element, string name)
+        => element.TryGetProperty(name, out var property) && property.TryGetInt32(out var value) ? value : null;
+
+    private static string? ReadJsonString(JsonElement element, string name)
+        => element.TryGetProperty(name, out var property) && property.ValueKind == JsonValueKind.String
+            ? property.GetString()
+            : null;
+
+    private sealed record LayoutRegion(string Id, string Label, int X, int Y, int Width, int Height)
+    {
+        public bool Contains(double x, double y)
+            => x >= X && x < X + Width && y >= Y && y < Y + Height;
     }
 
     private static async Task<object?> SendFileTransferTextAsync(object? payload)
