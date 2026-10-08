@@ -23,6 +23,13 @@ public static class YanziUi
 
     public static class Styles
     {
+        public const string DefaultButton = "Yanzi.Button.Default";
+        public const string OutlineButton = "Yanzi.Button.Outline";
+        public const string GhostButton = "Yanzi.Button.Ghost";
+        public const string LinkButton = "Yanzi.Button.Link";
+        public const string DestructiveButton = "Yanzi.Button.Destructive";
+        public const string Badge = "Yanzi.Badge";
+        // Compatibility aliases for Yanzi UI 0.1 clients.
         public const string PrimaryButton = "Yanzi.Button.Primary";
         public const string SecondaryButton = "Yanzi.Button.Secondary";
         public const string DangerButton = "Yanzi.Button.Danger";

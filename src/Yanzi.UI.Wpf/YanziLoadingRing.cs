@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Shapes;
@@ -31,7 +32,7 @@ public sealed class YanziLoadingRing : UserControl
             StrokeEndLineCap = PenLineCap.Round,
             SnapsToDevicePixels = true
         };
-        path.SetResourceReference(Shape.StrokeProperty, "Yanzi.Brush.Accent");
+        path.SetBinding(Shape.StrokeProperty, new Binding(nameof(Foreground)) { Source = this });
         canvas.Children.Add(path);
         root.Child = canvas;
         Content = root;

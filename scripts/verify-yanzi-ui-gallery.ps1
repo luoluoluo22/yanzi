@@ -80,9 +80,13 @@ foreach ($title in @('成功提示', '失败提示', '普通消息', '打开删�
 }
 
 Navigate '设计令牌'
-$null = Assert-Control '强调色' [System.Windows.Automation.ControlType]::Text
+$null = Assert-Control '主色' [System.Windows.Automation.ControlType]::Text
 $null = Assert-Control '危险' [System.Windows.Automation.ControlType]::Text
 
+Navigate '徽标 Badge'
+foreach ($title in @('Default','Secondary','Destructive','Outline','Ghost','Link','Verified','Generating','Preview')) {
+    $null = Assert-Control $title [System.Windows.Automation.ControlType]::Text
+}
 Navigate '评价与记录'
 $null = Assert-Control '保存评价' [System.Windows.Automation.ControlType]::Button
 $null = Assert-Control '复制评价摘要' [System.Windows.Automation.ControlType]::Button
@@ -98,4 +102,4 @@ $expectedRestored = if ($startedLight) { '○ 浅色' } else { '● 深色' }
 $null = Assert-Control $expectedRestored [System.Windows.Automation.ControlType]::Text
 
 Navigate '总览'
-Write-Host "PASS: $testCount UI Automation assertions, 8 pages, input, switch, list selection and theme switching."
+Write-Host "PASS: $testCount UI Automation assertions, 9 pages, Badge variants, input, switch, list selection and theme switching."

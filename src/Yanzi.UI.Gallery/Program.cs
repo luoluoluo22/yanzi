@@ -35,6 +35,7 @@ internal sealed class GalleryWindow : Window
         ("列表", "列表、选择和右键菜单"),
         ("反馈", "加载、提示和确认"),
         ("设计令牌", "颜色、间距、字号与圆角"),
+        ("徽标 Badge", "六种变体、图标和加载状态"),
         ("评价与记录", "评分和本地保存体验意见")
     };
 
@@ -56,8 +57,8 @@ internal sealed class GalleryWindow : Window
     public GalleryWindow()
     {
         Title = "燕子 UI · 组件评估中心";
-        Width = 1120;
-        Height = 780;
+        Width = 1180;
+        Height = 820;
         MinWidth = 880;
         MinHeight = 600;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -65,8 +66,8 @@ internal sealed class GalleryWindow : Window
         FontSize = 13;
 
         YanziUi.ApplyTo(this, _theme);
-        SetResourceReference(BackgroundProperty, "Yanzi.Brush.Window");
-        SetResourceReference(ForegroundProperty, "Yanzi.Brush.Text");
+        SetResourceReference(BackgroundProperty, "Yanzi.Color.Background");
+        SetResourceReference(ForegroundProperty, "Yanzi.Color.Foreground");
         Content = BuildShell();
         KeyDown += OnKeyboardShortcut;
         ShowPage(0);
@@ -79,7 +80,7 @@ internal sealed class GalleryWindow : Window
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
         var sidebar = new Border { BorderThickness = new Thickness(0, 0, 1, 0), Padding = new Thickness(16, 23, 16, 16) };
-        sidebar.SetResourceReference(Border.BackgroundProperty, "Yanzi.Brush.Surface");
+        sidebar.SetResourceReference(Border.BackgroundProperty, "Yanzi.Color.Sidebar");
         sidebar.SetResourceReference(Border.BorderBrushProperty, "Yanzi.Brush.Border");
         Grid.SetColumn(sidebar, 0);
         root.Children.Add(sidebar);
@@ -91,13 +92,15 @@ internal sealed class GalleryWindow : Window
         DockPanel.SetDock(brand, Dock.Top);
         var brandLine = new StackPanel { Orientation = Orientation.Horizontal };
         var logo = new Border { Width = 34, Height = 34, CornerRadius = new CornerRadius(9), Margin = new Thickness(0, 0, 10, 0) };
-        logo.SetResourceReference(Border.BackgroundProperty, "Yanzi.Brush.Accent");
-        logo.Child = new TextBlock { Text = "燕", Foreground = Brushes.White, FontWeight = FontWeights.Bold, FontSize = 17,
+        logo.SetResourceReference(Border.BackgroundProperty, "Yanzi.Color.Primary");
+        var logoGlyph = new TextBlock { Text = "燕", FontWeight = FontWeights.Bold, FontSize = 17,
             HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        logoGlyph.SetResourceReference(TextBlock.ForegroundProperty, "Yanzi.Color.PrimaryForeground");
+        logo.Child = logoGlyph;
         brandLine.Children.Add(logo);
         brandLine.Children.Add(Text("Yanzi UI", 20, true, "Yanzi.Brush.Text", new Thickness(0, 4, 0, 0)));
         brand.Children.Add(brandLine);
-        brand.Children.Add(Text("DESIGN SYSTEM  /  v0.1", 10, false, "Yanzi.Brush.TextMuted", new Thickness(0, 11, 0, 0)));
+        brand.Children.Add(Text("SHADCN DESIGN  /  v0.2", 10, false, "Yanzi.Brush.TextMuted", new Thickness(0, 11, 0, 0)));
         sidebarLayout.Children.Add(brand);
 
         var footer = new StackPanel { Margin = new Thickness(8, 12, 0, 3) };
@@ -122,7 +125,7 @@ internal sealed class GalleryWindow : Window
                 BorderThickness = new Thickness(0),
                 Cursor = Cursors.Hand
             };
-            YanziUi.WithStyle(button, YanziUi.Styles.SecondaryButton);
+            YanziUi.WithStyle(button, YanziUi.Styles.GhostButton);
             button.Click += (_, _) => ShowPage(index);
             _navigation.Add(button);
             nav.Children.Add(button);
@@ -188,7 +191,7 @@ internal sealed class GalleryWindow : Window
         _statusText.FontSize = 11;
         _statusText.SetResourceReference(TextBlock.ForegroundProperty, "Yanzi.Brush.TextSecondary");
         statusRow.Children.Add(_statusText);
-        var hint = Text("Ctrl+1～8 切换分类", 11, false, "Yanzi.Brush.TextMuted");
+        var hint = Text("Ctrl+1～9 切换分类", 11, false, "Yanzi.Brush.TextMuted");
         DockPanel.SetDock(hint, Dock.Right);
         statusRow.Children.Add(hint);
 
@@ -204,8 +207,8 @@ internal sealed class GalleryWindow : Window
         {
             var button = _navigation[i];
             button.FontWeight = _page == i ? FontWeights.SemiBold : FontWeights.Normal;
-            button.SetResourceReference(Control.BackgroundProperty, _page == i ? "Yanzi.Brush.SurfaceHover" : "Yanzi.Brush.Surface");
-            button.SetResourceReference(Control.ForegroundProperty, _page == i ? "Yanzi.Brush.Accent" : "Yanzi.Brush.Text");
+            button.SetResourceReference(Control.BackgroundProperty, _page == i ? "Yanzi.Color.SidebarAccent" : "Yanzi.Color.Transparent");
+            button.SetResourceReference(Control.ForegroundProperty, _page == i ? "Yanzi.Color.SidebarForeground" : "Yanzi.Color.MutedForeground");
         }
     }
 
@@ -229,7 +232,8 @@ internal sealed class GalleryWindow : Window
             case 4: Lists(); break;
             case 5: Feedback(); break;
             case 6: Tokens(); break;
-            case 7: Review(); break;
+            case 7: Badges(); break;
+            case 8: Review(); break;
         }
         if (_scroll != null) _scroll.ScrollToTop();
     }
@@ -239,9 +243,9 @@ internal sealed class GalleryWindow : Window
         var hero = Card("我们正在为燕子建立一套统一的界面语言",
             "所有预览均使用真实 Yanzi.UI.Wpf 资源与控件。你可以切换主题、实际点击与输入，并在最后一页留下改进意见。");
         var metrics = new UniformGrid { Columns = 3, Margin = new Thickness(0, 12, 0, 0) };
-        metrics.Children.Add(Metric("08", "重点组件"));
+        metrics.Children.Add(Metric("09", "评估分类"));
         metrics.Children.Add(Metric("02", "颜色主题"));
-        metrics.Children.Add(Metric("25", "基础验证"));
+        metrics.Children.Add(Metric("SH", "shadcn 语义"));
         hero.Children.Add(metrics);
 
         var primary = Button("体验按钮  →", YanziUi.Styles.PrimaryButton, () => ShowPage(1));
@@ -283,7 +287,26 @@ internal sealed class GalleryWindow : Window
         section.Children.Add(toggle);
 
         var sample = Card("设计约定", "高频操作只保留一个主按钮，危险操作使用红色强调；焦点、禁用和点击反馈来自公共组件，而非每个小程序自行实现。");
-        sample.Children.Add(CodeKey("Yanzi.Button.Primary / Secondary / Danger"));
+        sample.Children.Add(CodeKey("Yanzi.Button.Default / Outline / Secondary / Ghost / Destructive / Link"));
+
+        var variants = Card("shadcn 按钮变体", "官方六种语义变体：Default、Outline、Secondary、Ghost、Destructive、Link。");
+        var wrap = new WrapPanel();
+        foreach (var (label, style) in new[]
+        {
+            ("Default", YanziUi.Styles.DefaultButton),
+            ("Outline", YanziUi.Styles.OutlineButton),
+            ("Secondary", YanziUi.Styles.SecondaryButton),
+            ("Ghost", YanziUi.Styles.GhostButton),
+            ("Destructive", YanziUi.Styles.DestructiveButton),
+            ("Link", YanziUi.Styles.LinkButton)
+        })
+        {
+            var localLabel = label;
+            var button = Button(localLabel, style, () => Status("Variant: " + localLabel));
+            button.Margin = new Thickness(0, 0, 8, 10);
+            wrap.Children.Add(button);
+        }
+        variants.Children.Add(wrap);
     }
 
     private void Inputs()
@@ -414,18 +437,19 @@ internal sealed class GalleryWindow : Window
         var swatches = new WrapPanel { Margin = new Thickness(0, 6, 0, 0), ItemWidth = 155 };
         foreach (var (key, label) in new[]
         {
-            ("Accent", "强调色"), ("Surface", "表面"), ("Window", "窗口"),
-            ("Border", "分割线"), ("Text", "文字"), ("TextSecondary", "次要文字"),
-            ("Success", "成功"), ("Danger", "危险"), ("Warning", "警示")
+            ("Primary", "主色"), ("Secondary", "次要"), ("Background", "背景"),
+            ("Card", "卡片"), ("Foreground", "前景"), ("MutedForeground", "弱化文字"),
+            ("Accent", "悬停"), ("Border", "边框"), ("Ring", "焦点环"),
+            ("Destructive", "危险"), ("Success", "成功"), ("Warning", "警示")
         })
         {
             var item = new StackPanel { Width = 146, Margin = new Thickness(0, 0, 8, 20) };
             var swatch = new Border { Height = 54, CornerRadius = new CornerRadius(7), BorderThickness = new Thickness(1) };
-            swatch.SetResourceReference(Border.BackgroundProperty, "Yanzi.Brush." + key);
+            swatch.SetResourceReference(Border.BackgroundProperty, "Yanzi.Color." + key);
             swatch.SetResourceReference(Border.BorderBrushProperty, "Yanzi.Brush.Border");
             item.Children.Add(swatch);
             item.Children.Add(Text(label, 12, true, "Yanzi.Brush.Text", new Thickness(0, 9, 0, 0)));
-            item.Children.Add(Text("Brush." + key, 10, false, "Yanzi.Brush.TextMuted", new Thickness(0, 4, 0, 0)));
+            item.Children.Add(Text("Color." + key, 10, false, "Yanzi.Brush.TextMuted", new Thickness(0, 4, 0, 0)));
             swatches.Children.Add(item);
         }
         section.Children.Add(swatches);
@@ -434,7 +458,69 @@ internal sealed class GalleryWindow : Window
         typography.Children.Add(Text("大标题  /  18", 18, true, "Yanzi.Brush.Text", new Thickness(0, 4, 0, 14)));
         typography.Children.Add(Text("正文示例  /  13px  ·  中文与 English 混排", 13, false, "Yanzi.Brush.Text"));
         typography.Children.Add(Text("辅助说明  /  12px", 12, false, "Yanzi.Brush.TextSecondary", new Thickness(0, 10, 0, 0)));
-        typography.Children.Add(Paragraph("间距：4、8、12、16、24    圆角：控件 8，卡片 12"));
+        typography.Children.Add(Paragraph("间距：4、8、12、16、24    圆角：sm 4 / md 6 / lg 8 / xl 12"));
+    }
+
+    private void Badges()
+    {
+        var section = Card("Badge / 六种变体",
+            "参照 shadcn/ui 官方 Badge 页面：Default、Secondary、Destructive、Outline、Ghost、Link。");
+        var variants = new WrapPanel { Margin = new Thickness(0, 2, 0, 10) };
+        foreach (var variant in Enum.GetValues<YanziBadgeVariant>())
+        {
+            variants.Children.Add(new YanziBadge
+            {
+                Content = variant.ToString(),
+                Variant = variant,
+                Margin = new Thickness(0, 0, 10, 10)
+            });
+        }
+        section.Children.Add(variants);
+        section.Children.Add(CodeKey("YanziBadge.Variant / Yanzi.Badge"));
+
+        var icons = Card("图标和加载状态", "前后图标、生成中 Spinner 和状态指示共用同一套 Badge 模板。");
+        var iconRow = new WrapPanel();
+        iconRow.Children.Add(new YanziBadge
+            { Content = "Verified", Variant = YanziBadgeVariant.Secondary, LeadingIcon = "✓",
+                Margin = new Thickness(0, 0, 10, 10) });
+        iconRow.Children.Add(new YanziBadge
+            { Content = "Bookmark", Variant = YanziBadgeVariant.Outline, TrailingIcon = "↗",
+                Margin = new Thickness(0, 0, 10, 10) });
+        iconRow.Children.Add(new YanziBadge
+            { Content = "Generating", Variant = YanziBadgeVariant.Secondary, IsLoading = true,
+                Margin = new Thickness(0, 0, 10, 10) });
+        iconRow.Children.Add(new YanziBadge
+            { Content = "Deleting", Variant = YanziBadgeVariant.Destructive, IsLoading = true,
+                Margin = new Thickness(0, 0, 10, 10) });
+        icons.Children.Add(iconRow);
+
+        var live = Card("实时调节", "修改下拉框中的变体，观察同一个实例的外观变化；切换主题也会同步更新。");
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        var selection = new ComboBox
+        {
+            Width = 172,
+            Height = 34,
+            Margin = new Thickness(0, 0, 20, 0),
+            ItemsSource = Enum.GetValues<YanziBadgeVariant>(),
+            SelectedIndex = 0
+        };
+        var preview = new YanziBadge { Content = "Preview" };
+        selection.SelectionChanged += (_, _) =>
+        {
+            if (selection.SelectedItem is YanziBadgeVariant variant)
+                preview.Variant = variant;
+        };
+        row.Children.Add(selection);
+        row.Children.Add(preview);
+        live.Children.Add(row);
+        var loadingToggle = YanziUi.WithStyle(new CheckBox
+        {
+            Content = "显示加载状态",
+            Margin = new Thickness(0, 17, 0, 0)
+        }, YanziUi.Styles.CheckBox);
+        loadingToggle.Checked += (_, _) => preview.IsLoading = true;
+        loadingToggle.Unchecked += (_, _) => preview.IsLoading = false;
+        live.Children.Add(loadingToggle);
     }
 
     private void Review()
@@ -507,7 +593,7 @@ internal sealed class GalleryWindow : Window
             Directory.CreateDirectory(_reviewsDirectory);
             var data = new
             {
-                version = "0.1.0",
+                version = "0.2.0",
                 time = DateTimeOffset.Now,
                 visual = (int)(_visualRating?.Value ?? 4),
                 interaction = (int)(_interactionRating?.Value ?? 4),
@@ -599,7 +685,7 @@ internal sealed class GalleryWindow : Window
     private void OnKeyboardShortcut(object sender, KeyEventArgs e)
     {
         if ((Keyboard.Modifiers & ModifierKeys.Control) != 0 &&
-            e.Key >= Key.D1 && e.Key <= Key.D8)
+            e.Key >= Key.D1 && e.Key <= Key.D9)
         {
             ShowPage(e.Key - Key.D1);
             e.Handled = true;
