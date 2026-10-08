@@ -1,7 +1,7 @@
 # shadcn/ui x Yanzi UI: 64 item comparison register
 
 Official directory: https://ui.shadcn.com/docs/components
-Checked UTC: 2026-10-08T12:10:15.652653+00:00
+Checked UTC: 2026-10-08T12:34:22.440156+00:00
 
 Official and local catalog: 64/64 names, order and URLs match.
 Components with independent WPF previews: 64/64.

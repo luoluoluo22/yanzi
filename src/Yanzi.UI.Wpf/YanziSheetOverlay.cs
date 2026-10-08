@@ -19,6 +19,12 @@ public sealed class YanziSheetOverlay : Window
     public Border Panel { get; }
     public Button CloseButton { get; }
     public Border? DrawerHandle { get; }
+    public FrameworkElement? DrawerGrip { get; private set; }
+    public IReadOnlyList<double> DrawerSnapPoints { get; } = new[] { .40, .65, .90 };
+    public double CurrentDrawerFraction { get; private set; } = .40;
+    private bool _dragging;
+    private double _dragStartY;
+    private double _dragStartHeight;
 
     public YanziSheetOverlay(Window owner, string title, UIElement content,
         YanziSheetSide side = YanziSheetSide.Right)
@@ -102,9 +108,45 @@ public sealed class YanziSheetOverlay : Window
             };
             handle.SetResourceReference(Border.BackgroundProperty, "Yanzi.Color.Border");
             var shell = new Grid();
-            shell.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            shell.RowDefinitions.Add(new RowDefinition { Height = new GridLength(27) });
             shell.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-            shell.Children.Add(handle);
+            var grip = new Border
+            {
+                Height = 27,
+                Background = Brushes.Transparent,
+                Cursor = Cursors.SizeNS,
+                IsManipulationEnabled = true,
+                Child = handle
+            };
+            System.Windows.Automation.AutomationProperties.SetName(grip, "Drawer drag handle");
+            DrawerGrip = grip;
+            grip.MouseLeftButtonDown += GripMouseDown;
+            grip.MouseMove += GripMouseMove;
+            grip.MouseLeftButtonUp += GripMouseUp;
+            grip.LostMouseCapture += (_, _) => { _dragging = false; };
+            grip.ManipulationStarting += (_, e) =>
+            {
+                e.ManipulationContainer = Overlay;
+                e.Mode = ManipulationModes.Translate;
+                e.Handled = true;
+            };
+            grip.ManipulationDelta += (_, e) =>
+            {
+                if (!_dragging)
+                {
+                    _dragging = true;
+                    _dragStartHeight = Panel?.Height ?? 335;
+                }
+                ApplyDragHeight((Panel?.Height ?? 335) - e.DeltaManipulation.Translation.Y);
+                e.Handled = true;
+            };
+            grip.ManipulationCompleted += (_, e) =>
+            {
+                _dragging = false;
+                CompleteDrawerDrag(Panel?.Height ?? 335);
+                e.Handled = true;
+            };
+            shell.Children.Add(grip);
             Grid.SetRow(layout, 1);
             shell.Children.Add(layout);
             panelContent.Children.Add(shell);
@@ -158,6 +200,65 @@ public sealed class YanziSheetOverlay : Window
                 e.Handled = true;
             }
         };
+    }
+
+    /// <summary>Choose one of the configured snap fractions for a bottom drawer.</summary>
+    public bool SnapDrawerTo(double fraction)
+    {
+        if (Side != YanziSheetSide.Bottom ||
+            !DrawerSnapPoints.Any(x => Math.Abs(x - fraction) < .0001))
+            return false;
+        var availableHeight = Math.Max(400, Overlay.ActualHeight > 0 ? Overlay.ActualHeight : Height);
+        CurrentDrawerFraction = fraction;
+        Panel.Height = Math.Round(availableHeight * fraction);
+        return true;
+    }
+
+    /// <summary>Complete mouse/touch drag: dismiss below threshold, otherwise settle to nearest snap point.</summary>
+    public bool CompleteDrawerDrag(double proposedHeight)
+    {
+        if (Side != YanziSheetSide.Bottom || !double.IsFinite(proposedHeight))
+            return false;
+        var availableHeight = Math.Max(400, Overlay.ActualHeight > 0 ? Overlay.ActualHeight : Height);
+        if (proposedHeight < availableHeight * .22)
+        {
+            Close();
+            return true;
+        }
+        return SnapDrawerTo(DrawerSnapPoints.MinBy(x => Math.Abs(x * availableHeight - proposedHeight)));
+    }
+
+    private void GripMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (Side != YanziSheetSide.Bottom) return;
+        _dragging = true;
+        _dragStartY = e.GetPosition(Overlay).Y;
+        _dragStartHeight = Panel?.Height ?? 335;
+        if (Panel is not null) Panel.RenderTransform = Transform.Identity;
+        DrawerGrip?.CaptureMouse();
+        e.Handled = true;
+    }
+
+    private void GripMouseMove(object sender, MouseEventArgs e)
+    {
+        if (!_dragging || e.LeftButton != MouseButtonState.Pressed) return;
+        ApplyDragHeight(_dragStartHeight + _dragStartY - e.GetPosition(Overlay).Y);
+        e.Handled = true;
+    }
+
+    private void GripMouseUp(object sender, MouseButtonEventArgs e)
+    {
+        if (!_dragging) return;
+        _dragging = false;
+        DrawerGrip?.ReleaseMouseCapture();
+        CompleteDrawerDrag(Panel?.Height ?? 335);
+        e.Handled = true;
+    }
+
+    private void ApplyDragHeight(double height)
+    {
+        var max = Math.Max(400, Overlay.ActualHeight > 0 ? Overlay.ActualHeight : Height) * .94;
+        Panel.Height = Math.Clamp(height, 60, max);
     }
 
     private void AnimateIn()

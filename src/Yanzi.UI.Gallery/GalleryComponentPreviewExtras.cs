@@ -83,11 +83,23 @@ internal sealed partial class GalleryWindow
                 menu.AddAction("Reload", () => Status("Context Menu：Reload"), "Ctrl+R");
                 menu.AddSeparator();
                 menu.AddCheck("Show bookmarks", true, value => Status("Show bookmarks：" + value));
+                menu.AddSeparator();
+                menu.AddRadioGroup("View mode", new[]
+                {
+                    ("Comfortable", "comfortable"),
+                    ("Compact", "compact")
+                }, "comfortable", value => Status("View mode：" + value));
+                menu.AddSubmenu("More tools", child =>
+                {
+                    child.AddAction("Copy link", () => Status("Context Menu：Copy link"));
+                    child.AddAction("Inspect", () => Status("Context Menu：Inspect"));
+                });
+                menu.AddSeparator();
                 menu.AddAction("Delete", () => Status("Context Menu：Delete"), destructive: true);
                 menu.Attach(area);
                 Add(area);
                 Add(Action("打开右键菜单（键盘预览）", () => menu.OpenAt(new Point(30, 36))));
-                Limit("已自绘右键弹层和操作行；官网子菜单、单选菜单、完整 RTL 与动画仍待补齐。");
+                Limit("已有一级子菜单、单选组和键盘方向导航；多级嵌套、悬停延时、RTL 与边界避让仍待视觉校对。");
                 break;
             }
             case "Data Table":
@@ -143,13 +155,13 @@ internal sealed partial class GalleryWindow
                     var accepted = dialog.ShowDialog() == true;
                     Status(accepted ? "Dialog 示例保存：" + nameInput.Text : "Dialog 已取消，不写入数据");
                 }));
-                Limit("已有自绘通用可编辑 Dialog，支持滚动、Esc、关闭、确认；多窗口遮罩细节、动画与焦点环专项验收待完善。");
+                Limit("通用 Dialog 已增加 Tab 循环及关闭后焦点恢复；进入/退出动画、小屏适配和屏幕阅读器标签仍待核验。");
                 break;
             }
             case "Drawer":
             {
                 Add(Action("Open drawer", () => ShowPreviewSheet("Drawer")));
-                Limit("Drawer 现使用底部蒙层面板和独立手柄；拖拽关闭、触屏滑动与多段吸附尚未实现。");
+                Limit("底部 Drawer 新增手柄鼠标/触摸拖动、三档高度吸附及向下拖动关闭；速度阈值、回弹动画和触屏滚动冲突仍待验证。");
                 break;
             }
             case "Hover Card":
@@ -293,7 +305,28 @@ internal sealed partial class GalleryWindow
             "此处只做视觉演示，不会修改任何数据。"));
         content.Children.Add(Text("Press Close to return to the component catalog.",
             12, false, "Yanzi.Color.MutedForeground", new Thickness(0, 10, 0, 0)));
-        if (type == "Drawer") YanziSheet.ShowDrawer(this, "Drawer · Preview", content);
+        if (type == "Drawer")
+        {
+            var drawer = new YanziSheetOverlay(this, "Drawer · Preview", content,
+                YanziSheetSide.Bottom);
+            var snapButtons = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Margin = new Thickness(0, 14, 0, 14)
+            };
+            foreach (var (label, ratio) in new[] { ("40%", .40), ("65%", .65), ("90%", .90) })
+            {
+                var target = ratio;
+                var button = Button(label, YanziUi.Styles.PillOutlineButton,
+                    () => drawer.SnapDrawerTo(target));
+                button.Margin = new Thickness(0, 0, 9, 0);
+                snapButtons.Children.Add(button);
+            }
+            content.Children.Add(snapButtons);
+            content.Children.Add(Text("可以拖动顶部横条改变高度，松开后吸附到最近档位。向下拖到底部可关闭。",
+                12, false, "Yanzi.Color.MutedForeground"));
+            drawer.ShowDialog();
+        }
         else YanziSheet.Show(this, "Sheet · Preview", content);
     }
 }

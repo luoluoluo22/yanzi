@@ -811,6 +811,39 @@ internal static class Program
             ctxAction.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Check(contextActivated && !customContext.IsOpen,
                 "Context Menu action invokes callback and closes popup");
+            string? menuMode = null;
+            var menuRadios = customContext.AddRadioGroup("View mode",
+                new[] { ("Comfortable", "comfortable"), ("Compact", "compact") },
+                "comfortable", value => menuMode = value);
+            Check(menuRadios.Items.Count == 2 && menuRadios.SelectedValue == "comfortable",
+                "Context Menu radio group starts with a single checked choice");
+            menuRadios.Select("compact");
+            Check(menuMode == "compact" && menuRadios.Items[1].IsChecked
+                && !menuRadios.Items[0].IsChecked,
+                "Context Menu radio options remain exclusive and notify selection");
+            bool submenuExecuted = false;
+            var submenuTrigger = customContext.AddSubmenu("More tools", submenu =>
+            {
+                submenu.AddAction("Copy link", () => submenuExecuted = true);
+                submenu.AddAction("Inspect", () => submenuExecuted = true);
+            });
+            Check(customContext.SubmenuCount == 2 && !customContext.IsSubmenuOpen,
+                "Context Menu exposes two nested actions, initially collapsed");
+            customContext.OpenAt(new Point(18, 24));
+            customContext.OpenSubmenu();
+            Check(customContext.IsSubmenuOpen,
+                "Context Menu exposes a second adjacent panel without native popups");
+            customContext.HideSubmenu();
+            Check(!customContext.IsSubmenuOpen,
+                "Context Menu submenu can collapse without closing the parent");
+            customContext.OpenSubmenu(focusFirst: true);
+            var nestedButton = customContext.Surface.Parent is StackPanel nestedRoot
+                ? ((Border)nestedRoot.Children[1]).Child as StackPanel : null;
+            var nestedAction = nestedButton?.Children.OfType<Button>().FirstOrDefault();
+            Check(nestedAction is not null, "nested menu button lives in the same popup visual tree");
+            nestedAction!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Check(submenuExecuted && !customContext.IsOpen,
+                "nested menu action closes parent popup and calls the consumer");
 
             // General Dialog owns editable child content independently of Alert Dialog.
             var dialogForm = new StackPanel();
@@ -826,6 +859,9 @@ internal static class Program
                 && dialog.Card.BorderThickness.Left == 1
                 && dialog.CancelButton.IsCancel && dialog.SaveButton.IsDefault,
                 "Dialog has shadcn card geometry and default/cancel actions");
+            Check(System.Windows.Input.KeyboardNavigation.GetTabNavigation(dialog.Card) ==
+                System.Windows.Input.KeyboardNavigationMode.Cycle,
+                "Dialog Tab/Shift+Tab navigation cycles within the modal card");
             dialog.Loaded += (_, _) =>
                 dialog.Dispatcher.BeginInvoke(new Action(() =>
                     dialog.CancelButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent))));
@@ -872,11 +908,36 @@ internal static class Program
                 && bottomDrawer.Panel.CornerRadius.TopLeft == 16
                 && bottomDrawer.Panel.CornerRadius.TopRight == 16,
                 "Drawer has bottom anchored panel, rounded top corners and visual handle");
+            Check(bottomDrawer.DrawerGrip is not null
+                && bottomDrawer.DrawerGrip.IsManipulationEnabled
+                && bottomDrawer.DrawerSnapPoints.Count == 3,
+                "Drawer provides mouse/touch drag surface and three snap positions");
+            Check(bottomDrawer.SnapDrawerTo(.65)
+                && Math.Abs(bottomDrawer.CurrentDrawerFraction - .65) < .001,
+                "Drawer can settle on the middle snap point");
+            var h = bottomDrawer.Height;
+            Check(bottomDrawer.CompleteDrawerDrag(.89 * h)
+                && Math.Abs(bottomDrawer.CurrentDrawerFraction - .90) < .001,
+                "Drawer drag release snaps to the nearest height");
+            Check(bottomDrawer.CompleteDrawerDrag(.42 * h)
+                && Math.Abs(bottomDrawer.CurrentDrawerFraction - .40) < .001,
+                "Drawer drag release can snap back to the lowest expanded height");
             bottomDrawer.Loaded += (_, _) =>
                 bottomDrawer.Dispatcher.BeginInvoke(new Action(() =>
                     bottomDrawer.CloseButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent))));
             bottomDrawer.ShowDialog();
             Check(!bottomDrawer.IsVisible, "Drawer overlay closes without a native window titlebar");
+            Check(!bottomDrawer.SnapDrawerTo(.50),
+                "Drawer rejects unconfigured snap points");
+            var closeByDrag = new YanziSheetOverlay(window, "Swipe-dismiss preview",
+                new TextBlock { Text = "Dismiss test" }, YanziSheetSide.Bottom);
+            bool thresholdDismissed = false;
+            closeByDrag.Loaded += (_, _) =>
+                closeByDrag.Dispatcher.BeginInvoke(new Action(() =>
+                    thresholdDismissed = closeByDrag.CompleteDrawerDrag(closeByDrag.Height * .10)));
+            closeByDrag.ShowDialog();
+            Check(thresholdDismissed && !closeByDrag.IsVisible,
+                "Dragging a Drawer below dismiss threshold closes the modal");
             var leftSheet = new YanziSheetOverlay(window, "Left sheet", new TextBlock { Text = "Left" },
                 YanziSheetSide.Left);
             var topSheet = new YanziSheetOverlay(window, "Top sheet", new TextBlock { Text = "Top" },

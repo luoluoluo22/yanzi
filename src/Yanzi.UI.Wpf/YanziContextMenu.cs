@@ -18,13 +18,20 @@ public sealed class YanziContextMenu
     private readonly Popup _popup;
     private readonly Border _surface;
     private readonly StackPanel _rows;
+    private readonly StackPanel _popupRoot;
+    private readonly StackPanel _submenuRows;
+    private readonly Border _submenuSurface;
     private readonly List<Button> _actions = [];
+    private readonly List<Button> _submenuActions = [];
+    private Button? _submenuTrigger;
     private FrameworkElement? _anchor;
 
     public bool IsOpen { get => _popup.IsOpen; set => _popup.IsOpen = value; }
     public FrameworkElement Surface => _surface;
     public int Count => _actions.Count;
     public IReadOnlyList<Button> Actions => _actions;
+    public bool IsSubmenuOpen => _submenuSurface.Visibility == Visibility.Visible;
+    public int SubmenuCount => _submenuActions.Count;
 
     public YanziContextMenu()
     {
@@ -48,21 +55,52 @@ public sealed class YanziContextMenu
         };
         _surface.SetResourceReference(Border.BackgroundProperty, "Yanzi.Color.Popover");
         _surface.SetResourceReference(Border.BorderBrushProperty, "Yanzi.Color.Border");
+        _submenuRows = new StackPanel { Margin = new Thickness(5) };
+        _submenuSurface = new Border
+        {
+            Width = 200,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(9),
+            Padding = new Thickness(3),
+            VerticalAlignment = VerticalAlignment.Top,
+            Visibility = Visibility.Collapsed,
+            Child = _submenuRows
+        };
+        _submenuSurface.SetResourceReference(Border.BackgroundProperty, "Yanzi.Color.Popover");
+        _submenuSurface.SetResourceReference(Border.BorderBrushProperty, "Yanzi.Color.Border");
+        _popupRoot = new StackPanel { Orientation = Orientation.Horizontal };
+        _popupRoot.Children.Add(_surface);
+        _popupRoot.Children.Add(_submenuSurface);
         _popup = new Popup
         {
             Placement = PlacementMode.RelativePoint,
             AllowsTransparency = true,
             StaysOpen = false,
             PopupAnimation = PopupAnimation.Fade,
-            Child = _surface
+            Child = _popupRoot
         };
+        _popup.Closed += (_, _) => HideSubmenu();
         _popup.Opened += (_, _) =>
         {
             if (_actions.FirstOrDefault(x => x.IsEnabled) is Button first)
                 first.Focus();
         };
-        _surface.PreviewKeyDown += (_, e) =>
+        _popupRoot.PreviewKeyDown += (_, e) =>
         {
+            if (e.Key == Key.Left && IsSubmenuOpen &&
+                _submenuActions.Any(x => x.IsKeyboardFocusWithin))
+            {
+                HideSubmenu();
+                _submenuTrigger?.Focus();
+                e.Handled = true;
+                return;
+            }
+            if (e.Key == Key.Right && _submenuTrigger?.IsKeyboardFocused == true)
+            {
+                OpenSubmenu(focusFirst: true);
+                e.Handled = true;
+                return;
+            }
             if (e.Key == Key.Escape)
             {
                 Close();
@@ -70,7 +108,8 @@ public sealed class YanziContextMenu
             }
             else if (e.Key == Key.Down || e.Key == Key.Up)
             {
-                var available = _actions.Where(x => x.IsEnabled).ToArray();
+                var available = (IsSubmenuOpen && _submenuActions.Any(x => x.IsKeyboardFocusWithin)
+                    ? _submenuActions : _actions).Where(x => x.IsEnabled).ToArray();
                 if (available.Length == 0) return;
                 var focused = available.FirstOrDefault(x => x.IsKeyboardFocused);
                 var current = Array.IndexOf(available, focused);
@@ -114,6 +153,7 @@ public sealed class YanziContextMenu
         if (!_anchor.IsEnabled) return;
         _popup.HorizontalOffset = point.X;
         _popup.VerticalOffset = point.Y;
+        HideSubmenu();
         _popup.IsOpen = true;
     }
 
@@ -148,6 +188,7 @@ public sealed class YanziContextMenu
         ArgumentNullException.ThrowIfNull(handler);
         var content = Row(title, shortcut, destructive);
         var button = NewItem(content, title);
+        button.MouseEnter += (_, _) => HideSubmenu();
         button.Click += (_, _) =>
         {
             Close();
@@ -168,6 +209,76 @@ public sealed class YanziContextMenu
         _rows.Children.Add(check);
         return check;
     }
+
+    /// <summary>Menu radio items with exclusive semantics from YanziRadioGroup.</summary>
+    public YanziRadioGroup AddRadioGroup(string label, IEnumerable<(string Label, string Value)> options,
+        string selectedValue, Action<string> onSelect)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(label);
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(onSelect);
+        AddLabel(label);
+        var group = new YanziRadioGroup { Margin = new Thickness(10, 5, 0, 1) };
+        foreach (var (caption, value) in options)
+            group.Add(caption, value);
+        if (!group.Select(selectedValue))
+            throw new ArgumentException("The initially selected radio value must be a declared option.", nameof(selectedValue));
+        group.SelectionChanged += (_, choice) =>
+        {
+            if (choice is not null) onSelect(choice);
+        };
+        _rows.Children.Add(group);
+        return group;
+    }
+
+    /// <summary>
+    /// An inline adjacent submenu inside the SAME Popup, keeping the parent's
+    /// menu open while keyboard focus moves into submenu actions.
+    /// </summary>
+    public Button AddSubmenu(string title, Action<YanziContextSubmenu> build)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(title);
+        ArgumentNullException.ThrowIfNull(build);
+        if (_submenuTrigger is not null)
+            throw new InvalidOperationException("Only one submenu trigger is supported per menu instance.");
+        var trigger = NewItem(Row(title, "›", false), title);
+        _submenuTrigger = trigger;
+        build(new YanziContextSubmenu(this));
+        trigger.MouseEnter += (_, _) => OpenSubmenu(focusFirst: false);
+        trigger.Click += (_, _) => OpenSubmenu(focusFirst: true);
+        return trigger;
+    }
+
+    internal Button AddSubmenuAction(string title, Action action)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(title);
+        ArgumentNullException.ThrowIfNull(action);
+        var item = new Button
+        {
+            Content = title, Height = 33,
+            HorizontalContentAlignment = HorizontalAlignment.Left,
+            Padding = new Thickness(10, 4, 10, 4),
+            Margin = new Thickness(1)
+        };
+        YanziUi.WithStyle(item, YanziUi.Styles.DropdownAction);
+        AutomationProperties.SetName(item, title);
+        item.Click += (_, _) => { Close(); action(); };
+        _submenuActions.Add(item);
+        _submenuRows.Children.Add(item);
+        return item;
+    }
+
+    public void OpenSubmenu(bool focusFirst = false)
+    {
+        if (_submenuTrigger is null) return;
+        _submenuSurface.Margin = new Thickness(4,
+            Math.Max(0, _submenuTrigger.TranslatePoint(new Point(0, 0), _surface).Y), 0, 0);
+        _submenuSurface.Visibility = Visibility.Visible;
+        if (focusFirst && _submenuActions.Count > 0)
+            _submenuActions[0].Focus();
+    }
+
+    public void HideSubmenu() => _submenuSurface.Visibility = Visibility.Collapsed;
 
     private static Grid Row(string title, string shortcut, bool destructive)
     {
@@ -206,4 +317,12 @@ public sealed class YanziContextMenu
         _rows.Children.Add(item);
         return item;
     }
+}
+
+/// <summary>A child command collection, whose buttons remain in the parent's popup.</summary>
+public sealed class YanziContextSubmenu
+{
+    private readonly YanziContextMenu _owner;
+    internal YanziContextSubmenu(YanziContextMenu owner) => _owner = owner;
+    public Button AddAction(string title, Action callback) => _owner.AddSubmenuAction(title, callback);
 }

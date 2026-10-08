@@ -1,6 +1,6 @@
 {
   "source": "https://ui.shadcn.com/docs/components",
-  "checked_utc": "2026-10-08T12:10:15.652653+00:00",
+  "checked_utc": "2026-10-08T12:34:22.440156+00:00",
   "official_count": 64,
   "local_count": 64,
   "no_omissions": true,
@@ -693,7 +693,7 @@
       "fetch_error": null,
       "independent_preview": true,
       "comparison_focus": "右键定位、菜单项与子菜单交互",
-      "risk": "自绘 YanziContextMenu 已支持右键坐标、动作与勾选；子菜单、单选分组和 RTL 尚待补全",
+      "risk": "一级相邻子菜单、互斥单选组、方向键和 Esc 已实现；多级嵌套、RTL、屏幕边界避让和延迟仍待校验",
       "visual_result": "待核对",
       "interaction_result": "待核对"
     },
@@ -849,7 +849,7 @@
       "fetch_error": null,
       "independent_preview": true,
       "comparison_focus": "边缘抽屉位置、拖动和关闭",
-      "risk": "已改为底部蒙层面板及手柄，拖拽关闭和多级吸附尚未实现",
+      "risk": "已具备底部拖动手柄、鼠标/触摸位移、三档吸附与拖下关闭；惯性、回弹和滚动冲突尚需验证",
       "visual_result": "待核对",
       "interaction_result": "待核对"
     },

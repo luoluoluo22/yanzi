@@ -19,6 +19,7 @@ public sealed class YanziContentDialog : Window
     public Button CloseButton { get; }
     public Button CancelButton { get; }
     public Button SaveButton { get; }
+    private readonly IInputElement? _previousFocus;
 
     public YanziContentDialog(Window owner, string title, string description,
         UIElement body, string saveLabel = "Save changes")
@@ -27,6 +28,11 @@ public sealed class YanziContentDialog : Window
         ArgumentNullException.ThrowIfNull(body);
         ArgumentException.ThrowIfNullOrWhiteSpace(title);
         owner.VerifyAccess();
+        var focusBeforeDialog = Keyboard.FocusedElement;
+        // Restore focus only to a descendant of the owner, never another app/window.
+        _previousFocus = focusBeforeDialog is DependencyObject node &&
+            ReferenceEquals(Window.GetWindow(node), owner)
+            ? focusBeforeDialog : null;
 
         Owner = owner;
         Title = title;
@@ -139,6 +145,15 @@ public sealed class YanziContentDialog : Window
         Card.SetResourceReference(Border.BorderBrushProperty, "Yanzi.Color.Border");
         Overlay.Children.Add(Card);
         Content = Overlay;
+        // WPF equivalent of a modal dialog focus trap: Tab and Shift+Tab wrap
+        // inside the card, never reaching the disabled owner underneath.
+        KeyboardNavigation.SetTabNavigation(Card, KeyboardNavigationMode.Cycle);
+        KeyboardNavigation.SetControlTabNavigation(Card, KeyboardNavigationMode.Cycle);
+        Closed += (_, _) => owner.Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
+        {
+            if (_previousFocus is UIElement element && element.IsEnabled && element.IsVisible)
+                element.Focus();
+        });
         Loaded += (_, _) => Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
         {
             if (!TryFocusFirstInput(body))
