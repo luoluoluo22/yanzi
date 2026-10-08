@@ -18,7 +18,8 @@ public sealed class YanziSegmentedButtonGroup : UserControl
     {
         var frame = new Border
         {
-            CornerRadius = new CornerRadius(999),
+            CornerRadius = new CornerRadius(16),
+            ClipToBounds = true,
             BorderThickness = new Thickness(1),
             Padding = new Thickness(0),
             HorizontalAlignment = HorizontalAlignment.Left
@@ -36,8 +37,9 @@ public sealed class YanziSegmentedButtonGroup : UserControl
         var button = YanziUi.WithStyle(new Button
         {
             Content = label,
-            MinWidth = 0,
-            Height = 32
+            MinWidth = 48,
+            Height = 32,
+            Padding = new Thickness(14, 5, 14, 5)
         }, YanziUi.Styles.SegmentedFirstButton);
         button.Click += (_, _) => action();
         if (_buttons.Count > 0)
@@ -60,6 +62,10 @@ public sealed class YanziSegmentedButtonGroup : UserControl
                 : i == 0 ? YanziUi.Styles.SegmentedFirstButton
                 : i == _buttons.Count - 1 ? YanziUi.Styles.SegmentedLastButton
                 : YanziUi.Styles.SegmentedBaseButton;
+            _buttons[i].MinWidth = i == 0 ? 112 : 48;
+            _buttons[i].Padding = i == 0
+                ? new Thickness(18, 5, 18, 5)
+                : new Thickness(14, 5, 14, 5);
             _buttons[i].SetResourceReference(FrameworkElement.StyleProperty, key);
         }
     }

@@ -252,21 +252,33 @@ internal static class Program
             window.Content = pill;
             pill.ApplyTemplate();
             var pillChrome = pill.Template.FindName("Chrome", pill) as Border;
-            Check(pillChrome != null && pillChrome.CornerRadius.TopLeft >= 500,
-                "pill default has fully rounded chrome");
+            pill.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            pill.Arrange(new Rect(0, 0, pill.DesiredSize.Width, pill.DesiredSize.Height));
+            Check(pillChrome != null && Math.Abs(pillChrome.CornerRadius.TopLeft - 14) < 0.01,
+                "pill has an exact 14 DIP end radius instead of 999");
+            Check(pill.ActualWidth >= 96 && pill.ActualHeight == 32,
+                "pill enforces a 96x32 minimum horizontal silhouette");
+            Check(pill.ActualWidth - pill.ActualHeight > 60,
+                "pill keeps long parallel top and bottom edges");
             var chip = YanziUi.WithStyle(new Button { Content = "Chip" },
                 YanziUi.Styles.ChipOutlineButton);
             window.Content = chip;
             chip.ApplyTemplate();
             var chipChrome = chip.Template.FindName("Chrome", chip) as Border;
-            Check(chipChrome != null && chipChrome.CornerRadius.TopLeft >= 500,
-                "chip outline has fully rounded chrome");
+            chip.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            chip.Arrange(new Rect(0, 0, chip.DesiredSize.Width, chip.DesiredSize.Height));
+            Check(chipChrome != null && Math.Abs(chipChrome.CornerRadius.TopLeft - 10) < 0.01,
+                "chip has an exact 10 DIP end radius");
+            Check(chip.ActualWidth >= 76 && chip.ActualHeight == 24,
+                "chip maintains a wide 76x24 minimum footprint");
+            Check(chip.ActualWidth - chip.ActualHeight > 45,
+                "chip has a straight center section");
             YanziUi.ApplyTo(window, YanziTheme.Light);
             window.Content = pill;
             pill.ApplyTemplate();
             Check(pill.Template.FindName("Chrome", pill) is Border lightChrome
-                && lightChrome.CornerRadius.TopLeft >= 500,
-                "pill template survives light theme");
+                && Math.Abs(lightChrome.CornerRadius.TopLeft - 14) < 0.01,
+                "pill half-height radius survives light theme");
             YanziUi.ApplyTo(window, YanziTheme.Dark);
 
             var pillGroup = new YanziSegmentedButtonGroup();
@@ -274,6 +286,8 @@ internal static class Program
             var firstSegment = pillGroup.Add("Group", () => groupClickCount++);
             var lastSegment = pillGroup.Add("More", () => groupClickCount++);
             Check(pillGroup.Count == 2, "segmented group has two actions");
+            Check(firstSegment.MinWidth >= 112 && lastSegment.MinWidth >= 48,
+                "segmented group preserves two meaningful straight segments");
             firstSegment.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             lastSegment.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Check(groupClickCount == 2, "both segmented actions remain clickable");
@@ -281,11 +295,11 @@ internal static class Program
             firstSegment.ApplyTemplate();
             lastSegment.ApplyTemplate();
             Check(firstSegment.Template.FindName("Chrome", firstSegment) is Border firstChrome
-                && firstChrome.CornerRadius.TopLeft >= 500
+                && Math.Abs(firstChrome.CornerRadius.TopLeft - 15) < 0.01
                 && firstChrome.CornerRadius.TopRight == 0,
                 "first segmented control rounds left side only");
             Check(lastSegment.Template.FindName("Chrome", lastSegment) is Border lastChrome
-                && lastChrome.CornerRadius.TopRight >= 500
+                && Math.Abs(lastChrome.CornerRadius.TopRight - 15) < 0.01
                 && lastChrome.CornerRadius.TopLeft == 0,
                 "last segmented control rounds right side only");
 
