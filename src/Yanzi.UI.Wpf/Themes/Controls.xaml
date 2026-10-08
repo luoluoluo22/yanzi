@@ -610,6 +610,14 @@
         </Style.Triggers>
     </Style>
 
+    <!-- Opt-in typography pilot; existing Yanzi.Badge stays backward compatible. -->
+    <Style x:Key="Yanzi.Badge.PreviewGeist" TargetType="{x:Type ui:YanziBadge}"
+           BasedOn="{StaticResource Yanzi.Badge}">
+        <Setter Property="FontFamily" Value="{DynamicResource Yanzi.Font.Geist}"/>
+        <Setter Property="FontSize" Value="{DynamicResource Yanzi.Font.PreviewBadge}"/>
+        <Setter Property="FontWeight" Value="Medium"/>
+    </Style>
+
     <!-- Native WPF controls with semantic resource values, preserving built-in keyboard/IME behavior. -->
     <Style x:Key="Yanzi.Textarea" TargetType="{x:Type TextBox}" BasedOn="{StaticResource Yanzi.Input}">
         <Setter Property="VerticalContentAlignment" Value="Top"/>

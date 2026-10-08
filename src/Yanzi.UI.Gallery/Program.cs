@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using Yanzi.UI.Wpf;
@@ -115,7 +116,7 @@ internal sealed partial class GalleryWindow : Window
         brandLine.Children.Add(logo);
         brandLine.Children.Add(Text("Yanzi UI", 20, true, "Yanzi.Brush.Text", new Thickness(0, 4, 0, 0)));
         brand.Children.Add(brandLine);
-        brand.Children.Add(Text("SHADCN DESIGN  /  v0.5.5", 10, false, "Yanzi.Brush.TextMuted", new Thickness(0, 11, 0, 0)));
+        brand.Children.Add(Text("SHADCN DESIGN  /  v0.6.0", 10, false, "Yanzi.Brush.TextMuted", new Thickness(0, 11, 0, 0)));
         sidebarLayout.Children.Add(brand);
 
         var footer = new StackPanel { Margin = new Thickness(8, 12, 0, 3) };
@@ -268,6 +269,11 @@ internal sealed partial class GalleryWindow : Window
         _interactionRating = null;
         _reviewNotes = null;
         _body.Children.Clear();
+        // Only the two preview pages opt in to the Geist Latin + Chinese fallback.
+        if (_page is 0 or 7)
+            _body.SetResourceReference(TextElement.FontFamilyProperty, "Yanzi.Font.Geist");
+        else
+            _body.ClearValue(TextElement.FontFamilyProperty);
         _overviewGrid = null;
         if (!_sidebarManuallySet) SetSidebarVisible(_page != 0, false);
         UpdateNavigation();
@@ -539,30 +545,30 @@ internal sealed partial class GalleryWindow : Window
         var variants = new WrapPanel { Margin = new Thickness(0, 2, 0, 10) };
         foreach (var variant in Enum.GetValues<YanziBadgeVariant>())
         {
-            variants.Children.Add(new YanziBadge
+            variants.Children.Add(YanziUi.WithStyle(new YanziBadge
             {
                 Content = variant.ToString(),
                 Variant = variant,
                 Margin = new Thickness(0, 0, 10, 10)
-            });
+            }, YanziUi.Styles.BadgeGeistPreview));
         }
         section.Children.Add(variants);
         section.Children.Add(CodeKey("YanziBadge.Variant / Yanzi.Badge"));
 
         var icons = Card("图标和加载状态", "前后图标、生成中 Spinner 和状态指示共用同一套 Badge 模板。");
         var iconRow = new WrapPanel();
-        iconRow.Children.Add(new YanziBadge
+        iconRow.Children.Add(YanziUi.WithStyle(new YanziBadge
             { Content = "Verified", Variant = YanziBadgeVariant.Secondary, LeadingIcon = "✓",
-                Margin = new Thickness(0, 0, 10, 10) });
-        iconRow.Children.Add(new YanziBadge
+                Margin = new Thickness(0, 0, 10, 10) }, YanziUi.Styles.BadgeGeistPreview));
+        iconRow.Children.Add(YanziUi.WithStyle(new YanziBadge
             { Content = "Bookmark", Variant = YanziBadgeVariant.Outline, TrailingIcon = "↗",
-                Margin = new Thickness(0, 0, 10, 10) });
-        iconRow.Children.Add(new YanziBadge
+                Margin = new Thickness(0, 0, 10, 10) }, YanziUi.Styles.BadgeGeistPreview));
+        iconRow.Children.Add(YanziUi.WithStyle(new YanziBadge
             { Content = "Generating", Variant = YanziBadgeVariant.Secondary, IsLoading = true,
-                Margin = new Thickness(0, 0, 10, 10) });
-        iconRow.Children.Add(new YanziBadge
+                Margin = new Thickness(0, 0, 10, 10) }, YanziUi.Styles.BadgeGeistPreview));
+        iconRow.Children.Add(YanziUi.WithStyle(new YanziBadge
             { Content = "Deleting", Variant = YanziBadgeVariant.Destructive, IsLoading = true,
-                Margin = new Thickness(0, 0, 10, 10) });
+                Margin = new Thickness(0, 0, 10, 10) }, YanziUi.Styles.BadgeGeistPreview));
         icons.Children.Add(iconRow);
 
         var live = Card("实时调节", "修改下拉框中的变体，观察同一个实例的外观变化；切换主题也会同步更新。");
@@ -575,7 +581,7 @@ internal sealed partial class GalleryWindow : Window
             ItemsSource = Enum.GetValues<YanziBadgeVariant>(),
             SelectedIndex = 0
         };
-        var preview = new YanziBadge { Content = "Preview" };
+        var preview = YanziUi.WithStyle(new YanziBadge { Content = "Preview" }, YanziUi.Styles.BadgeGeistPreview);
         selection.SelectionChanged += (_, _) =>
         {
             if (selection.SelectedItem is YanziBadgeVariant variant)
@@ -664,7 +670,7 @@ internal sealed partial class GalleryWindow : Window
             Directory.CreateDirectory(_reviewsDirectory);
             var data = new
             {
-                version = "0.5.5",
+                version = "0.6.0",
                 time = DateTimeOffset.Now,
                 visual = (int)(_visualRating?.Value ?? 4),
                 interaction = (int)(_interactionRating?.Value ?? 4),

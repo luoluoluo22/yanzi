@@ -30,7 +30,7 @@ public sealed class YanziSearchBox : UserControl
 
     public event TextChangedEventHandler? TextChanged;
 
-    public YanziSearchBox(string placeholder = "Search")
+    public YanziSearchBox(string placeholder = "Search", bool useGeist = false)
     {
         MinHeight = 38;
         var grid = new Grid { Height = 38 };
@@ -59,6 +59,14 @@ public sealed class YanziSearchBox : UserControl
         };
         _placeholder.SetResourceReference(TextBlock.ForegroundProperty, "Yanzi.Color.MutedForeground");
         grid.Children.Add(_placeholder);
+        if (useGeist)
+        {
+            // Opt-in preview only: existing host search controls retain their font and size.
+            Input.SetResourceReference(Control.FontFamilyProperty, "Yanzi.Font.Geist");
+            Input.FontSize = 14;
+            _placeholder.SetResourceReference(TextBlock.FontFamilyProperty, "Yanzi.Font.Geist");
+            _placeholder.FontSize = 14;
+        }
 
         // Lucide "Search": circle cx=11 cy=11 r=8, path m21 21-4.35-4.35.
         // Viewbox scales the actual vector geometry down to 18 DIP without

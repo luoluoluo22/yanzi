@@ -40,6 +40,7 @@ public static class YanziUi
         public const string SegmentedBaseButton = "Yanzi.Button.Segmented.Base";
         public const string SegmentedLastButton = "Yanzi.Button.Segmented.Last";
         public const string Badge = "Yanzi.Badge";
+        public const string BadgeGeistPreview = "Yanzi.Badge.PreviewGeist";
         public const string Textarea = "Yanzi.Textarea";
         public const string Password = "Yanzi.Password";
         public const string Select = "Yanzi.Select";

@@ -26,6 +26,7 @@ internal sealed partial class GalleryWindow
             HorizontalAlignment = HorizontalAlignment.Center,
             Margin = new Thickness(0, 0, 0, 16)
         };
+        YanziUi.WithStyle(tag, YanziUi.Styles.BadgeGeistPreview);
         hero.Children.Add(tag);
         var headline = Text("The foundation for Yanzi UI", 27, true, "Yanzi.Color.Foreground", new Thickness(0, 0, 0, 11));
         headline.TextAlignment = TextAlignment.Center;
@@ -35,8 +36,8 @@ internal sealed partial class GalleryWindow
         description.TextAlignment = TextAlignment.Center;
         hero.Children.Add(description);
         var heroActions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
-        heroActions.Children.Add(Button("浏览组件  →", YanziUi.Styles.PillDefaultButton, () => ShowPage(8)));
-        heroActions.Children.Add(Button("视觉规范", YanziUi.Styles.PillOutlineButton, () => ShowPage(6)));
+        heroActions.Children.Add(PreviewGeistButton(Button("浏览组件  →", YanziUi.Styles.PillDefaultButton, () => ShowPage(8))));
+        heroActions.Children.Add(PreviewGeistButton(Button("视觉规范", YanziUi.Styles.PillOutlineButton, () => ShowPage(6))));
         hero.Children.Add(heroActions);
 
         var threeColumns = new UniformGrid { Columns = 3, Margin = new Thickness(0, 0, 6, 0) };
@@ -59,13 +60,13 @@ internal sealed partial class GalleryWindow
         buttons.Children.Add(SmallButton("Outline", YanziUi.Styles.PillOutlineButton,
             () => Status("Outline 按钮被点击")));
         sampler.Children.Add(buttons);
-        var search = new YanziSearchBox("Name")
+        var search = new YanziSearchBox("Name", useGeist: true)
         {
             Margin = new Thickness(0, 0, 0, 12)
         };
         sampler.Children.Add(search);
 
-        sampler.Children.Add(YanziUi.WithStyle(new TextBox
+        var message = YanziUi.WithStyle(new TextBox
         {
             Text = "Message",
             Height = 78,
@@ -73,7 +74,10 @@ internal sealed partial class GalleryWindow
             AcceptsReturn = true,
             TextWrapping = TextWrapping.Wrap,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto
-        }, YanziUi.Styles.TextareaSoft));
+        }, YanziUi.Styles.TextareaSoft);
+        message.SetResourceReference(Control.FontFamilyProperty, "Yanzi.Font.Geist");
+        message.FontSize = 14;
+        sampler.Children.Add(message);
         var tags = new WrapPanel { Margin = new Thickness(0, 12, 0, 11) };
         tags.Children.Add(PreviewBadge("Badge", YanziBadgeVariant.Default));
         tags.Children.Add(PreviewBadge("Secondary", YanziBadgeVariant.Secondary));
@@ -87,8 +91,8 @@ internal sealed partial class GalleryWindow
         footButtons.Children.Add(SmallButton("Alert Dialog", YanziUi.Styles.PillOutlineButton,
             () => YanziDialog.Confirm(this, "确认执行操作？", "这是组件展示，不会修改任何实际数据。", "确认")));
         var segmented = new YanziSegmentedButtonGroup { Margin = new Thickness(0, 0, 6, 5) };
-        segmented.Add("Button Group", () => Status("Button Group 被点击"));
-        var menuButton = segmented.Add("⌃", () => { });
+        PreviewGeistButton(segmented.Add("Button Group", () => Status("Button Group 被点击")));
+        var menuButton = PreviewGeistButton(segmented.Add("⌃", () => { }));
         var menu = YanziUi.WithStyle(new ContextMenu(), YanziUi.Styles.Menu);
         foreach (var text in new[] { "复制", "查看详情", "设置" })
         {
@@ -233,14 +237,26 @@ internal sealed partial class GalleryWindow
         var pill = style.StartsWith("Yanzi.Button.Pill", StringComparison.Ordinal);
         button.MinWidth = pill ? 56 : 0;
         button.Height = pill ? 32 : 34;
-        button.FontSize = 12;
+        button.FontSize = pill ? 14 : 12;
+        if (pill) PreviewGeistButton(button);
         button.Padding = pill ? new Thickness(18, 5, 18, 5) : new Thickness(11, 5, 11, 5);
         button.Margin = new Thickness(0, 0, 6, 5);
         return button;
     }
 
     private static YanziBadge PreviewBadge(string content, YanziBadgeVariant variant) =>
-        new() { Content = content, Variant = variant, Margin = new Thickness(0, 0, 7, 5) };
+        YanziUi.WithStyle(new YanziBadge
+        {
+            Content = content, Variant = variant, Margin = new Thickness(0, 0, 7, 5)
+        }, YanziUi.Styles.BadgeGeistPreview);
+
+    private static Button PreviewGeistButton(Button button)
+    {
+        button.SetResourceReference(Control.FontFamilyProperty, "Yanzi.Font.Geist");
+        button.SetResourceReference(Control.FontSizeProperty, "Yanzi.Font.PreviewButton");
+        button.FontWeight = FontWeights.Medium;
+        return button;
+    }
 
     private StackPanel InfoPanel(string eyebrow, string title, string detail)
     {

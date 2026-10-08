@@ -4,8 +4,15 @@
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>0.5.5</Version>
+    <Version>0.6.0</Version>
     <AssemblyName>Yanzi.UI.Wpf</AssemblyName>
     <RootNamespace>Yanzi.UI.Wpf</RootNamespace>
   </PropertyGroup>
+  <!-- Geist is OFL-licensed; embed only assets for the opt-in gallery typography pilot. -->
+  <ItemGroup>
+    <Resource Include="Fonts\Geist-Regular.ttf" />
+    <Resource Include="Fonts\Geist-Medium.ttf" />
+    <Resource Include="Fonts\Geist-SemiBold.ttf" />
+    <Content Include="Fonts\OFL.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

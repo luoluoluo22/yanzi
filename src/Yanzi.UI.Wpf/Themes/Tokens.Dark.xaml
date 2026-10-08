@@ -53,6 +53,10 @@
     <sys:Double x:Key="Yanzi.Space.3">12</sys:Double>
     <sys:Double x:Key="Yanzi.Space.4">16</sys:Double>
     <sys:Double x:Key="Yanzi.Space.6">24</sys:Double>
+    <!-- Opt-in Geist Latin with Microsoft YaHei UI CJK fallback. -->
+    <FontFamily x:Key="Yanzi.Font.Geist">pack://application:,,,/Yanzi.UI.Wpf;component/Fonts/#Geist, Microsoft YaHei UI</FontFamily>
+    <sys:Double x:Key="Yanzi.Font.PreviewButton">14</sys:Double>
+    <sys:Double x:Key="Yanzi.Font.PreviewBadge">12</sys:Double>
     <sys:Double x:Key="Yanzi.Font.Small">12</sys:Double>
     <sys:Double x:Key="Yanzi.Font.Body">14</sys:Double>
     <sys:Double x:Key="Yanzi.Font.Title">18</sys:Double>

@@ -447,6 +447,49 @@ internal static class Program
             Check(textareaHost is not null && textareaHost.Margin == new Thickness(0),
                 "multi-line input content host is not clipped by duplicate padding");
 
+            var geistFont = window.TryFindResource("Yanzi.Font.Geist") as FontFamily;
+            Check(geistFont != null, "Geist preview font family resource resolves");
+            Check(geistFont!.Source.Contains("Geist", StringComparison.OrdinalIgnoreCase),
+                "preview family refers to bundled Geist and CJK fallback");
+            Console.WriteLine("FONT_PILOT family=" + geistFont.Source);
+            var geistFace = new Typeface(geistFont, FontStyles.Normal, FontWeights.Medium, FontStretches.Normal);
+            var hasGeistGlyph = geistFace.TryGetGlyphTypeface(out var geistGlyph);
+            Console.WriteLine("FONT_PILOT loaded=" + hasGeistGlyph
+                + " uri=" + (geistGlyph?.FontUri?.ToString() ?? "(fallback)"));
+            Check(hasGeistGlyph && geistGlyph!.FontUri.ToString().Contains("Geist", StringComparison.OrdinalIgnoreCase),
+                "Geist actual typeface resolves to bundled font resource");
+
+            // The gallery-only typography is opt-in; library button and badge defaults stay stable.
+            var badgePreview = YanziUi.WithStyle(
+                new YanziBadge { Content = "Secondary", Variant = YanziBadgeVariant.Secondary },
+                YanziUi.Styles.BadgeGeistPreview);
+            window.Content = badgePreview;
+            window.UpdateLayout();
+            Check(badgePreview.FontFamily.Source.Contains("Geist", StringComparison.OrdinalIgnoreCase)
+                && badgePreview.FontWeight == FontWeights.Medium
+                && Math.Abs(badgePreview.FontSize - 12) < 0.01,
+                "Geist preview badge is 12 DIP, Medium 500");
+            var legacyBadge = YanziUi.WithStyle(new YanziBadge { Content = "Old" }, YanziUi.Styles.Badge);
+            window.Content = legacyBadge;
+            window.UpdateLayout();
+            Check(legacyBadge.FontFamily.Source.Contains("Segoe UI", StringComparison.OrdinalIgnoreCase)
+                && legacyBadge.FontWeight == FontWeights.SemiBold,
+                "legacy badge remains Segoe UI and Semibold");
+            var searchGeist = new YanziSearchBox("Name", useGeist: true);
+            window.Content = searchGeist;
+            window.UpdateLayout();
+            Check(Math.Abs(searchGeist.Input.FontSize - 14) < 0.01
+                && searchGeist.Input.FontFamily.Source.Contains("Geist", StringComparison.OrdinalIgnoreCase),
+                "opt-in search uses Geist at 14 DIP");
+            var searchHint = ((Grid)searchGeist.Content).Children.OfType<TextBlock>().First();
+            Check(searchHint.FontFamily.Source.Contains("Geist", StringComparison.OrdinalIgnoreCase)
+                && Math.Abs(searchHint.FontSize - 14) < 0.01,
+                "search input and placeholder use same font and size");
+            searchGeist.Text = "中文 Search ABC";
+            window.UpdateLayout();
+            Check(searchGeist.Input.Text.Contains("中文") && searchGeist.Input.CaretBrush != null,
+                "mixed Chinese Latin input and native caret remain functional");
+
             var secondWindow = new Window();
             Check(secondWindow.Resources.MergedDictionaries.Count == 0, "separate old window remains unchanged");
             Check(YanziUi.WithStyle(new ProgressBar(), YanziUi.Styles.Loading) is ProgressBar, "loading control helper");
