@@ -1,7 +1,7 @@
 {
   "id": "yanzi-android-automation",
   "name": "手机购物助手",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "category": "手机工具",
   "description": "通过手机 USB ADB 查看商品、价格、购物车与订单；无下单权限。",
   "icon": "mdi:cellphone-cog",
@@ -26,7 +26,7 @@
     {
       "name": "android.device.status",
       "description": "读取授权 Android 设备连接与前台状态（只读）",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "permissions": [
         "android.device.read"
       ],
@@ -42,7 +42,7 @@
     {
       "name": "pdd.product.search",
       "description": "在多多买菜搜索商品并返回规格及页面价格，不加购",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "permissions": [
         "shopping.read"
       ],
@@ -66,7 +66,7 @@
     {
       "name": "pdd.cart.inspect",
       "description": "只读查看多多买菜购物车正常商品数量和下架数，不下单",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "permissions": [
         "shopping.read"
       ],
@@ -82,13 +82,38 @@
     {
       "name": "pdd.orders.preview",
       "description": "只读解析当前订单列表页面，不跨页或改动历史订单",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "permissions": [
         "shopping.orders.read"
       ],
       "inputSchema": {
         "type": "object",
         "properties": {},
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "pdd.orders.collect",
+      "description": "在已打开的订单列表中最多扫描8页，遇到无法识别页面立即停止；不执行商品操作",
+      "version": "0.3.1",
+      "permissions": [
+        "shopping.orders.read"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "maxPages": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8
+          },
+          "openIfNeeded": {
+            "type": "boolean"
+          }
+        },
         "additionalProperties": false
       },
       "outputSchema": {

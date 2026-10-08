@@ -27,6 +27,7 @@ public static class YanziAction
         context.Capabilities.Register("pdd.product.search", args => Execute(context, "pdd.product.search", args));
         context.Capabilities.Register("pdd.cart.inspect", args => Execute(context, "pdd.cart.inspect", args));
         context.Capabilities.Register("pdd.orders.preview", args => Execute(context, "pdd.orders.preview", args));
+        context.Capabilities.Register("pdd.orders.collect", args => Execute(context, "pdd.orders.collect", args));
         await service.Stopped.Task;
         return "手机购物助手已停止";
       } catch (Exception ex) {
@@ -50,6 +51,8 @@ public static class YanziAction
                 CreateNoWindow = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8,
                 WorkingDirectory = Path.GetDirectoryName(entry)!
             };
             processInfo.ArgumentList.Add(entry);

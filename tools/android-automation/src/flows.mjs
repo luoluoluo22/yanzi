@@ -2,6 +2,7 @@ import {delay} from './adb.mjs';
 import {UnsafeTargetError} from './vision.mjs';
 import {extractProductCards,chooseProduct} from './products.mjs';
 import {extractCartRows} from './cart.mjs';
+import {extractOrderCards} from './orders.mjs';
 
 const MINI='多多买菜';
 export class AndroidFlows {
@@ -113,6 +114,27 @@ export class AndroidFlows {
     const scan=await this.vision.recognize();
     const cards=extractProductCards(scan.lines,await this.device.size());
     return {candidates:cards,choice:chooseProduct(cards,constraints)};
+  }
+  async openOrderHistory({attemptOnce=true}={}) {
+    const size=await this.device.size();
+    const current=await this.vision.recognize();
+    if(extractOrderCards(current.lines,{height:size.height}).recognized)
+      return {recognized:true,navigated:false};
+    if(!attemptOnce)throw new UnsafeTargetError('Not on a verified order list');
+    const top=current.lines.filter(line=>line?.box && line.box.y>size.height*.065
+      && line.box.y<size.height*.15
+      && /订单/.test(line.text)
+      && line.box.x>size.width*.5);
+    if(top.length!==1)throw new UnsafeTargetError('Order navigation shortcut is not uniquely identifiable');
+    const box=top[0].box;
+    await this.device.tap(Math.round(box.x+box.width/2),Math.round(box.y+box.height/2));
+    for(let i=0;i<5;i++){
+      await delay(500);
+      const next=await this.vision.recognize();
+      if(extractOrderCards(next.lines,{height:size.height}).recognized)
+        return {recognized:true,navigated:true};
+    }
+    throw new UnsafeTargetError('Order shortcut tapped but order list did not open');
   }
   async openCart() {
     await this.vision.tapText('购物车');

@@ -5,7 +5,7 @@ import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 
 const manifest=JSON.parse(readFileSync(new URL('../extension/manifest.json',import.meta.url),'utf8'));
-const names=['android.device.status','pdd.product.search','pdd.cart.inspect','pdd.orders.preview'];
+const names=['android.device.status','pdd.product.search','pdd.cart.inspect','pdd.orders.preview','pdd.orders.collect'];
 const allowedKeywords=new Set(['type','properties','items','required','enum','additionalProperties','minimum','maximum','minLength','title','description','default','examples','$schema']);
 function inspectSchema(schema){
  assert.equal(typeof schema,'object');
@@ -30,4 +30,15 @@ test('client denies unknown operations before even checking ADB',()=>{
  const data=JSON.parse(result.stdout);
  assert.equal(data.ok,false);
  assert.match(data.error,/not allowed/);
+});
+
+test('CLI emits one ASCII-safe JSON response for Unicode errors',()=>{
+ const result=spawnSync(process.execPath,
+  [fileURLToPath(new URL('../src/capability-cli.mjs',import.meta.url)),'错误能力','e30='],
+  {encoding:'utf8',timeout:5000});
+ assert.notEqual(result.status,0);
+ assert.match(result.stdout,/^[\x00-\x7f]*$/);
+ const data=JSON.parse(result.stdout);
+ assert.equal(data.ok,false);
+ assert.match(data.error,/错误能力/);
 });
