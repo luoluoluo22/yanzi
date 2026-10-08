@@ -21,6 +21,15 @@
     
     
     <Window.Resources>
+        <!-- Shared UI surface for every Settings page; original style remains reversible. -->
+        <Style x:Key="Yanzi.Settings.Surface" TargetType="{x:Type Border}"
+               BasedOn="{StaticResource SurfaceCard}">
+            <Setter Property="CornerRadius" Value="{DynamicResource Yanzi.Radius.Xl}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Border}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Card}"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+        </Style>
         <local:KeywordMatchToBrushConverter x:Key="KeywordMatchToBrushConverter" />
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
         <local:BoolToColorConverter x:Key="BoolToColorConverter" />
@@ -992,9 +1001,9 @@
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel>
-                                        <TextBlock Text="统一 UI 组件库 · 设置页试用" FontSize="16"
+                                        <TextBlock Text="统一 UI 组件库 · 全部设置页" FontSize="16"
                                                    Foreground="{DynamicResource Yanzi.Color.Foreground}" FontWeight="SemiBold"/>
-                                        <TextBlock Text="直接预览真实设置控件的新外观。此开关不修改设置值，也不影响保存规则。"
+                                        <TextBlock Text="统一卡片、输入、选择与开关风格；切换仅影响外观，不修改保存的设置。"
                                                    Foreground="{DynamicResource Yanzi.Color.MutedForeground}" FontSize="12"
                                                    TextWrapping="Wrap" Margin="0,6,14,0"/>
                                     </StackPanel>

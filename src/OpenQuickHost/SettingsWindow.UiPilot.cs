@@ -1,21 +1,39 @@
+using System.Collections;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Threading;
 using Yanzi.UI.Wpf;
 
 namespace OpenQuickHost;
 
 /// <summary>
-/// First, reversible in-place adoption of the shared WPF design library in
-/// the real General settings page. All original bindings and event handlers
-/// stay attached to the same controls; the preview switch never writes settings.
+/// Progressive adoption of Yanzi.UI.Wpf in the actual SettingsWindow.
+/// Original controls, bindings, command handlers and settings remain intact.
+/// The non-persistent preview toggle reversibly changes only visual Styles.
 /// </summary>
 public partial class SettingsWindow
 {
+    private static readonly string[] UnifiedSections =
+    [
+        nameof(GeneralSectionRoot),
+        nameof(EnvironmentSectionRoot),
+        nameof(SyncSectionRoot),
+        nameof(YanmSectionRoot),
+        nameof(YanwoSectionRoot),
+        nameof(AboutSectionRoot),
+        nameof(QuickPanelSectionRoot),
+        nameof(MouseGesturesSectionRoot),
+        nameof(RadialSectionRoot),
+        nameof(YarnSelectSectionRoot),
+        nameof(ExtensionsSectionRoot),
+        nameof(AiSectionRoot)
+    ];
+
     private bool _uiPilotReady;
-    private YanziCard? _uiPilotCard;
-    private StackPanel? _uiPilotRows;
-    private readonly List<UIElement> _uiPilotOriginalRows = [];
-    private readonly List<(FrameworkElement Element, object OldStyle)> _uiPilotStyled = [];
+    private bool _unifiedSettingsOn;
+    private YanziSettingsSectionCard? _uiPilotCard;
+    private readonly List<UIElement> _originalGeneralRows = [];
+    private readonly Dictionary<FrameworkElement, object> _originalStyles = new();
 
     private void InitializeSettingsUiPilot()
     {
@@ -23,10 +41,23 @@ public partial class SettingsWindow
         if (HostRuntimeProfile.IsDevelopment && Environment.GetCommandLineArgs().Any(static arg =>
                 arg.Equals("--settings-preview", StringComparison.OrdinalIgnoreCase)))
             Title = "燕子设置 · 统一 UI 试用（开发版）";
+
         YanziUi.ApplyTo(this, PilotTheme());
-        // The pilot toggle is deliberately not persisted in AppSettings.
         YanziUi.WithStyle(UnifiedUiPreviewToggle, YanziUi.Styles.SwitchShadcn);
         _uiPilotReady = true;
+
+        foreach (var name in UnifiedSections)
+        {
+            if (FindName(name) is not FrameworkElement section)
+                throw new InvalidOperationException($"Settings UI missing section: {name}");
+            // Dynamic panels such as models/extensions can populate after initial load.
+            section.IsVisibleChanged += (_, _) =>
+            {
+                if (!_unifiedSettingsOn || !section.IsVisible) return;
+                Dispatcher.BeginInvoke(DispatcherPriority.Loaded,
+                    () => StyleSettingsSubtree(section));
+            };
+        }
         SetSettingsUiPilot(UnifiedUiPreviewToggle.IsChecked == true);
     }
 
@@ -40,10 +71,10 @@ public partial class SettingsWindow
             {
                 using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(
                     @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
-                if (key?.GetValue("AppsUseLightTheme") is int { } light && light == 1)
+                if (key?.GetValue("AppsUseLightTheme") is int light && light == 1)
                     return YanziTheme.Light;
             }
-            catch (Exception) { /* No OS personalization key: use dark. */ }
+            catch (Exception) { /* Missing Windows personalization key: default dark. */ }
         }
         return YanziTheme.Dark;
     }
@@ -56,96 +87,138 @@ public partial class SettingsWindow
 
     private void UnifiedUiPreviewToggle_Changed(object sender, RoutedEventArgs e)
     {
-        if (!_uiPilotReady) return;
-        SetSettingsUiPilot(UnifiedUiPreviewToggle.IsChecked == true);
+        if (_uiPilotReady)
+            SetSettingsUiPilot(UnifiedUiPreviewToggle.IsChecked == true);
     }
 
     private void SetSettingsUiPilot(bool enabled)
     {
-        // First ten original children are the real Theme + four startup/system
-        // settings and their separators. We never duplicate a bound control.
+        if (enabled == _unifiedSettingsOn) return;
+        _unifiedSettingsOn = enabled;
         if (enabled)
         {
-            if (_uiPilotCard is not null) return;
-            var source = GeneralSectionRoot.Children
-                .Cast<UIElement>()
-                .Skip(1) // immutable preview header
-                .Take(10)
-                .ToArray();
-            if (source.Length != 10 || source[0] is not Grid ||
-                source[2] is not Grid || source[4] is not Grid ||
-                source[6] is not Grid || source[8] is not Grid)
-            {
-                HostAssets.AppendLog("Settings UI pilot aborted: original general layout changed.");
-                return;
-            }
-
-            _uiPilotOriginalRows.Clear();
-            _uiPilotOriginalRows.AddRange(source);
-            _uiPilotRows = new StackPanel();
-            var header = new StackPanel();
-            header.Children.Add(new TextBlock
-            {
-                Text = "基础设置", FontSize = 16, FontWeight = FontWeights.SemiBold
-            });
-            var hint = new TextBlock
-            {
-                Text = "主题、启动和托盘行为 · 实际设置",
-                FontSize = 12, Margin = new Thickness(0, 5, 0, 0)
-            };
-            ((TextBlock)header.Children[0]).SetResourceReference(
-                TextBlock.ForegroundProperty, "Yanzi.Color.Foreground");
-            hint.SetResourceReference(TextBlock.ForegroundProperty, "Yanzi.Color.MutedForeground");
-            header.Children.Add(hint);
-            _uiPilotCard = new YanziCard { Margin = new Thickness(0, 0, 0, 16) };
-            _uiPilotCard.SetHeader(header);
-            _uiPilotCard.SetBody(_uiPilotRows);
-
-            foreach (var child in source)
-            {
-                GeneralSectionRoot.Children.Remove(child);
-                _uiPilotRows.Children.Add(child);
-            }
-            GeneralSectionRoot.Children.Insert(1, _uiPilotCard);
-
-            // Preserve both saved values and existing two-way bindings/events.
-            // Only Style is swapped; all controls stay the same WPF instances.
-            foreach (var index in new[] { 0, 2, 4, 6, 8 })
-            {
-                if (source[index] is not Grid row) continue;
-                FrameworkElement? control = row.Children.OfType<System.Windows.Controls.ComboBox>().FirstOrDefault()
-                    ?? (FrameworkElement?)row.Children.OfType<System.Windows.Controls.CheckBox>().FirstOrDefault();
-                if (control is null) continue;
-                _uiPilotStyled.Add((control,
-                    control.ReadLocalValue(FrameworkElement.StyleProperty)));
-                control.SetResourceReference(FrameworkElement.StyleProperty,
-                    control is System.Windows.Controls.ComboBox ? YanziUi.Styles.Select : YanziUi.Styles.SwitchShadcn);
-            }
-            HostAssets.AppendLog("Settings UI pilot enabled: five real settings controls, no state mutation.");
+            BuildGeneralSettingsCard();
+            foreach (var name in UnifiedSections)
+                if (FindName(name) is FrameworkElement section)
+                    StyleSettingsSubtree(section);
+            HostAssets.AppendLog("Unified UI settings enabled across all sections (styles only).");
         }
         else
         {
-            if (_uiPilotCard is null || _uiPilotRows is null) return;
-            foreach (var (control, original) in _uiPilotStyled)
-            {
-                if (original == DependencyProperty.UnsetValue)
-                    control.ClearValue(FrameworkElement.StyleProperty);
-                else
-                    control.SetValue(FrameworkElement.StyleProperty, original);
-            }
-            _uiPilotStyled.Clear();
-
-            GeneralSectionRoot.Children.Remove(_uiPilotCard);
-            int insertAt = 1;
-            foreach (var child in _uiPilotOriginalRows)
-            {
-                _uiPilotRows.Children.Remove(child);
-                GeneralSectionRoot.Children.Insert(insertAt++, child);
-            }
-            _uiPilotOriginalRows.Clear();
-            _uiPilotRows = null;
-            _uiPilotCard = null;
-            HostAssets.AppendLog("Settings UI pilot disabled; original setting controls and styles restored.");
+            RestoreStyles();
+            RestoreGeneralSettingsRows();
+            HostAssets.AppendLog("Unified UI settings disabled: original controls and styles restored.");
         }
+    }
+
+    private void BuildGeneralSettingsCard()
+    {
+        if (_uiPilotCard is not null) return;
+        // Ten real controls: 5 setting rows followed by their legacy dividers.
+        var source = GeneralSectionRoot.Children.Cast<UIElement>().Skip(1).Take(10).ToArray();
+        if (source.Length != 10 || Enumerable.Range(0, 5)
+            .Any(i => source[2 * i] is not Grid || source[2 * i + 1] is not System.Windows.Shapes.Rectangle))
+            throw new InvalidOperationException("General settings rows changed unexpectedly.");
+
+        _originalGeneralRows.Clear();
+        _originalGeneralRows.AddRange(source);
+        var section = new YanziSettingsSectionCard("基础设置", "主题、启动和托盘行为 · 实际设置")
+        {
+            Margin = new Thickness(0, 0, 0, 16)
+        };
+        // Remove the original trailing divider. The rounded card border now
+        // provides the final visual edge; there is no detached bottom line.
+        foreach (var child in source)
+            GeneralSectionRoot.Children.Remove(child);
+        for (int i = 0; i < 5; i++)
+            section.AddRow(source[i * 2], i == 0 ? null : source[i * 2 - 1]);
+
+        GeneralSectionRoot.Children.Insert(1, section);
+        _uiPilotCard = section;
+    }
+
+    private void RestoreGeneralSettingsRows()
+    {
+        if (_uiPilotCard is null) return;
+        GeneralSectionRoot.Children.Remove(_uiPilotCard);
+        int index = 1;
+        foreach (var child in _originalGeneralRows)
+        {
+            if (_uiPilotCard.Rows.Children.Contains(child))
+                _uiPilotCard.Rows.Children.Remove(child);
+            GeneralSectionRoot.Children.Insert(index++, child);
+        }
+        _originalGeneralRows.Clear();
+        _uiPilotCard = null;
+    }
+
+    private void StyleSettingsSubtree(DependencyObject root)
+    {
+        int previous = _originalStyles.Count;
+        var legacySwitch = TryFindResource("RaycastSwitchStyle") as Style;
+        var legacySurface = TryFindResource("SurfaceCard") as Style;
+        Walk(root, current =>
+        {
+            switch (current)
+            {
+                case System.Windows.Controls.ComboBox combo when
+                    combo.ItemContainerStyle is null && combo.Tag?.ToString() != "KeepNativeStyle":
+                    SetStyleIfNeeded(combo, YanziUi.Styles.Select);
+                    break;
+                case PasswordBox password:
+                    SetStyleIfNeeded(password, YanziUi.Styles.Password);
+                    break;
+                case System.Windows.Controls.TextBox input when !input.AcceptsReturn && !input.IsReadOnly
+                    && input.Width is not (>= 0 and < 78):
+                    SetStyleIfNeeded(input, YanziUi.Styles.Input);
+                    break;
+                case System.Windows.Controls.CheckBox check when ReferenceEquals(check.Style, legacySwitch):
+                    SetStyleIfNeeded(check, YanziUi.Styles.SwitchShadcn);
+                    break;
+                case Border border when ReferenceEquals(border.Style, legacySurface):
+                    SetStyleIfNeeded(border, "Yanzi.Settings.Surface");
+                    break;
+                case System.Windows.Controls.Button button when button.Content is string label
+                    && label.Length >= 2 && button.Width is >= 100
+                    && button.Template is null:
+                    SetStyleIfNeeded(button, YanziUi.Styles.OutlineButton);
+                    break;
+            }
+        });
+        int styled = _originalStyles.Count - previous;
+        if (styled > 0 && root is FrameworkElement section)
+            HostAssets.AppendLog($"Unified UI section={section.Name}, newStyledControls={styled}.");
+    }
+
+    private void SetStyleIfNeeded(FrameworkElement element, string resourceKey)
+    {
+        if (_originalStyles.ContainsKey(element)) return;
+        _originalStyles.Add(element, element.ReadLocalValue(FrameworkElement.StyleProperty));
+        element.SetResourceReference(FrameworkElement.StyleProperty, resourceKey);
+    }
+
+    private void RestoreStyles()
+    {
+        foreach (var entry in _originalStyles)
+        {
+            if (entry.Value == DependencyProperty.UnsetValue)
+                entry.Key.ClearValue(FrameworkElement.StyleProperty);
+            else
+                entry.Key.SetValue(FrameworkElement.StyleProperty, entry.Value);
+        }
+        _originalStyles.Clear();
+    }
+
+    private static void Walk(DependencyObject root, Action<DependencyObject> visit)
+    {
+        var seen = new HashSet<DependencyObject>();
+        void Visit(DependencyObject current)
+        {
+            if (!seen.Add(current)) return;
+            visit(current);
+            foreach (var child in LogicalTreeHelper.GetChildren(current).OfType<DependencyObject>())
+                Visit(child);
+        }
+        Visit(root);
     }
 }

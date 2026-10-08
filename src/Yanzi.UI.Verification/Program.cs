@@ -1003,6 +1003,18 @@ internal static class Program
                 "YanziCard exposes real Header, Content and Footer slots");
             Check(sourceCard.ClipToBounds,
                 "Card clips nested content to its shared rounded outer boundary");
+            var settingsCard = new YanziSettingsSectionCard("Settings", "General options");
+            settingsCard.AddRow(new TextBlock { Text = "Theme" });
+            settingsCard.AddRow(new TextBlock { Text = "Startup" },
+                new Border { Height = 1 });
+            settingsCard.AddRow(new TextBlock { Text = "Cloud" },
+                new Border { Height = 1 });
+            Check(settingsCard.RowCount == 3 && settingsCard.DividerCount == 2
+                && settingsCard.Rows.Children.Count == 5
+                && settingsCard.Rows.Children[^1] is TextBlock,
+                "SettingsCard has separators only between rows and none after the last row");
+            Check(settingsCard.Card.BodyPadding.Bottom == 4,
+                "SettingsCard ends near the rounded outer border without trailing empty padding");
 
             // The second source batch must expose native behavior, not only Gallery examples.
             var sourceButton = YanziUi.WithStyle(new Button { Content = "Default" },

@@ -20,6 +20,12 @@ public sealed class YanziCard : Border
 
     public UIElement? Header => _header.Child;
     public UIElement? Body => _content.Child;
+    /// <summary>Allows dense settings rows to finish close to the card border.</summary>
+    public Thickness BodyPadding
+    {
+        get => _content.Padding;
+        set => _content.Padding = value;
+    }
     public UIElement? Footer => _footer.Child;
 
     public YanziCard()

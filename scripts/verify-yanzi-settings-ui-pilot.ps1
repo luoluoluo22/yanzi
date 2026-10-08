@@ -19,6 +19,13 @@ function Find($name, $controlType) {
         (New-Object System.Windows.Automation.PropertyCondition($a::ControlTypeProperty, $controlType)))
     return $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $filter)
 }
+# Navigation may be left on any settings page by the user. Select General first.
+$general = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants,
+    (New-Object System.Windows.Automation.PropertyCondition($a::ControlTypeProperty, $type::ListItem))) |
+    Where-Object { $_.Current.Name -match 'Key = general,' } | Select-Object -First 1
+if (-not $general) { throw 'General settings navigation unavailable' }
+$general.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Select()
+Start-Sleep -Milliseconds 150
 $toggle = Find '新版样式' $type::CheckBox
 if (-not $toggle) { throw 'Visual-only library toggle was not found' }
 $togglePattern = $toggle.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern)
