@@ -1,3 +1,45 @@
+# 燕子 Android 购物能力 · v0.3.0（增量进度）
+
+这次新增 **独立燕子扩展**，不修改或重启宿主核心程序。安装在
+`%LOCALAPPDATA%\OpenQuickHost\Extensions\yanzi-android-automation`，后端调用本目录
+`src/capability-cli.mjs`，代码、声明和安装脚本随仓库保存，不依赖固定的个人电脑路径。
+
+### 已验证的燕子能力调用
+
+| 能力 | 安全范围 | 实际验证 |
+|---|---|---|
+| `android.device.status` | 只读 | 燕子本机 Agent API 调用成功，返回已连接 Android 状态 |
+| `pdd.cart.inspect` | 只读 UI 操作；不加购 | 能力入口调用成功；不是购物车页面时返回 `recognized:false` |
+| `pdd.orders.preview` | 只读当前可见订单页 | 能力入口调用成功；不是订单列表时返回 `recognized:false`；不声称采集所有订单 |
+| `pdd.product.search` | 搜索/读价格；不加购 | **模块单独执行成功，燕子能力入口仍存在 C# 旧版包装层解析错误，待宿主安全重载后复测** |
+
+能力目录确认上述 4 个提供者均是 `yanzi-android-automation`。没有注册任何 `pay`、`submitOrder` 或 `checkout` 功能。C# 包装层按单线程顺序使用手机，同一时刻不并发执行多个 UI 任务。
+
+`orders.mjs` 已新增保守的订单页 OCR 结构化解析（日期、件数、实付、状态）。目前仅通过模拟 OCR 单元测试；当前手机不在订单列表时正确拒绝推断。**完整分页采集与订单商品明细仍未验收，绝不能从当前屏幕推断所有历史订单。**
+
+### 安装或更新
+
+```powershell
+cd F:\Desktop\kaifa\OpenQuickHost\tools\android-automation
+npm test
+./install-extension.ps1
+# 已安装且已停止扩展后：
+./install-extension.ps1 -Force
+```
+
+扩展运行入口 `extension/provider.cs` 使用现有 `YanziActionContext.Capabilities.Register`；Node 脚本从扩展相对路径调用，不暴露任意 ADB shell。扩展的 `startup.mode` 是 `on_app_launch`，启动后向能力网络注册上述四个入口。当前燕子 `extension.status` 对这个后台脚本的 `isRunning` 回报仍为 false，因此应以 **能力目录以及实际能力调用** 验证，而不是仅根据状态字段判定。更新运行中的 C# 包装器需要可控地重新加载扩展；本轮为避免打断其他任务，未重启燕子主程序。
+
+若调用时报错，先在本地读取扩展目录的 `startup-error.log` 或 `capability-error.log`，不要把日志内容上传至公开环境。已经出现一次旧版 Schema 的 `maxLength` 不兼容，已在仓库声明中修复。
+
+### 剩余工作
+
+1. 完成 C# 运行时新版本的安全加载与 `pdd.product.search` 从燕子端到端调用验收。
+2. 在订单真实页面测试 `pdd.orders.preview`，随后扩展为受控翻页采集和完整订单 SKU 明细。
+3. 加入操作审计和设备/应用焦点并发锁，完成购物车多商品跨页验证。
+4. 最后才为购物交易设计每笔明确授权和幂等机制；现在的扩展没有下单权限。
+
+---
+
 # 燕子 Android 自动操作底座（0.2.0）
 
 本模块是可独立运行的 Windows → USB ADB → Android 微信小程序自动化库。底层复用燕子的本机 PaddleOCR（`ocr.recognize`）；UI 树能够识别时优先使用 UI 树，不另行重复安装 OCR 引擎。目标是把“截图→定位→点击→核对”封装成可以多次复用的操作闭环。
