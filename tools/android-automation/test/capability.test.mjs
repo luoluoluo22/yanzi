@@ -5,7 +5,7 @@ import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 
 const manifest=JSON.parse(readFileSync(new URL('../extension/manifest.json',import.meta.url),'utf8'));
-const names=['android.device.status','pdd.product.search','pdd.cart.inspect','pdd.orders.preview','pdd.orders.collect'];
+const names=['android.device.status','pdd.product.search','pdd.cart.inspect','pdd.orders.preview','pdd.orders.collect','pdd.orders.detail'];
 const allowedKeywords=new Set(['type','properties','items','required','enum','additionalProperties','minimum','maximum','minLength','title','description','default','examples','$schema']);
 function inspectSchema(schema){
  assert.equal(typeof schema,'object');

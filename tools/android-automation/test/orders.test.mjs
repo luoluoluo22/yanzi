@@ -22,13 +22,17 @@ test('identical visible card dedupes; same amount different goods retained',()=>
   line('2026/08/20',400),line('已提货',480),line('商品3件',560),line('白菜',600),line('实付¥27.95',650),
   line('2026/08/20',900),line('已提货',980),line('商品3件',1060),line('土豆',1120),line('实付¥27.95',1170)).lines);
  assert.equal(r.orders.length,2);
- assert.notEqual(r.orders[0].identity,r.orders[1].identity);
+ assert.equal(r.orders[0].identity,r.orders[1].identity);
+ assert.notEqual(r.orders[0].visualHash,r.orders[1].visualHash);
+ assert.ok(r.orders[1].issues.includes('identity_collision_requires_order_number'));
+ assert.equal(r.orders[1].verified,false);
 });
 test('one-screen duplicate OCR card filtered when identical text',()=>{
  const r=extractOrderCards(frame(
  line('2026/08/20',400),line('已提货',480),line('商品3件',560),line('实付¥27.95',650),
  line('2026/08/20',900),line('已提货',980),line('商品3件',1060),line('实付¥27.95',1170)).lines);
- assert.equal(r.orders.length,1);
+ assert.equal(r.orders.length,2);
+ assert.equal(r.orders[1].verified,false);
 });
 test('collector never scrolls unless order list verified',async()=>{
  let swipes=0;
@@ -56,4 +60,66 @@ test('no-change and hard page cap bound traversal',async()=>{
  const r=await collectVisibleOrderPages({device:{size:async()=>({width:1080,height:2400}),swipe:async()=>swipes++},
  vision:{recognize:async()=>page},maxPages:8,waitMs:0});
  assert.equal(r.stopReason,'page_unchanged');assert.equal(swipes,1);assert.equal(r.complete,false);
+});
+
+test('real current delayed-payment order records future debit instead of zero total',()=>{
+ const r=extractOrderCards([
+   line('订单列表',138,445),line('全部',375,30),
+   line('2026/10/08',712,29),line('待提货(10月9日可提货)',708,602),
+   line('共12件 先用后付 实付:¥0',1072,612),
+   line('付款￥42.88)',1128,812),
+   line('已展开一周前的订单',1402,30),
+   line('2026/09/24',1522,29),line('待评价',1512,911),
+   line('共19件 先用后付 实付:¥147.05',1890,612)
+ ]);
+ assert.equal(r.recognized,true);
+ assert.equal(r.orders[0].quantity,12);
+ assert.equal(r.orders[0].amount,42.88);
+ assert.equal(r.orders[0].paidShown,0);
+ assert.equal(r.orders[0].deferredPaymentDue,42.88);
+ assert.equal(r.orders[0].verified,true);
+ assert.equal(r.orders[1].amount,147.05);
+ assert.equal(r.orders[1].verified,true);
+});
+test('zero paid without visible future payable stays unverified, never a free order',()=>{
+ const r=extractOrderCards([
+ line('订单列表',138,445),line('全部',375,30),
+ line('2026/10/08',712,29),line('待提货',708,602),
+ line('共12件 先用后付 实付:¥0',1072,612)]);
+ assert.equal(r.orders[0].amount,null);
+ assert.equal(r.orders[0].verified,false);
+});
+test('one-week collapsed orders expanded only after verifying paired control',async()=>{
+ let i=0,taps=0,swipes=0;
+ const header=[line('订单列表',138,445),line('全部',375,30)];
+ const first={lines:[...header,line('2026/10/08',710,30),line('待提货',710,850),
+ line('共12件 先用后付 实付:¥0',1072,612),line('付款¥42.88',1128,812),
+ line('已折叠一周前的订单',1402,30),line('展开',1402,900)]};
+ const second={lines:[...header,line('2026/10/08',710,30),line('待提货',710,850),
+ line('共12件 先用后付 实付:¥0',1072,612),line('付款¥42.88',1128,812),
+ line('已展开一周前的订单',1402,30),
+ line('2026/09/24',1520,30),line('待评价',1511,900),
+ line('共19件 先用后付 实付:¥147.05',1890,620),
+ line('今日特价',2170,500)]};
+ const a=await collectVisibleOrderPages({device:{
+ size:async()=>({width:1080,height:2400}),tap:async()=>{taps++},swipe:async()=>{swipes++}
+ },vision:{recognize:async()=>i++===0?first:second},maxPages:4,waitMs:0});
+ assert.equal(a.expandedHistory,true);
+ assert.equal(taps,1);
+ assert.equal(swipes,0);
+ assert.equal(a.orders.length,2);
+ assert.equal(a.stopReason,'recommendations_section');
+ assert.equal(a.complete,false);
+});
+
+test('suspicious integer-like OCR amount is flagged, never treated as verified ¥3724',()=>{
+ const r=extractOrderCards([
+ line('订单列表',138,445),line('全部',375,30),
+ line('2026/03/14',700,30),line('已提货',692,900),
+ line('共9件 先用后付 实付:¥3724',1072,612)
+ ]);
+ assert.equal(r.recognized,true);
+ assert.equal(r.orders[0].amount,null);
+ assert.equal(r.orders[0].verified,false);
+ assert.ok(r.orders[0].issues.includes('suspicious_large_integer_price_ocr'));
 });

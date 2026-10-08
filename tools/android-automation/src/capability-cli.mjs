@@ -5,8 +5,9 @@ import {PddCartAutomation} from './pdd-cart.mjs';
 import {AdbChineseIme} from './ime.mjs';
 import {extractOrderCards,collectVisibleOrderPages} from './orders.mjs';
 import {UnsafeTargetError} from './vision.mjs';
+import {collectOrderDetail} from './order-detail.mjs';
 
-const allowed=new Set(['android.device.status','pdd.product.search','pdd.cart.inspect','pdd.orders.preview','pdd.orders.collect']);
+const allowed=new Set(['android.device.status','pdd.product.search','pdd.cart.inspect','pdd.orders.preview','pdd.orders.collect','pdd.orders.detail']);
 const operation=process.argv[2];
 const encoded=process.argv[3]||'e30=';
 async function main(){
@@ -39,6 +40,13 @@ async function main(){
     }
     const collected=await collectVisibleOrderPages({device,vision,maxPages});
     return {ok:true,...collected};
+ }
+ if(operation==='pdd.orders.detail'){
+    if(Object.keys(input).some(k=>k!=='maxPages'))throw new Error('Unsupported detail options');
+    const maxPages=input.maxPages===undefined?8:input.maxPages;
+    if(!Number.isInteger(maxPages)||maxPages<1||maxPages>12)throw new Error('maxPages must be 1..12');
+    const detail=await collectOrderDetail({device,vision,maxPages});
+    return {ok:true,...detail};
  }
  if(Object.keys(input).length)throw new Error('Unexpected arguments for read-only capability');
  if(operation==='pdd.cart.inspect'){
