@@ -1,54 +1,66 @@
-# 燕子 Android 通用操作底座（P0/P1 第一轮）
+# 燕子 Android 自动操作底座 · P0/P1 第二轮
 
-本地独立 Node.js 模块，不改动燕子主窗口、移动 APP 或生产服务。仅通过 USB ADB 控制本人授权的 Android 设备；复用燕子宿主的 `ocr.recognize` (PaddleOCR)，不另外安装识别引擎。截图作为本机临时文件传给 `127.0.0.1` 上的燕子 Agent API，完成后删除；API Token 不输出日志。
+独立的本机 Node.js 模块，USB ADB + Android UI tree + 燕子已有 `ocr.recognize` (PaddleOCR)。本轮不改动宿主、云端服务或已安装的小程序；所有截图仅保存在本机临时路径，OCR 只发送至 `127.0.0.1` 上的燕子 Agent API，完成后删除临时文件。接口令牌从用户本机配置读取，不写入日志。
 
-## 当前进度
+## 状态与验证边界
 
-| 能力 | 状态 |
+| 能力 | 状态与证据 |
 | --- | --- |
-| ADB 设备发现、串号限定、多设备防误操作 | 已实现、单测及真机验收 |
-| 前台检测、启动微信、点击、滑动、返回 | 基础接口已实现 |
-| 获取截图、自动删除临时文件 | 已实现 |
-| Android UI tree 读取和解析 | 已实现；微信小程序实际不提供文字节点 |
-| OCR 检索文字与坐标、重复候选拒绝点击 | 已实现、真机识别通过 |
-| 分辨率覆盖修正 | 已实现，真机 1080×2400 与截图一致 |
-| 微信小程序入口导航 | 已实现原型，尚未覆盖全部页面状态 |
-| 商品搜索 | 原型；真实中文输入广播未能写入文本，阻止自动搜索 |
-| 购物车读取 | 只读接口原型；尚缺跨页采集和商品行级绑定 |
-| 自动增删/替换购物车商品 | 当前禁用，待前后数量核验 |
-| 自动下单/支付 | 当前禁用，待单独授权与幂等交易设计 |
+| ADB 设备连接、前台检查、触摸/滑动/返回 | 已实现，Redmi K70 真机可用 |
+| UI tree 优先 + PaddleOCR 回退 | 真机微信小程序可用（UI tree 仅暴露外层容器） |
+| 屏幕分辨率覆盖修正 | 真机 1080×2400，与截图对应 |
+| ADBKeyboard 中文输入、验证和恢复 | **真机通过**。切换 IME 后必须重新聚焦微信输入框，写入文字后在恢复原 IME 之前进行 OCR 核验 |
+| 多多买菜搜索流程 | **真机通过**。从现有结果页再次搜索“正新烤肠”，再切换“白糖”，识别并加载商品卡片 |
+| 商品卡片关联和重量单价 | **真机通过**。从同一个商品卡片提取商品文字、重量、价格、按钮；信息不完整会标记 `verified:false` |
+| 购物车 OCR 条目/数量解析 | **模拟测试通过**，未在真实购物车完成结构化验收 |
+| 修改前后购物车数量校验 | **模拟测试通过**；非目标条目变更、读数不确定、超时均不重试 |
+| 自动加入、删除、替换商品 | 尚禁用，待商品卡与真实购物车数量验证闭环 |
+| 下单、支付 | 完全禁用，待独立用户授权、金额和自提点验证、幂等机制 |
 
-**真机结果：** 新模块已识别 Redmi K70 上微信小程序的 46 行 OCR 文本，屏幕尺寸读取与截图统一。Android 手机上已安装 ADBKeyboard，切换/恢复原输入法通过验证，但 `ADB_INPUT_TEXT` 广播没有实际写入搜索框；这不是成功的中文输入，不能跳过校验。
+当前 **25 项单元测试通过**。真实购物场景仅执行了搜索、OCR 和比价，没有再次下单，也没有自动加购。
 
-## 使用
+## 本机使用
 
 ```powershell
 cd F:\Desktop\kaifa\OpenQuickHost\tools\android-automation
 npm test
 node src/cli.mjs status
 node src/cli.mjs inspect
-node src/cli.mjs locate 购物车
-node src/cli.mjs open-wechat
-node src/cli.mjs open-mini 多多买菜
+node src/cli.mjs locate 搜索
+node src/cli.mjs search 正新烤肠
+node src/cli.mjs products
+node src/cli.mjs compare 正新 7
+node src/cli.mjs search 白糖
 node src/cli.mjs plan-cart '[{"name":"正新原味烤肠"}]'
 ```
 
-多台手机时指定 `$env:ANDROID_SERIAL='你的设备序列号'`。`inspect` 会输出当前页面文字，可能包含私人信息，只在本人电脑本地运行，不贴到公开日志。需要燕子本机 Agent API 在线才能 OCR。
+这些命令用于受控调试，依赖手机 USB 授权及燕子本机 Agent API 在线。`inspect` 会输出可能包含私人内容的屏幕 OCR，不应写入公开日志。连接多台手机时，请设置 `ANDROID_SERIAL`。
 
-`search <中文词>` 当前仅用于受控调试，因微信小程序历史搜索会影响输入路径，尚未完成真机验收；搜索步骤若不满足屏幕条件会主动失败。**任何按钮点击的执行结果都需要后续屏幕状态核验，而不是把点击成功当作业务成功。**
+## 设计要点
 
-## 复用接口
+- **绝不根据固定位置猜测控件**：只能点击唯一可识别的文字/坐标，或通过商品行证据绑定操作按钮。OCR 重名或页面跳转不一致时停止。
+- **中文输入必须验真**：ADBKeyboard 的广播成功只代表广播已发出；搜索框显示预期文字并进入结果页，才算成功。完成后恢复先前输入法。
+- **价格可比较，不等于已结算**：优先明确 OCR 中的“券后价/秒杀价”，按每 500g 计算；超出视窗或存在多个无法辨认价格的卡片，标注未验证。
+- **写入动作不能盲重试**：`runVerifiedCartAction` 仅允许一次回调；执行前读取可信快照，执行后比对目标数量，任何结果不确定时返回 `uncertain`，要求重新读取后人工/AI 判断。
+- **交易能力隔离**：`addProduct/removeProduct/submitOrder` 在当前公开流程中主动拒绝执行。开发辅助的模拟事务校验不代表可以直接下单。
 
-- `AndroidDevice.ensureConnected/foreground/size/openApp/tap/swipe/back/screenshot/uiTree`
-- `ScreenVision.recognize/locate/tapText/waitFor/inspect`
-- `AdbChineseIme.type`（广播请求已发送 != 文字确实输入）
-- `AndroidFlows.openWechat/openMiniProgram/searchProducts/findProduct/openCart/readCart/prepareCart`
+## 核心接口
+
+| 组件 | 函数 |
+| --- | --- |
+| `AndroidDevice` | `ensureConnected/size/tap/swipe/back/openApp/uiTree/screenshot` |
+| `ScreenVision` | `recognize/locate/tapText/waitFor/inspect` |
+| `AdbChineseIme` | `type(text, {focus,verify,clearExisting})` |
+| `AndroidFlows` | `openWechat/openMiniProgram/searchProducts/findProduct/compareProducts/openCart/readCart` |
+| `products.mjs` | `extractProductCards/chooseProduct/yuanPer500g` |
+| `cart.mjs` | `extractCartRows/verifyCartChange` |
+| `transaction.mjs` | `runVerifiedCartAction`，默认不自动重试 |
 
 ## 下一步
 
-1. 解决中文输入：验证 ADBKeyboard 与小程序输入框的焦点/权限，或改用燕子 APP 的授权输入桥；完成真实中文搜索的端到端验收。
-2. 识别商品卡片：将文字、规格、价格、库存、商品按钮绑定为一个商品对象，用购物车数量变化验证添加/删除。错误时停机并重读。
-3. 历史订单分页采集与结构化保存、单位价格比较、预算约束、批量购物计划。
-4. 购物车事务回执、订单授权与幂等提交；交易能力在独立审批之前保持关闭。
+1. 对真实购物车进行**只读**商品行/数量/实际应付价识别验收，特别处理多行标题、促销原价、空购物车、弹窗与滑动分页。
+2. 绑定商品卡片与真实购物车同一 SKU 的身份，并在用户允许的测试购物车里完成一次增加→验证→撤销→验证。未验证的操作持续禁用。
+3. 历史订单批量结构化采集、时间周期分析、价格历史和备货预算。
+4. 最后再设计独立的订单审批、提交幂等及回执能力。对任何已经发出但结果不确定的真实交易，先查询订单状态，**不得立即重新提交**。
 
-不覆写或重启正在开发的燕子宿主；当前所有自动化测试均为模拟页面、无真实商品交易。
+模块独立热更新，无须停止燕子宿主；Git 提交仅限 `tools/android-automation`。

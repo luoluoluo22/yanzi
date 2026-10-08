@@ -1,5 +1,7 @@
 import {delay} from './adb.mjs';
 import {UnsafeTargetError} from './vision.mjs';
+import {extractProductCards,chooseProduct} from './products.mjs';
+import {extractCartRows} from './cart.mjs';
 
 const MINI='多多买菜';
 export class AndroidFlows {
@@ -37,25 +39,80 @@ export class AndroidFlows {
       }
     }
   }
+  // A search button on the home page may jump straight to cached results.
+  // Navigate by the actual screen rather than assuming a fixed sequence.
+  async ensureSearchEntry() {
+    for(let step=0;step<4;step++) {
+      const screen=await this.vision.recognize();
+      const header=screen.lines.filter(l=>l.box && l.box.y>=95 && l.box.y<215);
+      const searchButton=header.some(l=>l.text.trim()==='搜索' && l.box.x>450);
+      const field=header.find(l=>l.box.x>=75 && l.box.x<540 && l.text.trim()!=='搜索' && l.text.trim());
+      if(searchButton && field) return {screen,field};
+      if(searchButton){
+        // Search button exists, but no OCR-visible field: refuse to guess.
+        throw new UnsafeTargetError('Search input field not identified');
+      }
+      if(field) {
+        const box=field.box;
+        await this.device.tap(Math.round(box.x+box.width/2),Math.round(box.y+box.height/2));
+      } else {
+        throw new UnsafeTargetError('Cannot locate search entry safely');
+      }
+      await delay(400);
+    }
+    throw new UnsafeTargetError('Search entry state not reached');
+  }
   async searchProducts(query,{openSearch=true}={}) {
-    if(!query?.trim())throw new Error('Empty query');
-    if(openSearch)await this.vision.tapText('搜索',{exact:true,waitMs:500});
-    // The search CTA leads to a page whose input is not automatically focused.
-    // Focus the placeholder explicitly; never broadcast text to an unknown field.
-    await this.vision.tapText('搜索您要的商品',{exact:false,waitMs:250});
-    // No implicit pinyin: the actual visible Chinese query must be verified.
+    if(typeof query!=='string'||!query.trim())throw new Error('Empty query');
     if(!this.typeChinese)throw new Error('Chinese input adapter is not configured; cannot safely search products');
-    await this.typeChinese(query,{device:this.device,vision:this.vision});
-    const typed=await this.vision.recognize();
-    const normalized=(s)=>String(s).replace(/\\s+/g,'');
-    const located=typed.lines.some(line=>line.box && line.box.y<240 && normalized(line.text).includes(normalized(query)));
-    if(!located)throw new UnsafeTargetError('Chinese search field was not verified: refusing to submit');
-    await this.vision.tapText('搜索',{exact:true,waitMs:800});
-    return {query,verifiedInput:!!located,results:await this.vision.recognize()};
+    // Safe alternative for callers starting from the home page.
+    if(openSearch) {
+      const first=await this.vision.recognize();
+      const top=first.lines.filter(l=>l.box && l.box.y>=95 && l.box.y<215);
+      const button=top.find(l=>l.text.trim()==='搜索' && l.box.x>450);
+      const field=top.find(l=>l.box.x>=75 && l.box.x<540 && l.text.trim()!=='搜索');
+      if(button && !field) await this.vision.tapText('搜索',{exact:true,waitMs:400});
+    }
+    await this.ensureSearchEntry();
+    const focus=async()=>{
+      const {field}=await this.ensureSearchEntry();
+      const box=field.box;
+      await this.device.tap(Math.round(box.x+box.width/2),Math.round(box.y+box.height/2));
+    };
+    const verify=async wanted=>{
+      const typed=await this.vision.recognize();
+      return typed.lines.some(l=>{
+        if(!l.box || l.box.y<95 || l.box.y>=215 || l.box.x<75 || l.box.x>=540)return false;
+        const found=l.text.replace(/\s+/g,'');
+        const target=wanted.replace(/\s+/g,'');
+        // PP-OCR can include the search magnifying-glass glyph as "Q".
+        return found===target || (found.endsWith(target)&&found.length-target.length<=2);
+      });
+    };
+    await this.typeChinese(query,{focus,verify,clearExisting:true});
+    await this.vision.tapText('搜索',{exact:true,waitMs:850});
+    let results=await this.vision.recognize();
+    if(!results.text.includes('综合') && !results.text.includes('销量'))throw new UnsafeTargetError('Search results page not verified');
+    let cards=[];
+    for(let i=0;i<5;i++){
+      const size=await this.device.size();
+      cards=extractProductCards(results.lines,size);
+      if(cards.length)break;
+      await delay(550);
+      results=await this.vision.recognize();
+    }
+    return {query,verifiedInput:true,results,cards,loaded:cards.length>0};
   }
   async findProduct(query) {
     const scan=await this.vision.recognize();
-    return {query,matches:scan.lines.filter(l=>l.text.includes(query)).map(l=>({text:l.text,box:l.box})),snapshotText:scan.text};
+    const size=await this.device.size();
+    const cards=extractProductCards(scan.lines,size);
+    return {query,cards:cards.filter(c=>!query||c.name.includes(query)||c.brand===query),scanned:cards.length};
+  }
+  async compareProducts(constraints={}) {
+    const scan=await this.vision.recognize();
+    const cards=extractProductCards(scan.lines,await this.device.size());
+    return {candidates:cards,choice:chooseProduct(cards,constraints)};
   }
   async openCart() {
     await this.vision.tapText('购物车');
@@ -64,7 +121,8 @@ export class AndroidFlows {
   }
   async readCart() {
     const screen=await this.vision.recognize();
-    return {text:screen.text,lines:screen.lines,verified:screen.text.includes('购物车')||screen.text.includes('已选')};
+    const snapshot=extractCartRows(screen.lines,await this.device.size());
+    return {text:screen.text,snapshot,verified:snapshot.verified};
   }
   // Only executed on an exact unique product label. Final cart state is re-read
   // and MUST be separately verified; tapping '+' is not proof of success.
