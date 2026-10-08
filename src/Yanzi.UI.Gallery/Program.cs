@@ -24,11 +24,11 @@ internal static class Program
 /// Interactive catalog for reviewing actual Yanzi.UI.Wpf controls. This application runs
 /// out of process and does not modify the production Yanzi Runtime or installed extensions.
 /// </summary>
-internal sealed class GalleryWindow : Window
+internal sealed partial class GalleryWindow : Window
 {
     private static readonly (string Title, string Subtitle)[] Pages =
     {
-        ("总览", "观察整体视觉与基础状态"),
+        ("总览", "直接体验各类组件的组合效果"),
         ("按钮", "主次操作、危险操作、禁用态"),
         ("输入", "搜索、表单、中文输入和校验"),
         ("选择", "开关、勾选与菜单"),
@@ -36,6 +36,12 @@ internal sealed class GalleryWindow : Window
         ("反馈", "加载、提示和确认"),
         ("设计令牌", "颜色、间距、字号与圆角"),
         ("徽标 Badge", "六种变体、图标和加载状态"),
+        ("基础组件", "标签、分割线、键帽、提示与骨架屏"),
+        ("表单控件", "选择器、滑块、日期、密码与验证"),
+        ("导航与布局", "标签页、面包屑、折叠、分页"),
+        ("数据展示", "表格、进度、头像、空状态"),
+        ("弹层与反馈", "弹出菜单、Tooltip、Dialog、抽屉"),
+        ("全部组件索引", "查看官方组件逐项适配状态"),
         ("评价与记录", "评分和本地保存体验意见")
     };
 
@@ -66,6 +72,7 @@ internal sealed class GalleryWindow : Window
         FontSize = 13;
 
         YanziUi.ApplyTo(this, _theme);
+        SourceInitialized += (_, _) => GalleryWindowAppearance.Apply(this, _theme);
         SetResourceReference(BackgroundProperty, "Yanzi.Color.Background");
         SetResourceReference(ForegroundProperty, "Yanzi.Color.Foreground");
         Content = BuildShell();
@@ -100,7 +107,7 @@ internal sealed class GalleryWindow : Window
         brandLine.Children.Add(logo);
         brandLine.Children.Add(Text("Yanzi UI", 20, true, "Yanzi.Brush.Text", new Thickness(0, 4, 0, 0)));
         brand.Children.Add(brandLine);
-        brand.Children.Add(Text("SHADCN DESIGN  /  v0.2", 10, false, "Yanzi.Brush.TextMuted", new Thickness(0, 11, 0, 0)));
+        brand.Children.Add(Text("SHADCN DESIGN  /  v0.4.2", 10, false, "Yanzi.Brush.TextMuted", new Thickness(0, 11, 0, 0)));
         sidebarLayout.Children.Add(brand);
 
         var footer = new StackPanel { Margin = new Thickness(8, 12, 0, 3) };
@@ -110,7 +117,9 @@ internal sealed class GalleryWindow : Window
         sidebarLayout.Children.Add(footer);
 
         var nav = new StackPanel();
-        sidebarLayout.Children.Add(nav);
+        var navScroll = new ScrollViewer { Content = nav, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+        navScroll.Resources[typeof(ScrollBar)] = FindResource(YanziUi.Styles.Scrollbar);
+        sidebarLayout.Children.Add(navScroll);
         nav.Children.Add(Text("组件目录", 12, true, "Yanzi.Brush.TextMuted", new Thickness(8, 0, 0, 14)));
         for (var i = 0; i < Pages.Length; i++)
         {
@@ -119,8 +128,8 @@ internal sealed class GalleryWindow : Window
             {
                 Content = new TextBlock { Text = Pages[i].Title, TextAlignment = TextAlignment.Left, FontSize = 13, FontWeight = FontWeights.Medium },
                 HorizontalContentAlignment = HorizontalAlignment.Left,
-                Height = 43,
-                Margin = new Thickness(0, 0, 0, 6),
+                Height = 36,
+                Margin = new Thickness(0, 0, 0, 3),
                 Padding = new Thickness(14, 0, 0, 0),
                 BorderThickness = new Thickness(0),
                 Cursor = Cursors.Hand
@@ -167,6 +176,7 @@ internal sealed class GalleryWindow : Window
             _theme = _theme == YanziTheme.Dark ? YanziTheme.Light : YanziTheme.Dark;
             YanziUi.ApplyTo(this, _theme);
             RefreshThemeLabel();
+            GalleryWindowAppearance.Apply(this, _theme);
             UpdateNavigation();
         });
         themeStack.Children.Add(themeButton);
@@ -177,6 +187,7 @@ internal sealed class GalleryWindow : Window
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             Padding = new Thickness(32, 0, 24, 22)
         };
+        _scroll.Resources[typeof(ScrollBar)] = FindResource(YanziUi.Styles.Scrollbar);
         Grid.SetRow(_scroll, 1);
         main.Children.Add(_scroll);
         _scroll.Content = _body;
@@ -191,7 +202,7 @@ internal sealed class GalleryWindow : Window
         _statusText.FontSize = 11;
         _statusText.SetResourceReference(TextBlock.ForegroundProperty, "Yanzi.Brush.TextSecondary");
         statusRow.Children.Add(_statusText);
-        var hint = Text("Ctrl+1～9 切换分类", 11, false, "Yanzi.Brush.TextMuted");
+        var hint = Text("Ctrl+1～9 切换 · 更多在左侧目录", 11, false, "Yanzi.Brush.TextMuted");
         DockPanel.SetDock(hint, Dock.Right);
         statusRow.Children.Add(hint);
 
@@ -233,38 +244,15 @@ internal sealed class GalleryWindow : Window
             case 5: Feedback(); break;
             case 6: Tokens(); break;
             case 7: Badges(); break;
-            case 8: Review(); break;
+            case 8: BasicsCatalog(); break;
+            case 9: FormsCatalog(); break;
+            case 10: NavigationCatalog(); break;
+            case 11: DataCatalog(); break;
+            case 12: OverlayCatalog(); break;
+            case 13: ComponentsIndex(); break;
+            case 14: Review(); break;
         }
         if (_scroll != null) _scroll.ScrollToTop();
-    }
-
-    private void Overview()
-    {
-        var hero = Card("我们正在为燕子建立一套统一的界面语言",
-            "所有预览均使用真实 Yanzi.UI.Wpf 资源与控件。你可以切换主题、实际点击与输入，并在最后一页留下改进意见。");
-        var metrics = new UniformGrid { Columns = 3, Margin = new Thickness(0, 12, 0, 0) };
-        metrics.Children.Add(Metric("09", "评估分类"));
-        metrics.Children.Add(Metric("02", "颜色主题"));
-        metrics.Children.Add(Metric("SH", "shadcn 语义"));
-        hero.Children.Add(metrics);
-
-        var primary = Button("体验按钮  →", YanziUi.Styles.PrimaryButton, () => ShowPage(1));
-        primary.Margin = new Thickness(0, 20, 0, 0);
-        hero.Children.Add(primary);
-
-        var introduction = Card("体验路线", "从按钮、输入、选择等最常用操作入手，再检查状态反馈和设计规范。");
-        introduction.Children.Add(Paragraph("01   看一致性：颜色、字号、间距、圆角能否自然衔接。"));
-        introduction.Children.Add(Paragraph("02   看可用性：鼠标、键盘、输入法和禁用状态是否符合预期。"));
-        introduction.Children.Add(Paragraph("03   看稳定性：切换深浅主题、连续操作后是否依然正确。"));
-        introduction.Children.Add(Paragraph("04   最后评价：记录需要修改的地方，作为下一轮开发依据。"));
-    }
-
-    private static UIElement Metric(string value, string name)
-    {
-        var stack = new StackPanel();
-        stack.Children.Add(Text(value, 27, true, "Yanzi.Brush.Accent", new Thickness(0, 0, 0, 3)));
-        stack.Children.Add(Text(name, 12, false, "Yanzi.Brush.TextSecondary"));
-        return stack;
     }
 
     private void Buttons()
@@ -358,6 +346,13 @@ internal sealed class GalleryWindow : Window
         radioRow.Children.Add(new RadioButton { Content = "舒适", GroupName = "density", Foreground = ResolveBrush("Yanzi.Brush.Text") });
         checklist.Children.Add(radioRow);
         checklist.Children.Add(CodeKey("Yanzi.Toggle / Yanzi.CheckBox"));
+
+        var toggleDemo = Card("Toggle / 单独切换", "不同于 Switch，此处为可切换的工具按钮。点击后维持选中状态。");
+        var toggleButton = YanziUi.WithStyle(new ToggleButton { Content = "加粗", Width = 86,
+            HorizontalAlignment = HorizontalAlignment.Left }, YanziUi.Styles.ToggleButton);
+        toggleButton.Checked += (_, _) => Status("工具按钮：已选择加粗");
+        toggleButton.Unchecked += (_, _) => Status("工具按钮：已取消加粗");
+        toggleDemo.Children.Add(toggleButton);
 
         var menu = Card("上下文菜单", "右键下方按钮，测试菜单打开、焦点和快捷键操作。");
         var target = Button("右键点击我  ···", YanziUi.Styles.SecondaryButton, () => Status("点击了菜单演示按钮"));
@@ -593,7 +588,7 @@ internal sealed class GalleryWindow : Window
             Directory.CreateDirectory(_reviewsDirectory);
             var data = new
             {
-                version = "0.2.0",
+                version = "0.4.2",
                 time = DateTimeOffset.Now,
                 visual = (int)(_visualRating?.Value ?? 4),
                 interaction = (int)(_interactionRating?.Value ?? 4),

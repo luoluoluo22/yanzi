@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using Yanzi.UI.Wpf;
 
@@ -78,6 +79,151 @@ internal static class Program
                 "Yanzi.Color.Ring", "Yanzi.Color.Sidebar" };
             foreach (var key in expectedKeys)
                 Check(window.TryFindResource(key) is SolidColorBrush, "semantic token " + key);
+
+            var additionalStyles = new[] {
+                YanziUi.Styles.Textarea, YanziUi.Styles.Password, YanziUi.Styles.Select,
+                YanziUi.Styles.Slider, YanziUi.Styles.Progress, YanziUi.Styles.Radio,
+                YanziUi.Styles.Tabs, YanziUi.Styles.TabItem, YanziUi.Styles.Expander,
+                YanziUi.Styles.Calendar, YanziUi.Styles.DatePicker, YanziUi.Styles.Tooltip,
+                YanziUi.Styles.DataGrid,
+                YanziUi.Styles.Scrollbar
+            };
+            foreach (var key in additionalStyles)
+                Check(window.TryFindResource(key) is Style, "native reusable component style " + key);
+
+            var names = YanziComponentRegistry.Components.Select(c => c.Name).ToList();
+            Check(names.Count >= 60, "registry covers shadcn component inventory");
+            Check(names.Distinct(StringComparer.OrdinalIgnoreCase).Count() == names.Count,
+                "registry does not duplicate component identities");
+            Check(YanziComponentRegistry.Components.Any(c => c.Name == "Badge" && c.Status == YanziComponentStatus.Ready),
+                "registered reusable badge");
+            Check(YanziComponentRegistry.Components.Any(c => c.Name == "Menubar" && c.Status == YanziComponentStatus.Ready),
+                "registry includes native menubar adaptation");
+
+            var otp = new YanziOtpInput(6);
+            otp.SetValue("123456");
+            Check(otp.Value == "123456" && otp.IsComplete, "OTP value");
+            otp.Clear();
+            Check(otp.Value.Length == 0, "OTP clear");
+            var badOtpRejected = false;
+            try { otp.SetValue("a12345"); }
+            catch (ArgumentException) { badOtpRejected = true; }
+            Check(badOtpRejected, "OTP rejects invalid values");
+
+            var pagination = new YanziPagination { PageCount = 5 };
+            int changedPage = 0;
+            pagination.PageChanged += (_, page) => changedPage = page;
+            pagination.SetPage(3);
+            Check(pagination.Page == 3 && changedPage == 3, "pagination changes page and emits event");
+            pagination.SetPage(99);
+            Check(pagination.Page == 5, "pagination clamps to last page");
+            pagination.Page = 0;
+            Check(pagination.Page == 1, "pagination clamps to first page");
+
+            var carousel = new YanziCarousel();
+            carousel.Add(new TextBlock { Text = "Card 1" });
+            carousel.Add(new TextBlock { Text = "Card 2" });
+            Check(carousel.Step > 0, "carousel exposes scroll increment");
+
+            Check(YanziPrimitives.Avatar("YZ") is Border, "avatar primitive");
+            Check(YanziPrimitives.Kbd("Ctrl") is Border, "keyboard primitive");
+            Check(YanziPrimitives.Separator() is Border, "separator primitive");
+            Check(YanziPrimitives.Skeleton(100, 16) is Border, "skeleton primitive");
+            Check(YanziPrimitives.Alert("Title", "Body") is Border, "alert primitive");
+            Check(YanziPrimitives.EmptyState("Title", "Subtitle") is StackPanel, "empty state primitive");
+            Check(YanziPrimitives.Field("Label", new TextBox()) is StackPanel, "field primitive");
+
+            var toggle = new YanziToggleGroup();
+            toggle.Add("Left");
+            toggle.Add("Center");
+            string? selection = null;
+            toggle.SelectionChanged += (_, value) => selection = value;
+            toggle.Select(1);
+            Check(toggle.SelectedValue == "Center" && selection == "Center", "toggle group selection");
+
+            var trigger = new Button { Content = "Anchor" };
+            var popup = YanziPopover.Attach(trigger, new TextBlock { Text = "Popover content" });
+            Check(popup.PlacementTarget == trigger && !popup.IsOpen, "attached popover stays closed before interaction");
+            var crumb = YanziLayoutPrimitives.Breadcrumb(
+                ("Home", (Action?)(() => { })), ("Components", null));
+            Check(crumb.Children.Count == 3, "breadcrumb segments and separator");
+            var collapse = YanziLayoutPrimitives.Collapsible("Section", new TextBlock { Text = "Content" });
+            Check(!collapse.IsExpanded, "collapsible initial state");
+            var scrollArea = YanziLayoutPrimitives.ScrollArea(new TextBlock(), 170);
+            Check(scrollArea.Height == 170, "scroll area size");
+            var resizable = YanziLayoutPrimitives.Resizable(new TextBlock(), new TextBlock(), 140, 180);
+            Check(resizable.ColumnDefinitions.Count == 3, "resizable columns");
+            var aspect = YanziLayoutPrimitives.AspectRatio(new Border(), 16.0 / 9.0, 160);
+            Check(Math.Abs(aspect.Height - 90) < 0.01, "aspect ratio calculation");
+
+            Check(YanziComponentRegistry.Components.All(c => c.Status == YanziComponentStatus.Ready),
+                "all indexed components have reusable WPF entry points");
+            Check(window.TryFindResource(YanziUi.Styles.ToggleButton) is Style, "toggle button style");
+            Check(window.TryFindResource(YanziUi.Styles.Menubar) is Style, "menubar style");
+
+            var accordion = new YanziAccordion();
+            accordion.Add("First", new TextBlock { Text = "A" });
+            accordion.Add("Second", new TextBlock { Text = "B" });
+            Check(accordion.SectionCount == 2 && accordion.SingleOpen, "accordion builds reusable sections");
+            var buttonGroup = new YanziButtonGroup();
+            int buttonActions = 0;
+            buttonGroup.Add("A", () => buttonActions++);
+            buttonGroup.Add("B", () => buttonActions++);
+            Check(buttonGroup.Count == 2, "button group reusable children");
+
+            var inputGroup = new YanziInputGroup("https://", ".com");
+            inputGroup.Input.Text = "yanzi";
+            Check(inputGroup.Input.Text == "yanzi", "input group exposes editable control");
+
+            var chart = new YanziBarChart();
+            chart.SetData(new[] { new YanziBarPoint("Mon", 5), new YanziBarPoint("Tue", 8) });
+            Check(chart.Content is UniformGrid, "chart builds native layout");
+            var negativeRejected = false;
+            try { chart.SetData(new[] { new YanziBarPoint("No", -1) }); }
+            catch (ArgumentOutOfRangeException) { negativeRejected = true; }
+            Check(negativeRejected, "chart rejects invalid values");
+
+            int commandRuns = 0;
+            var commands = new YanziCommandPalette();
+            commands.Add("Check", () => commandRuns++);
+            commands.Execute();
+            Check(commandRuns == 1, "command palette invokes selected action");
+
+            var itemRow = new YanziItem("Title", "Body", "*");
+            Check(itemRow.Content != null, "item row layout");
+            var side = new YanziSidebar();
+            side.Add("Overview");
+            side.Add("Settings");
+            side.Select(1);
+            Check(side.Count == 2 && side.SelectedIndex == 1, "sidebar selection");
+
+            var messageScroller = new YanziMessageScroller { MaxVisible = 2 };
+            messageScroller.AddMessage("A", false);
+            messageScroller.AddMessage("B", true);
+            messageScroller.AddMessage("C", true);
+            Check(messageScroller.VisibleCount == 2, "bounded message scroller");
+
+            var questionnaire = new YanziQuestionnaire(new[]
+            {
+                new YanziQuestion("question", "Question?", YanziQuestionKind.Text)
+            });
+            Check(!questionnaire.Next(), "required questionnaire answer");
+            var completed = false;
+            var optional = new YanziQuestionnaire(new[]
+            {
+                new YanziQuestion("memo", "Optional?", YanziQuestionKind.Text, Required: false)
+            });
+            optional.Completed += (_, _) => completed = true;
+            Check(optional.Next() && completed, "questionnaire completes and emits answers");
+
+            Check(YanziContentPrimitives.MessageBubble("Hello", true) is Border, "message bubble");
+            Check(YanziContentPrimitives.Marker("Online") is StackPanel, "status marker");
+            Check(YanziContentPrimitives.Attachment("file.txt") is Border, "attachment chip");
+            var rtl = YanziContentPrimitives.Direction(new TextBlock(), FlowDirection.RightToLeft);
+            Check(rtl.FlowDirection == FlowDirection.RightToLeft, "direction primitive");
+            var hover = YanziHoverCard.Attach(new Button(), new TextBlock { Text = "Hover" });
+            Check(!hover.IsOpen, "hover card default state");
+            Check(typeof(YanziSheet).GetMethod(nameof(YanziSheet.Show)) != null, "right-side sheet API");
 
             var secondWindow = new Window();
             Check(secondWindow.Resources.MergedDictionaries.Count == 0, "separate old window remains unchanged");

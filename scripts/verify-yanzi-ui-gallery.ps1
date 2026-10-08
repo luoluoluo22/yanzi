@@ -42,6 +42,11 @@ function Navigate([string]$name) {
     Start-Sleep -Milliseconds 150
 }
 
+Navigate '总览'
+foreach ($title in @('The foundation for Yanzi UI', 'Activity history', 'Account settings', 'New chat')) {
+    $null = Assert-Control $title [System.Windows.Automation.ControlType]::Text
+}
+
 Navigate '按钮'
 $null = Assert-Control '保存更改' [System.Windows.Automation.ControlType]::Button
 $null = Assert-Control '取消' [System.Windows.Automation.ControlType]::Button
@@ -87,6 +92,30 @@ Navigate '徽标 Badge'
 foreach ($title in @('Default','Secondary','Destructive','Outline','Ghost','Link','Verified','Generating','Preview')) {
     $null = Assert-Control $title [System.Windows.Automation.ControlType]::Text
 }
+Navigate '基础组件'
+foreach ($title in @('基础内容 / Primitives', 'Skeleton / Empty / Typography', 'Typography h1')) {
+    $null = Assert-Control $title [System.Windows.Automation.ControlType]::Text
+}
+Navigate '表单控件'
+foreach ($title in @('Field / Input / Input Group / Textarea', '选择主题', 'Slider / Date Picker / Calendar / Progress', 'Input OTP / Button Group')) {
+    $null = Assert-Control $title [System.Windows.Automation.ControlType]::Text
+}
+Navigate '导航与布局'
+foreach ($title in @('Tabs / 标签页', 'Accordion / Collapsible / 折叠面板', 'Pagination / 分页')) {
+    $null = Assert-Control $title [System.Windows.Automation.ControlType]::Text
+}
+Navigate '数据展示'
+foreach ($title in @('Table / Data Table', 'Chart / 可视化', 'Carousel / 横向画廊', 'Empty / Skeleton')) {
+    $null = Assert-Control $title [System.Windows.Automation.ControlType]::Text
+}
+Navigate '弹层与反馈'
+foreach ($title in @('Dialog / Alert Dialog / Sheet / Drawer', 'Dropdown Menu / Context Menu / Popover', 'Command / 命令面板')) {
+    $null = Assert-Control $title [System.Windows.Automation.ControlType]::Text
+}
+Navigate '全部组件索引'
+foreach ($title in @('全部组件 / Component coverage', '组件覆盖清单', '筛选组件')) {
+    $null = Assert-Control $title [System.Windows.Automation.ControlType]::Text
+}
 Navigate '评价与记录'
 $null = Assert-Control '保存评价' [System.Windows.Automation.ControlType]::Button
 $null = Assert-Control '复制评价摘要' [System.Windows.Automation.ControlType]::Button
@@ -102,4 +131,4 @@ $expectedRestored = if ($startedLight) { '○ 浅色' } else { '● 深色' }
 $null = Assert-Control $expectedRestored [System.Windows.Automation.ControlType]::Text
 
 Navigate '总览'
-Write-Host "PASS: $testCount UI Automation assertions, 9 pages, Badge variants, input, switch, list selection and theme switching."
+Write-Host "PASS: $testCount UI Automation assertions, 15 pages, overview wall, Badge variants, input, switch, list selection and theme switching."

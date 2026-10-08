@@ -333,4 +333,170 @@
             </Trigger>
         </Style.Triggers>
     </Style>
+
+    <!-- Native WPF controls with semantic resource values, preserving built-in keyboard/IME behavior. -->
+    <Style x:Key="Yanzi.Textarea" TargetType="{x:Type TextBox}" BasedOn="{StaticResource Yanzi.Input}">
+        <Setter Property="TextWrapping" Value="Wrap"/>
+        <Setter Property="AcceptsReturn" Value="True"/>
+        <Setter Property="MinHeight" Value="82"/>
+        <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
+    </Style>
+    <Style x:Key="Yanzi.Password" TargetType="{x:Type PasswordBox}">
+        <Setter Property="MinHeight" Value="36"/>
+        <Setter Property="Padding" Value="12,6"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Input}"/>
+        <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Card}"/>
+        <Setter Property="Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="FontSize" Value="{DynamicResource Yanzi.Font.Body}"/>
+    </Style>
+    <Style x:Key="Yanzi.Select" TargetType="{x:Type ComboBox}">
+        <Setter Property="MinHeight" Value="36"/>
+        <Setter Property="Padding" Value="10,6"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Input}"/>
+        <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Card}"/>
+        <Setter Property="Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
+        <Setter Property="FontSize" Value="{DynamicResource Yanzi.Font.Body}"/>
+    </Style>
+    <Style x:Key="Yanzi.Slider" TargetType="{x:Type Slider}">
+        <Setter Property="MinHeight" Value="25"/>
+        <Setter Property="Foreground" Value="{DynamicResource Yanzi.Color.Primary}"/>
+        <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Muted}"/>
+        <Setter Property="IsMoveToPointEnabled" Value="True"/>
+    </Style>
+    <Style x:Key="Yanzi.Progress" TargetType="{x:Type ProgressBar}">
+        <Setter Property="MinHeight" Value="7"/>
+        <Setter Property="MaxHeight" Value="9"/>
+        <Setter Property="Foreground" Value="{DynamicResource Yanzi.Color.Primary}"/>
+        <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Secondary}"/>
+    </Style>
+    <Style x:Key="Yanzi.Radio" TargetType="{x:Type RadioButton}">
+        <Setter Property="Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
+        <Setter Property="FontSize" Value="{DynamicResource Yanzi.Font.Body}"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+    </Style>
+    <Style x:Key="Yanzi.Tabs" TargetType="{x:Type TabControl}">
+        <Setter Property="Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
+        <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Card}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Border}"/>
+        <Setter Property="Padding" Value="8"/>
+    </Style>
+    <Style x:Key="Yanzi.TabItem" TargetType="{x:Type TabItem}">
+        <Setter Property="Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
+        <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Secondary}"/>
+        <Setter Property="Padding" Value="14,8"/>
+        <Setter Property="FontSize" Value="{DynamicResource Yanzi.Font.Body}"/>
+    </Style>
+    <Style x:Key="Yanzi.Expander" TargetType="{x:Type Expander}">
+        <Setter Property="Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
+        <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Card}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Border}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding" Value="8"/>
+    </Style>
+    <Style x:Key="Yanzi.Calendar" TargetType="{x:Type Calendar}">
+        <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Card}"/>
+        <Setter Property="Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Border}"/>
+    </Style>
+    <Style x:Key="Yanzi.DatePicker" TargetType="{x:Type DatePicker}">
+        <Setter Property="MinHeight" Value="36"/>
+        <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Card}"/>
+        <Setter Property="Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Input}"/>
+    </Style>
+    <Style x:Key="Yanzi.Tooltip" TargetType="{x:Type ToolTip}">
+        <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Popover}"/>
+        <Setter Property="Foreground" Value="{DynamicResource Yanzi.Color.PopoverForeground}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Border}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding" Value="9,6"/>
+    </Style>
+    <Style x:Key="Yanzi.DataGrid" TargetType="{x:Type DataGrid}">
+        <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Card}"/>
+        <Setter Property="Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Border}"/>
+        <Setter Property="RowBackground" Value="{DynamicResource Yanzi.Color.Card}"/>
+        <Setter Property="AlternatingRowBackground" Value="{DynamicResource Yanzi.Color.Secondary}"/>
+        <Setter Property="GridLinesVisibility" Value="None"/>
+        <Setter Property="HeadersVisibility" Value="Column"/>
+        <Setter Property="CanUserAddRows" Value="False"/>
+        <Setter Property="CanUserDeleteRows" Value="False"/>
+        <Setter Property="AutoGenerateColumns" Value="True"/>
+        <Setter Property="IsReadOnly" Value="True"/>
+        <Setter Property="EnableRowVirtualization" Value="True"/>
+    </Style>
+    <Style x:Key="Yanzi.Menubar" TargetType="{x:Type Menu}">
+        <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Card}"/>
+        <Setter Property="Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Border}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding" Value="5"/>
+    </Style>
+    <Style x:Key="Yanzi.ToggleButton" TargetType="{x:Type ToggleButton}">
+        <Setter Property="MinHeight" Value="34"/>
+        <Setter Property="Padding" Value="13,7"/>
+        <Setter Property="Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
+        <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Transparent}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Border}"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type ToggleButton}">
+                    <Border x:Name="Chrome" Background="{TemplateBinding Background}"
+                        CornerRadius="{DynamicResource Yanzi.Radius.Md}"
+                        BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}">
+                        <ContentPresenter Margin="{TemplateBinding Padding}"
+                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Yanzi.Color.Secondary}"/>
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Chrome" Property="BorderThickness" Value="1"/>
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Ring}"/>
+                            <Setter TargetName="Chrome" Property="BorderThickness" Value="2"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <Style x:Key="Yanzi.Scrollbar" TargetType="{x:Type ScrollBar}">
+        <Setter Property="Width" Value="8"/>
+        <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Transparent}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type ScrollBar}">
+                    <Grid Background="Transparent">
+                        <Track x:Name="PART_Track" IsDirectionReversed="True">
+                            <Track.DecreaseRepeatButton>
+                                <RepeatButton Command="ScrollBar.PageUpCommand"
+                                    Focusable="False" Opacity="0"/>
+                            </Track.DecreaseRepeatButton>
+                            <Track.Thumb>
+                                <Thumb MinHeight="22">
+                                    <Thumb.Template>
+                                        <ControlTemplate TargetType="{x:Type Thumb}">
+                                            <Border Background="{DynamicResource Yanzi.Color.Border}"
+                                                CornerRadius="4" Margin="2,2,2,2"/>
+                                        </ControlTemplate>
+                                    </Thumb.Template>
+                                </Thumb>
+                            </Track.Thumb>
+                            <Track.IncreaseRepeatButton>
+                                <RepeatButton Command="ScrollBar.PageDownCommand"
+                                    Focusable="False" Opacity="0"/>
+                            </Track.IncreaseRepeatButton>
+                        </Track>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
 </ResourceDictionary>
