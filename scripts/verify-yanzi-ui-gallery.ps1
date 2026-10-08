@@ -185,6 +185,9 @@ foreach ($title in @('基础内容 / Primitives', 'Skeleton / Empty / Typography
     $null = Assert-Control $title [System.Windows.Automation.ControlType]::Text
 }
 Navigate '表单控件'
+$passwordInput = Assert-Control 'Password input' [System.Windows.Automation.ControlType]::Edit
+if (-not $passwordInput.Current.IsPassword) { throw 'PasswordBox lost its protected secure edit semantics' }
+$testCount++
 foreach ($title in @('Field / Input / Input Group / Textarea', '选择主题', 'Slider / Date Picker / Calendar / Progress', 'Input OTP / Button Group')) {
     $null = Assert-Control $title [System.Windows.Automation.ControlType]::Text
 }

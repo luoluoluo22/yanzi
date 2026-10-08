@@ -305,7 +305,7 @@ internal sealed partial class GalleryWindow
         Grid.SetColumn(forgot, 1);
         pwdLabel.Children.Add(forgot);
         inputs.Children.Add(pwdLabel);
-        var password = new PasswordBox { Height = 35, Padding = new Thickness(9, 5, 9, 5), FontSize = 14 };
+        var password = YanziUi.WithStyle(new PasswordBox { Height = 35 }, YanziUi.Styles.Password);
         password.SetResourceReference(Control.BackgroundProperty, "Yanzi.Color.Input");
         password.SetResourceReference(Control.ForegroundProperty, "Yanzi.Color.Foreground");
         password.SetResourceReference(Control.BorderBrushProperty, "Yanzi.Color.Border");

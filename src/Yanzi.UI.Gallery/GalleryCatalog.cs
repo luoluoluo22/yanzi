@@ -71,6 +71,7 @@ internal sealed partial class GalleryWindow
         var description = YanziUi.WithStyle(new TextBox { Text = "支持多行编辑和中文输入法", Height = 90 }, YanziUi.Styles.Textarea);
         form.Children.Add(YanziPrimitives.Field("描述", description));
         var pwd = YanziUi.WithStyle(new PasswordBox(), YanziUi.Styles.Password);
+        System.Windows.Automation.AutomationProperties.SetName(pwd, "Password input");
         form.Children.Add(YanziPrimitives.Field("密码 / Password", pwd, "这里只演示密码输入，不会保存到磁盘"));
         form.Children.Add(Button("验证表单", YanziUi.Styles.DefaultButton, () =>
         {

@@ -500,6 +500,7 @@ internal sealed partial class GalleryWindow
             case "Native Select":
                 var combo = YanziUi.WithStyle(new ComboBox { Width = 230 },
                     YanziUi.Styles.Select);
+                System.Windows.Automation.AutomationProperties.SetName(combo, "Native Select choices");
                 combo.Items.Add("Option one");
                 combo.Items.Add("Option two");
                 combo.SelectedIndex = 0;

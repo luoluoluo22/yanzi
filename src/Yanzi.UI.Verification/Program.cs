@@ -1096,6 +1096,54 @@ internal static class Program
             narrowDialog.Close();
             smallOwner.Close();
 
+            // Native Select and PasswordBox must not fall back to unrounded OS chrome.
+            var sourcePassword = YanziUi.WithStyle(new PasswordBox { Password = "sample-only" },
+                YanziUi.Styles.Password);
+            var nativeSelect = YanziUi.WithStyle(new ComboBox { Width = 230 },
+                YanziUi.Styles.Select);
+            nativeSelect.Items.Add("Option one");
+            nativeSelect.Items.Add("Option two");
+            nativeSelect.SelectedIndex = 0;
+            var editableNativeSelect = YanziUi.WithStyle(new ComboBox
+                { Width = 230, IsEditable = true }, YanziUi.Styles.Select);
+            editableNativeSelect.Items.Add("剪贴板");
+            editableNativeSelect.Items.Add("日历");
+            sourceStyleHost.Children.Add(sourcePassword);
+            sourceStyleHost.Children.Add(nativeSelect);
+            sourceStyleHost.Children.Add(editableNativeSelect);
+            window.UpdateLayout();
+            sourcePassword.ApplyTemplate();
+            nativeSelect.ApplyTemplate();
+            editableNativeSelect.ApplyTemplate();
+            var pwdChrome = sourcePassword.Template.FindName("Chrome", sourcePassword) as Border;
+            var pwdHost = sourcePassword.Template.FindName("PART_ContentHost", sourcePassword);
+            Check(pwdChrome?.CornerRadius.TopLeft == 8 && pwdHost is ScrollViewer
+                && sourcePassword.Password.Length == 11,
+                "Password native entry uses rounded 8 DIP chrome and real PART_ContentHost");
+            var selectChrome = nativeSelect.Template.FindName("Chrome", nativeSelect) as Border;
+            var selectPopup = nativeSelect.Template.FindName("PART_Popup", nativeSelect) as Popup;
+            Check(selectChrome?.CornerRadius.TopLeft == 8 && selectPopup?.Child is Border
+                && nativeSelect.SelectedItem?.ToString() == "Option one",
+                "Native Select has rounded trigger and theme-owned real WPF Popup");
+            Check(nativeSelect.ItemContainerStyle is not null
+                && nativeSelect.ItemContainerStyle.TargetType == typeof(ComboBoxItem),
+                "Native Select applies dark themed dropdown-item templates");
+            var selectedLabelPresenter = nativeSelect.Template.FindName("ContentSite",
+                nativeSelect) as ContentPresenter;
+            var selectedTextBrush = selectedLabelPresenter is not null
+                ? System.Windows.Documents.TextElement.GetForeground(selectedLabelPresenter) : null;
+            Check(selectedTextBrush is SolidColorBrush selectedTextColor
+                && nativeSelect.Foreground is SolidColorBrush nativeTextColor
+                && selectedTextColor.Color == nativeTextColor.Color,
+                "Native Select forwards semantic foreground into its selected-text presenter");
+            var editPart = editableNativeSelect.Template.FindName("PART_EditableTextBox",
+                editableNativeSelect) as TextBox;
+            Check(editPart?.Visibility == Visibility.Visible && editableNativeSelect.IsEditable,
+                "Native Select retains editable ComboBox mode and keyboard text-host");
+            nativeSelect.SelectedIndex = 1;
+            Check(nativeSelect.SelectedItem?.ToString() == "Option two",
+                "Native Select still changes selected WPF item after template replacement");
+
             var secondWindow = new Window();
             Check(secondWindow.Resources.MergedDictionaries.Count == 0, "separate old window remains unchanged");
             Check(YanziUi.WithStyle(new ProgressBar(), YanziUi.Styles.Loading) is ProgressBar, "loading control helper");

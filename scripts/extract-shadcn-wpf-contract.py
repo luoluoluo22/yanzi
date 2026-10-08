@@ -15,7 +15,7 @@ ROOT=Path(__file__).resolve().parent.parent
 BASE=ROOT/"docs/yanzi-ui-official-catalog/reference-package"
 OUT=ROOT/"docs/yanzi-ui-official-catalog/wpf-source-contract.json"
 TARGETS=("accordion","alert","card","calendar","combobox",
-         "button","input","select","dialog","dropdown-menu")
+         "button","input","select","dialog","dropdown-menu","native-select")
 THEME_KEYS=("background","foreground","card","card-foreground","popover",
             "popover-foreground","primary","primary-foreground","muted",
             "muted-foreground","accent","border","input","ring")
@@ -27,6 +27,7 @@ REQUIRED={
  "card":("card","card-header","card-content","card-footer"),
  "calendar":("calendar",),
  "combobox":("combobox-trigger","combobox-content","combobox-item","combobox-empty"),
+ "native-select":("native-select-wrapper","native-select","native-select-icon","native-select-option"),
  "button":("button",),
  "input":("input",),
  "select":("select-trigger","select-content","select-item"),

@@ -713,22 +713,198 @@
         <Setter Property="MinHeight" Value="82"/>
         <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
     </Style>
+    <!-- PasswordBox does not inherit TextBox's ControlTemplate.
+         Use the same rounded chrome and PART_ContentHost, keeping secure password entry native. -->
     <Style x:Key="Yanzi.Password" TargetType="{x:Type PasswordBox}">
-        <Setter Property="MinHeight" Value="36"/>
-        <Setter Property="Padding" Value="12,6"/>
+        <Setter Property="MinHeight" Value="32"/>
+        <Setter Property="Padding" Value="10,4"/>
+        <Setter Property="FontFamily" Value="{DynamicResource Yanzi.Font.Geist}"/>
+        <Setter Property="FontSize" Value="16"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
         <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Input}"/>
         <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Card}"/>
         <Setter Property="Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
         <Setter Property="BorderThickness" Value="1"/>
-        <Setter Property="FontSize" Value="{DynamicResource Yanzi.Font.Body}"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type PasswordBox}">
+                    <Grid SnapsToDevicePixels="True">
+                        <Border x:Name="FocusRing" BorderBrush="{DynamicResource Yanzi.Color.Ring}"
+                                BorderThickness="2" CornerRadius="{DynamicResource Yanzi.Radius.Lg}"
+                                Opacity="0"/>
+                        <Border x:Name="Chrome" Margin="2"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="{DynamicResource Yanzi.Radius.Md}">
+                            <!-- Keep padding on PasswordBox, never duplicate it on PART_ContentHost. -->
+                            <ScrollViewer x:Name="PART_ContentHost" Focusable="False"/>
+                        </Border>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                            <Setter TargetName="FocusRing" Property="Opacity" Value="0.65"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Chrome" Property="Opacity" Value="0.5"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <!-- Native selection retains ComboBox focus, keyboard navigation and editable mode,
+         while both popup and items use Yanzi theme rather than Windows light-blue chrome. -->
+    <Style x:Key="Yanzi.Select.Item" TargetType="{x:Type ComboBoxItem}">
+        <Setter Property="Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
+        <Setter Property="FontFamily" Value="{DynamicResource Yanzi.Font.Geist}"/>
+        <Setter Property="FontSize" Value="14"/>
+        <Setter Property="MinHeight" Value="30"/>
+        <Setter Property="Padding" Value="9,5"/>
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type ComboBoxItem}">
+                    <Border x:Name="ItemChrome" Background="Transparent"
+                            CornerRadius="{DynamicResource Yanzi.Radius.Sm}"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter ContentSource="Content"
+                                          HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsHighlighted" Value="True">
+                            <Setter TargetName="ItemChrome" Property="Background" Value="{DynamicResource Yanzi.Color.Accent}"/>
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="ItemChrome" Property="Background" Value="{DynamicResource Yanzi.Color.Secondary}"/>
+                        </Trigger>
+                        <MultiTrigger>
+                            <MultiTrigger.Conditions>
+                                <Condition Property="IsSelected" Value="True"/>
+                                <Condition Property="IsHighlighted" Value="True"/>
+                            </MultiTrigger.Conditions>
+                            <Setter TargetName="ItemChrome" Property="Background" Value="{DynamicResource Yanzi.Color.Accent}"/>
+                        </MultiTrigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
     <Style x:Key="Yanzi.Select" TargetType="{x:Type ComboBox}">
-        <Setter Property="MinHeight" Value="36"/>
-        <Setter Property="Padding" Value="10,6"/>
+        <Setter Property="MinHeight" Value="32"/>
+        <Setter Property="Padding" Value="10,4"/>
+        <Setter Property="FontFamily" Value="{DynamicResource Yanzi.Font.Geist}"/>
+        <Setter Property="FontSize" Value="14"/>
+        <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Input}"/>
         <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Card}"/>
         <Setter Property="Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
-        <Setter Property="FontSize" Value="{DynamicResource Yanzi.Font.Body}"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        <Setter Property="ItemContainerStyle" Value="{StaticResource Yanzi.Select.Item}"/>
+        <Setter Property="MaxDropDownHeight" Value="240"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="SnapsToDevicePixels" Value="True"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type ComboBox}">
+                    <Grid SnapsToDevicePixels="True">
+                        <Border x:Name="FocusRing" BorderBrush="{DynamicResource Yanzi.Color.Ring}"
+                                BorderThickness="2" CornerRadius="{DynamicResource Yanzi.Radius.Lg}"
+                                Opacity="0"/>
+                        <Border x:Name="Chrome" Margin="2"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="{DynamicResource Yanzi.Radius.Md}">
+                            <Grid>
+                                <ToggleButton x:Name="DropDownToggle" Focusable="False"
+                                    Foreground="{TemplateBinding Foreground}"
+                                    IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"
+                                    ClickMode="Press">
+                                    <ToggleButton.Template>
+                                        <ControlTemplate TargetType="{x:Type ToggleButton}">
+                                            <Border Background="Transparent">
+                                                <ContentPresenter HorizontalAlignment="Stretch" VerticalAlignment="Stretch"/>
+                                            </Border>
+                                        </ControlTemplate>
+                                    </ToggleButton.Template>
+                                    <Grid>
+                                        <ContentPresenter x:Name="ContentSite"
+                                            Margin="10,0,30,0"
+                                            VerticalAlignment="Center"
+                                            HorizontalAlignment="Left"
+                                            IsHitTestVisible="False"
+                                            TextElement.Foreground="{TemplateBinding Foreground}"
+                                            Content="{TemplateBinding SelectionBoxItem}"
+                                            ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                            ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"/>
+                                        <Viewbox Width="15" Height="15"
+                                                 HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                 Margin="0,0,10,0" IsHitTestVisible="False">
+                                            <Path Data="M6,9 L12,15 L18,9"
+                                                  Stroke="{DynamicResource Yanzi.Color.MutedForeground}"
+                                                  StrokeThickness="2" StrokeStartLineCap="Round"
+                                                  StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                                                  Fill="Transparent"/>
+                                        </Viewbox>
+                                    </Grid>
+                                </ToggleButton>
+                                <TextBox x:Name="PART_EditableTextBox"
+                                    Margin="8,2,31,2" Padding="2,0"
+                                    VerticalContentAlignment="Center"
+                                    Foreground="{TemplateBinding Foreground}"
+                                    Background="Transparent" BorderThickness="0"
+                                    FontFamily="{TemplateBinding FontFamily}"
+                                    FontSize="{TemplateBinding FontSize}"
+                                    Visibility="Hidden" Focusable="True"/>
+                            </Grid>
+                        </Border>
+                        <Popup x:Name="PART_Popup"
+                               PlacementTarget="{Binding RelativeSource={RelativeSource TemplatedParent}}"
+                               Placement="Bottom" VerticalOffset="3"
+                               IsOpen="{TemplateBinding IsDropDownOpen}"
+                               AllowsTransparency="True" StaysOpen="False"
+                               PopupAnimation="Fade" Focusable="False">
+                            <Border x:Name="PopupChrome"
+                                    MinWidth="{Binding PlacementTarget.ActualWidth, ElementName=PART_Popup}"
+                                    MaxHeight="{TemplateBinding MaxDropDownHeight}"
+                                    CornerRadius="{DynamicResource Yanzi.Radius.Md}"
+                                    BorderBrush="{DynamicResource Yanzi.Color.Border}"
+                                    BorderThickness="1" Background="{DynamicResource Yanzi.Color.Popover}"
+                                    SnapsToDevicePixels="True" Padding="3">
+                                <ScrollViewer MaxHeight="{TemplateBinding MaxDropDownHeight}"
+                                              VerticalScrollBarVisibility="Auto"
+                                              CanContentScroll="True">
+                                    <ItemsPresenter/>
+                                </ScrollViewer>
+                            </Border>
+                        </Popup>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsEditable" Value="True">
+                            <Setter TargetName="ContentSite" Property="Visibility" Value="Hidden"/>
+                            <Setter TargetName="PART_EditableTextBox" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                            <Setter TargetName="FocusRing" Property="Opacity" Value="0.65"/>
+                        </Trigger>
+                        <Trigger Property="IsDropDownOpen" Value="True">
+                            <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Ring}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.5"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
     <Style x:Key="Yanzi.Slider" TargetType="{x:Type Slider}">
         <Setter Property="MinHeight" Value="25"/>
