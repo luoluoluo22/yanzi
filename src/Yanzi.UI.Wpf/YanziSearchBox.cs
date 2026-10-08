@@ -52,7 +52,9 @@ public sealed class YanziSearchBox : UserControl
             FontSize = 13,
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Left,
-            Margin = new Thickness(14, 0, 37, 0),
+            // Align to the native TextBox caret start (17 DIP), not the border inset (14 DIP).
+            // Measured with GetRectFromCharacterIndex(0, trailingEdge: false).
+            Margin = new Thickness(17, 0, 37, 0),
             IsHitTestVisible = false
         };
         _placeholder.SetResourceReference(TextBlock.ForegroundProperty, "Yanzi.Color.MutedForeground");

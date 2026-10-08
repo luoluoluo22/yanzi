@@ -548,13 +548,15 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="{x:Type ui:YanziBadge}">
+                    <!-- 22 DIP capsule: 11 DIP circular ends, straight center grows with text. -->
                     <Border x:Name="BadgeChrome"
                         Background="{TemplateBinding Background}"
                         BorderBrush="{TemplateBinding BorderBrush}"
                         BorderThickness="{TemplateBinding BorderThickness}"
-                        CornerRadius="999"
-                        MinHeight="22"
-                        Padding="9,2">
+                        CornerRadius="11"
+                        Height="22"
+                        MinWidth="52"
+                        Padding="12,0">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <ui:YanziLoadingRing x:Name="Spinner" Width="12" Height="12"
                                 Foreground="{TemplateBinding Foreground}"

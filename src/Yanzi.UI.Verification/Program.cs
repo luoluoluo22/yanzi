@@ -72,6 +72,56 @@ internal static class Program
                 Check(item.Style != null, "badge resolves style: " + variant);
                 Check(item.Style?.TargetType == typeof(YanziBadge), "badge style type: " + variant);
             }
+            // Badge shape must be a short capsule, not a compressed oval.
+            // Test real layout widths, content changes and every visual variant.
+            var badgeRow = new StackPanel { Orientation = Orientation.Horizontal };
+            var shortBadge = new YanziBadge { Content = "Badge", Variant = YanziBadgeVariant.Default };
+            var mediumBadge = new YanziBadge { Content = "Outline", Variant = YanziBadgeVariant.Outline };
+            var longBadge = new YanziBadge { Content = "Secondary", Variant = YanziBadgeVariant.Secondary };
+            badgeRow.Children.Add(shortBadge);
+            badgeRow.Children.Add(mediumBadge);
+            badgeRow.Children.Add(longBadge);
+            window.Content = badgeRow;
+            badgeRow.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            badgeRow.Arrange(new Rect(0, 0, badgeRow.DesiredSize.Width, badgeRow.DesiredSize.Height));
+            shortBadge.ApplyTemplate();
+            mediumBadge.ApplyTemplate();
+            longBadge.ApplyTemplate();
+            var badgeChrome = shortBadge.Template.FindName("BadgeChrome", shortBadge) as Border;
+            Check(badgeChrome is not null && Math.Abs(badgeChrome.CornerRadius.TopLeft - 11) < 0.01,
+                "badge uses exact 11 DIP semicircular ends, not 999");
+            Check(shortBadge.DesiredSize.Height == 22 && mediumBadge.DesiredSize.Height == 22,
+                "badge variants share compact 22 DIP height");
+            Check(shortBadge.DesiredSize.Width >= 52
+                && shortBadge.DesiredSize.Width - shortBadge.DesiredSize.Height >= 30,
+                "short Badge label retains a visible horizontal straight section");
+            Check(longBadge.DesiredSize.Width > mediumBadge.DesiredSize.Width
+                && mediumBadge.DesiredSize.Width > shortBadge.DesiredSize.Width,
+                $"Badge variants size to label: Badge={shortBadge.DesiredSize.Width:0.#}, Outline={mediumBadge.DesiredSize.Width:0.#}, Secondary={longBadge.DesiredSize.Width:0.#}");
+            // Reflow changed text inside an actual WPF window, rather than
+            // measuring detached, cached controls.
+            window.ShowInTaskbar = false;
+            window.Left = -10000;
+            window.Top = -10000;
+            window.Show();
+            window.UpdateLayout();
+            badgeRow.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            var badgeOldWidth = shortBadge.DesiredSize.Width;
+            shortBadge.Content = "Longer sample label";
+            badgeRow.InvalidateMeasure();
+            shortBadge.InvalidateMeasure();
+            window.UpdateLayout();
+            badgeRow.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            Check(shortBadge.DesiredSize.Width > badgeOldWidth + 35,
+                "badge expands when its caption changes");
+            shortBadge.Content = "Badge";
+            badgeRow.InvalidateMeasure();
+            shortBadge.InvalidateMeasure();
+            window.UpdateLayout();
+            badgeRow.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            Check(Math.Abs(shortBadge.DesiredSize.Width - badgeOldWidth) < 1,
+                "badge shrinks again when its caption shortens");
+
             var spinnerBadge = new YanziBadge { Content = "Generating", IsLoading = true, LeadingIcon = "✓" };
             window.Content = spinnerBadge;
             Check(spinnerBadge.IsLoading && spinnerBadge.LeadingIcon == "✓", "badge spinner/icon properties");
@@ -270,7 +320,6 @@ internal static class Program
             window.ShowInTaskbar = false;
             window.Left = -10000;
             window.Top = -10000;
-            window.Show();
             window.UpdateLayout();
             widthPanel.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
             var outlineWidth = outlineBtn.DesiredSize.Width;
@@ -366,6 +415,12 @@ internal static class Program
             var prompt = (TextBlock)searchVisual.Children[1];
             Check(prompt.Visibility == Visibility.Visible && prompt.Text == "Name",
                 "placeholder displayed only when input is empty");
+            var placeholderX = prompt.TranslatePoint(new Point(0, 0), searchBox.Input).X;
+            searchBox.Text = "Name";
+            window.UpdateLayout();
+            var caretStart = searchBox.Input.GetRectFromCharacterIndex(0, false);
+            Check(Math.Abs(placeholderX - caretStart.X) <= 0.5,
+                $"placeholder left edge matches native caret start: placeholder={placeholderX:0.##}, caret={caretStart.X:0.##} DIP");
             searchBox.Text = "中文测试 abc";
             searchBox.Input.CaretIndex = searchBox.Text.Length;
             window.UpdateLayout();
