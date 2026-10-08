@@ -52,3 +52,39 @@ test('wrong tap destination stops instead of blindly clicking Back or another or
  assert.equal(taps,1);assert.equal(backs,0);
  assert.equal(r.stopReason,'order_detail_did_not_open');
 });
+
+test('pending pickup order is not clicked during historical-order verification',async()=>{
+ let taps=0,swipes=0;
+ const pending={lines:[
+  line('订单列表',440,138),line('全部',30,378),
+  line('2026/10/08',30,600),line('待提货(10月9日可提货)',600,600,440),
+  line('共12件 先用后付 实付:¥0',600,1000),
+  line('付款¥42.88',850,1060,180)
+ ]};
+ const result=await collectOrderDetailsFromList({
+  device:{size:async()=>({width:1080,height:2400}),tap:async()=>taps++,swipe:async()=>swipes++},
+  vision:{recognize:async()=>pending},maxOrders:1,maxScrolls:1,waitMs:0
+ });
+ assert.equal(taps,0);assert.equal(swipes,0);
+ assert.equal(result.orders.length,0);
+});
+test('when current pending and historical orders share a page, only historical order is opened',async()=>{
+ let taps=0,backs=0;
+ const orders={lines:[
+  line('订单列表',440,138),line('全部',30,378),
+  line('2026/10/08',30,530),line('待提货(10月9日可提货)',610,530,440),
+  line('共12件 先用后付 实付:¥0',600,850),
+  line('付款¥42.88',850,920,180),
+  line('2026/09/02',30,1160),line('已提货',890,1160),
+  line('共1件 先用后付 实付:¥5.66',600,1520)
+ ]};
+ let page=orders;
+ const result=await collectOrderDetailsFromList({
+  device:{size:async()=>({width:1080,height:2400}),
+    tap:async(x,y)=>{taps++;assert.ok(y>1160 && y<1500);page=detail(5.66,'260902-TEST000003');},
+    back:async()=>{backs++;page=orders;},swipe:async()=>{}},
+  vision:{recognize:async()=>page},maxOrders:1,maxScrolls:1,waitMs:0
+ });
+ assert.equal(taps,1);assert.equal(backs,1);
+ assert.equal(result.orders.length,1);assert.equal(result.orders[0].date,'2026-09-02');
+});

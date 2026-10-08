@@ -47,6 +47,9 @@ export async function collectOrderDetailsFromList({
    if(results.length>=maxOrders)break;
    const summary=entry.order;
    if(!summary.verified || attempted.has(summary.identity))continue;
+   // Read-only verification should not touch pending pickup/payment cards.
+   // Their action buttons are high-stakes; prefer completed historical orders.
+   if(!['已提货','已完成','待评价'].includes(summary.status))continue;
    if(entry.tapY>height*.79 || entry.tapY<height*.2)continue;
    attempted.add(summary.identity);
    const x=Math.round(width*.33),y=entry.tapY;
