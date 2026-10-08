@@ -43,10 +43,12 @@ function Navigate([string]$name) {
     Start-Sleep -Milliseconds 150
 }
 
-# Overview starts with the catalog hidden to maximize comparison width.
-$openCatalog = Assert-Control '☰ 目录' [System.Windows.Automation.ControlType]::Button
-$openCatalog.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
-Start-Sleep -Milliseconds 150
+# The catalog may be left expanded by the complete 64-component audit.
+$openCatalog = Find-Control '☰ 目录' [System.Windows.Automation.ControlType]::Button
+if ($openCatalog) {
+    $openCatalog.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+    Start-Sleep -Milliseconds 150
+}
 $null = Assert-Control '收起目录' [System.Windows.Automation.ControlType]::Button
 $testCount++
 Navigate '总览'
@@ -104,6 +106,13 @@ $searchValue.SetValue('')
 if ($searchValue.Current.Value -ne '') { throw 'Search input did not clear' }
 $testCount++
 
+# Previous specialized demos remain accessible, but do not replace the 64 official entries.
+$expandLegacy = Find-Control '展开专题演示' [System.Windows.Automation.ControlType]::Button
+if ($expandLegacy) {
+    $expandLegacy.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+    Start-Sleep -Milliseconds 90
+}
+$null = Assert-Control '收起专题演示' [System.Windows.Automation.ControlType]::Button
 Navigate '按钮'
 $null = Assert-Control '保存更改' [System.Windows.Automation.ControlType]::Button
 $null = Assert-Control '取消' [System.Windows.Automation.ControlType]::Button
@@ -118,7 +127,10 @@ Navigate '输入'
 $inputFields = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants,(New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty,[System.Windows.Automation.ControlType]::Edit)))
 if ($inputFields.Count -lt 3) { throw "Expected at least three input fields; got $($inputFields.Count)" }
 $testCount++
-$inputValue = $inputFields[0].GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
+# Do not type into the global sidebar component filter.
+$pageInput = @($inputFields | Where-Object { $_.Current.Name -ne '筛选官方组件' }) | Select-Object -First 1
+if (-not $pageInput) { throw 'No editable input in the actual input page' }
+$inputValue = $pageInput.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
 $inputValue.SetValue('UI automation smoke test')
 if ($inputValue.Current.Value -ne 'UI automation smoke test') { throw 'Input edit failed' }
 $testCount++
@@ -210,6 +222,10 @@ $expectedRestored = if ($startedLight) { '○ 浅色' } else { '● 深色' }
 $null = Assert-Control $expectedRestored [System.Windows.Automation.ControlType]::Text
 
 Navigate '总览'
+# Clear the shared filter BEFORE collapsing its sidebar; hidden descendants are
+# intentionally absent from UI Automation after the sidebar is collapsed.
+$catalogSearch = Find-Control '筛选官方组件' [System.Windows.Automation.ControlType]::Edit
+if ($catalogSearch) { $catalogSearch.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).SetValue('') }
 $closeCatalog = Assert-Control '收起目录' [System.Windows.Automation.ControlType]::Button
 $closeCatalog.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
 Start-Sleep -Milliseconds 160

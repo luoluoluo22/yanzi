@@ -2,7 +2,12 @@ using System.Collections.Generic;
 namespace Yanzi.UI.Wpf;
 
 public enum YanziComponentStatus { Ready, Preview, Planned }
-public sealed record YanziComponentDescriptor(string Name, YanziComponentStatus Status, string Api, string Group, int GalleryPage);
+public sealed record YanziComponentDescriptor(string Name, YanziComponentStatus Status, string Api, string Group, int GalleryPage)
+{
+    /// <summary>Exact path convention verified against the official /docs/components page (64 base entries).</summary>
+    public string OfficialUrl => "https://ui.shadcn.com/docs/components/base/"
+        + Name.ToLowerInvariant().Replace(' ', '-');
+}
 
 /// <summary>Truthful capability registry. Ready = reusable public API; Preview = gallery only; Planned = not implemented.</summary>
 public static class YanziComponentRegistry
@@ -24,7 +29,7 @@ public static class YanziComponentRegistry
         new("Card", YanziComponentStatus.Ready, "Yanzi.Card", "总览", 0),
         new("Carousel", YanziComponentStatus.Ready, "YanziCarousel", "数据展示", 11),
         new("Chart", YanziComponentStatus.Ready, "YanziBarChart", "数据展示", 11),
-        new("Checkbox", YanziComponentStatus.Ready, "Yanzi.CheckBox", "选择", 3),
+        new("Checkbox", YanziComponentStatus.Ready, "Yanzi.CheckBox.Preview", "选择", 3),
         new("Collapsible", YanziComponentStatus.Ready, "YanziLayoutPrimitives.Collapsible", "导航与布局", 10),
         new("Combobox", YanziComponentStatus.Ready, "Yanzi.Select (IsEditable=true)", "表单控件", 9),
         new("Command", YanziComponentStatus.Ready, "YanziCommandPalette", "弹层与反馈", 12),
@@ -34,7 +39,7 @@ public static class YanziComponentRegistry
         new("Dialog", YanziComponentStatus.Ready, "YanziDialog.Confirm", "弹层与反馈", 12),
         new("Direction", YanziComponentStatus.Ready, "YanziContentPrimitives.Direction", "弹层与反馈", 12),
         new("Drawer", YanziComponentStatus.Ready, "YanziSheet.Show", "弹层与反馈", 12),
-        new("Dropdown Menu", YanziComponentStatus.Ready, "Yanzi.Menu (ContextMenu)", "弹层与反馈", 12),
+        new("Dropdown Menu", YanziComponentStatus.Ready, "YanziDropdownMenu", "弹层与反馈", 12),
         new("Empty", YanziComponentStatus.Ready, "YanziPrimitives.EmptyState", "基础组件", 8),
         new("Field", YanziComponentStatus.Ready, "YanziPrimitives.Field", "表单控件", 9),
         new("Hover Card", YanziComponentStatus.Ready, "YanziHoverCard.Attach", "弹层与反馈", 12),
@@ -64,7 +69,7 @@ public static class YanziComponentRegistry
         new("Skeleton", YanziComponentStatus.Ready, "YanziPrimitives.Skeleton", "基础组件", 8),
         new("Slider", YanziComponentStatus.Ready, "Yanzi.Slider", "表单控件", 9),
         new("Spinner", YanziComponentStatus.Ready, "YanziLoadingRing", "反馈", 5),
-        new("Switch", YanziComponentStatus.Ready, "Yanzi.Toggle", "选择", 3),
+        new("Switch", YanziComponentStatus.Ready, "Yanzi.Switch.Shadcn", "选择", 3),
         new("Table", YanziComponentStatus.Ready, "Yanzi.DataGrid", "数据展示", 11),
         new("Tabs", YanziComponentStatus.Ready, "Yanzi.Tabs", "导航与布局", 10),
         new("Textarea", YanziComponentStatus.Ready, "Yanzi.Textarea", "表单控件", 9),

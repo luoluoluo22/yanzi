@@ -4,7 +4,7 @@
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>0.6.4</Version>
+    <Version>0.7.1</Version>
     <AssemblyName>Yanzi.UI.Wpf</AssemblyName>
     <RootNamespace>Yanzi.UI.Wpf</RootNamespace>
   </PropertyGroup>

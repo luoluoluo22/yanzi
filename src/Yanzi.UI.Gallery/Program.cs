@@ -47,6 +47,8 @@ internal sealed partial class GalleryWindow : Window
     };
 
     private readonly List<Button> _navigation = new();
+    private readonly Dictionary<string, Button> _componentNavigation = new(StringComparer.Ordinal);
+    private YanziComponentDescriptor? _activeComponent;
     private readonly StackPanel _body = new();
     private readonly TextBlock _pageTitle = new();
     private readonly TextBlock _pageSubtitle = new();
@@ -90,7 +92,7 @@ internal sealed partial class GalleryWindow : Window
     private UIElement BuildShell()
     {
         var root = new Grid();
-        _navigationColumn = new ColumnDefinition { Width = new GridLength(192) };
+        _navigationColumn = new ColumnDefinition { Width = new GridLength(214) };
         root.ColumnDefinitions.Add(_navigationColumn);
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
@@ -116,7 +118,7 @@ internal sealed partial class GalleryWindow : Window
         brandLine.Children.Add(logo);
         brandLine.Children.Add(Text("Yanzi UI", 20, true, "Yanzi.Brush.Text", new Thickness(0, 4, 0, 0)));
         brand.Children.Add(brandLine);
-        brand.Children.Add(Text("SHADCN DESIGN  /  v0.6.4", 10, false, "Yanzi.Brush.TextMuted", new Thickness(0, 11, 0, 0)));
+        brand.Children.Add(Text("SHADCN DESIGN  /  v0.7.1", 10, false, "Yanzi.Brush.TextMuted", new Thickness(0, 11, 0, 0)));
         sidebarLayout.Children.Add(brand);
 
         var footer = new StackPanel { Margin = new Thickness(8, 12, 0, 3) };
@@ -129,7 +131,8 @@ internal sealed partial class GalleryWindow : Window
         var navScroll = new ScrollViewer { Content = nav, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         navScroll.Resources[typeof(ScrollBar)] = FindResource(YanziUi.Styles.Scrollbar);
         sidebarLayout.Children.Add(navScroll);
-        nav.Children.Add(Text("组件目录", 12, true, "Yanzi.Brush.TextMuted", new Thickness(8, 0, 0, 14)));
+        nav.Children.Add(Text("首页与评估", 12, true, "Yanzi.Brush.TextMuted", new Thickness(8, 0, 0, 14)));
+        var legacyPages = new StackPanel { Visibility = Visibility.Collapsed };
         for (var i = 0; i < Pages.Length; i++)
         {
             var index = i;
@@ -146,8 +149,63 @@ internal sealed partial class GalleryWindow : Window
             YanziUi.WithStyle(button, YanziUi.Styles.GhostButton);
             button.Click += (_, _) => ShowPage(index);
             _navigation.Add(button);
-            nav.Children.Add(button);
+            if (index is 0 or 13 or 14) nav.Children.Add(button);
+            else legacyPages.Children.Add(button);
         }
+        nav.Children.Add(Text("COMPONENTS · 64", 12, true, "Yanzi.Brush.TextMuted",
+            new Thickness(8, 22, 0, 9)));
+        var componentSearch = YanziUi.WithStyle(new TextBox
+        {
+            Height = 33, ToolTip = "过滤官方组件", Margin = new Thickness(1, 0, 3, 11),
+            FontSize = 12
+        }, YanziUi.Styles.InputSoft);
+        System.Windows.Automation.AutomationProperties.SetName(componentSearch, "筛选官方组件");
+        nav.Children.Add(componentSearch);
+        var officialList = new StackPanel();
+        foreach (var component in YanziComponentRegistry.Components)
+        {
+            var item = component;
+            var entry = YanziUi.WithStyle(new Button
+            {
+                Content = item.Name,
+                HorizontalContentAlignment = HorizontalAlignment.Left,
+                Height = 31,
+                FontSize = 12,
+                Padding = new Thickness(14, 0, 4, 0),
+                Margin = new Thickness(0, 0, 0, 1),
+                BorderThickness = new Thickness(0),
+                Cursor = Cursors.Hand,
+                ToolTip = "官方文档对照：" + item.Name
+            }, YanziUi.Styles.GhostButton);
+            System.Windows.Automation.AutomationProperties.SetName(entry, item.Name);
+            entry.Click += (_, _) => ShowComponent(item);
+            _componentNavigation.Add(item.Name, entry);
+            officialList.Children.Add(entry);
+        }
+        componentSearch.TextChanged += (_, _) =>
+        {
+            var query = componentSearch.Text.Trim();
+            foreach (var (name, entry) in _componentNavigation)
+                entry.Visibility = name.Contains(query, StringComparison.OrdinalIgnoreCase)
+                    ? Visibility.Visible : Visibility.Collapsed;
+        };
+        nav.Children.Add(officialList);
+
+        var legacyToggle = YanziUi.WithStyle(new Button
+        {
+            Content = "展开专题演示",
+            HorizontalContentAlignment = HorizontalAlignment.Left,
+            Height = 35,
+            Margin = new Thickness(0, 19, 0, 5)
+        }, YanziUi.Styles.GhostButton);
+        legacyToggle.Click += (_, _) =>
+        {
+            bool opened = legacyPages.Visibility != Visibility.Visible;
+            legacyPages.Visibility = opened ? Visibility.Visible : Visibility.Collapsed;
+            legacyToggle.Content = opened ? "收起专题演示" : "展开专题演示";
+        };
+        nav.Children.Add(legacyToggle);
+        nav.Children.Add(legacyPages);
 
         var main = new Grid();
         Grid.SetColumn(main, 1);
@@ -235,7 +293,7 @@ internal sealed partial class GalleryWindow : Window
         if (manuallySelected) _sidebarManuallySet = true;
         _sidebarExpanded = visible;
         if (_navigationColumn != null)
-            _navigationColumn.Width = new GridLength(visible ? 192 : 0);
+            _navigationColumn.Width = new GridLength(visible ? 214 : 0);
         if (_navigationSidebar != null)
             _navigationSidebar.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
         if (_sidebarToggleButton != null)
@@ -258,10 +316,18 @@ internal sealed partial class GalleryWindow : Window
             button.SetResourceReference(Control.BackgroundProperty, _page == i ? "Yanzi.Color.SidebarAccent" : "Yanzi.Color.Transparent");
             button.SetResourceReference(Control.ForegroundProperty, _page == i ? "Yanzi.Color.SidebarForeground" : "Yanzi.Color.MutedForeground");
         }
+        foreach (var (name, button) in _componentNavigation)
+        {
+            bool active = _activeComponent?.Name == name;
+            button.FontWeight = active ? FontWeights.SemiBold : FontWeights.Normal;
+            button.SetResourceReference(Control.BackgroundProperty, active ? "Yanzi.Color.SidebarAccent" : "Yanzi.Color.Transparent");
+            button.SetResourceReference(Control.ForegroundProperty, active ? "Yanzi.Color.SidebarForeground" : "Yanzi.Color.MutedForeground");
+        }
     }
 
     private void ShowPage(int page)
     {
+        _activeComponent = null;
         _page = Math.Clamp(page, 0, Pages.Length - 1);
         _pageTitle.Text = Pages[_page].Title;
         _pageSubtitle.Text = Pages[_page].Subtitle;
@@ -672,7 +738,7 @@ internal sealed partial class GalleryWindow : Window
             Directory.CreateDirectory(_reviewsDirectory);
             var data = new
             {
-                version = "0.6.4",
+                version = "0.7.1",
                 time = DateTimeOffset.Now,
                 visual = (int)(_visualRating?.Value ?? 4),
                 interaction = (int)(_interactionRating?.Value ?? 4),
