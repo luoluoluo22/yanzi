@@ -56,6 +56,12 @@ internal sealed partial class GalleryWindow : Window
     private int _page;
     private YanziTheme _theme = YanziTheme.Dark;
     private ScrollViewer? _scroll;
+    private ColumnDefinition? _navigationColumn;
+    private Border? _navigationSidebar;
+    private Button? _sidebarToggleButton;
+    private bool _sidebarExpanded = true;
+    private bool _sidebarManuallySet;
+    private UniformGrid? _overviewGrid;
     private Slider? _visualRating;
     private Slider? _interactionRating;
     private TextBox? _reviewNotes;
@@ -83,10 +89,12 @@ internal sealed partial class GalleryWindow : Window
     private UIElement BuildShell()
     {
         var root = new Grid();
-        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(226) });
+        _navigationColumn = new ColumnDefinition { Width = new GridLength(192) };
+        root.ColumnDefinitions.Add(_navigationColumn);
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
         var sidebar = new Border { BorderThickness = new Thickness(0, 0, 1, 0), Padding = new Thickness(16, 23, 16, 16) };
+        _navigationSidebar = sidebar;
         sidebar.SetResourceReference(Border.BackgroundProperty, "Yanzi.Color.Sidebar");
         sidebar.SetResourceReference(Border.BorderBrushProperty, "Yanzi.Brush.Border");
         Grid.SetColumn(sidebar, 0);
@@ -107,7 +115,7 @@ internal sealed partial class GalleryWindow : Window
         brandLine.Children.Add(logo);
         brandLine.Children.Add(Text("Yanzi UI", 20, true, "Yanzi.Brush.Text", new Thickness(0, 4, 0, 0)));
         brand.Children.Add(brandLine);
-        brand.Children.Add(Text("SHADCN DESIGN  /  v0.4.2", 10, false, "Yanzi.Brush.TextMuted", new Thickness(0, 11, 0, 0)));
+        brand.Children.Add(Text("SHADCN DESIGN  /  v0.4.3", 10, false, "Yanzi.Brush.TextMuted", new Thickness(0, 11, 0, 0)));
         sidebarLayout.Children.Add(brand);
 
         var footer = new StackPanel { Margin = new Thickness(8, 12, 0, 3) };
@@ -147,7 +155,7 @@ internal sealed partial class GalleryWindow : Window
         main.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.Children.Add(main);
 
-        var header = new Grid { Margin = new Thickness(32, 26, 34, 24) };
+        var header = new Grid { Margin = new Thickness(23, 20, 24, 18) };
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         Grid.SetRow(header, 0);
@@ -162,7 +170,13 @@ internal sealed partial class GalleryWindow : Window
         _pageSubtitle.SetResourceReference(TextBlock.ForegroundProperty, "Yanzi.Brush.TextSecondary");
         titleBlock.Children.Add(_pageTitle);
         titleBlock.Children.Add(_pageSubtitle);
-        header.Children.Add(titleBlock);
+        var leftHeader = new StackPanel { Orientation = Orientation.Horizontal };
+        _sidebarToggleButton = Button("☰ 目录", YanziUi.Styles.GhostButton, () => SetSidebarVisible(!_sidebarExpanded, true));
+        _sidebarToggleButton.MinWidth = 72;
+        _sidebarToggleButton.Margin = new Thickness(0, 1, 14, 0);
+        leftHeader.Children.Add(_sidebarToggleButton);
+        leftHeader.Children.Add(titleBlock);
+        header.Children.Add(leftHeader);
 
         var themeStack = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         Grid.SetColumn(themeStack, 1);
@@ -185,12 +199,13 @@ internal sealed partial class GalleryWindow : Window
         {
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            Padding = new Thickness(32, 0, 24, 22)
+            Padding = new Thickness(22, 0, 22, 22)
         };
         _scroll.Resources[typeof(ScrollBar)] = FindResource(YanziUi.Styles.Scrollbar);
         Grid.SetRow(_scroll, 1);
         main.Children.Add(_scroll);
         _scroll.Content = _body;
+        _scroll.SizeChanged += (_, _) => UpdateOverviewColumns();
 
         var statusBar = new Border { BorderThickness = new Thickness(0, 1, 0, 0), Padding = new Thickness(32, 11, 24, 11) };
         statusBar.SetResourceReference(Border.BorderBrushProperty, "Yanzi.Brush.Border");
@@ -212,6 +227,27 @@ internal sealed partial class GalleryWindow : Window
 
     private void RefreshThemeLabel() => _themeText.Text = _theme == YanziTheme.Dark ? "● 深色" : "○ 浅色";
 
+    // Keep the component catalog one click away without sacrificing the gallery width.
+    // A manual choice stays in effect as the reviewer moves between pages.
+    private void SetSidebarVisible(bool visible, bool manuallySelected)
+    {
+        if (manuallySelected) _sidebarManuallySet = true;
+        _sidebarExpanded = visible;
+        if (_navigationColumn != null)
+            _navigationColumn.Width = new GridLength(visible ? 192 : 0);
+        if (_navigationSidebar != null)
+            _navigationSidebar.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        if (_sidebarToggleButton != null)
+            _sidebarToggleButton.Content = visible ? "收起目录" : "☰ 目录";
+        UpdateOverviewColumns();
+    }
+
+    private void UpdateOverviewColumns()
+    {
+        if (_page != 0 || _overviewGrid == null || _scroll == null) return;
+        _overviewGrid.Columns = _scroll.ActualWidth < 880 ? 2 : 3;
+    }
+
     private void UpdateNavigation()
     {
         for (var i = 0; i < _navigation.Count; i++)
@@ -232,6 +268,8 @@ internal sealed partial class GalleryWindow : Window
         _interactionRating = null;
         _reviewNotes = null;
         _body.Children.Clear();
+        _overviewGrid = null;
+        if (!_sidebarManuallySet) SetSidebarVisible(_page != 0, false);
         UpdateNavigation();
         _statusText.Text = $"正在浏览：{Pages[_page].Title} · 所有操作均为可撤销或模拟测试";
         switch (_page)
@@ -253,6 +291,7 @@ internal sealed partial class GalleryWindow : Window
             case 14: Review(); break;
         }
         if (_scroll != null) _scroll.ScrollToTop();
+        UpdateOverviewColumns();
     }
 
     private void Buttons()
@@ -588,7 +627,7 @@ internal sealed partial class GalleryWindow : Window
             Directory.CreateDirectory(_reviewsDirectory);
             var data = new
             {
-                version = "0.4.2",
+                version = "0.4.3",
                 time = DateTimeOffset.Now,
                 visual = (int)(_visualRating?.Value ?? 4),
                 interaction = (int)(_interactionRating?.Value ?? 4),

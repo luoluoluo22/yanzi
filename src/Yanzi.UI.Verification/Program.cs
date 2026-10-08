@@ -34,6 +34,8 @@ internal static class Program
                 YanziUi.Styles.SecondaryButton,
                 YanziUi.Styles.DangerButton,
                 YanziUi.Styles.Input,
+                YanziUi.Styles.InputSoft,
+                YanziUi.Styles.TextareaSoft,
                 YanziUi.Styles.Toggle,
                 YanziUi.Styles.CheckBox,
                 YanziUi.Styles.Menu,
@@ -76,7 +78,7 @@ internal static class Program
             var expectedKeys = new[] { "Yanzi.Color.Background", "Yanzi.Color.Foreground",
                 "Yanzi.Color.Primary", "Yanzi.Color.PrimaryForeground", "Yanzi.Color.Secondary",
                 "Yanzi.Color.Destructive", "Yanzi.Color.Accent", "Yanzi.Color.Input",
-                "Yanzi.Color.Ring", "Yanzi.Color.Sidebar" };
+                "Yanzi.Color.Ring", "Yanzi.Color.Sidebar", "Yanzi.Color.ChartBar" };
             foreach (var key in expectedKeys)
                 Check(window.TryFindResource(key) is SolidColorBrush, "semantic token " + key);
 
@@ -178,6 +180,9 @@ internal static class Program
             var chart = new YanziBarChart();
             chart.SetData(new[] { new YanziBarPoint("Mon", 5), new YanziBarPoint("Tue", 8) });
             Check(chart.Content is UniformGrid, "chart builds native layout");
+            Check(chart.PointCount == 2, "chart preserves data point count");
+            chart.SelectedIndex = 1;
+            Check(chart.SelectedIndex == 1, "chart supports selected column");
             var negativeRejected = false;
             try { chart.SetData(new[] { new YanziBarPoint("No", -1) }); }
             catch (ArgumentOutOfRangeException) { negativeRejected = true; }

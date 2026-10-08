@@ -23,6 +23,7 @@
     <SolidColorBrush x:Key="Yanzi.Color.Border" Color="#FF303030" />
     <SolidColorBrush x:Key="Yanzi.Color.Input" Color="#FF383838" />
     <SolidColorBrush x:Key="Yanzi.Color.Ring" Color="#FF737373" />
+    <SolidColorBrush x:Key="Yanzi.Color.ChartBar" Color="#FF585858" />
     <SolidColorBrush x:Key="Yanzi.Color.Sidebar" Color="#FF111111" />
     <SolidColorBrush x:Key="Yanzi.Color.SidebarForeground" Color="#FFFAFAFA" />
     <SolidColorBrush x:Key="Yanzi.Color.SidebarAccent" Color="#FF262626" />

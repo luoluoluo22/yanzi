@@ -47,6 +47,8 @@ public static class YanziUi
         public const string SecondaryButton = "Yanzi.Button.Secondary";
         public const string DangerButton = "Yanzi.Button.Danger";
         public const string Input = "Yanzi.Input";
+        public const string InputSoft = "Yanzi.Input.Soft";
+        public const string TextareaSoft = "Yanzi.Textarea.Soft";
         public const string Toggle = "Yanzi.Toggle";
         public const string ToggleButton = "Yanzi.ToggleButton";
         public const string CheckBox = "Yanzi.CheckBox";

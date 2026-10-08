@@ -40,6 +40,7 @@ internal sealed partial class GalleryWindow
         hero.Children.Add(heroActions);
 
         var threeColumns = new UniformGrid { Columns = 3, Margin = new Thickness(0, 0, 6, 0) };
+        _overviewGrid = threeColumns;
         _body.Children.Add(threeColumns);
         var left = new StackPanel { Margin = new Thickness(0, 0, 9, 0) };
         var middle = new StackPanel { Margin = new Thickness(0, 0, 9, 0) };
@@ -50,7 +51,7 @@ internal sealed partial class GalleryWindow
 
         // Component sampler: real buttons, editable controls and checkable states.
         var sampler = PreviewCard(left, null);
-        var buttons = new WrapPanel { Margin = new Thickness(0, 0, 0, 14) };
+        var buttons = new WrapPanel { Margin = new Thickness(0, 0, 0, 12) };
         buttons.Children.Add(SmallButton("Default  ↗", YanziUi.Styles.DefaultButton,
             () => YanziToast.Show(this, "操作已完成（演示）", YanziToastKind.Success)));
         buttons.Children.Add(SmallButton("Secondary", YanziUi.Styles.SecondaryButton,
@@ -58,16 +59,38 @@ internal sealed partial class GalleryWindow
         buttons.Children.Add(SmallButton("Outline", YanziUi.Styles.OutlineButton,
             () => Status("Outline 按钮被点击")));
         sampler.Children.Add(buttons);
-        var search = YanziUi.WithStyle(new TextBox { ToolTip = "输入关键字试试", Text = "Name", Margin = new Thickness(0, 0, 0, 11) }, YanziUi.Styles.Input);
-        sampler.Children.Add(search);
+        var searchGrid = new Grid { Margin = new Thickness(0, 0, 0, 12) };
+        var search = YanziUi.WithStyle(new TextBox
+        {
+            ToolTip = "Search components",
+            Text = "",
+            Height = 38,
+            Padding = new Thickness(11, 7, 30, 7)
+        }, YanziUi.Styles.InputSoft);
+        searchGrid.Children.Add(search);
+        var searchHint = Text("Name", 12, false, "Yanzi.Color.MutedForeground");
+        searchHint.Margin = new Thickness(13, 0, 30, 0);
+        searchHint.HorizontalAlignment = HorizontalAlignment.Left;
+        searchHint.IsHitTestVisible = false;
+        search.TextChanged += (_, _) => searchHint.Visibility =
+            string.IsNullOrEmpty(search.Text) ? Visibility.Visible : Visibility.Collapsed;
+        searchGrid.Children.Add(searchHint);
+        var searchIcon = Text("⌕", 19, false, "Yanzi.Color.MutedForeground");
+        searchIcon.HorizontalAlignment = HorizontalAlignment.Right;
+        searchIcon.Margin = new Thickness(0, 0, 13, 0);
+        searchIcon.IsHitTestVisible = false;
+        searchGrid.Children.Add(searchIcon);
+        sampler.Children.Add(searchGrid);
+
         sampler.Children.Add(YanziUi.WithStyle(new TextBox
         {
-            Text = "写下你的想法…",
-            Height = 70,
+            Text = "Message",
+            Height = 78,
+            Padding = new Thickness(12, 10, 12, 10),
             AcceptsReturn = true,
             TextWrapping = TextWrapping.Wrap,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto
-        }, YanziUi.Styles.Input));
+        }, YanziUi.Styles.TextareaSoft));
         var tags = new WrapPanel { Margin = new Thickness(0, 12, 0, 11) };
         tags.Children.Add(PreviewBadge("Badge", YanziBadgeVariant.Default));
         tags.Children.Add(PreviewBadge("Secondary", YanziBadgeVariant.Secondary));
@@ -105,29 +128,44 @@ internal sealed partial class GalleryWindow
             navCard.Children.Add(item);
         }
 
-        var timeline = PreviewCard(middle, "Activity history", "最近五次更新");
-        var bars = new Grid { Height = 152, Margin = new Thickness(0, 8, 0, 12) };
-        for (int i = 0; i < 5; i++) bars.ColumnDefinitions.Add(new ColumnDefinition());
-        var heights = new[] { 75d, 125d, 90d, 140d, 58d };
-        var labels = new[] { "Mon", "Tue", "Wed", "Thu", "Fri" };
-        for (var i = 0; i < 5; i++)
+        // Reusable chart + contextual status card, aligned with the homepage's layered card composition.
+        var timeline = PreviewCard(middle, "Contribution History", "Last 5 months of activity");
+        var chart = new YanziBarChart
         {
-            var column = new StackPanel { VerticalAlignment = VerticalAlignment.Bottom, HorizontalAlignment = HorizontalAlignment.Center };
-            var bar = new Border { Width = 29, Height = heights[i], CornerRadius = new CornerRadius(7, 7, 0, 0) };
-            bar.SetResourceReference(Border.BackgroundProperty, i == 0 ? "Yanzi.Color.Primary" : "Yanzi.Color.Muted");
-            column.Children.Add(bar);
-            var day = Text(labels[i], 10, false, "Yanzi.Color.MutedForeground", new Thickness(0, 7, 0, 0));
-            day.TextAlignment = TextAlignment.Center;
-            column.Children.Add(day);
-            Grid.SetColumn(column, i);
-            bars.Children.Add(column);
-        }
-        timeline.Children.Add(bars);
-        var activity = InfoPanel("UPCOMING", "UI component review", "Status · Scheduled");
-        timeline.Children.Add(activity);
-        var wide = SmallButton("查看所有组件", YanziUi.Styles.DefaultButton, () => ShowPage(8));
+            Height = 178,
+            MaxBarHeight = 128,
+            SelectedIndex = 0,
+            Margin = new Thickness(0, 2, 0, 16)
+        };
+        chart.SetData(new[]
+        {
+            new YanziBarPoint("Dec", 61),
+            new YanziBarPoint("Jan", 89),
+            new YanziBarPoint("Feb", 71),
+            new YanziBarPoint("Mar", 94),
+            new YanziBarPoint("Apr", 52)
+        });
+        timeline.Children.Add(chart);
+
+        var upcoming = new Border
+        {
+            CornerRadius = new CornerRadius(10),
+            Padding = new Thickness(13, 11, 13, 12),
+            Margin = new Thickness(0, 2, 0, 14)
+        };
+        upcoming.SetResourceReference(Border.BackgroundProperty, "Yanzi.Color.Secondary");
+        var upcomingDetails = new StackPanel();
+        upcomingDetails.Children.Add(Text("UPCOMING", 10, false, "Yanzi.Color.MutedForeground",
+            new Thickness(0, 0, 0, 7)));
+        upcomingDetails.Children.Add(Text("May 2024", 14, true, "Yanzi.Color.Foreground",
+            new Thickness(0, 0, 0, 5)));
+        upcomingDetails.Children.Add(Text("Scheduled", 11, false, "Yanzi.Color.MutedForeground"));
+        upcoming.Child = upcomingDetails;
+        timeline.Children.Add(upcoming);
+
+        var wide = SmallButton("View Full Report", YanziUi.Styles.DefaultButton, () => ShowPage(11));
         wide.HorizontalAlignment = HorizontalAlignment.Stretch;
-        wide.Margin = new Thickness(0, 15, 0, 0);
+        wide.Margin = new Thickness(0);
         timeline.Children.Add(wide);
 
         var balance = PreviewCard(middle, "Storage overview", "本地演示数据");
@@ -208,9 +246,9 @@ internal sealed partial class GalleryWindow
     {
         var button = Button(title, style, action);
         button.MinWidth = 0;
-        button.Height = 32;
-        button.FontSize = 11;
-        button.Padding = new Thickness(8, 3, 8, 3);
+        button.Height = 34;
+        button.FontSize = 12;
+        button.Padding = new Thickness(11, 5, 11, 5);
         button.Margin = new Thickness(0, 0, 6, 5);
         return button;
     }

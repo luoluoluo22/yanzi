@@ -42,8 +42,14 @@ function Navigate([string]$name) {
     Start-Sleep -Milliseconds 150
 }
 
+# Overview starts with the catalog hidden to maximize comparison width.
+$openCatalog = Assert-Control '☰ 目录' [System.Windows.Automation.ControlType]::Button
+$openCatalog.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+Start-Sleep -Milliseconds 150
+$null = Assert-Control '收起目录' [System.Windows.Automation.ControlType]::Button
+$testCount++
 Navigate '总览'
-foreach ($title in @('The foundation for Yanzi UI', 'Activity history', 'Account settings', 'New chat')) {
+foreach ($title in @('The foundation for Yanzi UI', 'Contribution History', 'Account settings', 'New chat', 'May 2024', 'Scheduled')) {
     $null = Assert-Control $title [System.Windows.Automation.ControlType]::Text
 }
 
@@ -131,4 +137,8 @@ $expectedRestored = if ($startedLight) { '○ 浅色' } else { '● 深色' }
 $null = Assert-Control $expectedRestored [System.Windows.Automation.ControlType]::Text
 
 Navigate '总览'
+$closeCatalog = Assert-Control '收起目录' [System.Windows.Automation.ControlType]::Button
+$closeCatalog.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+Start-Sleep -Milliseconds 160
+$null = Assert-Control '☰ 目录' [System.Windows.Automation.ControlType]::Button
 Write-Host "PASS: $testCount UI Automation assertions, 15 pages, overview wall, Badge variants, input, switch, list selection and theme switching."
