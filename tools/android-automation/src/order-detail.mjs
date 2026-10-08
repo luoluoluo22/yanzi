@@ -3,7 +3,7 @@ import {delay} from './adb.mjs';
 
 // Read-only parser for a PDD order-detail screen. Contact names, telephone,
 // pickup address and QR codes are deliberately NEVER returned.
-const BEGIN=/^((?:\d+(?:\.\d+)?(?:kg|g|斤)(?:[~～±+\-]\d+(?:\.\d+)?(?:kg|g|斤)?)?(?:\/(?:份|袋|包|盒|箱|个|瓶|板)|[*×xX]\d+(?:袋|包|支)\/(?:包|袋|箱)))(?:\s*\d+包\/袋)?)\s*[|丨]?/i;
+const BEGIN=/^(?:冷鲜|冷藏|冷冻|精选|热销|优选)?((?:\d+(?:\.\d+)?(?:kg|g|斤|枚|支|个|根)(?:[~～±+\-]\d+(?:\.\d+)?(?:kg|g|斤|枚|支|个|根)?)?(?:\/(?:份|袋|包|盒|箱|个|瓶|板)|[*×xX]\d+(?:袋|包|支)\/(?:包|袋|箱)))(?:\s+\d+(?:\.\d+)?(?:枚|支|袋|包)\/(?:份|袋|包|箱))?)\s*[|丨]?/i;
 const PAID=/实付\s*[:：]?\s*[¥￥]\s*(\d+(?:\.\d{1,2})?)/;
 const QUANTITY=/^[xX×]\s*(\d{1,2})$/;
 const COUNT=/(展开|收起)\s*[（(]\s*共\s*(\d{1,3})\s*件\s*[）)]/;
@@ -12,6 +12,23 @@ const TOTAL=/(?:先用后付\s*)?实付\s*[:：]?\s*[¥￥]\s*(\d+(?:\.\d{1,2})?
 const MONEY_LIMIT=1500;
 const stable=(str)=>createHash('sha256').update(str).digest('hex').slice(0,16);
 const compact=t=>String(t||'').replace(/\s+/g,'');
+export function similarOrderItemName(a,b){
+ const x=compact(a),y=compact(b);
+ if(x===y)return true;
+ if(Math.min(x.length,y.length)<8)return false;
+ if((x.startsWith(y)||y.startsWith(x))&&Math.min(x.length,y.length)>=12)return true;
+ const n=x.length,m=y.length;
+ if(Math.abs(n-m)>Math.max(n,m)*.2)return false;
+ let prev=Array.from({length:m+1},(_,i)=>i);
+ for(let i=1;i<=n;i++){
+   const curr=[i];
+   for(let j=1;j<=m;j++)
+     curr[j]=Math.min(curr[j-1]+1,prev[j]+1,prev[j-1]+(x[i-1]===y[j-1]?0:1));
+   prev=curr;
+ }
+ return 1-prev[m]/Math.max(n,m)>=.88;
+}
+
 function candidates(lines){
  return lines.filter(l=>l?.box&&l.box.height>1&&l.box.width>1)
   .map(l=>({text:String(l.text||'').trim(),box:l.box}))
@@ -41,12 +58,16 @@ export function parseOrderDetailFrame(lines,{height=2400,width=1080}={}){
   const end=Math.min(starts[i+1]?.box.y??firstFooter,firstFooter);
   const region=all.filter(l=>l.box.y>=top-15 && l.box.y<end-12);
   const lead=token.slice(prefix[0].length)
-     .replace(/实付\s*[:：]?\s*[¥￥]\s*\d+(?:\.\d{1,2})?.*$/,'');
+     .replace(/(?:实付\s*[:：]?\s*)?[¥￥]\s*\d+(?:\.\d{1,2})?.*$/,'');
   const continued=region.filter(l=>l!==cur&&l.box.x>width*.16&&l.box.x<width*.77
     &&l.box.y>=top+10&&l.box.y<=top+95
     &&!/^(?:[¥￥]|申请退款|已卖|优惠|实付|x\d)/.test(l.text));
   const name=compact(lead+continued.map(l=>l.text).join(''));
-  const paid=region.flatMap(l=>[...l.text.matchAll(/实付\s*[:：]?\s*[¥￥]\s*(\d+(?:\.\d{1,2})?)/g)].map(m=>Number(m[1])));
+  const explicit=region.flatMap(l=>[...l.text.matchAll(/实付\s*[:：]?\s*[¥￥]\s*(\d+(?:\.\d{1,2})?)/g)].map(m=>Number(m[1])));
+  // In completed orders, rows without an explicit 实付 label show a single
+  // ¥ amount. Ignore ambiguous multiple prices rather than guessing.
+  const unlabeled=region.flatMap(l=>[...l.text.matchAll(/[¥￥]\s*(\d+(?:\.\d{1,2})?)/g)].map(m=>Number(m[1])));
+  const paid=explicit.length?explicit:unlabeled;
   const quantity=region.filter(l=>l.box.x>width*.8)
     .map(l=>QUANTITY.exec(compact(l.text))?.[1]).filter(Boolean);
   const uniqPaid=[...new Set(paid)],uniqQty=[...new Set(quantity.map(Number))];
@@ -54,7 +75,7 @@ export function parseOrderDetailFrame(lines,{height=2400,width=1080}={}){
   if(!name)issues.push('missing_name');
   if(uniqPaid.length!==1||uniqPaid[0]>MONEY_LIMIT)issues.push('missing_or_suspicious_price');
   if(uniqQty.length!==1)issues.push('missing_or_ambiguous_quantity');
-  const item={name,specification:prefix[0].replace(/[|丨]$/,''),
+  const item={name,specification:prefix[1],
     quantity:uniqQty.length===1?uniqQty[0]:null,
     paidUnitPrice:uniqPaid.length===1&&uniqPaid[0]<=MONEY_LIMIT?uniqPaid[0]:null,
     verified:issues.length===0,issues};
@@ -119,8 +140,7 @@ export async function collectOrderDetail({device,vision,maxPages=8,waitMs=480}={
     const exact=observed.find(prev=>prev.identity===item.identity);
     if(exact){collisions++;continue;}
     const partial=observed.find(prev=>prev.specification===item.specification &&
-      (!prev.verified||!item.verified) &&
-      (prev.name.startsWith(item.name)||item.name.startsWith(prev.name)) &&
+      similarOrderItemName(prev.name,item.name) &&
       (prev.quantity===null||item.quantity===null||prev.quantity===item.quantity) &&
       (prev.paidUnitPrice===null||item.paidUnitPrice===null||prev.paidUnitPrice===item.paidUnitPrice));
     if(partial){
@@ -145,8 +165,11 @@ export async function collectOrderDetail({device,vision,maxPages=8,waitMs=480}={
   }
   if(all.some(l=>/商品总额/.test(l.text)) && i>0){stopReason='order_footer';break;}
   if(i===maxPages-1)break;
+  // Short overlapping scrolls keep price and quantity in view together.
+  // Large scroll jumps often split a product row across two screenshots,
+  // causing a false missing-price or missing-quantity diagnosis.
   await device.swipe(Math.round(width*.72),Math.round(height*.79),
-    Math.round(width*.72),Math.round(height*.34),420);
+    Math.round(width*.72),Math.round(height*.52),420);
   await delay(waitMs);
  }
  const items=observed;

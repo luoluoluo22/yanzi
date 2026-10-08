@@ -46,7 +46,12 @@ export async function collectOrderDetailsFromList({
   for(const entry of list.items){
    if(results.length>=maxOrders)break;
    const summary=entry.order;
-   if(!summary.verified || attempted.has(summary.identity))continue;
+   if(attempted.has(summary.identity))continue;
+   // A coupon tooltip can obscure the order count or amount in the list.
+   // Opening an order is safe only if its date and completed status are
+   // unambiguous on THIS screen. Detail verification remains independent.
+   if(!summary.date || !summary.status)continue;
+   if(list.items.filter(e=>e.order.date===summary.date).length!==1)continue;
    // Read-only verification should not touch pending pickup/payment cards.
    // Their action buttons are high-stakes; prefer completed historical orders.
    if(!['已提货','已完成','待评价'].includes(summary.status))continue;
@@ -55,9 +60,15 @@ export async function collectOrderDetailsFromList({
    const x=Math.round(width*.33),y=entry.tapY;
    // One navigation tap; never retry it when the next page is uncertain.
    await device.tap(x,y);
-   await delay(waitMs);
-   const opened=await vision.recognize();
-   if(!parseOrderDetailFrame(opened.lines,size).recognized){
+   // WeChat may navigate asynchronously. Poll screenshots for a bounded
+   // period; NEVER tap the order again to compensate for stale frames.
+   let opened=null;
+   for(let check=0;check<6;check++){
+    await delay(Math.max(180,waitMs));
+    const frame=await vision.recognize();
+    if(parseOrderDetailFrame(frame.lines,size).recognized){opened=frame;break;}
+   }
+   if(!opened){
     stopReason='order_detail_did_not_open';
     return {recognized:true,complete:false,orders:results,
       attempted:attempted.size,scrolled,stopReason};
@@ -67,10 +78,20 @@ export async function collectOrderDetailsFromList({
     detail=await collectOrderDetail({device,vision,maxPages:detailMaxPages,waitMs});
    }catch(e){readFailure=String(e.message||e).slice(0,180);}
    // Only send a single Back once we have verified the detail page.
-   await device.back();
-   await delay(waitMs);
-   const returned=await vision.recognize();
-   if(!extractOrderCards(returned.lines,{height}).recognized){
+   let restored=false;
+   try {
+    await device.back();
+    for(let check=0;check<6;check++){
+     await delay(Math.max(180,waitMs));
+     const returned=await vision.recognize();
+     if(extractOrderCards(returned.lines,{height}).recognized){restored=true;break;}
+    }
+   } catch (error) {
+    stopReason='return_navigation_unavailable';
+    return {recognized:true,complete:false,orders:results,
+      attempted:attempted.size,scrolled,stopReason};
+   }
+   if(!restored){
     stopReason='failed_to_restore_order_list';
     return {recognized:true,complete:false,orders:results,
       attempted:attempted.size,scrolled,stopReason};
@@ -79,18 +100,21 @@ export async function collectOrderDetailsFromList({
     results.push({date:summary.date,status:summary.status,quantity:summary.quantity,
       amount:summary.amount,complete:false,reason:'detail_error:'+readFailure,items:[]});
    }else{
-    const sameAmount=detail.complete&&detail.paidTotal!==null
-      && Math.abs(detail.paidTotal-summary.amount)<.011;
+    const amountMatched=Number.isFinite(summary.amount) && detail.paidTotal!==null
+      ? Math.abs(detail.paidTotal-summary.amount)<.011 : null;
     const uniqueId=Boolean(detail.orderIdHash)&&!knownIds.has(detail.orderIdHash);
     if(detail.orderIdHash)knownIds.add(detail.orderIdHash);
     results.push({
       date:summary.date,status:summary.status,quantity:summary.quantity,
       amount:summary.amount,orderIdHash:detail.orderIdHash,
-      complete:detail.complete&&sameAmount&&uniqueId,
-      amountMatched:sameAmount,items:detail.items,
+      summaryVerified:summary.verified,
+      detailComplete:detail.complete,
+      complete:detail.complete&&uniqueId&&amountMatched!==false,
+      amountMatched,items:detail.items,
       declaredCount:detail.declaredCount,paidTotal:detail.paidTotal,
       reason:!uniqueId?'duplicate_or_missing_order_identity':
-        !sameAmount?'list_detail_amount_mismatch':detail.warning
+        amountMatched===false?'list_detail_amount_mismatch':
+        !summary.verified?'list_summary_partially_obscured':detail.warning
     });
    }
    // The page must be freshly re-read after returning, since positions

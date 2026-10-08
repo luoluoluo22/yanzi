@@ -86,3 +86,59 @@ test('order detail cannot be marked complete if sum differs from order total',as
  assert.equal(r.totalMatched,false);
  assert.equal(r.complete,false);
 });
+
+test('real completed-order OCR with category tags, count specs and inline price',()=>{
+ const result=parseOrderDetailFrame([
+  L('订单详情',445,138),
+  L('冷鲜500g/盒【天天鲜肉】鲜猪五花',239,317),L('¥12.97',921,315),
+  L('肉-喜满春',236,368),L('X1',1003,368,35),
+  L('30枚/份|1.4kg大观谷农家杂粮蛋旭 ¥19.98',236,565),
+  L('飞农业',241,618),L('X1',1003,620,35),
+  L('冷藏400g±40g/袋【颗粒饱满】新鲜黄¥1.99',236,815),
+  L('甜玉米',236,868),L('x1',1003,870,35),
+  L('4斤~5斤/份【脆嫩爽口】精品包菜新鲜¥4.99',238,1065),
+  L('爽口',231,1118),L('X1',1003,1120,35),
+  L('收起(共19件)',395,1322)
+ ]);
+ assert.equal(result.declaredCount,19);
+ assert.equal(result.items.length,4);
+ assert.deepEqual(result.items.map(x=>x.paidUnitPrice),[12.97,19.98,1.99,4.99]);
+ assert.ok(result.items.every(x=>x.verified));
+ assert.equal(result.items[1].specification,'30枚/份');
+ assert.equal(result.items[2].specification,'400g±40g/袋');
+});
+
+test('overlapping scrolls reconcile partially OCR-read price without guessing',async()=>{
+ const header=L('订单详情',445,138);
+ const partial={lines:[
+  header,
+  L('500g/袋【香脆可口】圈嘴打手',239,510),
+  L('牙签瓜子袋装香瓜子',239,564),
+  L('x1',1000,615,35),
+  L('收起(共1件)',395,1050),
+  L('先用后付 实付：¥12.94',470,1330),
+  L('订单编号：PO-260924-123456789111',30,1650)
+ ]};
+ const full={lines:[
+  header,
+  L('500g/袋【香脆可口】圈嘴打手',239,510),
+  L('实付：¥12.94',830,508),
+  L('牙签瓜子袋装香瓜子',239,564),
+  L('¥14.99',925,560),
+  L('x1',1000,615,35),
+  L('收起(共1件)',395,1050),
+  L('先用后付 实付：¥12.94',470,1330),
+  L('订单编号：PO-260924-123456789111',30,1650)
+ ]};
+ let read=0;const deltas=[];
+ const res=await collectOrderDetail({
+  device:{size:async()=>({height:2400,width:1080}),
+    swipe:async(x,y,x2,y2)=>deltas.push(y-y2)},
+  vision:{recognize:async()=>read++===0?partial:full},
+  maxPages:3,waitMs:0
+ });
+ assert.equal(res.complete,true);
+ assert.equal(res.declaredCount,1);
+ assert.equal(res.computedTotal,12.94);
+ assert.ok(deltas.length>=1&&deltas.every(x=>x<=750));
+});

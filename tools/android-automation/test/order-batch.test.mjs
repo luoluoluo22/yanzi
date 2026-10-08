@@ -88,3 +88,56 @@ test('when current pending and historical orders share a page, only historical o
  assert.equal(taps,1);assert.equal(backs,1);
  assert.equal(result.orders.length,1);assert.equal(result.orders[0].date,'2026-09-02');
 });
+
+test('obscured list quantity can be verified from detail without misreading coupon',async()=>{
+ const obscured={lines:[
+   line('订单列表',440,138),line('全部',30,378),
+   line('2026/09/24',30,600),line('待评价',900,596),
+   line('实付:¥5.66',790,1000)
+ ]};
+ let page=obscured,clicks=0,backs=0;
+ const result=await collectOrderDetailsFromList({
+  device:{size:async()=>({width:1080,height:2400}),
+   tap:async(x,y)=>{clicks++;assert.ok(y>=690&&y<=800);page=detail(5.66,'260924-TEST000005')},
+   back:async()=>{backs++;page=obscured},
+   swipe:async()=>{}},
+  vision:{recognize:async()=>page},maxOrders:1,maxScrolls:1,waitMs:0
+ });
+ assert.equal(clicks,1); assert.equal(backs,1);
+ assert.equal(result.orders[0].summaryVerified,false);
+ assert.equal(result.orders[0].detailComplete,true);
+ assert.equal(result.orders[0].complete,true);
+ assert.equal(result.orders[0].amountMatched,true);
+});
+test('same-date cards without verified identity cannot be opened by guessing',async()=>{
+ const duplicated={lines:[
+  line('订单列表',440,138),line('全部',30,378),
+  line('2026/08/20',30,600),line('已提货',900,596),
+  line('实付:¥27.95',790,900),
+  line('2026/08/20',30,1270),line('已提货',900,1266),
+  line('实付:¥124.37',790,1660)
+ ]};
+ let clicks=0;
+ await collectOrderDetailsFromList({
+  device:{size:async()=>({width:1080,height:2400}),
+   tap:async()=>clicks++,swipe:async()=>{}},
+  vision:{recognize:async()=>duplicated},maxOrders:1,maxScrolls:1,waitMs:0
+ });
+ assert.equal(clicks,0);
+});
+
+test('async detail navigation is polled without a second tap',async()=>{
+ const original=list('2026/09/02',5.66,1);
+ const destination=detail(5.66,'260902-TEST000009');
+ let taps=0,backs=0,checks=0,isOpened=false;
+ const r=await collectOrderDetailsFromList({
+  device:{size:async()=>({width:1080,height:2400}),
+   tap:async()=>{taps++;isOpened=true;},
+   back:async()=>{backs++;isOpened=false;},
+   swipe:async()=>{}},
+  vision:{recognize:async()=>{checks++;return isOpened&&checks>3?destination:original}},
+  maxOrders:1,maxScrolls:1,waitMs:0
+ });
+ assert.equal(taps,1);assert.equal(backs,1);
+ assert.equal(r.orders[0].complete,true);
+});
