@@ -57,7 +57,7 @@ public sealed class YanziContentDialog : Window
         var heading = new TextBlock
         {
             Text = title,
-            FontSize = 18,
+            FontSize = 16,
             FontWeight = FontWeights.SemiBold,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -85,10 +85,10 @@ public sealed class YanziContentDialog : Window
         var descriptionText = new TextBlock
         {
             Text = description,
-            FontSize = 13,
+            FontSize = 14,
             TextWrapping = TextWrapping.Wrap,
             LineHeight = 20,
-            Margin = new Thickness(0, 0, 0, 20)
+            Margin = new Thickness(0, 0, 0, 16)
         };
         descriptionText.SetResourceReference(TextBlock.FontFamilyProperty, "Yanzi.Font.Geist");
         descriptionText.SetResourceReference(TextBlock.ForegroundProperty, "Yanzi.Color.MutedForeground");
@@ -101,7 +101,7 @@ public sealed class YanziContentDialog : Window
             MaxHeight = 280,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            Margin = new Thickness(0, 0, 0, 22)
+            Margin = new Thickness(0, 0, 0, 16)
         };
         main.Children.Add(scroller);
 
@@ -126,15 +126,25 @@ public sealed class YanziContentDialog : Window
         SaveButton.Click += (_, _) => DialogResult = true;
         footer.Children.Add(CancelButton);
         footer.Children.Add(SaveButton);
-        main.Children.Add(footer);
+        var footerBackground = new Border
+        {
+            Padding = new Thickness(16),
+            Margin = new Thickness(-16, 0, -16, -16),
+            BorderThickness = new Thickness(0, 1, 0, 0),
+            Child = footer
+        };
+        footerBackground.SetResourceReference(Border.BackgroundProperty, "Yanzi.Color.Muted");
+        footerBackground.SetResourceReference(Border.BorderBrushProperty, "Yanzi.Color.Border");
+        main.Children.Add(footerBackground);
 
         Card = new Border
         {
-            Width = 476,
-            MaxWidth = 476,
-            CornerRadius = new CornerRadius(12),
+            Width = 384,
+            MaxWidth = 384,
+            CornerRadius = new CornerRadius(14),
             BorderThickness = new Thickness(1),
-            Padding = new Thickness(24),
+            Padding = new Thickness(16),
+            ClipToBounds = true,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
             Effect = new DropShadowEffect { Color = Colors.Black,

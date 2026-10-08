@@ -172,6 +172,119 @@
         "pointer-events-none",
         "min-w-16 flex-1 outline-none"
       ]
+    },
+    "button": {
+      "registry_file": "docs/yanzi-ui-official-catalog/reference-package/registry/button.json",
+      "example_file": "docs/yanzi-ui-official-catalog/reference-package/examples/button-example.tsx",
+      "parts": [
+        "button"
+      ],
+      "source_classes": []
+    },
+    "input": {
+      "registry_file": "docs/yanzi-ui-official-catalog/reference-package/registry/input.json",
+      "example_file": "docs/yanzi-ui-official-catalog/reference-package/examples/input-example.tsx",
+      "parts": [
+        "input"
+      ],
+      "source_classes": [
+        "h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40"
+      ]
+    },
+    "select": {
+      "registry_file": "docs/yanzi-ui-official-catalog/reference-package/registry/select.json",
+      "example_file": "docs/yanzi-ui-official-catalog/reference-package/examples/select-example.tsx",
+      "parts": [
+        "select-group",
+        "select-value",
+        "select-trigger",
+        "select-content",
+        "select-label",
+        "select-item",
+        "select-separator",
+        "select-scroll-up-button",
+        "select-scroll-down-button"
+      ],
+      "source_classes": [
+        "scroll-my-1 p-1",
+        "flex flex-1 text-left",
+        "flex w-fit items-center justify-between gap-1.5 rounded-lg border border-input bg-transparent py-2 pr-2 pl-2.5 text-sm whitespace-nowrap transition-colors outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 data-placeholder:text-muted-foreground data-[size=default]:h-8 data-[size=sm]:h-7 data-[size=sm]:rounded-[min(var(--radius-md),10px)] *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-1.5 dark:bg-input/30 dark:hover:bg-input/50 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "pointer-events-none size-4 text-muted-foreground",
+        "isolate z-50",
+        "cn-menu-target cn-menu-translucent relative isolate z-50 max-h-(--available-height) w-(--anchor-width) min-w-36 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10 duration-100 data-[align-trigger=true]:animate-none data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+        "px-1.5 py-1 text-xs text-muted-foreground",
+        "relative flex w-full cursor-default items-center gap-1.5 rounded-md py-1 pr-8 pl-1.5 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground not-data-[variant=destructive]:focus:**:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
+        "flex flex-1 shrink-0 gap-2 whitespace-nowrap",
+        "pointer-events-none absolute right-2 flex size-4 items-center justify-center",
+        "pointer-events-none",
+        "pointer-events-none -mx-1 my-1 h-px bg-border",
+        "top-0 z-10 flex w-full cursor-default items-center justify-center bg-popover py-1 [&_svg:not([class*='size-'])]:size-4",
+        "bottom-0 z-10 flex w-full cursor-default items-center justify-center bg-popover py-1 [&_svg:not([class*='size-'])]:size-4"
+      ]
+    },
+    "dialog": {
+      "registry_file": "docs/yanzi-ui-official-catalog/reference-package/registry/dialog.json",
+      "example_file": "docs/yanzi-ui-official-catalog/reference-package/examples/dialog-example.tsx",
+      "parts": [
+        "dialog",
+        "dialog-trigger",
+        "dialog-portal",
+        "dialog-close",
+        "dialog-overlay",
+        "dialog-content",
+        "dialog-header",
+        "dialog-footer",
+        "dialog-title",
+        "dialog-description"
+      ],
+      "source_classes": [
+        "fixed inset-0 isolate z-50 bg-black/10 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
+        "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+        "absolute top-2 right-2",
+        "sr-only",
+        "flex flex-col gap-2",
+        "-mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-xl border-t bg-muted/50 p-4 sm:flex-row sm:justify-end",
+        "cn-font-heading text-base leading-none font-medium",
+        "text-sm text-muted-foreground *:[a]:underline *:[a]:underline-offset-3 *:[a]:hover:text-foreground"
+      ]
+    },
+    "dropdown-menu": {
+      "registry_file": "docs/yanzi-ui-official-catalog/reference-package/registry/dropdown-menu.json",
+      "example_file": "docs/yanzi-ui-official-catalog/reference-package/examples/dropdown-menu-example.tsx",
+      "parts": [
+        "dropdown-menu",
+        "dropdown-menu-portal",
+        "dropdown-menu-trigger",
+        "dropdown-menu-content",
+        "dropdown-menu-group",
+        "dropdown-menu-label",
+        "dropdown-menu-item",
+        "dropdown-menu-sub",
+        "dropdown-menu-sub-trigger",
+        "dropdown-menu-sub-content",
+        "dropdown-menu-checkbox-item",
+        "dropdown-menu-checkbox-item-indicator",
+        "dropdown-menu-radio-group",
+        "dropdown-menu-radio-item",
+        "dropdown-menu-radio-item-indicator",
+        "dropdown-menu-separator",
+        "dropdown-menu-shortcut"
+      ],
+      "source_classes": [
+        "isolate z-50 outline-none",
+        "cn-menu-target cn-menu-translucent z-50 max-h-(--available-height) w-(--anchor-width) min-w-32 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10 duration-100 outline-none data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:overflow-hidden data-closed:fade-out-0 data-closed:zoom-out-95",
+        "px-1.5 py-1 text-xs font-medium text-muted-foreground data-inset:pl-7",
+        "group/dropdown-menu-item relative flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground not-data-[variant=destructive]:focus:**:text-accent-foreground data-inset:pl-7 data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive dark:data-[variant=destructive]:focus:bg-destructive/20 data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 data-[variant=destructive]:*:[svg]:text-destructive",
+        "flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground not-data-[variant=destructive]:focus:**:text-accent-foreground data-inset:pl-7 data-popup-open:bg-accent data-popup-open:text-accent-foreground data-open:bg-accent data-open:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "cn-rtl-flip ml-auto",
+        "cn-menu-target cn-menu-translucent w-auto min-w-[96px] rounded-lg bg-popover p-1 text-popover-foreground shadow-lg ring-1 ring-foreground/10 duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+        "relative flex cursor-default items-center gap-1.5 rounded-md py-1 pr-8 pl-1.5 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:**:text-accent-foreground data-inset:pl-7 data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "pointer-events-none absolute right-2 flex items-center justify-center",
+        "relative flex cursor-default items-center gap-1.5 rounded-md py-1 pr-8 pl-1.5 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:**:text-accent-foreground data-inset:pl-7 data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "pointer-events-none absolute right-2 flex items-center justify-center",
+        "-mx-1 my-1 h-px bg-border",
+        "ml-auto text-xs tracking-widest text-muted-foreground group-focus/dropdown-menu-item:text-accent-foreground"
+      ]
     }
   },
   "warning": "This contract describes official CSS source, not proof of WPF rendering parity. Registry snapshot can differ slightly from the pinned GitHub example commit."

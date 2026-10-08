@@ -56,6 +56,11 @@ internal sealed partial class GalleryWindow
         "Calendar" => CalendarShowcase(),
         "Card" => CardShowcase(),
         "Combobox" => ComboboxShowcase(),
+        "Button" => ButtonShowcase(),
+        "Input" => InputShowcase(),
+        "Select" => SelectShowcase(),
+        "Dialog" => DialogShowcase(),
+        "Dropdown Menu" => DropdownMenuShowcase(),
         _ => null
     };
 

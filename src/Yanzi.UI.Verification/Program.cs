@@ -855,7 +855,8 @@ internal static class Program
                 && dialog.AllowsTransparency && !dialog.ShowInTaskbar
                 && dialog.BodyPresenter.Content == dialogForm,
                 "Dialog is a borderless overlay with arbitrary editable content");
-            Check(dialog.Card.CornerRadius.TopLeft == 12
+            Check(dialog.Card.CornerRadius.TopLeft == 14
+                && dialog.Card.Width == 384 && dialog.Card.Padding.Left == 16
                 && dialog.Card.BorderThickness.Left == 1
                 && dialog.CancelButton.IsCancel && dialog.SaveButton.IsDefault,
                 "Dialog has shadcn card geometry and default/cancel actions");
@@ -1002,6 +1003,59 @@ internal static class Program
                 "YanziCard exposes real Header, Content and Footer slots");
             Check(sourceCard.ClipToBounds,
                 "Card clips nested content to its shared rounded outer boundary");
+
+            // The second source batch must expose native behavior, not only Gallery examples.
+            var sourceButton = YanziUi.WithStyle(new Button { Content = "Default" },
+                YanziUi.Styles.DefaultButton);
+            var sourceInput = YanziUi.WithStyle(new TextBox { Text = "Hello" },
+                YanziUi.Styles.Input);
+            // Dynamic styles resolve only once elements enter an owner with theme resources.
+            var sourceStyleHost = new StackPanel();
+            sourceStyleHost.Children.Add(sourceButton);
+            sourceStyleHost.Children.Add(sourceInput);
+            window.Content = sourceStyleHost;
+            Check(sourceButton.MinHeight == 32 && sourceButton.MinWidth == 0
+                && sourceButton.Padding.Left == 10 && sourceButton.FontSize == 14,
+                "Button base uses source 32 DIP height, content width and 14 DIP text");
+            Check(sourceInput.MinHeight == 32 && sourceInput.Padding.Left == 10
+                && sourceInput.FontSize == 16,
+                "Input exposes source 32 DIP height, 10 DIP padding, and 16 DIP text");
+            var sourceSelect = new YanziSelect("Choose an option");
+            sourceSelect.Add("Apple");
+            sourceSelect.Add("Banana");
+            string? selectedSourceValue = null;
+            sourceSelect.SelectionChanged += (_, value) => selectedSourceValue = value;
+            Check(sourceSelect.Options.Count == 2 && sourceSelect.SelectedValue is null,
+                "Native Select holds two WPF options and an initially empty value");
+            Check(sourceSelect.Select("Banana") && selectedSourceValue == "Banana"
+                && sourceSelect.SelectedValue == "Banana",
+                "Select updates chosen text and reports selection");
+            Check(!sourceSelect.Select("Nonexistent") && sourceSelect.SelectedValue == "Banana",
+                "Select rejects values that are not in its option collection");
+            bool toggleState = false;
+            var checkedDropdown = new YanziDropdownMenu();
+            var checkAction = checkedDropdown.AddCheck("Show status", true, value => toggleState = value);
+            checkAction.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Check(toggleState == false, "Dropdown checkbox item toggles without relying on OS menu");
+            string? radioValue = null;
+            var sourceMenuRadios = checkedDropdown.AddRadioGroup("Theme", new[] { "Light", "Dark" },
+                "Dark", value => radioValue = value);
+            sourceMenuRadios[0].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Check(radioValue == "Light" && sourceMenuRadios.Count == 2,
+                "Dropdown radio group updates one exclusive selection");
+            var plainDropdown = new YanziDropdownMenu();
+            var shortcutItem = plainDropdown.AddAction("Profile", () => {}, "Ctrl+P");
+            Check(shortcutItem.Content is Grid contentRow && contentRow.ColumnDefinitions.Count == 2,
+                "Dropdown action renders label and keyboard shortcut in separate columns");
+            Check(plainDropdown.PreferAbove,
+                "Dropdown preserves legacy upward placement unless explicitly overridden");
+            plainDropdown.PreferAbove = false;
+            Check(!plainDropdown.PreferAbove,
+                "New source-aligned Dropdown can explicitly prefer below-trigger placement");
+            var sourceDialog = new YanziContentDialog(window, "Edit", "Change.", new TextBox());
+            Check(sourceDialog.Card.Width == 384 && sourceDialog.Card.Padding.Left == 16
+                && sourceDialog.Card.CornerRadius.TopLeft == 14,
+                "Dialog dimensions match source 384 DIP card and 16 DIP padding");
 
             var secondWindow = new Window();
             Check(secondWindow.Resources.MergedDictionaries.Count == 0, "separate old window remains unchanged");

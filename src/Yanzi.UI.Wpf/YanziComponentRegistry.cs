@@ -62,7 +62,7 @@ public static class YanziComponentRegistry
         new("Radio Group", YanziComponentStatus.Ready, "YanziRadio / YanziRadioGroup", "表单控件", 9),
         new("Resizable", YanziComponentStatus.Ready, "YanziLayoutPrimitives.Resizable", "导航与布局", 10),
         new("Scroll Area", YanziComponentStatus.Ready, "YanziLayoutPrimitives.ScrollArea", "导航与布局", 10),
-        new("Select", YanziComponentStatus.Ready, "Yanzi.Select", "表单控件", 9),
+        new("Select", YanziComponentStatus.Ready, "YanziSelect", "表单控件", 9),
         new("Separator", YanziComponentStatus.Ready, "YanziPrimitives.Separator", "基础组件", 8),
         new("Sheet", YanziComponentStatus.Ready, "YanziSheet.ShowAt", "弹层与反馈", 12),
         new("Sidebar", YanziComponentStatus.Ready, "YanziSidebar", "导航与布局", 10),

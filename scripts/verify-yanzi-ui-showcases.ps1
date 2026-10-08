@@ -31,7 +31,12 @@ $expect = @(
     @{Name='Button Group'; Child='Archive'; Type=[System.Windows.Automation.ControlType]::Button},
     @{Name='Calendar'; Child='2026-10-08'; Type=[System.Windows.Automation.ControlType]::Button},
     @{Name='Card'; Child='Login'; Type=[System.Windows.Automation.ControlType]::Button},
-    @{Name='Combobox'; Child='Combobox search'; Type=[System.Windows.Automation.ControlType]::Edit}
+    @{Name='Combobox'; Child='Combobox search'; Type=[System.Windows.Automation.ControlType]::Edit},
+    @{Name='Button'; Child='Default'; Type=[System.Windows.Automation.ControlType]::Button},
+    @{Name='Input'; Child='Email input'; Type=[System.Windows.Automation.ControlType]::Edit},
+    @{Name='Select'; Child='Select option'; Type=[System.Windows.Automation.ControlType]::Button},
+    @{Name='Dialog'; Child='Edit profile'; Type=[System.Windows.Automation.ControlType]::Button},
+    @{Name='Dropdown Menu'; Child='Open menu ▾'; Type=[System.Windows.Automation.ControlType]::Button}
 )
 foreach ($entry in $expect) {
     $nav=Find $entry.Name ([System.Windows.Automation.ControlType]::Button)
@@ -45,4 +50,4 @@ foreach ($entry in $expect) {
     $child=Find $entry.Child $entry.Type
     Verify ([bool]$child) "functional example exists for $($entry.Name)"
 }
-Write-Host "PASS: 8 reference scenarios and preview-first ordering verified"
+Write-Host "PASS: 13 source-aligned scenarios and preview-first ordering verified"
