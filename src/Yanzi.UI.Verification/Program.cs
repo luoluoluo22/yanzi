@@ -785,6 +785,106 @@ internal static class Program
             catch (ArgumentException) { duplicateComboRejected = true; }
             Check(duplicateComboRejected, "Combobox rejects duplicate values ignoring case");
 
+            // True shadcn-style context-menu surface: actions, checked state,
+            // right-click coordinate placement and safe close on activation.
+            var customContext = new YanziContextMenu();
+            bool contextActivated = false;
+            bool bookmarkChecked = true;
+            customContext.AddLabel("Quick actions");
+            var ctxAction = customContext.AddAction("Reload", () => contextActivated = true, "Ctrl+R");
+            customContext.AddSeparator();
+            var ctxCheck = customContext.AddCheck("Show bookmarks", true, state => bookmarkChecked = state);
+            var rightClickRegion = new Border { Width = 240, Height = 85, Focusable = true };
+            customContext.Attach(rightClickRegion);
+            Check(customContext.Count == 1 && customContext.Surface is Border ctxSurface
+                && ctxSurface.CornerRadius.TopLeft == 9,
+                "Context Menu renders its own rounded WPF popup and action rows");
+            Check(rightClickRegion.ContextMenu is null,
+                "Context Menu does not instantiate Windows native ContextMenu");
+            window.Content = rightClickRegion;
+            window.UpdateLayout();
+            customContext.OpenAt(new Point(34, 42));
+            Check(customContext.IsOpen,
+                "Context Menu opens at a relative pointer coordinate");
+            ctxCheck.IsChecked = false;
+            Check(!bookmarkChecked, "Context Menu checkbox updates its consumer");
+            ctxAction.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Check(contextActivated && !customContext.IsOpen,
+                "Context Menu action invokes callback and closes popup");
+
+            // General Dialog owns editable child content independently of Alert Dialog.
+            var dialogForm = new StackPanel();
+            var dialogText = new TextBox { Text = "Initial profile" };
+            dialogForm.Children.Add(dialogText);
+            var dialog = new YanziContentDialog(window, "Edit profile",
+                "Make changes here.", dialogForm);
+            Check(dialog.WindowStyle == WindowStyle.None
+                && dialog.AllowsTransparency && !dialog.ShowInTaskbar
+                && dialog.BodyPresenter.Content == dialogForm,
+                "Dialog is a borderless overlay with arbitrary editable content");
+            Check(dialog.Card.CornerRadius.TopLeft == 12
+                && dialog.Card.BorderThickness.Left == 1
+                && dialog.CancelButton.IsCancel && dialog.SaveButton.IsDefault,
+                "Dialog has shadcn card geometry and default/cancel actions");
+            dialog.Loaded += (_, _) =>
+                dialog.Dispatcher.BeginInvoke(new Action(() =>
+                    dialog.CancelButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent))));
+            Check(dialog.ShowDialog() == false,
+                "General Dialog supports modal cancel without touching input");
+            var savedForm = new StackPanel();
+            var savedInput = new TextBox { Text = "Before" };
+            savedForm.Children.Add(savedInput);
+            var savedDialog = new YanziContentDialog(window, "Edit profile",
+                "Change input.", savedForm);
+            savedDialog.Loaded += (_, _) =>
+                savedDialog.Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    savedInput.Text = "After";
+                    savedDialog.SaveButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                }));
+            Check(savedDialog.ShowDialog() == true && savedInput.Text == "After",
+                "General Dialog preserves edited content and returns successful save");
+            // Sheet/Drawer are now owner-sized overlays rather than OS titlebar windows.
+            var sideBody = new StackPanel();
+            sideBody.Children.Add(new TextBox { Text = "Demo" });
+            var rightSheet = new YanziSheetOverlay(window, "Sheet test", sideBody,
+                YanziSheetSide.Right);
+            Check(rightSheet.WindowStyle == WindowStyle.None
+                && rightSheet.AllowsTransparency && !rightSheet.ShowInTaskbar,
+                "Sheet uses borderless WPF owner overlay instead of a tool window");
+            Check(rightSheet.Overlay.Background is SolidColorBrush sheetDim
+                && sheetDim.Color.A >= 150
+                && rightSheet.Panel.HorizontalAlignment == HorizontalAlignment.Right
+                && rightSheet.Panel.Width == 390,
+                "Sheet right edge placement and backdrop alpha match overlay design");
+            rightSheet.Loaded += (_, _) =>
+                rightSheet.Dispatcher.BeginInvoke(new Action(() =>
+                    rightSheet.CloseButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent))));
+            rightSheet.ShowDialog();
+            Check(!rightSheet.IsVisible, "Sheet modal closes via dedicated close button");
+
+            var drawerBody = new StackPanel();
+            drawerBody.Children.Add(new TextBlock { Text = "Drawer content" });
+            var bottomDrawer = new YanziSheetOverlay(window, "Drawer test", drawerBody,
+                YanziSheetSide.Bottom);
+            Check(bottomDrawer.Panel.VerticalAlignment == VerticalAlignment.Bottom
+                && bottomDrawer.Panel.Height == 335 && bottomDrawer.DrawerHandle is not null
+                && bottomDrawer.Panel.CornerRadius.TopLeft == 16
+                && bottomDrawer.Panel.CornerRadius.TopRight == 16,
+                "Drawer has bottom anchored panel, rounded top corners and visual handle");
+            bottomDrawer.Loaded += (_, _) =>
+                bottomDrawer.Dispatcher.BeginInvoke(new Action(() =>
+                    bottomDrawer.CloseButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent))));
+            bottomDrawer.ShowDialog();
+            Check(!bottomDrawer.IsVisible, "Drawer overlay closes without a native window titlebar");
+            var leftSheet = new YanziSheetOverlay(window, "Left sheet", new TextBlock { Text = "Left" },
+                YanziSheetSide.Left);
+            var topSheet = new YanziSheetOverlay(window, "Top sheet", new TextBlock { Text = "Top" },
+                YanziSheetSide.Top);
+            Check(leftSheet.Panel.HorizontalAlignment == HorizontalAlignment.Left
+                && topSheet.Panel.VerticalAlignment == VerticalAlignment.Top,
+                "Sheet supports all four edge placements through shared API");
+
             var secondWindow = new Window();
             Check(secondWindow.Resources.MergedDictionaries.Count == 0, "separate old window remains unchanged");
             Check(YanziUi.WithStyle(new ProgressBar(), YanziUi.Styles.Loading) is ProgressBar, "loading control helper");

@@ -68,11 +68,11 @@ with cf.ThreadPoolExecutor(max_workers=8) as executor:
 
 risks = {
     "Chart": "本地仅有轻量柱图；其他类型图表及细节待验收",
-    "Dialog": "目前 API 使用 Confirm，尚未验证任意内容的通用 Dialog",
-    "Drawer": "目前映射 Sheet，拖拽语义尚未验收",
+    "Dialog": "已改为自绘 YanziContentDialog，支持可编辑内容；复杂焦点循环、RTL 与动画仍未验收",
+    "Drawer": "已改为底部蒙层面板及手柄，拖拽关闭和多级吸附尚未实现",
     "Combobox": "已新增自绘 YanziCombobox：单选过滤与空状态；多选 Chips、分组、ARIA 角色和 RTL 待验收",
     "Data Table": "排序、过滤、分页和虚拟化尚未逐项核对",
-    "Context Menu": "原生 WPF ContextMenu 与官网差异待核对",
+    "Context Menu": "自绘 YanziContextMenu 已支持右键坐标、动作与勾选；子菜单、单选分组和 RTL 尚待补全",
     "Select": "原生 ComboBox 与官网自绘选择弹层差异待核对",
     "Navigation Menu": "目前复用了 Menubar；完整交互仍需复刻",
     "Dropdown Menu": "新版 YanziDropdownMenu 已有，需进一步做逐状态截图对比",

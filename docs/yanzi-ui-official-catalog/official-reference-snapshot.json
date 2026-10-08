@@ -1,6 +1,6 @@
 {
   "source": "https://ui.shadcn.com/docs/components",
-  "checked_utc": "2026-10-08T11:56:09.342433+00:00",
+  "checked_utc": "2026-10-08T12:10:15.652653+00:00",
   "official_count": 64,
   "local_count": 64,
   "no_omissions": true,
@@ -668,7 +668,7 @@
     {
       "number": 20,
       "name": "Context Menu",
-      "api": "Yanzi.Menu / Yanzi.MenuItem",
+      "api": "YanziContextMenu",
       "api_status": "Ready",
       "old_group": "弹层与反馈",
       "official_url": "https://ui.shadcn.com/docs/components/base/context-menu",
@@ -693,7 +693,7 @@
       "fetch_error": null,
       "independent_preview": true,
       "comparison_focus": "右键定位、菜单项与子菜单交互",
-      "risk": "原生 WPF ContextMenu 与官网差异待核对",
+      "risk": "自绘 YanziContextMenu 已支持右键坐标、动作与勾选；子菜单、单选分组和 RTL 尚待补全",
       "visual_result": "待核对",
       "interaction_result": "待核对"
     },
@@ -770,7 +770,7 @@
     {
       "number": 23,
       "name": "Dialog",
-      "api": "YanziDialog.Confirm",
+      "api": "YanziContentDialog",
       "api_status": "Ready",
       "old_group": "弹层与反馈",
       "official_url": "https://ui.shadcn.com/docs/components/base/dialog",
@@ -790,7 +790,7 @@
       "fetch_error": null,
       "independent_preview": true,
       "comparison_focus": "蒙层、可滚动内容、关闭与焦点",
-      "risk": "目前 API 使用 Confirm，尚未验证任意内容的通用 Dialog",
+      "risk": "已改为自绘 YanziContentDialog，支持可编辑内容；复杂焦点循环、RTL 与动画仍未验收",
       "visual_result": "待核对",
       "interaction_result": "待核对"
     },
@@ -818,7 +818,7 @@
     {
       "number": 25,
       "name": "Drawer",
-      "api": "YanziSheet.Show",
+      "api": "YanziSheet.ShowDrawer",
       "api_status": "Ready",
       "old_group": "弹层与反馈",
       "official_url": "https://ui.shadcn.com/docs/components/base/drawer",
@@ -849,7 +849,7 @@
       "fetch_error": null,
       "independent_preview": true,
       "comparison_focus": "边缘抽屉位置、拖动和关闭",
-      "risk": "目前映射 Sheet，拖拽语义尚未验收",
+      "risk": "已改为底部蒙层面板及手柄，拖拽关闭和多级吸附尚未实现",
       "visual_result": "待核对",
       "interaction_result": "待核对"
     },
@@ -1645,7 +1645,7 @@
     {
       "number": 51,
       "name": "Sheet",
-      "api": "YanziSheet.Show",
+      "api": "YanziSheet.ShowAt",
       "api_status": "Ready",
       "old_group": "弹层与反馈",
       "official_url": "https://ui.shadcn.com/docs/components/base/sheet",

@@ -1,7 +1,7 @@
 # shadcn/ui x Yanzi UI: 64 item comparison register
 
 Official directory: https://ui.shadcn.com/docs/components
-Checked UTC: 2026-10-08T11:56:09.342433+00:00
+Checked UTC: 2026-10-08T12:10:15.652653+00:00
 
 Official and local catalog: 64/64 names, order and URLs match.
 Components with independent WPF previews: 64/64.
@@ -29,12 +29,12 @@ A reusable API entry is NOT proof of visual or behavioral parity.
 | 17 | [Collapsible](https://ui.shadcn.com/docs/components/base/collapsible) | 200 | YanziLayoutPrimitives.Collapsible | yes | pending | 折叠触发器、内容高度、动效与状态 |
 | 18 | [Combobox](https://ui.shadcn.com/docs/components/base/combobox) | 200 | YanziCombobox | yes | pending | 输入过滤、选中项、键盘方向与无结果 |
 | 19 | [Command](https://ui.shadcn.com/docs/components/base/command) | 200 | YanziCommandPalette | yes | pending | 检索、分组、命令执行、快捷键 |
-| 20 | [Context Menu](https://ui.shadcn.com/docs/components/base/context-menu) | 200 | Yanzi.Menu / Yanzi.MenuItem | yes | pending | 右键定位、菜单项与子菜单交互 |
+| 20 | [Context Menu](https://ui.shadcn.com/docs/components/base/context-menu) | 200 | YanziContextMenu | yes | pending | 右键定位、菜单项与子菜单交互 |
 | 21 | [Data Table](https://ui.shadcn.com/docs/components/base/data-table) | 200 | Yanzi.DataGrid | yes | pending | 排序、列宽、行选择、分页和空状态 |
 | 22 | [Date Picker](https://ui.shadcn.com/docs/components/base/date-picker) | 200 | Yanzi.DatePicker | yes | pending | 日期弹窗、输入格式、范围/禁用 |
-| 23 | [Dialog](https://ui.shadcn.com/docs/components/base/dialog) | 200 | YanziDialog.Confirm | yes | pending | 蒙层、可滚动内容、关闭与焦点 |
+| 23 | [Dialog](https://ui.shadcn.com/docs/components/base/dialog) | 200 | YanziContentDialog | yes | pending | 蒙层、可滚动内容、关闭与焦点 |
 | 24 | [Direction](https://ui.shadcn.com/docs/components/base/direction) | 200 | YanziContentPrimitives.Direction | yes | pending | LTR / RTL 文字和布局方向切换 |
-| 25 | [Drawer](https://ui.shadcn.com/docs/components/base/drawer) | 200 | YanziSheet.Show | yes | pending | 边缘抽屉位置、拖动和关闭 |
+| 25 | [Drawer](https://ui.shadcn.com/docs/components/base/drawer) | 200 | YanziSheet.ShowDrawer | yes | pending | 边缘抽屉位置、拖动和关闭 |
 | 26 | [Dropdown Menu](https://ui.shadcn.com/docs/components/base/dropdown-menu) | 200 | YanziDropdownMenu | yes | pending | 菜单弹层、键盘、子菜单、checkbox 项 |
 | 27 | [Empty](https://ui.shadcn.com/docs/components/base/empty) | 200 | YanziPrimitives.EmptyState | yes | pending | 空状态图标、说明、行动按钮与留白 |
 | 28 | [Field](https://ui.shadcn.com/docs/components/base/field) | 200 | YanziPrimitives.Field | yes | pending | FieldLabel、说明、错误反馈和必填 |
@@ -60,7 +60,7 @@ A reusable API entry is NOT proof of visual or behavioral parity.
 | 48 | [Scroll Area](https://ui.shadcn.com/docs/components/base/scroll-area) | 200 | YanziLayoutPrimitives.ScrollArea | yes | pending | 垂直/水平滚动条、滚动边缘与键盘 |
 | 49 | [Select](https://ui.shadcn.com/docs/components/base/select) | 200 | Yanzi.Select | yes | pending | 选项弹层、搜索、定位、滚动状态 |
 | 50 | [Separator](https://ui.shadcn.com/docs/components/base/separator) | 200 | YanziPrimitives.Separator | yes | pending | 分隔方向、厚度和语义颜色 |
-| 51 | [Sheet](https://ui.shadcn.com/docs/components/base/sheet) | 200 | YanziSheet.Show | yes | pending | 侧边抽屉、蒙层与焦点关闭 |
+| 51 | [Sheet](https://ui.shadcn.com/docs/components/base/sheet) | 200 | YanziSheet.ShowAt | yes | pending | 侧边抽屉、蒙层与焦点关闭 |
 | 52 | [Sidebar](https://ui.shadcn.com/docs/components/base/sidebar) | 200 | YanziSidebar | yes | pending | 左侧导航折叠、选中与悬停 |
 | 53 | [Skeleton](https://ui.shadcn.com/docs/components/base/skeleton) | 200 | YanziPrimitives.Skeleton | yes | pending | 骨架屏尺寸、闪动动画、加载退场 |
 | 54 | [Slider](https://ui.shadcn.com/docs/components/base/slider) | 200 | Yanzi.Slider | yes | pending | 轨道、Thumb、键盘、步进和方向 |

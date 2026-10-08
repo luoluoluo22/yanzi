@@ -67,25 +67,27 @@ internal sealed partial class GalleryWindow
                 {
                     Width = 325, Height = 117,
                     CornerRadius = new CornerRadius(8),
-                    BorderThickness = new Thickness(1)
+                    BorderThickness = new Thickness(1),
+                    Focusable = true
                 };
                 area.SetResourceReference(Border.BorderBrushProperty, "Yanzi.Color.Border");
                 area.SetResourceReference(Border.BackgroundProperty, "Yanzi.Color.Secondary");
-                var label = Text("在此区域点击鼠标右键", 13, false, "Yanzi.Color.Foreground");
+                var label = Text("Right click here · 或按 Shift + F10", 13, false, "Yanzi.Color.Foreground");
                 label.HorizontalAlignment = HorizontalAlignment.Center;
+                label.VerticalAlignment = VerticalAlignment.Center;
                 area.Child = label;
-                var menu = YanziUi.WithStyle(new ContextMenu(), YanziUi.Styles.Menu);
-                var actions = new[] { "Back", "Forward", "Reload", "Save as..." };
-                foreach (var text in actions)
-                {
-                    var title = text;
-                    var entry = YanziUi.WithStyle(new MenuItem { Header = title }, YanziUi.Styles.MenuItem);
-                    entry.Click += (_, _) => Status("Context Menu：" + title);
-                    menu.Items.Add(entry);
-                }
-                area.ContextMenu = menu;
+                var menu = new YanziContextMenu();
+                menu.AddLabel("Quick actions");
+                menu.AddAction("Back", () => Status("Context Menu：Back"), "Alt+Left");
+                menu.AddAction("Forward", () => Status("Context Menu：Forward"), "Alt+Right");
+                menu.AddAction("Reload", () => Status("Context Menu：Reload"), "Ctrl+R");
+                menu.AddSeparator();
+                menu.AddCheck("Show bookmarks", true, value => Status("Show bookmarks：" + value));
+                menu.AddAction("Delete", () => Status("Context Menu：Delete"), destructive: true);
+                menu.Attach(area);
                 Add(area);
-                Limit("目前仍基于系统 ContextMenu，圆角、菜单定位和子菜单需继续自绘。");
+                Add(Action("打开右键菜单（键盘预览）", () => menu.OpenAt(new Point(30, 36))));
+                Limit("已自绘右键弹层和操作行；官网子菜单、单选菜单、完整 RTL 与动画仍待补齐。");
                 break;
             }
             case "Data Table":
@@ -128,17 +130,26 @@ internal sealed partial class GalleryWindow
             {
                 Add(Action("Edit profile", () =>
                 {
-                    var accepted = YanziDialog.Confirm(this, "Edit profile",
-                        "本示例仍调用确认弹窗。官网 Dialog 需要支持任意可编辑内容。", "Save");
-                    Status(accepted ? "Dialog: 已确认" : "Dialog: 已取消");
+                    var form = new StackPanel();
+                    var nameInput = YanziUi.WithStyle(new TextBox { Text = "Yanzi Desktop" },
+                        YanziUi.Styles.InputSoft);
+                    var userInput = YanziUi.WithStyle(new TextBox { Text = "@yanzi" },
+                        YanziUi.Styles.InputSoft);
+                    form.Children.Add(YanziPrimitives.Field("Name", nameInput));
+                    form.Children.Add(YanziPrimitives.Field("Username", userInput));
+                    var dialog = new YanziContentDialog(this, "Edit profile",
+                        "Make changes to your profile here. Click save when you're done.",
+                        form, "Save changes");
+                    var accepted = dialog.ShowDialog() == true;
+                    Status(accepted ? "Dialog 示例保存：" + nameInput.Text : "Dialog 已取消，不写入数据");
                 }));
-                Limit("Confirm 与通用 Dialog 不同，后续需要独立内容模板和焦点陷阱。");
+                Limit("已有自绘通用可编辑 Dialog，支持滚动、Esc、关闭、确认；多窗口遮罩细节、动画与焦点环专项验收待完善。");
                 break;
             }
             case "Drawer":
             {
                 Add(Action("Open drawer", () => ShowPreviewSheet("Drawer")));
-                Limit("暂时沿用侧边 Sheet；底部上拉、拖拽手柄和触屏手势尚不具备。");
+                Limit("Drawer 现使用底部蒙层面板和独立手柄；拖拽关闭、触屏滑动与多段吸附尚未实现。");
                 break;
             }
             case "Hover Card":
@@ -253,7 +264,7 @@ internal sealed partial class GalleryWindow
             case "Sheet":
             {
                 Add(Action("Open sheet", () => ShowPreviewSheet("Sheet")));
-                Limit("当前为独立右侧 WPF Window；官网蒙层、过渡动画和焦点处理需重构。");
+                Limit("已实现右侧自绘蒙层和入场动画；不同方向、完整焦点循环与 RTL 仍需实机对照。");
                 break;
             }
             case "Sidebar":
@@ -282,6 +293,7 @@ internal sealed partial class GalleryWindow
             "此处只做视觉演示，不会修改任何数据。"));
         content.Children.Add(Text("Press Close to return to the component catalog.",
             12, false, "Yanzi.Color.MutedForeground", new Thickness(0, 10, 0, 0)));
-        YanziSheet.Show(this, type + " · preview", content);
+        if (type == "Drawer") YanziSheet.ShowDrawer(this, "Drawer · Preview", content);
+        else YanziSheet.Show(this, "Sheet · Preview", content);
     }
 }
