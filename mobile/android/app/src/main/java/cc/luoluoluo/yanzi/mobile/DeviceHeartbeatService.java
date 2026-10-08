@@ -141,7 +141,7 @@ public class DeviceHeartbeatService extends Service {
                 }
             });
             if (now >= maintenanceAt) {
-                maintenanceAt = now + BackgroundCadence.HEARTBEAT_MS;
+                maintenanceAt = now + BackgroundCadence.MAINTENANCE_MS;
                 runStage("lan_refresh", () -> AccountLanConnections.refresh(this, base, token, device, false));
                 runStage("receipt_cleanup", () -> MobileDesktopTransfer.cleanupReceipts(this));
                 runStage("outbox_replay", () -> {

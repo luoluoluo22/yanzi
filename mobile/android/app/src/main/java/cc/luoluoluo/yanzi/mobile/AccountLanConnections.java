@@ -16,7 +16,7 @@ final class AccountLanConnections {
         if (token.isEmpty() || device.isEmpty()) return;
         String session = base + "\n" + token + "\n" + device;
         long now = android.os.SystemClock.elapsedRealtime();
-        if (session.equals(lastSession) && now - lastAttempt < 120000) return;
+        if (session.equals(lastSession) && now - lastAttempt < 300000) return;
         if (!busy.compareAndSet(false, true)) return;
         lastSession = session; lastAttempt = now;
         status = "正在获取同账号设备连接信息";

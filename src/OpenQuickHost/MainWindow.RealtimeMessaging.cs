@@ -27,6 +27,8 @@ public partial class MainWindow
         await Dispatcher.InvokeAsync(() => _mobileMessagePollTimer.Stop());
         HostAssets.AppendLog("Mobile bridge realtime connected; periodic D1 polling suspended.");
         await Dispatcher.InvokeAsync(AppExtensionWindow.NotifyAccountConnected);
+        AccountEnvironmentSecretVault.Attach(_cloudSyncClient!);
+        AccountEnvironmentSecretVault.QueueRestoreFromCloud();
         await PollMobileMessagesSafeAsync("websocket-resync");
         var buffer = new byte[16384];
         try
@@ -55,6 +57,26 @@ public partial class MainWindow
                     else await _cloudSyncClient.AckDeviceMessageAsync(message.MessageId, _desktopDeviceId!, cancellationToken: cancellationToken);
                 }
                 else if (type == "messages-ready" || type == "ready") await PollMobileMessagesSafeAsync("websocket-hint");
+                else if (type == "external-access-ready")
+                {
+                    await Dispatcher.InvokeAsync(() => (System.Windows.Application.Current as App)?.NotifyExternalAccessReady());
+                }
+                else if (type == "sync-ready")
+                {
+                    var updatedByDeviceId = root.TryGetProperty("updatedByDeviceId", out var updatedByElement)
+                        ? updatedByElement.GetString()
+                        : null;
+                    var objectId = root.TryGetProperty("objectId", out var objectIdElement)
+                        ? objectIdElement.GetString()
+                        : null;
+                    if (string.IsNullOrWhiteSpace(updatedByDeviceId) ||
+                        !string.Equals(updatedByDeviceId, _desktopDeviceId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        ExtensionStorageService.NotifyAccountCloudChanged();
+                        if (string.Equals(objectId, AccountEnvironmentSecretVault.ObjectId, StringComparison.Ordinal))
+                            AccountEnvironmentSecretVault.QueueRestoreFromCloud();
+                    }
+                }
                 else if (type == "receipt")
                 {
                     var id = root.GetProperty("messageId").GetString()!;

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using OpenQuickHost;
 using OpenQuickHost.Sync;
+using Yanzi.Core;
 
 if (args.Contains("--task-recovery")) { PlatformTaskVerification.Run(); return; }
 
@@ -55,6 +56,8 @@ VerifySyncPackageSafety();
 if (args.Contains("--sync-safety")) return;
 VerifySyncCoverageCatalog();
 VerifyAiSecretBoundary();
+VerifyEnvironmentSecretVault();
+VerifySecretVaultGenericSyncIsolation();
 VerifyYanmObjectStore();
 VerifyPersonalRestorePoint();
 VerifyExtensionAuthoritySelection();
@@ -118,6 +121,178 @@ Assert(afterDeletion?.QuickPanelGlobalGroups.Select(static item => item.Id).Sequ
 Assert(afterDeletion?.RadialMenu?.Pages.Select(static item => item.Id).SequenceEqual(["r1"]) == true, "Deleted radial page reappeared after applying tombstones.");
 
 Console.WriteLine("Account config object verification passed: round-trip, isolated edits, safe tombstones, remote-only preservation.");
+
+static void VerifyEnvironmentSecretVault()
+{
+    const string tokenName = "CLOUDFLARE_API_TOKEN";
+    const string tokenValue = "verification-token-never-real";
+    var oldMasterKey = SyncCryptoService.DeriveKeys("old-password-for-verification", "vault@example.test").MasterKey;
+    var newMasterKey = SyncCryptoService.DeriveKeys("new-password-for-verification", "vault@example.test").MasterKey;
+    var recoveryKey = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
+    var payload = AccountEnvironmentSecretVault.CreatePayloadForVerification(
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { [tokenName] = tokenValue }, oldMasterKey, recoveryKey);
+    var wire = payload.GetRawText();
+    Assert(!wire.Contains(tokenName, StringComparison.Ordinal) && !wire.Contains(tokenValue, StringComparison.Ordinal),
+        "Secret vault wire payload must not expose secret names or values.");
+    var decrypted = AccountEnvironmentSecretVault.DecryptPayloadForVerification(payload, oldMasterKey);
+    Assert(decrypted.TryGetValue(tokenName, out var recovered) && recovered == tokenValue,
+        "Secret vault encryption round trip failed.");
+    var wrongKeyRejected = false;
+    try { _ = AccountEnvironmentSecretVault.DecryptPayloadForVerification(payload, newMasterKey); }
+    catch (System.Security.Cryptography.CryptographicException) { wrongKeyRejected = true; }
+    Assert(wrongKeyRejected, "A different login-derived key must not decrypt the vault without authenticated recovery.");
+    var recoveredAfterForgottenPassword = AccountEnvironmentSecretVault.DecryptPayloadWithRecoveryForVerification(
+        payload, newMasterKey, recoveryKey);
+    Assert(recoveredAfterForgottenPassword.UsedRecovery &&
+           recoveredAfterForgottenPassword.Secrets[tokenName] == tokenValue,
+        "Authenticated recovery must restore the vault when the old password is unavailable.");
+    var rewrapped = AccountEnvironmentSecretVault.RewrapPayloadForVerification(payload, null, newMasterKey, recoveryKey);
+    Assert(AccountEnvironmentSecretVault.DecryptPayloadForVerification(rewrapped, newMasterKey)[tokenName] == tokenValue,
+        "Recovery-assisted rewrap must preserve secrets across a forgotten-password reset.");
+
+    var oldDeviceRoot = Path.Combine(Path.GetTempPath(), "yanzi-vault-old-" + Guid.NewGuid().ToString("N"));
+    var newDeviceRoot = Path.Combine(Path.GetTempPath(), "yanzi-vault-new-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(oldDeviceRoot);
+    Directory.CreateDirectory(newDeviceRoot);
+    try
+    {
+        Dictionary<string, string> snapshot;
+        using (HostAssets.UseIsolatedDataRootForVerification(oldDeviceRoot))
+        {
+            AppEnvironmentVariableStore.Save([new AppEnvironmentVariableSettings
+            {
+                Name = tokenName,
+                Value = tokenValue,
+                Description = "verification"
+            }]);
+            snapshot = AppEnvironmentVariableStore.SnapshotSecretValuesForVault();
+            Assert(snapshot[tokenName] == tokenValue, "Old-device DPAPI secret was not captured for account migration.");
+        }
+
+        using (HostAssets.UseIsolatedDataRootForVerification(newDeviceRoot))
+        {
+            AppEnvironmentVariableStore.ApplySecretValuesFromVault(snapshot);
+            var restored = AppEnvironmentVariableStore.Load().Single(item => item.Name == tokenName);
+            Assert(restored.Value == tokenValue, "New-device secret restore did not persist the DPAPI value.");
+            Assert(restored.Description == string.Empty, "Vault restore should not invent user-visible metadata.");
+        }
+    }
+    finally
+    {
+        Directory.Delete(oldDeviceRoot, recursive: true);
+        Directory.Delete(newDeviceRoot, recursive: true);
+    }
+
+    var accountRoot = Path.Combine(Path.GetTempPath(), "yanzi-vault-account-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(accountRoot);
+    try
+    {
+        using (HostAssets.UseIsolatedDataRootForVerification(accountRoot))
+        {
+            AppEnvironmentVariableStore.ApplySecretValuesFromVault(
+                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { [tokenName] = "account-a-secret" });
+            AccountEnvironmentSecretVault.PrepareLocalAccountScopeForVerification("account-a");
+            AccountEnvironmentSecretVault.SaveAccountSnapshotForVerification(
+                "account-a", AppEnvironmentVariableStore.SnapshotSecretValuesForVault());
+
+            AccountEnvironmentSecretVault.PrepareLocalAccountScopeForVerification("account-b");
+            Assert(string.IsNullOrEmpty(AppEnvironmentVariableStore.GetValue(tokenName)),
+                "Switching to a new account must not expose another account's local secret cache.");
+            AppEnvironmentVariableStore.ApplySecretValuesFromVault(
+                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { [tokenName] = "account-b-secret" });
+            AccountEnvironmentSecretVault.SaveAccountSnapshotForVerification(
+                "account-b", AppEnvironmentVariableStore.SnapshotSecretValuesForVault());
+
+            AccountEnvironmentSecretVault.PrepareLocalAccountScopeForVerification("account-a");
+            Assert(AppEnvironmentVariableStore.GetValue(tokenName) == "account-a-secret",
+                "Switching back must restore the matching account's DPAPI cache.");
+            AccountEnvironmentSecretVault.PrepareLocalAccountScopeForVerification("account-b");
+            Assert(AppEnvironmentVariableStore.GetValue(tokenName) == "account-b-secret",
+                "Each account must retain its own DPAPI-protected local secret cache.");
+
+            AccountEnvironmentSecretVault.PersistPendingForVerification(
+                "account-b", ["CHANGED_TOKEN"], ["DELETED_TOKEN"]);
+            var pending = AccountEnvironmentSecretVault.SnapshotPendingForVerification("account-b");
+            Assert(pending.Changed.Contains("CHANGED_TOKEN") && pending.Deleted.Contains("DELETED_TOKEN"),
+                "Offline secret edits and deletions must survive in the protected pending journal.");
+            AccountEnvironmentSecretVault.CompletePendingForVerification(
+                "account-b", pending.Changed, pending.Deleted);
+            var completed = AccountEnvironmentSecretVault.SnapshotPendingForVerification("account-b");
+            Assert(completed.Changed.Count == 0 && completed.Deleted.Count == 0,
+                "Pending secret journal must clear only after a confirmed cloud write.");
+        }
+    }
+    finally
+    {
+        Directory.Delete(accountRoot, recursive: true);
+    }
+
+    Console.WriteLine("Environment secret vault verification passed: ciphertext boundary, wrong-key rejection, login-only recovery, password rewrap, cross-device DPAPI restore, account isolation, offline journal.");
+}
+
+static void VerifySecretVaultGenericSyncIsolation()
+{
+    var accountId = "verification-account";
+    var vaultObject = new CloudSyncObjectRecord
+    {
+        ObjectId = AccountEnvironmentSecretVault.ObjectId,
+        SchemaVersion = 1,
+        Revision = 1,
+        UpdatedAtUtc = DateTimeOffset.UtcNow.ToString("O"),
+        Payload = JsonSerializer.SerializeToElement(new { encrypted = "ciphertext-only" })
+    };
+    var ordinaryObject = new CloudSyncObjectRecord
+    {
+        ObjectId = "settings.general",
+        SchemaVersion = 1,
+        Revision = 2,
+        UpdatedAtUtc = DateTimeOffset.UtcNow.ToString("O"),
+        Payload = JsonSerializer.SerializeToElement(new { value = 1 })
+    };
+    var page = new CloudSyncObjectListResponse
+    {
+        Ok = true,
+        UserId = accountId,
+        CurrentRevision = 2,
+        CursorRevision = 2,
+        HasMore = false,
+        Objects = [vaultObject, ordinaryObject]
+    };
+    var state = new CloudObjectSyncState
+    {
+        UserId = accountId,
+        PendingObjectIds = [AccountEnvironmentSecretVault.ObjectId],
+        PendingOperations = new(StringComparer.OrdinalIgnoreCase)
+        {
+            [AccountEnvironmentSecretVault.ObjectId] = new CloudObjectPendingOperation
+            {
+                ObjectId = AccountEnvironmentSecretVault.ObjectId
+            }
+        },
+        Conflicts = new(StringComparer.OrdinalIgnoreCase)
+        {
+            [AccountEnvironmentSecretVault.ObjectId] = new CloudObjectConflictRecord
+            {
+                ObjectId = AccountEnvironmentSecretVault.ObjectId
+            }
+        }
+    };
+    var service = new AccountObjectSyncService(
+        new VerificationAccountObjectRepository(page),
+        new AccountSyncCoordinator());
+    service.RefreshAsync(state).GetAwaiter().GetResult();
+
+    Assert(!state.Objects.ContainsKey(AccountEnvironmentSecretVault.ObjectId) &&
+           !state.PendingObjectIds.Contains(AccountEnvironmentSecretVault.ObjectId) &&
+           !state.PendingOperations.ContainsKey(AccountEnvironmentSecretVault.ObjectId) &&
+           !state.Conflicts.ContainsKey(AccountEnvironmentSecretVault.ObjectId),
+        "Secret vault object must stay outside generic sync cache/conflict/history state.");
+    Assert(state.Objects.ContainsKey("settings.general") &&
+           state.LastSyncedRevision == 2 &&
+           state.DownloadCursorValidated,
+        "Ignoring the secret vault must not block generic sync cursor progress.");
+    Console.WriteLine("Secret vault generic-sync isolation passed: hidden object, preserved cursor progress.");
+}
 
 static void VerifySyncArchitectureSafety()
 {
@@ -811,4 +986,14 @@ static void VerifyQuickWindowSwitchSafety()
     Assert(cmdDisabled.ToggleWindow == false, "CommandItem 显式关闭 ToggleWindow 应该为 false。");
 
     Console.WriteLine("Quick window switch safety passed: eligibility check, manifest roundtrip, default value fallback and CommandItem mapping.");
+}
+
+sealed class VerificationAccountObjectRepository(CloudSyncObjectListResponse page)
+    : IAccountObjectRepository<CloudSyncObjectListResponse>
+{
+    public Task<CloudSyncObjectListResponse> ReadSnapshotAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult(page);
+
+    public Task<CloudSyncObjectListResponse> ReadChangesAsync(long cursor, CancellationToken cancellationToken = default) =>
+        Task.FromResult(page);
 }
