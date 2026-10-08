@@ -230,6 +230,65 @@ internal static class Program
             Check(!hover.IsOpen, "hover card default state");
             Check(typeof(YanziSheet).GetMethod(nameof(YanziSheet.Show)) != null, "right-side sheet API");
 
+            // Pill, Chip and Segmented have explicit reusable style resources.
+            foreach (var styleKey in new[]
+            {
+                YanziUi.Styles.PillDefaultButton,
+                YanziUi.Styles.PillSecondaryButton,
+                YanziUi.Styles.PillOutlineButton,
+                YanziUi.Styles.PillGhostButton,
+                YanziUi.Styles.PillDestructiveButton,
+                YanziUi.Styles.ChipDefaultButton,
+                YanziUi.Styles.ChipSecondaryButton,
+                YanziUi.Styles.ChipOutlineButton,
+                YanziUi.Styles.SegmentedFirstButton,
+                YanziUi.Styles.SegmentedBaseButton,
+                YanziUi.Styles.SegmentedLastButton
+            })
+                Check(window.TryFindResource(styleKey) is Style, "pill/chip/segmented style " + styleKey);
+
+            var pill = YanziUi.WithStyle(new Button { Content = "Pill" },
+                YanziUi.Styles.PillDefaultButton);
+            window.Content = pill;
+            pill.ApplyTemplate();
+            var pillChrome = pill.Template.FindName("Chrome", pill) as Border;
+            Check(pillChrome != null && pillChrome.CornerRadius.TopLeft >= 500,
+                "pill default has fully rounded chrome");
+            var chip = YanziUi.WithStyle(new Button { Content = "Chip" },
+                YanziUi.Styles.ChipOutlineButton);
+            window.Content = chip;
+            chip.ApplyTemplate();
+            var chipChrome = chip.Template.FindName("Chrome", chip) as Border;
+            Check(chipChrome != null && chipChrome.CornerRadius.TopLeft >= 500,
+                "chip outline has fully rounded chrome");
+            YanziUi.ApplyTo(window, YanziTheme.Light);
+            window.Content = pill;
+            pill.ApplyTemplate();
+            Check(pill.Template.FindName("Chrome", pill) is Border lightChrome
+                && lightChrome.CornerRadius.TopLeft >= 500,
+                "pill template survives light theme");
+            YanziUi.ApplyTo(window, YanziTheme.Dark);
+
+            var pillGroup = new YanziSegmentedButtonGroup();
+            var groupClickCount = 0;
+            var firstSegment = pillGroup.Add("Group", () => groupClickCount++);
+            var lastSegment = pillGroup.Add("More", () => groupClickCount++);
+            Check(pillGroup.Count == 2, "segmented group has two actions");
+            firstSegment.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            lastSegment.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Check(groupClickCount == 2, "both segmented actions remain clickable");
+            window.Content = pillGroup;
+            firstSegment.ApplyTemplate();
+            lastSegment.ApplyTemplate();
+            Check(firstSegment.Template.FindName("Chrome", firstSegment) is Border firstChrome
+                && firstChrome.CornerRadius.TopLeft >= 500
+                && firstChrome.CornerRadius.TopRight == 0,
+                "first segmented control rounds left side only");
+            Check(lastSegment.Template.FindName("Chrome", lastSegment) is Border lastChrome
+                && lastChrome.CornerRadius.TopRight >= 500
+                && lastChrome.CornerRadius.TopLeft == 0,
+                "last segmented control rounds right side only");
+
             var secondWindow = new Window();
             Check(secondWindow.Resources.MergedDictionaries.Count == 0, "separate old window remains unchanged");
             Check(YanziUi.WithStyle(new ProgressBar(), YanziUi.Styles.Loading) is ProgressBar, "loading control helper");

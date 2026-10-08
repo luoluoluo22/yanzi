@@ -35,8 +35,8 @@ internal sealed partial class GalleryWindow
         description.TextAlignment = TextAlignment.Center;
         hero.Children.Add(description);
         var heroActions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
-        heroActions.Children.Add(Button("浏览组件  →", YanziUi.Styles.DefaultButton, () => ShowPage(8)));
-        heroActions.Children.Add(Button("视觉规范", YanziUi.Styles.OutlineButton, () => ShowPage(6)));
+        heroActions.Children.Add(Button("浏览组件  →", YanziUi.Styles.PillDefaultButton, () => ShowPage(8)));
+        heroActions.Children.Add(Button("视觉规范", YanziUi.Styles.PillOutlineButton, () => ShowPage(6)));
         hero.Children.Add(heroActions);
 
         var threeColumns = new UniformGrid { Columns = 3, Margin = new Thickness(0, 0, 6, 0) };
@@ -52,11 +52,11 @@ internal sealed partial class GalleryWindow
         // Component sampler: real buttons, editable controls and checkable states.
         var sampler = PreviewCard(left, null);
         var buttons = new WrapPanel { Margin = new Thickness(0, 0, 0, 12) };
-        buttons.Children.Add(SmallButton("Default  ↗", YanziUi.Styles.DefaultButton,
+        buttons.Children.Add(SmallButton("Default  ↗", YanziUi.Styles.PillDefaultButton,
             () => YanziToast.Show(this, "操作已完成（演示）", YanziToastKind.Success)));
-        buttons.Children.Add(SmallButton("Secondary", YanziUi.Styles.SecondaryButton,
+        buttons.Children.Add(SmallButton("Secondary", YanziUi.Styles.PillSecondaryButton,
             () => Status("Secondary 按钮被点击")));
-        buttons.Children.Add(SmallButton("Outline", YanziUi.Styles.OutlineButton,
+        buttons.Children.Add(SmallButton("Outline", YanziUi.Styles.PillOutlineButton,
             () => Status("Outline 按钮被点击")));
         sampler.Children.Add(buttons);
         var searchGrid = new Grid { Margin = new Thickness(0, 0, 0, 12) };
@@ -101,9 +101,11 @@ internal sealed partial class GalleryWindow
         toggles.Children.Add(YanziUi.WithStyle(new CheckBox { Content = "Notify", IsChecked = true }, YanziUi.Styles.CheckBox));
         sampler.Children.Add(toggles);
         var footButtons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 14, 0, 0) };
-        footButtons.Children.Add(SmallButton("Alert Dialog", YanziUi.Styles.OutlineButton,
+        footButtons.Children.Add(SmallButton("Alert Dialog", YanziUi.Styles.PillOutlineButton,
             () => YanziDialog.Confirm(this, "确认执行操作？", "这是组件展示，不会修改任何实际数据。", "确认")));
-        var menuButton = SmallButton("Dropdown  ⌄", YanziUi.Styles.SecondaryButton, () => { });
+        var segmented = new YanziSegmentedButtonGroup { Margin = new Thickness(0, 0, 6, 5) };
+        segmented.Add("Button Group", () => Status("Button Group 被点击"));
+        var menuButton = segmented.Add("⌃", () => { });
         var menu = YanziUi.WithStyle(new ContextMenu(), YanziUi.Styles.Menu);
         foreach (var text in new[] { "复制", "查看详情", "设置" })
         {
@@ -114,7 +116,7 @@ internal sealed partial class GalleryWindow
         }
         menuButton.ContextMenu = menu;
         menuButton.Click += (_, _) => menu.IsOpen = true;
-        footButtons.Children.Add(menuButton);
+        footButtons.Children.Add(segmented);
         sampler.Children.Add(footButtons);
 
         var navCard = PreviewCard(left, "Workspace");
@@ -246,7 +248,7 @@ internal sealed partial class GalleryWindow
     {
         var button = Button(title, style, action);
         button.MinWidth = 0;
-        button.Height = 34;
+        button.Height = style.StartsWith("Yanzi.Button.Pill", StringComparison.Ordinal) ? 32 : 34;
         button.FontSize = 12;
         button.Padding = new Thickness(11, 5, 11, 5);
         button.Margin = new Thickness(0, 0, 6, 5);

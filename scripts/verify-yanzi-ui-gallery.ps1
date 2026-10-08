@@ -57,6 +57,11 @@ Navigate '按钮'
 $null = Assert-Control '保存更改' [System.Windows.Automation.ControlType]::Button
 $null = Assert-Control '取消' [System.Windows.Automation.ControlType]::Button
 $null = Assert-Control '删除记录' [System.Windows.Automation.ControlType]::Button
+$null = Assert-Control 'Pill / Chip / Segmented' [System.Windows.Automation.ControlType]::Text
+$null = Assert-Control 'Chip' [System.Windows.Automation.ControlType]::Button
+$null = Assert-Control '左' [System.Windows.Automation.ControlType]::Button
+$null = Assert-Control '中' [System.Windows.Automation.ControlType]::Button
+$null = Assert-Control '右' [System.Windows.Automation.ControlType]::Button
 
 Navigate '输入'
 $inputFields = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants,(New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty,[System.Windows.Automation.ControlType]::Edit)))
@@ -141,4 +146,4 @@ $closeCatalog = Assert-Control '收起目录' [System.Windows.Automation.Control
 $closeCatalog.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
 Start-Sleep -Milliseconds 160
 $null = Assert-Control '☰ 目录' [System.Windows.Automation.ControlType]::Button
-Write-Host "PASS: $testCount UI Automation assertions, 15 pages, overview wall, Badge variants, input, switch, list selection and theme switching."
+Write-Host "PASS: $testCount UI Automation assertions, 15 pages, rounded Pill/Chip/Segmented, Badge, input, switch, list, theme switching."

@@ -115,7 +115,7 @@ internal sealed partial class GalleryWindow : Window
         brandLine.Children.Add(logo);
         brandLine.Children.Add(Text("Yanzi UI", 20, true, "Yanzi.Brush.Text", new Thickness(0, 4, 0, 0)));
         brand.Children.Add(brandLine);
-        brand.Children.Add(Text("SHADCN DESIGN  /  v0.4.3", 10, false, "Yanzi.Brush.TextMuted", new Thickness(0, 11, 0, 0)));
+        brand.Children.Add(Text("SHADCN DESIGN  /  v0.5.0", 10, false, "Yanzi.Brush.TextMuted", new Thickness(0, 11, 0, 0)));
         sidebarLayout.Children.Add(brand);
 
         var footer = new StackPanel { Margin = new Thickness(8, 12, 0, 3) };
@@ -312,6 +312,43 @@ internal sealed partial class GalleryWindow : Window
         toggle.Checked += (_, _) => { primary.IsEnabled = secondary.IsEnabled = danger.IsEnabled = false; Status("按钮禁用态"); };
         toggle.Unchecked += (_, _) => { primary.IsEnabled = secondary.IsEnabled = danger.IsEnabled = true; Status("按钮已恢复"); };
         section.Children.Add(toggle);
+
+        var pills = Card("Pill / Chip / Segmented", "胶囊样式用于轻量展示和筛选，不改变保存、删除等标准业务按钮。");
+        var pillsRow = new WrapPanel();
+        foreach (var (caption, style) in new[]
+        {
+            ("Default", YanziUi.Styles.PillDefaultButton),
+            ("Secondary", YanziUi.Styles.PillSecondaryButton),
+            ("Outline", YanziUi.Styles.PillOutlineButton)
+        })
+        {
+            var label = caption;
+            var button = YanziUi.WithStyle(new Button { Content = caption, Height = 32, MinWidth = 0, Padding = new Thickness(12, 4, 12, 4),
+                Margin = new Thickness(0, 0, 8, 9) }, style);
+            button.Click += (_, _) => Status("Pill: " + label);
+            pillsRow.Children.Add(button);
+        }
+        pills.Children.Add(pillsRow);
+        var chipsRow = new WrapPanel { Margin = new Thickness(0, 8, 0, 14) };
+        foreach (var (caption, style) in new[]
+        {
+            ("Chip", YanziUi.Styles.ChipDefaultButton),
+            ("Secondary", YanziUi.Styles.ChipSecondaryButton),
+            ("Outline", YanziUi.Styles.ChipOutlineButton)
+        })
+        {
+            var label = caption;
+            var chip = YanziUi.WithStyle(new Button { Content = caption, Height = 24, MinWidth = 0,
+                Padding = new Thickness(8, 1, 8, 1), Margin = new Thickness(0, 0, 8, 6) }, style);
+            chip.Click += (_, _) => Status("Chip: " + label);
+            chipsRow.Children.Add(chip);
+        }
+        pills.Children.Add(chipsRow);
+        var segmented = new YanziSegmentedButtonGroup();
+        segmented.Add("左", () => Status("Segmented 左"));
+        segmented.Add("中", () => Status("Segmented 中"));
+        segmented.Add("右", () => Status("Segmented 右"));
+        pills.Children.Add(segmented);
 
         var sample = Card("设计约定", "高频操作只保留一个主按钮，危险操作使用红色强调；焦点、禁用和点击反馈来自公共组件，而非每个小程序自行实现。");
         sample.Children.Add(CodeKey("Yanzi.Button.Default / Outline / Secondary / Ghost / Destructive / Link"));
@@ -627,7 +664,7 @@ internal sealed partial class GalleryWindow : Window
             Directory.CreateDirectory(_reviewsDirectory);
             var data = new
             {
-                version = "0.4.3",
+                version = "0.5.0",
                 time = DateTimeOffset.Now,
                 visual = (int)(_visualRating?.Value ?? 4),
                 interaction = (int)(_interactionRating?.Value ?? 4),

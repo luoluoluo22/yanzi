@@ -28,6 +28,17 @@ public static class YanziUi
         public const string GhostButton = "Yanzi.Button.Ghost";
         public const string LinkButton = "Yanzi.Button.Link";
         public const string DestructiveButton = "Yanzi.Button.Destructive";
+        public const string PillDefaultButton = "Yanzi.Button.Pill.Default";
+        public const string PillSecondaryButton = "Yanzi.Button.Pill.Secondary";
+        public const string PillOutlineButton = "Yanzi.Button.Pill.Outline";
+        public const string PillGhostButton = "Yanzi.Button.Pill.Ghost";
+        public const string PillDestructiveButton = "Yanzi.Button.Pill.Destructive";
+        public const string ChipDefaultButton = "Yanzi.Button.Chip.Default";
+        public const string ChipSecondaryButton = "Yanzi.Button.Chip.Secondary";
+        public const string ChipOutlineButton = "Yanzi.Button.Chip.Outline";
+        public const string SegmentedFirstButton = "Yanzi.Button.Segmented.First";
+        public const string SegmentedBaseButton = "Yanzi.Button.Segmented.Base";
+        public const string SegmentedLastButton = "Yanzi.Button.Segmented.Last";
         public const string Badge = "Yanzi.Badge";
         public const string Textarea = "Yanzi.Textarea";
         public const string Password = "Yanzi.Password";
