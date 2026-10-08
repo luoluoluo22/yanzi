@@ -1,66 +1,81 @@
-# 燕子 Android 自动操作底座 · P0/P1 第二轮
+# 燕子 Android 自动操作底座（0.2.0）
 
-独立的本机 Node.js 模块，USB ADB + Android UI tree + 燕子已有 `ocr.recognize` (PaddleOCR)。本轮不改动宿主、云端服务或已安装的小程序；所有截图仅保存在本机临时路径，OCR 只发送至 `127.0.0.1` 上的燕子 Agent API，完成后删除临时文件。接口令牌从用户本机配置读取，不写入日志。
+本模块是可独立运行的 Windows → USB ADB → Android 微信小程序自动化库。底层复用燕子的本机 PaddleOCR（`ocr.recognize`）；UI 树能够识别时优先使用 UI 树，不另行重复安装 OCR 引擎。目标是把“截图→定位→点击→核对”封装成可以多次复用的操作闭环。
 
-## 状态与验证边界
+**注意：代码库中的能力与已注册在燕子宿主的能力不同。** 当前模块位于 `tools/android-automation/`，可从 Node CLI 或同一进程的 Node API 调用；尚未注册为正式的燕子小程序或云端工具。修改均隔离于其他燕子源码，避免影响正在运行的主程序。
 
-| 能力 | 状态与证据 |
+## 这轮实际完成的能力
+
+| 功能 | 验收情况 |
 | --- | --- |
-| ADB 设备连接、前台检查、触摸/滑动/返回 | 已实现，Redmi K70 真机可用 |
-| UI tree 优先 + PaddleOCR 回退 | 真机微信小程序可用（UI tree 仅暴露外层容器） |
-| 屏幕分辨率覆盖修正 | 真机 1080×2400，与截图对应 |
-| ADBKeyboard 中文输入、验证和恢复 | **真机通过**。切换 IME 后必须重新聚焦微信输入框，写入文字后在恢复原 IME 之前进行 OCR 核验 |
-| 多多买菜搜索流程 | **真机通过**。从现有结果页再次搜索“正新烤肠”，再切换“白糖”，识别并加载商品卡片 |
-| 商品卡片关联和重量单价 | **真机通过**。从同一个商品卡片提取商品文字、重量、价格、按钮；信息不完整会标记 `verified:false` |
-| 购物车 OCR 条目/数量解析 | **模拟测试通过**，未在真实购物车完成结构化验收 |
-| 修改前后购物车数量校验 | **模拟测试通过**；非目标条目变更、读数不确定、超时均不重试 |
-| 自动加入、删除、替换商品 | 尚禁用，待商品卡与真实购物车数量验证闭环 |
-| 下单、支付 | 完全禁用，待独立用户授权、金额和自提点验证、幂等机制 |
+| USB ADB 连接、设备串号和屏幕尺寸 | 真机通过；有多设备时禁止默认随意选择 |
+| 微信状态检测、截图、点击、滑动 | 真机通过，故障时返回可识别错误 |
+| PaddleOCR 中文 UI 元素定位 | 真机通过；匹配不唯一时拒绝猜测 |
+| ADBKeyboard 中文搜索 | 真机通过；切换输入法后重新聚焦、验证文字，再恢复输入法 |
+| 搜索“正新烤肠”“白糖”并读取商品 | 真机通过；读取品牌/名称/规格/促销价及按钮 |
+| 比价（每 500g 价格） | 真机通过；价格信息不完整时跳过该候选 |
+| 购物车结构化快照 | 真机通过，支持购物车有货商品和折叠下架商品计数 |
+| 自动加购 → 验证 → 删除 → 验证 | **真机通过**，以宸欢白砂糖 468g、¥5.99 做 1 份临时测试 |
+| 删除确认弹窗处理 | 真机通过，确认前核实文案，避免点“全部删除” |
+| 商家原有下架商品保护 | 真机两次循环后仍为 2 件，测试商品数量恢复为 0 |
+| 更换商品事务 `replaceCartItem` | 逻辑与模拟测试通过，尚未真机换两种不同商品验收 |
+| 真实下单/支付 | **禁用**，没有向任何用户订单重复付款或提交 |
 
-当前 **25 项单元测试通过**。真实购物场景仅执行了搜索、OCR 和比价，没有再次下单，也没有自动加购。
+## 核心流程
 
-## 本机使用
+`PddCartAutomation.testCycle()` 一次调用依次执行：
+
+1. 进入购物车，OCR 验证完整可见商品、数量、价格和下架商品数量。
+2. 确认测试商品原先不存在，关闭购物车。
+3. 在已显示的搜索结果中匹配唯一 SKU、规格、价格和“加入购物车”按钮。
+4. 点击一次，再打开购物车，验证目标数量由 0 变 1，其他商品完全未变。
+5. 根据该商品右侧数量控件所在行确定减号位置；只在识别到“确认删除该商品吗？”的弹窗时确认。
+6. 再读购物车，验证目标数量 1 变 0，原有商品和下架商品数量与基线一致。
+7. 任何执行结果不确定时返回 `uncertain`，**绝不立即重新点击、重复加购、重复提交**。
+
+`replaceCartItem({from,to,maxPrice,approved:true})` 使用“先加新商品并验证，再删旧商品并验证”的顺序，避免提前删除旧商品。该函数假定页面已经打开新商品的搜索结果。如果删除阶段不确定，返回 `partial`，保留现状等待核对，不在不确定状态下回滚或重试。
+
+## 命令行（本机）
 
 ```powershell
 cd F:\Desktop\kaifa\OpenQuickHost\tools\android-automation
 npm test
 node src/cli.mjs status
 node src/cli.mjs inspect
-node src/cli.mjs locate 搜索
 node src/cli.mjs search 正新烤肠
 node src/cli.mjs products
 node src/cli.mjs compare 正新 7
-node src/cli.mjs search 白糖
-node src/cli.mjs plan-cart '[{"name":"正新原味烤肠"}]'
+node src/cli.mjs cart-inspect
+# 有权限、确定购物车中没有该测试商品并且搜索结果显示同 SKU 时：
+node src/cli.mjs cart-cycle-test --ack-test-mutation
 ```
 
-这些命令用于受控调试，依赖手机 USB 授权及燕子本机 Agent API 在线。`inspect` 会输出可能包含私人内容的屏幕 OCR，不应写入公开日志。连接多台手机时，请设置 `ANDROID_SERIAL`。
+`cart-inspect` 会打开购物车浮层，但不改变商品数据。最后一条是**真实购物车改动测试**，必须显式传入标记；它会尝试临时添加一份测试白糖并删除，不用于生产购物或支付。不能在不清楚当前手机页面的情况下执行。多个设备连接时先设置 `ANDROID_SERIAL`。
 
-## 设计要点
+## Node API
 
-- **绝不根据固定位置猜测控件**：只能点击唯一可识别的文字/坐标，或通过商品行证据绑定操作按钮。OCR 重名或页面跳转不一致时停止。
-- **中文输入必须验真**：ADBKeyboard 的广播成功只代表广播已发出；搜索框显示预期文字并进入结果页，才算成功。完成后恢复先前输入法。
-- **价格可比较，不等于已结算**：优先明确 OCR 中的“券后价/秒杀价”，按每 500g 计算；超出视窗或存在多个无法辨认价格的卡片，标注未验证。
-- **写入动作不能盲重试**：`runVerifiedCartAction` 仅允许一次回调；执行前读取可信快照，执行后比对目标数量，任何结果不确定时返回 `uncertain`，要求重新读取后人工/AI 判断。
-- **交易能力隔离**：`addProduct/removeProduct/submitOrder` 在当前公开流程中主动拒绝执行。开发辅助的模拟事务校验不代表可以直接下单。
+```js
+import {PddCartAutomation} from './src/pdd-cart.mjs';
+const pdd=new PddCartAutomation(device,vision);
 
-## 核心接口
+// 已位于新商品搜索结果页，并取得本次交易明确授权
+const result=await pdd.replaceCartItem({
+  from:{name:'安井原味火山石烤肠',weightG:700},
+  to:{name:'正新原味脆皮爆汁烤肠',weightG:500},
+  maxPrice:7,
+  approved:true
+});
+if(result.status!=='confirmed') {
+  // 查询当前购物车并人工复核，不直接重试
+}
+```
 
-| 组件 | 函数 |
-| --- | --- |
-| `AndroidDevice` | `ensureConnected/size/tap/swipe/back/openApp/uiTree/screenshot` |
-| `ScreenVision` | `recognize/locate/tapText/waitFor/inspect` |
-| `AdbChineseIme` | `type(text, {focus,verify,clearExisting})` |
-| `AndroidFlows` | `openWechat/openMiniProgram/searchProducts/findProduct/compareProducts/openCart/readCart` |
-| `products.mjs` | `extractProductCards/chooseProduct/yuanPer500g` |
-| `cart.mjs` | `extractCartRows/verifyCartChange` |
-| `transaction.mjs` | `runVerifiedCartAction`，默认不自动重试 |
+只有 `confirmed` 代表完整核验通过。商品价格以**当时的 UI 显示**为准，券后或秒杀价格不代表最终结算价格；真正交易必须另外经过金额、自提点和支付方式审批。
 
-## 下一步
+## 测试结果与风险边界
 
-1. 对真实购物车进行**只读**商品行/数量/实际应付价识别验收，特别处理多行标题、促销原价、空购物车、弹窗与滑动分页。
-2. 绑定商品卡片与真实购物车同一 SKU 的身份，并在用户允许的测试购物车里完成一次增加→验证→撤销→验证。未验证的操作持续禁用。
-3. 历史订单批量结构化采集、时间周期分析、价格历史和备货预算。
-4. 最后再设计独立的订单审批、提交幂等及回执能力。对任何已经发出但结果不确定的真实交易，先查询订单状态，**不得立即重新提交**。
+2026-10-08：本地单元测试 **33/33 通过**。两轮真机加购—移除流程已恢复现场购物车，最终正常购物车 0 件、原有下架商品 2 件；未再次购买或付款。真机的一次自动化操作因同时识别到“0元下单”和“先用后付”而返回 `uncertain`，没有重复加购；修正入口筛选后复核并移除，之后整轮自动化完成。
 
-模块独立热更新，无须停止燕子宿主；Git 提交仅限 `tools/android-automation`。
+尚需支持：跨页购物车采集、弹窗/页面布局变更适配、购物车多个同名不同规格 SKU、输入焦点冲突、更多手机机型验收、商品价格时效和库存校验、购物车逐笔交易审计。正式下单能力保持禁用。
+
+来源代码及测试参见 `src/pdd-cart.mjs`、`src/products.mjs`、`src/cart.mjs`、`src/transaction.mjs` 和 `test/`。不保存用户个人购物历史或商品界面的整张截图，不输出本地 Agent API Token。

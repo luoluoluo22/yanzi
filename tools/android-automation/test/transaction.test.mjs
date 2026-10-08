@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {runVerifiedCartAction} from '../src/transaction.mjs';
 const target={name:'正新原味烤肠',weightG:500};
-const snap=n=>({visible:true,verified:true,rows:[{...target,quantity:n,price:5.99,verified:true}]});
+const snap=n=>({visible:true,verified:true,complete:true,outOfStockCount:2,rows:[{...target,quantity:n,price:5.99,verified:true}]});
 test('confirmed only after exactly one matching cart change',async()=>{
  let actions=0,reads=0;
  const result=await runVerifiedCartAction({type:'add',target,
