@@ -256,10 +256,44 @@ internal static class Program
             pill.Arrange(new Rect(0, 0, pill.DesiredSize.Width, pill.DesiredSize.Height));
             Check(pillChrome != null && Math.Abs(pillChrome.CornerRadius.TopLeft - 14) < 0.01,
                 "pill has an exact 14 DIP end radius instead of 999");
-            Check(pill.ActualWidth >= 96 && pill.ActualHeight == 32,
-                "pill enforces a 96x32 minimum horizontal silhouette");
-            Check(pill.ActualWidth - pill.ActualHeight > 60,
-                "pill keeps long parallel top and bottom edges");
+            Check(pill.ActualWidth >= 56 && pill.ActualHeight == 32,
+                "pill preserves a minimum 56x32 capsule silhouette");
+            Check(pill.ActualWidth - pill.ActualHeight >= 24,
+                "pill keeps parallel top and bottom edges");
+            var widthPanel = new StackPanel { Orientation = Orientation.Horizontal };
+            var outlineBtn = YanziUi.WithStyle(new Button { Content = "Outline" }, YanziUi.Styles.PillDefaultButton);
+            var secondaryBtn = YanziUi.WithStyle(new Button { Content = "Secondary" }, YanziUi.Styles.PillSecondaryButton);
+            widthPanel.Children.Add(outlineBtn);
+            widthPanel.Children.Add(secondaryBtn);
+            window.Content = widthPanel;
+            // Test live layout with a real WPF visual tree and dispatcher, not a detached control.
+            window.ShowInTaskbar = false;
+            window.Left = -10000;
+            window.Top = -10000;
+            window.Show();
+            window.UpdateLayout();
+            widthPanel.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            var outlineWidth = outlineBtn.DesiredSize.Width;
+            var secondaryWidth = secondaryBtn.DesiredSize.Width;
+            Check(secondaryWidth > outlineWidth + 5,
+                $"gallery buttons size to their text: Outline={outlineWidth:0.#} DIP Secondary={secondaryWidth:0.#} DIP");
+            Check(outlineWidth >= 56 && outlineWidth - 32 > 24,
+                "short text still preserves two straight capsule edges");
+            var beforeChange = outlineBtn.DesiredSize.Width;
+            outlineBtn.Content = "Outline with a longer dynamic caption";
+            outlineBtn.InvalidateMeasure();
+            widthPanel.InvalidateMeasure();
+            window.UpdateLayout();
+            widthPanel.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            Check(outlineBtn.DesiredSize.Width > beforeChange + 40,
+                "pill grows when the caption changes at runtime");
+            outlineBtn.Content = "Outline";
+            outlineBtn.InvalidateMeasure();
+            widthPanel.InvalidateMeasure();
+            window.UpdateLayout();
+            widthPanel.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            Check(Math.Abs(outlineBtn.DesiredSize.Width - beforeChange) < 1,
+                "pill contracts again when the caption becomes shorter");
             var chip = YanziUi.WithStyle(new Button { Content = "Chip" },
                 YanziUi.Styles.ChipOutlineButton);
             window.Content = chip;
@@ -269,10 +303,19 @@ internal static class Program
             chip.Arrange(new Rect(0, 0, chip.DesiredSize.Width, chip.DesiredSize.Height));
             Check(chipChrome != null && Math.Abs(chipChrome.CornerRadius.TopLeft - 10) < 0.01,
                 "chip has an exact 10 DIP end radius");
-            Check(chip.ActualWidth >= 76 && chip.ActualHeight == 24,
-                "chip maintains a wide 76x24 minimum footprint");
-            Check(chip.ActualWidth - chip.ActualHeight > 45,
+            Check(chip.ActualWidth >= 42 && chip.ActualHeight == 24,
+                "chip preserves a minimum 42x24 footprint");
+            Check(chip.ActualWidth - chip.ActualHeight >= 18,
                 "chip has a straight center section");
+            var chipPanel = new StackPanel { Orientation = Orientation.Horizontal };
+            var smallChip = YanziUi.WithStyle(new Button { Content = "Chip" }, YanziUi.Styles.ChipDefaultButton);
+            var longChip = YanziUi.WithStyle(new Button { Content = "Secondary" }, YanziUi.Styles.ChipSecondaryButton);
+            chipPanel.Children.Add(smallChip);
+            chipPanel.Children.Add(longChip);
+            window.Content = chipPanel;
+            chipPanel.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            Check(longChip.DesiredSize.Width > smallChip.DesiredSize.Width + 6,
+                "chip width follows caption instead of a common fixed width");
             YanziUi.ApplyTo(window, YanziTheme.Light);
             window.Content = pill;
             pill.ApplyTemplate();
@@ -286,8 +329,8 @@ internal static class Program
             var firstSegment = pillGroup.Add("Group", () => groupClickCount++);
             var lastSegment = pillGroup.Add("More", () => groupClickCount++);
             Check(pillGroup.Count == 2, "segmented group has two actions");
-            Check(firstSegment.MinWidth >= 112 && lastSegment.MinWidth >= 48,
-                "segmented group preserves two meaningful straight segments");
+            Check(firstSegment.MinWidth <= 54 && lastSegment.MinWidth <= 36,
+                "segmented group no longer forces identical long minimum widths");
             firstSegment.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             lastSegment.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Check(groupClickCount == 2, "both segmented actions remain clickable");

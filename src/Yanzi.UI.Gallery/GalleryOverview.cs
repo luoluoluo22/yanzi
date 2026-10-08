@@ -248,7 +248,7 @@ internal sealed partial class GalleryWindow
     {
         var button = Button(title, style, action);
         var pill = style.StartsWith("Yanzi.Button.Pill", StringComparison.Ordinal);
-        button.MinWidth = pill ? 96 : 0;
+        button.MinWidth = pill ? 56 : 0;
         button.Height = pill ? 32 : 34;
         button.FontSize = 12;
         button.Padding = pill ? new Thickness(18, 5, 18, 5) : new Thickness(11, 5, 11, 5);

@@ -115,7 +115,7 @@ internal sealed partial class GalleryWindow : Window
         brandLine.Children.Add(logo);
         brandLine.Children.Add(Text("Yanzi UI", 20, true, "Yanzi.Brush.Text", new Thickness(0, 4, 0, 0)));
         brand.Children.Add(brandLine);
-        brand.Children.Add(Text("SHADCN DESIGN  /  v0.5.1", 10, false, "Yanzi.Brush.TextMuted", new Thickness(0, 11, 0, 0)));
+        brand.Children.Add(Text("SHADCN DESIGN  /  v0.5.2", 10, false, "Yanzi.Brush.TextMuted", new Thickness(0, 11, 0, 0)));
         sidebarLayout.Children.Add(brand);
 
         var footer = new StackPanel { Margin = new Thickness(8, 12, 0, 3) };
@@ -323,7 +323,7 @@ internal sealed partial class GalleryWindow : Window
         })
         {
             var label = caption;
-            var button = YanziUi.WithStyle(new Button { Content = caption, Height = 32, MinWidth = 96, Padding = new Thickness(18, 5, 18, 5),
+            var button = YanziUi.WithStyle(new Button { Content = caption, Height = 32, MinWidth = 56, Padding = new Thickness(18, 5, 18, 5),
                 Margin = new Thickness(0, 0, 8, 9) }, style);
             button.Click += (_, _) => Status("Pill: " + label);
             pillsRow.Children.Add(button);
@@ -338,7 +338,7 @@ internal sealed partial class GalleryWindow : Window
         })
         {
             var label = caption;
-            var chip = YanziUi.WithStyle(new Button { Content = caption, Height = 24, MinWidth = 76,
+            var chip = YanziUi.WithStyle(new Button { Content = caption, Height = 24, MinWidth = 42,
                 Padding = new Thickness(13, 2, 13, 2), Margin = new Thickness(0, 0, 8, 6) }, style);
             chip.Click += (_, _) => Status("Chip: " + label);
             chipsRow.Children.Add(chip);
@@ -664,7 +664,7 @@ internal sealed partial class GalleryWindow : Window
             Directory.CreateDirectory(_reviewsDirectory);
             var data = new
             {
-                version = "0.5.1",
+                version = "0.5.2",
                 time = DateTimeOffset.Now,
                 visual = (int)(_visualRating?.Value ?? 4),
                 interaction = (int)(_interactionRating?.Value ?? 4),

@@ -37,7 +37,7 @@ public sealed class YanziSegmentedButtonGroup : UserControl
         var button = YanziUi.WithStyle(new Button
         {
             Content = label,
-            MinWidth = 48,
+            MinWidth = 36,
             Height = 32,
             Padding = new Thickness(14, 5, 14, 5)
         }, YanziUi.Styles.SegmentedFirstButton);
@@ -62,7 +62,7 @@ public sealed class YanziSegmentedButtonGroup : UserControl
                 : i == 0 ? YanziUi.Styles.SegmentedFirstButton
                 : i == _buttons.Count - 1 ? YanziUi.Styles.SegmentedLastButton
                 : YanziUi.Styles.SegmentedBaseButton;
-            _buttons[i].MinWidth = i == 0 ? 112 : 48;
+            _buttons[i].MinWidth = i == 0 ? 54 : 36;
             _buttons[i].Padding = i == 0
                 ? new Thickness(18, 5, 18, 5)
                 : new Thickness(14, 5, 14, 5);

@@ -108,7 +108,8 @@
     <Style x:Key="Yanzi.Button.Pill.Base" TargetType="{x:Type Button}" BasedOn="{StaticResource Yanzi.Button.Base}">
         <Setter Property="MinHeight" Value="32"/>
         <Setter Property="Height" Value="32"/>
-        <Setter Property="MinWidth" Value="96"/>
+        <!-- MinWidth only prevents tiny icon buttons from collapsing into a circle. -->
+        <Setter Property="MinWidth" Value="56"/>
         <Setter Property="Padding" Value="18,5"/>
         <Setter Property="FontSize" Value="12"/>
         <Setter Property="Template">
@@ -123,7 +124,9 @@
                                 Background="{TemplateBinding Background}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
                                 BorderBrush="{TemplateBinding BorderBrush}">
-                            <ContentPresenter Margin="{TemplateBinding Padding}"
+                            <ContentPresenter Content="{TemplateBinding Content}"
+                                ContentTemplate="{TemplateBinding ContentTemplate}"
+                                Margin="{TemplateBinding Padding}"
                                 HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
                                 VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
                                 RecognizesAccessKey="True"/>
@@ -200,7 +203,7 @@
     <Style x:Key="Yanzi.Button.Chip.Base" TargetType="{x:Type Button}" BasedOn="{StaticResource Yanzi.Button.Pill.Base}">
         <Setter Property="Height" Value="24"/>
         <Setter Property="MinHeight" Value="24"/>
-        <Setter Property="MinWidth" Value="76"/>
+        <Setter Property="MinWidth" Value="42"/>
         <Setter Property="Padding" Value="13,2"/>
         <Setter Property="FontSize" Value="11"/>
         <Setter Property="Template">
@@ -215,7 +218,9 @@
                                 Background="{TemplateBinding Background}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
                                 BorderBrush="{TemplateBinding BorderBrush}">
-                            <ContentPresenter Margin="{TemplateBinding Padding}"
+                            <ContentPresenter Content="{TemplateBinding Content}"
+                                ContentTemplate="{TemplateBinding ContentTemplate}"
+                                Margin="{TemplateBinding Padding}"
                                 HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
                                 VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
                                 RecognizesAccessKey="True"/>
