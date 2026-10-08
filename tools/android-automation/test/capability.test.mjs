@@ -5,7 +5,7 @@ import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 
 const manifest=JSON.parse(readFileSync(new URL('../extension/manifest.json',import.meta.url),'utf8'));
-const names=['android.device.status','pdd.product.search','pdd.cart.inspect','pdd.orders.preview','pdd.orders.collect','pdd.orders.detail'];
+const names=['android.device.status','pdd.product.search','pdd.cart.inspect','pdd.orders.preview','pdd.orders.collect','pdd.orders.detail','pdd.orders.batch'];
 const allowedKeywords=new Set(['type','properties','items','required','enum','additionalProperties','minimum','maximum','minLength','title','description','default','examples','$schema']);
 function inspectSchema(schema){
  assert.equal(typeof schema,'object');
@@ -41,4 +41,18 @@ test('CLI emits one ASCII-safe JSON response for Unicode errors',()=>{
  const data=JSON.parse(result.stdout);
  assert.equal(data.ok,false);
  assert.match(data.error,/错误能力/);
+});
+
+test('extension updates keep backups outside local extension catalog',()=>{
+ const script=readFileSync(new URL('../install-extension.ps1',import.meta.url),'utf8');
+ assert.match(script,/\.yanzi-backups/);
+ assert.match(script,/Move-Item/);
+ assert.ok(!script.includes('$target.backup-'));
+});
+test('Android provider is lifecycle-managed and individually stoppable',()=>{
+ const manifest=JSON.parse(readFileSync(new URL('../extension/manifest.json',import.meta.url),'utf8'));
+ const cs=readFileSync(new URL('../extension/provider.cs',import.meta.url),'utf8');
+ assert.equal(manifest.uiMode,'native-window');
+ assert.ok(cs.includes('context.ExtensionId + "-window"'));
+ assert.ok(cs.includes('public void Quit()'));
 });

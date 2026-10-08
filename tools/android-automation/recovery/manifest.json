@@ -1,0 +1,12 @@
+{
+  "id": "yanzi-android-automation-recovery",
+  "name": "手机购物助手旧任务回收",
+  "version": "0.1.0",
+  "runtime": "csharp",
+  "uiMode": "none",
+  "entryMode": "entry",
+  "entry": "recover.cs",
+  "waitForExit": true,
+  "permissions": [],
+  "provides": []
+}

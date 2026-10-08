@@ -6,8 +6,9 @@ import {AdbChineseIme} from './ime.mjs';
 import {extractOrderCards,collectVisibleOrderPages} from './orders.mjs';
 import {UnsafeTargetError} from './vision.mjs';
 import {collectOrderDetail} from './order-detail.mjs';
+import {collectOrderDetailsFromList} from './order-batch.mjs';
 
-const allowed=new Set(['android.device.status','pdd.product.search','pdd.cart.inspect','pdd.orders.preview','pdd.orders.collect','pdd.orders.detail']);
+const allowed=new Set(['android.device.status','pdd.product.search','pdd.cart.inspect','pdd.orders.preview','pdd.orders.collect','pdd.orders.detail','pdd.orders.batch']);
 const operation=process.argv[2];
 const encoded=process.argv[3]||'e30=';
 async function main(){
@@ -47,6 +48,17 @@ async function main(){
     if(!Number.isInteger(maxPages)||maxPages<1||maxPages>12)throw new Error('maxPages must be 1..12');
     const detail=await collectOrderDetail({device,vision,maxPages});
     return {ok:true,...detail};
+ }
+ if(operation==='pdd.orders.batch'){
+    if(Object.keys(input).some(k=>!['maxOrders','maxScrolls'].includes(k)))
+      throw new Error('Unsupported batch options');
+    const maxOrders=input.maxOrders===undefined?2:input.maxOrders;
+    const maxScrolls=input.maxScrolls===undefined?5:input.maxScrolls;
+    if(!Number.isInteger(maxOrders)||maxOrders<1||maxOrders>5)
+      throw new Error('maxOrders must be 1..5');
+    if(!Number.isInteger(maxScrolls)||maxScrolls<1||maxScrolls>12)
+      throw new Error('maxScrolls must be 1..12');
+    return {ok:true,...await collectOrderDetailsFromList({device,vision,maxOrders,maxScrolls})};
  }
  if(Object.keys(input).length)throw new Error('Unexpected arguments for read-only capability');
  if(operation==='pdd.cart.inspect'){

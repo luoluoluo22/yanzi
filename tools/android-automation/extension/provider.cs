@@ -23,12 +23,16 @@ public static class YanziAction
         }
         var service = new AndroidShoppingService();
         context.RegisterObject?.Invoke(key, service);
+        // The host's managed-extension lifecycle terminates its registered
+        // '-window' object via Quit(), even when this provider is headless.
+        context.RegisterObject?.Invoke(context.ExtensionId + "-window", service);
         context.Capabilities.Register("android.device.status", args => Execute(context, "android.device.status", args));
         context.Capabilities.Register("pdd.product.search", args => Execute(context, "pdd.product.search", args));
         context.Capabilities.Register("pdd.cart.inspect", args => Execute(context, "pdd.cart.inspect", args));
         context.Capabilities.Register("pdd.orders.preview", args => Execute(context, "pdd.orders.preview", args));
         context.Capabilities.Register("pdd.orders.collect", args => Execute(context, "pdd.orders.collect", args));
         context.Capabilities.Register("pdd.orders.detail", args => Execute(context, "pdd.orders.detail", args));
+        context.Capabilities.Register("pdd.orders.batch", args => Execute(context, "pdd.orders.batch", args));
         await service.Stopped.Task;
         return "手机购物助手已停止";
       } catch (Exception ex) {
