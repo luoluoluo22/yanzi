@@ -158,6 +158,23 @@ try
     {
         var preview = descriptors.Single(c => c.Id == "runtime-resident-test") with
         { Id = "runtime-editor-preview", Directory = previewDirectory, Runtime = "powershell", UiMode = "none", Entry = "main.ps1", WaitForExit = true };
+        // End-to-end isolated dynamic C# extension test: resolve bundled UI library through Runtime.
+        File.WriteAllText(Path.Combine(previewDirectory, "main.cs"), """
+using System.Threading.Tasks;
+using OpenQuickHost.CSharpRuntime;
+using Yanzi.UI.Wpf;
+public static class YanziAction
+{
+    public static Task<string> RunAsync(YanziActionContext context)
+        => Task.FromResult("yanzi-ui-dynamic-ok:" + typeof(YanziUi).Assembly.GetName().Name);
+}
+""");
+        var uiPreview = preview with { Id = "runtime-ui-preview", Runtime = "csharp", UiMode = "none", Entry = "main.cs" };
+        var uiResult = (await RuntimeRpc.CallAsync("script.execute", new { id = uiPreview.Id, source = "extension-editor-test", preview = uiPreview }))
+            .Deserialize<ScriptExecutionResult>(RuntimeRpc.Json)!;
+        Check(uiResult.Success && uiResult.Output.Contains("yanzi-ui-dynamic-ok:Yanzi.UI.Wpf"),
+            "C# extension failed to dynamically use the shared Yanzi UI library: " + uiResult.Error);
+
         var result = (await RuntimeRpc.CallAsync("script.execute", new { id = preview.Id, source = "extension-editor-test", preview }))
             .Deserialize<ScriptExecutionResult>(RuntimeRpc.Json)!;
         Check(result.Success && result.Output.Contains("editor-preview-ok"), "Editor test did not run through Runtime");

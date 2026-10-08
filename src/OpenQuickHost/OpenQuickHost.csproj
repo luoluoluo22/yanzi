@@ -105,6 +105,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Yanzi.Core\Yanzi.Core.csproj" />
+    <ProjectReference Include="..\Yanzi.UI.Wpf\Yanzi.UI.Wpf.csproj" />
   </ItemGroup>
 
   <Target Name="CopyNativeWindowReferenceAssembliesForBuild" AfterTargets="Build">

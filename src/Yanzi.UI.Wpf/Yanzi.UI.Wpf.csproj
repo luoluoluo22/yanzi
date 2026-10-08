@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Version>0.1.0</Version>
+    <AssemblyName>Yanzi.UI.Wpf</AssemblyName>
+    <RootNamespace>Yanzi.UI.Wpf</RootNamespace>
+  </PropertyGroup>
+</Project>
