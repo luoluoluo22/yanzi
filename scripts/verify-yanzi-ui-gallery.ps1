@@ -53,6 +53,20 @@ foreach ($title in @('The foundation for Yanzi UI', 'Contribution History', 'Acc
     $null = Assert-Control $title [System.Windows.Automation.ControlType]::Text
 }
 
+# Search field must be a real focusable edit surface, not a TextBlock with an imitation caret.
+$searchEdit = Assert-Control '搜索' [System.Windows.Automation.ControlType]::Edit
+$searchEdit.SetFocus()
+Start-Sleep -Milliseconds 80
+if (-not $searchEdit.Current.HasKeyboardFocus) { throw 'Search edit did not receive keyboard focus' }
+$testCount++
+$searchValue = $searchEdit.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
+$searchValue.SetValue('中文搜索 Search123')
+if ($searchValue.Current.Value -ne '中文搜索 Search123') { throw 'Search input failed to accept mixed Chinese and Latin text' }
+$testCount++
+$searchValue.SetValue('')
+if ($searchValue.Current.Value -ne '') { throw 'Search input did not clear' }
+$testCount++
+
 Navigate '按钮'
 $null = Assert-Control '保存更改' [System.Windows.Automation.ControlType]::Button
 $null = Assert-Control '取消' [System.Windows.Automation.ControlType]::Button

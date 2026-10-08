@@ -346,6 +346,52 @@ internal static class Program
                 && lastChrome.CornerRadius.TopLeft == 0,
                 "last segmented control rounds right side only");
 
+            // Search input is a real focusable TextBox, with a full-height content host.
+            var searchBox = new YanziSearchBox("Name");
+            window.Content = searchBox;
+            window.UpdateLayout();
+            Check(searchBox.Input.Template.FindName("PART_ContentHost", searchBox.Input)
+                is ScrollViewer textHost, "search TextBox retains PART_ContentHost");
+            var host = (ScrollViewer)searchBox.Input.Template.FindName("PART_ContentHost", searchBox.Input)!;
+            Check(host.Margin == new Thickness(0),
+                "search text viewport is not inset twice by the TextBox Padding");
+            Check(searchBox.Input.CaretBrush is SolidColorBrush
+                && searchBox.Input.Foreground is SolidColorBrush,
+                "search field has explicit caret and foreground brushes");
+            Check(host.ActualHeight >= 27,
+                $"search text host remains tall enough for glyphs and caret ({host.ActualHeight:0.#} DIP)");
+            Check(searchBox.Input.IsEnabled && searchBox.Input.Focusable,
+                "search field remains keyboard-focusable");
+            var searchVisual = (Grid)searchBox.Content;
+            var prompt = (TextBlock)searchVisual.Children[1];
+            Check(prompt.Visibility == Visibility.Visible && prompt.Text == "Name",
+                "placeholder displayed only when input is empty");
+            searchBox.Text = "中文测试 abc";
+            searchBox.Input.CaretIndex = searchBox.Text.Length;
+            window.UpdateLayout();
+            Check(searchBox.Input.Text == "中文测试 abc"
+                && searchBox.Input.CaretIndex == searchBox.Text.Length,
+                "Chinese and Latin input visible with caret at end");
+            Check(prompt.Visibility == Visibility.Collapsed,
+                "placeholder hides when the input is non-empty");
+            searchBox.Text = "";
+            Check(prompt.Visibility == Visibility.Visible, "placeholder restores after deleting text");
+            var lucideViewbox = searchVisual.Children.OfType<Viewbox>().Single();
+            var iconCanvas = (Canvas)lucideViewbox.Child;
+            Check(iconCanvas.Children.Count == 2
+                && iconCanvas.Children[0] is System.Windows.Shapes.Ellipse
+                && iconCanvas.Children[1] is System.Windows.Shapes.Line,
+                "search icon is native Lucide circle plus handle, not a font glyph");
+            var textarea = YanziUi.WithStyle(new TextBox { Text = "中文\nSecond line",
+                Height = 85 }, YanziUi.Styles.TextareaSoft);
+            window.Content = textarea;
+            window.UpdateLayout();
+            Check(textarea.VerticalContentAlignment == VerticalAlignment.Top,
+                "multi-line text starts from the top instead of vertical center");
+            var textareaHost = textarea.Template.FindName("PART_ContentHost", textarea) as ScrollViewer;
+            Check(textareaHost is not null && textareaHost.Margin == new Thickness(0),
+                "multi-line input content host is not clipped by duplicate padding");
+
             var secondWindow = new Window();
             Check(secondWindow.Resources.MergedDictionaries.Count == 0, "separate old window remains unchanged");
             Check(YanziUi.WithStyle(new ProgressBar(), YanziUi.Styles.Loading) is ProgressBar, "loading control helper");

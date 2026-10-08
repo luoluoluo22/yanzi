@@ -59,28 +59,11 @@ internal sealed partial class GalleryWindow
         buttons.Children.Add(SmallButton("Outline", YanziUi.Styles.PillOutlineButton,
             () => Status("Outline 按钮被点击")));
         sampler.Children.Add(buttons);
-        var searchGrid = new Grid { Margin = new Thickness(0, 0, 0, 12) };
-        var search = YanziUi.WithStyle(new TextBox
+        var search = new YanziSearchBox("Name")
         {
-            ToolTip = "Search components",
-            Text = "",
-            Height = 38,
-            Padding = new Thickness(11, 7, 30, 7)
-        }, YanziUi.Styles.InputSoft);
-        searchGrid.Children.Add(search);
-        var searchHint = Text("Name", 12, false, "Yanzi.Color.MutedForeground");
-        searchHint.Margin = new Thickness(13, 0, 30, 0);
-        searchHint.HorizontalAlignment = HorizontalAlignment.Left;
-        searchHint.IsHitTestVisible = false;
-        search.TextChanged += (_, _) => searchHint.Visibility =
-            string.IsNullOrEmpty(search.Text) ? Visibility.Visible : Visibility.Collapsed;
-        searchGrid.Children.Add(searchHint);
-        var searchIcon = Text("⌕", 19, false, "Yanzi.Color.MutedForeground");
-        searchIcon.HorizontalAlignment = HorizontalAlignment.Right;
-        searchIcon.Margin = new Thickness(0, 0, 13, 0);
-        searchIcon.IsHitTestVisible = false;
-        searchGrid.Children.Add(searchIcon);
-        sampler.Children.Add(searchGrid);
+            Margin = new Thickness(0, 0, 0, 12)
+        };
+        sampler.Children.Add(search);
 
         sampler.Children.Add(YanziUi.WithStyle(new TextBox
         {

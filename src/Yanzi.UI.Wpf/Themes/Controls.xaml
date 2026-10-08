@@ -382,8 +382,9 @@
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
                                 CornerRadius="{DynamicResource Yanzi.Radius.Md}">
-                            <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"
-                                          Focusable="False"/>
+                            <!-- TextBox internally applies Padding. A second content-host Margin
+                                 reduced the text viewport and clipped the caret/glyphs. -->
+                            <ScrollViewer x:Name="PART_ContentHost" Focusable="False"/>
                         </Border>
                     </Grid>
                     <ControlTemplate.Triggers>
@@ -413,6 +414,7 @@
         </Style.Triggers>
     </Style>
     <Style x:Key="Yanzi.Textarea.Soft" TargetType="{x:Type TextBox}" BasedOn="{StaticResource Yanzi.Input.Soft}">
+        <Setter Property="VerticalContentAlignment" Value="Top"/>
         <Setter Property="AcceptsReturn" Value="True"/>
         <Setter Property="TextWrapping" Value="Wrap"/>
         <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
@@ -608,6 +610,7 @@
 
     <!-- Native WPF controls with semantic resource values, preserving built-in keyboard/IME behavior. -->
     <Style x:Key="Yanzi.Textarea" TargetType="{x:Type TextBox}" BasedOn="{StaticResource Yanzi.Input}">
+        <Setter Property="VerticalContentAlignment" Value="Top"/>
         <Setter Property="TextWrapping" Value="Wrap"/>
         <Setter Property="AcceptsReturn" Value="True"/>
         <Setter Property="MinHeight" Value="82"/>
