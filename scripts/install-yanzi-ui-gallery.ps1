@@ -64,7 +64,7 @@ if (-not $NoExtension) {
     $manifest = [ordered]@{
         id = 'yanzi-ui-gallery'
         name = '组件评估'
-        version = '0.7.7'
+        version = '0.7.8'
         category = '开发工具'
         description = '查看并体验燕子公共 UI 组件：按钮、输入、选择、列表、弹窗、颜色主题，并记录评估建议。'
         keywords = @('UI', '组件库', '设计系统', '组件评估', '视觉预览', 'ui-gallery')

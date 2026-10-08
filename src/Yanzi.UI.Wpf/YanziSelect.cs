@@ -20,10 +20,12 @@ public sealed class YanziSelect : UserControl
     private readonly StackPanel _choices;
     private readonly Popup _popup;
     private readonly List<Button> _optionButtons = [];
+    private readonly Dictionary<string, FrameworkElement> _optionChecks = new(StringComparer.Ordinal);
     private string? _selected;
 
     public string? SelectedValue => _selected;
     public IReadOnlyList<string> Options => _options;
+    public IReadOnlyList<Button> OptionButtons => _optionButtons;
     public bool IsOpen => _popup.IsOpen;
     public event EventHandler<string?>? SelectionChanged;
 
@@ -136,14 +138,27 @@ public sealed class YanziSelect : UserControl
             throw new ArgumentException("Duplicate Select option", nameof(option));
         _options.Add(option);
         var text = option;
+        var line = new Grid();
+        line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(22) });
+        line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        var check = YanziIcons.Check(14);
+        check.Visibility = Visibility.Hidden;
+        line.Children.Add(check);
+        var textLabel = new TextBlock { Text = option, VerticalAlignment = VerticalAlignment.Center,
+            FontSize = 14 };
+        textLabel.SetResourceReference(TextBlock.ForegroundProperty, "Yanzi.Color.Foreground");
+        Grid.SetColumn(textLabel, 1);
+        line.Children.Add(textLabel);
         var row = YanziUi.WithStyle(new Button
         {
-            Content = option, Height = 30, Padding = new Thickness(8, 4, 8, 4),
+            Content = line, Height = 30, Padding = new Thickness(6, 4, 8, 4),
             HorizontalAlignment = HorizontalAlignment.Stretch,
-            HorizontalContentAlignment = HorizontalAlignment.Left,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
             Margin = new Thickness(0, 1, 0, 1)
         }, YanziUi.Styles.DropdownAction);
+        _optionChecks[text] = check;
         AutomationProperties.SetName(row, "Select " + option);
+        AutomationProperties.SetItemStatus(row, "Not selected");
         row.Click += (_, _) => Select(text);
         _choices.Children.Add(row);
         _optionButtons.Add(row);
@@ -153,6 +168,12 @@ public sealed class YanziSelect : UserControl
     {
         if (!_options.Contains(value, StringComparer.Ordinal) || !IsEnabled) return false;
         _selected = value;
+        for (int i = 0; i < _options.Count; i++)
+        {
+            bool selected = _options[i] == value;
+            _optionChecks[_options[i]].Visibility = selected ? Visibility.Visible : Visibility.Hidden;
+            AutomationProperties.SetItemStatus(_optionButtons[i], selected ? "Selected" : "Not selected");
+        }
         _value.Text = value;
         _value.SetResourceReference(TextBlock.ForegroundProperty, "Yanzi.Color.Foreground");
         Close();

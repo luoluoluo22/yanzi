@@ -112,6 +112,16 @@ internal sealed partial class GalleryWindow
         menu.AddRadioGroup("Theme", new[] { "Light", "Dark", "System" }, "Dark",
             value => Status("Theme: " + value));
         menu.AddSeparator();
+        menu.AddSubmenu("Share", share =>
+        {
+            share.AddAction("Copy link", () => Status("Share: Copy link"));
+            share.AddSubmenu("Export as", formats =>
+            {
+                formats.AddAction("PDF", () => Status("Export as PDF"));
+                formats.AddAction("Markdown", () => Status("Export as Markdown"));
+            });
+        });
+        menu.AddSeparator();
         menu.AddAction("Log out", () => Status("Log out · demo only"), destructive: true);
         menu.Attach(trigger);
         trigger.HorizontalAlignment = HorizontalAlignment.Center;

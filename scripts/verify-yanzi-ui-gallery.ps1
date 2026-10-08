@@ -43,11 +43,14 @@ function Navigate([string]$name) {
     Start-Sleep -Milliseconds 150
 }
 
-# The catalog may be left expanded by the complete 64-component audit.
-$openCatalog = Find-Control '☰ 目录' [System.Windows.Automation.ControlType]::Button
-if ($openCatalog) {
-    $openCatalog.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
-    Start-Sleep -Milliseconds 150
+# The same toggle exists whether the catalog is expanded or collapsed.
+# Check the actual expanded control before clicking; do not inadvertently collapse it.
+if (-not (Find-Control '收起目录' [System.Windows.Automation.ControlType]::Button)) {
+    $openCatalog = Find-Control '☰ 目录' [System.Windows.Automation.ControlType]::Button
+    if ($openCatalog) {
+        $openCatalog.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+        Start-Sleep -Milliseconds 150
+    }
 }
 $null = Assert-Control '收起目录' [System.Windows.Automation.ControlType]::Button
 $testCount++

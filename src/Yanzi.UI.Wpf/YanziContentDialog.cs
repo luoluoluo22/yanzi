@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media.Animation;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
 using System.Windows.Threading;
@@ -19,7 +20,14 @@ public sealed class YanziContentDialog : Window
     public Button CloseButton { get; }
     public Button CancelButton { get; }
     public Button SaveButton { get; }
+    public ScrollViewer BodyScroller { get; }
+    private readonly ScaleTransform _scale = new(.96, .96);
+    private readonly SolidColorBrush _scrim = new(Color.FromArgb(0, 0, 0, 0));
     private readonly IInputElement? _previousFocus;
+    private bool _closing;
+    private bool _finishedClosing;
+    private DispatcherTimer? _dismissTimer;
+    public bool IsClosing => _closing;
 
     public YanziContentDialog(Window owner, string title, string description,
         UIElement body, string saveLabel = "Save changes")
@@ -42,14 +50,14 @@ public sealed class YanziContentDialog : Window
         AllowsTransparency = true;
         Background = Brushes.Transparent;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        Width = Math.Max(510, owner.ActualWidth > 0 ? owner.ActualWidth : owner.Width);
-        Height = Math.Max(410, owner.ActualHeight > 0 ? owner.ActualHeight : owner.Height);
+        // A modal overlay must fit its owner and the current working area.
+        Width = Math.Clamp(owner.ActualWidth > 0 ? owner.ActualWidth : owner.Width,
+            300, Math.Max(300, SystemParameters.WorkArea.Width));
+        Height = Math.Clamp(owner.ActualHeight > 0 ? owner.ActualHeight : owner.Height,
+            320, Math.Max(320, SystemParameters.WorkArea.Height));
         YanziUi.ApplyTo(this, YanziUi.GetTheme(owner));
 
-        Overlay = new Grid
-        {
-            Background = new SolidColorBrush(Color.FromArgb(165, 0, 0, 0))
-        };
+        Overlay = new Grid { Background = _scrim };
         var main = new StackPanel();
         var header = new Grid { Margin = new Thickness(0, 0, 0, 4) };
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -79,7 +87,7 @@ public sealed class YanziContentDialog : Window
         System.Windows.Automation.AutomationProperties.SetName(CloseButton, "Close dialog");
         Grid.SetColumn(CloseButton, 1);
         header.Children.Add(CloseButton);
-        CloseButton.Click += (_, _) => DialogResult = false;
+        CloseButton.Click += (_, _) => RequestClose(false);
         main.Children.Add(header);
 
         var descriptionText = new TextBlock
@@ -95,7 +103,7 @@ public sealed class YanziContentDialog : Window
         main.Children.Add(descriptionText);
 
         BodyPresenter = new ContentPresenter { Content = body };
-        var scroller = new ScrollViewer
+        BodyScroller = new ScrollViewer
         {
             Content = BodyPresenter,
             MaxHeight = 280,
@@ -103,14 +111,14 @@ public sealed class YanziContentDialog : Window
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             Margin = new Thickness(0, 0, 0, 16)
         };
-        main.Children.Add(scroller);
+        main.Children.Add(BodyScroller);
 
         var footer = new StackPanel { Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right };
         CancelButton = YanziUi.WithStyle(new Button
         {
             Content = "Cancel",
-            IsCancel = true,
+            IsCancel = false, // Escape goes through animated RequestClose instead of auto-dismiss.
             MinWidth = 78,
             Height = 35,
             Margin = new Thickness(0, 0, 8, 0)
@@ -122,8 +130,8 @@ public sealed class YanziContentDialog : Window
             Height = 35,
             IsDefault = true
         }, YanziUi.Styles.DefaultButton);
-        CancelButton.Click += (_, _) => DialogResult = false;
-        SaveButton.Click += (_, _) => DialogResult = true;
+        CancelButton.Click += (_, _) => RequestClose(false);
+        SaveButton.Click += (_, _) => RequestClose(true);
         footer.Children.Add(CancelButton);
         footer.Children.Add(SaveButton);
         var footerBackground = new Border
@@ -149,34 +157,115 @@ public sealed class YanziContentDialog : Window
             VerticalAlignment = VerticalAlignment.Center,
             Effect = new DropShadowEffect { Color = Colors.Black,
                 BlurRadius = 26, ShadowDepth = 7, Opacity = .32 },
-            Child = main
+            Child = main,
+            Opacity = 0,
+            RenderTransform = _scale,
+            RenderTransformOrigin = new Point(.5, .5)
         };
         Card.SetResourceReference(Border.BackgroundProperty, "Yanzi.Color.Popover");
         Card.SetResourceReference(Border.BorderBrushProperty, "Yanzi.Color.Border");
         Overlay.Children.Add(Card);
         Content = Overlay;
+        Overlay.SizeChanged += (_, _) =>
+        {
+            Card.Width = Math.Min(384, Math.Max(230, Overlay.ActualWidth - 32));
+            BodyScroller.MaxHeight = Math.Max(64, Math.Min(280, Overlay.ActualHeight - 230));
+        };
         // WPF equivalent of a modal dialog focus trap: Tab and Shift+Tab wrap
         // inside the card, never reaching the disabled owner underneath.
         KeyboardNavigation.SetTabNavigation(Card, KeyboardNavigationMode.Cycle);
         KeyboardNavigation.SetControlTabNavigation(Card, KeyboardNavigationMode.Cycle);
-        Closed += (_, _) => owner.Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
+        Closed += (_, _) =>
+        {
+            _dismissTimer?.Stop();
+            owner.Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
         {
             if (_previousFocus is UIElement element && element.IsEnabled && element.IsVisible)
                 element.Focus();
-        });
-        Loaded += (_, _) => Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
+            });
+        };
+        Loaded += (_, _) =>
         {
-            if (!TryFocusFirstInput(body))
-                CloseButton.Focus();
-        });
+            AnimateEntrance();
+            Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
+            {
+                if (!TryFocusFirstInput(body))
+                    CloseButton.Focus();
+            });
+        };
         PreviewKeyDown += (_, e) =>
         {
             if (e.Key == Key.Escape)
             {
-                DialogResult = false;
+                RequestClose(false);
                 e.Handled = true;
             }
         };
+    }
+
+    private void AnimateEntrance()
+    {
+        var duration = new Duration(TimeSpan.FromMilliseconds(170));
+        var easing = new CubicEase { EasingMode = EasingMode.EaseOut };
+        Card.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, duration)
+        {
+            EasingFunction = easing, FillBehavior = FillBehavior.HoldEnd
+        });
+        _scale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(.96, 1, duration)
+        {
+            EasingFunction = easing, FillBehavior = FillBehavior.HoldEnd
+        });
+        _scale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(.96, 1, duration)
+        {
+            EasingFunction = easing, FillBehavior = FillBehavior.HoldEnd
+        });
+        _scrim.BeginAnimation(SolidColorBrush.ColorProperty,
+            new ColorAnimation(Color.FromArgb(0, 0, 0, 0),
+                Color.FromArgb(165, 0, 0, 0), duration) { EasingFunction = easing });
+    }
+
+    /// <summary>Unified close route for Escape, X, Cancel and Save.</summary>
+    public void RequestClose(bool accepted)
+    {
+        if (_closing) return;
+        _closing = true;
+        CloseButton.IsEnabled = CancelButton.IsEnabled = SaveButton.IsEnabled = false;
+        if (!IsVisible || !IsLoaded)
+        {
+            Close();
+            return;
+        }
+        // Animation completion callbacks are not guaranteed under all WPF render
+        // schedules. Close on a dispatcher deadline as a safety net.
+        _dismissTimer = new DispatcherTimer(DispatcherPriority.Normal, Dispatcher)
+        {
+            Interval = TimeSpan.FromMilliseconds(240)
+        };
+        _dismissTimer.Tick += (_, _) => FinishClose(accepted);
+        _dismissTimer.Start();
+        var fade = new DoubleAnimation
+        {
+            To = 0, Duration = TimeSpan.FromMilliseconds(115),
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn },
+            FillBehavior = FillBehavior.Stop
+        };
+        fade.Completed += (_, _) => FinishClose(accepted);
+        Card.BeginAnimation(OpacityProperty, fade);
+        _scrim.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation
+        {
+            To = Color.FromArgb(0, 0, 0, 0),
+            Duration = TimeSpan.FromMilliseconds(115),
+            FillBehavior = FillBehavior.Stop
+        });
+    }
+
+    private void FinishClose(bool accepted)
+    {
+        if (_finishedClosing) return;
+        _finishedClosing = true;
+        _dismissTimer?.Stop();
+        Card.Opacity = 0;
+        if (IsVisible) DialogResult = accepted;
     }
 
     private static bool TryFocusFirstInput(UIElement element)

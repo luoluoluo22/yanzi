@@ -858,8 +858,8 @@ internal static class Program
             Check(dialog.Card.CornerRadius.TopLeft == 14
                 && dialog.Card.Width == 384 && dialog.Card.Padding.Left == 16
                 && dialog.Card.BorderThickness.Left == 1
-                && dialog.CancelButton.IsCancel && dialog.SaveButton.IsDefault,
-                "Dialog has shadcn card geometry and default/cancel actions");
+                && !dialog.CancelButton.IsCancel && dialog.SaveButton.IsDefault,
+                "Dialog has shadcn card geometry and animated cancellation (no WPF auto-close)");
             Check(System.Windows.Input.KeyboardNavigation.GetTabNavigation(dialog.Card) ==
                 System.Windows.Input.KeyboardNavigationMode.Cycle,
                 "Dialog Tab/Shift+Tab navigation cycles within the modal card");
@@ -1032,6 +1032,11 @@ internal static class Program
                 "Select updates chosen text and reports selection");
             Check(!sourceSelect.Select("Nonexistent") && sourceSelect.SelectedValue == "Banana",
                 "Select rejects values that are not in its option collection");
+            var selectedVisual = (Grid)sourceSelect.OptionButtons[1].Content;
+            var unselectedVisual = (Grid)sourceSelect.OptionButtons[0].Content;
+            Check(selectedVisual.Children.OfType<Viewbox>().Single().Visibility == Visibility.Visible
+                && unselectedVisual.Children.OfType<Viewbox>().Single().Visibility == Visibility.Hidden,
+                "Select uses a vector checkmark only for the currently selected item");
             bool toggleState = false;
             var checkedDropdown = new YanziDropdownMenu();
             var checkAction = checkedDropdown.AddCheck("Show status", true, value => toggleState = value);
@@ -1043,6 +1048,29 @@ internal static class Program
             sourceMenuRadios[0].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Check(radioValue == "Light" && sourceMenuRadios.Count == 2,
                 "Dropdown radio group updates one exclusive selection");
+            var checkVisual = (Grid)checkAction.Content;
+            var radioVisual = (Grid)sourceMenuRadios[0].Content;
+            Check(checkVisual.Children.OfType<Viewbox>().Count() == 1
+                && radioVisual.Children.OfType<Viewbox>().Count() == 1
+                && radioVisual.Children.OfType<Viewbox>().Single().Visibility == Visibility.Visible,
+                "Dropdown check and radio states use native vector indicators");
+            var tree = new YanziDropdownMenu();
+            Button? exportTrigger = null;
+            Button? pdfAction = null;
+            bool pdfInvoked = false;
+            var shareTrigger = tree.AddSubmenu("Share", child =>
+            {
+                child.AddAction("Copy", () => {});
+                exportTrigger = child.AddSubmenu("Export as", grandChild =>
+                    pdfAction = grandChild.AddAction("PDF", () => pdfInvoked = true));
+            });
+            Check(tree.OpenSubmenu(shareTrigger) && tree.OpenDepth == 1,
+                "Dropdown submenu expands into a second level in the same Popup");
+            Check(tree.OpenSubmenu(exportTrigger!) && tree.OpenDepth == 2,
+                "Dropdown submenu supports a third recursively nested level");
+            pdfAction!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Check(pdfInvoked && !tree.IsOpen && tree.OpenDepth == 0,
+                "Clicking a nested leaf runs its action and closes the complete hierarchy");
             var plainDropdown = new YanziDropdownMenu();
             var shortcutItem = plainDropdown.AddAction("Profile", () => {}, "Ctrl+P");
             Check(shortcutItem.Content is Grid contentRow && contentRow.ColumnDefinitions.Count == 2,
@@ -1056,6 +1084,17 @@ internal static class Program
             Check(sourceDialog.Card.Width == 384 && sourceDialog.Card.Padding.Left == 16
                 && sourceDialog.Card.CornerRadius.TopLeft == 14,
                 "Dialog dimensions match source 384 DIP card and 16 DIP padding");
+            Check(sourceDialog.Card.Opacity == 0
+                && sourceDialog.Card.RenderTransform is ScaleTransform,
+                "Dialog is initialized for opacity and scale entrance animations");
+            var smallOwner = new Window { Width = 320, Height = 350 };
+            smallOwner.Show();
+            var narrowDialog = new YanziContentDialog(smallOwner, "Narrow", "Small window", new TextBox());
+            Check(narrowDialog.Width <= 320 && narrowDialog.Height <= 350
+                && narrowDialog.BodyScroller is not null,
+                "Dialog dimensions respect narrow owner windows before layout");
+            narrowDialog.Close();
+            smallOwner.Close();
 
             var secondWindow = new Window();
             Check(secondWindow.Resources.MergedDictionaries.Count == 0, "separate old window remains unchanged");
