@@ -749,6 +749,42 @@ internal static class Program
             Check(acceptPreview.ShowDialog() == true,
                 "Alert Dialog confirm action closes modal and reports success");
 
+            // Autocomplete combobox uses a custom TextBox + Popup, never native ComboBox.
+            var filterCombo = new YanziCombobox("Select a framework");
+            filterCombo.Add("Next.js");
+            filterCombo.Add("Nuxt.js");
+            filterCombo.Add("SvelteKit");
+            Check(filterCombo.Items.Count == 3
+                && filterCombo.FilteredCount == 3
+                && filterCombo.GetType().BaseType == typeof(UserControl),
+                "Combobox is custom WPF control with three indexed suggestions");
+            filterCombo.SearchText = "NUXT";
+            Check(filterCombo.FilteredCount == 1,
+                "Combobox filters suggestions case-insensitively");
+            filterCombo.SearchText = "no-match";
+            Check(filterCombo.FilteredCount == 0,
+                "Combobox exposes empty search result state");
+            string? selectedCombo = null;
+            filterCombo.SelectionChanged += (_, value) => selectedCombo = value;
+            Check(filterCombo.Select("SvelteKit")
+                && filterCombo.SelectedValue == "SvelteKit"
+                && filterCombo.SearchText == "SvelteKit" && selectedCombo == "SvelteKit",
+                "Combobox selection synchronizes display text, selected value and callback");
+            Check(!filterCombo.Select("unknown")
+                && filterCombo.SelectedValue == "SvelteKit",
+                "Combobox rejects values not present in options");
+            filterCombo.Clear();
+            Check(filterCombo.SelectedValue is null && filterCombo.SearchText == ""
+                && filterCombo.FilteredCount == 3 && selectedCombo is null,
+                "Combobox clear returns to full suggestions and notifies consumers");
+            filterCombo.IsEnabled = false;
+            Check(!filterCombo.Select("Next.js"), "disabled Combobox cannot select");
+            filterCombo.IsEnabled = true;
+            bool duplicateComboRejected = false;
+            try { filterCombo.Add("NUXT.JS"); }
+            catch (ArgumentException) { duplicateComboRejected = true; }
+            Check(duplicateComboRejected, "Combobox rejects duplicate values ignoring case");
+
             var secondWindow = new Window();
             Check(secondWindow.Resources.MergedDictionaries.Count == 0, "separate old window remains unchanged");
             Check(YanziUi.WithStyle(new ProgressBar(), YanziUi.Styles.Loading) is ProgressBar, "loading control helper");

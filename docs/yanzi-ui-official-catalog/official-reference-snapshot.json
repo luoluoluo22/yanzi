@@ -1,10 +1,10 @@
 {
   "source": "https://ui.shadcn.com/docs/components",
-  "checked_utc": "2026-10-08T11:21:14.652331+00:00",
+  "checked_utc": "2026-10-08T11:56:09.342433+00:00",
   "official_count": 64,
   "local_count": 64,
   "no_omissions": true,
-  "independent_preview_count": 48,
+  "independent_preview_count": 64,
   "visually_accepted_count": 0,
   "items": [
     {
@@ -602,7 +602,7 @@
     {
       "number": 18,
       "name": "Combobox",
-      "api": "Yanzi.Select (IsEditable=true)",
+      "api": "YanziCombobox",
       "api_status": "Ready",
       "old_group": "表单控件",
       "official_url": "https://ui.shadcn.com/docs/components/base/combobox",
@@ -630,9 +630,9 @@
         "API Reference"
       ],
       "fetch_error": null,
-      "independent_preview": false,
+      "independent_preview": true,
       "comparison_focus": "输入过滤、选中项、键盘方向与无结果",
-      "risk": "当前适配可编辑 ComboBox，筛选与键盘交互需验收",
+      "risk": "已新增自绘 YanziCombobox：单选过滤与空状态；多选 Chips、分组、ARIA 角色和 RTL 待验收",
       "visual_result": "待核对",
       "interaction_result": "待核对"
     },
@@ -659,7 +659,7 @@
         "API Reference"
       ],
       "fetch_error": null,
-      "independent_preview": false,
+      "independent_preview": true,
       "comparison_focus": "检索、分组、命令执行、快捷键",
       "risk": "完整视觉与交互对照尚未完成",
       "visual_result": "待核对",
@@ -691,7 +691,7 @@
         "API Reference"
       ],
       "fetch_error": null,
-      "independent_preview": false,
+      "independent_preview": true,
       "comparison_focus": "右键定位、菜单项与子菜单交互",
       "risk": "原生 WPF ContextMenu 与官网差异待核对",
       "visual_result": "待核对",
@@ -733,7 +733,7 @@
         "Show selected rows"
       ],
       "fetch_error": null,
-      "independent_preview": false,
+      "independent_preview": true,
       "comparison_focus": "排序、列宽、行选择、分页和空状态",
       "risk": "排序、过滤、分页和虚拟化尚未逐项核对",
       "visual_result": "待核对",
@@ -761,7 +761,7 @@
         "RTL"
       ],
       "fetch_error": null,
-      "independent_preview": false,
+      "independent_preview": true,
       "comparison_focus": "日期弹窗、输入格式、范围/禁用",
       "risk": "完整视觉与交互对照尚未完成",
       "visual_result": "待核对",
@@ -788,7 +788,7 @@
         "API Reference"
       ],
       "fetch_error": null,
-      "independent_preview": false,
+      "independent_preview": true,
       "comparison_focus": "蒙层、可滚动内容、关闭与焦点",
       "risk": "目前 API 使用 Confirm，尚未验证任意内容的通用 Dialog",
       "visual_result": "待核对",
@@ -847,7 +847,7 @@
         "API Reference"
       ],
       "fetch_error": null,
-      "independent_preview": false,
+      "independent_preview": true,
       "comparison_focus": "边缘抽屉位置、拖动和关闭",
       "risk": "目前映射 Sheet，拖拽语义尚未验收",
       "visual_result": "待核对",
@@ -984,7 +984,7 @@
         "API Reference"
       ],
       "fetch_error": null,
-      "independent_preview": false,
+      "independent_preview": true,
       "comparison_focus": "悬停延时、离开关闭、定位和内容",
       "risk": "完整视觉与交互对照尚未完成",
       "visual_result": "待核对",
@@ -1059,7 +1059,7 @@
         "InputGroupTextarea"
       ],
       "fetch_error": null,
-      "independent_preview": false,
+      "independent_preview": true,
       "comparison_focus": "输入框分组、按钮/图标嵌入边框",
       "risk": "完整视觉与交互对照尚未完成",
       "visual_result": "待核对",
@@ -1251,7 +1251,7 @@
         "API Reference"
       ],
       "fetch_error": null,
-      "independent_preview": false,
+      "independent_preview": true,
       "comparison_focus": "顶栏菜单、弹出子项、焦点切换",
       "risk": "完整视觉与交互对照尚未完成",
       "visual_result": "待核对",
@@ -1328,7 +1328,7 @@
         "API Reference"
       ],
       "fetch_error": null,
-      "independent_preview": false,
+      "independent_preview": true,
       "comparison_focus": "自动滚到底部、保留位置、加载更多",
       "risk": "完整视觉与交互对照尚未完成",
       "visual_result": "待核对",
@@ -1384,7 +1384,7 @@
         "API Reference"
       ],
       "fetch_error": null,
-      "independent_preview": false,
+      "independent_preview": true,
       "comparison_focus": "导航触发、活动项、响应式面板",
       "risk": "目前复用了 Menubar；完整交互仍需复刻",
       "visual_result": "待核对",
@@ -1439,7 +1439,7 @@
         "API Reference"
       ],
       "fetch_error": null,
-      "independent_preview": false,
+      "independent_preview": true,
       "comparison_focus": "触发定位、焦点恢复和外部点击关闭",
       "risk": "完整视觉与交互对照尚未完成",
       "visual_result": "待核对",
@@ -1503,7 +1503,7 @@
         "API Reference"
       ],
       "fetch_error": null,
-      "independent_preview": false,
+      "independent_preview": true,
       "comparison_focus": "问题类型、选项、确认和错误反馈",
       "risk": "完整视觉与交互对照尚未完成",
       "visual_result": "待核对",
@@ -1661,7 +1661,7 @@
         "API Reference"
       ],
       "fetch_error": null,
-      "independent_preview": false,
+      "independent_preview": true,
       "comparison_focus": "侧边抽屉、蒙层与焦点关闭",
       "risk": "完整视觉与交互对照尚未完成",
       "visual_result": "待核对",
@@ -1703,7 +1703,7 @@
         "Theming"
       ],
       "fetch_error": null,
-      "independent_preview": false,
+      "independent_preview": true,
       "comparison_focus": "左侧导航折叠、选中与悬停",
       "risk": "完整视觉与交互对照尚未完成",
       "visual_result": "待核对",

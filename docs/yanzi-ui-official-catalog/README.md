@@ -1,10 +1,10 @@
 # shadcn/ui x Yanzi UI: 64 item comparison register
 
 Official directory: https://ui.shadcn.com/docs/components
-Checked UTC: 2026-10-08T11:21:14.652331+00:00
+Checked UTC: 2026-10-08T11:56:09.342433+00:00
 
 Official and local catalog: 64/64 names, order and URLs match.
-Components with independent WPF previews: 48/64.
+Components with independent WPF previews: 64/64.
 Components independently reviewed for visual and full interaction parity: 0/64.
 A reusable API entry is NOT proof of visual or behavioral parity.
 
@@ -27,41 +27,41 @@ A reusable API entry is NOT proof of visual or behavioral parity.
 | 15 | [Chart](https://ui.shadcn.com/docs/components/base/chart) | 200 | YanziBarChart | yes | pending | 柱形/线图、坐标轴、提示、响应式 |
 | 16 | [Checkbox](https://ui.shadcn.com/docs/components/base/checkbox) | 200 | Yanzi.CheckBox.Preview | yes | pending | 选中勾号、混合态、焦点、标签点击 |
 | 17 | [Collapsible](https://ui.shadcn.com/docs/components/base/collapsible) | 200 | YanziLayoutPrimitives.Collapsible | yes | pending | 折叠触发器、内容高度、动效与状态 |
-| 18 | [Combobox](https://ui.shadcn.com/docs/components/base/combobox) | 200 | Yanzi.Select (IsEditable=true) | pending | pending | 输入过滤、选中项、键盘方向与无结果 |
-| 19 | [Command](https://ui.shadcn.com/docs/components/base/command) | 200 | YanziCommandPalette | pending | pending | 检索、分组、命令执行、快捷键 |
-| 20 | [Context Menu](https://ui.shadcn.com/docs/components/base/context-menu) | 200 | Yanzi.Menu / Yanzi.MenuItem | pending | pending | 右键定位、菜单项与子菜单交互 |
-| 21 | [Data Table](https://ui.shadcn.com/docs/components/base/data-table) | 200 | Yanzi.DataGrid | pending | pending | 排序、列宽、行选择、分页和空状态 |
-| 22 | [Date Picker](https://ui.shadcn.com/docs/components/base/date-picker) | 200 | Yanzi.DatePicker | pending | pending | 日期弹窗、输入格式、范围/禁用 |
-| 23 | [Dialog](https://ui.shadcn.com/docs/components/base/dialog) | 200 | YanziDialog.Confirm | pending | pending | 蒙层、可滚动内容、关闭与焦点 |
+| 18 | [Combobox](https://ui.shadcn.com/docs/components/base/combobox) | 200 | YanziCombobox | yes | pending | 输入过滤、选中项、键盘方向与无结果 |
+| 19 | [Command](https://ui.shadcn.com/docs/components/base/command) | 200 | YanziCommandPalette | yes | pending | 检索、分组、命令执行、快捷键 |
+| 20 | [Context Menu](https://ui.shadcn.com/docs/components/base/context-menu) | 200 | Yanzi.Menu / Yanzi.MenuItem | yes | pending | 右键定位、菜单项与子菜单交互 |
+| 21 | [Data Table](https://ui.shadcn.com/docs/components/base/data-table) | 200 | Yanzi.DataGrid | yes | pending | 排序、列宽、行选择、分页和空状态 |
+| 22 | [Date Picker](https://ui.shadcn.com/docs/components/base/date-picker) | 200 | Yanzi.DatePicker | yes | pending | 日期弹窗、输入格式、范围/禁用 |
+| 23 | [Dialog](https://ui.shadcn.com/docs/components/base/dialog) | 200 | YanziDialog.Confirm | yes | pending | 蒙层、可滚动内容、关闭与焦点 |
 | 24 | [Direction](https://ui.shadcn.com/docs/components/base/direction) | 200 | YanziContentPrimitives.Direction | yes | pending | LTR / RTL 文字和布局方向切换 |
-| 25 | [Drawer](https://ui.shadcn.com/docs/components/base/drawer) | 200 | YanziSheet.Show | pending | pending | 边缘抽屉位置、拖动和关闭 |
+| 25 | [Drawer](https://ui.shadcn.com/docs/components/base/drawer) | 200 | YanziSheet.Show | yes | pending | 边缘抽屉位置、拖动和关闭 |
 | 26 | [Dropdown Menu](https://ui.shadcn.com/docs/components/base/dropdown-menu) | 200 | YanziDropdownMenu | yes | pending | 菜单弹层、键盘、子菜单、checkbox 项 |
 | 27 | [Empty](https://ui.shadcn.com/docs/components/base/empty) | 200 | YanziPrimitives.EmptyState | yes | pending | 空状态图标、说明、行动按钮与留白 |
 | 28 | [Field](https://ui.shadcn.com/docs/components/base/field) | 200 | YanziPrimitives.Field | yes | pending | FieldLabel、说明、错误反馈和必填 |
-| 29 | [Hover Card](https://ui.shadcn.com/docs/components/base/hover-card) | 200 | YanziHoverCard.Attach | pending | pending | 悬停延时、离开关闭、定位和内容 |
+| 29 | [Hover Card](https://ui.shadcn.com/docs/components/base/hover-card) | 200 | YanziHoverCard.Attach | yes | pending | 悬停延时、离开关闭、定位和内容 |
 | 30 | [Input](https://ui.shadcn.com/docs/components/base/input) | 200 | Yanzi.Input | yes | pending | 输入高度、Caret、placeholder、校验态 |
-| 31 | [Input Group](https://ui.shadcn.com/docs/components/base/input-group) | 200 | YanziInputGroup | pending | pending | 输入框分组、按钮/图标嵌入边框 |
+| 31 | [Input Group](https://ui.shadcn.com/docs/components/base/input-group) | 200 | YanziInputGroup | yes | pending | 输入框分组、按钮/图标嵌入边框 |
 | 32 | [Input OTP](https://ui.shadcn.com/docs/components/base/input-otp) | 200 | YanziOtpInput | yes | pending | 单字符位、粘贴、移动焦点与错误态 |
 | 33 | [Item](https://ui.shadcn.com/docs/components/base/item) | 200 | YanziItem | yes | pending | 图文排列、辅助动作、选中状态 |
 | 34 | [Kbd](https://ui.shadcn.com/docs/components/base/kbd) | 200 | YanziPrimitives.Kbd | yes | pending | Kbd 边框、字体与组合键视觉 |
 | 35 | [Label](https://ui.shadcn.com/docs/components/base/label) | 200 | YanziPrimitives.Field | yes | pending | 与输入框关联、点击聚焦、禁用 |
 | 36 | [Marker](https://ui.shadcn.com/docs/components/base/marker) | 200 | YanziContentPrimitives.Marker | yes | pending | 标记注释、背景与状态组合 |
-| 37 | [Menubar](https://ui.shadcn.com/docs/components/base/menubar) | 200 | Yanzi.Menubar | pending | pending | 顶栏菜单、弹出子项、焦点切换 |
+| 37 | [Menubar](https://ui.shadcn.com/docs/components/base/menubar) | 200 | Yanzi.Menubar | yes | pending | 顶栏菜单、弹出子项、焦点切换 |
 | 38 | [Message](https://ui.shadcn.com/docs/components/base/message) | 200 | YanziContentPrimitives.MessageBubble | yes | pending | 消息区域、不同角色的状态与动作 |
-| 39 | [Message Scroller](https://ui.shadcn.com/docs/components/base/message-scroller) | 200 | YanziMessageScroller | pending | pending | 自动滚到底部、保留位置、加载更多 |
+| 39 | [Message Scroller](https://ui.shadcn.com/docs/components/base/message-scroller) | 200 | YanziMessageScroller | yes | pending | 自动滚到底部、保留位置、加载更多 |
 | 40 | [Native Select](https://ui.shadcn.com/docs/components/base/native-select) | 200 | Yanzi.Select | yes | pending | 系统选择下拉、占位、禁用和视觉 |
-| 41 | [Navigation Menu](https://ui.shadcn.com/docs/components/base/navigation-menu) | 200 | Yanzi.Menubar | pending | pending | 导航触发、活动项、响应式面板 |
+| 41 | [Navigation Menu](https://ui.shadcn.com/docs/components/base/navigation-menu) | 200 | Yanzi.Menubar | yes | pending | 导航触发、活动项、响应式面板 |
 | 42 | [Pagination](https://ui.shadcn.com/docs/components/base/pagination) | 200 | YanziPagination | yes | pending | 前后页、页号、禁用/边界状态 |
-| 43 | [Popover](https://ui.shadcn.com/docs/components/base/popover) | 200 | YanziPopover.Attach | pending | pending | 触发定位、焦点恢复和外部点击关闭 |
+| 43 | [Popover](https://ui.shadcn.com/docs/components/base/popover) | 200 | YanziPopover.Attach | yes | pending | 触发定位、焦点恢复和外部点击关闭 |
 | 44 | [Progress](https://ui.shadcn.com/docs/components/base/progress) | 200 | Yanzi.Progress | yes | pending | 进度条尺寸、状态与百分比 |
-| 45 | [Questionnaire](https://ui.shadcn.com/docs/components/base/questionnaire) | 200 | YanziQuestionnaire | pending | pending | 问题类型、选项、确认和错误反馈 |
+| 45 | [Questionnaire](https://ui.shadcn.com/docs/components/base/questionnaire) | 200 | YanziQuestionnaire | yes | pending | 问题类型、选项、确认和错误反馈 |
 | 46 | [Radio Group](https://ui.shadcn.com/docs/components/base/radio-group) | 200 | YanziRadio / YanziRadioGroup | yes | pending | 单组互斥、方向键、禁用与 focus ring |
 | 47 | [Resizable](https://ui.shadcn.com/docs/components/base/resizable) | 200 | YanziLayoutPrimitives.Resizable | yes | pending | 手柄、拖拽、min/max 和持久化 |
 | 48 | [Scroll Area](https://ui.shadcn.com/docs/components/base/scroll-area) | 200 | YanziLayoutPrimitives.ScrollArea | yes | pending | 垂直/水平滚动条、滚动边缘与键盘 |
 | 49 | [Select](https://ui.shadcn.com/docs/components/base/select) | 200 | Yanzi.Select | yes | pending | 选项弹层、搜索、定位、滚动状态 |
 | 50 | [Separator](https://ui.shadcn.com/docs/components/base/separator) | 200 | YanziPrimitives.Separator | yes | pending | 分隔方向、厚度和语义颜色 |
-| 51 | [Sheet](https://ui.shadcn.com/docs/components/base/sheet) | 200 | YanziSheet.Show | pending | pending | 侧边抽屉、蒙层与焦点关闭 |
-| 52 | [Sidebar](https://ui.shadcn.com/docs/components/base/sidebar) | 200 | YanziSidebar | pending | pending | 左侧导航折叠、选中与悬停 |
+| 51 | [Sheet](https://ui.shadcn.com/docs/components/base/sheet) | 200 | YanziSheet.Show | yes | pending | 侧边抽屉、蒙层与焦点关闭 |
+| 52 | [Sidebar](https://ui.shadcn.com/docs/components/base/sidebar) | 200 | YanziSidebar | yes | pending | 左侧导航折叠、选中与悬停 |
 | 53 | [Skeleton](https://ui.shadcn.com/docs/components/base/skeleton) | 200 | YanziPrimitives.Skeleton | yes | pending | 骨架屏尺寸、闪动动画、加载退场 |
 | 54 | [Slider](https://ui.shadcn.com/docs/components/base/slider) | 200 | Yanzi.Slider | yes | pending | 轨道、Thumb、键盘、步进和方向 |
 | 55 | [Spinner](https://ui.shadcn.com/docs/components/base/spinner) | 200 | YanziLoadingRing | yes | pending | 旋转、加载语义、尺寸和对齐 |

@@ -97,10 +97,13 @@ internal sealed partial class GalleryWindow
     {
         "Accordion", "Alert", "Alert Dialog", "Aspect Ratio", "Attachment", "Avatar",
         "Badge", "Breadcrumb", "Bubble", "Button", "Button Group", "Calendar", "Card",
-        "Carousel", "Chart", "Checkbox", "Collapsible", "Direction", "Dropdown Menu",
-        "Empty", "Field", "Input", "Input OTP", "Item", "Kbd", "Label", "Marker",
-        "Message", "Native Select", "Pagination", "Progress", "Radio Group", "Resizable",
-        "Scroll Area", "Select", "Separator", "Skeleton", "Slider", "Spinner", "Switch",
+        "Carousel", "Chart", "Checkbox", "Collapsible", "Combobox", "Command", "Context Menu",
+        "Data Table", "Date Picker", "Dialog", "Direction", "Drawer", "Dropdown Menu",
+        "Empty", "Field", "Hover Card", "Input", "Input Group", "Input OTP", "Item",
+        "Kbd", "Label", "Marker", "Menubar", "Message", "Message Scroller",
+        "Native Select", "Navigation Menu", "Pagination", "Popover", "Progress",
+        "Questionnaire", "Radio Group", "Resizable", "Scroll Area", "Select",
+        "Separator", "Sheet", "Sidebar", "Skeleton", "Slider", "Spinner", "Switch",
         "Table", "Tabs", "Textarea", "Toast", "Toggle", "Toggle Group", "Tooltip", "Typography"
     };
 
@@ -530,7 +533,7 @@ internal sealed partial class GalleryWindow
             case "Avatar":
                 Add(YanziPrimitives.Avatar("YZ", 44));
                 break;
-            default: return false;
+            default: return TryRenderPendingPreview(component, host);
         }
         host.Children.Add(line);
         return true;

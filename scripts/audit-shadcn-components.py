@@ -70,7 +70,7 @@ risks = {
     "Chart": "本地仅有轻量柱图；其他类型图表及细节待验收",
     "Dialog": "目前 API 使用 Confirm，尚未验证任意内容的通用 Dialog",
     "Drawer": "目前映射 Sheet，拖拽语义尚未验收",
-    "Combobox": "当前适配可编辑 ComboBox，筛选与键盘交互需验收",
+    "Combobox": "已新增自绘 YanziCombobox：单选过滤与空状态；多选 Chips、分组、ARIA 角色和 RTL 待验收",
     "Data Table": "排序、过滤、分页和虚拟化尚未逐项核对",
     "Context Menu": "原生 WPF ContextMenu 与官网差异待核对",
     "Select": "原生 ComboBox 与官网自绘选择弹层差异待核对",

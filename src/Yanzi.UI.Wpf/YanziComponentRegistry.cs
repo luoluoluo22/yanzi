@@ -31,7 +31,7 @@ public static class YanziComponentRegistry
         new("Chart", YanziComponentStatus.Ready, "YanziBarChart", "数据展示", 11),
         new("Checkbox", YanziComponentStatus.Ready, "Yanzi.CheckBox.Preview", "选择", 3),
         new("Collapsible", YanziComponentStatus.Ready, "YanziLayoutPrimitives.Collapsible", "导航与布局", 10),
-        new("Combobox", YanziComponentStatus.Ready, "Yanzi.Select (IsEditable=true)", "表单控件", 9),
+        new("Combobox", YanziComponentStatus.Ready, "YanziCombobox", "表单控件", 9),
         new("Command", YanziComponentStatus.Ready, "YanziCommandPalette", "弹层与反馈", 12),
         new("Context Menu", YanziComponentStatus.Ready, "Yanzi.Menu / Yanzi.MenuItem", "弹层与反馈", 12),
         new("Data Table", YanziComponentStatus.Ready, "Yanzi.DataGrid", "数据展示", 11),

@@ -49,6 +49,28 @@ foreach ($name in $names) {
         if(-not (FindNode '逐项对比清单' $types::Text)){
             throw "Missing comparison checklist for $name"
         }
+        # The old preview-fallback text must no longer appear for any of the 64.
+        if(FindNode '独立演示：待补齐。当前仅有对应公共库入口和原专题页。' $types::Text){
+            throw "Missing executable WPF preview for $name"
+        }
+        # These are interactive elements, not placeholders claiming parity.
+        $specific = switch ($name) {
+            'Combobox' { @('Combobox search', 'Edit'); break }
+            'Data Table' { @('Data Table 样例', 'DataGrid'); break }
+            'Dialog' { @('Edit profile', 'Button'); break }
+            'Drawer' { @('Open drawer', 'Button'); break }
+            'Hover Card' { @('@yanzi', 'Button'); break }
+            'Message Scroller' { @('追加一条消息', 'Button'); break }
+            'Popover' { @('Open popover', 'Button'); break }
+            'Sidebar' { @('Projects', 'Button'); break }
+            default { $null }
+        }
+        if($specific){
+            $kind = [System.Windows.Automation.ControlType].GetField($specific[1]).GetValue($null)
+            if(-not (FindNode $specific[0] $kind)){
+                throw "Independent control missing: $($specific[0])"
+            }
+        }
         if(-not (FindNode '核对：布局与尺寸' $types::ComboBox) -or
            -not (FindNode '核对：深浅主题 / 缩放' $types::ComboBox)){
             throw "Missing structured per-item audit controls for $name"
