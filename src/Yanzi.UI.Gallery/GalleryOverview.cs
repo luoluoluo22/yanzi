@@ -83,26 +83,47 @@ internal sealed partial class GalleryWindow
         tags.Children.Add(PreviewBadge("Secondary", YanziBadgeVariant.Secondary));
         tags.Children.Add(PreviewBadge("Outline", YanziBadgeVariant.Outline));
         sampler.Children.Add(tags);
-        var toggles = new StackPanel { Orientation = Orientation.Horizontal };
-        toggles.Children.Add(YanziUi.WithStyle(new CheckBox { IsChecked = true, ToolTip = "Enabled", Margin = new Thickness(0, 0, 9, 0) }, YanziUi.Styles.Toggle));
-        toggles.Children.Add(YanziUi.WithStyle(new CheckBox { Content = "Notify", IsChecked = true }, YanziUi.Styles.CheckBox));
-        sampler.Children.Add(toggles);
+        // Match shadcn homepage: unchecked Radio, checked Radio, checked Checkbox, enabled Switch.
+        // These two radios are independent state samples, while real exclusive groups use YanziRadioGroup.
+        var states = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 1, 0, 0) };
+        var radioUnchecked = new YanziRadio { Value = "sample-off", IsChecked = false,
+            ToolTip = "Radio · 未选中", Margin = new Thickness(0, 0, 2, 0) };
+        var radioChecked = new YanziRadio { Value = "sample-on", IsChecked = true,
+            ToolTip = "Radio · 已选中", Margin = new Thickness(0, 0, 3, 0) };
+        System.Windows.Automation.AutomationProperties.SetName(radioUnchecked, "Radio 未选中");
+        System.Windows.Automation.AutomationProperties.SetName(radioChecked, "Radio 已选中");
+        states.Children.Add(radioUnchecked);
+        states.Children.Add(radioChecked);
+        var checkbox = YanziUi.WithStyle(new CheckBox { IsChecked = true, ToolTip = "Checkbox · 已选中",
+            Margin = new Thickness(0, 0, 4, 0) }, YanziUi.Styles.CheckBoxPreview);
+        System.Windows.Automation.AutomationProperties.SetName(checkbox, "Checkbox 已选中");
+        states.Children.Add(checkbox);
+        var switchControl = YanziUi.WithStyle(new CheckBox { IsChecked = true, ToolTip = "Switch · 开启" }, YanziUi.Styles.Toggle);
+        System.Windows.Automation.AutomationProperties.SetName(switchControl, "Switch 开启");
+        switchControl.SetResourceReference(CheckBox.StyleProperty, YanziUi.Styles.SwitchShadcn);
+        states.Children.Add(switchControl);
+        sampler.Children.Add(states);
         var footButtons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 14, 0, 0) };
         footButtons.Children.Add(SmallButton("Alert Dialog", YanziUi.Styles.PillOutlineButton,
             () => YanziDialog.Confirm(this, "确认执行操作？", "这是组件展示，不会修改任何实际数据。", "确认")));
         var segmented = new YanziSegmentedButtonGroup { Margin = new Thickness(0, 0, 6, 5) };
         PreviewGeistButton(segmented.Add("Button Group", () => Status("Button Group 被点击")));
-        var menuButton = PreviewGeistButton(segmented.Add("⌃", () => { }));
-        var menu = YanziUi.WithStyle(new ContextMenu(), YanziUi.Styles.Menu);
-        foreach (var text in new[] { "复制", "查看详情", "设置" })
-        {
-            var copy = text;
-            var item = YanziUi.WithStyle(new MenuItem { Header = text }, YanziUi.Styles.MenuItem);
-            item.Click += (_, _) => Status("菜单：" + copy);
-            menu.Items.Add(item);
-        }
-        menuButton.ContextMenu = menu;
-        menuButton.Click += (_, _) => menu.IsOpen = true;
+        var menuButton = segmented.Add("展开菜单", () => { });
+        menuButton.Content = YanziIcons.ChevronUp(16);
+        menuButton.ToolTip = "展开操作菜单";
+        menuButton.Width = 39;
+        menuButton.MinWidth = 39;
+        menuButton.Padding = new Thickness(0);
+        menuButton.HorizontalContentAlignment = HorizontalAlignment.Center;
+        menuButton.VerticalContentAlignment = VerticalAlignment.Center;
+        System.Windows.Automation.AutomationProperties.SetName(menuButton, "展开操作菜单");
+        var menu = new YanziDropdownMenu();
+        menu.AddLabel("操作");
+        menu.AddAction("复制", () => Status("菜单：复制"));
+        menu.AddAction("查看详情", () => Status("菜单：查看详情"));
+        menu.AddSeparator();
+        menu.AddAction("设置", () => Status("菜单：设置"));
+        menu.Attach(menuButton);
         footButtons.Children.Add(segmented);
         sampler.Children.Add(footButtons);
 

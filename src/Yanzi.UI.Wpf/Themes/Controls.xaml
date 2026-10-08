@@ -464,6 +464,93 @@
         </Setter>
     </Style>
 
+    <!-- Opt-in shadcn Switch: the active track is Primary and the thumb switches
+         from light to dark for correct contrast. Canvas.Left prevents layout drift. -->
+    <Style x:Key="Yanzi.Switch.Shadcn" TargetType="{x:Type CheckBox}">
+        <Setter Property="Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
+        <Setter Property="FontFamily" Value="{DynamicResource Yanzi.Font.Geist}"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="Height" Value="24"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type CheckBox}">
+                    <StackPanel Orientation="Horizontal" Background="Transparent">
+                        <Grid Width="42" Height="24" VerticalAlignment="Center">
+                            <Border x:Name="FocusHalo" Width="42" Height="26" CornerRadius="13"
+                                BorderThickness="2" Opacity="0"
+                                BorderBrush="{DynamicResource Yanzi.Color.Ring}"/>
+                            <Canvas Width="36" Height="20" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                <Border x:Name="Track" Width="36" Height="20" CornerRadius="10"
+                                    Background="{DynamicResource Yanzi.Color.Input}"/>
+                                <Ellipse x:Name="Thumb" Width="16" Height="16"
+                                    Canvas.Left="2" Canvas.Top="2"
+                                    Fill="{DynamicResource Yanzi.Color.Foreground}"/>
+                            </Canvas>
+                        </Grid>
+                        <ContentPresenter VerticalAlignment="Center"
+                            Margin="3,0,0,0" RecognizesAccessKey="True"/>
+                    </StackPanel>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Track" Property="Background"
+                                Value="{DynamicResource Yanzi.Color.Primary}"/>
+                            <Setter TargetName="Thumb" Property="Fill"
+                                Value="{DynamicResource Yanzi.Color.PrimaryForeground}"/>
+                            <Setter TargetName="Thumb" Property="Canvas.Left" Value="18"/>
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="FocusHalo" Property="Opacity" Value="0.70"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.5"/>
+                            <Setter Property="Cursor" Value="Arrow"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Context-menu alternative: shadcn-style lightweight dropdown action rows. -->
+    <Style x:Key="Yanzi.Dropdown.Action" TargetType="{x:Type Button}">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{DynamicResource Yanzi.Color.PopoverForeground}"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="FontFamily" Value="{DynamicResource Yanzi.Font.Geist}"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="FontWeight" Value="Normal"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type Button}">
+                    <Border x:Name="Chrome" CornerRadius="6"
+                        Background="{TemplateBinding Background}">
+                        <ContentPresenter Margin="{TemplateBinding Padding}"
+                            VerticalAlignment="Center"
+                            HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Chrome" Property="Background"
+                                Value="{DynamicResource Yanzi.Color.Accent}"/>
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Chrome" Property="Background"
+                                Value="{DynamicResource Yanzi.Color.Accent}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <Style x:Key="Yanzi.Menu" TargetType="{x:Type ContextMenu}">
         <Setter Property="Background" Value="{DynamicResource Yanzi.Brush.Surface}"/>
         <Setter Property="Foreground" Value="{DynamicResource Yanzi.Brush.Text}"/>
@@ -655,6 +742,89 @@
         <Setter Property="Foreground" Value="{DynamicResource Yanzi.Color.Primary}"/>
         <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Secondary}"/>
     </Style>
+    <!-- shadcn-style radio: fully custom Control, not Windows RadioButton chrome. -->
+    <Style x:Key="Yanzi.Radio.Custom" TargetType="{x:Type ui:YanziRadio}">
+        <Setter Property="Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type ui:YanziRadio}">
+                    <Grid Width="24" Height="24" Background="Transparent" SnapsToDevicePixels="True">
+                        <Ellipse x:Name="FocusHalo" Width="22" Height="22" Fill="Transparent"
+                                 Stroke="{DynamicResource Yanzi.Color.Ring}" StrokeThickness="2"
+                                 Opacity="0" />
+                        <Ellipse x:Name="RadioOuter" Width="16" Height="16"
+                                 Fill="Transparent" Stroke="{DynamicResource Yanzi.Color.Input}"
+                                 StrokeThickness="1.5"/>
+                        <Ellipse x:Name="RadioDot" Width="8" Height="8"
+                                 Fill="{DynamicResource Yanzi.Color.Primary}"
+                                 Visibility="Collapsed"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="RadioOuter" Property="Stroke" Value="{DynamicResource Yanzi.Color.Primary}"/>
+                            <Setter TargetName="RadioDot" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="RadioOuter" Property="Stroke" Value="{DynamicResource Yanzi.Color.Foreground}"/>
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="FocusHalo" Property="Opacity" Value="0.65"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45"/>
+                            <Setter Property="Cursor" Value="Arrow"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <!-- Custom-drawn checkbox chrome; WPF CheckBox supplies standard two-state semantics only. -->
+    <Style x:Key="Yanzi.CheckBox.Preview" TargetType="{x:Type CheckBox}">
+        <Setter Property="Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
+        <Setter Property="FontFamily" Value="{DynamicResource Yanzi.Font.Geist}"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type CheckBox}">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Grid Width="24" Height="24" Background="Transparent">
+                            <Border x:Name="BoxChrome" Width="16" Height="16"
+                                    CornerRadius="3"
+                                    BorderThickness="1"
+                                    Background="Transparent"
+                                    BorderBrush="{DynamicResource Yanzi.Color.Input}"/>
+                            <Path x:Name="Tick" Width="11" Height="11"
+                                  Stretch="Uniform" StrokeThickness="2"
+                                  StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                  Stroke="{DynamicResource Yanzi.Color.PrimaryForeground}"
+                                  Data="M2,6 L5,9 L10,2" Visibility="Collapsed"/>
+                        </Grid>
+                        <ContentPresenter VerticalAlignment="Center" Margin="3,0,0,0"
+                            RecognizesAccessKey="True"/>
+                    </StackPanel>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="BoxChrome" Property="Background" Value="{DynamicResource Yanzi.Color.Primary}"/>
+                            <Setter TargetName="BoxChrome" Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Primary}"/>
+                            <Setter TargetName="Tick" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="BoxChrome" Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Ring}"/>
+                            <Setter TargetName="BoxChrome" Property="BorderThickness" Value="2"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <Style x:Key="Yanzi.Radio" TargetType="{x:Type RadioButton}">
         <Setter Property="Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
         <Setter Property="FontSize" Value="{DynamicResource Yanzi.Font.Body}"/>

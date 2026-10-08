@@ -54,7 +54,7 @@ public static class YanziComponentRegistry
         new("Popover", YanziComponentStatus.Ready, "YanziPopover.Attach", "弹层与反馈", 12),
         new("Progress", YanziComponentStatus.Ready, "Yanzi.Progress", "数据展示", 11),
         new("Questionnaire", YanziComponentStatus.Ready, "YanziQuestionnaire", "表单控件", 9),
-        new("Radio Group", YanziComponentStatus.Ready, "Yanzi.Radio", "表单控件", 9),
+        new("Radio Group", YanziComponentStatus.Ready, "YanziRadio / YanziRadioGroup", "表单控件", 9),
         new("Resizable", YanziComponentStatus.Ready, "YanziLayoutPrimitives.Resizable", "导航与布局", 10),
         new("Scroll Area", YanziComponentStatus.Ready, "YanziLayoutPrimitives.ScrollArea", "导航与布局", 10),
         new("Select", YanziComponentStatus.Ready, "Yanzi.Select", "表单控件", 9),

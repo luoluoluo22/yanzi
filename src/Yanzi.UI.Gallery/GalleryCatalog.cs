@@ -91,16 +91,18 @@ internal sealed partial class GalleryWindow
         }, YanziUi.Styles.Select);
         foreach (var label in new[] { "剪贴板", "截图", "日历", "白板", "浏览器" }) combo.Items.Add(label);
         choices.Children.Add(YanziPrimitives.Field("搜索并选择小程序", combo, "可直接键入内容查找选项"));
-        var radios = new StackPanel { Orientation = Orientation.Horizontal };
-        foreach (var modeName in new[] { "紧凑", "标准", "宽松" })
-        {
-            var radio = YanziUi.WithStyle(new RadioButton { Content = modeName, GroupName = "form-spacing", IsChecked = modeName == "标准",
-                Margin = new Thickness(0, 0, 18, 12) }, YanziUi.Styles.Radio);
-            radios.Children.Add(radio);
-        }
+        var radios = new YanziRadioGroup { Orientation = Orientation.Horizontal };
+        radios.Add("紧凑", "compact");
+        radios.Add("标准", "default");
+        radios.Add("宽松", "comfortable");
+        radios.Select("default");
+        radios.SelectionChanged += (_, value) => Status("表单密度：" + value);
         choices.Children.Add(radios);
+        var disabledRadio = new YanziRadioGroup();
+        disabledRadio.Add("禁用状态 / Disabled", "disabled", isEnabled: false);
+        choices.Children.Add(disabledRadio);
         choices.Children.Add(YanziUi.WithStyle(new CheckBox { Content = "启动时自动运行", IsChecked = true }, YanziUi.Styles.CheckBox));
-        choices.Children.Add(YanziUi.WithStyle(new CheckBox { Content = "启用通知", IsChecked = false }, YanziUi.Styles.Toggle));
+        choices.Children.Add(YanziUi.WithStyle(new CheckBox { Content = "启用通知", IsChecked = false }, YanziUi.Styles.SwitchShadcn));
 
         var wizard = Card("Questionnaire / 问卷向导", "真实的多步骤问卷，支持输入、单选、上一步和完成回调。");
         var survey = new YanziQuestionnaire(new[]

@@ -116,7 +116,7 @@ internal sealed partial class GalleryWindow : Window
         brandLine.Children.Add(logo);
         brandLine.Children.Add(Text("Yanzi UI", 20, true, "Yanzi.Brush.Text", new Thickness(0, 4, 0, 0)));
         brand.Children.Add(brandLine);
-        brand.Children.Add(Text("SHADCN DESIGN  /  v0.6.0", 10, false, "Yanzi.Brush.TextMuted", new Thickness(0, 11, 0, 0)));
+        brand.Children.Add(Text("SHADCN DESIGN  /  v0.6.4", 10, false, "Yanzi.Brush.TextMuted", new Thickness(0, 11, 0, 0)));
         sidebarLayout.Children.Add(brand);
 
         var footer = new StackPanel { Margin = new Thickness(8, 12, 0, 3) };
@@ -412,22 +412,24 @@ internal sealed partial class GalleryWindow : Window
     private void Selections()
     {
         var section = Card("开关 / Switch", "真实 CheckBox 实现，鼠标和空格键都应该可以切换。");
-        var s1 = YanziUi.WithStyle(new CheckBox { Content = "允许后台同步", IsChecked = true, Margin = new Thickness(0, 5, 0, 12) }, YanziUi.Styles.Toggle);
+        var s1 = YanziUi.WithStyle(new CheckBox { Content = "允许后台同步", IsChecked = true, Margin = new Thickness(0, 5, 0, 12) }, YanziUi.Styles.SwitchShadcn);
         s1.Checked += (_, _) => Status("后台同步已开启（演示）");
         s1.Unchecked += (_, _) => Status("后台同步已关闭（演示）");
         section.Children.Add(s1);
-        section.Children.Add(YanziUi.WithStyle(new CheckBox { Content = "启用截图识别", IsChecked = true }, YanziUi.Styles.Toggle));
-        section.Children.Add(YanziUi.WithStyle(new CheckBox { Content = "禁用的开关", IsChecked = false, IsEnabled = false, Margin = new Thickness(0, 12, 0, 0) }, YanziUi.Styles.Toggle));
+        section.Children.Add(YanziUi.WithStyle(new CheckBox { Content = "启用截图识别", IsChecked = true }, YanziUi.Styles.SwitchShadcn));
+        section.Children.Add(YanziUi.WithStyle(new CheckBox { Content = "禁用的开关", IsChecked = false, IsEnabled = false, Margin = new Thickness(0, 12, 0, 0) }, YanziUi.Styles.SwitchShadcn));
 
-        var checklist = Card("多选与单选", "表单通过原生选择控件完成操作，保证系统级键盘行为。");
-        checklist.Children.Add(YanziUi.WithStyle(new CheckBox { Content = "自动启动", IsChecked = true }, YanziUi.Styles.CheckBox));
-        checklist.Children.Add(YanziUi.WithStyle(new CheckBox { Content = "保留操作日志" }, YanziUi.Styles.CheckBox));
-        var radioRow = Row();
-        radioRow.Margin = new Thickness(0, 12, 0, 0);
-        radioRow.Children.Add(new RadioButton { Content = "紧凑", GroupName = "density", Foreground = ResolveBrush("Yanzi.Brush.Text"), IsChecked = true, Margin = new Thickness(0, 0, 18, 0) });
-        radioRow.Children.Add(new RadioButton { Content = "舒适", GroupName = "density", Foreground = ResolveBrush("Yanzi.Brush.Text") });
+        var checklist = Card("多选与单选", "Radio 使用自绘圆环与中心点，组内互斥；复选框也使用自绘的 shadcn 样式。");
+        checklist.Children.Add(YanziUi.WithStyle(new CheckBox { Content = "自动启动", IsChecked = true }, YanziUi.Styles.CheckBoxPreview));
+        checklist.Children.Add(YanziUi.WithStyle(new CheckBox { Content = "保留操作日志" }, YanziUi.Styles.CheckBoxPreview));
+        var radioRow = new YanziRadioGroup { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 12, 0, 0) };
+        radioRow.Add("紧凑", "compact");
+        radioRow.Add("舒适", "comfortable");
+        radioRow.Add("标准", "default");
+        radioRow.Select("compact");
+        radioRow.SelectionChanged += (_, selected) => Status("Radio Group：" + selected);
         checklist.Children.Add(radioRow);
-        checklist.Children.Add(CodeKey("Yanzi.Toggle / Yanzi.CheckBox"));
+        checklist.Children.Add(CodeKey("YanziRadio / YanziRadioGroup / Yanzi.CheckBox.Preview"));
 
         var toggleDemo = Card("Toggle / 单独切换", "不同于 Switch，此处为可切换的工具按钮。点击后维持选中状态。");
         var toggleButton = YanziUi.WithStyle(new ToggleButton { Content = "加粗", Width = 86,
@@ -670,7 +672,7 @@ internal sealed partial class GalleryWindow : Window
             Directory.CreateDirectory(_reviewsDirectory);
             var data = new
             {
-                version = "0.6.0",
+                version = "0.6.4",
                 time = DateTimeOffset.Now,
                 visual = (int)(_visualRating?.Value ?? 4),
                 interaction = (int)(_interactionRating?.Value ?? 4),

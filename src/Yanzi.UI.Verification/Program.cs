@@ -490,6 +490,189 @@ internal static class Program
             Check(searchGeist.Input.Text.Contains("中文") && searchGeist.Input.CaretBrush != null,
                 "mixed Chinese Latin input and native caret remain functional");
 
+            // Fully custom shadcn-like Radio: no native RadioButton is constructed.
+            Check(window.TryFindResource(YanziUi.Styles.RadioCustom) is Style,
+                "custom Radio control template is available");
+            Check(window.TryFindResource(YanziUi.Styles.CheckBoxPreview) is Style,
+                "shadcn checkbox chrome is available without a Windows checkbox glyph");
+            var previewRadio = new YanziRadio { Value = "preview", IsChecked = false };
+            window.Content = previewRadio;
+            window.UpdateLayout();
+            previewRadio.ApplyTemplate();
+            var radioOuter = previewRadio.Template.FindName("RadioOuter", previewRadio)
+                as System.Windows.Shapes.Ellipse;
+            var radioDot = previewRadio.Template.FindName("RadioDot", previewRadio)
+                as System.Windows.Shapes.Ellipse;
+            Check(previewRadio.GetType().BaseType == typeof(Control),
+                "Radio is a custom Control, not a native RadioButton");
+            Check(previewRadio.Width == 24 && previewRadio.Height == 24
+                && radioOuter?.Width == 16 && radioOuter.Height == 16
+                && radioDot?.Width == 8 && radioDot.Height == 8,
+                "Radio draws a 16 DIP outer ring and 8 DIP center dot in a 24 DIP hit area");
+            Check(radioDot!.Visibility == Visibility.Collapsed, "unchecked Radio shows no center dot");
+            previewRadio.Select();
+            window.UpdateLayout();
+            Check(previewRadio.IsChecked && radioDot.Visibility == Visibility.Visible,
+                "checked Radio displays its center dot");
+            previewRadio.Select();
+            Check(previewRadio.IsChecked, "clicking a selected Radio never deselects it");
+            previewRadio.IsEnabled = false;
+            Check(!previewRadio.Select(), "disabled Radio ignores activation");
+            previewRadio.IsEnabled = true;
+
+            var exclusive = new YanziRadioGroup { Orientation = Orientation.Horizontal };
+            var firstOption = exclusive.Add("Default", "default");
+            var secondOption = exclusive.Add("Comfortable", "comfortable");
+            var thirdOption = exclusive.Add("Compact", "compact");
+            int exclusiveEvents = 0;
+            exclusive.SelectionChanged += (_, _) => exclusiveEvents++;
+            window.Content = exclusive;
+            window.UpdateLayout();
+            Check(exclusive.Select("default") && firstOption.IsChecked
+                && !secondOption.IsChecked && !thirdOption.IsChecked,
+                "first RadioGroup selection is exclusive");
+            Check(exclusive.Select("comfortable") && secondOption.IsChecked
+                && !firstOption.IsChecked && !thirdOption.IsChecked,
+                "selecting second Radio clears previous selection");
+            Check(exclusive.SelectedValue == "comfortable" && exclusiveEvents >= 2,
+                "group exposes SelectedValue and change notifications");
+            Check(!exclusive.Select("not-an-option")
+                && exclusive.SelectedValue == "comfortable",
+                "unknown RadioGroup option does not mutate selection");
+            var disabledGroup = new YanziRadioGroup();
+            var disabledEntry = disabledGroup.Add("Disabled", "disabled", isEnabled: false);
+            Check(!disabledGroup.Select("disabled") && !disabledEntry.IsChecked,
+                "disabled option cannot be chosen");
+            disabledEntry.IsChecked = true;
+            Check(!disabledEntry.IsChecked && disabledGroup.SelectedValue is null,
+                "direct IsChecked assignment cannot bypass disabled group exclusivity");
+            Check(firstOption.IsTabStop == false && secondOption.IsTabStop,
+                "RadioGroup roves Tab stop to selected item");
+            Check(typeof(YanziRadio).BaseType == typeof(Control),
+                "custom Radio does not inherit Windows RadioButton");
+            firstOption.IsChecked = true;
+            Check(exclusive.SelectedValue == "default"
+                && firstOption.IsChecked && !secondOption.IsChecked,
+                "direct IsChecked assignment still enforces exclusivity");
+            var arrowSource = PresentationSource.FromVisual(firstOption);
+            Check(arrowSource is not null, "custom Radio belongs to an input-capable visual tree");
+            var nextKey = new System.Windows.Input.KeyEventArgs(
+                System.Windows.Input.Keyboard.PrimaryDevice, arrowSource!, 0, System.Windows.Input.Key.Right)
+            {
+                RoutedEvent = System.Windows.Input.Keyboard.KeyDownEvent
+            };
+            firstOption.RaiseEvent(nextKey);
+            Check(nextKey.Handled && exclusive.SelectedValue == "comfortable"
+                && secondOption.IsChecked && !firstOption.IsChecked,
+                "Right key routed event selects the next option");
+            var prevKey = new System.Windows.Input.KeyEventArgs(
+                System.Windows.Input.Keyboard.PrimaryDevice, arrowSource!, 0, System.Windows.Input.Key.Left)
+            {
+                RoutedEvent = System.Windows.Input.Keyboard.KeyDownEvent
+            };
+            secondOption.RaiseEvent(prevKey);
+            Check(prevKey.Handled && exclusive.SelectedValue == "default",
+                "Left key routed event selects previous option");
+
+            var radioPeer = System.Windows.Automation.Peers.UIElementAutomationPeer.CreatePeerForElement(secondOption);
+            Check(radioPeer?.GetAutomationControlType() ==
+                    System.Windows.Automation.Peers.AutomationControlType.RadioButton,
+                "custom Radio exposes radio semantics to screen readers");
+            Check(radioPeer?.GetPattern(System.Windows.Automation.Peers.PatternInterface.SelectionItem)
+                    is System.Windows.Automation.Provider.ISelectionItemProvider,
+                "custom Radio exposes automation selection item pattern");
+            var groupPeer = System.Windows.Automation.Peers.UIElementAutomationPeer.CreatePeerForElement(exclusive);
+            Check(groupPeer?.GetPattern(System.Windows.Automation.Peers.PatternInterface.Selection)
+                    is System.Windows.Automation.Provider.ISelectionProvider,
+                "RadioGroup exposes exclusive automation selection pattern");
+            YanziUi.ApplyTo(window, YanziTheme.Light);
+            window.Content = previewRadio;
+            previewRadio.ApplyTemplate();
+            Check(previewRadio.Template.FindName("RadioOuter", previewRadio) is System.Windows.Shapes.Ellipse,
+                "custom Radio template survives light theme");
+            YanziUi.ApplyTo(window, YanziTheme.Dark);
+
+            // Switch default and checked visuals follow shadcn contrast and geometry.
+            var shadcnSwitch = YanziUi.WithStyle(
+                new CheckBox { IsChecked = true }, YanziUi.Styles.SwitchShadcn);
+            window.Content = shadcnSwitch;
+            window.UpdateLayout();
+            shadcnSwitch.ApplyTemplate();
+            var switchTrack = shadcnSwitch.Template.FindName("Track", shadcnSwitch) as Border;
+            var switchThumb = shadcnSwitch.Template.FindName("Thumb", shadcnSwitch) as System.Windows.Shapes.Ellipse;
+            Check(switchTrack?.Width == 36 && switchTrack.Height == 20
+                && switchThumb?.Width == 16 && switchThumb.Height == 16,
+                "Switch has a 36x20 track with a 16x16 sliding thumb");
+            Check(Math.Abs(System.Windows.Controls.Canvas.GetLeft(switchThumb!) - 18) < 0.1,
+                "Switch checked thumb sits on right end");
+            Check(switchTrack!.Background is SolidColorBrush activeTrack
+                && activeTrack.Color == RequireBrush(window, "Yanzi.Color.Primary").Color,
+                "Switch checked track uses Primary token");
+            Check(switchThumb!.Fill is SolidColorBrush activeThumb
+                && activeThumb.Color == RequireBrush(window, "Yanzi.Color.PrimaryForeground").Color,
+                "Switch checked thumb contrasts with active track");
+            shadcnSwitch.IsChecked = false;
+            window.UpdateLayout();
+            Check(Math.Abs(System.Windows.Controls.Canvas.GetLeft(switchThumb) - 2) < 0.1,
+                "Switch unchecked thumb returns to left end");
+            Check(switchTrack.Background is SolidColorBrush inactiveTrack
+                && inactiveTrack.Color == RequireBrush(window, "Yanzi.Color.Input").Color,
+                "Switch unchecked track uses input-muted token");
+
+            // Vector chevron must have a geometric center independent of glyph baseline.
+            var chevron = YanziIcons.ChevronUp(16);
+            Check(chevron is Viewbox vb && vb.Width == vb.Height
+                && vb.HorizontalAlignment == HorizontalAlignment.Center
+                && vb.VerticalAlignment == VerticalAlignment.Center,
+                "ChevronUp is a centered 16x16 vector, not a text glyph");
+
+            // Popup uses a custom border/card and menu-item Button controls.
+            var dropdown = new YanziDropdownMenu();
+            var menuClicked = false;
+            dropdown.AddLabel("操作");
+            var action = dropdown.AddAction("复制", () => menuClicked = true);
+            dropdown.AddSeparator();
+            dropdown.AddAction("设置", () => menuClicked = true);
+            Check(dropdown.Count == 2 && dropdown.Surface is Border popupCard
+                && popupCard.CornerRadius.TopLeft >= 8,
+                "custom upward dropdown has rounded WPF card and reusable actions");
+            var popupTrigger = new Button { Content = "Menu", Width = 45, Height = 32 };
+            dropdown.Attach(popupTrigger);
+            var menuHost = new StackPanel();
+            menuHost.Children.Add(popupTrigger);
+            window.Content = menuHost;
+            window.UpdateLayout();
+            action.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Check(menuClicked && !dropdown.IsOpen,
+                "dropdown action callback runs and menu closes");
+
+            // Modal dialog is a borderless dimming overlay rather than a native tool window.
+            var dialogPreview = new YanziAlertDialog(window, "确认执行操作？",
+                "这是组件展示，不会修改实际数据。", "确认");
+            Check(dialogPreview.WindowStyle == WindowStyle.None
+                && dialogPreview.AllowsTransparency && !dialogPreview.ShowInTaskbar,
+                "Alert Dialog does not render Windows native toolwindow chrome");
+            Check(dialogPreview.Overlay.Background is SolidColorBrush overlayBrush
+                && overlayBrush.Color.A >= 140,
+                "Alert Dialog dims the entire owner surface");
+            Check(dialogPreview.Card.CornerRadius.TopLeft == 12
+                && dialogPreview.Card.BorderThickness.Left == 1
+                && dialogPreview.Card.Width >= 420,
+                "Alert Dialog has shadcn-style rounded, bordered content card");
+            Check(dialogPreview.CancelButton.IsCancel && dialogPreview.ConfirmButton.IsDefault,
+                "Alert Dialog retains keyboard cancellation and default confirmation");
+            dialogPreview.Loaded += (_, _) =>
+                dialogPreview.Dispatcher.BeginInvoke(new Action(() =>
+                    dialogPreview.CancelButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent))));
+            Check(dialogPreview.ShowDialog() == false,
+                "Alert Dialog visually opens modally and cancel closes without confirmation");
+            var acceptPreview = new YanziAlertDialog(window, "Confirm test", "safe test only");
+            acceptPreview.Loaded += (_, _) =>
+                acceptPreview.Dispatcher.BeginInvoke(new Action(() =>
+                    acceptPreview.ConfirmButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent))));
+            Check(acceptPreview.ShowDialog() == true,
+                "Alert Dialog confirm action closes modal and reports success");
+
             var secondWindow = new Window();
             Check(secondWindow.Resources.MergedDictionaries.Count == 0, "separate old window remains unchanged");
             Check(YanziUi.WithStyle(new ProgressBar(), YanziUi.Styles.Loading) is ProgressBar, "loading control helper");

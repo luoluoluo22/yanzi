@@ -3,6 +3,7 @@
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
+Add-Type -AssemblyName System.Windows.Forms
 
 if ($ProcessId -le 0) {
     $proc = Get-Process -Name 'Yanzi.UI.Gallery' -ErrorAction Stop |
@@ -53,6 +54,42 @@ foreach ($title in @('The foundation for Yanzi UI', 'Contribution History', 'Acc
     $null = Assert-Control $title [System.Windows.Automation.ControlType]::Text
 }
 
+# Homepage exposes both RADIO STATES plus checked Checkbox and enabled Switch.
+$radioOff = Assert-Control 'Radio 未选中' [System.Windows.Automation.ControlType]::RadioButton
+$radioOn = Assert-Control 'Radio 已选中' [System.Windows.Automation.ControlType]::RadioButton
+$radioOffPattern = $radioOff.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern)
+$radioOnPattern = $radioOn.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern)
+if ($radioOffPattern.Current.IsSelected -or -not $radioOnPattern.Current.IsSelected) { throw 'Homepage radio states do not match reference' }
+$testCount++
+$checkOn = Assert-Control 'Checkbox 已选中' [System.Windows.Automation.ControlType]::CheckBox
+if ($checkOn.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern).Current.ToggleState -ne [System.Windows.Automation.ToggleState]::On) { throw 'Checkbox must be checked' }
+$testCount++
+$switchOn = Assert-Control 'Switch 开启' [System.Windows.Automation.ControlType]::CheckBox
+if ($switchOn.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern).Current.ToggleState -ne [System.Windows.Automation.ToggleState]::On) { throw 'Switch must be on' }
+$testCount++
+
+$menuTrigger = Assert-Control '展开操作菜单' [System.Windows.Automation.ControlType]::Button
+$menuRect = $menuTrigger.Current.BoundingRectangle
+$menuTrigger.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+Start-Sleep -Milliseconds 180
+$desktop = [System.Windows.Automation.AutomationElement]::RootElement
+$actionNodes = $desktop.FindAll([System.Windows.Automation.TreeScope]::Descendants,
+    (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty,'复制')))
+$popupCopy = $null
+foreach ($candidate in $actionNodes) {
+    $r = $candidate.Current.BoundingRectangle
+    if ($candidate.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button -and
+        $r.Width -ge 130 -and $r.Y -lt $menuRect.Y -and
+        [Math]::Abs($r.Right-$menuRect.Right) -lt 45) {
+        $popupCopy = $candidate
+        break
+    }
+}
+if (-not $popupCopy) { throw 'Custom menu did not open above trigger with a full-width clickable row' }
+$testCount++
+$popupCopy.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+Start-Sleep -Milliseconds 120
+$testCount++
 # Search field must be a real focusable edit surface, not a TextBlock with an imitation caret.
 $searchEdit = Assert-Control '搜索' [System.Windows.Automation.ControlType]::Edit
 $searchEdit.SetFocus()
@@ -87,6 +124,17 @@ if ($inputValue.Current.Value -ne 'UI automation smoke test') { throw 'Input edi
 $testCount++
 
 Navigate '选择'
+$compactRadio = Assert-Control '紧凑' [System.Windows.Automation.ControlType]::RadioButton
+$comfortableRadio = Assert-Control '舒适' [System.Windows.Automation.ControlType]::RadioButton
+$compactSelection = $compactRadio.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern)
+$comfortableSelection = $comfortableRadio.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern)
+if (-not $compactSelection.Current.IsSelected) { throw 'Compact should be selected initially' }
+$comfortableSelection.Select()
+Start-Sleep -Milliseconds 90
+if (-not $comfortableSelection.Current.IsSelected -or $compactSelection.Current.IsSelected) { throw 'Exclusive RadioGroup UI Automation selection failed' }
+$testCount++
+# Arrow-key routed-event logic is tested within the WPF verification host.
+# Remote SendKeys is not used here: this process may run on another input desktop.
 $toggle = Assert-Control '允许后台同步' [System.Windows.Automation.ControlType]::CheckBox
 $togglePattern = $toggle.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern)
 $before = $togglePattern.Current.ToggleState
@@ -125,6 +173,12 @@ Navigate '表单控件'
 foreach ($title in @('Field / Input / Input Group / Textarea', '选择主题', 'Slider / Date Picker / Calendar / Progress', 'Input OTP / Button Group')) {
     $null = Assert-Control $title [System.Windows.Automation.ControlType]::Text
 }
+$defaultFormRadio = Assert-Control '标准' [System.Windows.Automation.ControlType]::RadioButton
+if (-not $defaultFormRadio.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Current.IsSelected) { throw 'Form RadioGroup default not selected' }
+$testCount++
+$disabledFormRadio = Assert-Control '禁用状态 / Disabled' [System.Windows.Automation.ControlType]::RadioButton
+if ($disabledFormRadio.Current.IsEnabled) { throw 'Disabled custom Radio should be inaccessible to clicks' }
+$testCount++
 Navigate '导航与布局'
 foreach ($title in @('Tabs / 标签页', 'Accordion / Collapsible / 折叠面板', 'Pagination / 分页')) {
     $null = Assert-Control $title [System.Windows.Automation.ControlType]::Text

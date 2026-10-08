@@ -46,7 +46,9 @@ public static class YanziUi
         public const string Select = "Yanzi.Select";
         public const string Slider = "Yanzi.Slider";
         public const string Progress = "Yanzi.Progress";
-        public const string Radio = "Yanzi.Radio";
+        public const string Radio = "Yanzi.Radio"; // legacy WPF RadioButton; new callers use RadioCustom
+        public const string RadioCustom = "Yanzi.Radio.Custom";
+        public const string CheckBoxPreview = "Yanzi.CheckBox.Preview";
         public const string Tabs = "Yanzi.Tabs";
         public const string TabItem = "Yanzi.TabItem";
         public const string Expander = "Yanzi.Expander";
@@ -62,9 +64,11 @@ public static class YanziUi
         public const string InputSoft = "Yanzi.Input.Soft";
         public const string TextareaSoft = "Yanzi.Textarea.Soft";
         public const string Toggle = "Yanzi.Toggle";
+        public const string SwitchShadcn = "Yanzi.Switch.Shadcn";
         public const string ToggleButton = "Yanzi.ToggleButton";
         public const string CheckBox = "Yanzi.CheckBox";
         public const string Menu = "Yanzi.Menu";
+        public const string DropdownAction = "Yanzi.Dropdown.Action";
         public const string Menubar = "Yanzi.Menubar";
         public const string MenuItem = "Yanzi.MenuItem";
         public const string List = "Yanzi.List";
