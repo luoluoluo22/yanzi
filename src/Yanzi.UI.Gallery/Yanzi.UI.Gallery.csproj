@@ -9,5 +9,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Yanzi.UI.Wpf\Yanzi.UI.Wpf.csproj"/>
+    <Content Include="Assets\*.jpg" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

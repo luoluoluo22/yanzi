@@ -946,6 +946,33 @@ internal static class Program
                 && topSheet.Panel.VerticalAlignment == VerticalAlignment.Top,
                 "Sheet supports all four edge placements through shared API");
 
+            // Reference-representative controls must expose real interaction, not tiny placeholders.
+            var featureAccordion = new YanziAccordion();
+            featureAccordion.Add("Shipping", new TextBlock { Text = "Worldwide" });
+            featureAccordion.Add("Returns", new TextBlock { Text = "30 days" });
+            featureAccordion.Add("Support", new TextBlock { Text = "Email" });
+            featureAccordion.Expand(1);
+            Check(featureAccordion.SectionCount == 3 && featureAccordion.ExpandedIndex == 1,
+                "Reference Accordion starts with three rows and the middle row expanded");
+            featureAccordion.Expand(0);
+            Check(featureAccordion.ExpandedIndex == 0,
+                "Accordion single-open behavior switches visible row");
+            var showcaseCalendar = new YanziCalendarMonth(new DateTime(2026, 10, 1));
+            DateTime? selectedCalendarDay = null;
+            showcaseCalendar.DateSelected += (_, day) => selectedCalendarDay = day;
+            showcaseCalendar.SelectDate(new DateTime(2026, 10, 8));
+            Check(showcaseCalendar.SelectedDate == new DateTime(2026, 10, 8)
+                && selectedCalendarDay == new DateTime(2026, 10, 8),
+                "Reference Calendar selects October 8 and raises a DateSelected event");
+            showcaseCalendar.Navigate(1);
+            Check(showcaseCalendar.DisplayedMonth.Month == 11
+                && showcaseCalendar.DisplayedMonth.Year == 2026,
+                "Custom month Calendar supports real forward/back navigation");
+            var refinedAlert = YanziPrimitives.Alert("Payment successful", "Receipt sent.", icon: "✓");
+            Check(refinedAlert.Child is Grid alertLayout
+                && alertLayout.ColumnDefinitions.Count == 2,
+                "Shared Alert primitive now draws icon beside title and description");
+
             var secondWindow = new Window();
             Check(secondWindow.Resources.MergedDictionaries.Count == 0, "separate old window remains unchanged");
             Check(YanziUi.WithStyle(new ProgressBar(), YanziUi.Styles.Loading) is ProgressBar, "loading control helper");

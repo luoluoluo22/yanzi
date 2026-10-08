@@ -59,22 +59,37 @@ public static class YanziPrimitives
         return placeholder;
     }
 
-    public static Border Alert(string title, string description, bool destructive = false)
+    public static Border Alert(string title, string description, bool destructive = false,
+        string icon = "i")
     {
-        var box = new Border { CornerRadius = new CornerRadius(8), BorderThickness = new Thickness(1),
-            Padding = new Thickness(14, 12, 14, 12) };
+        var box = new Border { CornerRadius = new CornerRadius(9), BorderThickness = new Thickness(1),
+            Padding = new Thickness(13, 12, 13, 12) };
         Resource(box, Border.BackgroundProperty, "Card");
         Resource(box, Border.BorderBrushProperty, destructive ? "Destructive" : "Border");
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(24) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        var symbol = new Border { Width = 15, Height = 15, CornerRadius = new CornerRadius(8),
+            BorderThickness = new Thickness(1.3), VerticalAlignment = VerticalAlignment.Top,
+            HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 3, 0, 0) };
+        Resource(symbol, Border.BorderBrushProperty, destructive ? "Destructive" : "Foreground");
+        var glyph = new TextBlock { Text = icon, FontWeight = FontWeights.Bold, FontSize = 10,
+            HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        Resource(glyph, TextBlock.ForegroundProperty, destructive ? "Destructive" : "Foreground");
+        symbol.Child = glyph;
+        grid.Children.Add(symbol);
         var stack = new StackPanel();
-        var header = new TextBlock { Text = title, FontWeight = FontWeights.SemiBold, FontSize = 13,
-            TextWrapping = TextWrapping.Wrap };
+        var header = new TextBlock { Text = title, FontWeight = FontWeights.SemiBold,
+            FontSize = 13, TextWrapping = TextWrapping.Wrap };
         Resource(header, TextBlock.ForegroundProperty, destructive ? "Destructive" : "Foreground");
-        var detail = new TextBlock { Text = description, FontSize = 12, Margin = new Thickness(0, 5, 0, 0),
+        var detail = new TextBlock { Text = description, FontSize = 13, Margin = new Thickness(0, 4, 0, 0),
             TextWrapping = TextWrapping.Wrap };
         Resource(detail, TextBlock.ForegroundProperty, "MutedForeground");
         stack.Children.Add(header);
         stack.Children.Add(detail);
-        box.Child = stack;
+        Grid.SetColumn(stack, 1);
+        grid.Children.Add(stack);
+        box.Child = grid;
         return box;
     }
 

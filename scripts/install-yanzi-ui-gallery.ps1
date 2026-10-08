@@ -27,7 +27,13 @@ foreach ($needed in @('Yanzi.UI.Gallery.exe', 'Yanzi.UI.Gallery.dll', 'Yanzi.UI.
 $releaseName = 'preview-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff')
 $release = Join-Path $installRoot $releaseName
 New-Item -ItemType Directory -Force -Path $release | Out-Null
-Copy-Item (Join-Path $source '*') $release -Force
+Copy-Item (Join-Path $source '*') $release -Force -Recurse
+# Nested showcase images must survive installation, not just local bin output.
+foreach ($photo in @('office-1.jpg', 'office-2.jpg', 'office-3.jpg', 'person-1.jpg', 'person-2.jpg', 'person-3.jpg')) {
+    if (-not (Test-Path (Join-Path $release ('Assets\' + $photo)))) {
+        throw "Gallery image resource missing after install: $photo"
+    }
+}
 $exe = Join-Path $release 'Yanzi.UI.Gallery.exe'
 
 if (-not (Test-Path $exe)) { throw "Gallery copy failed." }
@@ -58,7 +64,7 @@ if (-not $NoExtension) {
     $manifest = [ordered]@{
         id = 'yanzi-ui-gallery'
         name = '组件评估'
-        version = '0.7.4'
+        version = '0.7.5'
         category = '开发工具'
         description = '查看并体验燕子公共 UI 组件：按钮、输入、选择、列表、弹窗、颜色主题，并记录评估建议。'
         keywords = @('UI', '组件库', '设计系统', '组件评估', '视觉预览', 'ui-gallery')

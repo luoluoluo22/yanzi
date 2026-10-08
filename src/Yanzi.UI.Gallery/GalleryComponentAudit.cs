@@ -170,12 +170,13 @@ internal sealed partial class GalleryWindow
         reference.Children.Add(Text("本项重点：" + OfficialFocus[GetComponentIndex(item)],
             13, false, "Yanzi.Color.Foreground", new Thickness(0, 13, 0, 0)));
 
-        var preview = Card("当前 WPF 预览", IsolatedPreviewNames.Contains(item.Name)
-            ? "此处是可直接操作的独立组件示例，不是图片或网页嵌入。"
-            : "当前尚未建立该组件的独立展示。可以先从旧专题页查看已有 API；尚不能判定它已与官网一致。");
+        var preview = Card("当前 WPF 预览", "依据官网典型场景制作的可操作示例。下方保留参考信息和人工核对清单。");
+        var stageRoot = (UIElement)_body.Children[^1];
         if (!TryRenderIsolatedPreview(item.Name, preview))
             preview.Children.Add(Text("独立演示：待补齐。当前仅有对应公共库入口和原专题页。", 13,
                 false, "Yanzi.Color.MutedForeground"));
+        _body.Children.Remove(stageRoot);
+        _body.Children.Insert(0, stageRoot);
 
         var review = Card("逐项对比清单", "每一项默认「待核对」，只有人工验证后才能设为通过或不一致。记录保存在本地，不会自动报喜。");
         var oldRecord = LoadComponentAudit(item);
@@ -264,7 +265,14 @@ internal sealed partial class GalleryWindow
 
     private bool TryRenderIsolatedPreview(string component, StackPanel host)
     {
-        var line = new WrapPanel { Margin = new Thickness(0, 2, 0, 8) };
+        var showcase = BuildReferenceShowcase(component);
+        if (showcase is not null)
+        {
+            host.Children.Add(ReferenceStage(showcase));
+            return true;
+        }
+        var line = new WrapPanel { Margin = new Thickness(0, 2, 0, 8),
+            HorizontalAlignment = HorizontalAlignment.Center };
         void Add(UIElement e) => line.Children.Add(e);
         switch (component)
         {
@@ -533,9 +541,13 @@ internal sealed partial class GalleryWindow
             case "Avatar":
                 Add(YanziPrimitives.Avatar("YZ", 44));
                 break;
-            default: return TryRenderPendingPreview(component, host);
+            default:
+                var fallback = new StackPanel();
+                if (!TryRenderPendingPreview(component, fallback)) return false;
+                host.Children.Add(ReferenceStage(fallback));
+                return true;
         }
-        host.Children.Add(line);
+        host.Children.Add(ReferenceStage(line));
         return true;
     }
 
