@@ -973,6 +973,36 @@ internal static class Program
                 && alertLayout.ColumnDefinitions.Count == 2,
                 "Shared Alert primitive now draws icon beside title and description");
 
+            // Source-driven layout contract: representative layout, not merely API existence.
+            var sourceAccordion = new YanziAccordion();
+            sourceAccordion.Add("First", new TextBlock { Text = "One" });
+            sourceAccordion.Add("Second", new TextBlock { Text = "Two" });
+            var sourceAccordionStack = sourceAccordion.Content as StackPanel;
+            Check(sourceAccordionStack is not null
+                && sourceAccordionStack.Children.Count == 2
+                && sourceAccordionStack.Children[1] is StackPanel finalSection
+                && finalSection.Children.Count == 2,
+                "Source Accordion renders not-last:border-b (no extra final divider)");
+            var october2026 = new YanziCalendarMonth(new DateTime(2026, 10, 1));
+            Check(october2026.VisibleWeeks == 5 && october2026.VisibleDayCount == 35,
+                "Calendar adjusts October 2026 to five visible week rows");
+            october2026.Navigate(-2);
+            Check(october2026.VisibleWeeks == 6 && october2026.VisibleDayCount == 42,
+                "Calendar dynamically shows six week rows in August 2026");
+            var compactAlert = YanziPrimitives.Alert("Heading", "Copy");
+            Check(compactAlert.Padding.Left == 10 && compactAlert.Padding.Top == 8,
+                "Alert uses official px-2.5 py-2 spacing");
+            var sourceCard = new YanziCard();
+            sourceCard.SetHeader(new TextBlock { Text = "Header" });
+            sourceCard.SetBody(new TextBox { Text = "Input" });
+            sourceCard.SetFooter(new Button { Content = "Save" });
+            Check(sourceCard.Header is TextBlock && sourceCard.Body is TextBox
+                && sourceCard.Footer is Button
+                && sourceCard.BorderThickness.Left == 1,
+                "YanziCard exposes real Header, Content and Footer slots");
+            Check(sourceCard.ClipToBounds,
+                "Card clips nested content to its shared rounded outer boundary");
+
             var secondWindow = new Window();
             Check(secondWindow.Resources.MergedDictionaries.Count == 0, "separate old window remains unchanged");
             Check(YanziUi.WithStyle(new ProgressBar(), YanziUi.Styles.Loading) is ProgressBar, "loading control helper");

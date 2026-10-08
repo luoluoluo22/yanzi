@@ -62,14 +62,15 @@ public static class YanziPrimitives
     public static Border Alert(string title, string description, bool destructive = false,
         string icon = "i")
     {
-        var box = new Border { CornerRadius = new CornerRadius(9), BorderThickness = new Thickness(1),
-            Padding = new Thickness(13, 12, 13, 12) };
+        var box = new Border { BorderThickness = new Thickness(1),
+            Padding = new Thickness(10, 8, 10, 8) };
+        box.SetResourceReference(Border.CornerRadiusProperty, "Yanzi.Radius.Md");
         Resource(box, Border.BackgroundProperty, "Card");
         Resource(box, Border.BorderBrushProperty, destructive ? "Destructive" : "Border");
         var grid = new Grid();
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(24) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var symbol = new Border { Width = 15, Height = 15, CornerRadius = new CornerRadius(8),
+        var symbol = new Border { Width = 16, Height = 16, CornerRadius = new CornerRadius(8),
             BorderThickness = new Thickness(1.3), VerticalAlignment = VerticalAlignment.Top,
             HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 3, 0, 0) };
         Resource(symbol, Border.BorderBrushProperty, destructive ? "Destructive" : "Foreground");
@@ -80,9 +81,9 @@ public static class YanziPrimitives
         grid.Children.Add(symbol);
         var stack = new StackPanel();
         var header = new TextBlock { Text = title, FontWeight = FontWeights.SemiBold,
-            FontSize = 13, TextWrapping = TextWrapping.Wrap };
+            FontSize = 14, TextWrapping = TextWrapping.Wrap };
         Resource(header, TextBlock.ForegroundProperty, destructive ? "Destructive" : "Foreground");
-        var detail = new TextBlock { Text = description, FontSize = 13, Margin = new Thickness(0, 4, 0, 0),
+        var detail = new TextBlock { Text = description, FontSize = 14, Margin = new Thickness(0, 2, 0, 0),
             TextWrapping = TextWrapping.Wrap };
         Resource(detail, TextBlock.ForegroundProperty, "MutedForeground");
         stack.Children.Add(header);

@@ -26,7 +26,7 @@ public static class YanziComponentRegistry
         new("Button", YanziComponentStatus.Ready, "Yanzi.Button.*", "按钮", 1),
         new("Button Group", YanziComponentStatus.Ready, "YanziButtonGroup", "表单控件", 9),
         new("Calendar", YanziComponentStatus.Ready, "Yanzi.Calendar", "表单控件", 9),
-        new("Card", YanziComponentStatus.Ready, "Yanzi.Card", "总览", 0),
+        new("Card", YanziComponentStatus.Ready, "YanziCard", "总览", 0),
         new("Carousel", YanziComponentStatus.Ready, "YanziCarousel", "数据展示", 11),
         new("Chart", YanziComponentStatus.Ready, "YanziBarChart", "数据展示", 11),
         new("Checkbox", YanziComponentStatus.Ready, "Yanzi.CheckBox.Preview", "选择", 3),

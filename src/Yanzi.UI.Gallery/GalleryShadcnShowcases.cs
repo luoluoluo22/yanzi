@@ -64,13 +64,13 @@ internal sealed partial class GalleryWindow
         var accordion = new YanziAccordion { Width = 388, HorizontalAlignment = HorizontalAlignment.Center };
         accordion.Add("What are your shipping options?",
             Text("We offer standard and express shipping worldwide. Rates are calculated at checkout.",
-                13, false, "Yanzi.Color.MutedForeground"));
+                14, false, "Yanzi.Color.MutedForeground"));
         accordion.Add("What is your return policy?",
             Text("Returns accepted within 30 days. Items must be unused and in original packaging. Refunds processed within 5–7 business days.",
-                13, false, "Yanzi.Color.Foreground"));
+                14, false, "Yanzi.Color.Foreground"));
         accordion.Add("How can I contact customer support?",
             Text("You can reach our support team via email or live chat at any time.",
-                13, false, "Yanzi.Color.MutedForeground"));
+                14, false, "Yanzi.Color.MutedForeground"));
         accordion.Expand(1);
         return accordion;
     }
@@ -268,16 +268,14 @@ internal sealed partial class GalleryWindow
 
     private UIElement CardShowcase()
     {
-        var outer = new Border { Width = 364, CornerRadius = new CornerRadius(12),
-            BorderThickness = new Thickness(1), HorizontalAlignment = HorizontalAlignment.Center };
-        outer.SetResourceReference(Border.BackgroundProperty, "Yanzi.Color.Card");
-        outer.SetResourceReference(Border.BorderBrushProperty, "Yanzi.Color.Border");
-        var layout = new StackPanel();
-        var top = new StackPanel { Margin = new Thickness(16, 15, 16, 8) };
+        // All three Card slots are now rendered by the shared WPF component.
+        var outer = new YanziCard { Width = 380,
+            HorizontalAlignment = HorizontalAlignment.Center };
+        var top = new StackPanel();
         var header = new Grid();
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        header.Children.Add(Text("Login to your account", 15, true, "Yanzi.Color.Foreground"));
+        header.Children.Add(Text("Login to your account", 16, true, "Yanzi.Color.Foreground"));
         var signup = Button("Sign Up", YanziUi.Styles.GhostButton, () => Status("Sign up · 演示"));
         signup.Height = 24;
         signup.Margin = new Thickness(0);
@@ -285,46 +283,41 @@ internal sealed partial class GalleryWindow
         header.Children.Add(signup);
         top.Children.Add(header);
         top.Children.Add(Text("Enter your email below to login to your account",
-            13, false, "Yanzi.Color.MutedForeground", new Thickness(0, 7, 0, 0)));
-        layout.Children.Add(top);
-        var inputs = new StackPanel { Margin = new Thickness(16, 0, 16, 12) };
-        inputs.Children.Add(Text("Email", 13, true, "Yanzi.Color.Foreground", new Thickness(0, 9, 0, 7)));
+            14, false, "Yanzi.Color.MutedForeground", new Thickness(0, 7, 0, 0)));
+        outer.SetHeader(top);
+        var inputs = new StackPanel();
+        inputs.Children.Add(Text("Email", 14, true, "Yanzi.Color.Foreground", new Thickness(0, 9, 0, 7)));
         var email = YanziUi.WithStyle(new TextBox { Height = 35, Text = "m@example.com",
-            FontSize = 13, Padding = new Thickness(10, 4, 10, 4) }, YanziUi.Styles.InputSoft);
+            FontSize = 14, Padding = new Thickness(10, 4, 10, 4) }, YanziUi.Styles.InputSoft);
         inputs.Children.Add(email);
         var pwdLabel = new Grid { Margin = new Thickness(0, 17, 0, 7) };
         pwdLabel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         pwdLabel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        pwdLabel.Children.Add(Text("Password", 13, true, "Yanzi.Color.Foreground"));
+        pwdLabel.Children.Add(Text("Password", 14, true, "Yanzi.Color.Foreground"));
         var forgot = Button("Forgot your password?", YanziUi.Styles.GhostButton, () => Status("Password reset · 演示"));
         forgot.Height = 24;
         forgot.Margin = new Thickness(0);
         Grid.SetColumn(forgot, 1);
         pwdLabel.Children.Add(forgot);
         inputs.Children.Add(pwdLabel);
-        var password = new PasswordBox { Height = 35, Padding = new Thickness(9, 5, 9, 5), FontSize = 13 };
+        var password = new PasswordBox { Height = 35, Padding = new Thickness(9, 5, 9, 5), FontSize = 14 };
         password.SetResourceReference(Control.BackgroundProperty, "Yanzi.Color.Input");
         password.SetResourceReference(Control.ForegroundProperty, "Yanzi.Color.Foreground");
         password.SetResourceReference(Control.BorderBrushProperty, "Yanzi.Color.Border");
         inputs.Children.Add(password);
-        layout.Children.Add(inputs);
-        var footer = new StackPanel { Margin = new Thickness(0, 2, 0, 0),
-            Background = Brushes.Transparent };
-        var sep = new Border { Height = 1, Margin = new Thickness(0, 0, 0, 10) };
-        sep.SetResourceReference(Border.BackgroundProperty, "Yanzi.Color.Border");
-        footer.Children.Add(sep);
+        outer.SetBody(inputs);
+        var footer = new StackPanel { Background = Brushes.Transparent };
         var login = Button("Login", YanziUi.Styles.PillDefaultButton,
             () => Status("Login · 演示表单不发送凭据"));
-        login.Margin = new Thickness(16, 0, 16, 8);
+        login.Margin = new Thickness(0, 0, 0, 8);
         login.HorizontalAlignment = HorizontalAlignment.Stretch;
         footer.Children.Add(login);
         var google = Button("Login with Google", YanziUi.Styles.PillSecondaryButton,
             () => Status("Google login · 演示"));
-        google.Margin = new Thickness(16, 0, 16, 15);
+        google.Margin = new Thickness(0);
         google.HorizontalAlignment = HorizontalAlignment.Stretch;
         footer.Children.Add(google);
-        layout.Children.Add(footer);
-        outer.Child = layout;
+        outer.SetFooter(footer);
         return outer;
     }
 

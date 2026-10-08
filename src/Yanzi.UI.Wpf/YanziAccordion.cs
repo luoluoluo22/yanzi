@@ -25,7 +25,7 @@ public sealed class YanziAccordion : UserControl
         var columns = new Grid();
         columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         columns.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var heading = new TextBlock { Text = title, FontSize = 13,
+        var heading = new TextBlock { Text = title, FontSize = 14,
             FontWeight = FontWeights.SemiBold,
             VerticalAlignment = VerticalAlignment.Center };
         heading.SetResourceReference(TextBlock.ForegroundProperty, "Yanzi.Color.Foreground");
@@ -39,24 +39,25 @@ public sealed class YanziAccordion : UserControl
         var trigger = YanziUi.WithStyle(new Button
         {
             Content = columns,
-            Height = 46,
+            MinHeight = 40,
             HorizontalContentAlignment = HorizontalAlignment.Stretch,
-            Padding = new Thickness(0),
+            Padding = new Thickness(0, 10, 0, 10),
             HorizontalAlignment = HorizontalAlignment.Stretch
         }, YanziUi.Styles.GhostButton);
         AutomationProperties.SetName(trigger, title);
         var body = new Border
         {
             Child = content,
-            Padding = new Thickness(0, 2, 0, 18),
+            Padding = new Thickness(0, 0, 0, 10),
             Visibility = Visibility.Collapsed
         };
         trigger.Click += (_, _) => SetExpanded(index, body.Visibility != Visibility.Visible);
         var separator = new Border { Height = 1 };
         separator.SetResourceReference(Border.BackgroundProperty, "Yanzi.Color.Border");
+        if (_stack.Children.Count > 0 && _stack.Children[^1] is StackPanel previous)
+            previous.Children.Add(separator); // Official not-last:border-b: no rule after final item.
         container.Children.Add(trigger);
         container.Children.Add(body);
-        container.Children.Add(separator);
         _panels.Add((trigger, body, arrow));
         _stack.Children.Add(container);
     }

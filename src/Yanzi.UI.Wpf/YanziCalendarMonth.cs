@@ -21,13 +21,15 @@ public sealed class YanziCalendarMonth : UserControl
 
     public DateTime DisplayedMonth => _shown;
     public DateTime? SelectedDate => _selected;
+    public int VisibleWeeks => _dates.Rows;
+    public int VisibleDayCount => _dates.Children.Count;
     public event EventHandler<DateTime>? DateSelected;
 
     public YanziCalendarMonth(DateTime? month = null)
     {
         _shown = new DateTime((month ?? DateTime.Today).Year, (month ?? DateTime.Today).Month, 1);
-        Width = 278;
-        var outer = new Border { Padding = new Thickness(14), CornerRadius = new CornerRadius(9),
+        Width = 240;
+        var outer = new Border { Padding = new Thickness(8), CornerRadius = new CornerRadius(10),
             BorderThickness = new Thickness(1) };
         outer.SetResourceReference(Border.BorderBrushProperty, "Yanzi.Color.Border");
         outer.SetResourceReference(Border.BackgroundProperty, "Yanzi.Color.Card");
@@ -51,13 +53,13 @@ public sealed class YanziCalendarMonth : UserControl
         var weekday = new UniformGrid { Columns = 7, Margin = new Thickness(0, 0, 0, 6) };
         foreach (var name in new[] { "Su", "Mo", "Tu", "We", "Th", "Fr", "Sa" })
         {
-            var label = new TextBlock { Text = name, FontSize = 11,
+            var label = new TextBlock { Text = name, FontSize = 12,
                 TextAlignment = TextAlignment.Center, Margin = new Thickness(0, 0, 0, 7) };
             label.SetResourceReference(TextBlock.ForegroundProperty, "Yanzi.Color.MutedForeground");
             weekday.Children.Add(label);
         }
         layout.Children.Add(weekday);
-        _dates = new UniformGrid { Columns = 7, Rows = 6 };
+        _dates = new UniformGrid { Columns = 7, Rows = 5 };
         layout.Children.Add(_dates);
         outer.Child = layout;
         Content = outer;
@@ -94,7 +96,9 @@ public sealed class YanziCalendarMonth : UserControl
         _dates.Children.Clear();
         int shift = (int)_shown.DayOfWeek;
         DateTime first = _shown.AddDays(-shift);
-        for (int i = 0; i < 42; i++)
+        int weeks = (int)Math.Ceiling((shift + DateTime.DaysInMonth(_shown.Year, _shown.Month)) / 7d);
+        _dates.Rows = weeks;
+        for (int i = 0; i < weeks * 7; i++)
         {
             var day = first.AddDays(i).Date;
             bool inMonth = day.Month == _shown.Month;
@@ -103,16 +107,16 @@ public sealed class YanziCalendarMonth : UserControl
             var button = new Button
             {
                 Content = day.Day.ToString(CultureInfo.InvariantCulture),
-                Height = 32, MinWidth = 30,
+                Height = 28, MinWidth = 28,
                 Padding = new Thickness(0),
                 Margin = new Thickness(1, 2, 1, 2),
-                FontSize = 12, FontWeight = selected ? FontWeights.SemiBold : FontWeights.Normal,
+                FontSize = 13, FontWeight = selected ? FontWeights.SemiBold : FontWeights.Normal,
                 HorizontalContentAlignment = HorizontalAlignment.Center,
                 VerticalContentAlignment = VerticalAlignment.Center,
                 Cursor = System.Windows.Input.Cursors.Hand
             };
             YanziUi.WithStyle(button, selected
-                ? YanziUi.Styles.PillDefaultButton
+                ? YanziUi.Styles.DefaultButton
                 : YanziUi.Styles.GhostButton);
             if (!inMonth)
                 button.Opacity = .38;

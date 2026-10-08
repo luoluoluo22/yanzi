@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Data;
 
 namespace Yanzi.UI.Wpf;
 
@@ -46,7 +47,7 @@ public sealed class YanziCombobox : UserControl
             BorderThickness = new Thickness(0),
             Padding = new Thickness(11, 7, 4, 7),
             VerticalContentAlignment = VerticalAlignment.Center,
-            FontSize = 13,
+            FontSize = 14,
             MinWidth = 0
         };
         _input.SetResourceReference(Control.ForegroundProperty, "Yanzi.Color.Foreground");
@@ -76,8 +77,16 @@ public sealed class YanziCombobox : UserControl
         var arrow = YanziIcons.ChevronUp(14);
         arrow.RenderTransformOrigin = new Point(.5, .5);
         arrow.RenderTransform = new RotateTransform(180);
-        Grid.SetColumn(arrow, 1);
-        grid.Children.Add(arrow);
+        var openButton = new Button
+        {
+            Content = arrow, Width = 28, Height = 30, Padding = new Thickness(0),
+            Focusable = false, ToolTip = "Show options"
+        };
+        YanziUi.WithStyle(openButton, YanziUi.Styles.GhostButton);
+        AutomationProperties.SetName(openButton, "Open combobox options");
+        openButton.Click += (_, _) => { _input.Focus(); Open(); };
+        Grid.SetColumn(openButton, 1);
+        grid.Children.Add(openButton);
 
         _surface = new Border
         {
@@ -91,7 +100,6 @@ public sealed class YanziCombobox : UserControl
 
         _results = new ListBox
         {
-            MinWidth = 285,
             MaxHeight = 220,
             BorderThickness = new Thickness(0),
             Margin = new Thickness(4),
@@ -115,13 +123,14 @@ public sealed class YanziCombobox : UserControl
         panel.Children.Add(_empty);
         var popupFrame = new Border
         {
-            MinWidth = 285,
-            MaxWidth = 370,
             Padding = new Thickness(3),
             CornerRadius = new CornerRadius(8),
             BorderThickness = new Thickness(1),
             Child = panel
         };
+        // Keep the option surface aligned with the rendered trigger (no fixed 285px width).
+        popupFrame.SetBinding(FrameworkElement.WidthProperty,
+            new Binding(nameof(ActualWidth)) { Source = this });
         popupFrame.SetResourceReference(Border.BackgroundProperty, "Yanzi.Color.Popover");
         popupFrame.SetResourceReference(Border.BorderBrushProperty, "Yanzi.Color.Border");
         _popup = new Popup

@@ -60,10 +60,10 @@
     <sys:Double x:Key="Yanzi.Font.Small">12</sys:Double>
     <sys:Double x:Key="Yanzi.Font.Body">14</sys:Double>
     <sys:Double x:Key="Yanzi.Font.Title">18</sys:Double>
-    <CornerRadius x:Key="Yanzi.Radius.Sm">4</CornerRadius>
-    <CornerRadius x:Key="Yanzi.Radius.Md">6</CornerRadius>
-    <CornerRadius x:Key="Yanzi.Radius.Lg">8</CornerRadius>
-    <CornerRadius x:Key="Yanzi.Radius.Xl">12</CornerRadius>
-    <CornerRadius x:Key="Yanzi.Radius.Control">6</CornerRadius>
-    <CornerRadius x:Key="Yanzi.Radius.Card">10</CornerRadius>
+    <CornerRadius x:Key="Yanzi.Radius.Sm">6</CornerRadius>
+    <CornerRadius x:Key="Yanzi.Radius.Md">8</CornerRadius>
+    <CornerRadius x:Key="Yanzi.Radius.Lg">10</CornerRadius>
+    <CornerRadius x:Key="Yanzi.Radius.Xl">14</CornerRadius>
+    <CornerRadius x:Key="Yanzi.Radius.Control">8</CornerRadius>
+    <CornerRadius x:Key="Yanzi.Radius.Card">14</CornerRadius>
 </ResourceDictionary>
