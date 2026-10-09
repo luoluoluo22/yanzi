@@ -43,6 +43,14 @@
 
 生产保护也经过**故意尝试激活旧宿主**的负面测试：明确拒绝，且两款生产源码 SHA256 保持不变；新宿主尚未发布时不执行替换。
 
+## 独立干净构建发布候选
+
+- 干净 Git 工作树：`F:\Desktop\kaifa\OpenQuickHost-ui-v2-clean-check`，提交 `6fc2a6d`，无未提交文件。
+- 独立宿主与 Runtime Release 构建成功；两款 V2 动态编译、STA WPF 渲染和隔离 Runtime 18 项测试成功。
+- `tools/yanzi-ui-extension-adoption/release-candidate.json` 固定验证过的 Host、Runtime 和 UI DLL 的 SHA256。必须三者同时匹配，不能混入主开发目录其他未提交代码产物。
+- `verify-release-candidate.ps1` 提供可重复的整套哈希与运行时验收。实测使用 Windows .exe AppHost 启动隔离 Runtime 校验程序可成功；直接通过 dotnet DLL 启动可能因其进程自检机制不同而等待超时。
+- 尚**未发布和替换**正在运行的正式 Runtime，原扩展业务行为与数据不受本轮发布候选影响。
+
 ## 部署阶段与待办
 
 当前正式 `Yanzi.Runtime.exe` 为 2026-10-08 发布目录内的旧版，尚未安装本轮新的宿主编译器。**不能仅先替换扩展为 V2**，因为旧宿主不保证编译时能直接引用新公共库。

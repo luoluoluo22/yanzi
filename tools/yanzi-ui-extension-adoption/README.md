@@ -77,6 +77,18 @@
 
 量化结果：语义搜索 762 → 697 行、能力实验室 922 → 874 行，两款合计从 1,684 减到 1,571 行。详见 `docs/yanzi-ui-source-dedup-2026-10-09.md`。
 
+## 独立可发布候选（未激活）
+
+从 Git `6fc2a6d` 创建了不含其他未提交改动的独立工作树，构建出 Runtime、Host 和公共 UI DLL，三个构建产物 SHA256 记录在 `release-candidate.json`。可以用：
+
+```powershell
+.\tools\yanzi-ui-extension-adoption\verify-release-candidate.ps1
+```
+
+复测会验证三份产物的**准确 SHA256**、两款扩展真实 Roslyn 动态编译、STA WPF 样式解析和 18 项 Runtime 隔离生命周期检查。复测曾因通过 `dotnet <verifier.dll>` 启动测试而超时；修复为运行验证程序自身的 Windows `.exe` 后，整条链路已通过。
+
+正式小程序升级还需要先让正式 Runtime 使用经过验证的候选 Host + Runtime + UI DLL 三件套，安装脚本也会再次核对正在运行的进程哈希。此时 `install-v2.ps1` 只暂存源码，不主动部署或重启正式 Runtime。
+
 ## 后续限制
 
 本轮改的是两套 WPF 窗口的主要标准控件，特殊结果列表及任务操作面板没有做全量像素级评估。项目的扩展编译器未来可以统一提供一个安全的共享 UI 加载服务，避免每款小程序都维护几行反射桥接。
