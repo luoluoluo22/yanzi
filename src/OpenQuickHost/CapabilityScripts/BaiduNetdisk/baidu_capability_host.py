@@ -12,7 +12,7 @@ def dispatch(value: dict):
     op=value.get("operation")
     if not isinstance(op,str):
         raise ValueError("operation must be specified")
-    if op=="downloadExact":
+    if op in ("downloadExact", "downloadByName"):
         if value.get("confirm") is not True:
             raise PermissionError("Baidu desktop download requires confirm=true")
         from baidu_desktop_download import download_exact

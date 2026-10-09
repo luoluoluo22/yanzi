@@ -172,6 +172,48 @@ class BaiduTransferIndex:
             last_changed_at=int(row["status_changetime"] or 0),
         )
 
+    def lookup_recent_download_by_filename(
+        self, filename: str, *, after_seconds: int
+    ) -> Optional[BaiduTransferRecord]:
+        """Discover the cloud path AFTER one filename-targeted desktop download.
+
+        Strict exact basename match; never guess from a local download directory.
+        If multiple different matching cloud paths completed in the same
+        session window, fail closed rather than selecting arbitrarily.
+        """
+        if not isinstance(filename,str) or not filename or "/" in filename or "\\" in filename:
+            raise ValueError("Must provide a filename, not a path")
+        if not isinstance(after_seconds,int) or after_seconds<=0:
+            raise ValueError("Must provide positive current transfer timestamp")
+        conn=self._db("download")
+        try:
+            rows=conn.execute(
+                "SELECT local_path,server_path,isdir,file_size,op_starttime,"
+                "op_endtime,error_code FROM download_history_file "
+                "WHERE isdir=0 AND op_starttime>=? "
+                "ORDER BY op_starttime DESC,op_endtime DESC LIMIT 80",
+                (after_seconds,),
+            ).fetchall()
+        finally:
+            conn.close()
+        matches=[r for r in rows if str(r["server_path"] or "").rsplit("/",1)[-1]==filename]
+        if not matches:
+            return None
+        paths={str(row["server_path"]) for row in matches}
+        if len(paths)!=1:
+            raise BaiduTransferIndexError(
+                "Multiple recent downloads have the same filename in different cloud folders"
+            )
+        row=matches[0]
+        return BaiduTransferRecord(
+            kind="download",local_path=str(row["local_path"] or ""),
+            server_path=str(row["server_path"] or ""),
+            file_size=int(row["file_size"] or 0),
+            error_code=int(row["error_code"]) if row["error_code"] is not None else -1,
+            started_at=int(row["op_starttime"] or 0),
+            finished_at=int(row["op_endtime"] or 0),
+        )
+
     def lookup_download_for_cloud_path(
         self, cloud_path: str, *, after_seconds: int = 0
     ) -> Optional[BaiduTransferRecord]:

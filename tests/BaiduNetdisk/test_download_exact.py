@@ -62,6 +62,25 @@ class BaiduDownloadSafetyTests(unittest.TestCase):
                 download_exact(**self.base,
                                copy_to_folder=Path(folder)/"missing")
 
+    def test_name_only_client_history_discovers_cloud_path(self):
+        source=Path(r"F:\Desktop\cloud-drive-eval-20261009\AI-baidu-verified-upload-20261009-174900.txt")
+        from baidu_transfer_index import sha256_file
+        idx=BaiduTransferIndex()
+        latest=idx.lookup_recent_download_by_filename(source.name,after_seconds=1)
+        self.assertIsNotNone(latest)
+        self.assertEqual(latest.server_path,"/"+source.name)
+        self.assertEqual(latest.file_size,55)
+        self.assertTrue(latest.completed)
+        self.assertEqual(sha256_file(latest.local_path),sha256_file(source))
+        self.assertIsNone(idx.lookup_recent_download_by_filename(
+            source.name,after_seconds=latest.started_at+3600))
+
+    def test_name_only_bridge_rejects_without_explicit_confirmation(self):
+        from baidu_capability_host import dispatch
+        with self.assertRaises(PermissionError):
+            dispatch({"operation":"downloadByName",
+                      "filename":"any-test.txt","confirm":False})
+
     def test_recent_completed_download_requires_correct_cloud_path_and_time(self):
         source=Path(r"F:\Desktop\cloud-drive-eval-20261009\AI-baidu-verified-upload-20261009-174820.txt")
         from baidu_transfer_index import sha256_file

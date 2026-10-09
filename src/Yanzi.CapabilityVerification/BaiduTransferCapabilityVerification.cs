@@ -20,7 +20,8 @@ internal static class BaiduTransferCapabilityVerification
             "baiduNetdisk.roundtripVerify",
             "baiduNetdisk.uploadVerified",
             "baiduNetdisk.searchExactVisible",
-            "baiduNetdisk.downloadExactVerified"
+            "baiduNetdisk.downloadExactVerified",
+            "baiduNetdisk.downloadByName"
         };
         foreach (var name in names)
         {
@@ -48,6 +49,11 @@ internal static class BaiduTransferCapabilityVerification
               && downloadDef.Permissions.Contains("file.write")
               && downloadDef.Permissions.Contains("network.read"),
               "download permission and explicit confirmation");
+        Check(YanziCapabilityRegistry.TryGet(names[5], out var byNameDef)
+              && byNameDef!.RequiresConfirmation
+              && byNameDef.RiskLevel == "medium"
+              && byNameDef.Permissions.Contains("file.write"),
+              "filename-only download requires confirmation");
 
         var caller = new YanziCapabilityCaller(
             "baidu-verification", ["application.read", "file.read"]);
@@ -127,6 +133,20 @@ internal static class BaiduTransferCapabilityVerification
                 new YanziCapabilityCaller("baidu-download-deny", [
                     "application.run", "file.read", "file.write", "network.read"]));
             throw new InvalidOperationException("Unconfirmed download was wrongly authorized");
+        }
+        catch (Exception ex) when (ex is ArgumentException or UnauthorizedAccessException)
+        {
+            checks++;
+        }
+
+        try
+        {
+            await YanziCapabilityRegistry.InvokeAsync(names[5],
+                new { filename = "AI-baidu-verified-upload-20261009-174900.txt",
+                      confirm = false },
+                new YanziCapabilityCaller("baidu-name-only-deny", [
+                    "application.run", "file.read", "file.write", "network.read"]));
+            throw new InvalidOperationException("Unconfirmed filename download was wrongly authorized");
         }
         catch (Exception ex) when (ex is ArgumentException or UnauthorizedAccessException)
         {

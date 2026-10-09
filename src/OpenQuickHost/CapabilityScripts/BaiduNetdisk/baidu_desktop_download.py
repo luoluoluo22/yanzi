@@ -30,57 +30,111 @@ class BaiduDownloadError(RuntimeError):
     pass
 
 
+def _size_value(text: str) -> tuple[float, float]:
+    m=re.fullmatch(r"(\d+(?:\.\d+)?)\s*(B|KB|MB|GB|TB)",text.strip().upper())
+    if not m:
+        raise BaiduDownloadError("Unrecognized Baidu file size display")
+    unit={"B":1,"KB":1024,"MB":1024**2,"GB":1024**3,"TB":1024**4}[m.group(2)]
+    return float(m.group(1))*unit, max(.6*unit,1.0)
+
+
 def _single_selected_and_button(hwnd: int, filename: str, expected_size: int | None):
-    """Validate exact selected count and only one in-app download action."""
-    found_heading,_,rows=_semantic_result_snapshot(hwnd,filename)
-    if not found_heading or len(set(rows))!=1:
-        raise BaiduDownloadError("Exact result changed or became ambiguous")
+    """Return one verified button plus UI size estimate.
+
+    Supports either a textual download button or Baidu 8.8.3's compact
+    toolbar: share button plus an icon-only download button. Icon-only
+    controls MUST match the fixed verified arrow template as well as
+    relative toolbar geometry; otherwise refuse without clicking.
+    """
+    heading,_,rows=_semantic_result_snapshot(hwnd,filename)
+    unique=sorted(set(rows))
+    if not heading or len(unique)!=1:
+        raise BaiduDownloadError("Exact search result changed or became ambiguous")
+    row=unique[0]
     root=u.ControlFromHandle(hwnd)
-    queue=[(root,0)]
+    q=[(root,0)]
     selected=[]
-    download_buttons=[]
-    while queue:
-        item,depth=queue.pop(0)
+    labeled=[]
+    shares=[]
+    unnamed=[]
+    row_sizes=[]
+    bounds=win32gui.GetWindowRect(hwnd)
+    while q:
+        c,depth=q.pop(0)
         try:
-            title=item.Name or ""
-            if item.ControlTypeName=="TextControl" and re.fullmatch(
-                    r"已选中\s*1\s*/\s*\d+\s*个",title):
-                selected.append(item)
-            if item.ControlTypeName=="ButtonControl" and re.fullmatch(
-                    r"下载\(([^)]+)\)",title):
-                box=item.BoundingRectangle
-                left,top,right,bottom=win32gui.GetWindowRect(hwnd)
-                if left <= box.left < box.right <= right and top <= box.top < box.bottom <= bottom:
-                    download_buttons.append((item,title,(box.left,box.top,box.right,box.bottom)))
+            title=c.Name or ""
+            role=c.ControlTypeName
+            box=c.BoundingRectangle
+            rect=(box.left,box.top,box.right,box.bottom)
+            visible=(bounds[0]<=box.left<box.right<=bounds[2] and
+                     bounds[1]<=box.top<box.bottom<=bounds[3])
+            if role=="TextControl":
+                if re.fullmatch(r"已选中\s*1\s*/\s*\d+\s*个",title):
+                    selected.append(c)
+                if row[1]<=box.top and box.bottom<=row[3]:
+                    if re.fullmatch(r"\d+(?:\.\d+)?\s*(?:B|KB|MB|GB|TB)",title,re.I):
+                        row_sizes.append(title)
+            if role=="ButtonControl" and visible:
+                if re.fullmatch(r"下载\([^)]+\)",title):
+                    labeled.append((c,title,rect))
+                elif title=="分享":
+                    shares.append((c,rect))
+                elif title=="":
+                    unnamed.append((c,rect))
             if depth<15:
-                queue.extend((child,depth+1) for child in item.GetChildren()[:90])
+                q.extend((child,depth+1) for child in c.GetChildren()[:90])
         except Exception:
             continue
-    if len(selected)!=1 or len(download_buttons)!=1:
-        raise BaiduDownloadError(
-            f"Expected one selected file and one download button, got {len(selected)}/{len(download_buttons)}"
-        )
-    item,label,bounds=download_buttons[0]
-    if expected_size is not None:
-        match=re.search(r"下载\(([^)]+)\)",label)
-        amount=match.group(1).strip().upper() if match else ""
-        m=re.fullmatch(r"(\d+(?:\.\d+)?)\s*(B|KB|MB|GB|TB)",amount)
-        if not m:
-            raise BaiduDownloadError("Unknown Baidu download button size format")
-        scale={"B":1,"KB":1024,"MB":1024**2,"GB":1024**3,"TB":1024**4}[m.group(2)]
-        measured=float(m.group(1))*scale
-        # UI rounds to one decimal, so validate within display precision.
-        tolerance=max(0.6*scale,1.0)
-        if abs(measured-expected_size)>tolerance:
-            raise BaiduDownloadError("Selected Baidu file size differs from expected source")
-    return item,bounds
+    if len(selected)!=1:
+        raise BaiduDownloadError("Exactly one file must be selected before download")
+    if len(row_sizes)!=1:
+        raise BaiduDownloadError("Selected search row lacks one unambiguous file size")
+    ui_bytes,ui_tolerance=_size_value(row_sizes[0])
+    if expected_size is not None and abs(ui_bytes-expected_size)>ui_tolerance:
+        raise BaiduDownloadError("Search result size differs from trusted source")
+
+    if len(labeled)==1:
+        chosen,label,rect=labeled[0]
+        display=_size_value(re.search(r"下载\(([^)]+)\)",label).group(1))
+        if abs(display[0]-ui_bytes)>max(display[1],ui_tolerance):
+            raise BaiduDownloadError("Download button size conflicts with selected row")
+        return chosen,rect,ui_bytes,ui_tolerance
+
+    if labeled or len(shares)!=1:
+        raise BaiduDownloadError("No unambiguous named or compact download control")
+    share=shares[0][1]
+    # In verified version the download arrow is the FIRST 32px unnamed button
+    # immediately to the right of the share button on the SAME toolbar.
+    possible=[(item,rect) for item,rect in unnamed
+              if rect[0]==share[2] and rect[1]==share[1] and
+              rect[3]==share[3] and 28<=rect[2]-rect[0]<=36]
+    if len(possible)!=1:
+        raise BaiduDownloadError("Compact download toolbar structure unknown")
+    button,rect=possible[0]
+    import cv2,numpy as np
+    from PIL import ImageGrab
+    resource=Path(__file__).with_name("baidu-download-icon.png")
+    template=cv2.imread(str(resource),cv2.IMREAD_GRAYSCALE)
+    if template is None or template.shape not in ((17,16),(16,17)):
+        raise BaiduDownloadError("Verified download icon resource missing")
+    # Screenshot only the candidate button; never infer a download command from
+    # location alone. Visual confidence is version-specific and fail-closed.
+    capture=ImageGrab.grab(bbox=rect).convert("L")
+    pixels=np.asarray(capture)
+    if pixels.shape[0]<template.shape[0] or pixels.shape[1]<template.shape[1]:
+        raise BaiduDownloadError("Compact download button too small")
+    correlation=cv2.matchTemplate(pixels,template,cv2.TM_CCOEFF_NORMED)
+    _,confidence,_,_=cv2.minMaxLoc(correlation)
+    if confidence<.94:
+        raise BaiduDownloadError(f"Compact download icon confidence too low: {confidence:.3f}")
+    return button,rect,ui_bytes,ui_tolerance
 
 
 def download_exact(
     filename: str,
     *,
-    expected_cloud_path: str,
-    expected_size: int,
+    expected_cloud_path: str | None = None,
+    expected_size: int | None = None,
     expected_sha256: str | None = None,
     copy_to_folder: str | Path | None = None,
     timeout_seconds: int = 90,
@@ -92,12 +146,17 @@ def download_exact(
     overwriting any target. The original Baidu download remains untouched.
     """
     name=validate_filename(filename)
-    if not isinstance(expected_cloud_path,str) or not expected_cloud_path.startswith("/"):
-        raise ValueError("A trusted absolute cloud path is required")
-    if Path(expected_cloud_path.replace("/", "\\")).name!=name:
-        raise ValueError("Trusted cloud path does not match requested filename")
-    if not isinstance(expected_size,int) or expected_size<0 or expected_size>2*1024**3:
-        raise ValueError("Expected byte size must be between 0 and 2 GiB")
+    if (expected_cloud_path is None) != (expected_size is None):
+        raise ValueError("Trusted path and size must be supplied together, or both omitted")
+    if expected_cloud_path is not None:
+        if not isinstance(expected_cloud_path,str) or not expected_cloud_path.startswith("/"):
+            raise ValueError("Expected absolute trusted cloud path")
+        if Path(expected_cloud_path.replace("/", "\\")).name!=name:
+            raise ValueError("Trusted cloud path filename mismatch")
+    if expected_size is not None and (
+        not isinstance(expected_size,int) or expected_size<0 or expected_size>2*1024**3
+    ):
+        raise ValueError("Expected size must be 0..2GiB")
     if not isinstance(timeout_seconds,int) or not 15<=timeout_seconds<=300:
         raise ValueError("Timeout must be 15..300 seconds")
     if expected_sha256 is not None and not re.fullmatch("[a-fA-F0-9]{64}",expected_sha256):
@@ -132,7 +191,7 @@ def download_exact(
         mouse.position=position
         mouse.click(Button.left)
         sleep(.22)
-        button,bounds=_single_selected_and_button(hwnd,name,expected_size)
+        button,bounds,ui_bytes,ui_tolerance=_single_selected_and_button(hwnd,name,expected_size)
         cx=(bounds[0]+bounds[2])//2
         cy=(bounds[1]+bounds[3])//2
         if win32gui.GetAncestor(win32gui.WindowFromPoint((cx,cy)),win32con.GA_ROOT)!=hwnd:
@@ -149,20 +208,29 @@ def download_exact(
 
     deadline=monotonic()+timeout_seconds
     while monotonic()<deadline:
-        row=index.lookup_download_for_cloud_path(
-            expected_cloud_path,after_seconds=submitted_at
-        )
+        if expected_cloud_path is not None:
+            row=index.lookup_download_for_cloud_path(
+                expected_cloud_path,after_seconds=submitted_at
+            )
+        else:
+            row=index.lookup_recent_download_by_filename(
+                name,after_seconds=submitted_at
+            )
         if row:
             if row.error_code!=0 and row.finished_at>=row.started_at>0:
                 return {
                     "status":"client_failed","downloaded":False,
-                    "errorCode":row.error_code,"cloudPath":expected_cloud_path,
+                    "errorCode":row.error_code,"cloudPath":row.server_path,
                     "clientHistoryVerified":True,
                 }
             if row.completed:
                 target=Path(row.local_path)
-                if not target.is_file() or target.stat().st_size!=expected_size:
+                if not target.is_file() or target.stat().st_size!=row.file_size:
                     raise BaiduDownloadError("Completed client record but file size or path mismatches")
+                if abs(row.file_size-ui_bytes)>ui_tolerance:
+                    raise BaiduDownloadError("Client download differs from selected UI size")
+                if expected_size is not None and row.file_size!=expected_size:
+                    raise BaiduDownloadError("Client download differs from trusted size")
                 if target.name!=name:
                     raise BaiduDownloadError("Baidu changed downloaded file name; ambiguous target")
                 digest=sha256_file(target)
@@ -184,13 +252,16 @@ def download_exact(
                     "clientHistoryVerified":True,
                     "cloudPath":row.server_path,
                     "filename":name,
-                    "size":expected_size,
+                    "size":row.file_size,
                     "sha256":digest,
+                    "nameOnlySelection":expected_cloud_path is None,
+                    "trustedPathValidated":expected_cloud_path is not None,
                     "referenceSha256Verified":bool(expected_sha256),
                     "downloadPath":str(target),
                     "outputPath":str(final),
                     "source":"baidu-official-desktop-client",
                     "liveCloudFidVerified":False,
+                    "globallyUniqueFilenameVerified":False,
                 }
         sleep(.65)
     return {

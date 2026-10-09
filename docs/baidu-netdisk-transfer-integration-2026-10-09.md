@@ -130,3 +130,20 @@ F:\Desktop\cloud-drive-eval-20261009\yanzi-baidu-verifier\Yanzi.CapabilityVerifi
 源文件：`src/OpenQuickHost/CapabilityScripts/BaiduNetdisk/baidu_desktop_download.py`；`baidu_transfer_index.py` 新增 `lookup_download_for_cloud_path`；`baidu_capability_host.py` 新增 `downloadExact` 受控操作；`YanziBaiduTransferCapabilityProvider.cs` 注册权限 `application.run/file.read/file.write/network.read`、`RequiresConfirmation=true`、`RiskLevel=medium`，并添加下载并发互斥与最长 300 秒等待；`tests/BaiduNetdisk/test_download_exact.py` 增加拒绝非法输入与历史回环验证。
 
 最终回归：27 项 Python 自动测试通过，35 项燕子宿主级检查通过（含缺少确认时拒绝下载），编译零错误。正式部署状态必须以当前 `yanzi_catalog` 为准，不能将“源码编译成功”误称“正在运行宿主已激活”。
+
+
+## 2026-10-09：仅凭文件名自动下载模式（真实闭环通过）
+
+为降低用户操作成本，新增第二种自动下载能力 `baiduNetdisk.downloadByName`：最小输入 `{"filename":"准确文件名","confirm":true}`，可选 `expectedSha256`（推荐）、`copyToFolder`（必须预先存在，目标不能同名覆盖）、`timeoutSeconds`（15–300）。
+
+与 `baiduNetdisk.downloadExactVerified` 不同，新的按名模式**不要求调用者提前知道云端完整路径或文件大小**。工作方式：严格 UIA 搜索并选中唯一可见完整文件名，核对页面“已选中1/N个”和目标行显示的文件大小；支持两种下载工具栏形态：完整文本按钮 `下载(大小)`，以及百度 8.8.3.101 的紧凑图标按钮。后者须同时满足分享按钮邻接布局、按钮尺寸、下载箭头模板匹配度 ≥0.94，否则不点击；模板文件 `baidu-download-icon.png` 随正式宿主发布。客户端下载后，从本次新增的只读 `download_history_file` 记录按文件名与提交时间查找**唯一云端路径**，核对真实下载文件大小和 UI 预期值；如果有调用者独立提供的 SHA-256，进一步与原始值比对。返回 `nameOnlySelection=true`、`trustedPathValidated=false`、`globallyUniqueFilenameVerified=false`、`liveCloudFidVerified=false`，不会声称已经证明全网盘没有隐藏的同名文件。
+
+真实测试：
+- 文件：`AI-baidu-verified-upload-20261009-174900.txt`，55 字节。该文件曾在上传客户端记录中出现错误 `110000`，但实际存在于搜索结果。
+- 只提供 `filename`、`confirm=true` 及用于独立比对的原始 SHA-256，不提供 `expectedCloudPath` 或 `expectedSize`。
+- 首轮发现百度搜索页窄工具栏使用无障碍 Name 为空的下载按钮，程序正确拒绝点击；没有生成文件。
+- 加入版本受限的下载箭头模板识别后，重新调用成功：自动搜索、精确选中、下载至 `F:\Backup\Downloads`，记录 `client_completed`，反查 `cloudPath=/AI-baidu-verified-upload-20261009-174900.txt`，大小 55 字节，SHA-256 与源文件一致，约 13 秒。只使用百度官方桌面客户端。
+- 保留原来需要可信云端路径和大小的 `downloadExactVerified` 严格模式。
+- 每项实际下载都要求 `confirm=true`；同一个宿主内部的下载使用并发锁，目标本地复制使用独占写入防覆盖。搜索结果有多个同名可见条目、按钮图标不匹配或客户端任务有多个不同云端路径时均拒绝。
+
+代码：`baidu_desktop_download.py`、`baidu_transfer_index.py`（新增 `lookup_recent_download_by_filename`）、`baidu_capability_host.py`、`YanziBaiduTransferCapabilityProvider.cs`、`OpenQuickHost.csproj`（图标打包）、`baidu-download-icon.png`、`tests/BaiduNetdisk/test_download_exact.py`。最终自动测试 **29/29**，宿主验收 **39/39**，Debug 编译通过。

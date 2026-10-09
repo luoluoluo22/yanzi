@@ -127,6 +127,33 @@ public static class YanziBaiduTransferCapabilityProvider
 
         yield return new YanziCapabilityProviderDefinition
         {
+            Name = "baiduNetdisk.downloadByName",
+            Description = "仅凭精确文件名在官方百度客户端搜索并下载单个可见匹配文件，返回本次客户端历史的云端路径/大小/SHA-256；云端全局唯一性不保证",
+            Category = "cloud-drive",
+            Version = "0.1.0",
+            Permissions = ["application.run", "file.read", "file.write", "network.read"],
+            RiskLevel = "medium",
+            RequiresConfirmation = true,
+            InputSchema = YanziCapabilitySchema.Parse("""
+            {
+              "type":"object",
+              "properties":{
+                "filename":{"type":"string","minLength":3},
+                "expectedSha256":{"type":"string","minLength":64},
+                "copyToFolder":{"type":"string","minLength":1},
+                "timeoutSeconds":{"type":"integer","minimum":15,"maximum":300},
+                "confirm":{"type":"boolean","enum":[true]}
+              },
+              "required":["filename","confirm"],
+              "additionalProperties":false
+            }
+            """),
+            OutputSchema = ObjectSchema,
+            Handler = input => DownloadByNameAsync((JsonElement)input!)
+        };
+
+        yield return new YanziCapabilityProviderDefinition
+        {
             Name = "baiduNetdisk.downloadExactVerified",
             Description = "百度官方客户端全网盘精确搜索、选中单一文件并下载，凭本次下载历史云端路径/大小和可选可信 SHA-256 校验；显式确认",
             Category = "cloud-drive",
@@ -178,6 +205,38 @@ public static class YanziBaiduTransferCapabilityProvider
             OutputSchema = ObjectSchema,
             Handler = payload => UploadVerifiedAsync((JsonElement)payload!)
         };
+    }
+
+    private static async Task<object?> DownloadByNameAsync(JsonElement input)
+    {
+        if (!input.TryGetProperty("confirm", out var approved)
+            || approved.ValueKind != JsonValueKind.True)
+            throw new UnauthorizedAccessException("百度按文件名下载需要明确 confirm=true");
+        var filename = input.GetProperty("filename").GetString();
+        if (string.IsNullOrWhiteSpace(filename))
+            throw new ArgumentException("必须提供准确的文件名");
+        var expectedSha256 = input.TryGetProperty("expectedSha256", out var hash)
+            && hash.ValueKind == JsonValueKind.String ? hash.GetString() : null;
+        var copyToFolder = input.TryGetProperty("copyToFolder", out var dest)
+            && dest.ValueKind == JsonValueKind.String ? dest.GetString() : null;
+        var timeout = input.TryGetProperty("timeoutSeconds", out var time)
+            && time.TryGetInt32(out var n) ? n : 90;
+        if (timeout is < 15 or > 300)
+            throw new ArgumentOutOfRangeException(nameof(timeout));
+        if (!await DownloadGate.WaitAsync(0))
+            throw new InvalidOperationException("百度下载任务正在执行，拒绝并发");
+        try
+        {
+            return await InvokeLocalBridgeAsync(new
+            {
+                operation = "downloadByName", filename, expectedSha256,
+                copyToFolder, timeoutSeconds = timeout, confirm = true
+            }, timeout + 25);
+        }
+        finally
+        {
+            DownloadGate.Release();
+        }
     }
 
     private static async Task<object?> DownloadVerifiedAsync(JsonElement input)
