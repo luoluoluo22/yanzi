@@ -54,6 +54,9 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
+    <!-- Verified Quark transfer adapter scripts bundled into Yanzi host releases. -->
+    <None Include="CapabilityScripts\QuarkDrive\*.py" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="CapabilityScripts\QuarkDrive\*.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Resource Include="Assets\Icons\*.svg" />
     <Resource Include="Assets\mdi-icons.json" />
     <Resource Include="Assets\yanzi_mascot.png" />
