@@ -153,6 +153,25 @@ def dispatch(req: dict):
             "client": "Quark Desktop",
         }
 
+    if op == "globalSearchDownloadVerified":
+        _require_confirmed(req)
+        from quark_global_search import download_verified_by_cloud_search
+        source = Path(_string(req, "originalLocalFile")).resolve(strict=True)
+        target_folder = Path(_string(req, "targetFolder")).resolve(strict=True)
+        if not source.is_file() or not target_folder.is_dir():
+            raise ValueError("Source must be a file and destination an existing directory")
+        if (target_folder / source.name).exists():
+            raise FileExistsError("Destination already contains this filename")
+        if source.stat().st_size > 2 * 1024 * 1024 * 1024:
+            raise ValueError("File exceeds experimental adapter's 2GiB limit")
+        # Search and transfer are performed by the logged-in desktop app.
+        # Completion is verified against exact original source SHA and
+        # Quark's read-only upload/download task fid records.
+        return download_verified_by_cloud_search(
+            source, target_folder,
+            timeout=float(req.get("timeoutSeconds", 90)),
+        )
+
     raise ValueError(f"Unsupported Quark operation: {op}")
 
 

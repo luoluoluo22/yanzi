@@ -72,6 +72,19 @@ public static class YanziQuarkTransferCapabilityProvider
                 timeoutSeconds = Timeout(input)
             }, Timeout(input) + 20),
             write: true);
+
+        yield return Definition("quark.cloudDrive.globalSearchDownloadVerified",
+            "通过夸克桌面客户端搜索整个网盘，按可信文件名定位并下载，核对原上传 fid、下载 FINISH 和 SHA-256；要求确认",
+            """{"type":"object","properties":{"originalLocalFile":{"type":"string","minLength":1},"targetFolder":{"type":"string","minLength":1},"confirm":{"type":"boolean","enum":[true]},"timeoutSeconds":{"type":"integer","minimum":10,"maximum":240}},"required":["originalLocalFile","targetFolder","confirm"],"additionalProperties":false}""",
+            ["application.run", "file.read", "file.write", "network.read"],
+            input => RunAsync("globalSearchDownloadVerified", new
+            {
+                originalLocalFile = Required(input, "originalLocalFile"),
+                targetFolder = Required(input, "targetFolder"),
+                confirm = Confirmed(input),
+                timeoutSeconds = Timeout(input)
+            }, Timeout(input) + 20),
+            write: true);
     }
 
     private static YanziCapabilityProviderDefinition Definition(

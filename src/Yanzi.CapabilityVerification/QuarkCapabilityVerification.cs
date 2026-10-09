@@ -20,13 +20,14 @@ internal static class QuarkCapabilityVerification
             "quark.cloudDrive.cachedLookup",
             "quark.cloudDrive.cachedFolder",
             "quark.cloudDrive.uploadVerified",
-            "quark.cloudDrive.downloadVerified"
+            "quark.cloudDrive.downloadVerified",
+            "quark.cloudDrive.globalSearchDownloadVerified"
         };
         foreach (var name in names)
             Check(YanziCapabilityRegistry.TryGet(name, out var definition)
                   && definition?.ProviderExtensionId == "yanzi-host", "provider exists: " + name);
 
-        foreach (var name in new[] { names[4], names[5] })
+        foreach (var name in new[] { names[4], names[5], names[6] })
             Check(YanziCapabilityRegistry.TryGet(name, out var def)
                   && def!.RequiresConfirmation
                   && def.RiskLevel == "medium", "mutation confirmation metadata: " + name);
@@ -73,6 +74,22 @@ internal static class QuarkCapabilityVerification
                 new YanziCapabilityCaller("write-fixture", [
                     "application.run", "file.read", "network.write"]));
             throw new Exception("upload without confirm unexpectedly authorized");
+        }
+        catch (Exception ex) when (ex is ArgumentException or UnauthorizedAccessException)
+        {
+            checks++;
+        }
+
+        try
+        {
+            await YanziCapabilityRegistry.InvokeAsync(names[6], new
+            {
+                originalLocalFile = source,
+                targetFolder = @"F:\\Desktop\\cloud-drive-eval-20261009",
+                confirm = false
+            }, new YanziCapabilityCaller("write-fixture", [
+                "application.run", "file.read", "file.write", "network.read"]));
+            throw new Exception("global search download without confirm unexpectedly authorized");
         }
         catch (Exception ex) when (ex is ArgumentException or UnauthorizedAccessException)
         {

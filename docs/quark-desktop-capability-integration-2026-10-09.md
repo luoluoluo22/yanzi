@@ -91,3 +91,46 @@ F:\Desktop\cloud-drive-eval-20261009\yanzi-verification\Yanzi.CapabilityVerifica
 - 现阶段仅分析本机已安装客户端打包源码，没有获取登录 Cookie 或调用未知私有 API，也没有建立独立程序的授权 RPC。
 
 下一轮应完成正式宿主的安全激活和真实 Agent API 查询，然后探索通过客户端内置搜索页面按名称取得 `fid`。搜索结果必须实时验证文件身份，不能把历史缓存误判为云端最新数据。
+
+
+## 2026-10-09 下午：第七项能力——跨文件夹全网盘搜索下载
+
+从当前 Quark 7.3.5.1009 的源码与 GUI 实验确定：
+- 内部列表搜索由 `searchList` 与 `GET /1/clouddrive/file/search` 承载，但本集成**不直接调用私有云端接口**。
+- Quark `Ctrl+F` 面板有三类范围：“搜索网盘”“搜索当前文件夹”“搜索全网”。选择第一个后，必须点击随后出现的“搜索网盘文件”结果建议，才能进入客户端自己的“相关搜索结果”页面。
+- Windows 中文输入法可能截获自动键入的数字并打开候选面板，导致错误搜索。新增 `quark_unicode_input.py`，通过 Windows `SendInput` 的 Unicode 键盘事件完整输入文件名，不修改用户剪贴板。
+- 结果采用**模糊搜索**，即使输入完整文件名，可能返回大量候选；按 `TextPattern` 精确完整行匹配，拒绝同名不确定性，并用下载后的 Quark 原生 `download_task` 中 `fid/FINISH` 以及本地 SHA-256 核对真实身份。
+- 文件搜索结果行经验证后出现操作按钮；新增仅包含图标的 `quark-global-search-download-control.png` 视觉模板，程序限制在目标行附近匹配，阈值 `0.93`，阻止图标位置改变后的盲点点击。
+- 完成两次全网盘真实下载：根目录的 `AI-drive-io-roundtrip-20261009.txt`（93B）和此前子文件夹中的 `AI-quark-adapter-smoke-20261009.txt`（100B）。均无需预先进入对应目录；完整文件名、任务 FINISH、32 位 fid 与原始文件 SHA-256 一致。
+- 第二次下载直接通过**随燕子构建打包**的 `quark_capability_host.py` 使用 `globalSearchDownloadVerified` 操作完成，返回 `remoteConfirmed=true`。无 Cookie/Token 提取。
+- 已实现 `quark_global_search.py`，强制要求可信的本地已完成上传记录；找不到唯一精确文件、窗口不符合已验证布局、下载图标不匹配、下载目标已存在、完成状态/fid/hash 不一致时均拒绝报告成功。
+
+本次新增能力的正式名称：
+
+`quark.cloudDrive.globalSearchDownloadVerified`
+
+输入格式：
+
+```json
+{
+  "originalLocalFile": "F:\\Desktop\\cloud-drive-eval-20261009\\AI-drive-io-roundtrip-20261009.txt",
+  "targetFolder": "F:\\Desktop\\cloud-drive-eval-20261009\\downloaded_global",
+  "confirm": true,
+  "timeoutSeconds": 90
+}
+```
+
+这个操作在统一燕子 Provider 中声明 `requiresConfirmation=true`，调用桥接层也独立检查 `confirm=true`。核心输出包含 `remoteConfirmed`、`fid`、`sha256`、`targetPath`、`searchScope=all-cloud-files`。
+
+### 测试和版本边界
+
+- 独立适配器：共 36 项回归测试通过，其中 6 项是全网盘模块的拒绝操作测试。
+- 新增随源码提供的离线测试：`tests/QuarkDrive/test_global_search_safety.py`，5/5 PASS。无需网盘账户，可测试文件缺失、目标目录缺失、覆盖阻止、超时参数、未验证上传拒绝。
+- 燕子宿主级注册/权限/真实只读状态检查：**22/22 PASS**，包含第七项注册与确认声明。
+- 另有两次真实跨目录文件下载回归：93B/100B，均完成 fid 与 SHA-256 校验。
+- 旧的六项 `quark.cloudDrive.*` 已通过**当前正在运行燕子**的 `yanzi_catalog` 确认实际注册且 `available=true`。新版宿主在 2026-10-09 14:12 已由其他任务更新，包含之前六项；**第七项目前仅完成源码集成、隔离宿主验收及真实桥接验收，未在当前运行的宿主激活**。
+- 项目工作区包含其他 Agent 的大量未提交修改，不应把未验证的整套工作区一并提交或盲目覆盖正在运行的燕子。发布时需沿用版本化 Shell、任务健康核查和回滚指针。
+
+### 注意
+
+该能力依赖夸克桌面客户端的当前已登录窗口，不是无窗口 RPC。仅支持“用户能提供原始本地文件且有可核对的本机上传历史”的文件；本机没有上传记录的任意私人文件不允许凭模糊名称自动下载。非标准窗口大小和 UI 变化会触发拒绝。跨平台/跨电脑必须重新验收客户端版本及依赖。
