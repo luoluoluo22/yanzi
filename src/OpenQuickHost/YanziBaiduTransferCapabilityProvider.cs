@@ -12,6 +12,7 @@ public static class YanziBaiduTransferCapabilityProvider
 {
     private static readonly JsonElement ObjectSchema =
         YanziCapabilitySchema.Parse("""{"type":"object"}""");
+    private static readonly SemaphoreSlim UploadGate = new(1, 1);
 
     public static IEnumerable<YanziCapabilityProviderDefinition> Create()
     {
@@ -86,6 +87,115 @@ public static class YanziBaiduTransferCapabilityProvider
                 });
             }
         };
+
+        yield return new YanziCapabilityProviderDefinition
+        {
+            Name = "baiduNetdisk.uploadVerified",
+            Description = "调用百度网盘官方上传入口并等待本机客户端的成功完成记录；仅客户端历史验证，非实时云端 API 校验",
+            Category = "cloud-drive",
+            Version = "0.1.0",
+            Permissions = ["application.run", "application.read", "file.read", "network.write"],
+            RiskLevel = "medium",
+            RequiresConfirmation = true,
+            InputSchema = YanziCapabilitySchema.Parse("""
+            {
+              "type":"object",
+              "properties":{
+                "path":{"type":"string","minLength":1},
+                "confirm":{"type":"boolean","enum":[true]},
+                "timeoutSeconds":{"type":"integer","minimum":10,"maximum":240}
+              },
+              "required":["path","confirm"],
+              "additionalProperties":false
+            }
+            """),
+            OutputSchema = ObjectSchema,
+            Handler = payload => UploadVerifiedAsync((JsonElement)payload!)
+        };
+    }
+
+    private static async Task<object?> UploadVerifiedAsync(JsonElement input)
+    {
+        if (!input.TryGetProperty("confirm", out var confirmation)
+            || confirmation.ValueKind != JsonValueKind.True)
+            throw new UnauthorizedAccessException("百度网盘上传必须明确提供 confirm=true");
+        var rawPath = input.GetProperty("path").GetString();
+        if (string.IsNullOrWhiteSpace(rawPath))
+            throw new ArgumentException("缺少上传文件路径");
+        var path = Path.GetFullPath(Environment.ExpandEnvironmentVariables(rawPath));
+        var file = new FileInfo(path);
+        if (!file.Exists || file.Length > 2L * 1024 * 1024 * 1024)
+            throw new FileNotFoundException("上传文件必须存在且不超过实验能力 2GiB 限制", path);
+        var timeoutSeconds = input.TryGetProperty("timeoutSeconds", out var wait)
+            && wait.TryGetInt32(out var seconds) ? seconds : 90;
+        if (timeoutSeconds is < 10 or > 240)
+            throw new ArgumentOutOfRangeException(nameof(timeoutSeconds));
+
+        if (!await UploadGate.WaitAsync(0))
+            throw new InvalidOperationException("百度上传验收已有任务运行，拒绝重复提交");
+        try
+        {
+            var expectedBytes = file.Length;
+            var startSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            // This uses the existing official Windows Shell upload verb. Never
+            // access Baidu credentials or send private HTTP requests.
+            await YanziCapabilityRegistry.InvokeAsync(
+                "baiduNetdisk.upload", new { path }, YanziCapabilityCaller.LocalAgent);
+            var deadline = DateTimeOffset.UtcNow.AddSeconds(timeoutSeconds);
+            while (DateTimeOffset.UtcNow < deadline)
+            {
+                await Task.Delay(900);
+                var result = (JsonElement)(await InvokeLocalBridgeAsync(new
+                {
+                    operation = "transferStatus",
+                    kind = "upload",
+                    path,
+                    afterSeconds = startSeconds
+                }))!;
+                if (!result.GetProperty("found").GetBoolean()) continue;
+                if (result.TryGetProperty("failed", out var failed)
+                    && failed.ValueKind == JsonValueKind.True)
+                {
+                    return new
+                    {
+                        status = "client_failed", triggered = true,
+                        clientCompleted = false, clientFailed = true,
+                        errorCode = result.GetProperty("errorCode").GetInt32(),
+                        size = expectedBytes,
+                        message = "百度客户端报告上传失败；不自动重新提交，可检查客户端任务详情。",
+                        liveCloudExistenceVerified = false
+                    };
+                }
+                if (!result.GetProperty("completed").GetBoolean()) continue;
+                if (result.GetProperty("size").GetInt64() != expectedBytes)
+                    throw new InvalidOperationException("百度已完成记录的文件大小与上传前不一致");
+                file.Refresh();
+                if (!file.Exists || file.Length != expectedBytes)
+                    throw new InvalidOperationException("原始文件在上传期间发生变化");
+                return new
+                {
+                    status = "client_completed", triggered = true, clientCompleted = true,
+                    cloudPath = result.GetProperty("cloudPath").GetString(),
+                    size = expectedBytes, finishedAt = result.GetProperty("finishedAt").GetInt64(),
+                    evidence = "baidu-desktop-transfer-history",
+                    liveCloudExistenceVerified = false
+                };
+            }
+            // A previous Shell DoIt success cannot be represented as a completed
+            // upload. Caller should query transferStatus rather than resubmit.
+            return new
+            {
+                status = "pending_unconfirmed", triggered = true,
+                clientCompleted = false,
+                size = expectedBytes,
+                message = "上传已交给百度客户端，但未在规定时间内观察到完成记录；先查询状态，不要重复上传。",
+                liveCloudExistenceVerified = false
+            };
+        }
+        finally
+        {
+            UploadGate.Release();
+        }
     }
 
     private static async Task<object?> InvokeLocalBridgeAsync(object payload)

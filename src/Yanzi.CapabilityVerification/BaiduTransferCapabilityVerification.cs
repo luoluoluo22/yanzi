@@ -17,16 +17,25 @@ internal static class BaiduTransferCapabilityVerification
         var names = new[]
         {
             "baiduNetdisk.transferStatus",
-            "baiduNetdisk.roundtripVerify"
+            "baiduNetdisk.roundtripVerify",
+            "baiduNetdisk.uploadVerified"
         };
         foreach (var name in names)
         {
             Check(YanziCapabilityRegistry.TryGet(name, out var def)
                   && def!.ProviderExtensionId == "yanzi-host", "registered " + name);
-            Check(def!.RiskLevel == "low" && !def.RequiresConfirmation,
-                  "correct read-only metadata " + name);
-            Check(def.Permissions.Contains("file.read"), "requires file.read");
+            Check(def!.Permissions.Contains("file.read"), "requires file.read");
         }
+        foreach (var name in names.Take(2))
+        {
+            Check(YanziCapabilityRegistry.TryGet(name, out var def)
+                  && def!.RiskLevel == "low" && !def.RequiresConfirmation,
+                  "correct read-only metadata " + name);
+        }
+
+        Check(YanziCapabilityRegistry.TryGet(names[2], out var uploadVerified)
+              && uploadVerified!.RequiresConfirmation
+              && uploadVerified.RiskLevel == "medium", "upload confirmation metadata");
 
         var caller = new YanziCapabilityCaller(
             "baidu-verification", ["application.read", "file.read"]);
@@ -49,6 +58,16 @@ internal static class BaiduTransferCapabilityVerification
         Check(download.GetProperty("cloudPath").GetString()
               == upload.GetProperty("cloudPath").GetString(), "same cloud path");
 
+        var failedPath =
+            @"F:\Desktop\cloud-drive-eval-20261009\AI-baidu-verified-upload-20261009-174900.txt";
+        var failed = (JsonElement)(await YanziCapabilityRegistry.InvokeAsync(
+            names[0], new { kind = "upload", path = failedPath }, caller))!;
+        Check(failed.GetProperty("found").GetBoolean(), "failed task history visible");
+        Check(failed.GetProperty("failed").GetBoolean(), "failed upload recognized");
+        Check(!failed.GetProperty("completed").GetBoolean(), "failed is not complete");
+        Check(failed.GetProperty("errorCode").GetInt32() == 110000,
+              "original client error code preserved");
+
         var proof = (JsonElement)(await YanziCapabilityRegistry.InvokeAsync(
             names[1], new { originalLocalFile = source, downloadedFile = downloaded },
             caller))!;
@@ -70,6 +89,41 @@ internal static class BaiduTransferCapabilityVerification
             checks++;
         }
 
+        try
+        {
+            await YanziCapabilityRegistry.InvokeAsync(names[2],
+                new { path = source, confirm = false },
+                new YanziCapabilityCaller("baidu-write-check", [
+                    "application.run", "application.read", "file.read", "network.write"]));
+            throw new InvalidOperationException("Unconfirmed upload unexpectedly authorized");
+        }
+        catch (Exception ex) when (ex is ArgumentException or UnauthorizedAccessException)
+        {
+            checks++;
+        }
+
         Console.WriteLine("BAIDU_TRANSFER_CAPABILITY_VERIFICATION=PASS checks=" + checks);
+    }
+
+    public static async Task RunLiveUploadAsync()
+    {
+        YanziBuiltinCapabilityRegistration.Register();
+        var folder = @"F:\Desktop\cloud-drive-eval-20261009";
+        var path = Path.Combine(folder,
+            "AI-baidu-verified-upload-" + DateTimeOffset.Now.ToString("yyyyMMdd-HHmmss") + ".txt");
+        await File.WriteAllTextAsync(path, "Baidu UploadVerified client completion probe for YanZi.");
+        var caller = new YanziCapabilityCaller("baidu-live-upload", [
+            "application.run", "application.read", "file.read", "network.write"]);
+        var raw = await YanziCapabilityRegistry.InvokeAsync(
+            "baiduNetdisk.uploadVerified",
+            new { path, confirm = true, timeoutSeconds = 45 }, caller);
+        var result = JsonSerializer.SerializeToElement(raw);
+        if (result.GetProperty("status").GetString() != "client_completed"
+            || !result.GetProperty("clientCompleted").GetBoolean())
+            throw new InvalidOperationException("Client completion not established: " + result.ToString());
+        Console.WriteLine("BAIDU_UPLOAD_VERIFIED_REAL=PASS bytes=" +
+            result.GetProperty("size").GetInt64() +
+            " cloudPathPresent=" +
+            !string.IsNullOrEmpty(result.GetProperty("cloudPath").GetString()));
     }
 }

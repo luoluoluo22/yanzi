@@ -116,6 +116,24 @@ class BaiduTransferIndex:
             ))
         return results
 
+    def resolve_latest(self, kind: str, local_path: str | Path,
+                       *, after_seconds: int = 0
+                       ) -> Optional[BaiduTransferRecord]:
+        """Most recent matching history, including client-reported failure.
+
+        Never silently filter out nonzero error codes; callers need to
+        distinguish explicit failure from a task not yet recorded.
+        """
+        path = Path(local_path).resolve(strict=True)
+        size = path.stat().st_size
+        matches = [
+            record for record in self._history(
+                kind, local_path=path, after_seconds=after_seconds
+            )
+            if record.file_size == size
+        ]
+        return matches[0] if matches else None
+
     def resolve_completed(self, kind: str, local_path: str | Path,
                           *, after_seconds: int = 0,
                           expected_server_path: Optional[str] = None,

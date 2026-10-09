@@ -24,12 +24,14 @@ def dispatch(value: dict):
         after=value.get("afterSeconds",0)
         if not isinstance(after,int) or after<0:
             raise ValueError("afterSeconds must be a nonnegative integer")
-        record=idx.resolve_completed(kind,local,after_seconds=after)
+        record=idx.resolve_latest(kind,local,after_seconds=after)
         if record is None:
-            return {"found":False,"completed":False,"direction":kind}
+            return {"found":False,"completed":False,"failed":False,"direction":kind}
+        failed=record.error_code!=0 and record.finished_at>=record.started_at>0
         return {
             "found":True,
             "completed":record.completed,
+            "failed":failed,
             "kind":kind,
             "localPath":record.local_path,
             "cloudPath":record.server_path,

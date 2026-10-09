@@ -47,3 +47,14 @@ F:\Desktop\cloud-drive-eval-20261009\yanzi-baidu-verifier\Yanzi.CapabilityVerifi
 1. 增加组合 `uploadVerified`（发起 Shell 上传后监听本机真实 FINISH 记录，严格限制超时与防重复）。
 2. 继续研究百度官方客户端文件列表、路径定位、精确下载操作。不能将“提交下载”当作“下载成功”。
 3. 下载默认由百度客户端设置决定；未经用户授权不得全量扫描和搬移私人网盘文件。
+
+
+## 2026-10-09 17:40 后续：带完成判定的自动上传
+
+新增 `baiduNetdisk.uploadVerified`，在燕子统一 Provider 中声明 `RiskLevel=medium`、`RequiresConfirmation=true`，实际处理函数再次强制要求 `confirm=true`，需要 `application.run`、`application.read`、`file.read`、`network.write` 权限。它复用 `baiduNetdisk.upload` 的官方 Windows Shell 上传动作，然后通过固定 Python 桥接只读轮询百度上传历史，绝不读取 Cookie 或私有 API。
+
+结果明确区分：`client_completed`（文件大小及客户端完成记录成功、`errorCode=0`）、`client_failed`（客户端完成历史包含非零错误码，原码原样返回）、`pending_unconfirmed`（截止超时时无完成或明确失败记录）；后两类不会重复上传，也不声称实时云端对象可访问。调用支持 `timeoutSeconds`（10–240），并发上传会拒绝重复进入。
+
+真实尝试：第一份 55 字节文件的客户端成功记录已确认；第二份 55 字节文件的客户端历史为 `errorCode=110000`。初版仅筛选成功记录，导致第二份长时间挂起并错误归类为 pending；已修复 `BaiduTransferIndex.resolve_latest()` 与 `baidu_capability_host.py`，让失败记录以 `failed=true, completed=false` 和原错误码直接暴露。这里不猜测 `110000` 的具体厂商含义，不自动重试。
+
+测试：Python 9 项通过；宿主 27 项（包含实际成功与失败历史、权限和二次确认）通过；Debug 构建零错误。当前运行宿主尚未注册 `uploadVerified` 时，应先做独立正式包发布再激活，不能把源码修改描述为已上线。

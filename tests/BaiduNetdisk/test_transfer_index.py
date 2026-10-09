@@ -61,6 +61,17 @@ class BaiduReadOnlyTransferTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             BaiduTransferIndex().verify_roundtrip(self.original,self.original)
 
+    def test_report_failed_upload_instead_of_pending(self):
+        # A fresh independent client attempt produced a nonzero error code.
+        failed=Path(r"F:\Desktop\cloud-drive-eval-20261009\AI-baidu-verified-upload-20261009-174900.txt")
+        self.assertTrue(failed.exists())
+        latest=BaiduTransferIndex().resolve_latest("upload",failed)
+        self.assertIsNotNone(latest)
+        self.assertFalse(latest.completed)
+        self.assertNotEqual(latest.error_code,0)
+        self.assertGreater(latest.finished_at,0)
+        self.assertIsNone(BaiduTransferIndex().resolve_completed("upload",failed))
+
     def test_multiple_account_stores_fail_closed(self):
         with tempfile.TemporaryDirectory() as dir:
             root=Path(dir)

@@ -19,6 +19,7 @@ if (args.Length == 1 && args[0] == "--outbox") { await OutboxVerification.RunAsy
 if (args.Length == 1 && args[0] == "--chat-capability") { await ChatCapabilityVerification.RunAsync(); return; }
 if (args.Length == 1 && args[0] == "--quark-capability") { await QuarkCapabilityVerification.RunAsync(); return; }
 if (args.Length == 1 && args[0] == "--baidu-transfer") { await BaiduTransferCapabilityVerification.RunAsync(); return; }
+if (args.Length == 1 && args[0] == "--baidu-upload-live") { await BaiduTransferCapabilityVerification.RunLiveUploadAsync(); return; }
 YanziBuiltinCapabilityRegistration.Register();
 if (args.Length == 1 && args[0] == "--dependency-status")
 {
