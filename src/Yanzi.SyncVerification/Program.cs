@@ -17,6 +17,12 @@ if (args.Contains("--local-api-boundaries"))
     return;
 }
 
+if (args.Contains("--mobile-message-composer"))
+{
+    await MobileMessageComposerVerification.RunAsync();
+    return;
+}
+
 if (args.Contains("--mobile-message-bridge"))
 {
     await MobileMessageBridgeVerification.RunAsync(args);
@@ -367,6 +373,11 @@ static void VerifySyncArchitectureSafety()
         CloudObjectSyncStateStore.SaveAt(testRoot, recovered);
         Assert(System.IO.Directory.GetFiles(System.IO.Path.GetDirectoryName(accountPath)!, "*.corrupt-*").Length == 1,
             "Recovery must preserve damaged original for diagnosis.");
+        System.IO.File.WriteAllText(accountPath, "broken again");
+        var recoveredAgain = CloudObjectSyncStateStore.LoadAt(testRoot, "account-a");
+        Assert(recoveredAgain.RecoveredFromBackup && recoveredAgain.PendingOperations.Count == 1,
+            "Saving a recovered state must keep the known-good backup available for a second primary-file failure.");
+        CloudObjectSyncStateStore.SaveAt(testRoot, recoveredAgain);
         System.IO.File.WriteAllText(accountPath, "broken");
         System.IO.File.WriteAllText(accountPath + ".bak", "broken too");
         var blocked = CloudObjectSyncStateStore.LoadAt(testRoot, "account-a");

@@ -848,7 +848,9 @@ public partial class MobileMessageToastWindow : Window
 
     private async void InputTextBox_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
-        if (e.Key == System.Windows.Input.Key.Enter)
+        // Enter sends, while Shift+Enter inserts a newline into the multiline editor.
+        if (e.Key == System.Windows.Input.Key.Enter &&
+            (System.Windows.Input.Keyboard.Modifiers & System.Windows.Input.ModifierKeys.Shift) == 0)
         {
             e.Handled = true;
             await TriggerSendMessageAsync();
