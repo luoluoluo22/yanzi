@@ -66,6 +66,16 @@
 
 2026-10-09 最终复核发现：即使关闭扩展窗口，长期运行的正式燕子宿主仍持有已加载的 `Yanzi.UI.Wpf.dll`，Windows 不允许覆盖。安装脚本不会强制结束宿主，也不会冒险覆盖锁定文件。它将新版 DLL 写入校验过的 `Yanzi.UI.Wpf.dll.pending`，再调用 Windows `MoveFileEx` (`MOVEFILE_DELAY_UNTIL_REBOOT | MOVEFILE_REPLACE_EXISTING`) 预约**下一次开机**时原子替换；预约已得到 Windows 成功返回，实际替换仍须下次启动后确认。当前兼容版本已经实机验证，可继续运行至关机。
 
+## V2：从小程序反射桥接升级为宿主直接引用（本轮）
+
+新版本的宿主（`ScriptExtensionRunner`）把公共 UI 的固定程序集引用、可收集上下文解析及缓存版本管理集中在一个位置；小程序代码中不再需要粘贴 `YanziNativeUiBridge`。
+
+- `CompilerVerification`：使用真正宿主的动态 Roslyn 引用与注入源文件，编译两款去重源码并验证真实 WPF 深色主题加载。
+- `patches/*-v2.patch` 与 `source-hashes.v2.json`：从已安装的 V1 升级到 V2 的增量、可核验补丁。
+- `install-v2.ps1`：**默认只暂存，正式扩展源码不发生变化**。只有确认新的宿主版本已发布时，才允许用 `-Activate -VerifiedHostAssembly <Yanzi.dll 路径>` 激活；新宿主未部署前请不要启用。
+
+量化结果：语义搜索 762 → 697 行、能力实验室 922 → 874 行，两款合计从 1,684 减到 1,571 行。详见 `docs/yanzi-ui-source-dedup-2026-10-09.md`。
+
 ## 后续限制
 
 本轮改的是两套 WPF 窗口的主要标准控件，特殊结果列表及任务操作面板没有做全量像素级评估。项目的扩展编译器未来可以统一提供一个安全的共享 UI 加载服务，避免每款小程序都维护几行反射桥接。

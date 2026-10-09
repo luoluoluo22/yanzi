@@ -19,7 +19,7 @@ namespace OpenQuickHost;
 
 public static class ScriptExtensionRunner
 {
-    private const string CSharpCacheVersion = "v13";
+    private const string CSharpCacheVersion = "v14-shared-ui";
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> CSharpBuildLocks = new(StringComparer.OrdinalIgnoreCase);
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> ExtensionLaunchLocks = new(StringComparer.OrdinalIgnoreCase);
 
@@ -577,6 +577,7 @@ public static class ScriptExtensionRunner
         var cacheFingerprint = string.Join(
             "\n---\n",
             CSharpCacheVersion,
+            YanziSharedUiCompilation.CacheIdentity,
             command.ExtensionId ?? string.Empty,
             source,
             CSharpGlobalUsingsSource,
@@ -760,6 +761,8 @@ public static class ScriptExtensionRunner
                 .ToArray());
         }
 
+        // Trusted shared UI metadata is always available for extension compilation.
+        references.Add(YanziSharedUiCompilation.BuildReference());
         var runtimeReferences = BuildNativeWindowRuntimeReferences();
         if (runtimeReferences.Count > 0)
         {
@@ -767,6 +770,8 @@ public static class ScriptExtensionRunner
         }
 
         var finalReferences = references
+            // CoreLib contains these implementations too; prevent CS0433 in C# extensions.
+            .Where(static reference => reference.Display is not ("System.Threading.Thread (net90)" or "System.Text.Encoding.Extensions (net90)"))
             .GroupBy(static reference =>
             {
                 var display = reference.Display;
@@ -1216,6 +1221,8 @@ public static class ScriptExtensionRunner
 
         loadContext.Resolving += (_, assemblyName) =>
         {
+            var sharedUi = YanziSharedUiCompilation.Resolve(assemblyName);
+            if (sharedUi is not null) return sharedUi;
             if (string.IsNullOrWhiteSpace(command.ExtensionDirectoryPath) ||
                 string.IsNullOrWhiteSpace(assemblyName.Name))
             {
