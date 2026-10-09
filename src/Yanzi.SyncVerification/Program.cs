@@ -17,6 +17,12 @@ if (args.Contains("--local-api-boundaries"))
     return;
 }
 
+if (args.Contains("--mobile-clipboard-attachments"))
+{
+    await MobileAttachmentInputVerification.RunAsync();
+    return;
+}
+
 if (args.Contains("--mobile-message-composer"))
 {
     await MobileMessageComposerVerification.RunAsync();

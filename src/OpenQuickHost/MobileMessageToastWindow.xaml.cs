@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Text.Json;
@@ -728,53 +728,82 @@ public partial class MobileMessageToastWindow : Window
         keybd_event(VK_LWIN, 0, KEYEVENTF_KEYUP, 0);
     }
 
-    private void AttachButton_Click(object sender, RoutedEventArgs e)
+    private async void AttachButton_Click(object sender, RoutedEventArgs e)
     {
-        var menu = new System.Windows.Controls.ContextMenu();
-        var photoItem = new System.Windows.Controls.MenuItem { Header = "选择照片" };
-        photoItem.Click += PhotoItem_Click;
-        var fileItem = new System.Windows.Controls.MenuItem { Header = "选择文件" };
-        fileItem.Click += FileItem_Click;
-        menu.Items.Add(photoItem);
-        menu.Items.Add(fileItem);
-        
-        menu.PlacementTarget = sender as System.Windows.Controls.Button;
-        menu.IsOpen = true;
-    }
-
-    private async void PhotoItem_Click(object sender, RoutedEventArgs e)
-    {
-        using var dialog = new SaveFileDialog // 虽然叫SaveFileDialog，但是在WinForms中实际我们更常用OpenFileDialog。等等！上面的 code 里 11 行导入了 using System.Windows.Forms; 我们得用 OpenFileDialog。
-        {
-            // 在 WPF 里由于导入了 System.Windows.Forms，为了避免和 WPF 自己的 OpenFileDialog 冲突，
-            // 既然 direct using System.Windows.Forms; 存在，且 LoadInboxHistory 等里面在另存为时用了 SaveFileDialog，
-            // 我们可以直接使用 System.Windows.Forms.OpenFileDialog。
-        };
-        
-        using var ofd = new System.Windows.Forms.OpenFileDialog
-        {
-            Filter = "图片文件 (*.jpg;*.jpeg;*.png;*.gif;*.bmp)|*.jpg;*.jpeg;*.png;*.gif;*.bmp|所有文件 (*.*)|*.*",
-            Title = "选择要发送的照片"
-        };
-        if (ofd.ShowDialog() == System.Windows.Forms.DialogResult.OK)
-        {
-            await SendFileOrPhotoToMobileAsync(ofd.FileName, isPhoto: true);
-        }
-    }
-
-    private async void FileItem_Click(object sender, RoutedEventArgs e)
-    {
-        using var ofd = new System.Windows.Forms.OpenFileDialog
+        if (_sending) return;
+        using var dialog = new System.Windows.Forms.OpenFileDialog
         {
             Filter = "所有文件 (*.*)|*.*",
-            Title = "选择要发送的文件"
+            Title = "选择要发送到手机的图片或文件",
+            Multiselect = true,
+            CheckFileExists = true
         };
-        if (ofd.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+        if (dialog.ShowDialog() != System.Windows.Forms.DialogResult.OK) return;
+        await SendSelectedFilesAsync(dialog.FileNames);
+    }
+
+    private async Task SendSelectedFilesAsync(IEnumerable<string> paths)
+    {
+        foreach (var path in paths)
         {
-            await SendFileOrPhotoToMobileAsync(ofd.FileName, isPhoto: false);
+            if (!File.Exists(path)) continue;
+            await SendFileOrPhotoToMobileAsync(path, MobileMessageAttachmentInput.IsImageFile(path));
         }
     }
 
+    private async void InputTextBox_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        // Handle clipboard images/files before the TextBox applies its text-only paste behavior.
+        if (e.Key != System.Windows.Input.Key.V ||
+            (System.Windows.Input.Keyboard.Modifiers & System.Windows.Input.ModifierKeys.Control) == 0)
+            return;
+        try
+        {
+            if (!MobileMessageAttachmentInput.TryReadPastedAttachments(
+                System.Windows.Clipboard.GetDataObject(), out var image, out var files)) return;
+
+            e.Handled = true;
+            await SendPastedAttachmentAsync(image, files);
+        }
+        catch (System.Runtime.InteropServices.ExternalException)
+        {
+            SendStatusText.Text = "剪贴板暂时被其他程序占用，请重试。";
+        }
+    }
+
+    private async void InputTextBox_Pasting(object sender, System.Windows.DataObjectPastingEventArgs e)
+    {
+        // Covers the context-menu Paste command as well as non-keyboard paste gestures.
+        if (!MobileMessageAttachmentInput.TryReadPastedAttachments(e.DataObject, out var image, out var files))
+            return; // Preserve ordinary text and multiline paste.
+        e.CancelCommand();
+        await SendPastedAttachmentAsync(image, files);
+    }
+
+    private async Task SendPastedAttachmentAsync(BitmapSource? image, string[] files)
+    {
+        if (_sending)
+        {
+            SendStatusText.Text = "上一条消息正在发送，请稍后再粘贴。";
+            return;
+        }
+
+        if (image != null)
+        {
+            try
+            {
+                var file = MobileMessageAttachmentInput.SavePastedBitmap(image);
+                await SendFileOrPhotoToMobileAsync(file, isPhoto: true);
+            }
+            catch (Exception ex)
+            {
+                SendStatusText.Text = "粘贴图片失败：" + ex.Message;
+                HostAssets.AppendLog("Clipboard image send failed: " + ex);
+            }
+            return;
+        }
+        await SendSelectedFilesAsync(files);
+    }
     private async Task SendFileOrPhotoToMobileAsync(string filePath, bool isPhoto)
     {
         if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath)) return;
