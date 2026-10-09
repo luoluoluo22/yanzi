@@ -12,6 +12,18 @@ def dispatch(value: dict):
     op=value.get("operation")
     if not isinstance(op,str):
         raise ValueError("operation must be specified")
+    if op=="downloadExact":
+        if value.get("confirm") is not True:
+            raise PermissionError("Baidu desktop download requires confirm=true")
+        from baidu_desktop_download import download_exact
+        return download_exact(
+            filename=value.get("filename"),
+            expected_cloud_path=value.get("expectedCloudPath"),
+            expected_size=value.get("expectedSize"),
+            expected_sha256=value.get("expectedSha256"),
+            copy_to_folder=value.get("copyToFolder"),
+            timeout_seconds=value.get("timeoutSeconds",90),
+        )
     if op=="searchExact":
         from baidu_desktop_search import search_exact_visible
         filename=value.get("filename")

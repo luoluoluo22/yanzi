@@ -19,7 +19,8 @@ internal static class BaiduTransferCapabilityVerification
             "baiduNetdisk.transferStatus",
             "baiduNetdisk.roundtripVerify",
             "baiduNetdisk.uploadVerified",
-            "baiduNetdisk.searchExactVisible"
+            "baiduNetdisk.searchExactVisible",
+            "baiduNetdisk.downloadExactVerified"
         };
         foreach (var name in names)
         {
@@ -41,6 +42,12 @@ internal static class BaiduTransferCapabilityVerification
               && searchDef!.Permissions.Contains("network.read")
               && searchDef.Permissions.Contains("application.run")
               && !searchDef.RequiresConfirmation, "read-only cloud search permissions");
+        Check(YanziCapabilityRegistry.TryGet(names[4], out var downloadDef)
+              && downloadDef!.RequiresConfirmation
+              && downloadDef.RiskLevel == "medium"
+              && downloadDef.Permissions.Contains("file.write")
+              && downloadDef.Permissions.Contains("network.read"),
+              "download permission and explicit confirmation");
 
         var caller = new YanziCapabilityCaller(
             "baidu-verification", ["application.read", "file.read"]);
@@ -101,6 +108,25 @@ internal static class BaiduTransferCapabilityVerification
                 new YanziCapabilityCaller("baidu-write-check", [
                     "application.run", "application.read", "file.read", "network.write"]));
             throw new InvalidOperationException("Unconfirmed upload unexpectedly authorized");
+        }
+        catch (Exception ex) when (ex is ArgumentException or UnauthorizedAccessException)
+        {
+            checks++;
+        }
+
+        try
+        {
+            await YanziCapabilityRegistry.InvokeAsync(names[4],
+                new
+                {
+                    filename = "AI-baidu-verified-upload-20261009-174820.txt",
+                    expectedCloudPath = "/AI-baidu-verified-upload-20261009-174820.txt",
+                    expectedSize = 55,
+                    confirm = false
+                },
+                new YanziCapabilityCaller("baidu-download-deny", [
+                    "application.run", "file.read", "file.write", "network.read"]));
+            throw new InvalidOperationException("Unconfirmed download was wrongly authorized");
         }
         catch (Exception ex) when (ex is ArgumentException or UnauthorizedAccessException)
         {

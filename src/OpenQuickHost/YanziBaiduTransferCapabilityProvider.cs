@@ -13,6 +13,7 @@ public static class YanziBaiduTransferCapabilityProvider
     private static readonly JsonElement ObjectSchema =
         YanziCapabilitySchema.Parse("""{"type":"object"}""");
     private static readonly SemaphoreSlim UploadGate = new(1, 1);
+    private static readonly SemaphoreSlim DownloadGate = new(1, 1);
 
     public static IEnumerable<YanziCapabilityProviderDefinition> Create()
     {
@@ -126,6 +127,35 @@ public static class YanziBaiduTransferCapabilityProvider
 
         yield return new YanziCapabilityProviderDefinition
         {
+            Name = "baiduNetdisk.downloadExactVerified",
+            Description = "百度官方客户端全网盘精确搜索、选中单一文件并下载，凭本次下载历史云端路径/大小和可选可信 SHA-256 校验；显式确认",
+            Category = "cloud-drive",
+            Version = "0.1.0",
+            Permissions = ["application.run", "file.read", "file.write", "network.read"],
+            RiskLevel = "medium",
+            RequiresConfirmation = true,
+            InputSchema = YanziCapabilitySchema.Parse("""
+            {
+              "type":"object",
+              "properties":{
+                "filename":{"type":"string","minLength":3},
+                "expectedCloudPath":{"type":"string","minLength":2},
+                "expectedSize":{"type":"integer","minimum":0},
+                "expectedSha256":{"type":"string","minLength":64},
+                "copyToFolder":{"type":"string","minLength":1},
+                "timeoutSeconds":{"type":"integer","minimum":15,"maximum":300},
+                "confirm":{"type":"boolean","enum":[true]}
+              },
+              "required":["filename","expectedCloudPath","expectedSize","confirm"],
+              "additionalProperties":false
+            }
+            """),
+            OutputSchema = ObjectSchema,
+            Handler = input => DownloadVerifiedAsync((JsonElement)input!)
+        };
+
+        yield return new YanziCapabilityProviderDefinition
+        {
             Name = "baiduNetdisk.uploadVerified",
             Description = "调用百度网盘官方上传入口并等待本机客户端的成功完成记录；仅客户端历史验证，非实时云端 API 校验",
             Category = "cloud-drive",
@@ -148,6 +178,49 @@ public static class YanziBaiduTransferCapabilityProvider
             OutputSchema = ObjectSchema,
             Handler = payload => UploadVerifiedAsync((JsonElement)payload!)
         };
+    }
+
+    private static async Task<object?> DownloadVerifiedAsync(JsonElement input)
+    {
+        if (!input.TryGetProperty("confirm", out var confirmation)
+            || confirmation.ValueKind != JsonValueKind.True)
+            throw new UnauthorizedAccessException("百度网盘自动下载必须明确 confirm=true");
+        var filename = input.GetProperty("filename").GetString();
+        var cloudPath = input.GetProperty("expectedCloudPath").GetString();
+        if (string.IsNullOrWhiteSpace(filename) || string.IsNullOrWhiteSpace(cloudPath))
+            throw new ArgumentException("必须提供精确文件名与可信云端绝对路径");
+        if (!input.GetProperty("expectedSize").TryGetInt64(out var expectedSize)
+            || expectedSize is < 0 or > 2147483648L)
+            throw new ArgumentOutOfRangeException("expectedSize");
+        var expectedSha256 = input.TryGetProperty("expectedSha256", out var hash)
+            && hash.ValueKind == JsonValueKind.String ? hash.GetString() : null;
+        var copyToFolder = input.TryGetProperty("copyToFolder", out var folder)
+            && folder.ValueKind == JsonValueKind.String ? folder.GetString() : null;
+        var timeout = input.TryGetProperty("timeoutSeconds", out var time)
+            && time.TryGetInt32(out var parsed) ? parsed : 90;
+        if (timeout is < 15 or > 300)
+            throw new ArgumentOutOfRangeException(nameof(timeout));
+
+        if (!await DownloadGate.WaitAsync(0))
+            throw new InvalidOperationException("已有百度网盘自动下载任务在执行，拒绝并发操作");
+        try
+        {
+            return await InvokeLocalBridgeAsync(new
+            {
+                operation = "downloadExact",
+                filename,
+                expectedCloudPath = cloudPath,
+                expectedSize,
+                expectedSha256,
+                copyToFolder,
+                timeoutSeconds = timeout,
+                confirm = true
+            }, timeout + 25);
+        }
+        finally
+        {
+            DownloadGate.Release();
+        }
     }
 
     private static async Task<object?> UploadVerifiedAsync(JsonElement input)
@@ -234,7 +307,7 @@ public static class YanziBaiduTransferCapabilityProvider
         }
     }
 
-    private static async Task<object?> InvokeLocalBridgeAsync(object payload)
+    private static async Task<object?> InvokeLocalBridgeAsync(object payload, int maxSeconds = 25)
     {
         var script = Path.Combine(
             AppContext.BaseDirectory, "CapabilityScripts", "BaiduNetdisk",
@@ -261,7 +334,7 @@ public static class YanziBaiduTransferCapabilityProvider
         if (!process.Start())
             throw new InvalidOperationException("无法启动本机百度网盘只读校验器");
 
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(maxSeconds));
         try
         {
             await process.StandardInput.WriteAsync(JsonSerializer.Serialize(payload));

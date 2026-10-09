@@ -172,6 +172,41 @@ class BaiduTransferIndex:
             last_changed_at=int(row["status_changetime"] or 0),
         )
 
+    def lookup_download_for_cloud_path(
+        self, cloud_path: str, *, after_seconds: int = 0
+    ) -> Optional[BaiduTransferRecord]:
+        """Find newest download event for an exact cloud path and recent start time.
+
+        This is an indexed client-history read, NOT a remote file lookup.
+        Must not guess download path from filename or scan local directories.
+        """
+        if not isinstance(cloud_path,str) or not cloud_path.startswith("/"):
+            raise ValueError("Expected absolute cloud path")
+        if not isinstance(after_seconds,int) or after_seconds<0:
+            raise ValueError("after_seconds must be a nonnegative integer")
+        conn=self._db("download")
+        try:
+            rows=conn.execute(
+                "SELECT local_path,server_path,isdir,file_size,op_starttime,"
+                "op_endtime,error_code FROM download_history_file "
+                "WHERE server_path=? AND isdir=0 AND op_starttime>=? "
+                "ORDER BY op_endtime DESC LIMIT 20",
+                (cloud_path,after_seconds),
+            ).fetchall()
+        finally:
+            conn.close()
+        for row in rows:
+            if not row["local_path"]:
+                continue
+            return BaiduTransferRecord(
+                kind="download",local_path=str(row["local_path"]),
+                server_path=str(row["server_path"]),file_size=int(row["file_size"] or 0),
+                error_code=(int(row["error_code"]) if row["error_code"] is not None else -1),
+                started_at=int(row["op_starttime"] or 0),
+                finished_at=int(row["op_endtime"] or 0),
+            )
+        return None
+
     def resolve_latest(self, kind: str, local_path: str | Path,
                        *, after_seconds: int = 0
                        ) -> Optional[BaiduTransferRecord]:

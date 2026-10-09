@@ -96,3 +96,37 @@ F:\Desktop\cloud-drive-eval-20261009\yanzi-baidu-verifier\Yanzi.CapabilityVerifi
 - `tests/BaiduNetdisk/test_search_exact.py` 覆盖完整文件名、模糊/错误文本、陈旧搜索标题、多个同名行、离屏结果与错误文件名
 
 **重要安全边界**：搜索返回的是当前已渲染结果页的精确名称存在性，不保证整库唯一、也不提供云端 `fid`，不会因找到行就断言文件身份；输出明确 `uniqueAcrossEntireCloud=false`、`cloudFidVerified=false`、`downloaded=false`。某次深层 UI 检查遭到执行环境阻止，未强行规避；自动按名选中和下载**尚未验收，不对外开放**。
+
+
+## 2026-10-09：自动下载完成（通过真实客户端闭环）
+
+新增统一能力：`baiduNetdisk.downloadExactVerified`。
+
+**业务执行链**：
+1. 从已登录百度 Windows 客户端（BaiduNetdiskUnite.exe）找到唯一拥有 `tags-input-ipt` 搜索框的文件管理器窗口，向该窗口完整输入目标文件名并提交。
+2. 搜索标题必须匹配本次关键词，当前渲染页面只允许一个完整文件名一致的独立结果行；否则拒绝。
+3. 操作该行后检查“已选中1/N个”的无障碍文本和唯一“下载(文件大小)”按钮，按钮标示大小须与可信预期值一致，且点击位置属于百度窗口。禁止直接凭固定坐标盲点。
+4. 通过官方客户端执行一次下载，绝不自动重复提交。下载落到百度客户端设定的默认目录，程序不修改客户端下载设置。
+5. 在百度官方只读 `transmission.db.download_history_file` 中按**可信云端路径和本次开始时间**找到对应下载记录，确认 `error_code=0`、结束时间、文件路径/大小，与 `expectedSha256`（如提供）比对。如果指定 `copyToFolder`，通过独占文件创建复制经验证文件，禁止覆盖，复制后再次核验哈希。原官方下载文件保留。
+6. 对实际失败返回 `client_failed`，无法确认返回 `pending_unconfirmed`。UI 歧义、目标被覆盖、可信路径/大小冲突、哈希不匹配时明确失败，不制造成功假象。
+
+输入示例：
+
+```json
+{
+  "filename": "AI-baidu-verified-upload-20261009-174820.txt",
+  "expectedCloudPath": "/AI-baidu-verified-upload-20261009-174820.txt",
+  "expectedSize": 55,
+  "expectedSha256": "46dc70cc4a3effc8a2d81a61c7e7732c181f3ecd4b83cd7e6974ece9d1d71d17",
+  "timeoutSeconds": 90,
+  "confirm": true
+}
+```
+
+`copyToFolder` 为可选本地已存在目录。**要求可信云端完整路径、精确文件名、预期大小**；仅凭同名模糊搜索尚不能下载，以避免不同目录下同名文件误选。由于没有调用实时对象查询 API，输出声明 `liveCloudFidVerified=false`；有独立 `expectedSha256` 时才可声明 `referenceSha256Verified=true`。
+
+**真实测试**：通过新 Python 桥接程序调用 `downloadExact`，从网盘搜索页面精确找到先前成功上传的 `AI-baidu-verified-upload-20261009-174820.txt`，由百度官方客户端自动下载至 `F:\Backup\Downloads`；历史状态 `client_completed`，上传/下载云端路径一致，文件大小 55 字节，原始文件与下载文件 SHA-256 完全一致，耗时约 14 秒。无须手动选择任何文件。测试中如目标文件已存在则不覆盖。
+
+源文件：`src/OpenQuickHost/CapabilityScripts/BaiduNetdisk/baidu_desktop_download.py`；`baidu_transfer_index.py` 新增 `lookup_download_for_cloud_path`；`baidu_capability_host.py` 新增 `downloadExact` 受控操作；`YanziBaiduTransferCapabilityProvider.cs` 注册权限 `application.run/file.read/file.write/network.read`、`RequiresConfirmation=true`、`RiskLevel=medium`，并添加下载并发互斥与最长 300 秒等待；`tests/BaiduNetdisk/test_download_exact.py` 增加拒绝非法输入与历史回环验证。
+
+最终回归：27 项 Python 自动测试通过，35 项燕子宿主级检查通过（含缺少确认时拒绝下载），编译零错误。正式部署状态必须以当前 `yanzi_catalog` 为准，不能将“源码编译成功”误称“正在运行宿主已激活”。
