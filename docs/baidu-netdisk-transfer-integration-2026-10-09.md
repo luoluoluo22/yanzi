@@ -58,3 +58,12 @@ F:\Desktop\cloud-drive-eval-20261009\yanzi-baidu-verifier\Yanzi.CapabilityVerifi
 真实尝试：第一份 55 字节文件的客户端成功记录已确认；第二份 55 字节文件的客户端历史为 `errorCode=110000`。初版仅筛选成功记录，导致第二份长时间挂起并错误归类为 pending；已修复 `BaiduTransferIndex.resolve_latest()` 与 `baidu_capability_host.py`，让失败记录以 `failed=true, completed=false` 和原错误码直接暴露。这里不猜测 `110000` 的具体厂商含义，不自动重试。
 
 测试：Python 9 项通过；宿主 27 项（包含实际成功与失败历史、权限和二次确认）通过；Debug 构建零错误。当前运行宿主尚未注册 `uploadVerified` 时，应先做独立正式包发布再激活，不能把源码修改描述为已上线。
+
+
+## 2026-10-09 后续：进行中任务进度
+
+`baiduNetdisk.transferStatus` 现优先查询任务历史（成功、失败），没有匹配历史时再只读查询客户端活动表 `upload_file` / `download_file`，返回 `phase=active`、`size`、`completedBytes`、`progressPercent` 及原始 `clientStatusCode`。如果文件下载尚未在磁盘产生完整目标文件，仍允许按预期保存路径查询活动任务；不依据部分文件大小判断失败。
+
+状态：`completed`、`failed`、`active`、`unknown`。用户不应该把活动任务的数字状态码当成文档化的服务端错误码；只有实际客户端历史结束后才归档为完成或失败。不访问实时云端 API。已经使用临时、模拟的 SQLite 上传表验证 40/100 字节得到 40% 进度，且时间过滤生效，完全不写用户的真实网盘数据库。Python 回归现为 10/10 通过。
+
+正式部署限制：向当前用户的 `%LOCALAPPDATA%\YanziRuntime\shells` 复制新版本曾被当前执行环境安全检查拦截，因此保留之前正常运行的正式燕子，不通过其他工具绕过拦截；构建包仍可留在独立实验目录，待具备正常授权部署路径再切换。

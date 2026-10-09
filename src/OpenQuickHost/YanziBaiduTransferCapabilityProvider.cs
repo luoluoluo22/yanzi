@@ -19,7 +19,7 @@ public static class YanziBaiduTransferCapabilityProvider
         yield return new YanziCapabilityProviderDefinition
         {
             Name = "baiduNetdisk.transferStatus",
-            Description = "只读查询百度网盘官方客户端上传或下载完成记录；结果来自本机传输历史而非实时云端列表",
+            Description = "只读查询百度网盘上传/下载的进行中进度、完成和失败记录；来源为本机客户端任务数据库，不是实时云端对象查询",
             Category = "cloud-drive",
             Version = "0.1.0",
             Permissions = ["application.read", "file.read"],

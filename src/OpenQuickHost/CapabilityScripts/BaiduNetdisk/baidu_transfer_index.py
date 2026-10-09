@@ -47,6 +47,25 @@ def sha256_file(path: Path | str) -> str:
     return digest.hexdigest()
 
 
+@dataclass(frozen=True)
+class BaiduActiveTask:
+    kind: str
+    local_path: str
+    server_path: str
+    status_code: int
+    file_size: int
+    complete_size: int
+    error_code: int
+    last_changed_at: int
+
+    @property
+    def progress_percent(self) -> float:
+        if self.file_size <= 0:
+            return 0.0
+        return round(min(100.0, max(0.0,
+                         self.complete_size * 100.0 / self.file_size)), 2)
+
+
 class BaiduTransferIndex:
     def __init__(self, client_root: Path | str | None = None):
         root = Path(client_root) if client_root is not None else (
@@ -115,6 +134,43 @@ class BaiduTransferIndex:
                 finished_at=int(row["op_endtime"] or 0),
             ))
         return results
+
+    def resolve_active(self, kind: str, local_path: str | Path,
+                       *, after_seconds: int = 0
+                       ) -> Optional[BaiduActiveTask]:
+        """Read an in-flight task; numeric status remains client-specific."""
+        # Downloads can appear in the task DB before a final local file exists.
+        local = Path(local_path).resolve(strict=False)
+        if local.is_dir():
+            raise ValueError("Local transfer target must be a file path")
+        table = "upload_file" if kind == "upload" else "download_file"
+        conn = self._db(kind)
+        try:
+            rows = conn.execute(
+                f"SELECT local_path,server_path,status,file_size,complete_size,"
+                f"error_code,status_changetime FROM {table} "
+                "WHERE local_path=? AND isdir=0 AND status_changetime>=? "
+                "ORDER BY status_changetime DESC LIMIT 1",
+                (str(local), after_seconds),
+            ).fetchall()
+        finally:
+            conn.close()
+        if not rows:
+            return None
+        row = rows[0]
+        size = int(row["file_size"] or 0)
+        if size < 0:
+            return None
+        return BaiduActiveTask(
+            kind=kind,
+            local_path=str(row["local_path"] or ""),
+            server_path=str(row["server_path"] or ""),
+            status_code=int(row["status"]) if row["status"] is not None else -1,
+            file_size=size,
+            complete_size=int(row["complete_size"] or 0),
+            error_code=int(row["error_code"]) if row["error_code"] is not None else -1,
+            last_changed_at=int(row["status_changetime"] or 0),
+        )
 
     def resolve_latest(self, kind: str, local_path: str | Path,
                        *, after_seconds: int = 0

@@ -72,6 +72,53 @@ class BaiduReadOnlyTransferTests(unittest.TestCase):
         self.assertGreater(latest.finished_at,0)
         self.assertIsNone(BaiduTransferIndex().resolve_completed("upload",failed))
 
+    def test_inflight_upload_progress_read_only(self):
+        from unittest.mock import patch
+        from baidu_capability_host import dispatch
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            src=root/"sample-upload-progress.txt"
+            src.write_bytes(b"X"*100)
+            store=root/"account"
+            store.mkdir()
+            for dbname in ("upload.db","transmission.db"):
+                db=sqlite3.connect(store/dbname)
+                try:
+                    db.execute(
+                        "CREATE TABLE upload_file (local_path TEXT, server_path TEXT,"
+                        "status INTEGER, file_size INTEGER, complete_size INTEGER,"
+                        "error_code INTEGER, status_changetime INTEGER, isdir INTEGER)"
+                    )
+                    db.execute(
+                        "CREATE TABLE upload_history_file (local_path TEXT, server_path TEXT,"
+                        "isdir INTEGER, file_size INTEGER, op_starttime INTEGER,"
+                        "op_endtime INTEGER,error_code INTEGER)"
+                    )
+                    db.commit()
+                finally:
+                    db.close()
+            db=sqlite3.connect(store/"upload.db")
+            try:
+                db.execute("INSERT INTO upload_file VALUES (?,?,?,?,?,?,?,?)",
+                    (str(src.resolve()),"/sample-upload-progress.txt",2,100,40,0,1234,0))
+                db.commit()
+            finally:
+                db.close()
+            idx=BaiduTransferIndex(store)
+            task=idx.resolve_active("upload",src)
+            self.assertIsNotNone(task)
+            self.assertEqual(task.progress_percent,40.0)
+            self.assertEqual(task.complete_size,40)
+            self.assertIsNone(idx.resolve_active("upload",src,after_seconds=1235))
+            with patch("baidu_transfer_index.BaiduTransferIndex",return_value=idx):
+                result=dispatch({"operation":"transferStatus",
+                                 "kind":"upload","path":str(src)})
+            self.assertTrue(result["found"])
+            self.assertEqual(result["phase"],"active")
+            self.assertEqual(result["progressPercent"],40.0)
+            self.assertFalse(result["completed"])
+            self.assertFalse(result["failed"])
+
     def test_multiple_account_stores_fail_closed(self):
         with tempfile.TemporaryDirectory() as dir:
             root=Path(dir)

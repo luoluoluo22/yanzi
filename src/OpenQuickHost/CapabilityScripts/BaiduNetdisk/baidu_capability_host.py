@@ -20,18 +20,35 @@ def dispatch(value: dict):
         path=value.get("path")
         if not isinstance(path,str) or not path:
             raise ValueError("path must be a nonempty local filename")
-        local=Path(path).resolve(strict=True)
+        local=Path(path).resolve(strict=False)
         after=value.get("afterSeconds",0)
         if not isinstance(after,int) or after<0:
             raise ValueError("afterSeconds must be a nonnegative integer")
-        record=idx.resolve_latest(kind,local,after_seconds=after)
+        record=idx.resolve_latest(kind,local,after_seconds=after) if local.is_file() else None
         if record is None:
-            return {"found":False,"completed":False,"failed":False,"direction":kind}
+            active=idx.resolve_active(kind,local,after_seconds=after)
+            if active is not None:
+                return {
+                    "found":True, "completed":False,"failed":False,
+                    "phase":"active", "kind":kind,
+                    "localPath":active.local_path,
+                    "cloudPath":active.server_path,
+                    "size":active.file_size,
+                    "completedBytes":active.complete_size,
+                    "progressPercent":active.progress_percent,
+                    "clientStatusCode":active.status_code,
+                    "errorCode":active.error_code,
+                    "source":"baidu-desktop-active-transfer",
+                    "liveCloudExistenceVerified":False,
+                }
+            return {"found":False,"completed":False,"failed":False,
+                    "phase":"unknown","direction":kind}
         failed=record.error_code!=0 and record.finished_at>=record.started_at>0
         return {
             "found":True,
             "completed":record.completed,
             "failed":failed,
+            "phase":"failed" if failed else "completed" if record.completed else "unknown",
             "kind":kind,
             "localPath":record.local_path,
             "cloudPath":record.server_path,
