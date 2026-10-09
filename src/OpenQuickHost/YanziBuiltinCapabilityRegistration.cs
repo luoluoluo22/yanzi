@@ -77,6 +77,7 @@ public static class YanziBuiltinCapabilityRegistration
         YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziWpsCapabilityProvider.Create());
         YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziNeteaseMusicCapabilityProvider.Create());
         YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziBaiduNetdiskCapabilityProvider.Create());
+        YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziBaiduTransferCapabilityProvider.Create());
         YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziQuarkCloudDriveCapabilityProvider.Create());
         YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziQuarkTransferCapabilityProvider.Create());
         YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziBlenderCapabilityProvider.Create());
