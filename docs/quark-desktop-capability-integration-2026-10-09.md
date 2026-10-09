@@ -60,3 +60,34 @@ F:\Desktop\cloud-drive-eval-20261009\yanzi-verification\Yanzi.CapabilityVerifica
 正在运行的燕子是版本化运行目录里的旧进程。**没有强制结束该进程或覆盖正在被其他任务使用的正式宿主**；只有下一次安全更新宿主版本并重新启动后，这些新能力才会自动出现在当前运行中的能力注册表。不能把源码集成误称为已经在用户当前会话里激活。
 
 下一步在确认其他任务可安全重启后，按现有版本化宿主部署流程切换，并在新宿主本地 Agent API 中检查 6 项能力登记和只读调用。
+
+## 2026-10-09 正式激活尝试与回滚记录
+
+用户明确允许替换正式桌面宿主，保留 Runtime 后台服务。
+准备激活的构建（已经通过 19/19 宿主级验证）：
+
+`%LOCALAPPDATA%\YanziRuntime\shells\quark-8a10364-20261009-134554\Yanzi.exe`
+
+第一次切换时：
+- 旧桌面宿主 PID 16944 停止，新版桌面宿主 PID 15928 成功启动；
+- 后台 Runtime PID 14876 保持不变，健康探针确认客户端已成功附着、后台服务初始化状态为 true；
+- **激活脚本最后一行用管道向 Get-Content 传递路径，导致 PowerShell 参数绑定异常。** 该异常触发预定回滚。
+- 已核查旧桌面宿主恢复运行（PID 2924），正式 `runtime.json` 的 `stableShell` 仍指向 `20261009-095950-424\Yanzi.exe`，后台 Runtime 未中断。
+- 修复脚本后再试时，执行环境返回“无法确定请求的安全状态，已拦截此工具调用”。没有绕开拦截，也没有继续强行停止进程。
+- 因此状态为 **源码与发布资源完成、正式宿主尚未激活**；不能宣称 `quark.cloudDrive.*` 六项新能力已在当前 Agent API 生效。
+- 原配置自动备份于 `%LOCALAPPDATA%\YanziRuntime\runtime.before-quark-8a10364-20261009-135947.json`。
+
+### 网盘实时搜索静态研究新证据
+
+来自安装包 `dist/renderer/index.js`：
+- 应用封装的 `searchList({searchKey,page=1,size=100,needTotalNum=1,sort=[],isHL=1})`
+  使用 `driveRequestCatch` 发起 `GET /1/clouddrive/file/search`，参数映射为
+  `q`、`_page`、`_size`、`_fetch_total`、`_sort`、`_is_hl`。
+- UI 搜索页的 `loadSearchFiles` 调用 `searchList`，将返回的 `data.list`
+  写入 `file.changeListFile`，带分页和 `metadata._total` 信息。
+- 搜索建议交互内的入口会根据
+  `PanelTabEnum.SEARCH_CURRENT_FOLDER` 设置 `folderFid` 参数；
+  全网盘搜索则不附加该目录范围参数。
+- 现阶段仅分析本机已安装客户端打包源码，没有获取登录 Cookie 或调用未知私有 API，也没有建立独立程序的授权 RPC。
+
+下一轮应完成正式宿主的安全激活和真实 Agent API 查询，然后探索通过客户端内置搜索页面按名称取得 `fid`。搜索结果必须实时验证文件身份，不能把历史缓存误判为云端最新数据。
