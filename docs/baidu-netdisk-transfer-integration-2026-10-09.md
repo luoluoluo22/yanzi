@@ -67,3 +67,32 @@ F:\Desktop\cloud-drive-eval-20261009\yanzi-baidu-verifier\Yanzi.CapabilityVerifi
 状态：`completed`、`failed`、`active`、`unknown`。用户不应该把活动任务的数字状态码当成文档化的服务端错误码；只有实际客户端历史结束后才归档为完成或失败。不访问实时云端 API。已经使用临时、模拟的 SQLite 上传表验证 40/100 字节得到 40% 进度，且时间过滤生效，完全不写用户的真实网盘数据库。Python 回归现为 10/10 通过。
 
 正式部署限制：向当前用户的 `%LOCALAPPDATA%\YanziRuntime\shells` 复制新版本曾被当前执行环境安全检查拦截，因此保留之前正常运行的正式燕子，不通过其他工具绕过拦截；构建包仍可留在独立实验目录，待具备正常授权部署路径再切换。
+
+
+## 2026-10-09 后续：全网盘精确文件名搜索
+
+新能力：`baiduNetdisk.searchExactVisible`（燕子统一 Provider，调用已登录的百度官方桌面客户端，而非私有百度 HTTP API）。
+
+请求：
+
+```json
+{"filename":"AI-baidu-desktop-roundtrip-20261009.txt","waitSeconds":12}
+```
+
+它通过受控的 Windows UI Automation 搜索框 `EditControl(AutomationId=tags-input-ipt)` 输入完整文件名，使用系统 Unicode 键盘事件避免中文输入法截获，再按 Enter 提交搜索，等待搜索页出现针对当前文件名的标题与结果行。仅查找准确命名为目标文件的 `GroupControl`，忽略搜索栏/标题中的文本假阳性和画面之外的候选行。结果的 `visibleExactMatches` 为精确匹配个数，`advertisedFuzzyResultCount` 为客户端显示的模糊搜索条数。
+
+已通过真实客户端测试：
+- 搜索 `AI-baidu-desktop-roundtrip-20261009.txt`：模糊结果 4 条，当前可见完整文件名匹配 1 条，返回 `found=true`。
+- 搜索 `ZZZ-UNMATCHED-NEVER-TEST-20261009.dat`：模糊结果为 0 条、精确匹配为 0，返回 `found=false`。
+- 之后再次搜索自己的 107B 测试文件，精确匹配再次恢复为 1，证明搜索页随真实查询更新。
+- 曾发现仅替换搜索框文字不一定刷新上一个查询的结果。因此现在必须使用 Enter 明确提交后再等结果，且核验搜索标题匹配本次关键词，否则拒绝。
+- 百度窗口退到后台时 Chromium 无障碍树会短暂变空。查找窗口时先验证百度官方进程，再恢复窗口、激活并确认唯一搜索输入；输入前还核对窗口焦点，不会向其他程序盲打。
+
+实现：
+- `src/OpenQuickHost/CapabilityScripts/BaiduNetdisk/baidu_desktop_search.py`
+- `src/OpenQuickHost/CapabilityScripts/BaiduNetdisk/baidu_unicode_input.py`
+- `src/OpenQuickHost/CapabilityScripts/BaiduNetdisk/baidu_capability_host.py` 新增 `searchExact` 桥接操作
+- `src/OpenQuickHost/YanziBaiduTransferCapabilityProvider.cs` 新增统一能力
+- `tests/BaiduNetdisk/test_search_exact.py` 覆盖完整文件名、模糊/错误文本、陈旧搜索标题、多个同名行、离屏结果与错误文件名
+
+**重要安全边界**：搜索返回的是当前已渲染结果页的精确名称存在性，不保证整库唯一、也不提供云端 `fid`，不会因找到行就断言文件身份；输出明确 `uniqueAcrossEntireCloud=false`、`cloudFidVerified=false`、`downloaded=false`。某次深层 UI 检查遭到执行环境阻止，未强行规避；自动按名选中和下载**尚未验收，不对外开放**。

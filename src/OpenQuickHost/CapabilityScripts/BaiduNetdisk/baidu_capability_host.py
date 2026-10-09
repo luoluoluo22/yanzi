@@ -12,6 +12,11 @@ def dispatch(value: dict):
     op=value.get("operation")
     if not isinstance(op,str):
         raise ValueError("operation must be specified")
+    if op=="searchExact":
+        from baidu_desktop_search import search_exact_visible
+        filename=value.get("filename")
+        wait=value.get("waitSeconds",12)
+        return search_exact_visible(filename,wait_seconds=wait)
     idx=BaiduTransferIndex()
     if op=="transferStatus":
         kind=value.get("kind")

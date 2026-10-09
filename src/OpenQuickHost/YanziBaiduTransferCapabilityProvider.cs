@@ -90,6 +90,42 @@ public static class YanziBaiduTransferCapabilityProvider
 
         yield return new YanziCapabilityProviderDefinition
         {
+            Name = "baiduNetdisk.searchExactVisible",
+            Description = "通过已登录百度网盘桌面客户端全局搜索文件名，只确认当前已渲染搜索页的精确匹配；不保证全云盘唯一，也不返回未经验证的云端 fid",
+            Category = "cloud-drive",
+            Version = "0.1.0",
+            Permissions = ["application.run", "file.read", "network.read"],
+            RiskLevel = "low",
+            InputSchema = YanziCapabilitySchema.Parse("""
+            {
+              "type":"object",
+              "properties":{
+                "filename":{"type":"string","minLength":3},
+                "waitSeconds":{"type":"integer","minimum":2,"maximum":20}
+              },
+              "required":["filename"],
+              "additionalProperties":false
+            }
+            """),
+            OutputSchema = ObjectSchema,
+            Handler = input =>
+            {
+                var json = (JsonElement)input!;
+                var filename = json.GetProperty("filename").GetString()
+                    ?? throw new ArgumentException("缺少搜索文件名");
+                var waitSeconds = json.TryGetProperty("waitSeconds", out var wait)
+                    && wait.TryGetInt32(out var seconds) ? seconds : 12;
+                if (waitSeconds is < 2 or > 20)
+                    throw new ArgumentOutOfRangeException(nameof(waitSeconds));
+                return InvokeLocalBridgeAsync(new
+                {
+                    operation = "searchExact", filename, waitSeconds
+                });
+            }
+        };
+
+        yield return new YanziCapabilityProviderDefinition
+        {
             Name = "baiduNetdisk.uploadVerified",
             Description = "调用百度网盘官方上传入口并等待本机客户端的成功完成记录；仅客户端历史验证，非实时云端 API 校验",
             Category = "cloud-drive",

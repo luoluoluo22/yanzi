@@ -18,7 +18,8 @@ internal static class BaiduTransferCapabilityVerification
         {
             "baiduNetdisk.transferStatus",
             "baiduNetdisk.roundtripVerify",
-            "baiduNetdisk.uploadVerified"
+            "baiduNetdisk.uploadVerified",
+            "baiduNetdisk.searchExactVisible"
         };
         foreach (var name in names)
         {
@@ -26,7 +27,7 @@ internal static class BaiduTransferCapabilityVerification
                   && def!.ProviderExtensionId == "yanzi-host", "registered " + name);
             Check(def!.Permissions.Contains("file.read"), "requires file.read");
         }
-        foreach (var name in names.Take(2))
+        foreach (var name in new[] { names[0], names[1], names[3] })
         {
             Check(YanziCapabilityRegistry.TryGet(name, out var def)
                   && def!.RiskLevel == "low" && !def.RequiresConfirmation,
@@ -36,6 +37,10 @@ internal static class BaiduTransferCapabilityVerification
         Check(YanziCapabilityRegistry.TryGet(names[2], out var uploadVerified)
               && uploadVerified!.RequiresConfirmation
               && uploadVerified.RiskLevel == "medium", "upload confirmation metadata");
+        Check(YanziCapabilityRegistry.TryGet(names[3], out var searchDef)
+              && searchDef!.Permissions.Contains("network.read")
+              && searchDef.Permissions.Contains("application.run")
+              && !searchDef.RequiresConfirmation, "read-only cloud search permissions");
 
         var caller = new YanziCapabilityCaller(
             "baidu-verification", ["application.read", "file.read"]);
