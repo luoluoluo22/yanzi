@@ -2779,6 +2779,43 @@
                                 </Border>
                             </UniformGrid>
 
+                            <!-- LAN desktops: discovery never grants trust; account-bound encrypted handshake is mandatory. -->
+                            <Border Style="{StaticResource SurfaceCard}" Padding="14" Margin="0,2,0,12">
+                                <StackPanel>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="局域网电脑" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold"/>
+                                            <TextBlock Text="两台电脑安装完整版燕子并登录相同账号后，扫描并验证加密直连；云同步仍独立工作。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" TextWrapping="Wrap" Margin="0,6,12,0"/>
+                                        </StackPanel>
+                                        <Button x:Name="LanScanButton" Grid.Column="1" Content="扫描设备" Style="{StaticResource SecondaryBtn}" Padding="12,5" VerticalAlignment="Top" Click="LanScan_Click"/>
+                                    </Grid>
+                                    <StackPanel Orientation="Horizontal" Margin="0,12,0,8">
+                                        <TextBlock Text="指定 IP（可留空）" Foreground="{DynamicResource BrushTextSec}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                        <TextBox x:Name="LanManualIpText" Width="150" Height="30" VerticalContentAlignment="Center" Padding="8,2" Text=""
+                                                 Foreground="#FFF1F5F9" Background="#FF222831" BorderBrush="#FF475569"/>
+                                        <Button Content="配置防火墙" Style="{StaticResource SecondaryBtn}" Padding="10,4" Margin="10,0,0,0" Click="LanConfigureFirewall_Click"/>
+                                    </StackPanel>
+                                    <TextBlock x:Name="LanScanStatus" Text="尚未扫描 · 当前仅接受同账号加密认证的 Windows 设备" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" TextWrapping="Wrap" Margin="0,2,0,8"/>
+                                    <ListBox x:Name="LanDesktopList" Height="108" Background="#FF191F28" BorderBrush="{DynamicResource BrushBorder}" Foreground="{DynamicResource BrushTextMain}">
+                                        <ListBox.ItemTemplate><DataTemplate>
+                                            <TextBlock Text="{Binding Label}" TextWrapping="Wrap" Margin="6" Foreground="{DynamicResource BrushTextMain}"/>
+                                        </DataTemplate></ListBox.ItemTemplate>
+                                    </ListBox>
+                                    <TextBlock Text="远程 PowerShell（仅对加密验证成功的电脑可执行）" Foreground="{DynamicResource BrushTextSec}" Margin="0,12,0,4"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <TextBox x:Name="LanCommandText" Height="31" VerticalContentAlignment="Center" Padding="8,2" Text="hostname"
+                                                 Foreground="#FFF1F5F9" Background="#FF222831" BorderBrush="#FF475569"/>
+                                        <Button x:Name="LanExecuteButton" Grid.Column="1" Content="执行远程命令" Style="{StaticResource SecondaryBtn}" Padding="10,4" Margin="10,0,0,0" Click="LanExecute_Click"/>
+                                    </Grid>
+                                    <TextBox x:Name="LanCommandOutput" Text="执行结果将显示在这里。" IsReadOnly="True" Height="84" Margin="0,9,0,0"
+                                             AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                                             Padding="8" Background="#FF151B23" Foreground="#FFE2E8F0" BorderBrush="#FF475569"/>
+                                    <TextBlock Text="UDP 发现不代表可信；命令通过账号绑定的加密密钥和重放保护。首次使用请允许私人网络防火墙访问；自动发现失败可输入笔记本 IP。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                                </StackPanel>
+                            </Border>
+
                             <Border x:Name="NestDevicePanel" Style="{StaticResource SurfaceCard}" Padding="14" Margin="0,2,0,12" Visibility="Collapsed">
                                 <StackPanel>
                                     <Grid>

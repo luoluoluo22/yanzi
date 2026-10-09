@@ -59,6 +59,7 @@ public static class YanziBuiltinCapabilityRegistration
             YanziChatCapabilityProvider.GetProviders());
 
         YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziDeviceCapabilityProvider.Create());
+        YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziDesktopLanCapabilityProvider.Create());
         YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziScreenshotCapabilityProvider.Create());
         YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziOcrCapabilityProvider.Create());
         YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziExtensionCapabilityProvider.Create());
