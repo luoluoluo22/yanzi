@@ -118,4 +118,44 @@ sta.Start();
 sta.Join();
 if (uiError is not null) throw new Exception("Rendered WPF public UI smoke failed", uiError);
 Console.WriteLine("PASS WPF primary button and input styles resolve in a rendered STA window");
+// Verify the actual ScriptExtensionRunner cache/emit pathway, not only an
+// equivalent Roslyn compiler constructed by the verification program.
+var realRunnerRoot = Path.Combine(Path.GetTempPath(),
+    "yanzi-ui-runner-verification-" + Guid.NewGuid().ToString("N"));
+Directory.CreateDirectory(realRunnerRoot);
+try
+{
+    for (var i = 0; i < files.Length; i++)
+    {
+        var fixtureDirectory = Path.Combine(realRunnerRoot, defaults[i].Item1);
+        Directory.CreateDirectory(fixtureDirectory);
+        File.Copy(files[i], Path.Combine(fixtureDirectory, "main.cs"));
+        var command = new CommandItem(
+            glyph: "UI", title: "Shared UI compiler verification",
+            subtitle: "", category: "Tools", accentHex: "#777777",
+            openTarget: null, keywords: Array.Empty<string>(),
+            extensionId: "ui-compile-" + defaults[i].Item1,
+            extensionDirectoryPath: fixtureDirectory,
+            runtime: "csharp", uiMode: "native-window",
+            entryPoint: "main.cs", entryMode: "entry");
+        var first = await ScriptExtensionRunner.PreparePortableAssetsAsync(command);
+        if (!first.Success || !File.Exists(first.Output))
+            throw new InvalidOperationException(
+                "Actual host compiler rejected " + defaults[i].Item1 + ": " + first.Error);
+        var second = await ScriptExtensionRunner.PreparePortableAssetsAsync(command);
+        if (!second.Success || !string.Equals(first.Output, second.Output, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                "Actual host compiler cache unstable for " + defaults[i].Item1);
+        var outputBytes = File.ReadAllBytes(first.Output);
+        if (outputBytes.Length < 2048)
+            throw new InvalidOperationException("Unexpectedly small emitted extension DLL");
+        Console.WriteLine("PASS ACTUAL_RUNNER " + defaults[i].Item1
+            + " cacheStable=True compiledBytes=" + outputBytes.Length);
+    }
+}
+finally
+{
+    try { Directory.Delete(realRunnerRoot, recursive: true); }
+    catch (IOException) { /* Deletion is best effort after load/cache handling. */ }
+}
 Console.WriteLine($"PASS {files.Length}/{files.Length} compiled against host UI metadata.");

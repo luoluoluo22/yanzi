@@ -89,6 +89,21 @@
 
 正式小程序升级还需要先让正式 Runtime 使用经过验证的候选 Host + Runtime + UI DLL 三件套，安装脚本也会再次核对正在运行的进程哈希。此时 `install-v2.ps1` 只暂存源码，不主动部署或重启正式 Runtime。
 
+## 真实宿主编译与安全暂存（2026-10-09）
+
+`CompilerVerification` 现增加实际 `ScriptExtensionRunner.PreparePortableAssetsAsync` 的两款 V2 动态编译和重复编译缓存一致性验证，不仅运行测试程序自行创建的 Roslyn 编译。
+
+对已验证的干净 Runtime 发布候选，执行：
+
+```powershell
+.\tools\yanzi-ui-extension-adoption\verify-release-candidate.ps1
+.\tools\yanzi-ui-extension-adoption\stage-release-candidate.ps1
+```
+
+第二条命令仅将完整版本存入 `%LOCALAPPDATA%\YanziRuntime\staged\ui-v2-<commit>`，哈希核对 Runtime / Shell 全量文件，不会修改 `runtime.json` 或停掉正式程序。独立快照额外通过 Runtime 18 项测试。
+
+通用 `scripts/install-shared-runtime.ps1` 的非激活路径已改为真正只暂存；`verify-runtime-staging.ps1` 用临时安装目录重复验收正式指针不变。**这不是正式上线**：只有新版宿主先成功激活并完成健康检查，才能启用两款 V2 小程序源码。
+
 ## 后续限制
 
 本轮改的是两套 WPF 窗口的主要标准控件，特殊结果列表及任务操作面板没有做全量像素级评估。项目的扩展编译器未来可以统一提供一个安全的共享 UI 加载服务，避免每款小程序都维护几行反射桥接。

@@ -24,6 +24,7 @@ foreach ($entry in $checks) {
     }
     Write-Host "MATCH_SHA256=$($entry[0])"
 }
+& (Join-Path $PSScriptRoot 'verify-runtime-staging.ps1') -CandidateRoot $CandidateRoot
 Push-Location $CandidateRoot
 try {
     $compiler = Join-Path $CandidateRoot 'tools\yanzi-ui-extension-adoption\CompilerVerification\bin\Release\net9.0-windows\CompilerVerification.exe'

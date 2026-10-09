@@ -59,6 +59,15 @@
 
 下一轮：把新宿主通过正式发布链路部署后，在真实新 Runtime 中分别打开两款小程序，检查 UI 与所有操作、日志、热重载、回退，再决定清理仍存在的业务专有手写颜色。
 
+## 延伸迭代：宿主真实编译链与安全发布暂存
+
+- 扩展编译器验证增加**真实** `ScriptExtensionRunner.PreparePortableAssetsAsync()` 调用：语义搜索和能力实验室 V2 均成功生成 DLL，第二次构建命中同一缓存路径。此前只有测试代码自己组装 Roslyn 编译器，覆盖不到宿主缓存和生成产物的路径。
+- 复测锁定的独立干净发布候选：`Yanzi.dll`、`Yanzi.Runtime.exe`、`Yanzi.UI.Wpf.dll` SHA256 均一致，两款 V2 编译、STA 可视组件及 Runtime 18 项生命周期验收通过。
+- 增加 `stage-release-candidate.ps1`：只将完整干净候选按 Git 提交 ID 保存到 `%LOCALAPPDATA%\YanziRuntime\staged\`，并逐个文件 SHA256 对比（Runtime **127**、Shell **122**）。暂存目录重复校验可复现，直接从该目录执行 18 项 Runtime 检查成功。**未修改正式 runtime.json，也未重启生产实例。**
+- 修复 `scripts/install-shared-runtime.ps1` 的危险默认行为：未传 `-Activate` 时只生成版本快照并返回，不再静默改写生产 `runtime.json`。新增可选 `ProjectRoot`/`InstallationRoot` 方便隔离运行；`verify-runtime-staging.ps1` 用假生产指针、真实干净构建验证不变性与产物哈希。
+- `verify-release-candidate.ps1` 已将版本化暂存安全性检查纳入候选复测。
+- **尚未正式部署新宿主或激活 V2 扩展源码。** 正式宿主保留旧版本；直接激活 V2 会导致编译引用不兼容。等待无业务冲突的发布窗口后，再按原有运行时升级、健康检查与回滚流程执行切换。
+
 ## 与其他未提交工作隔离
 
 `ScriptExtensionRunner.cs` 在本轮开始前已经存在其他任务的修改（后台触发分发）。该部分既不属于 UI，也不应被本次提交顺带包含。提交时必须使用仅针对共享 UI 编译引用的精确索引补丁，避免带走用户其他正在进行的工作。
