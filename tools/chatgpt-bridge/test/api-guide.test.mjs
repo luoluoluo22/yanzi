@@ -15,7 +15,7 @@ test('all documented task bodies pass actual API validation and generated script
   const dom = page(t), guide = dom.window.YanziApiGuide;
   for (const [key, sample] of Object.entries(guide.samples)) {
     if (sample.path === '/api/jobs' && sample.body) assert.doesNotThrow(() => validateTask(sample.body));
-    const python = spawnSync('python', ['-c', 'import ast,sys; ast.parse(sys.stdin.read())'], { input: guide.example(key, 'python'), encoding: 'utf8', timeout: 10000 });
+    const python = spawnSync('python', ['-c', 'import ast,sys; ast.parse(sys.stdin.read())'], { input: guide.example(key, 'python'), encoding: 'utf8', timeout: 10000, env: { ...process.env, PYTHONIOENCODING: 'utf-8' } });
     assert.equal(python.status, 0, key + ': ' + python.stderr);
     const node = spawnSync('node', ['--check', '--input-type=module'], { input: guide.example(key, 'javascript'), encoding: 'utf8', timeout: 10000 });
     assert.equal(node.status, 0, key + ': ' + node.stderr);
