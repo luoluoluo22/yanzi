@@ -19,7 +19,7 @@ namespace OpenQuickHost;
 
 public static class ScriptExtensionRunner
 {
-    private const string CSharpCacheVersion = "v13";
+    private const string CSharpCacheVersion = "v14";
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> CSharpBuildLocks = new(StringComparer.OrdinalIgnoreCase);
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> ExtensionLaunchLocks = new(StringComparer.OrdinalIgnoreCase);
 
@@ -639,6 +639,8 @@ public static class ScriptExtensionRunner
                 OutputKind.DynamicallyLinkedLibrary,
                 optimizationLevel: OptimizationLevel.Release,
                 nullableContextOptions: NullableContextOptions.Enable));
+
+        compilation = CSharpAsyncCallbackGuard.Protect(compilation, syntaxTrees[1]);
 
         var tempSuffix = $".{Environment.ProcessId}.{Guid.NewGuid():N}.tmp";
         var tempDllPath = Path.Combine(outputDirectory, $"YanziExtension{tempSuffix}.dll");
@@ -1273,6 +1275,10 @@ public static class ScriptExtensionRunner
                     assembly = loadContext.LoadFromStream(fs);
                 }
             }
+
+            assembly.GetType(CSharpAsyncCallbackGuard.HelperType)?.GetField("ErrorHandler")?.SetValue(null,
+                (Action<Exception>)(error => HostAssets.AppendLog(
+                    $"ScriptRunner async callback failed: id={command.ExtensionId}, title={command.Title}, error={error}")));
 
             var runtimeContext = CreateInProcessRuntimeContext(assembly, context, stateUpdatePath, capabilitySession);
             var runMethod = FindYanziActionRunMethod(assembly, runtimeContext.GetType());

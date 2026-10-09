@@ -2,6 +2,17 @@ using System.Net;
 using System.Reflection;
 using OpenQuickHost.Sync;
 
+if (args.Contains("--login-recovery"))
+{
+    await LoginRecoveryVerification.RunAsync();
+    return;
+}
+if (args.Contains("--async-callbacks"))
+{
+    await AsyncCallbackVerification.RunAsync();
+    return;
+}
+
 var getProxy = new StubHandler();
 var getDirect = new StubHandler();
 var getClient = CreateClient(getProxy, getDirect);

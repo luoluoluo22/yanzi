@@ -737,7 +737,15 @@ public partial class MainWindow
             {
                 _cloudSyncClient.SetCredential(email, password, dialog.RememberCredential);
                 await _cloudSyncClient.EnsureAuthenticatedAsync();
-            if (HostRuntimeProfile.IsShell && _cloudSyncClient.E2eeMasterKey != null) RuntimeConnection.Queue("auth.key", new { account = _cloudSyncClient.CurrentUserId, key = _cloudSyncClient.E2eeMasterKey });
+                // Only an explicit owner sign-in may reconnect a removed registration.
+                // Background presence heartbeats must keep respecting device removal.
+                using var reconnectTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+                await _cloudSyncClient.RegisterDeviceAsync(
+                    DeviceIdentityStore.GetOrCreateDesktopDeviceId(), "desktop",
+                    DeviceIdentityStore.GetDesktopDisplayName(), BuildDesktopDeviceCapabilities(),
+                    cancellationToken: reconnectTimeout.Token, reactivateRemovedDevice: true);
+                if (HostRuntimeProfile.IsShell && _cloudSyncClient.E2eeMasterKey != null)
+                    RuntimeConnection.Queue("auth.key", new { account = _cloudSyncClient.CurrentUserId, key = _cloudSyncClient.E2eeMasterKey });
             };
             Window? activeWindow = null;
             foreach (Window win in System.Windows.Application.Current.Windows)

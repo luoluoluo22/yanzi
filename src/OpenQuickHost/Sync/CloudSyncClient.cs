@@ -154,12 +154,15 @@ public sealed partial class CloudSyncClient
     public async Task EnsureAuthenticatedAsync(CancellationToken cancellationToken = default)
     {
         var expectedGeneration = AccountCoordinator.Generation;
+        bool authenticated;
         await _authenticationLock.WaitAsync(cancellationToken);
-        try { AccountCoordinator.RequireCurrent(expectedGeneration); await EnsureAuthenticatedCoreAsync(cancellationToken); }
+        try { AccountCoordinator.RequireCurrent(expectedGeneration); authenticated = await EnsureAuthenticatedCoreAsync(cancellationToken); }
         finally { _authenticationLock.Release(); }
+        // Vault requests authenticate too. Never restore while holding the authentication gate.
+        if (authenticated) await RestoreVaultAfterLoginAsync(cancellationToken);
     }
 
-    private async Task EnsureAuthenticatedCoreAsync(CancellationToken cancellationToken)
+    private async Task<bool> EnsureAuthenticatedCoreAsync(CancellationToken cancellationToken)
     {
         if (HasValidSession())
         {
@@ -169,7 +172,7 @@ public sealed partial class CloudSyncClient
                 E2eeMasterKey = restoredKeys.MasterKey;
                 CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "E2eeMasterKey restored from saved credential for existing session");
             }
-            return;
+            return false;
         }
 
         if (!HasCredential)
@@ -185,8 +188,9 @@ public sealed partial class CloudSyncClient
         E2eeMasterKey = keys.MasterKey;
 
         // 这里传递明文密码，LoginAsync 内部会将其转为 LoginHash 进行网络传输
-        var authenticated = await LoginAsync(_credential.LoginEmail, _credential.Password, cancellationToken);
+        var authenticated = await LoginCoreAsync(_credential.LoginEmail, _credential.Password, cancellationToken);
         CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Authentication completed", ("userId", authenticated.UserId), ("username", authenticated.Username));
+        return true;
     }
 
     public async Task<SendCodeResponse> SendRegistrationCodeAsync(string email, string username, CancellationToken cancellationToken = default)
@@ -244,6 +248,24 @@ public sealed partial class CloudSyncClient
 
     public async Task<SyncSession> LoginAsync(string email, string password, CancellationToken cancellationToken = default)
     {
+        var session = await LoginCoreAsync(email, password, cancellationToken);
+        await RestoreVaultAfterLoginAsync(cancellationToken);
+        return session;
+    }
+
+    private async Task RestoreVaultAfterLoginAsync(CancellationToken cancellationToken)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(12));
+        try { await AccountEnvironmentSecretVault.RestoreAfterAuthenticationAsync(this, timeout.Token); }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            HostAssets.AppendLog("Environment secret vault restore timed out; login remains available.");
+        }
+    }
+
+    private async Task<SyncSession> LoginCoreAsync(string email, string password, CancellationToken cancellationToken)
+    {
         var generation = AccountCoordinator.Generation;
         CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Login requested", ("email", email), ("passwordLength", password?.Length ?? 0));
 
@@ -272,7 +294,6 @@ public sealed partial class CloudSyncClient
         await EnsureSuccessAsync(response, cancellationToken);
         var session = await ReadSessionAsync(response, cancellationToken);
         AccountCoordinator.Commit(generation, () => { _session = session; SyncSessionStore.Save(session); });
-        await AccountEnvironmentSecretVault.RestoreAfterAuthenticationAsync(this, cancellationToken);
         CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Login completed", ("userId", session.UserId), ("username", session.Username));
         return session;
     }
@@ -893,7 +914,8 @@ public sealed partial class CloudSyncClient
         string displayName,
         object? capabilities = null,
         string? pushToken = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool reactivateRemovedDevice = false)
     {
         await EnsureAuthenticatedAsync(cancellationToken);
         var body = JsonSerializer.Serialize(new
@@ -902,6 +924,7 @@ public sealed partial class CloudSyncClient
             platform,
             displayName,
             pushToken,
+            reactivateRemovedDevice,
             capabilities = capabilities ?? new { }
         });
 

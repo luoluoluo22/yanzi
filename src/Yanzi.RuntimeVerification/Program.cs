@@ -54,6 +54,7 @@ File.WriteAllText(Path.Combine(extension, "manifest.json"), """
 File.WriteAllText(Path.Combine(extension, "main.cs"), """
 using System;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using OpenQuickHost.CSharpRuntime;
 public static class YanziAction
@@ -69,10 +70,16 @@ public static class YanziAction
 }
 public sealed class Resident
 {
+    private readonly Timer timer = new(async _ =>
+    {
+        await Task.Yield();
+        try { throw new Exception("callback-original-failure"); }
+        catch { throw new Exception("callback-reporting-failed"); }
+    }, null, 250, Timeout.Infinite);
     public Guid Instance { get; } = Guid.NewGuid();
     public TaskCompletionSource<bool> Done { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public void Toggle() { }
-    public void Quit() => Done.TrySetResult(true);
+    public void Quit() { timer.Dispose(); Done.TrySetResult(true); }
 }
 """);
 
@@ -113,6 +120,13 @@ try
     var first = await RuntimeRpc.CallAsync("capability.invoke", new { name = "runtime.verification.ping", payload = new { } });
     var providerInstance = first.GetProperty("instance").GetGuid();
     Check(first.GetProperty("processId").GetInt32() == runtime.Id, "Provider executed outside Runtime");
+    var callbackLog = Path.Combine(root, "Logs", "runtime.log");
+    var callbackDeadline = DateTimeOffset.UtcNow.AddSeconds(5);
+    while ((!File.Exists(callbackLog) || !File.ReadAllText(callbackLog).Contains("callback-reporting-failed")) &&
+           DateTimeOffset.UtcNow < callbackDeadline) await Task.Delay(100);
+    Check(!runtime.HasExited && File.Exists(callbackLog) &&
+        File.ReadAllText(callbackLog).Contains("ScriptRunner async callback failed: id=runtime-resident-test"),
+        "Source callback failure must be reported without terminating Runtime");
 
     var stableCallback = Path.Combine(root, "stable-callback.txt");
     var devCallback = Path.Combine(root, "dev-callback.txt");
