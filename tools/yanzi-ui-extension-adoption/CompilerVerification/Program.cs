@@ -10,10 +10,35 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Text;
 using OpenQuickHost;
 
-var files = args.Length > 0
-    ? args
-    : [Path.Combine(Path.GetTempPath(), "yanzi-ui-v2-candidates", "semantic.cs"),
-       Path.Combine(Path.GetTempPath(), "yanzi-ui-v2-candidates", "CapabilityLab.cs")];
+var defaults = new[]
+{
+    ("semantic-search", "semantic.cs"),
+    ("capability-lab", "CapabilityLab.cs")
+};
+var files = args.Length > 0 ? args : defaults.Select(x => Path.Combine(
+    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+    "OpenQuickHost", "Extensions", x.Item1, x.Item2 + ".ui-v2-pending")).ToArray();
+if (args.Length == 0)
+{
+    // Ensure CI and future iterations test the exact staged bytes, not an old temp copy.
+    var manifest = Path.Combine(Directory.GetCurrentDirectory(),
+        "tools", "yanzi-ui-extension-adoption", "source-hashes.v2.json");
+    if (!File.Exists(manifest)) throw new FileNotFoundException(
+        "Run this verification from the OpenQuickHost repository root.", manifest);
+    using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(manifest));
+    for (var i = 0; i < files.Length; i++)
+    {
+        if (!File.Exists(files[i])) throw new FileNotFoundException(
+            "Staged UI v2 source is missing; run install-v2.ps1 first.", files[i]);
+        var actual = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            File.ReadAllBytes(files[i])));
+        var expected = doc.RootElement.GetProperty(defaults[i].Item1)
+            .GetProperty("optimizedSha256").GetString();
+        if (!string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Staged optimized extension SHA256 mismatch: " + files[i]);
+    }
+    Console.WriteLine("STAGED_SOURCE_SHA256=PASS");
+}
 var hostType = typeof(ScriptExtensionRunner);
 string SharedConst(string name) => (string)(hostType
     .GetField(name, BindingFlags.NonPublic | BindingFlags.Static)!

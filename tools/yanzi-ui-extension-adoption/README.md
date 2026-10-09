@@ -70,7 +70,8 @@
 
 新版本的宿主（`ScriptExtensionRunner`）把公共 UI 的固定程序集引用、可收集上下文解析及缓存版本管理集中在一个位置；小程序代码中不再需要粘贴 `YanziNativeUiBridge`。
 
-- `CompilerVerification`：使用真正宿主的动态 Roslyn 引用与注入源文件，编译两款去重源码并验证真实 WPF 深色主题加载。
+- `CompilerVerification`：使用真正宿主的动态 Roslyn 引用与注入源文件，编译两款去重源码并验证真实 WPF 深色主题加载；默认读取小程序目录里 **持久化暂存且 SHA256 校验的 `.ui-v2-pending` 文件**，不再依赖临时目录。
+- `verify.ps1`：在仓库根目录执行 `& .\tools\yanzi-ui-extension-adoption\verify.ps1`，一键完成安全暂存、直接编译、STA WPF 渲染、289 项公共组件检查及 18 项隔离 Runtime 回归。`-SkipRuntime` 可用于缩短日常快速测试。
 - `patches/*-v2.patch` 与 `source-hashes.v2.json`：从已安装的 V1 升级到 V2 的增量、可核验补丁。
 - `install-v2.ps1`：**默认只暂存，正式扩展源码不发生变化**。只有确认新的宿主版本已发布时，才允许用 `-Activate -VerifiedHostAssembly <Yanzi.dll 路径>` 激活；新宿主未部署前请不要启用。
 
