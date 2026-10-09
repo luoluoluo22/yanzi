@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   select:
-    if: github.ref_name != 'release/mobile-compose-v1.0.13'
+    if: github.ref_name != 'release/notification-replay-v1.0.14'
     runs-on: ubuntu-latest
     outputs:
       metadata: ${{ steps.changed.outputs.metadata }}
@@ -74,7 +74,7 @@ jobs:
         run: python3 scripts/application-release-ci.py verify "$RELEASE_META"
 
   desktop-lan-release:
-    if: github.event_name == 'workflow_dispatch' && github.ref_name == 'release/mobile-compose-v1.0.13'
+    if: github.event_name == 'workflow_dispatch' && github.ref_name == 'release/notification-replay-v1.0.14'
     runs-on: windows-latest
     permissions:
       contents: write
@@ -96,23 +96,23 @@ jobs:
         shell: pwsh
         run: |
           $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
-          & ./scripts/publish-installer.ps1 -Version 1.0.13 -SkipBaselineDownload -KeepHistoricalPackages
+          & ./scripts/publish-installer.ps1 -Version 1.0.14 -SkipBaselineDownload -KeepHistoricalPackages
           if ($LASTEXITCODE -ne 0) { throw 'Windows installer build failed' }
       - name: Upload release assets from GitHub
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload v1.0.13 .artifacts/installer/Yanzi-win-Setup-1.0.13.exe .artifacts/installer/Yanzi-win-Portable-1.0.13.zip .artifacts/installer/Yanzi-1.0.13-full.nupkg .artifacts/installer/RELEASES .artifacts/installer/releases.win.json .artifacts/installer/assets.win.json --repo luoluoluo22/yanzi --clobber
+          gh release upload v1.0.14 .artifacts/installer/Yanzi-win-Setup-1.0.14.exe .artifacts/installer/Yanzi-win-Portable-1.0.14.zip .artifacts/installer/Yanzi-1.0.14-full.nupkg .artifacts/installer/RELEASES .artifacts/installer/releases.win.json .artifacts/installer/assets.win.json --repo luoluoluo22/yanzi --clobber
           if ($LASTEXITCODE -ne 0) { throw 'GitHub Release asset upload failed' }
       - name: Verify complete draft resources
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $release = gh release view v1.0.13 --repo luoluoluo22/yanzi --json assets,isDraft | ConvertFrom-Json
+          $release = gh release view v1.0.14 --repo luoluoluo22/yanzi --json assets,isDraft | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0 -or -not $release.isDraft) { throw 'Draft release not found' }
-          foreach ($name in @('Yanzi-win-Setup-1.0.13.exe','Yanzi-win-Portable-1.0.13.zip','Yanzi-1.0.13-full.nupkg','releases.win.json','RELEASES','assets.win.json')) {
+          foreach ($name in @('Yanzi-win-Setup-1.0.14.exe','Yanzi-win-Portable-1.0.14.zip','Yanzi-1.0.14-full.nupkg','releases.win.json','RELEASES','assets.win.json')) {
             if ($name -notin @($release.assets | ForEach-Object name)) { throw "Missing artifact: $name" }
           }
           Write-Host 'Desktop release draft verified.'

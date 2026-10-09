@@ -22,6 +22,7 @@ public partial class MainWindow
     private DateTimeOffset _lastDesktopPresenceHeartbeatErrorLogAt = DateTimeOffset.MinValue;
     private DateTimeOffset _lastAccountLanRefreshAt = DateTimeOffset.MinValue;
     private int _desktopPresenceHeartbeatFailureCount;
+    private DateTimeOffset _messageFirstSeenUtc = DateTimeOffset.MinValue;
 
     private void StartMobileMessageBridge(string reason)
     {
@@ -333,6 +334,9 @@ public partial class MainWindow
                 catch (Exception error) { HostAssets.AppendLog("Device outbox retry deferred: " + error.GetType().Name); }
             });
             var accountId = _cloudSyncClient.CurrentUserId ?? throw new InvalidOperationException("Cloud account is not authenticated.");
+            _messageFirstSeenUtc = DeviceMessageNotificationPolicy.ReadOrInitialize(
+                accountId, _desktopDeviceId,
+                DeviceMessageCursorStore.Exists(accountId, _desktopDeviceId), DateTimeOffset.UtcNow);
             var cursor = DeviceMessageCursorStore.Read(accountId, _desktopDeviceId);
             var total = 0;
             for (var pageIndex = 0; pageIndex < 20; pageIndex++)
@@ -573,6 +577,13 @@ public partial class MainWindow
 
         await Dispatcher.InvokeAsync(() =>
         {
+            // Keep history, but do not replay old messages as popups or clipboard copies.
+            SaveMobileInboxMessage(message, title, text, sourceLabel, screenshotDataUrl, screenshotFilePath);
+            if (!DeviceMessageNotificationPolicy.ShouldPopup(message, _messageFirstSeenUtc, DateTimeOffset.UtcNow))
+            {
+                HostAssets.AppendDebug($"Mobile history archived quietly: id={message.MessageId}, createdAt={message.CreatedAt}.");
+                return;
+            }
             LastRunMessage = $"{title}：{text}";
             var clipboardMessage = CopyMobileMessageToClipboard(message, text, screenshotDataUrl, mobileAttachmentFilePath);
 
@@ -581,7 +592,6 @@ public partial class MainWindow
                 ? "已收到手机端消息。"
 
                 : $"已收到手机端消息，{clipboardMessage}。";
-            SaveMobileInboxMessage(message, title, text, sourceLabel, screenshotDataUrl, screenshotFilePath);
             ShowMobileMessageToast(title, text, sourceLabel, screenshotDataUrl, screenshotFilePath, message.SourceDeviceId);
         });
 
@@ -1346,7 +1356,8 @@ public partial class MainWindow
                 payload = message.Payload,
                 screenshotDataUrl = string.IsNullOrWhiteSpace(screenshotFilePath) ? screenshotDataUrl : null,
                 localFilePath = screenshotFilePath,
-                receivedAtUtc = DateTimeOffset.UtcNow.ToString("O"),
+                receivedAtUtc = (DeviceMessageNotificationPolicy.TryReadCreatedAt(message.CreatedAt, out var sentAt)
+                    ? sentAt : DateTimeOffset.UtcNow).ToString("O"),
                 createdAt = message.CreatedAt
             };
             File.AppendAllText(
