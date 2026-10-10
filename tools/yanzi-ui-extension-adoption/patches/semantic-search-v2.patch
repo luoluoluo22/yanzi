@@ -1,0 +1,137 @@
+--- a/semantic.cs
++++ b/semantic.cs
+@@ -22,36 +22,7 @@
+ using System.Windows.Media.Imaging;
+ using System.Windows.Threading;
+ using OpenQuickHost.CSharpRuntime;
+-using System.Reflection;
+-
+-internal static class YanziNativeUiBridge
+-{
+-    public static bool Ready { get; private set; }
+-    public static bool TryApply(Window window)
+-    {
+-        try
+-        {
+-            var path = Path.Combine(
+-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+-                "OpenQuickHost", "SharedUI", "Yanzi.UI.Wpf.dll");
+-            var assembly = AppDomain.CurrentDomain.GetAssemblies()
+-                .FirstOrDefault(a => a.GetName().Name == "Yanzi.UI.Wpf")
+-                ?? Assembly.LoadFrom(path);
+-            var ui = assembly.GetType("Yanzi.UI.Wpf.YanziUi", true)!;
+-            var theme = assembly.GetType("Yanzi.UI.Wpf.YanziTheme", true)!;
+-            ui.GetMethod("ApplyTo", BindingFlags.Public | BindingFlags.Static)!
+-                .Invoke(null, new object[] { window, Enum.Parse(theme, "Dark") });
+-            Ready = true;
+-            return true;
+-        }
+-        catch (Exception) { Ready = false; return false; }
+-    }
+-    public static void Style(FrameworkElement control, string key)
+-    {
+-        if (Ready)
+-            control.SetResourceReference(FrameworkElement.StyleProperty, key);
+-    }
+-}
++using Yanzi.UI.Wpf;
+ 
+ public sealed class SemanticSearchItem
+ {
+@@ -348,10 +319,8 @@
+         MinWidth = 560;
+         MinHeight = 420;
+         WindowStartupLocation = WindowStartupLocation.CenterScreen;
+-        Background = new SolidColorBrush(Color.FromRgb(24, 24, 27));
+-        // Share the real, versioned Yanzi UI design tokens with other native apps.
+-        var sharedUi = YanziNativeUiBridge.TryApply(this);
+-        if (sharedUi) SetResourceReference(Window.BackgroundProperty, "Yanzi.Color.Background");
++        YanziUi.ApplyTo(this, YanziTheme.Dark);
++        SetResourceReference(Window.BackgroundProperty, "Yanzi.Color.Background");
+ 
+         var root = new Grid { Margin = new Thickness(18) };
+         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+@@ -363,26 +332,11 @@
+         top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+         top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+ 
+-        _queryBox = new TextBox
++        _queryBox = YanziUi.WithStyle(new TextBox
+         {
+             Height = 38,
+-            FontSize = 14,
+-            Padding = new Thickness(12, 8, 12, 8),
+-            Background = new SolidColorBrush(Color.FromRgb(39, 39, 42)),
+-            Foreground = Brushes.White,
+-            BorderBrush = new SolidColorBrush(Color.FromRgb(63, 63, 70)),
+-            BorderThickness = new Thickness(1),
+             VerticalContentAlignment = VerticalAlignment.Center
+-        };
+-        if (sharedUi)
+-        {
+-            _queryBox.ClearValue(TextBox.BackgroundProperty);
+-            _queryBox.ClearValue(TextBox.BorderBrushProperty);
+-            _queryBox.ClearValue(TextBox.ForegroundProperty);
+-            _queryBox.ClearValue(TextBox.PaddingProperty);
+-            _queryBox.ClearValue(TextBox.BorderThicknessProperty);
+-            YanziNativeUiBridge.Style(_queryBox, "Yanzi.Input");
+-        }
++        }, YanziUi.Styles.Input);
+         AutomationProperties.SetAutomationId(_queryBox, "semantic.query");
+         AutomationProperties.SetName(_queryBox, "搜索内容");
+         _queryBox.KeyDown += async (_, e) =>
+@@ -396,8 +350,7 @@
+         Grid.SetColumn(_queryBox, 0);
+         top.Children.Add(_queryBox);
+ 
+-        _searchButton = MakeButton("搜索");
+-        if (sharedUi) StyleSharedButton(_searchButton, "Yanzi.Button.Primary");
++        _searchButton = MakeButton("搜索", YanziUi.Styles.PrimaryButton);
+         _searchButton.Margin = new Thickness(10, 0, 0, 0);
+         AutomationProperties.SetAutomationId(_searchButton, "semantic.search");
+         AutomationProperties.SetName(_searchButton, "搜索");
+@@ -405,8 +358,7 @@
+         Grid.SetColumn(_searchButton, 1);
+         top.Children.Add(_searchButton);
+ 
+-        _scanButton = MakeButton("更新索引");
+-        if (sharedUi) StyleSharedButton(_scanButton, "Yanzi.Button.Secondary");
++        _scanButton = MakeButton("更新索引", YanziUi.Styles.SecondaryButton);
+         _scanButton.Margin = new Thickness(8, 0, 0, 0);
+         AutomationProperties.SetAutomationId(_scanButton, "semantic.scan");
+         AutomationProperties.SetName(_scanButton, "更新索引");
+@@ -688,31 +640,14 @@
+         if (!string.IsNullOrWhiteSpace(message)) _status.Text = message;
+     }
+ 
+-    private static void StyleSharedButton(Button button, string styleKey)
+-    {
+-        button.ClearValue(Button.BackgroundProperty);
+-        button.ClearValue(Button.ForegroundProperty);
+-        button.ClearValue(Button.BorderBrushProperty);
+-        button.ClearValue(Button.BorderThicknessProperty);
+-        button.ClearValue(Button.PaddingProperty);
+-        YanziNativeUiBridge.Style(button, styleKey);
+-    }
+-
+-    private static Button MakeButton(string text)
+-    {
+-        return new Button
++    private static Button MakeButton(string text, string style) =>
++        YanziUi.WithStyle(new Button
+         {
+             Content = text,
+             Height = 38,
+             MinWidth = 74,
+-            Padding = new Thickness(14, 5, 14, 5),
+-            Background = new SolidColorBrush(Color.FromRgb(63, 63, 70)),
+-            Foreground = Brushes.White,
+-            BorderBrush = new SolidColorBrush(Color.FromRgb(82, 82, 91)),
+-            BorderThickness = new Thickness(1),
+             Cursor = Cursors.Hand
+-        };
+-    }
++        }, style);
+ }
+ 
+ public static class YanziAction

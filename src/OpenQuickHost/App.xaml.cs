@@ -317,6 +317,13 @@ public partial class App : WpfApplication
             StartLocalAgentApi(window, settings);
             _singleInstanceService.StartServer(message => HandleSecondaryLaunchMessageAsync(window, message));
             _ = HandleLaunchArgumentsAsync(window, e.Args);
+            // Development-only preview of the REAL SettingsWindow; production is untouched.
+            if (HostRuntimeProfile.IsDevelopment && e.Args.Any(static arg =>
+                    arg.Equals("--settings-preview", StringComparison.OrdinalIgnoreCase)))
+            {
+                _ = Dispatcher.BeginInvoke(new Action(() => OpenSettingsWindow("general")),
+                    System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            }
 
             // 4. 燕子 1.0.0 VIP 维护计划启动门禁自检（在保用户或终身 VIP 0 延迟秒过；未开通或已到期则触发激活引导）
             _ = Task.Run(async () =>

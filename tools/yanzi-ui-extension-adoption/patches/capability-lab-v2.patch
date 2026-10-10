@@ -1,0 +1,123 @@
+--- a/CapabilityLab.cs
++++ b/CapabilityLab.cs
+@@ -12,36 +12,7 @@
+ using System.Windows.Input;
+ using System.Windows.Media;
+ using OpenQuickHost.CSharpRuntime;
+-using System.Reflection;
+-
+-internal static class YanziNativeUiBridge
+-{
+-    public static bool Ready { get; private set; }
+-    public static bool TryApply(Window window)
+-    {
+-        try
+-        {
+-            var path = Path.Combine(
+-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+-                "OpenQuickHost", "SharedUI", "Yanzi.UI.Wpf.dll");
+-            var assembly = AppDomain.CurrentDomain.GetAssemblies()
+-                .FirstOrDefault(a => a.GetName().Name == "Yanzi.UI.Wpf")
+-                ?? Assembly.LoadFrom(path);
+-            var ui = assembly.GetType("Yanzi.UI.Wpf.YanziUi", true)!;
+-            var theme = assembly.GetType("Yanzi.UI.Wpf.YanziTheme", true)!;
+-            ui.GetMethod("ApplyTo", BindingFlags.Public | BindingFlags.Static)!
+-                .Invoke(null, new object[] { window, Enum.Parse(theme, "Dark") });
+-            Ready = true;
+-            return true;
+-        }
+-        catch (Exception) { Ready = false; return false; }
+-    }
+-    public static void Style(FrameworkElement control, string key)
+-    {
+-        if (Ready)
+-            control.SetResourceReference(FrameworkElement.StyleProperty, key);
+-    }
+-}
++using Yanzi.UI.Wpf;
+ 
+ public static class YanziAction
+ {
+@@ -130,8 +101,8 @@
+         Background = Brush("#0B0F14");
+         Foreground = Brush("#E5E7EB");
+         FontFamily = new FontFamily("Microsoft YaHei UI, Segoe UI");
+-        if (YanziNativeUiBridge.TryApply(this))
+-            SetResourceReference(Window.BackgroundProperty, "Yanzi.Color.Background");
++        YanziUi.ApplyTo(this, YanziTheme.Dark);
++        SetResourceReference(Window.BackgroundProperty, "Yanzi.Color.Background");
+         Content = BuildUi();
+ 
+         Loaded += async (_, _) =>
+@@ -222,18 +193,15 @@
+ 
+         var logBorder = new Border
+         {
+-            Background = Brush("#101720"),
+-            BorderBrush = Brush("#1F2937"),
++            Background = null,
++            BorderBrush = null,
+             BorderThickness = new Thickness(1),
+             CornerRadius = new CornerRadius(14),
+             Padding = new Thickness(14)
+         };
+ 
+-        if (YanziNativeUiBridge.Ready)
+-        {
+-            logBorder.SetResourceReference(Border.BackgroundProperty, "Yanzi.Color.Card");
+-            logBorder.SetResourceReference(Border.BorderBrushProperty, "Yanzi.Color.Border");
+-        }
++        logBorder.SetResourceReference(Border.BackgroundProperty, "Yanzi.Color.Card");
++        logBorder.SetResourceReference(Border.BorderBrushProperty, "Yanzi.Color.Border");
+         var logGrid = new Grid();
+         logGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+         logGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+@@ -280,17 +248,14 @@
+     {
+         var container = new Border
+         {
+-            Background = Brush("#111821"),
+-            BorderBrush = Brush("#202B38"),
++            Background = null,
++            BorderBrush = null,
+             BorderThickness = new Thickness(1),
+             CornerRadius = new CornerRadius(14),
+             Padding = new Thickness(16)
+         };
+-        if (YanziNativeUiBridge.Ready)
+-        {
+-            container.SetResourceReference(Border.BackgroundProperty, "Yanzi.Color.Card");
+-            container.SetResourceReference(Border.BorderBrushProperty, "Yanzi.Color.Border");
+-        }
++        container.SetResourceReference(Border.BackgroundProperty, "Yanzi.Color.Card");
++        container.SetResourceReference(Border.BorderBrushProperty, "Yanzi.Color.Border");
+ 
+         var stack = new StackPanel();
+         var top = new Grid();
+@@ -805,23 +770,10 @@
+     private static void ConfigureButton(Button button, string text, bool primary)
+     {
+         button.Content = text;
+-        button.Padding = new Thickness(13, 7, 13, 7);
+-        button.Background = Brush(primary ? "#2563EB" : "#18212C");
+-        button.Foreground = Brush(primary ? "#FFFFFF" : "#CBD5E1");
+-        button.BorderBrush = Brush(primary ? "#3B82F6" : "#2A3645");
+-        button.BorderThickness = new Thickness(1);
+         button.Cursor = Cursors.Hand;
+-        button.FontSize = 12;
+-        if (YanziNativeUiBridge.Ready)
+-        {
+-            button.ClearValue(Button.BackgroundProperty);
+-            button.ClearValue(Button.ForegroundProperty);
+-            button.ClearValue(Button.BorderBrushProperty);
+-            button.ClearValue(Button.BorderThicknessProperty);
+-            button.ClearValue(Button.PaddingProperty);
+-            YanziNativeUiBridge.Style(button,
+-                primary ? "Yanzi.Button.Primary" : "Yanzi.Button.Secondary");
+-        }
++        YanziUi.WithStyle(button, primary
++            ? YanziUi.Styles.PrimaryButton
++            : YanziUi.Styles.SecondaryButton);
+     }
+ 
+     private static SolidColorBrush Brush(string hex)

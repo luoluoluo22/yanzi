@@ -1,0 +1,28 @@
+{
+  "semantic-search": {
+    "entry": "semantic.cs",
+    "originalSha256": "B7FD968DBF1B75CEA7E2CC56735FB2729E1D7909BC193CC122153191859DAD92",
+    "modifiedSha256": "889641C6746E3CE12A3A7E84229045D50D2D1D135066FED1EAE3627500CBBAAA",
+    "patch": "patches/semantic-search.patch",
+    "patchBytes": 4208,
+    "previousSha256": "889641C6746E3CE12A3A7E84229045D50D2D1D135066FED1EAE3627500CBBAAA",
+    "optimizedSha256": "91F6160390374017E61B25E47855CABC7CF9A77892DA358C7BF5B8ACAA8A781F",
+    "upgradePatch": "patches/semantic-search-v2.patch",
+    "previousLines": 762,
+    "optimizedLines": 697,
+    "baselineLines": 708
+  },
+  "capability-lab": {
+    "entry": "CapabilityLab.cs",
+    "originalSha256": "9EFF7D2614CEAD06670A818CC59A215E89CFF35B4A8E68323F87AB427E3B5C8B",
+    "modifiedSha256": "38DAFBEDB67DADB20D952C611E72E2985577D8E2621EFFD687752F928AD747B6",
+    "patch": "patches/capability-lab.patch",
+    "patchBytes": 3477,
+    "previousSha256": "38DAFBEDB67DADB20D952C611E72E2985577D8E2621EFFD687752F928AD747B6",
+    "optimizedSha256": "41D1CA4CF86FA0FF39F016A67CFECF6E0F3545C22274C9FDACD01259E04B7064",
+    "upgradePatch": "patches/capability-lab-v2.patch",
+    "previousLines": 922,
+    "optimizedLines": 874,
+    "baselineLines": 870
+  }
+}

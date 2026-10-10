@@ -1,0 +1,14 @@
+{
+  "commit": "6fc2a6dbd7d91d0d0f25d93ada3f9293be5ab0cf",
+  "buildChannel": "isolated-clean-worktree",
+  "hostCompilationCache": "v14-shared-ui",
+  "runtimeHostAssemblySha256": "07ECAB0B16F92547D9BC7CDFFF50DC30A48551649A6C135F041E1E25C94B5E96",
+  "runtimeExecutableSha256": "D84B8DB33D4A301D7060BBB9302F9DD13042191C9033501D7267C8AA9A623D76",
+  "publicUiAssemblySha256": "32D90446B120E833BD04CAE64A971132F7A5D457FDE197822E03C589479F6C54",
+  "checks": {
+    "dynamicExtensionCompiles": 2,
+    "sharedUiControls": 289,
+    "isolatedRuntimeChecks": 18
+  },
+  "activationPolicy": "Only a production Runtime process using exactly this validated host assembly may activate the V2 C# extensions."
+}
