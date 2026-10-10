@@ -43,6 +43,7 @@ public partial class MainWindow
     private readonly HttpClient _aiHttpClient = new() { Timeout = TimeSpan.FromSeconds(300) };
     private string _aiChatInputText = string.Empty;
     private string _aiChatStatusText = "选择或新建话题开始对话";
+    private string _aiChatSendErrorText = string.Empty;
     private bool _isAiChatRequestInFlight;
     private bool _isAiChatSubmissionPending;
     private bool _isInitializingComboBox;
@@ -141,6 +142,21 @@ public partial class MainWindow
             OnPropertyChanged();
         }
     }
+
+    public string AiChatSendErrorText
+    {
+        get => _aiChatSendErrorText;
+        private set
+        {
+            if (_aiChatSendErrorText == value) return;
+            _aiChatSendErrorText = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(AiChatSendErrorVisibility));
+        }
+    }
+
+    public Visibility AiChatSendErrorVisibility => string.IsNullOrWhiteSpace(_aiChatSendErrorText)
+        ? Visibility.Collapsed : Visibility.Visible;
 
     public string AiChatModelDisplayText => string.IsNullOrWhiteSpace(_appSettings.AiModel)
         ? "AI 未配置"
@@ -891,7 +907,8 @@ public partial class MainWindow
         catch (Exception ex)
         {
             HostAssets.AppendLog($"SubmitAiChatMessage failed: {ex}");
-            AiChatStatusText = $"发送失败：{TrimForLog(FormatExceptionMessage(ex), 160)}";
+            AiChatSendErrorText = $"发送失败：{TrimForLog(FormatExceptionMessage(ex), 160)}";
+            AiChatStatusText = AiChatSendErrorText;
         }
         finally
         {
@@ -901,7 +918,8 @@ public partial class MainWindow
 
     private async Task SubmitAiChatMessageCore()
     {
-        var userInput = AiChatInputText.Trim();
+        // Read the visible editor directly if the two-way binding has not settled.
+        var userInput = (AiChatInputBox?.Text ?? AiChatInputText).Trim();
         if (string.IsNullOrEmpty(userInput) && _aiChatAttachments.Count == 0)
         {
             return;
@@ -914,10 +932,16 @@ public partial class MainWindow
 
         if (!IsAiConfigured(_appSettings))
         {
-            AiChatStatusText = "请先配置 AI";
+            var missingKey = string.IsNullOrWhiteSpace(_appSettings.AiApiKey);
+            AiChatSendErrorText = missingKey
+                ? "无法发送：当前服务商缺少 API Key。请打开右上角「设置」→「模型服务」重新配置。"
+                : "无法发送：当前服务商的模型或接口地址尚未配置，请在「设置」→「模型服务」检查。";
+            AiChatStatusText = AiChatSendErrorText;
+            HostAssets.AppendLog($"AI chat submission rejected before request: keyPresent={!missingKey}, modelPresent={!string.IsNullOrWhiteSpace(_appSettings.AiModel)}, urlPresent={!string.IsNullOrWhiteSpace(_appSettings.AiBaseUrl)}");
             return;
         }
 
+        AiChatSendErrorText = string.Empty;
         // 确保有话题
         if (_selectedAiChatTopic == null)
         {
@@ -1069,7 +1093,8 @@ public partial class MainWindow
         {
             HostAssets.AppendLog($"AI request failed: {FormatExceptionMessage(ex)}");
             SaveTopicsToStorage();
-            AiChatStatusText = $"AI 请求失败：{TrimForLog(FormatExceptionMessage(ex), 160)}";
+            AiChatSendErrorText = $"AI 请求失败：{TrimForLog(FormatExceptionMessage(ex), 160)}";
+            AiChatStatusText = AiChatSendErrorText;
         }
         finally
         {

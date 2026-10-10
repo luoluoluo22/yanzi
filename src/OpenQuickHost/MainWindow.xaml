@@ -2510,6 +2510,7 @@
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="10" />
                                 <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
 
                             <Grid Grid.Row="0">
@@ -2651,6 +2652,13 @@
                                     </Button.Template>
                                 </Button>
                             </Grid>
+                            <TextBlock Grid.Row="3"
+                                       Margin="2,8,2,0"
+                                       Text="{Binding AiChatSendErrorText}"
+                                       Visibility="{Binding AiChatSendErrorVisibility}"
+                                       Foreground="#FFEF8D8D"
+                                       TextWrapping="Wrap"
+                                       FontSize="{DynamicResource FontSizeSmallPlus}" />
                         </Grid>
                     </Border>
                 </Grid>
