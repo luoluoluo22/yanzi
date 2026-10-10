@@ -69,7 +69,10 @@ export default {
   async fetch(request, env, ctx) {
     const started = Date.now();
     const path = new URL(request.url).pathname;
-    const route = path.replace(/\/v1\/sync\/objects\/[^/]+/g, "/v1/sync/objects/:id").replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, ":id");
+    // Never log raw path segments: they may contain access tokens or personal data.
+    const family = path.startsWith("/v1/") ? path.split("/")[2] : "";
+    const route = path === "/health" ? "/health" :
+      ["sync", "auth", "devices", "device", "messaging", "messages", "records", "apps"].includes(family) ? `/v1/${family}` : "/other";
     let status = 500;
     let category = "server_error";
     try {
