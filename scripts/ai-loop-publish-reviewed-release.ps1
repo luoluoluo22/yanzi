@@ -57,7 +57,19 @@ $allowedArtifactRoot=[IO.Path]::GetFullPath((Join-Path $root '.artifacts\install
 foreach($asset in $files) {
     if (-not $asset.StartsWith($allowedArtifactRoot,[StringComparison]::OrdinalIgnoreCase)) { throw 'Release asset must come from the isolated reviewed worktree installer output.' }
     if (-not (Test-Path -LiteralPath $asset -PathType Leaf)) { throw "Release artifact missing: $asset" }
-    if ((Get-Item -LiteralPath $asset).Length -lt 4096) { throw "Release artifact too small: $asset" }
+    $name=[IO.Path]::GetFileName($asset)
+    $isMetadata=$name -in @('assets.win.json','releases.win.json','RELEASES')
+    $minimumBytes=if ($isMetadata) { 32 } else { 4096 }
+    if ((Get-Item -LiteralPath $asset).Length -lt $minimumBytes) { throw "Release artifact too small: $asset" }
+    if ($name -in @('assets.win.json','releases.win.json')) {
+        try { $null=(Get-Content -LiteralPath $asset -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop) }
+        catch { throw "Release metadata is not valid JSON: $asset" }
+    }
+    if ($name -in @('releases.win.json','RELEASES')) {
+        if (-not (Select-String -LiteralPath $asset -Pattern ([regex]::Escape($Version)) -Quiet)) {
+            throw "Release metadata does not reference version $Version : $asset"
+        }
+    }
 }
 if (@($files|Where-Object{[IO.Path]::GetFileName($_) -eq "Yanzi-win-Setup-$Version.exe"}).Count -ne 1) { throw 'Version-specific Windows installer is required. No recycled or wrong-version assets.' }
 $tag='v'+$Version
