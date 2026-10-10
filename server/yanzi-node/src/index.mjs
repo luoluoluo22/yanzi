@@ -77,6 +77,8 @@ if (config.cloudConfigured) {
     capabilities: capabilityAdvertisement(await runtime.invoke('server.status.get')),
     store,
     getToken: async () => config.token,
+    // Identify this server without weakening Cloudflare WAF protections.
+    fetchImpl: (url, options) => fetch(url, {...options, headers: {...options.headers, 'User-Agent': 'YanziClient-Server/1.0', 'X-Yanzi-Client': 'server'}}),
     execute: message => executeCapabilityMessage(runtime, message)
   });
 
