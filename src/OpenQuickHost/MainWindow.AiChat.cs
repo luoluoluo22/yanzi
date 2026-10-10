@@ -224,22 +224,6 @@ public partial class MainWindow
         CreateNewTopic();
     }
 
-    private void AiChatRenameTopicButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (SelectedAiChatTopic != null)
-        {
-            RenameTopic(SelectedAiChatTopic);
-        }
-    }
-
-    private void AiChatDeleteTopicButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (SelectedAiChatTopic != null)
-        {
-            DeleteTopic(SelectedAiChatTopic);
-        }
-    }
-
     private void AiChatTopicItem_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
         if (sender is FrameworkElement { DataContext: AiChatTopic topic })
@@ -298,6 +282,7 @@ public partial class MainWindow
 
     private void AiChatMessages_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
+        UpdateAiChatTimeDividers();
         OnPropertyChanged(nameof(VisibleCountText));
         _ = Dispatcher.BeginInvoke(() => AiChatScrollViewer?.ScrollToEnd(), DispatcherPriority.Background);
     }
@@ -418,6 +403,19 @@ public partial class MainWindow
             {
                 _aiChatMessages.Add(message);
             }
+        }
+        UpdateAiChatTimeDividers();
+    }
+
+    private void UpdateAiChatTimeDividers()
+    {
+        AiChatMessage? previous = null;
+        foreach (var message in _aiChatMessages)
+        {
+            // Show the first timestamp, then only after >= 3 minutes.
+            // This is visual metadata; no extra message is added to the chat history.
+            message.ShowTimeDivider = AiChatMessage.NeedsTimeDivider(previous, message);
+            previous = message;
         }
     }
 
@@ -2196,7 +2194,12 @@ public partial class MainWindow
                             }
                         }
 
-                        topic.Messages.Add(new AiChatMessage(isUser, text, attachments));
+                        DateTimeOffset? restoredTime = null;
+                        if (msgElement.TryGetProperty("timestamp", out var timeElement) &&
+                            timeElement.ValueKind == JsonValueKind.String &&
+                            timeElement.TryGetDateTimeOffset(out var originalTime))
+                            restoredTime = originalTime;
+                        topic.Messages.Add(new AiChatMessage(isUser, text, attachments, restoredTime));
                     }
                 }
 
@@ -2243,6 +2246,7 @@ public sealed class AiChatMessage : INotifyPropertyChanged
     private string? _toolName;
     private string? _toolFeedback;
     private bool _isExpanded = true; // 默认展开，让用户能够直观看到执行状态
+    private bool _showTimeDivider;
 
     public bool IsToolCall
     {
@@ -2268,12 +2272,14 @@ public sealed class AiChatMessage : INotifyPropertyChanged
         set { _isExpanded = value; OnPropertyChanged(); }
     }
 
-    public AiChatMessage(bool isUser, string text, IEnumerable<AiChatMessageAttachment>? attachments = null)
+    public AiChatMessage(bool isUser, string text,
+        IEnumerable<AiChatMessageAttachment>? attachments = null,
+        DateTimeOffset? timestamp = null)
     {
         Id = Guid.NewGuid().ToString();
         IsUser = isUser;
         _text = text;
-        Timestamp = DateTimeOffset.Now;
+        Timestamp = timestamp ?? DateTimeOffset.Now;
         Attachments = attachments?.ToList() ?? [];
     }
 
@@ -2294,6 +2300,31 @@ public sealed class AiChatMessage : INotifyPropertyChanged
         }
     }
     public DateTimeOffset Timestamp { get; }
+    public bool ShowTimeDivider
+    {
+        get => _showTimeDivider;
+        set
+        {
+            if (_showTimeDivider == value) return;
+            _showTimeDivider = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(TimeDividerVisibility));
+        }
+    }
+    public static bool NeedsTimeDivider(AiChatMessage? previous, AiChatMessage current)
+    {
+        ArgumentNullException.ThrowIfNull(current);
+        return previous is null ||
+               current.Timestamp.ToLocalTime().Date != previous.Timestamp.ToLocalTime().Date ||
+               current.Timestamp - previous.Timestamp >= TimeSpan.FromMinutes(3) ||
+               current.Timestamp < previous.Timestamp;
+    }
+
+    public Visibility TimeDividerVisibility => ShowTimeDivider ? Visibility.Visible : Visibility.Collapsed;
+    public string TimeDividerText =>
+        Timestamp.ToLocalTime().Date == DateTime.Now.Date
+            ? Timestamp.ToLocalTime().ToString("HH:mm")
+            : Timestamp.ToLocalTime().ToString("yyyy年M月d日 HH:mm");
     public List<AiChatMessageAttachment> Attachments { get; }
     public bool HasAttachments => Attachments.Count > 0;
     public Visibility AttachmentsVisibility => HasAttachments ? Visibility.Visible : Visibility.Collapsed;
