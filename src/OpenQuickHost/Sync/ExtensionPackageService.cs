@@ -128,6 +128,47 @@ public static class ExtensionPackageService
         return stream.ToArray();
     }
 
+    internal static string? ResolvePortableIconReference(string directory, string? iconReference)
+    {
+        if (string.IsNullOrWhiteSpace(iconReference)) return null;
+        if (!Uri.TryCreate(iconReference, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp))
+        {
+            if (iconReference.Contains(':') || Path.IsPathRooted(iconReference)) return null;
+            try
+            {
+                var root = Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+                var path = Path.GetFullPath(Path.Combine(directory, iconReference));
+                if (path.StartsWith(root, StringComparison.OrdinalIgnoreCase) && File.Exists(path) &&
+                    IsIconFile(path))
+                    return iconReference.Replace('\\', '/');
+            }
+            catch (ArgumentException) { }
+            return null;
+        }
+
+        // Legacy account archives contain protected URL references even when the
+        // same icon.png is already packaged. Unauthenticated image requests get 401.
+        var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var isAccountIcon = segments.Length == 5 && segments[0] == "v1" &&
+                            segments[1] == "me" && segments[2] == "extensions" &&
+                            segments[4] == "icon";
+        var isStoreIcon = segments.Length == 4 && segments[0] == "v1" &&
+                          segments[1] == "extensions" && segments[3] == "icon";
+        if (!isAccountIcon && !isStoreIcon) return null;
+
+        foreach (var fileName in new[] { "icon.png", "icon.webp", "icon.jpg", "icon.jpeg",
+                                         "icon.ico", "icon.svg", "icon.gif", "icon.bmp" })
+        {
+            if (File.Exists(Path.Combine(directory, fileName))) return fileName;
+        }
+        return null;
+    }
+
+    private static bool IsIconFile(string path) =>
+        Path.GetExtension(path).ToLowerInvariant() is
+            ".png" or ".webp" or ".jpg" or ".jpeg" or ".ico" or ".svg" or ".gif" or ".bmp";
+
     private static void WriteManifestEntry(ZipArchive archive, string directoryPath, string? iconOverride, bool includeUserShortcut)
     {
         var manifestPath = Path.Combine(directoryPath, "manifest.json");
@@ -144,9 +185,12 @@ public static class ExtensionPackageService
             throw new InvalidOperationException("扩展目录中的 manifest.json 缺少 id 或 name。");
         }
 
-        var packagedManifest = string.IsNullOrWhiteSpace(iconOverride)
-            ? manifest
-            : manifest with { Icon = iconOverride };
+        // Cloud icon URLs belong in account/store metadata, not in portable archives.
+        var bundledIcon = ResolvePortableIconReference(directoryPath, manifest.Icon);
+        var selectedIcon = bundledIcon ?? (string.IsNullOrWhiteSpace(iconOverride)
+            ? manifest.Icon
+            : iconOverride);
+        var packagedManifest = manifest with { Icon = selectedIcon };
 
         if (!includeUserShortcut)
         {

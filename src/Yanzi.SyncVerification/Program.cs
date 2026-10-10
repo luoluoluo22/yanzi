@@ -118,6 +118,7 @@ if (args.Contains("--fresh-account-sync"))
 
 ReleaseReadinessVerification.VerifyUninstallDataRetention();
 VerifyExtensionPackageStability();
+await PortableIconSyncVerification.RunAsync();
 if (args.Contains("--package-stability")) return;
 VerifySyncArchitectureSafety();
 VerifySyncConflictExperience();

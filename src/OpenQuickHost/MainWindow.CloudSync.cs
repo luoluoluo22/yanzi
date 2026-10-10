@@ -1507,7 +1507,8 @@ public partial class MainWindow
                     if (localCommands.TryGetValue(item.ExtensionId, out var existingCommand))
                         BackupExtensionBeforeCloudUpgrade(existingCommand);
                     var result = await ExtensionInstallService.InstallPackageAsync(
-                        packageBytes, item.ExtensionId, fallbackName: item.DisplayName);
+                        packageBytes, item.ExtensionId, fallbackName: item.DisplayName,
+                        privateIconDownload: (id, token) => _cloudSyncClient.DownloadMyExtensionIconAsync(id, token));
 
                     if (TryGetArchivedManifestShortcut(item.ManifestJson, out var restoredShortcut))
                     {
