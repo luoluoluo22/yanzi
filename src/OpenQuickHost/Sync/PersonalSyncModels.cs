@@ -54,6 +54,8 @@ public static class PersonalSyncProviders
 
 public sealed class PersonalSyncSettings
 {
+    public bool GitHubBackupEnabled { get; set; }
+
     public bool Enabled { get; set; }
 
     public string Provider { get; set; } = PersonalSyncProviders.WebDav;
