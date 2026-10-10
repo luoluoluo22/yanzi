@@ -311,9 +311,12 @@ public static class AppSettingsStore
 
     private static void WriteSanitizedSettings(AppSettings settings)
     {
-        AiCredentialStore.RemovePlaintext(settings);
-        var json = JsonSerializer.Serialize(settings, JsonOptions);
-        SafeFile.AtomicWriteText(SettingsPath, json);
+        // Redact only the persisted snapshot. Mutating the caller previously wiped
+        // hydrated API keys in memory; an unrelated save could then clear the vault.
+        var snapshot = JsonSerializer.Deserialize<AppSettings>(
+            JsonSerializer.Serialize(settings, JsonOptions), JsonOptions) ?? new AppSettings();
+        AiCredentialStore.RemovePlaintext(snapshot);
+        SafeFile.AtomicWriteText(SettingsPath, JsonSerializer.Serialize(snapshot, JsonOptions));
         System.Threading.Interlocked.Increment(ref _writeVersion);
         UpdateCache(settings);
     }

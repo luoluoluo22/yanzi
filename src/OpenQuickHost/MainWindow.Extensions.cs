@@ -1869,7 +1869,8 @@ public partial class MainWindow
             CapsGuidePopup.IsOpen = false;
         }
 
-        if (_isPinned || !IsVisible || IsRadialPickerMode)
+        // AI chat is a persistent workspace: Clipboard History must not dismiss it.
+        if (_isPinned || IsAiChatMode || !IsVisible || IsRadialPickerMode)
         {
             return;
         }
@@ -1889,7 +1890,7 @@ public partial class MainWindow
             return;
         }
 
-        if (_footerQuickMenu?.IsOpen == true || CommandList.ContextMenu?.IsOpen == true)
+        if (_footerQuickMenu?.IsOpen == true || _activeAiChatMenu?.IsOpen == true || CommandList.ContextMenu?.IsOpen == true)
         {
             return;
         }

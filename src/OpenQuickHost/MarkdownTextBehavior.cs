@@ -25,10 +25,25 @@ namespace OpenQuickHost
             var text = e.NewValue as string;
             if (string.IsNullOrEmpty(text)) return;
 
-            // 逐行解析
+            // Very long replies stay readable without allocating tens of thousands of Inlines.
+            if (text.Length > 48000)
+            {
+                textBlock.Inlines.Add(new Run(text));
+                return;
+            }
+
+            // Bound the UI thread's Markdown formatting budget. If expensive, show
+            // the remaining reply verbatim instead of delaying all interactions.
+            var renderTimer = System.Diagnostics.Stopwatch.StartNew();
             var lines = text.Split(new[] { "\r\n", "\r", "\n" }, System.StringSplitOptions.None);
             for (int i = 0; i < lines.Length; i++)
             {
+                if (renderTimer.ElapsedMilliseconds > 180)
+                {
+                    textBlock.Inlines.Add(new Run(string.Join("\n", lines, i, lines.Length - i)));
+                    break;
+                }
+
                 var line = lines[i];
 
                 if (i > 0)
@@ -121,7 +136,18 @@ namespace OpenQuickHost
 
             // 匹配超链接、粗斜体、粗体、斜体、删除线、行内代码
             var inlinePattern = @"(\[.*?\]\(.*?\)|__.*?__|__.*?__|\*\*\*.*?\*\*\*|\*\*.*?\*\*|__.*?__|\*.*?\*|_.*?_|`.*?`|~~.*?~~)";
-            var parts = System.Text.RegularExpressions.Regex.Split(text, inlinePattern);
+            string[] parts;
+            try
+            {
+                parts = System.Text.RegularExpressions.Regex.Split(
+                    text, inlinePattern, System.Text.RegularExpressions.RegexOptions.None,
+                    System.TimeSpan.FromMilliseconds(65));
+            }
+            catch (System.Text.RegularExpressions.RegexMatchTimeoutException)
+            {
+                inlines.Add(new Run(text));
+                return;
+            }
 
             foreach (var part in parts)
             {

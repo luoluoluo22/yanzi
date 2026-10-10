@@ -3,6 +3,7 @@ using OpenQuickHost;
 using OpenQuickHost.Sync;
 using Yanzi.Core;
 
+if (args.Contains("--ai-model-discovery")) { AiModelDiscoveryVerification.Run(); return; }
 if (args.Contains("--github-secondary-backup-verify")) { await GitHubSecondaryBackupVerification.RunAsync(args.Contains("--live")); return; }
 
 if (args.Contains("--task-recovery")) { PlatformTaskVerification.Run(); return; }
