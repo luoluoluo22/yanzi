@@ -80,6 +80,16 @@ test("owner approval, PKCE, resource binding, replay prevention, refresh and rev
   assert.equal((await post("/mcp", {}, { Authorization: `Bearer ${tokens.access_token}` })).status, 401);
 });
 
+test("refresh without resource preserves stored client and resource binding", async () => {
+  const tokens = app.locals.oauthProvider.issue(client.client_id);
+  const refresh = { grant_type: "refresh_token", client_id: client.client_id, refresh_token: tokens.refresh_token };
+  assert.equal((await post("/token", { ...refresh, resource: "https://other.example/mcp" })).status, 400);
+  const result = await post("/token", refresh);
+  assert.equal(result.status, 200);
+  const rotated = await result.json();
+  assert.equal((await post("/mcp", {}, { Authorization: `Bearer ${rotated.access_token}` })).status, 200);
+  assert.equal((await post("/token", refresh)).status, 400);
+});
 test("misconfigured issuer or weak owner password fails closed", () => {
   assert.throws(() => new OwnerOAuthProvider({ ...options, issuer: "http://mcp.example.com" }), /HTTPS/);
   assert.throws(() => new OwnerOAuthProvider({ ...options, password: "weak" }), /32 characters/);
