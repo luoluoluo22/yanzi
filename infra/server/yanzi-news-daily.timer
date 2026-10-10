@@ -1,0 +1,12 @@
+[Unit]
+Description=Send Yanzi daily news at 10:00 Asia/Shanghai
+
+[Timer]
+OnCalendar=*-*-* 10:00:00
+Persistent=true
+AccuracySec=1min
+RandomizedDelaySec=0
+Unit=yanzi-news-daily.service
+
+[Install]
+WantedBy=timers.target

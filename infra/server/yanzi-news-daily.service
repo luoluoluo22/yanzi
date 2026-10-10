@@ -1,0 +1,25 @@
+[Unit]
+Description=Yanzi 10 AM RSS news collection and mobile push
+Wants=network-online.target
+After=network-online.target yanzi-server-node.service chatgpt-gateway.service
+ConditionPathExists=/etc/yanzi-server-node.env
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/opt/yanzi
+Environment=YANZI_NEWS_STATE_DIR=/var/lib/yanzi-news
+ExecStart=/usr/bin/python3 /opt/yanzi/server/yanzi-node/scripts/news_digest.py --send
+TimeoutStartSec=180
+UMask=0077
+NoNewPrivileges=true
+ProtectHome=true
+ProtectSystem=strict
+ReadOnlyPaths=/etc/yanzi-server-node.env /etc/chatgpt-gateway/token
+ReadWritePaths=/var/lib/yanzi-news /var/lib/yanzi-server-node
+PrivateTmp=true
+PrivateDevices=true
+
+[Install]
+WantedBy=multi-user.target
