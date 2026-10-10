@@ -1772,20 +1772,32 @@
                                                                TextTrimming="CharacterEllipsis" />
                                                 </StackPanel>
 
-                                                <StackPanel Grid.Column="2" HorizontalAlignment="Right">
-                                                    <TextBlock Text="{Binding UpdatedAt, StringFormat={}{0:HH:mm}}"
+                                                <Grid Grid.Column="2" Width="34" VerticalAlignment="Center">
+                                                    <TextBlock x:Name="TopicUpdatedAt"
+                                                               Text="{Binding UpdatedAt, StringFormat={}{0:HH:mm}}"
                                                                Foreground="{DynamicResource Yanzi.Color.MutedForeground}"
                                                                FontSize="{DynamicResource FontSizeSmall}"
-                                                               HorizontalAlignment="Right" />
-                                                    <TextBlock Text="•••"
-                                                               Margin="0,5,0,0"
-                                                               Foreground="{DynamicResource Yanzi.Color.MutedForeground}"
-                                                               FontSize="{DynamicResource FontSizeSmall}"
-                                                               HorizontalAlignment="Right" />
-                                                </StackPanel>
+                                                               HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                                    <Button x:Name="TopicEditButton" Visibility="Collapsed"
+                                                            Width="30" Height="30" Padding="0"
+                                                            HorizontalAlignment="Right"
+                                                            ToolTip="编辑对话（重命名、删除）"
+                                                            Style="{DynamicResource Yanzi.Button.Ghost}"
+                                                            Click="AiChatTopicEditButton_Click">
+                                                        <Path Data="{local:IconGeometry pencil}"
+                                                              Width="16" Height="16" Stretch="Uniform"
+                                                              Fill="{DynamicResource Yanzi.Color.Foreground}"/>
+                                                    </Button>
+                                                </Grid>
                                             </Grid>
                                         </Border>
 
+                                    <DataTemplate.Triggers>
+                                            <DataTrigger Binding="{Binding IsMouseOver, ElementName=TopicItem}" Value="True">
+                                                <Setter TargetName="TopicEditButton" Property="Visibility" Value="Visible"/>
+                                                <Setter TargetName="TopicUpdatedAt" Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </DataTemplate.Triggers>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
@@ -1812,19 +1824,6 @@
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
-
-                    <!-- 标题和供应商；会话管理在左侧历史项的上下文菜单 -->
-                    <StackPanel Grid.Row="0" Margin="6,0,0,16">
-                        <TextBlock Text="{Binding SelectedAiChatTopic.Title}"
-                                   Foreground="{DynamicResource Yanzi.Color.Foreground}"
-                                   FontSize="24" FontWeight="SemiBold"
-                                   TextTrimming="CharacterEllipsis"/>
-                        <ComboBox x:Name="AiProviderSelectionComboBox"
-                                  Margin="0,8,0,0" Width="210" Height="38"
-                                  HorizontalAlignment="Left"
-                                  Style="{DynamicResource Yanzi.Select}"
-                                  SelectionChanged="AiProviderSelectionComboBox_SelectionChanged"/>
-                    </StackPanel>
 
                     <!-- 消息区 -->
                     <Border Grid.Row="1" Margin="0,0,0,14"
@@ -2167,12 +2166,27 @@
                                     </StackPanel>
                                 </Button>
 
-<ComboBox x:Name="AiModelSelectionComboBox"
-                                          Grid.Column="2"
-                                          Width="185"
-                                          Height="38"
-                                          Style="{DynamicResource Yanzi.Select}"
-                                          SelectionChanged="AiModelSelectionComboBox_SelectionChanged" />
+<Button x:Name="AiChatModelMenuButton" Grid.Column="2"
+                                        Width="185" Height="38" Padding="10,0"
+                                        HorizontalContentAlignment="Stretch"
+                                        Style="{DynamicResource Yanzi.Button.Outline}"
+                                        ToolTip="选择供应商和模型"
+                                        Click="AiChatModelMenuButton_Click">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="{Binding AiChatModelDisplayText}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                                   VerticalAlignment="Center"/>
+                                        <Path Grid.Column="1" Data="{local:IconGeometry chevron-down}"
+                                              Width="13" Height="13" Margin="8,0,0,0"
+                                              Stretch="Uniform" VerticalAlignment="Center"
+                                              Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                                    </Grid>
+                                </Button>
 
                                 <Button Grid.Column="4" MinWidth="96" Height="38" Padding="12,0"
                                         Style="{DynamicResource Yanzi.Button.Default}"
