@@ -29,6 +29,9 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          $script = './scripts/publish-installer.ps1'
+          $source = (Get-Content $script -Raw).Replace('https://repo.huaweicloud.com/repository/nuget/v3/index.json', 'https://api.nuget.org/v3/index.json')
+          Set-Content -Path $script -Value $source
           & ./scripts/publish-installer.ps1 -Version 1.0.18 -ArtifactRoot "$env:RUNNER_TEMP\yanzi-release" -SkipBaselineDownload
           if ($LASTEXITCODE -ne 0) { throw "Installer build failed" }
 
