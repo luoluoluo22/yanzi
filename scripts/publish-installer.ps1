@@ -88,15 +88,56 @@ $publishArgs = @(
 dotnet @publishArgs
 if ($LASTEXITCODE -ne 0) { throw 'Desktop publish failed.' }
 
+# Keep two independent Windows process identities, but distribute only ONE set of
+# framework, application, OCR and extension dependencies. Publishing each project
+# directly into different installer folders previously duplicated ~178 MiB on disk.
+$runtimeBuildDir = Join-Path $ArtifactRoot ("runtime-build\" + $Runtime)
+if (Test-Path -LiteralPath $runtimeBuildDir) {
+    Remove-Item -LiteralPath $runtimeBuildDir -Recurse -Force
+}
 $runtimePublishArgs = $publishArgs.Clone()
 $runtimePublishArgs[1] = Join-Path $root 'src\Yanzi.Runtime\Yanzi.Runtime.csproj'
-$runtimePublishArgs[$runtimePublishArgs.Length - 1] = Join-Path $publishDir 'Runtime'
+$runtimePublishArgs[$runtimePublishArgs.Length - 1] = $runtimeBuildDir
 dotnet @runtimePublishArgs
-if ($LASTEXITCODE -ne 0) { throw 'Shared Runtime publish failed.' }
-Assert-PayloadFile 'Runtime\Yanzi.Runtime.exe'
-Assert-PayloadFile 'Runtime\Yanzi.dll'
+if ($LASTEXITCODE -ne 0) { throw 'Independent Runtime publish failed.' }
+
+# The Runtime-specific entry point and manifests live beside Yanzi.exe, not in
+# another self-contained folder. Verify every common file matches byte-for-byte
+# before deduplication; fail closed if the two publish graphs diverge.
+$runtimeOnlyFiles = @('Yanzi.Runtime.exe', 'Yanzi.Runtime.dll',
+                      'Yanzi.Runtime.deps.json', 'Yanzi.Runtime.runtimeconfig.json')
+try {
+    foreach ($file in @(Get-ChildItem -LiteralPath $runtimeBuildDir -File -Recurse)) {
+        $relative = $file.FullName.Substring($runtimeBuildDir.TrimEnd('\').Length + 1)
+        if ($relative -in $runtimeOnlyFiles) {
+            Copy-Item -LiteralPath $file.FullName -Destination (Join-Path $publishDir $relative) -Force
+            continue
+        }
+        $shared = Join-Path $publishDir $relative
+        if (-not (Test-Path -LiteralPath $shared -PathType Leaf)) {
+            throw "Runtime-only dependency not present in host publish: $relative"
+        }
+        $sourceHash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash
+        $sharedHash = (Get-FileHash -LiteralPath $shared -Algorithm SHA256).Hash
+        if ($sourceHash -ne $sharedHash) {
+            throw "Runtime and host dependency differ; cannot share safely: $relative"
+        }
+    }
+}
+finally {
+    # Do not retain a third, untracked copy of the full framework in artifacts.
+    if (Test-Path -LiteralPath $runtimeBuildDir) {
+        Remove-Item -LiteralPath $runtimeBuildDir -Recurse -Force
+    }
+}
+if (Test-Path (Join-Path $publishDir 'Runtime')) {
+    throw 'Invalid release payload: duplicate Runtime directory detected.'
+}
+foreach ($name in $runtimeOnlyFiles) { Assert-PayloadFile $name }
 
 Write-Host "Verifying installer payload..."
+# Separate process identity, same published dependency directory.
+Assert-PayloadFile 'Yanzi.Runtime.exe'
 Assert-PayloadFile "Yanzi.exe"
 Assert-PayloadFile "Yanzi.dll"
 Assert-PayloadFile "Yanzi.Core.dll"
@@ -121,6 +162,8 @@ Assert-PayloadFile "NativeWindowRefs\WindowsBase.dll"
 Assert-PayloadFile "NativeWindowRefs\System.Xaml.dll"
 Assert-PayloadFile "NativeWindowRefs\System.Windows.Forms.dll"
 
+& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'verify-release-layout.ps1') -PublishDirectory $publishDir -ExpectedVersion $assemblyVersion
+if ($LASTEXITCODE -ne 0) { throw 'Single-runtime release layout verification failed.' }
 Write-Host "Published installer payload:"
 Write-Host "  $publishDir"
 
