@@ -788,7 +788,8 @@ internal sealed class GiteePersonalSyncBackend : PersonalSyncBackendBase
         var path = BuildPath(relativePath);
         var owner = await ResolveOwnerAsync(cancellationToken);
         CloudSyncDiagnostics.Log("GiteeBackend", "Read requested", ("owner", owner), ("repo", _config.Repo), ("path", path));
-        using var response = await _httpClient.GetAsync($"https://gitee.com/api/v5/repos/{Uri.EscapeDataString(owner)}/{Uri.EscapeDataString(_config.Repo)}/contents/{EncodePath(path)}?access_token={Uri.EscapeDataString(_secrets.GiteeToken.Trim())}&ref={Uri.EscapeDataString(ResolveBranch())}", cancellationToken);
+        var uri = $"https://gitee.com/api/v5/repos/{Uri.EscapeDataString(owner)}/{Uri.EscapeDataString(_config.Repo)}/contents/{EncodePath(path)}?access_token={Uri.EscapeDataString(_secrets.GiteeToken.Trim())}&ref={Uri.EscapeDataString(ResolveBranch())}";
+        using var response = await ReadGiteeWithRetryAsync(uri, cancellationToken);
         if (response.StatusCode == HttpStatusCode.NotFound)
         {
             CloudSyncDiagnostics.Log("GiteeBackend", "Read returned not found", ("path", path));
@@ -805,6 +806,38 @@ internal sealed class GiteePersonalSyncBackend : PersonalSyncBackendBase
         var bytes = DecodeBase64Content(payload?.Content);
         CloudSyncDiagnostics.Log("GiteeBackend", "Read completed", ("path", path), ("bytes", bytes.Length), ("sha", payload?.Sha));
         return bytes;
+    }
+
+    internal static bool IsRetryableGiteeReadStatus(HttpStatusCode status) =>
+        (int)status == 429 || ((int)status >= 500 && (int)status <= 599);
+
+    private async Task<HttpResponseMessage> ReadGiteeWithRetryAsync(
+        string uri, CancellationToken cancellationToken)
+    {
+        const int attempts = 4;
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                var response = await _httpClient.GetAsync(uri, cancellationToken);
+                if (!IsRetryableGiteeReadStatus(response.StatusCode) || attempt >= attempts)
+                    return response;
+                CloudSyncDiagnostics.Log("GiteeBackend", "Transient read; retry",
+                    ("statusCode", (int)response.StatusCode), ("attempt", attempt));
+                response.Dispose();
+            }
+            catch (HttpRequestException) when (attempt < attempts)
+            {
+                CloudSyncDiagnostics.Log("GiteeBackend", "Transient transport read; retry",
+                    ("attempt", attempt));
+            }
+            catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested && attempt < attempts)
+            {
+                CloudSyncDiagnostics.Log("GiteeBackend", "Transient read timeout; retry",
+                    ("attempt", attempt));
+            }
+            await Task.Delay(TimeSpan.FromMilliseconds(400 * (1 << (attempt - 1))), cancellationToken);
+        }
     }
 
     public override async Task WriteBytesAsync(string relativePath, byte[] content, string contentType, CancellationToken cancellationToken)
