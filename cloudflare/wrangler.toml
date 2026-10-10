@@ -1,6 +1,11 @@
 name = "yanzi-sync"
 main = "src/index.js"
 compatibility_date = "2026-04-23"
+
+# Persist sampled structured request logs without D1 writes.
+[observability]
+enabled = true
+head_sampling_rate = 1
 [[durable_objects.bindings]]
 name = "DEVICE_RELAY"
 class_name = "DeviceRelay"
