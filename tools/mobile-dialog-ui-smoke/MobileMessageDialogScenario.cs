@@ -20,7 +20,8 @@ public sealed class MobileMessageDialogScenario : IUiTestScenario
             await Task.Delay(140, cancellationToken);
             var device = (Button)window.FindName("DeviceSwitcherButton");
             var close = (Button)window.FindName("CloseButton");
-            var clear = (Button)window.FindName("SendButton");
+            var clear = (Button)window.FindName("ClearHistoryButton");
+            var send = (Button)window.FindName("SendButton");
             var attach = (Button)window.FindName("AttachButton");
             var voice = (Button)window.FindName("VoiceButton");
             var compose = (TextBox)window.FindName("InputTextBox");
@@ -33,8 +34,33 @@ public sealed class MobileMessageDialogScenario : IUiTestScenario
             context.Check(chatFrame.CornerRadius.TopLeft >= 12 && chatFrame.Background is not null,
                 "Shared popover surface and radius are rendered");
             context.Check(device.Style != null && attach.Style != null && voice.Style != null &&
-                close.Style != null && clear.Style != null,
+                close.Style != null && clear.Style != null && send.Style != null,
                 "All toolbar actions use shared button styles");
+            // Preserve content-driven width when switching to the shared Outline
+            // variant; Ghost intentionally has no border and looked unfinished here.
+            var textWidth = new FormattedText(
+                clear.Content.ToString()!, System.Globalization.CultureInfo.CurrentUICulture,
+                FlowDirection.LeftToRight,
+                new Typeface(clear.FontFamily, clear.FontStyle, clear.FontWeight, clear.FontStretch),
+                clear.FontSize, Brushes.White,
+                VisualTreeHelper.GetDpi(clear).PixelsPerDip).WidthIncludingTrailingWhitespace;
+            var required = textWidth + clear.Padding.Left + clear.Padding.Right + 4;
+            context.Check(ReferenceEquals(clear.Style, clear.TryFindResource("Yanzi.Button.Outline")) &&
+                          clear.BorderThickness.Left >= 1 &&
+                          ReferenceEquals(close.Style, close.TryFindResource("Yanzi.Button.Ghost")),
+                "Clear uses shared outlined button with border; close stays borderless Ghost");
+            context.Check(double.IsNaN(clear.Width) && clear.MinWidth >= 48,
+                "Clear label uses Auto width and minimum without losing shared outline");
+            context.Check(clear.ActualWidth >= required - 0.5,
+                "Chinese clear label fully fits button text, padding, and 2-DIP chrome inset",
+                $"required={required:F1}, actual={clear.ActualWidth:F1}");
+            var initialWidth = clear.ActualWidth;
+            clear.FontSize += 4;
+            window.UpdateLayout();
+            context.Check(clear.ActualWidth > initialWidth,
+                "Clear button grows when text metrics increase instead of clipping");
+            clear.FontSize -= 4;
+            window.UpdateLayout();
             context.Check(close.Content is FrameworkElement && attach.Content is FrameworkElement
                 && voice.Content is FrameworkElement,
                 "Toolbar icons are common font-independent vector icons");

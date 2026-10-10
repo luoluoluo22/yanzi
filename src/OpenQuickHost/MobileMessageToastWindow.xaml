@@ -45,8 +45,8 @@
                 </Button>
                 <!-- Hidden model for the selected target, retained by message routing logic. -->
                 <ComboBox x:Name="TargetDevicePicker" Visibility="Collapsed"/>
-                <Button Grid.Column="1" Content="清理" Width="48" Height="34"
-                        Style="{DynamicResource Yanzi.Button.Ghost}"
+                <Button x:Name="ClearHistoryButton" Grid.Column="1" Content="清理" MinWidth="48" Height="34"
+                        Style="{DynamicResource Yanzi.Button.Outline}"
                         Margin="6,0,0,0" Click="ClearHistoryButton_Click"
                         ToolTip="清空本机显示的手机消息历史"/>
                 <Button x:Name="CloseButton" Grid.Column="2" Width="34" Height="34"
