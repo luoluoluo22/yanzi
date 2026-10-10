@@ -273,6 +273,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private MobileMessageToastWindow? _mobileMessageToastWindow;
     private readonly WindowBoundExtensionsService _windowBoundExtensionsService;
     private readonly WindowSnapAssistService _windowSnapAssistService;
+    private readonly DispatcherTimer _githubSecondaryBackupTimer;
     private readonly DispatcherTimer _backgroundWebDavSyncTimer;
     private readonly DispatcherTimer _backgroundWebDavSyncDelayTimer;
     private readonly DispatcherTimer _accountExtensionSyncTimer;
@@ -377,6 +378,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Interval = TimeSpan.FromHours(6)
         };
         _backgroundWebDavSyncTimer.Tick += (_, _) => QueueBackgroundWebDavSync("timer");
+
+        _githubSecondaryBackupTimer = new DispatcherTimer { Interval = TimeSpan.FromHours(1) };
+        _githubSecondaryBackupTimer.Tick += async (_, _) =>
+            await GitHubSecondaryBackupService.RunIfDueAsync(AppSettingsStore.Load());
 
         _backgroundWebDavSyncDelayTimer = new DispatcherTimer();
         _backgroundWebDavSyncDelayTimer.Tick += (_, _) =>
@@ -1276,6 +1281,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isBackgroundServicesInitialized = true;
 
         StartBackgroundWebDavSync();
+        _githubSecondaryBackupTimer.Start();
+        _ = Task.Run(async () =>
+            await GitHubSecondaryBackupService.RunIfDueAsync(AppSettingsStore.Load()));
         _ = LoadInstalledApplicationsAsync();
         _windowBoundExtensionsService.Start(_appSettings.WindowBindings);
         if (_appSettings.EnableWindowSnapAssist)
