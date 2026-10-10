@@ -79,3 +79,16 @@ __pycache__/
 
 # JavaScript dependencies
 **/node_modules/
+
+# Ephemeral local development and test outputs
+.tmp/
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.coverage
+**/coverage/
+**/test-results/
+**/playwright-report/
+**/.next/
+**/.turbo/
+**/.parcel-cache/
