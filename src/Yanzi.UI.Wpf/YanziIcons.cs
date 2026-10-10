@@ -8,6 +8,25 @@ namespace Yanzi.UI.Wpf;
 /// <summary>Pixel-consistent vector icons for native WPF controls, independent of font metrics.</summary>
 public static class YanziIcons
 {
+    /// <summary>Render any simple Lucide-style 24-unit stroked path using theme tokens.</summary>
+    public static FrameworkElement StrokeIcon(string pathGeometry, double size = 16)
+    {
+        if (!double.IsFinite(size) || size <= 0) throw new ArgumentOutOfRangeException(nameof(size));
+        var canvas = new Canvas { Width = 24, Height = 24, IsHitTestVisible = false };
+        var path = new Path
+        {
+            Data = Geometry.Parse(pathGeometry),
+            StrokeThickness = 1.8,
+            StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round,
+            StrokeLineJoin = PenLineJoin.Round,
+            Fill = Brushes.Transparent
+        };
+        path.SetResourceReference(Shape.StrokeProperty, "Yanzi.Color.Foreground");
+        canvas.Children.Add(path);
+        return IconFrame(canvas, size);
+    }
+
     /// <summary>Font-independent, theme-aware check from the same 24-unit Lucide grid.</summary>
     public static FrameworkElement Check(double size = 14)
     {
