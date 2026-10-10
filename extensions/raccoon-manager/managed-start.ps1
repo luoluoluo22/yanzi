@@ -95,6 +95,32 @@ if (!$ours -and (Test-PortOccupied $port)) {
     $ours = $false
 }
 
+# YANZI_RACCOON_ENV_ISOLATION_V1
+# The host may be launched from another MCP with its own RACCOON_* variables.
+# The installed extension's per-device .env is authoritative for port, token and safety flags.
+$managedKeys = @(
+    'RACCOON_RUNTIME_DIR', 'RACCOON_ENV_FILE', 'RACCOON_SETTINGS_FILE',
+    'RACCOON_SECRET_FILE', 'RACCOON_OAUTH_STATE_FILE',
+    'RACCOON_SOURCE_BACKUP_DIR', 'RACCOON_PIPELINE_DIR'
+)
+$managedValues = @{}
+foreach ($name in $managedKeys) {
+    $managedValues[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
+}
+foreach ($name in @(Get-ChildItem Env: | Where-Object { $_.Name.StartsWith('RACCOON_') } | Select-Object -ExpandProperty Name)) {
+    [Environment]::SetEnvironmentVariable($name, $null, 'Process')
+}
+foreach ($name in $managedKeys) {
+    [Environment]::SetEnvironmentVariable($name, $managedValues[$name], 'Process')
+}
+foreach ($line in @(Get-Content -LiteralPath $envFile -Encoding UTF8)) {
+    if ($line -match '^(RACCOON_[A-Z0-9_]+)=(.*)$') {
+        [Environment]::SetEnvironmentVariable($Matches[1], $Matches[2], 'Process')
+    }
+}
+# Follow a port reassignment made above, not the old .env value.
+$env:RACCOON_PORT = [string]$port
+
 if ($Action -eq 'status') {
     & (Join-Path $service 'scripts\local.ps1') status
     exit $LASTEXITCODE
