@@ -1536,4 +1536,80 @@
             </Setter.Value>
         </Setter>
     </Style>
+
+    <!-- Reusable conversation primitives; semantic tokens are owned by the public theme.
+         Host windows supply data, commands and streaming lifecycle. -->
+    <Style x:Key="Yanzi.Chat.Sidebar" TargetType="{x:Type Border}">
+        <Setter Property="TextElement.Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
+        <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Sidebar}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Border}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="{DynamicResource Yanzi.Radius.Xl}"/>
+    </Style>
+    <Style x:Key="Yanzi.Chat.Topic" TargetType="{x:Type Border}">
+        <Setter Property="TextElement.Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
+        <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Transparent}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Transparent}"/>
+        <Setter Property="BorderThickness" Value="2,0,0,0"/>
+        <Setter Property="CornerRadius" Value="{DynamicResource Yanzi.Radius.Md}"/>
+        <Setter Property="Padding" Value="12,10"/>
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="{DynamicResource Yanzi.Color.SidebarAccent}"/>
+            </Trigger>
+            <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Accent}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Ring}"/>
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+    <Style x:Key="Yanzi.Chat.Transcript" TargetType="{x:Type Border}">
+        <Setter Property="TextElement.Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
+        <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Background}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Border}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="{DynamicResource Yanzi.Radius.Xl}"/>
+    </Style>
+    <Style x:Key="Yanzi.Chat.Bubble" TargetType="{x:Type Border}">
+        <Setter Property="TextElement.Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
+        <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Card}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Border}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="{DynamicResource Yanzi.Radius.Lg}"/>
+        <Setter Property="Padding" Value="14,12"/>
+    </Style>
+    <Style x:Key="Yanzi.Chat.UserBubble" TargetType="{x:Type Border}">
+        <Setter Property="Background" Value="{DynamicResource Yanzi.Color.ChatUserBubble}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.ChatUserBubble}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="{DynamicResource Yanzi.Radius.Lg}"/>
+        <Setter Property="Padding" Value="12,10"/>
+        <Setter Property="TextElement.Foreground" Value="{DynamicResource Yanzi.Color.ChatUserForeground}"/>
+    </Style>
+    <Style x:Key="Yanzi.Chat.Composer" TargetType="{x:Type Border}">
+        <Setter Property="TextElement.Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
+        <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Card}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Input}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="{DynamicResource Yanzi.Radius.Lg}"/>
+        <Setter Property="Padding" Value="14,12"/>
+    </Style>
+    <Style x:Key="Yanzi.Chat.Attachment" TargetType="{x:Type Border}">
+        <Setter Property="TextElement.Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
+        <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Secondary}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Border}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="{DynamicResource Yanzi.Radius.Md}"/>
+        <Setter Property="Padding" Value="10,7"/>
+    </Style>
+    <Style x:Key="Yanzi.Chat.StatusChip" TargetType="{x:Type Border}">
+        <Setter Property="TextElement.Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
+        <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Secondary}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Border}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="{DynamicResource Yanzi.Radius.Md}"/>
+        <Setter Property="Padding" Value="12,0"/>
+        <Setter Property="Height" Value="38"/>
+    </Style>
+
 </ResourceDictionary>

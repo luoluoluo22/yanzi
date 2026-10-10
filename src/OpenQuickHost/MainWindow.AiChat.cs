@@ -39,6 +39,7 @@ public partial class MainWindow
     private readonly ObservableCollection<AiChatMessage> _aiChatMessages = [];
     private readonly ObservableCollection<AiChatTopic> _aiChatTopics = [];
     private readonly ObservableCollection<AiChatAttachment> _aiChatAttachments = [];
+    private Yanzi.UI.Wpf.YanziDropdownMenu? _activeAiChatMenu;
     private AiChatTopic? _selectedAiChatTopic;
     private readonly HttpClient _aiHttpClient = new() { Timeout = TimeSpan.FromSeconds(300) };
     private string _aiChatInputText = string.Empty;
@@ -435,13 +436,15 @@ public partial class MainWindow
         var dialog = new Window
         {
             Title = "重命名话题",
-            Width = 400,
-            Height = 150,
+            Width = 420,
+            Height = 170,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Owner = this,
             ResizeMode = ResizeMode.NoResize
         };
 
+        Yanzi.UI.Wpf.YanziUi.ApplyTo(dialog, Yanzi.UI.Wpf.YanziUi.GetTheme(this));
+        dialog.SetResourceReference(Window.BackgroundProperty, "Yanzi.Color.Popover");
         var stack = new System.Windows.Controls.StackPanel { Margin = new Thickness(20) };
         var textBox = new System.Windows.Controls.TextBox
         {
@@ -450,6 +453,7 @@ public partial class MainWindow
             Padding = new Thickness(8),
             Margin = new Thickness(0, 0, 0, 15)
         };
+        textBox.SetResourceReference(System.Windows.Controls.Control.StyleProperty, "Yanzi.Input");
         textBox.SelectAll();
 
         var buttonPanel = new System.Windows.Controls.StackPanel
@@ -465,6 +469,8 @@ public partial class MainWindow
             Height = 32,
             Margin = new Thickness(0, 0, 10, 0)
         };
+        okButton.SetResourceReference(System.Windows.Controls.Control.StyleProperty, "Yanzi.Button.Default");
+        okButton.IsDefault = true;
         okButton.Click += (_, _) =>
         {
             var newTitle = textBox.Text.Trim();
@@ -482,6 +488,8 @@ public partial class MainWindow
             Width = 80,
             Height = 32
         };
+        cancelButton.SetResourceReference(System.Windows.Controls.Control.StyleProperty, "Yanzi.Button.Outline");
+        cancelButton.IsCancel = true;
         cancelButton.Click += (_, _) => dialog.Close();
 
         buttonPanel.Children.Add(okButton);
@@ -494,23 +502,41 @@ public partial class MainWindow
         dialog.ShowDialog();
     }
 
+    // Shared menu chrome and edge positioning are owned by Yanzi.UI.Wpf.
+    // Keep business actions (rename/delete) in the host.
     private void ShowTopicContextMenu(AiChatTopic topic, FrameworkElement placementTarget)
     {
-        var menu = new System.Windows.Controls.ContextMenu
-        {
-            PlacementTarget = placementTarget,
-            Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom
-        };
+        var menu = CreateAiChatMenu();
+        menu.AddAction("重命名", () => RenameTopic(topic));
+        menu.AddSeparator();
+        menu.AddAction("删除", () => DeleteTopic(topic));
+        OpenAiChatContextMenu(menu, placementTarget);
+    }
 
-        var renameItem = new System.Windows.Controls.MenuItem { Header = "重命名" };
-        renameItem.Click += (_, _) => RenameTopic(topic);
-        menu.Items.Add(renameItem);
+    private Yanzi.UI.Wpf.YanziDropdownMenu CreateAiChatMenu()
+    {
+        var menu = new Yanzi.UI.Wpf.YanziDropdownMenu();
+        menu.UseStandaloneTheme(Yanzi.UI.Wpf.YanziUi.GetTheme(this));
+        menu.UseContentWidth(168);
+        return menu;
+    }
 
-        var deleteItem = new System.Windows.Controls.MenuItem { Header = "删除" };
-        deleteItem.Click += (_, _) => DeleteTopic(topic);
-        menu.Items.Add(deleteItem);
-
-        menu.IsOpen = true;
+    private void OpenAiChatContextMenu(
+        Yanzi.UI.Wpf.YanziDropdownMenu menu, FrameworkElement target)
+    {
+        var cursor = System.Windows.Input.Mouse.GetPosition(target);
+        var physical = target.PointToScreen(cursor);
+        var source = PresentationSource.FromVisual(target);
+        if (source?.CompositionTarget is null) return;
+        var matrix = source.CompositionTarget.TransformFromDevice;
+        var area = System.Windows.Forms.Screen.FromPoint(
+            new System.Drawing.Point((int)Math.Round(physical.X), (int)Math.Round(physical.Y))).WorkingArea;
+        var topLeft = matrix.Transform(new System.Windows.Point(area.Left, area.Top));
+        var bottomRight = matrix.Transform(new System.Windows.Point(area.Right, area.Bottom));
+        var logicalClick = matrix.Transform(physical);
+        if (_activeAiChatMenu is not null) _activeAiChatMenu.IsOpen = false;
+        _activeAiChatMenu = menu;
+        menu.ShowAtScreenPoint(logicalClick, new Rect(topLeft, bottomRight));
     }
 
     // ==================== 附件管理 ====================
@@ -612,24 +638,11 @@ public partial class MainWindow
     
     private void ShowMessageContextMenu(AiChatMessage message, FrameworkElement placementTarget)
     {
-        var menu = new System.Windows.Controls.ContextMenu
-        {
-            PlacementTarget = placementTarget,
-            Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint
-        };
-
-        var copyItem = new System.Windows.Controls.MenuItem { Header = "复制内容" };
-        copyItem.Click += (_, _) => CopyMessage(message);
-        menu.Items.Add(copyItem);
-
+        var menu = CreateAiChatMenu();
+        menu.AddAction("复制内容", () => CopyMessage(message));
         if (message.IsUser)
-        {
-            var resendItem = new System.Windows.Controls.MenuItem { Header = "重新发送" };
-            resendItem.Click += (_, _) => ResendMessage(message);
-            menu.Items.Add(resendItem);
-        }
-
-        menu.IsOpen = true;
+            menu.AddAction("重新发送", () => ResendMessage(message));
+        OpenAiChatContextMenu(menu, placementTarget);
     }
 
     private void AiChatCopyMessageButton_Click(object sender, RoutedEventArgs e)
@@ -714,6 +727,7 @@ public partial class MainWindow
             return;
         }
 
+        if (_activeAiChatMenu is not null) _activeAiChatMenu.IsOpen = false;
         SaveTopicsToStorage();
 
         // 退出 AI Chat 模式时，恢复默认窗口大小

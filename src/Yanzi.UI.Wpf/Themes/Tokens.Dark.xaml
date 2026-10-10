@@ -35,6 +35,11 @@
     <SolidColorBrush x:Key="Yanzi.Color.SidebarAccentForeground" Color="#FFFAFAFA" />
     <SolidColorBrush x:Key="Yanzi.Color.Success" Color="#FF34A46D" />
     <SolidColorBrush x:Key="Yanzi.Color.Warning" Color="#FFE0AA4F" />
+    <SolidColorBrush x:Key="Yanzi.Color.ChatUserBubble" Color="#FF1677F2" />
+    <SolidColorBrush x:Key="Yanzi.Color.ChatUserForeground" Color="#FFFFFFFF" />
+    <SolidColorBrush x:Key="Yanzi.Color.ChatUserSubtle" Color="#D9EEFFFF" />
+    <SolidColorBrush x:Key="Yanzi.Color.ChatUserOverlay" Color="#24FFFFFF" />
+    <SolidColorBrush x:Key="Yanzi.Color.ChatUserOverlayHover" Color="#33FFFFFF" />
     <SolidColorBrush x:Key="Yanzi.Color.Transparent" Color="#00000000" />
     <!-- Legacy aliases retained for previously shipped Yanzi UI 0.1.0 clients. -->
     <SolidColorBrush x:Key="Yanzi.Brush.Window" Color="#FF0A0A0A" />
