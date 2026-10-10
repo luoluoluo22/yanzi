@@ -45,6 +45,26 @@ curl http://127.0.0.1:8789/capabilities
 
 服务器注册为 `platform=server`，并通过设备的 `capabilityCatalog` 自动上报当前能力。收到 `capability.invoke` 后仍会二次校验消息中的 owner / device-grant 授权。
 
+## 服务器向燕记手机发送消息
+
+Cloudflare 的自定义防火墙要求 `User-Agent` 包含 `YanziClient`。Server Node 和发送 CLI 均携带 `YanziClient-Server/1.0`，不需要关闭防火墙。
+
+首次授权由已登录的 Windows 燕子客户端执行；账号所有者令牌只用于签发，不离开 Windows：
+
+```powershell
+.\scripts\provision-yanzi-server-chat.ps1 -SshDestination "root@YOUR_SERVER"
+```
+
+要求预先信任 SSH 主机指纹，并设置密钥登录；远端执行 `sudo -n` 必须可用。只有绑定本服务器、K70 目标和 `device.presence/messages.receive/chat.send` 的设备 JWT 会通过加密 SSH 输入传到服务器。失败时脚本尽力撤销刚签发的凭据。每次授权最多有效 30 天，到期前需要重新执行。
+
+授权成功后，可在 Ubuntu 用 stdin 发送一条测试文本（不会把正文或凭据写入进程命令行）：
+
+```bash
+printf '%s\n' '燕子服务器连接测试' | sudo bash /opt/yanzi/server/yanzi-node/scripts/send-message.sh
+```
+
+返回 `cloudStatus=pending` 表示云端已经接受但手机尚未 ACK；只有 `acked` 才表示指定手机确认接收。手机离线时云端消息仍可保留，系统通知另取决于 Android 推送服务配置。发送使用独立持久 outbox，`YANZI_MESSAGE_CLIENT_ID` 可设置为稳定 ID 以便失败重试时去重。
+
 ## 数据目录
 
 - 运行状态：`/var/lib/yanzi-server-node`
