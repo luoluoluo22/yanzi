@@ -737,8 +737,7 @@ public partial class MainWindow
             {
                 _cloudSyncClient.SetCredential(email, password, dialog.RememberCredential);
                 await _cloudSyncClient.EnsureAuthenticatedAsync();
-                // Only an explicit owner sign-in may reconnect a removed registration.
-                // Background presence heartbeats must keep respecting device removal.
+                // Only explicit sign-in may reconnect a removed device; heartbeats must not.
                 using var reconnectTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(12));
                 await _cloudSyncClient.RegisterDeviceAsync(
                     DeviceIdentityStore.GetOrCreateDesktopDeviceId(), "desktop",
@@ -1000,6 +999,7 @@ public partial class MainWindow
             var service = new PersonalSyncService(settings);
             var result = await service.SyncExtensionsAsync(GetPersonalConfigSyncMode());
             await ExtensionStorageService.SyncPendingCloudWritesAsync();
+            await ExtensionStorageService.ReconcileCloudDataAsync();
             ApplyWebDavSyncResult(result);
             LastRunMessage = BuildPersonalSyncCompletedMessage(result);
         }
@@ -1141,18 +1141,19 @@ public partial class MainWindow
             var result = await Task.Run(async () =>
             {
                 var service = new PersonalSyncService(settings);
+                var restored = await ExtensionStorageService.ReconcileCloudDataAsync();
                 var extensions = await service.SyncExtensionsAsync(configSyncMode);
                 var yanm = configSyncMode == PersonalConfigSyncMode.Bidirectional
                     ? await service.SyncYanmStateAsync()
                     : await service.BackupYanmStateAsync();
                 var extensionData = await ExtensionStorageService.SyncPendingCloudWritesAsync();
-                return (Extensions: extensions, Yanm: yanm, ExtensionData: extensionData);
+                return (Extensions: extensions, Yanm: yanm, ExtensionData: extensionData, Restored: restored);
             });
             ApplyWebDavSyncResult(result.Extensions);
             ApplyYanmStateSyncResult(result.Yanm);
             ReconcileDeletedExtensionsWithAccountLibrary();
             SyncStatus = $"{BuildPersonalSyncCompletedMessage(result.Extensions, includeConfigSummary: false)} 燕幕{BuildYanmSyncAction(result.Yanm)}；扩展数据 pending 上传 {result.ExtensionData.UploadedCount}，失败 {result.ExtensionData.FailedCount}。";
-            HostAssets.AppendLog($"Personal sync background sync completed: runId={runId}, reason={reason}, durationMs={elapsed.ElapsedMilliseconds}, configMode={configSyncMode}, uploaded={result.Extensions.UploadedCount}, pulled={result.Extensions.PulledCount}, configUploaded={result.Extensions.ConfigUploaded}, configPulled={result.Extensions.ConfigPulled}, yanmUploaded={result.Yanm.Uploaded}, yanmPulled={result.Yanm.Pulled}, yanmSnapshotBytes={result.Yanm.PayloadBytes}, extensionDataUploaded={result.ExtensionData.UploadedCount}, extensionDataFailed={result.ExtensionData.FailedCount}");
+            HostAssets.AppendLog($"Personal sync background sync completed: runId={runId}, reason={reason}, durationMs={elapsed.ElapsedMilliseconds}, configMode={configSyncMode}, uploaded={result.Extensions.UploadedCount}, pulled={result.Extensions.PulledCount}, configUploaded={result.Extensions.ConfigUploaded}, configPulled={result.Extensions.ConfigPulled}, yanmUploaded={result.Yanm.Uploaded}, yanmPulled={result.Yanm.Pulled}, yanmSnapshotBytes={result.Yanm.PayloadBytes}, extensionDataUploaded={result.ExtensionData.UploadedCount}, extensionDataFailed={result.ExtensionData.FailedCount}, dataRestored={result.Restored.RestoredCount}, dataPublished={result.Restored.PublishedCount}, dataSkipped={result.Restored.SkippedCount}");
             _backgroundPersonalSyncFailureCount = 0;
             _backgroundPersonalSyncRetryAfterUtc = DateTimeOffset.MinValue;
         }
@@ -1336,6 +1337,12 @@ public partial class MainWindow
                                 skipCount++;
                                 continue;
                             }
+                            if (cloudRecord != null && IsAccountExtensionNewer(cmd, cloudRecord))
+                            {
+                                skipCount++;
+                                HostAssets.AppendLog($"Account extension is newer: skipping local downgrade id={cmd.ExtensionId}, local={cmd.DeclaredVersion}, remote={cloudRecord.LatestVersion}");
+                                continue;
+                            }
                             if (IsAccountExtensionCurrent(cmd, cloudRecord))
                             {
                                 unchangedCount++;
@@ -1466,10 +1473,11 @@ public partial class MainWindow
         try
         {
             var items = await _cloudSyncClient.GetUserExtensionsAsync();
-            var localIds = LocalExtensionCatalog.LoadCommands()
+            var localCommands = LocalExtensionCatalog.LoadCommands()
                 .Where(command => command.Source == CommandSource.LocalExtension)
-                .Select(command => command.ExtensionId)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                .GroupBy(command => command.ExtensionId, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+            var localIds = localCommands.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
             var recycledIds = ExtensionRecycleBinService.LoadEntries()
                 .Select(static entry => entry.ExtensionId)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -1481,7 +1489,8 @@ public partial class MainWindow
                 if (item.Enabled == 0 ||
                     !item.HasArchive ||
                     string.IsNullOrWhiteSpace(item.ExtensionId) ||
-                    localIds.Contains(item.ExtensionId) ||
+                    (localIds.Contains(item.ExtensionId) &&
+                     !IsAccountExtensionNewer(localCommands[item.ExtensionId], item)) ||
                     recycledIds.Contains(item.ExtensionId) ||
                     IsConfigExtensionId(item.ExtensionId))
                 {
@@ -1491,6 +1500,12 @@ public partial class MainWindow
                 try
                 {
                     var packageBytes = await _cloudSyncClient.DownloadMyExtensionArchiveAsync(item.ExtensionId);
+                    if (!string.IsNullOrWhiteSpace(item.ArchiveSha256) &&
+                        !Convert.ToHexString(SHA256.HashData(packageBytes)).Equals(
+                            item.ArchiveSha256, StringComparison.OrdinalIgnoreCase))
+                        throw new InvalidDataException($"Account extension hash mismatch: {item.ExtensionId}");
+                    if (localCommands.TryGetValue(item.ExtensionId, out var existingCommand))
+                        BackupExtensionBeforeCloudUpgrade(existingCommand);
                     var result = await ExtensionInstallService.InstallPackageAsync(
                         packageBytes, item.ExtensionId, fallbackName: item.DisplayName);
 
@@ -1572,6 +1587,33 @@ public partial class MainWindow
                 _accountDeletionReconcileLock.Release();
             }
         });
+    }
+
+    private static bool IsAccountExtensionNewer(CommandItem command, UserExtensionRecord record)
+    {
+        var localVersion = (command.DeclaredVersion ?? "").Trim().TrimStart('v', 'V');
+        var remoteVersion = (record.LatestVersion ?? "").Trim().TrimStart('v', 'V');
+        return Version.TryParse(localVersion, out var local) &&
+               Version.TryParse(remoteVersion, out var remote) &&
+               remote > local;
+    }
+
+    private static void BackupExtensionBeforeCloudUpgrade(CommandItem command)
+    {
+        var source = command.ExtensionDirectoryPath;
+        if (string.IsNullOrWhiteSpace(source) || !Directory.Exists(source)) return;
+        var id = command.ExtensionId;
+        if (id != Path.GetFileName(id))
+            throw new InvalidOperationException("Invalid extension ID for backup path");
+        var root = Path.Combine(HostAssets.DataRootPath, "Backups", "account-extension-upgrades",
+            id + "-" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fff") + "-" + Guid.NewGuid().ToString("N")[..8]);
+        foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+        {
+            var copy = Path.Combine(root, Path.GetRelativePath(source, file));
+            Directory.CreateDirectory(Path.GetDirectoryName(copy)!);
+            File.Copy(file, copy);
+        }
+        HostAssets.AppendLog($"Account extension backup preserved before upgrade: id={id}, path={root}");
     }
 
     private static bool IsAccountExtensionCurrent(CommandItem command, UserExtensionRecord? record)
@@ -5367,9 +5409,10 @@ public partial class MainWindow
             var result = await Task.Run(async () =>
             {
                 var service = new PersonalSyncService(settings, requireEnabled: false);
+                var restored = await ExtensionStorageService.ReconcileCloudDataAsync();
                 var extensions = await service.SyncExtensionsAsync(GetPersonalConfigSyncMode());
                 var extensionData = await ExtensionStorageService.SyncPendingCloudWritesAsync();
-                return (Extensions: extensions, ExtensionData: extensionData);
+                return (Extensions: extensions, ExtensionData: extensionData, Restored: restored);
             });
             AppSettingsStore.Save(settings);
             ApplyWebDavSyncResult(result.Extensions, syncAccountImmediately: true);

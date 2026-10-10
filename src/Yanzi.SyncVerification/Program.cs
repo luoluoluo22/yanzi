@@ -29,6 +29,82 @@ if (args.Contains("--account-extension-bridge"))
     return;
 }
 
+if (args.Contains("--extension-data-index-summary"))
+{
+    var service = new PersonalSyncService(AppSettingsStore.Load());
+    foreach (var ext in new[] { "yanzi-notes", "clipboard-history", "inspiration-board",
+        "yanzi-album", "ext_e9e37068c8284b1e808f5454181fb418" })
+    {
+        var keys = await service.GetExtensionDataKeysAsync(ext);
+        Console.WriteLine($"EXTENSION_INDEX id={ext} count={keys.Count}");
+    }
+    return;
+}
+if (args.Length == 2 && args[0] == "--extension-data-reconcile-scope")
+{
+    var result = await ExtensionStorageService.ReconcileCloudDataAsync(onlyExtensionIds: new[] { args[1] });
+    Console.WriteLine($"EXTENSION_SCOPE_RECOVERY id={args[1]} restored={result.RestoredCount} published={result.PublishedCount} skipped={result.SkippedCount}");
+    return;
+}
+if (args.Contains("--extension-data-catalog-tests"))
+{
+    await ExtensionDataCatalogVerification.RunAsync();
+    return;
+}
+if (args.Contains("--account-extension-versions"))
+{
+    var client = new CloudSyncClient(SyncConfigLoader.Load());
+    var items = await client.GetUserExtensionsAsync();
+    foreach (var id in new[] { "yanzi-notes", "inspiration-board", "taskbar-calendar", "clipboard-history", "copy-path-to-clipboard", "smart-opener-searcher" })
+    {
+        var item = items.FirstOrDefault(x => x.ExtensionId.Equals(id, StringComparison.OrdinalIgnoreCase));
+        Console.WriteLine(item == null ? $"ACCOUNT_EXT {id} missing" :
+            $"ACCOUNT_EXT {id} version={item.LatestVersion} revision={item.ArchiveRevision} sha={item.ArchiveSha256} enabled={item.Enabled} hasArchive={item.HasArchive}");
+    }
+    return;
+}
+if (args.Contains("--extension-package-backup"))
+{
+    var service = new PersonalSyncService(AppSettingsStore.Load());
+    var result = await service.SyncExtensionsAsync(PersonalConfigSyncMode.UploadOnlyBackup);
+    Console.WriteLine($"PERSONAL_PACKAGE_BACKUP uploaded={result.UploadedCount} downloaded={result.PulledCount} configUploaded={result.ConfigUploaded}");
+    return;
+}
+if (args.Contains("--extension-data-audit"))
+{
+    var service = new PersonalSyncService(AppSettingsStore.Load());
+    foreach (var ext in new[] { "yanzi-notes", "clipboard-history", "inspiration-board", "taskbar-calendar" })
+    {
+        var keys = await service.GetExtensionDataKeysAsync(ext);
+        Console.WriteLine($"EXT_DATA_AUDIT extension={ext} count={keys.Count}");
+        foreach (var key in keys)
+        {
+            if (ExtensionStorageService.IsPortableBinaryAsset(key))
+            {
+                var bytes = await service.TryReadExtensionBinaryAssetAsync(ext, key);
+                Console.WriteLine($"  {key} kind=binary exists={bytes != null} size={bytes?.Length ?? 0} sha256={Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes ?? [])).Substring(0, 20)}");
+            }
+            else
+            {
+                var entry = await service.TryReadExtensionDataAsync(ext, key);
+                Console.WriteLine($"  {key} kind=text exists={entry.Content != null} revision={entry.Value?.Revision ?? 0}");
+            }
+        }
+    }
+    return;
+}
+if (args.Contains("--resolve-stale-conflicts"))
+{
+    var result = await ExtensionStorageService.ResolveStaleLocalConflictsAsync();
+    Console.WriteLine($"EXTENSION_DATA_CONFLICTS resolved={result.ResolvedCount} skipped={result.SkippedCount} failed={result.FailedCount}");
+    return;
+}
+if (args.Contains("--extension-data-reconcile"))
+{
+    var result = await ExtensionStorageService.ReconcileCloudDataAsync();
+    Console.WriteLine($"EXTENSION_DATA_RECOVERY restored={result.RestoredCount} published={result.PublishedCount} skipped={result.SkippedCount}");
+    return;
+}
 if (args.Contains("--fresh-device-sync"))
 {
     await FreshDeviceSyncVerification.RunAsync();
@@ -367,6 +443,11 @@ static void VerifySyncArchitectureSafety()
         CloudObjectSyncStateStore.SaveAt(testRoot, recovered);
         Assert(System.IO.Directory.GetFiles(System.IO.Path.GetDirectoryName(accountPath)!, "*.corrupt-*").Length == 1,
             "Recovery must preserve damaged original for diagnosis.");
+        System.IO.File.WriteAllText(accountPath, "broken again");
+        var recoveredAgain = CloudObjectSyncStateStore.LoadAt(testRoot, "account-a");
+        Assert(recoveredAgain.RecoveredFromBackup && recoveredAgain.PendingOperations.Count == 1,
+            "Saving a recovered state must keep the known-good backup available for a second primary-file failure.");
+        CloudObjectSyncStateStore.SaveAt(testRoot, recoveredAgain);
         System.IO.File.WriteAllText(accountPath, "broken");
         System.IO.File.WriteAllText(accountPath + ".bak", "broken too");
         var blocked = CloudObjectSyncStateStore.LoadAt(testRoot, "account-a");
@@ -615,6 +696,28 @@ static void VerifyExtensionAuthoritySelection()
             PersonalSyncService.ChooseExtensionEntry(local, remote, PersonalConfigSyncMode.Bidirectional),
             remote),
         "Standalone personal sync no longer selected the newer remote extension entry.");
+    var backupLocal = new WebDavSyncEntry
+    {
+        ExtensionId = "demo", Version = "0.2.5", PackageHash = "local",
+        UpdatedByDeviceId = "desktop", Revision = 29, BaseRevision = 21
+    };
+    var backupRemote = new WebDavSyncEntry
+    {
+        ExtensionId = "demo", Version = "0.2.5", PackageHash = "remote",
+        UpdatedByDeviceId = "notebook", Revision = 21
+    };
+    Assert(!PersonalSyncService.ShouldPublishAccountBackup(backupLocal, backupRemote, "desktop"),
+        "A same-version extension on one PC must not repeatedly replace another device's backup.");
+    backupLocal.Version = "0.2.6";
+    Assert(PersonalSyncService.ShouldPublishAccountBackup(backupLocal, backupRemote, "desktop"),
+        "A genuinely newer extension version must be backed up.");
+    backupLocal.Version = "0.2.5";
+    backupRemote.UpdatedByDeviceId = "desktop";
+    Assert(PersonalSyncService.ShouldPublishAccountBackup(backupLocal, backupRemote, "desktop"),
+        "Same-device new edits should update their own previously confirmed backup.");
+    backupRemote.Deleted = true;
+    Assert(!PersonalSyncService.ShouldPublishAccountBackup(backupLocal, backupRemote, "desktop"),
+        "A backup deletion must not be silently recreated by a local stale installation.");
     local.BaseRevision = 10;
     local.BasePackageHash = "base";
     local.BaseDeleted = false;
