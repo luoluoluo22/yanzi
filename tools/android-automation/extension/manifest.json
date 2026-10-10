@@ -1,0 +1,173 @@
+{
+  "id": "yanzi-android-automation",
+  "name": "手机购物助手",
+  "version": "0.3.3",
+  "category": "手机工具",
+  "description": "通过手机 USB ADB 查看商品、价格、购物车与订单；无下单权限。",
+  "icon": "mdi:cellphone-cog",
+  "accentHex": "#FF777777",
+  "runtime": "csharp",
+  "uiMode": "native-window",
+  "entryMode": "entry",
+  "entry": "provider.cs",
+  "permissions": [
+    "android.device.read",
+    "shopping.read",
+    "shopping.orders.read"
+  ],
+  "requires": [
+    "node>=22"
+  ],
+  "startup": {
+    "mode": "on_app_launch"
+  },
+  "waitForExit": false,
+  "provides": [
+    {
+      "name": "android.device.status",
+      "description": "读取授权 Android 设备连接与前台状态（只读）",
+      "version": "0.3.3",
+      "permissions": [
+        "android.device.read"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "pdd.product.search",
+      "description": "在多多买菜搜索商品并返回规格及页面价格，不加购",
+      "version": "0.3.3",
+      "permissions": [
+        "shopping.read"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "pdd.cart.inspect",
+      "description": "只读查看多多买菜购物车正常商品数量和下架数，不下单",
+      "version": "0.3.3",
+      "permissions": [
+        "shopping.read"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "pdd.orders.preview",
+      "description": "只读解析当前订单列表页面，不跨页或改动历史订单",
+      "version": "0.3.3",
+      "permissions": [
+        "shopping.orders.read"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "pdd.orders.collect",
+      "description": "在已打开的订单列表中最多扫描8页，遇到无法识别页面立即停止；不执行商品操作",
+      "version": "0.3.3",
+      "permissions": [
+        "shopping.orders.read"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "maxPages": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8
+          },
+          "openIfNeeded": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "pdd.orders.detail",
+      "description": "从当前已打开的订单详情页只读采集完整商品清单，并验证商品数与实付金额；订单编号仅返回哈希",
+      "version": "0.3.3",
+      "permissions": [
+        "shopping.orders.read"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "maxPages": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 12
+          }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "pdd.orders.batch",
+      "description": "只读批量进入并验证订单详情后返回列表；每次最多5笔，未完整读取时明确返回不确定状态，不操作购物车或订单",
+      "version": "0.3.3",
+      "permissions": [
+        "shopping.orders.read"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "maxOrders": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5
+          },
+          "maxScrolls": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 12
+          }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object"
+      }
+    }
+  ]
+}

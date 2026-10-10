@@ -21,6 +21,15 @@
     
     
     <Window.Resources>
+        <!-- Shared UI surface for every Settings page; original style remains reversible. -->
+        <Style x:Key="Yanzi.Settings.Surface" TargetType="{x:Type Border}"
+               BasedOn="{StaticResource SurfaceCard}">
+            <Setter Property="CornerRadius" Value="{DynamicResource Yanzi.Radius.Xl}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Border}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Card}"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+        </Style>
         <local:KeywordMatchToBrushConverter x:Key="KeywordMatchToBrushConverter" />
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
         <local:BoolToColorConverter x:Key="BoolToColorConverter" />
@@ -983,6 +992,29 @@
                         
                         <!-- General Settings View -->
                         <StackPanel x:Name="GeneralSectionRoot" Visibility="{Binding IsGeneralSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <!-- Shared UI pilot acts on real settings; the visual toggle itself is not persisted. -->
+                            <Border Background="{DynamicResource Yanzi.Color.Card}" BorderBrush="{DynamicResource Yanzi.Color.Border}" BorderThickness="1"
+                                    CornerRadius="14" Padding="16,14" Margin="0,0,0,16">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock Text="统一 UI 组件库 · 全部设置页" FontSize="16"
+                                                   Foreground="{DynamicResource Yanzi.Color.Foreground}" FontWeight="SemiBold"/>
+                                        <TextBlock Text="统一卡片、输入、选择与开关风格；切换仅影响外观，不修改保存的设置。"
+                                                   Foreground="{DynamicResource Yanzi.Color.MutedForeground}" FontSize="12"
+                                                   TextWrapping="Wrap" Margin="0,6,14,0"/>
+                                    </StackPanel>
+                                    <CheckBox x:Name="UnifiedUiPreviewToggle" Grid.Column="1"
+                                              Content="新版样式" IsChecked="True"
+                                              VerticalAlignment="Center" Cursor="Hand"
+                                              Foreground="{DynamicResource Yanzi.Color.Foreground}" FontSize="13" FontWeight="Medium"
+                                              Checked="UnifiedUiPreviewToggle_Changed"
+                                              Unchecked="UnifiedUiPreviewToggle_Changed"/>
+                                </Grid>
+                            </Border>
 
                             
                             <Grid Margin="0,5">

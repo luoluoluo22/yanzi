@@ -211,6 +211,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         SizeChanged += SettingsWindow_BoundsChanged;
         Closing += SettingsWindow_Closing;
         LoadLogoImage();
+        InitializeSettingsUiPilot();
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -3761,6 +3762,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private void ThemeModeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        UpdateSettingsUiPilotTheme();
         if (_isLoadingSettings || _isRefreshingSettingsFromDisk || !IsLoaded ||
             string.Equals(AppSettingsStore.Load().ThemeMode, _settings.ThemeMode, StringComparison.Ordinal))
         {

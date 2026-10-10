@@ -1,10 +1,10 @@
-﻿param([switch]$SkipBuild, [switch]$Activate)
+﻿param([switch]$SkipBuild, [switch]$Activate, [string]$ProjectRoot = (Split-Path -Parent $PSScriptRoot), [string]$InstallationRoot = (Join-Path $env:LOCALAPPDATA 'YanziRuntime'))
 
 $ErrorActionPreference = "Stop"
-$projectRoot = Split-Path -Parent $PSScriptRoot
+$projectRoot = [IO.Path]::GetFullPath($ProjectRoot)
 $runtimeBuild = Join-Path $projectRoot 'src\Yanzi.Runtime\bin\Release\net9.0-windows'
 $shellBuild = Join-Path $projectRoot 'src\OpenQuickHost\bin\Release\net9.0-windows'
-$installationRoot = [IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'YanziRuntime'))
+$installationRoot = [IO.Path]::GetFullPath($InstallationRoot)
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
 $runtimeSnapshot = Join-Path $installationRoot "versions\$stamp"
 $shellSnapshot = Join-Path $installationRoot "shells\$stamp"
@@ -23,6 +23,14 @@ $runtimeExe = Join-Path $runtimeSnapshot 'Yanzi.Runtime.exe'
 $shellExe = Join-Path $shellSnapshot 'Yanzi.exe'
 $locationFile = Join-Path $installationRoot 'runtime.json'
 $previousLocation = if (Test-Path $locationFile) { Get-Content -LiteralPath $locationFile -Raw } else { $null }
+
+if (-not $Activate) {
+    # Staging must NEVER redirect the live Runtime pointer or stop production.
+    Write-Host "STAGED_ONLY_RUNTIME=$runtimeExe"
+    Write-Host "STAGED_ONLY_SHELL=$shellExe"
+    Write-Host "RUNTIME_POINTER_UNCHANGED=True"
+    return
+}
 
 if ($Activate) {
     # Check all target paths before ending the old desktop lifetime. No name-wide process kill.

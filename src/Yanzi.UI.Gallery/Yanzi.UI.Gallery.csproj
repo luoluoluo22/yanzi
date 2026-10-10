@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationIcon>..\OpenQuickHost\yanzi.ico</ApplicationIcon>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Yanzi.UI.Wpf\Yanzi.UI.Wpf.csproj"/>
+    <Content Include="Assets\*.jpg" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

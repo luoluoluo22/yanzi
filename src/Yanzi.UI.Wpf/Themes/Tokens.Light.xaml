@@ -1,0 +1,69 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=mscorlib">
+    <!-- shadcn/ui neutral palette adapted to WPF. Canonical semantic token names. -->
+    <SolidColorBrush x:Key="Yanzi.Color.Background" Color="#FFFFFFFF" />
+    <SolidColorBrush x:Key="Yanzi.Color.Foreground" Color="#FF0A0A0A" />
+    <SolidColorBrush x:Key="Yanzi.Color.Card" Color="#FFFFFFFF" />
+    <SolidColorBrush x:Key="Yanzi.Color.CardForeground" Color="#FF0A0A0A" />
+    <SolidColorBrush x:Key="Yanzi.Color.Popover" Color="#FFFFFFFF" />
+    <SolidColorBrush x:Key="Yanzi.Color.PopoverForeground" Color="#FF0A0A0A" />
+    <SolidColorBrush x:Key="Yanzi.Color.Primary" Color="#FF171717" />
+    <SolidColorBrush x:Key="Yanzi.Color.PrimaryForeground" Color="#FFFAFAFA" />
+    <SolidColorBrush x:Key="Yanzi.Color.PrimaryHover" Color="#FF404040" />
+    <SolidColorBrush x:Key="Yanzi.Color.Secondary" Color="#FFF5F5F5" />
+    <SolidColorBrush x:Key="Yanzi.Color.SecondaryForeground" Color="#FF171717" />
+    <SolidColorBrush x:Key="Yanzi.Color.Muted" Color="#FFF5F5F5" />
+    <SolidColorBrush x:Key="Yanzi.Color.MutedForeground" Color="#FF737373" />
+    <SolidColorBrush x:Key="Yanzi.Color.Accent" Color="#FFF5F5F5" />
+    <SolidColorBrush x:Key="Yanzi.Color.AccentForeground" Color="#FF171717" />
+    <SolidColorBrush x:Key="Yanzi.Color.Destructive" Color="#FFE7000B" />
+    <SolidColorBrush x:Key="Yanzi.Color.DestructiveForeground" Color="#FFFFFFFF" />
+    <SolidColorBrush x:Key="Yanzi.Color.DestructiveHover" Color="#FFC40009" />
+    <SolidColorBrush x:Key="Yanzi.Color.Border" Color="#FFE5E5E5" />
+    <SolidColorBrush x:Key="Yanzi.Color.Input" Color="#FFE5E5E5" />
+    <SolidColorBrush x:Key="Yanzi.Color.Ring" Color="#FFA3A3A3" />
+    <SolidColorBrush x:Key="Yanzi.Color.ChartBar" Color="#FFADADAD" />
+    <SolidColorBrush x:Key="Yanzi.Color.Sidebar" Color="#FFFAFAFA" />
+    <SolidColorBrush x:Key="Yanzi.Color.SidebarForeground" Color="#FF0A0A0A" />
+    <SolidColorBrush x:Key="Yanzi.Color.SidebarAccent" Color="#FFF5F5F5" />
+    <SolidColorBrush x:Key="Yanzi.Color.SidebarAccentForeground" Color="#FF171717" />
+    <SolidColorBrush x:Key="Yanzi.Color.Success" Color="#FF168650" />
+    <SolidColorBrush x:Key="Yanzi.Color.Warning" Color="#FFA26D11" />
+    <SolidColorBrush x:Key="Yanzi.Color.Transparent" Color="#00000000" />
+    <!-- Legacy aliases retained for previously shipped Yanzi UI 0.1.0 clients. -->
+    <SolidColorBrush x:Key="Yanzi.Brush.Window" Color="#FFFFFFFF" />
+    <SolidColorBrush x:Key="Yanzi.Brush.Surface" Color="#FFFFFFFF" />
+    <SolidColorBrush x:Key="Yanzi.Brush.SurfaceHover" Color="#FFF5F5F5" />
+    <SolidColorBrush x:Key="Yanzi.Brush.Text" Color="#FF0A0A0A" />
+    <SolidColorBrush x:Key="Yanzi.Brush.TextSecondary" Color="#FF737373" />
+    <SolidColorBrush x:Key="Yanzi.Brush.TextMuted" Color="#FF737373" />
+    <SolidColorBrush x:Key="Yanzi.Brush.Accent" Color="#FF171717" />
+    <SolidColorBrush x:Key="Yanzi.Brush.AccentHover" Color="#FF404040" />
+    <SolidColorBrush x:Key="Yanzi.Brush.OnAccent" Color="#FFFAFAFA" />
+    <SolidColorBrush x:Key="Yanzi.Brush.Danger" Color="#FFE7000B" />
+    <SolidColorBrush x:Key="Yanzi.Brush.DangerHover" Color="#FFC40009" />
+    <SolidColorBrush x:Key="Yanzi.Brush.Success" Color="#FF168650" />
+    <SolidColorBrush x:Key="Yanzi.Brush.Warning" Color="#FFA26D11" />
+    <SolidColorBrush x:Key="Yanzi.Brush.InputBG" Color="#FFFFFFFF" />
+    <SolidColorBrush x:Key="Yanzi.Brush.Border" Color="#FFE5E5E5" />
+    <SolidColorBrush x:Key="Yanzi.Brush.Input" Color="#FFFFFFFF" />
+    <sys:Double x:Key="Yanzi.Space.1">4</sys:Double>
+    <sys:Double x:Key="Yanzi.Space.2">8</sys:Double>
+    <sys:Double x:Key="Yanzi.Space.3">12</sys:Double>
+    <sys:Double x:Key="Yanzi.Space.4">16</sys:Double>
+    <sys:Double x:Key="Yanzi.Space.6">24</sys:Double>
+    <!-- Opt-in Geist Latin with Microsoft YaHei UI CJK fallback. -->
+    <FontFamily x:Key="Yanzi.Font.Geist">pack://application:,,,/Yanzi.UI.Wpf;component/Fonts/#Geist, Microsoft YaHei UI</FontFamily>
+    <sys:Double x:Key="Yanzi.Font.PreviewButton">14</sys:Double>
+    <sys:Double x:Key="Yanzi.Font.PreviewBadge">12</sys:Double>
+    <sys:Double x:Key="Yanzi.Font.Small">12</sys:Double>
+    <sys:Double x:Key="Yanzi.Font.Body">14</sys:Double>
+    <sys:Double x:Key="Yanzi.Font.Title">18</sys:Double>
+    <CornerRadius x:Key="Yanzi.Radius.Sm">6</CornerRadius>
+    <CornerRadius x:Key="Yanzi.Radius.Md">8</CornerRadius>
+    <CornerRadius x:Key="Yanzi.Radius.Lg">10</CornerRadius>
+    <CornerRadius x:Key="Yanzi.Radius.Xl">14</CornerRadius>
+    <CornerRadius x:Key="Yanzi.Radius.Control">8</CornerRadius>
+    <CornerRadius x:Key="Yanzi.Radius.Card">14</CornerRadius>
+</ResourceDictionary>
