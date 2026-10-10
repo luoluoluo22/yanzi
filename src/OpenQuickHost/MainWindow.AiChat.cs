@@ -48,12 +48,10 @@ public partial class MainWindow
     private string _aiChatSendErrorText = string.Empty;
     private bool _isAiChatRequestInFlight;
     private bool _isAiChatSubmissionPending;
-    private bool _isInitializingComboBox;
     private static readonly TimeSpan AiModelDiscoveryInterval = TimeSpan.FromMinutes(15);
     private readonly Dictionary<string, DateTimeOffset> _aiModelDiscoveryAttempts = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _aiModelDiscoveryInFlight = new(StringComparer.OrdinalIgnoreCase);
     private DispatcherTimer? _aiModelDiscoveryTimer;
-
     public bool IsAiChatRequestInFlight
     {
         get => _isAiChatRequestInFlight;
@@ -244,6 +242,22 @@ public partial class MainWindow
         if (sender is FrameworkElement { DataContext: AiChatTopic topic })
         {
             SelectTopic(topic);
+        }
+    }
+
+    private void AiChatTopicEditButton_Click(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true; // Editing must never select the conversation behind the button.
+        if (sender is System.Windows.Controls.Button { DataContext: AiChatTopic topic } button)
+        {
+            if (_activeAiChatMenu?.IsOpen == true) _activeAiChatMenu.IsOpen = false;
+            var menu = CreateAiChatMenu();
+            menu.PreferAbove = false;
+            menu.AddAction("重命名", () => RenameTopic(topic));
+            menu.AddSeparator();
+            menu.AddAction("删除", () => DeleteTopic(topic), destructive: true);
+            _activeAiChatMenu = menu;
+            menu.ShowFrom(button);
         }
     }
 
@@ -698,7 +712,7 @@ public partial class MainWindow
     private void ActivateAiChatMode()
     {
         LoadTopicsFromStorage();
-        InitializeAiModelComboBox();
+        RefreshAiModelSelector();
         StartAiModelDiscovery();
         
         // 切换到 AI Chat 模式时，调整窗口大小以获得更好的阅读体验
@@ -761,163 +775,109 @@ public partial class MainWindow
         SearchBox.SelectAll();
     }
 
-    private sealed class AiProviderChoice
+    // Model options are sourced directly from the saved service providers.
+    // The bottom-right menu is the only selector; no hidden duplicated ComboBoxes.
+    public void RefreshAiModelSelector()
     {
-        public AiProviderChoice(string id, string name)
-        {
-            Id = id;
-            Name = name;
-        }
-
-        public string Id { get; }
-        public string Name { get; }
-        public override string ToString() => Name;
-    }
-
-    public void InitializeAiModelComboBox()
-    {
-        if (AiProviderSelectionComboBox == null || AiModelSelectionComboBox == null)
-        {
-            return;
-        }
-
-        _isInitializingComboBox = true;
-        try
-        {
-            var providers = (_appSettings.AiServiceProviders ?? [])
-                .Where(static provider => provider.IsEnabled)
-                .ToList();
-
-            var providerChoices = providers
-                .Select(static provider => new AiProviderChoice(provider.Id, provider.Name))
-                .ToList();
-
-            AiProviderSelectionComboBox.ItemsSource = providerChoices;
-
-            var activeProvider = providers.FirstOrDefault(provider =>
-                    string.Equals(provider.Id, _appSettings.ActiveServiceProviderId, StringComparison.OrdinalIgnoreCase))
-                ?? providers.FirstOrDefault();
-
-            if (activeProvider == null)
-            {
-                AiProviderSelectionComboBox.SelectedItem = null;
-                AiModelSelectionComboBox.ItemsSource = Array.Empty<string>();
-                AiModelSelectionComboBox.SelectedItem = null;
-                return;
-            }
-
-            AiProviderSelectionComboBox.SelectedItem = providerChoices.FirstOrDefault(choice =>
-                string.Equals(choice.Id, activeProvider.Id, StringComparison.OrdinalIgnoreCase));
-
-            // Preserve the user's choice even if upstream removed the model.
-            var models = SettingsAiController.IncludeSelectedModel(
-                activeProvider.Models, _appSettings.AiModel, activeProvider.SelectedModel);
-            AiModelSelectionComboBox.ItemsSource = models;
-
-            var selectedModel = models.FirstOrDefault(model =>
-                    string.Equals(model, _appSettings.AiModel, StringComparison.OrdinalIgnoreCase))
-                ?? models.FirstOrDefault(model =>
-                    string.Equals(model, activeProvider.SelectedModel, StringComparison.OrdinalIgnoreCase))
-                ?? models.FirstOrDefault();
-
-            if (selectedModel != null)
-            {
-                AiModelSelectionComboBox.SelectedItem = selectedModel;
-            }
-            else
-            {
-                AiModelSelectionComboBox.SelectedItem = null;
-            }
-        }
-        finally
-        {
-            _isInitializingComboBox = false;
-        }
-    }
-
-    private void AiProviderSelectionComboBox_SelectionChanged(
-        object sender,
-        System.Windows.Controls.SelectionChangedEventArgs e)
-    {
-        if (_isInitializingComboBox ||
-            AiProviderSelectionComboBox?.SelectedItem is not AiProviderChoice choice)
-        {
-            return;
-        }
-
-        var provider = _appSettings.AiServiceProviders?
-            .FirstOrDefault(item =>
-                item.IsEnabled &&
-                string.Equals(item.Id, choice.Id, StringComparison.OrdinalIgnoreCase));
-
-        if (provider == null)
-        {
-            return;
-        }
-
-        var models = (provider.Models ?? [])
-            .Where(static model => !string.IsNullOrWhiteSpace(model))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        var selectedModel = models.FirstOrDefault(model =>
-                string.Equals(model, provider.SelectedModel, StringComparison.OrdinalIgnoreCase))
-            ?? models.FirstOrDefault();
-
-        _appSettings.ActiveServiceProviderId = provider.Id;
-        _appSettings.AiBaseUrl = provider.BaseUrl;
-        _appSettings.AiApiKey = provider.ApiKey;
-        _appSettings.AiModel = selectedModel ?? string.Empty;
-        provider.SelectedModel = _appSettings.AiModel;
-
-        AppSettingsStore.Save(_appSettings);
-        _appSettings = AppSettingsStore.Load();
-        InitializeAiModelComboBox();
         OnPropertyChanged(nameof(AiChatModelDisplayText));
         _ = RefreshAiModelCatalogAsync();
     }
 
-    private void AiModelSelectionComboBox_SelectionChanged(
-        object sender,
-        System.Windows.Controls.SelectionChangedEventArgs e)
+    private void AiChatModelMenuButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_isInitializingComboBox ||
-            AiModelSelectionComboBox?.SelectedItem is not string selectedModel ||
-            string.IsNullOrWhiteSpace(selectedModel))
+        e.Handled = true;
+        if (sender is not System.Windows.Controls.Button anchor) return;
+        if (_activeAiChatMenu?.IsOpen == true)
         {
+            _activeAiChatMenu.IsOpen = false;
             return;
         }
 
-        var provider = _appSettings.AiServiceProviders?
-            .FirstOrDefault(item =>
-                item.IsEnabled &&
-                string.Equals(item.Id, _appSettings.ActiveServiceProviderId, StringComparison.OrdinalIgnoreCase));
-
-        if (provider == null ||
-            provider.Models == null ||
-            !provider.Models.Any(model => string.Equals(model, selectedModel, StringComparison.OrdinalIgnoreCase)))
-        {
-            return;
-        }
-
-        _appSettings.AiModel = selectedModel;
-        _appSettings.AiBaseUrl = provider.BaseUrl;
-        _appSettings.AiApiKey = provider.ApiKey;
-        provider.SelectedModel = selectedModel;
-
-        AppSettingsStore.Save(_appSettings);
+        // Show cached models immediately while asynchronously refreshing all providers.
         _appSettings = AppSettingsStore.Load();
-        InitializeAiModelComboBox();
+        QueueAiModelCatalogRefreshes();
         OnPropertyChanged(nameof(AiChatModelDisplayText));
+
+        var menu = CreateAiChatMenu();
+        menu.PreferAbove = true;
+        menu.AlignStart = false;
+        menu.UseContentWidth(190);
+
+        var providers = (_appSettings.AiServiceProviders ?? [])
+            .Where(provider => provider.IsEnabled).ToArray();
+        if (providers.Length == 0)
+        {
+            menu.AddLabel("尚未启用模型供应商");
+            menu.AddSeparator();
+            menu.AddAction("配置供应商…", () => AiChatSettingsButton_Click(anchor, new RoutedEventArgs()));
+        }
+        else
+        {
+            var widestModel = providers.SelectMany(provider => provider.Models ?? [])
+                .Where(model => !string.IsNullOrWhiteSpace(model))
+                .DefaultIfEmpty("").MaxBy(model => model.Length) ?? "";
+            // Give full model IDs enough room, including provider-specific suffixes.
+            menu.SubmenuWidth = Math.Clamp(widestModel.Length * 9 + 58, 194, 420);
+            foreach (var provider in providers)
+            {
+                var providerId = provider.Id;
+                var models = (provider.Models ?? [])
+                    .Where(model => !string.IsNullOrWhiteSpace(model))
+                    .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+                var isActive = string.Equals(providerId, _appSettings.ActiveServiceProviderId,
+                    StringComparison.OrdinalIgnoreCase);
+                var item = menu.AddSubmenu(provider.Name, submenu =>
+                {
+                    if (models.Length == 0)
+                    {
+                        submenu.AddLabel("模型正在同步，或服务商暂未提供模型");
+                        return;
+                    }
+                    foreach (var model in models)
+                    {
+                        var modelId = model;
+                        var selected = isActive && string.Equals(modelId, _appSettings.AiModel,
+                            StringComparison.OrdinalIgnoreCase);
+                        submenu.AddAction(modelId, () => SelectAiChatProviderModel(providerId, modelId),
+                            selected ? Yanzi.UI.Wpf.YanziIcons.Check(15) : null);
+                    }
+                }, isActive ? Yanzi.UI.Wpf.YanziIcons.Check(15) : null);
+                item.ToolTip = "选择 " + provider.Name + " 提供的模型";
+            }
+        }
+
+        // Use the public menu's fixed-size screen placement. It reserves submenu
+        // space before opening, chooses right/left from the monitor boundaries
+        // and does not resize the popup while moving between providers.
+        OpenAiChatContextMenu(menu, anchor);
+    }
+
+    private void SelectAiChatProviderModel(string providerId, string model)
+    {
+        var settings = AppSettingsStore.Load();
+        var provider = settings.AiServiceProviders?.FirstOrDefault(item =>
+            item.IsEnabled && string.Equals(item.Id, providerId, StringComparison.OrdinalIgnoreCase));
+        if (provider == null || !(provider.Models ?? []).Any(candidate =>
+                string.Equals(candidate, model, StringComparison.OrdinalIgnoreCase)))
+            return;
+
+        settings.ActiveServiceProviderId = provider.Id;
+        settings.AiBaseUrl = provider.BaseUrl;
+        settings.AiApiKey = provider.ApiKey;
+        settings.AiModel = model;
+        provider.SelectedModel = model;
+        AppSettingsStore.Save(settings);
+        _appSettings = AppSettingsStore.Load();
+        RefreshAiModelSelector();
     }
 
     public void OnAiSettingsChanged()
     {
         _appSettings = AppSettingsStore.Load();
-        InitializeAiModelComboBox();
+        RefreshAiModelSelector();
         OnPropertyChanged(nameof(AiChatModelDisplayText));
         _aiModelDiscoveryAttempts.Clear();
-        if (IsAiChatMode) _ = RefreshAiModelCatalogAsync();
+        if (IsAiChatMode) QueueAiModelCatalogRefreshes();
     }
 
     private void StartAiModelDiscovery()
@@ -930,20 +890,29 @@ public partial class MainWindow
             };
             _aiModelDiscoveryTimer.Tick += (_, _) =>
             {
-                if (IsAiChatMode) _ = RefreshAiModelCatalogAsync();
+                if (IsAiChatMode) QueueAiModelCatalogRefreshes();
             };
         }
 
         _aiModelDiscoveryTimer.Start();
-        _ = RefreshAiModelCatalogAsync();
+        QueueAiModelCatalogRefreshes();
+    }
+
+    private void QueueAiModelCatalogRefreshes()
+    {
+        foreach (var provider in (_appSettings.AiServiceProviders ?? []).Where(p => p.IsEnabled))
+        {
+            _ = RefreshAiModelCatalogAsync(provider.Id);
+        }
     }
 
     // Fetch asynchronously, retain the last successful list on failure, and
     // never change the selected model implicitly.
-    private async Task RefreshAiModelCatalogAsync()
+    private async Task RefreshAiModelCatalogAsync(string? providerId = null)
     {
+        providerId ??= _appSettings.ActiveServiceProviderId;
         var provider = (_appSettings.AiServiceProviders ?? []).FirstOrDefault(p =>
-            p.IsEnabled && string.Equals(p.Id, _appSettings.ActiveServiceProviderId, StringComparison.OrdinalIgnoreCase));
+            p.IsEnabled && string.Equals(p.Id, providerId, StringComparison.OrdinalIgnoreCase));
         if (provider is null || string.IsNullOrWhiteSpace(provider.Id) ||
             string.IsNullOrWhiteSpace(provider.ApiKey) || string.IsNullOrWhiteSpace(provider.BaseUrl))
         {
@@ -997,7 +966,7 @@ public partial class MainWindow
                 string.Equals(_appSettings.ActiveServiceProviderId, id, StringComparison.OrdinalIgnoreCase))
             {
                 _appSettings = current;
-                InitializeAiModelComboBox();
+                RefreshAiModelSelector();
                 OnPropertyChanged(nameof(AiChatModelDisplayText));
                 if (!IsAiChatRequestInFlight && !string.IsNullOrWhiteSpace(current.AiModel) &&
                     !discovered.Contains(current.AiModel, StringComparer.OrdinalIgnoreCase))
