@@ -140,6 +140,18 @@ public sealed class RaccoonPanel : Window
 {
     private static readonly string Project = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OpenQuickHost", "Extensions", "raccoon-manager", "service");
     private static readonly string Runtime = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OpenQuickHost", "McpRuntime", "raccoon");
+    private static int GetConfiguredPort()
+    {
+        var envFile = Path.Combine(Runtime, ".env");
+        try {
+            if(File.Exists(envFile)) {
+                var line=File.ReadLines(envFile).FirstOrDefault(x=>x.StartsWith("RACCOON_PORT=",StringComparison.Ordinal));
+                if(line!=null && int.TryParse(line.Substring("RACCOON_PORT=".Length).Trim(),out var port) &&
+                    port>=1 && port<=65535) return port;
+            }
+        } catch(IOException) {} catch(UnauthorizedAccessException) {}
+        return 3766;
+    }
     private readonly string extensionDir;
     private readonly HttpClient http = new HttpClient { Timeout = TimeSpan.FromSeconds(4) };
     private readonly TextBlock summary = new TextBlock { FontSize=19, TextWrapping=TextWrapping.Wrap, Margin=new Thickness(0,12,0,12) };
@@ -211,7 +223,7 @@ public sealed class RaccoonPanel : Window
     {
         if(refreshing || operating || closed)return; refreshing=true;
         try {
-            var local=Health("http://127.0.0.1:3766/health");
+            var local=Health("http://127.0.0.1:"+GetConfiguredPort()+"/health");
             var publicUrl=File.Exists(Path.Combine(Runtime,".env"))
                 ? File.ReadLines(Path.Combine(Runtime,".env")).FirstOrDefault(x=>x.StartsWith("RACCOON_PUBLIC_URL=",StringComparison.Ordinal))
                 : null;

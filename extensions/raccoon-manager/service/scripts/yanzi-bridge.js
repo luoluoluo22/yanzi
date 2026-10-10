@@ -18,7 +18,7 @@ if (!Number.isInteger(port) || port <= 0 || port > 65535 || !options.RACCOON_TOK
 }
 const chunks = [];
 for await (const chunk of process.stdin) chunks.push(chunk);
-const request = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+const request = JSON.parse(Buffer.concat(chunks).toString('utf8').trimStart());
 if (!['list', 'call'].includes(request.action)) throw new Error('Unsupported bridge action.');
 if (request.action === 'call' && (!/^[a-zA-Z][a-zA-Z0-9_.:-]{0,127}$/.test(request.name) ||
     !request.arguments || typeof request.arguments !== 'object' || Array.isArray(request.arguments))) {

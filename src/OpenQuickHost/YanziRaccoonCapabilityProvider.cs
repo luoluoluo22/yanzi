@@ -17,6 +17,22 @@ public static class YanziRaccoonCapabilityProvider
     private static string Bridge => Path.Combine(Runtime, "app", "scripts", "yanzi-bridge.js");
     private static string EnableFile => Path.Combine(Runtime, "remote-control.enabled");
 
+    private static int GetConfiguredPort()
+    {
+        var path = Path.Combine(Runtime, ".env");
+        if (!File.Exists(path)) return 3766;
+        try
+        {
+            var line = File.ReadLines(path).FirstOrDefault(item =>
+                item.StartsWith("RACCOON_PORT=", StringComparison.Ordinal));
+            if (line != null && int.TryParse(line["RACCOON_PORT=".Length..].Trim(), out var port) &&
+                port is >= 1 and <= 65535) return port;
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+        return 3766;
+    }
+
     public static IEnumerable<YanziCapabilityProviderDefinition> Create()
     {
         yield return new()
@@ -54,7 +70,7 @@ public static class YanziRaccoonCapabilityProvider
             try
             {
                 using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
-                using var response = await client.GetAsync("http://127.0.0.1:3766/health");
+                using var response = await client.GetAsync($"http://127.0.0.1:{GetConfiguredPort()}/health");
                 using var data = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
                 ready = response.IsSuccessStatusCode &&
                     data.RootElement.TryGetProperty("name", out var name) && name.GetString() == "raccoon-mcp";
