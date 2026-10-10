@@ -1,0 +1,70 @@
+name: Publish Windows desktop v1.0.18
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: yanzi-desktop-release-v1.0.18
+  cancel-in-progress: false
+
+jobs:
+  windows-release:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out immutable release tag
+        uses: actions/checkout@v4
+        with:
+          ref: v1.0.18
+
+      - name: Install .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Build Windows installer packages
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & ./scripts/publish-installer.ps1 -Version 1.0.18 -ArtifactRoot "$env:RUNNER_TEMP\yanzi-release" -SkipBaselineDownload
+          if ($LASTEXITCODE -ne 0) { throw "Installer build failed" }
+
+      - name: Verify required assets
+        shell: pwsh
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'yanzi-release\installer'
+          foreach ($asset in @('Yanzi-win-Setup-1.0.18.exe','Yanzi-win-Portable-1.0.18.zip','Yanzi-1.0.18-full.nupkg','RELEASES','assets.win.json','releases.win.json')) {
+            $file = Join-Path $root $asset
+            if (!(Test-Path $file)) { throw "Missing release asset: $asset" }
+            $item = Get-Item $file
+            if (($asset.EndsWith('.exe') -or $asset.EndsWith('.zip') -or $asset.EndsWith('.nupkg')) -and $item.Length -lt 1000000) {
+              throw "Incomplete release asset: $asset"
+            }
+            Write-Host "$asset $($item.Length) $((Get-FileHash $file -Algorithm SHA256).Hash)"
+          }
+
+      - name: Upload official release assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'yanzi-release\installer'
+          $paths = @('Yanzi-win-Setup-1.0.18.exe','Yanzi-win-Portable-1.0.18.zip','Yanzi-1.0.18-full.nupkg','RELEASES','assets.win.json','releases.win.json') | ForEach-Object { Join-Path $root $_ }
+          gh release upload v1.0.18 @paths --repo luoluoluo22/yanzi --clobber
+          if ($LASTEXITCODE -ne 0) { throw "GitHub release upload failed" }
+
+      - name: Verify asset upload and publish draft
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $actual = (gh release view v1.0.18 --repo luoluoluo22/yanzi --json assets | ConvertFrom-Json).assets
+          foreach ($name in @('Yanzi-win-Setup-1.0.18.exe','Yanzi-win-Portable-1.0.18.zip','Yanzi-1.0.18-full.nupkg','RELEASES','assets.win.json','releases.win.json')) {
+            $item = $actual | Where-Object { $_.name -eq $name } | Select-Object -First 1
+            if (!$item -or $item.size -le 0) { throw "Release missing $name" }
+          }
+          gh release edit v1.0.18 --repo luoluoluo22/yanzi --draft=false --prerelease=false
+          if ($LASTEXITCODE -ne 0) { throw "Cannot publish release" }
