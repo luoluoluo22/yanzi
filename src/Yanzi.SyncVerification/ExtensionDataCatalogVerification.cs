@@ -60,6 +60,11 @@ internal static class ExtensionDataCatalogVerification
             ExtensionStorageService.IsPortableDataForExtension("mirror", "mirror_records.json") ||
             ExtensionStorageService.IsPortableDataForExtension("taskbar-calendar", "calendar_reminders.json.sync.json"))
             throw new Exception("Job agent portable scope includes device state or misses user data");
+        if (!GiteePersonalSyncBackend.IsRetryableGiteeReadStatus(System.Net.HttpStatusCode.BadGateway) ||
+            !GiteePersonalSyncBackend.IsRetryableGiteeReadStatus(System.Net.HttpStatusCode.TooManyRequests) ||
+            GiteePersonalSyncBackend.IsRetryableGiteeReadStatus(System.Net.HttpStatusCode.Unauthorized) ||
+            GiteePersonalSyncBackend.IsRetryableGiteeReadStatus(System.Net.HttpStatusCode.NotFound))
+            throw new Exception("Gitee read retry classification is unsafe");
         Console.WriteLine("Extension data catalog verification passed: discovery, merging, assets, scoped personal data, backup exclusion");
     }
 
