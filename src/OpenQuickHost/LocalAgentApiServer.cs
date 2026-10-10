@@ -211,7 +211,27 @@ public sealed partial class LocalAgentApiServer : IDisposable
         try
         {
             var sendBuffer = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(taskPayload));
-            await _activeBrowserSocket.SendAsync(new ArraySegment<byte>(sendBuffer), WebSocketMessageType.Text, true, _cts.Token);
+            // The same browser socket is shared with other tasks: serialize writes.
+            // Bound a stalled send independently of the AI generation timeout.
+            using var sendCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
+            sendCts.CancelAfter(TimeSpan.FromSeconds(15));
+            await _browserSendGate.WaitAsync(sendCts.Token);
+            try
+            {
+                var socket = _activeBrowserSocket;
+                if (socket == null || socket.State != WebSocketState.Open)
+                {
+                    _pendingBrowserTasks.TryRemove(taskId, out _);
+                    return (false, null, "浏览器助手连接已断开，请重新连接后重试。");
+                }
+
+                await socket.SendAsync(new ArraySegment<byte>(sendBuffer), WebSocketMessageType.Text, true, sendCts.Token);
+            }
+            finally
+            {
+                _browserSendGate.Release();
+            }
+
             HostAssets.AppendLog($"[LocalAgentApi] Dispatched AI prompt transfer task to browser extension: taskId={taskId}, site={aiSite}, promptLength={prompt.Length}");
         }
         catch (Exception ex)
@@ -225,6 +245,7 @@ public sealed partial class LocalAgentApiServer : IDisposable
             var completedTask = await Task.WhenAny(tcs.Task, Task.Delay(Timeout.Infinite, delayCts.Token));
             if (completedTask == tcs.Task)
             {
+                _pendingBrowserTasks.TryRemove(taskId, out _);
                 var resultDoc = await tcs.Task;
                 string? status = resultDoc.TryGetProperty("status", out var statusProp) ? statusProp.GetString() : null;
                 string? message = resultDoc.TryGetProperty("message", out var msgProp) ? msgProp.GetString() : null;

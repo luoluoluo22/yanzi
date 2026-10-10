@@ -63,6 +63,7 @@ public partial class AddJsonExtensionWindow : Window
     private bool _testSucceeded;
     private bool _manualMode;
     private bool _aiPromptCopied;
+    private bool _isAiAutoGenerating;
     private bool _isInitializing = true;
     private bool _suppressEditTracking;
     private EditSource _lastEditedSource = EditSource.Unknown;
@@ -1534,6 +1535,12 @@ public partial class AddJsonExtensionWindow : Window
 
     private async void DeepSeekAutoGenerateButton_Click(object sender, RoutedEventArgs e)
     {
+        // Enter bypasses the disabled send button; don't submit while already generating.
+        if (_isAiAutoGenerating)
+        {
+            return;
+        }
+
         try
         {
             ErrorText.Visibility = Visibility.Collapsed;
@@ -1701,10 +1708,18 @@ public partial class AddJsonExtensionWindow : Window
 
     private void SetAiAutoGeneratingState(bool isGenerating, string? statusText)
     {
+        _isAiAutoGenerating = isGenerating;
         if (ManualDeepSeekButton != null)
         {
             ManualDeepSeekButton.IsEnabled = !isGenerating;
             ManualDeepSeekButton.Opacity = isGenerating ? 0.6 : 1.0;
+            ManualDeepSeekButton.ToolTip = isGenerating ? "正在生成，请等待完成，避免重复提交" : "发送需求 (Enter 发送，Shift+Enter 换行)";
+        }
+
+        if (AiGeneratingStatusText != null)
+        {
+            AiGeneratingStatusText.Text = isGenerating ? "AI 正在生成，最长等待约 2 分钟…" : string.Empty;
+            AiGeneratingStatusText.Visibility = isGenerating ? Visibility.Visible : Visibility.Collapsed;
         }
     }
 

@@ -44,6 +44,7 @@ public partial class MainWindow
     private string _aiChatInputText = string.Empty;
     private string _aiChatStatusText = "选择或新建话题开始对话";
     private bool _isAiChatRequestInFlight;
+    private bool _isAiChatSubmissionPending;
     private bool _isInitializingComboBox;
 
     public bool IsAiChatRequestInFlight
@@ -876,6 +877,13 @@ public partial class MainWindow
 
     private async void SubmitAiChatMessage()
     {
+        // Lock before awaiting attachment preparation: repeated Enter must not duplicate requests.
+        if (_isAiChatSubmissionPending || IsAiChatRequestInFlight)
+        {
+            return;
+        }
+
+        _isAiChatSubmissionPending = true;
         try
         {
             await SubmitAiChatMessageCore();
@@ -883,6 +891,11 @@ public partial class MainWindow
         catch (Exception ex)
         {
             HostAssets.AppendLog($"SubmitAiChatMessage failed: {ex}");
+            AiChatStatusText = $"发送失败：{TrimForLog(FormatExceptionMessage(ex), 160)}";
+        }
+        finally
+        {
+            _isAiChatSubmissionPending = false;
         }
     }
 
@@ -1056,7 +1069,7 @@ public partial class MainWindow
         {
             HostAssets.AppendLog($"AI request failed: {FormatExceptionMessage(ex)}");
             SaveTopicsToStorage();
-            AiChatStatusText = "AI 请求失败";
+            AiChatStatusText = $"AI 请求失败：{TrimForLog(FormatExceptionMessage(ex), 160)}";
         }
         finally
         {
