@@ -357,6 +357,13 @@ internal sealed class GitHubPersonalSyncBackend : PersonalSyncBackendBase
     {
         var path = BuildPath(relativePath);
         var owner = await ResolveOwnerAsync(cancellationToken);
+        // GitHub Contents API is unreliable for multi-megabyte Base64 JSON (HTTP 400).
+        // Large encrypted recovery snapshots use the Git database API directly.
+        if (content.Length > 800_000)
+        {
+            await WriteBytesWithGitDatabaseAsync(owner, path, content, cancellationToken);
+            return;
+        }
         var sha = await TryGetShaAsync(path, cancellationToken);
         using var response = await PutFileAsync(owner, path, content, sha, cancellationToken);
         if (response.StatusCode == HttpStatusCode.Conflict)
