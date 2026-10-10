@@ -64,6 +64,17 @@ const PUBLIC_STORE_EXTENSION_IDS_SQL = PUBLIC_STORE_EXTENSIONS
   .join(", ");
 
 
+// Request-scoped attribution: only authenticated users, never raw identifiers.
+const requestIdentity = new WeakMap();
+async function anonymousKey(env, domain, value) {
+  if (!env.AUTH_TOKEN_SECRET || !value) return null;
+  const digest = await hmacSha256(env.AUTH_TOKEN_SECRET, `yanzi-telemetry-${domain}-v1:${value}`);
+  return digest.slice(0, 16);
+}
+function recordAuthenticatedUser(request, auth) {
+  if (auth?.userId) requestIdentity.set(request, { userId: String(auth.userId), deviceId: auth.deviceId ? String(auth.deviceId) : null });
+  return auth;
+}
 export default {
   async scheduled(event, env, ctx) { ctx.waitUntil(cleanupAttachments(env)); ctx.waitUntil(cleanupExternalAccess(env)); ctx.waitUntil(cleanupEnvironment(env)); },
   async fetch(request, env, ctx) {
@@ -112,7 +123,9 @@ export default {
       // No credentials, query strings, message bodies or device identifiers.
       if (status >= 400 || Math.random() < 0.01) {
         console.log(JSON.stringify({ event: "yanzi_request", method: request.method,
-          route: route.slice(0, 160), client, status, category, duration_ms: Date.now() - started }));
+          route: route.slice(0, 160), client, status, category, duration_ms: Date.now() - started,
+          user_key: await anonymousKey(env, "user", requestIdentity.get(request)?.userId),
+          device_key: await anonymousKey(env, "device", requestIdentity.get(request)?.deviceId ? `${requestIdentity.get(request).userId}:${requestIdentity.get(request).deviceId}` : null) }));
       }
     }
   }
@@ -2070,13 +2083,13 @@ async function requireAuth(request, env) {
     try {
       const payload = await verifyToken(env, token);
       if (payload?.sub && payload?.username && payload.type === 'device')
-        return await authorizeDeviceCredential(request, env, payload, HttpError);
+        return recordAuthenticatedUser(request, await authorizeDeviceCredential(request, env, payload, HttpError));
       if (payload?.sub && payload?.username && !payload.type) {
-        return {
+        return recordAuthenticatedUser(request, {
           userId: String(payload.sub),
           username: String(payload.username),
           email: payload.email ? String(payload.email) : null
-        };
+        });
       }
     } catch (tokenErr) {
       if (tokenErr.status === 403 || tokenErr.status === 401 && ["token_expired", "device_credential_revoked"].includes(tokenErr.code)) {
@@ -2118,11 +2131,11 @@ async function requireAuth(request, env) {
               Number(user.password_iterations || PASSWORD_ITERATIONS)
           );
             if (passwordHash === user.password_hash) {
-              return {
+              return recordAuthenticatedUser(request, {
                 userId: String(user.user_id),
                 username: String(user.username),
                 email: user.email ? String(user.email) : null
-              };
+              });
             }
           }
         }
