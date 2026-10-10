@@ -36,8 +36,8 @@ public sealed class MobileMessageDialogScenario : IUiTestScenario
             context.Check(device.Style != null && attach.Style != null && voice.Style != null &&
                 close.Style != null && clear.Style != null && send.Style != null,
                 "All toolbar actions use shared button styles");
-            // A fixed 48-DIP width clipped Chinese glyphs under the shared Ghost
-            // button's 10-DIP side padding plus its chrome inset.
+            // Preserve content-driven width when switching to the shared Outline
+            // variant; Ghost intentionally has no border and looked unfinished here.
             var textWidth = new FormattedText(
                 clear.Content.ToString()!, System.Globalization.CultureInfo.CurrentUICulture,
                 FlowDirection.LeftToRight,
@@ -45,8 +45,12 @@ public sealed class MobileMessageDialogScenario : IUiTestScenario
                 clear.FontSize, Brushes.White,
                 VisualTreeHelper.GetDpi(clear).PixelsPerDip).WidthIncludingTrailingWhitespace;
             var required = textWidth + clear.Padding.Left + clear.Padding.Right + 4;
+            context.Check(ReferenceEquals(clear.Style, clear.TryFindResource("Yanzi.Button.Outline")) &&
+                          clear.BorderThickness.Left >= 1 &&
+                          ReferenceEquals(close.Style, close.TryFindResource("Yanzi.Button.Ghost")),
+                "Clear uses shared outlined button with border; close stays borderless Ghost");
             context.Check(double.IsNaN(clear.Width) && clear.MinWidth >= 48,
-                "Clear label uses Auto width with shared Ghost styling and a minimum");
+                "Clear label uses Auto width and minimum without losing shared outline");
             context.Check(clear.ActualWidth >= required - 0.5,
                 "Chinese clear label fully fits button text, padding, and 2-DIP chrome inset",
                 $"required={required:F1}, actual={clear.ActualWidth:F1}");
