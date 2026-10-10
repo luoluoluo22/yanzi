@@ -23,6 +23,8 @@ public sealed partial class CloudSyncClient
     private DateTimeOffset _transportRetryAfterUtc;
     public AccountSyncCoordinator AccountCoordinator { get; }
     private readonly SemaphoreSlim _authenticationLock = new(1, 1);
+    // Suppress repeated automatic sign-ins after a definitive 401/404; explicit login still works.
+    private long _automaticLoginRejectedUntilUnixMs;
     private readonly object _secretVaultRecoveryKeyLock = new();
     private byte[]? _secretVaultRecoveryKey;
     private string? _secretVaultRecoveryKeyAccount;
@@ -133,6 +135,7 @@ public sealed partial class CloudSyncClient
             SecureCredentialStore.Clear();
         }
 
+        Interlocked.Exchange(ref _automaticLoginRejectedUntilUnixMs, 0);
         ClearSession();
     }
 
@@ -142,6 +145,7 @@ public sealed partial class CloudSyncClient
         _credential = null;
         E2eeMasterKey = null;
         SecureCredentialStore.Clear();
+        Interlocked.Exchange(ref _automaticLoginRejectedUntilUnixMs, 0);
         ClearSession();
     }
 
@@ -180,6 +184,9 @@ public sealed partial class CloudSyncClient
             CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Authentication blocked: missing credential");
             throw new InvalidOperationException("缺少登录凭据，请先登录。");
         }
+
+        if (DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() < Interlocked.Read(ref _automaticLoginRejectedUntilUnixMs))
+            throw new InvalidOperationException("保存的登录凭据已被服务器拒绝，自动重试已暂停。请重新登录。");
 
         CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Authenticating with saved credential", ("email", _credential?.LoginEmail));
 
@@ -240,6 +247,7 @@ public sealed partial class CloudSyncClient
         using var response = await SendJsonAsync(HttpMethod.Post, "/v1/auth/register", payload, includeAuth: false, cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);
         var session = await ReadSessionAsync(response, cancellationToken);
+        Interlocked.Exchange(ref _automaticLoginRejectedUntilUnixMs, 0);
         AccountCoordinator.Commit(generation, () => { _session = session; SyncSessionStore.Save(session); });
         await AccountEnvironmentSecretVault.RestoreAfterAuthenticationAsync(this, cancellationToken);
         CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Register completed", ("userId", session.UserId), ("username", session.Username));
@@ -284,6 +292,10 @@ public sealed partial class CloudSyncClient
         using var response = await SendJsonAsync(HttpMethod.Post, "/v1/auth/login", payload, includeAuth: false, cancellationToken);
         if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Unauthorized)
         {
+            // The server confirmed credentials are invalid or the account is absent.
+            // Retry no sooner than 10 minutes later instead of once per background poll.
+            Interlocked.Exchange(ref _automaticLoginRejectedUntilUnixMs,
+                DateTimeOffset.UtcNow.AddMinutes(10).ToUnixTimeMilliseconds());
             ClearSession();
             // 登录失败时不清除本地加密记住的凭据文件，避免因后端暂时网络波动或接口不可用导致本地凭据被强行抹除。
             // 这样既能在网络恢复后自动重连，也能在需要重新登录时在弹窗中保留自动填充邮箱的能力。
@@ -294,6 +306,7 @@ public sealed partial class CloudSyncClient
         await EnsureSuccessAsync(response, cancellationToken);
         var session = await ReadSessionAsync(response, cancellationToken);
         AccountCoordinator.Commit(generation, () => { _session = session; SyncSessionStore.Save(session); });
+        Interlocked.Exchange(ref _automaticLoginRejectedUntilUnixMs, 0);
         CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Login completed", ("userId", session.UserId), ("username", session.Username));
         return session;
     }
