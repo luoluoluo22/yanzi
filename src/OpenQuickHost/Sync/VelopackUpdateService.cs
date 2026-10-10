@@ -284,8 +284,8 @@ public sealed class VelopackUpdateService
             var session = SyncSessionStore.Load();
             var targetVer = updateInfo.TargetFullRelease.Version.ToString();
             var newVerReleaseDate = await ReleaseHistoryProvider.GetReleaseDateAsync(targetVer);
-            bool isEntitled = AppVersionInfo.IsVersionEntitled(
-                session?.IsVip ?? false,
+            bool isEntitled = AppVersionInfo.IsUpdateEntitled(
+                targetVer,
                 session?.VipType,
                 session?.VipExpireAt,
                 newVerReleaseDate

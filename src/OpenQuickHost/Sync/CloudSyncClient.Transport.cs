@@ -9,6 +9,15 @@ namespace OpenQuickHost.Sync;
 public sealed partial class CloudSyncClient
 {
     private static readonly HttpRequestOptionsKey<long> SessionGenerationKey = new("Yanzi.SessionGeneration");
+    private static bool IsPaidCloudRequestPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !path.StartsWith("/v1/", StringComparison.Ordinal)) return false;
+        if (path.StartsWith("/v1/auth/", StringComparison.Ordinal) ||
+            path.StartsWith("/v1/licenses/", StringComparison.Ordinal)) return false;
+        return path != "/v1/user/vip-status" && path != "/v1/user/cloud-access" &&
+               path != "/v1/user/cloud-export" && path != "/v1/app/update/latest";
+    }
+
     private HttpRequestMessage CreateJsonRequest(HttpMethod method, string path, string body, bool includeAuth)
     {
         var request = CreateRequest(method, path, includeAuth);
@@ -18,6 +27,9 @@ public sealed partial class CloudSyncClient
 
     private HttpRequestMessage CreateRequest(HttpMethod method, string path, bool includeAuth)
     {
+        if (IsPaidCloudRequestPath(path) &&
+            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() < Interlocked.Read(ref _cloudMembershipDeniedUntilUnixMs))
+            throw new CloudVipRequiredException();
         var request = new HttpRequestMessage(method, path);
         request.Options.Set(SessionGenerationKey, AccountCoordinator.Generation);
         request.Version = HttpVersion.Version11;

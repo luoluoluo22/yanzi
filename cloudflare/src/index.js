@@ -1,5 +1,5 @@
 import { createSyncApi } from './sync-api.js';
-import { isCloudServicePath, isVipActive, readVipEntitlement, passesLoginRateLimit } from './cloud-access-policy.js';
+import { isCloudServicePath, needsTopLevelCloudAuth, isVipActive, readVipEntitlement, passesLoginRateLimit } from './cloud-access-policy.js';
 import { cleanupEnvironment } from './device-environment.js';
 import { createDeviceApi } from './device-api.js';
 import { createDeviceRepository } from './device-repository.js';
@@ -82,7 +82,12 @@ async function ensureCloudVipUser(env, userId) {
     cloudVipCache.set(id, cached);
   }
   if (!isVipActive(cached.row, now))
-    throw new HttpError(403, 'vip_required', 'Cloud service requires an active VIP membership');
+    throw new HttpError(403, 'vip_required', '云服务需要有效 VIP 会员；本地免费功能不受影响。', {
+      upgradeUrl: 'https://wzyp.cn/shop/4AOUCE2B',
+      activationPath: '/v1/licenses/redeem',
+      exportPath: '/v1/user/cloud-export',
+      retryAfterSeconds: 1800
+    });
 }
 async function finalizeCloudAuth(request, env, auth) {
   recordAuthenticatedUser(request, auth);
@@ -139,7 +144,7 @@ export default {
           },
           error.status
         );
-        if (error.code === 'login_rate_limited') {
+        if (error.code === 'login_rate_limited' || error.code === 'export_rate_limited') {
           rejected.headers.set('retry-after', '60');
           rejected.headers.set('cache-control', 'no-store');
         }
@@ -173,6 +178,11 @@ async function handleRequest(request, env, ctx) {
   if (request.method === "OPTIONS") {
     return withCors(new Response(null, { status: 204 }));
   }
+  // Protect formerly public, resource-consuming catalogue and community APIs.
+  // Auth is checked ahead of R2/D1 reads, without trusting client version headers.
+  if (env.CLOUD_VIP_ONLY === 'true' && needsTopLevelCloudAuth(url.pathname)) {
+    await requireAuth(request, env);
+  }
 
   const platformApi = {
     requireAuth, ensureCloudVipUser, verifyToken, signToken, read: readUserSyncObject,
@@ -190,6 +200,12 @@ async function handleRequest(request, env, ctx) {
   if (deviceResponse) return deviceResponse;
 
   if (url.pathname.startsWith("/downloads/") && request.method === "GET") {
+    // Paid application packages are not free anonymous R2 egress. Keep signed
+    // Android release/upgrade manifests public so users can obtain an updated client.
+    if (env.CLOUD_VIP_ONLY === 'true' && url.pathname.startsWith('/downloads/applications/')) {
+      const auth = await requireAuth(request, env);
+      await ensureCloudVipUser(env, auth.userId);
+    }
     const key = url.pathname.substring(1);
     const object = await env.PACKAGES.get(key);
     if (!object) {
@@ -206,9 +222,18 @@ async function handleRequest(request, env, ctx) {
   }
 
   if (url.pathname === "/v1/debug/list-packages" && request.method === "GET") {
+    const auth = await requireAuth(request, env);
+    if (!isAdminUser(auth, env)) throw new HttpError(403, 'admin_required', 'Administrator required');
     const list = await env.PACKAGES.list({ prefix: 'downloads/' });
     const keys = list.objects.map(obj => obj.key);
     return json({ count: keys.length, keys });
+  }
+
+  if (url.pathname === '/upgrade' && request.method === 'GET') {
+    const html = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>燕子 VIP 云服务</title><style>body{background:#141821;color:#eaf0f6;font:16px system-ui,-apple-system,sans-serif;margin:0;padding:8vh 24px}main{max-width:640px;margin:auto}h1{font-size:28px}p{line-height:1.8;color:#ccd4df}a.button{display:inline-block;padding:12px 22px;background:#4378f0;color:white;border-radius:12px;text-decoration:none;margin:12px 0}small{color:#a6b3c3}</style><main><h1>燕子 VIP 云服务</h1><p>燕子本地基础功能和已获得的软件版本可以继续使用。云同步、跨设备消息及其他持续使用服务器资源的功能，需要有效 VIP 会员。</p><p>开通或续费后，在 Windows 燕子设置的账号区域选择“升级 VIP · 开通云服务”，输入卡密激活。会员资格会保存在云端账号，可在不同设备验证。</p><a class="button" href="https://wzyp.cn/shop/4AOUCE2B">查看会员升级选项</a><p><small>旧版客户端如果持续提示同步失败，可以先关闭云同步功能；您的本地数据不会因此自动删除。云端旧同步对象支持在登录后申请只读导出。</small></p></main></html>`;
+    return new Response(html, {headers:{'content-type':'text/html; charset=utf-8',
+      'content-security-policy':"default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'",
+      'cache-control':'public, max-age=3600'}});
   }
 
   if (url.pathname === "/health") {
@@ -618,6 +643,44 @@ async function handleRequest(request, env, ctx) {
       username: auth.username,
       ...vipInfo
     });
+  }
+
+  // Membership discovery works for free users (including older signed-in clients).
+  if (url.pathname === "/v1/user/cloud-access" && request.method === "GET") {
+    const auth = await requireAuth(request, env);
+    const vipInfo = await getUserVipInfo(env, auth.userId);
+    const response = json({ ok: true, ...vipInfo,
+      cloudVipOnly: env.CLOUD_VIP_ONLY === 'true',
+      canUseCloud: env.CLOUD_VIP_ONLY !== 'true' || vipInfo.isVip,
+      freeVersionCeiling: '1.0',
+      upgradeUrl: 'https://wzyp.cn/shop/4AOUCE2B',
+      redeemPath: '/v1/licenses/redeem',
+      exportPath: '/v1/user/cloud-export',
+      message: vipInfo.isVip ? '会员云服务已开通' : '本地免费功能继续可用，云服务及后续版本需要激活 VIP'
+    });
+    response.headers.set('cache-control', 'no-store');
+    return response;
+  }
+
+  // Authenticated historical data portability. Read-only and paginated to avoid
+  // breaking users' access to their own pre-existing data after membership expiry.
+  if (url.pathname === "/v1/user/cloud-export" && request.method === "GET") {
+    const auth = await requireAuth(request, env);
+    const rawCursor = url.searchParams.get('cursor') ?? '0';
+    if (!/^(?:0|[1-9][0-9]{0,15})$/.test(rawCursor) || !Number.isSafeInteger(Number(rawCursor)))
+      throw new HttpError(400, 'invalid_export_cursor', 'Invalid export cursor');
+    if (env.EXPORT_RATE_LIMITER?.limit) {
+      const key = await anonymousKey(env, 'export', auth.userId);
+      if (!(await passesLoginRateLimit(env.EXPORT_RATE_LIMITER, key)))
+        throw new HttpError(429, 'export_rate_limited', 'Export temporarily rate limited; retry in one minute');
+    }
+    const page = await readUserSyncObjects(env, auth.userId, Number(rawCursor), 100);
+    const response = json({ok:true, format:'yanzi-cloud-sync-objects-v1',
+      note:'Snapshot of sync objects only; attachments and external storage must be exported separately.',
+      ...page});
+    response.headers.set('cache-control','no-store');
+    response.headers.set('content-disposition','attachment; filename="yanzi-sync-objects.json"');
+    return response;
   }
 
   if (url.pathname === "/v1/licenses/redeem" && request.method === "POST") {
@@ -2065,7 +2128,6 @@ async function handleRequest(request, env, ctx) {
 
 async function getUserVipInfo(env, userId) {
   try {
-    await ensureLicenseTables(env);
     const userRecord = await env.DB.prepare(
       "select vip_expire_at, vip_type from users where user_id = ?"
     ).bind(userId).first();

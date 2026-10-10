@@ -671,9 +671,9 @@
                             <Grid Grid.Column="1" VerticalAlignment="Center" Margin="2,0,0,0">
                                 <!-- 未激活 VIP 时：显示“激活VIP”按钮 -->
                                 <Button x:Name="ActivateVipButton"
-                                        Content="激活VIP"
+                                        Content="升级 VIP · 开通云服务"
                                         Click="ActivateVipButton_Click"
-                                        ToolTip="输入卡密激活 VIP 维护支持"
+                                        ToolTip="购买或激活 VIP，开通云同步、跨设备消息和新版升级"
                                         Cursor="Hand"
                                         Visibility="{Binding IsVipActive, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
                                     <Button.Style>

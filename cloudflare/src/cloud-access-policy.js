@@ -1,12 +1,24 @@
 // Server-side cloud entitlement rules. Version strings and client headers never grant access.
-const cloudPrefixes = [
-  '/v1/sync', '/v1/me', '/v1/device', '/v1/devices', '/v1/messaging',
-  '/v1/messages', '/v1/records', '/v1/applications', '/v1/extension-data',
-  '/v1/external-access', '/v1/repos', '/v1/extensions'
-];
+// Default-deny cloud API policy. Only account enrollment, membership renewal,
+// support and update discovery work without a paid entitlement.
+const publicV1Routes = new Set([
+  '/v1/auth/login', '/v1/auth/register', '/v1/auth/send-code',
+  '/v1/auth/send-reset-code', '/v1/auth/reset-password', '/v1/auth/me',
+  '/v1/licenses/redeem', '/v1/licenses/generate', '/v1/licenses/list',
+  '/v1/user/vip-status', '/v1/user/cloud-access', '/v1/user/cloud-export',
+  '/v1/app/update/latest'
+]);
 export function isCloudServicePath(pathname) {
   if (typeof pathname !== 'string') return false;
-  return cloudPrefixes.some(prefix => pathname === prefix || pathname.startsWith(`${prefix}/`));
+  if (pathname.startsWith('/v1/')) return !publicV1Routes.has(pathname);
+  // A delegated invite or polling request also uses cloud resources.
+  return /^\/connect\/[a-f0-9]{64}(?:\/(?:requests|resources))?$/.test(pathname);
+}
+export function needsTopLevelCloudAuth(pathname) {
+  // Endpoints allowing anonymous access in their original implementation.
+  return pathname === '/v1/extensions' || pathname.startsWith('/v1/extensions/') ||
+    pathname === '/v1/applications/catalog' || pathname === '/v1/debug/list-packages' ||
+    pathname === '/v1/wishes' || pathname.startsWith('/v1/wishes/');
 }
 export function isVipActive(record, nowMs = Date.now()) {
   if (!record) return false;

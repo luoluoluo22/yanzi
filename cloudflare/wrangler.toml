@@ -14,6 +14,12 @@ namespace_id = "9101101"
   [ratelimits.simple]
   limit = 8
   period = 60
+[[ratelimits]]
+name = "EXPORT_RATE_LIMITER"
+namespace_id = "9101102"
+  [ratelimits.simple]
+  limit = 30
+  period = 60
 [[durable_objects.bindings]]
 name = "DEVICE_RELAY"
 class_name = "DeviceRelay"

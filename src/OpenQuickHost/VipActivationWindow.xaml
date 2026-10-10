@@ -22,6 +22,7 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
                 <StackPanel Grid.Row="0">
@@ -47,7 +48,7 @@
                         </Border>
                     </StackPanel>
                     <TextBlock Margin="0,8,0,0"
-                               Text="VIP 可以获取最新功能与维护更新。感谢您对燕子持续开发与优化的支持！"
+                               Text="VIP 可使用云同步、跨设备消息及其他云服务，并获得维护期内的新版本升级资格。基础本地功能继续免费；会员到期后可保留已获得的版本。"
                                TextWrapping="Wrap"
                                LineHeight="20"
                                Foreground="{DynamicResource BrushTextSec}"
@@ -112,8 +113,14 @@
                             Click="ActivateButton_Click" />
                 </Grid>
 
+                <Button x:Name="ExportHistoricalCloudButton" Grid.Row="4" Margin="0,14,0,0"
+                        Height="34" Content="导出历史云同步数据（无需有效 VIP）"
+                        ToolTip="只读导出云同步对象 JSON；不包括附件和第三方网盘"
+                        Style="{StaticResource SecondaryBtn}"
+                        Click="ExportHistoricalCloudButton_Click" />
+
                 <TextBlock x:Name="StatusMessageText"
-                           Grid.Row="4"
+                           Grid.Row="5"
                            Margin="0,12,0,0"
                            Text=""
                            FontSize="{DynamicResource FontSizeSmallPlus}"

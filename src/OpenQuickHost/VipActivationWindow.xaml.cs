@@ -141,6 +141,36 @@ public partial class VipActivationWindow : Window
         }
     }
 
+    private async void ExportHistoricalCloudButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_syncClient.HasCredential)
+        {
+            ShowMessage("请先登录云端账户，才能导出该账户的历史数据。", isError: true);
+            return;
+        }
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            FileName = "yanzi-cloud-sync-history.json",
+            Filter = "JSON 备份文件 (*.json)|*.json",
+            DefaultExt = ".json",
+            OverwritePrompt = true
+        };
+        if (dialog.ShowDialog(this) != true) return;
+        ExportHistoricalCloudButton.IsEnabled = false;
+        try
+        {
+            ShowMessage("正在读取历史云同步对象…", isError: false);
+            var content = await _syncClient.ExportHistoricalCloudSyncObjectsAsync();
+            await System.IO.File.WriteAllTextAsync(dialog.FileName, content, System.Text.Encoding.UTF8);
+            ShowMessage("导出完成。此文件包含云同步对象，但不含附件和第三方存储文件，请妥善保存。", isError: false);
+        }
+        catch (Exception ex)
+        {
+            ShowMessage("导出失败：" + ex.Message, isError: true);
+        }
+        finally { ExportHistoricalCloudButton.IsEnabled = true; }
+    }
+
     private void BuyButton_Click(object sender, RoutedEventArgs e)
     {
         HostAssets.AppendLog($"[VipActivationWindow] BuyButton_Click: opening {PurchaseUrl}");

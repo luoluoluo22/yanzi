@@ -13,6 +13,8 @@ if (args.Length == 2 && args[0] == "--release-readiness")
     return;
 }
 
+if (args.Contains("--vip-version-policy")) { VipVersionPolicyVerification.Run(); return; }
+
 if (args.Contains("--local-api-boundaries"))
 {
     await LocalApiBoundaryVerification.RunAsync();
