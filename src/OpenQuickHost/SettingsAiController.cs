@@ -5,6 +5,27 @@ namespace OpenQuickHost;
 internal sealed record AiProviderSnapshot(string ProviderType, string BaseUrl, string ApiKey);
 internal static class SettingsAiController
 {
+    internal static List<string> IncludeSelectedModel(
+        IEnumerable<string>? available, string? selectedModel, string? providerSelection)
+    {
+        var models = (available ?? [])
+            .Where(static model => !string.IsNullOrWhiteSpace(model))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var pinned = !string.IsNullOrWhiteSpace(selectedModel) ? selectedModel : providerSelection;
+        if (!string.IsNullOrWhiteSpace(pinned) &&
+            !models.Contains(pinned, StringComparer.OrdinalIgnoreCase))
+        {
+            models.Insert(0, pinned);
+        }
+
+        return models;
+    }
+
+    internal static bool SameModelIds(IEnumerable<string>? left, IEnumerable<string>? right) =>
+        (left ?? []).SequenceEqual(right ?? [], StringComparer.OrdinalIgnoreCase);
+
     internal static async Task<IReadOnlyList<string>> FetchAvailableModelsAsync(AiProviderSnapshot provider)
     {
         using var client = new HttpClient
