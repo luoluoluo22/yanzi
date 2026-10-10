@@ -67,10 +67,20 @@ const PUBLIC_STORE_EXTENSION_IDS_SQL = PUBLIC_STORE_EXTENSIONS
 export default {
   async scheduled(event, env, ctx) { ctx.waitUntil(cleanupAttachments(env)); ctx.waitUntil(cleanupExternalAccess(env)); ctx.waitUntil(cleanupEnvironment(env)); },
   async fetch(request, env, ctx) {
+    const started = Date.now();
+    const path = new URL(request.url).pathname;
+    const route = path.replace(/\/v1\/sync\/objects\/[^/]+/g, "/v1/sync/objects/:id").replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, ":id");
+    let status = 500;
+    let category = "server_error";
     try {
-      return await handleRequest(request, env, ctx);
+      const response = await handleRequest(request, env, ctx);
+      status = response.status;
+      category = status >= 500 ? "server_error" : status >= 400 ? "client_error" : "ok";
+      return response;
     } catch (error) {
       if (error instanceof HttpError || error instanceof MessagingError) {
+        status = error.status;
+        category = "handled_error";
         return withCors(
           json(
             {
@@ -92,6 +102,12 @@ export default {
           500
         )
       );
+    } finally {
+      // No credentials, query strings, message bodies or device identifiers.
+      if (status >= 400 || Math.random() < 0.01) {
+        console.log(JSON.stringify({ event: "yanzi_request", method: request.method,
+          route: route.slice(0, 160), status, category, duration_ms: Date.now() - started }));
+      }
     }
   }
 };
