@@ -105,6 +105,8 @@ public sealed class YanziCombobox : UserControl
             Margin = new Thickness(4),
             FontSize = 13
         };
+        // Always use a library-owned option template for hover, focus and selection.
+        _results.SetResourceReference(ItemsControl.ItemContainerStyleProperty, "Yanzi.Combobox.Option");
         _results.SetResourceReference(Control.BackgroundProperty, "Yanzi.Color.Popover");
         _results.SetResourceReference(Control.ForegroundProperty, "Yanzi.Color.PopoverForeground");
         _results.SetResourceReference(Control.FontFamilyProperty, "Yanzi.Font.Geist");

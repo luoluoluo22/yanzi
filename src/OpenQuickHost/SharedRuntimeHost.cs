@@ -94,6 +94,9 @@ public sealed class SharedRuntimeHost : IDisposable
                     return (object)new
                     {
                         protocolVersion = RuntimeRpc.Version, pid = Environment.ProcessId, instanceId = _instanceId,
+                        releaseVersion = typeof(App).Assembly.GetName().Version?.ToString(),
+                        releaseHash = ReleaseBuildIdentity.AssemblySha256,
+                        executablePath = Environment.ProcessPath,
                         startedAt = _started, backgroundServices = _window.GetRuntimeServiceStatus(),
                         clients = GetLiveClients().Select(c => new { pid = c.Pid, development = c.Development }).ToArray(),
                         running = RunningExtensionRegistry.GetSnapshot()

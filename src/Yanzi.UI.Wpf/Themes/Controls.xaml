@@ -618,6 +618,42 @@
         </Setter>
     </Style>
 
+    <!-- Searchable combobox options use the same token-driven hover and selection
+         chrome as shadcn's command list; never inherit native WPF ListBoxItem blue. -->
+    <Style x:Key="Yanzi.Combobox.Option" TargetType="{x:Type ListBoxItem}">
+        <Setter Property="Foreground" Value="{DynamicResource Yanzi.Color.PopoverForeground}"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="Padding" Value="9,7"/>
+        <Setter Property="Margin" Value="2,1"/>
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type ListBoxItem}">
+                    <Border x:Name="OptionChrome" Background="Transparent"
+                            CornerRadius="5" SnapsToDevicePixels="True">
+                        <ContentPresenter Margin="{TemplateBinding Padding}"
+                                          HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="OptionChrome" Property="Background" Value="{DynamicResource Yanzi.Color.Accent}"/>
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="OptionChrome" Property="Background" Value="{DynamicResource Yanzi.Color.Accent}"/>
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                            <Setter TargetName="OptionChrome" Property="Background" Value="{DynamicResource Yanzi.Color.Accent}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <Style x:Key="Yanzi.Loading" TargetType="{x:Type ProgressBar}">
         <Setter Property="IsIndeterminate" Value="True"/>
         <Setter Property="Height" Value="4"/>

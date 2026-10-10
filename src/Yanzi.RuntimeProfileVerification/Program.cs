@@ -23,6 +23,21 @@ try
     Check(saved.AgentApiPort == (expectDev ? 53920 : 53919), "Incorrect API port");
     Check(saved.EnableLanSync == !expectDev && saved.EnableWebDavSync == (!expectDev && expectedWebDav), "Sync policy failed after save/reload");
     Check(saved.LaunchAtStartup == !expectDev && saved.EnableAutoUpdate == !expectDev, "Registration/update policy failed");
+    // A build/test binary must never rebind the official startup entries,
+    // even if compiled in Release mode without --dev.
+    const string stableStartupKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
+    static object? ReadStartup(string name)
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(stableStartupKey);
+        return key?.GetValue(name);
+    }
+    var stableBefore = ReadStartup("Yanzi");
+    var runtimeBefore = ReadStartup("Yanzi.Runtime");
+    StartupRegistrationService.Apply(true);
+    StartupRegistrationService.Apply(false);
+    Check(Equals(stableBefore, ReadStartup("Yanzi")) &&
+          Equals(runtimeBefore, ReadStartup("Yanzi.Runtime")),
+          "Non-installed executable unexpectedly modified production startup registration");
     if (expectDev)
     {
         Check(!saved.PersonalSync.Enabled, "Dev enabled personal sync");

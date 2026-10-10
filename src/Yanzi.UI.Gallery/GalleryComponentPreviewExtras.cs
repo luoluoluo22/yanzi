@@ -188,11 +188,30 @@ internal sealed partial class GalleryWindow
             }
             case "Input Group":
             {
-                var search = new YanziInputGroup("https://", ".com") { Width = 365 };
-                search.Input.Text = "yanzi";
-                search.Input.TextChanged += (_, _) => Status("Input Group：" + search.Input.Text);
+                Add(Text("InputGroup · Text / Icon / Button / Kbd / Block Addon",
+                    13, true, "Yanzi.Color.Foreground", new Thickness(0, 0, 0, 10)));
+                var url = new YanziInputGroup("https://", ".com") { Width = 390 };
+                url.Input.Text = "yanzi";
+                url.Input.TextChanged += (_, _) => Status("URL: " + url.Input.Text);
+                Add(url);
+                var search = new YanziInputGroup { Width = 390,
+                    Margin = new Thickness(0, 12, 0, 0) };
+                search.AddText("⌕", leading: true);
+                search.AddAddon(YanziPrimitives.Kbd("Ctrl K"));
                 Add(search);
-                Limit("目前组合前后缀使用独立内容区；shadcn 的一体化边框仍待复刻。");
+                var query = new YanziInputGroup { Width = 390,
+                    Margin = new Thickness(0, 12, 0, 0) };
+                var queryButton = YanziUi.WithStyle(new Button
+                    { Content = "Search", Padding = new Thickness(8, 3, 8, 3) }, YanziUi.Styles.GhostButton);
+                queryButton.Click += (_, _) => Status("Search: " + query.Input.Text);
+                query.AddAddon(queryButton);
+                Add(query);
+                var amount = new YanziInputGroup("$", "USD") { Width = 390,
+                    Margin = new Thickness(0, 12, 0, 0) };
+                amount.Input.Text = "100";
+                amount.AddBlockAddon(Text("Footer: currency is USD", 11, false,
+                    "Yanzi.Color.MutedForeground", new Thickness(7, 6, 0, 0)));
+                Add(amount);
                 break;
             }
             case "Menubar":
@@ -227,18 +246,30 @@ internal sealed partial class GalleryWindow
             }
             case "Message Scroller":
             {
-                var demo = new YanziMessageScroller { Width = 415 };
-                demo.MaxVisible = 25;
-                demo.AddMessage("Hi, how can I help you today?", false);
-                demo.AddMessage("Show me the previous examples.", true);
-                demo.AddMessage("The scroller stays near the latest message.", false);
+                var demo = new YanziMessageScroller { Width = 415, MaxVisible = 90 };
+                demo.AddMessage("intro", "Hi, how can I help you today?", false);
+                demo.AddMessage("question", "Show me the previous examples.", true);
+                demo.AddMessage("answer", "Scroll up to read history without being pulled down.", false);
+                for (int i = 0; i < 12; i++)
+                    demo.AddMessage("thread-" + i, "Conversation turn " + i, i % 2 == 0);
                 Add(demo);
-                Add(Action("追加一条消息", () =>
+                var controls = new WrapPanel { Margin = new Thickness(0, 9, 0, 0) };
+                controls.Children.Add(Action("追加消息", () =>
                 {
-                    demo.AddMessage("New message · " + (demo.VisibleCount + 1), false);
-                    Status("Message Scroller · 已追加");
+                    demo.AddMessage("New message · " + Guid.NewGuid().ToString("N")[..8], false);
+                    Status("Message Scroller：追加完成");
                 }));
-                Limit("已有界消息和跟随滚动；官网复杂流式锚定、多角色显示待对齐。");
+                controls.Children.Add(Action("插入历史", () =>
+                    demo.PrependHistory(Enumerable.Range(0, 3).Select(i =>
+                        ("old-" + Guid.NewGuid().ToString("N")[..8],
+                        "Recovered earlier turn " + i, i % 2 == 0)))));
+                controls.Children.Add(Action("模拟流式输出", () =>
+                {
+                    demo.AppendToMessage("answer", " Additional tokens without forced scroll.");
+                    Status("Message Scroller：追加输出");
+                }));
+                controls.Children.Add(Action("跳到末尾", demo.JumpToLatest));
+                Add(controls);
                 break;
             }
             case "Navigation Menu":
@@ -270,32 +301,43 @@ internal sealed partial class GalleryWindow
             }
             case "Popover":
             {
-                var button = Action("Open popover", () => { });
-                var content = new StackPanel { Width = 250 };
-                content.Children.Add(Text("Dimensions", 15, true, "Yanzi.Color.Foreground"));
-                content.Children.Add(Text("Set the dimensions for the layer.", 12, false,
-                    "Yanzi.Color.MutedForeground", new Thickness(0, 4, 0, 10)));
-                var width = YanziUi.WithStyle(new TextBox { Text = "100%", Width = 190 },
-                    YanziUi.Styles.InputSoft);
-                content.Children.Add(YanziPrimitives.Field("Width", width));
-                YanziPopover.Attach(button, content);
-                Add(button);
-                Limit("可输入并点击外部关闭；弹出位置、箭头和边缘回退尚需与官网校准。");
+                var demoButtons = new StackPanel { Orientation = Orientation.Horizontal };
+                foreach (var align in Enum.GetValues<YanziPopoverAlign>())
+                {
+                    var chosen = align;
+                    var trigger = Action("Align " + chosen, () => { });
+                    var content = new StackPanel { Width = 260 };
+                    content.Children.Add(Text("Dimensions", 15, true, "Yanzi.Color.Foreground"));
+                    content.Children.Add(Text("Set the dimensions for the layer.", 12, false,
+                        "Yanzi.Color.MutedForeground", new Thickness(0, 4, 0, 10)));
+                    var width = YanziUi.WithStyle(new TextBox { Text = "100%" }, YanziUi.Styles.InputSoft);
+                    var height = YanziUi.WithStyle(new TextBox { Text = "25px" }, YanziUi.Styles.InputSoft);
+                    content.Children.Add(YanziPrimitives.Field("Width", width));
+                    content.Children.Add(YanziPrimitives.Field("Height", height));
+                    YanziPopover.Attach(trigger, content, chosen);
+                    demoButtons.Children.Add(trigger);
+                }
+                Add(demoButtons);
                 break;
             }
             case "Questionnaire":
             {
                 var questionnaire = new YanziQuestionnaire(new List<YanziQuestion>
                 {
-                    new("topic", "Which component do you use most?", YanziQuestionKind.Choice,
-                        new[] { "Button", "Input", "Dialog" }),
-                    new("note", "What should we improve?", YanziQuestionKind.Text, Required: false),
-                    new("agree", "Keep dark theme?", YanziQuestionKind.YesNo)
+                    new("platform", "Where should the agent run?", YanziQuestionKind.Choice,
+                        new[] { "Local workspace", "Cloud workspace" }),
+                    new("environment", "Which cloud environment should it use?", YanziQuestionKind.Choice,
+                        new[] { "Preview", "Staging", "Isolated sandbox" }, true, false,
+                        "platform", "Cloud workspace"),
+                    new("features", "What should the agent report?", YanziQuestionKind.MultipleChoice,
+                        new[] { "Progress", "Decisions", "Risks", "Next steps" }, false, true),
+                    new("notes", "Describe another task (optional)", YanziQuestionKind.Text,
+                        Required: false, AllowSkip: true)
                 });
+                questionnaire.Width = 440;
                 questionnaire.Completed += (_, answers) =>
-                    Status("Questionnaire：" + answers.Count + " 个回答（未上传）");
+                    Status("Questionnaire：保存 " + answers.Count + " 个选项（仅本地内存）");
                 Add(questionnaire);
-                Limit("当前为分步表单；多选、跳过、快捷键和流式服务端问卷尚待补全。");
                 break;
             }
             case "Sheet":
