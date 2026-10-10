@@ -1,0 +1,37 @@
+{
+  "id": "ext_e9e37068c8284b1e808f5454181fb418",
+  "name": "求职",
+  "version": "0.4.0",
+  "category": "AI 工具",
+  "description": "传统企业 AI 转型求职闭环：岗位扫描、主简历与智联在线简历同步、投递前校验、状态追踪与反馈学习。",
+  "keywords": [
+    "求职",
+    "招聘",
+    "智联",
+    "AI转型",
+    "AI应用",
+    "数字化",
+    "简历"
+  ],
+  "toggleWindow": false,
+  "icon": "mdi:briefcase-search-outline",
+  "accentHex": "#FF60A5FA",
+  "runtime": "csharp",
+  "uiMode": "native-window",
+  "entryMode": "entry",
+  "entry": "JobAgent.cs",
+  "permissions": [
+    "storage",
+    "network"
+  ],
+  "startup": {
+    "idle": {
+      "enabled": true,
+      "afterMinutes": 15,
+      "repeatMinutes": 60,
+      "pauseWhenFullscreen": true
+    }
+  },
+  "waitForExit": false,
+  "isPublished": false
+}

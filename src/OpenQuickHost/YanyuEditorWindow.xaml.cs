@@ -1,12 +1,18 @@
 using System.Windows;
 using System.Windows.Media;
 using MediaBrush = System.Windows.Media.Brush;
+using Yanzi.UI.Wpf;
 
 namespace OpenQuickHost;
 
 public partial class YanyuEditorWindow : Window
 {
     public sealed record ActionTypeOption(string Value, string Label)
+    {
+        public override string ToString() => Label;
+    }
+
+    public sealed record SuffixOption(string Value, string Label, string KbdLabel)
     {
         public override string ToString() => Label;
     }
@@ -42,23 +48,35 @@ public partial class YanyuEditorWindow : Window
         bool isEditMode)
     {
         InitializeComponent();
+        // Apply the shared design system only to this window, without altering the host's resources.
+        var themeMode = AppSettingsStore.Load().ThemeMode;
+        var useLightTheme = string.Equals(themeMode, "Light", StringComparison.OrdinalIgnoreCase);
+        if (string.Equals(themeMode, "System", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(
+                    @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+                useLightTheme = key?.GetValue("AppsUseLightTheme") is int light && light == 1;
+            }
+            catch { /* Use the dark theme when Windows personalization is unavailable. */ }
+        }
+        YanziUi.ApplyTo(this, useLightTheme ? YanziTheme.Light : YanziTheme.Dark);
         Title = title;
-        TitleText.Text = title;
-        DescriptionText.Text = subtitle;
-        DeleteButton.Visibility = isEditMode ? Visibility.Visible : Visibility.Collapsed;
+         DeleteButton.Visibility = isEditMode ? Visibility.Visible : Visibility.Collapsed;
 
         SuffixComboBox.ItemsSource = new[]
         {
-            YanyuTriggerSuffix.Space,
-            YanyuTriggerSuffix.Tab,
-            YanyuTriggerSuffix.Enter,
-            ";"
+            new SuffixOption(YanyuTriggerSuffix.Space, "空格", YanyuTriggerSuffix.ToKbdText(YanyuTriggerSuffix.Space)),
+            new SuffixOption(YanyuTriggerSuffix.Tab, "制表", YanyuTriggerSuffix.ToKbdText(YanyuTriggerSuffix.Tab)),
+            new SuffixOption(YanyuTriggerSuffix.Enter, "回车", YanyuTriggerSuffix.ToKbdText(YanyuTriggerSuffix.Enter)),
+            new SuffixOption(";", "分号", YanyuTriggerSuffix.ToKbdText(";"))
         };
 
         ActionTypeComboBox.ItemsSource = new[]
         {
             new ActionTypeOption(YanyuActionTypes.PasteText, "粘贴文本"),
-            new ActionTypeOption(YanyuActionTypes.RunExtension, "运行扩展")
+            new ActionTypeOption(YanyuActionTypes.RunExtension, $"运行{BrandTerms.Current.MiniApp}")
         };
 
         _extensionOptions = extensions
@@ -77,8 +95,12 @@ public partial class YanyuEditorWindow : Window
         EnabledCheckBox.IsChecked = initialRule.Enabled;
         TriggerTextBox.Text = initialRule.TriggerText;
         UseRegexCheckBox.IsChecked = initialRule.UseRegex;
-        BoundProcessBox.Text = initialRule.BoundProcessName;
-        SuffixComboBox.Text = YanyuTriggerSuffix.Normalize(initialRule.TriggerSuffix);
+        BoundProcessBox.ItemsSource = new[] { new ProcessItem { ProcessName = "所有应用" } }
+            .Concat(ProcessCatalog.GetRunningProcesses(initialRule.BoundProcessName))
+            .ToList();
+        BoundProcessBox.Text = string.IsNullOrWhiteSpace(initialRule.BoundProcessName)
+            ? "所有应用" : initialRule.BoundProcessName;
+        SuffixComboBox.Text = YanyuTriggerSuffix.ToDisplayText(initialRule.TriggerSuffix);
         ActionTypeComboBox.SelectedValue = YanyuActionTypes.Normalize(initialRule.ActionType);
         DescriptionBox.Text = initialRule.Description;
         TextContentBox.Text = initialRule.TextContent;
@@ -117,7 +139,7 @@ public partial class YanyuEditorWindow : Window
             return;
         }
 
-        var suffix = YanyuTriggerSuffix.Normalize(SuffixComboBox.Text);
+        var suffix = YanyuTriggerSuffix.NormalizeDisplayText(SuffixComboBox.Text);
         if (suffix.Length == 0)
         {
             ShowError("触发后缀不能为空。");
@@ -151,7 +173,7 @@ public partial class YanyuEditorWindow : Window
         if (string.Equals(actionType, YanyuActionTypes.RunExtension, StringComparison.OrdinalIgnoreCase) &&
             string.IsNullOrWhiteSpace(extensionId))
         {
-            ShowError("请选择一个扩展。");
+            ShowError($"请选择一个{BrandTerms.Current.MiniApp}。");
             return;
         }
 
@@ -161,7 +183,9 @@ public partial class YanyuEditorWindow : Window
             TriggerText = triggerText,
             TriggerSuffix = suffix,
             UseRegex = useRegex,
-            BoundProcessName = (BoundProcessBox.Text ?? string.Empty).Trim(),
+            BoundProcessName = string.Equals(BoundProcessBox.Text?.Trim(), "所有应用", StringComparison.OrdinalIgnoreCase)
+                ? string.Empty
+                : (BoundProcessBox.Text ?? string.Empty).Trim(),
             ActionType = actionType,
             TextContent = textContent,
             ExtensionId = extensionId,

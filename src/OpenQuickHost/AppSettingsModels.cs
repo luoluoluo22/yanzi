@@ -1713,11 +1713,34 @@ public static class YanyuTriggerSuffix
         return Normalize(value) switch
         {
             Space => "空格",
-            Tab => "Tab",
-            Enter => "Enter",
+            Tab => "制表",
+            Enter => "回车",
+            ";" => "分号",
             var custom => custom
         };
     }
+
+    public static string NormalizeDisplayText(string? value)
+    {
+        return (value ?? string.Empty).Trim() switch
+        {
+            "空格" or "␣ 空格" => Space,
+            "制表" or "⇥ 制表" => Tab,
+            "回车" or "↵ 回车" => Enter,
+            "分号" or "； 分号" => ";",
+            var input => Normalize(input)
+        };
+    }
+
+    // Display-only mapping. Persisted values remain space/tab/enter.
+    public static string ToKbdText(string? value) => Normalize(value) switch
+    {
+        Space => "␣ 空格",
+        Tab => "⇥ 制表",
+        Enter => "↵ 回车",
+        ";" => "； 分号",
+        var custom => custom
+    };
 }
 
 public sealed class YanyuRuleSettings

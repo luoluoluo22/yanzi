@@ -1,0 +1,29 @@
+{
+  "allPass": true,
+  "createdAt": "2026-10-09T08:06:40.13934+08:00",
+  "tests": [
+    {
+      "mode": "hidden",
+      "totalMs": 1639,
+      "peakWsMb": 41.8,
+      "peakPrivateMb": 13.4,
+      "cpuMs": 109.4,
+      "reportPath": "F:\\Desktop\\kaifa\\OpenQuickHost\\.tmp\\capture-hidden-desktop-probe\\bin\\Release\\net9.0-windows\\results\\hidden.json",
+      "timedOut": false,
+      "exitCode": 0
+    },
+    {
+      "mode": "offscreen",
+      "totalMs": 1631,
+      "peakWsMb": 38.9,
+      "peakPrivateMb": 12,
+      "cpuMs": 109.4,
+      "reportPath": "F:\\Desktop\\kaifa\\OpenQuickHost\\.tmp\\capture-hidden-desktop-probe\\bin\\Release\\net9.0-windows\\results\\offscreen.json",
+      "timedOut": false,
+      "exitCode": 0
+    }
+  ],
+  "foregroundUnchanged": true,
+  "clipboardSequenceUnchanged": true,
+  "cursorUnchanged": true
+}

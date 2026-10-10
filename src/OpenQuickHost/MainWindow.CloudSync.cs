@@ -1348,6 +1348,20 @@ public partial class MainWindow
                                 unchangedCount++;
                                 continue;
                             }
+                            // Same-version code from another device is a conflict, not an upgrade.
+                            // Avoid publishing stale source over a newer cloud archive.
+                            if (cloudRecord is { HasArchive: true } &&
+                                !string.IsNullOrWhiteSpace(cloudRecord.ArchiveSha256) &&
+                                string.Equals(
+                                    (cmd.DeclaredVersion ?? "0.1.0").Trim().TrimStart('v', 'V'),
+                                    (cloudRecord.LatestVersion ?? "").Trim().TrimStart('v', 'V'),
+                                    StringComparison.OrdinalIgnoreCase))
+                            {
+                                skipCount++;
+                                HostAssets.AppendLog(
+                                    $"Account extension same-version conflict: automatic upload skipped id={cmd.ExtensionId}, version={cmd.DeclaredVersion}, remoteRevision={cloudRecord.ArchiveRevision}. Bump manifest version before publishing.");
+                                continue;
+                            }
                             await SyncPrivateExtensionToAccountAsync(cmd, cloudRecord?.ArchiveRevision ?? 0);
                             successCount++;
                         }

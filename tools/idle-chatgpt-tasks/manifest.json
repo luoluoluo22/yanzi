@@ -1,0 +1,92 @@
+{
+  "id": "idle-chatgpt-tasks",
+  "name": "闲置任务",
+  "version": "0.2.3",
+  "category": "AI 工具",
+  "description": "后台常驻的闲置任务看板：支持 ChatGPT / 小程序任务、增删改查、状态分类、标签与重复执行。",
+  "keywords": [
+    "闲置",
+    "任务",
+    "ChatGPT",
+    "AI",
+    "队列",
+    "后台"
+  ],
+  "icon": "mdi:progress-clock",
+  "accentHex": "#FF22D3EE",
+  "runtime": "csharp",
+  "uiMode": "native-window",
+  "entryMode": "entry",
+  "entry": "IdleTaskApp.cs",
+  "permissions": [
+    "storage",
+    "network"
+  ],
+  "startup": {
+    "idle": {
+      "enabled": true,
+      "afterMinutes": 5,
+      "repeatMinutes": 10,
+      "pauseWhenFullscreen": true
+    },
+    "mode": "on_app_launch"
+  },
+  "waitForExit": false,
+  "toggleWindow": false,
+  "isPublished": false,
+  "provides": [
+    {
+      "name": "idle.tasks.list",
+      "description": "读取闲置任务队列的状态、运行次数和最近反馈；支持按状态或任务类别筛选。",
+      "version": "1.0",
+      "permissions": [
+        "idle.tasks.read"
+      ],
+      "audience": "system",
+      "category": "automation",
+      "riskLevel": "low",
+      "requiresConfirmation": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "chatgpt",
+              "extension"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+          }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "count"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

@@ -224,6 +224,17 @@ public static class ExtensionPackageService
         }
 
         if (segments.Any(static segment =>
+                segment.Equals("node_modules", StringComparison.OrdinalIgnoreCase) ||
+                segment.Equals(".runtime", StringComparison.OrdinalIgnoreCase) ||
+                segment.Equals(".raccoon-runtime", StringComparison.OrdinalIgnoreCase) ||
+                segment.Equals(".git", StringComparison.OrdinalIgnoreCase) ||
+                segment.Equals(".env", StringComparison.OrdinalIgnoreCase) ||
+                (segment.StartsWith(".env.", StringComparison.OrdinalIgnoreCase) &&
+                 !segment.Equals(".env.example", StringComparison.OrdinalIgnoreCase))))
+        {
+            return false;
+        }
+if (segments.Any(static segment =>
                 segment.Equals("bin", StringComparison.OrdinalIgnoreCase) ||
                 segment.Equals("obj", StringComparison.OrdinalIgnoreCase) ||
                 segment.Equals("backup", StringComparison.OrdinalIgnoreCase) ||

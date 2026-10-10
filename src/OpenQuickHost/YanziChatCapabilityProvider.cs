@@ -22,13 +22,14 @@ public static class YanziChatCapabilityProvider
         new()
         {
             Name = "chat.send",
-            Description = "向燕子手机发送文字、原图或文件；省略 target 时选择在线且最近活跃的 Android 手机。completed 才表示指定手机成功 ACK；pending 时用 chat.status 继续查询，勿重复发送。",
+            Description = "向燕子账号发送文字、原图或文件；省略 target 时所有设备共享消息，离线设备可上线补收；指定 target 时仅发送到该手机。账号发送 completed 表示发送时在线的手机均已 ACK，devices 包含各手机回执；pending 时用 chat.status 查询，勿重发。",
             InputSchema = YanziCapabilitySchema.Parse("""
             {"type":"object","properties":{
-              "target":{"type":"string","description":"设备 ID、设备名称或本地配置的别名（例如 K70）；名称片段须唯一。省略则自动选择最近在线手机"},
+              "target":{"type":"string","description":"省略则发送账号共享消息；填写设备 ID、名称或别名（例如 K70）则定向发送，名称片段须唯一"},
               "text":{"type":"string","default":""},
               "filePath":{"type":"string","description":"本机文件绝对路径；图片扩展名自动识别为 photo，附件 1 字节至 30 MB"},
               "kind":{"type":"string","enum":["text","photo","file"]},
+              "requestId":{"type":"string","minLength":8,"description":"稳定请求编号；重试必须使用原编号，参数变化会拒绝。省略自动生成并返回"},
               "waitForAck":{"type":"boolean","default":true},
               "timeoutSeconds":{"type":"integer","minimum":1,"maximum":60,"default":30}},
               "additionalProperties":false}
@@ -40,11 +41,11 @@ public static class YanziChatCapabilityProvider
         new()
         {
             Name = "chat.status",
-            Description = "只读查询已发送消息及指定手机回执；不轮询手机队列，不修改 deliveredAt。等待超时后使用原 messageId 继续查询。",
+            Description = "只读查询消息回执；共享消息省略 targetDeviceId 时返回各手机接收情况，指定设备时只查询该手机。等待超时后用原 messageId 查询，勿重发。",
             InputSchema = YanziCapabilitySchema.Parse("""
             {"type":"object","properties":{
               "messageId":{"type":"string","minLength":1},
-              "targetDeviceId":{"type":"string","minLength":1,"description":"可省略，使用消息原指定手机；广播消息必须提供"},
+              "targetDeviceId":{"type":"string","minLength":1,"description":"可省略：定向消息查原设备，共享消息查所有手机；填写则只查询该设备"},
               "waitForAck":{"type":"boolean","default":false},
               "timeoutSeconds":{"type":"integer","minimum":1,"maximum":60,"default":30}},
               "required":["messageId"],"additionalProperties":false}
@@ -130,14 +131,38 @@ public static class YanziChatCapabilityProvider
         var input = (JsonElement)payload!;
         var content = ValidateContent(input);
         var cloud = await GetCloudAsync();
-        var target = SelectTarget(await cloud.ListPeerDevicesAsync(), GetString(input, "target"), LoadAliases());
+        var peers = await cloud.ListPeerDevicesAsync();
+        var query = GetString(input, "target");
+        var target = string.IsNullOrWhiteSpace(query) ? null : SelectTarget(peers, query, LoadAliases());
+        var requestId=GetString(input,"requestId")??Guid.NewGuid().ToString("N");
+        var fileHash=content.FilePath==null?"":Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(await File.ReadAllBytesAsync(content.FilePath)));
+        var signature=JsonSerializer.Serialize(new{target=target?.DeviceId,content.Kind,content.Text,content.FilePath,fileHash});
+        var task=YanziTaskService.Begin("chat.send",requestId,signature,target?.DisplayName??"账号所有设备");
+        if(task.Replay)return YanziTaskService.ReplayResult(task);
+        try
+        {
+        YanziTaskService.Update(task.TaskId,"已核对发送范围与内容 · 即将发送");
+        await Task.Delay(900);
+        YanziTaskService.Check(task.TaskId);
+        if(YanziTaskService.Submit(task.TaskId).CancelRequested)throw new OperationCanceledException("task_cancelled");
         var job = DesktopChatOutbox.Enqueue(cloud.CurrentUserId!, DeviceIdentityStore.GetOrCreateDesktopDeviceId(),
-            Guid.NewGuid().ToString("N"), content.Kind, content.Text, content.FilePath, target.DeviceId);
+            task.TaskId[..32], content.Kind, content.Text, content.FilePath, target?.DeviceId);
+        YanziTaskService.Update(task.TaskId,content.FilePath==null?"正在投递消息":"正在上传附件并投递");
         var messageId = await cloud.DeliverChatJobAsync(job);
         if (string.IsNullOrWhiteSpace(messageId)) throw new IOException("服务器未返回 messageId；请检查持久发件箱，勿重复发送。");
-        var initial = new DeviceMessageRecord { MessageId = messageId, TargetDeviceId = target.DeviceId, Kind = content.Kind, Status = "pending" };
-        return await ObserveAsync(initial, target.DeviceId, target.DisplayName, WaitRequested(input, true), Timeout(input),
-            token => cloud.GetDeviceMessageAsync(messageId, token));
+        var initial = new DeviceMessageRecord { MessageId = messageId, TargetDeviceId = target?.DeviceId, Kind = content.Kind, Status = "pending" };
+        YanziTaskService.Update(task.TaskId,"消息已入队 · 等待手机接收回执");
+        object result=target==null
+            ? await ObserveAccountAsync(initial,peers,WaitRequested(input,true),Timeout(input),token=>cloud.GetDeviceMessageAsync(messageId,token))
+            : await ObserveAsync(initial,target.DeviceId,target.DisplayName,WaitRequested(input,true),Timeout(input),token=>cloud.GetDeviceMessageAsync(messageId,token));
+        return YanziTaskService.Finish(task.TaskId,result);
+        }
+        catch(Exception ex)
+        {
+            var state=YanziTaskService.Status(task.TaskId);
+            string status=ex is OperationCanceledException&&!state.Submitted?"cancelled":state.Submitted?"unknown":"failed";
+            return YanziTaskService.Finish(task.TaskId,new ChatDeliveryResult("",target?.DeviceId??"",target?.DisplayName??"账号所有设备",content.Kind,status,false,false,"",false,ex.Message));
+        }
     }
 
     private static async Task<object?> StatusAsync(object? payload)
@@ -147,7 +172,8 @@ public static class YanziChatCapabilityProvider
         var messageId = GetString(input, "messageId")!;
         var message = await cloud.GetDeviceMessageAsync(messageId) ?? throw new KeyNotFoundException("消息不存在。");
         var targetId = GetString(input, "targetDeviceId") ?? message.TargetDeviceId;
-        if (string.IsNullOrWhiteSpace(targetId)) throw new ArgumentException("广播消息须提供 targetDeviceId。");
+        if (string.IsNullOrWhiteSpace(targetId)) return await ObserveAccountAsync(message, await cloud.ListPeerDevicesAsync(),
+            WaitRequested(input, false), Timeout(input), token => cloud.GetDeviceMessageAsync(messageId, token));
         var name = message.Receipts.FirstOrDefault(r => r.DeviceId == targetId)?.DisplayName ?? targetId;
         return await ObserveAsync(message, targetId, name, WaitRequested(input, false), Timeout(input),
             token => cloud.GetDeviceMessageAsync(messageId, token));
@@ -171,6 +197,49 @@ public static class YanziChatCapabilityProvider
         return new(message.MessageId, targetId, targetName, message.Kind, status,
             receipt != null || (message.TargetDeviceId == targetId && !string.IsNullOrWhiteSpace(message.DeliveredAt)),
             successful, ackedAt ?? "", timedOut, error ?? "");
+    }
+
+    internal static AccountChatDeliveryResult MakeAccountResult(DeviceMessageRecord message, IEnumerable<PeerDeviceInfo> peers,
+        bool timedOut = false, string? error = null)
+    {
+        var phones = peers.Where(p => string.Equals(p.Platform, "android", StringComparison.OrdinalIgnoreCase)).ToArray();
+        var devices = phones.Select(p => new AccountChatDeviceResult(p.DeviceId, p.DisplayName, p.Online,
+            MakeResult(message, p.DeviceId, p.DisplayName))).ToArray();
+        var online = devices.Where(d => d.onlineAtObservation).ToArray();
+        bool complete = online.Length > 0 && online.All(d => d.receipt.acked);
+        string state = message.Status is "expired" or "cancelled" ? message.Status : complete ? "completed" : "pending";
+        return new(message.MessageId, "", "账号消息 · 所有设备", message.Kind, state,
+            devices.Any(d => d.receipt.delivered), complete,
+            devices.Where(d => d.receipt.acked).Select(d => d.receipt.ackedAt).OrderByDescending(x => x).FirstOrDefault() ?? "",
+            timedOut, error ?? "", "account", complete, devices);
+    }
+
+    private static async Task<AccountChatDeliveryResult> ObserveAccountAsync(DeviceMessageRecord initial, IEnumerable<PeerDeviceInfo> peers,
+        bool wait, int timeoutSeconds, Func<CancellationToken, Task<DeviceMessageRecord?>> poll)
+    {
+        // Freeze the online cohort during this wait; a device disappearing must not turn a missing ACK into success.
+        var snapshot = peers.ToArray();
+        var current = initial;
+        if (!wait) return MakeAccountResult(current, snapshot);
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
+        string? error = null;
+        while (!deadline.IsCancellationRequested)
+        {
+            var result = MakeAccountResult(current, snapshot);
+            if (result.status != "pending") return result;
+            try
+            {
+                current = await poll(deadline.Token) ?? current;
+                error = null;
+                result = MakeAccountResult(current, snapshot);
+                if (result.status != "pending") return result;
+                await Task.Delay(500, deadline.Token);
+            }
+            catch (OperationCanceledException) when (deadline.IsCancellationRequested) { break; }
+            catch (Exception ex) when (ex is HttpRequestException or IOException or InvalidOperationException or UnauthorizedAccessException)
+            { error = ex.GetType().Name + ": " + ex.Message; try { await Task.Delay(500, deadline.Token); } catch (OperationCanceledException) { break; } }
+        }
+        return MakeAccountResult(current, snapshot, timedOut: true, error: error);
     }
 
     internal static async Task<ChatDeliveryResult> ObserveAsync(DeviceMessageRecord initial, string targetId, string targetName,
@@ -206,3 +275,7 @@ public static class YanziChatCapabilityProvider
 
 public sealed record ChatDeliveryResult(string messageId, string targetDeviceId, string targetName, string kind,
     string status, bool delivered, bool acked, string ackedAt, bool waitTimedOut, string error);
+public sealed record AccountChatDeviceResult(string deviceId, string displayName, bool onlineAtObservation, ChatDeliveryResult receipt);
+public sealed record AccountChatDeliveryResult(string messageId, string targetDeviceId, string targetName, string kind,
+    string status, bool delivered, bool acked, string ackedAt, bool waitTimedOut, string error, string routing,
+    bool allOnlineAcked, AccountChatDeviceResult[] devices);

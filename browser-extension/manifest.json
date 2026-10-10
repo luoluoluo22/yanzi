@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "燕子浏览器助手 (Yanzi Browser Helper)",
-  "version": "0.5.35",
+  "version": "0.5.57",
   "minimum_chrome_version": "120",
   "description": "打通浏览器登录态，配合燕子效率工具完成后台无感网页数据抓取与交互自动化。",
   "permissions": [

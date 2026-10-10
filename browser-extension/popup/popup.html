@@ -19,12 +19,12 @@
     </header>
 
     <nav class="panel-tabs" aria-label="控制台页面">
-      <button type="button" data-panel="overview" aria-pressed="true">连接与服务</button>
-      <button type="button" data-panel="market" aria-pressed="false">网页小程序</button>
+      <button type="button" data-panel="market" aria-pressed="true">网页小程序</button>
+      <button type="button" data-panel="overview" aria-pressed="false">连接与服务</button>
       <button type="button" data-panel="api" aria-pressed="false">API 接入</button>
       <button type="button" data-panel="logs" aria-pressed="false">执行日志</button>
     </nav>
-    <div class="panel-content" id="panel-overview">
+    <div class="panel-content" id="panel-overview" hidden>
     <section class="status-section glass-card">
       <div class="status-row">
         <span class="status-label">燕子主程序连接</span>
@@ -46,7 +46,7 @@
     </section>
     <footer class="app-footer"><button id="reconnect-btn" class="btn primary-btn btn-glow">重新连接燕子主程序</button></footer>
     </div>
-    <div class="panel-content" id="panel-market" hidden>
+    <div class="panel-content" id="panel-market">
       <section class="glass-card market-intro">
         <div class="section-title-row">
           <h2>网页小程序市场</h2>
@@ -63,7 +63,7 @@
       </section>
       <section class="glass-card webapp-rules-card" id="xhs-rules-card">
         <div class="section-title-row">
-          <h2>小红书屏蔽规则</h2>
+          <h2>小红书内容规则</h2>
           <span class="log-count" id="xhs-rule-count">0 条</span>
         </div>
         <div id="xhs-rule-list" class="webapp-rule-list">

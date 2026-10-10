@@ -182,12 +182,12 @@
       if (node.querySelector('.turn-action-controls button[aria-label="复制"], .turn-action-controls button[aria-label="Copy"], .turn-action-controls button[aria-label="评价回复"]')) return true;
     }
 
-    // Current ChatGPT DOM no longer exposes the old role/unit attributes.
-    // A stable MarkdownRoot with no active stop control is sufficient; the
-    // caller already requires the payload to remain unchanged for 3 seconds.
-    return Boolean(
-      document.querySelector('[class*="MarkdownRoot-"]') &&
-      !document.querySelector(stopSelector)
+    // Current ChatGPT DOM no longer exposes the old role/unit attributes reliably.
+    // Do not treat a bare MarkdownRoot as completion: a stalled partial reply has one too.
+    // Require an explicit action control that ChatGPT exposes only after a turn is settled.
+    const actionLabels = /^(复制|Copy|重新生成|Regenerate|重试|Retry|赞|踩|Good response|Bad response|Share|分享|评价回复)$/i;
+    return Array.from((document.querySelector('main') || document).querySelectorAll('button')).some(button =>
+      actionLabels.test((button.getAttribute('aria-label') || button.textContent || '').trim())
     );
   }
   function temporaryEvidence() {
@@ -206,7 +206,7 @@
     if (saveControl && new URL(location.href).searchParams.get('temporary-chat') === 'true') return 'save-chat-control';
     return null;
   }
-  const meta = () => ({ url: location.href, conversationId: location.pathname.match(/^\/c\/([^/]+)/)?.[1] || null, visibility: document.visibilityState, temporary: Boolean(temporaryEvidence()), temporaryEvidence: temporaryEvidence() });
+  const meta = () => ({ url: location.href, conversationId: location.pathname.match(/^\/c\/([^/]+)/)?.[1] || null, visibility: document.visibilityState, temporary: Boolean(temporaryEvidence()), temporaryEvidence: temporaryEvidence(), automationRevision: '2026-10-06-send-ack-watchdog-v2' });
   const pageSnapshots = () => {
     const legacy = Array.from(document.querySelectorAll(
       '[data-message-author-role="assistant"], [data-chatgpt-search-unit-key$=":assistant"]'
@@ -513,10 +513,15 @@
     busy = true;
     try {
       const defaultTimeoutSeconds = task.action === "chatgpt_image" ? 900 : 180;
-      const deadline = Date.now() + Math.min(
-        1200,
-        Math.max(10, Number(task.timeoutSeconds) || defaultTimeoutSeconds)
-      ) * 1000;
+      const requestedTimeoutSeconds = Number(task.timeoutSeconds);
+      // timeoutSeconds === 0 is reserved for durable background jobs: wait for a real
+      // ChatGPT completion/error signal instead of converting elapsed time into failure.
+      const deadline = requestedTimeoutSeconds === 0
+        ? Number.POSITIVE_INFINITY
+        : Date.now() + Math.min(
+            1200,
+            Math.max(10, requestedTimeoutSeconds || defaultTimeoutSeconds)
+          ) * 1000;
       if (task.action === "chatgpt_messages") {
         checkPage();
         return { ...meta(), messages: messages() };
@@ -530,6 +535,15 @@
           images.push(await imageToDataUrl(image));
         }
         return { ...meta(), images };
+      }
+      if (["chatgpt_feedback_send", "chatgpt_subagent_continue"].includes(task.action)) {
+        const expected = "https://chatgpt.com/c/" + task.expectedConversationId;
+        if (location.origin !== "https://chatgpt.com" ||
+            location.pathname.replace(/\/$/, "") !== new URL(expected).pathname ||
+            location.href.split(/[?#]/)[0].replace(/\/$/, "") !== expected ||
+            task.expectedUrl !== expected || temporaryEvidence()) {
+          throw new Error("原 ChatGPT 对话身份不符；反馈未发送");
+        }
       }
       const input = await waitFor(() => document.querySelector(inputSelector), deadline, "等待 ChatGPT 输入框");
       if (task.temporary === true) await waitFor(() => temporaryEvidence(), Math.min(deadline, Date.now() + 15000), '确认临时聊天模式（未确认时不会发送）');
@@ -564,9 +578,26 @@
         return button && !button.disabled ? button : null;
       }, Math.min(deadline, Date.now() + 10000), "等待发送按钮");
       if (task.temporary === true && !temporaryEvidence()) throw new Error('临时聊天状态已改变，未发送消息');
+      if (["chatgpt_feedback_send", "chatgpt_subagent_continue"].includes(task.action)) {
+        const currentId = location.pathname.match(/^\/c\/([^/]+)/)?.[1];
+        if (currentId !== task.expectedConversationId || temporaryEvidence())
+          throw new Error("发送前对话已切换，反馈未发送");
+      }
       send.click();
-      await waitFor(() => messages().filter(m => m.role === "user").length > userCount, Math.min(deadline, Date.now() + 15000), "确认消息已发送");
+      await waitFor(() => {
+        const currentMessages = messages();
+        if (currentMessages.filter(m => m.role === "user").length > userCount) return true;
+        if (currentMessages.filter(m => m.role === "assistant").length > assistantCount) return true;
+        if (document.querySelector(stopSelector)) return true;
+        const currentInput = document.querySelector(inputSelector);
+        const currentDraft = (currentInput?.value || currentInput?.innerText || "").trim();
+        return currentDraft ? null : true;
+      }, Math.min(deadline, Date.now() + 15000), "确认消息已发送");
       let last = "", lastImages = "", changedAt = Date.now();
+      const durableTask = Number(task.timeoutSeconds) === 0;
+      const stalledForMs = 5 * 60 * 1000;
+      const continuationCooldownMs = 15 * 60 * 1000;
+      let lastContinuationAt = 0;
       while (Date.now() < deadline) {
         checkPage();
         const current = messages().filter(m => m.role === "assistant");
@@ -629,6 +660,36 @@
         }
         const error = document.querySelector('[data-testid="conversation-turn-error"]');
         if (error) throw new Error(error.innerText || "ChatGPT 返回错误");
+
+        // Durable jobs sometimes stall after a partial reply. Resume this same conversation;
+        // never resubmit the original task, and rate-limit recovery prompts.
+        if (
+          durableTask &&
+          hasExpectedPayload &&
+          !generating &&
+          !replyHasCompletionControls() &&
+          Date.now() - changedAt >= stalledForMs &&
+          Date.now() - lastContinuationAt >= continuationCooldownMs
+        ) {
+          const resumeInput = inputBox();
+          if (resumeInput) {
+            if (resumeInput.tagName === "TEXTAREA") {
+              Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(resumeInput, "继续");
+            } else {
+              const paragraph = document.createElement("p");
+              paragraph.textContent = "继续";
+              resumeInput.replaceChildren(paragraph);
+            }
+            resumeInput.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: "继续" }));
+            const resumeSend = await waitFor(() => {
+              const button = document.querySelector(sendSelector);
+              return button && !button.disabled ? button : null;
+            }, Date.now() + 10000, "等待继续按钮");
+            resumeSend.click();
+            lastContinuationAt = Date.now();
+            changedAt = Date.now();
+          }
+        }
         await pause(500);
       }
       throw new Error("等待回复超时；消息可能已发送，请查询聊天后再决定是否重试");

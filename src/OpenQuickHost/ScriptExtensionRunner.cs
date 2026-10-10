@@ -187,6 +187,35 @@ public static class ScriptExtensionRunner
             {
                 try
                 {
+                    // Background trigger events must not block the scheduler while awaiting remote jobs.
+                    // Observe asynchronous faults without holding the extension launch lock.
+                    if (!string.Equals(launchSource, "launcher", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var triggerMethod = win.GetType().GetMethod(
+                            "HandleTrigger",
+                            BindingFlags.Public | BindingFlags.Instance,
+                            binder: null,
+                            types: [typeof(string)],
+                            modifiers: null);
+
+                        if (triggerMethod != null)
+                        {
+                            var invocation = triggerMethod.Invoke(win, [launchSource]);
+                            if (invocation is Task triggerTask)
+                            {
+                                ObserveBackgroundTriggerTask(triggerTask, command.ExtensionId, launchSource);
+                            }
+
+                            HostAssets.AppendLog(
+                                $"ScriptRunner routed background trigger to already running extension: id={command.ExtensionId}, source={launchSource}");
+                            return new ScriptExecutionResult(
+                                true,
+                                "已发送后台触发事件到正在运行的小程序。",
+                                string.Empty,
+                                0);
+                        }
+                    }
+
                     // Long-lived background extensions may expose Run(string)
                     // so non-empty input (for example "录屏") can be routed
                     // into the existing service instance instead of spawning
@@ -260,6 +289,20 @@ public static class ScriptExtensionRunner
         HostAssets.AppendLog(
             $"ScriptRunner execute done: id={command.ExtensionId}, title={command.Title}, success={result.Success}, exitCode={result.ExitCode}, isCancelled={result.IsCancelled}, elapsedMs={executionStopwatch.ElapsedMilliseconds}, outputLength={result.Output.Length}, errorLength={result.Error.Length}");
         return result;
+    }
+
+    private static void ObserveBackgroundTriggerTask(Task task, string extensionId, string launchSource)
+    {
+        _ = task.ContinueWith(
+            completedTask =>
+            {
+                var error = completedTask.Exception?.GetBaseException();
+                HostAssets.AppendLog(
+                    $"ScriptRunner background trigger failed: id={extensionId}, source={launchSource}, exception={error}");
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
     }
 
     private static async Task<ScriptExecutionResult> ExecutePowerShellEntryAsync(

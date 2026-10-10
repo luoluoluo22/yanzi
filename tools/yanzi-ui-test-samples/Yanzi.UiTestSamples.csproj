@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0-windows10.0.19041.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Yanzi.UiTesting/Yanzi.UiTesting.csproj"/>
+    <ProjectReference Include="../../src/Yanzi.UI.Wpf/Yanzi.UI.Wpf.csproj"/>
+    <ProjectReference Include="../../src/Yanzi.Capture/Yanzi.Capture.csproj"/>
+  </ItemGroup>
+</Project>

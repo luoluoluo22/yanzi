@@ -52,6 +52,8 @@ public static class YanziUi
         public const string Tabs = "Yanzi.Tabs";
         public const string TabItem = "Yanzi.TabItem";
         public const string Expander = "Yanzi.Expander";
+        // Legacy native WPF calendar/date-picker skins, retained for existing consumers.
+        // New components should use YanziCalendarMonth and YanziDatePicker (includes custom popup).
         public const string Calendar = "Yanzi.Calendar";
         public const string DatePicker = "Yanzi.DatePicker";
         public const string Tooltip = "Yanzi.Tooltip";
@@ -60,6 +62,10 @@ public static class YanziUi
         public const string PrimaryButton = "Yanzi.Button.Primary";
         public const string SecondaryButton = "Yanzi.Button.Secondary";
         public const string DangerButton = "Yanzi.Button.Danger";
+        public const string Kbd = "Yanzi.Kbd";
+        public const string KbdGroup = "Yanzi.KbdGroup";
+        public const string ResizableHandle = "Yanzi.ResizableHandle";
+        public const string ResizableHandleVertical = "Yanzi.ResizableHandle.Vertical";
         public const string Input = "Yanzi.Input";
         public const string InputSoft = "Yanzi.Input.Soft";
         public const string TextareaSoft = "Yanzi.Textarea.Soft";

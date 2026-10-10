@@ -65,7 +65,15 @@ if ($Activate) {
             catch { $statusText = $null }
             if ($LASTEXITCODE -eq 0 -and $statusText) {
                 $status = $statusText | ConvertFrom-Json
-                if ($status.pid -eq $runtimeProcess.Id -and $status.backgroundServices.initialized) { $healthy = $true; break }
+                $services = $status.backgroundServices
+                $idleObserved = $services.idleTriggerObservedAt
+                $idleFresh = $false
+                if ($idleObserved) {
+                    try { $idleFresh = ([DateTimeOffset]::Now - [DateTimeOffset]::Parse($idleObserved)).TotalSeconds -lt 20 }
+                    catch { $idleFresh = $false }
+                }
+                # An initialized Runtime without a ticking idle trigger is not a healthy release.
+                if ($status.pid -eq $runtimeProcess.Id -and $services.initialized -and $services.idleTrigger -eq $true -and $idleFresh) { $healthy = $true; break }
             }
             Start-Sleep -Milliseconds 400
         }

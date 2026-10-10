@@ -104,38 +104,48 @@ internal sealed partial class GalleryWindow
             }
             case "Data Table":
             {
-                var grid = YanziUi.WithStyle(new DataGrid
-                {
-                    Width = 440, Height = 213,
-                    AutoGenerateColumns = true,
-                    CanUserSortColumns = true,
-                    IsReadOnly = true,
-                    SelectionMode = DataGridSelectionMode.Single,
-                    ItemsSource = new[]
+                var data = new YanziDataTable { Width = 485, PageSize = 4 };
+                data.SetData(new[] { "订单号", "状态", "金额", "客户" },
+                    new IReadOnlyList<string>[]
                     {
-                        new { Id = "INV001", Status = "Paid", Amount = "$250" },
-                        new { Id = "INV002", Status = "Pending", Amount = "$150" },
-                        new { Id = "INV003", Status = "Unpaid", Amount = "$80" },
-                        new { Id = "INV004", Status = "Paid", Amount = "$420" }
-                    }
-                }, YanziUi.Styles.DataGrid);
-                System.Windows.Automation.AutomationProperties.SetName(grid, "Data Table 样例");
-                Add(grid);
-                Limit("仅排序和行选择示例；列过滤、分组、分页与官网 Table 组合能力尚待实现。");
+                        new[] { "INV001", "已付款", "$250", "王敏" },
+                        new[] { "INV002", "待处理", "$150", "李峰" },
+                        new[] { "INV003", "未付款", "$80", "赵丽" },
+                        new[] { "INV004", "已付款", "$420", "陈晓" },
+                        new[] { "INV005", "处理中", "$120", "刘杰" },
+                        new[] { "INV006", "已付款", "$310", "张雪" },
+                        new[] { "INV007", "待处理", "$60", "孙浩" },
+                        new[] { "INV008", "已付款", "$740", "唐芳" },
+                        new[] { "INV009", "未付款", "$95", "谢宇" },
+                        new[] { "INV010", "已付款", "$430", "吴宁" },
+                        new[] { "INV011", "待处理", "$45", "周静" },
+                        new[] { "INV012", "已付款", "$155", "侯明" }
+                    });
+                data.SelectionChanged += (_, id) => Status("切换选择：INV" + (id + 1).ToString("000"));
+                Add(data);
+                Limit("可筛选、排序、切换可见列、跨页选择和分页；当前采用有界分页渲染，非窗口虚拟滚动。尚未实现服务端分页。");
                 break;
             }
             case "Date Picker":
             {
-                var date = YanziUi.WithStyle(new DatePicker
+                var date = new YanziDatePicker
                 {
                     SelectedDate = new DateTime(2026, 10, 8),
-                    Width = 220,
-                    HorizontalAlignment = HorizontalAlignment.Left
-                }, YanziUi.Styles.DatePicker);
-                date.SelectedDateChanged += (_, _) =>
-                    Status("Date Picker：" + date.SelectedDate?.ToString("yyyy-MM-dd"));
-                Add(YanziPrimitives.Field("Pick a date", date));
-                Limit("当前使用 Windows 日期弹层；范围选择、月份切换外观及弹层样式待对齐。");
+                    Width = 240
+                };
+                date.SelectedDateChanged += (_, selected) =>
+                    Status("Date Picker：" + selected?.ToString("yyyy-MM-dd"));
+                Add(YanziPrimitives.Field("选择日期", date));
+                var constrained = new YanziDatePicker
+                {
+                    Width = 240, Placeholder = "选择截止日期",
+                    MinimumDate = new DateTime(2026, 10, 10),
+                    MaximumDate = new DateTime(2026, 10, 20)
+                };
+                constrained.SelectedDateChanged += (_, selected) =>
+                    Status("限定日期：" + selected?.ToString("yyyy-MM-dd"));
+                Add(YanziPrimitives.Field("日期范围约束（10日—20日）", constrained));
+                Limit("公共 Date Picker：Popover 日历、键盘关闭、选中态、禁用日期均已实现。多日区间与快捷预设仍待扩展。");
                 break;
             }
             case "Dialog":
@@ -187,22 +197,32 @@ internal sealed partial class GalleryWindow
             }
             case "Menubar":
             {
-                var bar = YanziUi.WithStyle(new Menu { Width = 385, HorizontalAlignment = HorizontalAlignment.Left },
-                    YanziUi.Styles.Menubar);
-                foreach (var label in new[] { "File", "Edit", "View", "Profiles" })
+                var bar = new YanziMenubar { Width = 385 };
+                bar.AddMenu("文件", menu =>
                 {
-                    var menu = new MenuItem { Header = label };
-                    foreach (var child in new[] { "New", "Open", "Settings" })
+                    menu.AddLabel("操作");
+                    menu.AddAction("新建", () => Status("文件 / 新建"), "Ctrl+N");
+                    menu.AddAction("打开", () => Status("文件 / 打开"), "Ctrl+O");
+                    menu.AddSeparator();
+                    menu.AddSubmenu("最近项目", submenu =>
                     {
-                        var nameCopy = label + " / " + child;
-                        var action = YanziUi.WithStyle(new MenuItem { Header = child }, YanziUi.Styles.MenuItem);
-                        action.Click += (_, _) => Status("Menubar：" + nameCopy);
-                        menu.Items.Add(action);
-                    }
-                    bar.Items.Add(menu);
-                }
+                        submenu.AddAction("燕子", () => Status("打开 / 燕子"));
+                        submenu.AddAction("棘轮", () => Status("打开 / 棘轮"));
+                    });
+                });
+                bar.AddMenu("编辑", menu =>
+                {
+                    menu.AddAction("撤销", () => Status("编辑 / 撤销"), "Ctrl+Z");
+                    menu.AddCheck("自动保存", true, enabled => Status("自动保存：" + enabled));
+                });
+                bar.AddMenu("视图", menu =>
+                {
+                    menu.AddRadioGroup("显示", new[] { "列表", "网格" }, "列表",
+                        chosen => Status("视图：" + chosen));
+                });
+                bar.AddMenu("帮助", menu => menu.AddAction("关于", () => Status("关于燕子")));
                 Add(bar);
-                Limit("目前 WPF Menu 作为行为基础，checkbox/radio 子项和子菜单视觉待对齐。");
+                Limit("Menubar 使用公共 Dropdown Menu 弹层、复选项、单选项和多级子菜单；不再渲染 WPF Menu/MenuItem。");
                 break;
             }
             case "Message Scroller":
@@ -223,24 +243,29 @@ internal sealed partial class GalleryWindow
             }
             case "Navigation Menu":
             {
-                var menu = YanziUi.WithStyle(new Menu
+                var navigation = new YanziNavigationMenu { Width = 420 };
+                navigation.AddGroup("快速开始", new[]
                 {
-                    Width = 405, HorizontalAlignment = HorizontalAlignment.Left
-                }, YanziUi.Styles.Menubar);
-                foreach (var title in new[] { "Getting started", "Components", "Documentation" })
+                    new YanziNavigationMenu.Link("项目介绍", "了解燕子、能力和使用方式。", () => Status("导航：项目介绍")),
+                    new YanziNavigationMenu.Link("安装指南", "安装和配置你的第一个小程序。", () => Status("导航：安装指南")),
+                    new YanziNavigationMenu.Link("常见问题", "查找常见问题与解决办法。", () => Status("导航：常见问题")),
+                    new YanziNavigationMenu.Link("版本更新", "查看最新版功能与维护记录。", () => Status("导航：版本更新"))
+                });
+                navigation.AddGroup("组件", new[]
                 {
-                    var header = new MenuItem { Header = title };
-                    foreach (var link in new[] { "Overview", "Examples", "API Reference" })
-                    {
-                        var text = title + " / " + link;
-                        var item = new MenuItem { Header = link };
-                        item.Click += (_, _) => Status("导航：" + text);
-                        header.Items.Add(item);
-                    }
-                    menu.Items.Add(header);
-                }
-                Add(menu);
-                Limit("先复用顶栏 Menu；多栏浮层和鼠标指针动画仍不同于官网 Navigation Menu。");
+                    new YanziNavigationMenu.Link("公共组件", "按钮、输入框、菜单与日期选择器。", () => Status("导航：公共组件")),
+                    new YanziNavigationMenu.Link("布局容器", "卡片、网格、面板和侧边栏。", () => Status("导航：布局容器")),
+                    new YanziNavigationMenu.Link("交互模式", "弹层、导航和快捷操作。", () => Status("导航：交互模式")),
+                    new YanziNavigationMenu.Link("主题系统", "语义令牌、深色和浅色主题。", () => Status("导航：主题系统"))
+                });
+                navigation.AddGroup("开发文档", new[]
+                {
+                    new YanziNavigationMenu.Link("API 文档", "调用公共库中的类型和方法。", () => Status("导航：API 文档")),
+                    new YanziNavigationMenu.Link("代码示例", "如何从不同小程序中复用组件。", () => Status("导航：代码示例")),
+                    new YanziNavigationMenu.Link("组件验收", "查看组件一致性测试规范。", () => Status("导航：组件验收"))
+                });
+                Add(navigation);
+                Limit("共享导航：宽面板双列链接、分类切换、指示标记和键盘导航已实现；RTL 与浏览器路由由宿主提供。");
                 break;
             }
             case "Popover":

@@ -835,14 +835,16 @@ public static class YanziAction
         var normalizedMode = string.IsNullOrWhiteSpace(mode) ? null : mode.Trim();
         var normalizedSchedule = string.IsNullOrWhiteSpace(schedule) ? null : schedule.Trim();
         var manifest = ParseManifest(File.ReadAllText(manifestPath));
+        var idle = manifest.Startup?.Idle;
         var updated = manifest with
         {
-            Startup = normalizedMode == null && normalizedSchedule == null
+            Startup = normalizedMode == null && normalizedSchedule == null && idle == null
                 ? null
                 : new LocalExtensionStartupManifest
                 {
                     Mode = normalizedMode,
-                    Schedule = normalizedSchedule
+                    Schedule = normalizedSchedule,
+                    Idle = idle
                 }
         };
 
@@ -1282,9 +1284,36 @@ public sealed record LocalExtensionStartupManifest
     /// </summary>
     public string? Schedule { get; init; }
 
+    /// <summary>
+    /// 闲置触发。只有鼠标/键盘持续无输入，且没有全屏前台窗口时才计入闲置。
+    /// </summary>
+    public LocalExtensionIdleTriggerManifest? Idle { get; init; }
+
     public ExtensionStartupDefinition ToDefinition()
     {
-        return new ExtensionStartupDefinition(Mode, Schedule);
+        return new ExtensionStartupDefinition(Mode, Schedule, Idle?.ToDefinition());
+    }
+}
+public sealed record LocalExtensionIdleTriggerManifest
+{
+    public bool Enabled { get; init; } = true;
+
+    /// <summary>连续无键鼠输入多少分钟后进入可触发状态。</summary>
+    public int AfterMinutes { get; init; } = 5;
+
+    /// <summary>持续闲置时再次触发的间隔；0 表示本次闲置只触发一次。</summary>
+    public int RepeatMinutes { get; init; } = 0;
+
+    /// <summary>前台存在覆盖整个显示器的窗口时暂停闲置判定。</summary>
+    public bool PauseWhenFullscreen { get; init; } = true;
+
+    public ExtensionIdleTriggerDefinition ToDefinition()
+    {
+        return new ExtensionIdleTriggerDefinition(
+            Enabled,
+            Math.Clamp(AfterMinutes, 1, 1440),
+            Math.Clamp(RepeatMinutes, 0, 1440),
+            PauseWhenFullscreen);
     }
 }
 

@@ -490,10 +490,33 @@ public sealed partial class LocalAgentApiServer
     {
 
         var id = Uri.UnescapeDataString(path["/v1/extensions/".Length..]);
-        var commands = LocalExtensionCatalog.LoadCommands();
-        var command = commands.FirstOrDefault(c => string.Equals(c.ExtensionId, id, StringComparison.OrdinalIgnoreCase));
-        ExtensionRecycleBinService.MoveToRecycleBin(id, command?.ExtensionDirectoryPath);
+        if (_onDeleteExtension is not null)
+        {
+            // Use the same deletion workflow as Settings: write a sync tombstone,
+            // move the extension to the recycle bin, and remove the private cloud copy.
+            var (ok, message) = await _onDeleteExtension(id);
+            if (!ok)
+            {
+                await WriteJsonAsync(response, 404, new { ok = false, error = "delete_failed", detail = message });
+                return;
+            }
+            _onMutated(id);
+            _onTriggerSync?.Invoke();
+            await WriteJsonAsync(response, 200, new { ok = true, id });
+            return;
+        }
+
+        var command = LocalExtensionCatalog.LoadCommands()
+            .FirstOrDefault(c => string.Equals(c.ExtensionId, id, StringComparison.OrdinalIgnoreCase));
+        if (command is null)
+        {
+            await WriteJsonAsync(response, 404, new { ok = false, error = "extension_not_found" });
+            return;
+        }
+        WebDavSyncService.MarkExtensionDeletedLocally(id, command.DeclaredVersion);
+        ExtensionRecycleBinService.MoveToRecycleBin(id, command.ExtensionDirectoryPath);
         _onMutated(id);
+        _onTriggerSync?.Invoke();
         await WriteJsonAsync(response, 200, new { ok = true, id });
         return;
     }

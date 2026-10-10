@@ -24,6 +24,11 @@
     <SolidColorBrush x:Key="Yanzi.Color.Input" Color="#FF383838" />
     <SolidColorBrush x:Key="Yanzi.Color.Ring" Color="#FF737373" />
     <SolidColorBrush x:Key="Yanzi.Color.ChartBar" Color="#FF585858" />
+    <SolidColorBrush x:Key="Yanzi.Color.Chart1" Color="#FF60A5FA" />
+    <SolidColorBrush x:Key="Yanzi.Color.Chart2" Color="#FF34D399" />
+    <SolidColorBrush x:Key="Yanzi.Color.Chart3" Color="#FFFBBF24" />
+    <SolidColorBrush x:Key="Yanzi.Color.Chart4" Color="#FFA78BFA" />
+    <SolidColorBrush x:Key="Yanzi.Color.Chart5" Color="#FFFB7185" />
     <SolidColorBrush x:Key="Yanzi.Color.Sidebar" Color="#FF111111" />
     <SolidColorBrush x:Key="Yanzi.Color.SidebarForeground" Color="#FFFAFAFA" />
     <SolidColorBrush x:Key="Yanzi.Color.SidebarAccent" Color="#FF262626" />

@@ -92,3 +92,7 @@ __pycache__/
 **/.next/
 **/.turbo/
 **/.parcel-cache/
+
+# Local credential provisioning script (contains machine-specific secret)
+scripts/set-yanzi-github-token.ps1
+src/OpenQuickHost/Sync/*.cs.bak-*

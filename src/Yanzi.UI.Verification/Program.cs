@@ -251,15 +251,54 @@ internal static class Program
             var carousel = new YanziCarousel();
             carousel.Add(new TextBlock { Text = "Card 1" });
             carousel.Add(new TextBlock { Text = "Card 2" });
-            Check(carousel.Step > 0, "carousel exposes scroll increment");
+            Check(carousel.Step > 0 && carousel.Count == 2 && carousel.SelectedIndex == 0,
+                "Carousel exposes item count, position and scroll increment");
+            Check(carousel.Next() && carousel.SelectedIndex == 1 && !carousel.Next(),
+                "Carousel moves to next card and prevents overflow");
+            Check(carousel.Previous() && carousel.SelectedIndex == 0 && !carousel.Previous(),
+                "Carousel moves back and respects first-card boundary");
+            carousel.Loop = true;
+            Check(carousel.Previous() && carousel.SelectedIndex == 1,
+                "Carousel optionally wraps last to first");
+            carousel.GoTo(0);
+            Check(carousel.SnapToItems && carousel.SelectedIndex == 0 && carousel.DragEnabled,
+                "Carousel supports item-aligned pointer dragging without breaking existing navigation");
+            var cardWidths = new[] { 115d, 115d, 115d, 115d };
+            Check(YanziCarousel.FindSnapIndex(cardWidths, 0, 130, false) == 0,
+                "Carousel snaps to first item when scrolled to the beginning");
+            Check(YanziCarousel.FindSnapIndex(cardWidths, 112, 130, true) == 1,
+                "Carousel snaps to nearest interior card");
+            Check(YanziCarousel.FindSnapIndex(cardWidths, 130, 130, true) == 3
+                && YanziCarousel.FindSnapIndex(cardWidths, 130, 130, false) == 2,
+                "Carousel resolves clamped end-of-scroll ties by drag direction");
+            var invalidCardWidthRejected = false;
+            try { YanziCarousel.FindSnapIndex(new[] { 0d }, 0, 100, true); }
+            catch (ArgumentOutOfRangeException) { invalidCardWidthRejected = true; }
+            Check(invalidCardWidthRejected, "Carousel rejects invalid measured card widths");
 
-            Check(YanziPrimitives.Avatar("YZ") is Border, "avatar primitive");
+            Check(YanziPrimitives.Avatar("YZ") is YanziAvatar,
+                "Avatar primitive uses shared image-capable control");
+            var photoAvatar = (YanziAvatar)YanziPrimitives.Avatar("YZ", 36);
+            Check(photoAvatar.IsShowingFallback && photoAvatar.Diameter == 36,
+                "Avatar uses initials when image is missing");
+            photoAvatar.ImageSource = new DrawingImage();
+            Check(!photoAvatar.IsShowingFallback, "Avatar accepts a real ImageSource");
+            photoAvatar.ImageSource = null;
+            Check(photoAvatar.IsShowingFallback, "Avatar restores initials when image is cleared");
             Check(YanziPrimitives.Kbd("Ctrl") is Border, "keyboard primitive");
             Check(YanziPrimitives.Separator() is Border, "separator primitive");
             Check(YanziPrimitives.Skeleton(100, 16) is Border, "skeleton primitive");
             Check(YanziPrimitives.Alert("Title", "Body") is Border, "alert primitive");
             Check(YanziPrimitives.EmptyState("Title", "Subtitle") is StackPanel, "empty state primitive");
-            Check(YanziPrimitives.Field("Label", new TextBox()) is StackPanel, "field primitive");
+            var linkedInput = new TextBox();
+            var linkedLabel = YanziPrimitives.Label("姓名", linkedInput, required: true);
+            Check(linkedLabel.Text.Contains("姓名") && linkedLabel.Text.Contains("*"),
+                "Label supports a required marker");
+            Check(ReferenceEquals(System.Windows.Automation.AutomationProperties.GetLabeledBy(linkedInput), linkedLabel),
+                "Label is associated with the input for assistive technology");
+            var field = YanziPrimitives.Field("Label", linkedInput);
+            Check(field.Children[0] is YanziLabel && field.Children[1] == linkedInput,
+                "Field composes reusable Label and its input");
 
             var toggle = new YanziToggleGroup();
             toggle.Add("Left");
@@ -277,15 +316,172 @@ internal static class Program
             Check(crumb.Children.Count == 3, "breadcrumb segments and separator");
             var collapse = YanziLayoutPrimitives.Collapsible("Section", new TextBlock { Text = "Content" });
             Check(!collapse.IsExpanded, "collapsible initial state");
+            // Native Expander behavior keeps its state, while the entire chrome is public UI.
+            window.Content = collapse;
+            collapse.ApplyTemplate();
+            Check(collapse.Template?.FindName("HeaderToggle", collapse) is ToggleButton,
+                "Expander owns the shared trigger and chevron template");
+            collapse.IsExpanded = true;
+            Check(collapse.IsExpanded, "Expander retains native two-way expand/collapse semantics");
+            var nativeRadio = YanziUi.WithStyle(new RadioButton { Content = "选项" }, YanziUi.Styles.Radio);
+            window.Content = nativeRadio;
+            nativeRadio.ApplyTemplate();
+            Check(nativeRadio.Style != null && nativeRadio.Template != null,
+                "legacy RadioButton now uses an explicit custom dot template");
+            nativeRadio.IsChecked = true;
+            Check(nativeRadio.IsChecked == true, "re-templated RadioButton retains native checked behavior");
+
+            var publicBar = new YanziMenubar();
+            publicBar.AddMenu("文件", m =>
+            {
+                m.AddAction("打开", () => { });
+                m.AddSubmenu("最近", sub => sub.AddAction("工程", () => { }));
+            });
+            publicBar.AddMenu("编辑", m => m.AddCheck("自动保存", true, _ => { }));
+            Check(publicBar.MenuCount == 2 && publicBar.Menus[0].Count == 2,
+                "shared Menubar composes two non-native dropdowns and nested submenu");
+            Check(!publicBar.Menus[0].PreferAbove,
+                "Menubar opens below its trigger, unlike the legacy upward menu");
+
+            var sharedTable = new YanziTable();
+            sharedTable.SetData(new[] { "名称", "数字" }, new IReadOnlyList<string>[]
+            {
+                new[] { "Bob", "20" }, new[] { "Alice", "10" }
+            });
+            sharedTable.SortBy(0);
+            Check(sharedTable.Rows[0][0] == "Alice" && !sharedTable.Descending,
+                "shared Table sorts first click in ascending order");
+            sharedTable.SortBy(0);
+            Check(sharedTable.Rows[0][0] == "Bob" && sharedTable.Descending,
+                "shared Table reverses sorting on second click");
+            sharedTable.SelectRow(1);
+            Check(sharedTable.SelectedIndex == 1 && sharedTable.RowCount == 2,
+                "shared Table tracks selected row and count");
+
+            var advanced = new YanziDataTable { PageSize = 3 };
+            advanced.SetData(new[] { "编号", "状态", "用户" }, new IReadOnlyList<string>[]
+            {
+                new[] { "INV001", "已付款", "小王" },
+                new[] { "INV002", "未付款", "小李" },
+                new[] { "INV003", "已付款", "小陈" },
+                new[] { "INV004", "已付款", "小周" },
+                new[] { "INV005", "未付款", "小孙" },
+                new[] { "INV006", "已付款", "小吴" },
+                new[] { "INV007", "已付款", "小赵" }
+            });
+            Check(advanced.RowCount == 7 && advanced.PageCount == 3 &&
+                  advanced.Table.RowCount == 3 && advanced.VisibleRowCount == 3,
+                "Data Table renders only the current page and computes page count");
+            advanced.ToggleVisibleRow(1);
+            Check(advanced.SelectedCount == 1 && advanced.SelectedIds.Single() == 1,
+                "Data Table selects and identifies a source row");
+            Check(advanced.NextPage() && advanced.PageIndex == 1 &&
+                  advanced.VisibleRowIds.SequenceEqual(new[] { 3, 4, 5 }),
+                "Data Table moves forward without reordering original source IDs");
+            advanced.ToggleVisibleRow(1);
+            Check(advanced.SelectedCount == 2 && advanced.SelectedIds.Contains(4),
+                "Data Table preserves multiple selected IDs across pages");
+            advanced.SetFilter("已付款", 1);
+            Check(advanced.FilteredRowCount == 5 && advanced.PageIndex == 0
+                  && advanced.PageCount == 2,
+                "Data Table column filtering resets to page one");
+            advanced.SortBy(0);
+            advanced.SortBy(0);
+            Check(advanced.SortDescending && advanced.VisibleRowIds[0] == 6,
+                "Data Table sorting operates over all filtered pages");
+            Check(advanced.Table.SortColumn == 0 && advanced.Table.Descending,
+                "Data Table keeps the sort arrow state on rerendered headers");
+            advanced.SetColumnVisible(2, false);
+            Check(advanced.VisibleColumns.Count == 2 && advanced.Table.ColumnCount == 2,
+                "Data Table hides a column without deleting the underlying data");
+            advanced.SetColumnVisible(0, false);
+            advanced.SetColumnVisible(1, false);
+            Check(advanced.VisibleColumns.Count == 1,
+                "Data Table never allows hiding every column");
+            advanced.SetFilter("NO_MATCH");
+            Check(advanced.FilteredRowCount == 0 && advanced.PageCount == 1 &&
+                  !advanced.NextPage() && advanced.Table.RowCount == 0,
+                "Data Table handles empty filter results without invalid pages");
+            advanced.SetFilter("");
+            advanced.PageSize = 2;
+            Check(advanced.PageCount == 4 && advanced.PreviousPage() == false,
+                "Data Table page size and previous-page bounds");
+            var many = new YanziDataTable { PageSize = 10 };
+            many.SetData(new[] { "ID" }, Enumerable.Range(1, 10000)
+                .Select(x => (IReadOnlyList<string>)new[] { x.ToString() }));
+            Check(many.RowCount == 10000 && many.VisibleRowCount == 10 &&
+                  many.Table.RowCount == 10,
+                "Data Table bounds WPF row creation for large in-memory datasets");
+
+            var nav = new YanziNavigationMenu();
+            nav.AddGroup("入门", new[]
+            {
+                new YanziNavigationMenu.Link("介绍", "产品介绍", () => { }),
+                new YanziNavigationMenu.Link("安装", "本地安装", () => { })
+            });
+            nav.AddGroup("组件", new[]
+            {
+                new YanziNavigationMenu.Link("数据表格", "筛选与分页", () => { })
+            });
+            Check(nav.GroupCount == 2 && !nav.IsOpen,
+                "Navigation Menu has two groups and begins closed");
+            Check(nav.ViewportMinWidth >= 455 && nav.GetLinks(0).Count == 2,
+                "Navigation Menu uses a wide viewport and stores full link descriptions");
+            Check(nav.GetLinks(1).Single().Title == "数据表格",
+                "Navigation Menu preserves group-specific navigation destinations");
+            nav.Close();
+            Check(!nav.IsOpen && nav.ActiveGroupIndex == -1,
+                "Navigation Menu dismisses safely without an on-screen owner");
             var scrollArea = YanziLayoutPrimitives.ScrollArea(new TextBlock(), 170);
             Check(scrollArea.Height == 170, "scroll area size");
+            Check(window.TryFindResource("Yanzi.Scrollbar") is Style,
+                "shared ScrollArea scrollbar chrome is registered for themed scrolling");
+            var sideways = YanziLayoutPrimitives.ScrollArea(new StackPanel(), 90, horizontal: true);
+            Check(sideways.HorizontalScrollBarVisibility == ScrollBarVisibility.Auto &&
+                sideways.VerticalScrollBarVisibility == ScrollBarVisibility.Disabled,
+                "Horizontal Scroll Area enables x-axis and disables y-axis");
+            Check(window.TryFindResource("Yanzi.Scrollbar.Horizontal") is Style,
+                "Horizontal Scroll Area uses reusable horizontal scrollbar template");
             var resizable = YanziLayoutPrimitives.Resizable(new TextBlock(), new TextBlock(), 140, 180);
             Check(resizable.ColumnDefinitions.Count == 3, "resizable columns");
+            var sharedGrip = resizable.Children.OfType<GridSplitter>().Single();
+            Check(sharedGrip.KeyboardIncrement == 8 && sharedGrip.DragIncrement == 2,
+                "Resizable preserves native pointer drag and keyboard resize increments");
+            Check(System.Windows.Automation.AutomationProperties.GetName(sharedGrip) == "调整面板宽度"
+                && window.TryFindResource("Yanzi.ResizableHandle") is Style,
+                "Resizable uses the shared accessible themed grip");
+            Check(sharedGrip.ResizeDirection == GridResizeDirection.Columns,
+                "Horizontal Resizable explicitly binds splitter to columns");
+            var upDown = YanziLayoutPrimitives.ResizableVertical(new TextBlock(),
+                new TextBlock(), 115, 285);
+            var heightGrip = upDown.Children.OfType<GridSplitter>().Single();
+            Check(upDown.RowDefinitions.Count == 3
+                && heightGrip.ResizeDirection == GridResizeDirection.Rows
+                && System.Windows.Automation.AutomationProperties.GetName(heightGrip) == "调整面板高度",
+                "Vertical Resizable exposes an accessible top/bottom splitter");
+            Check(window.TryFindResource(YanziUi.Styles.ResizableHandleVertical) is Style,
+                "Vertical Resizable renders its own horizontal grip template");
+            YanziLayoutPrimitives.SetResizableFirstSize(upDown, 143, vertical: true);
+            Check(Math.Abs(YanziLayoutPrimitives.GetResizableFirstSize(upDown, vertical: true)-143)<0.01,
+                "Vertical Resizable snapshots and restores its height");
+            YanziLayoutPrimitives.SetResizableFirstSize(upDown, 9999, vertical: true);
+            Check(YanziLayoutPrimitives.GetResizableFirstSize(upDown, vertical: true) <= 215,
+                "Vertical Resizable keeps at least 60 DIP for the lower pane");
+            YanziLayoutPrimitives.SetResizableFirstSize(resizable, 48);
+            Check(YanziLayoutPrimitives.GetResizableFirstSize(resizable) >= 60,
+                "Horizontal Resizable clamps restored width to minimum");
+            var invalidResizeRejected = false;
+            try { YanziLayoutPrimitives.SetResizableFirstSize(upDown, double.NaN, vertical: true); }
+            catch (ArgumentOutOfRangeException) { invalidResizeRejected = true; }
+            Check(invalidResizeRejected, "Resizable rejects invalid saved sizes");
             var aspect = YanziLayoutPrimitives.AspectRatio(new Border(), 16.0 / 9.0, 160);
             Check(Math.Abs(aspect.Height - 90) < 0.01, "aspect ratio calculation");
 
-            Check(YanziComponentRegistry.Components.All(c => c.Status == YanziComponentStatus.Ready),
-                "all indexed components have reusable WPF entry points");
+            Check(YanziComponentRegistry.Components.All(c => c.Status is YanziComponentStatus.Ready or YanziComponentStatus.Preview),
+                "all indexed components expose a reusable entry point or an explicitly marked preview");
+            Check(YanziComponentRegistry.Components.Any(c => c.Name == "Data Table" && c.Status == YanziComponentStatus.Preview)
+                && YanziComponentRegistry.Components.Any(c => c.Name == "Navigation Menu" && c.Status == YanziComponentStatus.Preview),
+                "complex non-parity table and navigation variants are labeled Preview rather than fully Ready");
             Check(window.TryFindResource(YanziUi.Styles.ToggleButton) is Style, "toggle button style");
             Check(window.TryFindResource(YanziUi.Styles.Menubar) is Style, "menubar style");
 
@@ -313,6 +509,59 @@ internal static class Program
             try { chart.SetData(new[] { new YanziBarPoint("No", -1) }); }
             catch (ArgumentOutOfRangeException) { negativeRejected = true; }
             Check(negativeRejected, "chart rejects invalid values");
+            var multiChart = new YanziChart { Width = 330, Height = 200 };
+            multiChart.SetData(new[]
+            {
+                new YanziBarPoint("周一", 25),
+                new YanziBarPoint("周二", 65),
+                new YanziBarPoint("周三", 10)
+            });
+            Check(multiChart.PointCount == 3 && multiChart.RenderedPointCount == 3,
+                "Shared Chart renders one interactive target per bar");
+            var chartTree = (Grid)multiChart.Content;
+            var chartPlot = chartTree.Children.OfType<Canvas>().Single();
+            var focusableBars = chartPlot.Children.OfType<Button>().ToArray();
+            Check(focusableBars.Length == 3 &&
+                System.Windows.Automation.AutomationProperties.GetName(focusableBars[0]).StartsWith("周一"),
+                "Chart uses real accessible Buttons for the three graphical data points");
+            focusableBars[1].RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+            Check(multiChart.SelectedIndex == 1,
+                "Chart accessible point button actually selects its underlying datum");
+            Check(window.TryFindResource("Yanzi.Color.Chart1") is System.Windows.Media.Brush
+                && window.TryFindResource("Yanzi.Color.Chart5") is System.Windows.Media.Brush,
+                "Five semantic chart colors follow both themes");
+            var chartSelectedPoint = -1;
+            multiChart.SelectedPointChanged += (_, i) => chartSelectedPoint = i;
+            multiChart.SelectPoint(1);
+            Check(multiChart.SelectedIndex == 1 && chartSelectedPoint == 1,
+                "Shared Chart exposes selected data point");
+            foreach (var kind in new[] { YanziChartKind.Line, YanziChartKind.Area, YanziChartKind.Pie })
+            {
+                multiChart.Kind = kind;
+                Check(multiChart.Kind == kind && multiChart.RenderedPointCount == 3,
+                    "Shared Chart renders " + kind + " with three interactive points");
+            }
+            var pieLegend = chartTree.Children.OfType<WrapPanel>().Single()
+                .Children.OfType<Button>().ToArray();
+            Check(pieLegend.Length == 3 &&
+                System.Windows.Automation.AutomationProperties.GetName(pieLegend[0]).StartsWith("周一"),
+                "Pie Chart exposes focusable data-driven legend choices");
+            pieLegend[2].RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+            Check(multiChart.SelectedIndex == 2,
+                "Pie Chart interactive legend selects its matching sector");
+            multiChart.SetData(new[] { new YanziBarPoint("整体", 20) });
+            Check(multiChart.RenderedPointCount == 1,
+                "Pie chart supports a single full-circle sector");
+            multiChart.SetData(new[]
+            {
+                new YanziBarPoint("零", 0), new YanziBarPoint("仍零", 0)
+            });
+            Check(multiChart.PointCount == 2 && multiChart.RenderedPointCount == 0,
+                "Pie chart handles zero-sum data without invalid geometry");
+            var invalidChart = false;
+            try { multiChart.SetData(new[] { new YanziBarPoint("无效", double.NaN) }); }
+            catch (ArgumentOutOfRangeException) { invalidChart = true; }
+            Check(invalidChart, "Shared Chart rejects non-finite values");
 
             int commandRuns = 0;
             var commands = new YanziCommandPalette();
@@ -969,6 +1218,31 @@ internal static class Program
             Check(showcaseCalendar.DisplayedMonth.Month == 11
                 && showcaseCalendar.DisplayedMonth.Year == 2026,
                 "Custom month Calendar supports real forward/back navigation");
+            var dateControl = new YanziDatePicker
+            {
+                SelectedDate = new DateTime(2026, 10, 8),
+                Placeholder = "选择日期"
+            };
+            Check(dateControl.SelectedDate == new DateTime(2026, 10, 8)
+                && !dateControl.IsDropDownOpen,
+                "Shared DatePicker stores selected date and starts with popup closed");
+            DateTime? dateControlResult = null;
+            dateControl.SelectedDateChanged += (_, date) => dateControlResult = date;
+            dateControl.SelectedDate = new DateTime(2026, 10, 15);
+            Check(dateControlResult == new DateTime(2026, 10, 15),
+                "Shared DatePicker announces selected date updates");
+            var boundedMonth = new YanziCalendarMonth(new DateTime(2026, 10, 1))
+            {
+                MinimumDate = new DateTime(2026, 10, 10),
+                MaximumDate = new DateTime(2026, 10, 20)
+            };
+            boundedMonth.SelectDate(new DateTime(2026, 10, 9));
+            Check(boundedMonth.SelectedDate is null,
+                "Calendar rejects dates below its minimum");
+            boundedMonth.SelectDate(new DateTime(2026, 10, 15));
+            boundedMonth.SelectDate(new DateTime(2026, 10, 21));
+            Check(boundedMonth.SelectedDate == new DateTime(2026, 10, 15),
+                "Calendar accepts dates within the allowed interval and rejects later ones");
             var refinedAlert = YanziPrimitives.Alert("Payment successful", "Receipt sent.", icon: "✓");
             Check(refinedAlert.Child is Grid alertLayout
                 && alertLayout.ColumnDefinitions.Count == 2,

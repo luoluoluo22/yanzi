@@ -1,4 +1,5 @@
 importScripts("lanzou-network-observer.js");
+
 let ws = null;
 let currentWsSeq = 0;
 let reconnectDelay = 1000;
@@ -225,6 +226,21 @@ function handleTask(task) {
     return;
   }
 
+  if (task.action === "probe_xhs_evaluation_reply") {
+    void handleXhsEvaluationReplyProbeTask(task);
+    return;
+  }
+
+  if (task.action === "probe_xhs_evaluation_tab_status") {
+    void handleXhsEvaluationTabStatusProbeTask(task);
+    return;
+  }
+
+  if (task.action === "probe_xhs_open_evaluation_chat") {
+    void handleXhsOpenEvaluationChatProbeTask(task);
+    return;
+  }
+
   if (task.action === "webapp_data_get" ||
       task.action === "webapp_data_set" ||
       task.action === "xiaohongshu_custom_card_list" ||
@@ -293,6 +309,7 @@ async function handleWebAppProbeTask(task) {
             appId,
             debugLayoutTest: task.debugLayoutTest || null,
             debugInterestTest: task.debugInterestTest || null,
+            debugEvaluationPlacementTest: task.debugEvaluationPlacementTest || null,
             debugSelectionTest: task.debugSelectionTest || null,
             debugLocalFeedTest: task.debugLocalFeedTest || null,
             debugSkipTest: task.debugSkipTest || null,
@@ -324,6 +341,22 @@ async function handleWebAppProbeTask(task) {
       });
     }
 
+    let registeredContentScript = null;
+    try {
+      const registered = await chrome.scripting.getRegisteredContentScripts();
+      const expectedId = typeof webAppContentScriptId === "function"
+        ? webAppContentScriptId(appId)
+        : "";
+      const matched = registered.find(item => item.id === expectedId);
+      registeredContentScript = matched ? {
+        id: matched.id,
+        matches: matched.matches || [],
+        js: matched.js || [],
+        runAt: matched.runAt || "",
+        persistAcrossSessions: matched.persistAcrossSessions !== false
+      } : null;
+    } catch {}
+
     sendToLocalClient({
       type: "task_response",
       taskId: task.taskId,
@@ -333,6 +366,7 @@ async function handleWebAppProbeTask(task) {
         appId,
         matchedTabs: results.length,
         xiaohongshuTabs: appId === "xiaohongshu.filter" ? results.length : undefined,
+        registeredContentScript,
         tabs: results
       },
       message: `probed ${results.length} tab(s) for ${appId}`
@@ -356,6 +390,78 @@ function sendBrowserTaskResponse(task, status, data, message) {
     data: data ?? null,
     message: message || ""
   });
+}
+
+async function handleXhsEvaluationReplyProbeTask(task) {
+  try {
+    const data = await queueXhsEvaluation({
+      note: task.note || {},
+      evaluation: task.evaluation || {},
+      interests: task.interests || [],
+      liked: task.liked || [],
+      disliked: task.disliked || []
+    });
+    sendBrowserTaskResponse(
+      task,
+      "success",
+      data,
+      "xiaohongshu evaluation reply probe completed"
+    );
+  } catch (error) {
+    sendBrowserTaskResponse(
+      task,
+      "error",
+      null,
+      error?.message || String(error)
+    );
+  }
+}
+
+async function handleXhsEvaluationTabStatusProbeTask(task) {
+  const tabId = Number(task.tabId || 0);
+  if (!tabId) {
+    sendBrowserTaskResponse(task, "error", null, "tabId is required");
+    return;
+  }
+
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    const alarm = await chrome.alarms.get(
+      XHS_EVALUATION_ALARM_PREFIX + tabId
+    );
+    sendBrowserTaskResponse(task, "success", {
+      exists: true,
+      tabId,
+      active: Boolean(tab.active),
+      pinned: Boolean(tab.pinned),
+      discarded: Boolean(tab.discarded),
+      url: tab.url || "",
+      alarmScheduled: Boolean(alarm),
+      alarmScheduledTime: Number(alarm?.scheduledTime || 0)
+    });
+  } catch {
+    sendBrowserTaskResponse(task, "success", {
+      exists: false,
+      tabId,
+      active: false,
+      alarmScheduled: false,
+      alarmScheduledTime: 0
+    });
+  }
+}
+
+async function handleXhsOpenEvaluationChatProbeTask(task) {
+  try {
+    const data = await openXhsEvaluationChat(task.tabId);
+    sendBrowserTaskResponse(task, "success", data);
+  } catch (error) {
+    sendBrowserTaskResponse(
+      task,
+      "error",
+      null,
+      error?.message || String(error)
+    );
+  }
 }
 
 function normalizeXiaohongshuCustomCard(input) {
@@ -655,4 +761,4 @@ globalThis.yanziBrowserHost = {
   isConnected: () => Boolean(ws && ws.readyState === WebSocket.OPEN),
   log: logEvent
 };
-importScripts("chatgpt-background.js", "webapps/runtime-background.js");
+importScripts("chatgpt-network-observer.js", "chatgpt-background.js", "webapps/runtime-background.js");

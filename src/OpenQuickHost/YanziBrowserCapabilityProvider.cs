@@ -79,7 +79,7 @@ public static class YanziBrowserCapabilityProvider
         yield return new()
         {
             Name = "browser.workflow",
-            Description = "执行声明式网页工作流；仅允许 wait/fill/click/scroll/scrape 原子步骤，不执行任意 JavaScript",
+            Description = "执行声明式网页工作流；仅允许 wait/fill/click/scroll/scrape/fetch 原子步骤，不执行任意 JavaScript",
             Permissions = ["browser.read", "browser.write", "network.read"],
             Category = "browser",
             RiskLevel = "medium",
@@ -112,7 +112,7 @@ public static class YanziBrowserCapabilityProvider
             browser = server?.ConnectedBrowserName ?? "",
             localApiListening = server?.IsListening == true,
             provider = "yanzi-browser-extension",
-            supportedWorkflowSteps = new[] { "wait", "fill", "click", "scroll", "scrape" }
+            supportedWorkflowSteps = new[] { "wait", "fill", "click", "scroll", "scrape", "fetch" }
         });
     }
 
@@ -258,7 +258,7 @@ public static class YanziBrowserCapabilityProvider
             throw new ArgumentException($"步骤 {index} 缺少 type。");
 
         var type = typeElement.GetString()?.Trim().ToLowerInvariant();
-        if (type is not ("wait" or "fill" or "click" or "scroll" or "scrape"))
+        if (type is not ("wait" or "fill" or "click" or "scroll" or "scrape" or "fetch"))
             throw new ArgumentException($"步骤 {index} 不支持类型：{type}");
 
         switch (type)

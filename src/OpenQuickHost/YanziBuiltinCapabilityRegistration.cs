@@ -49,6 +49,7 @@ public static class YanziBuiltinCapabilityRegistration
             "yanzi-host",
             YanziSystemDependencyCapabilities.Create());
         YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziFileWorkflow.Providers());
+        YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziTaskService.Providers());
 
         YanziCapabilityProviderSdk.RegisterProvider(
             "yanzi-host",
@@ -59,6 +60,7 @@ public static class YanziBuiltinCapabilityRegistration
             YanziChatCapabilityProvider.GetProviders());
 
         YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziDeviceCapabilityProvider.Create());
+        YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziDesktopLanCapabilityProvider.Create());
         YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziScreenshotCapabilityProvider.Create());
         YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziOcrCapabilityProvider.Create());
         YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziExtensionCapabilityProvider.Create());
@@ -80,12 +82,13 @@ public static class YanziBuiltinCapabilityRegistration
         YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziBaiduTransferCapabilityProvider.Create());
         YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziQuarkCloudDriveCapabilityProvider.Create());
         YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziQuarkTransferCapabilityProvider.Create());
+        YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziLanzouCapabilityProvider.Create());
         YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziBlenderCapabilityProvider.Create());
         YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziUnityCapabilityProvider.Create());
         YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziJianyingCapabilityProvider.Create());
         YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziVisualStudioCapabilityProvider.Create());
         YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziBrowserCapabilityProvider.Create());
-        YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziLanzouCapabilityProvider.Create());
+        YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziCnblogsCapabilityProvider.Create());
         YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziGitCapabilityProvider.Create());
         HostAssets.AppendLog("[Capabilities] Git registered: " + string.Join(",",
             YanziCapabilityRegistry.List()

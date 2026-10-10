@@ -88,9 +88,9 @@ public static class WindowsOcrService
 
 public sealed class OcrResultWindow : Window
 {
-    public OcrResultWindow(string text)
+    public OcrResultWindow(string text, string engine = "")
     {
-        Title = "文字识别";
+        Title = string.IsNullOrWhiteSpace(engine) ? "文字识别" : "文字识别 · " + engine;
         Width = 700;
         Height = 450;
         MinWidth = 540;
@@ -134,7 +134,7 @@ public sealed class OcrResultWindow : Window
 
         header.Children.Add(new TextBlock
         {
-            Text = "文字识别",
+            Text = string.IsNullOrWhiteSpace(engine) ? "文字识别" : "文字识别 · " + engine,
             FontSize = 15,
             FontWeight = FontWeights.SemiBold,
             Foreground = Brushes.White,
@@ -204,10 +204,22 @@ public sealed class OcrResultWindow : Window
             "复制文字",
             "capture.ocr.copy",
             false);
-        copy.Click += (_, _) =>
+        copy.Click += async (_, _) =>
         {
-            Clipboard.SetText(box.Text ?? string.Empty);
-            copy.Content = "已复制";
+            copy.IsEnabled = false;
+            try
+            {
+                var result = await CaptureTextClipboard.WriteAsync(box.Text ?? string.Empty);
+                copy.Content = result.Success ? "已复制" : "复制失败，请重试";
+            }
+            catch (Exception)
+            {
+                copy.Content = "复制失败，请重试";
+            }
+            finally
+            {
+                copy.IsEnabled = true;
+            }
         };
 
         var done = MakeButton(

@@ -228,7 +228,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  void loadWebAppMarket();
+  showPanel('market');
   const portInput = document.getElementById("server-port");
   chrome.storage.local.get({ localWsUrl: "ws://127.0.0.1:53919/v1/browser/ws", chatgptBridgeStatus: "disconnected" }, config => {
     portInput.value = new URL(config.localWsUrl).port;

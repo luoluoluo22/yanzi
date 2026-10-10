@@ -113,6 +113,7 @@ internal sealed partial class GalleryWindow
 
     private void ShowComponent(YanziComponentDescriptor item)
     {
+        if (_page == 0 && _scroll != null) _overviewReturnScrollOffset = _scroll.VerticalOffset;
         _activeComponent = item;
         _page = -1;
         _pageTitle.Text = item.Name;
@@ -120,6 +121,7 @@ internal sealed partial class GalleryWindow
         _body.Children.Clear();
         _body.SetResourceReference(System.Windows.Documents.TextElement.FontFamilyProperty, "Yanzi.Font.Geist");
         _overviewGrid = null;
+        _overviewCatalogGrid = null;
         if (!_sidebarManuallySet) SetSidebarVisible(true, false);
         UpdateNavigation();
         _statusText.Text = "正在核对：" + item.Name + " · 默认均为待核对，不代表已还原";
@@ -132,6 +134,9 @@ internal sealed partial class GalleryWindow
         var reference = Card("官方参考 / " + item.Name,
             "逐项对照官网及燕子的真实 WPF 实现。名称和 API 已登记，不等于视觉/交互已验收。");
         var actions = new WrapPanel { Margin = new Thickness(0, 0, 0, 12) };
+        var backToWall = Button("← 返回全部组件", YanziUi.Styles.PillOutlineButton, ReturnToOverviewWall);
+        System.Windows.Automation.AutomationProperties.SetName(backToWall, "返回全部组件首页");
+        actions.Children.Add(backToWall);
         var openOfficial = Button("打开 shadcn 官方组件页面 ↗", YanziUi.Styles.PillDefaultButton, () =>
         {
             try
@@ -306,11 +311,10 @@ internal sealed partial class GalleryWindow
                 Add(YanziContentPrimitives.MessageBubble("Show me the components.", true));
                 break;
             case "Calendar":
-                Add(YanziUi.WithStyle(new Calendar
-                {
-                    SelectedDate = DateTime.Today,
-                    Margin = new Thickness(0, 0, 10, 0)
-                }, YanziUi.Styles.Calendar));
+                var month = new YanziCalendarMonth(new DateTime(2026, 10, 1));
+                month.SetSelectedDate(new DateTime(2026, 10, 8));
+                month.DateSelected += (_, day) => Status("日历：" + day.ToString("yyyy-MM-dd"));
+                Add(month);
                 break;
             case "Carousel":
                 var carousel = new YanziCarousel { Width = 330, Height = 150 };
@@ -336,9 +340,9 @@ internal sealed partial class GalleryWindow
                     new Thickness(8)), false));
                 break;
             case "Direction":
-                var rtl = Text("يمين · Right-to-left · 方向", 14, false, "Yanzi.Color.Foreground");
-                rtl.FlowDirection = FlowDirection.RightToLeft;
-                Add(rtl);
+                Add(YanziContentPrimitives.Direction(
+                    Text("يمين · Right-to-left · 方向", 14, false, "Yanzi.Color.Foreground"),
+                    FlowDirection.RightToLeft));
                 break;
             case "Empty":
                 Add(YanziPrimitives.EmptyState("No results", "Try searching for a different item."));
@@ -373,6 +377,33 @@ internal sealed partial class GalleryWindow
                 var resize = YanziLayoutPrimitives.Resizable(left, right, 135, 125);
                 resize.Width = 320;
                 Add(resize);
+
+                var top = new Border { Padding = new Thickness(12) };
+                top.SetResourceReference(Border.BackgroundProperty, "Yanzi.Color.Secondary");
+                top.Child = Text("上面板（拖动水平手柄）", 13, false, "Yanzi.Color.Foreground");
+                var bottom = new Border { Padding = new Thickness(12) };
+                bottom.SetResourceReference(Border.BackgroundProperty, "Yanzi.Color.Card");
+                bottom.Child = Text("下面板", 13, false, "Yanzi.Color.Foreground");
+                var vertical = YanziLayoutPrimitives.ResizableVertical(top, bottom, 112, 260);
+                vertical.Width = 320;
+                vertical.Margin = new Thickness(0, 16, 0, 0);
+                Add(vertical);
+
+                var saved = YanziLayoutPrimitives.GetResizableFirstSize(vertical, vertical: true);
+                var controls = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
+                controls.Children.Add(Button("保存面板高度", YanziUi.Styles.OutlineButton,
+                    () =>
+                    {
+                        saved = YanziLayoutPrimitives.GetResizableFirstSize(vertical, vertical: true);
+                        Status("已保存上面板高度：" + saved.ToString("0") + " DIP");
+                    }));
+                controls.Children.Add(Button("恢复高度", YanziUi.Styles.OutlineButton,
+                    () =>
+                    {
+                        YanziLayoutPrimitives.SetResizableFirstSize(vertical, saved, vertical: true);
+                        Status("已恢复上面板高度");
+                    }));
+                Add(controls);
                 break;
             case "Scroll Area":
                 var scrolling = new StackPanel();
@@ -382,6 +413,21 @@ internal sealed partial class GalleryWindow
                 var area = YanziLayoutPrimitives.ScrollArea(scrolling, 150);
                 area.Width = 260;
                 Add(area);
+                var horizontalContent = new StackPanel { Orientation = Orientation.Horizontal };
+                for (int i = 1; i <= 12; i++)
+                {
+                    var chip = YanziUi.WithStyle(new Button
+                    {
+                        Content = "项目 " + i,
+                        Margin = new Thickness(0, 0, 8, 0),
+                        MinHeight = 34
+                    }, YanziUi.Styles.OutlineButton);
+                    horizontalContent.Children.Add(chip);
+                }
+                var horizontalArea = YanziLayoutPrimitives.ScrollArea(horizontalContent, 70, horizontal: true);
+                horizontalArea.Width = 275;
+                horizontalArea.Margin = new Thickness(0, 12, 0, 0);
+                Add(horizontalArea);
                 break;
             case "Skeleton":
                 var sk = new StackPanel();
@@ -390,15 +436,13 @@ internal sealed partial class GalleryWindow
                 Add(sk);
                 break;
             case "Table":
-                var table = YanziUi.WithStyle(new DataGrid
+                var table = new YanziTable { Width = 360 };
+                table.SetData(new[] { "姓名", "岗位" }, new IReadOnlyList<string>[]
                 {
-                    Width = 320, Height = 155, AutoGenerateColumns = true, IsReadOnly = true,
-                    ItemsSource = new[]
-                    {
-                        new { Name = "Alice", Role = "Designer" },
-                        new { Name = "Bob", Role = "Developer" }
-                    }
-                }, YanziUi.Styles.DataGrid);
+                    new[] { "Alice", "设计师" },
+                    new[] { "Bob", "开发者" }
+                });
+                table.SelectedRowChanged += (_, row) => Status("选中：" + table.Rows[row][0]);
                 Add(table);
                 break;
             case "Toggle Group":
@@ -446,6 +490,13 @@ internal sealed partial class GalleryWindow
                 group.Select("default");
                 group.SelectionChanged += (_, value) => Status("选中：" + value);
                 Add(group);
+                var legacyRadio = YanziUi.WithStyle(new RadioButton
+                {
+                    Content = "兼容旧式 RadioButton（使用公共模板）",
+                    IsChecked = true,
+                    Margin = new Thickness(0, 8, 0, 0)
+                }, YanziUi.Styles.Radio);
+                Add(legacyRadio);
                 break;
             case "Alert Dialog":
                 Add(Button("打开 Alert Dialog", YanziUi.Styles.PillDefaultButton, () =>
@@ -482,14 +533,41 @@ internal sealed partial class GalleryWindow
                     ? WithToolTip(hint, "来自 Yanzi UI 的 Tooltip") : new TextBlock());
                 break;
             case "Chart":
-                var chart = new YanziBarChart { Width = 280, Height = 178 };
-                chart.SetData([new YanziBarPoint("Mon", 40),
-                    new YanziBarPoint("Tue", 88), new YanziBarPoint("Wed", 60)]);
-                Add(chart);
+            {
+                var chartPane = new StackPanel { Width = 500 };
+                var chartKind = YanziUi.WithStyle(new ComboBox
+                {
+                    Width = 160, HorizontalAlignment = HorizontalAlignment.Left,
+                    Margin = new Thickness(0, 0, 0, 12)
+                }, YanziUi.Styles.Select);
+                foreach (var title in new[] { "柱状图", "折线图", "面积图", "饼图" })
+                    chartKind.Items.Add(title);
+                chartKind.SelectedIndex = 0;
+                chartPane.Children.Add(chartKind);
+                var chart = new YanziChart { Width = 460, Height = 230 };
+                chart.SetData(new[]
+                {
+                    new YanziBarPoint("周一", 40),
+                    new YanziBarPoint("周二", 88),
+                    new YanziBarPoint("周三", 60),
+                    new YanziBarPoint("周四", 72),
+                    new YanziBarPoint("周五", 55)
+                });
+                chartKind.SelectionChanged += (_, _) =>
+                {
+                    chart.Kind = (YanziChartKind)chartKind.SelectedIndex;
+                    Status("Chart 图形：" + chartKind.SelectedItem);
+                };
+                chart.SelectedPointChanged += (_, index) =>
+                    Status($"Chart 数据：{chart.Points[index].Label} {chart.Points[index].Value:0.##}");
+                chartPane.Children.Add(chart);
+                Add(chartPane);
                 break;
+            }
             case "Tabs":
                 var tabs = YanziUi.WithStyle(new TabControl { Width = 300, Height = 120 },
                     YanziUi.Styles.Tabs);
+                tabs.SetResourceReference(TabControl.ItemContainerStyleProperty, YanziUi.Styles.TabItem);
                 tabs.Items.Add(new TabItem { Header = "Overview",
                     Content = new TextBlock { Text = "Overview content", Margin = new Thickness(12) } });
                 tabs.Items.Add(new TabItem { Header = "Details",
@@ -519,18 +597,26 @@ internal sealed partial class GalleryWindow
                 Add(Text("The quick brown fox · 文字排版", 21, true,
                     "Yanzi.Color.Foreground"));
                 break;
-            case "Card":
-                Add(Text("Card / 标题、内容与操作区的间距", 14, false,
-                    "Yanzi.Color.Foreground"));
-                break;
             case "Label":
+            {
+                var fieldInput = YanziUi.WithStyle(new TextBox { Width = 220, Text = "Sample" },
+                    YanziUi.Styles.InputSoft);
+                var labeled = new StackPanel();
+                labeled.Children.Add(YanziPrimitives.Label("姓名", fieldInput, required: true));
+                labeled.Children.Add(fieldInput);
+                Add(labeled);
+                break;
+            }
             case "Field":
-                Add(Text("Name", 13, true, "Yanzi.Color.Foreground"));
-                Add(YanziUi.WithStyle(new TextBox { Width = 220, Text = "Sample" },
-                    YanziUi.Styles.InputSoft));
+                Add(YanziPrimitives.Field("Name",
+                    YanziUi.WithStyle(new TextBox { Width = 220, Text = "Sample" },
+                        YanziUi.Styles.InputSoft), "公共 Field / Label API"));
                 break;
             case "Kbd":
-                Add(YanziPrimitives.Kbd("Ctrl + K"));
+                Add(YanziPrimitives.Kbd("␣ 空格"));
+                Add(YanziPrimitives.Kbd("↵ 回车"));
+                Add(YanziPrimitives.Kbd("⇥ 制表"));
+                Add(YanziPrimitives.KbdGroup("Ctrl", "K"));
                 break;
             case "Toast":
                 Add(Button("显示 Toast", YanziUi.Styles.PillDefaultButton,
@@ -552,5 +638,9 @@ internal sealed partial class GalleryWindow
         return true;
     }
 
-    private static Button WithToolTip(Button button, string tip) { button.ToolTip = tip; return button; }
+    private static Button WithToolTip(Button button, string tip)
+    {
+        button.ToolTip = YanziUi.WithStyle(new ToolTip { Content = tip }, YanziUi.Styles.Tooltip);
+        return button;
+    }
 }

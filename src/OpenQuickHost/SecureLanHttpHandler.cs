@@ -11,12 +11,32 @@ public sealed class SecureLanHttpHandler : HttpMessageHandler
 {
     private readonly HttpClient _transport = new(new SocketsHttpHandler { UseProxy = false,
         AllowAutoRedirect = false, ConnectTimeout = TimeSpan.FromMilliseconds(1500) }) { Timeout = TimeSpan.FromSeconds(90) };
+    private readonly string? _probeDeviceId;
+    private readonly string? _probeAddress;
+    private readonly int _probePort;
+
+    // Discovery addresses are untrusted until an AEAD-authenticated protocol probe succeeds.
+    public SecureLanHttpHandler() { }
+    public SecureLanHttpHandler(string expectedDeviceId, string address, int port)
+    {
+        if (string.IsNullOrWhiteSpace(expectedDeviceId) || !IPAddress.TryParse(address, out var ip) ||
+            ip.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork ||
+            IPAddress.IsLoopback(ip) || port is < 1 or > 65535)
+            throw new ArgumentException("invalid_lan_probe_target");
+        _probeDeviceId = expectedDeviceId;
+        _probeAddress = address;
+        _probePort = port;
+    }
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         var activePairs = YanziLanPairing.List();
-        var peers = YanziPeerRegistry.List().Where(x => activePairs.Any(pair => pair.DeviceId == x.DeviceId) &&
-            (x.Address == request.RequestUri!.Host && x.Port == request.RequestUri.Port ||
-            x.Endpoints?.Any(e => e.Address == request.RequestUri!.Host && e.Port == request.RequestUri.Port && DateTimeOffset.UtcNow - e.VerifiedAt < TimeSpan.FromMinutes(10)) == true)).ToArray();
+        var peers = (_probeDeviceId != null
+            ? (_probeAddress == request.RequestUri!.Host && _probePort == request.RequestUri.Port && activePairs.Any(p => p.DeviceId == _probeDeviceId)
+                ? new[] { new YanziPeer(_probeDeviceId, _probeDeviceId, _probeAddress!, _probePort, "desktop", DateTimeOffset.UtcNow, []) }
+                : Array.Empty<YanziPeer>())
+            : YanziPeerRegistry.List().Where(x => activePairs.Any(pair => pair.DeviceId == x.DeviceId) &&
+                (x.Address == request.RequestUri!.Host && x.Port == request.RequestUri.Port ||
+                x.Endpoints?.Any(e => e.Address == request.RequestUri!.Host && e.Port == request.RequestUri.Port && DateTimeOffset.UtcNow - e.VerifiedAt < TimeSpan.FromMinutes(10)) == true)).ToArray());
         if (peers.Length != 1) throw new HttpRequestException("explicit_peer_required");
         var pairs = YanziLanPairing.List().Where(x => x.DeviceId == peers[0].DeviceId).ToArray();
         if (pairs.Length != 1) throw new HttpRequestException("pair_required_or_rotation_pending");

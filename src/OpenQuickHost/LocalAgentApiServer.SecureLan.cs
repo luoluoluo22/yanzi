@@ -98,7 +98,11 @@ public sealed partial class LocalAgentApiServer
                     using var manifest = JsonDocument.Parse(plaintext);
                     if (manifest.RootElement.TryGetProperty("notificationPort", out var advertised)) port = advertised.GetInt32();
                 }
-                YanziPeerRegistry.ObserveAuthenticated(pair.DeviceId, remote.Address, port > 0 ? port : 42981, pair.DisplayName);
+                var advertisedPlatform = canonical.AbsolutePath == "/v1/me/devices/protocol" &&
+                    System.Web.HttpUtility.ParseQueryString(canonical.Query)["peerPlatform"] == "desktop"
+                    ? "desktop" : "android";
+                YanziPeerRegistry.ObserveAuthenticated(pair.DeviceId, remote.Address, port > 0 ? port : 42981,
+                    pair.DisplayName, advertisedPlatform);
             }
             using var handler = new HttpClientHandler { UseProxy = false, AllowAutoRedirect = false };
             using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(90) };

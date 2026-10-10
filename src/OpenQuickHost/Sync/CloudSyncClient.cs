@@ -41,8 +41,8 @@ public sealed partial class CloudSyncClient
         _options = options;
         _httpClient = CreateHttpClient(options.BaseUrl, useProxy: true, TimeSpan.FromSeconds(30));
         _directHttpClient = CreateHttpClient(options.BaseUrl, useProxy: false, TimeSpan.FromSeconds(30));
-        _largeTransferHttpClient = CreateHttpClient(options.BaseUrl, useProxy: true, TimeSpan.FromMinutes(2));
-        _directLargeTransferHttpClient = CreateHttpClient(options.BaseUrl, useProxy: false, TimeSpan.FromMinutes(2));
+        _largeTransferHttpClient = CreateHttpClient(options.BaseUrl, useProxy: true, TimeSpan.FromMinutes(10));
+        _directLargeTransferHttpClient = CreateHttpClient(options.BaseUrl, useProxy: false, TimeSpan.FromMinutes(10));
         _session = SyncSessionStore.Load();
         _credential = SecureCredentialStore.Load();
     }
@@ -429,7 +429,7 @@ public sealed partial class CloudSyncClient
     public async Task UpsertExtensionAsync(CommandItem command, string? iconOverride = null, CancellationToken cancellationToken = default)
     {
         await EnsureAuthenticatedAsync(cancellationToken);
-        var accentHex = System.Windows.Application.Current.Dispatcher.CheckAccess()
+        var accentHex = System.Windows.Application.Current?.Dispatcher.CheckAccess() != false
             ? command.AccentBrush?.ToString()
             : System.Windows.Application.Current.Dispatcher.Invoke(() => command.AccentBrush?.ToString());
 
@@ -551,7 +551,7 @@ public sealed partial class CloudSyncClient
     {
         await EnsureAuthenticatedAsync(cancellationToken);
         var icon = string.IsNullOrWhiteSpace(iconOverride) ? command.IconReference : iconOverride;
-        var accentHex = System.Windows.Application.Current.Dispatcher.CheckAccess()
+        var accentHex = System.Windows.Application.Current?.Dispatcher.CheckAccess() != false
             ? command.AccentBrush?.ToString()
             : System.Windows.Application.Current.Dispatcher.Invoke(() => command.AccentBrush?.ToString());
 
@@ -1374,7 +1374,7 @@ public sealed partial class CloudSyncClient
             version = command.DeclaredVersion,
             category = command.Category,
             description = command.Subtitle,
-            accentHex = System.Windows.Application.Current.Dispatcher.CheckAccess()
+            accentHex = System.Windows.Application.Current?.Dispatcher.CheckAccess() != false
                 ? command.AccentBrush?.ToString()
                 : System.Windows.Application.Current.Dispatcher.Invoke(() => command.AccentBrush?.ToString()),
             keywords = command.Keywords,

@@ -677,20 +677,23 @@ public partial class MainWindow
         {
             // 给软件一点初始化时间
             await Task.Delay(3000);
-            
+
+            // Scheduler 属于宿主级后台能力，不依赖小程序启动完成。
+            await Dispatcher.InvokeAsync(StartExtensionScheduler);
+
             var startupCommands = _allCommands
                 .Where(x => x.Startup?.Mode == "on_app_launch")
                 .ToList();
 
-            foreach (var command in startupCommands)
+            async Task StartStartupCommandAsync(CommandItem command)
             {
                 if (RunningExtensionRegistry.IsRunning(command.ExtensionId))
                 {
                     HostAssets.AppendLog($"Startup extension already running, skipping: {command.Title} ({command.ExtensionId})");
-                    continue;
+                    return;
                 }
 
-                await Dispatcher.InvokeAsync(async () => 
+                await Dispatcher.InvokeAsync(async () =>
                 {
                     try
                     {
@@ -702,22 +705,50 @@ public partial class MainWindow
                         HostAssets.AppendLog($"Failed to start extension {command.Title}: {ex.Message}");
                     }
                 });
-                
-                // 多个自启动扩展之间稍微间隔下，避免瞬间压力过大
+
                 await Task.Delay(500);
             }
 
-            // 启动定时调度服务
-            await Dispatcher.InvokeAsync(() => StartExtensionScheduler());
+            // 同时配置了 on_app_launch 与 idle 的小程序必须先以 app-startup 身份常驻，
+            // 再开启 Idle Trigger；否则机器在 Runtime 重启前已经闲置足够久时，
+            // Idle Trigger 会抢先把它以 launchSource=idle 启动。
+            var idleStartupCommands = startupCommands
+                .Where(x => x.Startup?.Idle?.Enabled == true)
+                .ToList();
+            try
+            {
+                foreach (var command in idleStartupCommands)
+                {
+                    await StartStartupCommandAsync(command);
+                }
+            }
+            finally
+            {
+                // Even if a startup extension fails, the idle dispatcher must survive Runtime startup.
+                await Dispatcher.InvokeAsync(StartExtensionIdleTriggerService);
+            }
+
+            foreach (var command in startupCommands.Except(idleStartupCommands))
+            {
+                await StartStartupCommandAsync(command);
+            }
+
         });
     }
 
     private ExtensionSchedulerService? _extensionScheduler;
+    private ExtensionIdleTriggerService? _extensionIdleTriggerService;
 
     private void StartExtensionScheduler()
     {
         _extensionScheduler ??= new ExtensionSchedulerService(this);
         _extensionScheduler.Start();
+    }
+
+    private void StartExtensionIdleTriggerService()
+    {
+        _extensionIdleTriggerService ??= new ExtensionIdleTriggerService(this);
+        _extensionIdleTriggerService.Start();
     }
 
     /// <summary>
@@ -726,6 +757,14 @@ public partial class MainWindow
     public async Task ExecuteScheduledExtensionAsync(CommandItem command)
     {
         await ExecuteCommandAsync(command, launchSource: "scheduler");
+    }
+
+    /// <summary>
+    /// 供 ExtensionIdleTriggerService 调用，执行闲置触发的小程序。
+    /// </summary>
+    public async Task ExecuteIdleTriggeredExtensionAsync(CommandItem command)
+    {
+        await ExecuteCommandAsync(command, launchSource: "idle");
     }
 
     /// <summary>
@@ -1687,7 +1726,7 @@ public partial class MainWindow
         {
             SetSearchScopePopupOpen(false);
             if (CapsGuidePopup != null) CapsGuidePopup.IsOpen = false;
-            if (FooterQuickMenuPopup != null) FooterQuickMenuPopup.IsOpen = false;
+            CloseFooterQuickMenu();
             Hide();
             return;
         }
@@ -1695,7 +1734,7 @@ public partial class MainWindow
         ShowInTaskbar = false;
         SetSearchScopePopupOpen(false);
         if (CapsGuidePopup != null) CapsGuidePopup.IsOpen = false;
-        if (FooterQuickMenuPopup != null) FooterQuickMenuPopup.IsOpen = false;
+        CloseFooterQuickMenu();
         Hide();
     }
 
@@ -1756,6 +1795,8 @@ public partial class MainWindow
     {
         if (AllowClose)
         {
+            _extensionScheduler?.Stop();
+            _extensionIdleTriggerService?.Stop();
             _searchDebounceTimer.Stop();
             _searchPipelineManager.Dispose();
             NetworkChange.NetworkAvailabilityChanged -= NetworkChange_NetworkAvailabilityChanged;
@@ -1848,7 +1889,7 @@ public partial class MainWindow
             return;
         }
 
-        if (FooterQuickMenuPopup.IsOpen || CommandList.ContextMenu?.IsOpen == true)
+        if (_footerQuickMenu?.IsOpen == true || CommandList.ContextMenu?.IsOpen == true)
         {
             return;
         }
@@ -1868,7 +1909,7 @@ public partial class MainWindow
         if (!IsVisible)
         {
             if (CapsGuidePopup != null) CapsGuidePopup.IsOpen = false;
-            if (FooterQuickMenuPopup != null) FooterQuickMenuPopup.IsOpen = false;
+            CloseFooterQuickMenu();
         }
     }
 

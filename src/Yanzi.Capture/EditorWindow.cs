@@ -16,6 +16,7 @@ namespace Yanzi.Capture;
 public sealed class EditorWindow : Window
 {
     private readonly CaptureDocument _document;
+    private readonly CaptureOcrClient? _ocrClient;
     private readonly EditorSurface _surface;
     private readonly TextBlock _status = new();
     private readonly Dictionary<EditorTool, Button> _toolButtons = [];
@@ -28,9 +29,10 @@ public sealed class EditorWindow : Window
     private Button? _historyUndo;
     private Button? _historyRedo;
 
-    public EditorWindow(CaptureDocument document)
+    public EditorWindow(CaptureDocument document, CaptureOcrClient? ocrClient = null)
     {
         _document = document;
+        _ocrClient = ocrClient;
         _surface = new EditorSurface(document);
         _surface.StatusChanged = SetStatus;
         _surface.TextFactory = CreateTextAnnotation;
@@ -1084,27 +1086,23 @@ public sealed class EditorWindow : Window
 
         try
         {
-            var text =
-                await WindowsOcrService.RecognizeAsync(
-                    DocumentRenderer.Render(_document));
+            OcrFeedback.BeginRecognizing();
+            var bitmap = DocumentRenderer.Render(_document);
+            var outcome = _ocrClient is null
+                ? new CaptureOcrResult(await WindowsOcrService.RecognizeAsync(bitmap), "Windows OCR", true, TimeSpan.Zero)
+                : await _ocrClient.RecognizeAsync(bitmap);
 
-            var result =
-                new OcrResultWindow(text)
-                {
-                    Owner = this
-                };
-
-            result.ShowDialog();
+            await OcrFeedback.PublishAsync(outcome);
 
             SetStatus(
-                string.IsNullOrWhiteSpace(text)
+                string.IsNullOrWhiteSpace(outcome.Text)
                     ? "没有识别到文字"
-                    : "OCR 完成");
+                    : "文字已复制");
         }
         catch (Exception ex)
         {
-            SetStatus(
-                "OCR 失败：" + ex.Message);
+            OcrFeedback.ShowFailure(ex);
+            SetStatus("OCR 失败：" + ex.Message);
         }
     }
 

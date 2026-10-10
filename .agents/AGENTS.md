@@ -106,6 +106,26 @@
 
 ---
 
+### 浏览器助手 / 网页小程序开发完成后的强制刷新验收
+
+> [!IMPORTANT]
+> **“代码已修改”不等于“开发完成”。浏览器助手或网页小程序的开发完成条件必须包含扩展自重载与当前页面刷新。**
+> 1. 只要本次修改涉及 `browser-extension/`、`browser-extension/webapps/`、Popup、Service Worker 或任一网页小程序 content script，完成代码修改与语法检查后，AI Agent **必须调用项目现有的浏览器扩展自重载链路**，不得仅告诉用户“手动刷新/手动重载扩展”。
+> 2. 标准执行入口为 `scripts/dev-browser-extension-refresh.ps1`。该脚本读取燕子当前 `appsettings.local.json` 中的 Local Agent API 端口与 Token，并调用 `POST /v1/browser/reload`。
+> 3. 扩展收到重载请求后，必须先写入 `yanziPendingExtensionReloadRefresh`，再执行 `chrome.runtime.reload()`；新版 Service Worker 启动后由 `refreshWebAppTabsAfterExtensionReload()` **自动刷新当前所有已安装网页小程序所匹配的标签页**，确保页面不继续运行旧 content script。
+> 4. 验收至少确认：
+>    - `POST /v1/browser/reload` 返回 HTTP 202；
+>    - 扩展重新连接；
+>    - 日志出现 `Browser extension reload ACK`；
+>    - 日志出现 `Browser extension runtime ready`，并记录 `refreshedWebAppTabs`；
+>    - 用户当前正在使用的目标网页已经重新加载为最新代码。
+> 5. 如果 Local Agent API 暂时不可用，但燕子进程应当在线，先恢复/重启燕子 Local Agent API，再重试自动刷新；**不能把“API 未启动”当作跳过刷新步骤的理由**。
+> 6. 只有在浏览器本身未运行、扩展未安装/未连接或当前机器客观无法进行真实页面验收时，才允许结束时明确标注“未完成运行时刷新验收”；其他情况下必须刷新后才能宣称开发完成。
+> 7. 以后修改网页小程序时，默认形成固定闭环：**修改 → 静态检查/测试 → 扩展自重载 → 自动刷新匹配网页 → 运行时验收**。
+> 8. 网页小程序版本号必须保持一致：`webapps/catalog.json` 中的版本与 content script 对外 probe 返回的版本必须同步更新；刷新后应通过 `probe_webapps` 确认运行时报告的版本就是最新版本。
+
+---
+
 ## 6. 自主开发与跨平台验证入口
 
 > [!IMPORTANT]

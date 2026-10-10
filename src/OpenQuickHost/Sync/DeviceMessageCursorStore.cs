@@ -16,6 +16,15 @@ internal static class DeviceMessageCursorStore
         return Path.Combine(HostAssets.ResolveDataDirectoryPath("device-message-cursors"), name);
     }
 
+    internal static bool Exists(string account, string deviceId)
+    {
+        lock (Gate)
+        {
+            try { return File.Exists(PathFor(account, deviceId)); }
+            catch { return false; }
+        }
+    }
+
     public static long Read(string account, string deviceId)
     {
         lock (Gate)

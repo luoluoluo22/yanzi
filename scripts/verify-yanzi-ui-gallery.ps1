@@ -74,22 +74,29 @@ if ($switchOn.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Patte
 $testCount++
 
 $menuTrigger = Assert-Control '展开操作菜单' [System.Windows.Automation.ControlType]::Button
+# The interactive homepage examples now sit below the 64-item component wall.
+# Focus the actual control and wait for WPF layout/scroll before measuring popup placement.
+$menuTrigger.SetFocus()
+Start-Sleep -Milliseconds 150
 $menuRect = $menuTrigger.Current.BoundingRectangle
 $menuTrigger.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
-Start-Sleep -Milliseconds 180
 $desktop = [System.Windows.Automation.AutomationElement]::RootElement
-$actionNodes = $desktop.FindAll([System.Windows.Automation.TreeScope]::Descendants,
-    (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty,'复制')))
 $popupCopy = $null
-foreach ($candidate in $actionNodes) {
-    $r = $candidate.Current.BoundingRectangle
-    if ($candidate.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button -and
-        $r.Width -ge 130 -and $r.Y -lt $menuRect.Y -and
-        [Math]::Abs($r.Right-$menuRect.Right) -lt 45) {
-        $popupCopy = $candidate
-        break
+$timeoutAt = [DateTimeOffset]::UtcNow.AddSeconds(2)
+do {
+    Start-Sleep -Milliseconds 120
+    $actionNodes = $desktop.FindAll([System.Windows.Automation.TreeScope]::Descendants,
+        (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty,'复制')))
+    foreach ($candidate in $actionNodes) {
+        $r = $candidate.Current.BoundingRectangle
+        if ($candidate.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button -and
+            $r.Width -ge 130 -and $r.Y -lt $menuRect.Y -and
+            [Math]::Abs($r.Right-$menuRect.Right) -lt 45) {
+            $popupCopy = $candidate
+            break
+        }
     }
-}
+} until ($popupCopy -or [DateTimeOffset]::UtcNow -ge $timeoutAt)
 if (-not $popupCopy) { throw 'Custom menu did not open above trigger with a full-width clickable row' }
 $testCount++
 $popupCopy.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()

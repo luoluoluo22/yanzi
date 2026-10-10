@@ -19,6 +19,18 @@ if (args.Contains("--local-api-boundaries"))
     return;
 }
 
+if (args.Contains("--mobile-message-composer"))
+{
+    await MobileMessageComposerVerification.RunAsync();
+    return;
+}
+
+if (args.Contains("--device-notification-policy"))
+{
+    DeviceMessageNotificationVerification.Run();
+    return;
+}
+
 if (args.Contains("--mobile-message-bridge"))
 {
     await MobileMessageBridgeVerification.RunAsync(args);

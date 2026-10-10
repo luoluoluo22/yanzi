@@ -52,6 +52,7 @@ public partial class AddJsonExtensionWindow : Window
     private LocalExtensionHostedViewManifest? _manualHostedView;
     private LocalExtensionSearchProviderManifest? _manualSearchProvider;
     private LocalExtensionMouseGestureManifest? _manualMouseGesture;
+    private LocalExtensionIdleTriggerManifest? _manualIdleTrigger;
     private string? _manualUiMode;
     private string? _manualWorkingDirectory;
     private bool? _manualRunAsAdmin;
@@ -2691,12 +2692,13 @@ public partial class AddJsonExtensionWindow : Window
             {
                 Source = ScriptSourceBox.Text.ReplaceLineEndings("\r\n")
             },
-            Startup = (string.IsNullOrWhiteSpace(StartupModeBox.Text) && string.IsNullOrWhiteSpace(StartupScheduleBox.Text))
+            Startup = (string.IsNullOrWhiteSpace(StartupModeBox.Text) && string.IsNullOrWhiteSpace(StartupScheduleBox.Text) && _manualIdleTrigger == null)
                 ? null
                 : new LocalExtensionStartupManifest
                 {
                     Mode = NullIfEmpty(StartupModeBox.Text),
-                    Schedule = NullIfEmpty(StartupScheduleBox.Text)
+                    Schedule = NullIfEmpty(StartupScheduleBox.Text),
+                    Idle = _manualIdleTrigger
                 },
             SearchProvider = _manualSearchProvider,
             MouseGesture = NormalizeMouseGestureForManifest(_manualMouseGesture)
@@ -2797,6 +2799,7 @@ public partial class AddJsonExtensionWindow : Window
         _manualHostedView = manifest.HostedView;
         _manualSearchProvider = manifest.SearchProvider;
         _manualMouseGesture = manifest.MouseGesture;
+        _manualIdleTrigger = manifest.Startup?.Idle;
         _manualUiMode = manifest.UiMode;
         _manualWorkingDirectory = manifest.WorkingDirectory;
         _manualRunAsAdmin = manifest.RunAsAdmin;

@@ -130,6 +130,25 @@ C# multi-file extension example (with startup):
 }
 ```
 
+Idle trigger example:
+
+```json
+{
+  "startup": {
+    "idle": {
+      "enabled": true,
+      "afterMinutes": 5,
+      "repeatMinutes": 10,
+      "pauseWhenFullscreen": true
+    }
+  }
+}
+```
+
+- `startup.idle` is a generic mini-app trigger. The host treats the PC as idle only after keyboard and mouse have had no input for `afterMinutes` **and** there is no fullscreen foreground window.
+- `repeatMinutes = 0` means once per continuous idle period. A positive value allows another run after that many minutes while the same idle period continues.
+- Idle launches use `context.LaunchSource == "idle"`; headless/background work should branch on this value and avoid opening its normal UI.
+
 Web app extension example:
 
 ```json

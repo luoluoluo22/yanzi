@@ -357,6 +357,23 @@
         </Setter>
     </Style>
 
+    <!-- shadcn Kbd / KbdGroup: quiet, non-interactive semantic keycaps. -->
+    <Style x:Key="Yanzi.Kbd" TargetType="{x:Type ui:YanziKbd}">
+        <Setter Property="MinHeight" Value="20"/>
+        <Setter Property="Padding" Value="6,2"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Muted}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Border}"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="CornerRadius" Value="{DynamicResource Yanzi.Radius.Sm}"/>
+        <Setter Property="TextElement.FontSize" Value="11"/>
+        <Setter Property="TextElement.FontWeight" Value="Medium"/>
+    </Style>
+    <Style x:Key="Yanzi.KbdGroup" TargetType="{x:Type ui:YanziKbdGroup}">
+        <Setter Property="Orientation" Value="Horizontal"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
     <!-- WPF native edit semantics and shadcn input/ring styling. -->
     <Style x:Key="Yanzi.Input" TargetType="{x:Type TextBox}">
         <Setter Property="MinHeight" Value="32"/>
@@ -1001,29 +1018,175 @@
         </Setter>
     </Style>
 
+    <!-- Native RadioButton semantics, shared non-native keyline and filled-dot chrome. -->
     <Style x:Key="Yanzi.Radio" TargetType="{x:Type RadioButton}">
         <Setter Property="Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
-        <Setter Property="FontSize" Value="{DynamicResource Yanzi.Font.Body}"/>
-        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="FontFamily" Value="{DynamicResource Yanzi.Font.Geist}"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type RadioButton}">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Grid Width="16" Height="16" Margin="0,0,8,0">
+                            <Ellipse x:Name="Ring" StrokeThickness="1.3"
+                                     Stroke="{DynamicResource Yanzi.Color.Primary}" Fill="Transparent"/>
+                            <Ellipse x:Name="Dot" Width="7" Height="7" Visibility="Collapsed"
+                                     Fill="{DynamicResource Yanzi.Color.Primary}"/>
+                        </Grid>
+                        <ContentPresenter RecognizesAccessKey="True" VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Dot" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Ring" Property="Stroke" Value="{DynamicResource Yanzi.Color.Ring}"/>
+                            <Setter TargetName="Ring" Property="StrokeThickness" Value="2.5"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value=".5"/>
+                            <Setter Property="Cursor" Value="Arrow"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
+    <!-- shadcn Tabs: segmented TabsList + clean selected tab and separate content. -->
     <Style x:Key="Yanzi.Tabs" TargetType="{x:Type TabControl}">
         <Setter Property="Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
-        <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Card}"/>
-        <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Border}"/>
-        <Setter Property="Padding" Value="8"/>
+        <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Background}"/>
+        <Setter Property="ItemContainerStyle" Value="{DynamicResource Yanzi.TabItem}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type TabControl}">
+                    <Grid KeyboardNavigation.TabNavigation="Local">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <Border Background="{DynamicResource Yanzi.Color.Muted}"
+                                CornerRadius="{DynamicResource Yanzi.Radius.Md}"
+                                Padding="3" Margin="0,0,0,10" HorizontalAlignment="Left">
+                            <TabPanel IsItemsHost="True" Background="Transparent"/>
+                        </Border>
+                        <ContentPresenter x:Name="PART_SelectedContentHost" Grid.Row="1"
+                                          ContentSource="SelectedContent"
+                                          HorizontalAlignment="Stretch" VerticalAlignment="Stretch"/>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
     <Style x:Key="Yanzi.TabItem" TargetType="{x:Type TabItem}">
-        <Setter Property="Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
-        <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Secondary}"/>
-        <Setter Property="Padding" Value="14,8"/>
-        <Setter Property="FontSize" Value="{DynamicResource Yanzi.Font.Body}"/>
+        <Setter Property="Padding" Value="12,7"/>
+        <Setter Property="FontFamily" Value="{DynamicResource Yanzi.Font.Geist}"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="Foreground" Value="{DynamicResource Yanzi.Color.MutedForeground}"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type TabItem}">
+                    <Border x:Name="TabChrome" Background="{TemplateBinding Background}"
+                            BorderThickness="1" BorderBrush="Transparent"
+                            CornerRadius="{DynamicResource Yanzi.Radius.Sm}"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter ContentSource="Header" HorizontalAlignment="Center"
+                                          VerticalAlignment="Center" RecognizesAccessKey="True"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter Property="Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
+                            <Setter TargetName="TabChrome" Property="Background" Value="{DynamicResource Yanzi.Color.Card}"/>
+                            <Setter TargetName="TabChrome" Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Border}"/>
+                        </Trigger>
+                        <MultiTrigger>
+                            <MultiTrigger.Conditions>
+                                <Condition Property="IsMouseOver" Value="True"/>
+                                <Condition Property="IsSelected" Value="False"/>
+                            </MultiTrigger.Conditions>
+                            <Setter Property="Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
+                        </MultiTrigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="TabChrome" Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Ring}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45"/>
+                            <Setter Property="Cursor" Value="Arrow"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
+    <!-- Expander keeps WPF IsExpanded and automation, but owns every visible part. -->
     <Style x:Key="Yanzi.Expander" TargetType="{x:Type Expander}">
         <Setter Property="Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
         <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Card}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Border}"/>
         <Setter Property="BorderThickness" Value="1"/>
-        <Setter Property="Padding" Value="8"/>
+        <Setter Property="Padding" Value="12,8"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type Expander}">
+                    <Border BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            Background="{TemplateBinding Background}"
+                            CornerRadius="{DynamicResource Yanzi.Radius.Md}">
+                        <StackPanel>
+                            <ToggleButton x:Name="HeaderToggle" Content="{TemplateBinding Header}"
+                                          IsChecked="{Binding IsExpanded,RelativeSource={RelativeSource TemplatedParent},Mode=TwoWay}"
+                                          Foreground="{TemplateBinding Foreground}" Cursor="Hand" Background="Transparent">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="{x:Type ToggleButton}">
+                                        <Border x:Name="HeaderChrome" Background="Transparent"
+                                                CornerRadius="{DynamicResource Yanzi.Radius.Sm}">
+                                            <Grid Margin="12,9">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <ContentPresenter ContentSource="Content" VerticalAlignment="Center"/>
+                                                <Path x:Name="Chevron" Grid.Column="1" Width="14" Height="14"
+                                                      Margin="8,0,0,0" StrokeThickness="1.7" Stretch="Uniform"
+                                                      Stroke="{DynamicResource Yanzi.Color.MutedForeground}"
+                                                      Data="M3,5 L8,10 L13,5"/>
+                                            </Grid>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsChecked" Value="True">
+                                                <Setter TargetName="Chevron" Property="Data" Value="M3,10 L8,5 L13,10"/>
+                                            </Trigger>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="HeaderChrome" Property="Background" Value="{DynamicResource Yanzi.Color.Muted}"/>
+                                            </Trigger>
+                                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                                <Setter TargetName="HeaderChrome" Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Ring}"/>
+                                                <Setter TargetName="HeaderChrome" Property="BorderThickness" Value="1"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <Border x:Name="ExpandedContent" Visibility="Collapsed"
+                                    Padding="{TemplateBinding Padding}">
+                                <ContentPresenter ContentSource="Content"/>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsExpanded" Value="True">
+                            <Setter TargetName="ExpandedContent" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value=".5"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
     <Style x:Key="Yanzi.Calendar" TargetType="{x:Type Calendar}">
         <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Card}"/>
@@ -1036,12 +1199,62 @@
         <Setter Property="Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Input}"/>
     </Style>
+    <!-- shadcn Tooltip: rounded themed popup; never use the default Windows chrome. -->
     <Style x:Key="Yanzi.Tooltip" TargetType="{x:Type ToolTip}">
         <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Popover}"/>
         <Setter Property="Foreground" Value="{DynamicResource Yanzi.Color.PopoverForeground}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Border}"/>
         <Setter Property="BorderThickness" Value="1"/>
-        <Setter Property="Padding" Value="9,6"/>
+        <Setter Property="Padding" Value="10,7"/>
+        <Setter Property="FontFamily" Value="{DynamicResource Yanzi.Font.Geist}"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="HasDropShadow" Value="False"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type ToolTip}">
+                    <Border BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            Background="{TemplateBinding Background}"
+                            CornerRadius="{DynamicResource Yanzi.Radius.Sm}"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter/>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <Style x:Key="Yanzi.Table.Row" TargetType="{x:Type Button}">
+        <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Card}"/>
+        <Setter Property="Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Border}"/>
+        <Setter Property="BorderThickness" Value="0,1,0,0"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="MinHeight" Value="39"/>
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type Button}">
+                    <Border x:Name="RowChrome" BorderThickness="{TemplateBinding BorderThickness}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            Background="{TemplateBinding Background}">
+                        <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="RowChrome" Property="Background" Value="{DynamicResource Yanzi.Color.Muted}"/>
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="RowChrome" Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Ring}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.5"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
     <Style x:Key="Yanzi.DataGrid" TargetType="{x:Type DataGrid}">
         <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Card}"/>
@@ -1098,6 +1311,114 @@
             </Setter.Value>
         </Setter>
     </Style>
+    <Style x:Key="Yanzi.ResizableHandle" TargetType="{x:Type GridSplitter}">
+        <Setter Property="Width" Value="10"/>
+        <Setter Property="Focusable" Value="True"/>
+        <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        <Setter Property="Cursor" Value="SizeWE"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type GridSplitter}">
+                    <Grid Background="Transparent" Width="10" SnapsToDevicePixels="True">
+                        <Border x:Name="Grip" Width="6" Height="34"
+                                HorizontalAlignment="Center" VerticalAlignment="Center"
+                                CornerRadius="3" BorderThickness="1"
+                                BorderBrush="{DynamicResource Yanzi.Color.Border}"
+                                Background="{DynamicResource Yanzi.Color.Muted}">
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <Ellipse Width="2" Height="2" Margin="0,2" Fill="{DynamicResource Yanzi.Color.MutedForeground}"/>
+                                <Ellipse Width="2" Height="2" Margin="0,2" Fill="{DynamicResource Yanzi.Color.MutedForeground}"/>
+                                <Ellipse Width="2" Height="2" Margin="0,2" Fill="{DynamicResource Yanzi.Color.MutedForeground}"/>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Grip" Property="Background" Value="{DynamicResource Yanzi.Color.Accent}"/>
+                            <Setter TargetName="Grip" Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Ring}"/>
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Grip" Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Ring}"/>
+                            <Setter TargetName="Grip" Property="BorderThickness" Value="2"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.4"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <!-- Vertical Resizable: horizontal, keyboard-focusable themed handle. -->
+    <!-- Chart datapoint hit target: accessible Button without native WPF chrome. -->
+    <Style x:Key="Yanzi.Chart.HitTarget" TargetType="{x:Type Button}">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderBrush" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type Button}">
+                    <Border x:Name="HitChrome" Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="4"/>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="HitChrome" Property="BorderBrush"
+                                    Value="{DynamicResource Yanzi.Color.Ring}"/>
+                            <Setter TargetName="HitChrome" Property="BorderThickness" Value="2"/>
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="HitChrome" Property="BorderBrush"
+                                    Value="{DynamicResource Yanzi.Color.Border}"/>
+                            <Setter TargetName="HitChrome" Property="BorderThickness" Value="1"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <Style x:Key="Yanzi.ResizableHandle.Vertical" TargetType="{x:Type GridSplitter}">
+        <Setter Property="Height" Value="10"/>
+        <Setter Property="Focusable" Value="True"/>
+        <Setter Property="VerticalAlignment" Value="Stretch"/>
+        <Setter Property="Cursor" Value="SizeNS"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type GridSplitter}">
+                    <Grid Background="Transparent" Height="10" SnapsToDevicePixels="True">
+                        <Border x:Name="Grip" Width="34" Height="6" HorizontalAlignment="Center"
+                                VerticalAlignment="Center" CornerRadius="3" BorderThickness="1"
+                                BorderBrush="{DynamicResource Yanzi.Color.Border}"
+                                Background="{DynamicResource Yanzi.Color.Muted}">
+                            <StackPanel Orientation="Horizontal"
+                                        HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <Ellipse Width="2" Height="2" Margin="2,0" Fill="{DynamicResource Yanzi.Color.MutedForeground}"/>
+                                <Ellipse Width="2" Height="2" Margin="2,0" Fill="{DynamicResource Yanzi.Color.MutedForeground}"/>
+                                <Ellipse Width="2" Height="2" Margin="2,0" Fill="{DynamicResource Yanzi.Color.MutedForeground}"/>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Grip" Property="Background" Value="{DynamicResource Yanzi.Color.Accent}"/>
+                            <Setter TargetName="Grip" Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Ring}"/>
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Grip" Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Ring}"/>
+                            <Setter TargetName="Grip" Property="BorderThickness" Value="2"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.4"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
     <Style x:Key="Yanzi.Scrollbar" TargetType="{x:Type ScrollBar}">
         <Setter Property="Width" Value="8"/>
         <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Transparent}"/>
@@ -1114,8 +1435,17 @@
                                 <Thumb MinHeight="22">
                                     <Thumb.Template>
                                         <ControlTemplate TargetType="{x:Type Thumb}">
-                                            <Border Background="{DynamicResource Yanzi.Color.Border}"
+                                            <Border x:Name="ThumbChrome"
+                                                Background="{DynamicResource Yanzi.Color.Border}"
                                                 CornerRadius="4" Margin="2,2,2,2"/>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="ThumbChrome" Property="Background" Value="{DynamicResource Yanzi.Color.MutedForeground}"/>
+                                                </Trigger>
+                                                <Trigger Property="IsDragging" Value="True">
+                                                    <Setter TargetName="ThumbChrome" Property="Background" Value="{DynamicResource Yanzi.Color.Primary}"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
                                         </ControlTemplate>
                                     </Thumb.Template>
                                 </Thumb>
@@ -1123,6 +1453,46 @@
                             <Track.IncreaseRepeatButton>
                                 <RepeatButton Command="ScrollBar.PageDownCommand"
                                     Focusable="False" Opacity="0"/>
+                            </Track.IncreaseRepeatButton>
+                        </Track>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <Style x:Key="Yanzi.Scrollbar.Horizontal" TargetType="{x:Type ScrollBar}">
+        <Setter Property="Height" Value="8"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type ScrollBar}">
+                    <Grid Background="Transparent">
+                        <Track x:Name="PART_Track" Orientation="Horizontal">
+                            <Track.DecreaseRepeatButton>
+                                <RepeatButton Command="ScrollBar.PageLeftCommand" Focusable="False" Opacity="0"/>
+                            </Track.DecreaseRepeatButton>
+                            <Track.Thumb>
+                                <Thumb MinWidth="22">
+                                    <Thumb.Template>
+                                        <ControlTemplate TargetType="{x:Type Thumb}">
+                                            <Border x:Name="ThumbChrome" CornerRadius="4" Margin="2"
+                                                Background="{DynamicResource Yanzi.Color.Border}"/>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="ThumbChrome" Property="Background"
+                                                        Value="{DynamicResource Yanzi.Color.MutedForeground}"/>
+                                                </Trigger>
+                                                <Trigger Property="IsDragging" Value="True">
+                                                    <Setter TargetName="ThumbChrome" Property="Background"
+                                                        Value="{DynamicResource Yanzi.Color.Primary}"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Thumb.Template>
+                                </Thumb>
+                            </Track.Thumb>
+                            <Track.IncreaseRepeatButton>
+                                <RepeatButton Command="ScrollBar.PageRightCommand" Focusable="False" Opacity="0"/>
                             </Track.IncreaseRepeatButton>
                         </Track>
                     </Grid>

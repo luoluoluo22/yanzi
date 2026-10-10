@@ -1714,8 +1714,21 @@
                                         ToolTip="点击选择图标背景色" />
                             </Grid>
 
-                            <!-- 触发方式（参考设置 - 扩展页右侧设计） -->
-                            <TextBlock Text="触发方式" Style="{StaticResource SectionTitleStyle}" Margin="0,22,0,10" />
+                            <!-- 触发方式：默认折叠，避免触发器越来越多后挤占主要编辑空间 -->
+                            <Expander x:Name="TriggerOptionsExpander" IsExpanded="False" Margin="0,22,0,0">
+                                <Expander.Header>
+                                    <Grid MinHeight="30">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="触发方式" Style="{StaticResource SectionTitleStyle}" VerticalAlignment="Center" Margin="0" />
+                                        <TextBlock x:Name="TriggerSummaryLabel" Grid.Column="1" Text="未设置"
+                                                   Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}"
+                                                   VerticalAlignment="Center" Margin="12,0,2,0" />
+                                    </Grid>
+                                </Expander.Header>
+                                <StackPanel Margin="0,10,0,0">
 
                             <!-- 开机自启 段卡 -->
                             <Border Background="{DynamicResource BrushSecondaryBtnBG}" CornerRadius="10"
@@ -1771,6 +1784,63 @@
                                             VerticalAlignment="Center"
                                             Click="TriggerScheduleConfigure_Click" />
                                 </Grid>
+                            </Border>
+
+                            <!-- 闲置运行 段卡 -->
+                            <Border Background="{DynamicResource BrushSecondaryBtnBG}" CornerRadius="10"
+                                    BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1"
+                                    Margin="0,0,0,10">
+                                <StackPanel>
+                                    <Grid Margin="14,12,14,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <Border Width="28" Height="28" Background="#1A06B6D4" CornerRadius="7" VerticalAlignment="Center">
+                                            <Path Width="14" Height="14" Stretch="Uniform" Fill="#FF22D3EE"
+                                                  Data="M12,2A10,10 0 1,0 22,12A10,10 0 0,0 12,2M12,4A8,8 0 0,1 20,12H12V4M10,5V14H18A8,8 0 1,1 10,5Z"
+                                                  HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                        </Border>
+                                        <StackPanel Grid.Column="1" Margin="10,0,8,0" VerticalAlignment="Center">
+                                            <TextBlock Text="闲置运行" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" />
+                                            <TextBlock x:Name="TriggerIdleLabel" Text="未启用 · 无键鼠输入且无全屏窗口"
+                                                       Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}"
+                                                       Margin="0,2,0,0" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <CheckBox x:Name="TriggerIdleSwitch" Grid.Column="2"
+                                                  VerticalAlignment="Center"
+                                                  Click="TriggerIdleSwitch_Click" />
+                                    </Grid>
+                                    <StackPanel Margin="52,0,14,12">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="52" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="闲置" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" VerticalAlignment="Center" />
+                                            <TextBox x:Name="IdleAfterMinutesBox" Grid.Column="1" Text="5"
+                                                     Style="{StaticResource FormTextBoxStyle}" Margin="6,0,0,0"
+                                                     TextChanged="IdleTriggerConfig_TextChanged" />
+                                            <TextBlock Grid.Column="2" Text="分钟后触发" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" VerticalAlignment="Center" Margin="6,0,0,0" />
+                                        </Grid>
+                                        <Grid Margin="0,8,0,0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="52" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="持续闲置每" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" VerticalAlignment="Center" />
+                                            <TextBox x:Name="IdleRepeatMinutesBox" Grid.Column="1" Text="10"
+                                                     Style="{StaticResource FormTextBoxStyle}" Margin="6,0,0,0"
+                                                     TextChanged="IdleTriggerConfig_TextChanged" />
+                                            <TextBlock Grid.Column="2" Text="分钟再触发（0=仅一次）"
+                                                       Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}"
+                                                       VerticalAlignment="Center" Margin="6,0,0,0" />
+                                        </Grid>
+                                    </StackPanel>
+                                </StackPanel>
                             </Border>
 
                             <!-- 全局快捷键 段卡 -->
@@ -1919,6 +1989,8 @@
                                     </StackPanel>
                                 </StackPanel>
                             </Border>
+                                </StackPanel>
+                            </Expander>
                         </StackPanel>
                     </ScrollViewer>
                     </Grid>

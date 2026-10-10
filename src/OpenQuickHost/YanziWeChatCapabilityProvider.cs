@@ -108,6 +108,7 @@ public static class YanziWeChatCapabilityProvider
               "type":"object",
               "properties":{
                 "text":{"type":"string","minLength":1},
+                "requestId":{"type":"string","minLength":8,"description":"稳定请求编号；重复请求返回原任务，结果不确定时不重发"},
                 "verificationTarget":{"type":"string","description":"需要登录验证时，二维码/确认截图发送到的燕子手机；省略则选择最近在线 Android 手机"},
                 "loginWaitSeconds":{"type":"integer","minimum":5,"maximum":120,"default":60}
               },
@@ -210,7 +211,7 @@ public static class YanziWeChatCapabilityProvider
                         scale = Math.Round(scale, 4)
                     },
                     capturePath = cached.CapturePath,
-                    layoutVersion = "weixin-win-v7",
+                    layoutVersion = "weixin-win-v8",
                     regions = cached.Regions.Clone(),
                     uiObjects = cached.UiObjects.Clone(),
                     navigation = cached.Navigation.Clone(),
@@ -250,9 +251,27 @@ public static class YanziWeChatCapabilityProvider
             var analysisWatch = Stopwatch.StartNew();
             var uiObjects = BuildFixedUiObjects(window.Rect.Width, window.Rect.Height, scale, regions);
             var navigation = AnalyzeNavigationState(visualBitmap, uiObjects, scale);
-            var effectiveUiObjects = navigation.IsChatView
+            var ocrInfos = ExtractOcrLines(ocr);
+            var conversationRegion = regions.First(region => string.Equals(region.Id, "conversationList", StringComparison.Ordinal));
+            var chatHeaderRegion = regions.First(region => string.Equals(region.Id, "chatHeader", StringComparison.Ordinal));
+            var messageRegion = regions.First(region => string.Equals(region.Id, "messageList", StringComparison.Ordinal));
+            navigation = EnrichNavigationContentState(
+                navigation,
+                conversationRegion,
+                chatHeaderRegion,
+                ocrInfos,
+                scale);
+
+            var effectiveUiObjects = navigation.IsConversationView
                 ? uiObjects
                 : uiObjects.Where(item => item.Kind is "windowControl" or "profileAvatar" or "navigationItem" or "navigationUtility").ToArray();
+
+            var messageAnalyses = navigation.ContentState switch
+            {
+                "chatConversation" => AnalyzeMessageObjects(visualBitmap, messageRegion, ocrInfos, scale),
+                "serviceAccountContent" => AnalyzeServiceContentObjects(visualBitmap, messageRegion, ocrInfos, scale),
+                _ => Array.Empty<MessageAnalysis>()
+            };
             var mappedLines = new List<object>();
             var grouped = regions.ToDictionary(region => region.Id, _ => new List<string>(), StringComparer.OrdinalIgnoreCase);
 
@@ -268,7 +287,8 @@ public static class YanziWeChatCapabilityProvider
                     var region = regions.FirstOrDefault(item => item.Contains(centerX, centerY))
                         ?? new LayoutRegion("unknown", "未归类", 0, 0, window.Rect.Width, window.Rect.Height);
                     var text = ReadJsonString(line, "text") ?? string.Empty;
-                    var role = ClassifyOcrRole(region, effectiveUiObjects, text, x, y, width, height, scale, navigation.IsChatView);
+                    var role = ClassifyOcrRole(region, effectiveUiObjects, text, x, y, width, height, scale, navigation.IsConversationView);
+                    role = RefineMessageOcrRole(role, text, centerX, centerY, messageAnalyses);
                     if (!string.IsNullOrWhiteSpace(text)
                         && ShouldIncludeInRegionText(role)
                         && grouped.TryGetValue(region.Id, out var texts))
@@ -304,15 +324,10 @@ public static class YanziWeChatCapabilityProvider
                 lineCount = grouped.TryGetValue(region.Id, out var items) ? items.Count : 0
             }).ToArray();
 
-            var conversationRegion = regions.First(region => string.Equals(region.Id, "conversationList", StringComparison.Ordinal));
-            var messageRegion = regions.First(region => string.Equals(region.Id, "messageList", StringComparison.Ordinal));
-            var ocrInfos = ExtractOcrLines(ocr);
-            var conversations = navigation.IsChatView
+            var conversations = navigation.IsConversationView
                 ? BuildConversationRows(visualBitmap, conversationRegion, ocrInfos, scale)
                 : Array.Empty<object>();
-            var messageObjects = navigation.IsChatView
-                ? BuildMessageObjects(visualBitmap, messageRegion, ocrInfos, scale)
-                : Array.Empty<object>();
+            var messageObjects = messageAnalyses.Select(ToMessageObjectDto).ToArray();
 
             var fullText = ocr.TryGetProperty("text", out var fullTextProperty)
                 ? fullTextProperty.GetString() ?? string.Empty
@@ -371,7 +386,7 @@ public static class YanziWeChatCapabilityProvider
                     scale = Math.Round(scale, 4)
                 },
                 capturePath,
-                layoutVersion = "weixin-win-v7",
+                layoutVersion = "weixin-win-v8",
                 regions = regionDtos,
                 uiObjects = effectiveUiObjects.Select(ToUiObjectDto).ToArray(),
                 navigation = ToNavigationDto(navigation),
@@ -774,10 +789,83 @@ public static class YanziWeChatCapabilityProvider
             Active: active,
             ActiveLabel: activeLabel,
             IsChatView: string.Equals(active, "chat", StringComparison.Ordinal),
+            ContentState: "unknown",
+            IsConversationView: false,
             Confidence: stateConfidence,
             ProfileBounds: profile.Bounds,
             ProfileConfidence: profileConfidence,
             Items: items.ToArray());
+    }
+
+
+    private static NavigationAnalysis EnrichNavigationContentState(
+        NavigationAnalysis navigation,
+        LayoutRegion conversationRegion,
+        LayoutRegion chatHeaderRegion,
+        IReadOnlyList<OcrLineInfo> lines,
+        double scale)
+    {
+        _ = scale;
+
+        if (!navigation.IsChatView)
+        {
+            return navigation with
+            {
+                ContentState = navigation.Active == "unknown" ? "unknown" : navigation.Active + "View",
+                IsConversationView = false
+            };
+        }
+
+        static bool IsInside(LayoutRegion region, OcrLineInfo line)
+        {
+            var centerX = line.X + line.Width / 2d;
+            var centerY = line.Y + line.Height / 2d;
+            return region.Contains(centerX, centerY);
+        }
+
+        var headerLines = lines
+            .Where(line => IsInside(chatHeaderRegion, line))
+            .Where(line => !string.IsNullOrWhiteSpace(line.Text))
+            .Where(line => !LooksLikeIconOcrNoise(line.Text))
+            .OrderBy(line => line.X)
+            .ToArray();
+
+        var headerText = string.Join(
+            " ",
+            headerLines.Select(line => line.Text.Trim()));
+
+        var isServiceAccount = headerText.Contains("服务号", StringComparison.Ordinal)
+            || headerText.Contains("公众号", StringComparison.Ordinal)
+            || headerText.Contains("订阅号", StringComparison.Ordinal);
+
+        if (isServiceAccount)
+        {
+            return navigation with
+            {
+                ContentState = "serviceAccountContent",
+                IsConversationView = true
+            };
+        }
+
+        if (headerLines.Length > 0)
+        {
+            return navigation with
+            {
+                ContentState = "chatConversation",
+                IsConversationView = true
+            };
+        }
+
+        var hasConversationListContent = lines.Any(line =>
+            IsInside(conversationRegion, line)
+            && !string.IsNullOrWhiteSpace(line.Text)
+            && !LooksLikeIconOcrNoise(line.Text));
+
+        return navigation with
+        {
+            ContentState = hasConversationListContent ? "chatList" : "unknown",
+            IsConversationView = false
+        };
     }
 
     private static object ToNavigationDto(NavigationAnalysis navigation)
@@ -786,6 +874,8 @@ public static class YanziWeChatCapabilityProvider
             active = navigation.Active,
             activeLabel = navigation.ActiveLabel,
             isChatView = navigation.IsChatView,
+            contentState = navigation.ContentState,
+            isConversationView = navigation.IsConversationView,
             confidence = Math.Round(navigation.Confidence, 3),
             profileAvatar = new
             {
@@ -956,7 +1046,7 @@ public static class YanziWeChatCapabilityProvider
     private static bool LooksLikeVoiceDuration(string text)
         => Regex.IsMatch(
             text.Trim(),
-            @"^\d{1,3}\s*(?:[″""”']|秒)$",
+            @"^[^\d]{0,2}\d{1,3}\s*(?:[″""”']|秒)$",
             RegexOptions.CultureInvariant);
 
     private static bool LooksLikeMessageSystemTime(string text, double centerX, LayoutRegion region, double scale)
@@ -967,172 +1057,1111 @@ public static class YanziWeChatCapabilityProvider
 
         return Regex.IsMatch(
             text.Trim(),
-            @"^(?:(?:\d{1,2}月\d{1,2}日\s*)?(?:星期[一二三四五六日天]\s*)?\d{1,2}:\d{2}|\d{1,2}月\d{1,2}日|昨天|今天|星期[一二三四五六日天])$",
+            @"^(?:(?:\d{1,2}月\d{1,2}日\s*)?(?:星期[一二三四五六日天]\s*)?\d{1,2}:\d{2}|(?:昨天|今天|前天)\s*\d{1,2}:\d{2}|\d{1,2}月\d{1,2}日|昨天|今天|前天|星期[一二三四五六日天])$",
             RegexOptions.CultureInvariant);
     }
 
-    private static object[] BuildMessageObjects(
+    private static MessageAnalysis[] AnalyzeMessageObjects(
         Bitmap bitmap,
         LayoutRegion region,
         IReadOnlyList<OcrLineInfo> lines,
         double scale)
     {
-        int Dip(double value) => Math.Max(1, (int)Math.Round(value * scale));
-        var result = new List<object>();
-        var avatarBounds = DetectIncomingAvatarBounds(bitmap, region, scale);
-
+        var background = EstimateMessageBackground(bitmap, region, scale);
+        var avatars = DetectMessageAvatarAnchors(bitmap, region, scale);
+        var result = new List<MessageAnalysis>();
+        var bodyIndex = 0;
         var avatarIndex = 0;
-        foreach (var bounds in avatarBounds)
-        {
-            result.Add(new
-            {
-                id = $"message.avatar.incoming.{avatarIndex++}",
-                kind = "avatar.incoming",
-                label = "聊天对象头像",
-                bounds = new { x = bounds.X, y = bounds.Y, width = bounds.Width, height = bounds.Height },
-                confidence = 0.82
-            });
-        }
 
-        var voiceIndex = 0;
-        foreach (var line in lines.Where(line =>
-                     line.X + line.Width / 2d >= region.X
-                     && line.X + line.Width / 2d < region.X + region.Width
-                     && line.Y + line.Height / 2d >= region.Y
-                     && line.Y + line.Height / 2d < region.Y + region.Height
-                     && LooksLikeVoiceDuration(line.Text)))
+        foreach (var avatar in avatars.OrderBy(item => item.Bounds.Top))
         {
-            var incoming = line.X + line.Width / 2d < region.X + region.Width * 0.62;
-            var y = Math.Max(region.Y, (int)Math.Round(line.Y - Dip(12)));
-            var h = Dip(42);
-            Rectangle bounds;
-            if (incoming)
+            result.Add(new MessageAnalysis
             {
-                bounds = ClampRect(
-                    new Rectangle(
-                        region.X + Dip(62),
-                        y,
-                        Math.Min(Dip(168), region.Width - Dip(68)),
-                        h),
-                    bitmap.Size);
+                Id = $"message.avatar.{avatar.Direction}.{avatarIndex++}",
+                Kind = $"avatar.{avatar.Direction}",
+                Label = avatar.Direction == "incoming" ? "对方头像" : "我的头像",
+                Direction = avatar.Direction,
+                Bounds = avatar.Bounds,
+                AvatarBounds = avatar.Bounds,
+                AvatarConfidence = avatar.Confidence,
+                Confidence = avatar.Confidence,
+                BoundaryMethod = "visual_avatar_anchor"
+            });
+
+            var body = DetectMessageBodyBounds(
+                bitmap,
+                region,
+                avatar,
+                background,
+                scale);
+
+            if (body == null)
+                continue;
+
+            var bodyBounds = RefineMessageBodyBounds(
+                bitmap,
+                region,
+                avatar,
+                body.Bounds,
+                background,
+                scale);
+            var bodyLines = lines
+                .Where(line =>
+                {
+                    var centerX = line.X + line.Width / 2d;
+                    var centerY = line.Y + line.Height / 2d;
+                    return bodyBounds.Contains(
+                        (int)Math.Round(centerX),
+                        (int)Math.Round(centerY));
+                })
+                .OrderBy(line => line.Y)
+                .ThenBy(line => line.X)
+                .ToArray();
+
+            var metrics = AnalyzeMessageBodyMetrics(bitmap, bodyBounds, background);
+            var durationLine = bodyLines.FirstOrDefault(line => LooksLikeVoiceDuration(line.Text));
+            var durationSeconds = durationLine == null
+                ? (int?)null
+                : int.TryParse(Regex.Match(durationLine.Text, @"\d{1,3}").Value, out var seconds)
+                    ? seconds
+                    : null;
+
+            string kind;
+            string label;
+            double typeConfidence;
+
+            if (durationSeconds.HasValue)
+            {
+                kind = "message.voice";
+                label = "语音消息";
+                typeConfidence = 0.93;
             }
             else
             {
-                bounds = ClampRect(
-                    new Rectangle(
-                        Math.Max(region.X, (int)Math.Round(line.X - Dip(135))),
-                        y,
-                        Dip(165),
-                        h),
-                    bitmap.Size);
+                var bubbleLike = metrics.GreenFillRatio >= 0.12
+                    || metrics.NeutralBubbleFillRatio >= 0.24;
+
+                if (bubbleLike)
+                {
+                    kind = "message.text";
+                    label = "文字消息";
+                    typeConfidence = Math.Clamp(
+                        0.72
+                        + Math.Max(metrics.GreenFillRatio, metrics.NeutralBubbleFillRatio) * 0.35,
+                        0.72,
+                        0.98);
+                }
+                else
+                {
+                    kind = "message.image";
+                    label = "图片消息";
+                    typeConfidence = Math.Clamp(
+                        0.74
+                        + Math.Min(0.18, metrics.EdgeRatio * 0.9)
+                        + Math.Min(0.08, (1d - metrics.NeutralBubbleFillRatio) * 0.12),
+                        0.74,
+                        0.99);
+                }
             }
 
-            var seconds = Regex.Match(line.Text, @"\d{1,3}").Value;
-            result.Add(new
+            var readableLines = bodyLines
+                .Where(line => !LooksLikeMessageSystemTime(
+                    line.Text,
+                    line.X + line.Width / 2d,
+                    region,
+                    scale))
+                .Where(line => !LooksLikeVoiceDuration(line.Text))
+                .ToArray();
+            var recognizedText = JoinMessageLines(readableLines);
+
+            var unread = kind == "message.voice"
+                ? DetectVoiceUnreadDot(bitmap, bodyBounds, avatar.Direction, scale)
+                : (bool?)null;
+
+            result.Add(new MessageAnalysis
             {
-                id = $"message.voice.{voiceIndex++}",
-                kind = "message.voice",
-                label = "语音消息",
-                direction = incoming ? "incoming" : "outgoing",
-                durationSeconds = int.TryParse(seconds, out var parsed) ? parsed : (int?)null,
-                bounds = new { x = bounds.X, y = bounds.Y, width = bounds.Width, height = bounds.Height },
-                sourceText = line.Text,
-                confidence = 0.9
+                Id = $"message.body.{bodyIndex++}",
+                Kind = kind,
+                Label = label,
+                Direction = avatar.Direction,
+                Bounds = bodyBounds,
+                AvatarBounds = avatar.Bounds,
+                AvatarConfidence = avatar.Confidence,
+                Confidence = Math.Clamp((body.Confidence + typeConfidence) / 2d, 0.65, 0.99),
+                Text = kind == "message.text" ? recognizedText : string.Empty,
+                InnerText = kind == "message.image" ? recognizedText : string.Empty,
+                DurationSeconds = durationSeconds,
+                Unread = unread,
+                BoundaryMethod = "avatar_anchored_background_region",
+                BackgroundDifferenceRatio = metrics.BackgroundDifferenceRatio,
+                EdgeRatio = metrics.EdgeRatio,
+                DominantColorRatio = metrics.DominantColorRatio,
+                GreenFillRatio = metrics.GreenFillRatio,
+                NeutralBubbleFillRatio = metrics.NeutralBubbleFillRatio
             });
         }
 
+        var standaloneCards = DetectStandaloneMessageCards(
+            bitmap,
+            region,
+            lines,
+            result,
+            background,
+            scale);
+        result.AddRange(standaloneCards);
         var systemTimeIndex = 0;
         foreach (var line in lines.Where(line =>
                      line.X + line.Width / 2d >= region.X
                      && line.X + line.Width / 2d < region.X + region.Width
                      && line.Y + line.Height / 2d >= region.Y
                      && line.Y + line.Height / 2d < region.Y + region.Height
-                     && LooksLikeMessageSystemTime(line.Text, line.X + line.Width / 2d, region, scale)))
+                     && LooksLikeMessageSystemTime(
+                         line.Text,
+                         line.X + line.Width / 2d,
+                         region,
+                         scale)))
         {
-            result.Add(new
+            var bounds = ClampRect(
+                new Rectangle(
+                    (int)Math.Round(line.X),
+                    (int)Math.Round(line.Y),
+                    Math.Max(1, (int)Math.Round(line.Width)),
+                    Math.Max(1, (int)Math.Round(line.Height))),
+                bitmap.Size);
+
+            if (result.Any(item =>
+                    item.Kind.StartsWith("message.", StringComparison.Ordinal)
+                    && !string.Equals(item.Kind, "message.systemTime", StringComparison.Ordinal)
+                    && item.Bounds.IntersectsWith(bounds)))
             {
-                id = $"message.systemTime.{systemTimeIndex++}",
-                kind = "message.systemTime",
-                label = "系统时间",
-                text = line.Text,
-                bounds = new
+                continue;
+            }
+
+            result.Add(new MessageAnalysis
+            {
+                Id = $"message.systemTime.{systemTimeIndex++}",
+                Kind = "message.systemTime",
+                Label = "系统时间",
+                Direction = "system",
+                Bounds = bounds,
+                Confidence = 0.95,
+                Text = line.Text,
+                BoundaryMethod = "ocr_center_time_pattern"
+            });
+        }
+
+        return result
+            .OrderBy(item => item.Bounds.Top)
+            .ThenBy(item => item.Bounds.Left)
+            .ToArray();
+    }
+
+
+    private static MessageAnalysis[] AnalyzeServiceContentObjects(
+        Bitmap bitmap,
+        LayoutRegion region,
+        IReadOnlyList<OcrLineInfo> lines,
+        double scale)
+    {
+        // 服务号正文仍由同一套视觉边界、OCR 聚类与卡片识别管线处理。
+        // 保留独立入口，后续如果服务号版式出现特有卡片，可在这里增量细分。
+        return AnalyzeMessageObjects(bitmap, region, lines, scale);
+    }
+
+    private static object ToMessageObjectDto(MessageAnalysis item)
+        => new
+        {
+            id = item.Id,
+            kind = item.Kind,
+            label = item.Label,
+            direction = item.Direction,
+            bounds = new
+            {
+                x = item.Bounds.X,
+                y = item.Bounds.Y,
+                width = item.Bounds.Width,
+                height = item.Bounds.Height
+            },
+            avatar = item.AvatarBounds.Width > 0 && item.AvatarBounds.Height > 0
+                ? new
                 {
-                    x = (int)Math.Round(line.X),
-                    y = (int)Math.Round(line.Y),
-                    width = (int)Math.Round(line.Width),
-                    height = (int)Math.Round(line.Height)
-                },
-                confidence = 0.95
+                    bounds = new
+                    {
+                        x = item.AvatarBounds.X,
+                        y = item.AvatarBounds.Y,
+                        width = item.AvatarBounds.Width,
+                        height = item.AvatarBounds.Height
+                    },
+                    confidence = Math.Round(item.AvatarConfidence, 3)
+                }
+                : null,
+            text = string.IsNullOrWhiteSpace(item.Text) ? null : item.Text,
+            innerText = string.IsNullOrWhiteSpace(item.InnerText) ? null : item.InnerText,
+            durationSeconds = item.DurationSeconds,
+            unread = item.Unread,
+            confidence = Math.Round(item.Confidence, 3),
+            evidence = new
+            {
+                boundaryMethod = item.BoundaryMethod,
+                backgroundDifferenceRatio = Math.Round(item.BackgroundDifferenceRatio, 4),
+                edgeRatio = Math.Round(item.EdgeRatio, 4),
+                dominantColorRatio = Math.Round(item.DominantColorRatio, 4),
+                greenFillRatio = Math.Round(item.GreenFillRatio, 4),
+                neutralBubbleFillRatio = Math.Round(item.NeutralBubbleFillRatio, 4)
+            }
+        };
+
+    private static MessageAnalysis[] DetectStandaloneMessageCards(
+        Bitmap bitmap,
+        LayoutRegion region,
+        IReadOnlyList<OcrLineInfo> lines,
+        IReadOnlyList<MessageAnalysis> existing,
+        (int R, int G, int B) background,
+        double scale)
+    {
+        int Dip(double value) => Math.Max(1, (int)Math.Round(value * scale));
+
+        var candidates = lines
+            .Where(line =>
+            {
+                var centerX = line.X + line.Width / 2d;
+                var centerY = line.Y + line.Height / 2d;
+                if (!region.Contains(centerX, centerY))
+                    return false;
+                if (LooksLikeMessageSystemTime(line.Text, centerX, region, scale))
+                    return false;
+                if (existing.Any(item =>
+                        item.Bounds.Contains(
+                            (int)Math.Round(centerX),
+                            (int)Math.Round(centerY))))
+                {
+                    return false;
+                }
+                return true;
+            })
+            .OrderBy(line => line.Y)
+            .ThenBy(line => line.X)
+            .ToArray();
+
+        if (candidates.Length < 3)
+            return [];
+
+        var groups = new List<List<OcrLineInfo>>();
+        foreach (var line in candidates)
+        {
+            var group = groups.LastOrDefault();
+            if (group == null)
+            {
+                groups.Add([line]);
+                continue;
+            }
+
+            var groupBottom = group.Max(item => item.Y + item.Height);
+            var verticalGap = line.Y - groupBottom;
+            if (verticalGap <= Dip(62))
+            {
+                group.Add(line);
+            }
+            else
+            {
+                groups.Add([line]);
+            }
+        }
+
+        var result = new List<MessageAnalysis>();
+        var index = 0;
+        foreach (var group in groups)
+        {
+            if (group.Count < 3)
+                continue;
+
+            var minX = (int)Math.Floor(group.Min(item => item.X));
+            var maxX = (int)Math.Ceiling(group.Max(item => item.X + item.Width));
+            var minY = (int)Math.Floor(group.Min(item => item.Y));
+            var maxY = (int)Math.Ceiling(group.Max(item => item.Y + item.Height));
+
+            var rough = ClampRect(
+                new Rectangle(
+                    minX - Dip(16),
+                    minY - Dip(26),
+                    Math.Max(Dip(40), maxX - minX + Dip(34)),
+                    Math.Max(Dip(40), maxY - minY + Dip(48))),
+                bitmap.Size);
+
+            if (rough.Width < Dip(150) || rough.Height < Dip(75))
+                continue;
+
+            var metrics = AnalyzeMessageBodyMetrics(bitmap, rough, background);
+            var largeNeutralBlock = metrics.NeutralBubbleFillRatio >= 0.38
+                && metrics.BackgroundDifferenceRatio >= 0.55;
+            if (!largeNeutralBlock)
+                continue;
+
+            var textLines = group
+                .Where(item => !LooksLikeIconOcrNoise(item.Text))
+                .ToArray();
+            var text = JoinMessageLines(textLines);
+            if (string.IsNullOrWhiteSpace(text))
+                continue;
+
+            result.Add(new MessageAnalysis
+            {
+                Id = $"message.card.{index++}",
+                Kind = "message.card",
+                Label = "卡片消息",
+                Direction = "system",
+                Bounds = rough,
+                Confidence = Math.Clamp(
+                    0.72
+                    + Math.Min(0.16, metrics.NeutralBubbleFillRatio * 0.18)
+                    + Math.Min(0.10, group.Count / 20d),
+                    0.72,
+                    0.98),
+                Text = text,
+                BoundaryMethod = "ocr_cluster_large_neutral_card",
+                BackgroundDifferenceRatio = metrics.BackgroundDifferenceRatio,
+                EdgeRatio = metrics.EdgeRatio,
+                DominantColorRatio = metrics.DominantColorRatio,
+                GreenFillRatio = metrics.GreenFillRatio,
+                NeutralBubbleFillRatio = metrics.NeutralBubbleFillRatio
             });
         }
 
         return result.ToArray();
     }
+    private static string RefineMessageOcrRole(
+        string role,
+        string text,
+        double centerX,
+        double centerY,
+        IReadOnlyList<MessageAnalysis> analyses)
+    {
+        if (role is "systemTime" or "controlIcon")
+            return role;
 
-    private static Rectangle[] DetectIncomingAvatarBounds(Bitmap bitmap, LayoutRegion region, double scale)
+        var avatar = analyses.FirstOrDefault(item =>
+            item.Kind.StartsWith("avatar.", StringComparison.Ordinal)
+            && item.Bounds.Contains((int)Math.Round(centerX), (int)Math.Round(centerY)));
+        if (avatar != null)
+            return "avatarVisual";
+
+        var body = analyses.FirstOrDefault(item =>
+            item.Kind.StartsWith("message.", StringComparison.Ordinal)
+            && item.Kind != "message.systemTime"
+            && item.Bounds.Contains((int)Math.Round(centerX), (int)Math.Round(centerY)));
+        if (body == null)
+            return role;
+
+        return body.Kind switch
+        {
+            "message.image" => "mediaText",
+            "message.voice" => LooksLikeVoiceDuration(text) ? "voiceDuration" : "messageMetadata",
+            "message.text" => "messageText",
+            "message.card" => "cardText",
+            _ => role
+        };
+    }
+
+    private static string JoinMessageLines(IReadOnlyList<OcrLineInfo> lines)
+    {
+        if (lines.Count == 0)
+            return string.Empty;
+
+        var ordered = lines
+            .Where(line => !string.IsNullOrWhiteSpace(line.Text))
+            .OrderBy(line => line.Y)
+            .ThenBy(line => line.X)
+            .ToArray();
+        if (ordered.Length == 0)
+            return string.Empty;
+
+        var rows = new List<List<OcrLineInfo>>();
+        foreach (var line in ordered)
+        {
+            var centerY = line.Y + line.Height / 2d;
+            var row = rows.LastOrDefault();
+            if (row == null)
+            {
+                rows.Add([line]);
+                continue;
+            }
+
+            var rowCenter = row.Average(item => item.Y + item.Height / 2d);
+            var tolerance = Math.Max(5d, row.Average(item => item.Height) * 0.65);
+            if (Math.Abs(centerY - rowCenter) <= tolerance)
+            {
+                row.Add(line);
+            }
+            else
+            {
+                rows.Add([line]);
+            }
+        }
+
+        return string.Join(
+            Environment.NewLine,
+            rows.Select(row => string.Join(
+                " ",
+                row.OrderBy(item => item.X)
+                    .Select(item => item.Text.Trim())
+                    .Where(item => !string.IsNullOrWhiteSpace(item)))));
+    }
+
+    private static (int R, int G, int B) EstimateMessageBackground(
+        Bitmap bitmap,
+        LayoutRegion region,
+        double scale)
     {
         int Dip(double value) => Math.Max(1, (int)Math.Round(value * scale));
-        var strip = ClampRect(
-            new Rectangle(region.X + Dip(12), region.Y + Dip(2), Dip(48), Math.Max(1, region.Height - Dip(4))),
-            bitmap.Size);
-        var backgroundProbe = ClampRect(
-            new Rectangle(region.X + Dip(2), region.Y + Dip(6), Dip(8), Math.Max(1, region.Height - Dip(12))),
-            bitmap.Size);
-        var background = SampleAverageColor(bitmap, backgroundProbe);
+        var samples = new List<(int R, int G, int B)>();
 
-        var spans = new List<(int Start, int End)>();
-        var start = -1;
+        void SampleStrip(int left)
+        {
+            var right = Math.Min(region.X + region.Width, left + Dip(5));
+            for (var y = region.Y + Dip(4); y < region.Y + region.Height - Dip(4); y += Dip(5))
+            {
+                for (var x = left; x < right; x++)
+                {
+                    var color = bitmap.GetPixel(x, y);
+                    samples.Add((color.R, color.G, color.B));
+                }
+            }
+        }
+
+        SampleStrip(region.X + Dip(2));
+        SampleStrip(Math.Max(region.X + Dip(2), region.X + region.Width - Dip(7)));
+
+        return MedianColor(samples.ToArray());
+    }
+
+    private static MessageAvatarAnchor[] DetectMessageAvatarAnchors(
+        Bitmap bitmap,
+        LayoutRegion region,
+        double scale)
+    {
+        var result = new List<MessageAvatarAnchor>();
+        result.AddRange(DetectMessageAvatarAnchorsOnSide(bitmap, region, scale, "incoming"));
+        result.AddRange(DetectMessageAvatarAnchorsOnSide(bitmap, region, scale, "outgoing"));
+
+        return result
+            .OrderBy(item => item.Bounds.Top)
+            .ThenBy(item => item.Bounds.Left)
+            .ToArray();
+    }
+
+    private static MessageAvatarAnchor[] DetectMessageAvatarAnchorsOnSide(
+        Bitmap bitmap,
+        LayoutRegion region,
+        double scale,
+        string direction)
+    {
+        int Dip(double value) => Math.Max(1, (int)Math.Round(value * scale));
+        var incoming = string.Equals(direction, "incoming", StringComparison.Ordinal);
+        var strip = incoming
+            ? ClampRect(
+                new Rectangle(
+                    region.X + Dip(12),
+                    region.Y + Dip(2),
+                    Dip(48),
+                    Math.Max(1, region.Height - Dip(4))),
+                bitmap.Size)
+            : ClampRect(
+                new Rectangle(
+                    region.X + region.Width - Dip(68),
+                    region.Y + Dip(2),
+                    Dip(48),
+                    Math.Max(1, region.Height - Dip(4))),
+                bitmap.Size);
+        var probe = incoming
+            ? ClampRect(
+                new Rectangle(
+                    region.X + Dip(2),
+                    region.Y + Dip(2),
+                    Dip(8),
+                    Math.Max(1, region.Height - Dip(4))),
+                bitmap.Size)
+            : ClampRect(
+                new Rectangle(
+                    region.X + region.Width - Dip(10),
+                    region.Y + Dip(2),
+                    Dip(8),
+                    Math.Max(1, region.Height - Dip(4))),
+                bitmap.Size);
+
+        var spans = new List<(int Start, int End, double Strength)>();
+        int? start = null;
         var lastActive = -1;
         var gap = 0;
         var maxGap = Dip(3);
+        double strengthSum = 0;
+        var strengthCount = 0;
 
         for (var y = strip.Top; y < strip.Bottom; y++)
         {
+            long br = 0, bg = 0, bb = 0;
+            var probeCount = 0;
+            for (var x = probe.Left; x < probe.Right; x++)
+            {
+                var color = bitmap.GetPixel(x, y);
+                br += color.R;
+                bg += color.G;
+                bb += color.B;
+                probeCount++;
+            }
+
+            if (probeCount == 0)
+                continue;
+
+            var baseR = br / (double)probeCount;
+            var baseG = bg / (double)probeCount;
+            var baseB = bb / (double)probeCount;
             var changed = 0;
             for (var x = strip.Left; x < strip.Right; x++)
             {
                 var color = bitmap.GetPixel(x, y);
-                var delta = Math.Abs(color.R - background.R)
-                    + Math.Abs(color.G - background.G)
-                    + Math.Abs(color.B - background.B);
+                var delta = Math.Abs(color.R - baseR)
+                    + Math.Abs(color.G - baseG)
+                    + Math.Abs(color.B - baseB);
                 if (delta >= 58)
                     changed++;
             }
 
-            var active = changed >= Math.Max(4, (int)Math.Round(strip.Width * 0.2));
+            var ratio = changed / (double)Math.Max(1, strip.Width);
+            var active = changed >= Math.Max(4, (int)Math.Round(strip.Width * 0.18));
             if (active)
             {
-                if (start < 0)
+                if (!start.HasValue)
                     start = y;
                 lastActive = y;
                 gap = 0;
+                strengthSum += ratio;
+                strengthCount++;
             }
-            else if (start >= 0)
+            else if (start.HasValue)
             {
                 gap++;
                 if (gap > maxGap)
                 {
-                    spans.Add((start, lastActive));
-                    start = -1;
+                    spans.Add((
+                        start.Value,
+                        lastActive,
+                        strengthCount == 0 ? 0 : strengthSum / strengthCount));
+                    start = null;
                     lastActive = -1;
+                    gap = 0;
+                    strengthSum = 0;
+                    strengthCount = 0;
+                }
+            }
+        }
+
+        if (start.HasValue && lastActive >= start.Value)
+        {
+            spans.Add((
+                start.Value,
+                lastActive,
+                strengthCount == 0 ? 0 : strengthSum / strengthCount));
+        }
+
+        var avatarSize = Dip(40);
+        return spans
+            .Select(span =>
+            {
+                var visibleHeight = span.End - span.Start + 1;
+                var centerY = (span.Start + span.End) / 2d;
+                var x = incoming
+                    ? region.X + Dip(20)
+                    : region.X + region.Width - Dip(68);
+                var bounds = ClampRect(
+                    new Rectangle(
+                        x,
+                        (int)Math.Round(centerY - avatarSize / 2d),
+                        avatarSize,
+                        avatarSize),
+                    bitmap.Size);
+                var heightScore = Math.Clamp(
+                    1d - Math.Abs(visibleHeight - Dip(36)) / (double)Math.Max(1, Dip(18)),
+                    0,
+                    1);
+                var strengthScore = Math.Clamp((span.Strength - 0.16) / 0.48, 0, 1);
+                var confidence = Math.Clamp(
+                    0.68 + heightScore * 0.20 + strengthScore * 0.12,
+                    0.68,
+                    0.99);
+
+                return new
+                {
+                    visibleHeight,
+                    Anchor = new MessageAvatarAnchor(direction, bounds, confidence)
+                };
+            })
+            .Where(item => item.visibleHeight >= Dip(24) && item.visibleHeight <= Dip(52))
+            .Select(item => item.Anchor)
+            .ToArray();
+    }
+
+    private static MessageBodyDetection? DetectMessageBodyBounds(
+        Bitmap bitmap,
+        LayoutRegion region,
+        MessageAvatarAnchor avatar,
+        (int R, int G, int B) background,
+        double scale)
+    {
+        int Dip(double value) => Math.Max(1, (int)Math.Round(value * scale));
+        var incoming = string.Equals(avatar.Direction, "incoming", StringComparison.Ordinal);
+        var searchStart = incoming
+            ? avatar.Bounds.Right + Dip(5)
+            : region.X + Dip(18);
+        var searchEnd = incoming
+            ? region.X + region.Width - Dip(18)
+            : avatar.Bounds.Left - Dip(5);
+
+        if (searchEnd - searchStart < Dip(12))
+            return null;
+
+        (int Left, int Right, int ScanY)? FindHorizontalSpan(int scanY)
+        {
+            scanY = Math.Clamp(scanY, region.Y, region.Y + region.Height - 1);
+
+            bool IsBodyColumn(int x)
+            {
+                var hits = 0;
+                foreach (var rawOffset in new[] { -4, -2, 0, 2, 4 })
+                {
+                    var offset = (int)Math.Round(rawOffset * scale);
+                    var y = Math.Clamp(scanY + offset, region.Y, region.Y + region.Height - 1);
+                    var color = bitmap.GetPixel(x, y);
+                    if (ColorDistance(color, background) >= 24)
+                        hits++;
+                }
+                return hits >= 3;
+            }
+
+            var seed = -1;
+            if (incoming)
+            {
+                for (var x = searchStart; x < searchEnd; x++)
+                {
+                    if (IsBodyColumn(x))
+                    {
+                        seed = x;
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                for (var x = searchEnd - 1; x >= searchStart; x--)
+                {
+                    if (IsBodyColumn(x))
+                    {
+                        seed = x;
+                        break;
+                    }
+                }
+            }
+
+            if (seed < 0)
+                return null;
+
+            var left = seed;
+            var right = seed;
+            var maxGap = Dip(5);
+            var gap = 0;
+
+            if (incoming)
+            {
+                for (var x = seed; x < searchEnd; x++)
+                {
+                    if (IsBodyColumn(x))
+                    {
+                        right = x;
+                        gap = 0;
+                    }
+                    else if (++gap > maxGap)
+                    {
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                for (var x = seed; x >= searchStart; x--)
+                {
+                    if (IsBodyColumn(x))
+                    {
+                        left = x;
+                        gap = 0;
+                    }
+                    else if (++gap > maxGap)
+                    {
+                        break;
+                    }
+                }
+            }
+
+            return right - left + 1 >= Dip(18)
+                ? (left, right, scanY)
+                : null;
+        }
+
+        var scanYs = new[]
+        {
+            avatar.Bounds.Top + Dip(6),
+            avatar.Bounds.Top + Dip(12),
+            avatar.Bounds.Top + Dip(18),
+            avatar.Bounds.Top + Dip(24),
+            avatar.Bounds.Top + Dip(30),
+            avatar.Bounds.Top + avatar.Bounds.Height / 2
+        }
+        .Select(y => Math.Clamp(y, region.Y, region.Y + region.Height - 1))
+        .Distinct()
+        .ToArray();
+
+        var horizontal = scanYs
+            .Select(FindHorizontalSpan)
+            .Where(item => item.HasValue)
+            .Select(item => item!.Value)
+            .OrderByDescending(item => item.Right - item.Left)
+            .ThenBy(item => Math.Abs(item.ScanY - (avatar.Bounds.Top + avatar.Bounds.Height / 2)))
+            .Cast<(int Left, int Right, int ScanY)?>()
+            .FirstOrDefault();
+
+        if (!horizontal.HasValue)
+            return null;
+
+        var left = horizontal.Value.Left;
+        var right = horizontal.Value.Right;
+        var targetY = horizontal.Value.ScanY;
+        var width = right - left + 1;
+
+        bool IsBodyRow(int y)
+        {
+            var changed = 0;
+            var step = Math.Max(1, Dip(2));
+            var sampled = 0;
+            for (var x = left; x <= right; x += step)
+            {
+                sampled++;
+                if (ColorDistance(bitmap.GetPixel(x, y), background) >= 24)
+                    changed++;
+            }
+
+            return changed >= Math.Max(3, (int)Math.Round(sampled * 0.14));
+        }
+
+        var spans = new List<(int Top, int Bottom)>();
+        int? spanStart = null;
+        var last = -1;
+        var gap = 0;
+        var verticalGap = Dip(4);
+
+        for (var y = region.Y; y < region.Y + region.Height; y++)
+        {
+            if (IsBodyRow(y))
+            {
+                if (!spanStart.HasValue)
+                    spanStart = y;
+                last = y;
+                gap = 0;
+            }
+            else if (spanStart.HasValue)
+            {
+                gap++;
+                if (gap > verticalGap)
+                {
+                    spans.Add((spanStart.Value, last));
+                    spanStart = null;
+                    last = -1;
                     gap = 0;
                 }
             }
         }
 
-        if (start >= 0 && lastActive >= start)
-            spans.Add((start, lastActive));
+        if (spanStart.HasValue && last >= spanStart.Value)
+            spans.Add((spanStart.Value, last));
 
-        return spans
-            .Select(span => new Rectangle(
-                strip.Left,
-                span.Start,
-                strip.Width,
-                span.End - span.Start + 1))
-            .Where(rect => rect.Height >= Dip(24) && rect.Height <= Dip(52))
-            .ToArray();
+        var span = spans
+            .Where(item => item.Top <= targetY && item.Bottom >= targetY)
+            .OrderByDescending(item => item.Bottom - item.Top)
+            .Cast<(int Top, int Bottom)?>()
+            .FirstOrDefault();
+
+        if (!span.HasValue)
+        {
+            span = spans
+                .OrderBy(item => Math.Abs(((item.Top + item.Bottom) / 2d) - targetY))
+                .Cast<(int Top, int Bottom)?>()
+                .FirstOrDefault();
+        }
+
+        if (!span.HasValue)
+            return null;
+
+        var bounds = ClampRect(
+            new Rectangle(
+                left,
+                span.Value.Top,
+                width,
+                span.Value.Bottom - span.Value.Top + 1),
+            bitmap.Size);
+        if (bounds.Width < Dip(18) || bounds.Height < Dip(16))
+            return null;
+
+        var expectedGap = incoming
+            ? bounds.Left - avatar.Bounds.Right
+            : avatar.Bounds.Left - bounds.Right;
+        var gapScore = Math.Clamp(
+            1d - Math.Abs(expectedGap - Dip(8)) / (double)Math.Max(1, Dip(18)),
+            0,
+            1);
+        var sizeScore = Math.Clamp(
+            Math.Min(bounds.Width / (double)Math.Max(1, Dip(60)), 1)
+            * Math.Min(bounds.Height / (double)Math.Max(1, Dip(30)), 1),
+            0,
+            1);
+        var confidence = Math.Clamp(0.66 + gapScore * 0.18 + sizeScore * 0.16, 0.66, 0.98);
+
+        return new MessageBodyDetection(bounds, confidence);
+    }
+    private static Rectangle RefineMessageBodyBounds(
+        Bitmap bitmap,
+        LayoutRegion region,
+        MessageAvatarAnchor avatar,
+        Rectangle initial,
+        (int R, int G, int B) background,
+        double scale)
+    {
+        int Dip(double value) => Math.Max(1, (int)Math.Round(value * scale));
+        var incoming = string.Equals(avatar.Direction, "incoming", StringComparison.Ordinal);
+        var minX = incoming
+            ? avatar.Bounds.Right + Dip(5)
+            : region.X + Dip(18);
+        var maxX = incoming
+            ? region.X + region.Width - Dip(18)
+            : avatar.Bounds.Left - Dip(5);
+        if (maxX <= minX || initial.Width <= 0 || initial.Height <= 0)
+            return initial;
+
+        bool ActiveColumn(int x)
+        {
+            var changed = 0;
+            var sampled = 0;
+            var step = Math.Max(1, Dip(2));
+            for (var y = initial.Top; y < initial.Bottom; y += step)
+            {
+                sampled++;
+                if (ColorDistance(bitmap.GetPixel(x, y), background) >= 24)
+                    changed++;
+            }
+
+            return changed >= Math.Max(2, (int)Math.Round(sampled * 0.07));
+        }
+
+        var spans = new List<(int Left, int Right)>();
+        int? start = null;
+        var last = -1;
+        var gap = 0;
+        var maxGap = Dip(4);
+        for (var x = minX; x < maxX; x++)
+        {
+            if (ActiveColumn(x))
+            {
+                if (!start.HasValue)
+                    start = x;
+                last = x;
+                gap = 0;
+            }
+            else if (start.HasValue)
+            {
+                gap++;
+                if (gap > maxGap)
+                {
+                    spans.Add((start.Value, last));
+                    start = null;
+                    last = -1;
+                    gap = 0;
+                }
+            }
+        }
+        if (start.HasValue && last >= start.Value)
+            spans.Add((start.Value, last));
+
+        var initialCenterX = initial.Left + initial.Width / 2d;
+        var horizontal = spans
+            .Where(span => span.Left <= initialCenterX && span.Right >= initialCenterX)
+            .OrderByDescending(span => span.Right - span.Left)
+            .Cast<(int Left, int Right)?>()
+            .FirstOrDefault();
+
+        if (!horizontal.HasValue)
+        {
+            horizontal = spans
+                .OrderByDescending(span =>
+                    Math.Max(0, Math.Min(span.Right, initial.Right) - Math.Max(span.Left, initial.Left)))
+                .Cast<(int Left, int Right)?>()
+                .FirstOrDefault();
+        }
+
+        if (!horizontal.HasValue)
+            return initial;
+
+        var left = horizontal.Value.Left;
+        var right = horizontal.Value.Right;
+        if (right - left + 1 < initial.Width * 0.65)
+            return initial;
+
+        bool ActiveRow(int y)
+        {
+            var changed = 0;
+            var sampled = 0;
+            var step = Math.Max(1, Dip(2));
+            for (var x = left; x <= right; x += step)
+            {
+                sampled++;
+                if (ColorDistance(bitmap.GetPixel(x, y), background) >= 24)
+                    changed++;
+            }
+
+            return changed >= Math.Max(2, (int)Math.Round(sampled * 0.07));
+        }
+
+        var rowSpans = new List<(int Top, int Bottom)>();
+        int? rowStart = null;
+        var rowLast = -1;
+        gap = 0;
+        for (var y = region.Y; y < region.Y + region.Height; y++)
+        {
+            if (ActiveRow(y))
+            {
+                if (!rowStart.HasValue)
+                    rowStart = y;
+                rowLast = y;
+                gap = 0;
+            }
+            else if (rowStart.HasValue)
+            {
+                gap++;
+                if (gap > maxGap)
+                {
+                    rowSpans.Add((rowStart.Value, rowLast));
+                    rowStart = null;
+                    rowLast = -1;
+                    gap = 0;
+                }
+            }
+        }
+        if (rowStart.HasValue && rowLast >= rowStart.Value)
+            rowSpans.Add((rowStart.Value, rowLast));
+
+        var initialCenterY = initial.Top + initial.Height / 2d;
+        var vertical = rowSpans
+            .Where(span => span.Top <= initialCenterY && span.Bottom >= initialCenterY)
+            .OrderByDescending(span => span.Bottom - span.Top)
+            .Cast<(int Top, int Bottom)?>()
+            .FirstOrDefault();
+
+        if (!vertical.HasValue)
+            return ClampRect(new Rectangle(left, initial.Top, right - left + 1, initial.Height), bitmap.Size);
+
+        var refined = ClampRect(
+            new Rectangle(
+                left,
+                vertical.Value.Top,
+                right - left + 1,
+                vertical.Value.Bottom - vertical.Value.Top + 1),
+            bitmap.Size);
+
+        // 防止把相邻消息或大块背景误吞进来，只允许在已有候选的基础上合理扩展。
+        if (refined.Width > Math.Max(initial.Width * 3, Dip(300))
+            || refined.Height > Math.Max(initial.Height * 3, Dip(360)))
+        {
+            return initial;
+        }
+
+        return refined;
+    }
+    private static MessageBodyMetrics AnalyzeMessageBodyMetrics(
+        Bitmap bitmap,
+        Rectangle bounds,
+        (int R, int G, int B) background)
+    {
+        if (bounds.Width <= 0 || bounds.Height <= 0)
+            return new MessageBodyMetrics(0, 0, 0, 0, 0);
+
+        var histogram = new Dictionary<int, int>();
+        var green = 0;
+        var neutralBubble = 0;
+        var changed = 0;
+        var sampled = 0;
+        var step = Math.Max(1, Math.Min(bounds.Width, bounds.Height) / 80);
+
+        for (var y = bounds.Top; y < bounds.Bottom; y += step)
+        {
+            for (var x = bounds.Left; x < bounds.Right; x += step)
+            {
+                sampled++;
+                var color = bitmap.GetPixel(x, y);
+                var key = ((color.R >> 4) << 8) | ((color.G >> 4) << 4) | (color.B >> 4);
+                histogram[key] = histogram.TryGetValue(key, out var count) ? count + 1 : 1;
+
+                if (color.G >= 95
+                    && color.G - color.R >= 28
+                    && color.G - color.B >= 16)
+                {
+                    green++;
+                }
+
+                var spread = Math.Max(color.R, Math.Max(color.G, color.B))
+                    - Math.Min(color.R, Math.Min(color.G, color.B));
+                var brightness = (color.R + color.G + color.B) / 3d;
+                var backgroundBrightness = (background.R + background.G + background.B) / 3d;
+                var neutral = spread <= 16;
+                var bubbleNeutral = backgroundBrightness < 120
+                    ? neutral && brightness - backgroundBrightness is >= 8 and <= 105
+                    : neutral && backgroundBrightness - brightness is >= 8 and <= 105;
+                if (bubbleNeutral)
+                    neutralBubble++;
+
+                if (ColorDistance(color, background) >= 24)
+                    changed++;
+            }
+        }
+
+        var dominant = histogram.Count == 0 ? 0 : histogram.Values.Max() / (double)Math.Max(1, sampled);
+        var edgeRatio = CountVisualEdges(bitmap, bounds) / (double)Math.Max(1, bounds.Width * bounds.Height);
+        return new MessageBodyMetrics(
+            BackgroundDifferenceRatio: changed / (double)Math.Max(1, sampled),
+            EdgeRatio: edgeRatio,
+            DominantColorRatio: dominant,
+            GreenFillRatio: green / (double)Math.Max(1, sampled),
+            NeutralBubbleFillRatio: neutralBubble / (double)Math.Max(1, sampled));
     }
 
+    private static int ColorDistance(Color color, (int R, int G, int B) reference)
+        => Math.Abs(color.R - reference.R)
+           + Math.Abs(color.G - reference.G)
+           + Math.Abs(color.B - reference.B);
+
+    private static bool DetectVoiceUnreadDot(
+        Bitmap bitmap,
+        Rectangle body,
+        string direction,
+        double scale)
+    {
+        int Dip(double value) => Math.Max(1, (int)Math.Round(value * scale));
+        var incoming = string.Equals(direction, "incoming", StringComparison.Ordinal);
+        var probe = incoming
+            ? new Rectangle(body.Right + Dip(1), body.Top, Dip(16), Math.Max(body.Height, Dip(24)))
+            : new Rectangle(body.Left - Dip(17), body.Top, Dip(16), Math.Max(body.Height, Dip(24)));
+        probe = ClampRect(probe, bitmap.Size);
+        if (probe.Width <= 0 || probe.Height <= 0)
+            return false;
+
+        var ratio = CountWechatRedPixels(bitmap, probe)
+            / (double)Math.Max(1, probe.Width * probe.Height);
+        return ratio >= 0.008;
+    }
     private static bool ShouldIncludeInRegionText(string role)
         => role is "text" or "title" or "time" or "preview" or "messageText" or "systemTime";
 
@@ -2010,10 +3039,49 @@ public static class YanziWeChatCapabilityProvider
         string Active,
         string ActiveLabel,
         bool IsChatView,
+        string ContentState,
+        bool IsConversationView,
         double Confidence,
         Rectangle ProfileBounds,
         double ProfileConfidence,
         NavigationItemAnalysis[] Items);
+    private sealed record MessageAvatarAnchor(
+        string Direction,
+        Rectangle Bounds,
+        double Confidence);
+
+    private sealed record MessageBodyDetection(
+        Rectangle Bounds,
+        double Confidence);
+
+    private sealed record MessageBodyMetrics(
+        double BackgroundDifferenceRatio,
+        double EdgeRatio,
+        double DominantColorRatio,
+        double GreenFillRatio,
+        double NeutralBubbleFillRatio);
+
+    private sealed class MessageAnalysis
+    {
+        public string Id { get; init; } = string.Empty;
+        public string Kind { get; init; } = string.Empty;
+        public string Label { get; init; } = string.Empty;
+        public string Direction { get; init; } = string.Empty;
+        public Rectangle Bounds { get; init; }
+        public Rectangle AvatarBounds { get; init; }
+        public double AvatarConfidence { get; init; }
+        public double Confidence { get; init; }
+        public string Text { get; init; } = string.Empty;
+        public string InnerText { get; init; } = string.Empty;
+        public int? DurationSeconds { get; init; }
+        public bool? Unread { get; init; }
+        public string BoundaryMethod { get; init; } = string.Empty;
+        public double BackgroundDifferenceRatio { get; init; }
+        public double EdgeRatio { get; init; }
+        public double DominantColorRatio { get; init; }
+        public double GreenFillRatio { get; init; }
+        public double NeutralBubbleFillRatio { get; init; }
+    }
     private sealed record VisualObject(
         string Id,
         string Kind,
@@ -2077,6 +3145,22 @@ public static class YanziWeChatCapabilityProvider
 
     private static async Task<object?> SendFileTransferTextAsync(object? payload)
     {
+        var input=(JsonElement)payload!;
+        string text=input.GetProperty("text").GetString()??"";
+        if(text.Length>4000)throw new ArgumentException("微信文字消息不能超过 4000 个字符。");
+        string requestId=input.TryGetProperty("requestId",out var id)?id.GetString()!:Guid.NewGuid().ToString("N");
+        var signature=JsonSerializer.Serialize(new{text,verificationTarget=input.TryGetProperty("verificationTarget",out var target)?target.GetString():null});
+        var task=YanziTaskService.Begin("wechat.fileTransfer.sendText",requestId,signature,"文件传输助手");
+        if(task.Replay)return YanziTaskService.ReplayResult(task);
+        try{return YanziTaskService.Finish(task.TaskId,(await SendFileTransferTextCoreAsync(input,task.TaskId))!);}
+        catch(Exception ex)
+        {
+            var state=YanziTaskService.Status(task.TaskId);
+            return YanziTaskService.Finish(task.TaskId,new{status=ex is OperationCanceledException&&!state.Submitted?"cancelled":state.Submitted?"uncertain":"failed",sent=state.Submitted?(bool?)null:false,confirmed=false,error=ex.Message,draftRetained=true});
+        }
+    }
+    private static async Task<object?> SendFileTransferTextCoreAsync(object? payload,string taskId)
+    {
         var input = (JsonElement)payload!;
         var text = input.GetProperty("text").GetString() ?? "";
         if (text.Length > 4000)
@@ -2087,6 +3171,8 @@ public static class YanziWeChatCapabilityProvider
         await Gate.WaitAsync();
         try
         {
+            YanziTaskService.Check(taskId);
+            YanziTaskService.Update(taskId,"正在检查微信登录状态");
             var startedAt = DateTimeOffset.UtcNow;
             var launchResult = await EnsureVisibleWeixinAsync();
             var window = FindBestWindow() ?? throw new InvalidOperationException("新版微信已启动，但未找到可见窗口。");
@@ -2157,17 +3243,22 @@ public static class YanziWeChatCapabilityProvider
             }
 
             await Task.Delay(800);
+            YanziTaskService.Check(taskId);
             window = FindBestWindow() ?? throw new InvalidOperationException("微信主窗口不可用。");
             if (!window.LooksLikeMain)
                 throw new InvalidOperationException("微信尚未进入主界面。");
 
+            YanziTaskService.Update(taskId,"正在打开并核对文件传输助手");
             var navigation = await EnsureFileTransferAssistantAsync(window);
+            YanziTaskService.Check(taskId);
             window = FindBestWindow() ?? window;
             FocusWindow(window.Handle);
             ClickRelative(window, 0.675, 0.866);
             await Task.Delay(180);
 
             using var before = CaptureWindow(window);
+            if(ReadFocusedTextPreservingClipboard().Length!=0)throw new InvalidOperationException("draft_present");
+            YanziTaskService.Check(taskId);
             PasteTextPreservingClipboard(text);
             await Task.Delay(180);
 
@@ -2178,6 +3269,9 @@ public static class YanziWeChatCapabilityProvider
                 throw new InvalidOperationException("微信输入框校验失败，未发送消息，避免误发。");
             }
 
+            YanziTaskService.Update(taskId,"已核对输入内容 · 即将发送");
+            await Task.Delay(900);YanziTaskService.Check(taskId);
+            if(YanziTaskService.Submit(taskId).CancelRequested)throw new OperationCanceledException("task_cancelled");
             RunSta(() =>
             {
                 Forms.SendKeys.SendWait("{END}");

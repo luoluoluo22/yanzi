@@ -72,10 +72,16 @@
             </ScrollViewer>
 
             <DockPanel Grid.Row="2" Margin="0,10,0,0">
-                <Button x:Name="AttachButton" DockPanel.Dock="Left" Width="30" Height="30" Margin="0,0,8,0" Content="＋" Click="AttachButton_Click" Style="{StaticResource SecondaryBtn}" FontSize="{DynamicResource FontSizeLargePlus}" Padding="0" />
+                <Button x:Name="AttachButton" DockPanel.Dock="Left" Width="30" Height="30" Margin="0,0,8,0" Content="＋" Click="AttachButton_Click" ToolTip="选择图片或其他文件发送" Style="{StaticResource SecondaryBtn}" FontSize="{DynamicResource FontSizeLargePlus}" Padding="0" />
                 <Button x:Name="VoiceButton" DockPanel.Dock="Left" Width="30" Height="30" Margin="0,0,8,0" Content="🎙" Click="VoiceButton_Click" Style="{StaticResource SecondaryBtn}" FontSize="{DynamicResource FontSizeNormalPlus}" Padding="0" />
                 <Button x:Name="SendButton" DockPanel.Dock="Right" Width="60" Height="30" Margin="8,0,0,0" Content="发送" Click="SendButton_Click" Style="{StaticResource PrimaryBtn}" />
-                <TextBox x:Name="InputTextBox" Height="30" Background="{DynamicResource BrushInputBG}" Foreground="{DynamicResource BrushTextMain}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="6,2,6,2" KeyDown="InputTextBox_KeyDown" VerticalContentAlignment="Center"/>
+                <TextBox x:Name="InputTextBox" MinHeight="30" MinLines="1" MaxLines="5"
+                         AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                         Background="{DynamicResource BrushInputBG}" Foreground="{DynamicResource BrushTextMain}"
+                         BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Padding="6,5,6,5"
+                         KeyDown="InputTextBox_KeyDown" PreviewKeyDown="InputTextBox_PreviewKeyDown"
+                         DataObject.Pasting="InputTextBox_Pasting" VerticalContentAlignment="Center"
+                         ToolTip="Enter 发送；Shift+Enter 换行；Ctrl+V 可粘贴文字、图片或文件。" />
             </DockPanel>
 
             <StackPanel Grid.Row="3">

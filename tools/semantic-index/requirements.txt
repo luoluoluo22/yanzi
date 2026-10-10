@@ -1,0 +1,4 @@
+sentence-transformers==6.1.0
+transformers==5.19.0
+pillow==12.3.0
+numpy==2.5.2

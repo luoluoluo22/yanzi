@@ -4,7 +4,7 @@ $settings = Get-Content (Join-Path $env:LOCALAPPDATA 'OpenQuickHost/appsettings.
 $agentBase = "http://127.0.0.1:$($settings.agentApiPort)"
 $headers = @{ 'X-Yanzi-Token' = $settings.agentApiToken }
 $manifest = @{
-    id = 'chatgpt-bridge'; name = 'ChatGPT 后台工作台'; version = '0.2.0'; category = 'AI 工具'
+    id = 'chatgpt-bridge'; name = 'ChatGPT 后台工作台'; version = '0.3.0'; category = 'AI 工具'
     description = '在浏览器后台调用 ChatGPT 文本与图片生成，支持结构化回复、图片缓存、定时和事件触发。'
     keywords = @('ChatGPT', '后台', '定时', 'API'); icon = 'mdi:chat-processing-outline'
     runtime = 'powershell'; entryMode = 'entry'; entry = 'start.ps1'; requires = @('node>=22')
@@ -21,7 +21,7 @@ $extensionId = if ($exists) { $exists.id } else { $created.item.id }
 if (-not $extensionId) { throw 'Agent API did not return an extension ID.' }
 $destination = Join-Path $env:LOCALAPPDATA "OpenQuickHost/Extensions/$extensionId"
 if (-not (Test-Path $destination -PathType Container)) { throw 'Agent API did not create an extension directory.' }
-foreach ($name in @('server.mjs', 'start.ps1', 'package.json', 'package-lock.json', 'public')) {
+foreach ($name in @('server.mjs', 'origin-routing.mjs', 'subagent-routing.mjs', 'start.ps1', 'package.json', 'package-lock.json', 'public')) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $destination -Recurse -Force
 }
 $modules = Join-Path $destination 'node_modules'

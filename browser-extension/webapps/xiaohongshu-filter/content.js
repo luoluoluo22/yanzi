@@ -1,5 +1,6 @@
 (() => {
   const APP_ID = "xiaohongshu.filter";
+  const APP_VERSION = "0.7.22";
   const RULES_KEY = "rules";
   const SETTINGS_KEY = "settings";
   const NOTE_STATS_KEY = "noteStats";
@@ -16,13 +17,20 @@
   const LOCAL_TEST_NOTES_ENABLED = true;
   const LOCAL_TEST_REAL_NOTES_PER_CARD = 5;
   const LOCAL_FEED_STORAGE_KEY = "yanzi.xhs.local-feed.v2";
-  const LOCAL_FEED_REPLENISH_THRESHOLD = 2;
+  const LOCAL_FEED_REPLENISH_THRESHOLD = 8;
   const LOCAL_FEED_BATCH_SIZE = 30;
-  const LOCAL_FEED_GENERATION_RETRY_MS = 60000;
+  const LOCAL_FEED_GENERATION_RETRY_MS = 30000;
   const LOCAL_FEED_MAX_NOTES = 240;
+  const LOCAL_FEED_MAX_DEDUP_MEMORY = 3000;
+  const LOCAL_FEED_MAX_EXPLORATION_NODES = 1600;
+  const LOCAL_FEED_FRONTIER_LIMIT = 24;
   const LOCAL_FEED_MAX_FEEDBACK = 120;
   const LOCAL_FEED_MAX_EVALUATIONS = 80;
   const LOCAL_FEED_MAX_INTERESTS = 30;
+  const LOCAL_FEED_RECENT_CONTEXT_LIMIT = 24;
+  const LOCAL_FEED_COVERAGE_LIMIT = 12;
+  const LOCAL_FEED_SYSTEM_PROMPT_MAX_CHARS = 6000;
+  const LOCAL_FEED_DEFAULT_SYSTEM_PROMPT = "你正在为用户生成个人信息流里的短笔记。目标不是机械改写已有内容，而是持续扩大用户对感兴趣领域的认知边界。\n\n生成原则：\n1. 优先服从用户明确设置的兴趣主题、喜欢/不感兴趣反馈和本轮评价。\n2. 同一主题不要反复讲同一个结论。轮换探索：机制、条件与边界、反例、现实案例、对比、历史变化、可迁移应用、尚未解决的问题。\n3. 每篇只讲清一个值得继续思考的问题或机制，避免空泛总结、鸡汤、标题党、广告和虚构新闻。\n4. 已经覆盖过的主题可以再次出现，但必须换一个实质不同的问题、机制、证据或应用场景，不能只换措辞。\n5. 兴趣主题非空时，大约 70% 围绕兴趣展开，30% 用于相邻领域和新鲜探索；不要让单一主题长期占满信息流。\n6. 如果兴趣主题为空，则主动跨不同现实领域探索，不默认偏向 AI、开发或编程。\n7. 用户对局部文字的反馈只约束该局部观点或表达角度，不要扩大为对整篇或整个主题的判断。\n8. 优先生成能帮助用户建立因果关系、边界条件和迁移能力的内容。\n9. 每次新内容都应从已有探索空间节点继续延伸，并形成一个更具体的新标签；用户标记“继续探索”的节点优先向下生长，标记“停止延伸”的节点及其下游不再扩展。";
   const LOCAL_TEST_NOTES = [
     {
       id: "local-test-ai-01",
@@ -162,13 +170,19 @@
   let customCardSequenceIndex = 0;
   let customCardSequenceInitialized = false;
   let localFeedState = {
-    version: 3,
+    version: 4,
     updatedAt: 0,
     notes: [],
+    dedupMemory: [],
     feedback: [],
     evaluations: [],
+    exploration: {
+      nodes: [],
+      updatedAt: 0
+    },
     preferences: {
       interests: [],
+      systemPrompt: LOCAL_FEED_DEFAULT_SYSTEM_PROMPT,
       updatedAt: 0
     },
     generation: {
@@ -176,6 +190,7 @@
       startedAt: 0,
       lastCompletedAt: 0,
       lastReturnedCount: 0,
+      lastRejectedDuplicates: 0,
       lastElapsedMs: 0,
       lastContext: null,
       lastError: ""
@@ -186,6 +201,8 @@
   let localFeedMutationInProgress = false;
   let localFeedLoaded = false;
   let evaluationPanelContext = null;
+  let evaluationResultPanelAnchor = null;
+  let evaluationResultExpiryTimer = null;
   const customCardImpressionsThisPage = new Set();
 
   const CARD_SELECTORS = [
@@ -542,6 +559,22 @@
         overflow: hidden !important;
         text-overflow: ellipsis !important;
       }
+      .yanzi-xhs-custom-topic {
+        align-self: flex-start !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+        margin-top: 8px !important;
+        padding: 3px 7px !important;
+        border: 1px solid rgba(255,255,255,.09) !important;
+        border-radius: 999px !important;
+        background: rgba(255,255,255,.055) !important;
+        color: #8b8d94 !important;
+        font-size: 10.5px !important;
+        line-height: 1.35 !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+      }
       .yanzi-xhs-local-feedback {
         position: absolute !important;
         top: 9px !important;
@@ -619,10 +652,53 @@
       .yanzi-xhs-interest-nav:hover {
         background: rgba(255,255,255,.08) !important;
       }
-      .yanzi-xhs-interest-nav svg {
+      .yanzi-xhs-interest-status {
+        position: relative !important;
+        display: inline-flex !important;
         width: 20px !important;
         height: 20px !important;
         flex: 0 0 20px !important;
+        align-items: center !important;
+        justify-content: center !important;
+        box-sizing: border-box !important;
+      }
+      .yanzi-xhs-interest-status-ring {
+        position: absolute !important;
+        inset: 2px !important;
+        box-sizing: border-box !important;
+        border: 2px solid #8b8b93 !important;
+        border-radius: 50% !important;
+      }
+      .yanzi-xhs-interest-status-mark {
+        position: relative !important;
+        z-index: 1 !important;
+        display: none !important;
+        align-items: center !important;
+        justify-content: center !important;
+        width: 100% !important;
+        height: 100% !important;
+        color: #ff4d4f !important;
+        font-size: 12px !important;
+        font-weight: 800 !important;
+        line-height: 1 !important;
+      }
+      .yanzi-xhs-interest-status[data-state="loading"] .yanzi-xhs-interest-status-ring {
+        border-color: rgba(212,212,216,.28) !important;
+        border-top-color: #f4f4f5 !important;
+        animation: yanzi-xhs-interest-status-spin .8s linear infinite !important;
+      }
+      .yanzi-xhs-interest-status[data-state="ready"] .yanzi-xhs-interest-status-ring {
+        border-color: #34c759 !important;
+        box-shadow: 0 0 0 1px rgba(52,199,89,.08) !important;
+      }
+      .yanzi-xhs-interest-status[data-state="error"] .yanzi-xhs-interest-status-ring {
+        border-color: #ff4d4f !important;
+      }
+      .yanzi-xhs-interest-status[data-state="error"] .yanzi-xhs-interest-status-mark {
+        display: inline-flex !important;
+      }
+      @keyframes yanzi-xhs-interest-status-spin {
+        to { transform: rotate(360deg); }
       }
       .yanzi-xhs-interest-nav-label {
         min-width: 0 !important;
@@ -659,6 +735,196 @@
       .yanzi-xhs-interest-panel[hidden],
       .yanzi-xhs-evaluation-panel[hidden] {
         display: none !important;
+      }
+      .yanzi-xhs-interest-panel[data-view="space"] {
+        width: min(920px, calc(100vw - 28px)) !important;
+        max-height: min(720px, calc(100vh - 40px)) !important;
+      }
+      .yanzi-xhs-space-summary {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        gap: 6px 12px !important;
+        margin: 0 0 9px !important;
+        color: #a1a1aa !important;
+        font-size: 11px !important;
+      }
+      .yanzi-xhs-space-legend {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        gap: 8px 12px !important;
+        margin-bottom: 9px !important;
+        color: #85858d !important;
+        font-size: 10.5px !important;
+      }
+      .yanzi-xhs-space-legend span {
+        display: inline-flex !important;
+        align-items: center !important;
+        gap: 5px !important;
+      }
+      .yanzi-xhs-space-dot {
+        width: 8px !important;
+        height: 8px !important;
+        border-radius: 50% !important;
+        background: #d4d4d8 !important;
+      }
+      .yanzi-xhs-space-dot[data-kind="root"] { background: #ff2442 !important; }
+      .yanzi-xhs-space-dot[data-kind="continue"] { background: #75c993 !important; }
+      .yanzi-xhs-space-dot[data-kind="stop"] { background: #66666f !important; }
+      .yanzi-xhs-space-layout {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) 250px !important;
+        gap: 10px !important;
+        align-items: stretch !important;
+      }
+      .yanzi-xhs-space-main {
+        min-width: 0 !important;
+      }
+      .yanzi-xhs-space-toolbar {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        gap: 8px !important;
+        margin: 0 0 7px !important;
+        color: #777780 !important;
+        font-size: 10.5px !important;
+      }
+      .yanzi-xhs-space-clear-selection {
+        min-height: 26px !important;
+        padding: 0 8px !important;
+        border: 1px solid rgba(255,255,255,.08) !important;
+        border-radius: 7px !important;
+        background: rgba(255,255,255,.04) !important;
+        color: #a1a1aa !important;
+        cursor: pointer !important;
+        font-size: 10.5px !important;
+      }
+      .yanzi-xhs-space-clear-selection[hidden] {
+        display: none !important;
+      }
+      .yanzi-xhs-space-canvas {
+        width: 100% !important;
+        height: 400px !important;
+        min-height: 320px !important;
+        box-sizing: border-box !important;
+        overflow: auto !important;
+        border: 1px solid rgba(255,255,255,.08) !important;
+        border-radius: 11px !important;
+        background: rgba(255,255,255,.025) !important;
+        cursor: crosshair !important;
+        touch-action: none !important;
+      }
+      .yanzi-xhs-space-svg {
+        display: block !important;
+        min-width: 100% !important;
+      }
+      .yanzi-xhs-space-edge {
+        stroke: rgba(255,255,255,.12) !important;
+        stroke-width: 1.2 !important;
+        fill: none !important;
+      }
+      .yanzi-xhs-space-node {
+        cursor: pointer !important;
+        outline: none !important;
+      }
+      .yanzi-xhs-space-node circle {
+        fill: #d4d4d8 !important;
+        stroke: rgba(0,0,0,.48) !important;
+        stroke-width: 2 !important;
+      }
+      .yanzi-xhs-space-node[data-type="interest"] circle {
+        fill: #ff2442 !important;
+      }
+      .yanzi-xhs-space-node[data-status="continue"] circle {
+        fill: #75c993 !important;
+      }
+      .yanzi-xhs-space-node[data-status="stop"] circle {
+        fill: #66666f !important;
+      }
+      .yanzi-xhs-space-node[data-selected="1"] circle {
+        stroke: #fff !important;
+        stroke-width: 3 !important;
+      }
+      .yanzi-xhs-space-node text {
+        fill: #d8d8dd !important;
+        font: 11px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+        user-select: none !important;
+      }
+      .yanzi-xhs-space-node[data-status="stop"] text {
+        fill: #777780 !important;
+      }
+      .yanzi-xhs-space-selection-rect {
+        fill: rgba(255,255,255,.07) !important;
+        stroke: rgba(255,255,255,.55) !important;
+        stroke-width: 1 !important;
+        stroke-dasharray: 5 4 !important;
+        pointer-events: none !important;
+      }
+      .yanzi-xhs-space-node[data-multi-selected="1"] circle {
+        stroke: #fff !important;
+        stroke-width: 3 !important;
+      }
+      .yanzi-xhs-space-detail {
+        min-width: 0 !important;
+        box-sizing: border-box !important;
+        padding: 11px !important;
+        overflow: auto !important;
+        border: 1px solid rgba(255,255,255,.08) !important;
+        border-radius: 10px !important;
+        background: rgba(255,255,255,.035) !important;
+      }
+      .yanzi-xhs-space-detail-title {
+        color: #f4f4f5 !important;
+        font-size: 13px !important;
+        font-weight: 650 !important;
+      }
+      .yanzi-xhs-space-detail-path,
+      .yanzi-xhs-space-detail-meta {
+        margin-top: 5px !important;
+        color: #85858d !important;
+        font-size: 10.5px !important;
+        line-height: 1.45 !important;
+      }
+      .yanzi-xhs-space-actions {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        gap: 6px !important;
+        margin-top: 9px !important;
+      }
+      .yanzi-xhs-space-actions button {
+        min-height: 30px !important;
+        padding: 0 10px !important;
+        border: 1px solid rgba(255,255,255,.10) !important;
+        border-radius: 8px !important;
+        background: rgba(255,255,255,.05) !important;
+        color: #c9c9cf !important;
+        cursor: pointer !important;
+        font-size: 11px !important;
+      }
+      .yanzi-xhs-space-actions button[data-active="1"] {
+        border-color: rgba(255,255,255,.28) !important;
+        background: rgba(255,255,255,.12) !important;
+        color: #fff !important;
+      }
+      .yanzi-xhs-space-actions button[data-status="continue"][data-active="1"] {
+        border-color: rgba(117,201,147,.5) !important;
+        color: #a9e3bb !important;
+      }
+      .yanzi-xhs-space-actions button[data-status="stop"][data-active="1"] {
+        color: #9a9aa2 !important;
+      }
+      .yanzi-xhs-space-empty {
+        padding: 54px 16px !important;
+        text-align: center !important;
+        color: #777780 !important;
+        font-size: 12px !important;
+      }
+      @media (max-width: 720px) {
+        .yanzi-xhs-space-layout {
+          grid-template-columns: 1fr !important;
+        }
+        .yanzi-xhs-space-canvas {
+          height: 320px !important;
+        }
       }
       .yanzi-xhs-interest-head,
       .yanzi-xhs-evaluation-head {
@@ -707,10 +973,21 @@
         align-items: center !important;
         gap: 5px !important;
         min-height: 28px !important;
-        padding: 0 9px !important;
+        padding: 0 8px !important;
         border-radius: 999px !important;
         background: rgba(255,255,255,.09) !important;
         color: #f4f4f5 !important;
+        transition: opacity .15s ease, background .15s ease !important;
+      }
+      .yanzi-xhs-interest-chip[data-enabled="0"] {
+        opacity: .48 !important;
+        background: rgba(255,255,255,.045) !important;
+      }
+      .yanzi-xhs-interest-chip-label {
+        max-width: 150px !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
       }
       .yanzi-xhs-interest-chip button {
         border: 0 !important;
@@ -718,7 +995,18 @@
         background: transparent !important;
         color: #a1a1aa !important;
         cursor: pointer !important;
-        font-size: 14px !important;
+        font-size: 13px !important;
+        line-height: 1 !important;
+      }
+      .yanzi-xhs-interest-chip button[data-action="toggle"] {
+        color: #7dd3a7 !important;
+        font-size: 10px !important;
+      }
+      .yanzi-xhs-interest-chip[data-enabled="0"] button[data-action="toggle"] {
+        color: #71717a !important;
+      }
+      .yanzi-xhs-interest-chip button:hover {
+        color: #fff !important;
       }
       .yanzi-xhs-interest-input-row {
         display: flex !important;
@@ -770,6 +1058,191 @@
         color: #8b8b93 !important;
         font-size: 11px !important;
       }
+      .yanzi-xhs-evaluation-save:disabled {
+        opacity: .62 !important;
+        cursor: default !important;
+      }
+      .yanzi-xhs-evaluation-replies {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 8px !important;
+        margin: 10px 0 2px !important;
+      }
+      .yanzi-xhs-evaluation-reply {
+        padding: 9px 10px !important;
+        border: 1px solid rgba(255,255,255,.09) !important;
+        border-radius: 10px !important;
+        background: rgba(255,255,255,.045) !important;
+      }
+      .yanzi-xhs-evaluation-reply-quote {
+        margin-bottom: 6px !important;
+        padding-left: 8px !important;
+        border-left: 2px solid rgba(255,255,255,.18) !important;
+        color: #90919a !important;
+        font-size: 10.5px !important;
+        line-height: 1.45 !important;
+      }
+      .yanzi-xhs-evaluation-reply-user {
+        margin-bottom: 6px !important;
+        color: #b6b6be !important;
+        font-size: 10.8px !important;
+        line-height: 1.45 !important;
+      }
+      .yanzi-xhs-evaluation-reply-label {
+        margin-bottom: 4px !important;
+        color: #8b8b93 !important;
+        font-size: 10px !important;
+        font-weight: 600 !important;
+      }
+      .yanzi-xhs-evaluation-reply-answer {
+        color: #f0f0f2 !important;
+        font-size: 11.5px !important;
+        line-height: 1.58 !important;
+        white-space: pre-wrap !important;
+        overflow-wrap: anywhere !important;
+      }
+      .yanzi-xhs-evaluation-reply[data-status="pending"] .yanzi-xhs-evaluation-reply-answer {
+        color: #a1a1aa !important;
+      }
+      .yanzi-xhs-evaluation-reply[data-status="error"] .yanzi-xhs-evaluation-reply-answer {
+        color: #d3a1a8 !important;
+      }
+      .yanzi-xhs-evaluation-launcher {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        gap: 8px !important;
+        width: 100% !important;
+        min-height: 32px !important;
+        box-sizing: border-box !important;
+        padding: 7px 9px !important;
+        border: 1px solid rgba(255,255,255,.09) !important;
+        border-radius: 9px !important;
+        background: rgba(255,255,255,.045) !important;
+        color: #d6d6dc !important;
+        cursor: pointer !important;
+        font: 600 10.8px/1.25 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+        text-align: left !important;
+      }
+      .yanzi-xhs-evaluation-launcher:hover {
+        background: rgba(255,255,255,.075) !important;
+      }
+      .yanzi-xhs-evaluation-launcher-state {
+        flex: 0 0 auto !important;
+        color: #8b8b93 !important;
+        font-size: 10px !important;
+        font-weight: 500 !important;
+      }
+      .yanzi-xhs-evaluation-launcher[data-status="success"] .yanzi-xhs-evaluation-launcher-state {
+        color: #9dd7ad !important;
+      }
+      .yanzi-xhs-evaluation-launcher[data-status="error"] .yanzi-xhs-evaluation-launcher-state {
+        color: #d3a1a8 !important;
+      }
+      .yanzi-xhs-evaluation-result-panel {
+        position: fixed !important;
+        z-index: 2147483647 !important;
+        width: min(500px, calc(100vw - 28px)) !important;
+        max-height: min(72vh, 720px) !important;
+        box-sizing: border-box !important;
+        padding: 14px !important;
+        overflow: auto !important;
+        border: 1px solid rgba(255,255,255,.13) !important;
+        border-radius: 14px !important;
+        background: rgba(24,24,26,.985) !important;
+        color: #fff !important;
+        box-shadow: 0 22px 60px rgba(0,0,0,.44) !important;
+        backdrop-filter: blur(16px) !important;
+        -webkit-backdrop-filter: blur(16px) !important;
+        font: 13px/1.58 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+      }
+      .yanzi-xhs-evaluation-result-panel[hidden] {
+        display: none !important;
+      }
+      .yanzi-xhs-evaluation-result-head {
+        position: sticky !important;
+        top: -14px !important;
+        z-index: 2 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        gap: 10px !important;
+        margin: -14px -14px 10px !important;
+        padding: 12px 14px 9px !important;
+        background: rgba(24,24,26,.98) !important;
+        border-bottom: 1px solid rgba(255,255,255,.07) !important;
+      }
+      .yanzi-xhs-evaluation-result-title {
+        font-size: 13px !important;
+        font-weight: 650 !important;
+      }
+      .yanzi-xhs-evaluation-result-close {
+        width: 28px !important;
+        height: 28px !important;
+        padding: 0 !important;
+        border: 0 !important;
+        border-radius: 8px !important;
+        background: transparent !important;
+        color: #a1a1aa !important;
+        cursor: pointer !important;
+        font-size: 18px !important;
+      }
+      .yanzi-xhs-evaluation-result-close:hover {
+        background: rgba(255,255,255,.08) !important;
+        color: #fff !important;
+      }
+      .yanzi-xhs-evaluation-result-quote {
+        margin: 0 0 9px !important;
+        padding: 7px 9px !important;
+        border-left: 2px solid rgba(255,255,255,.19) !important;
+        border-radius: 0 8px 8px 0 !important;
+        background: rgba(255,255,255,.035) !important;
+        color: #9b9ba5 !important;
+        font-size: 11px !important;
+      }
+      .yanzi-xhs-evaluation-result-user {
+        margin: 0 0 11px !important;
+        color: #b7b7bf !important;
+        font-size: 11.5px !important;
+      }
+      .yanzi-xhs-evaluation-result-answer {
+        color: #f3f3f5 !important;
+        font-size: 13px !important;
+        line-height: 1.68 !important;
+        white-space: pre-wrap !important;
+        overflow-wrap: anywhere !important;
+      }
+      .yanzi-xhs-evaluation-result-meta {
+        margin-top: 12px !important;
+        color: #85858f !important;
+        font-size: 10.5px !important;
+      }
+      .yanzi-xhs-evaluation-result-foot {
+        position: sticky !important;
+        bottom: -14px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: flex-end !important;
+        gap: 8px !important;
+        margin: 12px -14px -14px !important;
+        padding: 10px 14px 12px !important;
+        background: rgba(24,24,26,.98) !important;
+        border-top: 1px solid rgba(255,255,255,.07) !important;
+      }
+      .yanzi-xhs-evaluation-followup {
+        min-height: 34px !important;
+        padding: 0 12px !important;
+        border: 0 !important;
+        border-radius: 9px !important;
+        background: #ff2442 !important;
+        color: #fff !important;
+        cursor: pointer !important;
+        font: 600 11px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+      }
+      .yanzi-xhs-evaluation-followup:disabled {
+        opacity: .45 !important;
+        cursor: default !important;
+      }
       .yanzi-xhs-interest-clear {
         border: 0 !important;
         background: transparent !important;
@@ -802,6 +1275,61 @@
       }
       .yanzi-xhs-interest-section[hidden] {
         display: none !important;
+      }
+      .yanzi-xhs-prompt-help {
+        margin: 0 0 8px !important;
+        color: #8b8b93 !important;
+        font-size: 11px !important;
+        line-height: 1.55 !important;
+      }
+      .yanzi-xhs-prompt-input {
+        width: 100% !important;
+        min-height: 300px !important;
+        max-height: 430px !important;
+        box-sizing: border-box !important;
+        resize: vertical !important;
+        padding: 11px 12px !important;
+        border: 1px solid rgba(255,255,255,.10) !important;
+        border-radius: 10px !important;
+        outline: none !important;
+        background: rgba(255,255,255,.045) !important;
+        color: #f4f4f5 !important;
+        font: 11.5px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important;
+      }
+      .yanzi-xhs-prompt-input:focus {
+        border-color: rgba(255,255,255,.23) !important;
+        background: rgba(255,255,255,.06) !important;
+      }
+      .yanzi-xhs-prompt-actions {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        gap: 10px !important;
+        margin-top: 9px !important;
+      }
+      .yanzi-xhs-prompt-status {
+        min-width: 0 !important;
+        color: #8b8b93 !important;
+        font-size: 11px !important;
+      }
+      .yanzi-xhs-prompt-buttons {
+        display: flex !important;
+        gap: 6px !important;
+      }
+      .yanzi-xhs-prompt-buttons button {
+        min-height: 30px !important;
+        padding: 0 10px !important;
+        border: 1px solid rgba(255,255,255,.10) !important;
+        border-radius: 8px !important;
+        background: rgba(255,255,255,.06) !important;
+        color: #d4d4d8 !important;
+        cursor: pointer !important;
+        font-size: 11px !important;
+      }
+      .yanzi-xhs-prompt-buttons .yanzi-xhs-prompt-save {
+        background: #ff2442 !important;
+        border-color: #ff2442 !important;
+        color: #fff !important;
       }
       .yanzi-xhs-history-summary {
         display: flex !important;
@@ -1464,6 +1992,8 @@
       title: trimText(item?.title, 160),
       body: trimText(item?.body, 1200),
       topic: trimText(item?.topic, 80),
+      explorationNodeId: normalizeText(item?.explorationNodeId),
+      parentNodeId: normalizeText(item?.parentNodeId || item?.explorationParentNodeId),
       author: trimText(item?.author || "燕子 · 本地", 80),
       badge: trimText(item?.badge || (item?.source === "chatgpt" ? "AI 生成" : "本地测试"), 24),
       imageUrl: normalizeText(item?.imageUrl),
@@ -1484,9 +2014,39 @@
     };
   }
 
+  function localFeedDedupEntry(note) {
+    return {
+      title: trimText(note?.title, 160),
+      body: trimText(note?.body, 240),
+      topic: trimText(note?.topic, 80),
+      createdAt: Number(note?.createdAt || note?.updatedAt || Date.now())
+    };
+  }
+
+  function normalizeLocalFeedDedupMemory(items, fallbackNotes = []) {
+    const source = Array.isArray(items) && items.length
+      ? items
+      : fallbackNotes;
+    const seen = new Set();
+    const normalized = [];
+
+    for (const item of source) {
+      const entry = localFeedDedupEntry(item);
+      if (!entry.title || !entry.body) continue;
+      const key = normalizeLocalFeedDedupText(
+        entry.title + "|" + entry.body
+      );
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      normalized.push(entry);
+    }
+
+    return normalized.slice(-LOCAL_FEED_MAX_DEDUP_MEMORY);
+  }
+
   function createInitialLocalFeedState() {
     return {
-      version: 3,
+      version: 4,
       updatedAt: Date.now(),
       notes: LOCAL_TEST_NOTES.map((note, index) =>
         normalizeLocalFeedNote({
@@ -1496,10 +2056,16 @@
           state: "ready"
         }, index)
       ),
+      dedupMemory: [],
       feedback: [],
       evaluations: [],
+      exploration: {
+        nodes: [],
+        updatedAt: 0
+      },
       preferences: {
         interests: [],
+        systemPrompt: LOCAL_FEED_DEFAULT_SYSTEM_PROMPT,
         updatedAt: 0
       },
       generation: {
@@ -1507,11 +2073,414 @@
         startedAt: 0,
         lastCompletedAt: 0,
         lastReturnedCount: 0,
+        lastRejectedDuplicates: 0,
         lastElapsedMs: 0,
         lastContext: null,
         lastError: ""
       }
     };
+  }
+
+  function normalizeLocalFeedInterest(item) {
+    const text = trimText(
+      typeof item === "string" ? item : item?.text,
+      40
+    );
+    if (!text) return null;
+
+    return {
+      text,
+      enabled: typeof item === "object" && item !== null
+        ? item.enabled !== false
+        : true
+    };
+  }
+
+  function normalizeLocalFeedInterests(items) {
+    const normalized = (Array.isArray(items) ? items : [])
+      .map(normalizeLocalFeedInterest)
+      .filter(Boolean);
+
+    return normalized
+      .filter((item, index, list) =>
+        list.findIndex(other =>
+          other.text.toLowerCase() === item.text.toLowerCase()
+        ) === index
+      )
+      .slice(0, LOCAL_FEED_MAX_INTERESTS);
+  }
+
+  function activeLocalFeedInterestTexts() {
+    return normalizeLocalFeedInterests(
+      localFeedState.preferences?.interests || []
+    )
+      .filter(item => item.enabled)
+      .map(item => item.text);
+  }
+
+  function explorationRootNodeId(label) {
+    return ruleId("space-root", normalizeText(label).toLowerCase());
+  }
+
+  function explorationChildNodeId(parentNodeId, label) {
+    return ruleId(
+      "space-node",
+      normalizeText(parentNodeId) + "|" + normalizeText(label).toLowerCase()
+    );
+  }
+
+  function normalizeExplorationNode(item) {
+    const label = trimText(item?.label || item?.topic, 80);
+    const type = ["interest", "topic", "legacy-root", "legacy"].includes(item?.type)
+      ? item.type
+      : "topic";
+    const parentNodeId = type === "interest" || type === "legacy-root"
+      ? ""
+      : normalizeText(item?.parentNodeId);
+    const id = normalizeText(item?.id) || (
+      type === "interest"
+        ? explorationRootNodeId(label)
+        : type === "legacy-root"
+          ? "space-history-root"
+          : explorationChildNodeId(parentNodeId, label)
+    );
+    if (!label || !id) return null;
+
+    return {
+      id,
+      label,
+      parentNodeId,
+      type,
+      status: ["continue", "stop", "neutral"].includes(item?.status)
+        ? item.status
+        : type === "legacy-root" || type === "legacy"
+          ? "stop"
+          : "neutral",
+      enabled: item?.enabled !== false,
+      createdAt: Number(item?.createdAt || Date.now()),
+      updatedAt: Number(item?.updatedAt || Date.now())
+    };
+  }
+
+  function normalizeExplorationGraph(value, notes, interests) {
+    const source = Array.isArray(value?.nodes) ? value.nodes : [];
+    const nodes = [];
+    const byId = new Map();
+
+    const addNode = item => {
+      const node = normalizeExplorationNode(item);
+      if (!node) return null;
+      const existing = byId.get(node.id);
+      if (existing) {
+        Object.assign(existing, {
+          label: node.label,
+          parentNodeId: node.parentNodeId || existing.parentNodeId,
+          type: node.type || existing.type,
+          status: node.status || existing.status,
+          enabled: node.enabled,
+          updatedAt: Math.max(existing.updatedAt || 0, node.updatedAt || 0)
+        });
+        return existing;
+      }
+      byId.set(node.id, node);
+      nodes.push(node);
+      return node;
+    };
+
+    for (const item of source) addNode(item);
+
+    const interestRoots = new Map();
+    const activeRootIds = new Set();
+    const normalizedInterests = normalizeLocalFeedInterests(interests);
+
+    for (const interest of normalizedInterests) {
+      const id = explorationRootNodeId(interest.text);
+      activeRootIds.add(id);
+      const existing = byId.get(id);
+      const root = addNode({
+        id,
+        label: interest.text,
+        parentNodeId: "",
+        type: "interest",
+        status: existing?.status || "neutral",
+        enabled: interest.enabled,
+        createdAt: existing?.createdAt || Date.now(),
+        updatedAt: existing?.updatedAt || Date.now()
+      });
+      if (root) interestRoots.set(root.label.toLowerCase(), root);
+    }
+
+    const existingFreeRoot = byId.get("space-root-free");
+    if (!interestRoots.size) {
+      const freeRoot = addNode({
+        id: "space-root-free",
+        label: "自由探索",
+        parentNodeId: "",
+        type: "interest",
+        status: existingFreeRoot?.status || "neutral",
+        enabled: true,
+        createdAt: existingFreeRoot?.createdAt || Date.now(),
+        updatedAt: existingFreeRoot?.updatedAt || Date.now()
+      });
+      if (freeRoot) {
+        activeRootIds.add(freeRoot.id);
+        interestRoots.set(freeRoot.label.toLowerCase(), freeRoot);
+      }
+    } else if (existingFreeRoot) {
+      existingFreeRoot.enabled = false;
+    }
+
+    for (const node of nodes) {
+      if (
+        node.type === "interest" &&
+        node.id !== "space-root-free" &&
+        !activeRootIds.has(node.id)
+      ) {
+        node.enabled = false;
+      }
+    }
+
+    let legacyRoot = byId.get("space-history-root") || null;
+    const ensureLegacyRoot = () => {
+      if (legacyRoot) return legacyRoot;
+      legacyRoot = addNode({
+        id: "space-history-root",
+        label: "历史导入",
+        parentNodeId: "",
+        type: "legacy-root",
+        status: "stop",
+        enabled: true
+      });
+      return legacyRoot;
+    };
+
+    for (const note of notes || []) {
+      const topic = trimText(note?.topic, 80);
+      if (!topic) continue;
+
+      const hadLineage = Boolean(
+        normalizeText(note.explorationNodeId) ||
+        normalizeText(note.parentNodeId)
+      );
+      if (!hadLineage && note.source === "chatgpt" && note.state !== "seen") {
+        note.state = "seen";
+        note.seenAt = note.seenAt || Date.now();
+        note.assignedAt = 0;
+        note.updatedAt = Date.now();
+      }
+
+      const existingNode = note.explorationNodeId
+        ? byId.get(note.explorationNodeId)
+        : null;
+      if (existingNode) {
+        note.parentNodeId = existingNode.parentNodeId || "";
+        continue;
+      }
+
+      if (note.parentNodeId && byId.has(note.parentNodeId)) {
+        const node = addNode({
+          id: explorationChildNodeId(note.parentNodeId, topic),
+          label: topic,
+          parentNodeId: note.parentNodeId,
+          type: "topic",
+          status: "neutral",
+          enabled: true,
+          createdAt: note.createdAt,
+          updatedAt: note.updatedAt
+        });
+        if (node) note.explorationNodeId = node.id;
+        continue;
+      }
+
+      const matchingRoot = interestRoots.get(topic.toLowerCase());
+      if (matchingRoot) {
+        note.explorationNodeId = matchingRoot.id;
+        note.parentNodeId = "";
+        continue;
+      }
+
+      const root = ensureLegacyRoot();
+      const node = addNode({
+        id: explorationChildNodeId(root.id, topic),
+        label: topic,
+        parentNodeId: root.id,
+        type: "legacy",
+        status: "stop",
+        enabled: true,
+        createdAt: note.createdAt,
+        updatedAt: note.updatedAt
+      });
+      if (node) {
+        note.explorationNodeId = node.id;
+        note.parentNodeId = root.id;
+      }
+    }
+
+    const liveIds = new Set(nodes.map(node => node.id));
+    for (const node of nodes) {
+      if (node.parentNodeId && !liveIds.has(node.parentNodeId)) {
+        node.parentNodeId = "";
+      }
+    }
+
+    return {
+      nodes: nodes
+        .sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0))
+        .slice(-LOCAL_FEED_MAX_EXPLORATION_NODES),
+      updatedAt: Number(value?.updatedAt || 0)
+    };
+  }
+
+  function explorationNodeMap() {
+    return new Map(
+      (localFeedState.exploration?.nodes || []).map(node => [node.id, node])
+    );
+  }
+
+  function explorationNodeMetrics() {
+    const childCounts = new Map();
+    const noteCounts = new Map();
+    for (const node of localFeedState.exploration?.nodes || []) {
+      if (node.parentNodeId) {
+        childCounts.set(
+          node.parentNodeId,
+          Number(childCounts.get(node.parentNodeId) || 0) + 1
+        );
+      }
+    }
+    for (const note of localFeedState.notes || []) {
+      if (!note.explorationNodeId) continue;
+      noteCounts.set(
+        note.explorationNodeId,
+        Number(noteCounts.get(note.explorationNodeId) || 0) + 1
+      );
+    }
+    return { childCounts, noteCounts };
+  }
+
+  function explorationNodeBlocked(node, byId) {
+    let current = node;
+    const visited = new Set();
+    while (current) {
+      if (visited.has(current.id)) return true;
+      visited.add(current.id);
+      if (current.status === "stop" || current.enabled === false) return true;
+      if (!current.parentNodeId) return false;
+      current = byId.get(current.parentNodeId);
+    }
+    return false;
+  }
+
+  function localFeedExplorationFrontier() {
+    const nodes = localFeedState.exploration?.nodes || [];
+    const byId = explorationNodeMap();
+    const { childCounts, noteCounts } = explorationNodeMetrics();
+
+    return nodes
+      .filter(node =>
+        node.type !== "legacy-root" &&
+        node.type !== "legacy" &&
+        !explorationNodeBlocked(node, byId)
+      )
+      .map(node => ({
+        id: node.id,
+        label: node.label,
+        parentNodeId: node.parentNodeId || "",
+        type: node.type,
+        status: node.status,
+        childCount: Number(childCounts.get(node.id) || 0),
+        noteCount: Number(noteCounts.get(node.id) || 0),
+        updatedAt: Number(node.updatedAt || 0)
+      }))
+      .sort((a, b) => {
+        const priority = value => value.status === "continue" ? 0 : 1;
+        return priority(a) - priority(b) ||
+          a.childCount - b.childCount ||
+          b.updatedAt - a.updatedAt;
+      })
+      .slice(0, LOCAL_FEED_FRONTIER_LIMIT);
+  }
+
+  function upsertExplorationNode(label, parentNodeId, options = {}) {
+    const text = trimText(label, 80);
+    const parentId = normalizeText(parentNodeId);
+    if (!text || !parentId) return null;
+
+    localFeedState.exploration = localFeedState.exploration || {
+      nodes: [],
+      updatedAt: 0
+    };
+
+    const id = explorationChildNodeId(parentId, text);
+    let node = localFeedState.exploration.nodes.find(item => item.id === id);
+    if (!node) {
+      node = normalizeExplorationNode({
+        id,
+        label: text,
+        parentNodeId: parentId,
+        type: "topic",
+        status: options.status || "neutral",
+        enabled: true,
+        createdAt: Number(options.createdAt || Date.now()),
+        updatedAt: Date.now()
+      });
+      if (node) localFeedState.exploration.nodes.push(node);
+    } else {
+      node.label = text;
+      node.updatedAt = Date.now();
+    }
+
+    localFeedState.exploration.nodes = localFeedState.exploration.nodes
+      .slice(-LOCAL_FEED_MAX_EXPLORATION_NODES);
+    localFeedState.exploration.updatedAt = Date.now();
+    return node;
+  }
+
+  function readExplorationSelection(panel) {
+    try {
+      const value = JSON.parse(panel?.dataset?.spaceSelectedIds || "[]");
+      return new Set(
+        (Array.isArray(value) ? value : [])
+          .map(item => normalizeText(item))
+          .filter(Boolean)
+      );
+    } catch {
+      return new Set();
+    }
+  }
+
+  function writeExplorationSelection(panel, ids) {
+    if (!panel) return;
+    panel.dataset.spaceSelectedIds = JSON.stringify(
+      [...new Set(ids || [])].filter(Boolean)
+    );
+  }
+
+  async function updateExplorationNodeStatuses(nodeIds, status) {
+    if (!["continue", "stop", "neutral"].includes(status)) return;
+    const ids = new Set(nodeIds || []);
+    if (!ids.size) return;
+
+    let changed = false;
+    const now = Date.now();
+    for (const node of localFeedState.exploration?.nodes || []) {
+      if (!ids.has(node.id)) continue;
+      if (node.type === "legacy-root" || node.type === "legacy") continue;
+      if (node.status === status) continue;
+      node.status = status;
+      node.updatedAt = now;
+      changed = true;
+    }
+
+    if (!changed) return;
+    localFeedState.exploration.updatedAt = now;
+    localFeedState.preferences.updatedAt = now;
+    await persistLocalFeedState();
+    renderInterestPanel();
+  }
+
+  async function updateExplorationNodeStatus(nodeId, status) {
+    await updateExplorationNodeStatuses([nodeId], status);
   }
 
   function normalizeLocalFeedState(value) {
@@ -1535,6 +2504,11 @@
         return item;
       });
 
+    const dedupMemory = normalizeLocalFeedDedupMemory(
+      value.dedupMemory,
+      notes
+    );
+
     const feedback = (Array.isArray(value.feedback) ? value.feedback : [])
       .filter(item =>
         item &&
@@ -1548,31 +2522,47 @@
           "evaluation-" + ruleId("evaluation", String(item?.at || Date.now()) + "|" + String(item?.text || "")),
         noteId: normalizeText(item?.noteId),
         text: trimText(item?.text, 500),
+        kind: item?.kind === "chat" ? "chat" : "evaluation",
         scope: item?.scope === "selection" ? "selection" : "note",
         selectionText: trimText(item?.selectionText, 240),
         title: trimText(item?.title, 160),
         body: trimText(item?.body, 500),
         topic: trimText(item?.topic, 80),
         at: Number(item?.at || Date.now()),
-        usedAt: Number(item?.usedAt || 0)
+        usedAt: Number(item?.usedAt || 0),
+        replyStatus: ["pending", "success", "error"].includes(item?.replyStatus)
+          ? item.replyStatus
+          : "",
+        replyText: String(item?.replyText || ""),
+        replyError: trimText(item?.replyError, 500),
+        replyRequestedAt: Number(item?.replyRequestedAt || 0),
+        replyAt: Number(item?.replyAt || 0),
+        replyElapsedMs: Number(item?.replyElapsedMs || 0),
+        replyTabId: Number(item?.replyTabId || 0),
+        replyChatUrl: normalizeText(item?.replyChatUrl),
+        replyTabExpiresAt: Number(item?.replyTabExpiresAt || 0),
+        replyKeepOpen: item?.replyKeepOpen === true
       }))
       .filter(item => item.text)
       .slice(-LOCAL_FEED_MAX_EVALUATIONS);
 
-    const interests = (Array.isArray(value.preferences?.interests)
-      ? value.preferences.interests
-      : [])
-      .map(item => trimText(item, 40))
-      .filter(Boolean)
-      .filter((item, index, list) =>
-        list.findIndex(other => other.toLowerCase() === item.toLowerCase()) === index
-      )
-      .slice(0, LOCAL_FEED_MAX_INTERESTS);
+    const interests = normalizeLocalFeedInterests(
+      value.preferences?.interests
+    );
 
     const preferences = {
       interests,
+      systemPrompt: String(value.preferences?.systemPrompt || LOCAL_FEED_DEFAULT_SYSTEM_PROMPT)
+        .trim()
+        .slice(0, LOCAL_FEED_SYSTEM_PROMPT_MAX_CHARS) || LOCAL_FEED_DEFAULT_SYSTEM_PROMPT,
       updatedAt: Number(value.preferences?.updatedAt || 0)
     };
+
+    const exploration = normalizeExplorationGraph(
+      value.exploration,
+      notes,
+      interests
+    );
 
     const generation = {
       inFlight: value.generation?.inFlight === true,
@@ -1582,6 +2572,7 @@
         value.generation?.requestPreferencesUpdatedAt || 0
       ),
       lastReturnedCount: Number(value.generation?.lastReturnedCount || 0),
+      lastRejectedDuplicates: Number(value.generation?.lastRejectedDuplicates || 0),
       lastElapsedMs: Number(value.generation?.lastElapsedMs || 0),
       lastContext: value.generation?.lastContext &&
         typeof value.generation.lastContext === "object"
@@ -1599,11 +2590,13 @@
     }
 
     return {
-      version: 3,
+      version: 4,
       updatedAt: Number(value.updatedAt || 0),
       notes,
+      dedupMemory,
       feedback,
       evaluations,
+      exploration,
       preferences,
       generation
     };
@@ -1623,6 +2616,11 @@
       ...seen.slice(0, Math.max(20, LOCAL_FEED_MAX_NOTES - future.length))
     ].slice(0, LOCAL_FEED_MAX_NOTES);
 
+    localFeedState.dedupMemory = normalizeLocalFeedDedupMemory([
+      ...(localFeedState.dedupMemory || []),
+      ...localFeedState.notes
+    ]);
+
     localFeedState.feedback = (localFeedState.feedback || [])
       .slice(-LOCAL_FEED_MAX_FEEDBACK);
     localFeedState.evaluations = (localFeedState.evaluations || [])
@@ -1630,8 +2628,18 @@
     localFeedState.preferences = {
       interests: (localFeedState.preferences?.interests || [])
         .slice(0, LOCAL_FEED_MAX_INTERESTS),
+      systemPrompt: String(
+        localFeedState.preferences?.systemPrompt || LOCAL_FEED_DEFAULT_SYSTEM_PROMPT
+      ).trim().slice(0, LOCAL_FEED_SYSTEM_PROMPT_MAX_CHARS) || LOCAL_FEED_DEFAULT_SYSTEM_PROMPT,
       updatedAt: Number(localFeedState.preferences?.updatedAt || 0)
     };
+
+    localFeedState.exploration = normalizeExplorationGraph(
+      localFeedState.exploration,
+      localFeedState.notes,
+      localFeedState.preferences.interests
+    );
+    localFeedState.version = 4;
 
     await chrome.storage.local.set({
       [LOCAL_FEED_STORAGE_KEY]: localFeedState
@@ -1648,13 +2656,18 @@
 
   async function loadLocalFeedState() {
     const stored = await chrome.storage.local.get(LOCAL_FEED_STORAGE_KEY);
-    localFeedState = normalizeLocalFeedState(stored?.[LOCAL_FEED_STORAGE_KEY]);
+    const storedState = stored?.[LOCAL_FEED_STORAGE_KEY];
+    const needsMigration =
+      !storedState ||
+      Number(storedState?.version || 0) < 4 ||
+      !storedState?.exploration;
+    localFeedState = normalizeLocalFeedState(storedState);
     localFeedLoaded = true;
     ensureInterestNavButton();
     renderInterestPanel();
     updateInterestNavButton();
 
-    if (!stored?.[LOCAL_FEED_STORAGE_KEY]) {
+    if (needsMigration) {
       await persistLocalFeedState();
     }
 
@@ -1791,62 +2804,164 @@
     }
   }
 
+  function effectiveLocalFeedSystemPrompt() {
+    return String(
+      localFeedState.preferences?.systemPrompt || LOCAL_FEED_DEFAULT_SYSTEM_PROMPT
+    ).trim().slice(0, LOCAL_FEED_SYSTEM_PROMPT_MAX_CHARS) ||
+      LOCAL_FEED_DEFAULT_SYSTEM_PROMPT;
+  }
+
+  function localFeedTopicCoverage() {
+    const counts = new Map();
+    const coverageSource = localFeedState.dedupMemory?.length
+      ? localFeedState.dedupMemory
+      : localFeedState.notes || [];
+    for (const note of coverageSource) {
+      const topic = trimText(note?.topic, 80);
+      if (!topic) continue;
+      const key = topic.toLowerCase();
+      const current = counts.get(key);
+      if (current) {
+        current.count += 1;
+      } else {
+        counts.set(key, { topic, count: 1 });
+      }
+    }
+
+    return [...counts.values()]
+      .sort((a, b) => b.count - a.count || a.topic.localeCompare(b.topic))
+      .slice(0, LOCAL_FEED_COVERAGE_LIMIT);
+  }
+
   function localFeedPromptContext() {
     const feedback = (localFeedState.feedback || [])
       .slice()
       .sort((a, b) => Number(a.at || 0) - Number(b.at || 0));
 
     const mapFeedbackItem = item => ({
-      title: item.title || "",
-      body: item.body || "",
-      topic: item.topic || "",
+      title: trimText(item.title, 100),
+      body: trimText(item.body, 120),
+      topic: trimText(item.topic, 60),
       scope: item.scope === "selection" ? "selection" : "note",
       selectionText: item.scope === "selection"
-        ? normalizeText(item.selectionText)
+        ? trimText(item.selectionText, 200)
         : ""
     });
 
     const liked = feedback
       .filter(item => item.value === "like")
-      .slice(-16)
+      .slice(-10)
       .map(mapFeedbackItem);
 
     const disliked = feedback
       .filter(item => item.value === "dislike")
-      .slice(-16)
+      .slice(-10)
       .map(mapFeedbackItem);
 
     const evaluations = (localFeedState.evaluations || [])
-      .filter(item => !item.usedAt)
+      .filter(item => item.kind !== "chat" && !item.usedAt)
       .sort((a, b) => Number(a.at || 0) - Number(b.at || 0))
       .slice(-12)
       .map(item => ({
         id: item.id,
-        text: item.text || "",
-        title: item.title || "",
-        topic: item.topic || "",
+        text: trimText(item.text, 500),
+        title: trimText(item.title, 100),
+        topic: trimText(item.topic, 60),
         scope: item.scope === "selection" ? "selection" : "note",
         selectionText: item.scope === "selection"
-          ? normalizeText(item.selectionText)
+          ? trimText(item.selectionText, 200)
           : ""
       }));
 
     const recent = localFeedState.notes
       .filter(note => note.seenAt)
       .sort((a, b) => Number(a.seenAt || 0) - Number(b.seenAt || 0))
-      .slice(-60)
+      .slice(-LOCAL_FEED_RECENT_CONTEXT_LIMIT)
       .map(note => ({
-        title: note.title,
-        body: note.body,
-        topic: note.topic || ""
+        title: trimText(note.title, 100),
+        topic: trimText(note.topic, 60)
       }));
 
-    const interests = (localFeedState.preferences?.interests || []).slice(
+    const interests = activeLocalFeedInterestTexts().slice(
       0,
       LOCAL_FEED_MAX_INTERESTS
     );
 
-    return { liked, disliked, evaluations, recent, interests };
+    return {
+      liked,
+      disliked,
+      evaluations,
+      recent,
+      interests,
+      coverage: localFeedTopicCoverage(),
+      frontier: localFeedExplorationFrontier(),
+      systemPrompt: effectiveLocalFeedSystemPrompt()
+    };
+  }
+
+
+  function normalizeLocalFeedDedupText(value) {
+    return String(value || "")
+      .toLowerCase()
+      .replace(/[\s\p{P}\p{S}]+/gu, "");
+  }
+
+  function localFeedBigrams(value) {
+    const chars = Array.from(normalizeLocalFeedDedupText(value));
+    if (!chars.length) return new Set();
+    if (chars.length === 1) return new Set(chars);
+    const result = new Set();
+    for (let index = 0; index < chars.length - 1; index += 1) {
+      result.add(chars[index] + chars[index + 1]);
+    }
+    return result;
+  }
+
+  function localFeedTextSimilarity(left, right) {
+    const a = localFeedBigrams(left);
+    const b = localFeedBigrams(right);
+    if (!a.size || !b.size) return 0;
+    let overlap = 0;
+    for (const token of a) {
+      if (b.has(token)) overlap += 1;
+    }
+    return (2 * overlap) / (a.size + b.size);
+  }
+
+  function isLocalFeedNearDuplicate(candidate, corpus) {
+    const title = normalizeText(candidate?.title);
+    const body = normalizeText(candidate?.body);
+    const topic = normalizeText(candidate?.topic).toLowerCase();
+    if (!title || !body) return true;
+
+    for (const note of corpus || []) {
+      const otherTitle = normalizeText(note?.title);
+      const otherBody = normalizeText(note?.body);
+      if (!otherTitle || !otherBody) continue;
+
+      if (title.toLowerCase() === otherTitle.toLowerCase()) return true;
+
+      const titleSimilarity = localFeedTextSimilarity(title, otherTitle);
+      if (titleSimilarity >= 0.72) return true;
+
+      const combinedSimilarity = localFeedTextSimilarity(
+        title + " " + body,
+        otherTitle + " " + otherBody
+      );
+      if (combinedSimilarity >= 0.66) return true;
+
+      const otherTopic = normalizeText(note?.topic).toLowerCase();
+      if (
+        topic &&
+        otherTopic &&
+        topic === otherTopic &&
+        localFeedTextSimilarity(body, otherBody) >= 0.62
+      ) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   async function maybeReplenishLocalFeed() {
@@ -1879,6 +2994,7 @@
       lastError: ""
     };
     await persistLocalFeedState();
+    updateInterestNavButton();
 
     try {
       const context = localFeedPromptContext();
@@ -1904,6 +3020,7 @@
           lastError: "兴趣已在生成期间更新，旧批次已丢弃"
         };
         await persistLocalFeedState();
+        updateInterestNavButton();
 
         clearTimeout(localFeedRetryTimer);
         localFeedRetryTimer = setTimeout(() => {
@@ -1913,10 +3030,12 @@
         return;
       }
 
-      const existingTitles = new Set(
-        localFeedState.notes.map(note => normalizeText(note.title).toLowerCase())
-      );
+      const dedupeCorpus = [
+        ...(localFeedState.dedupMemory || []),
+        ...localFeedState.notes
+      ];
       const added = [];
+      let rejectedDuplicates = 0;
 
       for (const item of response.notes) {
         const note = normalizeLocalFeedNote({
@@ -1931,10 +3050,41 @@
           feedbackAt: 0
         }, localFeedState.notes.length + added.length);
 
-        const key = normalizeText(note.title).toLowerCase();
-        if (!key || existingTitles.has(key)) continue;
-        existingTitles.add(key);
+        const nodeMap = explorationNodeMap();
+        const parentNode = nodeMap.get(note.parentNodeId);
+        if (
+          !parentNode ||
+          explorationNodeBlocked(parentNode, nodeMap) ||
+          normalizeText(parentNode.label).toLowerCase() ===
+            normalizeText(note.topic).toLowerCase()
+        ) {
+          continue;
+        }
+
+        if (isLocalFeedNearDuplicate(note, dedupeCorpus)) {
+          rejectedDuplicates += 1;
+          continue;
+        }
+
+        const explorationNode = upsertExplorationNode(
+          note.topic,
+          note.parentNodeId,
+          { createdAt: note.createdAt }
+        );
+        if (!explorationNode) continue;
+
+        note.explorationNodeId = explorationNode.id;
+        note.parentNodeId = explorationNode.parentNodeId;
+        dedupeCorpus.push(note);
         added.push(note);
+      }
+
+      if (!added.length) {
+        throw new Error(
+          response.notes.length
+            ? "本轮候选笔记均被去重或探索关系校验过滤"
+            : "ChatGPT 本轮没有生成可用笔记"
+        );
       }
 
       localFeedState.notes.push(...added);
@@ -1970,11 +3120,13 @@
         lastCompletedAt: Date.now(),
         requestPreferencesUpdatedAt: 0,
         lastReturnedCount: added.length,
+        lastRejectedDuplicates: rejectedDuplicates,
         lastElapsedMs: Number(response.elapsedMs || 0),
         lastContext: response.contextUsed || null,
         lastError: ""
       };
       await persistLocalFeedState();
+      updateInterestNavButton();
 
       scheduleFilter(document);
     } catch (error) {
@@ -1986,6 +3138,7 @@
         lastError: trimText(error?.message || String(error), 300)
       };
       await persistLocalFeedState();
+      updateInterestNavButton();
 
       clearTimeout(localFeedRetryTimer);
       localFeedRetryTimer = setTimeout(() => {
@@ -2039,6 +3192,7 @@
     return (localFeedState.evaluations || [])
       .filter(item =>
         item.noteId === cardId &&
+        item.kind !== "chat" &&
         item.scope !== "selection" &&
         !item.usedAt
       )
@@ -2096,74 +3250,524 @@
 
   async function setLocalFeedEvaluation(card, text, options = {}) {
     const value = trimText(text, 500);
-    if (!card?.id || !value) return false;
+    if (!card?.id || !value) return null;
 
     const now = Date.now();
     const selectionText = trimText(options.selectionText, 240);
     const scope = selectionText ? "selection" : "note";
-    const existing = selectionText
-      ? pendingSelectionEvaluation(card.id, selectionText)
-      : pendingEvaluationForCard(card.id);
+    const kind = options.kind === "chat" ? "chat" : "evaluation";
+    let evaluation = kind === "chat"
+      ? null
+      : selectionText
+        ? pendingSelectionEvaluation(card.id, selectionText)
+        : pendingEvaluationForCard(card.id);
 
-    if (existing) {
-      existing.text = value;
-      existing.scope = scope;
-      existing.selectionText = selectionText;
-      existing.title = trimText(card.title, 160);
-      existing.body = trimText(card.body, 500);
-      existing.topic = trimText(card.topic, 80);
-      existing.at = now;
+    if (evaluation) {
+      evaluation.text = value;
+      evaluation.kind = kind;
+      evaluation.scope = scope;
+      evaluation.selectionText = selectionText;
+      evaluation.title = trimText(card.title, 160);
+      evaluation.body = trimText(card.body, 500);
+      evaluation.topic = trimText(card.topic, 80);
+      evaluation.at = now;
+      evaluation.replyStatus = "";
+      evaluation.replyText = "";
+      evaluation.replyError = "";
+      evaluation.replyRequestedAt = 0;
+      evaluation.replyAt = 0;
+      evaluation.replyElapsedMs = 0;
+      evaluation.replyTabId = 0;
+      evaluation.replyChatUrl = "";
+      evaluation.replyTabExpiresAt = 0;
+      evaluation.replyKeepOpen = false;
     } else {
-      localFeedState.evaluations = localFeedState.evaluations || [];
-      localFeedState.evaluations.push({
+      evaluation = {
         id: "evaluation-" + ruleId(
           "evaluation",
           card.id + "|" + selectionText + "|" + now + "|" + value
         ),
         noteId: card.id,
         text: value,
+        kind,
         scope,
         selectionText,
         title: trimText(card.title, 160),
         body: trimText(card.body, 500),
         topic: trimText(card.topic, 80),
         at: now,
-        usedAt: 0
-      });
+        usedAt: 0,
+        replyStatus: "",
+        replyText: "",
+        replyError: "",
+        replyRequestedAt: 0,
+        replyAt: 0,
+        replyElapsedMs: 0,
+        replyTabId: 0,
+        replyChatUrl: "",
+        replyTabExpiresAt: 0,
+        replyKeepOpen: false
+      };
+      localFeedState.evaluations = localFeedState.evaluations || [];
+      localFeedState.evaluations.push(evaluation);
     }
 
     await persistLocalFeedState();
 
-    if (scope === "note") {
+    if (scope === "note" && kind === "evaluation") {
       document.querySelectorAll(
         '.yanzi-xhs-custom-card[data-card-id="' +
         CSS.escape(card.id) +
         '"] .yanzi-xhs-local-feedback button[data-action="evaluate"]'
       ).forEach(button => {
         button.dataset.active = "1";
-        button.title = "已评价；将在下一轮生成时使用";
+        button.title = "已评价；GPT 正在/将立即回复，同时影响后续生成";
       });
     }
 
-    return true;
+    return evaluation;
+  }
+
+  function latestLocalFeedChatForCard(cardId) {
+    return (localFeedState.evaluations || [])
+      .filter(item =>
+        item.noteId === cardId &&
+        item.kind === "chat" &&
+        item.scope !== "selection"
+      )
+      .sort((a, b) => Number(b.at || 0) - Number(a.at || 0))[0] || null;
+  }
+
+  async function startLocalFeedChat(
+    card,
+    anchor,
+    selectionText = ""
+  ) {
+    if (!card?.id) return;
+
+    const selected = trimText(selectionText, 240);
+    const latest = (localFeedState.evaluations || [])
+      .filter(item =>
+        item.noteId === card.id &&
+        item.kind === "chat" &&
+        normalizeText(item.selectionText || "") === normalizeText(selected)
+      )
+      .sort((a, b) => Number(b.at || 0) - Number(a.at || 0))[0] || null;
+
+    if (latest?.replyStatus === "pending") {
+      showEvaluationResultPanel(latest, anchor);
+      return;
+    }
+
+    const chat = await setLocalFeedEvaluation(
+      card,
+      "展开讲讲",
+      {
+        kind: "chat",
+        selectionText: selected
+      }
+    );
+    if (!chat) return;
+
+    void requestLocalFeedEvaluationReply(chat, card, anchor);
+  }
+
+  function localFeedEvaluationRepliesForCard(cardId) {
+    return (localFeedState.evaluations || [])
+      .filter(item =>
+        item.noteId === cardId &&
+        (
+          item.replyStatus === "pending" ||
+          item.replyStatus === "success" ||
+          item.replyStatus === "error"
+        )
+      )
+      .sort((a, b) =>
+        Number(a.replyRequestedAt || a.at || 0) -
+        Number(b.replyRequestedAt || b.at || 0)
+      )
+      .slice(-3);
+  }
+
+  function ensureEvaluationResultPanel() {
+    let panel = document.querySelector(".yanzi-xhs-evaluation-result-panel");
+    if (panel) return panel;
+
+    panel = document.createElement("div");
+    panel.className = "yanzi-xhs-evaluation-result-panel";
+    panel.hidden = true;
+    panel.innerHTML = [
+      '<div class="yanzi-xhs-evaluation-result-head">',
+      '<strong class="yanzi-xhs-evaluation-result-title">GPT 聊聊</strong>',
+      '<button type="button" class="yanzi-xhs-evaluation-result-close" aria-label="关闭">×</button>',
+      '</div>',
+      '<div class="yanzi-xhs-evaluation-result-quote" hidden></div>',
+      '<div class="yanzi-xhs-evaluation-result-user"></div>',
+      '<div class="yanzi-xhs-evaluation-result-answer"></div>',
+      '<div class="yanzi-xhs-evaluation-result-meta"></div>',
+      '<div class="yanzi-xhs-evaluation-result-foot">',
+      '<button type="button" class="yanzi-xhs-evaluation-followup">继续追问</button>',
+      '</div>'
+    ].join("");
+
+    panel.querySelector(".yanzi-xhs-evaluation-result-close")
+      .addEventListener("click", () => {
+        panel.hidden = true;
+        panel.dataset.evaluationId = "";
+        evaluationResultPanelAnchor = null;
+        clearTimeout(evaluationResultExpiryTimer);
+        evaluationResultExpiryTimer = null;
+      });
+
+    panel.querySelector(".yanzi-xhs-evaluation-followup")
+      .addEventListener("click", async () => {
+        const id = panel.dataset.evaluationId || "";
+        const item = (localFeedState.evaluations || [])
+          .find(entry => entry.id === id);
+        const button = panel.querySelector(".yanzi-xhs-evaluation-followup");
+        if (!item?.replyTabId || button.disabled) return;
+
+        button.disabled = true;
+        button.textContent = "正在打开…";
+
+        try {
+          const response = await chrome.runtime.sendMessage({
+            type: "yanzi_xhs_open_evaluation_chat",
+            tabId: item.replyTabId
+          });
+
+          if (!response?.ok) {
+            throw new Error(response?.error || "评价会话已结束");
+          }
+
+          item.replyKeepOpen = true;
+          item.replyTabExpiresAt = 0;
+          item.replyChatUrl = normalizeText(
+            response.chatUrl || item.replyChatUrl || ""
+          );
+          await persistLocalFeedState();
+          refreshEvaluationResultPanel(item);
+        } catch {
+          item.replyKeepOpen = false;
+          item.replyTabExpiresAt = 0;
+          item.replyTabId = 0;
+          await persistLocalFeedState();
+          refreshEvaluationResultPanel(item);
+        }
+      });
+
+    document.documentElement.appendChild(panel);
+    return panel;
+  }
+
+  function positionEvaluationResultPanel(panel, anchor) {
+    panel.style.left = "0px";
+    panel.style.top = "0px";
+
+    const anchorRect = anchor?.getBoundingClientRect?.();
+    const panelRect = panel.getBoundingClientRect();
+    const gap = 8;
+
+    let left = Number(anchorRect?.left ?? 12);
+    left = Math.min(
+      Math.max(12, left),
+      Math.max(12, window.innerWidth - panelRect.width - 12)
+    );
+
+    const below = Number(anchorRect?.bottom ?? 84) + gap;
+    const above = Number(anchorRect?.top ?? 84) - panelRect.height - gap;
+    const top = below + panelRect.height <= window.innerHeight - 12
+      ? below
+      : Math.max(12, above);
+
+    panel.style.left = left + "px";
+    panel.style.top = top + "px";
+  }
+
+  function refreshEvaluationResultPanel(item, anchor = evaluationResultPanelAnchor) {
+    const panel = document.querySelector(".yanzi-xhs-evaluation-result-panel");
+    if (!panel || panel.hidden || panel.dataset.evaluationId !== item?.id) return;
+
+    const quote = panel.querySelector(".yanzi-xhs-evaluation-result-quote");
+    if (item.scope === "selection" && item.selectionText) {
+      quote.hidden = false;
+      quote.textContent = "针对：" + item.selectionText;
+    } else {
+      quote.hidden = true;
+      quote.textContent = "";
+    }
+
+    panel.querySelector(".yanzi-xhs-evaluation-result-title").textContent =
+      item.kind === "chat"
+        ? "GPT 聊聊"
+        : item.scope === "selection"
+          ? "GPT 局部评论分析"
+          : "GPT 评论分析";
+
+    panel.querySelector(".yanzi-xhs-evaluation-result-user").textContent =
+      item.kind === "chat"
+        ? "展开讲讲"
+        : "你的评价：" + (item.text || "");
+
+    const answer = panel.querySelector(".yanzi-xhs-evaluation-result-answer");
+    if (item.replyStatus === "pending") {
+      answer.textContent = item.kind === "chat"
+        ? "正在加载这篇笔记，请 ChatGPT 展开讲讲…"
+        : "正在结合这篇笔记和你的兴趣上下文获取详细分析…";
+    } else if (item.replyStatus === "error") {
+      answer.textContent = "获取分析失败：" + (item.replyError || "未知错误");
+    } else {
+      answer.textContent = item.replyText || "GPT 已完成分析，但没有可展示的文本。";
+    }
+
+    const followup = panel.querySelector(".yanzi-xhs-evaluation-followup");
+    const meta = panel.querySelector(".yanzi-xhs-evaluation-result-meta");
+    const now = Date.now();
+    const remainingMs = Math.max(0, Number(item.replyTabExpiresAt || 0) - now);
+    const sessionAvailable = Boolean(
+      item.replyTabId &&
+      (
+        item.replyKeepOpen === true ||
+        remainingMs > 0
+      )
+    );
+
+    clearTimeout(evaluationResultExpiryTimer);
+    evaluationResultExpiryTimer = null;
+
+    if (item.replyStatus === "pending") {
+      followup.disabled = true;
+      followup.textContent = "等待分析完成";
+      meta.textContent = "GPT 正在分析；完成后会保留对应会话至少 1 分钟。";
+    } else if (item.replyStatus === "success" && sessionAvailable) {
+      followup.disabled = false;
+      followup.textContent = "继续追问";
+      if (item.replyKeepOpen) {
+        meta.textContent = item.replyElapsedMs
+          ? "分析耗时约 " + Math.max(1, Math.round(item.replyElapsedMs / 1000)) +
+            " 秒 · ChatGPT 会话已保留，可继续追问"
+          : "ChatGPT 会话已保留，可继续追问";
+      } else {
+        const seconds = Math.max(1, Math.ceil(remainingMs / 1000));
+        meta.textContent =
+          "ChatGPT 会话还会保留约 " + seconds +
+          " 秒；点击“继续追问”后不会自动关闭。";
+        evaluationResultExpiryTimer = setTimeout(() => {
+          const latest = (localFeedState.evaluations || [])
+            .find(entry => entry.id === item.id);
+          if (latest) refreshEvaluationResultPanel(latest);
+        }, remainingMs + 150);
+      }
+    } else {
+      followup.disabled = true;
+      followup.textContent = item.replyStatus === "error"
+        ? "分析失败"
+        : "会话已结束";
+      meta.textContent = item.replyStatus === "error"
+        ? "这次分析没有成功建立可继续追问的会话。"
+        : "分析内容仍保留，但对应 ChatGPT 临时会话的保留期已结束。";
+    }
+
+    positionEvaluationResultPanel(panel, anchor);
+  }
+
+  function showEvaluationResultPanel(item, anchor) {
+    if (!item?.id) return;
+
+    const panel = ensureEvaluationResultPanel();
+    evaluationResultPanelAnchor = anchor || evaluationResultPanelAnchor;
+    panel.dataset.evaluationId = item.id;
+    panel.hidden = false;
+    refreshEvaluationResultPanel(item, evaluationResultPanelAnchor);
+  }
+
+  function buildLocalFeedEvaluationReplies(card) {
+    const items = localFeedEvaluationRepliesForCard(card.id);
+    if (!items.length) return null;
+
+    const wrap = document.createElement("div");
+    wrap.className = "yanzi-xhs-evaluation-replies";
+
+    for (const item of items) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "yanzi-xhs-evaluation-launcher";
+      button.dataset.evaluationId = item.id;
+      button.dataset.status = item.replyStatus || "";
+
+      const label = document.createElement("span");
+      label.textContent = item.kind === "chat"
+        ? "聊聊"
+        : item.scope === "selection"
+          ? "GPT 局部评论分析"
+          : "GPT 评论分析";
+
+      const state = document.createElement("span");
+      state.className = "yanzi-xhs-evaluation-launcher-state";
+      state.textContent = item.replyStatus === "pending"
+        ? "分析中…"
+        : item.replyStatus === "error"
+          ? "失败"
+          : "点击展开";
+
+      button.appendChild(label);
+      button.appendChild(state);
+      const stopLauncherEvent = event => {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+      };
+      button.addEventListener("pointerdown", stopLauncherEvent, true);
+      button.addEventListener("mousedown", stopLauncherEvent, true);
+      button.addEventListener("click", event => {
+        stopLauncherEvent(event);
+
+        const latest = (localFeedState.evaluations || [])
+          .find(entry => entry.id === item.id) || item;
+        showEvaluationResultPanel(latest, button);
+      }, true);
+      wrap.appendChild(button);
+    }
+
+    return wrap;
+  }
+
+  function renderLocalFeedEvaluationReplies(card) {
+    document.querySelectorAll(
+      '.yanzi-xhs-custom-card[data-card-id="' +
+      CSS.escape(card.id) +
+      '"]'
+    ).forEach(overlay => {
+      const info = overlay.querySelector(".yanzi-xhs-custom-info");
+      if (!info) return;
+
+      info.querySelector(":scope > .yanzi-xhs-evaluation-replies")?.remove();
+      const replies = buildLocalFeedEvaluationReplies(card);
+      if (!replies) return;
+
+      const author = info.querySelector(":scope > .yanzi-xhs-custom-author");
+      if (author) info.insertBefore(replies, author);
+      else info.appendChild(replies);
+    });
+
+    const panel = document.querySelector(".yanzi-xhs-evaluation-result-panel");
+    const openId = panel?.dataset.evaluationId || "";
+    if (openId) {
+      const latest = (localFeedState.evaluations || [])
+        .find(item => item.id === openId);
+      if (latest) refreshEvaluationResultPanel(latest);
+    }
+  }
+
+  async function requestLocalFeedEvaluationReply(evaluation, card, anchor = null) {
+    if (!evaluation?.id || !card?.id) return;
+
+    const current = (localFeedState.evaluations || [])
+      .find(item => item.id === evaluation.id);
+    if (!current) return;
+
+    current.replyStatus = "pending";
+    current.replyText = "";
+    current.replyError = "";
+    current.replyRequestedAt = Date.now();
+    current.replyAt = 0;
+    current.replyElapsedMs = 0;
+    current.replyTabId = 0;
+    current.replyChatUrl = "";
+    current.replyTabExpiresAt = 0;
+    current.replyKeepOpen = false;
+    await persistLocalFeedState();
+    renderLocalFeedEvaluationReplies(card);
+    if (anchor) {
+      showEvaluationResultPanel(current, anchor);
+    }
+
+    const context = localFeedPromptContext();
+
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: "yanzi_xhs_evaluate_note",
+        note: {
+          id: card.id,
+          title: trimText(card.title, 160),
+          body: trimText(card.body, 1200),
+          topic: trimText(card.topic, 80)
+        },
+        evaluation: {
+          id: current.id,
+          text: current.text,
+          kind: current.kind || "evaluation",
+          scope: current.scope,
+          selectionText: current.selectionText || ""
+        },
+        interests: context.interests,
+        liked: context.liked,
+        disliked: context.disliked
+      });
+
+      const latest = (localFeedState.evaluations || [])
+        .find(item => item.id === evaluation.id);
+      if (!latest) return;
+
+      if (!response?.ok || !normalizeText(response.answer)) {
+        throw new Error(response?.error || "GPT 没有返回可展示的回答");
+      }
+
+      latest.replyStatus = "success";
+      latest.replyText = String(response.answer || "").trim();
+      latest.replyError = "";
+      latest.replyAt = Date.now();
+      latest.replyElapsedMs = Number(response.elapsedMs || 0);
+      latest.replyTabId = Number(response.tabId || 0);
+      latest.replyChatUrl = normalizeText(response.chatUrl || "");
+      latest.replyTabExpiresAt = Number(response.tabExpiresAt || 0);
+      latest.replyKeepOpen = false;
+      await persistLocalFeedState();
+      renderLocalFeedEvaluationReplies(card);
+    } catch (error) {
+      const latest = (localFeedState.evaluations || [])
+        .find(item => item.id === evaluation.id);
+      if (!latest) return;
+
+      latest.replyStatus = "error";
+      latest.replyText = "";
+      latest.replyError = trimText(error?.message || String(error), 500);
+      latest.replyAt = Date.now();
+      await persistLocalFeedState();
+      renderLocalFeedEvaluationReplies(card);
+    }
   }
 
   async function updateLocalFeedInterests(nextItems) {
-    const interests = (Array.isArray(nextItems) ? nextItems : [])
-      .map(item => trimText(item, 40))
-      .filter(Boolean)
-      .filter((item, index, list) =>
-        list.findIndex(other => other.toLowerCase() === item.toLowerCase()) === index
-      )
-      .slice(0, LOCAL_FEED_MAX_INTERESTS);
+    const interests = normalizeLocalFeedInterests(nextItems);
 
     localFeedState.preferences = {
+      ...localFeedState.preferences,
       interests,
+      systemPrompt: effectiveLocalFeedSystemPrompt(),
       updatedAt: Date.now()
     };
     await persistLocalFeedState();
     renderInterestPanel();
     updateInterestNavButton();
+  }
+
+  async function updateLocalFeedSystemPrompt(nextPrompt) {
+    const systemPrompt = String(nextPrompt || "")
+      .trim()
+      .slice(0, LOCAL_FEED_SYSTEM_PROMPT_MAX_CHARS) ||
+      LOCAL_FEED_DEFAULT_SYSTEM_PROMPT;
+
+    localFeedState.preferences = {
+      ...localFeedState.preferences,
+      interests: normalizeLocalFeedInterests(
+        localFeedState.preferences?.interests || []
+      ),
+      systemPrompt,
+      updatedAt: Date.now()
+    };
+    await persistLocalFeedState();
+    renderInterestPanel();
   }
 
   function localFeedHistoryItems() {
@@ -2212,6 +3816,577 @@
     return "待展示";
   }
 
+  function explorationPathLabels(nodeId) {
+    const byId = explorationNodeMap();
+    const labels = [];
+    const visited = new Set();
+    let current = byId.get(nodeId);
+
+    while (current && !visited.has(current.id)) {
+      visited.add(current.id);
+      labels.unshift(current.label);
+      current = current.parentNodeId
+        ? byId.get(current.parentNodeId)
+        : null;
+    }
+
+    return labels;
+  }
+
+  function explorationVisibleNodes() {
+    const nodes = localFeedState.exploration?.nodes || [];
+    const visible = nodes.filter(node =>
+      node.type !== "legacy" &&
+      (
+        node.type !== "legacy-root" ||
+        nodes.some(item => item.type === "legacy")
+      )
+    );
+
+    const keep = new Map();
+    const byId = new Map(nodes.map(node => [node.id, node]));
+
+    const addWithAncestors = node => {
+      let current = node;
+      const seen = new Set();
+      while (current && !seen.has(current.id)) {
+        seen.add(current.id);
+        keep.set(current.id, current);
+        current = current.parentNodeId
+          ? byId.get(current.parentNodeId)
+          : null;
+      }
+    };
+
+    visible
+      .filter(node =>
+        node.type === "interest" ||
+        node.type === "legacy-root" ||
+        node.status === "continue"
+      )
+      .forEach(addWithAncestors);
+
+    visible
+      .filter(node => node.type === "topic")
+      .sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0))
+      .slice(0, 160)
+      .forEach(addWithAncestors);
+
+    return [...keep.values()];
+  }
+
+  function renderExplorationGraph(panel) {
+    const svg = panel.querySelector(".yanzi-xhs-space-svg");
+    const summary = panel.querySelector(".yanzi-xhs-space-summary");
+    const detail = panel.querySelector(".yanzi-xhs-space-detail");
+    if (!svg || !summary || !detail) return;
+
+    const allNodes = localFeedState.exploration?.nodes || [];
+    const visibleNodes = explorationVisibleNodes();
+    const byId = new Map(allNodes.map(node => [node.id, node]));
+    const visibleById = new Map(visibleNodes.map(node => [node.id, node]));
+    const selectedIds = readExplorationSelection(panel);
+
+    for (const id of [...selectedIds]) {
+      if (!visibleById.has(id)) selectedIds.delete(id);
+    }
+    writeExplorationSelection(panel, selectedIds);
+
+    const clearSelectionButton = panel.querySelector(
+      ".yanzi-xhs-space-clear-selection"
+    );
+    if (clearSelectionButton) {
+      clearSelectionButton.hidden = selectedIds.size === 0;
+      clearSelectionButton.textContent = selectedIds.size
+        ? "清除选择 (" + selectedIds.size + ")"
+        : "清除选择";
+      clearSelectionButton.onclick = () => {
+        writeExplorationSelection(panel, []);
+        panel.dataset.spaceNodeId = "";
+        renderExplorationGraph(panel);
+      };
+    }
+
+    const { childCounts, noteCounts } = explorationNodeMetrics();
+    const frontier = localFeedExplorationFrontier();
+
+    const continueCount = allNodes.filter(
+      node => node.status === "continue"
+    ).length;
+    const stopCount = allNodes.filter(
+      node => node.status === "stop"
+    ).length;
+    const exploredCount = allNodes.filter(
+      node => node.type === "topic"
+    ).length;
+    const legacyCount = allNodes.filter(
+      node => node.type === "legacy"
+    ).length;
+
+    summary.textContent =
+      "已探索 " + exploredCount + " 个空间 · " +
+      "可继续前沿 " + frontier.length + " · " +
+      "手工继续 " + continueCount + " · " +
+      "停止 " + stopCount +
+      (legacyCount ? " · 历史导入 " + legacyCount : "");
+
+    svg.replaceChildren();
+
+    if (!visibleNodes.length) {
+      svg.setAttribute("viewBox", "0 0 680 360");
+      svg.setAttribute("width", "680");
+      svg.setAttribute("height", "360");
+      detail.replaceChildren();
+
+      const empty = document.createElement("div");
+      empty.className = "yanzi-xhs-space-empty";
+      empty.textContent =
+        "先在“兴趣主题”中添加一个根主题，探索空间会从这里开始生长。";
+      detail.appendChild(empty);
+      return;
+    }
+
+    const depthCache = new Map();
+    const depthOf = node => {
+      if (depthCache.has(node.id)) return depthCache.get(node.id);
+
+      let current = node;
+      let depth = 0;
+      const visited = new Set();
+
+      while (current?.parentNodeId && !visited.has(current.id)) {
+        visited.add(current.id);
+        const parent = byId.get(current.parentNodeId);
+        if (!parent) break;
+        depth += 1;
+        current = parent;
+      }
+
+      depthCache.set(node.id, depth);
+      return depth;
+    };
+
+    const layers = new Map();
+    for (const node of visibleNodes) {
+      const depth = depthOf(node);
+      if (!layers.has(depth)) layers.set(depth, []);
+      layers.get(depth).push(node);
+    }
+
+    for (const items of layers.values()) {
+      items.sort((a, b) => {
+        const priority = node =>
+          node.type === "interest"
+            ? 0
+            : node.status === "continue"
+              ? 1
+              : node.type === "legacy-root"
+                ? 3
+                : 2;
+
+        return (
+          priority(a) - priority(b) ||
+          Number(b.updatedAt || 0) - Number(a.updatedAt || 0) ||
+          a.label.localeCompare(b.label)
+        );
+      });
+    }
+
+    const layerGap = 170;
+    const rowGap = 58;
+    const leftPad = 34;
+    const topPad = 34;
+    const maxDepth = Math.max(...layers.keys());
+    const maxRows = Math.max(
+      ...[...layers.values()].map(items => items.length)
+    );
+    const width = Math.max(
+      680,
+      leftPad * 2 + 170 + maxDepth * layerGap
+    );
+    const height = Math.max(
+      360,
+      topPad * 2 + Math.max(1, maxRows - 1) * rowGap + 40
+    );
+    const positions = new Map();
+
+    for (const [depth, items] of layers) {
+      const layerHeight = Math.max(1, items.length - 1) * rowGap;
+      const startY = Math.max(topPad + 18, (height - layerHeight) / 2);
+
+      items.forEach((node, index) => {
+        positions.set(node.id, {
+          x: leftPad + 12 + depth * layerGap,
+          y: startY + index * rowGap
+        });
+      });
+    }
+
+    svg.setAttribute("viewBox", "0 0 " + width + " " + height);
+    svg.setAttribute("width", String(width));
+    svg.setAttribute("height", String(height));
+
+    const SVG_NS = "http://www.w3.org/2000/svg";
+
+    for (const node of visibleNodes) {
+      if (!node.parentNodeId) continue;
+
+      const from = positions.get(node.parentNodeId);
+      const to = positions.get(node.id);
+      if (!from || !to || !visibleById.has(node.parentNodeId)) continue;
+
+      const path = document.createElementNS(SVG_NS, "path");
+      const midX = (from.x + to.x) / 2;
+      path.setAttribute(
+        "d",
+        "M " + (from.x + 8) + " " + from.y +
+        " C " + midX + " " + from.y +
+        ", " + midX + " " + to.y +
+        ", " + (to.x - 8) + " " + to.y
+      );
+      path.setAttribute("class", "yanzi-xhs-space-edge");
+      svg.appendChild(path);
+    }
+
+    let selectedId = normalizeText(panel.dataset.spaceNodeId);
+
+    if (selectedIds.size === 1) {
+      selectedId = [...selectedIds][0];
+    } else if (selectedIds.size > 1) {
+      selectedId = "";
+    } else if (!visibleById.has(selectedId)) {
+      selectedId =
+        visibleNodes.find(node => node.status === "continue")?.id ||
+        visibleNodes.find(node => node.type === "interest")?.id ||
+        visibleNodes[0]?.id ||
+        "";
+      panel.dataset.spaceNodeId = selectedId;
+    }
+
+    const selectNode = (nodeId, event) => {
+      const next = readExplorationSelection(panel);
+
+      if (event?.ctrlKey || event?.metaKey) {
+        if (next.has(nodeId)) next.delete(nodeId);
+        else next.add(nodeId);
+      } else {
+        next.clear();
+        next.add(nodeId);
+      }
+
+      writeExplorationSelection(panel, next);
+      panel.dataset.spaceNodeId = next.size === 1
+        ? [...next][0]
+        : "";
+      renderExplorationGraph(panel);
+    };
+
+    for (const node of visibleNodes) {
+      const position = positions.get(node.id);
+      if (!position) continue;
+
+      const group = document.createElementNS(SVG_NS, "g");
+      group.setAttribute("class", "yanzi-xhs-space-node");
+      group.setAttribute(
+        "transform",
+        "translate(" + position.x + " " + position.y + ")"
+      );
+      group.dataset.nodeId = node.id;
+      group.dataset.status = node.status;
+      group.dataset.type = node.type;
+      group.dataset.selected = node.id === selectedId ? "1" : "0";
+      group.dataset.multiSelected = selectedIds.has(node.id) ? "1" : "0";
+      group.setAttribute("role", "button");
+      group.setAttribute("tabindex", "0");
+      group.setAttribute("aria-label", "探索节点 " + node.label);
+
+      const circle = document.createElementNS(SVG_NS, "circle");
+      circle.setAttribute("r", node.type === "interest" ? "8" : "7");
+      group.appendChild(circle);
+
+      const text = document.createElementNS(SVG_NS, "text");
+      text.setAttribute("x", "13");
+      text.setAttribute("y", "4");
+      const chars = Array.from(node.label);
+      text.textContent = chars.length > 11
+        ? chars.slice(0, 11).join("") + "…"
+        : node.label;
+      group.appendChild(text);
+
+      const title = document.createElementNS(SVG_NS, "title");
+      title.textContent = explorationPathLabels(node.id).join(" → ");
+      group.appendChild(title);
+
+      group.addEventListener("click", event => {
+        selectNode(node.id, event);
+      });
+      group.addEventListener("keydown", event => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        selectNode(node.id, event);
+      });
+
+      svg.appendChild(group);
+    }
+
+    let dragState = null;
+
+    const svgPoint = event => {
+      const rect = svg.getBoundingClientRect();
+      const viewBox = svg.viewBox?.baseVal;
+      const scaleX = rect.width > 0 && viewBox?.width
+        ? viewBox.width / rect.width
+        : 1;
+      const scaleY = rect.height > 0 && viewBox?.height
+        ? viewBox.height / rect.height
+        : 1;
+
+      return {
+        x: (event.clientX - rect.left) * scaleX,
+        y: (event.clientY - rect.top) * scaleY
+      };
+    };
+
+    svg.onpointerdown = event => {
+      if (event.button !== 0) return;
+      if (event.target?.closest?.(".yanzi-xhs-space-node")) return;
+
+      event.preventDefault();
+      const start = svgPoint(event);
+      const selectionRect = document.createElementNS(SVG_NS, "rect");
+      selectionRect.setAttribute(
+        "class",
+        "yanzi-xhs-space-selection-rect"
+      );
+      selectionRect.setAttribute("x", String(start.x));
+      selectionRect.setAttribute("y", String(start.y));
+      selectionRect.setAttribute("width", "0");
+      selectionRect.setAttribute("height", "0");
+      svg.appendChild(selectionRect);
+
+      dragState = {
+        pointerId: event.pointerId,
+        start,
+        rect: selectionRect,
+        additive: Boolean(event.ctrlKey || event.metaKey)
+      };
+
+      try {
+        svg.setPointerCapture(event.pointerId);
+      } catch {}
+    };
+
+    svg.onpointermove = event => {
+      if (!dragState || dragState.pointerId !== event.pointerId) return;
+
+      const current = svgPoint(event);
+      const x = Math.min(dragState.start.x, current.x);
+      const y = Math.min(dragState.start.y, current.y);
+      const rectWidth = Math.abs(current.x - dragState.start.x);
+      const rectHeight = Math.abs(current.y - dragState.start.y);
+
+      dragState.rect.setAttribute("x", String(x));
+      dragState.rect.setAttribute("y", String(y));
+      dragState.rect.setAttribute("width", String(rectWidth));
+      dragState.rect.setAttribute("height", String(rectHeight));
+    };
+
+    const finishBoxSelection = event => {
+      if (!dragState || dragState.pointerId !== event.pointerId) return;
+
+      const current = svgPoint(event);
+      const x1 = Math.min(dragState.start.x, current.x);
+      const y1 = Math.min(dragState.start.y, current.y);
+      const x2 = Math.max(dragState.start.x, current.x);
+      const y2 = Math.max(dragState.start.y, current.y);
+      const moved =
+        Math.abs(x2 - x1) >= 4 ||
+        Math.abs(y2 - y1) >= 4;
+
+      const next = dragState.additive
+        ? readExplorationSelection(panel)
+        : new Set();
+
+      if (moved) {
+        for (const node of visibleNodes) {
+          const position = positions.get(node.id);
+          if (!position) continue;
+
+          if (
+            position.x >= x1 &&
+            position.x <= x2 &&
+            position.y >= y1 &&
+            position.y <= y2
+          ) {
+            next.add(node.id);
+          }
+        }
+      }
+
+      dragState.rect.remove();
+
+      try {
+        svg.releasePointerCapture(event.pointerId);
+      } catch {}
+
+      dragState = null;
+      writeExplorationSelection(panel, next);
+      panel.dataset.spaceNodeId = next.size === 1
+        ? [...next][0]
+        : "";
+      renderExplorationGraph(panel);
+    };
+
+    svg.onpointerup = finishBoxSelection;
+    svg.onpointercancel = finishBoxSelection;
+
+    detail.replaceChildren();
+
+    const explicitSelected = [...selectedIds]
+      .map(id => byId.get(id))
+      .filter(Boolean);
+    const actionableSelected = explicitSelected.filter(node =>
+      node.type !== "legacy-root" &&
+      node.type !== "legacy"
+    );
+
+    const actionItems = [
+      ["continue", "继续探索"],
+      ["neutral", "中性"],
+      ["stop", "停止延伸"]
+    ];
+
+    const appendStatusActions = nodes => {
+      if (!nodes.length) return;
+
+      const actions = document.createElement("div");
+      actions.className = "yanzi-xhs-space-actions";
+
+      for (const [status, label] of actionItems) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.dataset.status = status;
+        button.dataset.active = nodes.every(
+          node => node.status === status
+        ) ? "1" : "0";
+        button.textContent = label;
+        button.title = status === "stop"
+          ? "所选节点及其下游不再作为 AI 生成的候选父节点"
+          : status === "continue"
+            ? "优先从所选节点继续向下探索"
+            : "允许探索，但不额外提高优先级";
+        button.addEventListener("click", () => {
+          void updateExplorationNodeStatuses(
+            nodes.map(node => node.id),
+            status
+          );
+        });
+        actions.appendChild(button);
+      }
+
+      detail.appendChild(actions);
+    };
+
+    if (explicitSelected.length > 1) {
+      const title = document.createElement("div");
+      title.className = "yanzi-xhs-space-detail-title";
+      title.textContent =
+        "已选择 " + explicitSelected.length + " 个节点";
+      detail.appendChild(title);
+
+      const meta = document.createElement("div");
+      meta.className = "yanzi-xhs-space-detail-meta";
+      meta.textContent =
+        "可批量操作 " + actionableSelected.length + " 个 · " +
+        "继续 " + explicitSelected.filter(
+          node => node.status === "continue"
+        ).length +
+        " · 中性 " + explicitSelected.filter(
+          node => node.status === "neutral"
+        ).length +
+        " · 停止 " + explicitSelected.filter(
+          node => node.status === "stop"
+        ).length;
+      detail.appendChild(meta);
+
+      const labels = document.createElement("div");
+      labels.className = "yanzi-xhs-space-detail-path";
+      const preview = explicitSelected
+        .slice(0, 8)
+        .map(node => node.label)
+        .join("、");
+      labels.textContent =
+        "节点：" + preview +
+        (
+          explicitSelected.length > 8
+            ? " 等 " + explicitSelected.length + " 个"
+            : ""
+        );
+      detail.appendChild(labels);
+
+      if (!actionableSelected.length) {
+        const disabled = document.createElement("div");
+        disabled.className = "yanzi-xhs-space-detail-meta";
+        disabled.textContent =
+          "所选节点都是历史导入节点，不参与后续探索。";
+        detail.appendChild(disabled);
+        return;
+      }
+
+      appendStatusActions(actionableSelected);
+      return;
+    }
+
+    const selected = explicitSelected.length === 1
+      ? explicitSelected[0]
+      : byId.get(selectedId);
+
+    if (!selected) {
+      const empty = document.createElement("div");
+      empty.className = "yanzi-xhs-space-empty";
+      empty.textContent =
+        "单击节点查看属性，或在左侧画布拖动框选多个节点。";
+      detail.appendChild(empty);
+      return;
+    }
+
+    const title = document.createElement("div");
+    title.className = "yanzi-xhs-space-detail-title";
+    title.textContent = selected.label;
+    detail.appendChild(title);
+
+    const path = document.createElement("div");
+    path.className = "yanzi-xhs-space-detail-path";
+    path.textContent =
+      "路径：" + explorationPathLabels(selected.id).join(" → ");
+    detail.appendChild(path);
+
+    const meta = document.createElement("div");
+    meta.className = "yanzi-xhs-space-detail-meta";
+    meta.textContent =
+      "关联笔记 " + Number(noteCounts.get(selected.id) || 0) +
+      " · 子节点 " + Number(childCounts.get(selected.id) || 0) +
+      " · 状态 " + (
+        selected.status === "continue"
+          ? "继续探索"
+          : selected.status === "stop"
+            ? "停止延伸"
+            : "中性"
+      );
+    detail.appendChild(meta);
+
+    if (selected.type === "legacy-root") {
+      const legacy = document.createElement("div");
+      legacy.className = "yanzi-xhs-space-detail-meta";
+      legacy.textContent =
+        "旧版本没有记录父子关系，因此历史内容只归档在这里，不作为未来生成的父节点。";
+      detail.appendChild(legacy);
+      return;
+    }
+
+    appendStatusActions([selected]);
+  }
+
   function ensureInterestPanel() {
     let panel = document.querySelector(".yanzi-xhs-interest-panel");
     if (panel) return panel;
@@ -2223,12 +4398,14 @@
     panel.dataset.historyFilter = "all";
     panel.innerHTML = [
       '<div class="yanzi-xhs-interest-head">',
-      '<strong>兴趣与历史</strong>',
+      '<strong>兴趣与探索</strong>',
       '<button type="button" class="yanzi-xhs-interest-close" aria-label="关闭">×</button>',
       '</div>',
       '<div class="yanzi-xhs-interest-tabs">',
       '<button type="button" class="yanzi-xhs-interest-tab" data-view="topics" data-active="1">兴趣主题</button>',
+      '<button type="button" class="yanzi-xhs-interest-tab" data-view="space" data-active="0">探索空间</button>',
       '<button type="button" class="yanzi-xhs-interest-tab" data-view="history" data-active="0">历史笔记</button>',
+      '<button type="button" class="yanzi-xhs-interest-tab" data-view="prompt" data-active="0">提示词</button>',
       '</div>',
       '<div class="yanzi-xhs-interest-section" data-section="topics">',
       '<p class="yanzi-xhs-interest-help">决定下一轮 AI 笔记的主要内容。留空时会跨领域探索，不再默认偏向开发或 AI。</p>',
@@ -2240,6 +4417,25 @@
       '<div class="yanzi-xhs-interest-foot">',
       '<span class="yanzi-xhs-interest-status"></span>',
       '<button type="button" class="yanzi-xhs-interest-clear">清空</button>',
+      '</div>',
+      '</div>',
+      '<div class="yanzi-xhs-interest-section" data-section="space" hidden>',
+      '<div class="yanzi-xhs-space-summary"></div>',
+      '<div class="yanzi-xhs-space-legend">',
+      '<span><i class="yanzi-xhs-space-dot" data-kind="root"></i>兴趣根节点</span>',
+      '<span><i class="yanzi-xhs-space-dot" data-kind="continue"></i>继续探索</span>',
+      '<span><i class="yanzi-xhs-space-dot"></i>中性</span>',
+      '<span><i class="yanzi-xhs-space-dot" data-kind="stop"></i>停止延伸</span>',
+      '</div>',
+      '<div class="yanzi-xhs-space-layout">',
+      '<div class="yanzi-xhs-space-main">',
+      '<div class="yanzi-xhs-space-toolbar">',
+      '<span>拖动画布空白处框选 · Ctrl/⌘ + 单击增减多选</span>',
+      '<button type="button" class="yanzi-xhs-space-clear-selection" hidden>清除选择</button>',
+      '</div>',
+      '<div class="yanzi-xhs-space-canvas"><svg class="yanzi-xhs-space-svg" role="img" aria-label="探索空间网络"></svg></div>',
+      '</div>',
+      '<div class="yanzi-xhs-space-detail"></div>',
       '</div>',
       '</div>',
       '<div class="yanzi-xhs-interest-section" data-section="history" hidden>',
@@ -2254,18 +4450,57 @@
       '<button type="button" class="yanzi-xhs-history-filter" data-filter="none" data-active="0">未反馈</button>',
       '</div>',
       '<div class="yanzi-xhs-history-list"></div>',
+      '</div>',
+      '<div class="yanzi-xhs-interest-section" data-section="prompt" hidden>',
+      '<p class="yanzi-xhs-prompt-help">这是 AI 笔记生成时使用的长期提示词。兴趣主题、反馈、覆盖统计、最近标题以及 JSON 输出协议会由系统在运行时追加，因此不需要写进这里。</p>',
+      '<textarea class="yanzi-xhs-prompt-input" maxlength="' + LOCAL_FEED_SYSTEM_PROMPT_MAX_CHARS + '" spellcheck="false"></textarea>',
+      '<div class="yanzi-xhs-prompt-actions">',
+      '<span class="yanzi-xhs-prompt-status"></span>',
+      '<div class="yanzi-xhs-prompt-buttons">',
+      '<button type="button" class="yanzi-xhs-prompt-reset">恢复默认</button>',
+      '<button type="button" class="yanzi-xhs-prompt-save">保存提示词</button>',
+      '</div>',
+      '</div>',
       '</div>'
     ].join("");
 
+    const resetInterestEditor = () => {
+      const input = panel.querySelector(".yanzi-xhs-interest-input");
+      const addButton = panel.querySelector(".yanzi-xhs-interest-add");
+      input.value = "";
+      delete input.dataset.editing;
+      input.placeholder = "例如：摄影、社会观察、汽车、投资";
+      addButton.textContent = "添加";
+    };
+
     const addFromInput = async () => {
       const input = panel.querySelector(".yanzi-xhs-interest-input");
-      const parts = String(input.value || "")
+      const editingText = normalizeText(input.dataset.editing);
+      const rawValue = String(input.value || "");
+
+      if (editingText) {
+        const nextText = trimText(rawValue, 40);
+        if (!nextText) return;
+
+        resetInterestEditor();
+        await updateLocalFeedInterests(
+          (localFeedState.preferences?.interests || []).map(item =>
+            item.text === editingText
+              ? { ...item, text: nextText }
+              : item
+          )
+        );
+        input.focus();
+        return;
+      }
+
+      const parts = rawValue
         .split(/[，,;；\n]+/)
         .map(item => normalizeText(item))
         .filter(Boolean);
       if (!parts.length) return;
 
-      input.value = "";
+      resetInterestEditor();
       await updateLocalFeedInterests([
         ...(localFeedState.preferences?.interests || []),
         ...parts
@@ -2274,7 +4509,7 @@
     };
 
     const showView = view => {
-      const next = view === "history" ? "history" : "topics";
+      const next = ["history", "prompt", "space"].includes(view) ? view : "topics";
       panel.dataset.view = next;
       panel.querySelectorAll(".yanzi-xhs-interest-tab").forEach(button => {
         button.dataset.active = button.dataset.view === next ? "1" : "0";
@@ -2283,6 +4518,21 @@
         section.hidden = section.dataset.section !== next;
       });
       renderInterestPanel();
+      if (!panel.hidden) {
+        requestAnimationFrame(() => {
+          const rect = panel.getBoundingClientRect();
+          const currentLeft = Number.parseFloat(panel.style.left || "12");
+          const currentTop = Number.parseFloat(panel.style.top || "12");
+          panel.style.left = Math.min(
+            Math.max(12, currentLeft),
+            Math.max(12, window.innerWidth - rect.width - 12)
+          ) + "px";
+          panel.style.top = Math.min(
+            Math.max(12, currentTop),
+            Math.max(12, window.innerHeight - rect.height - 12)
+          ) + "px";
+        });
+      }
     };
 
     panel.querySelector(".yanzi-xhs-interest-close").addEventListener("click", () => {
@@ -2297,6 +4547,11 @@
       void addFromInput();
     });
     panel.querySelector(".yanzi-xhs-interest-input").addEventListener("keydown", event => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        resetInterestEditor();
+        return;
+      }
       if (event.key !== "Enter") return;
       event.preventDefault();
       void addFromInput();
@@ -2309,6 +4564,15 @@
         panel.dataset.historyFilter = button.dataset.filter || "all";
         renderInterestPanel();
       });
+    });
+    panel.querySelector(".yanzi-xhs-prompt-save").addEventListener("click", () => {
+      const input = panel.querySelector(".yanzi-xhs-prompt-input");
+      void updateLocalFeedSystemPrompt(input.value);
+    });
+    panel.querySelector(".yanzi-xhs-prompt-reset").addEventListener("click", () => {
+      const input = panel.querySelector(".yanzi-xhs-prompt-input");
+      input.value = LOCAL_FEED_DEFAULT_SYSTEM_PROMPT;
+      void updateLocalFeedSystemPrompt(LOCAL_FEED_DEFAULT_SYSTEM_PROMPT);
     });
 
     document.documentElement.appendChild(panel);
@@ -2333,32 +4597,98 @@
       for (const interest of interests) {
         const chip = document.createElement("span");
         chip.className = "yanzi-xhs-interest-chip";
+        chip.dataset.enabled = interest.enabled ? "1" : "0";
+
+        const toggle = document.createElement("button");
+        toggle.type = "button";
+        toggle.dataset.action = "toggle";
+        toggle.setAttribute("aria-pressed", interest.enabled ? "true" : "false");
+        toggle.setAttribute(
+          "aria-label",
+          (interest.enabled ? "停用 " : "启用 ") + interest.text
+        );
+        toggle.title = interest.enabled
+          ? "停用：暂时不用于生成 AI 笔记"
+          : "启用：重新用于生成 AI 笔记";
+        toggle.textContent = interest.enabled ? "●" : "○";
+        toggle.addEventListener("click", event => {
+          event.preventDefault();
+          event.stopPropagation();
+          void updateLocalFeedInterests(
+            interests.map(item =>
+              item.text === interest.text
+                ? { ...item, enabled: !item.enabled }
+                : item
+            )
+          );
+        });
 
         const label = document.createElement("span");
-        label.textContent = interest;
+        label.className = "yanzi-xhs-interest-chip-label";
+        label.textContent = interest.text;
+        label.title = interest.text;
+
+        const edit = document.createElement("button");
+        edit.type = "button";
+        edit.dataset.action = "edit";
+        edit.setAttribute("aria-label", "修改 " + interest.text);
+        edit.title = "修改话题";
+        edit.textContent = "✎";
+        edit.addEventListener("click", event => {
+          event.preventDefault();
+          event.stopPropagation();
+          const input = panel.querySelector(".yanzi-xhs-interest-input");
+          const addButton = panel.querySelector(".yanzi-xhs-interest-add");
+          input.dataset.editing = interest.text;
+          input.value = interest.text;
+          input.placeholder = "修改兴趣主题";
+          addButton.textContent = "保存";
+          input.focus();
+          input.select();
+        });
 
         const remove = document.createElement("button");
         remove.type = "button";
-        remove.setAttribute("aria-label", "移除 " + interest);
+        remove.dataset.action = "remove";
+        remove.setAttribute("aria-label", "移除 " + interest.text);
+        remove.title = "删除话题";
         remove.textContent = "×";
         remove.addEventListener("click", event => {
           event.preventDefault();
           event.stopPropagation();
           void updateLocalFeedInterests(
-            interests.filter(item => item !== interest)
+            interests.filter(item => item.text !== interest.text)
           );
         });
 
+        chip.appendChild(toggle);
         chip.appendChild(label);
+        chip.appendChild(edit);
         chip.appendChild(remove);
         chips.appendChild(chip);
       }
     }
 
+    const enabledInterestCount = interests.filter(
+      item => item.enabled
+    ).length;
     panel.querySelector(".yanzi-xhs-interest-status").textContent =
       interests.length
-        ? "已设置 " + interests.length + " 个主题 · 下一轮补货生效"
+        ? "已启用 " + enabledInterestCount + " / " + interests.length +
+          " 个主题 · 下一轮补货生效"
         : "未设置主题";
+
+    const promptInput = panel.querySelector(".yanzi-xhs-prompt-input");
+    const systemPrompt = effectiveLocalFeedSystemPrompt();
+    if (document.activeElement !== promptInput) {
+      promptInput.value = systemPrompt;
+    }
+    const promptCustomized = systemPrompt !== LOCAL_FEED_DEFAULT_SYSTEM_PROMPT;
+    panel.querySelector(".yanzi-xhs-prompt-status").textContent =
+      (promptCustomized ? "已自定义" : "系统默认") +
+      " · " + systemPrompt.length + " 字 · 下一轮补货生效";
+
+    renderExplorationGraph(panel);
 
     const history = localFeedHistoryItems();
     const likeCount = history.filter(note =>
@@ -2513,16 +4843,82 @@
     return fallback;
   }
 
+  function localFeedLoadIndicatorState() {
+    const generation = localFeedState.generation || {};
+    const futureSupply = getLocalFeedFutureSupply();
+    const lastError = normalizeText(generation.lastError);
+
+    if (generation.inFlight === true) {
+      return {
+        state: "loading",
+        label: "AI 笔记加载中",
+        detail: "正在生成新一批笔记"
+      };
+    }
+
+    if (lastError) {
+      return {
+        state: "error",
+        label: "AI 笔记加载失败",
+        detail: lastError
+      };
+    }
+
+    if (futureSupply > 0) {
+      return {
+        state: "ready",
+        label: "AI 笔记已加载",
+        detail: "当前可用 " + futureSupply + " 条"
+      };
+    }
+
+    if (
+      Number(generation.lastCompletedAt || 0) > 0 &&
+      Number(generation.lastReturnedCount || 0) <= 0
+    ) {
+      return {
+        state: "error",
+        label: "AI 笔记加载失败",
+        detail: "上一轮没有得到可用笔记"
+      };
+    }
+
+    return {
+      state: "loading",
+      label: "AI 笔记等待加载",
+      detail: "正在等待生成"
+    };
+  }
+
   function updateInterestNavButton() {
     const button = document.querySelector(".yanzi-xhs-interest-nav");
     if (!button) return;
-    const count = localFeedState.preferences?.interests?.length || 0;
+
+    const interests = normalizeLocalFeedInterests(
+      localFeedState.preferences?.interests || []
+    );
+    const count = interests.filter(item => item.enabled).length;
     const badge = button.querySelector(".yanzi-xhs-interest-nav-count");
     badge.textContent = count ? String(count) : "";
     badge.hidden = count === 0;
-    button.title = count
-      ? "已设置 " + count + " 个兴趣主题"
-      : "设置 AI 本地笔记的兴趣主题";
+
+    const loadStatus = localFeedLoadIndicatorState();
+    const indicator = button.querySelector(".yanzi-xhs-interest-status");
+    if (indicator) {
+      indicator.dataset.state = loadStatus.state;
+      indicator.setAttribute(
+        "aria-label",
+        loadStatus.label + "：" + loadStatus.detail
+      );
+      indicator.title = loadStatus.label + "：" + loadStatus.detail;
+    }
+    button.dataset.loadState = loadStatus.state;
+
+    const interestText = interests.length
+      ? "已启用 " + count + " / " + interests.length + " 个兴趣主题"
+      : "未设置兴趣主题";
+    button.title =
+      loadStatus.label + " · " + loadStatus.detail + " · " + interestText;
   }
 
   function showInterestPanel(anchor) {
@@ -2572,10 +4968,10 @@
     button.setAttribute("role", "button");
     button.setAttribute("tabindex", "0");
     button.innerHTML = `
-      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <path d="M12 3.5c1.1 2.7 2.9 4.5 5.5 5.5-2.6 1-4.4 2.8-5.5 5.5-1.1-2.7-2.9-4.5-5.5-5.5 2.6-1 4.4-2.8 5.5-5.5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
-        <path d="M18.5 14.5c.5 1.2 1.3 2 2.5 2.5-1.2.5-2 1.3-2.5 2.5-.5-1.2-1.3-2-2.5-2.5 1.2-.5 2-1.3 2.5-2.5Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
-      </svg>
+      <span class="yanzi-xhs-interest-status" data-state="loading" aria-label="正在加载 AI 笔记">
+        <span class="yanzi-xhs-interest-status-ring"></span>
+        <span class="yanzi-xhs-interest-status-mark">!</span>
+      </span>
       <span class="yanzi-xhs-interest-nav-label">兴趣</span>
       <span class="yanzi-xhs-interest-nav-count" hidden></span>
     `;
@@ -2611,11 +5007,11 @@
         <strong>评价这类内容</strong>
         <button type="button" class="yanzi-xhs-evaluation-close" aria-label="关闭">×</button>
       </div>
-      <p class="yanzi-xhs-evaluation-help">写具体一点，例如“开发内容太多，多一点社会观察和摄影”。这条评价只用于下一轮生成。</p>
-      <textarea class="yanzi-xhs-evaluation-text" maxlength="500" placeholder="告诉 AI 下一批应该怎么调整……"></textarea>
+      <p class="yanzi-xhs-evaluation-help">写下你的问题、质疑或看法。确认后会立即去 GPT 获取回应，同时保留为后续内容反馈。</p>
+      <textarea class="yanzi-xhs-evaluation-text" maxlength="500" placeholder="例如：这个结论在什么条件下才成立？"></textarea>
       <div class="yanzi-xhs-evaluation-foot">
-        <span>最多 500 字 · 下一轮使用一次</span>
-        <button type="button" class="yanzi-xhs-evaluation-save">保存评价</button>
+        <span>最多 500 字 · GPT 立即回复 · 同时影响后续推荐</span>
+        <button type="button" class="yanzi-xhs-evaluation-save">确认并获取回答</button>
       </div>
     `;
 
@@ -2635,12 +5031,24 @@
         return;
       }
 
-      const saved = await setLocalFeedEvaluation(card, value, {
-        selectionText
-      });
-      if (!saved) return;
-      panel.hidden = true;
-      evaluationPanelContext = null;
+      const saveButton = panel.querySelector(".yanzi-xhs-evaluation-save");
+      const previousLabel = saveButton.textContent;
+      saveButton.disabled = true;
+      saveButton.textContent = "正在提交…";
+
+      try {
+        const saved = await setLocalFeedEvaluation(card, value, {
+          selectionText
+        });
+        if (!saved) return;
+
+        panel.hidden = true;
+        evaluationPanelContext = null;
+        void requestLocalFeedEvaluationReply(saved, card);
+      } finally {
+        saveButton.disabled = false;
+        saveButton.textContent = previousLabel;
+      }
     });
 
     panel.querySelector(".yanzi-xhs-evaluation-text").addEventListener("keydown", event => {
@@ -2669,8 +5077,8 @@
     if (title) title.textContent = selected ? "评论这段内容" : "评价这类内容";
     if (help) {
       help.textContent = selected
-        ? "你的评论只针对刚才框选的文字，下一轮生成会把它当作局部反馈。"
-        : "写具体一点，例如“开发内容太多，多一点社会观察和摄影”。这条评价只用于下一轮生成。";
+        ? "这次评价只针对刚才框选的文字。确认后 GPT 会结合原笔记与兴趣上下文立即回应，不扩大成对整篇的判断。"
+        : "可以提问、质疑或补充观点。确认后 GPT 会结合这篇笔记与兴趣上下文立即回应，同时保留为后续内容反馈。";
     }
 
     input.value = existing?.text || "";
@@ -2842,10 +5250,29 @@
       info.appendChild(body);
     }
 
+    const evaluationReplies = buildLocalFeedEvaluationReplies(card);
+    if (evaluationReplies) {
+      info.appendChild(evaluationReplies);
+    }
+
     const author = document.createElement("div");
     author.className = "yanzi-xhs-custom-author";
     author.textContent = card.author || "燕子";
     info.appendChild(author);
+
+    if (card.localFeed === true && normalizeText(card.topic)) {
+      const topicText = normalizeText(card.topic);
+      const topicChars = Array.from(topicText);
+      const topic = document.createElement("div");
+      topic.className = "yanzi-xhs-custom-topic";
+      topic.textContent = "#" + (
+        topicChars.length > 6
+          ? topicChars.slice(0, 6).join("") + "…"
+          : topicText
+      );
+      topic.title = topicText;
+      info.appendChild(topic);
+    }
 
     if (card.localFeed === true) {
       const feedback = document.createElement("div");
@@ -2866,12 +5293,13 @@
 
       const evaluate = document.createElement("button");
       evaluate.type = "button";
-      evaluate.dataset.action = "evaluate";
-      evaluate.dataset.active = pendingEvaluationForCard(card.id) ? "1" : "0";
-      evaluate.textContent = "评价";
-      evaluate.title = pendingEvaluationForCard(card.id)
-        ? "已评价；将在下一轮生成时使用"
-        : "写下对这类内容的具体评价";
+      evaluate.dataset.action = "chat";
+      evaluate.dataset.active =
+        latestLocalFeedChatForCard(card.id)?.replyStatus === "pending"
+          ? "1"
+          : "0";
+      evaluate.textContent = "聊聊";
+      evaluate.title = "加载这篇笔记并让 ChatGPT 展开讲讲";
 
       feedback.appendChild(like);
       feedback.appendChild(dislike);
@@ -2886,8 +5314,8 @@
         event.stopPropagation();
         event.stopImmediatePropagation();
 
-        if (button.dataset.action === "evaluate") {
-          showEvaluationPanel(card, button);
+        if (button.dataset.action === "chat") {
+          void startLocalFeedChat(card, button);
           return;
         }
 
@@ -2901,7 +5329,11 @@
     overlay.appendChild(info);
 
     overlay.addEventListener("click", event => {
-      if (event.target.closest?.(".yanzi-xhs-local-feedback button")) return;
+      if (
+        event.target.closest?.(
+          ".yanzi-xhs-local-feedback button, .yanzi-xhs-evaluation-launcher"
+        )
+      ) return;
 
       const selection = window.getSelection();
       if (
@@ -4067,12 +6499,12 @@
         const anchor = {
           getBoundingClientRect: () => popoverRect
         };
-        showEvaluationPanel(
+        hideSelectionPopover();
+        void startLocalFeedChat(
           context.card,
           anchor,
           context.text
         );
-        hideSelectionPopover();
         return;
       }
 
@@ -4138,7 +6570,7 @@
       popover.innerHTML =
         '<div class="yanzi-xhs-selection-action" data-action="selection-like">感兴趣</div>' +
         '<div class="yanzi-xhs-selection-action" data-action="selection-dislike">不感兴趣</div>' +
-        '<div class="yanzi-xhs-selection-action" data-action="selection-evaluate">评论</div>';
+        '<div class="yanzi-xhs-selection-action" data-action="selection-evaluate">聊聊</div>';
     } else {
       popover.innerHTML = context.kind === "title"
         ? '<div class="yanzi-xhs-selection-action" data-action="block-keyword">屏蔽关键词</div><div class="yanzi-xhs-selection-action" data-action="keyword-settings">设置</div>'
@@ -4379,6 +6811,15 @@
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message?.appId !== APP_ID) return;
 
+    if (message.type === "yanzi_webapp_ping") {
+      sendResponse({
+        ok: true,
+        appId: APP_ID,
+        version: APP_VERSION
+      });
+      return true;
+    }
+
     if (message.type === "yanzi_webapp_probe") {
       const cards = collectCards(document);
       let debugLayoutTest = null;
@@ -4508,6 +6949,95 @@
                 '.yanzi-xhs-interest-tab[data-view="history"]'
               )?.textContent
             ),
+            spaceTabText: normalizeText(
+              panel.querySelector(
+                '.yanzi-xhs-interest-tab[data-view="space"]'
+              )?.textContent
+            ),
+            spaceSummary: normalizeText(
+              panel.querySelector(".yanzi-xhs-space-summary")?.textContent
+            ),
+            spaceRenderedNodes: panel.querySelectorAll(
+              ".yanzi-xhs-space-node"
+            ).length,
+            spaceLayout: (() => {
+              panel.querySelector(
+                '.yanzi-xhs-interest-tab[data-view="space"]'
+              )?.click();
+              const layout = panel.querySelector(".yanzi-xhs-space-layout");
+              const canvas = panel.querySelector(".yanzi-xhs-space-canvas");
+              const detail = panel.querySelector(".yanzi-xhs-space-detail");
+              const result = {
+                panelWidth: Math.round(panel.getBoundingClientRect().width),
+                canvasHeight: Math.round(canvas?.getBoundingClientRect().height || 0),
+                detailWidth: Math.round(detail?.getBoundingClientRect().width || 0),
+                columns: layout ? getComputedStyle(layout).gridTemplateColumns : "",
+                toolbar: normalizeText(
+                  panel.querySelector(".yanzi-xhs-space-toolbar")?.textContent
+                )
+              };
+              panel.querySelector(
+                '.yanzi-xhs-interest-tab[data-view="history"]'
+              )?.click();
+              return result;
+            })(),
+            spaceBatchSelection: (() => {
+              const previousSelection = readExplorationSelection(panel);
+              const previousNodeId = panel.dataset.spaceNodeId || "";
+              const candidates = explorationVisibleNodes()
+                .filter(node =>
+                  node.type !== "legacy-root" &&
+                  node.type !== "legacy"
+                )
+                .slice(0, 2);
+              if (candidates.length < 2) {
+                return { ok: false, reason: "not_enough_nodes" };
+              }
+              writeExplorationSelection(
+                panel,
+                candidates.map(node => node.id)
+              );
+              panel.dataset.spaceNodeId = "";
+              renderExplorationGraph(panel);
+              const result = {
+                ok: true,
+                selectedCount: candidates.length,
+                detailTitle: normalizeText(
+                  panel.querySelector(".yanzi-xhs-space-detail-title")?.textContent
+                ),
+                actionCount: panel.querySelectorAll(
+                  ".yanzi-xhs-space-detail .yanzi-xhs-space-actions button"
+                ).length,
+                highlightedCount: panel.querySelectorAll(
+                  '.yanzi-xhs-space-node[data-multi-selected="1"]'
+                ).length
+              };
+              writeExplorationSelection(panel, previousSelection);
+              panel.dataset.spaceNodeId = previousNodeId;
+              renderExplorationGraph(panel);
+              return result;
+            })(),
+            promptTabText: normalizeText(
+              panel.querySelector(
+                '.yanzi-xhs-interest-tab[data-view="prompt"]'
+              )?.textContent
+            ),
+            promptStatus: normalizeText(
+              panel.querySelector(".yanzi-xhs-prompt-status")?.textContent
+            ),
+            promptLength: effectiveLocalFeedSystemPrompt().length,
+            generationContext: (() => {
+              const context = localFeedPromptContext();
+              return {
+                recentCount: context.recent.length,
+                coverageCount: context.coverage.length,
+                frontierCount: context.frontier.length,
+                likedCount: context.liked.length,
+                dislikedCount: context.disliked.length,
+                evaluationCount: context.evaluations.length,
+                promptLength: context.systemPrompt.length
+              };
+            })(),
             summary: normalizeText(
               panel.querySelector(
                 ".yanzi-xhs-history-summary-text"
@@ -4562,6 +7092,146 @@
             '"]'
           )?.click();
           panel.hidden = wasHidden;
+        }
+      }
+
+      let debugEvaluationPlacementTest = null;
+      if (message.debugEvaluationPlacementTest) {
+        const overlay = document.querySelector(
+          '.yanzi-xhs-custom-card[data-local-feed="1"]'
+        );
+
+        if (!overlay) {
+          debugEvaluationPlacementTest = {
+            ok: false,
+            error: "local_feed_card_not_visible"
+          };
+        } else {
+          const cardId = overlay.dataset.cardId || "";
+          const card = localFeedNoteById(cardId);
+
+          if (!card) {
+            debugEvaluationPlacementTest = {
+              ok: false,
+              error: "local_feed_note_not_found",
+              cardId
+            };
+          } else {
+            const tempId = "debug-evaluation-placement-" + Date.now();
+            const temp = {
+              id: tempId,
+              noteId: card.id,
+              text: "这是一次不会保存的评价位置诊断。",
+              scope: "selection",
+              selectionText: "用于确认局部评价回复显示位置",
+              title: card.title,
+              body: card.body,
+              topic: card.topic,
+              at: Date.now(),
+              usedAt: 0,
+              replyStatus: "success",
+              replyText: "这是一次不会保存的 GPT 详细回复位置诊断。",
+              replyError: "",
+              replyRequestedAt: Date.now(),
+              replyAt: Date.now(),
+              replyElapsedMs: 1,
+              replyTabId: 999999,
+              replyChatUrl: "https://chatgpt.com/c/debug",
+              replyTabExpiresAt: Date.now() + 60000,
+              replyKeepOpen: false
+            };
+
+            localFeedState.evaluations.push(temp);
+            try {
+              renderLocalFeedEvaluationReplies(card);
+
+              const info = overlay.querySelector(".yanzi-xhs-custom-info");
+              const body = info?.querySelector(":scope > .yanzi-xhs-custom-body");
+              const replies = info?.querySelector(
+                ":scope > .yanzi-xhs-evaluation-replies"
+              );
+              const author = info?.querySelector(
+                ":scope > .yanzi-xhs-custom-author"
+              );
+              const launcher = replies?.querySelector(
+                '.yanzi-xhs-evaluation-launcher[data-evaluation-id="' +
+                CSS.escape(tempId) +
+                '"]'
+              );
+
+              launcher?.click();
+
+              const resultPanel = document.querySelector(
+                ".yanzi-xhs-evaluation-result-panel"
+              );
+              debugEvaluationPlacementTest = {
+                ok: Boolean(
+                  launcher &&
+                  resultPanel &&
+                  !resultPanel.hidden
+                ),
+                cardId: card.id,
+                title: card.title || "",
+                launcherVisible: Boolean(launcher),
+                launcherText: normalizeText(launcher?.textContent),
+                panelVisible: Boolean(resultPanel && !resultPanel.hidden),
+                answerText: normalizeText(
+                  resultPanel?.querySelector(
+                    ".yanzi-xhs-evaluation-result-answer"
+                  )?.textContent
+                ),
+                quoteText: normalizeText(
+                  resultPanel?.querySelector(
+                    ".yanzi-xhs-evaluation-result-quote"
+                  )?.textContent
+                ),
+                followupEnabled: Boolean(
+                  resultPanel?.querySelector(
+                    ".yanzi-xhs-evaluation-followup"
+                  ) &&
+                  !resultPanel.querySelector(
+                    ".yanzi-xhs-evaluation-followup"
+                  ).disabled
+                ),
+                afterBody: Boolean(
+                  !body ||
+                  !replies ||
+                  (
+                    body.compareDocumentPosition(replies) &
+                    Node.DOCUMENT_POSITION_FOLLOWING
+                  )
+                ),
+                beforeAuthor: Boolean(
+                  !author ||
+                  !replies ||
+                  (
+                    replies.compareDocumentPosition(author) &
+                    Node.DOCUMENT_POSITION_FOLLOWING
+                  )
+                ),
+                launcherContainerCount: info?.querySelectorAll(
+                  ":scope > .yanzi-xhs-evaluation-replies"
+                ).length || 0,
+                floatingPanelCount: document.querySelectorAll(
+                  ".yanzi-xhs-evaluation-result-panel"
+                ).length
+              };
+            } finally {
+              const resultPanel = document.querySelector(
+                ".yanzi-xhs-evaluation-result-panel"
+              );
+              if (resultPanel) {
+                resultPanel.hidden = true;
+                resultPanel.dataset.evaluationId = "";
+              }
+              evaluationResultPanelAnchor = null;
+              clearTimeout(evaluationResultExpiryTimer);
+              evaluationResultExpiryTimer = null;
+              localFeedState.evaluations = localFeedState.evaluations
+                .filter(item => item.id !== tempId);
+              renderLocalFeedEvaluationReplies(card);
+            }
+          }
         }
       }
 
@@ -4721,7 +7391,7 @@
       sendResponse({
         ok: true,
         appId: APP_ID,
-        version: "0.7.7",
+        version: APP_VERSION,
         enabled,
         filteringEnabled,
         url: location.href,
@@ -4790,6 +7460,13 @@
         localTestNotesCount: LOCAL_TEST_NOTES.length,
         localTestRealNotesPerCard: LOCAL_TEST_REAL_NOTES_PER_CARD,
         localFeedLoaded,
+        localFeedDedupMemory: (localFeedState.dedupMemory || []).length,
+        localFeedExplorationNodes: (localFeedState.exploration?.nodes || []).length,
+        localFeedExplorationFrontier: localFeedExplorationFrontier().length,
+        localFeedExplorationContinue: (localFeedState.exploration?.nodes || [])
+          .filter(node => node.status === "continue").length,
+        localFeedExplorationStopped: (localFeedState.exploration?.nodes || [])
+          .filter(node => node.status === "stop").length,
         localFeedReady: localFeedState.notes.filter(note => note.state === "ready").length,
         localFeedAssigned: localFeedState.notes.filter(note => note.state === "assigned" && !note.seenAt).length,
         localFeedActiveAssignments: getActiveLocalFeedAssignmentIds().size,
@@ -4801,19 +7478,34 @@
         localFeedSeen: localFeedState.notes.filter(note => Boolean(note.seenAt)).length,
         localFeedGenerated: localFeedState.notes.filter(note => note.source === "chatgpt").length,
         localFeedFutureSupply: getLocalFeedFutureSupply(),
+        localFeedLoadStatus: localFeedLoadIndicatorState(),
+        interestNavLoadState:
+          document.querySelector(".yanzi-xhs-interest-nav")?.dataset.loadState || "",
+        interestNavStatusAria:
+          document.querySelector(".yanzi-xhs-interest-status")
+            ?.getAttribute("aria-label") || "",
         localFeedFeedbackCount: localFeedState.feedback.length,
         localFeedLikes: localFeedState.feedback.filter(item => item.value === "like").length,
         localFeedDislikes: localFeedState.feedback.filter(item => item.value === "dislike").length,
         localFeedBatchSize: LOCAL_FEED_BATCH_SIZE,
         localFeedInterests: (localFeedState.preferences?.interests || []).slice(),
         localFeedEvaluationsPending: (localFeedState.evaluations || [])
-          .filter(item => !item.usedAt)
+          .filter(item => item.kind !== "chat" && !item.usedAt)
           .map(item => ({
             id: item.id,
             noteId: item.noteId,
             text: item.text,
             at: item.at
           })),
+        localFeedChatRecords: (localFeedState.evaluations || [])
+          .filter(item => item.kind === "chat").length,
+        localFeedChatButtons: Array.from(document.querySelectorAll(
+          '.yanzi-xhs-local-feedback button[data-action="chat"]'
+        )).map(button => ({
+          text: normalizeText(button.textContent),
+          title: normalizeText(button.title),
+          active: button.dataset.active === "1"
+        })),
         localFeedEvaluationsUsed: (localFeedState.evaluations || [])
           .filter(item => Boolean(item.usedAt)).length,
         interestNavPresent: Boolean(document.querySelector(".yanzi-xhs-interest-nav")),
@@ -4824,6 +7516,9 @@
           startedAt: Number(localFeedState.generation?.startedAt || 0),
           lastCompletedAt: Number(localFeedState.generation?.lastCompletedAt || 0),
           lastReturnedCount: Number(localFeedState.generation?.lastReturnedCount || 0),
+          lastRejectedDuplicates: Number(
+            localFeedState.generation?.lastRejectedDuplicates || 0
+          ),
           lastElapsedMs: Number(localFeedState.generation?.lastElapsedMs || 0),
           lastContext: localFeedState.generation?.lastContext || null,
           lastError: localFeedState.generation?.lastError || ""
@@ -4838,6 +7533,7 @@
         } : null,
         debugLayoutTest,
         debugInterestTest,
+        debugEvaluationPlacementTest,
         debugSelectionTest,
         debugLocalFeedTest
       });

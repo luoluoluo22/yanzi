@@ -32,6 +32,10 @@ public sealed class CaptureWorkspaceWindow : Window
 {
     private readonly BitmapSource _screen;
     private readonly string _extensionDataDirectory;
+    private readonly bool _ocrOnly;
+    private readonly Action? _openSettings;
+    private readonly CaptureOcrClient? _ocrClient;
+    private Button? _floatingSettingsButton;
 
     private readonly Canvas _canvas = new();
     private readonly Image _screenImage = new();
@@ -86,10 +90,16 @@ public sealed class CaptureWorkspaceWindow : Window
 
     public CaptureWorkspaceWindow(
         BitmapSource screen,
-        string extensionDataDirectory)
+        string extensionDataDirectory,
+        bool ocrOnly = false,
+        Action? openSettings = null,
+        CaptureOcrClient? ocrClient = null)
     {
         _screen = screen;
         _extensionDataDirectory = extensionDataDirectory;
+        _ocrOnly = ocrOnly;
+        _openSettings = openSettings;
+        _ocrClient = ocrClient;
 
         Title = "燕子截图";
         WindowStyle = WindowStyle.None;
@@ -241,6 +251,28 @@ public sealed class CaptureWorkspaceWindow : Window
         _canvas.Children.Add(_ratioFlyout);
 
         root.Children.Add(_canvas);
+        if (_openSettings is not null)
+        {
+            _floatingSettingsButton = new Button
+            {
+                Content = "⚙",
+                ToolTip = "燕子截图设置（含 F3 OCR 快捷键）",
+                FontSize = 19,
+                Width = 37,
+                Height = 37,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0, 20, 24, 0),
+                Foreground = Brushes.White,
+                Background = Brush("#E61B2028"),
+                BorderBrush = Brush("#555E6A"),
+                Cursor = Cursors.Hand
+            };
+            AutomationProperties.SetAutomationId(_floatingSettingsButton, "capture.workspace.settings.quick");
+            _floatingSettingsButton.Click += (_, _) => _openSettings();
+            Panel.SetZIndex(_floatingSettingsButton, 60);
+            root.Children.Add(_floatingSettingsButton);
+        }
         Content = root;
     }
 
@@ -276,6 +308,13 @@ public sealed class CaptureWorkspaceWindow : Window
             VerticalAlignment = VerticalAlignment.Center
         };
         DockPanel.SetDock(actions, Dock.Right);
+
+        if (_openSettings is not null)
+            actions.Children.Add(ActionButton(
+                "settings",
+                "截图设置 / OCR 快捷键",
+                "capture.workspace.settings",
+                _openSettings));
 
         actions.Children.Add(
             ActionButton(
@@ -1345,7 +1384,9 @@ public sealed class CaptureWorkspaceWindow : Window
         var original =
             e.OriginalSource as DependencyObject;
 
-        if (IsDescendantOf(_toolbar, original) ||
+        if ((_floatingSettingsButton is not null &&
+             IsDescendantOf(_floatingSettingsButton, original)) ||
+            IsDescendantOf(_toolbar, original) ||
             IsDescendantOf(_ratioControl, original) ||
             IsDescendantOf(_ratioFlyout, original))
         {
@@ -1482,6 +1523,12 @@ public sealed class CaptureWorkspaceWindow : Window
 
         if (_session is null)
         {
+            if (_ocrOnly)
+            {
+                e.Handled = true;
+                _ = RecognizeSelectionAndCloseAsync(pixels);
+                return;
+            }
             CreateSession(pixels);
         }
         else
@@ -1551,6 +1598,8 @@ public sealed class CaptureWorkspaceWindow : Window
 
     private void CreateSession(Int32Rect pixels)
     {
+        if (_floatingSettingsButton is not null)
+            _floatingSettingsButton.Visibility = Visibility.Collapsed;
         _session = new CaptureSession(
             _screen,
             pixels);
@@ -1999,6 +2048,28 @@ public sealed class CaptureWorkspaceWindow : Window
         _editor?.SelectAnnotation(annotation);
     }
 
+    private async Task RecognizeSelectionAndCloseAsync(Int32Rect selection)
+    {
+        try
+        {
+            Hide();
+            OcrFeedback.BeginRecognizing();
+            var bitmap = ScreenCaptureService.Crop(_screen, selection);
+            var outcome = _ocrClient is null
+                ? new CaptureOcrResult(await WindowsOcrService.RecognizeAsync(bitmap), "Windows OCR", true, TimeSpan.Zero)
+                : await _ocrClient.RecognizeAsync(bitmap);
+            await OcrFeedback.PublishAsync(outcome);
+        }
+        catch (Exception ex)
+        {
+            OcrFeedback.ShowFailure(ex);
+        }
+        finally
+        {
+            Close();
+        }
+    }
+
     private async Task RunOcrAsync()
     {
         if (_session is null)
@@ -2006,27 +2077,25 @@ public sealed class CaptureWorkspaceWindow : Window
 
         try
         {
+            Hide();
+            OcrFeedback.BeginRecognizing();
             var bitmap =
                 DocumentRenderer.Render(
                     _session.Document);
 
-            var text =
-                await WindowsOcrService
-                    .RecognizeAsync(bitmap);
+            var outcome = _ocrClient is null
+                ? new CaptureOcrResult(await WindowsOcrService.RecognizeAsync(bitmap), "Windows OCR", true, TimeSpan.Zero)
+                : await _ocrClient.RecognizeAsync(bitmap);
 
-            new OcrResultWindow(text)
-            {
-                Owner = this
-            }.ShowDialog();
+            await OcrFeedback.PublishAsync(outcome);
         }
         catch (Exception ex)
         {
-            MessageBox.Show(
-                this,
-                ex.Message,
-                "文字识别",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+            OcrFeedback.ShowFailure(ex);
+        }
+        finally
+        {
+            Close();
         }
     }
 

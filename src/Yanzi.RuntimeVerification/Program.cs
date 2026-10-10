@@ -49,7 +49,7 @@ File.WriteAllText(Path.Combine(root, "appsettings.local.json"), JsonSerializer.S
     launcherHotkey = "", enableWindowSnapAssist = false
 }, RuntimeRpc.Json));
 File.WriteAllText(Path.Combine(extension, "manifest.json"), """
-{"id":"runtime-resident-test","name":"Runtime lifecycle fixture","version":"1.0","runtime":"csharp","uiMode":"native-window","entryMode":"entry","entry":"main.cs","startup":{"mode":"on_app_launch"},"permissions":[],"provides":[{"name":"runtime.verification.ping","inputSchema":{"type":"object"},"outputSchema":{"type":"object"}}]}
+{"id":"runtime-resident-test","name":"Runtime lifecycle fixture","version":"1.0","runtime":"csharp","uiMode":"native-window","entryMode":"entry","entry":"main.cs","startup":{"mode":"on_app_launch","idle":{"enabled":true,"afterMinutes":5,"repeatMinutes":10,"pauseWhenFullscreen":true}},"permissions":[],"provides":[{"name":"runtime.verification.ping","inputSchema":{"type":"object"},"outputSchema":{"type":"object"}}]}
 """);
 File.WriteAllText(Path.Combine(extension, "main.cs"), """
 using System;
@@ -110,11 +110,21 @@ try
     start.ArgumentList.Add("--runtime"); start.ArgumentList.Add("--tray");
     start.ArgumentList.Add("--runtime-data-root"); start.ArgumentList.Add(root);
     runtime = Process.Start(start)!;
-    var initial = await WaitForAsync(s => s.GetProperty("running").EnumerateArray().Any(e => e.GetProperty("extensionId").GetString() == "runtime-resident-test"));
+    var initial = await WaitForAsync(s => s.GetProperty("running").EnumerateArray().Any(e => e.GetProperty("extensionId").GetString() == "runtime-resident-test")
+        && s.GetProperty("backgroundServices").TryGetProperty("idleTrigger", out var trigger) && trigger.GetBoolean());
     var instance = initial.GetProperty("instanceId").GetGuid();
     var residentId = initial.GetProperty("running").EnumerateArray().Single(e => e.GetProperty("extensionId").GetString() == "runtime-resident-test").GetProperty("instanceId").GetGuid();
     Check(initial.GetProperty("pid").GetInt32() == runtime.Id, "Background owner is not Runtime");
     Check(initial.GetProperty("backgroundServices").GetProperty("initialized").GetBoolean(), "Background initialization missing");
+    Check(initial.GetProperty("backgroundServices").GetProperty("idleTrigger").GetBoolean(), "Idle trigger did not start");
+    var idleStatusPath = Path.Combine(root, "ExtensionStorage", "runtime-resident-test", "idle-trigger-status.json");
+    var heartbeatDeadline = DateTimeOffset.UtcNow.AddSeconds(20);
+    while (!File.Exists(idleStatusPath) && DateTimeOffset.UtcNow < heartbeatDeadline)
+        await Task.Delay(250);
+    Check(File.Exists(idleStatusPath), "Idle trigger failed to publish heartbeat");
+    using var heartbeat = JsonDocument.Parse(File.ReadAllText(idleStatusPath));
+    Check(DateTimeOffset.UtcNow - heartbeat.RootElement.GetProperty("observedAt").GetDateTimeOffset() < TimeSpan.FromSeconds(20), "Idle trigger heartbeat is stale");
+    Check(initial.GetProperty("backgroundServices").TryGetProperty("idleTriggerObservedAt", out _), "Idle trigger health timestamp missing");
     using var http = new HttpClient();
     Check((await http.GetAsync($"http://127.0.0.1:{port}/health")).IsSuccessStatusCode, "Runtime API not alive");
     var first = await RuntimeRpc.CallAsync("capability.invoke", new { name = "runtime.verification.ping", payload = new { } });

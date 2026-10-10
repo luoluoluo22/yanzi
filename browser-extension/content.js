@@ -37,6 +37,7 @@ function executeTask(task) {
 // ==========================================
 // 0. AI 提示词自动传递与 JSON 提取引擎 (AI Transfer Engine)
 // ==========================================
+
 async function performLanzouUploadFile(task) {
   // Disposable test ZIP only, using browser session automatically. Never expose credentials.
   try {
@@ -431,6 +432,9 @@ function waitForElement(selector, timeout) {
   });
 }
 
+// 1.15 同源网络请求 (Fetch)
+// 仅允许访问当前页面同源接口，并携带当前登录 Cookie。
+// 用于已登录网站自身提供的 CRUD API；不暴露跨站任意请求能力。
 async function handleFetchStep(step) {
   if (!step.url) {
     throw new Error("fetch 步骤缺少 url");
@@ -494,23 +498,59 @@ async function handleFetchStep(step) {
 }
 
 // 1.2 高保真输入操作 (Fill)
+function setAutomationFieldValue(el, value) {
+  const nextValue = value == null ? "" : String(value);
+  el.focus?.();
+
+  if (el.isContentEditable) {
+    // 招聘站、聊天站常使用 contenteditable div 而不是 textarea。
+    // 统一支持后，工作流无需为每个聊天站点增加专用输入协议。
+    el.textContent = nextValue;
+    try {
+      el.dispatchEvent(new InputEvent("input", {
+        bubbles: true,
+        inputType: "insertText",
+        data: nextValue
+      }));
+    } catch (_) {
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+    return;
+  }
+
+  const proto = el instanceof HTMLTextAreaElement
+    ? HTMLTextAreaElement.prototype
+    : el instanceof HTMLInputElement
+      ? HTMLInputElement.prototype
+      : null;
+  const valueSetter = proto
+    ? Object.getOwnPropertyDescriptor(proto, "value")?.set
+    : null;
+
+  if (valueSetter) {
+    valueSetter.call(el, nextValue);
+  } else {
+    el.value = nextValue;
+  }
+
+  // React 的 _valueTracker 需要保留“旧值”，随后 input 事件才能被框架识别为变化。
+  const tracker = el._valueTracker;
+  if (tracker) {
+    try { tracker.setValue(""); } catch (_) {}
+  }
+
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+  el.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
 async function handleFillStep(step) {
   const el = document.querySelector(step.selector);
   if (!el) {
     throw new Error(`未找到输入框元素: ${step.selector}`);
   }
 
-  el.value = step.value;
-  
-  // 触发 SPA 双向绑定更新事件
-  el.dispatchEvent(new Event("input", { bubbles: true }));
-  el.dispatchEvent(new Event("change", { bubbles: true }));
-  
-  // React 专有状态追踪器触发
-  const tracker = el._valueTracker;
-  if (tracker) {
-    tracker.setValue(step.value);
-  }
+  setAutomationFieldValue(el, step.value);
   
   // 稍微等待 100ms 确保页面数据流渲染更新完成
   await new Promise(resolve => setTimeout(resolve, 100));
@@ -599,11 +639,7 @@ function performAutofill(task) {
   fields.forEach(field => {
     const el = document.querySelector(field.selector);
     if (el) {
-      el.value = field.value;
-      el.dispatchEvent(new Event("input", { bubbles: true }));
-      el.dispatchEvent(new Event("change", { bubbles: true }));
-      const tracker = el._valueTracker;
-      if (tracker) tracker.setValue(field.value);
+      setAutomationFieldValue(el, field.value);
     }
   });
 

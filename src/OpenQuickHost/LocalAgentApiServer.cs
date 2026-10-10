@@ -263,6 +263,7 @@ public sealed partial class LocalAgentApiServer : IDisposable
     private readonly Func<string, Task<(bool ok, string message)>>? _onPublishExtension;
     private readonly Func<string, Task<(bool ok, string message)>>? _onUnpublishExtension;
     private readonly Func<string, Task<(bool ok, string message)>>? _onInstallExtension;
+    private readonly Func<string, Task<(bool ok, string message)>>? _onDeleteExtension;
     private readonly Func<Task<AuthMeResponse?>>? _onGetMe;
     private readonly Func<string, string, Task>? _onShowNotification;
     private readonly Func<string, string, Task>? _onPushToMobile;
@@ -288,7 +289,8 @@ public sealed partial class LocalAgentApiServer : IDisposable
         Func<string, string, Task>? onShowNotification = null,
         Func<string, string, Task>? onPushToMobile = null,
         Func<DeviceMessageRecord, Task<(bool success, string output)>>? onMobileMessage = null,
-        Action<string, bool>? onSettingsChanged = null)
+        Action<string, bool>? onSettingsChanged = null,
+        Func<string, Task<(bool ok, string message)>>? onDeleteExtension = null)
     {
         _prefix = prefix.EndsWith("/", StringComparison.Ordinal) ? prefix : prefix + "/";
         _token = token;
@@ -297,6 +299,7 @@ public sealed partial class LocalAgentApiServer : IDisposable
         _onPublishExtension = onPublishExtension;
         _onUnpublishExtension = onUnpublishExtension;
         _onInstallExtension = onInstallExtension;
+        _onDeleteExtension = onDeleteExtension;
         _onGetMe = onGetMe;
         _onShowNotification = onShowNotification;
         _onPushToMobile = onPushToMobile;
@@ -566,12 +569,21 @@ public sealed partial class LocalAgentApiServer : IDisposable
 
                 var taskId = Guid.NewGuid().ToString("N");
                 var taskPayload = new Dictionary<string, object>();
+                var executionTimeoutSeconds = 30;
                 try
                 {
                     var jsonDoc = JsonDocument.Parse(body);
                     foreach (var prop in jsonDoc.RootElement.EnumerateObject())
                     {
                         taskPayload[prop.Name] = prop.Value;
+                        if (
+                            prop.NameEquals("timeoutSeconds") &&
+                            prop.Value.ValueKind == JsonValueKind.Number &&
+                            prop.Value.TryGetInt32(out var requestedTimeoutSeconds)
+                        )
+                        {
+                            executionTimeoutSeconds = Math.Clamp(requestedTimeoutSeconds, 5, 600);
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -602,7 +614,7 @@ public sealed partial class LocalAgentApiServer : IDisposable
                     return;
                 }
 
-                using (var delayCts = new CancellationTokenSource(TimeSpan.FromSeconds(30)))
+                using (var delayCts = new CancellationTokenSource(TimeSpan.FromSeconds(executionTimeoutSeconds)))
                 {
                     var completedTask = await Task.WhenAny(tcs.Task, Task.Delay(Timeout.Infinite, delayCts.Token));
                     if (completedTask == tcs.Task)
@@ -629,7 +641,11 @@ public sealed partial class LocalAgentApiServer : IDisposable
                     else
                     {
                         _pendingBrowserTasks.TryRemove(taskId, out _);
-                        await WriteJsonAsync(response, 504, new { error = "browser_execution_timeout" });
+                        await WriteJsonAsync(response, 504, new
+                        {
+                            error = "browser_execution_timeout",
+                            timeoutSeconds = executionTimeoutSeconds
+                        });
                     }
                 }
                 return;

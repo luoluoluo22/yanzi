@@ -211,11 +211,13 @@ internal sealed partial class GalleryWindow
     private Border PictureAvatar(string file, double diameter, bool online)
     {
         var grid = new Grid { Width = diameter + 3, Height = diameter + 3 };
-        var portrait = new Ellipse { Width = diameter, Height = diameter, HorizontalAlignment = HorizontalAlignment.Center };
-        var bitmap = DemoBitmap(file);
-        if (bitmap is not null)
-            portrait.Fill = new ImageBrush(bitmap) { Stretch = Stretch.UniformToFill };
-        else portrait.SetResourceReference(Shape.FillProperty, "Yanzi.Color.Secondary");
+        var portrait = new YanziAvatar
+        {
+            Initials = "用户",
+            Diameter = diameter,
+            ImageSource = DemoBitmap(file),
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
         grid.Children.Add(portrait);
         if (online)
         {

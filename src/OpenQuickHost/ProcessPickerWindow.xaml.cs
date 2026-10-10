@@ -46,48 +46,7 @@ public partial class ProcessPickerWindow : Window
         
         BlacklistItemsControl.ItemsSource = Blacklist;
 
-        _allRunningProcesses = Process.GetProcesses()
-            .Where(p => p.MainWindowHandle != IntPtr.Zero)
-            .GroupBy(p => p.ProcessName, StringComparer.OrdinalIgnoreCase)
-            .Select(g => 
-            {
-                string? validPath = null;
-                foreach (var p in g)
-                {
-                    try
-                    {
-                        var path = ProcessHelper.GetProcessExecutablePath(p);
-                        if (!string.IsNullOrWhiteSpace(path))
-                        {
-                            validPath = path;
-                            break;
-                        }
-                    }
-                    catch { }
-                }
-
-                ImageSource? icon = null;
-                if (!string.IsNullOrWhiteSpace(validPath))
-                {
-                    try { icon = NativeFileIconService.GetIcon(validPath, isFolder: false); }
-                    catch { }
-                }
-
-                if (icon == null)
-                {
-                    icon = FallbackIconResolver.GetFallbackIcon(g.Key);
-                }
-
-                return new ProcessItem
-                {
-                    ProcessName = g.Key,
-                    ExecutablePath = validPath,
-                    Icon = icon
-                };
-            })
-            .OrderByDescending(p => !string.IsNullOrWhiteSpace(defaultProcess) && p.ProcessName.Equals(defaultProcess, StringComparison.OrdinalIgnoreCase))
-            .ThenBy(p => p.ProcessName)
-            .ToList();
+        _allRunningProcesses = ProcessCatalog.GetRunningProcesses(defaultProcess);
 
         if (initialList != null)
         {
