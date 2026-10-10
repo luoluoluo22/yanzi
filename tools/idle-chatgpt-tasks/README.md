@@ -68,3 +68,12 @@
 - 主动点击“重新排队”会清除 NextEligibleAt，允许用户手动干预；任务禁用时不再自动派发。
 - 临时 Provider 的真实 Agent API 回归测试脚本：scripts/test-idle-task-list-capability.ps1；隔离状态机测试：.artifacts/idle-retry-test。
 - 本机正式发布与回滚信息：docs/continuous-improvement/integrated-release-v1.0.12-2026-10-09.md。
+
+## v0.2.4：浏览器回传中断的受控恢复
+
+- Chrome 异步消息通道关闭不是业务失败：保留原始 Job ID，重新查询 Job 后才允许有限次数恢复；仅明确的消息通道错误属于可恢复范围。
+- 现存的旧版通道关闭 Job 能按原有 2/5/15 分钟、最多 3 次的恢复机制继续处理；恢复提示词要求先核对源码、日志和既有产物。
+- 新版浏览器助手 0.5.58 在异步消息通道异常时只读检查原标签页；原始用户消息和已完成回复均核对成功才视为成功。
+- 只读核对无法确认时，返回 deliveryUncertain，并保留标签页；任务显示“待人工核对”，不自动重发。
+- Bridge 回报成功但缺失回复文本时也进入“待人工核对”，不会把上轮留存的 Result 当作本轮成果。
+- 测试：tests/IdleTaskRecoveryVerification/Program.cs，tools/chatgpt-bridge/test/idle-browser-recovery.test.mjs。
