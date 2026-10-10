@@ -12,7 +12,8 @@ public static class ExtensionInstallService
         byte[] packageBytes,
         string? requestedExtensionId = null,
         CancellationToken cancellationToken = default,
-        string? fallbackName = null)
+        string? fallbackName = null,
+        Func<string, CancellationToken, Task<(byte[] Content, string? ContentType)>>? privateIconDownload = null)
     {
         if (packageBytes == null || packageBytes.Length == 0)
         {
@@ -75,7 +76,7 @@ public static class ExtensionInstallService
                 throw new InvalidOperationException($"扩展 ID 不匹配。协议里是 {requestedExtensionId}，扩展包里是 {manifest.Id}。");
             }
 
-            manifest = await LocalizeRemoteIconAsync(tempDirectory, manifest, cancellationToken);
+            manifest = await LocalizeRemoteIconAsync(tempDirectory, manifest, cancellationToken, privateIconDownload);
 
             var targetDirectory = Path.Combine(HostAssets.ExtensionsPath, manifest.Id);
             // 升级采用“旧目录先挪走 → 新目录就位 → 删旧”的顺序：直接 Delete 后 Move 之间
@@ -149,7 +150,8 @@ public static class ExtensionInstallService
     private static async Task<LocalExtensionManifest> LocalizeRemoteIconAsync(
         string extensionDirectory,
         LocalExtensionManifest manifest,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<string, CancellationToken, Task<(byte[] Content, string? ContentType)>>? privateIconDownload)
     {
         var iconReference = manifest.Icon?.Trim();
         if (string.IsNullOrWhiteSpace(iconReference) ||
@@ -159,17 +161,38 @@ public static class ExtensionInstallService
             return manifest;
         }
 
+        var bundledIcon = ExtensionPackageService.ResolvePortableIconReference(extensionDirectory, iconReference);
+        if (!string.IsNullOrWhiteSpace(bundledIcon))
+        {
+            // Preserve protected URL only in account metadata; use the embedded image.
+            var local = manifest with { Icon = bundledIcon };
+            await File.WriteAllTextAsync(Path.Combine(extensionDirectory, "manifest.json"),
+                JsonSerializer.Serialize(local, JsonOptions), cancellationToken);
+            return local;
+        }
+
         byte[] bytes;
         string? mediaType;
         try
         {
-            using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
-            using var response = await httpClient.GetAsync(iconUri, cancellationToken);
-            response.EnsureSuccessStatusCode();
-            bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
-            mediaType = response.Content.Headers.ContentType?.MediaType;
+            var expectedPath = $"/v1/me/extensions/{Uri.EscapeDataString(manifest.Id)}/icon";
+            if (privateIconDownload != null &&
+                string.Equals(iconUri.AbsolutePath, expectedPath, StringComparison.OrdinalIgnoreCase))
+            {
+                var downloaded = await privateIconDownload(manifest.Id, cancellationToken);
+                bytes = downloaded.Content;
+                mediaType = downloaded.ContentType;
+            }
+            else
+            {
+                using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+                using var response = await httpClient.GetAsync(iconUri, cancellationToken);
+                response.EnsureSuccessStatusCode();
+                bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+                mediaType = response.Content.Headers.ContentType?.MediaType;
+            }
         }
-        catch (Exception ex) when ((ex is HttpRequestException or TaskCanceledException) && !cancellationToken.IsCancellationRequested)
+        catch (Exception ex) when ((ex is HttpRequestException or TaskCanceledException or InvalidOperationException or IOException) && !cancellationToken.IsCancellationRequested)
         {
             HostAssets.AppendLog($"Extension icon localization skipped: {ex.GetType().Name}");
             return manifest;

@@ -1274,6 +1274,20 @@ public sealed partial class CloudSyncClient
         return await response.Content.ReadAsByteArrayAsync(cancellationToken);
     }
 
+    public async Task<(byte[] Content, string? ContentType)> DownloadMyExtensionIconAsync(
+        string extensionId, CancellationToken cancellationToken = default)
+    {
+        await EnsureAuthenticatedAsync(cancellationToken);
+        using var request = CreateRequest(HttpMethod.Get,
+            $"/v1/me/extensions/{Uri.EscapeDataString(extensionId)}/icon", includeAuth: true);
+        using var response = await SendAsyncWithFallback(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+        if (bytes.Length is 0 or > 8388608)
+            throw new InvalidDataException("Private extension icon payload is empty or too large.");
+        return (bytes, response.Content.Headers.ContentType?.MediaType);
+    }
+
     public async Task<bool> CheckExtensionArchiveExistsAsync(string extensionId, CancellationToken cancellationToken = default)
     {
         try
