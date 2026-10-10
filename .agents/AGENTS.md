@@ -4,6 +4,15 @@
 
 ---
 
+## 0. 持续开发与按需发布（2026-10-10 起优先执行）
+
+> [!IMPORTANT]
+> **开发即验证，验证后及时合并，合并不等于发布。**
+> 所有 Agent 在修改代码前先阅读根目录 [AGENTS.md](../AGENTS.md) 和 [持续开发、验证、合并与按需发布规范](../docs/development-integration-release-policy.md)。分支上的开发过程可分步 Commit，关联测试与审查通过即可合并 main；不得将未验收代码并入 main。合并到 main 默认不更新用户正式安装版，不自动启动、关闭或重启正式进程；只有存在明确的发布/部署意图时才执行发布门禁。
+> Cloudflare main 变更会触发实际生产部署，必须执行专门的线上授权/迁移门禁；不能将该特殊情况误称为“只提交代码”。
+> 与以下旧版“自动启动”“自主公开发布”等要求冲突时，以 2026-10-10 新规范为准。
+
+---
 ## 1. 脚本编码规范与 PowerShell 兼容性
 
 > [!IMPORTANT]
@@ -59,24 +68,15 @@
 
 ---
 
-## 4. 本地修改与测试构建后的自动启动规约
+## 4. 开发构建后的运行时验证与正式实例隔离
 
 > [!IMPORTANT]
-> **构建成功后自动启动程序**
-> 1. 在完成本地代码修改并执行 `dotnet build` 构建通过（0 错误）后，AI Agent **必须自动启动程序**以便用户直接体验与验收，无需等待用户额外提醒或手动启动。
-> 2. **进程管理与启动命令规范**：
->    - 若系统中已有旧版 `Yanzi` 进程在运行，先安全终止旧进程：
->      ```powershell
->      Stop-Process -Name Yanzi -Force -ErrorAction SilentlyContinue
->      ```
->    - 为防止进程受控制台生命周期回收影响，必须使用独立进程创建方式拉起可执行文件（兼容 Windows PowerShell 5.1）：
->      ```powershell
->      Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = "F:\Desktop\kaifa\OpenQuickHost\src\OpenQuickHost\bin\Debug\net9.0-windows\Yanzi.exe --tray"; CurrentDirectory = "F:\Desktop\kaifa\OpenQuickHost\src\OpenQuickHost\bin\Debug\net9.0-windows" }
->      ```
->      脱离终端作业独立运行，保证桌面窗口正常渲染且不阻塞命令行交互。
+> 1. `dotnet build` 通过（0 错误）表示编译通过，**不等于应立即部署或重启用户正在使用的正式程序**；常态开发先做受影响模块的自动测试，再按新规范合并代码。
+> 2. 需要窗口、宿主或浏览器交互验证时，优先使用隔离开发实例、独立进程或明确的热重载机制，并核对当前运行的其他 Agent/任务；不得默认执行 `Stop-Process -Name Yanzi -Force`。
+> 3. 只有用户明确请求本机正式安装、更新或发布，或命中预先明确批准的具体部署任务时，才允许切换正式程序；此时必须遵守备份、健康检查、版本核验和回滚门禁。
+> 4. 发布源码已通过相应门禁的情况下，可直接复用现有 Commit/tag 构建；无需为发布目的重新提交未变化源码。
 
 ---
-
 ## 5. 燕子小程序（Extension）开发与测试规约
 
 > [!IMPORTANT]

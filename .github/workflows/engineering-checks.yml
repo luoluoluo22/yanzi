@@ -15,6 +15,8 @@ jobs:
         with: {dotnet-version: "9.0.x"}
       - uses: actions/setup-java@v4
         with: {distribution: temurin, java-version: "17"}
+      - name: Protect on-demand application releases
+        run: python3 scripts/verify-release-trigger-policy.py
       - name: Worker and SDK user scenarios
         run: node --test cloudflare/src/*.test.mjs cloudflare/tests/*.test.mjs protocol/sdk/*.test.mjs sdk/javascript/*.test.mjs
       - name: Platform independent account and settings scenarios
