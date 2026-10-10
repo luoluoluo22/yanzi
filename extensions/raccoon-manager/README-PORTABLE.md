@@ -1,32 +1,33 @@
-# 浣熊 MCP 小程序 · 空白 Windows 部署和跨设备调用
+# 浣熊 MCP 小程序：统一依赖、空白 Windows 部署和跨设备调用
 
-## 软件包与设备数据
+## 包结构
 
-小程序发布包位于 `extensions/raccoon-manager/`，包含 C# 界面、PowerShell 启动器、Node 运行时安装器，以及 `service/` 中的完整 JavaScript 源码、`package.json`、`package-lock.json`。它不是宿主内置代码，必须允许用户单独安装、卸载或禁用。
+小程序位于 `extensions/raccoon-manager/`，包括 C# 管理窗口、PowerShell 启动器、完整的 Node 服务源码、`package.json` 和 `package-lock.json`。用户可以独立安装、卸载与禁用。
 
-`node_modules` 不进入同步包；安装时由 `npm ci --omit=dev` 按 lockfile 恢复。设备私有配置统一位于 `%LOCALAPPDATA%\OpenQuickHost\McpRuntime\raccoon`。不得将 .env、token、OAuth 状态、日志或执行缓存发布或同步。
+**Node.js 不随小程序包同步，也不在小程序中下载。** 小程序 `manifest.json` 声明 `"requires": ["node>=22.16.0"]`，燕子宿主的 `YanziCapabilityRequirementResolver` 负责检查、自动准备运行时、确认版本及 PATH。宿主统一 Provider 优先复用已安装 Node，缺失时尝试 WinGet；若 WinGet 不存在或失败，使用官方 Node LTS ZIP 安装到当前用户目录 `%LOCALAPPDATA%\OpenQuickHost\Runtimes\node`，验证官方 `SHASUMS256.txt` 后再解压、原子迁移。该便携版运行时可由其他声明 `node` 的小程序复用。
 
-## 完全空白机器安装
+`stage-service.ps1` 只校验宿主准备好的 `node.exe`、`npm.cmd` 和最低版本，然后将服务代码部署到 `McpRuntime\raccoon\app`，基于 lockfile 的 SHA-256 缓存判断是否调用 `npm ci --omit=dev`。**`node_modules`、Node 二进制、密钥及运行时数据不进入小程序同步包。**
 
-1. 安装燕子、登录同一个燕子账号，并安装「浣熊 MCP」小程序。
-2. 小程序启动调用 `managed-start.ps1`，进而执行 `stage-service.ps1`。
-3. `ensure-node.ps1` 先寻找受支持的本机 Node（>=22.16.0），若找不到，自动下载最新 Node 24 LTS Windows ZIP 到当前用户的 `OpenQuickHost\Runtimes\node`（无需管理员权限）。下载来源为 nodejs.org，使用官方 SHASUMS256.txt 校验，校验失败拒绝安装。
-4. 将小程序中的完整 service 代码部署到 `McpRuntime\raccoon\app`，依据 lockfile 哈希变化执行 npm ci，失败则不启动服务；本机随机生成独立 token。服务只绑定 127.0.0.1。
-5. 燕子登录后的设备心跳会将设备注册到同账号设备目录。网页「我的设备」可见设备和浣熊安装/授权状态；无需将公网 IP、Node 安装目录或私钥拷贝到其他电脑。
+在小程序以外直接调用 `stage-service.ps1` 时，它要求环境已准备好；若系统缺少 Node，必须先通过燕子启动小程序或调用宿主 `dependency.ensure`，不会偷偷触发重复下载实现。
 
-## 网页如何使用新电脑
+## 从空白电脑恢复
 
-- 网页的「我的设备」使用燕子云端 `/v1/me/devices` 发现已登录设备。
-- 网页 ChatGPT 中的「燕子 MCP」通过 `device.list` 读取设备；通过 `device.raccoon.invoke` 选择目标设备（按设备名或 ID），可执行 `status`、`list` 或 `call`。
-- 这些请求经过当前在线的燕子 MCP 网关，使用燕子云端已认证的设备消息执行通道转发给目标燕子宿主，再调用目标机器本地的浣熊 MCP；无需每台电脑都有公网隧道。
-- **隐私与安全：**设备被发现不代表允许远程执行。需要在目标机器浣熊小程序勾选「允许同账号网页远程调用本机浣熊 MCP」。不允许远程执行时仅能读取状态与工具清单。公网 OAuth/Cloudflare 隧道需单独配置，不会因新电脑安装而自动暴露。
-- **命令权限单独控制：**新安装的浣熊默认 `RACCOON_ENABLE_SHELL=0`。即使开启账号远程执行，`shell_run` 仍受此开关限制，只有用户在目标机明确配置并重启 MCP 后才能执行 Shell 命令。
-- 同时，**浣熊 MCP 插件本身**的 `list_devices` 会通过本机已登录燕子的 Agent API 自动发现同账号 Windows 设备，并允许给任意现有 MCP 工具传入 `deviceName`（如 `DESKTOP-HSCA8C5`）或 `deviceId`；调用通过账号中继转发至远程电脑。现有 `remoteDevices` 手动 URL 配置仍兼容，用于不属于本燕子账号的独立 MCP 实例。
-- 新路径是 **网页浣熊 MCP → 本机燕子账号设备目录 → 燕子认证设备中继 → 目标燕子宿主 → 本机浣熊 MCP**。远端必须安装并运行新版燕子与浣熊扩展，且高风险执行权限需要在远端显式开启。
-- 当前入口燕子 MCP 网关本身仍需有一台在线机器承载；未部署独立云端网关时，若网关机器关机，网页插件不能通过这条通道唤醒它。
+1. 安装燕子并登录账号，恢复「浣熊 MCP」小程序。
+2. 燕子在启动前解析 `manifest.requires`，优先复用已有 Node。未满足时交由公共 Provider 安装（WinGet 或经官方 SHA-256 验证的免管理员便携版）。
+3. 公共 Provider 更新当前进程 PATH，浣熊读取并校验 Node/npm，安装 lockfile 中的 npm 包。安装失败则不启动 MCP。
+4. 首次启动时各设备本机独立生成随机 MCP token，监听 `127.0.0.1`；不跨设备复制该 token。设备登录与心跳向燕子账号目录注册。
+5. 在网页或燕子工具侧选中同账号在线设备后，可调用其已授权的 MCP 能力。
 
-## 验证
+## 安全与远程
 
-测试项目：`ensure-node.ps1 -ForcePortable` 真正下载并校验 Node；隔离 `LOCALAPPDATA` 后进行 `stage-service.ps1` 与 npm ci；以服务运行时文件验证 `yanzi-bridge.js` 能读取工具列表并调用 ping；编译燕子宿主，确认网页设备页面能够识别能力状态。
+- 网页「我的设备」读取燕子云端 `/v1/me/devices`，不会把 MCP 隧道地址或任何设备凭证同步到其他电脑。
+- `device.raccoon.invoke` 通过已登录设备消息中继读取状态、工具清单或执行具体工具。高风险远程调用必须在目标机器的浣熊面板开启「允许同账号网页远程调用本机浣熊 MCP」。
+- 新设备默认 `RACCOON_ENABLE_SHELL=0`。即使开启远程授权，Shell 操作也需由目标设备独立开启。
+- `list_devices` 和工具参数 `deviceName` / `deviceId` 可以通过账号目录路由到其他 Windows 设备。手动 `remoteDevices` 配置继续兼容。
+- 当前网页 MCP 入口仍依赖至少一台在线设备作为网关；此改造不提供永久在线云网关。
 
-不要把同一台电脑的设备身份或云端登录凭证复制到另一台电脑。另一个新电脑必须独立登录并注册自己的设备 ID。
+## 验证边界
+
+必须覆盖：宿主构建、`dependency.status` / `dependency.ensure` 回归、Node 首次便携安装、重复安装缓存、npm 安装/缓存、独立扩展 C# 语法、Node 服务原有测试。安装成功不能代替在**另一台真正全新电脑**上的端到端验证。发布宿主和安装小程序是独立步骤。
+
+不得将 `.env`、设备身份、账号 token、OAuth 状态、执行日志、缓存或用户数据加入源代码或小程序同步包。

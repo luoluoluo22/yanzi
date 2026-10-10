@@ -1,7 +1,7 @@
 {
     "id":  "raccoon-manager",
     "name":  "浣熊 MCP",
-    "version":  "0.4.0",
+    "version":  "0.4.1",
     "category":  "开发工具",
     "description":  "查看浣熊 MCP 与 Cloudflare 隧道进程、连接健康及日志，启动服务或在空闲时安全重启。",
     "keywords":  [
@@ -21,6 +21,7 @@
     "startup":  {
                     "mode":  "on_app_launch"
                 },
+    "requires":  ["node>=22.16.0"],
     "permissions":  [
 
                     ],

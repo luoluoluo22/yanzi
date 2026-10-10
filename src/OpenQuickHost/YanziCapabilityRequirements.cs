@@ -410,6 +410,9 @@ public static class YanziSystemDependencyProvider
         var installerId = SelectInstallerId(definition, requirement);
         if (winget == null)
         {
+            if (definition.Name == "node")
+                return await EnsurePortableNodeAsync(requirement, cancellationToken).ConfigureAwait(false);
+
             var error = $"电脑缺少 {definition.Name}，同时没有检测到 WinGet，燕子无法自动准备该依赖。";
             SetProgress(definition.Name, requirement.Raw, "failed", error, null);
             return before with
@@ -429,11 +432,21 @@ public static class YanziSystemDependencyProvider
             $"正在通过 WinGet 下载并安装 {installerId}…",
             20);
 
-        var install = await RunProcessAsync(
-            winget,
-            BuildWingetInstallArguments(installerId),
-            cancellationToken,
-            timeout: TimeSpan.FromMinutes(15)).ConfigureAwait(false);
+        ProcessResult install;
+        try
+        {
+            install = await RunProcessAsync(
+                winget,
+                BuildWingetInstallArguments(installerId),
+                cancellationToken,
+                timeout: TimeSpan.FromMinutes(15)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (definition.Name == "node" &&
+            ex is not OperationCanceledException)
+        {
+            return await EnsurePortableNodeAsync(requirement, cancellationToken,
+                "WinGet 启动失败：" + ex.Message).ConfigureAwait(false);
+        }
 
         SetProgress(definition.Name, requirement.Raw, "verifying", "安装进程已结束，正在刷新 PATH 并验证版本…", 90);
 
@@ -475,12 +488,59 @@ public static class YanziSystemDependencyProvider
             ? $"WinGet 已结束，但燕子仍未找到满足 {requirement.Raw} 的可执行环境。"
             : $"{definition.Name} 自动安装失败（WinGet exit {install.ExitCode}）：{CompactError(install.StdErr, install.StdOut)}";
 
+        if (definition.Name == "node")
+            return await EnsurePortableNodeAsync(requirement, cancellationToken, detail).ConfigureAwait(false);
+
         SetProgress(definition.Name, requirement.Raw, "failed", detail, null);
         return before with
         {
             Provider = "winget:" + installerId,
             Error = detail
         };
+    }
+
+    private static async Task<YanziResolvedRequirement> EnsurePortableNodeAsync(
+        YanziCapabilityRequirement requirement,
+        CancellationToken cancellationToken,
+        string? priorError = null)
+    {
+        SetProgress("node", requirement.Raw, "installing",
+            "正在从 Node.js 官网准备当前用户专用运行时，并验证官方 SHA-256…", 30);
+        try
+        {
+            var nodePath = await YanziPortableNodeInstaller
+                .EnsureAsync(requirement.MinimumVersion, cancellationToken)
+                .ConfigureAwait(false);
+            SetProgress("node", requirement.Raw, "verifying",
+                "已准备 Node 便携版，正在检查版本与 npm…", 90);
+            var versionText = await GetVersionAsync(nodePath, "--version", cancellationToken)
+                .ConfigureAwait(false);
+            if (!TryParseLooseVersion(versionText, out var version) ||
+                (requirement.MinimumVersion != null && version < requirement.MinimumVersion) ||
+                !File.Exists(Path.Combine(Path.GetDirectoryName(nodePath)!, "npm.cmd")))
+                throw new InvalidDataException("安装后的 Node/npm 未通过版本与文件校验。");
+
+            EnsureExecutableDirectoryOnPath(nodePath);
+            SetProgress("node", requirement.Raw, "completed",
+                $"Node 便携版准备完成：{versionText}（无需管理员权限）", 100);
+            return new YanziResolvedRequirement(
+                requirement.Raw, "node", true, "portable:nodejs.org", versionText,
+                nodePath, true);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            var detail = (priorError == null ? "" : priorError + "；") +
+                "Node 便携版安装失败：" + ex.Message;
+            HostAssets.AppendLog($"Portable Node dependency installation failed: {detail}");
+            SetProgress("node", requirement.Raw, "failed", detail, null);
+            return new YanziResolvedRequirement(
+                requirement.Raw, "node", false, "portable:nodejs.org", null,
+                null, false, detail);
+        }
     }
 
     private static void SetProgress(
@@ -608,6 +668,7 @@ public static class YanziSystemDependencyProvider
                     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "nodejs", "node.exe"),
                     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "nodejs", "node.exe"),
                     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "nodejs", "node.exe"));
+                candidates.AddRange(YanziPortableNodeInstaller.GetCachedExecutables());
                 break;
 
             case "ffmpeg":
@@ -621,6 +682,8 @@ public static class YanziSystemDependencyProvider
 
         return candidates
             .Where(File.Exists)
+            .Where(path => definition.Name != "node" ||
+                File.Exists(Path.Combine(Path.GetDirectoryName(path)!, "npm.cmd")))
             .Select(Path.GetFullPath)
             .Distinct(StringComparer.OrdinalIgnoreCase);
     }
@@ -732,15 +795,13 @@ public static class YanziSystemDependencyProvider
             .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
             .Select(item => item.Trim().Trim('"'));
 
-        if (entries.Any(item =>
-                string.Equals(item, directory, StringComparison.OrdinalIgnoreCase)))
-        {
-            return;
-        }
-
+        // Put the selected version first, even if an older Node is earlier on PATH.
+        // Otherwise PowerShell's Get-Command can launch the wrong executable.
+        var ordered = new[] { directory }.Concat(entries.Where(item =>
+            !string.Equals(item, directory, StringComparison.OrdinalIgnoreCase)));
         Environment.SetEnvironmentVariable(
             "PATH",
-            directory + Path.PathSeparator + current,
+            string.Join(Path.PathSeparator, ordered),
             EnvironmentVariableTarget.Process);
     }
 
