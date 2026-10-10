@@ -1,9 +1,5 @@
 name: Publish Yanzi Windows v1.0.19
 on:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/publish-desktop-v1019.yml
   workflow_dispatch:
 
 permissions:
