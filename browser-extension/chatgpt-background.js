@@ -183,6 +183,91 @@ function reportChatGptNetworkProgress(taskId,stage,snapshot=null) {
   } catch { /* Diagnostics must never interrupt task execution. */ }
 }
 
+// Only inspect the original reserved tab after Chrome loses the async response
+// port. Never click Send, inject a prompt, or navigate during reconciliation.
+async function recoverChatGptPageAfterChannelDrop(tabId, prompt, { maxWaitMs = 90000 } = {}) {
+  const normalize = text => String(text || "").replace(/\s+/g, " ").trim();
+  const expected = normalize(prompt);
+  if (!Number.isInteger(tabId) || !expected) return null;
+  const deadline = Date.now() + maxWaitMs;
+  let stableText = "";
+  let stableSince = 0;
+  while (Date.now() < deadline) {
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      if (!/^https:\/\/chatgpt\.com\//.test(tab.url || "") ||
+          tab.active || tab.pinned || tab.discarded) return null;
+      if (tab.status !== "complete") {
+        await new Promise(resolve => setTimeout(resolve, 1200));
+        continue;
+      }
+      const [reading] = await withChatGptPageScriptTimeout(
+        () => chrome.scripting.executeScript({
+          target: { tabId },
+          func: () => {
+            const legacy = Array.from(document.querySelectorAll("[data-message-author-role]"));
+            const units = legacy.length ? [] : Array.from(document.querySelectorAll("[data-chatgpt-search-unit-key]"))
+              .filter(el => /:(user|assistant)$/.test(el.getAttribute("data-chatgpt-search-unit-key") || ""));
+            const modern = legacy.length || units.length ? [] : [
+              ...Array.from(document.querySelectorAll('[data-user-message-bubble="true"]')).map(el => ({ el, role: "user" })),
+              ...Array.from(document.querySelectorAll('[class*="MarkdownRoot-"]'))
+                .filter(el => !el.closest('[data-user-message-bubble="true"]')).map(el => ({ el, role: "assistant" }))
+            ].sort((a, b) => a.el.compareDocumentPosition(b.el) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1);
+            const turns = (legacy.length ? legacy : units).map(el => ({
+              role: el.getAttribute("data-message-author-role") || (el.getAttribute("data-chatgpt-search-unit-key") || "").split(":").at(-1),
+              text: (el.innerText || "").trim()
+            }));
+            if (!turns.length) turns.push(...modern.map(({ el, role }) => ({ role, text: (el.innerText || "").trim() })));
+            const lastUserIndex = turns.findLastIndex(turn => turn.role === "user");
+            const reply = lastUserIndex >= 0 ? turns.slice(lastUserIndex + 1).filter(turn => turn.role === "assistant").at(-1) : null;
+            const stop = Boolean(document.querySelector('[data-testid="stop-button"], main button[aria-label*="停止"], main button[aria-label^="Stop"], [data-is-streaming="true"]'));
+            const actionLabels = /^(复制|Copy|重新生成|Regenerate|重试|Retry|赞|踩|Good response|Bad response|Share|分享|评价回复)$/i;
+            const settled = !stop && Array.from((document.querySelector("main") || document).querySelectorAll("button"))
+              .some(button => actionLabels.test((button.getAttribute("aria-label") || button.textContent || "").trim()));
+            return {
+              url: location.href,
+              lastUserText: lastUserIndex < 0 ? null : turns[lastUserIndex].text,
+              replyText: reply?.text || "",
+              settled
+            };
+          }
+        }), 12000);
+      const snapshot = reading?.result;
+      // Match the most recent user turn exactly. A different turn must never be
+      // claimed as this task's answer even if it happens to have an assistant reply.
+      if (normalize(snapshot?.lastUserText) === expected && snapshot?.replyText && snapshot.settled) {
+        const text = snapshot.replyText.trim();
+        if (text === stableText) {
+          if (Date.now() - stableSince >= 3500) {
+            return {
+              status: "success",
+              data: {
+                text,
+                markdown: text,
+                url: snapshot.url,
+                conversationId: new URL(snapshot.url).pathname.match(/^\/c\/([^/]+)/)?.[1] || null,
+                tabId,
+                recoveredFromChannelDrop: true
+              }
+            };
+          }
+        } else {
+          stableText = text;
+          stableSince = Date.now();
+        }
+      } else {
+        stableText = "";
+        stableSince = 0;
+      }
+    } catch {
+      // Reloads and temporary missing content scripts are normal while the
+      // page is changing routes; keep this path read-only.
+    }
+    await new Promise(resolve => setTimeout(resolve, 1500));
+  }
+  return null;
+}
+
 async function runChatGptTask(task) {
   task = {
     ...task,
@@ -546,10 +631,26 @@ async function runChatGptTask(task) {
           networkWatch?.snapshot()||null);
       },1500);
     }
-    const response = await chrome.tabs.sendMessage(tab.id, {
-      type: "yanzi_chatgpt_task",
-      task
-    });
+    let response;
+    try {
+      response = await chrome.tabs.sendMessage(tab.id, {
+        type: "yanzi_chatgpt_task",
+        task
+      });
+    } catch (error) {
+      if (task.action !== "chatgpt_send" ||
+          !/message channel closed before a response|message port closed before a response|Extension context invalidated/i.test(error?.message || ""))
+        throw error;
+      const recovered = await recoverChatGptPageAfterChannelDrop(tab.id, task.prompt);
+      if (!recovered) {
+        return {
+          ...result,
+          data: { tabId: tab.id, deliveryUncertain: true },
+          message: "ChatGPT 页面异步消息通道中断，原消息可能已发送；只读核对未取得最终回复，已保留原标签页，请核查后再重试"
+        };
+      }
+      response = recovered;
+    }
 
     if(networkTimer!==null){clearInterval(networkTimer);networkTimer=null;}
     if(networkWatch)reportChatGptNetworkProgress(task.taskId,"page_reply_received",

@@ -976,6 +976,7 @@ public sealed class IdleTaskWindow : Window
         "running" => "执行中",
         "waiting-bridge" => "等待恢复",
         "submission-uncertain" => "待确认",
+        "needs-review" => "待人工核对",
         "success" => "已完成",
         "error" => "失败",
         "timeout" => "超时",
@@ -988,7 +989,7 @@ public sealed class IdleTaskWindow : Window
         "success" => GreenBrush,
         "error" or "timeout" or "interrupted" => RedBrush,
         "running" or "queued" or "submitting" or "checking" => AccentBrush,
-        "submission-uncertain" or "waiting-bridge" => AmberBrush,
+        "submission-uncertain" or "waiting-bridge" or "needs-review" => AmberBrush,
         _ => MutedTextBrush
     };
 
@@ -1040,10 +1041,23 @@ public static class IdleTaskWorker
     private static DateTimeOffset RetryAt(IdleTaskRecord task) =>
         task.NextRetryAt ?? (task.LastCompletedAt ?? task.UpdatedAt).Add(RetryDelay(task.RetryCount));
 
+    // Chrome can close an asynchronous message channel after the ChatGPT page accepted
+    // the prompt. Distinguish this transport failure from a permanent task error.
+    public static bool IsMessageChannelFailure(string? message) =>
+        !string.IsNullOrWhiteSpace(message) &&
+        (message.Contains("message channel closed before a response", StringComparison.OrdinalIgnoreCase)
+         || message.Contains("message port closed before a response", StringComparison.OrdinalIgnoreCase)
+         || message.Contains("Extension context invalidated", StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsRecoverableFailure(IdleTaskRecord task) =>
+        IdleTaskRecord.IsRetryableFailure(task.Status)
+        || (string.Equals(task.Status, "error", StringComparison.OrdinalIgnoreCase)
+            && IsMessageChannelFailure(task.Error));
+
     private static bool RetryReady(IdleTaskRecord task, DateTimeOffset now) =>
         task.Enabled
         && string.Equals(task.Kind, "chatgpt", StringComparison.OrdinalIgnoreCase)
-        && IdleTaskRecord.IsRetryableFailure(task.Status)
+        && IsRecoverableFailure(task)
         && task.RetryCount < MaxInterruptedRetries
         && !string.IsNullOrWhiteSpace(task.BridgeJobId)
         && now >= RetryAt(task);
@@ -1130,7 +1144,7 @@ public static class IdleTaskWorker
 
     private static async Task<string> ExecuteChatGptTaskAsync(IdleTaskRuntime runtime, IdleTaskRecord task)
     {
-        if (IdleTaskRecord.IsRetryableFailure(task.Status))
+        if (IsRecoverableFailure(task))
         {
             if (task.RetryCount >= MaxInterruptedRetries || DateTimeOffset.Now < RetryAt(task))
                 return "中断任务的自动重试尚未到期，或已达到重试上限。";
@@ -1154,7 +1168,15 @@ public static class IdleTaskWorker
 
                 if (string.Equals(previous.Status, "success", StringComparison.OrdinalIgnoreCase))
                 {
-                    if (!string.IsNullOrWhiteSpace(previous.Result)) task.Result = previous.Result;
+                    if (string.IsNullOrWhiteSpace(previous.Result))
+                    {
+                        task.Status = "needs-review";
+                        task.Error = "原 Job 返回成功但没有回复文本；需要核验，禁止直接重发。";
+                        task.NextRetryAt = null;
+                        TouchAndSave(runtime.DataDirectory, task);
+                        return task.Error;
+                    }
+                    task.Result = previous.Result;
                     CompleteSuccess(runtime.DataDirectory, task);
                     return "上一轮 Job 实际已成功，已核对结果，未重复派发。";
                 }
@@ -1167,7 +1189,17 @@ public static class IdleTaskWorker
                     TouchAndSave(runtime.DataDirectory, task);
                     return task.Error;
                 }
-                if (!IdleTaskRecord.IsRetryableFailure(previous.Status))
+                if (previous.DeliveryUncertain)
+                {
+                    task.Status = "needs-review";
+                    task.Error = "原页面消息可能已发送；等待人工核对，禁止重复发送。";
+                    task.NextRetryAt = null;
+                    TouchAndSave(runtime.DataDirectory, task);
+                    return task.Error;
+                }
+                if (!IdleTaskRecord.IsRetryableFailure(previous.Status)
+                    && !(string.Equals(previous.Status, "error", StringComparison.OrdinalIgnoreCase)
+                         && IsMessageChannelFailure(previous.Message)))
                 {
                     task.Status = previous.Status;
                     task.LastRunStatus = previous.Status;
@@ -1275,16 +1307,38 @@ public static class IdleTaskWorker
             return task.Error;
         }
 
-        task.Status = job.Status;
-        task.Error = job.Message;
+        // A lost extension response is an interrupted transport, not a proven task
+        // failure. Retain the original Job ID and reconcile it before any new send.
+        var channelInterrupted = string.Equals(job.Status, "error", StringComparison.OrdinalIgnoreCase)
+                                 && IsMessageChannelFailure(job.Message);
+        task.Status = job.DeliveryUncertain ? "needs-review" : channelInterrupted ? "interrupted" : job.Status;
+        task.Error = job.DeliveryUncertain
+            ? "原 ChatGPT 页面可能仍在运行，已保留 Job ID；必须核对原页面及成果后才能重新派发：" + (job.Message ?? "")
+            : job.Message;
         if (!string.IsNullOrWhiteSpace(job.Result))
             task.Result = job.Result;
         TouchAndSave(dataDirectory, task);
 
+        if (job.DeliveryUncertain)
+        {
+            task.NextRetryAt = null;
+            task.LastBusinessStatus = "unverified";
+            TouchAndSave(dataDirectory, task);
+            return "页面回传不确定，已暂停自动重派以避免重复操作。";
+        }
         if (IdleTaskRecord.IsTerminal(job.Status))
         {
             if (string.Equals(job.Status, "success", StringComparison.OrdinalIgnoreCase))
             {
+                if (string.IsNullOrWhiteSpace(job.Result))
+                {
+                    task.Status = "needs-review";
+                    task.Error = "ChatGPT Job 返回 success，但缺少可验收的回复文本；保留 Job ID，暂停自动重发。";
+                    task.NextRetryAt = null;
+                    task.LastBusinessStatus = "unverified";
+                    TouchAndSave(dataDirectory, task);
+                    return task.Error;
+                }
                 CompleteSuccess(dataDirectory, task);
                 return "闲置任务已完成。";
             }
@@ -1301,11 +1355,11 @@ public static class IdleTaskWorker
                 return "ChatGPT 工作台繁忙，本任务已自动重新排队，不计为一次失败。";
             }
 
-            task.LastRunStatus = job.Status;
+            task.LastRunStatus = task.Status;
             task.LastCompletedAt = DateTimeOffset.Now;
             task.CompletedAt = task.LastCompletedAt;
             task.RunCount += 1;
-            if (IdleTaskRecord.IsRetryableFailure(job.Status)
+            if (IdleTaskRecord.IsRetryableFailure(task.Status)
                 && task.RetryCount < MaxInterruptedRetries && task.Enabled)
             {
                 task.NextRetryAt = DateTimeOffset.Now.Add(RetryDelay(task.RetryCount));
@@ -1316,7 +1370,7 @@ public static class IdleTaskWorker
             else
             {
                 task.NextRetryAt = null;
-                if (IdleTaskRecord.IsRetryableFailure(job.Status))
+                if (IdleTaskRecord.IsRetryableFailure(task.Status))
                     task.Error = (job.Message ?? "ChatGPT 会话失败") + "；自动重试已达到 " +
                         MaxInterruptedRetries + " 次上限，需要人工排查。";
             }
@@ -1616,7 +1670,11 @@ public static class IdleTaskBridge
             else if (dataNode.TryGetProperty("markdown", out var markdownNode) && markdownNode.ValueKind == JsonValueKind.String)
                 result = markdownNode.GetString();
         }
-        return new IdleBridgeJob(status, result, message);
+        var uncertain = root.TryGetProperty("data", out var delivered)
+                        && delivered.ValueKind == JsonValueKind.Object
+                        && delivered.TryGetProperty("deliveryUncertain", out var flag)
+                        && flag.ValueKind == JsonValueKind.True;
+        return new IdleBridgeJob(status, result, message, uncertain);
     }
 
     private static bool TryReadBridgeTime(JsonElement node, out DateTimeOffset time)
@@ -1906,7 +1964,8 @@ public sealed class IdleTaskRecord
         string.Equals(task.Status, "error", StringComparison.OrdinalIgnoreCase)
         || string.Equals(task.Status, "timeout", StringComparison.OrdinalIgnoreCase)
         || string.Equals(task.Status, "interrupted", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(task.Status, "submission-uncertain", StringComparison.OrdinalIgnoreCase);
+        || string.Equals(task.Status, "submission-uncertain", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(task.Status, "needs-review", StringComparison.OrdinalIgnoreCase);
 
     public static bool IsRetryableFailure(string? status) =>
         string.Equals(status, "interrupted", StringComparison.OrdinalIgnoreCase)
@@ -1916,7 +1975,8 @@ public sealed class IdleTaskRecord
         string.Equals(status, "success", StringComparison.OrdinalIgnoreCase)
         || string.Equals(status, "error", StringComparison.OrdinalIgnoreCase)
         || string.Equals(status, "timeout", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(status, "interrupted", StringComparison.OrdinalIgnoreCase);
+        || string.Equals(status, "interrupted", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(status, "needs-review", StringComparison.OrdinalIgnoreCase);
 }
 
 public sealed class IdleTriggerRuntimeSnapshot
@@ -1947,4 +2007,4 @@ public sealed class IdleTriggerRuntimeSnapshot
 }
 
 public sealed record IdleBridgeHealth(bool Connected, string? Message);
-public sealed record IdleBridgeJob(string Status, string? Result, string? Message);
+public sealed record IdleBridgeJob(string Status, string? Result, string? Message, bool DeliveryUncertain = false);
