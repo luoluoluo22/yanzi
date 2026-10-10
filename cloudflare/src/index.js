@@ -73,6 +73,9 @@ export default {
     const family = path.startsWith("/v1/") ? path.split("/")[2] : "";
     const route = path === "/health" ? "/health" :
       ["sync", "auth", "devices", "device", "messaging", "messages", "records", "apps"].includes(family) ? `/v1/${family}` : "/other";
+    // Fixed allowlist: never persist untrusted client headers or identifying values.
+    const rawClient = request.headers.get("x-yanzi-client") || "";
+    const client = ["desktop", "server", "android", "mobile", "web"].includes(rawClient) ? rawClient : "unknown";
     let status = 500;
     let category = "server_error";
     try {
@@ -109,7 +112,7 @@ export default {
       // No credentials, query strings, message bodies or device identifiers.
       if (status >= 400 || Math.random() < 0.01) {
         console.log(JSON.stringify({ event: "yanzi_request", method: request.method,
-          route: route.slice(0, 160), status, category, duration_ms: Date.now() - started }));
+          route: route.slice(0, 160), client, status, category, duration_ms: Date.now() - started }));
       }
     }
   }
