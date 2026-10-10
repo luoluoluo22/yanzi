@@ -83,7 +83,7 @@ export default {
     // Never log raw path segments: they may contain access tokens or personal data.
     const family = path.startsWith("/v1/") ? path.split("/")[2] : "";
     const route = path === "/health" ? "/health" :
-      ["sync", "auth", "devices", "device", "messaging", "messages", "records", "apps"].includes(family) ? `/v1/${family}` : "/other";
+      ["sync", "auth", "devices", "device", "messaging", "messages", "records", "apps", "applications", "me"].includes(family) ? `/v1/${family}` : "/other";
     // Fixed allowlist: never persist untrusted client headers or identifying values.
     const rawClient = request.headers.get("x-yanzi-client") || "";
     const client = ["desktop", "server", "android", "mobile", "web"].includes(rawClient) ? rawClient : "unknown";
@@ -275,6 +275,7 @@ async function handleRequest(request, env, ctx) {
       ).bind(email)
     ]);
 
+    recordAuthenticatedUser(request, { userId });
     return json(await buildAuthResponse(env, { userId, username, email }));
   }
 
@@ -408,6 +409,7 @@ async function handleRequest(request, env, ctx) {
     }
 
     await touchUser(env, user.user_id);
+    recordAuthenticatedUser(request, { userId: user.user_id });
     return json(await buildAuthResponse(env, { userId: user.user_id, username: user.username, email: user.email }));
   }
 
@@ -534,6 +536,7 @@ async function handleRequest(request, env, ctx) {
       ).bind(now, user.user_id)
     ]);
 
+    recordAuthenticatedUser(request, { userId: user.user_id });
     return json(await buildAuthResponse(env, { userId: user.user_id, username: user.username, email: user.email }));
   }
 
