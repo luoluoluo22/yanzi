@@ -3,6 +3,8 @@ using OpenQuickHost;
 using OpenQuickHost.Sync;
 using Yanzi.Core;
 
+if (args.Contains("--github-chunk-live-smoke")) { await GitHubChunkLiveSmoke.RunAsync(); return; }
+
 if (args.Contains("--github-secondary-backup-verify")) { await GitHubSecondaryBackupVerification.RunAsync(args.Contains("--live")); return; }
 
 if (args.Contains("--task-recovery")) { PlatformTaskVerification.Run(); return; }

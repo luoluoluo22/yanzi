@@ -56,6 +56,9 @@ public sealed class PersonalSyncSettings
 {
     public bool GitHubBackupEnabled { get; set; }
 
+    // Never upload until the user has saved an independent offline recovery code.
+    public bool GitHubBackupRecoveryKeyConfirmed { get; set; }
+
     public bool Enabled { get; set; }
 
     public string Provider { get; set; } = PersonalSyncProviders.WebDav;

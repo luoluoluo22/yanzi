@@ -33,7 +33,13 @@ public static class GitHubSecondaryBackupService
     {
         if (!settings.PersonalSync.GitHubBackupEnabled && !force)
             return new GitHubBackupResult(false, "disabled", 0, null);
+        if (!settings.PersonalSync.GitHubBackupRecoveryKeyConfirmed)
+            return new GitHubBackupResult(false, "offline-recovery-key-not-confirmed", 0, null);
         var secrets = PersonalSyncSecretStore.Load();
+        // Prefer the existing synchronized GH_TOKEN instead of a stale duplicate.
+        var environmentToken = AppEnvironmentVariableStore.GetValue("GH_TOKEN");
+        if (!string.IsNullOrWhiteSpace(environmentToken))
+            secrets.GitHubToken = environmentToken;
         if (string.IsNullOrWhiteSpace(secrets.GitHubToken) ||
             string.IsNullOrWhiteSpace(settings.PersonalSync.GitHub.Repo))
             throw new InvalidOperationException("GitHub backup requires an authenticated repository.");
@@ -60,7 +66,7 @@ public static class GitHubSecondaryBackupService
                 {
                     var payload = Encrypt(plain, key);
                     var backend = new GitHubPersonalSyncBackend(settings.PersonalSync.GitHub, secrets);
-                    await backend.ProbeAsync(cancellationToken);
+                    await backend.VerifyPrivateRepositoryAsync(cancellationToken);
                     var device = new string(Environment.MachineName.ToLowerInvariant()
                         .Where(c => char.IsAsciiLetterOrDigit(c) || c == '-').ToArray());
                     if (device.Length == 0) device = "device";
