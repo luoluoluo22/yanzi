@@ -90,7 +90,7 @@ public static partial class ExtensionStorageService
         var states = ExtensionDataSyncStateStore.Load();
         var known = states.Select(static s => s.ExtensionId)
             .Concat(["yanzi-notes", "clipboard-history", "inspiration-board", "yanzi-album",
-                "ext_e9e37068c8284b1e808f5454181fb418"])
+                "ext_e9e37068c8284b1e808f5454181fb418", "taskbar-calendar"])
             .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         if (onlyExtensionIds != null)
             known = known.Where(id => onlyExtensionIds.Contains(id, StringComparer.OrdinalIgnoreCase)).ToArray();
@@ -248,6 +248,8 @@ public static partial class ExtensionStorageService
             return string.Equals(relative, "board-data.json", StringComparison.OrdinalIgnoreCase) ||
                    (relative.StartsWith("boards/", StringComparison.OrdinalIgnoreCase) &&
                     relative.EndsWith(".yzboard", StringComparison.OrdinalIgnoreCase));
+        if (string.Equals(extensionId, "taskbar-calendar", StringComparison.OrdinalIgnoreCase))
+            return string.Equals(relative, "calendar_reminders.json", StringComparison.OrdinalIgnoreCase);
         if (string.Equals(extensionId, "yanzi-album", StringComparison.OrdinalIgnoreCase))
             return IsPortableBinaryAsset(relative) &&
                    (relative.StartsWith("作品/", StringComparison.Ordinal) ||

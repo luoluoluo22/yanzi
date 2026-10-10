@@ -44,6 +44,10 @@ internal static class ExtensionDataCatalogVerification
             !ExtensionStorageService.IsPortableDataForExtension("yanzi-album", "桌面钉图/pinned.png") ||
             ExtensionStorageService.IsPortableDataForExtension("yanzi-album", "private/session.json"))
             throw new Exception("Album personal assets must be portable without leaking device state");
+        if (!ExtensionStorageService.IsPortableDataForExtension("taskbar-calendar", "calendar_reminders.json") ||
+            ExtensionStorageService.IsPortableDataForExtension("taskbar-calendar", "calendar_cache.json") ||
+            ExtensionStorageService.IsPortableDataForExtension("taskbar-calendar", "calendar_reminders.json.tmp"))
+            throw new Exception("Calendar recovery must include primary reminders, not device-local state");
         const string job = "ext_e9e37068c8284b1e808f5454181fb418";
         if (!ExtensionStorageService.IsPortableDataForExtension(job, "resume.json") ||
             !ExtensionStorageService.IsPortableDataForExtension(job, "daily/2026-10-10.json") ||
