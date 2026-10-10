@@ -114,6 +114,10 @@ try
         && s.GetProperty("backgroundServices").TryGetProperty("idleTrigger", out var trigger) && trigger.GetBoolean());
     var instance = initial.GetProperty("instanceId").GetGuid();
     var residentId = initial.GetProperty("running").EnumerateArray().Single(e => e.GetProperty("extensionId").GetString() == "runtime-resident-test").GetProperty("instanceId").GetGuid();
+    var buildHash = initial.GetProperty("releaseHash").GetString();
+    using (var assemblyFile = File.OpenRead(Path.Combine(Path.GetDirectoryName(runtimePath)!, "Yanzi.dll")))
+        Check(string.Equals(buildHash, Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(assemblyFile)),
+            StringComparison.OrdinalIgnoreCase), "Runtime build hash does not match its shared application assembly");
     Check(initial.GetProperty("pid").GetInt32() == runtime.Id, "Background owner is not Runtime");
     Check(initial.GetProperty("backgroundServices").GetProperty("initialized").GetBoolean(), "Background initialization missing");
     Check(initial.GetProperty("backgroundServices").GetProperty("idleTrigger").GetBoolean(), "Idle trigger did not start");

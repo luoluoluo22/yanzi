@@ -20,6 +20,9 @@ public static class RuntimeConnection
     public static bool IsConnected { get; private set; }
     public static Guid InstanceId { get; private set; }
     public static int RuntimePid { get; private set; }
+    // An old background snapshot may remain alive during a Shell upgrade. Keep
+    // serving existing jobs, but do not report a mismatched version as verified.
+    public static bool IsRuntimeVersionCurrent { get; private set; }
     public static string InstallationPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "YanziRuntime", "runtime.json");
 
@@ -45,13 +48,33 @@ public static class RuntimeConnection
 
     public static string? FindExecutable()
     {
-        var bundled = Path.Combine(AppContext.BaseDirectory, "Runtime", "Yanzi.Runtime.exe");
-        if (File.Exists(bundled))
+        var baseDirectory = Path.GetFullPath(AppContext.BaseDirectory);
+        var selfContainedHost = Path.Combine(baseDirectory, "Yanzi.exe");
+        var independentRuntime = Path.Combine(baseDirectory, "Yanzi.Runtime.exe");
+        var installedHost = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Yanzi", "current", "Yanzi.exe");
+        var officialInstall = Path.GetFullPath(selfContainedHost).Equals(
+            Path.GetFullPath(installedHost), StringComparison.OrdinalIgnoreCase);
+        var parent = Directory.GetParent(baseDirectory)?.FullName;
+        var portableRelease = File.Exists(Path.Combine(baseDirectory, ".portable"))
+            || (parent != null && File.Exists(Path.Combine(parent, ".portable")));
+        // Never promote a development Shell or its isolated snapshot into the production Runtime.
+        var useSharedHost = (officialInstall || portableRelease)
+            && !HostRuntimeProfile.IsDevelopment && File.Exists(independentRuntime)
+            && File.Exists(Path.Combine(baseDirectory, "coreclr.dll"));
+        var legacyRuntime = Path.Combine(baseDirectory, "Runtime", "Yanzi.Runtime.exe");
+        var sourceExecutable = useSharedHost ? independentRuntime
+            : File.Exists(legacyRuntime) ? legacyRuntime : null;
+        if (sourceExecutable != null)
         {
-            // A running Runtime must survive replacement of the installer's current directory.
+            // Copy to a content-addressed, standalone snapshot before starting. The runtime
+            // survives replacing the official installer directory, while the installer
+            // distributes the shared native/framework binaries only once.
+            var bundleDirectory = Path.GetDirectoryName(sourceExecutable)!;
             using var fingerprint = System.Security.Cryptography.IncrementalHash.CreateHash(System.Security.Cryptography.HashAlgorithmName.SHA256);
-            var bundleDirectory = Path.GetDirectoryName(bundled)!;
-            foreach (var file in Directory.EnumerateFiles(bundleDirectory, "*", SearchOption.AllDirectories).OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
+            foreach (var file in Directory.EnumerateFiles(bundleDirectory, "*", SearchOption.AllDirectories)
+                         .OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
             {
                 fingerprint.AppendData(System.Text.Encoding.UTF8.GetBytes(Path.GetRelativePath(bundleDirectory, file)));
                 using var stream = File.OpenRead(file);
@@ -59,11 +82,11 @@ public static class RuntimeConnection
             }
             var hash = Convert.ToHexString(fingerprint.GetHashAndReset());
             var snapshot = Path.Combine(Path.GetDirectoryName(InstallationPath)!, "bundled", hash);
-            var executable = Path.Combine(snapshot, "Yanzi.Runtime.exe");
+            var executable = Path.Combine(snapshot, Path.GetFileName(sourceExecutable));
             if (!File.Exists(executable))
             {
                 var staging = snapshot + "." + Guid.NewGuid().ToString("N");
-                CopyDirectory(Path.GetDirectoryName(bundled)!, staging);
+                CopyDirectory(bundleDirectory, staging);
                 try { Directory.Move(staging, snapshot); }
                 catch (IOException) when (File.Exists(executable)) { Directory.Delete(staging, true); }
             }
@@ -73,7 +96,8 @@ public static class RuntimeConnection
         using var document = JsonDocument.Parse(File.ReadAllText(InstallationPath));
         var path = document.RootElement.GetProperty("executable").GetString();
         return path != null && Path.IsPathFullyQualified(path) && File.Exists(path)
-            && Path.GetFileName(path).Equals("Yanzi.Runtime.exe", StringComparison.OrdinalIgnoreCase) ? path : null;
+            && (Path.GetFileName(path).Equals("Yanzi.Runtime.exe", StringComparison.OrdinalIgnoreCase)
+                || Path.GetFileName(path).Equals("Yanzi.exe", StringComparison.OrdinalIgnoreCase)) ? path : null;
     }
 
     private static void CopyDirectory(string source, string target)
@@ -89,6 +113,15 @@ public static class RuntimeConnection
         var health = await RuntimeRpc.CallAsync("health", cancellationToken: cancellationToken);
         RuntimePid = health.GetProperty("pid").GetInt32();
         InstanceId = health.GetProperty("instanceId").GetGuid();
+        var actualVersion = health.TryGetProperty("releaseVersion", out var publishedVersion)
+            ? publishedVersion.GetString() : null;
+        var actualHash = health.TryGetProperty("releaseHash", out var hashProperty)
+            ? hashProperty.GetString() : null;
+        IsRuntimeVersionCurrent = string.Equals(actualVersion,
+            typeof(App).Assembly.GetName().Version?.ToString(), StringComparison.OrdinalIgnoreCase)
+            && string.Equals(actualHash, ReleaseBuildIdentity.AssemblySha256, StringComparison.OrdinalIgnoreCase);
+        if (!IsRuntimeVersionCurrent)
+            HostAssets.AppendLog($"Runtime build mismatch: Shell={typeof(App).Assembly.GetName().Version}/{ReleaseBuildIdentity.AssemblySha256[..12]}, Runtime={actualVersion ?? "legacy/unknown"}/{actualHash?[..Math.Min(12, actualHash.Length)] ?? "unknown"}; existing background jobs preserved.");
         _running = health.GetProperty("running").Deserialize<RunningExtensionInfo[]>(RuntimeRpc.Json) ?? [];
         IsConnected = true;
     }
@@ -143,7 +176,9 @@ public static class RuntimeConnection
             finally { _busy = false; }
         };
         _heartbeat.Start();
-        window.SetRuntimeConnectionStatus($"已连接常驻 Runtime · PID {RuntimePid}");
+        window.SetRuntimeConnectionStatus(IsRuntimeVersionCurrent
+            ? $"已连接常驻 Runtime · PID {RuntimePid}"
+            : $"Runtime 版本与宿主不一致 · PID {RuntimePid} · 请在维护窗口升级后台服务");
     }
 
     private static Task<JsonElement> TouchAsync(string operation) => RuntimeRpc.CallAsync(operation,
