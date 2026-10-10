@@ -308,6 +308,24 @@ internal sealed class GitHubPersonalSyncBackend : PersonalSyncBackendBase
 
     public override string DisplayRoot => $"github://{GetConfiguredOwnerDisplay()}/{_config.Repo}@{ResolveBranch()}";
 
+    /// <summary>Disaster-backup safety gate: never upload into a public repository.</summary>
+    internal async Task VerifyPrivateRepositoryAsync(CancellationToken cancellationToken = default)
+    {
+        var owner = await ResolveOwnerAsync(cancellationToken);
+        using var response = await _httpClient.GetAsync(
+            $"https://api.github.com/repos/{Uri.EscapeDataString(owner)}/{Uri.EscapeDataString(_config.Repo)}",
+            cancellationToken);
+        if (!response.IsSuccessStatusCode)
+            throw await PersonalSyncFailure.CreateFailureAsync("GitHub", response, cancellationToken);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(cancellationToken));
+        if (!document.RootElement.TryGetProperty("private", out var isPrivate) ||
+            isPrivate.ValueKind != JsonValueKind.True)
+            throw new InvalidOperationException("Backup repository must be private.");
+        if (document.RootElement.TryGetProperty("archived", out var archived) &&
+            archived.ValueKind == JsonValueKind.True)
+            throw new InvalidOperationException("Backup repository is archived.");
+    }
+
     public override async Task ProbeAsync(CancellationToken cancellationToken)
     {
         var owner = await ResolveOwnerAsync(cancellationToken);
@@ -340,6 +358,10 @@ internal sealed class GitHubPersonalSyncBackend : PersonalSyncBackendBase
         }
 
         var payload = await response.Content.ReadFromJsonAsync<GitHubContentPayload>(JsonOptions, cancellationToken);
+        if ((relativePath.EndsWith(".yzbk", StringComparison.OrdinalIgnoreCase) ||
+             relativePath.EndsWith(".bin", StringComparison.OrdinalIgnoreCase)) &&
+            !string.IsNullOrWhiteSpace(payload?.GitUrl))
+            return await ReadBlobBytesAsync(payload.GitUrl, cancellationToken);
         if (!string.IsNullOrWhiteSpace(payload?.Content))
         {
             return DecodeBase64Content(payload.Content);
