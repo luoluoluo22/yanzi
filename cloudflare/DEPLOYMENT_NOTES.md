@@ -219,3 +219,29 @@ Expected result for wrong password:
 ```
 
 This means the request reached the Worker and the auth path is functioning.
+
+## Cloud-access protection (2026-10-11)
+
+- `LOGIN_RATE_LIMITER`: Workers Rate Limiting binding, 8 login attempts per 60 seconds
+  for each HMAC-pseudonymized email + incoming network address. The limit runs **before**
+  the D1 `auth_users` lookup and returns `429 login_rate_limited` with `Retry-After: 60`.
+  Limits are Cloudflare-location-local and eventually consistent. Incoming requests
+  still count toward the Workers request quota; this reduces D1 reads, not Worker invocations.
+- WAF: separately consider a path-based login limit at the edge to reduce Worker
+  invocations. Do not block by `X-Yanzi-Client-Version` or trust spoofable client headers;
+  existing desktop clients hardcode `0.2.3`.
+- `CLOUD_VIP_ONLY`: **off by default** (unset). Set to the string `true` only after
+  explicitly approving the paid-cloud cutover and preparing a read-only user data
+  export/recovery path. VIP access uses the server's `users.vip_type` /
+  `users.vip_expire_at`, not any client-supplied version, plan or tier. Auth/login,
+  account status, license redemption, health checks and public downloads remain available.
+  An authenticated non-VIP cloud request returns `403 vip_required` when enabled.
+  Delegated application data tokens also require the owner's membership.
+- `CLOUD_VIP_ONLY` deliberately is **not configured in production**. At the time of
+  implementation, 3 of 322 user records have an active VIP entitlement, so enabling
+  without a staged migration would suspend cloud functionality for roughly 99% of
+  registered users. Preserve data and offer export, a clear upgrade experience,
+  support for grandfathered grants, and a rollback before flipping this switch.
+- VIP checks use an isolate-local 15-second memo of a read-only indexed membership
+  lookup (no D1 writes). This is not a cross-region synchronized revocation system.
+  A successful license redemption invalidates its isolate's cached entitlement.

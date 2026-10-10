@@ -1,4 +1,5 @@
 import { createSyncApi } from './sync-api.js';
+import { isCloudServicePath, isVipActive, readVipEntitlement, passesLoginRateLimit } from './cloud-access-policy.js';
 import { cleanupEnvironment } from './device-environment.js';
 import { createDeviceApi } from './device-api.js';
 import { createDeviceRepository } from './device-repository.js';
@@ -66,6 +67,38 @@ const PUBLIC_STORE_EXTENSION_IDS_SQL = PUBLIC_STORE_EXTENSIONS
 
 // Request-scoped attribution: only authenticated users, never raw identifiers.
 const requestIdentity = new WeakMap();
+const cloudVipCache = new Map();
+async function ensureCloudVipUser(env, userId) {
+  if (env.CLOUD_VIP_ONLY !== 'true') return;
+  const id = String(userId || '');
+  if (!id) throw new HttpError(401, 'unauthorized', 'Authentication required');
+  const now = Date.now();
+  let cached = cloudVipCache.get(id);
+  if (!cached || cached.checkedUntil < now) {
+    // Avoid ensureLicenseTables here: entitlement checks must never write D1.
+    const {row} = await readVipEntitlement(env.DB, id, now);
+    cached = { row, checkedUntil: now + 15000 };
+    if (cloudVipCache.size >= 2000) cloudVipCache.clear();
+    cloudVipCache.set(id, cached);
+  }
+  if (!isVipActive(cached.row, now))
+    throw new HttpError(403, 'vip_required', 'Cloud service requires an active VIP membership');
+}
+async function finalizeCloudAuth(request, env, auth) {
+  recordAuthenticatedUser(request, auth);
+  if (isCloudServicePath(new URL(request.url).pathname))
+    await ensureCloudVipUser(env, auth?.userId);
+  return auth;
+}
+async function limitLoginBeforeDatabase(request, env, email) {
+  if (!env.LOGIN_RATE_LIMITER?.limit) return;
+  const ip = request.headers.get('cf-connecting-ip') || 'unknown';
+  const key = await anonymousKey(env, 'login-limit', `${email}:${ip}`);
+  if (!key) return;
+  if (!(await passesLoginRateLimit(env.LOGIN_RATE_LIMITER, key)))
+    throw new HttpError(429, 'login_rate_limited', 'Too many login attempts; try again in one minute');
+}
+
 async function anonymousKey(env, domain, value) {
   if (!env.AUTH_TOKEN_SECRET || !value) return null;
   const digest = await hmacSha256(env.AUTH_TOKEN_SECRET, `yanzi-telemetry-${domain}-v1:${value}`);
@@ -98,16 +131,19 @@ export default {
       if (error instanceof HttpError || error instanceof MessagingError) {
         status = error.status;
         category = "handled_error";
-        return withCors(
-          json(
-            {
-              error: error.code,
-              message: error.message,
-              ...(error.details ? { details: error.details } : {})
-            },
-            error.status
-          )
+        const rejected = json(
+          {
+            error: error.code,
+            message: error.message,
+            ...(error.details ? { details: error.details } : {})
+          },
+          error.status
         );
+        if (error.code === 'login_rate_limited') {
+          rejected.headers.set('retry-after', '60');
+          rejected.headers.set('cache-control', 'no-store');
+        }
+        return withCors(rejected);
       }
 
       return withCors(
@@ -139,7 +175,7 @@ async function handleRequest(request, env, ctx) {
   }
 
   const platformApi = {
-    requireAuth, verifyToken, signToken, read: readUserSyncObject,
+    requireAuth, ensureCloudVipUser, verifyToken, signToken, read: readUserSyncObject,
     write: writeUserSyncObject, json, HttpError
   };
   const externalResponse = await handleExternalAccess(request, env, platformApi);
@@ -340,6 +376,7 @@ async function handleRequest(request, env, ctx) {
   if (url.pathname === "/v1/auth/login" && request.method === "POST") {
     const payload = await readJson(request);
     const email = normalizeEmail(payload.email || payload.username);
+    await limitLoginBeforeDatabase(request, env, email);
     const password = validatePassword(payload.password);
     const authVersion = payload.authVersion || "";
     const legacyPassword = payload.legacyPassword ? validatePassword(payload.legacyPassword) : null;
@@ -650,6 +687,7 @@ async function handleRequest(request, env, ctx) {
       ).bind(newExpireAt, newVipType, nowIso, auth.userId)
     ]);
 
+    cloudVipCache.delete(auth.userId);
     const updatedVipInfo = await getUserVipInfo(env, auth.userId);
 
     return json({
@@ -2086,9 +2124,9 @@ async function requireAuth(request, env) {
     try {
       const payload = await verifyToken(env, token);
       if (payload?.sub && payload?.username && payload.type === 'device')
-        return recordAuthenticatedUser(request, await authorizeDeviceCredential(request, env, payload, HttpError));
+        return await finalizeCloudAuth(request, env, await authorizeDeviceCredential(request, env, payload, HttpError));
       if (payload?.sub && payload?.username && !payload.type) {
-        return recordAuthenticatedUser(request, {
+        return await finalizeCloudAuth(request, env, {
           userId: String(payload.sub),
           username: String(payload.username),
           email: payload.email ? String(payload.email) : null
@@ -2134,7 +2172,7 @@ async function requireAuth(request, env) {
               Number(user.password_iterations || PASSWORD_ITERATIONS)
           );
             if (passwordHash === user.password_hash) {
-              return recordAuthenticatedUser(request, {
+              return await finalizeCloudAuth(request, env, {
                 userId: String(user.user_id),
                 username: String(user.username),
                 email: user.email ? String(user.email) : null
@@ -2144,6 +2182,7 @@ async function requireAuth(request, env) {
         }
       }
     } catch (basicAuthErr) {
+      if (basicAuthErr instanceof HttpError && basicAuthErr.code === 'vip_required') throw basicAuthErr;
       // 捕获 Base64 编码或数据库请求异常
     }
   }

@@ -6,6 +6,14 @@ compatibility_date = "2026-04-23"
 [observability]
 enabled = true
 head_sampling_rate = 1
+
+# Bound requests per login identity + client network, before any D1 auth lookup.
+[[ratelimits]]
+name = "LOGIN_RATE_LIMITER"
+namespace_id = "9101101"
+  [ratelimits.simple]
+  limit = 8
+  period = 60
 [[durable_objects.bindings]]
 name = "DEVICE_RELAY"
 class_name = "DeviceRelay"
