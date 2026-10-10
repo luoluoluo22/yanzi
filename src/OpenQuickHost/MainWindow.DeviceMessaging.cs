@@ -140,6 +140,8 @@ public partial class MainWindow
         return new
         {
             app = "yanzi-desktop",
+            raccoonMcpInstalled = File.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OpenQuickHost", "Extensions", "raccoon-manager", "manifest.json")),
+            raccoonRemoteControlEnabled = File.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OpenQuickHost", "McpRuntime", "raccoon", "remote-control.enabled")),
             os = Environment.OSVersion.VersionString,
             receiveMobileMessages = true,
             receiveAccountChat = true,

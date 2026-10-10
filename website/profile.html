@@ -1303,6 +1303,7 @@
                 <th>设备名称</th>
                 <th>平台</th>
                 <th>设备 ID</th>
+                <th>浣熊 MCP</th>
                 <th>最后在线</th>
                 <th>更新时间</th>
               </tr>
@@ -1313,6 +1314,7 @@
                   <td><strong>${escapeHtml(item.displayName || item.display_name || "未命名设备")}</strong></td>
                   <td><span class="badge">${escapeHtml(item.platform || "未知平台")}</span></td>
                   <td class="muted">${escapeHtml(item.deviceId || item.device_id || "-")}</td>
+                  <td>${(() => { const cap = parseJsonObject(item.capabilities || item.capabilities_json) || {}; return !Object.hasOwn(cap, "raccoonMcpInstalled") ? "尚未上报" : cap.raccoonMcpInstalled ? (cap.raccoonRemoteControlEnabled ? "已安装 · 已授权远程调用" : "已安装 · 未授权远程执行") : "未安装"; })()}</td>
                   <td>${escapeHtml(formatDate(item.lastSeenAt || item.last_seen_at))}</td>
                   <td class="muted">${escapeHtml(formatDate(item.updatedAt || item.updated_at))}</td>
                 </tr>

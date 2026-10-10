@@ -1,0 +1,25 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "raccoon",
+  "version": "0.8.2",
+  "description": "AI 开发工作台：文件、Git、构建测试、任务图与设备调试。",
+  "author": { "name": "luoluoluo22" },
+  "license": "MIT",
+  "extensions": {
+    "com.openai": {
+      "apps": "./.app.json",
+      "interface": {
+        "displayName": "Raccoon",
+        "shortDescription": "AI 开发工作台",
+        "longDescription": "通过现有 MCP 连接完成源码读写、搜索、Git、构建测试、后台任务图和设备调试。",
+        "developerName": "luoluoluo22",
+        "category": "Developer Tools",
+        "composerIcon": "./assets/raccoon-128.png",
+        "composerIconDark": "./assets/raccoon-128.png",
+        "logo": "./assets/raccoon-256.png",
+        "logoDark": "./assets/raccoon-256.png",
+        "defaultPrompt": ["使用 Raccoon 检查项目并完成构建测试。", "制定任务图，通过 Raccoon 在后台执行开发验收。"]
+      }
+    }
+  }
+}

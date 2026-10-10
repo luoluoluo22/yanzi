@@ -1,0 +1,11 @@
+import fs from "node:fs";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
+import { config } from "../src/config.js";
+const gateway=JSON.parse(fs.readFileSync(path.resolve(".raccoon-runtime/gateway.json"),"utf8"));
+const prepared=spawnSync(process.execPath,["scripts/prepare-release.js"],{encoding:"utf8",windowsHide:true,maxBuffer:1024*1024});
+if(prepared.status!==0)throw new Error(prepared.stderr || "Release preparation failed");
+const {releaseId}=JSON.parse(prepared.stdout);
+const response=await fetch(`http://127.0.0.1:${gateway.port}/__raccoon/deploy`,{method:"POST",headers:{Authorization:`Bearer ${config.token}`,"Content-Type":"application/json"},body:JSON.stringify({releaseId})});
+const result=await response.json();console.log(JSON.stringify({...result,releaseId},null,2));
+if(!response.ok)process.exitCode=response.status===409?2:1;

@@ -1,0 +1,12 @@
+{
+  "name": "Raccoon development validation",
+  "cwd": ".",
+  "parallelism": 3,
+  "nodes": [
+    { "id": "syntax", "command": "node scripts/check.js", "locks": ["raccoon:source:check"] },
+    { "id": "unit", "command": "node --test --test-concurrency=1", "locks": ["raccoon:tests"], "timeoutMs": 300000 },
+    { "id": "http", "command": "node scripts/smoke-http.js", "locks": ["raccoon:test-port:39766"], "timeoutMs": 60000 },
+    { "id": "pipeline", "command": "node scripts/pipeline-smoke.js", "dependsOn": ["syntax"], "locks": ["raccoon:test-port:39677"], "timeoutMs": 60000 },
+    { "id": "complete", "command": "node -e \"console.log('raccoon-validation-complete')\"", "dependsOn": ["unit", "http", "pipeline"], "expect": { "stdoutIncludes": "raccoon-validation-complete" } }
+  ]
+}

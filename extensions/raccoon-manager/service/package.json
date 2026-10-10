@@ -1,0 +1,48 @@
+{
+  "name": "raccoon-mcp",
+  "version": "0.8.0",
+  "description": "Local-first MCP server for AI-assisted development and computer operations.",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "icons:generate": "node scripts/generate-icons.js",
+    "check": "node scripts/check.js",
+    "smoke": "node scripts/smoke.js",
+    "start:http": "node src/index.js --http",
+    "smoke:http": "node scripts/smoke-http.js",
+    "smoke:compat": "node scripts/compat-smoke.js",
+    "smoke:capacity": "node scripts/capacity-smoke.js",
+    "smoke:features": "node scripts/feature-smoke.js",
+    "smoke:icon": "node scripts/icon-smoke.js",
+    "smoke:pipeline": "node scripts/pipeline-smoke.js",
+    "dev:pipeline": "node scripts/dev-pipeline-cli.js full",
+    "test": "node --test --test-concurrency=1",
+    "verify": "npm run check && npm test && npm run smoke && npm run smoke:http && npm run smoke:compat && npm run smoke:capacity && npm run smoke:features && npm run smoke:icon && npm run smoke:pipeline",
+    "doctor": "node scripts/doctor.js"
+  },
+  "keywords": [
+    "mcp",
+    "local-first",
+    "automation",
+    "developer-tools"
+  ],
+  "author": "luoluoluo22",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.31.0",
+    "@napi-rs/canvas": "^1.0.9",
+    "adm-zip": "^0.6.1",
+    "docx": "^9.8.1",
+    "express": "^5.2.1",
+    "marked": "^18.0.14",
+    "minimatch": "^10.2.6",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^6.3.289",
+    "xlsx": "^0.18.5",
+    "zod": "^4.6.5"
+  },
+  "engines": {
+    "node": ">=22.16.0"
+  }
+}

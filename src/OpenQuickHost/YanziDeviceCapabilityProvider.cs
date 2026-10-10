@@ -37,6 +37,15 @@ public static class YanziDeviceCapabilityProvider
             OutputSchema = YanziCapabilitySchema.Parse("""{"type":"object"}"""),
             Handler = AliasAsync
         };
+        yield return new()
+        {
+            Name = "device.raccoon.invoke",
+            Description = "Invoke the selected computer's Raccoon MCP through the authenticated Yanzi account relay.",
+            Permissions = ["device.execute"], Category = "devices", RiskLevel = "high", RequiresConfirmation = true,
+            InputSchema = YanziCapabilitySchema.Parse("""{"type":"object","properties":{"target":{"type":"string","minLength":1},"operation":{"type":"string","enum":["status","list","call"]},"name":{"type":"string"},"arguments":{"type":"object"}},"required":["target","operation"],"additionalProperties":false}"""),
+            OutputSchema = YanziCapabilitySchema.Parse("""{"type":"object"}"""),
+            Handler = InvokeRemoteRaccoonAsync
+        };
     }
 
     internal static IReadOnlyDictionary<string,string> LoadAliases()
@@ -106,6 +115,64 @@ public static class YanziDeviceCapabilityProvider
         var (_, devices) = await LoadDevicesAsync();
         var d = Resolve(devices, input.GetProperty("target").GetString()!);
         return new { deviceId=d.DeviceId, displayName=d.DisplayName, platform=d.Platform, online=d.Online, lastSeenAt=d.LastSeenAt, lastLocation=d.LastLocation };
+    }
+
+    private static async Task<object?> InvokeRemoteRaccoonAsync(object? payload)
+    {
+        var input = (JsonElement)payload!;
+        var target = input.GetProperty("target").GetString() ?? "";
+        var operation = input.GetProperty("operation").GetString() ?? "";
+        var capability = operation switch
+        {
+            "status" => "raccoon.status",
+            "list" => "raccoon.tools.list",
+            "call" => "raccoon.tools.call",
+            _ => throw new ArgumentException("Unknown Raccoon operation.")
+        };
+        var arguments = operation == "call"
+            ? JsonSerializer.SerializeToElement(new
+            {
+                name = input.TryGetProperty("name", out var n) ? n.GetString() : null,
+                arguments = input.TryGetProperty("arguments", out var a) ? a.Clone() : JsonSerializer.SerializeToElement(new { })
+            })
+            : JsonSerializer.SerializeToElement(new { });
+        var (cloud, devices) = await LoadDevicesAsync();
+        var device = Resolve(devices, target);
+        if (!string.Equals(device.Platform, "desktop", StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("Raccoon MCP can only be invoked on a desktop device.");
+        if (!device.Online) throw new InvalidOperationException("Selected desktop is offline; no operation was queued.");
+        if (device.DeviceId == DeviceIdentityStore.GetOrCreateDesktopDeviceId())
+        {
+            var data = await YanziCapabilityRegistry.InvokeAsync(capability, arguments, YanziCapabilityCaller.LocalAgent);
+            return new { success = true, deviceId = device.DeviceId, source = "local", result = data };
+        }
+        var descriptor = await cloud.GetPeerDescriptorAsync(device.DeviceId);
+        if (descriptor == null) throw new InvalidOperationException("Device disappeared from this account.");
+        var caps = descriptor.Value.GetProperty("capabilities");
+        if (caps.TryGetProperty("raccoonMcpInstalled", out var installed) && installed.ValueKind == JsonValueKind.False)
+            throw new InvalidOperationException("Raccoon MCP is not installed on the selected computer.");
+        if (operation == "call" && (!caps.TryGetProperty("raccoonRemoteControlEnabled", out var enabled) ||
+            enabled.ValueKind != JsonValueKind.True))
+            throw new UnauthorizedAccessException("Remote execution has not been enabled locally on the selected computer.");
+
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(115));
+        var messageId = await cloud.SendDeviceMessageAsync(
+            DeviceIdentityStore.GetOrCreateDesktopDeviceId(), "desktop", "capability.invoke",
+            "Raccoon MCP", "", targetDeviceId: device.DeviceId,
+            payload: new { name = capability, payload = arguments },
+            expiresAt: DateTimeOffset.UtcNow.AddMinutes(2), cancellationToken: timeout.Token);
+        while (!timeout.IsCancellationRequested)
+        {
+            var response = await cloud.GetDeviceMessageAsync(messageId, timeout.Token);
+            if (response?.Status is "completed" or "failed" or "unknown" or "expired" or "cancelled")
+            {
+                var output = response.Payload.TryGetValue("executionResult", out var result) ? (JsonElement?)result.Clone() : null;
+                return new { success = response.Status == "completed", deviceId = device.DeviceId, source = "cloud",
+                    messageId, status = response.Status, result = output };
+            }
+            await Task.Delay(650, timeout.Token);
+        }
+        throw new TimeoutException("Raccoon execution result is not yet known. Query the message ID before any retry.");
     }
 
     private static async Task<object?> AliasAsync(object? payload)
