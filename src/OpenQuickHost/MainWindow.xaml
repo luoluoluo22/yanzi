@@ -618,6 +618,7 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+                    <Button Content="能力" ToolTip="查看仓库能力分类与调用接口" Click="WarehouseCapabilities_Click" Padding="10,4" Margin="5,0,0,0" FontSize="12" Style="{DynamicResource GhostButtonStyle}" />
                     <Button Content="+"
                             ToolTip="固定当前选中项到顶部标签"
                             Click="SearchScopeAddButton_Click"
