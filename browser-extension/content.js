@@ -8,6 +8,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // 核心任务执行引擎
 function executeTask(task) {
+  if (task.site === "lanzou") {
+    const allowed = new Set(["pc.woozooo.com", "up.woozooo.com", "accounts.woozooo.com", "www.lanzou.com", "lanzou.com", "www.lanzoui.com", "lanzoui.com", "www.lanzouo.com", "lanzouo.com", "www.lanzouw.com", "lanzouw.com", "www.lanzoux.com", "lanzoux.com"]);
+    if (window.location.protocol !== "https:" || !allowed.has(window.location.hostname.toLowerCase())) {
+      sendResult(task.taskId, "error", null, task.closeOnComplete, "已阻止蓝奏云工作流在非受信任站点运行");
+      return;
+    }
+  }
   try {
     if (task.action === "ai_prompt_transfer") {
       performAiPromptTransfer(task);
@@ -15,6 +22,8 @@ function executeTask(task) {
       performScrape(task);
     } else if (task.action === "autofill") {
       performAutofill(task);
+    } else if (task.action === "lanzou_upload_file") {
+      performLanzouUploadFile(task);
     } else if (task.action === "workflow") {
       performWorkflow(task);
     } else {
@@ -28,6 +37,54 @@ function executeTask(task) {
 // ==========================================
 // 0. AI 提示词自动传递与 JSON 提取引擎 (AI Transfer Engine)
 // ==========================================
+async function performLanzouUploadFile(task) {
+  // Disposable test ZIP only, using browser session automatically. Never expose credentials.
+  try {
+    if (location.protocol !== "https:" || location.hostname !== "pc.woozooo.com")
+      throw new Error("official disk origin required");
+    const filename = String(task.filename || "");
+    const folderId = String(task.folderId || "");
+    const encoded = String(task.base64 || "");
+    if (task.confirmAction !== true || !/^[^\\/:*?"<>|\r\n]{1,120}\.(zip|rar|7z|txt|pdf|doc|docx|xls|xlsx|png|jpg|jpeg)$/i.test(filename) ||
+        !/^(?:-1|[0-9]{1,16})$/.test(folderId) || encoded.length < 4 || encoded.length > 3000000)
+      throw new Error("confirmed action, supported filename, folderId and file size are required");
+    const binary = atob(encoded);
+    const bytes = Uint8Array.from(binary, char => char.charCodeAt(0));
+    if (bytes.length > 2097152 || bytes.length < 1)
+      throw new Error("invalid fixture size");
+    const payload = new FormData();
+    payload.append("task", "1");
+    payload.append("vie", "2");
+    payload.append("ve", "2");
+    payload.append("folder_id", folderId);
+    payload.append("upload_file", new Blob([bytes], {type:"application/zip"}), filename);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 18000);
+    let response;
+    try {
+      response = await fetch("/html5up.php", {
+        method:"POST", credentials:"same-origin", body:payload, signal:controller.signal
+      });
+    } finally { clearTimeout(timer); }
+    const raw = await response.text();
+    let parsed = null;
+    try { parsed = JSON.parse(raw); } catch (_) {}
+    sendResult(task.taskId, "success", {
+      httpStatus:response.status, resultCode:parsed?.zt ?? null, uploadLocation:"root-or-unknown",
+      infoType:typeof parsed?.info,
+      items:Array.isArray(parsed?.text) ? parsed.text.slice(0,3).map(item=>({
+        id:String(item?.id || "").slice(0,25),
+        name:String(item?.name_all || item?.name || "").slice(0,120)
+      })) : [],
+      responseShape:parsed ? Object.keys(parsed).slice(0,15) : [],
+      unrecognizedResponse: parsed ? null : raw.slice(0,150)
+    }, task.closeOnComplete);
+  } catch (error) {
+    sendResult(task.taskId, "error", null, task.closeOnComplete,
+      "lanzou test upload failed: "+(error?.message || String(error)));
+  }
+}
+
 async function performAiPromptTransfer(task) {
   const prompt = task.prompt || "";
   const timeoutMs = (task.timeoutSeconds || 120) * 1000;
@@ -271,6 +328,13 @@ async function performWorkflow(task) {
         const scrapeResult = await handleScrapeStep(step);
         // 将抓取到的数据累加进结果集中
         Object.assign(results, scrapeResult);
+      } else if (step.type === "fetch") {
+        if (task.site !== "lanzou" || location.hostname !== "pc.woozooo.com")
+          throw new Error("仅允许蓝奏云官方登录页的专用 fetch 工作流");
+        const fetchResult = await handleFetchStep(step);
+        if (step.key) {
+          results[step.key] = [JSON.stringify(fetchResult)];
+        }
       } else {
         throw new Error(`不支持的步骤类型: ${step.type}`);
       }
@@ -365,6 +429,68 @@ function waitForElement(selector, timeout) {
       }
     }, 500);
   });
+}
+
+async function handleFetchStep(step) {
+  if (!step.url) {
+    throw new Error("fetch 步骤缺少 url");
+  }
+
+  const target = new URL(step.url, window.location.href);
+
+  const siteKey = (hostname) => {
+    const parts = String(hostname || "").toLowerCase().split(".").filter(Boolean);
+    return parts.length >= 2 ? parts.slice(-2).join(".") : parts.join(".");
+  };
+  const sameOrigin = target.origin === window.location.origin;
+  const sameSiteHttps =
+    target.protocol === "https:" &&
+    window.location.protocol === "https:" &&
+    siteKey(target.hostname) === siteKey(window.location.hostname);
+
+  if (!sameOrigin && !sameSiteHttps) {
+    throw new Error(`fetch 仅允许当前站点及其 HTTPS 子域: ${target.origin}`);
+  }
+
+  const method = String(step.method || "GET").toUpperCase();
+  const headers = Object.assign(
+    { "Accept": "application/json, text/plain, */*" },
+    step.headers || {}
+  );
+
+  const init = {
+    method,
+    credentials: "include",
+    headers
+  };
+
+  if (step.body !== undefined && step.body !== null && method !== "GET" && method !== "HEAD") {
+    if (typeof step.body === "string") {
+      init.body = step.body;
+    } else {
+      if (!Object.keys(headers).some(k => k.toLowerCase() === "content-type")) {
+        headers["Content-Type"] = "application/json;charset=UTF-8";
+      }
+      init.body = JSON.stringify(step.body);
+    }
+  }
+
+  const response = await fetch(target.href, init);
+  const text = await response.text();
+  let data = text;
+  try {
+    data = JSON.parse(text);
+  } catch (_) {}
+
+  if (!response.ok) {
+    throw new Error(`fetch ${method} ${target.pathname} 失败: ${response.status} ${String(text).slice(0, 300)}`);
+  }
+
+  return {
+    status: response.status,
+    url: response.url,
+    data
+  };
 }
 
 // 1.2 高保真输入操作 (Fill)

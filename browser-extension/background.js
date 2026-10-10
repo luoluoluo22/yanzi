@@ -1,3 +1,4 @@
+importScripts("lanzou-network-observer.js");
 let ws = null;
 let currentWsSeq = 0;
 let reconnectDelay = 1000;
@@ -209,6 +210,13 @@ function handleTask(task) {
   
   if (task.action === "ai_prompt_transfer") {
     handleAiPromptTransferTask(task, targetUrl);
+    return;
+  }
+
+  if (task.action === "lanzou_network_control") {
+    void globalThis.handleLanzouNetworkControl(task)
+      .then(data => sendBrowserTaskResponse(task, "success", data))
+      .catch(error => sendBrowserTaskResponse(task, "error", null, error?.message || "network observer failed"));
     return;
   }
 

@@ -1,0 +1,21 @@
+{
+  "id": "lanzou-cloud",
+  "name": "蓝奏云",
+  "version": "0.1.0",
+  "category": "网盘",
+  "description": "打开蓝奏云网页版；燕子能力中提供页面读取、受控浏览器工作流和网络请求诊断。上传/云端管理需登录后验收。",
+  "keywords": [
+    "蓝奏云",
+    "蓝奏",
+    "lanzou",
+    "网盘",
+    "上传",
+    "下载",
+    "分享"
+  ],
+  "icon": "https://www.lanzou.com/favicon.ico",
+  "openTarget": "https://pc.woozooo.com/mydisk.php",
+  "permissions": [
+    "network.read"
+  ]
+}
