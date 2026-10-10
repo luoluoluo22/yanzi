@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.IO;
 
@@ -38,6 +38,7 @@ internal static class CloudObjectSyncStateStore
                         // Keep the damaged original until a recovered state is successfully saved.
                         state = Read(path + ".bak");
                         state.RecoveredFromBackup = true;
+                        HostAssets.AppendLog($"Cloud object state recovered from backup: primaryError={ex.GetType().Name}");
                     }
                     if (!string.Equals(state.UserId, userId, StringComparison.Ordinal))
                         throw new JsonException("同步记录不属于当前账号。");
@@ -110,8 +111,16 @@ internal static class CloudObjectSyncStateStore
                 File.WriteAllText(tempPath, JsonSerializer.Serialize(state, JsonOptions));
                 if (File.Exists(path))
                 {
-                    if (state.RecoveredFromBackup) File.Copy(path, path + ".corrupt-" + Guid.NewGuid().ToString("N"));
-                    File.Replace(tempPath, path, path + ".bak");
+                    if (state.RecoveredFromBackup)
+                    {
+                        // Preserve the verified healthy backup when recovering from corrupt primary state.
+                        var corruptPath = path + ".corrupt-" + Guid.NewGuid().ToString("N");
+                        File.Replace(tempPath, path, corruptPath);
+                    }
+                    else
+                    {
+                        File.Replace(tempPath, path, path + ".bak");
+                    }
                 }
                 else File.Move(tempPath, path);
                 state.RecoveredFromBackup = false;

@@ -5,7 +5,7 @@ using OpenQuickHost.Sync;
 
 namespace OpenQuickHost;
 
-public static class ExtensionStorageService
+public static partial class ExtensionStorageService
 {
     private static readonly TimeSpan BackgroundCloudTimeout = TimeSpan.FromSeconds(8);
     private const long AccountReadRefreshIntervalMs = 60_000;
@@ -606,6 +606,14 @@ public static class ExtensionStorageService
                 key.StartsWith(@"EBWebView\", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(key, "EBWebView", StringComparison.OrdinalIgnoreCase))
             {
+                continue;
+            }
+            if (!IsPortableDataForExtension(extensionId, key)) continue;
+            if (IsPortableBinaryAsset(key))
+            {
+                var bytes = await File.ReadAllBytesAsync(file, cancellationToken);
+                if (!await service.PublishExtensionBinaryAssetIfAbsentAsync(extensionId, key, bytes, cancellationToken))
+                    HostAssets.AppendLog($"Extension binary conflict preserved: id={extensionId}, key={key}");
                 continue;
             }
             var content = await File.ReadAllTextAsync(file, Encoding.UTF8, cancellationToken);

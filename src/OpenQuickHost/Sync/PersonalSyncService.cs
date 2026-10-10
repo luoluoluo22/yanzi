@@ -13,7 +13,7 @@ public enum PersonalConfigSyncMode
     Disabled
 }
 
-public sealed class PersonalSyncService
+public sealed partial class PersonalSyncService
 {
     private const string RemoteIndexPath = "index.json";
     private static readonly SemaphoreSlim OperationLock = new(1, 1);
@@ -134,6 +134,7 @@ public sealed class PersonalSyncService
                     "text/plain; charset=utf-8",
                     cancellationToken);
             }
+            await PublishExtensionDataKeysAsync(extensionId, [key], cancellationToken);
             return new ExtensionDataWriteResult(observed, true);
         }
 
@@ -205,6 +206,7 @@ public sealed class PersonalSyncService
                 "text/plain; charset=utf-8",
                 cancellationToken);
         }
+        await PublishExtensionDataKeysAsync(extensionId, [key], cancellationToken);
         return new ExtensionDataWriteResult(confirmed, true);
     }
 
@@ -421,6 +423,27 @@ public sealed class PersonalSyncService
                 continue;
             }
 
+            if (packagesUploadOnly)
+            {
+                // An account session uses the private extension library as the installer authority.
+                // The Gitee repository is a backup. Different PCs may package the same version
+                // differently; never ping-pong those binaries at each login.
+                if (ShouldPublishAccountBackup(localEntry, remoteEntry,
+                        DeviceIdentityStore.GetOrCreateDesktopDeviceId()) &&
+                    snapshot.PackageBytesByExtensionId.ContainsKey(extensionId))
+                {
+                    await UploadPackageIfNeededAsync(localEntry, snapshot.PackageBytesByExtensionId, cancellationToken);
+                    mergedMap[extensionId] = localEntry;
+                    uploaded++;
+                    remoteIndexChanged = true;
+                }
+                else
+                {
+                    mergedMap[extensionId] = remoteEntry;
+                }
+                continue;
+            }
+
             if (!packagesUploadOnly && HasConcurrentExtensionChanges(localEntry, remoteEntry))
             {
                 snapshot.PackageBytesByExtensionId.TryGetValue(extensionId, out var localPackageBytes);
@@ -453,6 +476,20 @@ public sealed class PersonalSyncService
                 {
                     await UploadPackageIfNeededAsync(winner, snapshot.PackageBytesByExtensionId, cancellationToken);
                     uploaded++;
+                }
+                else if (!winner.Deleted &&
+                         snapshot.PackageBytesByExtensionId.TryGetValue(extensionId, out var verifyBytes) &&
+                         verifyBytes.Length > 5 * 1024 * 1024 &&
+                         string.Equals(ComputeSha256(verifyBytes), winner.PackageHash, StringComparison.OrdinalIgnoreCase))
+                {
+                    // An apparently uploaded large package may have been truncated by Gitee.
+                    var observed = await _backend.TryReadBytesAsync(winner.PackagePath, cancellationToken);
+                    if (observed == null ||
+                        !string.Equals(ComputeSha256(observed), winner.PackageHash, StringComparison.OrdinalIgnoreCase))
+                    {
+                        await UploadPackageIfNeededAsync(winner, snapshot.PackageBytesByExtensionId, cancellationToken);
+                        uploaded++;
+                    }
                 }
                 else if (winner.Deleted != loser.Deleted ||
                          !string.Equals(winner.UpdatedAtUtc, loser.UpdatedAtUtc, StringComparison.Ordinal))
@@ -1658,7 +1695,11 @@ public sealed class PersonalSyncService
 
         var packageBytes = await _backend.TryReadBytesAsync(entry.PackagePath, cancellationToken)
             ?? throw new FileNotFoundException($"远端扩展包不存在：{entry.PackagePath}");
-        SyncPackageSafety.VerifyHash(packageBytes, entry.PackageHash);
+        try { SyncPackageSafety.VerifyHash(packageBytes, entry.PackageHash); }
+        catch (InvalidDataException ex)
+        {
+            throw new InvalidDataException($"远端扩展包损坏：id={entry.ExtensionId}, path={entry.PackagePath}, expected={entry.PackageHash}, actual={ComputeSha256(packageBytes)}, bytes={packageBytes.Length}", ex);
+        }
         if (!TryValidateZipArchive(packageBytes, out var packageError))
         {
             throw new InvalidDataException($"远端扩展包无效：{entry.PackagePath}，detail={packageError}");
@@ -1707,6 +1748,34 @@ public sealed class PersonalSyncService
     private static int CompareEntries(WebDavSyncEntry left, WebDavSyncEntry right)
     {
         return ExtensionSyncRevision.Compare(left, right);
+    }
+
+    internal static bool ShouldPublishAccountBackup(
+        WebDavSyncEntry local, WebDavSyncEntry remote, string deviceId)
+    {
+        // A deletion in the backup repository must not be silently resurrected by an
+        // unrelated device. Explicit publishing remains available through the account library.
+        if (local.Deleted || local.Purged || remote.Deleted || remote.Purged ||
+            string.Equals(local.PackageHash, remote.PackageHash, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        static bool ParseVersion(string? text, out Version value)
+        {
+            value = new Version(0, 0);
+            return Version.TryParse((text ?? string.Empty).TrimStart('v', 'V'), out value!);
+        }
+
+        if (ParseVersion(local.Version, out var currentVersion) &&
+            ParseVersion(remote.Version, out var previousVersion) &&
+            currentVersion.CompareTo(previousVersion) > 0)
+            return true;
+
+        // Same-version hot edits may update a backup only when this exact device owns
+        // the remote version and has changed relative to its verified local baseline.
+        return !string.IsNullOrWhiteSpace(deviceId) &&
+               string.Equals(local.UpdatedByDeviceId, deviceId, StringComparison.OrdinalIgnoreCase) &&
+               string.Equals(remote.UpdatedByDeviceId, deviceId, StringComparison.OrdinalIgnoreCase) &&
+               local.BaseRevision >= remote.Revision && local.Revision > remote.Revision;
     }
 
     internal static WebDavSyncEntry ChooseExtensionEntry(
