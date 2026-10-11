@@ -258,7 +258,14 @@ public static class YanziSystemDependencyProvider
             Aliases: ["ffmpeg"],
             ExecutableName: "ffmpeg.exe",
             VersionArguments: "-version",
-            DefaultInstallerId: "Gyan.FFmpeg")
+            DefaultInstallerId: "Gyan.FFmpeg"),
+        new(
+            Name: "mihomo",
+            Description: "Mihomo VPN proxy core (portable, pinned SHA256)",
+            Aliases: ["mihomo"],
+            ExecutableName: "mihomo.exe",
+            VersionArguments: "-v",
+            DefaultInstallerId: "portable:MetaCubeX/mihomo")
     ];
 
     public static bool CanHandle(string name)
@@ -406,6 +413,9 @@ public static class YanziSystemDependencyProvider
             return before;
         }
 
+        if (definition.Name == "mihomo")
+            return await EnsurePortableMihomoAsync(requirement, cancellationToken).ConfigureAwait(false);
+
         var winget = FindExecutableOnPath("winget.exe");
         var installerId = SelectInstallerId(definition, requirement);
         if (winget == null)
@@ -497,6 +507,28 @@ public static class YanziSystemDependencyProvider
             Provider = "winget:" + installerId,
             Error = detail
         };
+    }
+
+    private static async Task<YanziResolvedRequirement> EnsurePortableMihomoAsync(
+        YanziCapabilityRequirement requirement, CancellationToken cancellationToken)
+    {
+        SetProgress("mihomo", requirement.Raw, "installing", "Downloading a pinned Mihomo runtime and verifying SHA256...", 20);
+        try
+        {
+            var path = await YanziPortableMihomoInstaller.EnsureAsync(requirement.MinimumVersion, cancellationToken).ConfigureAwait(false);
+            var version = await GetVersionAsync(path, "-v", cancellationToken).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(version) || !version.Contains("mihomo", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("Installed Mihomo core did not pass version verification.");
+            EnsureExecutableDirectoryOnPath(path);
+            SetProgress("mihomo", requirement.Raw, "completed", "Mihomo runtime ready", 100);
+            return new YanziResolvedRequirement(requirement.Raw, "mihomo", true, "portable:MetaCubeX/mihomo", version, path, true);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception ex)
+        {
+            SetProgress("mihomo", requirement.Raw, "failed", "Mihomo installation failed: " + ex.GetType().Name, null);
+            return new YanziResolvedRequirement(requirement.Raw, "mihomo", false, "portable:MetaCubeX/mihomo", null, null, false, "Mihomo installation failed: " + ex.GetType().Name);
+        }
     }
 
     private static async Task<YanziResolvedRequirement> EnsurePortableNodeAsync(
@@ -669,6 +701,10 @@ public static class YanziSystemDependencyProvider
                     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "nodejs", "node.exe"),
                     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "nodejs", "node.exe"));
                 candidates.AddRange(YanziPortableNodeInstaller.GetCachedExecutables());
+                break;
+
+            case "mihomo":
+                candidates.AddRange(YanziPortableMihomoInstaller.GetCachedExecutables());
                 break;
 
             case "ffmpeg":
