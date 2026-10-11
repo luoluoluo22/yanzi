@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Net.Http;
+using System.Net.WebSockets;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Linq;
@@ -79,8 +80,8 @@ public sealed class VideoResumeService
     private bool _manual;
     private volatile bool _stop;
     private readonly RiceCookerFinishMonitor _riceMonitor;
-    private bool _riceChecking;
-    private DateTime _lastRiceErrorLog = DateTime.MinValue;
+    private CancellationTokenSource? _riceCancellation;
+    private Task? _riceTask;
 
     public bool IsRunning => !_stop;
 
@@ -119,7 +120,21 @@ public sealed class VideoResumeService
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
         ready.Wait(3000);
-        Log("服务已启动：12:00-13:00 / 19:00-20:00。");
+        _riceCancellation = new CancellationTokenSource();
+        _riceTask = Task.Run(() => _riceMonitor.WatchAsync(
+            () =>
+            {
+                if (!_stop && _dispatcher is { HasShutdownStarted: false } dispatcher)
+                    dispatcher.BeginInvoke(new Action(async () =>
+                    {
+                        if (_stop) return;
+                        Log("收到电饭煲 cancel 事件并确认保温转待机：直接续播。");
+                        HideButton();
+                        await OpenLatestFromRiceAsync();
+                    }));
+                return Task.CompletedTask;
+            }, Log, _riceCancellation.Token));
+        Log("服务已启动：午晚视频入口 + Home Assistant 事件订阅。");
     }
 
     public Task WaitAsync() => _stopped.Task;
@@ -128,6 +143,7 @@ public sealed class VideoResumeService
     {
         if (_stop) return;
         _stop = true;
+        try { _riceCancellation?.Cancel(); } catch { }
         if (_dispatcher != null && !_dispatcher.HasShutdownStarted)
         {
             _dispatcher.BeginInvoke(() =>
@@ -173,10 +189,9 @@ public sealed class VideoResumeService
         return "已显示看视频按钮。";
     }
 
-    private async void Tick()
+    private void Tick()
     {
         if (_stop) return;
-
         var now = DateTime.Now;
         if (TimeSlot.TryActive(now, out var slot))
         {
@@ -184,33 +199,9 @@ public sealed class VideoResumeService
             if (_suppressed != slot.Key(now.Date)) ShowButton(slot);
             else HideButton();
         }
-        else if (!_manual)
-        {
-            HideButton();
-        }
-
-        // Only the completed cook -> observed keep-warm -> standby transition.
-        if (_riceChecking) return;
-        _riceChecking = true;
-        try
-        {
-            if (await _riceMonitor.CheckAsync() && !_stop)
-            {
-                Log("米家确认取消事件、保温结束并转待机：直接打开续播视频。");
-                HideButton();
-                await OpenLatestFromRiceAsync();
-            }
-        }
-        catch (Exception ex)
-        {
-            _riceMonitor.ResetConnection();
-            if (now - _lastRiceErrorLog > TimeSpan.FromMinutes(10))
-            {
-                _lastRiceErrorLog = now;
-                Log("电饭煲事件监听失败: " + ex.Message);
-            }
-        }
-        finally { _riceChecking = false; }
+        else if (!_manual) HideButton();
+        // Cooker actions are delivered by the Home Assistant WebSocket listener,
+        // not by this 5-second UI window scheduling timer.
     }
 
     private async Task OpenLatestFromRiceAsync()
@@ -322,6 +313,207 @@ public sealed class VideoResumeService
     }
 }
 
+// Reusable miniapp event adapter: WebSocket auth, HA state_changed subscription,
+// an initial get_states snapshot, entity allowlisting, heartbeats and reconnect.
+// Appliance-specific decisions stay in the consumer, not in this transport.
+// <YANZI_HA_EVENT_STREAM>
+public sealed record YanziHaEntityUpdate(string EntityId, string State, JsonElement Attributes, bool IsBaseline);
+public sealed record YanziHaSubscriptionSettings(Uri Uri, string Token, string[] EntityIds);
+
+public static class YanziHaStateChangedStream
+{
+    internal static bool TryParseChange(JsonElement packet, IReadOnlySet<string> entities,
+        out YanziHaEntityUpdate? update)
+    {
+        update = null;
+        if (packet.ValueKind != JsonValueKind.Object
+            || !packet.TryGetProperty("type", out var type)
+            || type.GetString() != "event"
+            || !packet.TryGetProperty("id", out var id)
+            || id.ValueKind != JsonValueKind.Number || id.GetInt32() != 1
+            || !packet.TryGetProperty("event", out var ev)
+            || !ev.TryGetProperty("event_type", out var kind)
+            || kind.GetString() != "state_changed"
+            || !ev.TryGetProperty("data", out var data)
+            || !data.TryGetProperty("entity_id", out var entity)
+            || entity.ValueKind != JsonValueKind.String) return false;
+        string name = entity.GetString() ?? "";
+        if (!entities.Contains(name)
+            || !data.TryGetProperty("new_state", out var newState)
+            || newState.ValueKind != JsonValueKind.Object
+            || !newState.TryGetProperty("state", out var state)
+            || state.ValueKind != JsonValueKind.String) return false;
+        var attrs = newState.TryGetProperty("attributes", out var attributes)
+            ? attributes.Clone() : default;
+        update = new YanziHaEntityUpdate(name, state.GetString() ?? "", attrs, false);
+        return true;
+    }
+
+    private static async Task SendAsync(ClientWebSocket socket, object value, CancellationToken stop)
+    {
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(value);
+        await socket.SendAsync(new ArraySegment<byte>(bytes),
+            WebSocketMessageType.Text, true, stop).ConfigureAwait(false);
+    }
+
+    private static async Task<JsonElement> ReadAsync(
+        ClientWebSocket socket, CancellationToken stop, int seconds = 70)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(stop);
+        timeout.CancelAfter(TimeSpan.FromSeconds(seconds));
+        var buffer = new byte[16384];
+        using var stream = new MemoryStream();
+        WebSocketReceiveResult frame;
+        do
+        {
+            frame = await socket.ReceiveAsync(new ArraySegment<byte>(buffer),
+                timeout.Token).ConfigureAwait(false);
+            if (frame.MessageType != WebSocketMessageType.Text)
+                throw new IOException("WebSocket closed or sent unsupported data");
+            if (stream.Length + frame.Count > 2 * 1024 * 1024)
+                throw new IOException("Home Assistant event exceeds 2 MB");
+            stream.Write(buffer, 0, frame.Count);
+        } while (!frame.EndOfMessage);
+        using var json = JsonDocument.Parse(stream.ToArray());
+        return json.RootElement.Clone();
+    }
+
+    private static string Type(JsonElement message) =>
+        message.TryGetProperty("type", out var type) ? type.GetString() ?? "" : "";
+
+    private static void ConfirmResult(JsonElement message, int expectedId)
+    {
+        if (Type(message) != "result"
+            || !message.TryGetProperty("id", out var id) || id.GetInt32() != expectedId
+            || !message.TryGetProperty("success", out var success) || !success.GetBoolean())
+            throw new IOException("Home Assistant subscription/snapshot command failed");
+    }
+
+    public static async Task SubscribeAsync(
+        Uri baseUri, string accessToken, IReadOnlyCollection<string> entityIds,
+        Func<YanziHaEntityUpdate, Task> onChange,
+        Action<bool, string>? onConnection, CancellationToken stop)
+    {
+        var allowed = new HashSet<string>(entityIds, StringComparer.Ordinal);
+        if (allowed.Count == 0) throw new ArgumentException("At least one entity is required");
+        if (baseUri.Scheme is not ("http" or "https"))
+            throw new ArgumentException("Home Assistant must use HTTP or HTTPS");
+        var endpoint = new UriBuilder(baseUri)
+        {
+            Scheme = baseUri.Scheme == "https" ? "wss" : "ws",
+            Path = "/api/websocket", Query = "", Fragment = "",
+            Port = baseUri.IsDefaultPort ? -1 : baseUri.Port
+        }.Uri;
+
+        int attempt = 0;
+        while (!stop.IsCancellationRequested)
+        {
+            bool connected = false;
+            try
+            {
+                using var socket = new ClientWebSocket();
+                socket.Options.KeepAliveInterval = TimeSpan.FromSeconds(20);
+                using (var timeout = CancellationTokenSource.CreateLinkedTokenSource(stop))
+                {
+                    timeout.CancelAfter(TimeSpan.FromSeconds(12));
+                    await socket.ConnectAsync(endpoint, timeout.Token).ConfigureAwait(false);
+                }
+                var hello = await ReadAsync(socket, stop, 12).ConfigureAwait(false);
+                if (Type(hello) != "auth_required")
+                    throw new IOException("Home Assistant did not request authentication");
+                await SendAsync(socket, new { type = "auth", access_token = accessToken }, stop)
+                    .ConfigureAwait(false);
+                var auth = await ReadAsync(socket, stop, 12).ConfigureAwait(false);
+                if (Type(auth) != "auth_ok") throw new IOException("Home Assistant authorization failed");
+
+                await SendAsync(socket, new { id = 1, type = "subscribe_events",
+                    event_type = "state_changed" }, stop).ConfigureAwait(false);
+                var subscribed = await ReadAsync(socket, stop, 12).ConfigureAwait(false);
+                ConfirmResult(subscribed, 1);
+
+                // Subscribe BEFORE getting state; discard events during bootstrap.
+                // This deliberately avoids retroactive triggers after reconnect.
+                await SendAsync(socket, new { id = 2, type = "get_states" }, stop)
+                    .ConfigureAwait(false);
+                JsonElement snapshot;
+                while (true)
+                {
+                    var msg = await ReadAsync(socket, stop, 15).ConfigureAwait(false);
+                    if (Type(msg) == "result" && msg.TryGetProperty("id", out var id)
+                        && id.GetInt32() == 2)
+                    {
+                        ConfirmResult(msg, 2);
+                        snapshot = msg.GetProperty("result");
+                        break;
+                    }
+                }
+                if (snapshot.ValueKind != JsonValueKind.Array)
+                    throw new IOException("Home Assistant get_states returned no array");
+                foreach (var item in snapshot.EnumerateArray())
+                {
+                    if (!item.TryGetProperty("entity_id", out var name)) continue;
+                    var entity = name.GetString() ?? "";
+                    if (!allowed.Contains(entity)) continue;
+                    var state = item.GetProperty("state").GetString() ?? "";
+                    var attributes = item.TryGetProperty("attributes", out var attrs)
+                        ? attrs.Clone() : default;
+                    await onChange(new YanziHaEntityUpdate(entity, state, attributes, true))
+                        .ConfigureAwait(false);
+                }
+                attempt = 0;
+                connected = true;
+                onConnection?.Invoke(true, "WebSocket subscribed to state_changed");
+
+                using var session = CancellationTokenSource.CreateLinkedTokenSource(stop);
+                var heartbeats = Task.Run(async () =>
+                {
+                    int pingId = 100;
+                    try
+                    {
+                        while (!session.IsCancellationRequested)
+                        {
+                            await Task.Delay(TimeSpan.FromSeconds(20), session.Token)
+                                .ConfigureAwait(false);
+                            await SendAsync(socket, new { id = pingId++, type = "ping" },
+                                session.Token).ConfigureAwait(false);
+                        }
+                    }
+                    catch (OperationCanceledException) when (session.IsCancellationRequested) { }
+                }, session.Token);
+                try
+                {
+                    while (!session.IsCancellationRequested && socket.State == WebSocketState.Open)
+                    {
+                        var message = await ReadAsync(socket, session.Token).ConfigureAwait(false);
+                        if (TryParseChange(message, allowed, out var changed) && changed != null)
+                            await onChange(changed).ConfigureAwait(false);
+                    }
+                    if (!stop.IsCancellationRequested) throw new IOException("WebSocket disconnected");
+                }
+                finally
+                {
+                    session.Cancel();
+                    try { await heartbeats.ConfigureAwait(false); } catch { }
+                }
+            }
+            catch (OperationCanceledException) when (stop.IsCancellationRequested) { break; }
+            catch (Exception ex)
+            {
+                onConnection?.Invoke(false, "订阅失败：" + ex.GetType().Name + " / " + ex.Message);
+            }
+            finally
+            {
+                if (connected) onConnection?.Invoke(false, "连接已断开，等待重新订阅");
+            }
+            if (stop.IsCancellationRequested) break;
+            var delay = TimeSpan.FromSeconds(Math.Min(45, (int)Math.Pow(2, Math.Min(++attempt, 5))));
+            try { await Task.Delay(delay, stop).ConfigureAwait(false); }
+            catch (OperationCanceledException) { break; }
+        }
+    }
+}
+// </YANZI_HA_EVENT_STREAM>
+
 public sealed class RiceCookerFinishMonitor
 {
     private readonly string _linkPath;
@@ -347,17 +539,12 @@ public sealed class RiceCookerFinishMonitor
         _warmObservedAt = default;
     }
 
-    // Require recent cooking completion, observed keep-warm, a native MiOT
-    // 'cancel_' run-status event, and the keep-warm -> standby transition.
-    // A timeout/automatic stop changing the sensor alone must not start video.
-    internal bool ObserveStatus(
-        string status, string completionEvent, string runEventState,
-        string runEventPayload, DateTimeOffset now)
+    internal bool ObserveStatus(string status, string completionEvent,
+        string runEventState, string runEventPayload, DateTimeOffset now)
     {
         bool recentCompletion = DateTimeOffset.TryParse(completionEvent,
             CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var completed)
             && completed <= now.AddMinutes(1) && completed >= now.AddHours(-8);
-
         if (status == "保温中")
         {
             if (_lastStatus != status || _armedCompletion != completionEvent || !_armed)
@@ -367,7 +554,6 @@ public sealed class RiceCookerFinishMonitor
             _lastStatus = status;
             return false;
         }
-
         bool nativeCancel = runEventPayload.StartsWith("cancel_", StringComparison.OrdinalIgnoreCase)
             && DateTimeOffset.TryParse(runEventState, CultureInfo.InvariantCulture,
                 DateTimeStyles.AssumeUniversal, out var canceledAt)
@@ -375,11 +561,9 @@ public sealed class RiceCookerFinishMonitor
             && canceledAt >= completed
             && canceledAt <= now.AddMinutes(1)
             && canceledAt >= now.AddMinutes(-5);
-
         bool confirmed = status == "待机中" && _lastStatus == "保温中"
             && _armed && recentCompletion && nativeCancel
             && string.Equals(_armedCompletion, completionEvent, StringComparison.Ordinal);
-
         _armed = false;
         _armedCompletion = "";
         _warmObservedAt = default;
@@ -399,73 +583,99 @@ public sealed class RiceCookerFinishMonitor
         return "";
     }
 
-    public async Task<bool> CheckAsync()
+    private static bool ValidEntity(string id, string prefix) =>
+        id.StartsWith(prefix, StringComparison.Ordinal) && id.Length > prefix.Length
+        && id.Length <= 160 && id[prefix.Length..].All(ch =>
+            (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '_');
+
+    public YanziHaSubscriptionSettings? LoadConnection()
     {
-        if (!File.Exists(_linkPath) || !File.Exists(_homeLinkPath)) return false;
+        if (!File.Exists(_linkPath) || !File.Exists(_homeLinkPath)) return null;
         using var link = JsonDocument.Parse(File.ReadAllText(_linkPath, Encoding.UTF8));
         if (!link.RootElement.TryGetProperty("enabled", out var enabled)
-            || enabled.ValueKind != JsonValueKind.True) return false;
-        var entityId = link.RootElement.GetProperty("eventEntityId").GetString() ?? "";
-        var statusEntityId = link.RootElement.GetProperty("statusEntityId").GetString() ?? "";
-        var runStatusEventId = link.RootElement.GetProperty("runStatusEventId").GetString() ?? "";
-        if (!statusEntityId.StartsWith("sensor.", StringComparison.Ordinal)
-            || statusEntityId.Length > 160 || statusEntityId.Length <= 7
-            || statusEntityId[7..].Any(ch => !(ch >= 'a' && ch <= 'z') &&
-                                            !(ch >= '0' && ch <= '9') && ch != '_'))
-            throw new InvalidOperationException("电饭煲状态实体 ID 无效。");
-        foreach (var eventId in new[] { entityId, runStatusEventId })
-        {
-            if (!eventId.StartsWith("event.", StringComparison.Ordinal)
-                || eventId.Length > 160 || eventId.Length <= 6
-                || eventId[6..].Any(ch => !(ch >= 'a' && ch <= 'z') &&
-                                         !(ch >= '0' && ch <= '9') && ch != '_'))
-                throw new InvalidOperationException("电饭煲事件实体 ID 无效。");
-        }
+            || enabled.ValueKind != JsonValueKind.True) return null;
+        string completed = link.RootElement.GetProperty("eventEntityId").GetString() ?? "";
+        string status = link.RootElement.GetProperty("statusEntityId").GetString() ?? "";
+        string runStatus = link.RootElement.GetProperty("runStatusEventId").GetString() ?? "";
+        if (!ValidEntity(completed, "event.") || !ValidEntity(status, "sensor.")
+            || !ValidEntity(runStatus, "event."))
+            throw new InvalidOperationException("Home Assistant 实体 ID 不合法");
 
         using var home = JsonDocument.Parse(File.ReadAllText(_homeLinkPath, Encoding.UTF8));
         var root = home.RootElement;
-        if (!root.GetProperty("Enabled").GetBoolean()) return false;
+        if (!root.GetProperty("Enabled").GetBoolean()) return null;
         var url = root.GetProperty("HomeAssistantUrl").GetString()?.TrimEnd('/') ?? "";
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var baseUri)
-            || (baseUri.Scheme != Uri.UriSchemeHttp && baseUri.Scheme != Uri.UriSchemeHttps)
-            || !string.IsNullOrEmpty(baseUri.UserInfo) || baseUri.AbsolutePath != "/"
-            || !string.IsNullOrEmpty(baseUri.Query) || !string.IsNullOrEmpty(baseUri.Fragment))
-            throw new InvalidOperationException("Home Assistant 地址无效。");
-
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+            || !string.IsNullOrEmpty(uri.UserInfo) || uri.AbsolutePath != "/"
+            || !string.IsNullOrEmpty(uri.Query) || !string.IsNullOrEmpty(uri.Fragment))
+            throw new InvalidOperationException("Home Assistant 连接地址无效");
         var cipher = Convert.FromBase64String(root.GetProperty("ProtectedToken").GetString() ?? "");
-        var plain = ProtectedData.Unprotect(cipher, Encoding.UTF8.GetBytes("YanziShutdownLight-v1"),
+        var clear = ProtectedData.Unprotect(cipher, Encoding.UTF8.GetBytes("YanziShutdownLight-v1"),
             DataProtectionScope.CurrentUser);
         string token;
-        try { token = Encoding.UTF8.GetString(plain); }
-        finally { CryptographicOperations.ZeroMemory(plain); }
+        try { token = Encoding.UTF8.GetString(clear); }
+        finally { CryptographicOperations.ZeroMemory(clear); }
+        return new YanziHaSubscriptionSettings(uri, token, new[] { completed, status, runStatus });
+    }
 
-        using var http = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })
+    public async Task WatchAsync(Func<Task> onCanceled, Action<string> log, CancellationToken stop)
+    {
+        var data = new Dictionary<string, YanziHaEntityUpdate>(StringComparer.Ordinal);
+        DateTime lastError = DateTime.MinValue;
+        while (!stop.IsCancellationRequested)
         {
-            Timeout = TimeSpan.FromSeconds(6)
-        };
-        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        async Task<JsonElement> ReadEntity(string id)
-        {
-            using var response = await http.GetAsync(
-                new Uri(baseUri.GetLeftPart(UriPartial.Authority) + "/api/states/" +
-                        Uri.EscapeDataString(id))).ConfigureAwait(false);
-            response.EnsureSuccessStatusCode();
-            using var json = JsonDocument.Parse(
-                await response.Content.ReadAsStringAsync().ConfigureAwait(false));
-            return json.RootElement.Clone();
+            try
+            {
+                var config = LoadConnection();
+                if (config is not null)
+                {
+                    string finishedId = config.EntityIds[0];
+                    string statusId = config.EntityIds[1];
+                    string runId = config.EntityIds[2];
+                    await YanziHaStateChangedStream.SubscribeAsync(
+                        config.Uri, config.Token, config.EntityIds,
+                        async change =>
+                        {
+                            data[change.EntityId] = change;
+                            if (!data.TryGetValue(finishedId, out var finished)
+                                || !data.TryGetValue(statusId, out var status)
+                                || !data.TryGetValue(runId, out var run)) return;
+                            bool trigger = ObserveStatus(status.State, finished.State, run.State,
+                                ExtractRunStatus(run.Attributes), DateTimeOffset.Now);
+                            if (trigger && !change.IsBaseline) await onCanceled().ConfigureAwait(false);
+                        },
+                        (isOpen, info) =>
+                        {
+                            if (!isOpen)
+                            {
+                                data.Clear();
+                                ResetConnection();
+                                if (DateTime.Now - lastError > TimeSpan.FromMinutes(5))
+                                {
+                                    lastError = DateTime.Now;
+                                    log("HA 订阅状态：" + info);
+                                }
+                            }
+                            else log("HA WebSocket 已连接，监听三个电饭煲实体。");
+                        },
+                        stop).ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException) when (stop.IsCancellationRequested) { break; }
+            catch (Exception ex)
+            {
+                ResetConnection();
+                data.Clear();
+                if (DateTime.Now - lastError > TimeSpan.FromMinutes(5))
+                {
+                    lastError = DateTime.Now;
+                    log("HA 事件监听异常：" + ex.GetType().Name + " / " + ex.Message);
+                }
+            }
+            try { await Task.Delay(TimeSpan.FromSeconds(30), stop).ConfigureAwait(false); }
+            catch (OperationCanceledException) { break; }
         }
-
-        var completedAt = (await ReadEntity(entityId).ConfigureAwait(false))
-            .GetProperty("state").GetString() ?? "";
-        var runEvent = await ReadEntity(runStatusEventId).ConfigureAwait(false);
-        var runEventState = runEvent.GetProperty("state").GetString() ?? "";
-        string payload = "";
-        if (runEvent.TryGetProperty("attributes", out var attributes))
-            payload = ExtractRunStatus(attributes);
-        var status = (await ReadEntity(statusEntityId).ConfigureAwait(false))
-            .GetProperty("state").GetString() ?? "";
-        return ObserveStatus(status, completedAt, runEventState,
-            payload, DateTimeOffset.Now);
     }
 }
 

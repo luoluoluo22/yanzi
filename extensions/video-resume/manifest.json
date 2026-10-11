@@ -1,9 +1,9 @@
 {
   "id": "video-resume",
   "name": "看视频",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "category": "生活工具",
-  "description": "午晚时段保留看视频按钮；电饭煲完成烹饪并保温后，检测原生 cancel 事件及待机状态直接续播。",
+  "description": "午晚定时保留按钮；米家电饭煲通过 Home Assistant WebSocket 订阅取消保温事件并自动续播。",
   "keywords": [
     "看视频",
     "续播",
