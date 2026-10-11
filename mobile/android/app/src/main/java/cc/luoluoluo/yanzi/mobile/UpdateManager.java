@@ -125,6 +125,27 @@ public final class UpdateManager {
                                 }
                             }
 
+                            // Keep 0.x / 1.0.0 free. Later updates require a valid VIP
+                            // at release time, checked against the server's current records.
+                            if (!MobileUpdateEntitlement.isFreeVersion(latestVersion) &&
+                                compareVersions(getLocalVersionName(activity), latestVersion) < 0 &&
+                                !hasPaidUpdateEntitlement(activity, latestVersion,
+                                    latestAndroidRelease.optString("published_at", ""))) {
+                                log(activity, "当前账号没有获得此版本的升级资格，跳过 APK 下载");
+                                if (isManual || manualCheckRequested) {
+                                    new Handler(Looper.getMainLooper()).post(() -> {
+                                        if (activity.isFinishing() || activity.isDestroyed()) return;
+                                        new AlertDialog.Builder(activity)
+                                            .setTitle("新版本需要 VIP 升级权益")
+                                            .setMessage("本地功能仍可继续使用。购买或激活 VIP 后，可获得维护期内发布的新版本。")
+                                            .setPositiveButton("购买或激活 VIP", (d,w) -> activity.startActivity(
+                                                new Intent(Intent.ACTION_VIEW, Uri.parse("https://sync.luoluoluo.cc.cd/upgrade"))))
+                                            .setNegativeButton("稍后", null).show();
+                                    });
+                                }
+                                return;
+                            }
+
                             if (apkDownloadUrl.isEmpty() && activity.getPackageName().endsWith(".dev")) return;
                             if (apkDownloadUrl.isEmpty()) {
                                 apkDownloadUrl = "https://github.com/luoluoluo22/yanzi/releases/download/" + tag + "/yanzi-mobile-" + latestVersion + ".apk";
@@ -185,6 +206,39 @@ public final class UpdateManager {
                 }
             }
         });
+    }
+
+    private static boolean hasPaidUpdateEntitlement(Context context, String targetVersion, String releasedAt) {
+        MobileSessionStore.Snapshot snapshot = MobileSessionStore.snapshot(context);
+        if (snapshot.token.isEmpty() || releasedAt == null || releasedAt.trim().isEmpty()) return false;
+        HttpURLConnection connection = null;
+        try {
+            URL url = new URL(snapshot.baseUrl + "/v1/user/cloud-access");
+            connection = MobileNetworkRouting.openCloudConnection(url);
+            connection.setConnectTimeout(10000);
+            connection.setReadTimeout(10000);
+            connection.setRequestProperty("Authorization", "Bearer " + snapshot.token);
+            connection.setRequestProperty("X-Yanzi-Client", "mobile");
+            connection.setRequestProperty("X-Yanzi-Client-Version", BuildConfig.VERSION_NAME);
+            if (connection.getResponseCode() != 200) return false;
+            byte[] buffer = new byte[2048];
+            java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream();
+            try (InputStream stream = connection.getInputStream()) {
+                int count;
+                while ((count = stream.read(buffer)) != -1) {
+                    if (output.size() + count > 8192) return false;
+                    output.write(buffer, 0, count);
+                }
+            }
+            if (output.size() == 0) return false;
+            JSONObject response = new JSONObject(output.toString("UTF-8"));
+            snapshot.requireCurrent();
+            return MobileUpdateEntitlement.mayInstall(targetVersion,releasedAt,
+                response.optString("vipType", ""),response.optString("vipExpireAt", ""));
+        } catch (Exception error) {
+            log(context, "验证 VIP 更新资格失败，暂不下载付费版本");
+            return false;
+        } finally { if (connection != null) connection.disconnect(); }
     }
 
     private static boolean isApkAlreadyDownloaded(Context context, String latestVersion) {
