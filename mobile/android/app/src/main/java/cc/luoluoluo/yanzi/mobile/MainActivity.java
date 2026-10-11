@@ -2729,6 +2729,8 @@ extends Activity {
 
         LinearLayout notifyRow = YanziUiKit.row(this, "bell-outline", YanziUiKit.ORANGE, "消息通知", "声音、振动、横幅与锁屏提醒", this::openNotificationSettings);
         this.profileTabPage.addView((View)notifyRow, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
+        LinearLayout voiceMemoryRow = YanziUiKit.row(this, "microphone", YanziUiKit.BLUE, "声音记忆", "本机录音 · 锁屏持续 · 分段保存", () -> startActivity(new Intent(this, VoiceMemoryActivity.class)));
+        this.profileTabPage.addView((View)voiceMemoryRow, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
 
         LinearLayout itemAccessibility = YanziUiKit.row(this, "accessibility", YanziUiKit.BLUE, "无障碍服务", "只在自动化需要时开启", this::openAccessibilitySettings);
         this.profileTabPage.addView((View)itemAccessibility, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));

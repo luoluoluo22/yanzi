@@ -36,6 +36,8 @@ android {
             versionName = it
         }
         manifestPlaceholders["fcmEnabled"] = fcmEnabled.toString()
+        manifestPlaceholders["voiceMemoryActivityExported"] = "false"
+        manifestPlaceholders["voiceMemoryAppLabel"] = "@string/app_name"
         if (fcmEnabled) {
             val config = pushConfigFile!!.readText().replace("\\", "\\\\").replace("\"", "\\\"").replace("\r", "").replace("\n", "")
             buildConfigField("String", "FCM_CONFIG", "\"$config\"")
@@ -92,7 +94,11 @@ android {
         getByName("debug") { buildConfigField("boolean", "BUNDLED_WAKE_MODEL", bundledWakeModel.toString()) }
         create("dev") {
             initWith(getByName("debug"))
-            applicationIdSuffix = ".dev"
+            applicationIdSuffix = providers.gradleProperty("YANZI_ANDROID_DEV_SUFFIX").orNull ?: ".dev"
+            if (applicationIdSuffix == ".voiceqa") {
+                manifestPlaceholders["voiceMemoryActivityExported"] = "true"
+                manifestPlaceholders["voiceMemoryAppLabel"] = "燕记录音测试"
+            }
             versionNameSuffix = "-dev"
             buildConfigField("boolean", "BUNDLED_WAKE_MODEL", bundledWakeModel.toString())
             isDebuggable = true
