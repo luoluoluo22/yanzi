@@ -1,3 +1,4 @@
+using OpenQuickHost.Sync;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -62,6 +63,9 @@ public static class ScriptExtensionRunner
 
     public static bool CanExecute(CommandItem command)
     {
+        if (command.Source == CommandSource.LocalExtension &&
+            !ExtensionDevicePolicy.CanRun(command.ExtensionId))
+            return false;
         if (string.IsNullOrWhiteSpace(command.Runtime) || string.IsNullOrWhiteSpace(command.ExtensionDirectoryPath))
         {
             return false;
@@ -112,6 +116,8 @@ public static class ScriptExtensionRunner
         Action<string>? onOutputLine,
         CancellationToken cancellationToken = default)
     {
+        if (command.Source == CommandSource.LocalExtension && !ExtensionDevicePolicy.CanRun(command.ExtensionId))
+            return new ScriptExecutionResult(false, string.Empty, "此小程序未授权在当前设备运行。", -1);
         if (HostRuntimeProfile.IsShell)
         {
             try
@@ -1764,6 +1770,8 @@ public static class ScriptExtensionRunner
 
     private static ScriptExecutionContext CreateContext(CommandItem command, string? inputText, string launchSource, IReadOnlyDictionary<string, string>? state)
     {
+        if (command.Source == CommandSource.LocalExtension && !ExtensionDevicePolicy.CanRun(command.ExtensionId))
+            throw new InvalidOperationException("此小程序仅允许在指定设备上运行。");
         var settings = AppSettingsStore.Load();
         var agentApiBaseUrl = settings.EnableAgentApi
             ? $"http://127.0.0.1:{settings.AgentApiPort}"

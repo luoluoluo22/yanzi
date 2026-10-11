@@ -6,6 +6,8 @@ public static class YanziExtensionCapabilityProvider
 {
     public static IEnumerable<YanziCapabilityProviderDefinition> Create()
     {
+        yield return new(){Name="extension.device-policies",Description="列出所有已安装小程序的设备专有、包同步和数据隔离策略",Permissions=["extension.read"], Category="extensions",
+            InputSchema=YanziCapabilitySchema.EmptyObject,OutputSchema=YanziCapabilitySchema.Parse("""{"type":"object"}"""),Handler=DevicePoliciesAsync};
         yield return new(){Name="extension.list",Description="列出已安装燕子小程序及运行状态",Permissions=["extension.read"], Category="extensions",
             InputSchema=YanziCapabilitySchema.EmptyObject,OutputSchema=YanziCapabilitySchema.Parse("""{"type":"object","properties":{"items":{"type":"array"}},"required":["items"]}"""),Handler=ListAsync};
         yield return new(){Name="extension.status",Description="查询指定燕子小程序是否已安装、版本及运行状态",Permissions=["extension.read"], Category="extensions",
@@ -28,6 +30,23 @@ public static class YanziExtensionCapabilityProvider
         return found.Length switch{1=>found[0],0=>throw new KeyNotFoundException("未找到小程序："+query),_=>throw new ArgumentException("小程序名称不唯一："+query)};
     }
 
+    private static Task<object?> DevicePoliciesAsync(object? _)
+    {
+        var deviceId = OpenQuickHost.Sync.ExtensionDevicePolicy.CurrentDeviceId;
+        var entries = OpenQuickHost.Sync.LocalExtensionCatalog.LoadEntries().Select(entry =>
+        {
+            var p = entry.Manifest.DevicePolicy ?? new OpenQuickHost.Sync.LocalExtensionDevicePolicy();
+            return new
+            {
+                id = entry.Manifest.Id, name = entry.Manifest.Name, version = entry.Manifest.Version,
+                mode = p.Mode, deviceIds = p.DeviceIds, packageSync = p.PackageSync,
+                dataSync = p.DataSync, visible = p.AllowsDevice(deviceId),
+                packageUpload = p.AllowsDevice(deviceId) && p.SyncsPackage,
+                cloudDataEnabled = p.AllowsDevice(deviceId) && p.SyncsData
+            };
+        }).ToArray();
+        return Task.FromResult<object?>(new { deviceId, items = entries });
+    }
     private static Task<object?> ListAsync(object? _)
     {
         var running=RunningExtensionRegistry.GetSnapshot().Select(x=>x.ExtensionId).ToHashSet(StringComparer.OrdinalIgnoreCase);

@@ -212,7 +212,10 @@ public static class ExtensionPackageService
         // 内联脚本执行时生成的临时文件不属于小程序内容。将其打包会让每次运行都产生新哈希并重复上传。
         if (segments.Length == 1 &&
             (segments[0].StartsWith(".yanzi-inline-", StringComparison.OrdinalIgnoreCase) ||
-             segments[0].Equals("debug.log", StringComparison.OrdinalIgnoreCase)))
+             segments[0].Equals("debug.log", StringComparison.OrdinalIgnoreCase) ||
+             segments[0].Equals("rice-cooker-link.json", StringComparison.OrdinalIgnoreCase) ||
+             segments[0].EndsWith(".local.json", StringComparison.OrdinalIgnoreCase) ||
+             segments[0].EndsWith(".user.json", StringComparison.OrdinalIgnoreCase)))
         {
             return false;
         }

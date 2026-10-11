@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
@@ -55,6 +55,8 @@ public sealed partial class PersonalSyncService
         string key,
         CancellationToken cancellationToken = default)
     {
+        if (!ExtensionDevicePolicy.ShouldSyncData(extensionId))
+            return new ExtensionDataReadResult(null, null, false);
         var objectBytes = await _backend.TryReadBytesAsync(
             ExtensionDataObjectStore.BuildObjectPath(extensionId, key),
             cancellationToken);
@@ -102,6 +104,8 @@ public sealed partial class PersonalSyncService
         bool deleted,
         CancellationToken cancellationToken)
     {
+        if (!ExtensionDevicePolicy.ShouldSyncData(extensionId))
+            throw new InvalidOperationException("设备独立数据不能写入个人云端。");
         var currentBytes = await _backend.TryReadBytesAsync(
             ExtensionDataObjectStore.BuildObjectPath(extensionId, key),
             cancellationToken);
@@ -1468,8 +1472,9 @@ public sealed partial class PersonalSyncService
         var packageBytesByExtensionId = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
         var existingIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var command in LocalExtensionCatalog.LoadCommands())
+        foreach (var command in LocalExtensionCatalog.LoadAllCommands())
         {
+            if (!ExtensionDevicePolicy.ShouldSyncPackage(command.ExtensionId)) continue;
             if (string.IsNullOrWhiteSpace(command.ExtensionDirectoryPath) || !Directory.Exists(command.ExtensionDirectoryPath))
             {
                 continue;
@@ -1660,6 +1665,9 @@ public sealed partial class PersonalSyncService
     private async Task<bool> ApplyRemoteEntryAsync(WebDavSyncEntry entry, CancellationToken cancellationToken)
     {
         var localDirectory = SyncPackageSafety.ResolveExtensionDirectory(HostAssets.ExtensionsPath, entry.ExtensionId);
+        // Locally private packages must not be replaced or removed by remote sync.
+        if (File.Exists(Path.Combine(localDirectory, "manifest.json")) &&
+            !ExtensionDevicePolicy.ShouldSyncPackage(entry.ExtensionId)) return false;
         if (entry.Purged)
         {
             var changed = false;
@@ -1705,6 +1713,17 @@ public sealed partial class PersonalSyncService
             throw new InvalidDataException($"远端扩展包无效：{entry.PackagePath}，detail={packageError}");
         }
 
+        // An account-wide index can list packages targeted to another computer.
+        // Verify the embedded policy before touching this machine's installation.
+        using (var zipStream = new MemoryStream(packageBytes, writable: false))
+        using (var zip = new ZipArchive(zipStream, ZipArchiveMode.Read))
+        {
+            var manifestEntry = zip.GetEntry("manifest.json");
+            if (manifestEntry == null) throw new InvalidDataException("扩展包缺少 manifest.json。");
+            using var reader = new StreamReader(manifestEntry.Open(), Encoding.UTF8);
+            var manifestText = await reader.ReadToEndAsync(cancellationToken);
+            if (!ExtensionDevicePolicy.CanSyncInstall(manifestText)) return false;
+        }
         await ReplaceDirectoryFromPackageAsync(Path.Combine(HostAssets.ExtensionsPath, entry.ExtensionId), packageBytes, cancellationToken);
         return true;
     }

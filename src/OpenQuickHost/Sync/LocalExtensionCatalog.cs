@@ -156,12 +156,16 @@ public static class LocalExtensionCatalog
         }
     }
 
-    public static IReadOnlyList<CommandItem> LoadCommands()
-    {
-        return LoadEntries()
-            .Select(CreateCommand)
-            .ToList();
-    }
+    public static IReadOnlyList<CommandItem> LoadCommands() =>
+        LoadEntries()
+            .Where(entry => (entry.Manifest.DevicePolicy ?? new LocalExtensionDevicePolicy())
+                .AllowsDevice(ExtensionDevicePolicy.CurrentDeviceId))
+            .Select(CreateCommand).ToList();
+
+    // Include locally installed, hidden packages only when constructing sync state,
+    // never when displaying commands or registering shortcuts/startup tasks.
+    public static IReadOnlyList<CommandItem> LoadAllCommands() =>
+        LoadEntries().Select(CreateCommand).ToList();
 
     public static CommandItem CreateCommand(LocalExtensionCatalogEntry entry)
     {
@@ -778,6 +782,7 @@ public static class YanziAction
             Version = manifest.Version,
             Category = manifest.Category,
             Description = manifest.Description,
+            DevicePolicy = manifest.DevicePolicy,
             Keywords = manifest.Keywords,
             OpenTarget = manifest.OpenTarget,
             Icon = manifest.Icon,
@@ -879,6 +884,7 @@ public static class YanziAction
             Version = "0.1.0",
             Category = "快捷方式",
             Description = "示例：打开当前用户桌面目录。",
+            DevicePolicy = new LocalExtensionDevicePolicy(),
             Keywords = ["桌面", "desktop", "打开"],
             OpenTarget = "shell:Desktop",
             ToggleWindow = true,
@@ -1154,6 +1160,9 @@ public sealed record LocalExtensionManifest
     public string? Category { get; init; }
 
     public string? Description { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public LocalExtensionDevicePolicy? DevicePolicy { get; init; }
 
     public string[]? Keywords { get; init; }
 
