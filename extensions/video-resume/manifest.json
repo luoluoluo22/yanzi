@@ -1,0 +1,35 @@
+{
+  "id": "video-resume",
+  "name": "看视频",
+  "version": "1.4.0",
+  "category": "生活工具",
+  "description": "午晚定时保留按钮；米家电饭煲通过 Home Assistant WebSocket 订阅取消保温事件并自动续播。",
+  "keywords": [
+    "看视频",
+    "续播",
+    "视频",
+    "腾讯视频",
+    "历史记录"
+  ],
+  "toggleWindow": false,
+  "queryPrefixes": [
+    "看视频",
+    "续播"
+  ],
+  "icon": "mdi:play-circle-outline",
+  "accentHex": "#18181B",
+  "runtime": "csharp",
+  "uiMode": "native-window",
+  "entryMode": "entry",
+  "entry": "main.cs",
+  "permissions": [
+    "context.read"
+  ],
+  "startup": {
+    "mode": "on_app_launch",
+    "schedule": null
+  },
+  "runAsAdmin": false,
+  "waitForExit": false,
+  "isPublished": false
+}
