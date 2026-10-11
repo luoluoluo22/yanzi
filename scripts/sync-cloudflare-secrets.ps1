@@ -1,7 +1,15 @@
-﻿param (
+param (
     [string]$AccountId = "cc88cc0084b504db93ccd9462af37212",
-    [string]$ScriptName = "yanzi-sync"
+    [string]$ScriptName = "yanzi-sync",
+    [switch]$ConfirmProductionSecretSync
 )
+
+# Never mutate production secrets as a side effect of Git push.
+# A human/operator must opt in explicitly when rotating a credential.
+if (-not $ConfirmProductionSecretSync) {
+    Write-Host "[Cloudflare Sync] Skipped; production secret updates require -ConfirmProductionSecretSync."
+    exit 0
+}
 
 $ErrorActionPreference = "Continue"
 $rootDir = Resolve-Path (Join-Path $PSScriptRoot "..")

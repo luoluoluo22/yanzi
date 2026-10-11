@@ -11,6 +11,12 @@ This file records the Cloudflare deployment details that were verified during th
 - Main entry: `cloudflare/src/index.js`
 - Root config used by Cloudflare Builds: `wrangler.jsonc`
 - Backend folder config: `cloudflare/wrangler.toml`
+- **Critical:** both root `wrangler.jsonc` and backend `wrangler.toml` must preserve
+  `DEVICE_RELAY`, `LOGIN_RATE_LIMITER`, `EXPORT_RATE_LIMITER`, scheduled triggers,
+  and observability. Wrangler may select the root config even from a nested folder.
+  Deploy explicitly with `--config cloudflare/wrangler.toml` from repository root,
+  and run `node --test cloudflare/tests/wrangler-config-parity.test.mjs` before deploy.
+  Verify deployed version bindings after deployment; a 200 `/health` alone is insufficient.
 
 ## Cloudflare Builds (Auto Deployment)
 
@@ -21,7 +27,7 @@ The GitHub repository `luoluoluo22/yanzi` is connected directly to Cloudflare. P
 Use these Build settings for the backend Worker (`openquickhost-sync`) in the Cloudflare dashboard:
 
 - Build command: empty
-- Deploy command: `npx wrangler deploy`
+- Deploy command: `npx wrangler deploy --config cloudflare/wrangler.toml`
 - Root directory: empty
 - Production branch: `main`
 - Path includes: `cloudflare/*`, `wrangler.jsonc`
