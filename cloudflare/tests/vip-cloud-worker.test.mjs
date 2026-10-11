@@ -92,6 +92,11 @@ test('health, public upgrade and Android update bundle discovery do not query D1
  const upgrade=await f.request('/upgrade');
  assert.equal(upgrade.status,200);
  assert.match(await upgrade.text(),/VIP/);
+ const html=await (await f.request('/upgrade')).text();
+ assert.match(html,/script src="\/upgrade\.js"/);
+ const source=await f.request('/upgrade.js');
+ assert.equal(source.status,200);
+ assert.match(await source.text(),/\/v1\/user\/cloud-export/);
  const publicRelease=await f.request('/downloads/android/releases.json');
  assert.equal(publicRelease.status,404);
  assert.deepEqual(f.queries,[]);

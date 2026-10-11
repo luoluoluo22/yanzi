@@ -1,5 +1,6 @@
 import { createSyncApi } from './sync-api.js';
 import { isCloudServicePath, needsTopLevelCloudAuth, isVipActive, readVipEntitlement, passesLoginRateLimit } from './cloud-access-policy.js';
+import { upgradePageHtml, upgradePageScript } from './upgrade-page.js';
 import { cleanupEnvironment } from './device-environment.js';
 import { createDeviceApi } from './device-api.js';
 import { createDeviceRepository } from './device-repository.js';
@@ -233,10 +234,14 @@ async function handleRequest(request, env, ctx) {
   }
 
   if (url.pathname === '/upgrade' && request.method === 'GET') {
-    const html = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>燕子 VIP 云服务</title><style>body{background:#141821;color:#eaf0f6;font:16px system-ui,-apple-system,sans-serif;margin:0;padding:8vh 24px}main{max-width:640px;margin:auto}h1{font-size:28px}p{line-height:1.8;color:#ccd4df}a.button{display:inline-block;padding:12px 22px;background:#4378f0;color:white;border-radius:12px;text-decoration:none;margin:12px 0}small{color:#a6b3c3}</style><main><h1>燕子 VIP 云服务</h1><p>燕子本地基础功能和已获得的软件版本可以继续使用。云同步、跨设备消息及其他持续使用服务器资源的功能，需要有效 VIP 会员。</p><p>开通或续费后，在 Windows 燕子设置的账号区域选择“升级 VIP · 开通云服务”，输入卡密激活。会员资格会保存在云端账号，可在不同设备验证。</p><a class="button" href="https://wzyp.cn/shop/4AOUCE2B">查看会员升级选项</a><p><small>旧版客户端如果持续提示同步失败，可以先关闭云同步功能；您的本地数据不会因此自动删除。云端旧同步对象支持在登录后申请只读导出。</small></p></main></html>`;
-    return new Response(html, {headers:{'content-type':'text/html; charset=utf-8',
-      'content-security-policy':"default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'",
+    return new Response(upgradePageHtml, {headers:{'content-type':'text/html; charset=utf-8',
+      'content-security-policy':"default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'",
       'cache-control':'public, max-age=3600'}});
+  }
+  if (url.pathname === '/upgrade.js' && request.method === 'GET') {
+    return new Response(upgradePageScript, {headers:{'content-type':'application/javascript; charset=utf-8',
+      'cache-control':'public, max-age=3600',
+      'x-content-type-options':'nosniff'}});
   }
 
   if (url.pathname === "/health") {
