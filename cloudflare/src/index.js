@@ -216,7 +216,7 @@ async function handleRequest(request, env, ctx) {
     headers.set("etag", object.httpEtag || "");
     if (!headers.has("Content-Type")) headers.set("Content-Type", key.endsWith('.apk')
       ? "application/vnd.android.package-archive" : key.endsWith('.json') ? "application/json; charset=utf-8" : "application/zip");
-    headers.set("Cache-Control", key.endsWith('releases.json') ? "no-store" : "public, max-age=3600");
+    headers.set("Cache-Control", key.endsWith('releases.json') ? "public, max-age=60" : "public, max-age=3600");
     headers.set("Access-Control-Allow-Origin", "*");
     return new Response(object.body, { headers });
   }
@@ -237,8 +237,9 @@ async function handleRequest(request, env, ctx) {
   }
 
   if (url.pathname === "/health") {
-    const result = await env.DB.prepare("select datetime('now') as now").first();
-    return json({ ok: true, now: result?.now ?? null, foundationRevision: "2026-10-03-domains-v1", deviceEnvironmentProtocol: 1 });
+    // Never spend a D1 read for an unauthenticated health probe.
+    // Database availability is verified separately by protected internal checks.
+    return json({ ok: true, now: isoNow(), foundationRevision: "2026-10-03-domains-v1", deviceEnvironmentProtocol: 1 });
   }
 
   if (url.pathname === "/v1/auth/register" && request.method === "POST") {
@@ -1040,7 +1041,9 @@ async function handleRequest(request, env, ctx) {
         platforms: platforms
       };
 
-      return withCors(json(payload));
+      const result = withCors(json(payload));
+      result.headers.set('cache-control', 'public, max-age=300');
+      return result;
     } catch (err) {
       console.error("Fetch GitHub releases failed:", err);
       // 容错：如果 GitHub 接口报错，返回兜底配置
