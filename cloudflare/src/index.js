@@ -68,6 +68,18 @@ const PUBLIC_STORE_EXTENSION_IDS_SQL = PUBLIC_STORE_EXTENSIONS
 
 // Request-scoped attribution: only authenticated users, never raw identifiers.
 const requestIdentity = new WeakMap();
+const loginAttemptIdentity = new WeakMap();
+const TELEMETRY_ERROR_CODES = new Set(['user_not_found', 'invalid_credentials', 'login_rate_limited',
+  'vip_required', 'unauthorized', 'token_expired', 'device_credential_revoked', 'device_scope_denied',
+  'not_found', 'internal_error', 'export_rate_limited']);
+function safeClientVersion(value) {
+  const version = String(value || '').trim().toLowerCase();
+  return /^\d{1,4}(?:\.\d{1,4}){1,3}(?:[-.][a-z0-9]{1,16})?$/.test(version) ? version : 'unknown';
+}
+function safeDeviceClaim(request) {
+  const value = request.headers.get('x-yanzi-device-id') || '';
+  return /^[a-zA-Z0-9_-]{8,100}$/.test(value) ? value : null;
+}
 const cloudVipCache = new Map();
 async function cachedCloudVipRecord(env, userId) {
   const now = Date.now();
@@ -131,6 +143,7 @@ export default {
     const client = ["desktop", "server", "android", "mobile", "web"].includes(rawClient) ? rawClient : "unknown";
     let status = 500;
     let category = "server_error";
+    let failureCode = null;
     try {
       const response = await handleRequest(request, env, ctx);
       status = response.status;
@@ -139,6 +152,7 @@ export default {
     } catch (error) {
       if (error instanceof HttpError || error instanceof MessagingError) {
         status = error.status;
+        failureCode = TELEMETRY_ERROR_CODES.has(error.code) ? error.code : 'other_handled_error';
         category = "handled_error";
         const rejected = json(
           {
@@ -155,6 +169,7 @@ export default {
         return withCors(rejected);
       }
 
+      failureCode = 'internal_error';
       return withCors(
         json(
           {
@@ -166,11 +181,21 @@ export default {
       );
     } finally {
       // No credentials, query strings, message bodies or device identifiers.
-      if (status >= 400 || Math.random() < 0.01) {
+      const successSampleRate = 0.1;
+      if (status >= 400 || Math.random() < successSampleRate) {
+        const auth = requestIdentity.get(request);
+        const claimedDevice = safeDeviceClaim(request);
         console.log(JSON.stringify({ event: "yanzi_request", method: request.method,
-          route: route.slice(0, 160), client, status, category, duration_ms: Date.now() - started,
-          user_key: await anonymousKey(env, "user", requestIdentity.get(request)?.userId),
-          device_key: await anonymousKey(env, "device", requestIdentity.get(request)?.deviceId ? `${requestIdentity.get(request).userId}:${requestIdentity.get(request).deviceId}` : null) }));
+          route: route.slice(0, 160), client,
+          client_version: safeClientVersion(request.headers.get('x-yanzi-client-version')),
+          status, category, failure_code: failureCode, duration_ms: Date.now() - started,
+          sample_rate: status >= 400 ? 1 : successSampleRate,
+          user_key: await anonymousKey(env, "user", auth?.userId),
+          verified_device_key: await anonymousKey(env, "device", auth?.deviceId && auth?.userId ? `${auth.userId}:${auth.deviceId}` : null),
+          claimed_device_key: await anonymousKey(env, "device-claim", claimedDevice),
+          attempted_account_key: await anonymousKey(env, "login-attempt", loginAttemptIdentity.get(request)),
+          network_key: await anonymousKey(env, 'network-' + new Date().toISOString().slice(0, 10),
+            request.headers.get('cf-connecting-ip')) }));
       }
     }
   }
@@ -410,6 +435,8 @@ async function handleRequest(request, env, ctx) {
   if (url.pathname === "/v1/auth/login" && request.method === "POST") {
     const payload = await readJson(request);
     const email = normalizeEmail(payload.email || payload.username);
+    // Attempted account is NOT an authenticated user; only emit its keyed digest.
+    loginAttemptIdentity.set(request, email);
     await limitLoginBeforeDatabase(request, env, email);
     const password = validatePassword(payload.password);
     const authVersion = payload.authVersion || "";
@@ -4506,7 +4533,7 @@ function withCors(response) {
   response.headers.set("access-control-allow-methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
   response.headers.set(
     "access-control-allow-headers",
-    "content-type,authorization,accept,origin,x-yanzi-client,x-yanzi-client-version,x-api-version,x-client-version"
+    "content-type,authorization,accept,origin,x-yanzi-client,x-yanzi-client-version,x-yanzi-device-id,x-api-version,x-client-version"
   );
   return response;
 }
