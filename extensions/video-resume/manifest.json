@@ -1,0 +1,35 @@
+{
+  "id": "video-resume",
+  "name": "看视频",
+  "version": "1.2.0",
+  "category": "生活工具",
+  "description": "午晚时段显示看视频入口；电饭煲完成烹饪、保温后取消转为待机时直接续播最近追看的视频。",
+  "keywords": [
+    "看视频",
+    "续播",
+    "视频",
+    "腾讯视频",
+    "历史记录"
+  ],
+  "toggleWindow": false,
+  "queryPrefixes": [
+    "看视频",
+    "续播"
+  ],
+  "icon": "mdi:play-circle-outline",
+  "accentHex": "#18181B",
+  "runtime": "csharp",
+  "uiMode": "native-window",
+  "entryMode": "entry",
+  "entry": "main.cs",
+  "permissions": [
+    "context.read"
+  ],
+  "startup": {
+    "mode": "on_app_launch",
+    "schedule": null
+  },
+  "runAsAdmin": false,
+  "waitForExit": false,
+  "isPublished": false
+}
