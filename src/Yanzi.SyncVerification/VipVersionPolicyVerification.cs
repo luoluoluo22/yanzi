@@ -18,6 +18,15 @@ internal static class VipVersionPolicyVerification
         Must(!AppVersionInfo.IsUpdateEntitled("1.0.1", "month", "2026-10-09T23:59:59Z", published), "later releases blocked after expiry");
         Must(AppVersionInfo.IsUpdateEntitled("1.0.1", "lifetime", null, null), "lifetime covers future releases");
         Must(!AppVersionInfo.IsUpdateEntitled("unknown", null, null, null), "unparseable paid release blocked");
+        var method = typeof(OpenQuickHost.Sync.CloudSyncClient).GetMethod("IsPaidCloudRequestPath",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)
+            ?? throw new InvalidOperationException("Missing cloud entitlement path classifier");
+        bool RequiresVip(string path) => (bool)(method.Invoke(null, [path]) ?? false);
+        Must(RequiresVip("/v1/sync/changes?since=42"), "sync API needs VIP");
+        Must(RequiresVip("/v1/me/devices"), "device cloud API needs VIP");
+        Must(!RequiresVip("/v1/user/cloud-export?cursor=100"), "legacy export works after membership denied");
+        Must(!RequiresVip("/v1/user/vip-status"), "membership renewal lookup exempt");
+        Must(!RequiresVip("/v1/licenses/redeem"), "licence redemption exempt");
         Console.WriteLine("VIP_UPDATE_POLICY_PASSED");
     }
 }
