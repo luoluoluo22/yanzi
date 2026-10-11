@@ -91,6 +91,56 @@ public static class YanziAction
             return result.ToText();
         }
 
+        if (string.Equals(input, "--ledger-bootstrap", StringComparison.OrdinalIgnoreCase))
+        {
+            var jobs = JobRepository.LoadJobs(context.ExtensionDataDirectory);
+            JobRepository.SaveJobs(context.ExtensionDataDirectory, jobs);
+            var archived = JobApplicationLedger.Read(context.ExtensionDataDirectory);
+            return "已归档岗位：" + archived.Count + "，当前缓存：" + jobs.Count;
+        }
+        if (input.StartsWith("--hr-bind=", StringComparison.OrdinalIgnoreCase))
+        {
+            var parts = input.Substring("--hr-bind=".Length).Split('|', 3);
+            if (parts.Length != 3) return "格式：--hr-bind=<岗位ID>|<智联会话链接>|<最近一次已发送原文>";
+            return await HrConversationWorkflow.BindAsync(context, context.ExtensionDataDirectory,
+                parts[0], parts[1], parts[2], CancellationToken.None).ConfigureAwait(false);
+        }
+
+        if (input.StartsWith("--hr-review=", StringComparison.OrdinalIgnoreCase))
+        {
+            var id = input.Substring("--hr-review=".Length).Trim();
+            return await HrConversationWorkflow.ReviewAsync(context, context.ExtensionDataDirectory, id, CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+
+        if (string.Equals(input, "--hr-review-all", StringComparison.OrdinalIgnoreCase))
+        {
+            return await HrConversationWorkflow.ReviewAllBoundAsync(
+                context, context.ExtensionDataDirectory, CancellationToken.None).ConfigureAwait(false);
+        }
+
+        if (input.StartsWith("--hr-queue=", StringComparison.OrdinalIgnoreCase))
+        {
+            var id = input.Substring("--hr-queue=".Length).Trim();
+            var entry = HrConversationWorkflow.Load(context.ExtensionDataDirectory, id);
+            return entry == null ? "该岗位无待处理问题。" :
+                JsonSerializer.Serialize(entry, new JsonSerializerOptions { WriteIndented = true });
+        }
+
+        if (input.StartsWith("--hr-verify=", StringComparison.OrdinalIgnoreCase))
+        {
+            var parts = input.Substring("--hr-verify=".Length).Split('|', 3);
+            if (parts.Length != 3) return "格式：--hr-verify=<岗位ID>|<消息指纹>|<核实的招聘方原文>";
+            return HrConversationWorkflow.VerifyInbound(context.ExtensionDataDirectory, parts[0], parts[1], parts[2]);
+        }
+
+        if (input.StartsWith("--hr-send=", StringComparison.OrdinalIgnoreCase))
+        {
+            var id = input.Substring("--hr-send=".Length).Trim();
+            return await HrConversationWorkflow.SendVerifiedAsync(
+                context, context.ExtensionDataDirectory, id, CancellationToken.None).ConfigureAwait(false);
+        }
+
         if (string.Equals(input, "--check-messages", StringComparison.OrdinalIgnoreCase))
         {
             var result = await ZhaopinInteractionService.CheckMessagesAsync(
@@ -400,7 +450,8 @@ public sealed class JobAgentWindow : Window
         _messageWatchCheck.Margin = new Thickness(0, 8, 0, 0);
         root.Children.Add(_messageWatchCheck);
 
-        _autoReplyCheck.Content = "首次招呼自动回复";
+        _autoReplyCheck.Content = "仅核实入站消息后允许发送（安全模式）";
+        _autoReplyCheck.IsEnabled = false;
         _autoReplyCheck.Foreground = MainText;
         _autoReplyCheck.FontSize = 11.5;
         _autoReplyCheck.Margin = new Thickness(0, 7, 0, 0);
@@ -526,7 +577,7 @@ public sealed class JobAgentWindow : Window
         settings.IdealSalaryMax = ParseInt(_salaryMaxBox.Text, 6500);
         settings.HighSalaryWarning = ParseInt(_hardMaxBox.Text, 10000);
         settings.EnableMessageWatch = _messageWatchCheck.IsChecked == true;
-        settings.AutoReplyEnabled = _autoReplyCheck.IsChecked == true;
+        settings.AutoReplyEnabled = false; // 不再启用按未读列表自动点击的旧版模板回复。
         settings.DailyApplyLimit = ParseInt(_dailyApplyLimitBox.Text, 5);
         settings.ReplyTemplate = (_replyTemplateBox.Text ?? string.Empty).Trim();
         if (settings.IdealSalaryMax < settings.IdealSalaryMin)
@@ -890,6 +941,7 @@ public sealed class JobAgentWindow : Window
         if (job == null) return;
         job.Status = status;
         job.UpdatedAt = DateTimeOffset.Now;
+        job.LastInteractionAt = job.UpdatedAt;
         if (status == "applied" && !job.AppliedAt.HasValue) job.AppliedAt = DateTimeOffset.Now;
         if (status is "viewed" or "contacted" or "interview" or "offer" or "rejected")
             job.LastFeedbackAt = DateTimeOffset.Now;
@@ -3427,6 +3479,8 @@ public static class JobBackgroundService
                         settings.AutoReplyEnabled,
                         cancellationToken).ConfigureAwait(false);
                     messages.Add(check.Message);
+                    messages.Add(await HrConversationWorkflow.ReviewAllBoundAsync(
+                        context, context.ExtensionDataDirectory, cancellationToken).ConfigureAwait(false));
                 }
                 catch (Exception ex)
                 {
@@ -3999,74 +4053,11 @@ public static class ZhaopinInteractionService
         }
         catch { }
 
-        var autoReplyMessage = "";
-        if (allowAutoReply
-            && !state.AutoRepliedFingerprints.Contains(fingerprint, StringComparer.Ordinal))
-        {
-            var reply = await TryAutoReplyAsync(
-                context,
-                settings.ReplyTemplate,
-                cancellationToken).ConfigureAwait(false);
-
-            if (reply.Success)
-            {
-                state.LastAutoReplyAt = DateTimeOffset.Now;
-                state.AutoReplyCount++;
-                state.AutoRepliedFingerprints.Add(fingerprint);
-                if (state.AutoRepliedFingerprints.Count > 300)
-                    state.AutoRepliedFingerprints = state.AutoRepliedFingerprints.TakeLast(300).ToList();
-
-                autoReplyMessage = "；已自动回复首次招呼";
-                DailyJournalService.AppendEvent(dataDirectory, "auto_reply", "", "", settings.ReplyTemplate);
-            }
-            else
-            {
-                autoReplyMessage = "；自动回复未执行：" + reply.Message;
-            }
-        }
-
+        // 旧版本按未读列表第一项点击并发送模板，无法核实实际收件人，已永久停用。
+        var autoReplyMessage = "；具体对话由 HR 会话核实队列处理";
         JobRepository.SaveMessageState(dataDirectory, state);
         DailyJournalService.Capture(dataDirectory, "发现 HR 新消息：" + preview + autoReplyMessage);
         return new MessageCheckResult(true, true, unread.Count, "发现 " + unread.Count + " 条新招呼" + autoReplyMessage);
-    }
-
-    private static async Task<InteractionResult> TryAutoReplyAsync(
-        YanziActionContext context,
-        string replyText,
-        CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(replyText))
-            return new InteractionResult(false, "empty_template", "回复模板为空");
-
-        var browser = new LocalBrowserClient(context);
-        try
-        {
-            await browser.WorkflowAsync(
-                MessageUrl,
-                new List<Dictionary<string, object?>>
-                {
-                    Step("wait", ("selector", UnreadSelector), ("timeout", 12000)),
-                    Step("click", ("selector", UnreadSelector)),
-                    Step("wait", ("timeout", 900)),
-                    Step("wait", ("selector", ChatInputSelector), ("timeout", 12000)),
-                    Step("fill", ("selector", ChatInputSelector), ("value", replyText)),
-                    Step("wait", ("timeout", 250)),
-                    Step("click", ("selector", SendSelector)),
-                    Step("wait", ("timeout", 800)),
-                    Step("scrape", ("selectors", new Dictionary<string, string>
-                    {
-                        ["body"] = "body|innerText"
-                    }))
-                },
-                closeOnComplete: true,
-                cancellationToken).ConfigureAwait(false);
-
-            return new InteractionResult(true, "replied", "已回复");
-        }
-        catch (Exception ex)
-        {
-            return new InteractionResult(false, "reply_failed", ex.Message);
-        }
     }
 
     private static async Task<LoginCheckResult> CheckLoginAsync(
@@ -4156,6 +4147,321 @@ public static class ZhaopinInteractionService
 
     private static string Hash(string value) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value ?? "")));
+}
+
+
+public sealed class HrConversationBinding
+{
+    public string JobId { get; set; } = "";
+    public string ConversationUrl { get; set; } = "";
+    public string LastSentText { get; set; } = "";
+    public DateTimeOffset BoundAt { get; set; }
+}
+
+public sealed class HrReplyQueueEntry
+{
+    public string JobId { get; set; } = "";
+    public string Company { get; set; } = "";
+    public string ConversationUrl { get; set; } = "";
+    public string RecruiterMessage { get; set; } = "";
+    public string MessageFingerprint { get; set; } = "";
+    public string Draft { get; set; } = "";
+    public string State { get; set; } = "pending_inbound_verification";
+    public bool InboundVerified { get; set; }
+    public DateTimeOffset DetectedAt { get; set; }
+    public DateTimeOffset? SentAt { get; set; }
+}
+
+public static class HrConversationWorkflow
+{
+    private static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true, WriteIndented = true };
+    private static string DirectoryPath(string dir) => Path.Combine(dir, "application-ledger", "hr-queue");
+    private static string QueuePath(string dir, string id) => Path.Combine(DirectoryPath(dir), id + ".json");
+    private static string Digest(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
+
+    // 历史已验证会话提供可用的 sessionId；未知会话必须先绑定并核实招聘者，不能按列表顺序盲点。
+    public static List<(string JobId, string Url, string LastSent)> BoundThreads(string dir)
+    {
+        var result = new List<(string JobId, string Url, string LastSent)>();
+        var directory = Path.Combine(dir, "application-followups");
+        if (!Directory.Exists(directory)) return result;
+        foreach (var file in Directory.GetFiles(directory, "*hr-reply.json"))
+        {
+            try
+            {
+                using var json = JsonDocument.Parse(File.ReadAllText(file));
+                var root = json.RootElement;
+                var id = root.GetProperty("jobId").GetString() ?? "";
+                var url = root.GetProperty("conversationUrl").GetString() ?? "";
+                var sent = root.GetProperty("sent").GetProperty("text").GetString() ?? "";
+                if (Guid.TryParseExact(id, "N", out _) && ValidConversationUrl(url) && sent.Length > 0)
+                    result.Add((id, url, sent));
+            }
+            catch { /* 不从无效文件猜测会话 ID。 */ }
+        }
+        // 经过只读验收的会话绑定，用于后续新增投递；同一岗位的最新绑定覆盖历史导入。
+        var bindingDir = Path.Combine(dir, "application-ledger", "hr-bindings");
+        if (Directory.Exists(bindingDir))
+        {
+            foreach (var path in Directory.GetFiles(bindingDir, "*.json"))
+            {
+                try
+                {
+                    var item = JsonSerializer.Deserialize<HrConversationBinding>(File.ReadAllText(path), Json);
+                    if (item == null || !Guid.TryParseExact(item.JobId, "N", out _) ||
+                        !ValidConversationUrl(item.ConversationUrl) || string.IsNullOrWhiteSpace(item.LastSentText)) continue;
+                    result.RemoveAll(x => x.JobId == item.JobId);
+                    result.Add((item.JobId, item.ConversationUrl, item.LastSentText));
+                }
+                catch { }
+            }
+        }
+
+        // 每次核实送达后，自动把“最近一条我方回复”作为新基线，防止识别成下一轮 HR 新消息。
+        for (var i = 0; i < result.Count; i++)
+        {
+            var thread = result[i];
+            var queue = Load(dir, thread.JobId);
+            if (queue?.State == "delivered" && !string.IsNullOrWhiteSpace(queue.Draft) &&
+                queue.ConversationUrl == thread.Url)
+                result[i] = (thread.JobId, thread.Url, queue.Draft);
+        }
+        return result.DistinctBy(x => x.Item1).ToList();
+    }
+
+    public static async Task<string> BindAsync(
+        YanziActionContext context, string dir, string jobId, string url, string lastSent, CancellationToken ct)
+    {
+        if (!Guid.TryParseExact(jobId, "N", out _) || !ValidConversationUrl(url) ||
+            string.IsNullOrWhiteSpace(lastSent) || lastSent.Length > 1500)
+            return "绑定参数不合法。必须提供已核实的岗位、智联 sessionId 链接和真实最近发送文本。";
+        var job = JobRepository.LoadJobs(dir).FirstOrDefault(x => x.Id == jobId);
+        if (job == null || !job.AppliedAt.HasValue) return "该职位未核实成功投递，拒绝绑定。";
+        var browser = new LocalBrowserClient(context);
+        var page = await browser.ScrapeAsync(url,
+            new Dictionary<string, string> { ["body"] = "body|innerText" },
+            closeOnComplete: true, ct).ConfigureAwait(false);
+        var text = page.TryGetValue("body", out var values) ? values.FirstOrDefault() ?? "" : "";
+        var start = text.LastIndexOf("列表数据最多保留90天", StringComparison.Ordinal);
+        var chat = start >= 0 ? text.Substring(start) : "";
+        if (!chat.Contains(job.Title, StringComparison.OrdinalIgnoreCase) ||
+            !chat.Contains(job.Company.Substring(0, Math.Min(4, job.Company.Length)), StringComparison.OrdinalIgnoreCase) ||
+            !chat.Contains(lastSent, StringComparison.Ordinal))
+            return "官方聊天内容与职位、公司或最后发送消息不一致；未绑定。";
+        var location = Path.Combine(dir, "application-ledger", "hr-bindings");
+        Directory.CreateDirectory(location);
+        var path = Path.Combine(location, jobId + ".json");
+        var temp = path + ".tmp";
+        File.WriteAllText(temp, JsonSerializer.Serialize(new HrConversationBinding
+        {
+            JobId = jobId, ConversationUrl = url, LastSentText = lastSent, BoundAt = DateTimeOffset.Now
+        }, Json), new UTF8Encoding(false));
+        File.Move(temp, path, true);
+        return "已绑定经过官方页面验证的岗位会话；后续按绑定的会话追踪，不使用列表序号猜测。";
+    }
+
+    private static bool ValidConversationUrl(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
+        uri.Scheme == Uri.UriSchemeHttps && uri.Host.Equals("i.zhaopin.com", StringComparison.OrdinalIgnoreCase) &&
+        uri.AbsolutePath == "/im" && Regex.IsMatch(uri.Query, @"(?:\?|&)sessionId=[a-f0-9]{32}(?:&|$)", RegexOptions.IgnoreCase);
+
+    public static HrReplyQueueEntry? Load(string dir, string jobId)
+    {
+        if (!Guid.TryParseExact(jobId, "N", out _)) return null;
+        var path = QueuePath(dir, jobId);
+        try { return File.Exists(path) ? JsonSerializer.Deserialize<HrReplyQueueEntry>(File.ReadAllText(path), Json) : null; }
+        catch { return null; }
+    }
+
+    private static void Save(string dir, HrReplyQueueEntry item)
+    {
+        if (!Guid.TryParseExact(item.JobId, "N", out _)) throw new InvalidOperationException("无效的岗位 ID");
+        var directory = DirectoryPath(dir);
+        Directory.CreateDirectory(directory);
+        var path = QueuePath(dir, item.JobId);
+        var temp = path + ".tmp";
+        File.WriteAllText(temp, JsonSerializer.Serialize(item, Json), new UTF8Encoding(false));
+        File.Move(temp, path, true);
+    }
+
+    public static string DraftForVerifiedFacts(string message, ResumeProfile resume)
+    {
+        var education = (resume.Education ?? "").Trim();
+        var projects = (resume.ProjectExperience ?? "").Trim();
+        if ((message.Contains("计算机", StringComparison.OrdinalIgnoreCase) ||
+             message.Contains("什么专业", StringComparison.OrdinalIgnoreCase)) &&
+            education.Contains("电子商务") && education.Contains("成都理工大学"))
+        {
+            var fact = education.Replace("｜", "，").Replace("|", "，");
+            var works = projects.Contains("剪映 Skill") ? "我实际做过剪映 Skill 和 AI 剪辑智能体等应用项目。" : "";
+            var since = (resume.WorkExperience ?? "").Contains("2024.11", StringComparison.Ordinal)
+                ? "2024年11月起" : "";
+            return "您好，我本科是" + fact + "，不是计算机科班。" + since +
+                   "主要从事AI应用开发、自动化工作流和智能体项目。" +
+                   works + "如果方便，我可以进一步介绍项目实践。想请问这个岗位更看重技术开发能力还是内容制作能力呢？";
+        }
+        return ""; // 不能根据未知问题瞎编回答；等待进一步识别。
+    }
+
+    public static async Task<string> ReviewAsync(
+        YanziActionContext context, string dir, string jobId, CancellationToken ct)
+    {
+        var binding = BoundThreads(dir).FirstOrDefault(x => x.JobId == jobId);
+        if (string.IsNullOrWhiteSpace(binding.Url)) return "未找到已核实的智联会话绑定；不会根据消息列表名称猜测目标。";
+        var job = JobRepository.LoadJobs(dir).FirstOrDefault(x => x.Id == jobId);
+        if (job == null) return "无法对应到原始投递岗位，已停止会话检查。";
+        var browser = new LocalBrowserClient(context);
+        var page = await browser.WorkflowAsync(binding.Url, new List<Dictionary<string, object?>>
+        {
+            new() { ["type"] = "wait", ["timeout"] = 1300 },
+            new() { ["type"] = "scrape", ["selectors"] = new Dictionary<string, string>
+            {
+                ["body"] = "body|innerText", ["messages"] = "[class*='msg']|innerText"
+            }}
+        }, closeOnComplete: true, ct).ConfigureAwait(false);
+        var body = page.TryGetValue("body", out var bodies) ? bodies.FirstOrDefault() ?? "" : "";
+        var transcriptStart = body.LastIndexOf("列表数据最多保留90天", StringComparison.Ordinal);
+        var chatPart = transcriptStart >= 0 ? body.Substring(transcriptStart) : "";
+        if (!chatPart.Contains(job.Title, StringComparison.OrdinalIgnoreCase) ||
+            !chatPart.Contains(job.Company.Length > 4 ? job.Company.Substring(0, 4) : job.Company, StringComparison.OrdinalIgnoreCase))
+            return "无法同时核对会话中的公司与岗位，已停止处理。";
+        var leaf = page.TryGetValue("messages", out var raw) ? raw
+            .Select(x => (x ?? "").Trim()).Where(x => x.Length > 1 && x.Length < 1200)
+            .ToList() : new List<string>();
+        var lastSentAt = leaf.FindLastIndex(x => x.Equals(binding.LastSent, StringComparison.Ordinal));
+        if (lastSentAt == leaf.Count - 1 && lastSentAt >= 0)
+            return "会话已核实：最近一条是已记录的我方回复，未发现新的招聘方问题。";
+        if (lastSentAt < 0 || lastSentAt >= leaf.Count - 1)
+            return "无法可靠判定入站消息方向，未自动回复。";
+        var candidate = leaf[^1];
+        var fingerprint = Digest(jobId + "|" + candidate);
+        var existing = Load(dir, jobId);
+        if (existing?.MessageFingerprint == fingerprint)
+            return "相同消息已在待处理队列，状态：" + existing.State;
+        var entry = new HrReplyQueueEntry
+        {
+            JobId = jobId, Company = job.Company, ConversationUrl = binding.Url,
+            RecruiterMessage = candidate, MessageFingerprint = fingerprint,
+            Draft = DraftForVerifiedFacts(candidate, JobRepository.LoadResume(dir)),
+            DetectedAt = DateTimeOffset.Now, State = "pending_inbound_verification"
+        };
+        Save(dir, entry);
+        return "发现新会话内容，已进入核实队列。因浏览器暂不提供可靠的消息发送方字段，尚未认定为 HR 入站消息，也未发送回复。";
+    }
+
+
+    public static async Task<string> ReviewAllBoundAsync(
+        YanziActionContext context, string dir, CancellationToken ct)
+    {
+        var threads = BoundThreads(dir);
+        if (threads.Count == 0) return "暂无已绑定的招聘会话，等待核实后纳入监控。";
+        var checkedCount = 0;
+        var pendingCount = 0;
+        foreach (var thread in threads.Take(12))
+        {
+            try
+            {
+                var message = await ReviewAsync(context, dir, thread.JobId, ct).ConfigureAwait(false);
+                checkedCount++;
+                if (message.Contains("待处理队列") || message.Contains("核实队列"))
+                    pendingCount++;
+            }
+            catch
+            {
+                // 单个会话检查失败不得阻断其它会话；不推断已联系或已回复。
+            }
+        }
+        return $"已核对 {checkedCount} 个绑定会话，待核实 {pendingCount} 条。";
+    }
+
+    public static string VerifyInbound(string dir, string jobId, string fingerprint, string confirmedMessage)
+    {
+        var item = Load(dir, jobId);
+        if (item == null || item.State != "pending_inbound_verification" ||
+            !item.MessageFingerprint.Equals(fingerprint, StringComparison.OrdinalIgnoreCase) ||
+            !item.RecruiterMessage.Equals(confirmedMessage, StringComparison.Ordinal))
+            return "会话消息指纹或正文不匹配，拒绝标记为 HR 入站。";
+        if (string.IsNullOrWhiteSpace(item.Draft))
+            return "招聘方问题缺少事实可核实的安全答案，需人工处理。";
+        item.InboundVerified = true;
+        item.State = "ready_to_send";
+        Save(dir, item);
+        return "已记录经人工核实的入站问题，可执行指定会话的发送与送达验证。";
+    }
+
+    public static async Task<string> SendVerifiedAsync(
+        YanziActionContext context, string dir, string jobId, CancellationToken ct)
+    {
+        var entry = Load(dir, jobId);
+        if (entry == null || !entry.InboundVerified || entry.State != "ready_to_send" ||
+            string.IsNullOrWhiteSpace(entry.Draft) || !ValidConversationUrl(entry.ConversationUrl))
+            return "缺少入站身份核实或安全回复草稿，拒绝发送。";
+        var binding = BoundThreads(dir).FirstOrDefault(x => x.JobId == jobId);
+        if (binding.Url != entry.ConversationUrl) return "会话绑定发生变化，拒绝发送。";
+        var job = JobRepository.LoadJobs(dir).FirstOrDefault(x => x.Id == jobId);
+        if (job == null) return "找不到投递岗位，拒绝发送。";
+        // 独立的只读预检必须先于发送，尤其要核对职位、公司、原问题和是否已经发出相同答复。
+        var browser = new LocalBrowserClient(context);
+        var preflight = await browser.ScrapeAsync(entry.ConversationUrl,
+            new Dictionary<string, string> { ["body"] = "body|innerText" },
+            closeOnComplete: true, ct).ConfigureAwait(false);
+        var checkedBody = preflight.TryGetValue("body", out var existingBodies)
+            ? existingBodies.FirstOrDefault() ?? "" : "";
+        var knownTranscript = checkedBody.LastIndexOf("列表数据最多保留90天", StringComparison.Ordinal);
+        var sessionBody = knownTranscript >= 0 ? checkedBody.Substring(knownTranscript) : "";
+        if (!sessionBody.Contains(job.Title, StringComparison.OrdinalIgnoreCase) ||
+            !sessionBody.Contains(job.Company.Substring(0, Math.Min(4, job.Company.Length)), StringComparison.OrdinalIgnoreCase) ||
+            !sessionBody.Contains(entry.RecruiterMessage, StringComparison.Ordinal))
+            return "发送前核对岗位、公司或原问题失败，拒绝发送。";
+        if (sessionBody.Contains(entry.Draft, StringComparison.Ordinal))
+            return "对话中已经存在相同答案，拒绝重复发送。";
+
+        // 先落盘发送意图，发生超时不能自动重试，防止服务端已发但本地未收到确认而重复发送。
+        entry.State = "sending_unverified";
+        Save(dir, entry);
+        try
+        {
+            var response = await browser.WorkflowAsync(entry.ConversationUrl,
+                new List<Dictionary<string, object?>>
+                {
+                    new() { ["type"] = "wait", ["selector"] = "textarea", ["timeout"] = 12000 },
+                    new() { ["type"] = "scrape", ["selectors"] = new Dictionary<string, string>
+                    {
+                        ["before"] = "body|innerText"
+                    }},
+                    new() { ["type"] = "fill", ["selector"] = "textarea", ["value"] = entry.Draft },
+                    new() { ["type"] = "click", ["selector"] = "[class*='send-btn']" },
+                    new() { ["type"] = "wait", ["timeout"] = 850 },
+                    new() { ["type"] = "scrape", ["selectors"] = new Dictionary<string, string>
+                    {
+                        ["after"] = "body|innerText"
+                    }}
+                }, closeOnComplete: true, ct).ConfigureAwait(false);
+            var before = response.TryGetValue("before", out var b) ? b.FirstOrDefault() ?? "" : "";
+            var after = response.TryGetValue("after", out var a) ? a.FirstOrDefault() ?? "" : "";
+            if (!before.Contains(job.Title) || !before.Contains(job.Company.Substring(0, Math.Min(4, job.Company.Length))))
+                return "发送结果未确认：会话身份前置校验不通过，禁止自动重试。";
+            var idx = after.LastIndexOf(entry.Draft, StringComparison.Ordinal);
+            if (idx < 0 || before.Contains(entry.Draft, StringComparison.Ordinal) ||
+                !after.Substring(idx + entry.Draft.Length).Contains("送达", StringComparison.Ordinal))
+                return "发送结果未确认，请人工核查后再决定，禁止重复发送。";
+            entry.State = "delivered";
+            entry.SentAt = DateTimeOffset.Now;
+            Save(dir, entry);
+            job.LastInteractionAt = entry.SentAt;
+            job.LastInteractionMessage = "已回复 HR，平台显示送达；消息归档于 application-ledger/hr-queue。";
+            job.InteractionState = "hr_replied_waiting";
+            JobRepository.SaveJobs(dir, JobRepository.LoadJobs(dir).Select(x => x.Id == jobId ? job : x).ToList());
+            DailyJournalService.AppendEvent(dir, "hr_reply_delivered", jobId, job.Title, entry.Draft);
+            return "已向指定 HR 会话回复，平台显示送达；本地已归档。";
+        }
+        catch (Exception ex)
+        {
+            entry.State = "sending_unverified";
+            Save(dir, entry);
+            return "发送可能已经完成，但验证失败，禁止自动重试：" + ex.Message;
+        }
+    }
 }
 
 public static class DailyJournalService
@@ -5070,30 +5376,154 @@ public static class JobScorer
     private static int Clamp(int value) => Math.Max(0, Math.Min(100, value));
 }
 
+
+public static class JobApplicationLedger
+{
+    // 记录与滚动职位缓存独立，事件先落盘（Flush(true)），快照再原子替换。
+    private static readonly JsonSerializerOptions Options = new() { PropertyNameCaseInsensitive = true, WriteIndented = true };
+    private static bool Tracked(JobRecord x) => x.AppliedAt.HasValue || x.GreetingSentAt.HasValue || x.Status is "interview" or "offer" or "rejected";
+    private static string Folder(string dir) => Path.Combine(dir, "application-ledger");
+
+    public static List<JobRecord> Restore(string dir, List<JobRecord> input)
+    {
+        var result = new List<JobRecord>(input);
+        var byId = result.ToDictionary(x => x.Id, StringComparer.OrdinalIgnoreCase);
+        foreach (var saved in Read(dir))
+        {
+            if (!byId.TryGetValue(saved.Id, out var current))
+            {
+                result.Add(saved);
+                byId.Add(saved.Id, saved);
+                continue;
+            }
+            if ((saved.AppliedAt.HasValue && !current.AppliedAt.HasValue) ||
+                (saved.LastInteractionAt.HasValue &&
+                (!current.LastInteractionAt.HasValue || saved.LastInteractionAt > current.LastInteractionAt)))
+            {
+                current.AppliedAt = saved.AppliedAt ?? current.AppliedAt;
+                current.GreetingSentAt = saved.GreetingSentAt ?? current.GreetingSentAt;
+                current.Status = saved.Status;
+                current.LastFeedbackAt = saved.LastFeedbackAt;
+                current.LastInteractionAt = saved.LastInteractionAt;
+                current.InteractionState = saved.InteractionState;
+                current.LastInteractionMessage = saved.LastInteractionMessage;
+            }
+            if (string.IsNullOrWhiteSpace(current.UserNote)) current.UserNote = saved.UserNote;
+        }
+        return result;
+    }
+
+    public static List<JobRecord> Read(string dir)
+    {
+        var data = new Dictionary<string, JobRecord>(StringComparer.OrdinalIgnoreCase);
+        var folder = Folder(dir);
+        var events = Path.Combine(folder, "events.jsonl");
+        if (File.Exists(events))
+        {
+            foreach (var line in File.ReadLines(events))
+            {
+                if (string.IsNullOrWhiteSpace(line)) continue;
+                try
+                {
+                    using var json = JsonDocument.Parse(line);
+                    var root = json.RootElement;
+                    var job = root.GetProperty("Job").Deserialize<JobRecord>(Options);
+                    if (job is not null && Tracked(job) && Guid.TryParseExact(job.Id, "N", out _))
+                        data[job.Id] = job;
+                }
+                catch { /* 断电时不完整的末尾事件可忽略；之前的完整事件依然保留。 */ }
+            }
+        }
+        var snapshots = Path.Combine(folder, "snapshots");
+        if (Directory.Exists(snapshots))
+        {
+            foreach (var file in Directory.GetFiles(snapshots, "*.json"))
+            {
+                try
+                {
+                    var job = JsonSerializer.Deserialize<JobRecord>(File.ReadAllText(file), Options);
+                    if (job != null && Tracked(job) && Guid.TryParseExact(job.Id, "N", out _) &&
+                        (!data.TryGetValue(job.Id, out var fromEvents) ||
+                         (job.LastInteractionAt ?? job.UpdatedAt) > (fromEvents.LastInteractionAt ?? fromEvents.UpdatedAt)))
+                        data[job.Id] = job;
+                }
+                catch { /* 保留损坏文件供修复；使用事件流恢复。 */ }
+            }
+        }
+        return data.Values.ToList();
+    }
+
+    public static void Persist(string dir, IEnumerable<JobRecord> jobs)
+    {
+        var folder = Folder(dir);
+        var snapshots = Path.Combine(folder, "snapshots");
+        Directory.CreateDirectory(snapshots);
+        foreach (var job in jobs.Where(Tracked))
+        {
+            if (!Guid.TryParseExact(job.Id, "N", out _)) continue;
+            var path = Path.Combine(snapshots, job.Id + ".json");
+            JobRecord? previous = null;
+            try { if (File.Exists(path)) previous = JsonSerializer.Deserialize<JobRecord>(File.ReadAllText(path), Options); }
+            catch { }
+            if (previous != null &&
+                previous.Status == job.Status && previous.AppliedAt == job.AppliedAt &&
+                previous.GreetingSentAt == job.GreetingSentAt &&
+                previous.LastFeedbackAt == job.LastFeedbackAt &&
+                previous.LastInteractionAt == job.LastInteractionAt &&
+                previous.LastInteractionMessage == job.LastInteractionMessage &&
+                previous.InteractionState == job.InteractionState && previous.UserNote == job.UserNote) continue;
+
+            var payload = JsonSerializer.Serialize(new { EventId = Guid.NewGuid().ToString("N"), At = DateTimeOffset.Now, Job = job });
+            using (var stream = new FileStream(Path.Combine(folder, "events.jsonl"), FileMode.Append, FileAccess.Write, FileShare.Read))
+            {
+                var bytes = Encoding.UTF8.GetBytes(payload + "\n");
+                stream.Write(bytes);
+                stream.Flush(true);
+            }
+            var temporary = path + ".tmp";
+            File.WriteAllText(temporary, JsonSerializer.Serialize(job, Options), new UTF8Encoding(false));
+            File.Move(temporary, path, true);
+        }
+    }
+}
+
 public static class JobRepository
 {
     private static readonly object Gate = new();
+    private static readonly Mutex CrossProcessGate = new(false, @"Local\Yanzi.JobAgent.JobStorage");
     private static readonly JsonSerializerOptions Json = new()
     {
         WriteIndented = true,
         PropertyNameCaseInsensitive = true
     };
 
+    private static void EnterStorage()
+    {
+        try { if (!CrossProcessGate.WaitOne(TimeSpan.FromSeconds(15))) throw new TimeoutException("求职数据库正由其他进程使用，请稍后重试。"); }
+        catch (AbandonedMutexException) { /* Interrupted worker; previous write is recoverable. */ }
+    }
+
     public static List<JobRecord> LoadJobs(string dir)
     {
         lock (Gate)
         {
-            var path = Path.Combine(dir, "jobs.json");
-            if (!File.Exists(path)) return new List<JobRecord>();
+            EnterStorage();
             try
             {
-                return JsonSerializer.Deserialize<List<JobRecord>>(File.ReadAllText(path), Json) ?? new List<JobRecord>();
+                var path = Path.Combine(dir, "jobs.json");
+                if (!File.Exists(path)) return JobApplicationLedger.Restore(dir, new List<JobRecord>());
+                try
+                {
+                    var jobs = JsonSerializer.Deserialize<List<JobRecord>>(File.ReadAllText(path), Json) ?? new List<JobRecord>();
+                    return JobApplicationLedger.Restore(dir, jobs);
+                }
+                catch
+                {
+                    BackupCorrupt(path);
+                    return JobApplicationLedger.Restore(dir, new List<JobRecord>());
+                }
             }
-            catch
-            {
-                BackupCorrupt(path);
-                return new List<JobRecord>();
-            }
+            finally { CrossProcessGate.ReleaseMutex(); }
         }
     }
 
@@ -5101,11 +5531,28 @@ public static class JobRepository
     {
         lock (Gate)
         {
-            Directory.CreateDirectory(dir);
-            WriteAtomic(Path.Combine(dir, "jobs.json"), JsonSerializer.Serialize(jobs, Json));
+            EnterStorage();
+            try
+            {
+                Directory.CreateDirectory(dir);
+                var path = Path.Combine(dir, "jobs.json");
+                var previous = new List<JobRecord>();
+                if (File.Exists(path))
+                {
+                    try { previous = JsonSerializer.Deserialize<List<JobRecord>>(File.ReadAllText(path), Json) ?? new(); }
+                    catch { BackupCorrupt(path); }
+                }
+                var ids = new HashSet<string>(jobs.Select(x => x.Id), StringComparer.OrdinalIgnoreCase);
+                foreach (var old in previous.Where(x => x.AppliedAt.HasValue || x.GreetingSentAt.HasValue))
+                    if (ids.Add(old.Id)) jobs.Add(old);
+
+                jobs = JobApplicationLedger.Restore(dir, jobs);
+                JobApplicationLedger.Persist(dir, jobs);
+                WriteAtomic(path, JsonSerializer.Serialize(jobs, Json));
+            }
+            finally { CrossProcessGate.ReleaseMutex(); }
         }
     }
-
     public static JobAgentSettings LoadSettings(string dir)
     {
         lock (Gate)
@@ -5286,7 +5733,7 @@ public sealed class JobAgentSettings
     public int PageDelayMs { get; set; } = 260;
     public int DetailFetchLimit { get; set; } = 36;
     public bool EnableMessageWatch { get; set; } = true;
-    public bool AutoReplyEnabled { get; set; } = true;
+    public bool AutoReplyEnabled { get; set; } = false;
     public int DailyApplyLimit { get; set; } = 5;
     public int MessageCheckIntervalMinutes { get; set; } = 60;
     public string OnlinePurposeJobTitle { get; set; } = "AI产品经理";
@@ -5313,6 +5760,7 @@ public sealed class JobAgentSettings
         PreferredCities ??= new List<string>();
         SkillKeywords ??= new List<string>();
         ReplyTemplate ??= "";
+        AutoReplyEnabled = false; // 禁用旧版按列表猜测收件人的固定模板发送。
         SearchKeywords = SearchKeywords.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).Take(12).ToList();
         if (SearchKeywords.Count == 0) SearchKeywords = DefaultKeywords();
         PreferredCities = PreferredCities.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
