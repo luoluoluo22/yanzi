@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <OutputType>Exe</OutputType>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <VideoResumeSource Condition="'$(VideoResumeSource)' == ''">../../extensions/video-resume/main.cs</VideoResumeSource>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(VideoResumeSource)" />
+    <Compile Include="ContextStub.cs" />
+    <Compile Include="Program.cs" />
+  </ItemGroup>
+</Project>
