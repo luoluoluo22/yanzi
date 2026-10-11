@@ -76,6 +76,10 @@ public static class ExtensionInstallService
                 throw new InvalidOperationException($"扩展 ID 不匹配。协议里是 {requestedExtensionId}，扩展包里是 {manifest.Id}。");
             }
 
+            if (!(manifest.DevicePolicy ?? new LocalExtensionDevicePolicy())
+                    .AllowsDevice(ExtensionDevicePolicy.CurrentDeviceId))
+                throw new InvalidOperationException("此小程序仅支持指定设备，当前设备不会安装。");
+
             manifest = await LocalizeRemoteIconAsync(tempDirectory, manifest, cancellationToken, privateIconDownload);
 
             var targetDirectory = Path.Combine(HostAssets.ExtensionsPath, manifest.Id);

@@ -28,7 +28,8 @@ public static partial class ExtensionStorageService
         string? scope,
         CancellationToken cancellationToken = default)
     {
-        var normalizedScope = ParseScope(scope);
+        var normalizedScope = ExtensionDevicePolicy.ShouldSyncData(extensionId)
+            ? ParseScope(scope) : ExtensionStorageScope.Local;
         var normalizedKey = NormalizeStorageKey(key);
         var localPath = ResolveLocalFilePath(extensionId, normalizedKey);
 
@@ -148,7 +149,8 @@ public static partial class ExtensionStorageService
         string? scope,
         CancellationToken cancellationToken = default)
     {
-        var normalizedScope = ParseScope(scope);
+        var normalizedScope = ExtensionDevicePolicy.ShouldSyncData(extensionId)
+            ? ParseScope(scope) : ExtensionStorageScope.Local;
         var normalizedKey = NormalizeStorageKey(key);
         var localPath = ResolveLocalFilePath(extensionId, normalizedKey);
 
@@ -209,7 +211,8 @@ public static partial class ExtensionStorageService
         string? scope,
         CancellationToken cancellationToken = default)
     {
-        var normalizedScope = ParseScope(scope);
+        var normalizedScope = ExtensionDevicePolicy.ShouldSyncData(extensionId)
+            ? ParseScope(scope) : ExtensionStorageScope.Local;
         var normalizedKey = NormalizeStorageKey(key);
         var localPath = ResolveLocalFilePath(extensionId, normalizedKey);
         if (File.Exists(localPath)) File.Delete(localPath);
@@ -586,6 +589,7 @@ public static partial class ExtensionStorageService
 
     public static async Task SyncLocalDirectoryToCloudAsync(string extensionId, CancellationToken cancellationToken = default)
     {
+        if (!ExtensionDevicePolicy.ShouldSyncData(extensionId)) return;
         var settings = AppSettingsStore.Load();
         if (!PersonalSyncBackendFactory.IsConfigured(settings))
         {
@@ -644,7 +648,8 @@ public static partial class ExtensionStorageService
         }
 
         var pending = ExtensionDataSyncStateStore.Load()
-            .Where(static item => item.Pending && item.Conflict == null)
+            .Where(static item => item.Pending && item.Conflict == null &&
+                ExtensionDevicePolicy.ShouldSyncData(item.ExtensionId))
             .ToArray();
         if (pending.Length == 0)
         {

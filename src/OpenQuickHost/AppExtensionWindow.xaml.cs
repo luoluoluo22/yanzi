@@ -39,6 +39,9 @@ public partial class AppExtensionWindow : Window
 
     public AppExtensionWindow(CommandItem command, string? initialInput, string launchSource)
     {
+        if (command.Source == CommandSource.LocalExtension &&
+            !Sync.ExtensionDevicePolicy.CanRun(command.ExtensionId))
+            throw new InvalidOperationException("此小程序不允许在当前设备上打开。");
         InitializeComponent();
         _command = command;
         _initialInput = initialInput ?? string.Empty;
@@ -66,6 +69,9 @@ public partial class AppExtensionWindow : Window
 
     public static bool TryActivateExisting(CommandItem command, bool activate = true)
     {
+        if (command.Source == CommandSource.LocalExtension &&
+            !Sync.ExtensionDevicePolicy.CanRun(command.ExtensionId))
+            throw new InvalidOperationException("此小程序不允许在当前设备上激活。");
         var definition = command.App;
         if (definition == null || !definition.SingleInstance)
         {

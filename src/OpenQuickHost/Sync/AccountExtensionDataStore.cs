@@ -27,6 +27,8 @@ internal static class AccountExtensionDataStore
         var normalizedExtensionId = ExtensionDataObjectStore.NormalizeExtensionId(extensionId);
         var normalizedKey = ExtensionDataObjectStore.NormalizeKey(key);
         var objectId = BuildObjectId(normalizedExtensionId, normalizedKey);
+        if (!ExtensionDevicePolicy.ShouldSyncData(normalizedExtensionId))
+            return AccountExtensionDataReadResult.Unavailable(objectId);
         var client = CreateClient();
 
         if (!CanAttemptAccountCloud(client))
@@ -67,6 +69,8 @@ internal static class AccountExtensionDataStore
         var normalizedKey = ExtensionDataObjectStore.NormalizeKey(key);
         var normalizedContent = content ?? string.Empty;
         var objectId = BuildObjectId(normalizedExtensionId, normalizedKey);
+        if (!ExtensionDevicePolicy.ShouldSyncData(normalizedExtensionId))
+            return AccountExtensionDataWriteResult.Unavailable(objectId);
         var client = CreateClient();
 
         if (expectedAccountId != null && client.CurrentUserId != expectedAccountId)
@@ -115,6 +119,8 @@ internal static class AccountExtensionDataStore
         var normalizedExtensionId = ExtensionDataObjectStore.NormalizeExtensionId(extensionId);
         var normalizedKey = ExtensionDataObjectStore.NormalizeKey(key);
         var objectId = BuildObjectId(normalizedExtensionId, normalizedKey);
+        if (!ExtensionDevicePolicy.ShouldSyncData(normalizedExtensionId))
+            return AccountExtensionDataWriteResult.Unavailable(objectId);
         var client = CreateClient();
 
         if (!CanAttemptAccountCloud(client))

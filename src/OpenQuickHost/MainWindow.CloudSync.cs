@@ -1327,6 +1327,11 @@ public partial class MainWindow
                 {
                     if (cmd.Source == CommandSource.LocalExtension && !IsInternalCommand(cmd))
                     {
+                        if (!ExtensionDevicePolicy.ShouldSyncPackage(cmd.ExtensionId))
+                        {
+                            skipCount++;
+                            continue;
+                        }
                         try
                         {
                             cloudRecordMap.TryGetValue(cmd.ExtensionId, out var cloudRecord);
@@ -1501,6 +1506,7 @@ public partial class MainWindow
             foreach (var item in items)
             {
                 if (item.Enabled == 0 ||
+                    !ExtensionDevicePolicy.CanSyncInstall(item.ManifestJson) ||
                     !item.HasArchive ||
                     string.IsNullOrWhiteSpace(item.ExtensionId) ||
                     (localIds.Contains(item.ExtensionId) &&
@@ -1514,6 +1520,11 @@ public partial class MainWindow
                 try
                 {
                     var packageBytes = await _cloudSyncClient.DownloadMyExtensionArchiveAsync(item.ExtensionId);
+                    if (!ExtensionDevicePolicy.CanSyncInstallArchive(packageBytes))
+                    {
+                        HostAssets.AppendLog($"Account extension skipped for device policy: id={item.ExtensionId}");
+                        continue;
+                    }
                     if (!string.IsNullOrWhiteSpace(item.ArchiveSha256) &&
                         !Convert.ToHexString(SHA256.HashData(packageBytes)).Equals(
                             item.ArchiveSha256, StringComparison.OrdinalIgnoreCase))
