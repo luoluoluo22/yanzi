@@ -107,7 +107,7 @@ final class ApplicationCatalogView {
     private void ui(Runnable action){activity.runOnUiThread(()->{if(!closed&&!activity.isFinishing()&&!activity.isDestroyed())action.run();});}
     private void load(){if(accountId==null)return;work(this::readCatalog,null,"正在刷新目录…");}
     private void readCatalog()throws Exception{
-        JSONObject catalog=json("/v1/applications/catalog",null,false),library=json("/v1/applications/library",null,true);
+        JSONObject catalog=json("/v1/applications/catalog",null,true),library=json("/v1/applications/library",null,true);
         checkAccount();ui(()->render(catalog.optJSONArray("applications"),library.optJSONArray("applications")));
     }
     private void render(JSONArray apps,JSONArray selections){
@@ -274,7 +274,10 @@ final class ApplicationCatalogView {
     private byte[] download(JSONObject app,int limit)throws Exception{
         URL url=assetUrl(app);
         byte[] b=CloudRequestRetry.systemFirst(true,systemRoute->{checkAccount();HttpURLConnection c=connection(url,systemRoute);
-            try{if(c.getResponseCode()!=200)throw new IllegalStateException("下载失败，HTTP "+c.getResponseCode());return read(c.getInputStream(),limit);}finally{c.disconnect();}});
+            try{c.setRequestProperty("Authorization", "Bearer "+token);
+                if(c.getResponseCode()!=200)throw new IllegalStateException(c.getResponseCode()==403?
+                    "云应用下载需要有效 VIP，请先升级或续费会员":"下载失败，HTTP "+c.getResponseCode());
+                return read(c.getInputStream(),limit);}finally{c.disconnect();}});
         checkAccount();if(b.length!=app.getLong("size")||!hex(MessageDigest.getInstance("SHA-256").digest(b)).equals(app.getString("sha256")))throw new IOException("应用校验失败");return b;
     }
     private JSONObject json(String path,JSONObject input,boolean authenticated)throws Exception{

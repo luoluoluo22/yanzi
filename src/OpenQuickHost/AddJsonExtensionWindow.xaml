@@ -1391,6 +1391,9 @@
 
                                         <!-- 底部操作按钮 -->
                                         <Grid Grid.Row="1" Margin="0,4,0,0">
+                                            <TextBlock x:Name="AiGeneratingStatusText" HorizontalAlignment="Left" VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource BrushTextSec}" FontSize="11"
+                                                       Visibility="Collapsed" />
                                             <Button x:Name="ManualDeepSeekButton" HorizontalAlignment="Right"
                                                     Style="{DynamicResource PrimaryButtonStyle}"
                                                     Width="30" Height="30" Padding="0"

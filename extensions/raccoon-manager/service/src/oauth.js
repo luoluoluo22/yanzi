@@ -132,7 +132,8 @@ export class OwnerOAuthProvider {
   }
 
   async exchangeRefreshToken(client, token, scopes, resource) {
-    this.checkResource(resource);
+    // Refresh tokens are already bound to this resource; resource is optional in refresh grants.
+    if (resource) this.checkResource(resource);
     const key = digest(token), record = this.state.refresh[key];
     if (!record || record.clientId !== client.client_id || record.expiresAt <= now() || record.resource !== this.resource) throw new InvalidGrantError("Invalid refresh token.");
     this.checkScopes(scopes);

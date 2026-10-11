@@ -9,6 +9,19 @@ namespace OpenQuickHost.Sync;
 public sealed partial class CloudSyncClient
 {
     private static readonly HttpRequestOptionsKey<long> SessionGenerationKey = new("Yanzi.SessionGeneration");
+    private static bool IsPaidCloudRequestPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return false;
+        // Query parameters do not change the entitlement domain. In particular,
+        // historical export must stay reachable even after cloud 403 cooldown.
+        var route = path.Split('?', 2)[0];
+        if (!route.StartsWith("/v1/", StringComparison.Ordinal)) return false;
+        if (route.StartsWith("/v1/auth/", StringComparison.Ordinal) ||
+            route.StartsWith("/v1/licenses/", StringComparison.Ordinal)) return false;
+        return route != "/v1/user/vip-status" && route != "/v1/user/cloud-access" &&
+               route != "/v1/user/cloud-export" && route != "/v1/app/update/latest";
+    }
+
     private HttpRequestMessage CreateJsonRequest(HttpMethod method, string path, string body, bool includeAuth)
     {
         var request = CreateRequest(method, path, includeAuth);
@@ -18,6 +31,9 @@ public sealed partial class CloudSyncClient
 
     private HttpRequestMessage CreateRequest(HttpMethod method, string path, bool includeAuth)
     {
+        if (IsPaidCloudRequestPath(path) &&
+            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() < Interlocked.Read(ref _cloudMembershipDeniedUntilUnixMs))
+            throw new CloudVipRequiredException();
         var request = new HttpRequestMessage(method, path);
         request.Options.Set(SessionGenerationKey, AccountCoordinator.Generation);
         request.Version = HttpVersion.Version11;

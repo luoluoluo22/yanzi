@@ -61,6 +61,7 @@ export async function handleExternalAccess(request,env,api){
     if(typeof input.approve!=='boolean')throw new E(400,'decision_required','approve must be a boolean');
     const row=await env.DB.prepare('SELECT * FROM external_access_requests WHERE request_id=? AND user_id=?').bind(id,auth.userId).first();
     if(!row)throw new E(404,'request_not_found','Request not found');
+    if (api.ensureCloudVipUser) await api.ensureCloudVipUser(env,row.user_id);
     if(row.status!=='pending'||row.expires_at<=time)throw new E(409,'request_already_decided','Request handled or expired');
     const approvedScopes=input.approve&&row.scopes_json?selectScopes(input.scopes,scopesOf(row),E):null;
     let expires=0;
@@ -85,6 +86,7 @@ export async function handleExternalAccess(request,env,api){
   if(connect){
     const inviteHash=await hash(connect[1]),invite=await env.DB.prepare('SELECT * FROM external_access_invites WHERE invite_hash=? AND revoked=0 AND expires_at>?').bind(inviteHash,now()).first();
     if(!invite)throw new E(404,'invitation_unavailable','Invitation unavailable or expired');
+    if (api.ensureCloudVipUser) await api.ensureCloudVipUser(env,invite.user_id);
     const address=url.origin+'/connect/'+connect[1];
     const available=scopesOf(invite);
     if(request.method==='GET'&&connect[2]==='resources')return response(api,{ok:true,resources:available,containsData:false});

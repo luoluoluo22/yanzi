@@ -25,6 +25,8 @@ public sealed partial class CloudSyncClient
     private readonly SemaphoreSlim _authenticationLock = new(1, 1);
     // Suppress repeated automatic sign-ins after a definitive 401/404; explicit login still works.
     private long _automaticLoginRejectedUntilUnixMs;
+    // Avoid old clients re-polling paid cloud APIs on every background interval after 403.
+    private long _cloudMembershipDeniedUntilUnixMs;
     private readonly object _secretVaultRecoveryKeyLock = new();
     private byte[]? _secretVaultRecoveryKey;
     private string? _secretVaultRecoveryKeyAccount;
@@ -136,6 +138,7 @@ public sealed partial class CloudSyncClient
         }
 
         Interlocked.Exchange(ref _automaticLoginRejectedUntilUnixMs, 0);
+        Interlocked.Exchange(ref _cloudMembershipDeniedUntilUnixMs, 0);
         ClearSession();
     }
 
@@ -146,6 +149,7 @@ public sealed partial class CloudSyncClient
         E2eeMasterKey = null;
         SecureCredentialStore.Clear();
         Interlocked.Exchange(ref _automaticLoginRejectedUntilUnixMs, 0);
+        Interlocked.Exchange(ref _cloudMembershipDeniedUntilUnixMs, 0);
         ClearSession();
     }
 
@@ -249,7 +253,7 @@ public sealed partial class CloudSyncClient
         var session = await ReadSessionAsync(response, cancellationToken);
         Interlocked.Exchange(ref _automaticLoginRejectedUntilUnixMs, 0);
         AccountCoordinator.Commit(generation, () => { _session = session; SyncSessionStore.Save(session); });
-        await AccountEnvironmentSecretVault.RestoreAfterAuthenticationAsync(this, cancellationToken);
+        await RestoreVaultAfterLoginAsync(cancellationToken);
         CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Register completed", ("userId", session.UserId), ("username", session.Username));
         return session;
     }
@@ -266,6 +270,12 @@ public sealed partial class CloudSyncClient
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(12));
         try { await AccountEnvironmentSecretVault.RestoreAfterAuthenticationAsync(this, timeout.Token); }
+        catch (CloudVipRequiredException)
+        {
+            // Cloud membership expiry must never prevent login, licence redemption,
+            // membership renewal or access to the user's historical data export.
+            HostAssets.AppendLog("[VIP] Secret vault sync suspended; account login remains available.");
+        }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             HostAssets.AppendLog("Environment secret vault restore timed out; login remains available.");
@@ -359,7 +369,7 @@ public sealed partial class CloudSyncClient
         var session = await ReadSessionAsync(response, cancellationToken);
         AccountCoordinator.Commit(generation, () => { _session = session; SyncSessionStore.Save(session); });
         await AccountEnvironmentSecretVault.RewrapAfterPasswordChangeAsync(this, previousMasterKey, keys.MasterKey, cancellationToken);
-        await AccountEnvironmentSecretVault.RestoreAfterAuthenticationAsync(this, cancellationToken);
+        await RestoreVaultAfterLoginAsync(cancellationToken);
         CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Reset password completed", ("userId", session.UserId), ("username", session.Username));
         return session;
     }
@@ -393,9 +403,47 @@ public sealed partial class CloudSyncClient
             _session.VipType = status.VipType;
             _session.VipExpireAt = status.VipExpireAt;
             _session.DaysRemaining = status.DaysRemaining;
+            if (status.IsVip) Interlocked.Exchange(ref _cloudMembershipDeniedUntilUnixMs, 0);
             SyncSessionStore.Save(_session);
         }
         return status;
+    }
+
+    /// <summary>
+    /// Export historical sync objects without requiring a current VIP subscription.
+    /// This deliberately does not claim to include attachment binaries or external WebDAV data.
+    /// </summary>
+    public async Task<string> ExportHistoricalCloudSyncObjectsAsync(CancellationToken cancellationToken = default)
+    {
+        await EnsureAuthenticatedAsync(cancellationToken);
+        var allObjects = new List<JsonElement>();
+        long cursor = 0;
+        for (var pageIndex = 0; pageIndex < 1000; pageIndex++)
+        {
+            using var request = CreateRequest(HttpMethod.Get, $"/v1/user/cloud-export?cursor={cursor}", includeAuth: true);
+            using var response = await SendAsyncWithFallback(request, cancellationToken);
+            await EnsureSuccessAsync(response, cancellationToken);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+            var payload = document.RootElement;
+            if (!payload.TryGetProperty("objects", out var pageObjects) || pageObjects.ValueKind != JsonValueKind.Array)
+                throw new InvalidOperationException("历史云数据格式不正确，导出已停止。");
+            foreach (var item in pageObjects.EnumerateArray()) allObjects.Add(item.Clone());
+            var next = payload.GetProperty("cursorRevision").GetInt64();
+            var hasMore = payload.GetProperty("hasMore").GetBoolean();
+            if (!hasMore)
+            {
+                return JsonSerializer.Serialize(new
+                {
+                    format = "yanzi-cloud-sync-objects-v1",
+                    exportedAtUtc = DateTimeOffset.UtcNow,
+                    note = "仅包含云同步对象；附件文件与第三方网盘数据不在此备份中。",
+                    objects = allObjects
+                }, new JsonSerializerOptions { WriteIndented = true });
+            }
+            if (next <= cursor) throw new InvalidOperationException("云端导出游标未前进，已中止以防数据重复。");
+            cursor = next;
+        }
+        throw new InvalidOperationException("历史云数据超过安全分页上限，请联系维护者协助导出。");
     }
 
     public async Task<RedeemLicenseResponse?> RedeemLicenseAsync(string code, CancellationToken cancellationToken = default)
@@ -411,6 +459,7 @@ public sealed partial class CloudSyncClient
             _session.VipType = result.VipType;
             _session.VipExpireAt = result.VipExpireAt;
             _session.DaysRemaining = result.DaysRemaining;
+            if (result.IsVip) Interlocked.Exchange(ref _cloudMembershipDeniedUntilUnixMs, 0);
             SyncSessionStore.Save(_session);
         }
         return result;
@@ -1490,7 +1539,7 @@ public sealed partial class CloudSyncClient
         return await JsonSerializer.DeserializeAsync<T>(stream, JsonOptions, cancellationToken);
     }
 
-    private static async Task EnsureSuccessAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    private async Task EnsureSuccessAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         if (response.IsSuccessStatusCode)
         {
@@ -1526,6 +1575,13 @@ public sealed partial class CloudSyncClient
         }
 
         var message = error?.Message;
+        if (response.StatusCode == HttpStatusCode.Forbidden &&
+            string.Equals(error?.Error, "vip_required", StringComparison.OrdinalIgnoreCase))
+        {
+            Interlocked.Exchange(ref _cloudMembershipDeniedUntilUnixMs,
+                DateTimeOffset.UtcNow.AddMinutes(30).ToUnixTimeMilliseconds());
+            throw new CloudVipRequiredException();
+        }
         if (response.StatusCode == HttpStatusCode.Conflict &&
             string.Equals(error?.Error, "sync_revision_conflict", StringComparison.OrdinalIgnoreCase))
         {
@@ -1657,3 +1713,8 @@ public sealed class DeviceMessageRecord
 }
 
 public sealed record DeviceMessageReceipt(string DeviceId, string DisplayName, string Status, string AckedAt);
+
+public sealed class CloudVipRequiredException : InvalidOperationException
+{
+    public CloudVipRequiredException() : base("燕子云同步、跨设备消息等服务需要有效 VIP。请打开设置中的‘升级 VIP’，购买或输入卡密激活；本地功能不受影响。") { }
+}

@@ -729,11 +729,17 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 NewVersionInfo = updateInfo.TargetFullRelease.Version.ToString();
                 HasNewVersion = true;
 
+                // 用户可能已在其他设备续费，检查更新前刷新服务端权益。
+                if (_mainWindow.CloudSyncClient?.HasCredential == true)
+                {
+                    try { await _mainWindow.CloudSyncClient.GetVipStatusAsync(); }
+                    catch (Exception ex) { HostAssets.AppendLog($"[VIP] 更新前刷新权益失败，沿用已缓存授权: {ex.Message}"); }
+                }
                 // 维护期校验：检查当前用户是否有权升级到该版本
                 var session = SyncSessionStore.Load();
                 var newVerReleaseDate = await ReleaseHistoryProvider.GetReleaseDateAsync(NewVersionInfo);
-                bool isEntitled = AppVersionInfo.IsVersionEntitled(
-                    session?.IsVip ?? false,
+                bool isEntitled = AppVersionInfo.IsUpdateEntitled(
+                    NewVersionInfo,
                     session?.VipType,
                     session?.VipExpireAt,
                     newVerReleaseDate
@@ -776,10 +782,15 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private async void DownloadUpdatesButton_Click(object sender, System.Windows.RoutedEventArgs e)
     {
         if (_newVersionUpdateInfo == null) return;
+        if (_mainWindow.CloudSyncClient?.HasCredential == true)
+        {
+            try { await _mainWindow.CloudSyncClient.GetVipStatusAsync(); }
+            catch (Exception ex) { HostAssets.AppendLog($"[VIP] 下载前刷新权益失败，沿用已缓存授权: {ex.Message}"); }
+        }
         var session = SyncSessionStore.Load();
         var newVerReleaseDate = await ReleaseHistoryProvider.GetReleaseDateAsync(NewVersionInfo);
-        bool isEntitled = AppVersionInfo.IsVersionEntitled(
-            session?.IsVip ?? false,
+        bool isEntitled = AppVersionInfo.IsUpdateEntitled(
+            NewVersionInfo,
             session?.VipType,
             session?.VipExpireAt,
             newVerReleaseDate

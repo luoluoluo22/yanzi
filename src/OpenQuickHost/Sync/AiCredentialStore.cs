@@ -71,28 +71,22 @@ public static class AiCredentialStore
         lock (BagIoLock)
         {
             var bag = Load();
-            bag.LegacyApiKey = settings.AiApiKey?.Trim() ?? string.Empty;
+            // Settings snapshots and account sync omit secrets. Treat blanks as
+            // unknown, never as a command to erase an existing DPAPI credential.
+            if (!string.IsNullOrWhiteSpace(settings.AiApiKey))
+            {
+                bag.LegacyApiKey = settings.AiApiKey.Trim();
+            }
 
-            var activeProviderIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var provider in settings.AiServiceProviders ?? [])
             {
                 var id = provider.Id?.Trim() ?? string.Empty;
-                if (id.Length == 0) continue;
-                activeProviderIds.Add(id);
-                if (string.IsNullOrWhiteSpace(provider.ApiKey))
-                {
-                    bag.ProviderApiKeys.Remove(id);
-                }
-                else
+                if (id.Length > 0 && !string.IsNullOrWhiteSpace(provider.ApiKey))
                 {
                     bag.ProviderApiKeys[id] = provider.ApiKey.Trim();
                 }
             }
 
-            foreach (var staleId in bag.ProviderApiKeys.Keys.Where(id => !activeProviderIds.Contains(id)).ToArray())
-            {
-                bag.ProviderApiKeys.Remove(staleId);
-            }
             Save(bag);
         }
     }

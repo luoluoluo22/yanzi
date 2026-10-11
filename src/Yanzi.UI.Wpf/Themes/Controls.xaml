@@ -618,6 +618,42 @@
         </Setter>
     </Style>
 
+    <!-- Searchable combobox options use the same token-driven hover and selection
+         chrome as shadcn's command list; never inherit native WPF ListBoxItem blue. -->
+    <Style x:Key="Yanzi.Combobox.Option" TargetType="{x:Type ListBoxItem}">
+        <Setter Property="Foreground" Value="{DynamicResource Yanzi.Color.PopoverForeground}"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="Padding" Value="9,7"/>
+        <Setter Property="Margin" Value="2,1"/>
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type ListBoxItem}">
+                    <Border x:Name="OptionChrome" Background="Transparent"
+                            CornerRadius="5" SnapsToDevicePixels="True">
+                        <ContentPresenter Margin="{TemplateBinding Padding}"
+                                          HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="OptionChrome" Property="Background" Value="{DynamicResource Yanzi.Color.Accent}"/>
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="OptionChrome" Property="Background" Value="{DynamicResource Yanzi.Color.Accent}"/>
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                            <Setter TargetName="OptionChrome" Property="Background" Value="{DynamicResource Yanzi.Color.Accent}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <Style x:Key="Yanzi.Loading" TargetType="{x:Type ProgressBar}">
         <Setter Property="IsIndeterminate" Value="True"/>
         <Setter Property="Height" Value="4"/>
@@ -1500,4 +1536,80 @@
             </Setter.Value>
         </Setter>
     </Style>
+
+    <!-- Reusable conversation primitives; semantic tokens are owned by the public theme.
+         Host windows supply data, commands and streaming lifecycle. -->
+    <Style x:Key="Yanzi.Chat.Sidebar" TargetType="{x:Type Border}">
+        <Setter Property="TextElement.Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
+        <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Sidebar}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Border}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="{DynamicResource Yanzi.Radius.Xl}"/>
+    </Style>
+    <Style x:Key="Yanzi.Chat.Topic" TargetType="{x:Type Border}">
+        <Setter Property="TextElement.Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
+        <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Transparent}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Transparent}"/>
+        <Setter Property="BorderThickness" Value="2,0,0,0"/>
+        <Setter Property="CornerRadius" Value="{DynamicResource Yanzi.Radius.Md}"/>
+        <Setter Property="Padding" Value="12,10"/>
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="{DynamicResource Yanzi.Color.SidebarAccent}"/>
+            </Trigger>
+            <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Accent}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Ring}"/>
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+    <Style x:Key="Yanzi.Chat.Transcript" TargetType="{x:Type Border}">
+        <Setter Property="TextElement.Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
+        <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Background}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Border}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="{DynamicResource Yanzi.Radius.Xl}"/>
+    </Style>
+    <Style x:Key="Yanzi.Chat.Bubble" TargetType="{x:Type Border}">
+        <Setter Property="TextElement.Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
+        <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Card}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Border}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="{DynamicResource Yanzi.Radius.Lg}"/>
+        <Setter Property="Padding" Value="14,12"/>
+    </Style>
+    <Style x:Key="Yanzi.Chat.UserBubble" TargetType="{x:Type Border}">
+        <Setter Property="Background" Value="{DynamicResource Yanzi.Color.ChatUserBubble}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.ChatUserBubble}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="{DynamicResource Yanzi.Radius.Lg}"/>
+        <Setter Property="Padding" Value="12,10"/>
+        <Setter Property="TextElement.Foreground" Value="{DynamicResource Yanzi.Color.ChatUserForeground}"/>
+    </Style>
+    <Style x:Key="Yanzi.Chat.Composer" TargetType="{x:Type Border}">
+        <Setter Property="TextElement.Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
+        <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Card}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Input}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="{DynamicResource Yanzi.Radius.Lg}"/>
+        <Setter Property="Padding" Value="14,12"/>
+    </Style>
+    <Style x:Key="Yanzi.Chat.Attachment" TargetType="{x:Type Border}">
+        <Setter Property="TextElement.Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
+        <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Secondary}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Border}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="{DynamicResource Yanzi.Radius.Md}"/>
+        <Setter Property="Padding" Value="10,7"/>
+    </Style>
+    <Style x:Key="Yanzi.Chat.StatusChip" TargetType="{x:Type Border}">
+        <Setter Property="TextElement.Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
+        <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Secondary}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Border}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="{DynamicResource Yanzi.Radius.Md}"/>
+        <Setter Property="Padding" Value="12,0"/>
+        <Setter Property="Height" Value="38"/>
+    </Style>
+
 </ResourceDictionary>

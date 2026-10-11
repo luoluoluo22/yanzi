@@ -1,5 +1,6 @@
 import { createSyncApi } from './sync-api.js';
-import { isCloudServicePath, isVipActive, readVipEntitlement, passesLoginRateLimit } from './cloud-access-policy.js';
+import { isCloudServicePath, needsTopLevelCloudAuth, isVipActive, readVipEntitlement, passesLoginRateLimit } from './cloud-access-policy.js';
+import { upgradePageHtml, upgradePageScript } from './upgrade-page.js';
 import { cleanupEnvironment } from './device-environment.js';
 import { createDeviceApi } from './device-api.js';
 import { createDeviceRepository } from './device-repository.js';
@@ -68,21 +69,29 @@ const PUBLIC_STORE_EXTENSION_IDS_SQL = PUBLIC_STORE_EXTENSIONS
 // Request-scoped attribution: only authenticated users, never raw identifiers.
 const requestIdentity = new WeakMap();
 const cloudVipCache = new Map();
+async function cachedCloudVipRecord(env, userId) {
+  const now = Date.now();
+  let cached = cloudVipCache.get(userId);
+  if (!cached || cached.checkedUntil < now) {
+    // Indexed read only; no D1 schema/table writes on status polling.
+    const {row} = await readVipEntitlement(env.DB, userId, now);
+    cached = {row, checkedUntil:now + 15000};
+    if (cloudVipCache.size >= 2000) cloudVipCache.clear();
+    cloudVipCache.set(userId, cached);
+  }
+  return cached.row;
+}
 async function ensureCloudVipUser(env, userId) {
   if (env.CLOUD_VIP_ONLY !== 'true') return;
   const id = String(userId || '');
   if (!id) throw new HttpError(401, 'unauthorized', 'Authentication required');
-  const now = Date.now();
-  let cached = cloudVipCache.get(id);
-  if (!cached || cached.checkedUntil < now) {
-    // Avoid ensureLicenseTables here: entitlement checks must never write D1.
-    const {row} = await readVipEntitlement(env.DB, id, now);
-    cached = { row, checkedUntil: now + 15000 };
-    if (cloudVipCache.size >= 2000) cloudVipCache.clear();
-    cloudVipCache.set(id, cached);
-  }
-  if (!isVipActive(cached.row, now))
-    throw new HttpError(403, 'vip_required', 'Cloud service requires an active VIP membership');
+  if (!isVipActive(await cachedCloudVipRecord(env, id), Date.now()))
+    throw new HttpError(403, 'vip_required', '云服务需要有效 VIP 会员；本地免费功能不受影响。', {
+      upgradeUrl: 'https://wzyp.cn/shop/4AOUCE2B',
+      activationPath: '/v1/licenses/redeem',
+      exportPath: '/v1/user/cloud-export',
+      retryAfterSeconds: 1800
+    });
 }
 async function finalizeCloudAuth(request, env, auth) {
   recordAuthenticatedUser(request, auth);
@@ -139,7 +148,7 @@ export default {
           },
           error.status
         );
-        if (error.code === 'login_rate_limited') {
+        if (error.code === 'login_rate_limited' || error.code === 'export_rate_limited') {
           rejected.headers.set('retry-after', '60');
           rejected.headers.set('cache-control', 'no-store');
         }
@@ -173,6 +182,11 @@ async function handleRequest(request, env, ctx) {
   if (request.method === "OPTIONS") {
     return withCors(new Response(null, { status: 204 }));
   }
+  // Protect formerly public, resource-consuming catalogue and community APIs.
+  // Auth is checked ahead of R2/D1 reads, without trusting client version headers.
+  if (env.CLOUD_VIP_ONLY === 'true' && needsTopLevelCloudAuth(url.pathname)) {
+    await requireAuth(request, env);
+  }
 
   const platformApi = {
     requireAuth, ensureCloudVipUser, verifyToken, signToken, read: readUserSyncObject,
@@ -190,6 +204,12 @@ async function handleRequest(request, env, ctx) {
   if (deviceResponse) return deviceResponse;
 
   if (url.pathname.startsWith("/downloads/") && request.method === "GET") {
+    // Paid application packages are not free anonymous R2 egress. Keep signed
+    // Android release/upgrade manifests public so users can obtain an updated client.
+    if (env.CLOUD_VIP_ONLY === 'true' && url.pathname.startsWith('/downloads/applications/')) {
+      const auth = await requireAuth(request, env);
+      await ensureCloudVipUser(env, auth.userId);
+    }
     const key = url.pathname.substring(1);
     const object = await env.PACKAGES.get(key);
     if (!object) {
@@ -200,20 +220,34 @@ async function handleRequest(request, env, ctx) {
     headers.set("etag", object.httpEtag || "");
     if (!headers.has("Content-Type")) headers.set("Content-Type", key.endsWith('.apk')
       ? "application/vnd.android.package-archive" : key.endsWith('.json') ? "application/json; charset=utf-8" : "application/zip");
-    headers.set("Cache-Control", key.endsWith('releases.json') ? "no-store" : "public, max-age=3600");
+    headers.set("Cache-Control", key.endsWith('releases.json') ? "public, max-age=60" : "public, max-age=3600");
     headers.set("Access-Control-Allow-Origin", "*");
     return new Response(object.body, { headers });
   }
 
   if (url.pathname === "/v1/debug/list-packages" && request.method === "GET") {
+    const auth = await requireAuth(request, env);
+    if (!isAdminUser(auth, env)) throw new HttpError(403, 'admin_required', 'Administrator required');
     const list = await env.PACKAGES.list({ prefix: 'downloads/' });
     const keys = list.objects.map(obj => obj.key);
     return json({ count: keys.length, keys });
   }
 
+  if (url.pathname === '/upgrade' && request.method === 'GET') {
+    return new Response(upgradePageHtml, {headers:{'content-type':'text/html; charset=utf-8',
+      'content-security-policy':"default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'",
+      'cache-control':'public, max-age=3600'}});
+  }
+  if (url.pathname === '/upgrade.js' && request.method === 'GET') {
+    return new Response(upgradePageScript, {headers:{'content-type':'application/javascript; charset=utf-8',
+      'cache-control':'public, max-age=3600',
+      'x-content-type-options':'nosniff'}});
+  }
+
   if (url.pathname === "/health") {
-    const result = await env.DB.prepare("select datetime('now') as now").first();
-    return json({ ok: true, now: result?.now ?? null, foundationRevision: "2026-10-03-domains-v1", deviceEnvironmentProtocol: 1 });
+    // Never spend a D1 read for an unauthenticated health probe.
+    // Database availability is verified separately by protected internal checks.
+    return json({ ok: true, now: isoNow(), foundationRevision: "2026-10-03-domains-v1", deviceEnvironmentProtocol: 1 });
   }
 
   if (url.pathname === "/v1/auth/register" && request.method === "POST") {
@@ -579,6 +613,14 @@ async function handleRequest(request, env, ctx) {
 
   if (url.pathname === "/v1/auth/me" && request.method === "GET") {
     const auth = await requireAuth(request, env);
+    const vipInfo = await getUserVipInfo(env, auth.userId);
+    // Legacy clients poll account status. Never create/query the wish-wall tables
+    // for free users who cannot access that paid cloud feature.
+    if (env.CLOUD_VIP_ONLY === 'true' && !vipInfo.isVip) {
+      return json({userId:auth.userId, username:auth.username, email:auth.email,
+        points:0, wishesCount:0, acceptedCount:0, isAdmin:isAdminUser(auth, env),
+        ...vipInfo});
+    }
     let points = 0;
     let wishesCount = 0;
     let acceptedCount = 0;
@@ -595,7 +637,6 @@ async function handleRequest(request, env, ctx) {
     } catch (e) {
       console.warn("user_points query fallback:", e);
     }
-    const vipInfo = await getUserVipInfo(env, auth.userId);
     return json({
       userId: auth.userId,
       username: auth.username,
@@ -618,6 +659,44 @@ async function handleRequest(request, env, ctx) {
       username: auth.username,
       ...vipInfo
     });
+  }
+
+  // Membership discovery works for free users (including older signed-in clients).
+  if (url.pathname === "/v1/user/cloud-access" && request.method === "GET") {
+    const auth = await requireAuth(request, env);
+    const vipInfo = await getUserVipInfo(env, auth.userId);
+    const response = json({ ok: true, ...vipInfo,
+      cloudVipOnly: env.CLOUD_VIP_ONLY === 'true',
+      canUseCloud: env.CLOUD_VIP_ONLY !== 'true' || vipInfo.isVip,
+      freeVersionCeiling: '1.0',
+      upgradeUrl: 'https://wzyp.cn/shop/4AOUCE2B',
+      redeemPath: '/v1/licenses/redeem',
+      exportPath: '/v1/user/cloud-export',
+      message: vipInfo.isVip ? '会员云服务已开通' : '本地免费功能继续可用，云服务及后续版本需要激活 VIP'
+    });
+    response.headers.set('cache-control', 'no-store');
+    return response;
+  }
+
+  // Authenticated historical data portability. Read-only and paginated to avoid
+  // breaking users' access to their own pre-existing data after membership expiry.
+  if (url.pathname === "/v1/user/cloud-export" && request.method === "GET") {
+    const auth = await requireAuth(request, env);
+    const rawCursor = url.searchParams.get('cursor') ?? '0';
+    if (!/^(?:0|[1-9][0-9]{0,15})$/.test(rawCursor) || !Number.isSafeInteger(Number(rawCursor)))
+      throw new HttpError(400, 'invalid_export_cursor', 'Invalid export cursor');
+    if (env.EXPORT_RATE_LIMITER?.limit) {
+      const key = await anonymousKey(env, 'export', auth.userId);
+      if (!(await passesLoginRateLimit(env.EXPORT_RATE_LIMITER, key)))
+        throw new HttpError(429, 'export_rate_limited', 'Export temporarily rate limited; retry in one minute');
+    }
+    const page = await readUserSyncObjects(env, auth.userId, Number(rawCursor), 100);
+    const response = json({ok:true, format:'yanzi-cloud-sync-objects-v1',
+      note:'Snapshot of sync objects only; attachments and external storage must be exported separately.',
+      ...page});
+    response.headers.set('cache-control','no-store');
+    response.headers.set('content-disposition','attachment; filename="yanzi-sync-objects.json"');
+    return response;
   }
 
   if (url.pathname === "/v1/licenses/redeem" && request.method === "POST") {
@@ -977,7 +1056,9 @@ async function handleRequest(request, env, ctx) {
         platforms: platforms
       };
 
-      return withCors(json(payload));
+      const result = withCors(json(payload));
+      result.headers.set('cache-control', 'public, max-age=300');
+      return result;
     } catch (err) {
       console.error("Fetch GitHub releases failed:", err);
       // 容错：如果 GitHub 接口报错，返回兜底配置
@@ -2065,10 +2146,7 @@ async function handleRequest(request, env, ctx) {
 
 async function getUserVipInfo(env, userId) {
   try {
-    await ensureLicenseTables(env);
-    const userRecord = await env.DB.prepare(
-      "select vip_expire_at, vip_type from users where user_id = ?"
-    ).bind(userId).first();
+    const userRecord = await cachedCloudVipRecord(env, String(userId));
 
     if (!userRecord) {
       return { isVip: false, vipType: null, vipExpireAt: null, daysRemaining: 0 };
