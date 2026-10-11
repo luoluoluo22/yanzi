@@ -253,7 +253,7 @@ public sealed partial class CloudSyncClient
         var session = await ReadSessionAsync(response, cancellationToken);
         Interlocked.Exchange(ref _automaticLoginRejectedUntilUnixMs, 0);
         AccountCoordinator.Commit(generation, () => { _session = session; SyncSessionStore.Save(session); });
-        await AccountEnvironmentSecretVault.RestoreAfterAuthenticationAsync(this, cancellationToken);
+        await RestoreVaultAfterLoginAsync(cancellationToken);
         CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Register completed", ("userId", session.UserId), ("username", session.Username));
         return session;
     }
@@ -270,6 +270,12 @@ public sealed partial class CloudSyncClient
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(12));
         try { await AccountEnvironmentSecretVault.RestoreAfterAuthenticationAsync(this, timeout.Token); }
+        catch (CloudVipRequiredException)
+        {
+            // Cloud membership expiry must never prevent login, licence redemption,
+            // membership renewal or access to the user's historical data export.
+            HostAssets.AppendLog("[VIP] Secret vault sync suspended; account login remains available.");
+        }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             HostAssets.AppendLog("Environment secret vault restore timed out; login remains available.");
@@ -363,7 +369,7 @@ public sealed partial class CloudSyncClient
         var session = await ReadSessionAsync(response, cancellationToken);
         AccountCoordinator.Commit(generation, () => { _session = session; SyncSessionStore.Save(session); });
         await AccountEnvironmentSecretVault.RewrapAfterPasswordChangeAsync(this, previousMasterKey, keys.MasterKey, cancellationToken);
-        await AccountEnvironmentSecretVault.RestoreAfterAuthenticationAsync(this, cancellationToken);
+        await RestoreVaultAfterLoginAsync(cancellationToken);
         CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Reset password completed", ("userId", session.UserId), ("username", session.Username));
         return session;
     }
