@@ -98,7 +98,7 @@ public sealed class VideoResumeService
             try
             {
                 _dispatcher = Dispatcher.CurrentDispatcher;
-                _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(20) };
+                _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
                 _timer.Tick += (_, _) => Tick();
                 _timer.Start();
                 Tick();
@@ -196,7 +196,7 @@ public sealed class VideoResumeService
         {
             if (await _riceMonitor.CheckAsync() && !_stop)
             {
-                Log("电饭煲结束保温并转为待机，直接打开续播页面。");
+                Log("米家确认取消事件、保温结束并转待机：直接打开续播视频。");
                 HideButton();
                 await OpenLatestFromRiceAsync();
             }
@@ -329,6 +329,7 @@ public sealed class RiceCookerFinishMonitor
     private string _lastStatus = "";
     private string _armedCompletion = "";
     private bool _armed;
+    private DateTimeOffset _warmObservedAt;
 
     public RiceCookerFinishMonitor(string extensionDirectory)
     {
@@ -343,29 +344,59 @@ public sealed class RiceCookerFinishMonitor
         _lastStatus = "";
         _armedCompletion = "";
         _armed = false;
+        _warmObservedAt = default;
     }
 
-    // Keep-warm -> standby, following a recent finished cook, is our best
-    // proxy for physical Cancel. HA does not report the physical button itself.
-    internal bool ObserveStatus(string status, string completionEvent, DateTimeOffset now)
+    // Require recent cooking completion, observed keep-warm, a native MiOT
+    // 'cancel_' run-status event, and the keep-warm -> standby transition.
+    // A timeout/automatic stop changing the sensor alone must not start video.
+    internal bool ObserveStatus(
+        string status, string completionEvent, string runEventState,
+        string runEventPayload, DateTimeOffset now)
     {
         bool recentCompletion = DateTimeOffset.TryParse(completionEvent,
             CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var completed)
             && completed <= now.AddMinutes(1) && completed >= now.AddHours(-8);
+
         if (status == "保温中")
         {
+            if (_lastStatus != status || _armedCompletion != completionEvent || !_armed)
+                _warmObservedAt = now;
             _armed = recentCompletion;
             _armedCompletion = recentCompletion ? completionEvent : "";
             _lastStatus = status;
             return false;
         }
-        bool canceled = status == "待机中" && _lastStatus == "保温中"
-            && _armed && recentCompletion
+
+        bool nativeCancel = runEventPayload.StartsWith("cancel_", StringComparison.OrdinalIgnoreCase)
+            && DateTimeOffset.TryParse(runEventState, CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal, out var canceledAt)
+            && canceledAt >= _warmObservedAt
+            && canceledAt >= completed
+            && canceledAt <= now.AddMinutes(1)
+            && canceledAt >= now.AddMinutes(-5);
+
+        bool confirmed = status == "待机中" && _lastStatus == "保温中"
+            && _armed && recentCompletion && nativeCancel
             && string.Equals(_armedCompletion, completionEvent, StringComparison.Ordinal);
+
         _armed = false;
         _armedCompletion = "";
+        _warmObservedAt = default;
         _lastStatus = status;
-        return canceled;
+        return confirmed;
+    }
+
+    internal static string ExtractRunStatus(JsonElement attributes)
+    {
+        if (attributes.ValueKind != JsonValueKind.Object) return "";
+        foreach (var property in attributes.EnumerateObject())
+        {
+            if (property.Name.Contains("EventRunStatus", StringComparison.OrdinalIgnoreCase)
+                && property.Value.ValueKind == JsonValueKind.String)
+                return property.Value.GetString() ?? "";
+        }
+        return "";
     }
 
     public async Task<bool> CheckAsync()
@@ -376,16 +407,20 @@ public sealed class RiceCookerFinishMonitor
             || enabled.ValueKind != JsonValueKind.True) return false;
         var entityId = link.RootElement.GetProperty("eventEntityId").GetString() ?? "";
         var statusEntityId = link.RootElement.GetProperty("statusEntityId").GetString() ?? "";
+        var runStatusEventId = link.RootElement.GetProperty("runStatusEventId").GetString() ?? "";
         if (!statusEntityId.StartsWith("sensor.", StringComparison.Ordinal)
             || statusEntityId.Length > 160 || statusEntityId.Length <= 7
             || statusEntityId[7..].Any(ch => !(ch >= 'a' && ch <= 'z') &&
                                             !(ch >= '0' && ch <= '9') && ch != '_'))
             throw new InvalidOperationException("电饭煲状态实体 ID 无效。");
-        if (!entityId.StartsWith("event.", StringComparison.Ordinal)
-            || entityId.Length > 160
-            || entityId[6..].Any(ch => !(ch >= 'a' && ch <= 'z') &&
-                                      !(ch >= '0' && ch <= '9') && ch != '_'))
-            throw new InvalidOperationException("电饭煲完成事件实体 ID 无效。");
+        foreach (var eventId in new[] { entityId, runStatusEventId })
+        {
+            if (!eventId.StartsWith("event.", StringComparison.Ordinal)
+                || eventId.Length > 160 || eventId.Length <= 6
+                || eventId[6..].Any(ch => !(ch >= 'a' && ch <= 'z') &&
+                                         !(ch >= '0' && ch <= '9') && ch != '_'))
+                throw new InvalidOperationException("电饭煲事件实体 ID 无效。");
+        }
 
         using var home = JsonDocument.Parse(File.ReadAllText(_homeLinkPath, Encoding.UTF8));
         var root = home.RootElement;
@@ -409,7 +444,7 @@ public sealed class RiceCookerFinishMonitor
             Timeout = TimeSpan.FromSeconds(6)
         };
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        async Task<string> ReadEntityState(string id)
+        async Task<JsonElement> ReadEntity(string id)
         {
             using var response = await http.GetAsync(
                 new Uri(baseUri.GetLeftPart(UriPartial.Authority) + "/api/states/" +
@@ -417,11 +452,20 @@ public sealed class RiceCookerFinishMonitor
             response.EnsureSuccessStatusCode();
             using var json = JsonDocument.Parse(
                 await response.Content.ReadAsStringAsync().ConfigureAwait(false));
-            return json.RootElement.GetProperty("state").GetString() ?? "";
+            return json.RootElement.Clone();
         }
-        var completedAt = await ReadEntityState(entityId).ConfigureAwait(false);
-        var status = await ReadEntityState(statusEntityId).ConfigureAwait(false);
-        return ObserveStatus(status, completedAt, DateTimeOffset.Now);
+
+        var completedAt = (await ReadEntity(entityId).ConfigureAwait(false))
+            .GetProperty("state").GetString() ?? "";
+        var runEvent = await ReadEntity(runStatusEventId).ConfigureAwait(false);
+        var runEventState = runEvent.GetProperty("state").GetString() ?? "";
+        string payload = "";
+        if (runEvent.TryGetProperty("attributes", out var attributes))
+            payload = ExtractRunStatus(attributes);
+        var status = (await ReadEntity(statusEntityId).ConfigureAwait(false))
+            .GetProperty("state").GetString() ?? "";
+        return ObserveStatus(status, completedAt, runEventState,
+            payload, DateTimeOffset.Now);
     }
 }
 
