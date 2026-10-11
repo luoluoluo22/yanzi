@@ -124,9 +124,10 @@ public sealed partial class CloudSyncClient
             DefaultRequestVersion = HttpVersion.Version11,
             DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrLower
         };
-        client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("YanziClient-Desktop", "0.2.3"));
+        var runtimeVersion = typeof(CloudSyncClient).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
+        client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("YanziClient-Desktop", runtimeVersion));
         client.DefaultRequestHeaders.TryAddWithoutValidation("X-Yanzi-Client", "desktop");
-        client.DefaultRequestHeaders.TryAddWithoutValidation("X-Yanzi-Client-Version", "0.2.3");
+        client.DefaultRequestHeaders.TryAddWithoutValidation("X-Yanzi-Client-Version", runtimeVersion);
         client.DefaultRequestHeaders.TryAddWithoutValidation("X-Yanzi-Device-Id", DeviceIdentityStore.GetOrCreateDesktopDeviceId());
         return client;
     }
