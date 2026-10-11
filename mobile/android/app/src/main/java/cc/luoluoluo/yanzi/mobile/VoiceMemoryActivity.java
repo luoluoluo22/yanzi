@@ -3,6 +3,9 @@ package cc.luoluoluo.yanzi.mobile;
 import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
+import android.net.Uri;
+import java.io.FileInputStream;
+import java.io.OutputStream;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.media.MediaPlayer;
@@ -15,11 +18,15 @@ import java.util.Locale;
 /** Native, device-local recording screen. Never starts recording without explicit interaction. */
 public final class VoiceMemoryActivity extends Activity {
     private static final int AUDIO_PERMISSION_REQUEST = 5201;
+    private static final int EXPORT_REQUEST = 5202;
+    private File pendingExport;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private TextView status;
     private LinearLayout list;
     private Button startButton;
     private Button stopButton;
+    private RadioGroup formatGroup;
+    private TextView archiveSummary;
     private MediaPlayer player;
     private File playing;
     private long lastArchiveRefresh;
@@ -38,7 +45,7 @@ public final class VoiceMemoryActivity extends Activity {
         super.onCreate(state);
         getWindow().setStatusBarColor(Color.rgb(16, 20, 30));
         getWindow().setNavigationBarColor(Color.rgb(16, 20, 30));
-        VoiceMemoryStore.recoverInterruptedSegments(this);
+        if (!VoiceMemoryService.isRecording()) VoiceMemoryStore.recoverInterruptedSegments(this);
         qaSeconds = BuildConfig.DEBUG ? getIntent().getIntExtra(VoiceMemoryService.EXTRA_QA_SECONDS, 0) : 0;
         buildScreen();
     }
@@ -96,7 +103,28 @@ public final class VoiceMemoryActivity extends Activity {
             handler.postDelayed(this::reloadArchive, 1500);
         });
 
-        column.addView(label("默认每 15 分钟保存一个 WAV 文件。录音可在锁屏后继续；系统通知中可停止。", 13, 0xffaab8cb), spacing(-2));
+        column.addView(label("默认每 15 分钟保存一个音频文件；可在锁屏时继续，通知栏可以停止。", 13, 0xffaab8cb), spacing(-2));
+        column.addView(label("录制格式（开始前选择）", 16, Color.WHITE), spacing(-2));
+        formatGroup = new RadioGroup(this);
+        formatGroup.setOrientation(RadioGroup.VERTICAL);
+        RadioButton aac = new RadioButton(this);
+        aac.setId(View.generateViewId());
+        aac.setText("省空间 · AAC 32 kbps（推荐）");
+        aac.setTextColor(Color.WHITE);
+        RadioButton wav = new RadioButton(this);
+        wav.setId(View.generateViewId());
+        wav.setText("无损原始 WAV（兼容回退）");
+        wav.setTextColor(Color.WHITE);
+        formatGroup.addView(aac);
+        formatGroup.addView(wav);
+        String currentFormat = getSharedPreferences("voice-memory-state", MODE_PRIVATE).getString("format", "aac");
+        formatGroup.check("wav".equals(currentFormat) ? wav.getId() : aac.getId());
+        formatGroup.setOnCheckedChangeListener((group, id) -> {
+            if (VoiceMemoryService.isRecording()) return;
+            getSharedPreferences("voice-memory-state", MODE_PRIVATE).edit()
+                    .putString("format", id == aac.getId() ? "aac" : "wav").apply();
+        });
+        column.addView(formatGroup, spacing(-2));
         if (BuildConfig.DEBUG) {
             CheckBox qa = new CheckBox(this);
             qa.setText("开发验收：每 8 秒分段");
@@ -108,6 +136,8 @@ public final class VoiceMemoryActivity extends Activity {
         TextView archiveTitle = label("本地录音", 20, Color.WHITE);
         archiveTitle.setTypeface(null, 1);
         column.addView(archiveTitle, spacing(-2));
+        archiveSummary = label("", 13, 0xffaab8cb);
+        column.addView(archiveSummary, spacing(-2));
         Button refresh = button("刷新列表");
         refresh.setOnClickListener(v -> reloadArchive());
         column.addView(refresh, spacing(-2));
@@ -144,14 +174,33 @@ public final class VoiceMemoryActivity extends Activity {
         boolean active = VoiceMemoryService.isRecording();
         startButton.setEnabled(!active);
         stopButton.setEnabled(active);
+        if (formatGroup != null) {
+            for (int i = 0; i < formatGroup.getChildCount(); i++)
+                formatGroup.getChildAt(i).setEnabled(!active);
+        }
         String error = getSharedPreferences("voice-memory-state", MODE_PRIVATE).getString("last_error", "");
-        status.setText(active ? "● 正在录音 · 关闭此页面也会继续" :
+        long started = getSharedPreferences("voice-memory-state", MODE_PRIVATE).getLong("started_at", 0);
+        String elapsed = active && started > 0
+                ? String.format(Locale.ROOT, " · 已录 %d 分 %02d 秒",
+                        Math.max(0, (System.currentTimeMillis() - started) / 60000),
+                        Math.max(0, (System.currentTimeMillis() - started) / 1000) % 60) : "";
+        status.setText(active ? "● 正在录音" + elapsed + " · 可锁屏继续" :
                 !error.isEmpty() ? "未录音 · " + error : "○ 未录音 · 等待手动启动");
     }
     private void reloadArchive() {
         if (list == null) return;
         list.removeAllViews();
         File[] files = VoiceMemoryStore.recordings(this);
+        long totalBytes = 0;
+        long totalTime = 0;
+        for (File file : files) {
+            totalBytes += file.length();
+            totalTime += VoiceMemoryStore.durationMs(file);
+        }
+        if (archiveSummary != null)
+            archiveSummary.setText(String.format(Locale.ROOT,
+                    "%d 段 · 约 %d 分 %02d 秒 · %.1f MB · 仅保存在本机",
+                    files.length, totalTime / 60000, (totalTime / 1000) % 60, totalBytes / 1048576.0));
         if (files.length == 0) {
             list.addView(label("暂无录音，文件仅保存在当前手机。", 14, 0xffaab8cb), spacing(-2));
             return;
@@ -168,7 +217,11 @@ public final class VoiceMemoryActivity extends Activity {
             Button play = button(playing != null && playing.equals(file) ? "停止" : "播放");
             play.setContentDescription("播放 " + file.getName());
             play.setOnClickListener(v -> playOrStop(file));
-            row.addView(play, new LinearLayout.LayoutParams(dp(86), dp(48)));
+            row.addView(play, new LinearLayout.LayoutParams(dp(70), dp(48)));
+            Button export = button("导出");
+            export.setContentDescription("导出 " + file.getName());
+            export.setOnClickListener(v -> beginExport(file));
+            row.addView(export, new LinearLayout.LayoutParams(dp(70), dp(48)));
             row.setBackgroundColor(0xff263045);
             list.addView(row, spacing(-2));
         }
@@ -190,6 +243,45 @@ public final class VoiceMemoryActivity extends Activity {
         }
         reloadArchive();
     }
+    private void beginExport(File file) {
+        if (VoiceMemoryService.isRecording()) {
+            Toast.makeText(this, "请停止录音后再导出", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        pendingExport = file;
+        Intent destination = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        destination.setType(file.getName().endsWith(".aac") ? "audio/aac" : "audio/wav");
+        destination.addCategory(Intent.CATEGORY_OPENABLE);
+        destination.putExtra(Intent.EXTRA_TITLE, file.getName());
+        try { startActivityForResult(destination, EXPORT_REQUEST); }
+        catch (Exception e) {
+            pendingExport = null;
+            Toast.makeText(this, "无法打开文件保存界面", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != EXPORT_REQUEST) return;
+        File source = pendingExport;
+        pendingExport = null;
+        if (resultCode != RESULT_OK || source == null || data == null || data.getData() == null) return;
+        Uri destination = data.getData();
+        new Thread(() -> {
+            try (FileInputStream input = new FileInputStream(source);
+                 OutputStream output = getContentResolver().openOutputStream(destination, "w")) {
+                if (output == null) throw new java.io.IOException("Destination not writable");
+                byte[] bytes = new byte[65536];
+                int count;
+                while ((count = input.read(bytes)) >= 0) if (count > 0) output.write(bytes, 0, count);
+                output.flush();
+                runOnUiThread(() -> Toast.makeText(this, "录音已导出", Toast.LENGTH_SHORT).show());
+            } catch (Exception error) {
+                runOnUiThread(() -> Toast.makeText(this, "导出失败：" + error.getClass().getSimpleName(), Toast.LENGTH_LONG).show());
+            }
+        }, "VoiceMemoryExport").start();
+    }
+
     private void stopPlayback() {
         if (player != null) { try { player.stop(); } catch (Exception ignored) {} player.release(); player = null; }
         playing = null;

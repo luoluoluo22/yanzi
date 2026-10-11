@@ -16,6 +16,7 @@ public final class LanRecoveryTest extends Instrumentation {
         if ("chat-objects".equals(arguments.getString("suite"))) { ChatObjectsVerification.run(this); return; }
         if ("chat-objects-live".equals(arguments.getString("suite"))) { ChatObjectsLiveVerification.run(this,arguments); return; }
         if ("send-latency".equals(arguments.getString("suite"))) { MessageSendLatencyVerification.run(this); return; }
+        if ("voice-memory-codec".equals(arguments.getString("suite"))) { VoiceMemoryVerification.run(this); return; }
         if ("wake-chain".equals(arguments.getString("suite"))) { WakeChainVerification.run(this); return; }
         if ("chat-notification".equals(arguments.getString("suite"))) { ChatNotificationVerification.run(this); return; }
         if ("chat-rich-text".equals(arguments.getString("suite"))) { ChatRichTextVerification.run(this); return; }

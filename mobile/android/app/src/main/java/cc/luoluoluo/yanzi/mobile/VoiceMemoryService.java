@@ -80,14 +80,16 @@ public final class VoiceMemoryService extends Service {
         final int segmentSeconds = BuildConfig.DEBUG && intent != null
                 ? Math.max(5, Math.min(DEFAULT_SEGMENT_SECONDS, intent.getIntExtra(EXTRA_QA_SECONDS, DEFAULT_SEGMENT_SECONDS)))
                 : DEFAULT_SEGMENT_SECONDS;
-        captureThread = new Thread(() -> capture(segmentSeconds), "VoiceMemoryCapture");
+        final boolean compressed = "aac".equals(getSharedPreferences("voice-memory-state", MODE_PRIVATE).getString("format", "aac"));
+        captureThread = new Thread(() -> capture(segmentSeconds, compressed), "VoiceMemoryCapture");
         captureThread.start();
         return START_NOT_STICKY;
     }
 
-    private void capture(int segmentSeconds) {
+    private void capture(int segmentSeconds, boolean compressed) {
         android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_AUDIO);
         RandomAccessFile output = null;
+        VoiceMemoryAacWriter aac = null;
         File partial = null;
         try {
             int minimum = AudioRecord.getMinBufferSize(VoiceMemoryStore.SAMPLE_RATE,
@@ -107,30 +109,51 @@ public final class VoiceMemoryService extends Service {
             if (audio.getRecordingState() != AudioRecord.RECORDSTATE_RECORDING)
                 throw new IOException("Microphone failed to start");
             recordError("");
+            getSharedPreferences("voice-memory-state", MODE_PRIVATE).edit()
+                    .putLong("started_at", System.currentTimeMillis())
+                    .putString("active_format", compressed ? "aac" : "wav").apply();
             byte[] buffer = new byte[8192];
             long startedAt = 0;
             while (!stopRequested) {
-                if (output == null) {
-                    partial = VoiceMemoryStore.newPartial(this);
-                    output = VoiceMemoryStore.beginSegment(partial);
+                if (output == null && aac == null) {
+                    if (compressed) aac = new VoiceMemoryAacWriter(this);
+                    else {
+                        partial = VoiceMemoryStore.newPartial(this);
+                        output = VoiceMemoryStore.beginSegment(partial);
+                    }
                     startedAt = SystemClock.elapsedRealtime();
                 }
                 int read = audio.read(buffer, 0, buffer.length, AudioRecord.READ_BLOCKING);
-                if (read > 0) output.write(buffer, 0, read - (read % 2));
-                else if (read == AudioRecord.ERROR_INVALID_OPERATION || read == AudioRecord.ERROR_DEAD_OBJECT)
+                if (read > 0) {
+                    if (compressed) aac.write(buffer, read - (read % 2));
+                    else output.write(buffer, 0, read - (read % 2));
+                } else if (!stopRequested && (read == AudioRecord.ERROR_INVALID_OPERATION || read == AudioRecord.ERROR_DEAD_OBJECT))
                     throw new IOException("Audio capture interrupted: " + read);
                 if (SystemClock.elapsedRealtime() - startedAt >= segmentSeconds * 1000L) {
-                    output.getFD().sync();
-                    output.close();
-                    output = null;
-                    VoiceMemoryStore.finishSegment(partial);
-                    partial = null;
+                    if (compressed) {
+                        VoiceMemoryAacWriter completed = aac;
+                        aac = null;
+                        completed.finish();
+                    } else {
+                        output.getFD().sync();
+                        output.close();
+                        output = null;
+                        VoiceMemoryStore.finishSegment(partial);
+                        partial = null;
+                    }
                 }
             }
         } catch (Exception error) {
             Log.e("YanziVoiceMemory", "Recording stopped", error);
             recordError("录音中断：" + error.getClass().getSimpleName());
         } finally {
+            if (aac != null) {
+                try { aac.finish(); }
+                catch (Exception e) {
+                    Log.e("YanziVoiceMemory", "AAC finalization deferred to recovery", e);
+                    aac.abort();
+                }
+            }
             if (output != null) {
                 try { output.getFD().sync(); output.close(); } catch (Exception e) { Log.w("YanziVoiceMemory", "File close failed", e); }
                 try { VoiceMemoryStore.finishSegment(partial); } catch (Exception e) { Log.e("YanziVoiceMemory", "Segment recovery pending", e); }
@@ -144,6 +167,7 @@ public final class VoiceMemoryService extends Service {
             if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
             wakeLock = null;
             RECORDING.set(false);
+            getSharedPreferences("voice-memory-state", MODE_PRIVATE).edit().remove("started_at").apply();
             stopForeground(true);
             stopSelf();
         }
