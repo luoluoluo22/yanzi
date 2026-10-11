@@ -3768,7 +3768,7 @@ public static class ZhaopinInteractionService
                         ["body"] = "body|innerText"
                     }))
                 },
-                closeOnComplete: false,
+                closeOnComplete: true,
                 cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
@@ -3818,7 +3818,7 @@ public static class ZhaopinInteractionService
         stored.InteractionState = "manual_required";
         stored.LastInteractionAt = DateTimeOffset.Now;
         stored.LastInteractionMessage =
-            "已经打开投递流程，但网页需要你确认简历/补充字段；当前标签页已保留，完成后可在小程序标记“已投递”。";
+            "自动投递未确认，临时职位标签页已自动关闭；请从小程序重新打开岗位，完成简历/补充字段确认后再标记“已投递”。";
         SaveJob(dataDirectory, jobs, stored);
         DailyJournalService.AppendEvent(dataDirectory, "apply_manual", stored.Id, stored.Title, stored.LastInteractionMessage);
         return new InteractionResult(false, "manual_required", stored.LastInteractionMessage);
