@@ -11,14 +11,30 @@ $envFile = Join-Path $runtimeDir '.env'
 $nodeExe = (Get-Command node -ErrorAction Stop).Source
 $entryFile = Join-Path $projectDir 'src\index.js'
 
-function Get-ServiceProcess {
-  if (-not (Test-Path -LiteralPath $pidFile)) { return $null }
-  $saved = Get-Content -LiteralPath $pidFile -Raw | ConvertFrom-Json
-  $running = Get-CimInstance Win32_Process -Filter "ProcessId = $($saved.pid)"
-  if ($running -and $running.ExecutablePath -eq $nodeExe -and $running.CommandLine.Contains($entryFile)) { return $running }
-  return $null
+function Test-RaccoonProcess($candidate) {
+  return $null -ne $candidate -and
+    [IO.Path]::GetFileName([string]$candidate.ExecutablePath) -ieq 'node.exe' -and
+    [string]$candidate.CommandLine -like ('*' + $entryFile + '*')
 }
 
+function Get-ServiceProcess {
+  if (Test-Path -LiteralPath $pidFile) {
+    $saved = Get-Content -LiteralPath $pidFile -Raw | ConvertFrom-Json
+    $process = Get-CimInstance Win32_Process -Filter "ProcessId = $($saved.pid)"
+    if (Test-RaccoonProcess $process) { return $process }
+  }
+  # The shared runtime may use a different Node executable than `Get-Command node`.
+  # Reconcile stale PID files using the actual listening socket, never an arbitrary node PID.
+  $portLine = Get-Content -LiteralPath $envFile -ErrorAction SilentlyContinue |
+    Where-Object { $_ -match '^RACCOON_PORT=\d+\s*$' } | Select-Object -First 1
+  if (-not $portLine) { return $null }
+  $port = [int](($portLine -split '=', 2)[1].Trim())
+  foreach ($socket in @(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue)) {
+    $process = Get-CimInstance Win32_Process -Filter "ProcessId = $($socket.OwningProcess)"
+    if (Test-RaccoonProcess $process) { return $process }
+  }
+  return $null
+}
 if ($Action -eq 'start') {
   New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
   if (Test-Path -LiteralPath (Join-Path $runtimeDir 'service-paused')) { Remove-Item -LiteralPath (Join-Path $runtimeDir 'service-paused') }

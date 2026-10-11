@@ -15,7 +15,7 @@ namespace Yanzi.UI.Wpf;
 public sealed class YanziNavigationMenu : Border
 {
     public sealed record Link(string Title, string Description, Action Navigate);
-    private sealed record Group(string Label, IReadOnlyList<Link> Links, Button Trigger);
+    private sealed record Group(string Label, IReadOnlyList<Link> Links, Button Trigger, FrameworkElement Chevron);
 
     private readonly StackPanel _triggers = new()
     {
@@ -114,8 +114,10 @@ public sealed class YanziNavigationMenu : Border
         var label = new StackPanel { Orientation = Orientation.Horizontal };
         label.Children.Add(new TextBlock { Text = title, VerticalAlignment = VerticalAlignment.Center });
         var chevron = YanziIcons.ChevronUp(12);
+        // Keep the rotation centred so the arrow stays next to the trigger text.
+        chevron.RenderTransformOrigin = new Point(0.5, 0.5);
         chevron.RenderTransform = new RotateTransform(180);
-        chevron.Margin = new Thickness(6, 0, 0, 0);
+        chevron.Margin = new Thickness(4, 0, 0, 0);
         label.Children.Add(chevron);
         var trigger = YanziUi.WithStyle(new Button
         {
@@ -133,7 +135,7 @@ public sealed class YanziNavigationMenu : Border
         {
             if (_popup.IsOpen && _activeGroup != index) ShowGroup(index);
         };
-        _groups.Add(new Group(title, items, trigger));
+        _groups.Add(new Group(title, items, trigger, chevron));
         _triggers.Children.Add(trigger);
         return trigger;
     }
@@ -195,8 +197,8 @@ public sealed class YanziNavigationMenu : Border
             grid.Children.Add(card);
         }
         _links.Children.Add(grid);
-        UpdateTriggers();
         _popup.IsOpen = true;
+        UpdateTriggers();
         _indicator.Visibility = Visibility.Visible;
         Dispatcher.BeginInvoke(new Action(UpdateIndicator),
             System.Windows.Threading.DispatcherPriority.Loaded);
@@ -212,8 +214,11 @@ public sealed class YanziNavigationMenu : Border
     {
         for (var i = 0; i < _groups.Count; i++)
         {
+            bool active = _popup.IsOpen && _activeGroup == i;
             _groups[i].Trigger.SetResourceReference(Control.BackgroundProperty,
-                _popup.IsOpen && _activeGroup == i ? "Yanzi.Color.Accent" : "Yanzi.Color.Card");
+                active ? "Yanzi.Color.Accent" : "Yanzi.Color.Card");
+            // shadcn trigger arrow: down when closed, up when its viewport opens.
+            _groups[i].Chevron.RenderTransform = new RotateTransform(active ? 0 : 180);
         }
     }
 

@@ -78,46 +78,101 @@ public partial class MobileMessageToastWindow : Window
         _preferredTargetDeviceId = null;
     }
     private string? _deviceListWarning;
+    // Device routing is presented by the shared native dropdown, not WPF ContextMenu/MenuItem.
+    // Rebuilt on demand so availability, labels, and selections are always current.
+    private Yanzi.UI.Wpf.YanziDropdownMenu? _deviceMenu;
+
     private async void DeviceSwitcher_Click(object sender, RoutedEventArgs e)
     {
+        if (_deviceMenu?.IsOpen == true)
+        {
+            _deviceMenu.IsOpen = false;
+            return;
+        }
         _deviceListWarning = null;
         await LoadTargetsAsync();
-        var menu = new System.Windows.Controls.ContextMenu { MaxHeight = 520, MinWidth = 330,
-            PlacementTarget = (System.Windows.Controls.Button)sender, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
-        if (_deviceListWarning != null) menu.Items.Add(new System.Windows.Controls.MenuItem { Header = _deviceListWarning, IsEnabled = false });
+        if (!IsLoaded || !IsVisible) return;
+        var menu = new Yanzi.UI.Wpf.YanziDropdownMenu
+        {
+            PreferAbove = false, AlignStart = true, SubmenuWidth = 205
+        };
+        menu.UseStandaloneTheme(Yanzi.UI.Wpf.YanziUi.GetTheme(this));
+        menu.UseContentWidth(190);
+        if (_deviceListWarning != null) menu.AddLabel(_deviceListWarning);
+        var selectedId = (TargetDevicePicker.SelectedItem as ChatTarget)?.Id;
         foreach (var target in TargetDevicePicker.Items.Cast<ChatTarget>())
         {
-            var row = new Grid { Width = 340, Margin = new Thickness(0, 4, 0, 4) };
-            row.ColumnDefinitions.Add(new ColumnDefinition()); row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            var text = new StackPanel();
-            text.Children.Add(new TextBlock { Text = target.Label, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
-            text.Children.Add(new TextBlock { Text = target.Detail, FontSize = 11, Opacity = .72, Margin = new Thickness(0, 4, 8, 0), TextWrapping = TextWrapping.Wrap });
-            row.Children.Add(text);
-            var item = new System.Windows.Controls.MenuItem { Header = row,
-                ToolTip = target.Id == null ? target.Detail : target.Label + "\n设备标识：" + target.Id,
-                IsCheckable = true, IsChecked = (TargetDevicePicker.SelectedItem as ChatTarget)?.Id == target.Id };
-            item.Click += (_, _) => { TargetDevicePicker.SelectedItem = target; TitleText.Text = target.Label; };
-            if (target.Id != null)
+            var item = menu.AddAction(target.Label, () =>
             {
-                var remove = new System.Windows.Controls.Button { Content = "删除", Padding = new Thickness(8, 4, 8, 4),
-                    VerticalAlignment = System.Windows.VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
-                Grid.SetColumn(remove, 1); row.Children.Add(remove);
-                remove.Click += async (_, args) => {
-                    args.Handled = true; menu.IsOpen = false;
-                    if (System.Windows.MessageBox.Show(this, "删除“" + target.Label + "”的设备登记并停用该设备的消息和直连授权？\n设备上的文件不会被删除。", "删除设备", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
-                    try {
-                        var cloud = (System.Windows.Application.Current.MainWindow as MainWindow)?.CloudSyncClient ?? throw new InvalidOperationException("请先登录账号");
-                        await cloud.RemovePeerDeviceAsync(target.Id);
-                        foreach (var pair in YanziLanPairing.List().Where(x => x.DeviceId == target.Id)) YanziLanPairing.Revoke(pair.PairId);
-                        YanziPeerRegistry.Remove(target.Id);
-                        await LoadTargetsAsync(); SendStatusText.Text = "已删除设备“" + target.Label + "”。";
-                    } catch (Exception error) { SendStatusText.Text = "删除未完成：" + error.Message; }
-                };
-            }
-            menu.Items.Add(item);
+                TargetDevicePicker.SelectedItem = target;
+                TitleText.Text = target.Label;
+            }, shortcut: selectedId == target.Id ? "✓" : "");
+            item.ToolTip = target.Id is null ? target.Detail :
+                target.Detail + "\n设备标识：" + target.Id;
         }
-        menu.IsOpen = true;
+        if (TargetDevicePicker.Items.Cast<ChatTarget>().Any(x => x.Id != null))
+        {
+            menu.AddSeparator();
+            menu.AddSubmenu("管理设备", sub =>
+            {
+                foreach (var target in TargetDevicePicker.Items.Cast<ChatTarget>().Where(x => x.Id != null))
+                {
+                    var captured = target;
+                    var removeItem = sub.AddAction("删除 · " + target.Label,
+                        async () => await RemoveDeviceAsync(captured));
+                    removeItem.ToolTip = "撤销设备授权，操作前再次确认";
+                }
+            });
+        }
+        _deviceMenu = menu;
+        menu.ShowFrom(DeviceSwitcherButton);
     }
+
+    private async Task RemoveDeviceAsync(ChatTarget target)
+    {
+        if (target.Id is null) return;
+        if (System.Windows.MessageBox.Show(this,
+            "删除“" + target.Label + "”的设备登记并停用该设备的消息和直连授权？\n设备上的文件不会被删除。",
+            "删除设备", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        try
+        {
+            var cloud = (System.Windows.Application.Current.MainWindow as MainWindow)?.CloudSyncClient
+                ?? throw new InvalidOperationException("请先登录账号");
+            await cloud.RemovePeerDeviceAsync(target.Id);
+            foreach (var pair in YanziLanPairing.List().Where(x => x.DeviceId == target.Id))
+                YanziLanPairing.Revoke(pair.PairId);
+            YanziPeerRegistry.Remove(target.Id);
+            await LoadTargetsAsync();
+            SendStatusText.Text = "已删除设备“" + target.Label + "”。";
+        }
+        catch (Exception error) { SendStatusText.Text = "删除未完成：" + error.Message; }
+    }
+
+    private void ApplySharedMobileAppearance()
+    {
+        // Per-window tokens: extensions and the running host keep their own theme.
+        var theme = string.Equals(AppSettingsStore.Load().ThemeMode, "Light",
+            StringComparison.OrdinalIgnoreCase)
+            ? Yanzi.UI.Wpf.YanziTheme.Light : Yanzi.UI.Wpf.YanziTheme.Dark;
+        Yanzi.UI.Wpf.YanziUi.ApplyTo(this, theme);
+        DeviceChevron.Content = Yanzi.UI.Wpf.YanziIcons.ChevronRight(13);
+        DeviceChevron.RenderTransformOrigin = new System.Windows.Point(.5, .5);
+        DeviceChevron.RenderTransform = new RotateTransform(90);
+        CloseButton.Content = Yanzi.UI.Wpf.YanziIcons.StrokeIcon(
+            "M18,6 L6,18 M6,6 L18,18", 16);
+        AttachButton.Content = Yanzi.UI.Wpf.YanziIcons.StrokeIcon(
+            "M12,5 L12,19 M5,12 L19,12", 17);
+        VoiceButton.Content = Yanzi.UI.Wpf.YanziIcons.StrokeIcon(
+            "M12,2 C10.3,2 9,3.3 9,5 L9,12 C9,13.7 10.3,15 12,15 C13.7,15 15,13.7 15,12 L15,5 C15,3.3 13.7,2 12,2 Z M5,10 L5,12 C5,16 8,19 12,19 C16,19 19,16 19,12 L19,10 M12,19 L12,22 M8,22 L16,22", 16);
+        System.Windows.Automation.AutomationProperties.SetName(DeviceSwitcherButton, "选择手机接收设备");
+        System.Windows.Automation.AutomationProperties.SetName(CloseButton, "关闭手机消息");
+        System.Windows.Automation.AutomationProperties.SetName(AttachButton, "添加图片或文件");
+        System.Windows.Automation.AutomationProperties.SetName(VoiceButton, "语音输入");
+        System.Windows.Automation.AutomationProperties.SetName(InputTextBox, "输入发送到手机的消息");
+        System.Windows.Automation.AutomationProperties.SetName(SendButton, "发送手机消息");
+        Closed += (_, _) => { if (_deviceMenu != null) _deviceMenu.IsOpen = false; };
+    }
+
     private async void UpdateReceipt(string id, string status)
     {
         if (id != _lastCloudMessageId) return;
@@ -137,6 +192,7 @@ public partial class MobileMessageToastWindow : Window
     public MobileMessageToastWindow()
     {
         InitializeComponent();
+        ApplySharedMobileAppearance();
         LoadInboxHistory();
         _receiptOwner = System.Windows.Application.Current.MainWindow as MainWindow;
         if (_receiptOwner != null) _receiptOwner.MobileReceiptReceived += UpdateReceipt;
@@ -152,6 +208,7 @@ public partial class MobileMessageToastWindow : Window
     public MobileMessageToastWindow(string title, string messageText, string sourceDeviceId, DateTimeOffset receivedAt, string? screenshotDataUrl = null, string? screenshotFilePath = null)
     {
         InitializeComponent();
+        ApplySharedMobileAppearance();
         TitleText.Text = string.IsNullOrWhiteSpace(title) ? "手机发来消息" : title.Trim();
         AppendMessageCore(title, messageText, sourceDeviceId, receivedAt, screenshotDataUrl, screenshotFilePath, updateHeader: true);
 
@@ -202,7 +259,7 @@ public partial class MobileMessageToastWindow : Window
             MessageStack.Children.Add(new TextBlock
             {
                 Text = "暂无手机消息记录。",
-                Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(148, 163, 184)),
+                Foreground = (System.Windows.Media.Brush)FindResource("Yanzi.Color.MutedForeground"),
                 FontSize = 13,
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(2, 4, 2, 4)
@@ -268,7 +325,7 @@ public partial class MobileMessageToastWindow : Window
             CornerRadius = new CornerRadius(12),
             HorizontalAlignment = isSelf ? System.Windows.HorizontalAlignment.Right : System.Windows.HorizontalAlignment.Left,
             BorderThickness = isSelf ? new Thickness(0) : new Thickness(1),
-            BorderBrush = isSelf ? null : new SolidColorBrush(System.Windows.Media.Color.FromArgb(36, 56, 189, 248))
+            BorderBrush = null
         };
 
         if (isSelf)
@@ -277,7 +334,8 @@ public partial class MobileMessageToastWindow : Window
         }
         else
         {
-            container.Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(190, 31, 41, 55));
+            container.SetResourceReference(Border.BackgroundProperty, "Yanzi.Color.Secondary");
+            container.SetResourceReference(Border.BorderBrushProperty, "Yanzi.Color.Border");
         }
 
         var panel = new StackPanel();
@@ -290,7 +348,7 @@ public partial class MobileMessageToastWindow : Window
             IsReadOnly = true,
             BorderThickness = new Thickness(0),
             Background = System.Windows.Media.Brushes.Transparent,
-            Foreground = isSelf ? System.Windows.Media.Brushes.White : new SolidColorBrush(System.Windows.Media.Color.FromRgb(229, 231, 235)),
+            Foreground = isSelf ? System.Windows.Media.Brushes.White : (System.Windows.Media.Brush)FindResource("Yanzi.Color.SecondaryForeground"),
             FontSize = 14,
             Padding = new Thickness(0),
             HorizontalAlignment = isSelf ? System.Windows.HorizontalAlignment.Right : System.Windows.HorizontalAlignment.Left
@@ -1080,13 +1138,13 @@ public partial class MobileMessageToastWindow : Window
             Margin = new Thickness(0, 10, 0, 10),
             Padding = new Thickness(8, 4, 8, 4),
             CornerRadius = new CornerRadius(4),
-            Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(25, 255, 255, 255))
+            Background = (System.Windows.Media.Brush)FindResource("Yanzi.Color.Muted")
         };
 
         var textBlock = new TextBlock
         {
             Text = FormatChatTime(receivedAt),
-            Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(156, 163, 175)),
+            Foreground = (System.Windows.Media.Brush)FindResource("Yanzi.Color.MutedForeground"),
             FontSize = 11,
             HorizontalAlignment = System.Windows.HorizontalAlignment.Center
         };

@@ -39,12 +39,14 @@ public partial class MainWindow
     private readonly ObservableCollection<AiChatMessage> _aiChatMessages = [];
     private readonly ObservableCollection<AiChatTopic> _aiChatTopics = [];
     private readonly ObservableCollection<AiChatAttachment> _aiChatAttachments = [];
+    private Yanzi.UI.Wpf.YanziDropdownMenu? _activeAiChatMenu;
     private AiChatTopic? _selectedAiChatTopic;
     private readonly HttpClient _aiHttpClient = new() { Timeout = TimeSpan.FromSeconds(300) };
     private string _aiChatInputText = string.Empty;
     private string _aiChatStatusText = "选择或新建话题开始对话";
+    private string _aiChatSendErrorText = string.Empty;
     private bool _isAiChatRequestInFlight;
-    private bool _isInitializingComboBox;
+    private bool _isAiChatSubmissionPending;
 
     public bool IsAiChatRequestInFlight
     {
@@ -141,6 +143,21 @@ public partial class MainWindow
         }
     }
 
+    public string AiChatSendErrorText
+    {
+        get => _aiChatSendErrorText;
+        private set
+        {
+            if (_aiChatSendErrorText == value) return;
+            _aiChatSendErrorText = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(AiChatSendErrorVisibility));
+        }
+    }
+
+    public Visibility AiChatSendErrorVisibility => string.IsNullOrWhiteSpace(_aiChatSendErrorText)
+        ? Visibility.Collapsed : Visibility.Visible;
+
     public string AiChatModelDisplayText => string.IsNullOrWhiteSpace(_appSettings.AiModel)
         ? "AI 未配置"
         : _appSettings.AiModel;
@@ -206,27 +223,27 @@ public partial class MainWindow
         CreateNewTopic();
     }
 
-    private void AiChatRenameTopicButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (SelectedAiChatTopic != null)
-        {
-            RenameTopic(SelectedAiChatTopic);
-        }
-    }
-
-    private void AiChatDeleteTopicButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (SelectedAiChatTopic != null)
-        {
-            DeleteTopic(SelectedAiChatTopic);
-        }
-    }
-
     private void AiChatTopicItem_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
         if (sender is FrameworkElement { DataContext: AiChatTopic topic })
         {
             SelectTopic(topic);
+        }
+    }
+
+    private void AiChatTopicEditButton_Click(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true; // Editing must never select the conversation behind the button.
+        if (sender is System.Windows.Controls.Button { DataContext: AiChatTopic topic } button)
+        {
+            if (_activeAiChatMenu?.IsOpen == true) _activeAiChatMenu.IsOpen = false;
+            var menu = CreateAiChatMenu();
+            menu.PreferAbove = false;
+            menu.AddAction("重命名", () => RenameTopic(topic));
+            menu.AddSeparator();
+            menu.AddAction("删除", () => DeleteTopic(topic), destructive: true);
+            _activeAiChatMenu = menu;
+            menu.ShowFrom(button);
         }
     }
 
@@ -280,6 +297,7 @@ public partial class MainWindow
 
     private void AiChatMessages_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
+        UpdateAiChatTimeDividers();
         OnPropertyChanged(nameof(VisibleCountText));
         _ = Dispatcher.BeginInvoke(() => AiChatScrollViewer?.ScrollToEnd(), DispatcherPriority.Background);
     }
@@ -401,6 +419,19 @@ public partial class MainWindow
                 _aiChatMessages.Add(message);
             }
         }
+        UpdateAiChatTimeDividers();
+    }
+
+    private void UpdateAiChatTimeDividers()
+    {
+        AiChatMessage? previous = null;
+        foreach (var message in _aiChatMessages)
+        {
+            // Show the first timestamp, then only after >= 3 minutes.
+            // This is visual metadata; no extra message is added to the chat history.
+            message.ShowTimeDivider = AiChatMessage.NeedsTimeDivider(previous, message);
+            previous = message;
+        }
     }
 
     private void DeleteTopic(AiChatTopic topic)
@@ -418,13 +449,15 @@ public partial class MainWindow
         var dialog = new Window
         {
             Title = "重命名话题",
-            Width = 400,
-            Height = 150,
+            Width = 420,
+            Height = 170,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Owner = this,
             ResizeMode = ResizeMode.NoResize
         };
 
+        Yanzi.UI.Wpf.YanziUi.ApplyTo(dialog, Yanzi.UI.Wpf.YanziUi.GetTheme(this));
+        dialog.SetResourceReference(Window.BackgroundProperty, "Yanzi.Color.Popover");
         var stack = new System.Windows.Controls.StackPanel { Margin = new Thickness(20) };
         var textBox = new System.Windows.Controls.TextBox
         {
@@ -433,6 +466,7 @@ public partial class MainWindow
             Padding = new Thickness(8),
             Margin = new Thickness(0, 0, 0, 15)
         };
+        textBox.SetResourceReference(System.Windows.Controls.Control.StyleProperty, "Yanzi.Input");
         textBox.SelectAll();
 
         var buttonPanel = new System.Windows.Controls.StackPanel
@@ -448,6 +482,8 @@ public partial class MainWindow
             Height = 32,
             Margin = new Thickness(0, 0, 10, 0)
         };
+        okButton.SetResourceReference(System.Windows.Controls.Control.StyleProperty, "Yanzi.Button.Default");
+        okButton.IsDefault = true;
         okButton.Click += (_, _) =>
         {
             var newTitle = textBox.Text.Trim();
@@ -465,6 +501,8 @@ public partial class MainWindow
             Width = 80,
             Height = 32
         };
+        cancelButton.SetResourceReference(System.Windows.Controls.Control.StyleProperty, "Yanzi.Button.Outline");
+        cancelButton.IsCancel = true;
         cancelButton.Click += (_, _) => dialog.Close();
 
         buttonPanel.Children.Add(okButton);
@@ -477,23 +515,41 @@ public partial class MainWindow
         dialog.ShowDialog();
     }
 
+    // Shared menu chrome and edge positioning are owned by Yanzi.UI.Wpf.
+    // Keep business actions (rename/delete) in the host.
     private void ShowTopicContextMenu(AiChatTopic topic, FrameworkElement placementTarget)
     {
-        var menu = new System.Windows.Controls.ContextMenu
-        {
-            PlacementTarget = placementTarget,
-            Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom
-        };
+        var menu = CreateAiChatMenu();
+        menu.AddAction("重命名", () => RenameTopic(topic));
+        menu.AddSeparator();
+        menu.AddAction("删除", () => DeleteTopic(topic));
+        OpenAiChatContextMenu(menu, placementTarget);
+    }
 
-        var renameItem = new System.Windows.Controls.MenuItem { Header = "重命名" };
-        renameItem.Click += (_, _) => RenameTopic(topic);
-        menu.Items.Add(renameItem);
+    private Yanzi.UI.Wpf.YanziDropdownMenu CreateAiChatMenu()
+    {
+        var menu = new Yanzi.UI.Wpf.YanziDropdownMenu();
+        menu.UseStandaloneTheme(Yanzi.UI.Wpf.YanziUi.GetTheme(this));
+        menu.UseContentWidth(168);
+        return menu;
+    }
 
-        var deleteItem = new System.Windows.Controls.MenuItem { Header = "删除" };
-        deleteItem.Click += (_, _) => DeleteTopic(topic);
-        menu.Items.Add(deleteItem);
-
-        menu.IsOpen = true;
+    private void OpenAiChatContextMenu(
+        Yanzi.UI.Wpf.YanziDropdownMenu menu, FrameworkElement target)
+    {
+        var cursor = System.Windows.Input.Mouse.GetPosition(target);
+        var physical = target.PointToScreen(cursor);
+        var source = PresentationSource.FromVisual(target);
+        if (source?.CompositionTarget is null) return;
+        var matrix = source.CompositionTarget.TransformFromDevice;
+        var area = System.Windows.Forms.Screen.FromPoint(
+            new System.Drawing.Point((int)Math.Round(physical.X), (int)Math.Round(physical.Y))).WorkingArea;
+        var topLeft = matrix.Transform(new System.Windows.Point(area.Left, area.Top));
+        var bottomRight = matrix.Transform(new System.Windows.Point(area.Right, area.Bottom));
+        var logicalClick = matrix.Transform(physical);
+        if (_activeAiChatMenu is not null) _activeAiChatMenu.IsOpen = false;
+        _activeAiChatMenu = menu;
+        menu.ShowAtScreenPoint(logicalClick, new Rect(topLeft, bottomRight));
     }
 
     // ==================== 附件管理 ====================
@@ -595,24 +651,11 @@ public partial class MainWindow
     
     private void ShowMessageContextMenu(AiChatMessage message, FrameworkElement placementTarget)
     {
-        var menu = new System.Windows.Controls.ContextMenu
-        {
-            PlacementTarget = placementTarget,
-            Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint
-        };
-
-        var copyItem = new System.Windows.Controls.MenuItem { Header = "复制内容" };
-        copyItem.Click += (_, _) => CopyMessage(message);
-        menu.Items.Add(copyItem);
-
+        var menu = CreateAiChatMenu();
+        menu.AddAction("复制内容", () => CopyMessage(message));
         if (message.IsUser)
-        {
-            var resendItem = new System.Windows.Controls.MenuItem { Header = "重新发送" };
-            resendItem.Click += (_, _) => ResendMessage(message);
-            menu.Items.Add(resendItem);
-        }
-
-        menu.IsOpen = true;
+            menu.AddAction("重新发送", () => ResendMessage(message));
+        OpenAiChatContextMenu(menu, placementTarget);
     }
 
     private void AiChatCopyMessageButton_Click(object sender, RoutedEventArgs e)
@@ -655,7 +698,7 @@ public partial class MainWindow
     private void ActivateAiChatMode()
     {
         LoadTopicsFromStorage();
-        InitializeAiModelComboBox();
+        RefreshAiModelSelector();
         
         // 切换到 AI Chat 模式时，调整窗口大小以获得更好的阅读体验
         if (WindowState == WindowState.Normal)
@@ -697,6 +740,7 @@ public partial class MainWindow
             return;
         }
 
+        if (_activeAiChatMenu is not null) _activeAiChatMenu.IsOpen = false;
         SaveTopicsToStorage();
 
         // 退出 AI Chat 模式时，恢复默认窗口大小
@@ -715,167 +759,117 @@ public partial class MainWindow
         SearchBox.SelectAll();
     }
 
-    private sealed class AiProviderChoice
+    // Model options are sourced directly from the saved service providers.
+    // The bottom-right menu is the only selector; no hidden duplicated ComboBoxes.
+    public void RefreshAiModelSelector()
     {
-        public AiProviderChoice(string id, string name)
-        {
-            Id = id;
-            Name = name;
-        }
-
-        public string Id { get; }
-        public string Name { get; }
-        public override string ToString() => Name;
-    }
-
-    public void InitializeAiModelComboBox()
-    {
-        if (AiProviderSelectionComboBox == null || AiModelSelectionComboBox == null)
-        {
-            return;
-        }
-
-        _isInitializingComboBox = true;
-        try
-        {
-            var providers = (_appSettings.AiServiceProviders ?? [])
-                .Where(static provider => provider.IsEnabled)
-                .ToList();
-
-            var providerChoices = providers
-                .Select(static provider => new AiProviderChoice(provider.Id, provider.Name))
-                .ToList();
-
-            AiProviderSelectionComboBox.ItemsSource = providerChoices;
-
-            var activeProvider = providers.FirstOrDefault(provider =>
-                    string.Equals(provider.Id, _appSettings.ActiveServiceProviderId, StringComparison.OrdinalIgnoreCase))
-                ?? providers.FirstOrDefault();
-
-            if (activeProvider == null)
-            {
-                AiProviderSelectionComboBox.SelectedItem = null;
-                AiModelSelectionComboBox.ItemsSource = Array.Empty<string>();
-                AiModelSelectionComboBox.SelectedItem = null;
-                return;
-            }
-
-            AiProviderSelectionComboBox.SelectedItem = providerChoices.FirstOrDefault(choice =>
-                string.Equals(choice.Id, activeProvider.Id, StringComparison.OrdinalIgnoreCase));
-
-            var models = (activeProvider.Models ?? [])
-                .Where(static model => !string.IsNullOrWhiteSpace(model))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
-
-            AiModelSelectionComboBox.ItemsSource = models;
-
-            var selectedModel = models.FirstOrDefault(model =>
-                    string.Equals(model, _appSettings.AiModel, StringComparison.OrdinalIgnoreCase))
-                ?? models.FirstOrDefault(model =>
-                    string.Equals(model, activeProvider.SelectedModel, StringComparison.OrdinalIgnoreCase))
-                ?? models.FirstOrDefault();
-
-            if (selectedModel != null)
-            {
-                AiModelSelectionComboBox.SelectedItem = selectedModel;
-            }
-            else
-            {
-                AiModelSelectionComboBox.SelectedItem = null;
-            }
-        }
-        finally
-        {
-            _isInitializingComboBox = false;
-        }
-    }
-
-    private void AiProviderSelectionComboBox_SelectionChanged(
-        object sender,
-        System.Windows.Controls.SelectionChangedEventArgs e)
-    {
-        if (_isInitializingComboBox ||
-            AiProviderSelectionComboBox?.SelectedItem is not AiProviderChoice choice)
-        {
-            return;
-        }
-
-        var provider = _appSettings.AiServiceProviders?
-            .FirstOrDefault(item =>
-                item.IsEnabled &&
-                string.Equals(item.Id, choice.Id, StringComparison.OrdinalIgnoreCase));
-
-        if (provider == null)
-        {
-            return;
-        }
-
-        var models = (provider.Models ?? [])
-            .Where(static model => !string.IsNullOrWhiteSpace(model))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        var selectedModel = models.FirstOrDefault(model =>
-                string.Equals(model, provider.SelectedModel, StringComparison.OrdinalIgnoreCase))
-            ?? models.FirstOrDefault();
-
-        _appSettings.ActiveServiceProviderId = provider.Id;
-        _appSettings.AiBaseUrl = provider.BaseUrl;
-        _appSettings.AiApiKey = provider.ApiKey;
-        _appSettings.AiModel = selectedModel ?? string.Empty;
-        provider.SelectedModel = _appSettings.AiModel;
-
-        AppSettingsStore.Save(_appSettings);
-        _appSettings = AppSettingsStore.Load();
-        InitializeAiModelComboBox();
         OnPropertyChanged(nameof(AiChatModelDisplayText));
     }
 
-    private void AiModelSelectionComboBox_SelectionChanged(
-        object sender,
-        System.Windows.Controls.SelectionChangedEventArgs e)
+    private void AiChatModelMenuButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_isInitializingComboBox ||
-            AiModelSelectionComboBox?.SelectedItem is not string selectedModel ||
-            string.IsNullOrWhiteSpace(selectedModel))
+        e.Handled = true;
+        if (sender is not System.Windows.Controls.Button anchor) return;
+        if (_activeAiChatMenu?.IsOpen == true)
         {
+            _activeAiChatMenu.IsOpen = false;
             return;
         }
 
-        var provider = _appSettings.AiServiceProviders?
-            .FirstOrDefault(item =>
-                item.IsEnabled &&
-                string.Equals(item.Id, _appSettings.ActiveServiceProviderId, StringComparison.OrdinalIgnoreCase));
-
-        if (provider == null ||
-            provider.Models == null ||
-            !provider.Models.Any(model => string.Equals(model, selectedModel, StringComparison.OrdinalIgnoreCase)))
-        {
-            return;
-        }
-
-        _appSettings.AiModel = selectedModel;
-        _appSettings.AiBaseUrl = provider.BaseUrl;
-        _appSettings.AiApiKey = provider.ApiKey;
-        provider.SelectedModel = selectedModel;
-
-        AppSettingsStore.Save(_appSettings);
+        // Reload once when opening: another settings window may have added models.
         _appSettings = AppSettingsStore.Load();
-        InitializeAiModelComboBox();
         OnPropertyChanged(nameof(AiChatModelDisplayText));
+
+        var menu = CreateAiChatMenu();
+        menu.PreferAbove = true;
+        menu.AlignStart = false;
+        menu.UseContentWidth(190);
+
+        var providers = (_appSettings.AiServiceProviders ?? [])
+            .Where(provider => provider.IsEnabled).ToArray();
+        if (providers.Length == 0)
+        {
+            menu.AddLabel("尚未启用模型供应商");
+            menu.AddSeparator();
+            menu.AddAction("配置供应商…", () => AiChatSettingsButton_Click(anchor, new RoutedEventArgs()));
+        }
+        else
+        {
+            var widestModel = providers.SelectMany(provider => provider.Models ?? [])
+                .Where(model => !string.IsNullOrWhiteSpace(model))
+                .DefaultIfEmpty("").MaxBy(model => model.Length) ?? "";
+            // Give full model IDs enough room, including provider-specific suffixes.
+            menu.SubmenuWidth = Math.Clamp(widestModel.Length * 9 + 58, 194, 420);
+            foreach (var provider in providers)
+            {
+                var providerId = provider.Id;
+                var models = (provider.Models ?? [])
+                    .Where(model => !string.IsNullOrWhiteSpace(model))
+                    .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+                var isActive = string.Equals(providerId, _appSettings.ActiveServiceProviderId,
+                    StringComparison.OrdinalIgnoreCase);
+                var item = menu.AddSubmenu(provider.Name, submenu =>
+                {
+                    if (models.Length == 0)
+                    {
+                        submenu.AddLabel("暂无模型，请先在设置中添加");
+                        return;
+                    }
+                    foreach (var model in models)
+                    {
+                        var modelId = model;
+                        var selected = isActive && string.Equals(modelId, _appSettings.AiModel,
+                            StringComparison.OrdinalIgnoreCase);
+                        submenu.AddAction(modelId, () => SelectAiChatProviderModel(providerId, modelId),
+                            selected ? Yanzi.UI.Wpf.YanziIcons.Check(15) : null);
+                    }
+                }, isActive ? Yanzi.UI.Wpf.YanziIcons.Check(15) : null);
+                item.ToolTip = "选择 " + provider.Name + " 提供的模型";
+            }
+        }
+
+        // Use the public menu's fixed-size screen placement. It reserves submenu
+        // space before opening, chooses right/left from the monitor boundaries
+        // and does not resize the popup while moving between providers.
+        OpenAiChatContextMenu(menu, anchor);
+    }
+
+    private void SelectAiChatProviderModel(string providerId, string model)
+    {
+        var settings = AppSettingsStore.Load();
+        var provider = settings.AiServiceProviders?.FirstOrDefault(item =>
+            item.IsEnabled && string.Equals(item.Id, providerId, StringComparison.OrdinalIgnoreCase));
+        if (provider == null || !(provider.Models ?? []).Any(candidate =>
+                string.Equals(candidate, model, StringComparison.OrdinalIgnoreCase)))
+            return;
+
+        settings.ActiveServiceProviderId = provider.Id;
+        settings.AiBaseUrl = provider.BaseUrl;
+        settings.AiApiKey = provider.ApiKey;
+        settings.AiModel = model;
+        provider.SelectedModel = model;
+        AppSettingsStore.Save(settings);
+        _appSettings = AppSettingsStore.Load();
+        RefreshAiModelSelector();
     }
 
     public void OnAiSettingsChanged()
     {
         _appSettings = AppSettingsStore.Load();
-        InitializeAiModelComboBox();
+        RefreshAiModelSelector();
         OnPropertyChanged(nameof(AiChatModelDisplayText));
     }
 
 
     private async void SubmitAiChatMessage()
     {
+        // Lock before awaiting attachment preparation: repeated Enter must not duplicate requests.
+        if (_isAiChatSubmissionPending || IsAiChatRequestInFlight)
+        {
+            return;
+        }
+
+        _isAiChatSubmissionPending = true;
         try
         {
             await SubmitAiChatMessageCore();
@@ -883,12 +877,19 @@ public partial class MainWindow
         catch (Exception ex)
         {
             HostAssets.AppendLog($"SubmitAiChatMessage failed: {ex}");
+            AiChatSendErrorText = $"发送失败：{TrimForLog(FormatExceptionMessage(ex), 160)}";
+            AiChatStatusText = AiChatSendErrorText;
+        }
+        finally
+        {
+            _isAiChatSubmissionPending = false;
         }
     }
 
     private async Task SubmitAiChatMessageCore()
     {
-        var userInput = AiChatInputText.Trim();
+        // Read the visible editor directly if the two-way binding has not settled.
+        var userInput = (AiChatInputBox?.Text ?? AiChatInputText).Trim();
         if (string.IsNullOrEmpty(userInput) && _aiChatAttachments.Count == 0)
         {
             return;
@@ -901,10 +902,16 @@ public partial class MainWindow
 
         if (!IsAiConfigured(_appSettings))
         {
-            AiChatStatusText = "请先配置 AI";
+            var missingKey = string.IsNullOrWhiteSpace(_appSettings.AiApiKey);
+            AiChatSendErrorText = missingKey
+                ? "无法发送：当前服务商缺少 API Key。请打开右上角「设置」→「模型服务」重新配置。"
+                : "无法发送：当前服务商的模型或接口地址尚未配置，请在「设置」→「模型服务」检查。";
+            AiChatStatusText = AiChatSendErrorText;
+            HostAssets.AppendLog($"AI chat submission rejected before request: keyPresent={!missingKey}, modelPresent={!string.IsNullOrWhiteSpace(_appSettings.AiModel)}, urlPresent={!string.IsNullOrWhiteSpace(_appSettings.AiBaseUrl)}");
             return;
         }
 
+        AiChatSendErrorText = string.Empty;
         // 确保有话题
         if (_selectedAiChatTopic == null)
         {
@@ -1056,7 +1063,8 @@ public partial class MainWindow
         {
             HostAssets.AppendLog($"AI request failed: {FormatExceptionMessage(ex)}");
             SaveTopicsToStorage();
-            AiChatStatusText = "AI 请求失败";
+            AiChatSendErrorText = $"AI 请求失败：{TrimForLog(FormatExceptionMessage(ex), 160)}";
+            AiChatStatusText = AiChatSendErrorText;
         }
         finally
         {
@@ -2144,7 +2152,12 @@ public partial class MainWindow
                             }
                         }
 
-                        topic.Messages.Add(new AiChatMessage(isUser, text, attachments));
+                        DateTimeOffset? restoredTime = null;
+                        if (msgElement.TryGetProperty("timestamp", out var timeElement) &&
+                            timeElement.ValueKind == JsonValueKind.String &&
+                            timeElement.TryGetDateTimeOffset(out var originalTime))
+                            restoredTime = originalTime;
+                        topic.Messages.Add(new AiChatMessage(isUser, text, attachments, restoredTime));
                     }
                 }
 
@@ -2191,6 +2204,7 @@ public sealed class AiChatMessage : INotifyPropertyChanged
     private string? _toolName;
     private string? _toolFeedback;
     private bool _isExpanded = true; // 默认展开，让用户能够直观看到执行状态
+    private bool _showTimeDivider;
 
     public bool IsToolCall
     {
@@ -2216,12 +2230,14 @@ public sealed class AiChatMessage : INotifyPropertyChanged
         set { _isExpanded = value; OnPropertyChanged(); }
     }
 
-    public AiChatMessage(bool isUser, string text, IEnumerable<AiChatMessageAttachment>? attachments = null)
+    public AiChatMessage(bool isUser, string text,
+        IEnumerable<AiChatMessageAttachment>? attachments = null,
+        DateTimeOffset? timestamp = null)
     {
         Id = Guid.NewGuid().ToString();
         IsUser = isUser;
         _text = text;
-        Timestamp = DateTimeOffset.Now;
+        Timestamp = timestamp ?? DateTimeOffset.Now;
         Attachments = attachments?.ToList() ?? [];
     }
 
@@ -2242,6 +2258,31 @@ public sealed class AiChatMessage : INotifyPropertyChanged
         }
     }
     public DateTimeOffset Timestamp { get; }
+    public bool ShowTimeDivider
+    {
+        get => _showTimeDivider;
+        set
+        {
+            if (_showTimeDivider == value) return;
+            _showTimeDivider = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(TimeDividerVisibility));
+        }
+    }
+    public static bool NeedsTimeDivider(AiChatMessage? previous, AiChatMessage current)
+    {
+        ArgumentNullException.ThrowIfNull(current);
+        return previous is null ||
+               current.Timestamp.ToLocalTime().Date != previous.Timestamp.ToLocalTime().Date ||
+               current.Timestamp - previous.Timestamp >= TimeSpan.FromMinutes(3) ||
+               current.Timestamp < previous.Timestamp;
+    }
+
+    public Visibility TimeDividerVisibility => ShowTimeDivider ? Visibility.Visible : Visibility.Collapsed;
+    public string TimeDividerText =>
+        Timestamp.ToLocalTime().Date == DateTime.Now.Date
+            ? Timestamp.ToLocalTime().ToString("HH:mm")
+            : Timestamp.ToLocalTime().ToString("yyyy年M月d日 HH:mm");
     public List<AiChatMessageAttachment> Attachments { get; }
     public bool HasAttachments => Attachments.Count > 0;
     public Visibility AttachmentsVisibility => HasAttachments ? Visibility.Visible : Visibility.Collapsed;

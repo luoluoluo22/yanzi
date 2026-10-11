@@ -272,6 +272,26 @@ public sealed class YanziDropdownMenu
         trigger.Click += (_, _) => IsOpen = !IsOpen;
     }
 
+    /// <summary>Show a fresh menu at a button without subscribing to its Click event.
+    /// Useful when the content must be rebuilt asynchronously for every opening.</summary>
+    public void ShowFrom(Button trigger)
+    {
+        ArgumentNullException.ThrowIfNull(trigger);
+        if (IsOpen) IsOpen = false;
+        _trigger = trigger;
+        _screenPlacement = false;
+        if (_screenCanvas is not null)
+        {
+            _screenCanvas.Children.Remove(_root.Panel);
+            _surface.Children.Clear();
+            _surface.Children.Add(_root.Panel);
+            _screenCanvas = null;
+        }
+        _popup.Placement = PlacementMode.Custom;
+        _popup.PlacementTarget = trigger;
+        IsOpen = true;
+    }
+
     public void AddLabel(string text) => AddLabelTo(_root, text);
     public void AddSeparator() => AddSeparatorTo(_root);
     public Button AddAction(string text, Action action, string shortcut = "",
