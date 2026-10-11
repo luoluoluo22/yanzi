@@ -387,6 +387,161 @@ public sealed class LeftOpeningTrayMenuScenario : IUiTestScenario
     }
 }
 
+/// <summary>Regression for reviewed native-dropdown hover and navigation chevrons.</summary>
+public sealed class ReviewedComponentsScenario : IUiTestScenario
+{
+    public string Name => "Gallery review combobox and navigation chrome";
+
+    public async Task RunAsync(UiTestContext context, CancellationToken cancellationToken)
+    {
+        var combo = new YanziCombobox("Select a framework");
+        combo.Add("Next.js");
+        combo.Add("Nuxt.js");
+        combo.Add("Astro");
+        var nav = new YanziNavigationMenu();
+        var a = nav.AddGroup("快速开始",
+            new[] { new YanziNavigationMenu.Link("查看文档", "查看教程", () => { }) });
+        var b = nav.AddGroup("组件",
+            new[] { new YanziNavigationMenu.Link("输入框", "基础组件", () => { }) });
+        var stack = new StackPanel { Margin = new Thickness(20) };
+        stack.Children.Add(combo);
+        stack.Children.Add(nav);
+        var window = new Window { Title = "组件核对", Width = 580, Height = 300, Content = stack };
+        YanziUi.ApplyTo(window, YanziTheme.Dark);
+        try
+        {
+            context.ShowWindow(window);
+            combo.IsOpen = true;
+            await Task.Delay(100, cancellationToken);
+            var field = typeof(YanziCombobox).GetField("_results",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            var results = field?.GetValue(combo) as ListBox;
+            context.Require(results is not null, "public combobox owns an accessible option list");
+            context.Check(results.ItemContainerStyle is not null &&
+                ReferenceEquals(results.ItemContainerStyle,
+                    results.TryFindResource("Yanzi.Combobox.Option")),
+                "search result hover uses the shared custom ListBoxItem template, not Windows native chrome");
+            var chevron = ((StackPanel)a.Content).Children[1] as FrameworkElement;
+            context.Require(chevron is not null, "navigation trigger includes a chevron");
+            context.Check(Math.Abs(chevron.RenderTransformOrigin.X - .5) < .001 &&
+                Math.Abs(chevron.RenderTransformOrigin.Y - .5) < .001,
+                "chevron pivots around its own center instead of shifting into text");
+            nav.ShowGroup(0);
+            await Task.Delay(60, cancellationToken);
+            context.Check(((RotateTransform)chevron.RenderTransform).Angle == 0,
+                "opened navigation trigger rotates chevron up");
+            nav.ShowGroup(1);
+            await Task.Delay(60, cancellationToken);
+            context.Check(((RotateTransform)chevron.RenderTransform).Angle == 180,
+                "nonactive navigation trigger chevron returns down");
+            nav.Close();
+        }
+        finally
+        {
+            combo.IsOpen = false;
+            nav.Close();
+            window.Close();
+        }
+    }
+}
+
+/// <summary>Reviews functional primitives behind the fifteen user-annotated gallery entries.</summary>
+public sealed class AnnotatedComponentsScenario : IUiTestScenario
+{
+    public string Name => "Annotated components functional regression";
+
+    public async Task RunAsync(UiTestContext context, CancellationToken cancellationToken)
+    {
+        var group = new YanziInputGroup("https://", ".com") { Width = 330 };
+        group.Input.Text = "example";
+        group.AddAddon(YanziPrimitives.Kbd("Ctrl K"));
+        var field = YanziPrimitives.FieldSet("Account", "Billing profile");
+        var email = new TextBox { Text = "invalid" };
+        var validated = YanziPrimitives.ValidatedField(
+            "Email", email, "Help text", "Invalid email", required: true);
+        field.Children.Add(validated);
+        var scroller = new YanziMessageScroller { Width = 375, MaxVisible = 80 };
+        for (var i = 0; i < 16; i++)
+            scroller.AddMessage("id-" + i, "Message row " + i + " one two three four five", i % 2 == 0);
+        var quiz = new YanziQuestionnaire([
+            new("platform", "Platform", YanziQuestionKind.Choice,
+                ["Local", "Cloud"]),
+            new("environment", "Environment", YanziQuestionKind.Choice,
+                ["Preview", "Staging"], true, false, "platform", "Cloud"),
+            new("features", "Features", YanziQuestionKind.MultipleChoice,
+                ["Progress", "Risks"], false, true),
+            new("notes", "Notes", YanziQuestionKind.Text, Required: false, AllowSkip: true)
+        ]);
+        var anchor = new Button { Content = "Popover target", Width = 160 };
+        var popover = YanziPopover.Attach(anchor, new TextBox { Text = "inside" }, YanziPopoverAlign.Center);
+        var row = new StackPanel { Margin = new Thickness(12) };
+        row.Children.Add(group);
+        row.Children.Add(field);
+        row.Children.Add(scroller);
+        row.Children.Add(quiz);
+        row.Children.Add(anchor);
+        var window = new Window { Title = "已批注组件验证", Width = 650,
+            Height = 950, Content = new ScrollViewer { Content = row } };
+        YanziUi.ApplyTo(window, YanziTheme.Dark);
+        try
+        {
+            context.ShowWindow(window);
+            await Task.Delay(90, cancellationToken);
+            context.Check(group.Input.Text == "example", "InputGroup editable input retained");
+            context.Check(group.Leading.Children.Count == 1 && group.Trailing.Children.Count == 2,
+                "InputGroup shares outline among leading text, trailing text and keyboard hint");
+            context.Check(group.Input.Template.FindName("PART_ContentHost", group.Input) is ScrollViewer,
+                "InputGroup editing uses an unframed native text content host");
+            context.Check(field.Children.Count == 3 && validated.Children.Count >= 4,
+                "FieldSet groups legend, description and validated field content");
+            context.Check(System.Windows.Automation.AutomationProperties.GetHelpText(email) == "Invalid email",
+                "Field error announced by automation");
+            context.Check(scroller.VisibleCount == 16, "MessageScroller renders messages with stable IDs");
+            scroller.JumpToLatest();
+            await Task.Delay(70, cancellationToken);
+            var before = scroller.ScrollOffset;
+            scroller.PrependHistory([
+                ("older-1", "Earlier transcript turn 1", false),
+                ("older-2", "Earlier transcript turn 2", true)
+            ]);
+            await Task.Delay(70, cancellationToken);
+            context.Check(scroller.VisibleCount == 18, "MessageScroller prepends history");
+            context.Check(scroller.ScrollOffset >= before,
+                "MessageScroller preserves or moves forward viewport offset when prepending earlier rows");
+            context.Check(scroller.AppendToMessage("id-3", " streamed"), "MessageScroller updates stable ID while streaming");
+            context.Check(scroller.ScrollToMessage("older-1"), "MessageScroller supports direct message jump");
+            context.Check(!scroller.ScrollToMessage("nonexistent"), "MessageScroller ignores unknown IDs");
+            context.Check(quiz.CurrentIndex == 0 && quiz.QuestionCount == 4,
+                "Questionnaire supports conditional, multiselect and optional steps");
+            context.Check(!quiz.Next(), "Required choice blocks next until selected");
+            var radio = row.Children.OfType<YanziQuestionnaire>().Single()
+                .Content as StackPanel;
+            var local = radio?.Children.OfType<RadioButton>().FirstOrDefault();
+            context.Require(local is not null, "Choice renders keyboard accessible radio buttons");
+            local.IsChecked = true;
+            context.Check(quiz.Next() && quiz.CurrentIndex == 2,
+                "Conditional question skipped when previous answer is Local");
+            context.Check(quiz.Skip() && quiz.CurrentIndex == 3,
+                "Optional multi-select question supports skip");
+            context.Check(quiz.Skip(), "Optional freeform question supports skip at completion");
+            context.Check(quiz.Answers.ContainsKey("platform") && !quiz.Answers.ContainsKey("environment"),
+                "Conditionally invisible questionnaire answers are absent");
+            context.Check(YanziContentPrimitives.MarkerVariant("Divider", "separator") is Grid,
+                "Marker separator uses a native three-column row");
+            context.Check(YanziContentPrimitives.MessageRow("Hello", false, "AI",
+                "Assistant", "10:00") is DockPanel, "Message supports avatar, title, bubble and footer");
+            context.Click(anchor);
+            await Task.Delay(80, cancellationToken);
+            context.Check(popover.IsOpen, "Popover opens with center alignment");
+        }
+        finally
+        {
+            popover.IsOpen = false;
+            window.Close();
+        }
+    }
+}
+
 public sealed class ExpectedFailureScenario : IUiTestScenario
 {
     public string Name => "Intentional failure checks";

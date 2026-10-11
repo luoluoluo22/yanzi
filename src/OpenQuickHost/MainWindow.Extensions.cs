@@ -1889,7 +1889,7 @@ public partial class MainWindow
             return;
         }
 
-        if (_footerQuickMenu?.IsOpen == true || CommandList.ContextMenu?.IsOpen == true)
+        if (_footerQuickMenu?.IsOpen == true || _activeAiChatMenu?.IsOpen == true || CommandList.ContextMenu?.IsOpen == true)
         {
             return;
         }
