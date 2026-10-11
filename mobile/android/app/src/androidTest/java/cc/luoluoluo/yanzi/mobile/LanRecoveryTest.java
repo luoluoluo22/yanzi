@@ -15,6 +15,7 @@ public final class LanRecoveryTest extends Instrumentation {
     @Override public void onStart() {
         if ("wake-chain".equals(arguments.getString("suite"))) { WakeChainVerification.run(this); return; }
         if ("chat-notification".equals(arguments.getString("suite"))) { ChatNotificationVerification.run(this); return; }
+        if ("chat-rich-text".equals(arguments.getString("suite"))) { ChatRichTextVerification.run(this); return; }
         if ("message-delivery".equals(arguments.getString("suite"))) { MessageDeliveryVerification.run(this); return; }
         if ("task-query-original".equals(arguments.getString("suite"))) { TaskRecoveryVerification.queryOriginal(this, arguments); return; }
         if ("task-recovery-ui".equals(arguments.getString("suite"))) { TaskRecoveryVerification.verifyUi(this, arguments); return; }

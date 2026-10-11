@@ -6824,26 +6824,21 @@ extends Activity {
         boolean isFeedback = "\u7cfb\u7edf\u53cd\u9988".equals(sender) || (sender != null && sender.startsWith("\u7cfb\u7edf\u53cd\u9988"));
         boolean isToolMsg = sender != null && sender.startsWith("\u5de5\u5177\u8c03\u7528:");
         if (isUser) {
-            msgContainer.setGravity(0x800005);
-            tv = new TextView((Context)this);
-            tv.setText((CharSequence)displayText, TextView.BufferType.SPANNABLE);
-            tv.setTextColor(Color.rgb((int)74, (int)222, (int)128));
-            tv.setTextSize(2, 14.0f);
-            tv.setPadding(this.dp(12), this.dp(8), this.dp(12), this.dp(8));
-            tv.setTextIsSelectable(true);
+            msgContainer.setGravity(Gravity.END);
+            LinearLayout userBubble = new LinearLayout(this);
+            userBubble.setOrientation(LinearLayout.VERTICAL);
+            userBubble.setPadding(dp(12), dp(8), dp(12), dp(8));
             GradientDrawable bg = new GradientDrawable();
-            bg.setColor(Color.argb((int)30, (int)74, (int)222, (int)128));
-            bg.setCornerRadius((float)this.dp(12));
-            tv.setBackground((Drawable)bg);
-            tv.setOnLongClickListener(v -> {
+            bg.setColor(Color.rgb(37, 99, 235));
+            bg.setCornerRadius(dp(12));
+            userBubble.setBackground(bg);
+            ChatRichText.render(userBubble, displayText,
+                    Math.max(dp(160), getResources().getDisplayMetrics().widthPixels - dp(110)));
+            userBubble.setOnLongClickListener(v -> {
                 this.showAiMessageMenu(info);
                 return true;
             });
-            msgContainer.setOnLongClickListener(v -> {
-                this.showAiMessageMenu(info);
-                return true;
-            });
-            msgContainer.addView((View)tv, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-2, -2));
+            msgContainer.addView(userBubble, new LinearLayout.LayoutParams(-2, -2));
         } else if (isToolMsg) {
             msgContainer.setGravity(0x800003);
             LinearLayout header = new LinearLayout((Context)this);
@@ -9733,165 +9728,9 @@ extends Activity {
 
     private void renderMarkdownMessage(LinearLayout container, String text, int textColor, AiMessageInfo info) {
         if (text == null || text.isEmpty()) return;
-
-        String[] lines = text.split("\n", -1);
-        ArrayList<String> currentTextBlock = new ArrayList<>();
-        ArrayList<String> currentTableBlock = new ArrayList<>();
-
-        for (String line : lines) {
-            String trimmed = line.trim();
-            boolean isTable = trimmed.startsWith("|") && trimmed.endsWith("|");
-
-            if (isTable) {
-                if (!currentTextBlock.isEmpty()) {
-                    renderNormalTextBlock(container, TextUtils.join("\n", currentTextBlock), textColor, info);
-                    currentTextBlock.clear();
-                }
-                currentTableBlock.add(line);
-            } else {
-                if (!currentTableBlock.isEmpty()) {
-                    renderTableBlock(container, currentTableBlock);
-                    currentTableBlock.clear();
-                }
-                currentTextBlock.add(line);
-            }
-        }
-
-        if (!currentTextBlock.isEmpty()) {
-            renderNormalTextBlock(container, TextUtils.join("\n", currentTextBlock), textColor, info);
-        }
-        if (!currentTableBlock.isEmpty()) {
-            renderTableBlock(container, currentTableBlock);
-        }
-    }
-
-    private void renderNormalTextBlock(LinearLayout container, String text, int textColor, AiMessageInfo info) {
-        if (text == null || text.trim().isEmpty()) return;
-        TextView tv = new TextView(container.getContext());
-        tv.setText(parseMarkdownToSpanned(text), TextView.BufferType.SPANNABLE);
-        tv.setTextColor(textColor);
-        tv.setTextSize(2, 14.0f);
-        tv.setPadding(dp(4), dp(4), dp(4), dp(4));
-        tv.setTextIsSelectable(true);
-        tv.setOnLongClickListener(v -> {
-            this.showAiMessageMenu(info);
-            return true;
-        });
-
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        container.addView(tv, params);
-    }
-
-    private void renderTableBlock(LinearLayout container, ArrayList<String> tableLines) {
-        Context context = container.getContext();
-        HorizontalScrollView hsv = new HorizontalScrollView(context);
-        hsv.setFillViewport(true);
-
-        LinearLayout.LayoutParams hsvParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        hsvParams.setMargins(0, dp(8), 0, dp(8));
-        hsv.setLayoutParams(hsvParams);
-
-        TableLayout tableLayout = new TableLayout(context);
-        tableLayout.setStretchAllColumns(true);
-
-        GradientDrawable tableBg = new GradientDrawable();
-        tableBg.setColor(Color.rgb(17, 24, 39));
-        tableBg.setCornerRadius(dp(8));
-        tableBg.setStroke(dp(1), Color.rgb(75, 85, 99));
-        tableLayout.setBackground(tableBg);
-        tableLayout.setPadding(dp(1), dp(1), dp(1), dp(1));
-
-        TableLayout.LayoutParams tableParams = new TableLayout.LayoutParams(
-                TableLayout.LayoutParams.MATCH_PARENT,
-                TableLayout.LayoutParams.WRAP_CONTENT);
-        tableLayout.setLayoutParams(tableParams);
-
-        boolean isHeader = true;
-        int rowIndex = 0;
-
-        for (String line : tableLines) {
-            String trimmed = line.trim();
-            if (trimmed.replaceAll("[|\\s-:]", "").isEmpty()) {
-                continue;
-            }
-
-            String[] rawCells = trimmed.split("\\|", -1);
-            if (rawCells.length <= 1) continue;
-
-            int startCell = trimmed.startsWith("|") ? 1 : 0;
-            int endCell = trimmed.endsWith("|") ? rawCells.length - 1 : rawCells.length;
-
-            ArrayList<String> cells = new ArrayList<>();
-            for (int c = startCell; c < endCell; c++) {
-                cells.add(rawCells[c].trim());
-            }
-
-            TableRow row = new TableRow(context);
-
-            GradientDrawable rowBg = new GradientDrawable();
-            if (isHeader) {
-                rowBg.setColor(Color.rgb(30, 41, 59));
-            } else {
-                rowBg.setColor(rowIndex % 2 == 0 ? Color.rgb(17, 24, 39) : Color.rgb(31, 41, 55));
-            }
-            row.setBackground(rowBg);
-
-            for (String cellText : cells) {
-                TextView cellTv = new TextView(context);
-                cellTv.setText(parseMarkdownToSpanned(cellText), TextView.BufferType.SPANNABLE);
-                cellTv.setTextSize(2, 12.0f);
-                cellTv.setPadding(dp(10), dp(8), dp(10), dp(8));
-                cellTv.setGravity(Gravity.CENTER);
-
-                if (isHeader) {
-                    cellTv.setTextColor(Color.WHITE);
-                    cellTv.setTypeface(null, Typeface.BOLD);
-                } else {
-                    cellTv.setTextColor(Color.rgb(229, 231, 235));
-                }
-                row.addView(cellTv);
-            }
-
-            tableLayout.addView(row);
-            isHeader = false;
-            rowIndex++;
-        }
-
-        hsv.addView(tableLayout);
-        container.addView(hsv);
-    }
-
-    private android.text.Spanned parseMarkdownToSpanned(String text) {
-        if (text == null) return new android.text.SpannableString("");
-        String escaped = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
-
-        escaped = escaped.replaceAll("(?m)^######\\s+(.*?)\\s*$", "<h6>$1</h6>");
-        escaped = escaped.replaceAll("(?m)^#####\\s+(.*?)\\s*$", "<h5>$1</h5>");
-        escaped = escaped.replaceAll("(?m)^####\\s+(.*?)\\s*$", "<h4>$1</h4>");
-        escaped = escaped.replaceAll("(?m)^###\\s+(.*?)\\s*$", "<h3>$1</h3>");
-        escaped = escaped.replaceAll("(?m)^##\\s+(.*?)\\s*$", "<h2>$1</h2>");
-        escaped = escaped.replaceAll("(?m)^#\\s+(.*?)\\s*$", "<h1>$1</h1>");
-
-        escaped = escaped.replaceAll("\\*\\*(.*?)\\*\\*", "<b>$1</b>");
-        escaped = escaped.replaceAll("\\*(.*?)\\*", "<i>$1</i>");
-        escaped = escaped.replaceAll("__(.*?)__", "<u>$1</u>");
-        escaped = escaped.replaceAll("`(.*?)`", "<tt><font color=\"#4ADE80\">$1</font></tt>");
-        escaped = escaped.replaceAll("(?m)^\\s*-\\s+(.*)$", "&bull; $1");
-        escaped = escaped.replaceAll("(?m)^\\s*\\*\\s+(.*)$", "&bull; $1");
-        escaped = escaped.replace("\n", "<br/>");
-
-        // Remove trailing <br/> added right after heading tags
-        escaped = escaped.replaceAll("</h([1-6])><br/>", "</h$1>");
-
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
-            return Html.fromHtml(escaped, Html.FROM_HTML_MODE_LEGACY);
-        } else {
-            return Html.fromHtml(escaped);
-        }
+        // Device messages and AI responses share the same selectable, link-aware renderer.
+        ChatRichText.render(container, text,
+                Math.max(dp(180), getResources().getDisplayMetrics().widthPixels - dp(64)));
     }
 
     private void toggleTtsStatus(ImageView speakBtn) {
@@ -11758,12 +11597,19 @@ extends Activity {
         inputRow.addView((View)this.chatVoiceToggleBtn, (ViewGroup.LayoutParams)voiceToggleParams);
 
         this.chatInputEditText = this.input("发送消息...", "");
+        this.chatInputEditText.setSingleLine(false);
+        this.chatInputEditText.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+                | android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                | android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        this.chatInputEditText.setMinHeight(this.dp(40));
+        this.chatInputEditText.setMaxLines(5);
+        this.chatInputEditText.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
         GradientDrawable inputBg = new GradientDrawable();
         inputBg.setColor(ThemeConfig.COLOR_CARD_BACKGROUND);
         inputBg.setCornerRadius((float)this.dp(8));
         this.chatInputEditText.setBackground((Drawable)inputBg);
 
-        LinearLayout.LayoutParams editParams = new LinearLayout.LayoutParams(0, this.dp(40), 1.0f);
+        LinearLayout.LayoutParams editParams = new LinearLayout.LayoutParams(0, -2, 1.0f);
         editParams.rightMargin = this.dp(8);
         inputRow.addView((View)this.chatInputEditText, (ViewGroup.LayoutParams)editParams);
 
@@ -12027,7 +11873,7 @@ extends Activity {
                         this, sourceDeviceId, sourceDeviceName);
                 TextView sender = new TextView((Context)this);
                 sender.setText(labelValue);
-                sender.setTextSize(11f);
+                sender.setTextSize(12f);
                 sender.setTextColor(Color.rgb(125, 138, 154));
                 sender.setMaxLines(1);
                 sender.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -12041,7 +11887,7 @@ extends Activity {
             bubble.setPadding(this.dp(13), this.dp(9), this.dp(13), this.dp(9));
 
             GradientDrawable gd = new GradientDrawable();
-            gd.setColor(isSelf ? Color.rgb(44, 126, 79) : Color.rgb(24, 34, 48));
+            gd.setColor(isSelf ? Color.rgb(37, 99, 235) : Color.rgb(24, 34, 48));
             gd.setCornerRadius((float)this.dp(11));
             bubble.setBackground((Drawable)gd);
 
@@ -12053,8 +11899,11 @@ extends Activity {
                 if (content != null && (content.startsWith("content://") || content.startsWith("file://") || content.startsWith("/"))) {
                     try {
                         ImageView iv = new ImageView((Context)this);
-                        iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
-                        LinearLayout.LayoutParams imgLp = new LinearLayout.LayoutParams(this.dp(170), this.dp(170));
+                        iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                        iv.setAdjustViewBounds(true);
+                        iv.setMaxWidth(this.dp(240));
+                        iv.setMaxHeight(this.dp(300));
+                        LinearLayout.LayoutParams imgLp = new LinearLayout.LayoutParams(-2, -2);
                         iv.setLayoutParams((ViewGroup.LayoutParams)imgLp);
                         Uri imageUri = content.startsWith("/") ? Uri.fromFile(new java.io.File(content)) : Uri.parse(content);
                         iv.setImageURI(imageUri);
@@ -12094,13 +11943,8 @@ extends Activity {
                     }
                 });
             } else {
-                TextView text = new TextView((Context)this);
-                text.setText((CharSequence)content);
-                text.setTextColor(Color.WHITE);
-                text.setTextSize(15f);
-                text.setLineSpacing(0f, 1.08f);
-                text.setMaxWidth(maxBubbleWidth);
-                bubble.addView((View)text);
+                // Text is rendered as safe Markdown: selectable spans and tappable HTTP(S) links.
+                ChatRichText.render(bubble, content, maxBubbleWidth);
             }
 
             bubble.setOnLongClickListener(v -> {
@@ -12161,7 +12005,7 @@ extends Activity {
         TextView marker = new TextView((Context)this);
         marker.setText(formatChatMessageTime(time));
         marker.setTextColor(Color.rgb(112, 126, 145));
-        marker.setTextSize(11f);
+        marker.setTextSize(12f);
         marker.setGravity(Gravity.CENTER);
         marker.setPadding(this.dp(8), this.dp(9), this.dp(8), this.dp(4));
         this.chatMessageListLayout.addView(marker,
