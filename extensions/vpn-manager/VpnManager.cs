@@ -257,7 +257,7 @@ public sealed class VpnManagerWindow : Window
         if (mode is not ("rule" or "global" or "direct")) mode = "rule";
         var blocked = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "external-controller", "external-ui",
             "external-ui-url", "external-controller-pipe", "external-controller-unix", "external-controller-tls",
-            "secret", "port", "socks-port", "mixed-port", "redir-port", "tproxy-port", "allow-lan", "listeners", "iptables", "tunnels", "script", 
+            "secret", "port", "socks-port", "mixed-port", "redir-port", "tproxy-port", "allow-lan", "listeners", "iptables", "tunnels", "script",
             "bind-address", "tun", "mode" };
         // Reject alternate YAML root-key syntax that could bypass the hard-coded security overrides.
         if (Regex.IsMatch(input, @"(?m)^(?:['""\{\[]|<<\s*:)"))
