@@ -68,6 +68,9 @@ final class MobileMessageClient {
             connection.setRequestMethod(method);
             connection.setRequestProperty("User-Agent", "YanziClient-Mobile/" + BuildConfig.VERSION_NAME);
             connection.setRequestProperty("X-Yanzi-Client", "mobile");
+            connection.setRequestProperty("X-Yanzi-Client-Version", BuildConfig.VERSION_NAME);
+            if (MobileApplicationContext.get() != null)
+                connection.setRequestProperty("X-Yanzi-Device-Id", MobileDeviceIdentity.stableDeviceId(MobileApplicationContext.get()));
             if (token != null) connection.setRequestProperty("Authorization", "Bearer " + token);
             if (payload != null) {
                 connection.setDoOutput(true);

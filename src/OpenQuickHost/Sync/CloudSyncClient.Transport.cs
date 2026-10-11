@@ -127,6 +127,7 @@ public sealed partial class CloudSyncClient
         client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("YanziClient-Desktop", "0.2.3"));
         client.DefaultRequestHeaders.TryAddWithoutValidation("X-Yanzi-Client", "desktop");
         client.DefaultRequestHeaders.TryAddWithoutValidation("X-Yanzi-Client-Version", "0.2.3");
+        client.DefaultRequestHeaders.TryAddWithoutValidation("X-Yanzi-Device-Id", DeviceIdentityStore.GetOrCreateDesktopDeviceId());
         return client;
     }
 
