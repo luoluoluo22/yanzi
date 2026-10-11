@@ -107,7 +107,7 @@ final class ApplicationCatalogView {
     private void ui(Runnable action){activity.runOnUiThread(()->{if(!closed&&!activity.isFinishing()&&!activity.isDestroyed())action.run();});}
     private void load(){if(accountId==null)return;work(this::readCatalog,null,"正在刷新目录…");}
     private void readCatalog()throws Exception{
-        JSONObject catalog=json("/v1/applications/catalog",null,false),library=json("/v1/applications/library",null,true);
+        JSONObject catalog=json("/v1/applications/catalog",null,true),library=json("/v1/applications/library",null,true);
         checkAccount();ui(()->render(catalog.optJSONArray("applications"),library.optJSONArray("applications")));
     }
     private void render(JSONArray apps,JSONArray selections){

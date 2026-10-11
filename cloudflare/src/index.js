@@ -68,20 +68,23 @@ const PUBLIC_STORE_EXTENSION_IDS_SQL = PUBLIC_STORE_EXTENSIONS
 // Request-scoped attribution: only authenticated users, never raw identifiers.
 const requestIdentity = new WeakMap();
 const cloudVipCache = new Map();
+async function cachedCloudVipRecord(env, userId) {
+  const now = Date.now();
+  let cached = cloudVipCache.get(userId);
+  if (!cached || cached.checkedUntil < now) {
+    // Indexed read only; no D1 schema/table writes on status polling.
+    const {row} = await readVipEntitlement(env.DB, userId, now);
+    cached = {row, checkedUntil:now + 15000};
+    if (cloudVipCache.size >= 2000) cloudVipCache.clear();
+    cloudVipCache.set(userId, cached);
+  }
+  return cached.row;
+}
 async function ensureCloudVipUser(env, userId) {
   if (env.CLOUD_VIP_ONLY !== 'true') return;
   const id = String(userId || '');
   if (!id) throw new HttpError(401, 'unauthorized', 'Authentication required');
-  const now = Date.now();
-  let cached = cloudVipCache.get(id);
-  if (!cached || cached.checkedUntil < now) {
-    // Avoid ensureLicenseTables here: entitlement checks must never write D1.
-    const {row} = await readVipEntitlement(env.DB, id, now);
-    cached = { row, checkedUntil: now + 15000 };
-    if (cloudVipCache.size >= 2000) cloudVipCache.clear();
-    cloudVipCache.set(id, cached);
-  }
-  if (!isVipActive(cached.row, now))
+  if (!isVipActive(await cachedCloudVipRecord(env, id), Date.now()))
     throw new HttpError(403, 'vip_required', '云服务需要有效 VIP 会员；本地免费功能不受影响。', {
       upgradeUrl: 'https://wzyp.cn/shop/4AOUCE2B',
       activationPath: '/v1/licenses/redeem',
@@ -605,6 +608,14 @@ async function handleRequest(request, env, ctx) {
 
   if (url.pathname === "/v1/auth/me" && request.method === "GET") {
     const auth = await requireAuth(request, env);
+    const vipInfo = await getUserVipInfo(env, auth.userId);
+    // Legacy clients poll account status. Never create/query the wish-wall tables
+    // for free users who cannot access that paid cloud feature.
+    if (env.CLOUD_VIP_ONLY === 'true' && !vipInfo.isVip) {
+      return json({userId:auth.userId, username:auth.username, email:auth.email,
+        points:0, wishesCount:0, acceptedCount:0, isAdmin:isAdminUser(auth, env),
+        ...vipInfo});
+    }
     let points = 0;
     let wishesCount = 0;
     let acceptedCount = 0;
@@ -621,7 +632,6 @@ async function handleRequest(request, env, ctx) {
     } catch (e) {
       console.warn("user_points query fallback:", e);
     }
-    const vipInfo = await getUserVipInfo(env, auth.userId);
     return json({
       userId: auth.userId,
       username: auth.username,
@@ -2131,9 +2141,7 @@ async function handleRequest(request, env, ctx) {
 
 async function getUserVipInfo(env, userId) {
   try {
-    const userRecord = await env.DB.prepare(
-      "select vip_expire_at, vip_type from users where user_id = ?"
-    ).bind(userId).first();
+    const userRecord = await cachedCloudVipRecord(env, String(userId));
 
     if (!userRecord) {
       return { isVip: false, vipType: null, vipExpireAt: null, daysRemaining: 0 };
