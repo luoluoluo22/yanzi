@@ -198,6 +198,7 @@ extends Activity {
     private HorizontalScrollView aiAttachmentScrollView;
     private LinearLayout aiAttachmentContainer;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private static final ExecutorService messageExecutor = Executors.newSingleThreadExecutor();
     private SharedPreferences prefs;
     private String deviceId;
     private androidx.core.widget.NestedScrollView mainScrollView;
@@ -4003,13 +4004,16 @@ extends Activity {
     private void sendTextValueToDesktop(String text, String pendingStatus) {
         this.setStatus(pendingStatus);
         beginMessageSend();
-        this.executor.execute(() -> {
+        MobileSessionStore.Snapshot sendSession = MobileSessionStore.snapshot(this);
+        long queuedAt = android.os.SystemClock.elapsedRealtime();
+        messageExecutor.execute(() -> {
+            android.util.Log.i("YanziSend", "queue_wait_ms=" + (android.os.SystemClock.elapsedRealtime() - queuedAt));
             try {
+                sendSession.requireCurrent();
                 String messageId;
                 String baseUrl = this.normalizedBaseUrl();
                 String token = this.requireToken();
                 try {
-                    YanziApiClient.registerDevice(baseUrl, token, this.deviceId, this.buildDeviceName());
                     messageId = YanziApiClient.sendTextToDesktop(baseUrl, token, this.deviceId, text);
                 }
                 catch (Exception ex) {
@@ -4017,11 +4021,10 @@ extends Activity {
                         throw ex;
                     }
                     token = this.refreshToken();
-                    YanziApiClient.registerDevice(baseUrl, token, this.deviceId, this.buildDeviceName());
                     messageId = YanziApiClient.sendTextToDesktop(baseUrl, token, this.deviceId, text);
                 }
                 String sentMessageId = messageId;
-                this.runOnUiThread(() -> this.setStatus("\u5df2\u53d1\u9001\u5230\u4e91\u7aef\uff0cmessageId=" + sentMessageId + "\u3002\u7b49\u5f85\u7535\u8111\u63a5\u6536\u3002"));
+                this.runOnUiThread(() -> this.setStatus("消息已提交，id=" + sentMessageId));
             }
             catch (Exception ex) {
                 this.runOnUiThread(() -> this.setStatus("\u53d1\u9001\u5931\u8d25\uff1a" + ex.getMessage()));
@@ -4045,8 +4048,12 @@ extends Activity {
         this.setStatus("\u6b63\u5728\u5904\u7406\u7167\u7247...");
         this.showPhotoProgress("\u6b63\u5728\u53d1\u9001\u7167\u7247...");
         beginMessageSend();
-        this.executor.execute(() -> {
+        MobileSessionStore.Snapshot sendSession = MobileSessionStore.snapshot(this);
+        long queuedAt = android.os.SystemClock.elapsedRealtime();
+        messageExecutor.execute(() -> {
+            android.util.Log.i("YanziSend", "queue_wait_ms=" + (android.os.SystemClock.elapsedRealtime() - queuedAt));
             try {
+                sendSession.requireCurrent();
                 String messageId;
                 byte[] jpegBytes = this.readJpegBytesFromUri(uri);
                 int[] size = MainActivity.readImageSizeFromJpegBytes(jpegBytes);
@@ -11383,8 +11390,12 @@ extends Activity {
         this.showPhotoProgress("正在发送照片...");
 
         beginMessageSend();
-        this.executor.execute(() -> {
+        MobileSessionStore.Snapshot sendSession = MobileSessionStore.snapshot(this);
+        long queuedAt = android.os.SystemClock.elapsedRealtime();
+        messageExecutor.execute(() -> {
+            android.util.Log.i("YanziSend", "queue_wait_ms=" + (android.os.SystemClock.elapsedRealtime() - queuedAt));
             try {
+                sendSession.requireCurrent();
                 byte[] jpegBytes = this.readJpegBytesFromUri(uri);
                 File stablePhoto = ChatHistoryStore.persistPhoto(this, jpegBytes);
                 String stablePath = stablePhoto.getAbsolutePath();
@@ -11429,8 +11440,12 @@ extends Activity {
         this.showPhotoProgress("\u6b63\u5728\u53d1\u9001\u6587\u4ef6...");
 
         beginMessageSend();
-        this.executor.execute(() -> {
+        MobileSessionStore.Snapshot sendSession = MobileSessionStore.snapshot(this);
+        long queuedAt = android.os.SystemClock.elapsedRealtime();
+        messageExecutor.execute(() -> {
+            android.util.Log.i("YanziSend", "queue_wait_ms=" + (android.os.SystemClock.elapsedRealtime() - queuedAt));
             try {
+                sendSession.requireCurrent();
                 String fileName = "file_" + System.currentTimeMillis();
                 long fileSize = 0;
                 android.database.Cursor cursor = this.getContentResolver().query(uri, null, null, null, null);
@@ -11508,20 +11523,22 @@ extends Activity {
         this.saveChatMessageToLocal("self", "text", text, sentAt);
 
         beginMessageSend();
-        this.executor.execute(() -> {
+        MobileSessionStore.Snapshot sendSession = MobileSessionStore.snapshot(this);
+        long queuedAt = android.os.SystemClock.elapsedRealtime();
+        messageExecutor.execute(() -> {
+            android.util.Log.i("YanziSend", "queue_wait_ms=" + (android.os.SystemClock.elapsedRealtime() - queuedAt));
             try {
+                sendSession.requireCurrent();
                 String baseUrl = this.normalizedBaseUrl();
                 String token = this.requireToken();
                 String messageId = "";
                 try {
-                    YanziApiClient.registerDevice(baseUrl, token, this.deviceId, this.buildDeviceName());
                     messageId = YanziApiClient.sendTextToDesktop(baseUrl, token, this.deviceId, text);
                 } catch (Exception ex) {
                     if (!MainActivity.isUnauthorized(ex)) {
                         throw ex;
                     }
                     token = this.refreshToken();
-                    YanziApiClient.registerDevice(baseUrl, token, this.deviceId, this.buildDeviceName());
                     messageId = YanziApiClient.sendTextToDesktop(baseUrl, token, this.deviceId, text);
                 }
                 final String finalMsgId = messageId;

@@ -15,6 +15,7 @@ public class DeviceHeartbeatService extends Service {
     private final java.util.concurrent.atomic.AtomicBoolean syncBusy = new java.util.concurrent.atomic.AtomicBoolean();
     private volatile long syncAt;
     private long stateAt, stateRevision = -1;
+    private final java.util.concurrent.atomic.AtomicBoolean outboxRequested = new java.util.concurrent.atomic.AtomicBoolean();
     private final java.util.concurrent.atomic.AtomicBoolean outgoingBusy = new java.util.concurrent.atomic.AtomicBoolean();
     private final java.util.Set<String> inflight = ConcurrentHashMap.newKeySet();
     private final Object deliveryLock = new Object();
@@ -54,6 +55,33 @@ public class DeviceHeartbeatService extends Service {
             try { context.startForegroundService(new Intent(context, DeviceHeartbeatService.class)); }
             catch (IllegalStateException ex) { Log.w("YanziMessageBridge", "Service start deferred until foreground resume"); }
         }
+    }
+    static void requestOutboxReplay(Context context) {
+        if (MobileSessionStore.snapshot(context).token.isEmpty()) return;
+        try { context.startForegroundService(new Intent(context, DeviceHeartbeatService.class).putExtra("outboxReady", true)); }
+        catch (IllegalStateException | SecurityException error) { Log.w("YanziMessageBridge", "Outbox replay deferred until service maintenance"); }
+    }
+    private void replayOutbox(String base, String token) {
+        outboxRequested.set(true);
+        if (!outgoingBusy.compareAndSet(false, true)) return;
+        try { outgoing.execute(() -> {
+            try {
+                do {
+                    outboxRequested.set(false);
+                    MobileSessionStore.Snapshot current = MobileSessionStore.snapshot(this);
+                    if (!current.matches(base, token)) return;
+                    current.requireCurrent();
+                    MobileMessageOutbox.replay(base, token, current);
+                } while (outboxRequested.get() && !Thread.currentThread().isInterrupted());
+            } catch (Exception error) { Log.w("YanziMessageBridge", "Outbox retry deferred: " + error.getClass().getSimpleName()); }
+            finally {
+                outgoingBusy.set(false);
+                if (outboxRequested.get() && !outgoing.isShutdown()) {
+                    MobileSessionStore.Snapshot current = MobileSessionStore.snapshot(this);
+                    if (!current.token.isEmpty()) replayOutbox(current.baseUrl, current.token);
+                }
+            }
+        }); } catch (RejectedExecutionException ignored) { outgoingBusy.set(false); }
     }
     @Override public void onCreate() {
         super.onCreate();
@@ -144,13 +172,7 @@ public class DeviceHeartbeatService extends Service {
                 maintenanceAt = now + BackgroundCadence.MAINTENANCE_MS;
                 runStage("lan_refresh", () -> AccountLanConnections.refresh(this, base, token, device, false));
                 runStage("receipt_cleanup", () -> MobileDesktopTransfer.cleanupReceipts(this));
-                runStage("outbox_replay", () -> {
-                    if (outgoingBusy.compareAndSet(false, true)) outgoing.execute(() -> {
-                        try { MobileMessageOutbox.replay(base, token); }
-                        catch (Exception error) { Log.w("YanziMessageBridge", "Outbox retry deferred: " + error.getClass().getSimpleName()); }
-                        finally { outgoingBusy.set(false); }
-                    });
-                });
+                runStage("outbox_replay", () -> replayOutbox(base, token));
             }
             if (!runStage("realtime_connect", () -> {
                 if (!connected && !connecting && now >= reconnectAt) {
@@ -416,6 +438,11 @@ public class DeviceHeartbeatService extends Service {
         retryAt = SystemClock.elapsedRealtime() + Math.min(30000L, 1000L * (1L << failures));
     }
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
+        if (intent != null && intent.getBooleanExtra("outboxReady", false)) {
+            MobileSessionStore.Snapshot current = MobileSessionStore.snapshot(this);
+            if (!current.token.isEmpty()) replayOutbox(current.baseUrl, current.token);
+            return START_STICKY;
+        }
         pollAt = 0; heartbeat = 0;
         if (intent != null && intent.getBooleanExtra("messagesReady", false)) retryAt = 0;
         wakeSoon();

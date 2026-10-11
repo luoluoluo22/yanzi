@@ -13,6 +13,7 @@ public final class LanRecoveryTest extends Instrumentation {
     private Bundle arguments;
     @Override public void onCreate(Bundle arguments) { super.onCreate(arguments); this.arguments=arguments; start(); }
     @Override public void onStart() {
+        if ("send-latency".equals(arguments.getString("suite"))) { MessageSendLatencyVerification.run(this); return; }
         if ("wake-chain".equals(arguments.getString("suite"))) { WakeChainVerification.run(this); return; }
         if ("chat-notification".equals(arguments.getString("suite"))) { ChatNotificationVerification.run(this); return; }
         if ("chat-rich-text".equals(arguments.getString("suite"))) { ChatRichTextVerification.run(this); return; }
