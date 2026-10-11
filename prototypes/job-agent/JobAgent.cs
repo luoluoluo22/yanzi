@@ -3972,7 +3972,7 @@ public static class ZhaopinInteractionService
         if (unread.Count == 0)
         {
             JobRepository.SaveMessageState(dataDirectory, state);
-            MarkContactedFromMessageBody(dataDirectory, body);
+            // 会话列表里可能包含用户自己的招呼；不能凭公司名就标记 HR 已回复。
             return new MessageCheckResult(true, false, 0, "智联已登录，没有检测到新的未读招呼。");
         }
 
@@ -3987,7 +3987,7 @@ public static class ZhaopinInteractionService
         state.LastUnreadFingerprint = fingerprint;
         state.LastNewMessageAt = DateTimeOffset.Now;
         state.NewMessageCount++;
-        MarkContactedFromMessageBody(dataDirectory, string.Join("\n", unread) + "\n" + body);
+        // 仅在具体对话中核实招聘方入站消息后，才更新该岗位的已联系状态。
 
         var preview = string.Join(" / ", unread.Take(2));
         DailyJournalService.AppendEvent(dataDirectory, "hr_message", "", "", preview);
@@ -4611,10 +4611,18 @@ public static class JobScanService
             job.UpdatedAt = DateTimeOffset.Now;
         }
 
-        JobRepository.SaveJobs(dataDirectory, merged
+        // 历史投递/联系记录不得被最新扫描产生的 1500 条职位池淘汰。
+        var retained = merged
+            .Where(x => x.AppliedAt.HasValue || x.GreetingSentAt.HasValue
+                        || x.Status is "applied" or "viewed" or "contacted" or "interview" or "offer" or "rejected")
+            .ToList();
+        var retainedIds = new HashSet<string>(retained.Select(x => x.Id), StringComparer.OrdinalIgnoreCase);
+        var recent = merged
+            .Where(x => !retainedIds.Contains(x.Id))
             .OrderByDescending(x => x.DiscoveredAt)
-            .Take(1500)
-            .ToList());
+            .Take(Math.Max(0, 1500 - retained.Count))
+            .ToList();
+        JobRepository.SaveJobs(dataDirectory, retained.Concat(recent).ToList());
 
         state.LastScanAt = DateTimeOffset.Now;
         state.LastNewCount = newJobs.Count;
