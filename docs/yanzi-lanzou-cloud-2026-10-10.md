@@ -11,7 +11,7 @@
 - `lanzou.browser.act`: 有风险确认的 click/fill 工作流，可作为逐个实测后网盘操作的底层执行器；它不是已经验证的文件管理 API。不可直接操作 iframe 里的跨域文档。
 - `lanzou.network.observe`: start/stop/status/snapshot/clear；在 Edge 网络事件中只记录 HTTPS 白名单域名的请求方法、PHP 路径、状态、类型和**非敏感表单字段名**；不记录请求值、Cookie、认证头、查询串、文件体与响应体。
 - `lanzou.network.observe` 暂不提供 `probe` 或协议重放：固定 GET 探针连续三次出现宿主超时，即便 AbortController / Promise.race 限时也未能稳定返回，故从对外可用操作中撤下。仅保留已实测稳定的网络观察能力。
-- 本机安装 `lanzou-cloud` 小程序导航入口，源码在 `extensions/lanzou-cloud/manifest.json`。
+- 本机安装 `lanzou-cloud` 小程序导航入口，源码在 `%LOCALAPPDATA%\OpenQuickHost\Extensions\lanzou-cloud\manifest.json`。
 
 ## 已完成的验证
 - Edge 浏览器助手：online/connected，后台真实打开 `https://www.lanzou.com/u` 并得到公开首页标题。

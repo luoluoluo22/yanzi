@@ -1,6 +1,6 @@
 ﻿$ErrorActionPreference='Stop'
-$root='F:\Desktop\kaifa\OpenQuickHost'
-$source=Join-Path $root 'tools\idle-chatgpt-tasks'
+$root=Split-Path -Parent $PSScriptRoot
+$source=Join-Path $env:LOCALAPPDATA 'OpenQuickHost\Extensions\idle-chatgpt-tasks'
 $manifest=Get-Content (Join-Path $source 'manifest.json') -Raw -Encoding UTF8|ConvertFrom-Json
 if($manifest.id -ne 'idle-chatgpt-tasks' -or $manifest.version -ne '0.2.4'){throw 'Incorrect candidate version'}
 $text=Get-Content (Join-Path $source 'IdleTaskApp.cs') -Encoding UTF8 -Raw
