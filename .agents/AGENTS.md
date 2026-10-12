@@ -106,6 +106,15 @@
 
 ---
 
+### Windows 小程序动工前的强制流程
+
+> [!IMPORTANT]
+> **先读 [`docs/miniapps/DEVELOPMENT_WORKFLOW.md`](../docs/miniapps/DEVELOPMENT_WORKFLOW.md)，再定位 `%LOCALAPPDATA%\OpenQuickHost\Extensions\<id>`。**
+> 每次新建、修复或移植：①读取用户目录 manifest/入口与现状；②备份并逐文件对比（禁止用旧仓库副本覆盖）；③仅在用户目录修改；④凭据只引用既有环境变量管理器；⑤测试编译/运行/回退；⑥依赖既有自动同步，不自建同步或提交业务源码；⑦仅在真实核对云端和目标设备后报告“跨设备同步成功”。
+> **小程序源码修改不得创建宿主仓库业务 PR**。只有通用 API、SDK、文档、测试或 CI 需要变更时，才另行修改宿主 Git，运行 `scripts/verify-miniapp-repository-isolation.ps1` 并遵守发布门禁。
+
+---
+
 ### 浏览器助手 / 网页小程序开发完成后的强制刷新验收
 
 > [!IMPORTANT]
