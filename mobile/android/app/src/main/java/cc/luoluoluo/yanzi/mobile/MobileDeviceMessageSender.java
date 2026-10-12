@@ -28,10 +28,22 @@ final class MobileDeviceMessageSender {
                     output.write(local.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
                 }
                 if (connection.getResponseCode() == 200) {
-                    LanDiscoveryManager.noteSuccess();
-                    android.util.Log.i("YanziMessageTiming", "stage=lan_delivered durationMs="
-                            + (android.os.SystemClock.elapsedRealtime() - startedAt)
-                            + " kind=" + envelope.optString("kind"));
+                    try (java.io.InputStream input = connection.getInputStream();
+                         java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream()) {
+                        byte[] buffer = new byte[4096];
+                        int count;
+                        while ((count = input.read(buffer)) > 0) {
+                            bytes.write(buffer, 0, count);
+                            if (bytes.size() > 65536) return;
+                        }
+                        JSONObject result = new JSONObject(bytes.toString("UTF-8"));
+                        if (result.optBoolean("success") && !result.optString("messageId").isEmpty()) {
+                            LanDiscoveryManager.noteSuccess();
+                            android.util.Log.i("YanziMessageTiming", "stage=lan_delivered durationMs="
+                                    + (android.os.SystemClock.elapsedRealtime() - startedAt)
+                                    + " kind=" + envelope.optString("kind"));
+                        }
+                    }
                 }
             } finally {
                 if (connection != null) connection.disconnect();

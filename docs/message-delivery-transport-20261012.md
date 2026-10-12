@@ -21,3 +21,9 @@
 - Windows 安装前的快照指针为 %LOCALAPPDATA%/YanziRuntime/runtime.previous.json；安装脚本自带故障回滚。
 - 正式 Android 需要正确签名凭证与真实设备安装测试，不能将调试证书 APK 当作生产更新。
 - 本次不改动 Cloudflare 数据库结构、身份密钥、消息路由协议和云端配额策略。
+
+## 运行中限制与安全验收
+
+- 2026-10-12 台式机实际 Runtime DLL 与已构建宿主 SHA256 一致，健康状态 mobileBridge=true，mobilePolling=false，Cloudflare WebSocket 已连接。
+- 尝试由服务器身份向桌面发送验收消息返回 device_scope_denied：服务器授权仅包含现有目标，未扩大授权。该测试没有生成被接收消息，不得记为端到端通过。
+- 手机当前无 ADB 设备，Android Dev APK 编译通过但尚未安装真机；线上最新安卓发布已到 0.2.55，当前 Dev 构建为 0.2.54-dev，不可当作正式覆盖升级。
