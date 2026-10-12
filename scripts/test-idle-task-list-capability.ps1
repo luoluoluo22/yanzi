@@ -1,7 +1,7 @@
 param([switch]$KeepArtifacts)
 
 $ErrorActionPreference = 'Stop'
-$sourceDirectory = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\tools\idle-chatgpt-tasks'))
+$sourceDirectory = Join-Path $env:LOCALAPPDATA 'OpenQuickHost\Extensions\idle-chatgpt-tasks'
 $settings = Get-Content -LiteralPath (Join-Path $env:LOCALAPPDATA 'OpenQuickHost\appsettings.local.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $apiBase = 'http://127.0.0.1:' + $settings.AgentApiPort
 $headers = @{ 'X-Yanzi-Token' = $settings.AgentApiToken }

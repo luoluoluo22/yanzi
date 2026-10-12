@@ -6,7 +6,7 @@
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <VideoResumeSource Condition="'$(VideoResumeSource)' == ''">../../extensions/video-resume/main.cs</VideoResumeSource>
+    <VideoResumeSource Condition="'$(VideoResumeSource)' == ''">$(LOCALAPPDATA)\OpenQuickHost\Extensions\video-resume\main.cs</VideoResumeSource>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="$(VideoResumeSource)" />

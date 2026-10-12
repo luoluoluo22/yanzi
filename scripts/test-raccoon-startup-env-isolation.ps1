@@ -5,7 +5,7 @@ $extension = Join-Path $root 'fixture'
 $runtime = Join-Path $root 'OpenQuickHost\McpRuntime\raccoon'
 $service = Join-Path $root 'fake-service'
 $results = Join-Path $root 'observed.json'
-$source = Join-Path $PSScriptRoot '..\extensions\raccoon-manager\managed-start.ps1'
+$source = Join-Path $env:LOCALAPPDATA 'OpenQuickHost\Extensions\raccoon-manager\managed-start.ps1'
 try {
     New-Item -ItemType Directory -Force -Path $extension,$runtime,(Join-Path $service 'scripts') | Out-Null
     Copy-Item $source (Join-Path $extension 'managed-start.ps1')

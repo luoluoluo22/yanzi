@@ -37,6 +37,8 @@ jobs:
         with: {node-version: "22"}
       - uses: actions/setup-dotnet@v4
         with: {dotnet-version: "9.0.x"}
+      - name: Reject Windows miniapp packages in the host Git repository
+        run: ./scripts/verify-miniapp-repository-isolation.ps1
       - name: Desktop build
         run: dotnet build OpenQuickHost.sln -c Debug -v:minimal
       - name: Settings ownership and object conflict regression

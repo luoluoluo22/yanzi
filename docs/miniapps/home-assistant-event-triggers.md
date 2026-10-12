@@ -14,7 +14,7 @@
 
 - `sdk/miniapps/HomeAssistantStateChangedStream.cs`：唯一的通用订阅实现。
 - `scripts/miniapps/Sync-HomeAssistantEventStream.ps1`：把公共实现嵌入各个小程序的 `main.cs`，使用标记 `YANZI_HA_EVENT_STREAM` 定位。修改公共实现后重新执行该工具。
-- `extensions/video-resume/main.cs`：首个实际应用，包含生成的适配器及独立的电饭煲状态机，不会在宿主中硬编码电饭煲业务。
+- `%LOCALAPPDATA%\OpenQuickHost\Extensions\video-resume\main.cs`：首个实际应用，包含生成的适配器及独立的电饭煲状态机，不会在宿主中硬编码电饭煲业务。
 
 例如新建小程序后执行：
 
@@ -65,7 +65,7 @@ await YanziHaStateChangedStream.SubscribeAsync(
 在仓库根目录运行：
 
 ```powershell
-./scripts/miniapps/Sync-HomeAssistantEventStream.ps1 -EntryPath 'extensions/video-resume/main.cs' -Check
+./scripts/miniapps/Sync-HomeAssistantEventStream.ps1 -EntryPath "$env:LOCALAPPDATA\OpenQuickHost\Extensions\video-resume\main.cs" -Check
 dotnet restore tests/video-resume/VideoResume.Verification.csproj --configfile tests/video-resume/NuGet.Config
 dotnet run --project tests/video-resume/VideoResume.Verification.csproj --no-restore
 dotnet run --project tests/video-resume/VideoResume.Verification.csproj --no-restore -- --live

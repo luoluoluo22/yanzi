@@ -1,6 +1,0 @@
-﻿{
-    "enabled":  false,
-    "eventEntityId":  "event.your_cooker_cooking_finished",
-    "statusEntityId":  "sensor.your_cooker_status",
-    "runStatusEventId":  "event.your_cooker_runstatus"
-}
