@@ -96,7 +96,8 @@ test('stale cursors advance through bounded history without losing a later targe
   try {
     for (let i = 0; i < 700; i++) insertMessage(f.sqlite, `unrelated_${String(i).padStart(6, '0')}`, 'desktop-b');
     insertMessage(f.sqlite, 'important_after_history', 'desktop-a');
-    let cursor = 0;
+    // Nonzero cursor represents a checkpointed incremental consumer.
+    let cursor = 1;
     for (let i = 0; i < 3; i++) {
       const page = await f.repository.getPendingDeviceMessagePage(f.env, 'u', 'desktop-a', 'desktop', 20, {receiveAccountChat:true}, cursor, true);
       assert.ok(page.nextCursor > cursor);
@@ -126,5 +127,17 @@ test('limit pagination does not drop messages beyond the returned page', async (
     assert.equal(second.nextCursor, 25);
     assert.equal(second.hasMore, false);
     assert.equal(new Set([...first.items, ...second.items].map(x => x.messageId)).size, 25);
+  } finally { f.sqlite.close(); }
+});
+
+test('zero-cursor one-shot consumer can still find a pending message beyond the bounded window', async () => {
+  const f = fixture();
+  try {
+    for (let i = 0; i < 650; i++) insertMessage(f.sqlite, `unrelated_bootstrap_${i}`, 'desktop-b');
+    insertMessage(f.sqlite, 'pending_for_one_shot', 'desktop-a');
+    const page = await f.repository.getPendingDeviceMessagePage(f.env, 'u', 'desktop-a', 'desktop', 20, {}, 0, true);
+    assert.deepEqual(page.items.map(x => x.messageId), ['pending_for_one_shot']);
+    assert.equal(page.nextCursor, page.highWater);
+    assert.equal(page.hasMore, false);
   } finally { f.sqlite.close(); }
 });

@@ -51,7 +51,10 @@ async function getPendingDeviceMessagePage(env, userId, deviceId, platform, limi
   let rows;
   let scannedThrough = upperBound;
 
-  if (cursorProvided) {
+  // A zero cursor also serves existing one-shot consumers that do not persist
+  // nextCursor. Keep their full pending-message lookup on bootstrap so they
+  // cannot miss messages following a long unrelated-device history.
+  if (cursorProvided && effectiveAfter > 0) {
     // Bound the candidate sequence window BEFORE joining/filtering messages. A
     // stale cursor can otherwise scan the entire account history each poll.
     // Even an empty result advances the cursor, but must not claim hasMore:
@@ -133,7 +136,7 @@ async function getPendingDeviceMessagePage(env, userId, deviceId, platform, limi
   const nextCursor = overLimit && items.length
     ? Number(items[items.length - 1].sequence || effectiveAfter)
     : scannedThrough;
-  const hasMore = overLimit || (cursorProvided && items.length > 0 && scannedThrough < highWater);
+  const hasMore = overLimit || (cursorProvided && effectiveAfter > 0 && items.length > 0 && scannedThrough < highWater);
   return { items, nextCursor, hasMore, highWater, cursorReset: effectiveAfter !== after };
 }
 
