@@ -90,3 +90,41 @@ test('cursor beyond current database high-water resets safely after database rec
     assert.equal(page.nextCursor, 1);
   } finally { f.sqlite.close(); }
 });
+
+test('stale cursors advance through bounded history without losing a later targeted message', async () => {
+  const f = fixture();
+  try {
+    for (let i = 0; i < 700; i++) insertMessage(f.sqlite, `unrelated_${String(i).padStart(6, '0')}`, 'desktop-b');
+    insertMessage(f.sqlite, 'important_after_history', 'desktop-a');
+    let cursor = 0;
+    for (let i = 0; i < 3; i++) {
+      const page = await f.repository.getPendingDeviceMessagePage(f.env, 'u', 'desktop-a', 'desktop', 20, {receiveAccountChat:true}, cursor, true);
+      assert.ok(page.nextCursor > cursor);
+      assert.ok(page.nextCursor - cursor <= 320);
+      if (i < 2) {
+        assert.equal(page.items.length, 0);
+        assert.equal(page.hasMore, false, 'legacy desktop rejects empty pages marked hasMore');
+      } else {
+        assert.deepEqual(page.items.map(x => x.messageId), ['important_after_history']);
+      }
+      cursor = page.nextCursor;
+    }
+    assert.equal(cursor, 701);
+  } finally { f.sqlite.close(); }
+});
+
+test('limit pagination does not drop messages beyond the returned page', async () => {
+  const f = fixture();
+  try {
+    for (let i = 0; i < 25; i++) insertMessage(f.sqlite, `target_${i}`, 'desktop-a');
+    const first = await f.repository.getPendingDeviceMessagePage(f.env, 'u', 'desktop-a', 'desktop', 20, {}, 0, true);
+    assert.equal(first.items.length, 20);
+    assert.equal(first.nextCursor, 20);
+    assert.equal(first.hasMore, true);
+    const second = await f.repository.getPendingDeviceMessagePage(f.env, 'u', 'desktop-a', 'desktop', 20, {}, first.nextCursor, true);
+    assert.equal(second.items.length, 5);
+    assert.equal(second.nextCursor, 25);
+    assert.equal(second.hasMore, false);
+    assert.equal(new Set([...first.items, ...second.items].map(x => x.messageId)).size, 25);
+  } finally { f.sqlite.close(); }
+});

@@ -1,24 +1,34 @@
 // Domain implementation; dependencies are supplied by the composition root.
 export function createSyncApi(api) {
+  // Table existence changes only during a migration/deploy. Bound the cache
+  // lifetime so an in-place migration can still be discovered without adding
+  // two sqlite_master scans to every legacy capabilities poll.
+  const capabilitiesSchemaCache = new WeakMap();
+  async function getCapabilitiesSchema(db) {
+    const now = Date.now();
+    const cached = capabilitiesSchemaCache.get(db);
+    if (cached && cached.expiresAt > now) return cached.promise;
+    const promise = Promise.all([
+      db.prepare(`select name from sqlite_master where type = 'table' and name = 'user_sync_objects'`).first(),
+      db.prepare(`select name from sqlite_master where type = 'table' and name = 'user_sync_object_history'`).first()
+    ]).then(([objects, history]) => ({objectSyncAvailable: Boolean(objects?.name), objectHistoryAvailable: Boolean(history?.name)}));
+    capabilitiesSchemaCache.set(db, {expiresAt: now + 300_000, promise});
+    try { return await promise; }
+    catch (error) { capabilitiesSchemaCache.delete(db); throw error; }
+  }
   const { HttpError, ensureUser, getUserWebDavConfig, getYanmStateViewUrl, handleAttachments, hmacSha256, isoNow, json, normalizeOptionalIsoDate, normalizeSyncObjectId, normalizeSyncRevision, normalizeYanmComponentStatePatch, notifyDeviceRelay, patchYanmComponentStateForUser, readJson, readUserSyncObject, readUserSyncObjectHistory, readUserSyncObjects, readYanmStateForUser, requireAuth, writeUserSyncObject, writeYanmStateForUser } = api;
 async function handleSyncApi(request, env, ctx) {
   const url = new URL(request.url);
   if (url.pathname === "/v1/sync/capabilities" && request.method === "GET") {
     await requireAuth(request, env);
-    const table = await env.DB.prepare(
-      `select name from sqlite_master where type = 'table' and name = 'user_sync_objects'`
-    ).first();
-    const historyTable = await env.DB.prepare(
-      `select name from sqlite_master where type = 'table' and name = 'user_sync_object_history'`
-    ).first();
-    const objectSyncAvailable = Boolean(table?.name);
+    const {objectSyncAvailable, objectHistoryAvailable} = await getCapabilitiesSchema(env.DB);
     const objectsAuthoritative = objectSyncAvailable &&
       String(env.SYNC_OBJECTS_AUTHORITATIVE || "").trim().toLowerCase() === "true";
     return json({
       ok: true,
       protocolVersion: 2,
       objectSyncAvailable,
-      objectHistoryAvailable: Boolean(historyTable?.name),
+      objectHistoryAvailable,
       objectsAuthoritative,
       legacySnapshotReadSupported: true,
       legacySnapshotWriteRequired: !objectsAuthoritative,

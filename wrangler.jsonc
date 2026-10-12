@@ -20,5 +20,43 @@
       "pattern": "sync.luoluoluo.cc.cd",
       "custom_domain": true
     }
-  ]
+  ],
+  "ratelimits": [
+    {
+      "name": "LOGIN_RATE_LIMITER",
+      "namespace_id": "9101101",
+      "simple": {
+        "limit": 8,
+        "period": 60
+      }
+    },
+    {
+      "name": "EXPORT_RATE_LIMITER",
+      "namespace_id": "9101102",
+      "simple": {
+        "limit": 30,
+        "period": 60
+      }
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "DEVICE_RELAY",
+        "class_name": "DeviceRelay"
+      }
+    ]
+  },
+  "triggers": {
+    "crons": [
+      "*/30 * * * *"
+    ]
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "vars": {
+    "CLOUD_VIP_ONLY": "true"
+  }
 }

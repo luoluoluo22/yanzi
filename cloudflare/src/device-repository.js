@@ -49,9 +49,22 @@ async function getPendingDeviceMessagePage(env, userId, deviceId, platform, limi
   const upperBound = highWater;
   const acceptsChat = acceptsAccountChat({ platform, capabilities }) ? 1 : 0;
   let rows;
+  let scannedThrough = upperBound;
 
   if (cursorProvided) {
-    rows = await env.DB.prepare(
+    // Bound the candidate sequence window BEFORE joining/filtering messages. A
+    // stale cursor can otherwise scan the entire account history each poll.
+    // Even an empty result advances the cursor, but must not claim hasMore:
+    // older desktop clients reject an empty page with hasMore=true.
+    const candidateWindow = Math.min(512, Math.max(64, limit * 16));
+    const candidateRows = await env.DB.prepare(
+      `SELECT sequence FROM device_message_sequence
+       WHERE user_id = ? AND sequence > ? AND sequence <= ?
+       ORDER BY sequence ASC LIMIT ?`
+    ).bind(userId, effectiveAfter, upperBound, candidateWindow).all();
+    const candidates = candidateRows.results ?? [];
+    scannedThrough = candidates.length ? Number(candidates[candidates.length - 1].sequence) : upperBound;
+    rows = candidates.length ? await env.DB.prepare(
       `SELECT m.*, q.sequence
        FROM device_message_sequence q
        JOIN device_messages m ON m.user_id = q.user_id AND m.message_id = q.message_id
@@ -69,9 +82,9 @@ async function getPendingDeviceMessagePage(env, userId, deviceId, platform, limi
          )
        ORDER BY q.sequence ASC LIMIT ?`
     ).bind(
-      userId, effectiveAfter, upperBound, isoNow(), deviceId, acceptsChat,
+      userId, effectiveAfter, scannedThrough, isoNow(), deviceId, acceptsChat,
       deviceId, deviceId, platform, limit + 1
-    ).all();
+    ).all() : {results: []};
   } else {
     // Compatibility path for pre-cursor clients. Query only currently
     // deliverable rows instead of replay-scanning the entire account history.
@@ -112,11 +125,15 @@ async function getPendingDeviceMessagePage(env, userId, deviceId, platform, limi
   }
 
   const allItems = (rows.results ?? []).map(serializeDeviceMessageRecord);
-  const hasMore = allItems.length > limit;
-  const items = hasMore ? allItems.slice(0, limit) : allItems;
-  const nextCursor = hasMore && items.length
+  const overLimit = allItems.length > limit;
+  const items = overLimit ? allItems.slice(0, limit) : allItems;
+  // Do not skip any matching item when the output limit is reached. When the
+  // window has fewer matches, advancing past all inspected candidates avoids
+  // repeatedly charging D1 for old messages belonging to other devices.
+  const nextCursor = overLimit && items.length
     ? Number(items[items.length - 1].sequence || effectiveAfter)
-    : highWater;
+    : scannedThrough;
+  const hasMore = overLimit || (cursorProvided && items.length > 0 && scannedThrough < highWater);
   return { items, nextCursor, hasMore, highWater, cursorReset: effectiveAfter !== after };
 }
 
