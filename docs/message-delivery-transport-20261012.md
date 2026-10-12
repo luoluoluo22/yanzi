@@ -26,4 +26,16 @@
 
 - 2026-10-12 台式机实际 Runtime DLL 与已构建宿主 SHA256 一致，健康状态 mobileBridge=true，mobilePolling=false，Cloudflare WebSocket 已连接。
 - 尝试由服务器身份向桌面发送验收消息返回 device_scope_denied：服务器授权仅包含现有目标，未扩大授权。该测试没有生成被接收消息，不得记为端到端通过。
-- 手机当前无 ADB 设备，Android Dev APK 编译通过但尚未安装真机；线上最新安卓发布已到 0.2.55，当前 Dev 构建为 0.2.54-dev，不可当作正式覆盖升级。
+- 初次检查时手机无 ADB 连接，Dev APK 尚未安装。其后真实设备已连接并完成下述回归；正式 Android 包仍未更新。
+
+
+## 2026-10-12 OnePlus 实机补充验收
+
+- ADB 设备 OnePlus GM1900 (Android 11) 已连接。正式版与开发版均为 0.2.55；已先导出现有 Dev APK 备份，再以 Android Gradle 临时版本覆盖参数构建 0.2.55-dev 开发测试包，并通过同一调试签名原地升级。正式包和用户数据未被删除。
+- 首次发送：手机→桌面局域网处理耗时约 308 ms，LAN 确认 383 ms，但云端 POST 回退到 Android 系统网络前等待物理网络超时，cloud_accepted=12,734 ms。
+- 修复：MobileMessageClient 仅对 POST /v1/me/mobile/messages 优先使用系统网络（VPN 可用时即走 VPN），对安全重试且有稳定 clientMessageId 的提交才允许失败后物理网络兜底。ACK 原本已经 system-first，其他非消息端点保持原有路由。
+- 修复后真机复测：手机→桌面处理 271 ms，LAN 确认 173 ms，云端 POST 入库确认 402 ms。Cloudflare 单条消息查询给出 desktop 回执 status=completed / acked=true；Windows 仅处理一次，没有重复弹窗。
+- Windows→OnePlus Dev 定向消息两次均 completed / acked=true，手机 logcat 记录 chat_saved、receipt_saved、notification_attempted、ack_success。
+- 屏幕 OFF 且 Android 报 Dozing 状态时再次发送：OnePlus Dev 已保存并 ACK；验证结束后恢复屏幕 ON。该结论仅针对短时熄屏，不代表长时间 Deep Doze 或厂商强制限制已被验证。
+- 局限：同一 Wi-Fi 条件与当前设备 VPN 状态得到的数据，不可外推至蜂窝网络或异地网络；本次未发布 Android 正式版。版本 0.2.55-dev 为测试覆盖参数构建，不代表代码库默认版本已经同步升级。
+- 原有开发包已备份于 .artifacts/mobile-message-qa-20261012/before-android-0.2.55-dev.apk；用于本次验收的测试包保存于该目录。所有账户凭证及其他未提交开发改动均保持不变。

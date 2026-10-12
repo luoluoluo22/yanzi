@@ -34,6 +34,11 @@ final class MobileMessageClient {
             // consistent with the attachment GETs so successful downloads can finish.
             boolean ack = "POST".equals(method) && path.matches("/v1/me/mobile/messages/[^/]+/ack");
             boolean claim = "POST".equals(method) && path.matches("/v1/me/mobile/messages/[^/]+/claim");
+            // Sending a cloud message must prefer Android's active system network. On devices
+            // using a VPN, forcing the underlying physical network can spend eight seconds
+            // timing out before the working VPN/system route is tried. A stable clientMessageId
+            // allows the alternate physical route as a safe transport fallback.
+            boolean cloudSubmission = "POST".equals(method) && "/v1/me/mobile/messages".equals(path);
             // Claim is intentionally never retried: a lost success response is ambiguous and
             // retrying could suppress a command after the server already moved it to executing.
             // Use the system/default route for that single attempt so an active VPN remains
@@ -42,7 +47,9 @@ final class MobileMessageClient {
                     ? CloudRequestRetry.systemFirst(true, systemRoute -> requestOnce(base, path, token, method, payload, systemRoute))
                     : claim
                         ? CloudRequestRetry.systemFirst(false, systemRoute -> requestOnce(base, path, token, method, payload, systemRoute))
-                        : CloudRequestRetry.execute(safe, systemRoute -> requestOnce(base, path, token, method, payload, systemRoute));
+                        : cloudSubmission
+                            ? CloudRequestRetry.systemFirst(safe, systemRoute -> requestOnce(base, path, token, method, payload, systemRoute))
+                            : CloudRequestRetry.execute(safe, systemRoute -> requestOnce(base, path, token, method, payload, systemRoute));
             try {
                 if ("POST".equals(method) && "/v1/me/mobile/messages".equals(path) && payload != null) MobileTaskJournal.accepted(base, token, payload, response);
                 if ("GET".equals(method) && path.matches("/v1/me/mobile/messages/[^/]+")) MobileTaskJournal.observed(base, token, path.substring(path.lastIndexOf('/')+1), response);
