@@ -2,6 +2,10 @@ name = "yanzi-sync"
 main = "src/index.js"
 compatibility_date = "2026-04-23"
 
+# VIP entitlement must be enforced on every costly cloud endpoint.
+[vars]
+CLOUD_VIP_ONLY = "true"
+
 # Persist sampled structured request logs without D1 writes.
 [observability]
 enabled = true

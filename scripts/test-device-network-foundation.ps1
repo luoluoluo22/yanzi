@@ -12,7 +12,7 @@ try {
     Stop-YanziLocalWorkerPort -Port $Port
     npx.cmd wrangler d1 migrations apply openquickhost-sync-db --local --persist-to $state --config $config | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Local D1 migrations failed.' }
-    $workerArgs = @('wrangler','dev','--local','--persist-to',$state,'--ip','127.0.0.1','--port',$Port,'--config',$config,'--var','AUTH_TOKEN_SECRET:local-phone-message-verification')
+    $workerArgs = @('wrangler','dev','--local','--persist-to',$state,'--ip','127.0.0.1','--port',$Port,'--config',$config,'--var','AUTH_TOKEN_SECRET:local-phone-message-verification','--var','CLOUD_VIP_ONLY:false')
     $worker = Start-Process npx.cmd -ArgumentList $workerArgs -WorkingDirectory $repo -WindowStyle Hidden -RedirectStandardOutput (Join-Path $artifact 'worker.log') -RedirectStandardError (Join-Path $artifact 'worker.err') -PassThru
     $ready = $false
     $deadline = (Get-Date).AddSeconds(60)
