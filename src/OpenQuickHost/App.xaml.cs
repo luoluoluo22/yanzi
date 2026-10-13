@@ -58,7 +58,6 @@ public partial class App : WpfApplication
     internal void NotifyExternalAccessReady() => _externalAccessApproval?.Wake();
     private LanDiscoveryService? _lanDiscoveryService;
     private SingleInstanceService? _singleInstanceService;
-    private SharedRuntimeHost? _sharedRuntimeHost;
     private bool _listenerServicesPaused;
     private bool _isAutoPausedByBlacklist;
     private IntPtr _foregroundHook = IntPtr.Zero;
@@ -71,7 +70,7 @@ public partial class App : WpfApplication
 
     internal bool IsVerificationHarness { get; set; }
 
-    protected override async void OnStartup(WpfStartupEventArgs e)
+    protected override void OnStartup(WpfStartupEventArgs e)
     {
         if (IsVerificationHarness) return;
         // 运行端到端加密 E2EE 模块启动自检
@@ -207,15 +206,15 @@ public partial class App : WpfApplication
         // 3. 只有抢占到 Mutex 的唯一主实例，才进行后续复杂的环境配置初始化
         TrySetProcessDpiAwareness();
         base.OnStartup(e);
-        if (HostRuntimeProfile.IsShell)
+        // Single-process startup: no shared Runtime installation, discovery or IPC attachment.
+        // Retire only legacy Yanzi-managed Runtime processes after winning the primary-instance lock.
+        try { LegacyRuntimeMigrationService.StopManagedProcesses(); }
+        catch (Exception ex)
         {
-            try { await RuntimeConnection.EnsureAvailableAsync(); }
-            catch (Exception ex)
-            {
-                System.Windows.MessageBox.Show(ex.Message, "燕子 Runtime", MessageBoxButton.OK, MessageBoxImage.Error);
-                Shutdown(1);
-                return;
-            }
+            HostAssets.AppendLog("Single-process migration blocked: " + ex.Message);
+            System.Windows.MessageBox.Show("旧版燕子后台进程未能退出。请先结束旧版 Runtime，然后重新打开燕子。", "燕子升级", MessageBoxButton.OK, MessageBoxImage.Warning);
+            Shutdown(1);
+            return;
         }
         YanziBuiltinCapabilityRegistration.Register();
 
@@ -257,15 +256,7 @@ public partial class App : WpfApplication
 
             // 无论前台还是后台启动，都必须初始化后台核心服务（WebDAV、Everything、WindowBinding、鼠标手势等）
             window.InitializeBackgroundServices();
-            if (HostRuntimeProfile.IsRuntime)
-            {
-                _sharedRuntimeHost = new SharedRuntimeHost(window);
-                _sharedRuntimeHost.Start();
-            }
-            else
-            {
-                await RuntimeConnection.AttachAsync(window);
-            }
+            // UI and background services are now hosted by this one Yanzi.exe process.
             if (HostRuntimeProfile.OwnsBackgroundServices) _externalAccessApproval = new ExternalAccessApprovalService();
             window.EnsureStandbyRadialMenu();
 
@@ -649,8 +640,7 @@ public partial class App : WpfApplication
 
     protected override void OnExit(WpfExitEventArgs e)
     {
-        _sharedRuntimeHost?.Dispose();
-        if (HostRuntimeProfile.IsShell) RuntimeConnection.Detach();
+        // No Runtime IPC connection is created by the official Windows application.
         DispatcherUnhandledException -= App_DispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException -= CurrentDomain_UnhandledException;
         TaskScheduler.UnobservedTaskException -= TaskScheduler_UnobservedTaskException;
