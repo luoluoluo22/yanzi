@@ -3,18 +3,20 @@ export function createSyncApi(api) {
   // Table existence changes only during a migration/deploy. Bound the cache
   // lifetime so an in-place migration can still be discovered without adding
   // two sqlite_master scans to every legacy capabilities poll.
-  const capabilitiesSchemaCache = new WeakMap();
+  // env.DB proxy identity can change between requests. Cache metadata per isolate.
+  let capabilitiesSchemaCache = null;
   async function getCapabilitiesSchema(db) {
     const now = Date.now();
-    const cached = capabilitiesSchemaCache.get(db);
+    const cached = capabilitiesSchemaCache;
     if (cached && cached.expiresAt > now) return cached.promise;
     const promise = Promise.all([
       db.prepare(`select name from sqlite_master where type = 'table' and name = 'user_sync_objects'`).first(),
       db.prepare(`select name from sqlite_master where type = 'table' and name = 'user_sync_object_history'`).first()
     ]).then(([objects, history]) => ({objectSyncAvailable: Boolean(objects?.name), objectHistoryAvailable: Boolean(history?.name)}));
-    capabilitiesSchemaCache.set(db, {expiresAt: now + 300_000, promise});
+    const entry = {expiresAt: now + 300_000, promise};
+    capabilitiesSchemaCache = entry;
     try { return await promise; }
-    catch (error) { capabilitiesSchemaCache.delete(db); throw error; }
+    catch (error) { if (capabilitiesSchemaCache === entry) capabilitiesSchemaCache = null; throw error; }
   }
   const { HttpError, ensureUser, getUserWebDavConfig, getYanmStateViewUrl, handleAttachments, hmacSha256, isoNow, json, normalizeOptionalIsoDate, normalizeSyncObjectId, normalizeSyncRevision, normalizeYanmComponentStatePatch, notifyDeviceRelay, patchYanmComponentStateForUser, readJson, readUserSyncObject, readUserSyncObjectHistory, readUserSyncObjects, readYanmStateForUser, requireAuth, writeUserSyncObject, writeYanmStateForUser } = api;
 async function handleSyncApi(request, env, ctx) {
