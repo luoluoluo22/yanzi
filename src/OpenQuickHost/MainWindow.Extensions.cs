@@ -772,8 +772,7 @@ public partial class MainWindow
     /// </summary>
     public void NotifyScheduleChanged(string extensionId, string? schedule)
     {
-        if (HostRuntimeProfile.IsShell) RuntimeConnection.Queue("scheduler.refresh", new { id = extensionId, schedule });
-        else _extensionScheduler?.RefreshExtension(extensionId, schedule);
+        _extensionScheduler?.RefreshExtension(extensionId, schedule);
     }
 
     public void EnsureStandbyRadialMenu()
@@ -1579,7 +1578,7 @@ public partial class MainWindow
 
     public void PauseListenerServices()
     {
-        if (HostRuntimeProfile.IsShell) { _listenerServicesPaused = true; RuntimeConnection.Queue("listeners.pause"); return; }
+        // Listeners are owned in-process by Yanzi.exe.
         _listenerServicesPaused = true;
         StopMousePanelService();
         KeyboardDoubleTapService.Stop();
@@ -1597,7 +1596,7 @@ public partial class MainWindow
 
     public void ResumeListenerServices()
     {
-        if (HostRuntimeProfile.IsShell) { _listenerServicesPaused = false; RuntimeConnection.Queue("listeners.resume"); return; }
+        // Listeners are owned in-process by Yanzi.exe.
         _listenerServicesPaused = false;
         InputHookService.ReloadSettings();
         StartMousePanelService();

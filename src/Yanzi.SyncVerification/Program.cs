@@ -13,6 +13,8 @@ if (args.Length == 2 && args[0] == "--release-readiness")
     return;
 }
 
+if (args.Contains("--single-process")) { SingleProcessVerification.Run(); return; }
+
 if (args.Contains("--cloud-login-retry")) { CloudLoginRetryVerification.Run(); return; }
 
 if (args.Contains("--vip-version-policy")) { VipVersionPolicyVerification.Run(); return; }

@@ -10,6 +10,7 @@ void Check(bool condition, string message)
 }
 Check(HostRuntimeProfile.IsDevelopment == expectDev, "Incorrect runtime channel");
 Check(HostRuntimeProfile.AppId == (expectDev ? "Yanzi.OpenQuickHost.Dev.Shell" : "Yanzi.OpenQuickHost.Shell"), "Incorrect singleton namespace");
+Check(HostRuntimeProfile.OwnsBackgroundServices == !expectDev, "Single-process background owner regression");
 Check(Path.GetFileName(HostAssets.DataRootPath) == (expectDev ? "OpenQuickHost.Dev" : "OpenQuickHost"), "Incorrect data directory");
 
 var temp = Path.Combine(Path.GetTempPath(), "yanzi-profile-check-" + Guid.NewGuid().ToString("N"));

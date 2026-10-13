@@ -11,10 +11,7 @@ foreach ($name in @('Yanzi.exe', 'Yanzi.dll', 'Yanzi.deps.json', 'Yanzi.runtimec
 }
 if (Test-Path (Join-Path $dir 'Runtime')) { throw 'Duplicate Runtime directory detected in release payload.' }
 foreach ($name in @('Yanzi.Runtime.exe', 'Yanzi.Runtime.dll', 'Yanzi.Runtime.deps.json', 'Yanzi.Runtime.runtimeconfig.json')) {
-    if (-not (Test-Path -LiteralPath (Join-Path $dir $name) -PathType Leaf)) { throw "Runtime entrypoint missing: $name" }
-}
-if ((Get-Item (Join-Path $dir 'Yanzi.Runtime.exe')).Length -gt 1MB) {
-    throw 'Runtime executable unexpectedly embeds dependencies.'
+    if (Test-Path -LiteralPath (Join-Path $dir $name)) { throw "Single-process release must not ship: $name" }
 }
 $app = Get-Item -LiteralPath (Join-Path $dir 'Yanzi.exe')
 $hostVersion = $app.VersionInfo.FileVersion
@@ -27,9 +24,9 @@ if ($CheckInstalled) {
     if (-not $app.FullName.Equals($official, [StringComparison]::OrdinalIgnoreCase)) {
         throw 'Post-install verification requires the official current installation directory.'
     }
-    $runKey = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -ErrorAction Stop
+    $runKey = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -ErrorAction SilentlyContinue
     $expectedStartup = '"' + $official + '" --tray'
-    if ($runKey.Yanzi -ne $expectedStartup -or $runKey.'Yanzi.Runtime') {
+    if (($runKey.Yanzi -and $runKey.Yanzi -ne $expectedStartup) -or $runKey.'Yanzi.Runtime') {
         throw "Startup registry points to stale or duplicate versions. Expected $expectedStartup"
     }
     $processes = @(Get-CimInstance Win32_Process -Filter "Name = 'Yanzi.exe' OR Name = 'Yanzi.Runtime.exe'")
@@ -38,22 +35,7 @@ if ($CheckInstalled) {
         -and $_.CommandLine -notmatch '(?i)(?:^|\\s)--runtime(?:\\s|$)'
     })
     if ($shell.Count -ne 1) { throw "Expected one installed Shell, found $($shell.Count)." }
-    $background = @($processes | Where-Object {
-        $_.CommandLine -match '(?i)(?:^|\\s)--runtime(?:\\s|$)'
-    })
-    if ($background.Count -ne 1) { throw "Expected one running Runtime, found $($background.Count)." }
-    $runtimePath = $background[0].ExecutablePath
-    if (-not $runtimePath -or -not (Test-Path $runtimePath)) { throw 'Missing Runtime process executable.' }
-    $runtimeFileVersion = (Get-Item -LiteralPath $runtimePath).VersionInfo.FileVersion
-    if ($runtimeFileVersion -ne $hostVersion) {
-        throw "Runtime/Shell mismatch: Runtime=$runtimeFileVersion Shell=$hostVersion"
-    }
-    $officialDll = Join-Path $dir 'Yanzi.dll'
-    $runtimeDll = Join-Path (Split-Path $runtimePath -Parent) 'Yanzi.dll'
-    if (-not (Test-Path -LiteralPath $runtimeDll)) { throw "Runtime snapshot missing shared assembly: $runtimeDll" }
-    if ((Get-FileHash -LiteralPath $officialDll -Algorithm SHA256).Hash -ne
-        (Get-FileHash -LiteralPath $runtimeDll -Algorithm SHA256).Hash) {
-        throw 'Runtime/Shell binary hash mismatch; outdated background process is still active.'
-    }
-    Write-Output "INSTALLED_RELEASE_OK shellPid=$($shell[0].ProcessId) runtimePid=$($background[0].ProcessId) version=$hostVersion"
+    $background = @($processes | Where-Object { $_.Name -eq 'Yanzi.Runtime.exe' })
+    if ($background.Count -ne 0) { throw "Legacy Runtime still running: $($background.Count)." }
+    Write-Output "INSTALLED_RELEASE_OK pid=$($shell[0].ProcessId) version=$hostVersion"
 }

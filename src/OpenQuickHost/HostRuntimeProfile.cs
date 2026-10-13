@@ -3,12 +3,15 @@ namespace OpenQuickHost;
 /// <summary>Process-wide channel identity, resolved before any settings or logs are opened.</summary>
 public static class HostRuntimeProfile
 {
+    // A legacy --runtime switch cannot turn the official Yanzi.exe into a second service host.
+    // The separate executable has been removed from the solution and installer.
     public static bool IsRuntime { get; } =
-        string.Equals(System.IO.Path.GetFileNameWithoutExtension(Environment.ProcessPath), "Yanzi.Runtime", StringComparison.OrdinalIgnoreCase)
-        || Environment.GetCommandLineArgs().Any(arg => arg.Equals("--runtime", StringComparison.OrdinalIgnoreCase));
+        string.Equals(System.IO.Path.GetFileNameWithoutExtension(Environment.ProcessPath), "Yanzi.Runtime", StringComparison.OrdinalIgnoreCase);
     public static bool IsShell => !IsRuntime;
     public static string? RuntimeDataRoot { get; } = ResolveRuntimeDataRoot();
-    public static bool OwnsBackgroundServices => IsRuntime;
+    // The installed Yanzi.exe owns both the UI and all background services.
+    // Developer UI remains isolated from the stable account, hooks and scheduled jobs.
+    public static bool OwnsBackgroundServices => IsRuntime || !IsDevelopment;
     public static bool IsDevelopment { get; } = !IsRuntime && ResolveDevelopment(Environment.GetCommandLineArgs());
     public static string AppId => IsRuntime ? RuntimeDataRoot == null ? "Yanzi.OpenQuickHost" : "Yanzi.Runtime.Test." + RuntimeRpc.PipeName
         : IsDevelopment ? "Yanzi.OpenQuickHost.Dev.Shell" : "Yanzi.OpenQuickHost.Shell";

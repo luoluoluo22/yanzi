@@ -118,7 +118,7 @@ public static class ScriptExtensionRunner
     {
         if (command.Source == CommandSource.LocalExtension && !ExtensionDevicePolicy.CanRun(command.ExtensionId))
             return new ScriptExecutionResult(false, string.Empty, "此小程序未授权在当前设备运行。", -1);
-        if (HostRuntimeProfile.IsShell)
+        if (HostRuntimeProfile.IsShell && RuntimeConnection.IsConnected)
         {
             try
             {

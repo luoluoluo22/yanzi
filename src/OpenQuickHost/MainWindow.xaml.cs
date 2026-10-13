@@ -3568,7 +3568,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             SharedRuntimeHost.Current?.RequestShell("command.ui", runnable.ExtensionId);
             return;
         }
-        if (HostRuntimeProfile.IsShell && runnable.HostedView == null && (ScriptExtensionRunner.CanExecute(runnable) || runnable.App != null))
+        if (HostRuntimeProfile.IsShell && RuntimeConnection.IsConnected && runnable.HostedView == null && (ScriptExtensionRunner.CanExecute(runnable) || runnable.App != null))
         {
             await ExecuteThroughRuntimeAsync(runnable, explicitInput, launchSource);
             return;
