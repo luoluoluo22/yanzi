@@ -23,8 +23,8 @@ public sealed partial class CloudSyncClient
     private DateTimeOffset _transportRetryAfterUtc;
     public AccountSyncCoordinator AccountCoordinator { get; }
     private readonly SemaphoreSlim _authenticationLock = new(1, 1);
-    // Suppress repeated automatic sign-ins after a definitive 401/404; explicit login still works.
-    private long _automaticLoginRejectedUntilUnixMs;
+    // Independent from GET transport cooling: background sign-ins must never hammer the auth endpoint.
+    private readonly CloudLoginRetryPolicy _automaticLoginRetry = new();
     // Avoid old clients re-polling paid cloud APIs on every background interval after 403.
     private long _cloudMembershipDeniedUntilUnixMs;
     private readonly object _secretVaultRecoveryKeyLock = new();
@@ -137,7 +137,7 @@ public sealed partial class CloudSyncClient
             SecureCredentialStore.Clear();
         }
 
-        Interlocked.Exchange(ref _automaticLoginRejectedUntilUnixMs, 0);
+        _automaticLoginRetry.Reset();
         Interlocked.Exchange(ref _cloudMembershipDeniedUntilUnixMs, 0);
         ClearSession();
     }
@@ -148,7 +148,7 @@ public sealed partial class CloudSyncClient
         _credential = null;
         E2eeMasterKey = null;
         SecureCredentialStore.Clear();
-        Interlocked.Exchange(ref _automaticLoginRejectedUntilUnixMs, 0);
+        _automaticLoginRetry.Reset();
         Interlocked.Exchange(ref _cloudMembershipDeniedUntilUnixMs, 0);
         ClearSession();
     }
@@ -189,7 +189,7 @@ public sealed partial class CloudSyncClient
             throw new InvalidOperationException("缺少登录凭据，请先登录。");
         }
 
-        if (DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() < Interlocked.Read(ref _automaticLoginRejectedUntilUnixMs))
+        if (_automaticLoginRetry.IsCoolingDown(DateTimeOffset.UtcNow))
             throw new InvalidOperationException("保存的登录凭据已被服务器拒绝，自动重试已暂停。请重新登录。");
 
         CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Authenticating with saved credential", ("email", _credential?.LoginEmail));
@@ -199,7 +199,7 @@ public sealed partial class CloudSyncClient
         E2eeMasterKey = keys.MasterKey;
 
         // 这里传递明文密码，LoginAsync 内部会将其转为 LoginHash 进行网络传输
-        var authenticated = await LoginCoreAsync(_credential.LoginEmail, _credential.Password, cancellationToken);
+        var authenticated = await LoginCoreAsync(_credential.LoginEmail, _credential.Password, cancellationToken, isAutomatic: true);
         CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Authentication completed", ("userId", authenticated.UserId), ("username", authenticated.Username));
         return true;
     }
@@ -251,7 +251,7 @@ public sealed partial class CloudSyncClient
         using var response = await SendJsonAsync(HttpMethod.Post, "/v1/auth/register", payload, includeAuth: false, cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);
         var session = await ReadSessionAsync(response, cancellationToken);
-        Interlocked.Exchange(ref _automaticLoginRejectedUntilUnixMs, 0);
+        _automaticLoginRetry.Reset();
         AccountCoordinator.Commit(generation, () => { _session = session; SyncSessionStore.Save(session); });
         await RestoreVaultAfterLoginAsync(cancellationToken);
         CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Register completed", ("userId", session.UserId), ("username", session.Username));
@@ -282,7 +282,7 @@ public sealed partial class CloudSyncClient
         }
     }
 
-    private async Task<SyncSession> LoginCoreAsync(string email, string password, CancellationToken cancellationToken)
+    private async Task<SyncSession> LoginCoreAsync(string email, string password, CancellationToken cancellationToken, bool isAutomatic = false)
     {
         var generation = AccountCoordinator.Generation;
         CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Login requested", ("email", email), ("passwordLength", password?.Length ?? 0));
@@ -299,13 +299,36 @@ public sealed partial class CloudSyncClient
             legacyPassword = normalizedPassword
         };
 
-        using var response = await SendJsonAsync(HttpMethod.Post, "/v1/auth/login", payload, includeAuth: false, cancellationToken);
+        HttpResponseMessage response;
+        try
+        {
+            response = await SendJsonAsync(HttpMethod.Post, "/v1/auth/login", payload, includeAuth: false, cancellationToken);
+        }
+        catch (Exception ex) when (ex is HttpRequestException ||
+            (ex is OperationCanceledException && !cancellationToken.IsCancellationRequested))
+        {
+            var delay = _automaticLoginRetry.RecordFailure(null, null, DateTimeOffset.UtcNow);
+            CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Login transport cooldown",
+                ("delaySeconds", (int)delay.TotalSeconds), ("automatic", isAutomatic));
+            throw;
+        }
+
+        using (response)
+        {
+        if (!response.IsSuccessStatusCode)
+        {
+            var retryAfter = response.Headers.RetryAfter?.Delta;
+            if (retryAfter == null && response.Headers.RetryAfter?.Date is DateTimeOffset retryAt)
+                retryAfter = retryAt - DateTimeOffset.UtcNow;
+            var delay = _automaticLoginRetry.RecordFailure(response.StatusCode, retryAfter, DateTimeOffset.UtcNow);
+            CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Login HTTP cooldown",
+                ("statusCode", (int)response.StatusCode), ("delaySeconds", (int)delay.TotalSeconds),
+                ("automatic", isAutomatic));
+        }
         if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Unauthorized)
         {
             // The server confirmed credentials are invalid or the account is absent.
             // Retry no sooner than 10 minutes later instead of once per background poll.
-            Interlocked.Exchange(ref _automaticLoginRejectedUntilUnixMs,
-                DateTimeOffset.UtcNow.AddMinutes(10).ToUnixTimeMilliseconds());
             ClearSession();
             // 登录失败时不清除本地加密记住的凭据文件，避免因后端暂时网络波动或接口不可用导致本地凭据被强行抹除。
             // 这样既能在网络恢复后自动重连，也能在需要重新登录时在弹窗中保留自动填充邮箱的能力。
@@ -316,9 +339,10 @@ public sealed partial class CloudSyncClient
         await EnsureSuccessAsync(response, cancellationToken);
         var session = await ReadSessionAsync(response, cancellationToken);
         AccountCoordinator.Commit(generation, () => { _session = session; SyncSessionStore.Save(session); });
-        Interlocked.Exchange(ref _automaticLoginRejectedUntilUnixMs, 0);
+        _automaticLoginRetry.Reset();
         CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Login completed", ("userId", session.UserId), ("username", session.Username));
         return session;
+        }
     }
 
     public async Task<SendCodeResponse> SendPasswordResetCodeAsync(string email, CancellationToken cancellationToken = default)

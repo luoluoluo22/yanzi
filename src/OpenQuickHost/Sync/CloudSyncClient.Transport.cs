@@ -66,6 +66,11 @@ public sealed partial class CloudSyncClient
             ? savedGeneration : AccountCoordinator.Generation;
         AccountCoordinator.RequireCurrent(generation);
         Exception? lastError = null;
+        // A failed proxy/TLS handshake must not lock the user's sign-in behind a WAF exit node.
+        // For this POST, retry only when the connection could not have delivered a request.
+        var path = request.RequestUri?.IsAbsoluteUri == true
+            ? request.RequestUri.AbsolutePath : request.RequestUri?.OriginalString;
+        var isLogin = request.Method == HttpMethod.Post && path == "/v1/auth/login";
         var attempts = largeTransfer
             ? new (HttpClient client, string label)[]
             {
@@ -73,13 +78,19 @@ public sealed partial class CloudSyncClient
                 (_directLargeTransferHttpClient, "direct-large"),
                 (_largeTransferHttpClient, "proxy-large-retry")
             }
-            : new (HttpClient client, string label)[]
-            {
-                (_httpClient, "proxy"),
-                (_directHttpClient, "direct"),
-                (_httpClient, "proxy-retry")
-            };
-        var maxAttempts = IsIdempotentMethod(request.Method) ? attempts.Length : 1;
+            : isLogin
+                ? new (HttpClient client, string label)[]
+                {
+                    (_directHttpClient, "login-direct"),
+                    (_httpClient, "login-proxy")
+                }
+                : new (HttpClient client, string label)[]
+                {
+                    (_httpClient, "proxy"),
+                    (_directHttpClient, "direct"),
+                    (_httpClient, "proxy-retry")
+                };
+        var maxAttempts = isLogin ? 2 : IsIdempotentMethod(request.Method) ? attempts.Length : 1;
 
         for (var index = 0; index < maxAttempts; index++)
         {
@@ -93,7 +104,9 @@ public sealed partial class CloudSyncClient
                 ResetTransportBackoff();
                 return response;
             }
-            catch (Exception ex) when (AccountCoordinator.Generation == generation && IsRetryableTransportException(ex, cancellationToken) && index < maxAttempts - 1)
+            catch (Exception ex) when (AccountCoordinator.Generation == generation &&
+                (isLogin ? IsSafeAuthTransportFallback(ex) : IsRetryableTransportException(ex, cancellationToken)) &&
+                !cancellationToken.IsCancellationRequested && index < maxAttempts - 1)
             {
                 lastError = ex;
                 CloudSyncDiagnostics.Log(
@@ -146,6 +159,21 @@ public sealed partial class CloudSyncClient
         client.DefaultRequestHeaders.TryAddWithoutValidation("X-Yanzi-Client-Version", runtimeVersion);
         client.DefaultRequestHeaders.TryAddWithoutValidation("X-Yanzi-Device-Id", DeviceIdentityStore.GetOrCreateDesktopDeviceId());
         return client;
+    }
+
+    // Only retry login POST after a TLS/connection handshake failure. A timeout or
+    // truncated response could mean the server already processed the login request.
+    private static bool IsSafeAuthTransportFallback(Exception ex)
+    {
+        if (ex is not HttpRequestException http || http.StatusCode != null) return false;
+        if (http.InnerException is System.Security.Authentication.AuthenticationException) return true;
+        if (http.InnerException is System.Net.Sockets.SocketException socket)
+            return socket.SocketErrorCode is
+                System.Net.Sockets.SocketError.ConnectionRefused or
+                System.Net.Sockets.SocketError.HostNotFound or
+                System.Net.Sockets.SocketError.NetworkUnreachable;
+        return http.Message.Contains("SSL connection could not be established", StringComparison.OrdinalIgnoreCase) ||
+               http.Message.Contains("Connection refused", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsRetryableTransportException(Exception ex, CancellationToken cancellationToken)
