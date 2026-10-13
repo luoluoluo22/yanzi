@@ -22,6 +22,25 @@ public sealed partial class CloudSyncClient
     private int _consecutiveTransportFailures;
     private DateTimeOffset _transportRetryAfterUtc;
     public AccountSyncCoordinator AccountCoordinator { get; }
+    // Coalesce concurrent private-extension reads. Only reuse a successful
+    // account-scoped snapshot for a short interval; writes invalidate it.
+    private readonly SemaphoreSlim _extensionSnapshotFetchLock = new(1, 1);
+    private readonly object _extensionSnapshotLock = new();
+    private IReadOnlyList<UserExtensionRecord>? _extensionSnapshot;
+    private string? _extensionSnapshotUserId;
+    private DateTimeOffset _extensionSnapshotExpiresUtc;
+    private long _extensionSnapshotGeneration;
+
+    private void InvalidateExtensionSnapshot()
+    {
+        lock (_extensionSnapshotLock)
+        {
+            _extensionSnapshot = null;
+            _extensionSnapshotExpiresUtc = DateTimeOffset.MinValue;
+            _extensionSnapshotGeneration++;
+        }
+    }
+
     private readonly SemaphoreSlim _authenticationLock = new(1, 1);
     // Independent from GET transport cooling: background sign-ins must never hammer the auth endpoint.
     private readonly CloudLoginRetryPolicy _automaticLoginRetry = new();
@@ -505,11 +524,42 @@ public sealed partial class CloudSyncClient
     public async Task<IReadOnlyList<UserExtensionRecord>> GetUserExtensionsAsync(CancellationToken cancellationToken = default)
     {
         await EnsureAuthenticatedAsync(cancellationToken);
-        using var request = CreateRequest(HttpMethod.Get, "/v1/me/extensions", includeAuth: true);
-        using var response = await SendAsyncWithFallback(request, cancellationToken);
-        response.EnsureSuccessStatusCode();
-        var payload = await ReadAsync<UserExtensionListResponse>(response, cancellationToken);
-        return payload?.Items ?? [];
+        await _extensionSnapshotFetchLock.WaitAsync(cancellationToken);
+        try
+        {
+            var userId = CurrentUserId;
+            long generation;
+            lock (_extensionSnapshotLock)
+            {
+                if (_extensionSnapshot != null &&
+                    string.Equals(_extensionSnapshotUserId, userId, StringComparison.Ordinal) &&
+                    _extensionSnapshotExpiresUtc > DateTimeOffset.UtcNow)
+                    return _extensionSnapshot;
+                generation = _extensionSnapshotGeneration;
+            }
+
+            using var request = CreateRequest(HttpMethod.Get, "/v1/me/extensions", includeAuth: true);
+            using var response = await SendAsyncWithFallback(request, cancellationToken);
+            response.EnsureSuccessStatusCode();
+            var payload = await ReadAsync<UserExtensionListResponse>(response, cancellationToken);
+            IReadOnlyList<UserExtensionRecord> result = payload?.Items ?? [];
+            lock (_extensionSnapshotLock)
+            {
+                // A concurrent upload/removal must not install an old snapshot.
+                if (_extensionSnapshotGeneration == generation &&
+                    string.Equals(CurrentUserId, userId, StringComparison.Ordinal))
+                {
+                    _extensionSnapshot = result;
+                    _extensionSnapshotUserId = userId;
+                    _extensionSnapshotExpiresUtc = DateTimeOffset.UtcNow.AddSeconds(20);
+                }
+            }
+            return result;
+        }
+        finally
+        {
+            _extensionSnapshotFetchLock.Release();
+        }
     }
 
     public async Task UpsertExtensionAsync(CommandItem command, string? iconOverride = null, CancellationToken cancellationToken = default)
@@ -583,6 +633,7 @@ public sealed partial class CloudSyncClient
             includeAuth: true);
         using var response = await SendAsyncWithFallback(request, cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);
+        InvalidateExtensionSnapshot();
     }
 
     public async Task<string?> PublishIconAsync(CommandItem command, string version, CancellationToken cancellationToken = default)
@@ -679,6 +730,7 @@ public sealed partial class CloudSyncClient
             includeAuth: true);
         using var response = await SendAsyncWithFallback(request, cancellationToken);
         response.EnsureSuccessStatusCode();
+        InvalidateExtensionSnapshot();
     }
 
     public async Task DeleteExtensionAsync(string extensionId, CancellationToken cancellationToken = default)
@@ -701,6 +753,7 @@ public sealed partial class CloudSyncClient
             includeAuth: true);
         using var response = await SendAsyncWithFallback(request, cancellationToken);
         response.EnsureSuccessStatusCode();
+        InvalidateExtensionSnapshot();
     }
 
     public async Task<T?> GetUserConfigAsync<T>(string configId, CancellationToken cancellationToken = default)
@@ -734,6 +787,7 @@ public sealed partial class CloudSyncClient
             includeAuth: true);
         using var response = await SendAsyncWithFallback(request, cancellationToken);
         response.EnsureSuccessStatusCode();
+        InvalidateExtensionSnapshot();
     }
 
     internal async Task<byte[]> GetSecretVaultRecoveryKeyAsync(CancellationToken cancellationToken = default)
@@ -1303,6 +1357,7 @@ public sealed partial class CloudSyncClient
     public async Task UploadPrivateExtensionArchiveAsync(CommandItem command, byte[] packageBytes, string version, int expectedRevision = 0, CancellationToken cancellationToken = default)
     {
         await UploadArchiveAsync(command, packageBytes, version, privateLibrary: true, expectedRevision, cancellationToken);
+        InvalidateExtensionSnapshot();
     }
 
     private async Task UploadArchiveAsync(CommandItem command, byte[] packageBytes, string version, bool privateLibrary, int expectedRevision, CancellationToken cancellationToken)

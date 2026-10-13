@@ -13,7 +13,7 @@ function mockDb(exists = true) {
   };
 }
 
-test('capabilities checks schema once per D1 binding, not on every poll', async () => {
+test('capabilities caches schema per Worker isolate, not request-local D1 proxy', async () => {
   const api = createSyncApi({
     requireAuth: async () => ({userId:'u'}),
     json: value => new Response(JSON.stringify(value), {headers: {'content-type':'application/json'}})
@@ -26,6 +26,15 @@ test('capabilities checks schema once per D1 binding, not on every poll', async 
     assert.equal((await response.json()).objectHistoryAvailable, true);
   }
   assert.equal(one.count, 2);
-  assert.equal((await (await api.handleSyncApi(request, {DB:two}, {})).json()).objectSyncAvailable, false);
-  assert.equal(two.count, 2, 'cache must not share state across different bindings');
+  assert.equal((await (await api.handleSyncApi(request, {DB:two}, {})).json()).objectSyncAvailable, true);
+  assert.equal(two.count, 0, 'a new env.DB proxy should reuse the isolate schema snapshot');
+
+  // A freshly deployed Worker instance has its own cache and can observe
+  // a different database schema after a migration or binding change.
+  const nextIsolate = createSyncApi({
+    requireAuth: async () => ({userId:'u'}),
+    json: value => new Response(JSON.stringify(value), {headers: {'content-type':'application/json'}})
+  });
+  assert.equal((await (await nextIsolate.handleSyncApi(request, {DB:two}, {})).json()).objectSyncAvailable, false);
+  assert.equal(two.count, 2);
 });

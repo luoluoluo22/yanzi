@@ -48,6 +48,10 @@ async function getPendingDeviceMessagePage(env, userId, deviceId, platform, limi
   const effectiveAfter = after > highWater ? 0 : after;
   const upperBound = highWater;
   const acceptsChat = acceptsAccountChat({ platform, capabilities }) ? 1 : 0;
+  // A caught-up incremental client needs no history join at all.
+  if (cursorProvided && effectiveAfter > 0 && effectiveAfter >= highWater) {
+    return {items: [], nextCursor: highWater, hasMore: false, highWater, cursorReset: effectiveAfter !== after};
+  }
   let rows;
   let scannedThrough = upperBound;
 
@@ -88,9 +92,30 @@ async function getPendingDeviceMessagePage(env, userId, deviceId, platform, limi
       userId, effectiveAfter, scannedThrough, isoNow(), deviceId, acceptsChat,
       deviceId, deviceId, platform, limit + 1
     ).all() : {results: []};
+  } else if (!acceptsChat) {
+    // Server/IoT receivers do not subscribe to account chat. Use the
+    // indexed targeted pending-message branches, not the chat-history scan.
+    rows = await env.DB.prepare(
+      `SELECT * FROM (
+         SELECT m.*, q.sequence
+         FROM device_messages m
+         JOIN device_message_sequence q ON q.user_id = m.user_id AND q.message_id = m.message_id
+         WHERE m.user_id = ? AND m.status = 'pending' AND m.target_device_id = ?
+           AND q.sequence <= ? AND (m.expires_at IS NULL OR m.expires_at > ?)
+         UNION ALL
+         SELECT m.*, q.sequence
+         FROM device_messages m
+         JOIN device_message_sequence q ON q.user_id = m.user_id AND q.message_id = m.message_id
+         WHERE m.user_id = ? AND m.status = 'pending' AND m.target_device_id IS NULL
+           AND m.target_platform = ? AND q.sequence <= ?
+           AND coalesce(json_extract(m.payload_json, '$.accountChat'), 0) <> 1
+           AND (m.expires_at IS NULL OR m.expires_at > ?)
+       ) ORDER BY sequence ASC LIMIT ?`
+    ).bind(userId, deviceId, upperBound, isoNow(),
+      userId, platform, upperBound, isoNow(), limit + 1).all();
   } else {
-    // Compatibility path for pre-cursor clients. Query only currently
-    // deliverable rows instead of replay-scanning the entire account history.
+    // Compatibility path for chat-capable pre-cursor clients. Query only
+    // currently deliverable rows instead of replay-scanning the entire account history.
     rows = await env.DB.prepare(
       `SELECT * FROM (
          SELECT m.*, q.sequence
