@@ -1,4 +1,5 @@
 import { createSyncApi } from './sync-api.js';
+import { findReusablePrivateArchive } from './private-archive-reuse.js';
 import { isCloudServicePath, needsTopLevelCloudAuth, isVipActive, readVipEntitlement, passesLoginRateLimit } from './cloud-access-policy.js';
 import { upgradePageHtml, upgradePageScript } from './upgrade-page.js';
 import { cleanupEnvironment } from './device-environment.js';
@@ -1958,23 +1959,31 @@ async function handleRequest(request, env, ctx) {
     }
 
     const revision = currentRevision + 1;
-    const archiveKey = `users/${auth.userId}/extensions/${extensionId}/archive-history/${revision}-${sha256}.zip`;
+    // Reuse immutable bytes within the same account/extension if SHA matches.
+    // D1 history revisions remain independently restorable.
+    const reusableKey = await findReusablePrivateArchive(
+      env, auth.userId, extensionId, sha256, bytes.byteLength
+    );
+    const archiveKey = reusableKey ||
+      `users/${auth.userId}/extensions/${extensionId}/archive-history/${revision}-${sha256}.zip`;
     const now = isoNow();
     const deviceId = String(request.headers.get("x-yanzi-device-id") || "").slice(0, 200);
     const deviceName = String(request.headers.get("x-yanzi-device-name") || "").slice(0, 200);
 
-    await env.PACKAGES.put(archiveKey, bytes, {
-      httpMetadata: {
-        contentType: request.headers.get("content-type") || "application/zip"
-      },
-      customMetadata: {
-        userId: auth.userId,
-        extensionId,
-        version,
-        sha256,
-        private: "true"
-      }
-    });
+    if (!reusableKey) {
+      await env.PACKAGES.put(archiveKey, bytes, {
+        httpMetadata: {
+          contentType: request.headers.get("content-type") || "application/zip"
+        },
+        customMetadata: {
+          userId: auth.userId,
+          extensionId,
+          version,
+          sha256,
+          private: "true"
+        }
+      });
+    }
 
     const results = await env.DB.batch([
       env.DB.prepare(
@@ -2019,7 +2028,8 @@ async function handleRequest(request, env, ctx) {
     ]);
 
     if (Number(results?.[0]?.meta?.changes || 0) === 0) {
-      await env.PACKAGES.delete(archiveKey);
+      // A reused object remains referenced by old revisions.
+      if (!reusableKey) await env.PACKAGES.delete(archiveKey);
       const latest = await env.DB.prepare(
         `select revision from user_extension_archive_heads where user_id = ? and extension_id = ?`
       ).bind(auth.userId, extensionId).first();
