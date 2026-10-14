@@ -23,8 +23,8 @@ android {
         applicationId = "cc.luoluoluo.yanzi.mobile"
         minSdk = 26
         targetSdk = 35
-        versionCode = 61
-        versionName = "0.2.61"
+        versionCode = 62
+        versionName = "0.2.62"
         providers.gradleProperty("YANZI_ANDROID_VERSION_CODE").orNull?.let {
             val candidate = it.toIntOrNull()
             require(candidate != null && candidate > 0) { "Invalid candidate Android version code" }

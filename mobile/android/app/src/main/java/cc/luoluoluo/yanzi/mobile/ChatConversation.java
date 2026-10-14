@@ -35,7 +35,8 @@ final class ChatConversation {
         if(id.startsWith("agent:")) return id;
         if(GROUP.equals(id)) return GROUP;
         // Compatibility with the first local adapter, which used plain chat.send.
-        if(message.optString("text").startsWith("【反重力】") && source.startsWith("desktop-")
+        if((message.optString("text").startsWith("【反重力】") || message.optString("requestId").startsWith("agy-"))
+                && source.startsWith("desktop-")
                 && !message.optString("targetDeviceId").isEmpty() && !(payload!=null && payload.optBoolean("accountChat")))
             return "agent:antigravity:"+source;
         if(id.startsWith("device:") || (!message.optString("targetDeviceId").isEmpty()

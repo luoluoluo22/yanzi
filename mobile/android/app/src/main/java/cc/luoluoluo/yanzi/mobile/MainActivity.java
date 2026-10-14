@@ -5555,6 +5555,61 @@ extends Activity {
         builder.show();
     }
 
+    private void showChatPhotoFullscreen(Uri imageUri, String pathOrUri) {
+        if (imageUri == null && (pathOrUri == null || pathOrUri.isEmpty())) return;
+        try {
+            final android.app.Dialog dialog = new android.app.Dialog((Context)this, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
+            FrameLayout root = new FrameLayout((Context)this);
+            root.setBackgroundColor(Color.argb(245, 10, 15, 25));
+
+            final ImageView fullIv = new ImageView((Context)this);
+            fullIv.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            fullIv.setAdjustViewBounds(true);
+
+            if (imageUri != null) {
+                fullIv.setImageURI(imageUri);
+            } else if (pathOrUri.startsWith("/")) {
+                fullIv.setImageURI(Uri.fromFile(new java.io.File(pathOrUri)));
+            } else {
+                fullIv.setImageURI(Uri.parse(pathOrUri));
+            }
+
+            FrameLayout.LayoutParams ivParams = new FrameLayout.LayoutParams(-1, -1, Gravity.CENTER);
+            root.addView((View)fullIv, (ViewGroup.LayoutParams)ivParams);
+
+            LinearLayout topBar = new LinearLayout((Context)this);
+            topBar.setOrientation(LinearLayout.HORIZONTAL);
+            topBar.setGravity(Gravity.CENTER_VERTICAL);
+            topBar.setPadding(this.dp(16), this.dp(28), this.dp(16), this.dp(12));
+            topBar.setBackgroundColor(Color.argb(140, 0, 0, 0));
+
+            TextView titleView = new TextView((Context)this);
+            titleView.setText("查看照片 (点击任意处返回)");
+            titleView.setTextColor(Color.WHITE);
+            titleView.setTextSize(14f);
+            LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(0, -2, 1.0f);
+            topBar.addView((View)titleView, (ViewGroup.LayoutParams)titleLp);
+
+            TextView closeBtn = new TextView((Context)this);
+            closeBtn.setText("✕ 关闭");
+            closeBtn.setTextColor(Color.rgb(203, 213, 225));
+            closeBtn.setTextSize(14f);
+            closeBtn.setPadding(this.dp(8), this.dp(4), this.dp(8), this.dp(4));
+            closeBtn.setOnClickListener(v -> dialog.dismiss());
+            topBar.addView((View)closeBtn, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-2, -2));
+
+            root.addView((View)topBar, (ViewGroup.LayoutParams)new FrameLayout.LayoutParams(-1, -2, Gravity.TOP));
+
+            root.setOnClickListener(v -> dialog.dismiss());
+            fullIv.setOnClickListener(v -> dialog.dismiss());
+
+            dialog.setContentView((View)root);
+            dialog.show();
+        } catch (Exception ex) {
+            Toast.makeText(this.getApplicationContext(), "打开大图失败: " + ex.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+
     private boolean isTextFile(String fileName) {
         if (fileName == null) return false;
         String nameLower = fileName.toLowerCase(java.util.Locale.ROOT);
@@ -12080,6 +12135,11 @@ extends Activity {
                         Uri imageUri = content.startsWith("/") ? Uri.fromFile(new java.io.File(content)) : Uri.parse(content);
                         iv.setImageURI(imageUri);
                         if (iv.getDrawable() != null) {
+                            final Uri finalImageUri = imageUri;
+                            final String finalContent = content;
+                            iv.setClickable(true);
+                            iv.setFocusable(true);
+                            iv.setOnClickListener(v -> this.showChatPhotoFullscreen(finalImageUri, finalContent));
                             bubble.addView((View)iv);
                             shown = true;
                         }
