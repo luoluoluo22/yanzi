@@ -11,6 +11,7 @@ internal static class ChatConversationMetadataVerification
         using var scope=(IDisposable)typeof(HostAssets).GetMethod("UseIsolatedDataRootForVerification",
             BindingFlags.NonPublic|BindingFlags.Static)!.Invoke(null,[root])!;
         var provider=YanziChatCapabilityProvider.GetProviders().Single(p=>p.Name=="chat.send");
+        YanziCapabilitySchema.ValidateDefinition(provider.InputSchema);
         if(!provider.InputSchema.GetProperty("properties").TryGetProperty("conversationId",out _))
             throw new Exception("chat.send does not declare conversation metadata.");
         var id=Guid.NewGuid().ToString("N");
