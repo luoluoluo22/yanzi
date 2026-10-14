@@ -89,7 +89,12 @@ async function handleDeviceApi(request, env, ctx) {
         push_token = coalesce(excluded.push_token, user_devices.push_token),
         capabilities_json = json_patch(user_devices.capabilities_json, excluded.capabilities_json),
         last_seen_at = excluded.last_seen_at,
-        updated_at = excluded.updated_at`
+        updated_at = excluded.updated_at
+      where user_devices.platform <> excluded.platform
+         or user_devices.display_name <> excluded.display_name
+         or (excluded.push_token is not null and excluded.push_token <> coalesce(user_devices.push_token, ''))
+         or json_patch(user_devices.capabilities_json, excluded.capabilities_json) <> user_devices.capabilities_json
+         or user_devices.last_seen_at <= strftime('%Y-%m-%dT%H:%M:%fZ', excluded.last_seen_at, '-60 seconds')`
     )
       .bind(
         device.deviceId,
