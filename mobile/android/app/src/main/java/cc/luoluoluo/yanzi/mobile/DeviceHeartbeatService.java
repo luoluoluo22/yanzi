@@ -384,7 +384,7 @@ public class DeviceHeartbeatService extends Service {
                         edit.putString(transferKey, new JSONObject().put("sha256", transferPayload.optString("sha256")).put("path", content).put("savedAt", System.currentTimeMillis()).toString());
                     if (accountChat) {
                         if (!ChatHistoryStore.append(this, ChatHistoryStore.message(
-                                "peer", kind, content, chatTime, id, chatSourceId, chatSourceName))
+                                "peer", kind, content, chatTime, id, chatSourceId, chatSourceName).put("conversationId",ChatConversation.incoming(message)))
                                 && !ChatHistoryStore.containsMessage(this, id))
                             throw new java.io.IOException("chat_save_failed");
                         trace(id, "chat_saved");

@@ -2242,7 +2242,8 @@ public class FloatingWheelService extends Service {
                         if (sourceName.isEmpty() && messagePayload != null) sourceName = messagePayload.optString("sourceDeviceName", "");
                         if (sourceName.isEmpty()) sourceName = peerDisplayName(sourceId);
                         long receivedAt = ChatHistoryStore.messageTime(json);
-                        this.saveChatMessageToPrefs(kind, content, sourceId, sourceName, receivedAt);
+                        ChatHistoryStore.append(this,ChatHistoryStore.message("peer",kind,content,receivedAt,
+                            json.optString("messageId"),sourceId,sourceName).put("conversationId",ChatConversation.incoming(json)));
                         Intent chatIntent = new Intent(BuildConfig.APPLICATION_ID + ".CHAT_MESSAGE");
                         chatIntent.putExtra("message", content);
                         chatIntent.putExtra("kind", kind);

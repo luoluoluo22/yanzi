@@ -525,7 +525,12 @@ public partial class MainWindow
                 var extensionId = extensionElement.ValueKind == JsonValueKind.String
                     ? extensionElement.GetString()
                     : extensionElement.ToString();
-                if (!string.IsNullOrWhiteSpace(extensionId) && _localExtensionIndex.TryGetValue(extensionId, out var command))
+                // Runtime and UI caches can lag behind an on-disk miniapp installation.
+                // Resolve the current manifest, also preventing a deleted cached item from running.
+                var command = string.IsNullOrWhiteSpace(extensionId) ? null :
+                    LocalExtensionCatalog.LoadCommands().FirstOrDefault(c =>
+                        string.Equals(c.ExtensionId, extensionId, StringComparison.OrdinalIgnoreCase));
+                if (command != null)
                 {
                     var execResult = await RunMobileExtensionAsync(command, text);
                     await Dispatcher.InvokeAsync(() =>

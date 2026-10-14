@@ -1180,8 +1180,8 @@ public sealed partial class CloudSyncClient
         object payload = job.Attachment is { } attachment ? new {
             source = "desktop-chat", attachmentId = attachment.AttachmentId, fileName = attachment.FileName,
             size = attachment.Size, sha256 = attachment.Sha256, contentType = attachment.ContentType,
-            clientTransferId = job.Id, clientOperationId = job.Id
-        } : new { source = "desktop-chat", clientTransferId = job.Id, clientOperationId = job.Id };
+            clientTransferId = job.Id, clientOperationId = job.Id, conversationId = job.ConversationId
+        } : new { source = "desktop-chat", clientTransferId = job.Id, clientOperationId = job.Id, conversationId = job.ConversationId };
         var id = await SendDeviceMessageAsync(job.Source, "android", job.Kind, "YanziChat", job.Text,
             targetDeviceId: job.TargetDeviceId, payload: payload, cancellationToken: cancellationToken, clientMessageId: job.Id, expiresAt: job.CreatedAt.AddDays(30));
         DesktopChatOutbox.Complete(job, id);
