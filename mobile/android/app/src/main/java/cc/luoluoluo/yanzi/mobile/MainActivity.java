@@ -421,11 +421,76 @@ extends Activity {
             chatInputEditText.setText(prefs.getString(chatPreferenceKey("draft."+target.id),""));
             chatInputEditText.setHint(target.agent ? "给反重力发送消息…" : "发送消息…");
         }
-        prefs.edit().putLong(chatPreferenceKey("seen."+target.id),System.currentTimeMillis()).apply();
+        prefs.edit().putLong(chatPreferenceKey("seen."+target.id),System.currentTimeMillis())
+            .putString(chatPreferenceKey("last_selected_conversation_id"), target.id)
+            .putString(chatPreferenceKey("last_selected_target_device"), target.targetDeviceId)
+            .putLong(chatPreferenceKey("last_used_time." + target.id), System.currentTimeMillis())
+            .apply();
         if (desktopDashboard != null) desktopDashboard.conversation(target.agent?"反重力":target.name,this::showChatConversations);
         if (chatAttachBtn != null) chatAttachBtn.setVisibility(target.agent?View.GONE:View.VISIBLE);
         this.updateAntigravitySessionHeader();
         selectSubTab(0); loadChatHistory();
+    }
+
+    private List<ChatConversation> sortChatConversations(List<ChatConversation> rawList) {
+        if (rawList == null || rawList.isEmpty()) return new ArrayList<>();
+        List<ChatConversation> result = new ArrayList<>();
+        ChatConversation group = null;
+        for (ChatConversation c : rawList) {
+            if (ChatConversation.GROUP.equals(c.id)) {
+                group = c;
+            } else {
+                result.add(c);
+            }
+        }
+
+        final String activeId = (this.chatConversation != null && !ChatConversation.GROUP.equals(this.chatConversation.id))
+                ? this.chatConversation.id
+                : this.prefs.getString(chatPreferenceKey("last_selected_conversation_id"), "");
+
+        java.util.Collections.sort(result, (a, b) -> {
+            boolean aActive = a.id.equals(activeId);
+            boolean bActive = b.id.equals(activeId);
+            if (aActive != bActive) return aActive ? -1 : 1;
+
+            long timeA = Math.max(this.prefs.getLong(chatPreferenceKey("last_used_time." + a.id), 0L),
+                    ChatHistoryStore.lastMessageTime(this, a.id));
+            long timeB = Math.max(this.prefs.getLong(chatPreferenceKey("last_used_time." + b.id), 0L),
+                    ChatHistoryStore.lastMessageTime(this, b.id));
+            if (timeA != timeB) return Long.compare(timeB, timeA);
+
+            if (a.agent != b.agent) return a.agent ? -1 : 1;
+            return a.name.compareToIgnoreCase(b.name);
+        });
+
+        if (group != null) {
+            result.add(group);
+        } else {
+            result.add(ChatConversation.group());
+        }
+        return result;
+    }
+
+    private void restoreLastSelectedConversation() {
+        try {
+            String lastId = this.prefs.getString(chatPreferenceKey("last_selected_conversation_id"), "");
+            if (lastId.isEmpty() || ChatConversation.GROUP.equals(lastId)) return;
+            final String cacheKey = chatPreferenceKey("contacts");
+            JSONArray cached = new JSONArray();
+            try { cached = new JSONArray(this.prefs.getString(cacheKey, "[]")); } catch (Exception ignored) {}
+            List<ChatConversation> list = ChatConversation.contacts(cached, this.deviceId);
+            for (ChatConversation c : list) {
+                if (c.id.equals(lastId)) {
+                    this.selectChatConversation(c);
+                    return;
+                }
+            }
+            String targetDev = this.prefs.getString(chatPreferenceKey("last_selected_target_device"), "");
+            if (!targetDev.isEmpty()) {
+                ChatConversation sessionConv = new ChatConversation(lastId, "反重力", targetDev, "desktop", true);
+                this.selectChatConversation(sessionConv);
+            }
+        } catch (Exception ignored) {}
     }
 
     private void updateAntigravitySessionHeader() {
@@ -436,7 +501,7 @@ extends Activity {
         }
         this.agentSessionHeaderLayout.setVisibility(View.VISIBLE);
         String title = AntigravitySessionManager.getSessionTitle(this, this.chatConversation.targetDeviceId, this.chatConversation.id);
-        this.tvCurrentSessionTitle.setText("💬 会话: " + title + " ▾");
+        this.tvCurrentSessionTitle.setText("会话: " + title + " ▾");
     }
 
     private void showAntigravitySessionMenu(View anchor) {
@@ -477,6 +542,13 @@ extends Activity {
         newBg.setColor(Color.argb(35, 37, 99, 235));
         newBg.setCornerRadius((float)this.dp(8));
         newBtn.setBackground((Drawable)newBg);
+
+        ImageView newBtnLogo = new ImageView((Context)this);
+        newBtnLogo.setImageDrawable(YanziUiKit.getAntigravityLogo(this));
+        newBtnLogo.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        LinearLayout.LayoutParams nLogoLp = new LinearLayout.LayoutParams(this.dp(16), this.dp(16));
+        nLogoLp.rightMargin = this.dp(8);
+        newBtn.addView((View)newBtnLogo, (ViewGroup.LayoutParams)nLogoLp);
 
         TextView newTv = new TextView((Context)this);
         newTv.setText("➕ 新建会话");
@@ -595,8 +667,9 @@ extends Activity {
         final String cacheKey=chatPreferenceKey("contacts");
         JSONArray cached=new JSONArray();
         try {cached=new JSONArray(prefs.getString(cacheKey,"[]"));} catch(Exception ignored) {}
-        final List<ChatConversation> contacts=ChatConversation.contacts(cached,deviceId);
-        if(contacts.stream().noneMatch(c->c.id.equals(chatConversation.id))) contacts.add(chatConversation);
+        final List<ChatConversation> rawContacts=ChatConversation.contacts(cached,deviceId);
+        if(rawContacts.stream().noneMatch(c->c.id.equals(chatConversation.id))) rawContacts.add(chatConversation);
+        final List<ChatConversation> contacts=sortChatConversations(rawContacts);
         final ChatConversationAdapter adapter=new ChatConversationAdapter(this,contacts,chatConversation.id);
         final AlertDialog dialog=new AlertDialog.Builder(this).setTitle("聊天对象")
             .setSingleChoiceItems(adapter,-1,(d,which)->{
@@ -615,8 +688,10 @@ extends Activity {
             this.runOnUiThread(() -> {
                 if(isFinishing() || !dialog.isShowing() || !account.equals(ChatHistoryStore.accountKey(this))) return;
                 if(devices!=null) prefs.edit().putString(cacheKey,devices.toString()).apply();
-                contacts.clear();contacts.addAll(ChatConversation.contacts(devices,deviceId));
-                if(contacts.stream().noneMatch(c->c.id.equals(chatConversation.id))) contacts.add(chatConversation);
+                List<ChatConversation> fresh = ChatConversation.contacts(devices, deviceId);
+                if (fresh.stream().noneMatch(c -> c.id.equals(chatConversation.id))) fresh.add(chatConversation);
+                contacts.clear();
+                contacts.addAll(sortChatConversations(fresh));
                 adapter.notifyDataSetChanged();
                 for(int i=0;i<contacts.size();i++) if(contacts.get(i).id.equals(chatConversation.id)) dialog.getListView().setItemChecked(i,true);
             });
@@ -2273,6 +2348,7 @@ extends Activity {
                 () -> this.selectSubTab(2),
                 () -> this.selectSubTab(3));
         this.desktopDashboard.conversation(chatConversation.name,this::showChatConversations);
+        this.restoreLastSelectedConversation();
 
         // 子 Tab 条
         LinearLayout subTabBar = new LinearLayout((Context)this);
@@ -11916,7 +11992,7 @@ extends Activity {
         LinearLayout sessionPill = new LinearLayout((Context)this);
         sessionPill.setOrientation(LinearLayout.HORIZONTAL);
         sessionPill.setGravity(Gravity.CENTER_VERTICAL);
-        sessionPill.setPadding(this.dp(10), this.dp(5), this.dp(10), this.dp(5));
+        sessionPill.setPadding(this.dp(8), this.dp(4), this.dp(10), this.dp(4));
         sessionPill.setClickable(true);
         sessionPill.setFocusable(true);
 
@@ -11926,8 +12002,15 @@ extends Activity {
         pillBg.setCornerRadius((float)this.dp(14));
         sessionPill.setBackground((Drawable)pillBg);
 
+        ImageView pillLogo = new ImageView((Context)this);
+        pillLogo.setImageDrawable(YanziUiKit.getAntigravityLogo(this));
+        pillLogo.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        LinearLayout.LayoutParams logoLp = new LinearLayout.LayoutParams(this.dp(16), this.dp(16));
+        logoLp.rightMargin = this.dp(6);
+        sessionPill.addView((View)pillLogo, (ViewGroup.LayoutParams)logoLp);
+
         this.tvCurrentSessionTitle = new TextView((Context)this);
-        this.tvCurrentSessionTitle.setText("💬 会话: 默认会话 ▾");
+        this.tvCurrentSessionTitle.setText("会话: 默认会话 ▾");
         this.tvCurrentSessionTitle.setTextColor(Color.rgb(125, 211, 252));
         this.tvCurrentSessionTitle.setTextSize(12.5f);
         this.tvCurrentSessionTitle.setSingleLine(true);

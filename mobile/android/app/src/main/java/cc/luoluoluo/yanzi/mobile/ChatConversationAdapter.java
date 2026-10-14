@@ -19,9 +19,22 @@ final class ChatConversationAdapter extends BaseAdapter {
         ChatConversation c=contacts.get(position);
         LinearLayout row=new LinearLayout(context);row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(dp(16),dp(12),dp(16),dp(12));
-        row.setBackgroundColor(c.id.equals(selected)?YanziUiKit.CARD_ALT:YanziUiKit.CARD);
-        ImageView icon=YanziUiKit.icon(context,c.agent?"rocket-launch":c.id.equals("group")?"account-group":c.platform.equals("desktop")?"desktop-classic":"cellphone",YanziUiKit.BLUE,24);
-        row.addView(icon,new LinearLayout.LayoutParams(dp(40),dp(40)));
+        ImageView icon;
+        if (c.agent) {
+            icon = new ImageView(context);
+            icon.setImageDrawable(YanziUiKit.getAntigravityLogo(context));
+            icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            icon.setClipToOutline(true);
+            android.graphics.drawable.GradientDrawable iconBg = new android.graphics.drawable.GradientDrawable();
+            iconBg.setColor(android.graphics.Color.rgb(15, 23, 42));
+            iconBg.setCornerRadius(dp(8));
+            icon.setBackground(iconBg);
+            int pad = dp(4);
+            icon.setPadding(pad, pad, pad, pad);
+        } else {
+            icon = YanziUiKit.icon(context, c.id.equals("group") ? "account-group" : c.platform.equals("desktop") ? "desktop-classic" : "cellphone", YanziUiKit.BLUE, 24);
+        }
+        row.addView(icon, new LinearLayout.LayoutParams(dp(40), dp(40)));
         LinearLayout copy=new LinearLayout(context);copy.setOrientation(LinearLayout.VERTICAL);
         TextView name=YanziUiKit.text(context,c.name,14,YanziUiKit.TEXT,true);name.setSingleLine(true);
         name.setEllipsize(android.text.TextUtils.TruncateAt.END);copy.addView(name);

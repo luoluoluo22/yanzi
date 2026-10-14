@@ -42,6 +42,13 @@ final class DesktopDashboardView {
             chat.label.setMaxWidth(YanziUiKit.dp(chat.root.getContext(),90));
             chat.label.setEllipsize(android.text.TextUtils.TruncateAt.END);
             chat.root.setContentDescription("聊天对象："+name);
+            if (name.contains("反重力")) {
+                chat.icon.setImageDrawable(YanziUiKit.getAntigravityLogo(chat.root.getContext()));
+                chat.icon.setColorFilter(null);
+            } else {
+                android.graphics.Path path = MobileIconLibrary.resolveOrDefault("chat");
+                chat.icon.setImageDrawable(new PathDrawable(path, chat.accent));
+            }
             if(chat.icon.getParent()==chat.root) {
                 chat.root.removeView(chat.icon);
                 LinearLayout icons=new LinearLayout(chat.root.getContext());
