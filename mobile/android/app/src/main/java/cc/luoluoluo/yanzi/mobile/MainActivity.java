@@ -406,6 +406,8 @@ extends Activity {
     private ChatConversation chatConversation = ChatConversation.group();
     private ChatConversation attachmentConversation;
     private String chatHistoryAccount="";
+    private LinearLayout agentSessionHeaderLayout;
+    private TextView tvCurrentSessionTitle;
 
     private String chatPreferenceKey(String suffix) {
         return "chatObjects."+ChatHistoryStore.accountKey(this)+"."+suffix;
@@ -422,7 +424,170 @@ extends Activity {
         prefs.edit().putLong(chatPreferenceKey("seen."+target.id),System.currentTimeMillis()).apply();
         if (desktopDashboard != null) desktopDashboard.conversation(target.agent?"反重力":target.name,this::showChatConversations);
         if (chatAttachBtn != null) chatAttachBtn.setVisibility(target.agent?View.GONE:View.VISIBLE);
+        this.updateAntigravitySessionHeader();
         selectSubTab(0); loadChatHistory();
+    }
+
+    private void updateAntigravitySessionHeader() {
+        if (this.agentSessionHeaderLayout == null || this.tvCurrentSessionTitle == null) return;
+        if (this.chatConversation == null || !this.chatConversation.agent) {
+            this.agentSessionHeaderLayout.setVisibility(View.GONE);
+            return;
+        }
+        this.agentSessionHeaderLayout.setVisibility(View.VISIBLE);
+        String title = AntigravitySessionManager.getSessionTitle(this, this.chatConversation.targetDeviceId, this.chatConversation.id);
+        this.tvCurrentSessionTitle.setText("💬 会话: " + title + " ▾");
+    }
+
+    private void showAntigravitySessionMenu(View anchor) {
+        if (this.chatConversation == null || !this.chatConversation.agent) return;
+        final String targetDevice = this.chatConversation.targetDeviceId;
+        final String currentSessionId = this.chatConversation.id;
+
+        List<AntigravitySessionManager.SessionItem> sessions = AntigravitySessionManager.getSessions(this, targetDevice);
+
+        LinearLayout cardView = new LinearLayout((Context)this);
+        cardView.setOrientation(LinearLayout.VERTICAL);
+        cardView.setPadding(this.dp(14), this.dp(12), this.dp(14), this.dp(12));
+
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.rgb(15, 23, 42));
+        bg.setStroke(this.dp(1), Color.rgb(51, 65, 85));
+        bg.setCornerRadius((float)this.dp(12));
+        cardView.setBackground((Drawable)bg);
+
+        final android.widget.PopupWindow popup = new android.widget.PopupWindow(
+                cardView,
+                this.dp(260),
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                true);
+        popup.setOutsideTouchable(true);
+        popup.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+        popup.setElevation((float)this.dp(8));
+
+        // 1. 新建会话按钮
+        LinearLayout newBtn = new LinearLayout((Context)this);
+        newBtn.setOrientation(LinearLayout.HORIZONTAL);
+        newBtn.setGravity(Gravity.CENTER_VERTICAL);
+        newBtn.setPadding(this.dp(12), this.dp(10), this.dp(12), this.dp(10));
+        newBtn.setClickable(true);
+        newBtn.setFocusable(true);
+
+        GradientDrawable newBg = new GradientDrawable();
+        newBg.setColor(Color.argb(35, 37, 99, 235));
+        newBg.setCornerRadius((float)this.dp(8));
+        newBtn.setBackground((Drawable)newBg);
+
+        TextView newTv = new TextView((Context)this);
+        newTv.setText("➕ 新建会话");
+        newTv.setTextColor(Color.rgb(125, 211, 252));
+        newTv.setTextSize(13.5f);
+        newTv.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        newBtn.addView((View)newTv);
+
+        newBtn.setOnClickListener(v -> {
+            popup.dismiss();
+            AntigravitySessionManager.SessionItem created = AntigravitySessionManager.createNewSession(this, targetDevice);
+            ChatConversation newConv = new ChatConversation(created.id, "反重力", targetDevice, this.chatConversation.platform, true);
+            this.selectChatConversation(newConv);
+            Toast.makeText((Context)this, "已开启新会话", Toast.LENGTH_SHORT).show();
+        });
+        cardView.addView((View)newBtn, new LinearLayout.LayoutParams(-1, -2));
+
+        // 分割线
+        View divider = new View((Context)this);
+        divider.setBackgroundColor(Color.rgb(30, 41, 59));
+        LinearLayout.LayoutParams divLp = new LinearLayout.LayoutParams(-1, this.dp(1));
+        divLp.topMargin = this.dp(10);
+        divLp.bottomMargin = this.dp(8);
+        cardView.addView(divider, divLp);
+
+        TextView sectionTitle = new TextView((Context)this);
+        sectionTitle.setText("近期会话");
+        sectionTitle.setTextColor(Color.rgb(100, 116, 139));
+        sectionTitle.setTextSize(11.5f);
+        sectionTitle.setPadding(this.dp(4), 0, 0, this.dp(4));
+        cardView.addView((View)sectionTitle);
+
+        ScrollView listScroll = new ScrollView((Context)this);
+        LinearLayout listLayout = new LinearLayout((Context)this);
+        listLayout.setOrientation(LinearLayout.VERTICAL);
+
+        for (final AntigravitySessionManager.SessionItem item : sessions) {
+            final boolean isCurrent = item.id.equals(currentSessionId);
+
+            LinearLayout itemRow = new LinearLayout((Context)this);
+            itemRow.setOrientation(LinearLayout.HORIZONTAL);
+            itemRow.setGravity(Gravity.CENTER_VERTICAL);
+            itemRow.setPadding(this.dp(8), this.dp(9), this.dp(8), this.dp(9));
+            itemRow.setClickable(true);
+            itemRow.setFocusable(true);
+
+            GradientDrawable itemBg = new GradientDrawable();
+            if (isCurrent) {
+                itemBg.setColor(Color.argb(25, 34, 197, 94));
+                itemBg.setStroke(this.dp(1), Color.rgb(34, 197, 94));
+            } else {
+                itemBg.setColor(Color.TRANSPARENT);
+            }
+            itemBg.setCornerRadius((float)this.dp(6));
+            itemRow.setBackground((Drawable)itemBg);
+
+            TextView statusDot = new TextView((Context)this);
+            statusDot.setText(isCurrent ? "● " : "○ ");
+            statusDot.setTextColor(isCurrent ? Color.rgb(34, 197, 94) : Color.rgb(71, 85, 105));
+            statusDot.setTextSize(12f);
+            itemRow.addView((View)statusDot);
+
+            TextView titleTv = new TextView((Context)this);
+            titleTv.setText((CharSequence)item.title);
+            titleTv.setTextColor(isCurrent ? Color.WHITE : Color.rgb(203, 213, 225));
+            titleTv.setTextSize(13f);
+            titleTv.setSingleLine(true);
+            titleTv.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(0, -2, 1.0f);
+            titleLp.rightMargin = this.dp(6);
+            itemRow.addView((View)titleTv, (ViewGroup.LayoutParams)titleLp);
+
+            if (sessions.size() > 1) {
+                TextView delBtn = new TextView((Context)this);
+                delBtn.setText("✕");
+                delBtn.setTextColor(Color.rgb(100, 116, 139));
+                delBtn.setTextSize(12f);
+                delBtn.setPadding(this.dp(6), this.dp(2), this.dp(6), this.dp(2));
+                delBtn.setClickable(true);
+                delBtn.setOnClickListener(v -> {
+                    popup.dismiss();
+                    AntigravitySessionManager.deleteSession(this, targetDevice, item.id);
+                    if (isCurrent) {
+                        List<AntigravitySessionManager.SessionItem> remaining = AntigravitySessionManager.getSessions(this, targetDevice);
+                        if (!remaining.isEmpty()) {
+                            ChatConversation fallback = new ChatConversation(remaining.get(0).id, "反重力", targetDevice, this.chatConversation.platform, true);
+                            this.selectChatConversation(fallback);
+                        }
+                    } else {
+                        Toast.makeText((Context)this, "已删除会话", Toast.LENGTH_SHORT).show();
+                    }
+                });
+                itemRow.addView((View)delBtn);
+            }
+
+            itemRow.setOnClickListener(v -> {
+                popup.dismiss();
+                if (!isCurrent) {
+                    ChatConversation chosen = new ChatConversation(item.id, "反重力", targetDevice, this.chatConversation.platform, true);
+                    this.selectChatConversation(chosen);
+                }
+            });
+
+            listLayout.addView((View)itemRow);
+        }
+
+        listScroll.addView((View)listLayout, new LinearLayout.LayoutParams(-1, -2));
+        LinearLayout.LayoutParams scrollLp = new LinearLayout.LayoutParams(-1, -2);
+        cardView.addView((View)listScroll, (ViewGroup.LayoutParams)scrollLp);
+
+        popup.showAsDropDown(anchor, 0, this.dp(4));
     }
 
     private void showChatConversations() {
@@ -11666,6 +11831,10 @@ extends Activity {
         long sentAt = System.currentTimeMillis();
         this.renderChatMessage("self", "text", text, sentAt, this.deviceId, MainActivity.buildDeviceDisplayName(), true);
         MobileChatController.append(this,this.deviceId,"self","text",text,sentAt,recipient.id);
+        if (recipient.agent) {
+            AntigravitySessionManager.updateTitleIfDefault(this, recipient.targetDeviceId, recipient.id, text);
+            this.updateAntigravitySessionHeader();
+        }
 
         this.chatInputEditText.post(() -> {
             if (this.chatInputEditText != null) {
@@ -11737,6 +11906,39 @@ extends Activity {
     private LinearLayout buildChatContainer() {
         this.chatContainerLayout = new LinearLayout((Context)this);
         this.chatContainerLayout.setOrientation(LinearLayout.VERTICAL);
+
+        this.agentSessionHeaderLayout = new LinearLayout((Context)this);
+        this.agentSessionHeaderLayout.setOrientation(LinearLayout.HORIZONTAL);
+        this.agentSessionHeaderLayout.setGravity(Gravity.CENTER_VERTICAL);
+        this.agentSessionHeaderLayout.setPadding(this.dp(12), this.dp(4), this.dp(12), this.dp(4));
+        this.agentSessionHeaderLayout.setVisibility(View.GONE);
+
+        LinearLayout sessionPill = new LinearLayout((Context)this);
+        sessionPill.setOrientation(LinearLayout.HORIZONTAL);
+        sessionPill.setGravity(Gravity.CENTER_VERTICAL);
+        sessionPill.setPadding(this.dp(10), this.dp(5), this.dp(10), this.dp(5));
+        sessionPill.setClickable(true);
+        sessionPill.setFocusable(true);
+
+        GradientDrawable pillBg = new GradientDrawable();
+        pillBg.setColor(Color.argb(220, 24, 34, 48));
+        pillBg.setStroke(this.dp(1), Color.rgb(51, 65, 85));
+        pillBg.setCornerRadius((float)this.dp(14));
+        sessionPill.setBackground((Drawable)pillBg);
+
+        this.tvCurrentSessionTitle = new TextView((Context)this);
+        this.tvCurrentSessionTitle.setText("💬 会话: 默认会话 ▾");
+        this.tvCurrentSessionTitle.setTextColor(Color.rgb(125, 211, 252));
+        this.tvCurrentSessionTitle.setTextSize(12.5f);
+        this.tvCurrentSessionTitle.setSingleLine(true);
+        this.tvCurrentSessionTitle.setMaxWidth(this.dp(220));
+        this.tvCurrentSessionTitle.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        sessionPill.addView((View)this.tvCurrentSessionTitle);
+
+        sessionPill.setOnClickListener(v -> this.showAntigravitySessionMenu(sessionPill));
+
+        this.agentSessionHeaderLayout.addView((View)sessionPill);
+        this.chatContainerLayout.addView((View)this.agentSessionHeaderLayout);
 
         ScrollView scroll = new ScrollView((Context)this);
         this.chatMessageScrollView = scroll;
@@ -11972,6 +12174,7 @@ extends Activity {
         this.lastRenderedChatTimeMs = Long.MIN_VALUE;
         if(this.prefs!=null && sForeground && "desktop".equals(selectedTab) && currentSubTabIndex==0)
             this.prefs.edit().putLong(chatPreferenceKey("seen."+chatConversation.id),System.currentTimeMillis()).apply();
+        this.updateAntigravitySessionHeader();
         JSONArray arr = ChatHistoryStore.load(this,chatConversation.id);
         java.util.Set<String> embeddedImages = new java.util.HashSet<>();
         for (int i = 0; i < arr.length(); ++i) {
