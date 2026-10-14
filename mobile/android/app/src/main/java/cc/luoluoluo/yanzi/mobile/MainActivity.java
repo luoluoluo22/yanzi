@@ -11624,6 +11624,7 @@ extends Activity {
                 String baseUrl = this.normalizedBaseUrl();
                 String token = this.requireToken();
                 String messageId = "";
+                try {
                     YanziApiClient.registerDevice(baseUrl, token, this.deviceId, this.buildDeviceName());
                     messageId = YanziApiClient.sendConversation(baseUrl,token,this.deviceId,recipient,text);
                 } catch (Exception ex) {
