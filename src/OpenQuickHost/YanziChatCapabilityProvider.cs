@@ -26,6 +26,7 @@ public static class YanziChatCapabilityProvider
             InputSchema = YanziCapabilitySchema.Parse("""
             {"type":"object","properties":{
               "target":{"type":"string","description":"省略则发送账号共享消息；填写设备 ID、名称或别名（例如 K70）则定向发送，名称片段须唯一"},
+              "conversationId":{"type":"string","description":"可选会话标识，最长 200 字符，供客户端按聊天对象分开保存"},
               "text":{"type":"string","default":""},
               "filePath":{"type":"string","description":"本机文件绝对路径；图片扩展名自动识别为 photo，附件 1 字节至 30 MB"},
               "kind":{"type":"string","enum":["text","photo","file"]},
@@ -130,13 +131,15 @@ public static class YanziChatCapabilityProvider
     {
         var input = (JsonElement)payload!;
         var content = ValidateContent(input);
+        var conversationId=GetString(input,"conversationId");
+        if(conversationId?.Length>200) throw new ArgumentException("conversationId 最长 200 字符。");
         var cloud = await GetCloudAsync();
         var peers = await cloud.ListPeerDevicesAsync();
         var query = GetString(input, "target");
         var target = string.IsNullOrWhiteSpace(query) ? null : SelectTarget(peers, query, LoadAliases());
         var requestId=GetString(input,"requestId")??Guid.NewGuid().ToString("N");
         var fileHash=content.FilePath==null?"":Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(await File.ReadAllBytesAsync(content.FilePath)));
-        var signature=JsonSerializer.Serialize(new{target=target?.DeviceId,content.Kind,content.Text,content.FilePath,fileHash});
+        var signature=JsonSerializer.Serialize(new{target=target?.DeviceId,content.Kind,content.Text,content.FilePath,fileHash,conversationId});
         var task=YanziTaskService.Begin("chat.send",requestId,signature,target?.DisplayName??"账号所有设备");
         if(task.Replay)return YanziTaskService.ReplayResult(task);
         try
@@ -146,7 +149,7 @@ public static class YanziChatCapabilityProvider
         YanziTaskService.Check(task.TaskId);
         if(YanziTaskService.Submit(task.TaskId).CancelRequested)throw new OperationCanceledException("task_cancelled");
         var job = DesktopChatOutbox.Enqueue(cloud.CurrentUserId!, DeviceIdentityStore.GetOrCreateDesktopDeviceId(),
-            task.TaskId[..32], content.Kind, content.Text, content.FilePath, target?.DeviceId);
+            task.TaskId[..32], content.Kind, content.Text, content.FilePath, target?.DeviceId,conversationId);
         YanziTaskService.Update(task.TaskId,content.FilePath==null?"正在投递消息":"正在上传附件并投递");
         var messageId = await cloud.DeliverChatJobAsync(job);
         if (string.IsNullOrWhiteSpace(messageId)) throw new IOException("服务器未返回 messageId；请检查持久发件箱，勿重复发送。");

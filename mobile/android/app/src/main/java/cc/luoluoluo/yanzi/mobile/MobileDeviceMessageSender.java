@@ -82,6 +82,8 @@ final class MobileDeviceMessageSender {
         // Only execution commands may wait for a LAN result before cloud delivery.
         // Ordinary chat can reach LAN concurrently, but its cloud submission is never blocked.
         String lan = execution ? LanDiscoveryManager.getLanBaseUrl(MobileApplicationContext.get()) : null;
+        if(lan!=null && envelope.has("targetDeviceId") && !envelope.optString("targetDeviceId")
+            .equals(LanDiscoveryManager.getLanDeviceId(MobileApplicationContext.get()))) lan=null;
         if (lan != null) {
             java.net.HttpURLConnection connection = null;
             try {

@@ -35,6 +35,26 @@ final class DesktopDashboardView {
         void select(int index) {
             for (int i = 0; i < actions.length; i++) {if(actions[i]!=null)actions[i].setActive(i == index);};
         }
+        void conversation(String name, Runnable choose) {
+            ActionRef chat=actions[0];
+            chat.label.setText(name);
+            chat.label.setSingleLine(true);
+            chat.label.setMaxWidth(YanziUiKit.dp(chat.root.getContext(),90));
+            chat.label.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            chat.root.setContentDescription("聊天对象："+name);
+            if(chat.icon.getParent()==chat.root) {
+                chat.root.removeView(chat.icon);
+                LinearLayout icons=new LinearLayout(chat.root.getContext());
+                icons.setGravity(Gravity.CENTER);
+                icons.addView(chat.icon,new LinearLayout.LayoutParams(YanziUiKit.dp(chat.root.getContext(),32),YanziUiKit.dp(chat.root.getContext(),32)));
+                TextView arrow=YanziUiKit.text(chat.root.getContext(),"⌄",18,YanziUiKit.BLUE,true);
+                arrow.setGravity(Gravity.CENTER); arrow.setContentDescription("切换聊天对象");
+                arrow.setOnClickListener(v->choose.run());
+                icons.addView(arrow,new LinearLayout.LayoutParams(YanziUiKit.dp(chat.root.getContext(),40),YanziUiKit.dp(chat.root.getContext(),44)));
+                chat.root.addView(icons,0);
+            }
+            chat.root.setOnLongClickListener(v->{choose.run();return true;});
+        }
     }
 
     private DesktopDashboardView() {}

@@ -225,10 +225,7 @@ extends Activity {
             long time = intent.getLongExtra("time", System.currentTimeMillis());
             android.util.Log.i("MainActivity", "Received CHAT_MESSAGE broadcast, kind=" + kind + ", source=" + sourceDeviceName);
             if (msg != null) {
-                MainActivity.this.runOnUiThread(() ->
-                        MainActivity.this.renderChatMessage("peer", kind == null ? "text" : kind, msg,
-                                time, sourceDeviceId == null ? "" : sourceDeviceId,
-                                sourceDeviceName == null ? "电脑" : sourceDeviceName, true));
+                MainActivity.this.runOnUiThread(() -> MainActivity.this.loadChatHistory());
             }
         }
     };
@@ -406,6 +403,60 @@ extends Activity {
     private Button chatSendButton;
     private Button chatPhotoButton;
     private Button chatFileButton;
+    private ChatConversation chatConversation = ChatConversation.group();
+    private ChatConversation attachmentConversation;
+    private String chatHistoryAccount="";
+
+    private String chatPreferenceKey(String suffix) {
+        return "chatObjects."+ChatHistoryStore.accountKey(this)+"."+suffix;
+    }
+
+    private void selectChatConversation(ChatConversation target) {
+        if (chatInputEditText != null) prefs.edit().putString(chatPreferenceKey("draft."+chatConversation.id),
+            chatInputEditText.getText().toString()).apply();
+        chatConversation=target;
+        if (chatInputEditText != null) {
+            chatInputEditText.setText(prefs.getString(chatPreferenceKey("draft."+target.id),""));
+            chatInputEditText.setHint(target.agent ? "给反重力发送消息…" : "发送消息…");
+        }
+        prefs.edit().putLong(chatPreferenceKey("seen."+target.id),System.currentTimeMillis()).apply();
+        if (desktopDashboard != null) desktopDashboard.conversation(target.agent?"反重力":target.name,this::showChatConversations);
+        if (chatAttachBtn != null) chatAttachBtn.setVisibility(target.agent?View.GONE:View.VISIBLE);
+        selectSubTab(0); loadChatHistory();
+    }
+
+    private void showChatConversations() {
+        final String account=ChatHistoryStore.accountKey(this);
+        final String cacheKey=chatPreferenceKey("contacts");
+        JSONArray cached=new JSONArray();
+        try {cached=new JSONArray(prefs.getString(cacheKey,"[]"));} catch(Exception ignored) {}
+        final List<ChatConversation> contacts=ChatConversation.contacts(cached,deviceId);
+        if(contacts.stream().noneMatch(c->c.id.equals(chatConversation.id))) contacts.add(chatConversation);
+        final ChatConversationAdapter adapter=new ChatConversationAdapter(this,contacts,chatConversation.id);
+        final AlertDialog dialog=new AlertDialog.Builder(this).setTitle("聊天对象")
+            .setSingleChoiceItems(adapter,-1,(d,which)->{
+                if(account.equals(ChatHistoryStore.accountKey(this))) selectChatConversation(contacts.get(which));
+                d.dismiss();
+            }).setNegativeButton("取消",null).create();
+        dialog.show();
+        this.executor.execute(() -> {
+            final JSONArray devices;
+            try {
+                devices=MobileMessageClient.readSystemFirst(normalizedBaseUrl(),"/v1/me/devices",requireToken()).optJSONArray("items");
+            } catch(Exception unavailable) {
+                this.runOnUiThread(()->{if(dialog.isShowing()) dialog.setTitle("聊天对象 · 使用缓存");});
+                return;
+            }
+            this.runOnUiThread(() -> {
+                if(isFinishing() || !dialog.isShowing() || !account.equals(ChatHistoryStore.accountKey(this))) return;
+                if(devices!=null) prefs.edit().putString(cacheKey,devices.toString()).apply();
+                contacts.clear();contacts.addAll(ChatConversation.contacts(devices,deviceId));
+                if(contacts.stream().noneMatch(c->c.id.equals(chatConversation.id))) contacts.add(chatConversation);
+                adapter.notifyDataSetChanged();
+                for(int i=0;i<contacts.size();i++) if(contacts.get(i).id.equals(chatConversation.id)) dialog.getListView().setItemChecked(i,true);
+            });
+        });
+    }
     private TextView flatLogTv;
     private androidx.core.widget.NestedScrollView flatLogScrollView;
     private android.widget.Button btnShowFileManager;
@@ -986,6 +1037,8 @@ extends Activity {
     }
 
     protected void onPause() {
+        if(this.chatInputEditText!=null && this.prefs!=null) this.prefs.edit()
+            .putString(chatPreferenceKey("draft."+chatConversation.id),chatInputEditText.getText().toString()).apply();
         sForeground = false;
         FloatingWheelService.setAppForeground(false);
         this.diagnosticRefreshHandler.removeCallbacks(this.diagnosticRefreshRunnable);
@@ -2054,6 +2107,7 @@ extends Activity {
                 () -> this.selectSubTab(1),
                 () -> this.selectSubTab(2),
                 () -> this.selectSubTab(3));
+        this.desktopDashboard.conversation(chatConversation.name,this::showChatConversations);
 
         // 子 Tab 条
         LinearLayout subTabBar = new LinearLayout((Context)this);
@@ -2122,6 +2176,7 @@ extends Activity {
 
         this.offlineHintView = new LinearLayout((Context)this);
         this.offlineHintView.setOrientation(1);
+        this.offlineHintView.setVisibility(View.GONE);
         this.offlineHintView.setGravity(17);
         this.offlineHintView.setPadding(0, this.dp(100), 0, this.dp(100));
 
@@ -4898,6 +4953,7 @@ extends Activity {
             }
 
             if (index == 0) {
+                if(changed) this.loadChatHistory();
                 if (this.btnShowChat != null) {
                     this.btnShowChat.setTextColor(YanziUiKit.BLUE);
                     this.btnShowChat.setBackground((android.graphics.drawable.Drawable)activeBg);
@@ -11390,6 +11446,7 @@ extends Activity {
     }
 
     private void pickChatPhoto() {
+        this.attachmentConversation=this.chatConversation;
         try {
             Intent intent = new Intent("android.intent.action.OPEN_DOCUMENT");
             intent.addCategory("android.intent.category.OPENABLE");
@@ -11402,6 +11459,7 @@ extends Activity {
     }
 
     private void pickChatFile() {
+        this.attachmentConversation=this.chatConversation;
         try {
             Intent intent = new Intent("android.intent.action.GET_CONTENT");
             intent.setType("*/*");
@@ -11414,6 +11472,9 @@ extends Activity {
     }
 
     private void sendPhotoToDesktopChat(Uri uri) {
+        final ChatConversation recipient=attachmentConversation==null?chatConversation:attachmentConversation;
+        attachmentConversation=null;
+        if(recipient.agent) { this.setStatus("反重力当前支持文字消息。");return; }
         this.setStatus("正在处理照片...");
         this.showPhotoProgress("正在发送照片...");
 
@@ -11426,8 +11487,8 @@ extends Activity {
                 long sentAt = System.currentTimeMillis();
                 String localDeviceName = MainActivity.buildDeviceDisplayName();
                 this.runOnUiThread(() -> {
-                    this.renderChatMessage("self", "photo", stablePath, sentAt, this.deviceId, localDeviceName, true);
-                    this.saveChatMessageToLocal("self", "photo", stablePath, sentAt);
+                    MobileChatController.append(this,this.deviceId,"self","photo",stablePath,sentAt,recipient.id);
+                    this.loadChatHistory();
                 });
 
                 int[] size = MainActivity.readImageSizeFromJpegBytes(jpegBytes);
@@ -11438,11 +11499,13 @@ extends Activity {
                 String token = this.requireToken();
                 String messageId;
                 try {
-                    messageId = YanziApiClient.sendPhotoToDesktop(baseUrl, token, this.deviceId, jpegBytes, width, height);
+                    messageId = MobileDesktopTransfer.sendBytes(this,baseUrl,token,this.deviceId,"photo",
+                        "photo-"+sentAt+".jpg","image/jpeg",jpegBytes,"手机照片 "+width+"x"+height,recipient);
                 } catch (Exception ex) {
                     if (!MainActivity.isUnauthorized(ex)) throw ex;
                     token = this.refreshToken();
-                    messageId = YanziApiClient.sendPhotoToDesktop(baseUrl, token, this.deviceId, jpegBytes, width, height);
+                    messageId = MobileDesktopTransfer.sendBytes(this,baseUrl,token,this.deviceId,"photo",
+                        "photo-"+sentAt+".jpg","image/jpeg",jpegBytes,"手机照片 "+width+"x"+height,recipient);
                 }
                 final String finalMsgId = messageId;
                 this.runOnUiThread(() -> {
@@ -11460,6 +11523,9 @@ extends Activity {
     }
 
     private void sendFileToDesktopChat(Uri uri) {
+        final ChatConversation recipient=attachmentConversation==null?chatConversation:attachmentConversation;
+        attachmentConversation=null;
+        if(recipient.agent) { this.setStatus("反重力当前支持文字消息。");return; }
         this.setStatus("\u6b63\u5728\u5904\u7406\u6587\u4ef6...");
         this.showPhotoProgress("\u6b63\u5728\u53d1\u9001\u6587\u4ef6...");
 
@@ -11509,12 +11575,12 @@ extends Activity {
                         }
                     }
                     messageId = MobileDesktopTransfer.sendFile(this, baseUrl, token, this.deviceId,
-                            "file", finalFileName, "application/octet-stream", stagedFile, "手机文件：" + finalFileName);
+                            "file", finalFileName, "application/octet-stream", stagedFile, "手机文件：" + finalFileName,recipient);
                 } finally { stagedFile.delete(); }
 
                 this.runOnUiThread(() -> {
-                    this.renderChatMessage("self", "file", finalFileName, true);
-                    this.saveChatMessageToLocal("self", "file", finalFileName);
+                    MobileChatController.append(this,this.deviceId,"self","file",finalFileName,System.currentTimeMillis(),recipient.id);
+                    this.loadChatHistory();
                 });
 
                 this.runOnUiThread(() -> {
@@ -11533,8 +11599,10 @@ extends Activity {
 
     private void handleSendChatMessageClick() {
         if (this.chatInputEditText == null) return;
+        if(!chatHistoryAccount.equals(ChatHistoryStore.accountKey(this))) {loadChatHistory();setStatus("账号已改变，请重新输入消息。");return;}
         String text = this.chatInputEditText.getText().toString().trim();
         if (text.isEmpty()) return;
+        final ChatConversation recipient=this.chatConversation;
 
         this.chatInputEditText.setText("");
         this.chatInputEditText.requestFocus();
@@ -11542,7 +11610,7 @@ extends Activity {
         this.setStatus("正在发送...");
         long sentAt = System.currentTimeMillis();
         this.renderChatMessage("self", "text", text, sentAt, this.deviceId, MainActivity.buildDeviceDisplayName(), true);
-        this.saveChatMessageToLocal("self", "text", text, sentAt);
+        MobileChatController.append(this,this.deviceId,"self","text",text,sentAt,recipient.id);
 
         this.chatInputEditText.post(() -> {
             if (this.chatInputEditText != null) {
@@ -11556,23 +11624,53 @@ extends Activity {
                 String baseUrl = this.normalizedBaseUrl();
                 String token = this.requireToken();
                 String messageId = "";
-                try {
                     YanziApiClient.registerDevice(baseUrl, token, this.deviceId, this.buildDeviceName());
-                    messageId = YanziApiClient.sendTextToDesktop(baseUrl, token, this.deviceId, text);
+                    messageId = YanziApiClient.sendConversation(baseUrl,token,this.deviceId,recipient,text);
                 } catch (Exception ex) {
                     if (!MainActivity.isUnauthorized(ex)) {
                         throw ex;
                     }
                     token = this.refreshToken();
                     YanziApiClient.registerDevice(baseUrl, token, this.deviceId, this.buildDeviceName());
-                    messageId = YanziApiClient.sendTextToDesktop(baseUrl, token, this.deviceId, text);
+                    messageId = YanziApiClient.sendConversation(baseUrl,token,this.deviceId,recipient,text);
                 }
                 final String finalMsgId = messageId;
                 this.runOnUiThread(() -> this.setStatus("\u6d88\u606f\u5df2\u53d1\u9001\uff0cid=" + finalMsgId));
+                if(recipient.agent) {
+                    for(int attempts=0;attempts<20;attempts++) {
+                        JSONObject detail=YanziApiClient.fetchMessageDetail(baseUrl,token,messageId);
+                        JSONObject actual=detail.optJSONObject("message"); if(actual!=null) detail=actual;
+                        String state=detail.optString("status");
+                        if(state.equals("failed") || state.equals("expired") || state.equals("cancelled") || state.equals("unknown")) {
+                            JSONObject p=detail.optJSONObject("payload");
+                            JSONObject r=p==null?null:p.optJSONObject("executionResult");
+                            throw new IllegalStateException(r==null?detail.optString("result","反重力请求："+state):r.optString("output","反重力请求："+state));
+                        }
+                        if(state.equals("completed") || state.equals("acked")) {
+                            if(text.startsWith("/")) {
+                                JSONObject p=detail.optJSONObject("payload");
+                                JSONObject r=p==null?null:p.optJSONObject("executionResult");
+                                String output=r==null?detail.optString("result",""):r.optString("output","");
+                                if(!output.isEmpty()) {
+                                    final String commandOutput=output;
+                                    this.runOnUiThread(()->{
+                                        try {sendSession.requireCurrent();} catch(Exception changed) {return;}
+                                        MobileChatController.append(this,this.deviceId,"peer","text",commandOutput,System.currentTimeMillis(),recipient.id);
+                                        loadChatHistory();
+                                    });
+                                }
+                            }
+                            break;
+                        }
+                        Thread.sleep(1000);
+                    }
+                }
             } catch (Exception ex) {
                 this.runOnUiThread(() -> {
+                    try {sendSession.requireCurrent();} catch(Exception changed) {return;}
                     this.setStatus("\u53d1\u9001\u5931\u8d25\uff1a" + ex.getMessage());
-                    this.renderChatMessage("system", "text", "\u53d1\u9001\u5931\u8d25\uff1a" + ex.getMessage(), true);
+                    MobileChatController.append(this,this.deviceId,"system","text","发送失败："+ex.getMessage(),System.currentTimeMillis(),recipient.id);
+                    this.loadChatHistory();
                 });
             } finally { finishMessageSend(); }
         });
@@ -11774,6 +11872,7 @@ extends Activity {
     }
 
     private void launchCameraForChat() {
+        this.attachmentConversation=this.chatConversation;
         Intent intent = new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
         if (intent.resolveActivity(this.getPackageManager()) != null) {
             try {
@@ -11798,14 +11897,24 @@ extends Activity {
     }
 
     private void saveChatMessageToLocal(String role, String kind, String content, long time) {
-        MobileChatController.append(this, this.deviceId, role, kind, content, time);
+        MobileChatController.append(this, this.deviceId, role, kind, content, time,chatConversation.id);
     }
 
     private void loadChatHistory() {
         if (this.chatMessageListLayout == null) return;
+        String account=ChatHistoryStore.accountKey(this);
+        if(!chatHistoryAccount.isEmpty() && !chatHistoryAccount.equals(account)) {
+            chatConversation=ChatConversation.group();
+            if(chatInputEditText!=null) chatInputEditText.setText("");
+            if(desktopDashboard!=null) desktopDashboard.conversation("群聊",this::showChatConversations);
+            if(chatAttachBtn!=null) chatAttachBtn.setVisibility(View.VISIBLE);
+        }
+        chatHistoryAccount=account;
         this.chatMessageListLayout.removeAllViews();
         this.lastRenderedChatTimeMs = Long.MIN_VALUE;
-        JSONArray arr = MobileChatController.load(this);
+        if(this.prefs!=null && sForeground && "desktop".equals(selectedTab) && currentSubTabIndex==0)
+            this.prefs.edit().putLong(chatPreferenceKey("seen."+chatConversation.id),System.currentTimeMillis()).apply();
+        JSONArray arr = ChatHistoryStore.load(this,chatConversation.id);
         for (int i = 0; i < arr.length(); ++i) {
             JSONObject obj = arr.optJSONObject(i);
             if (obj == null) continue;
@@ -11866,10 +11975,7 @@ extends Activity {
         if (activity != null) {
             activity.runOnUiThread(() -> {
                 if (sInstance != activity || activity.isFinishing()) return;
-                activity.renderChatMessage("peer", kind, msg, time,
-                        sourceDeviceId == null ? "" : sourceDeviceId,
-                        sourceDeviceName == null || sourceDeviceName.trim().isEmpty() ? "其他设备" : sourceDeviceName,
-                        true);
+                activity.loadChatHistory();
             });
         }
     }
@@ -12013,7 +12119,7 @@ extends Activity {
             bubble.setOnLongClickListener(v -> {
                 PopupMenu popup = new PopupMenu((Context)MainActivity.this, bubble);
                 popup.getMenu().add(0, 1, 0, "复制消息");
-                popup.getMenu().add(0, 2, 0, "清理全部消息");
+                popup.getMenu().add(0, 2, 0, "清理当前会话");
                 popup.setOnMenuItemClickListener(item -> {
                     int id = item.getItemId();
                     if (id == 1) {
@@ -12033,9 +12139,9 @@ extends Activity {
                     } else if (id == 2) {
                         new android.app.AlertDialog.Builder((Context)MainActivity.this)
                                 .setTitle("提示")
-                                .setMessage("确定要清理全部聊天消息吗？")
+                                .setMessage("确定要清理当前对象的聊天消息吗？")
                                 .setPositiveButton("确定", (dialog, which) -> {
-                                    MobileChatController.clear(MainActivity.this);
+                                    ChatHistoryStore.clearConversation(MainActivity.this,chatConversation.id);
                                     MainActivity.this.loadChatHistory();
                                     Toast.makeText(MainActivity.this, "聊天历史已清理", Toast.LENGTH_SHORT).show();
                                 })
