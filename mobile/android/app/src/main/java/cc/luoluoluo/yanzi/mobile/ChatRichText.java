@@ -1,6 +1,8 @@
 package cc.luoluoluo.yanzi.mobile;
 
 import android.content.ActivityNotFoundException;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
@@ -24,6 +26,7 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
+import android.webkit.MimeTypeMap;
 import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -31,6 +34,8 @@ import android.widget.TableLayout;
 import android.widget.TableRow;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import androidx.core.content.FileProvider;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -49,8 +54,10 @@ final class ChatRichText {
     private static final int LINK = Color.rgb(125, 211, 252);
     private static final Pattern IMAGE_MD = Pattern.compile("!\\[([^\\]\\r\\n]*)\\]\\(([^)\\r\\n]+)\\)");
     private static final Pattern INLINE = Pattern.compile(
-            "\\[([^\\]\\n]+)\\]\\((https?://[^\\s)]+)\\)|`([^`\\n]+)`|\\*\\*([^*\\n]+)\\*\\*|__([^_\\n]+)__|~~([^~\\n]+)~~|(?<!\\*)\\*([^*\\n]+)\\*(?!\\*)|(?<!_)_([^_\\n]+)_(?!_)",
+            "(?<!\\!)\\[([^\\]\\n]+)\\]\\(([^)\\n]+)\\)|`([^`\\n]+)`|\\*\\*([^*\\n]+)\\*\\*|__([^_\\n]+)__|~~([^~\\n]+)~~|(?<!\\*)\\*([^*\\n]+)\\*(?!\\*)|(?<!_)_([^_\\n]+)_(?!_)",
             Pattern.CASE_INSENSITIVE);
+    private static final Pattern BARE_FILE_PATH = Pattern.compile(
+            "(?i)(?:file:///[^\\s\\r\\n\\)\\]\\\"\\'\\<\\>]+|[a-zA-Z]:[\\\\/][^\\s\\r\\n\\)\\]\\\"\\'\\<\\>]+)");
     private static final Pattern HEADING = Pattern.compile("^\\s{0,3}(#{1,6})\\s+(.+)$");
     private static final Pattern LIST = Pattern.compile("^(\\s*)([-*+]\\s+|\\d+[.)]\\s+)(.*)$");
     private static final Pattern RULE = Pattern.compile("^\\s*(?:-{3,}|\\*{3,}|_{3,})\\s*$");
@@ -292,10 +299,13 @@ final class ChatRichText {
                 piece = matcher.group(i); break;
             }
             if (piece == null) piece = matcher.group();
+            if (matcher.group(1) != null && piece.startsWith("`") && piece.endsWith("`") && piece.length() >= 2) {
+                piece = piece.substring(1, piece.length() - 1);
+            }
             out.append(piece);
             int end = out.length();
             if (matcher.group(1) != null) {
-                String url = matcher.group(2);
+                String url = matcher.group(2).trim();
                 out.setSpan(new URLSpan(url), begin, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                 out.setSpan(new ForegroundColorSpan(LINK), begin, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                 out.setSpan(new UnderlineSpan(), begin, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
@@ -324,6 +334,17 @@ final class ChatRichText {
                 value = "https://" + value;
             }
             out.setSpan(new URLSpan(value), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+            out.setSpan(new ForegroundColorSpan(LINK), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+            out.setSpan(new UnderlineSpan(), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        Matcher files = BARE_FILE_PATH.matcher(out);
+        while (files.find()) {
+            int start = files.start(), end = files.end();
+            while (end > start && ".,;:!?)]}".indexOf(out.charAt(end - 1)) >= 0) end--;
+            if (end <= start || out.getSpans(start, end, URLSpan.class).length > 0
+                    || out.getSpans(start, end, BackgroundColorSpan.class).length > 0) continue;
+            String filePath = out.subSequence(start, end).toString();
+            out.setSpan(new URLSpan(filePath), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
             out.setSpan(new ForegroundColorSpan(LINK), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
             out.setSpan(new UnderlineSpan(), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
@@ -360,7 +381,7 @@ final class ChatRichText {
         return s.isEmpty() ? null : s;
     }
 
-    static File findLocalImageFile(Context context, String source) {
+    static File findLocalFile(Context context, String source) {
         if (source == null || source.trim().isEmpty()) return null;
         String clean = source.trim();
         try {
@@ -415,6 +436,10 @@ final class ChatRichText {
         }
 
         return null;
+    }
+
+    static File findLocalImageFile(Context context, String source) {
+        return findLocalFile(context, source);
     }
 
     private static void image(LinearLayout parent, String alt, String source, int maxWidth) {
@@ -492,6 +517,96 @@ final class ChatRichText {
         return Math.round(amount * context.getResources().getDisplayMetrics().density);
     }
 
+    static boolean handleLinkClick(Context context, String rawUrl) {
+        if (rawUrl == null || rawUrl.trim().isEmpty()) return false;
+        String url = rawUrl.trim();
+
+        // 1. 网页链接 (http:// 或 https://)
+        if (url.startsWith("https://") || url.startsWith("http://")) {
+            try {
+                Uri uri = Uri.parse(url);
+                Intent intent = new Intent(Intent.ACTION_VIEW, uri);
+                intent.addCategory(Intent.CATEGORY_BROWSABLE);
+                context.startActivity(intent);
+            } catch (ActivityNotFoundException error) {
+                Toast.makeText(context, "没有可打开链接的应用", Toast.LENGTH_SHORT).show();
+            }
+            return true;
+        }
+
+        // 2. 检查本地是否有对应文件（如已下载的附件、缓存图片或本地文件）
+        File localFile = findLocalFile(context, url);
+        if (localFile != null && localFile.isFile() && localFile.length() > 0) {
+            String lowerName = localFile.getName().toLowerCase(java.util.Locale.ROOT);
+            if ((lowerName.endsWith(".png") || lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")
+                    || lowerName.endsWith(".webp") || lowerName.endsWith(".gif"))
+                    && context instanceof MainActivity) {
+                ((MainActivity) context).showChatPhotoFullscreen(Uri.fromFile(localFile), localFile.getAbsolutePath());
+                return true;
+            }
+
+            try {
+                Uri fileUri = FileProvider.getUriForFile(
+                        context, BuildConfig.APPLICATION_ID + ".fileprovider", localFile);
+                String mimeType = getMimeType(localFile);
+                Intent intent = new Intent(Intent.ACTION_VIEW);
+                intent.setDataAndType(fileUri, mimeType);
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                context.startActivity(intent);
+                return true;
+            } catch (ActivityNotFoundException e) {
+                Toast.makeText(context, "没有可打开此文件的应用: " + localFile.getName(), Toast.LENGTH_SHORT).show();
+                copyToClipboard(context, url);
+                return true;
+            } catch (Exception e) {
+                android.util.Log.e("ChatRichText", "Failed to open local file: " + localFile, e);
+            }
+        }
+
+        // 3. 其它常规网络协议 (例如 mailto:, tel:)
+        Uri parsedUri = null;
+        try {
+            parsedUri = Uri.parse(url);
+        } catch (Exception ignored) {}
+        if (parsedUri != null && parsedUri.getScheme() != null
+                && !parsedUri.getScheme().equalsIgnoreCase("file")
+                && !url.matches("(?i)^[a-zA-Z]:.*")) {
+            try {
+                Intent intent = new Intent(Intent.ACTION_VIEW, parsedUri);
+                context.startActivity(intent);
+                return true;
+            } catch (Exception ignored) {}
+        }
+
+        // 4. 未下载或远程文件路径：复制到剪贴板并给出提示
+        copyToClipboard(context, url);
+        String displayName = parseFileName(url);
+        if (displayName == null || displayName.isEmpty()) displayName = url;
+        Toast.makeText(context, "已复制文件路径: " + displayName, Toast.LENGTH_SHORT).show();
+        return true;
+    }
+
+    private static void copyToClipboard(Context context, String text) {
+        try {
+            ClipboardManager cm = (ClipboardManager) context.getSystemService(Context.CLIPBOARD_SERVICE);
+            if (cm != null) {
+                cm.setPrimaryClip(ClipData.newPlainText("File Path", text));
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private static String getMimeType(File file) {
+        if (file == null) return "application/octet-stream";
+        String name = file.getName();
+        int dot = name.lastIndexOf('.');
+        if (dot >= 0 && dot < name.length() - 1) {
+            String ext = name.substring(dot + 1).toLowerCase(java.util.Locale.ROOT);
+            String mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext);
+            if (mime != null && !mime.isEmpty()) return mime;
+        }
+        return "application/octet-stream";
+    }
+
     /**
      * setTextIsSelectable installs ArrowKeyMovementMethod; LinkMovementMethod would
      * replace it and break partial selection. Detect quick URL taps without
@@ -517,16 +632,7 @@ final class ChatRichText {
                     && SystemClock.uptimeMillis() - downAt < ViewConfiguration.getLongPressTimeout()) {
                 URLSpan link = getLinkAt(event.getX(), event.getY());
                 if (link != null) {
-                    Uri uri = Uri.parse(link.getURL());
-                    String scheme = uri.getScheme();
-                    if ("https".equalsIgnoreCase(scheme) || "http".equalsIgnoreCase(scheme)) {
-                        try {
-                            Intent intent = new Intent(Intent.ACTION_VIEW, uri);
-                            intent.addCategory(Intent.CATEGORY_BROWSABLE);
-                            getContext().startActivity(intent);
-                        } catch (ActivityNotFoundException error) {
-                            Toast.makeText(getContext(), "没有可打开链接的应用", Toast.LENGTH_SHORT).show();
-                        }
+                    if (handleLinkClick(getContext(), link.getURL())) {
                         return true;
                     }
                 }

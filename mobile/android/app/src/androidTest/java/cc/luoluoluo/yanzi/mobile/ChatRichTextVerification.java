@@ -97,7 +97,17 @@ public final class ChatRichTextVerification {
                     ChatRichText.render(imgContainer, imgFixture, 650);
                     require(imgContainer.getChildCount() == 3, "Image fixture rendered as 3 distinct views in container");
 
-                    result.putString("stream", "CHAT_RICH_TEXT=PASSED (markdown heading, bold, italic, strike, inline code, URLSpan, lists, quotes, code/table scroll, selectable text, captured HTTPS tap, embedded markdown image)");
+                    // Verify file markdown link parsing and bare file path URLSpan
+                    LinearLayout fileBox = new LinearLayout(ctx);
+                    ChatRichText.render(fileBox, "请查阅 [脚本代码](file:///f:/Desktop/main.py) 与裸路径 file:///C:/test.log", 650);
+                    TextView fileTv = (TextView)fileBox.getChildAt(0);
+                    Spanned fileSpanned = (Spanned)fileTv.getText();
+                    URLSpan[] fileUrls = fileSpanned.getSpans(0, fileSpanned.length(), URLSpan.class);
+                    require(fileUrls.length == 2, "Both file markdown link and bare file path parsed as URLSpan, found: " + fileUrls.length);
+                    require("file:///f:/Desktop/main.py".equals(fileUrls[0].getURL()), "First link URL matches file:///f:/Desktop/main.py");
+                    require("file:///C:/test.log".equals(fileUrls[1].getURL()), "Second link URL matches file:///C:/test.log");
+
+                    result.putString("stream", "CHAT_RICH_TEXT=PASSED (markdown heading, bold, italic, strike, inline code, URLSpan, file links, lists, quotes, code/table scroll, selectable text, captured HTTPS tap, embedded markdown image)");
                 } catch (Throwable error) { failure.set(error); }
             });
             if (failure.get() != null) throw failure.get();
