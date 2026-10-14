@@ -31,6 +31,7 @@ cloudflare/.dev.vars
 .env
 .env.*
 !.env.example
+mobile/android/app/google-services.json
 
 .vs/
 docs/local-release-assets/

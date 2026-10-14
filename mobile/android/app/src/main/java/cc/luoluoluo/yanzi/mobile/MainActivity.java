@@ -254,6 +254,7 @@ extends Activity {
     private ApplicationCatalogView applicationStore;
     private DesktopDashboardView.Result desktopDashboard;
     private View bottomTabs;
+    private boolean isKeyboardVisible = false;
     private String selectedTab = "";
     private int pendingMessageSends;
     private android.widget.ImageView profileAvatarView;
@@ -2695,6 +2696,7 @@ extends Activity {
         this.bottomTabs = this.buildBottomTabs();
         shell.addView(this.bottomTabs, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, this.dp(64)));
         this.setContentView((View)shell);
+        this.setupKeyboardVisibilityListener();
         this.selectTab("desktop");
         this.setStatus(this.prefs.getString("token", "").trim().isEmpty() ? "\u8bf7\u5148\u767b\u5f55\u71d5\u5b50\u8d26\u53f7\u3002" : "\u5df2\u52a0\u8f7d\u672c\u5730\u767b\u5f55\u6001\u3002");
         this.renderCachedYanm();
@@ -5071,16 +5073,49 @@ extends Activity {
         }
     }
 
+    private void setupKeyboardVisibilityListener() {
+        final View decorView = this.getWindow().getDecorView();
+        decorView.getViewTreeObserver().addOnGlobalLayoutListener(new android.view.ViewTreeObserver.OnGlobalLayoutListener() {
+            private boolean lastVisible = false;
+            private final android.graphics.Rect rect = new android.graphics.Rect();
+
+            @Override
+            public void onGlobalLayout() {
+                decorView.getWindowVisibleDisplayFrame(rect);
+                int screenHeight = decorView.getRootView().getHeight();
+                int keypadHeight = screenHeight - rect.bottom;
+                boolean visible = keypadHeight > screenHeight * 0.15;
+                if (visible != lastVisible) {
+                    lastVisible = visible;
+                    MainActivity.this.isKeyboardVisible = visible;
+                    MainActivity.this.runOnUiThread(MainActivity.this::updateBottomTabsVisibility);
+                }
+            }
+        });
+    }
+
     private void beginMessageSend() {
-        runOnUiThread(() -> { pendingMessageSends++; updateBottomTabsVisibility(); });
+        runOnUiThread(() -> { pendingMessageSends++; });
     }
 
     private void finishMessageSend() {
-        runOnUiThread(() -> { pendingMessageSends = Math.max(0, pendingMessageSends - 1); updateBottomTabsVisibility(); });
+        runOnUiThread(() -> {
+            pendingMessageSends = Math.max(0, pendingMessageSends - 1);
+            if (this.currentSubTabIndex == 0 && this.chatInputEditText != null && this.chatInputEditText.getVisibility() == View.VISIBLE) {
+                this.chatInputEditText.post(() -> {
+                    if (this.chatInputEditText != null && !this.chatInputEditText.isFocused() && this.isKeyboardVisible) {
+                        this.chatInputEditText.requestFocus();
+                    }
+                });
+            }
+        });
     }
 
     private void updateBottomTabsVisibility() {
-        if (bottomTabs != null) bottomTabs.setVisibility(pendingMessageSends > 0 || isAiLoading ? View.GONE : View.VISIBLE);
+        if (bottomTabs != null) {
+            boolean shouldHide = this.isKeyboardVisible || isAiLoading;
+            bottomTabs.setVisibility(shouldHide ? View.GONE : View.VISIBLE);
+        }
     }
 
     private void updateConnectionUi() {
@@ -11502,10 +11537,18 @@ extends Activity {
         if (text.isEmpty()) return;
 
         this.chatInputEditText.setText("");
+        this.chatInputEditText.requestFocus();
+        this.chatInputEditText.setSelection(0);
         this.setStatus("正在发送...");
         long sentAt = System.currentTimeMillis();
         this.renderChatMessage("self", "text", text, sentAt, this.deviceId, MainActivity.buildDeviceDisplayName(), true);
         this.saveChatMessageToLocal("self", "text", text, sentAt);
+
+        this.chatInputEditText.post(() -> {
+            if (this.chatInputEditText != null) {
+                this.chatInputEditText.requestFocus();
+            }
+        });
 
         beginMessageSend();
         this.executor.execute(() -> {
@@ -11545,6 +11588,11 @@ extends Activity {
         scroll.setNestedScrollingEnabled(true);
         scroll.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
         scroll.setOnTouchListener((v, event) -> {
+            if (event.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) {
+                if (this.isKeyboardVisible && this.chatInputEditText != null) {
+                    this.hideKeyboard((View)this.chatInputEditText);
+                }
+            }
             if (this.swipeRefresh != null && this.currentSubTabIndex == 0) {
                 switch (event.getActionMasked()) {
                     case android.view.MotionEvent.ACTION_DOWN:
@@ -11687,6 +11735,8 @@ extends Activity {
         inputRow.addView((View)this.chatAttachBtn, (ViewGroup.LayoutParams)attachParams);
 
         this.chatSendButton = this.button("发送");
+        this.chatSendButton.setFocusable(false);
+        this.chatSendButton.setFocusableInTouchMode(false);
         this.chatSendButton.setOnClickListener(v -> this.handleSendChatMessageClick());
         LinearLayout.LayoutParams sendParams = new LinearLayout.LayoutParams(this.dp(60), this.dp(40));
         inputRow.addView((View)this.chatSendButton, (ViewGroup.LayoutParams)sendParams);
@@ -11771,9 +11821,23 @@ extends Activity {
                     obj.optString("sourceDeviceName", ""),
                     false);
         }
+        this.scrollChatToBottom(false);
+    }
+
+    private void scrollChatToBottom(boolean smooth) {
+        if (this.chatMessageListLayout == null) return;
         if (this.chatMessageListLayout.getParent() instanceof ScrollView) {
-            ScrollView sv = (ScrollView)this.chatMessageListLayout.getParent();
-            sv.post(() -> sv.fullScroll(View.FOCUS_DOWN));
+            ScrollView sv = (ScrollView) this.chatMessageListLayout.getParent();
+            sv.post(() -> {
+                View child = sv.getChildAt(0);
+                if (child != null) {
+                    if (smooth) {
+                        sv.smoothScrollTo(0, child.getBottom());
+                    } else {
+                        sv.scrollTo(0, child.getBottom());
+                    }
+                }
+            });
         }
     }
 
@@ -11857,9 +11921,8 @@ extends Activity {
                 bubbleContainer.addView((View)systemText, (ViewGroup.LayoutParams)systemLp);
                 this.chatMessageListLayout.addView((View)bubbleContainer,
                         (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -2));
-                if (scrollToBottom && this.chatMessageListLayout.getParent() instanceof ScrollView) {
-                    ScrollView sv = (ScrollView)this.chatMessageListLayout.getParent();
-                    sv.post(() -> sv.fullScroll(View.FOCUS_DOWN));
+                if (scrollToBottom) {
+                    this.scrollChatToBottom(true);
                 }
                 return;
             }
@@ -11994,9 +12057,8 @@ extends Activity {
             this.chatMessageListLayout.addView((View)bubbleContainer,
                     (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -2));
 
-            if (scrollToBottom && this.chatMessageListLayout.getParent() instanceof ScrollView) {
-                ScrollView sv = (ScrollView)this.chatMessageListLayout.getParent();
-                sv.post(() -> sv.fullScroll(View.FOCUS_DOWN));
+            if (scrollToBottom) {
+                this.scrollChatToBottom(true);
             }
         });
     }

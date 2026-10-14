@@ -1,3 +1,13 @@
+## 2026-10-12：软键盘联动底部导航与正式版 0.2.58
+
+实现软键盘显隐与底部导航栏（bottomTabs）的精准联动，并解决发送后 Tab 栏异常消失的问题：
+1. 建立软键盘生命周期监听器 `setupKeyboardVisibilityListener()`：基于 `OnGlobalLayoutListener` 精准检测可视高度与键盘实际弹出/收起状态（高度超过屏幕 15% 判定激活）；
+2. 软键盘激活（弹出）时，底栏立即设为 `View.GONE`，为聊天输入框腾出最大视野；
+3. 输入完成、软键盘消失（收起）后，底栏自动恢复 `View.VISIBLE`；
+4. 移除旧逻辑中依赖异步网络发送 `pendingMessageSends > 0` 强行切换底栏可见性的机制，消除发送中底栏闪烁与状态残留；
+5. 聊天记录列表支持触摸轻扫自动收起软键盘并恢复底栏。
+构建正式版 Release APK（版本号 0.2.58 / code 58，签名 SHA-256: 8a0ec0b84d1a05edcc89dd020bf81901f9ed7f083887db7c05201c59b31e1ee3），并通过 ADB 保留数据覆盖安装至 Redmi K70（e3e68545）。
+
 ## 2026-10-04 息屏接收链候选 0.2.55
 
 已补 30 秒有界接收唤醒锁、ready 拉取优先、应用层 ping/pong 与 120 秒活性失效重连、Push 即时拉取和服务端假在线仍 Push。Dev/Release/lintVital、模拟器锁/活性 12 项与原消息处理、Worker 7 项通过。仅模拟器安装，K70 未连接；FCM 构建未配置、小米 Push 未接入，用户无企业资质，Worker 未部署，息屏实时性未验收。详见 docs/mobile-wake-chain-2026-10-04.md。
