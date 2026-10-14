@@ -25,13 +25,17 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
 import android.widget.HorizontalScrollView;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TableLayout;
 import android.widget.TableRow;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.File;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -43,6 +47,7 @@ final class ChatRichText {
     private static final int BODY = Color.rgb(241, 245, 249);
     private static final int MUTED = Color.rgb(203, 213, 225);
     private static final int LINK = Color.rgb(125, 211, 252);
+    private static final Pattern IMAGE_MD = Pattern.compile("!\\[([^\\]\\r\\n]*)\\]\\(([^)\\r\\n]+)\\)");
     private static final Pattern INLINE = Pattern.compile(
             "\\[([^\\]\\n]+)\\]\\((https?://[^\\s)]+)\\)|`([^`\\n]+)`|\\*\\*([^*\\n]+)\\*\\*|__([^_\\n]+)__|~~([^~\\n]+)~~|(?<!\\*)\\*([^*\\n]+)\\*(?!\\*)|(?<!_)_([^_\\n]+)_(?!_)",
             Pattern.CASE_INSENSITIVE);
@@ -62,6 +67,32 @@ final class ChatRichText {
             String stripped = line.trim();
             if (stripped.isEmpty()) {
                 flush(parent, paragraph, maxWidth);
+                i++;
+                continue;
+            }
+            Matcher imgMatcher = IMAGE_MD.matcher(line);
+            if (imgMatcher.find()) {
+                flush(parent, paragraph, maxWidth);
+                int lastIdx = 0;
+                imgMatcher.reset();
+                while (imgMatcher.find()) {
+                    if (imgMatcher.start() > lastIdx) {
+                        String before = line.substring(lastIdx, imgMatcher.start()).trim();
+                        if (!before.isEmpty()) {
+                            text(parent, before, maxWidth, 15, false, 3, 3, BODY);
+                        }
+                    }
+                    String alt = imgMatcher.group(1);
+                    String source = imgMatcher.group(2).trim();
+                    image(parent, alt, source, maxWidth);
+                    lastIdx = imgMatcher.end();
+                }
+                if (lastIdx < line.length()) {
+                    String after = line.substring(lastIdx).trim();
+                    if (!after.isEmpty()) {
+                        text(parent, after, maxWidth, 15, false, 3, 3, BODY);
+                    }
+                }
                 i++;
                 continue;
             }
@@ -297,6 +328,164 @@ final class ChatRichText {
             out.setSpan(new UnderlineSpan(), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
         return out;
+    }
+
+    static Set<String> extractImageNames(String raw) {
+        Set<String> names = new HashSet<>();
+        if (raw == null || raw.isEmpty()) return names;
+        Matcher m = IMAGE_MD.matcher(raw);
+        while (m.find()) {
+            String source = m.group(2);
+            String name = parseFileName(source);
+            if (name != null && !name.isEmpty()) {
+                names.add(name.toLowerCase(java.util.Locale.ROOT));
+            }
+        }
+        return names;
+    }
+
+    static String parseFileName(String source) {
+        if (source == null || source.trim().isEmpty()) return null;
+        String s = source.trim();
+        try {
+            s = java.net.URLDecoder.decode(s, "UTF-8");
+        } catch (Exception ignored) {}
+        if (s.contains("?")) s = s.substring(0, s.indexOf('?'));
+        if (s.contains("#")) s = s.substring(0, s.indexOf('#'));
+        int lastSlash = Math.max(s.lastIndexOf('/'), s.lastIndexOf('\\'));
+        if (lastSlash >= 0 && lastSlash < s.length() - 1) {
+            s = s.substring(lastSlash + 1);
+        }
+        s = s.replaceAll("[\\\\/\\x00-\\x1f]", "_").trim();
+        return s.isEmpty() ? null : s;
+    }
+
+    static File findLocalImageFile(Context context, String source) {
+        if (source == null || source.trim().isEmpty()) return null;
+        String clean = source.trim();
+        try {
+            clean = java.net.URLDecoder.decode(clean, "UTF-8");
+        } catch (Exception ignored) {}
+
+        if (clean.startsWith("file:///") && !clean.matches("(?i)^file:///[a-zA-Z]:.*")) {
+            try {
+                File directFile = new File(Uri.parse(clean).getPath());
+                if (directFile.isFile() && directFile.length() > 0) return directFile;
+            } catch (Exception ignored) {}
+        } else if (clean.startsWith("/") && new File(clean).isFile()) {
+            File directFile = new File(clean);
+            if (directFile.isFile() && directFile.length() > 0) return directFile;
+        }
+
+        String fileName = parseFileName(clean);
+        if (fileName == null || fileName.isEmpty()) return null;
+
+        File attachDir = new File(context.getFilesDir(), "mobile-attachments");
+        if (attachDir.isDirectory()) {
+            File[] files = attachDir.listFiles();
+            if (files != null) {
+                for (File f : files) {
+                    if (f.isFile() && f.length() > 0) {
+                        String name = f.getName();
+                        if (name.equalsIgnoreCase(fileName) || name.endsWith("-" + fileName)) {
+                            return f;
+                        }
+                    }
+                }
+                for (File f : files) {
+                    if (f.isFile() && f.length() > 0 && f.getName().toLowerCase(java.util.Locale.ROOT).contains(fileName.toLowerCase(java.util.Locale.ROOT))) {
+                        return f;
+                    }
+                }
+            }
+        }
+
+        File cacheDir = context.getCacheDir();
+        if (cacheDir != null && cacheDir.isDirectory()) {
+            File directCache = new File(cacheDir, fileName);
+            if (directCache.isFile() && directCache.length() > 0) return directCache;
+            File[] cacheFiles = cacheDir.listFiles();
+            if (cacheFiles != null) {
+                for (File f : cacheFiles) {
+                    if (f.isFile() && f.length() > 0 && (f.getName().equalsIgnoreCase(fileName) || f.getName().endsWith("-" + fileName))) {
+                        return f;
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static void image(LinearLayout parent, String alt, String source, int maxWidth) {
+        Context context = parent.getContext();
+        File localFile = findLocalImageFile(context, source);
+        if (localFile != null && localFile.isFile() && localFile.length() > 0) {
+            try {
+                ImageView iv = new ImageView(context);
+                iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                iv.setAdjustViewBounds(true);
+                int maxImgWidth = Math.min(maxWidth, dp(context, 260));
+                int maxImgHeight = dp(context, 320);
+                iv.setMaxWidth(maxImgWidth);
+                iv.setMaxHeight(maxImgHeight);
+
+                Uri imageUri = Uri.fromFile(localFile);
+                iv.setImageURI(imageUri);
+
+                if (iv.getDrawable() != null) {
+                    GradientDrawable bg = new GradientDrawable();
+                    bg.setColor(Color.rgb(15, 23, 42));
+                    bg.setCornerRadius(dp(context, 8));
+                    iv.setBackground(bg);
+                    iv.setClipToOutline(true);
+
+                    final String finalPath = localFile.getAbsolutePath();
+                    iv.setClickable(true);
+                    iv.setFocusable(true);
+                    iv.setOnClickListener(v -> {
+                        if (context instanceof MainActivity) {
+                            ((MainActivity) context).showChatPhotoFullscreen(imageUri, finalPath);
+                        }
+                    });
+
+                    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+                    lp.topMargin = dp(context, 6);
+                    lp.bottomMargin = dp(context, 6);
+                    parent.addView(iv, lp);
+                    return;
+                }
+            } catch (Exception e) {
+                android.util.Log.e("ChatRichText", "Failed to render embedded image", e);
+            }
+        }
+
+        renderImagePlaceholder(parent, alt, source, maxWidth);
+    }
+
+    private static void renderImagePlaceholder(LinearLayout parent, String alt, String source, int maxWidth) {
+        Context context = parent.getContext();
+        String displayName = alt;
+        if (displayName == null || displayName.trim().isEmpty()) {
+            displayName = parseFileName(source);
+            if (displayName == null) displayName = source;
+        }
+        TextView placeholder = new TextView(context);
+        placeholder.setText("📷 [照片: " + displayName + " (传输中...)]");
+        placeholder.setTextColor(Color.rgb(148, 163, 184));
+        placeholder.setTextSize(13);
+        placeholder.setPadding(dp(context, 10), dp(context, 6), dp(context, 10), dp(context, 6));
+
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.rgb(30, 41, 59));
+        bg.setStroke(dp(context, 1), Color.rgb(71, 85, 105));
+        bg.setCornerRadius(dp(context, 6));
+        placeholder.setBackground(bg);
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+        lp.topMargin = dp(context, 4);
+        lp.bottomMargin = dp(context, 4);
+        parent.addView(placeholder, lp);
     }
 
     private static int dp(Context context, int amount) {

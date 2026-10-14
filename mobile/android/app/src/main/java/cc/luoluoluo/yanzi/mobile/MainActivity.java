@@ -5555,7 +5555,7 @@ extends Activity {
         builder.show();
     }
 
-    private void showChatPhotoFullscreen(Uri imageUri, String pathOrUri) {
+    void showChatPhotoFullscreen(Uri imageUri, String pathOrUri) {
         if (imageUri == null && (pathOrUri == null || pathOrUri.isEmpty())) return;
         try {
             final android.app.Dialog dialog = new android.app.Dialog((Context)this, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
@@ -11973,12 +11973,29 @@ extends Activity {
         if(this.prefs!=null && sForeground && "desktop".equals(selectedTab) && currentSubTabIndex==0)
             this.prefs.edit().putLong(chatPreferenceKey("seen."+chatConversation.id),System.currentTimeMillis()).apply();
         JSONArray arr = ChatHistoryStore.load(this,chatConversation.id);
+        java.util.Set<String> embeddedImages = new java.util.HashSet<>();
+        for (int i = 0; i < arr.length(); ++i) {
+            JSONObject obj = arr.optJSONObject(i);
+            if (obj == null) continue;
+            if ("text".equals(obj.optString("kind", "text"))) {
+                embeddedImages.addAll(ChatRichText.extractImageNames(obj.optString("content", "")));
+            }
+        }
         for (int i = 0; i < arr.length(); ++i) {
             JSONObject obj = arr.optJSONObject(i);
             if (obj == null) continue;
             String kind = obj.optString("kind", "text");
             String content = obj.optString("content", "");
             if (MobileChatController.isDevelopmentChatArtifact(kind, content)) continue;
+            if ("photo".equals(kind)) {
+                String rawName = ChatRichText.parseFileName(content);
+                if (rawName != null) {
+                    String cleanName = rawName.replaceFirst("^att_[a-f0-9]{32}-", "").toLowerCase(java.util.Locale.ROOT);
+                    if (embeddedImages.contains(cleanName) || embeddedImages.contains(rawName.toLowerCase(java.util.Locale.ROOT))) {
+                        continue;
+                    }
+                }
+            }
             this.renderChatMessage(
                     obj.optString("role", "peer"),
                     kind,

@@ -88,7 +88,16 @@ public final class ChatRichTextVerification {
                     require(ctx.opened != null, "A short tap opens the link");
                     require(Intent.ACTION_VIEW.equals(ctx.opened.getAction()), "Link uses ACTION_VIEW");
                     require("https://example.com/path".equals(String.valueOf(ctx.opened.getData())), "Preserves URL");
-                    result.putString("stream", "CHAT_RICH_TEXT=PASSED (markdown heading, bold, italic, strike, inline code, URLSpan, lists, quotes, code/table scroll, selectable text, captured HTTPS tap)");
+
+                    // Verify embedded markdown image extraction and placeholder rendering
+                    String imgFixture = "前言文本\n![测试图片](file:///C:/Users/Administrator/Desktop/sample.png)\n后记文本";
+                    java.util.Set<String> extracted = ChatRichText.extractImageNames(imgFixture);
+                    require(extracted.contains("sample.png"), "Extracted image filename contains sample.png");
+                    LinearLayout imgContainer = new LinearLayout(ctx);
+                    ChatRichText.render(imgContainer, imgFixture, 650);
+                    require(imgContainer.getChildCount() == 3, "Image fixture rendered as 3 distinct views in container");
+
+                    result.putString("stream", "CHAT_RICH_TEXT=PASSED (markdown heading, bold, italic, strike, inline code, URLSpan, lists, quotes, code/table scroll, selectable text, captured HTTPS tap, embedded markdown image)");
                 } catch (Throwable error) { failure.set(error); }
             });
             if (failure.get() != null) throw failure.get();
