@@ -44,7 +44,10 @@ jobs:
       - name: Desktop build
         run: dotnet build OpenQuickHost.sln -c Debug -v:minimal
       - name: Settings ownership and object conflict regression
-        run: dotnet run --project src/Yanzi.SyncVerification -c Debug
+        run: |
+          dotnet run --project src/Yanzi.SyncVerification -c Debug
+          dotnet run --project src/Yanzi.SyncVerification -c Debug -- --chat-conversation-metadata
+          dotnet run --project src/Yanzi.SyncVerification -c Debug -- --mobile-extension-catalog
       - name: Desktop transport regression
         run: ./scripts/test-network-retry.ps1
       - name: Local API authorization and route domains

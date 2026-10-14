@@ -25,7 +25,7 @@ import java.util.UUID;
  */
 final class ChatHistoryStore extends SQLiteOpenHelper {
     private static final String DB_NAME = "yanzi-chat-history.db";
-    private static final int DB_VERSION = 1;
+    private static final int DB_VERSION = 2;
     private static final String LEGACY_KEY = "desktop_chat_history";
     private static final String MIGRATION_KEY = "chat_history_sqlite_migrated_v1";
     private static final Object LOCK = new Object();
@@ -53,12 +53,17 @@ final class ChatHistoryStore extends SQLiteOpenHelper {
                 "time_ms INTEGER NOT NULL," +
                 "source_device_id TEXT," +
                 "source_device_name TEXT," +
+                "conversation_id TEXT NOT NULL DEFAULT 'group'," +
                 "UNIQUE(account_id, message_id) ON CONFLICT IGNORE)");
         db.execSQL("CREATE INDEX chat_messages_account_time ON chat_messages(account_id, time_ms, id)");
+        db.execSQL("CREATE INDEX chat_messages_conversation_time ON chat_messages(account_id,conversation_id,time_ms,id)");
     }
 
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        // Version 1 is the initial durable store.
+        if (oldVersion < 2) {
+            db.execSQL("ALTER TABLE chat_messages ADD COLUMN conversation_id TEXT NOT NULL DEFAULT 'group'");
+            db.execSQL("CREATE INDEX chat_messages_conversation_time ON chat_messages(account_id,conversation_id,time_ms,id)");
+        }
     }
 
     static JSONObject message(String role, String kind, String content, long time,
@@ -103,21 +108,26 @@ final class ChatHistoryStore extends SQLiteOpenHelper {
     }
 
     static JSONArray load(Context context) {
+        return load(context, ChatConversation.GROUP);
+    }
+
+    static JSONArray load(Context context, String conversationId) {
         synchronized (LOCK) {
             JSONArray result = new JSONArray();
             try {
                 migrateLegacyLocked(context);
                 String account = currentAccount(context);
                 try (Cursor cursor = get(context).getReadableDatabase().rawQuery(
-                        "SELECT message_id,role,kind,content,time_ms,source_device_id,source_device_name " +
-                                "FROM chat_messages WHERE account_id=? ORDER BY time_ms ASC,id ASC",
-                        new String[]{account})) {
+                        "SELECT message_id,role,kind,content,time_ms,source_device_id,source_device_name,conversation_id " +
+                                "FROM chat_messages WHERE account_id=? AND conversation_id=? ORDER BY time_ms ASC,id ASC",
+                        new String[]{account, conversationId})) {
                     while (cursor.moveToNext()) {
                         JSONObject value = new JSONObject()
                                 .put("role", cursor.getString(1))
                                 .put("kind", cursor.getString(2))
                                 .put("content", cursor.getString(3))
                                 .put("time", cursor.getLong(4));
+                        value.put("conversationId",cursor.getString(7));
                         String messageId = cursor.getString(0);
                         String sourceId = cursor.getString(5);
                         String sourceName = cursor.getString(6);
@@ -146,6 +156,38 @@ final class ChatHistoryStore extends SQLiteOpenHelper {
                         .apply();
             } catch (Exception error) {
                 android.util.Log.e("YanziChatHistory", "clear failed", error);
+            }
+        }
+    }
+
+    static void clearConversation(Context context, String conversationId) {
+        synchronized(LOCK) {
+            get(context).getWritableDatabase().delete("chat_messages","account_id=? AND conversation_id=?",
+                new String[]{currentAccount(context),conversationId});
+        }
+    }
+
+    static String accountKey(Context context) { return currentAccount(context); }
+    static String preview(Context context,String conversationId) {
+        synchronized(LOCK) {
+            try(Cursor cursor=get(context).getReadableDatabase().rawQuery(
+                "SELECT kind,content FROM chat_messages WHERE account_id=? AND conversation_id=? ORDER BY time_ms DESC,id DESC LIMIT 1",
+                new String[]{currentAccount(context),conversationId})) {
+                if(!cursor.moveToFirst())return "暂无消息";
+                String kind=cursor.getString(0);
+                if(kind.equals("photo"))return "[图片]";
+                if(kind.equals("file"))return "[文件]";
+                return cursor.getString(1).replace('\n',' ').replace('\r',' ');
+            }
+        }
+    }
+
+    static int unread(Context context, String conversationId, long after) {
+        synchronized(LOCK) {
+            try(Cursor cursor=get(context).getReadableDatabase().rawQuery(
+                "SELECT count(*) FROM chat_messages WHERE account_id=? AND conversation_id=? AND role='peer' AND time_ms>?",
+                new String[]{currentAccount(context),conversationId,Long.toString(after)})) {
+                return cursor.moveToFirst()?cursor.getInt(0):0;
             }
         }
     }
@@ -236,6 +278,7 @@ final class ChatHistoryStore extends SQLiteOpenHelper {
         row.put("time_ms", value.optLong("time", System.currentTimeMillis()));
         row.put("source_device_id", value.optString("sourceDeviceId", ""));
         row.put("source_device_name", value.optString("sourceDeviceName", ""));
+        row.put("conversation_id",value.optString("conversationId",ChatConversation.GROUP));
         return row;
     }
 

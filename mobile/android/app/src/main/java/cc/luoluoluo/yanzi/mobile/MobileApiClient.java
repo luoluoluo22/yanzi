@@ -77,6 +77,19 @@ class MobileApiClient {
                     "photo-" + System.currentTimeMillis() + ".jpg", "image/jpeg", jpegBytes, "手机照片 " + width + "x" + height);
         }
 
+        static String sendConversation(String base, String token, String source, ChatConversation recipient, String text) throws Exception {
+            JSONObject response=MobileDeviceMessageSender.send(base,token,
+                recipient.envelope(source,MobileDeviceIdentity.buildDeviceDisplayName(),text));
+            String id=response.optString("messageId","");
+            if("lan".equals(response.optString("_transport"))) {
+                if(!response.optBoolean("success")) throw new java.io.IOException(response.optString("output","电脑执行失败"));
+                sImmediateMessageResults.put(id,new JSONObject().put("status","completed")
+                    .put("payload",new JSONObject().put("executionResult",new JSONObject().put("output",response.optString("output","")))));
+            }
+            if(id.isEmpty()) throw new java.io.IOException("服务器未返回消息编号，请在任务中心确认，勿重复发送。");
+            return id;
+        }
+
         static String postScreenshotDirectMessage(String baseUrl, String token, String sourceDeviceId, String screenshotDataUrl, int bytes, int width, int height) throws Exception {
             JSONObject payload = new JSONObject().put("sourceDeviceId", (Object)sourceDeviceId).put("targetPlatform", (Object)"desktop").put("kind", (Object)"screenshot").put("title", (Object)"\u624b\u673a\u7167\u7247").put("text", (Object)("\u624b\u673a\u7167\u7247\uff1a" + width + "x" + height)).put("payload", (Object)new JSONObject().put("source", (Object)"android-mobile").put("sourceDeviceName", (Object)MobileDeviceIdentity.buildDeviceDisplayName()).put("screenshotMime", (Object)"image/jpeg").put("screenshotWidth", width).put("screenshotHeight", height).put("screenshotBytes", bytes).put("screenshotDataUrl", (Object)screenshotDataUrl).put("expiresAt", System.currentTimeMillis() + 2592000000L).put("createdAt", System.currentTimeMillis()));
             return MobileApiClient.postJson(baseUrl, "/v1/me/mobile/messages", payload, token, "\u53d1\u9001\u7167\u7247").optString("messageId", "unknown");
