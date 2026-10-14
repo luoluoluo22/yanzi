@@ -11619,8 +11619,10 @@ extends Activity {
         });
 
         beginMessageSend();
+        final MobileSessionStore.Snapshot sendSession = MobileSessionStore.snapshot(this);
         this.executor.execute(() -> {
             try {
+                sendSession.requireCurrent();
                 String baseUrl = this.normalizedBaseUrl();
                 String token = this.requireToken();
                 String messageId = "";
