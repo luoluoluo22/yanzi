@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -1868,7 +1868,8 @@ public partial class MainWindow
             CapsGuidePopup.IsOpen = false;
         }
 
-        if (_isPinned || !IsVisible || IsRadialPickerMode)
+        // AI chat remains visible while the clipboard popup takes focus.
+        if (_isPinned || IsAiChatMode || !IsVisible || IsRadialPickerMode)
         {
             return;
         }
