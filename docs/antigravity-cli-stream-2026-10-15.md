@@ -15,7 +15,8 @@
 - Android Dev APK 构建成功，安装到一加设备并启动。
 - Cloudflare Worker 已发布：`c3e9c53e-3dad-459f-8e4d-57f5a4cb9098`；未授权接口回 403。
 - Windows 当前版通过原子目录切换安装；备份位置：`%LOCALAPPDATA%\Yanzi\backup-pre-stream-20261015-141755`；启动成功。
-- **尚未完成**：在同一目标手机端真实收取完整增量流并核查 UI、重连、取消的端到端验收；日志存在 WebSocket reconnect，需网络在线时继续验证。
+- 已在一加 Dev 真机新建反重力会话、发送测试输入；手机显示「停止」，桌面 worker 启动、执行完毕，手机收到最终五句回复并恢复「发送」。
+- **尚未完成**：实际生成期间未观察到增量临时气泡；Android 日志出现 WebSocket reconnect，仍需实测实时连接及 LAN 路由；停止按钮的真实中途终止还未单独验收。
 
 ## 未完成/边界
 - 持久 `--input-format stream-json` 会话常驻进程属于第二阶段，尚未实现。
