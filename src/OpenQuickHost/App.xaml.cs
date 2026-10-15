@@ -241,6 +241,8 @@ public partial class App : WpfApplication
         }
 
         if (HostRuntimeProfile.OwnsBackgroundServices) _ = Task.Run(() => OpenQuickHost.Sync.ExtensionRecycleBinService.PurgeExpiredItems(30));
+        // Only the installed unified host schedules safe, bounded release-snapshot cleanup.
+        YanziArtifactRetentionService.Start();
 
         ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown;
 
