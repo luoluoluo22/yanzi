@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Diagnostics;
 using System.Text;
@@ -180,14 +180,32 @@ public static class YanziAction
             var jobPath = Path.Combine(root, id + ".json");
             File.WriteAllText(jobPath, JsonSerializer.Serialize(new { id, prompt = input, replyDeviceId, conversationId, cliPath = cli, status = "pending", createdAt = DateTimeOffset.UtcNow }));
             var node = FindNode();
-            var psi = new ProcessStartInfo(node) { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = context.ExtensionDirectory };
-            psi.ArgumentList.Add(Path.Combine(context.ExtensionDirectory, "worker.cjs"));
-            psi.ArgumentList.Add(jobPath);
-            psi.Environment["AGY_BRIDGE_API"] = context.AgentApiBaseUrl;
-            psi.Environment["AGY_BRIDGE_TOKEN"] = context.AgentApiToken;
-            using var process = Process.Start(psi) ?? throw new InvalidOperationException("后台任务启动失败。");
-            context.Log("Antigravity job started: " + id);
-            return "反重力已开始处理，回复会回到发起手机的聊天会话。任务：" + id;
+            var daemonPath = Path.Combine(root, "daemon.json");
+            var daemonRunning = false;
+            if (File.Exists(daemonPath))
+            {
+                try
+                {
+                    using var daemon = JsonDocument.Parse(File.ReadAllText(daemonPath));
+                    daemonRunning = daemon.RootElement.TryGetProperty("pid", out var daemonPid) && IsRunning(daemonPid.GetInt32());
+                }
+                catch { }
+                if (!daemonRunning) try { File.Delete(daemonPath); } catch { }
+            }
+            if (!daemonRunning)
+            {
+                var psi = new ProcessStartInfo(node) { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = context.ExtensionDirectory };
+                psi.ArgumentList.Add(Path.Combine(context.ExtensionDirectory, "worker.cjs"));
+                psi.ArgumentList.Add("--daemon");
+                psi.ArgumentList.Add(root);
+                psi.Environment["AGY_BRIDGE_API"] = context.AgentApiBaseUrl;
+                psi.Environment["AGY_BRIDGE_TOKEN"] = context.AgentApiToken;
+                using var process = Process.Start(psi) ?? throw new InvalidOperationException("反重力常驻会话启动失败。");
+                File.WriteAllText(daemonPath, JsonSerializer.Serialize(new { pid = process.Id, startedAt = DateTimeOffset.UtcNow }));
+                context.Log("Antigravity persistent session started: pid=" + process.Id + ", job=" + id);
+            }
+            else context.Log("Antigravity job queued into existing persistent session: " + id);
+            return "反重力已开始处理，回复会流式回到发起手机的聊天会话。任务：" + id;
         }
         catch { File.Delete(activePath); throw; }
     }

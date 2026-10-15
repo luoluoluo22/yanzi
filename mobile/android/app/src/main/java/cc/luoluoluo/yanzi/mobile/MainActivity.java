@@ -559,6 +559,8 @@ extends Activity {
     }
 
     private void stopCurrentAgentGeneration() {
+        android.util.Log.i("YanziAgentStop", "tap waiting=" + this.isCurrentAgentWaiting()
+                + " inFlight=" + this.agentStopInFlight);
         if (!this.isCurrentAgentWaiting() || this.agentStopInFlight) return;
         final ChatConversation recipient = this.chatConversation;
         final String conversationId = recipient.id;
@@ -577,6 +579,7 @@ extends Activity {
                     if (originalMessageId != null && !originalMessageId.isEmpty()) break;
                     Thread.sleep(100);
                 }
+                android.util.Log.i("YanziAgentStop", "requestReady=" + (originalMessageId != null && !originalMessageId.isEmpty()));
                 if (originalMessageId == null || originalMessageId.isEmpty()) {
                     throw new java.io.IOException("原请求尚未提交到电脑");
                 }
@@ -593,9 +596,18 @@ extends Activity {
 
                 // Fast path: if the desktop has not claimed the run-extension request yet,
                 // cancel it in the cloud queue so Antigravity never starts.
-                boolean cancelledBeforeExecution = YanziApiClient.cancelPendingExecution(
-                        baseUrl, token, originalMessageId, this.deviceId);
+                boolean cancelledBeforeExecution = false;
+                try {
+                    cancelledBeforeExecution = YanziApiClient.cancelPendingExecution(
+                            baseUrl, token, originalMessageId, this.deviceId);
+                } catch (Exception earlyCancelError) {
+                    // Cloud pre-cancellation is best-effort; an exception must not prevent
+                    // the real CLI stop command from reaching a LAN-executed job.
+                    android.util.Log.w("YanziAgentStop", "early cloud cancellation unavailable: "
+                            + earlyCancelError.getClass().getSimpleName());
+                }
 
+                android.util.Log.i("YanziAgentStop", "cloudCancelledPending=" + cancelledBeforeExecution);
                 if (!cancelledBeforeExecution) {
                     // A failed cloud cancellation means the request was already claimed, or it used
                     // LAN transport. In both cases send /取消 through the same conversation. The
@@ -605,25 +617,29 @@ extends Activity {
                     if (!conversationId.equals(this.pendingAgentConversationId)) return;
                     String cancelMessageId = YanziApiClient.sendConversation(
                             baseUrl, token, this.deviceId, recipient, "/取消");
+                    android.util.Log.i("YanziAgentStop", "sentCancelControl");
                     this.waitForExecutionMessage(baseUrl, token, cancelMessageId, 80, 250);
+                    android.util.Log.i("YanziAgentStop", "cancelControlAcknowledged");
 
                     // worker.cjs polls every 250 ms and kills the whole agy process tree.
                     Thread.sleep(500);
                 }
 
+                final boolean didCancelPending = cancelledBeforeExecution;
                 this.runOnUiThread(() -> {
                     if (!conversationId.equals(this.pendingAgentConversationId)) return;
                     this.clearAgentWait(conversationId);
                     this.loadChatHistory();
-                    this.setStatus(cancelledBeforeExecution
+                    this.setStatus(didCancelPending
                             ? "已取消等待中的反重力任务"
                             : "已停止反重力生成");
                     Toast.makeText(
                             this,
-                            cancelledBeforeExecution ? "已取消任务" : "已停止生成",
+                            didCancelPending ? "已取消任务" : "已停止生成",
                             Toast.LENGTH_SHORT).show();
                 });
             } catch (Exception ex) {
+                android.util.Log.w("YanziAgentStop", "stop failed " + ex.getClass().getSimpleName());
                 this.runOnUiThread(() -> {
                     if (!conversationId.equals(this.pendingAgentConversationId)) return;
                     this.agentStopInFlight = false;
@@ -12648,6 +12664,7 @@ extends Activity {
     public static void onReceivedAgentStream(AgentStreamProtocol.Event event, String sourceDeviceId,
                                              String sourceDeviceName) {
         if (event == null) return;
+        android.util.Log.i("YanziAgentStream", "received state=" + event.state + " seq=" + event.seq + " chars=" + event.text.length());
         MainActivity activity = sInstance;
         if (activity != null) {
             activity.runOnUiThread(() -> {
@@ -12659,7 +12676,12 @@ extends Activity {
 
     private void renderAgentStream(AgentStreamProtocol.Event event, String sourceDeviceId, String sourceDeviceName) {
         if (this.chatMessageListLayout == null || this.chatConversation == null
-                || !event.conversationId.equals(this.chatConversation.id)) return;
+                || !event.conversationId.equals(this.chatConversation.id)) {
+            android.util.Log.i("YanziAgentStream", "ignored mismatch current=" + (this.chatConversation == null ? "null" : this.chatConversation.id)
+                    + " incoming=" + event.conversationId);
+            return;
+        }
+        android.util.Log.i("YanziAgentStream", "render state=" + event.state + " seq=" + event.seq);
         Integer previous = this.agentStreamSequences.get(event.id);
         if (previous != null && event.seq <= previous) return;
         this.agentStreamSequences.put(event.id, event.seq);
@@ -12721,9 +12743,13 @@ extends Activity {
         }
 
         String value = event.text == null || event.text.isEmpty() ? "正在生成…" : event.text;
-        if ("error".equals(event.state) && !value.contains("执行异常")) value = value + "\n\n生成过程中出现异常，正在收尾…";
+        if ("error".equals(event.state) && !value.contains("执行异常"))
+            value = value + "\n\n生成或消息投递失败，请检查任务结果。";
         streamText.setText(value);
-        this.setStatus("反重力正在生成…");
+        if ("complete".equals(event.state) || "error".equals(event.state)) {
+            if (event.conversationId.equals(this.pendingAgentConversationId)) this.clearAgentWait(event.conversationId);
+            this.setStatus("complete".equals(event.state) ? "反重力已生成，正在同步聊天历史…" : "反重力任务结束，但出现错误");
+        } else this.setStatus("反重力正在生成…");
         this.scrollChatToBottom(true);
     }
 

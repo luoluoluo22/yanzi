@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
-const { runJob } = require('../worker.cjs');
+const { runJob, PersistentCliSession } = require('../worker.cjs');
 
 async function fixture(t, prompt = '中文🙂') {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agy-bridge-test-'));
@@ -136,8 +136,78 @@ test('stream-json publishes incremental snapshots before final durable message',
   assert.ok(streamCalls.length >= 2, 'expected more than one transient stream snapshot');
   assert.equal(streamCalls[0].payload.state, 'start');
   assert.equal(streamCalls.at(-1).payload.text, '你好');
+  assert.equal(streamCalls.at(-1).payload.state, 'complete');
   assert.equal(finalCalls.length, 1);
   assert.equal(finalCalls[0].payload.target, 'android-stream-phone');
   assert.match(finalCalls[0].payload.text, /你好/);
   assert.ok(f.requests.findIndex(x => x.name === 'chat.stream') < f.requests.findIndex(x => x.name === 'chat.send'));
+});
+
+function persistentFixture(t, delayMs = 20) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agy-persistent-test-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const cli = path.join(root, 'persistent-cli.cjs');
+  fs.writeFileSync(cli, `
+    const readline=require('node:readline');
+    let turn=0;
+    const emit=v=>process.stdout.write(JSON.stringify(v)+'\\n');
+    readline.createInterface({input:process.stdin}).on('line',line=>{
+      let m; try{m=JSON.parse(line)}catch{return}
+      if(m.event!=='user') return;
+      turn++;
+      if(turn===1) emit({event:'init',conversation_id:'persistent-conversation',init:{}});
+      const text=turn===1?'FIRST':'SECOND';
+      setTimeout(()=>{
+        emit({event:'step_update',step_update:{step_type:'agent_response',state:'ACTIVE',text_delta:text}});
+        emit({event:'result',result:{status:'SUCCESS',conversation_id:'persistent-conversation',response:text}});
+      }, ${delayMs});
+    });
+  `);
+  return { root, cli };
+}
+
+test('Persistent CLI keeps one process across two turns in the same conversation', async t => {
+  const f = persistentFixture(t);
+  const session = new PersistentCliSession(f.root, process.execPath, { cliPrefix:[f.cli], startupTimeoutMs:2000 });
+  t.after(() => session.dispose());
+  const first = await session.runTurn('one', null, 3000);
+  const pid = session.pid;
+  const second = await session.runTurn('two', null, 3000);
+  assert.equal(first.result.response, 'FIRST');
+  assert.equal(second.result.response, 'SECOND');
+  assert.ok(pid > 0);
+  assert.equal(session.pid, pid);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(f.root,'session.json'),'utf8')).conversationId, 'persistent-conversation');
+  session.dispose();
+});
+
+test('Different conversations use independent persistent CLI processes', async t => {
+  const a = persistentFixture(t, 60);
+  const b = persistentFixture(t, 60);
+  const one = new PersistentCliSession(a.root, process.execPath, { cliPrefix:[a.cli], startupTimeoutMs:2000 });
+  const two = new PersistentCliSession(b.root, process.execPath, { cliPrefix:[b.cli], startupTimeoutMs:2000 });
+  t.after(() => { one.dispose(); two.dispose(); });
+  const [r1,r2] = await Promise.all([one.runTurn('a', null, 3000), two.runTurn('b', null, 3000)]);
+  assert.equal(r1.result.status, 'SUCCESS');
+  assert.equal(r2.result.status, 'SUCCESS');
+  assert.ok(one.pid > 0 && two.pid > 0);
+  assert.notEqual(one.pid, two.pid);
+  one.dispose(); two.dispose();
+});
+
+test('Stopping one persistent conversation does not stop another', async t => {
+  const a = persistentFixture(t, 500);
+  const b = persistentFixture(t, 120);
+  const one = new PersistentCliSession(a.root, process.execPath, { cliPrefix:[a.cli], startupTimeoutMs:2000 });
+  const two = new PersistentCliSession(b.root, process.execPath, { cliPrefix:[b.cli], startupTimeoutMs:2000 });
+  t.after(() => { one.dispose(); two.dispose(); });
+  const first = one.runTurn('slow', null, 3000);
+  const second = two.runTurn('fast', null, 3000);
+  await new Promise(resolve => setTimeout(resolve, 80));
+  one.cancelCurrent();
+  await assert.rejects(first, /stopped|已停止/i);
+  const result = await second;
+  assert.equal(result.result.status, 'SUCCESS');
+  assert.ok(two.pid > 0);
+  one.dispose(); two.dispose();
 });

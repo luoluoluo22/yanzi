@@ -35,8 +35,20 @@ final class MobileRealtimeClient {
                 try { if (text.length() > 2 * 1024 * 1024) throw new IllegalArgumentException(); listener.event(new JSONObject(text)); }
                 catch (Exception ex) { webSocket.close(1008, "Invalid event"); listener.disconnected(); }
             }
-            @Override public void onFailure(WebSocket webSocket, Throwable failure, Response response) { if (stamp == generation) listener.disconnected(); }
-            @Override public void onClosed(WebSocket webSocket, int code, String reason) { if (stamp == generation) listener.disconnected(); }
+            @Override public void onFailure(WebSocket webSocket, Throwable failure, Response response) {
+                if (stamp == generation) {
+                    // Do not put exception messages or authorization-bearing URLs into device logs.
+                    android.util.Log.w("YanziRealtime", "WebSocket connection failed: " + failure.getClass().getSimpleName()
+                            + "; HTTP=" + (response == null ? "none" : response.code()));
+                    listener.disconnected();
+                }
+            }
+            @Override public void onClosed(WebSocket webSocket, int code, String reason) {
+                if (stamp == generation) {
+                    android.util.Log.i("YanziRealtime", "WebSocket closed code=" + code);
+                    listener.disconnected();
+                }
+            }
             @Override public void onClosing(WebSocket webSocket, int code, String reason) { webSocket.close(code, reason); }
         });
     }

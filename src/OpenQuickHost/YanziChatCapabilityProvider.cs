@@ -55,7 +55,7 @@ public static class YanziChatCapabilityProvider
               "target":{"type":"string","minLength":1},
               "conversationId":{"type":"string","minLength":1},
               "streamId":{"type":"string","minLength":8},
-              "state":{"type":"string","enum":["start","update","cancelled","error"]},
+              "state":{"type":"string","enum":["start","update","cancelled","error","complete"]},
               "seq":{"type":"integer","minimum":0},
               "text":{"type":"string"}},
               "required":["target","conversationId","streamId","state","seq","text"],"additionalProperties":false}

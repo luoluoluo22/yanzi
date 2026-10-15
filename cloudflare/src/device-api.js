@@ -351,7 +351,7 @@ async function handleDeviceApi(request, env, ctx) {
     catch { throw new HttpError(400, 'invalid_stream_json', 'Stream control must be JSON'); }
     if (control.v !== 1 || !/^[a-zA-Z0-9_-]{8,128}$/.test(control.id || '') ||
         typeof control.conversationId !== 'string' || control.conversationId.length > 200 ||
-        !['start', 'update', 'cancelled', 'error'].includes(control.state) ||
+        !['start', 'update', 'cancelled', 'error', 'complete'].includes(control.state) ||
         !Number.isSafeInteger(control.seq) || control.seq < 0 || typeof control.text !== 'string')
       throw new HttpError(400, 'invalid_stream_fields', 'Invalid stream control fields');
     if (!env.DEVICE_RELAY)

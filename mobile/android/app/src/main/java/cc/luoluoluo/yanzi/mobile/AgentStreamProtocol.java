@@ -33,7 +33,7 @@ final class AgentStreamProtocol {
             String text = value.optString("text", "");
             if (id.length() < 8 || id.length() > 128 || conversationId.isEmpty() || conversationId.length() > 200
                     || seq < 0 || !(state.equals("start") || state.equals("update")
-                    || state.equals("cancelled") || state.equals("error"))) return null;
+                    || state.equals("cancelled") || state.equals("error") || state.equals("complete"))) return null;
             return new Event(id, conversationId, state, seq, text);
         } catch (Exception ignored) {
             return null;

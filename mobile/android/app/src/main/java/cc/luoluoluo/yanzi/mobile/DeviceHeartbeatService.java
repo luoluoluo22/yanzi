@@ -179,6 +179,7 @@ public class DeviceHeartbeatService extends Service {
                             if ("sync-ready".equals(type)) {syncAt = Math.min(syncAt, SystemClock.elapsedRealtime() + 1000);wakeSoon();}
                             if ("external-access-ready".equals(type)) {ExternalAccessManager.invalidate(DeviceHeartbeatService.this);wakeSoon();}
                             if ("agent-stream".equals(type)) {
+                                android.util.Log.i("YanziAgentStream", "WS event targetMatch=" + device.equals(event.optString("targetDeviceId")));
                                 if (!device.equals(event.optString("targetDeviceId"))) return;
                                 AgentStreamProtocol.Event streamEvent =
                                         AgentStreamProtocol.parse(event.optString("content", ""));

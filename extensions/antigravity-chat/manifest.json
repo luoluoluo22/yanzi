@@ -1,7 +1,7 @@
 {
   "id": "antigravity-chat",
   "name": "反重力",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "一键检测、部署和更新 Google Antigravity CLI；首次使用按提示登录。保留手机聊天消息接入、独立会话和回复回传。",
   "category": "AI助手",
   "icon": "mdi:rocket-launch",

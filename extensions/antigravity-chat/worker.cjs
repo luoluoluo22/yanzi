@@ -1,7 +1,7 @@
 'use strict';
 const fs = require('node:fs');
 const path = require('node:path');
-const { spawn } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 
 function save(file, value) {
   fs.writeFileSync(file + '.tmp', JSON.stringify(value));
@@ -260,6 +260,14 @@ class PersistentCliSession {
         }
       }, this.options.startupTimeoutMs || 20000);
 
+      // Real agy 1.3.5 emits init only AFTER the first stdin user message.
+      // Waiting for init here deadlocks the first turn. The spawn event is the transport handshake.
+      proc.once('spawn', () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(startupTimer);
+        resolve();
+      });
       proc.stdout.setEncoding('utf8');
       proc.stderr.setEncoding('utf8');
       proc.stdout.on('data', data => {
@@ -270,11 +278,7 @@ class PersistentCliSession {
           const line = this.buffer.slice(0, newline);
           this.buffer = this.buffer.slice(newline + 1);
           const event = this.consumeEvent(line);
-          if (!settled && event?.event === 'init') {
-            settled = true;
-            clearTimeout(startupTimer);
-            resolve();
-          }
+          // init carries conversation metadata, not startup readiness.
         }
       });
       proc.stderr.on('data', () => {});
@@ -410,11 +414,16 @@ class PersistentCliSession {
       clearTimeout(current.timer);
       current.reject(new Error('反重力常驻 CLI 已停止。'));
     }
-    try {
-      if (process.platform === 'win32')
-        spawn('taskkill', ['/PID', String(proc.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' }).on('error', () => { try { proc.kill(); } catch {} });
-      else proc.kill('SIGKILL');
-    } catch { try { proc.kill(); } catch {} }
+    // Dispose the live child before returning, otherwise orphaned stdout/stdio
+    // keeps Node alive even after a session is marked finished.
+    if (process.platform === 'win32') {
+      try {
+        spawnSync('taskkill', ['/PID', String(proc.pid), '/T', '/F'],
+          { windowsHide: true, stdio: 'ignore', timeout: 2500 });
+      } catch {}
+    }
+    try { proc.kill('SIGKILL'); } catch {}
+    try { proc.stdin.destroy(); proc.stdout.destroy(); proc.stderr.destroy(); } catch {}
   }
 
   dispose() {
@@ -694,6 +703,10 @@ async function runJob(jobPath, options = {}) {
     }
   }
   finally {
+    // Completion is a realtime control event; the durable answer may arrive later.
+    if (job.status === 'cancelled') await streamPublisher.terminal('cancelled');
+    else if (job.deliveryStatus === 'submitted') await streamPublisher.terminal('complete', response);
+    else if (job.deliveryStatus === 'failed') await streamPublisher.terminal('error', '最终消息投递失败，请在电脑端使用 /结果 检查保存的回复。');
     clearInterval(cancelTimer);
     save(jobPath, job);
     if (read(activePath).id === job.id && fs.existsSync(activePath)) fs.unlinkSync(activePath);
@@ -701,5 +714,50 @@ async function runJob(jobPath, options = {}) {
   }
   return job;
 }
-module.exports = { runJob };
-if (require.main === module) runJob(process.argv[2]).catch(() => { process.exitCode = 1; });
+async function runDaemon(root, options = {}) {
+  fs.mkdirSync(root, { recursive: true });
+  const daemonPath = path.join(root, 'daemon.json');
+  const activePath = path.join(root, 'active.json');
+  save(daemonPath, { pid: process.pid, startedAt: new Date().toISOString() });
+  let persistent = null;
+  let persistentCliPath = '';
+  let idleSince = Date.now();
+  const idleTimeoutMs = options.idleTimeoutMs || Number(process.env.AGY_SESSION_IDLE_MS || 30 * 60 * 1000);
+  try {
+    while (true) {
+      const active = read(activePath);
+      const id = active.id;
+      if (id) {
+        const jobPath = path.join(root, id + '.json');
+        const job = read(jobPath);
+        if (job.id === id && job.status === 'pending') {
+          const cliPath = options.cliPath || job.cliPath || path.join(process.env.LOCALAPPDATA, 'agy', 'bin', 'agy.exe');
+          if (!persistent || persistentCliPath !== cliPath) {
+            if (persistent) persistent.dispose();
+            persistent = new PersistentCliSession(root, cliPath, options);
+            persistentCliPath = cliPath;
+          }
+          await runJob(jobPath, { ...options, persistentSession: persistent });
+          idleSince = Date.now();
+          continue;
+        }
+      }
+      if (Date.now() - idleSince >= idleTimeoutMs) break;
+      await new Promise(resolve => setTimeout(resolve, options.pollIntervalMs || 150));
+    }
+  } finally {
+    if (persistent) persistent.dispose();
+    try {
+      const marker = read(daemonPath);
+      if (marker.pid === process.pid && fs.existsSync(daemonPath)) fs.unlinkSync(daemonPath);
+    } catch {}
+  }
+}
+
+module.exports = { runJob, runDaemon, PersistentCliSession, streamPreview };
+if (require.main === module) {
+  const task = process.argv[2] === '--daemon'
+    ? runDaemon(process.argv[3])
+    : runJob(process.argv[2]);
+  task.catch(error => { try { process.stderr.write(String(error?.stack || error) + '\n'); } catch {} process.exitCode = 1; });
+}

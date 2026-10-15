@@ -2211,6 +2211,7 @@ public class FloatingWheelService extends Service {
                     } else if ("YanziChat".equals(title)) {
                         AgentStreamProtocol.Event streamEvent = AgentStreamProtocol.parse(text);
                         if (streamEvent != null) {
+                            android.util.Log.i("YanziAgentStream", "LAN event state=" + streamEvent.state + " seq=" + streamEvent.seq);
                             String streamSourceId = json.optString("sourceDeviceId", peerDevice == null ? "" : peerDevice);
                             JSONObject streamPayload = json.optJSONObject("payload");
                             String streamSourceName = json.optString("sourceDeviceName", "");

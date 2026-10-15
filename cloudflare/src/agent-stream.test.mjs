@@ -51,6 +51,13 @@ test('Transient WebSocket publishing skips D1 message and durable outbox',async(
   assert.equal(h.events[0].type,'agent-stream');
   assert.equal(h.events[0].targetDeviceId,'android-1');
 });
+test('Complete stream events are ephemeral too',async()=>{
+  const h=createHarness();
+  const event=makeControl('done').replace('"state":"update"','"state":"complete"');
+  const res=await h.send(event);
+  assert.equal(res.status,200);
+  assert.equal(h.events[0].type,'agent-stream');
+});
 test('Malformed transient stream does not publish',async()=>{
   const h=createHarness();
   await assert.rejects(h.send(makeControl().replace('"seq":2','"seq":-1')), /Invalid stream control fields/);
