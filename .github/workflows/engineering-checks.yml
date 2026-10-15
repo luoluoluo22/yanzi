@@ -48,6 +48,12 @@ jobs:
           dotnet run --project src/Yanzi.SyncVerification -c Debug
           dotnet run --project src/Yanzi.SyncVerification -c Debug -- --chat-conversation-metadata
           dotnet run --project src/Yanzi.SyncVerification -c Debug -- --mobile-extension-catalog
+      - name: AI chat parallelism, SSE and clipboard regression
+        shell: pwsh
+        run: |
+          dotnet run --project src/Yanzi.SyncVerification -c Debug --no-build -- --ai-chat-parallel
+          dotnet run --project src/Yanzi.SyncVerification -c Debug --no-build -- --ai-chat-sse
+          ./scripts/verify-ai-chat-regression.ps1
       - name: Desktop transport regression
         run: ./scripts/test-network-retry.ps1
       - name: Local API authorization and route domains
