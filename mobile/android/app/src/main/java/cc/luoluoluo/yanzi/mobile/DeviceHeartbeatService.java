@@ -178,7 +178,13 @@ public class DeviceHeartbeatService extends Service {
                             String type = event.optString("type");
                             if ("sync-ready".equals(type)) {syncAt = Math.min(syncAt, SystemClock.elapsedRealtime() + 1000);wakeSoon();}
                             if ("external-access-ready".equals(type)) {ExternalAccessManager.invalidate(DeviceHeartbeatService.this);wakeSoon();}
-                            if ("message".equals(type)) dispatch(base, token, device, event.optJSONObject("message"));
+                            if ("agent-stream".equals(type)) {
+                                if (!device.equals(event.optString("targetDeviceId"))) return;
+                                AgentStreamProtocol.Event streamEvent =
+                                        AgentStreamProtocol.parse(event.optString("content", ""));
+                                if (streamEvent != null) MainActivity.onReceivedAgentStream(streamEvent,
+                                        event.optString("sourceDeviceId", ""), event.optString("sourceDeviceName", "Antigravity"));
+                            } else if ("message".equals(type)) dispatch(base, token, device, event.optJSONObject("message"));
                             else if ("ready".equals(type) || "messages-ready".equals(type)) {pollAt = 0;wakeSoon();}
                         }
                     });
@@ -307,6 +313,23 @@ public class DeviceHeartbeatService extends Service {
         boolean attachment = "file".equals(kind) || "photo".equals(kind);
         String content = message.optString("text", "");
         JSONObject transfer = message.optJSONObject("payload");
+        AgentStreamProtocol.Event streamEvent = "text".equals(kind) ? AgentStreamProtocol.parse(content) : null;
+        if (streamEvent != null) {
+            synchronized (MobileDesktopTransfer.deliveryLock) {
+                if (!valid(token, device)) return;
+                if (!prefs.contains(receipt)) {
+                    String streamSourceId = message.optString("sourceDeviceId", "");
+                    String streamSourceName = ChatHistoryStore.sourceDeviceName(
+                            this, message, streamSourceId.startsWith("desktop-") ? "电脑" : streamSourceId);
+                    if (!prefs.edit().putLong(receipt, System.currentTimeMillis()).commit())
+                        throw new java.io.IOException("message_receipt_commit_failed");
+                    MainActivity.onReceivedAgentStream(streamEvent, streamSourceId, streamSourceName);
+                    trace(id, "stream_delivered");
+                }
+            }
+            acknowledge(base, token, id, ack.put("success", true));
+            return;
+        }
         String transferIdBeforeDownload = transfer == null ? "" : transfer.optString("clientTransferId");
         boolean alreadyOnLan = false;
         if (attachment && transferIdBeforeDownload.matches("[a-f0-9]{32}") && prefs.contains("lanTransfer." + transferIdBeforeDownload)) {

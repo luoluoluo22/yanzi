@@ -1049,6 +1049,17 @@ public sealed partial class CloudSyncClient
         } finally { _chatDeliveryGate.Release(); }
     }
 
+    /// <summary>Ephemeral AI snapshots via authenticated websocket relay; never enqueue in D1/outbox.</summary>
+    public async Task SendTransientChatStreamAsync(string sourceDeviceId, string targetDeviceId, string content,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureAuthenticatedAsync(cancellationToken);
+        var body = JsonSerializer.Serialize(new { sourceDeviceId, targetDeviceId, content });
+        using var request = CreateJsonRequest(HttpMethod.Post, "/v1/me/mobile/messages/stream", body, includeAuth: true);
+        using var response = await SendAsyncWithFallback(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+    }
+
     private readonly SemaphoreSlim _outboxReplay = new(1, 1);
     public async Task ReplayDeviceOutboxAsync(CancellationToken cancellationToken = default)
     {
