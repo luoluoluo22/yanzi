@@ -50,6 +50,7 @@ public sealed class VelopackUpdateService
 
     public void InitializeManager(UpdateChannelMode mode)
     {
+        if (HostRuntimeProfile.IsDevelopment) return;
         try
         {
             _currentChannelMode = mode;
@@ -103,6 +104,13 @@ public sealed class VelopackUpdateService
         {
             HostAssets.AppendLog($"VelopackUpdateService: _updateManager still null after init ({channelMode}), aborting check.");
             UpdateStatusChanged?.Invoke("更新管理器未就绪。");
+            return null;
+        }
+
+        if (!_updateManager.IsInstalled)
+        {
+            HostAssets.AppendDebug("VelopackUpdateService: update check skipped for unpackaged build.");
+            UpdateStatusChanged?.Invoke("当前为未安装版本，自动更新不可用。");
             return null;
         }
 
@@ -217,6 +225,7 @@ public sealed class VelopackUpdateService
     /// </summary>
     public void ApplyAndRestart(UpdateInfo updateInfo)
     {
+        if (HostRuntimeProfile.IsDevelopment) return;
         if (_updateManager == null || updateInfo == null)
         {
             HostAssets.AppendLog("VelopackUpdateService: ApplyAndRestart aborted (manager or updateInfo is null).");
@@ -240,6 +249,7 @@ public sealed class VelopackUpdateService
     /// </summary>
     public async Task StartSilentUpdateCheckAndDownloadAsync()
     {
+        if (!HostRuntimeProfile.OwnsBackgroundServices) return;
         // 1. 用户配置检查
         var settings = AppSettingsStore.Load();
         if (!settings.EnableAutoUpdate)
@@ -267,6 +277,23 @@ public sealed class VelopackUpdateService
             var updateInfo = await CheckForUpdatesAsync();
             if (updateInfo == null)
             {
+                return;
+            }
+
+            // 维护期校验：检查当前用户是否有权升级到该新版本
+            var session = SyncSessionStore.Load();
+            var targetVer = updateInfo.TargetFullRelease.Version.ToString();
+            var newVerReleaseDate = await ReleaseHistoryProvider.GetReleaseDateAsync(targetVer);
+            bool isEntitled = AppVersionInfo.IsUpdateEntitled(
+                targetVer,
+                session?.VipType,
+                session?.VipExpireAt,
+                newVerReleaseDate
+            );
+
+            if (!isEntitled)
+            {
+                HostAssets.AppendLog($"VelopackUpdateService: Silent update to v{targetVer} skipped because current user is not entitled (expireAt={session?.VipExpireAt}, releaseDate={newVerReleaseDate}).");
                 return;
             }
 

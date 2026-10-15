@@ -1,9 +1,164 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using OpenQuickHost;
 using OpenQuickHost.Sync;
+using Yanzi.Core;
+if (args.Contains("--chat-conversation-metadata")) { ChatConversationMetadataVerification.Run(); return; }
+if (args.Contains("--mobile-extension-catalog")) { await MobileExtensionCatalogVerification.RunAsync(); return; }
 
+if (args.Contains("--github-secondary-backup-verify")) { await GitHubSecondaryBackupVerification.RunAsync(args.Contains("--live")); return; }
+
+if (args.Contains("--task-recovery")) { PlatformTaskVerification.Run(); return; }
+
+if (args.Length == 2 && args[0] == "--release-readiness")
+{
+    await ReleaseReadinessVerification.RunAsync(args[1]);
+    return;
+}
+
+if (args.Contains("--ai-chat-parallel")) { AiChatRequestTrackerVerification.Run(); return; }
+if (args.Contains("--ai-chat-sse")) { await AiChatSseVerification.RunAsync(); return; }
+if (args.Contains("--single-process")) { SingleProcessVerification.Run(); return; }
+
+if (args.Contains("--cloud-login-retry")) { CloudLoginRetryVerification.Run(); return; }
+
+if (args.Contains("--vip-version-policy")) { VipVersionPolicyVerification.Run(); return; }
+
+if (args.Contains("--local-api-boundaries"))
+{
+    await LocalApiBoundaryVerification.RunAsync();
+    return;
+}
+
+if (args.Contains("--mobile-message-composer"))
+{
+    await MobileMessageComposerVerification.RunAsync();
+    return;
+}
+
+if (args.Contains("--device-notification-policy"))
+{
+    DeviceMessageNotificationVerification.Run();
+    return;
+}
+
+if (args.Contains("--mobile-message-bridge"))
+{
+    await MobileMessageBridgeVerification.RunAsync(args);
+    return;
+}
+
+if (args.Contains("--account-extension-bridge"))
+{
+    await AccountExtensionBridgeVerification.RunAsync(args);
+    return;
+}
+
+if (args.Contains("--extension-data-index-summary"))
+{
+    var service = new PersonalSyncService(AppSettingsStore.Load());
+    foreach (var ext in new[] { "yanzi-notes", "clipboard-history", "inspiration-board",
+        "yanzi-album", "ext_e9e37068c8284b1e808f5454181fb418" })
+    {
+        var keys = await service.GetExtensionDataKeysAsync(ext);
+        Console.WriteLine($"EXTENSION_INDEX id={ext} count={keys.Count}");
+    }
+    return;
+}
+if (args.Length == 2 && args[0] == "--extension-data-reconcile-scope")
+{
+    var result = await ExtensionStorageService.ReconcileCloudDataAsync(onlyExtensionIds: new[] { args[1] });
+    Console.WriteLine($"EXTENSION_SCOPE_RECOVERY id={args[1]} restored={result.RestoredCount} published={result.PublishedCount} skipped={result.SkippedCount}");
+    return;
+}
+if (args.Contains("--extension-data-catalog-tests"))
+{
+    await ExtensionDataCatalogVerification.RunAsync();
+    return;
+}
+if (args.Contains("--account-extension-versions"))
+{
+    var client = new CloudSyncClient(SyncConfigLoader.Load());
+    var items = await client.GetUserExtensionsAsync();
+    foreach (var id in new[] { "yanzi-notes", "inspiration-board", "taskbar-calendar", "clipboard-history", "copy-path-to-clipboard", "smart-opener-searcher" })
+    {
+        var item = items.FirstOrDefault(x => x.ExtensionId.Equals(id, StringComparison.OrdinalIgnoreCase));
+        Console.WriteLine(item == null ? $"ACCOUNT_EXT {id} missing" :
+            $"ACCOUNT_EXT {id} version={item.LatestVersion} revision={item.ArchiveRevision} sha={item.ArchiveSha256} enabled={item.Enabled} hasArchive={item.HasArchive}");
+    }
+    return;
+}
+if (args.Contains("--extension-package-backup"))
+{
+    var service = new PersonalSyncService(AppSettingsStore.Load());
+    var result = await service.SyncExtensionsAsync(PersonalConfigSyncMode.UploadOnlyBackup);
+    Console.WriteLine($"PERSONAL_PACKAGE_BACKUP uploaded={result.UploadedCount} downloaded={result.PulledCount} configUploaded={result.ConfigUploaded}");
+    return;
+}
+if (args.Contains("--extension-data-audit"))
+{
+    var service = new PersonalSyncService(AppSettingsStore.Load());
+    foreach (var ext in new[] { "yanzi-notes", "clipboard-history", "inspiration-board", "taskbar-calendar" })
+    {
+        var keys = await service.GetExtensionDataKeysAsync(ext);
+        Console.WriteLine($"EXT_DATA_AUDIT extension={ext} count={keys.Count}");
+        foreach (var key in keys)
+        {
+            if (ExtensionStorageService.IsPortableBinaryAsset(key))
+            {
+                var bytes = await service.TryReadExtensionBinaryAssetAsync(ext, key);
+                Console.WriteLine($"  {key} kind=binary exists={bytes != null} size={bytes?.Length ?? 0} sha256={Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes ?? [])).Substring(0, 20)}");
+            }
+            else
+            {
+                var entry = await service.TryReadExtensionDataAsync(ext, key);
+                Console.WriteLine($"  {key} kind=text exists={entry.Content != null} revision={entry.Value?.Revision ?? 0}");
+            }
+        }
+    }
+    return;
+}
+if (args.Contains("--resolve-stale-conflicts"))
+{
+    var result = await ExtensionStorageService.ResolveStaleLocalConflictsAsync();
+    Console.WriteLine($"EXTENSION_DATA_CONFLICTS resolved={result.ResolvedCount} skipped={result.SkippedCount} failed={result.FailedCount}");
+    return;
+}
+if (args.Contains("--extension-data-reconcile"))
+{
+    var result = await ExtensionStorageService.ReconcileCloudDataAsync();
+    Console.WriteLine($"EXTENSION_DATA_RECOVERY restored={result.RestoredCount} published={result.PublishedCount} skipped={result.SkippedCount}");
+    return;
+}
+if (args.Contains("--fresh-device-sync"))
+{
+    await FreshDeviceSyncVerification.RunAsync();
+    return;
+}
+if (args.Contains("--fresh-account-sync"))
+{
+    await FreshDeviceSyncVerification.RunAccountOnlyAsync();
+    return;
+}
+
+ReleaseReadinessVerification.VerifyUninstallDataRetention();
+VerifyExtensionPackageStability();
+await PortableIconSyncVerification.RunAsync();
+if (args.Contains("--package-stability")) return;
+VerifySyncArchitectureSafety();
+VerifySyncConflictExperience();
+if (args.Contains("--sync-ux-safety")) return;
+VerifyBackpackResponsiveness();
+if (args.Contains("--backpack-safety")) return;
+VerifySearchInteractionSafety();
+VerifyQuickWindowSwitchSafety();
+VerifyKnownApplicationCatalog();
+if (args.Contains("--interaction-safety")) return;
+VerifySyncPackageSafety();
+if (args.Contains("--sync-safety")) return;
 VerifySyncCoverageCatalog();
 VerifyAiSecretBoundary();
+VerifyEnvironmentSecretVault();
+VerifySecretVaultGenericSyncIsolation();
 VerifyYanmObjectStore();
 VerifyPersonalRestorePoint();
 VerifyExtensionAuthoritySelection();
@@ -23,6 +178,8 @@ var roundTrip = AccountConfigObjectStore.Apply(new CloudQuickPanelConfigSnapshot
 Assert(roundTrip != null, "Dynamic object round trip returned null.");
 Assert(roundTrip!.QuickPanelGlobalGroups.Select(static item => item.Id).SequenceEqual(["g1", "g2"]), "Global group order or IDs changed during round trip.");
 Assert(roundTrip.QuickPanelContextGroups.Single().Id == "c1", "Context group was not restored.");
+Assert(roundTrip.AppShortcutBindings?.TryGetValue("wechat", out var wechatShortcut) == true && wechatShortcut == "Alt+W",
+    "Stable application shortcut bindings must survive account object round trip.");
 Assert(roundTrip.RadialMenu?.Pages.Select(static item => item.Id).SequenceEqual(["r1", "r2"]) == true, "Radial page order or IDs changed during round trip.");
 
 var initialMap = initialWrites.ToDictionary(static item => item.ObjectId, StringComparer.OrdinalIgnoreCase);
@@ -65,6 +222,333 @@ Assert(afterDeletion?.QuickPanelGlobalGroups.Select(static item => item.Id).Sequ
 Assert(afterDeletion?.RadialMenu?.Pages.Select(static item => item.Id).SequenceEqual(["r1"]) == true, "Deleted radial page reappeared after applying tombstones.");
 
 Console.WriteLine("Account config object verification passed: round-trip, isolated edits, safe tombstones, remote-only preservation.");
+
+static void VerifyEnvironmentSecretVault()
+{
+    const string tokenName = "CLOUDFLARE_API_TOKEN";
+    const string tokenValue = "verification-token-never-real";
+    var oldMasterKey = SyncCryptoService.DeriveKeys("old-password-for-verification", "vault@example.test").MasterKey;
+    var newMasterKey = SyncCryptoService.DeriveKeys("new-password-for-verification", "vault@example.test").MasterKey;
+    var recoveryKey = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
+    var payload = AccountEnvironmentSecretVault.CreatePayloadForVerification(
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { [tokenName] = tokenValue }, oldMasterKey, recoveryKey);
+    var wire = payload.GetRawText();
+    Assert(!wire.Contains(tokenName, StringComparison.Ordinal) && !wire.Contains(tokenValue, StringComparison.Ordinal),
+        "Secret vault wire payload must not expose secret names or values.");
+    var decrypted = AccountEnvironmentSecretVault.DecryptPayloadForVerification(payload, oldMasterKey);
+    Assert(decrypted.TryGetValue(tokenName, out var recovered) && recovered == tokenValue,
+        "Secret vault encryption round trip failed.");
+    var wrongKeyRejected = false;
+    try { _ = AccountEnvironmentSecretVault.DecryptPayloadForVerification(payload, newMasterKey); }
+    catch (System.Security.Cryptography.CryptographicException) { wrongKeyRejected = true; }
+    Assert(wrongKeyRejected, "A different login-derived key must not decrypt the vault without authenticated recovery.");
+    var recoveredAfterForgottenPassword = AccountEnvironmentSecretVault.DecryptPayloadWithRecoveryForVerification(
+        payload, newMasterKey, recoveryKey);
+    Assert(recoveredAfterForgottenPassword.UsedRecovery &&
+           recoveredAfterForgottenPassword.Secrets[tokenName] == tokenValue,
+        "Authenticated recovery must restore the vault when the old password is unavailable.");
+    var rewrapped = AccountEnvironmentSecretVault.RewrapPayloadForVerification(payload, null, newMasterKey, recoveryKey);
+    Assert(AccountEnvironmentSecretVault.DecryptPayloadForVerification(rewrapped, newMasterKey)[tokenName] == tokenValue,
+        "Recovery-assisted rewrap must preserve secrets across a forgotten-password reset.");
+
+    var oldDeviceRoot = Path.Combine(Path.GetTempPath(), "yanzi-vault-old-" + Guid.NewGuid().ToString("N"));
+    var newDeviceRoot = Path.Combine(Path.GetTempPath(), "yanzi-vault-new-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(oldDeviceRoot);
+    Directory.CreateDirectory(newDeviceRoot);
+    try
+    {
+        Dictionary<string, string> snapshot;
+        using (HostAssets.UseIsolatedDataRootForVerification(oldDeviceRoot))
+        {
+            AppEnvironmentVariableStore.Save([new AppEnvironmentVariableSettings
+            {
+                Name = tokenName,
+                Value = tokenValue,
+                Description = "verification"
+            }]);
+            snapshot = AppEnvironmentVariableStore.SnapshotSecretValuesForVault();
+            Assert(snapshot[tokenName] == tokenValue, "Old-device DPAPI secret was not captured for account migration.");
+        }
+
+        using (HostAssets.UseIsolatedDataRootForVerification(newDeviceRoot))
+        {
+            AppEnvironmentVariableStore.ApplySecretValuesFromVault(snapshot);
+            var restored = AppEnvironmentVariableStore.Load().Single(item => item.Name == tokenName);
+            Assert(restored.Value == tokenValue, "New-device secret restore did not persist the DPAPI value.");
+            Assert(restored.Description == string.Empty, "Vault restore should not invent user-visible metadata.");
+        }
+    }
+    finally
+    {
+        Directory.Delete(oldDeviceRoot, recursive: true);
+        Directory.Delete(newDeviceRoot, recursive: true);
+    }
+
+    var accountRoot = Path.Combine(Path.GetTempPath(), "yanzi-vault-account-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(accountRoot);
+    try
+    {
+        using (HostAssets.UseIsolatedDataRootForVerification(accountRoot))
+        {
+            AppEnvironmentVariableStore.ApplySecretValuesFromVault(
+                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { [tokenName] = "account-a-secret" });
+            AccountEnvironmentSecretVault.PrepareLocalAccountScopeForVerification("account-a");
+            AccountEnvironmentSecretVault.SaveAccountSnapshotForVerification(
+                "account-a", AppEnvironmentVariableStore.SnapshotSecretValuesForVault());
+
+            AccountEnvironmentSecretVault.PrepareLocalAccountScopeForVerification("account-b");
+            Assert(string.IsNullOrEmpty(AppEnvironmentVariableStore.GetValue(tokenName)),
+                "Switching to a new account must not expose another account's local secret cache.");
+            AppEnvironmentVariableStore.ApplySecretValuesFromVault(
+                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { [tokenName] = "account-b-secret" });
+            AccountEnvironmentSecretVault.SaveAccountSnapshotForVerification(
+                "account-b", AppEnvironmentVariableStore.SnapshotSecretValuesForVault());
+
+            AccountEnvironmentSecretVault.PrepareLocalAccountScopeForVerification("account-a");
+            Assert(AppEnvironmentVariableStore.GetValue(tokenName) == "account-a-secret",
+                "Switching back must restore the matching account's DPAPI cache.");
+            AccountEnvironmentSecretVault.PrepareLocalAccountScopeForVerification("account-b");
+            Assert(AppEnvironmentVariableStore.GetValue(tokenName) == "account-b-secret",
+                "Each account must retain its own DPAPI-protected local secret cache.");
+
+            AccountEnvironmentSecretVault.PersistPendingForVerification(
+                "account-b", ["CHANGED_TOKEN"], ["DELETED_TOKEN"]);
+            var pending = AccountEnvironmentSecretVault.SnapshotPendingForVerification("account-b");
+            Assert(pending.Changed.Contains("CHANGED_TOKEN") && pending.Deleted.Contains("DELETED_TOKEN"),
+                "Offline secret edits and deletions must survive in the protected pending journal.");
+            AccountEnvironmentSecretVault.CompletePendingForVerification(
+                "account-b", pending.Changed, pending.Deleted);
+            var completed = AccountEnvironmentSecretVault.SnapshotPendingForVerification("account-b");
+            Assert(completed.Changed.Count == 0 && completed.Deleted.Count == 0,
+                "Pending secret journal must clear only after a confirmed cloud write.");
+        }
+    }
+    finally
+    {
+        Directory.Delete(accountRoot, recursive: true);
+    }
+
+    Console.WriteLine("Environment secret vault verification passed: ciphertext boundary, wrong-key rejection, login-only recovery, password rewrap, cross-device DPAPI restore, account isolation, offline journal.");
+}
+
+static void VerifySecretVaultGenericSyncIsolation()
+{
+    var accountId = "verification-account";
+    var vaultObject = new CloudSyncObjectRecord
+    {
+        ObjectId = AccountEnvironmentSecretVault.ObjectId,
+        SchemaVersion = 1,
+        Revision = 1,
+        UpdatedAtUtc = DateTimeOffset.UtcNow.ToString("O"),
+        Payload = JsonSerializer.SerializeToElement(new { encrypted = "ciphertext-only" })
+    };
+    var ordinaryObject = new CloudSyncObjectRecord
+    {
+        ObjectId = "settings.general",
+        SchemaVersion = 1,
+        Revision = 2,
+        UpdatedAtUtc = DateTimeOffset.UtcNow.ToString("O"),
+        Payload = JsonSerializer.SerializeToElement(new { value = 1 })
+    };
+    var page = new CloudSyncObjectListResponse
+    {
+        Ok = true,
+        UserId = accountId,
+        CurrentRevision = 2,
+        CursorRevision = 2,
+        HasMore = false,
+        Objects = [vaultObject, ordinaryObject]
+    };
+    var state = new CloudObjectSyncState
+    {
+        UserId = accountId,
+        PendingObjectIds = [AccountEnvironmentSecretVault.ObjectId],
+        PendingOperations = new(StringComparer.OrdinalIgnoreCase)
+        {
+            [AccountEnvironmentSecretVault.ObjectId] = new CloudObjectPendingOperation
+            {
+                ObjectId = AccountEnvironmentSecretVault.ObjectId
+            }
+        },
+        Conflicts = new(StringComparer.OrdinalIgnoreCase)
+        {
+            [AccountEnvironmentSecretVault.ObjectId] = new CloudObjectConflictRecord
+            {
+                ObjectId = AccountEnvironmentSecretVault.ObjectId
+            }
+        }
+    };
+    var service = new AccountObjectSyncService(
+        new VerificationAccountObjectRepository(page),
+        new AccountSyncCoordinator());
+    service.RefreshAsync(state).GetAwaiter().GetResult();
+
+    Assert(!state.Objects.ContainsKey(AccountEnvironmentSecretVault.ObjectId) &&
+           !state.PendingObjectIds.Contains(AccountEnvironmentSecretVault.ObjectId) &&
+           !state.PendingOperations.ContainsKey(AccountEnvironmentSecretVault.ObjectId) &&
+           !state.Conflicts.ContainsKey(AccountEnvironmentSecretVault.ObjectId),
+        "Secret vault object must stay outside generic sync cache/conflict/history state.");
+    Assert(state.Objects.ContainsKey("settings.general") &&
+           state.LastSyncedRevision == 2 &&
+           state.DownloadCursorValidated,
+        "Ignoring the secret vault must not block generic sync cursor progress.");
+    Console.WriteLine("Secret vault generic-sync isolation passed: hidden object, preserved cursor progress.");
+}
+
+static void VerifySyncArchitectureSafety()
+{
+    var compatibility = new CloudSyncCapabilitiesResponse { Ok = true, ObjectSyncAvailable = true, ObjectsAuthoritative = false };
+    Assert(CloudSyncTransferPolicy.SupportsUpload(compatibility), "Compatibility mode supports conditional object uploads.");
+    Assert(!CloudSyncTransferPolicy.SupportsDownload(compatibility), "Partial compatibility objects must not be treated as the only download source.");
+    Assert(!CloudSyncTransferPolicy.SupportsUpload(new CloudSyncCapabilitiesResponse { Ok = true }), "Unavailable object PUT must remain blocked.");
+    var oldPending = new CloudObjectPendingOperation { LastExpectedRevision = 577 };
+    var knownLayout = new CloudObjectSyncCacheEntry { ObjectId = "yanm.layout", Revision = 600, UpdatedByDeviceId = "this-device", Payload = JsonSerializer.SerializeToElement(new { layout = 1 }) };
+    Assert(CloudSyncTransferPolicy.UploadRevision(oldPending, knownLayout, knownLayout, "this-device") == 600,
+        "An old same-device retry must use the already adopted version instead of getting stuck at 577.");
+    Assert(CloudSyncTransferPolicy.UploadRevision(oldPending, knownLayout, knownLayout, "another-device") == 577,
+        "Another device's data must not be silently rebased.");
+    Assert(CloudSyncTransferPolicy.UploadRevision(new CloudObjectPendingOperation(), knownLayout, knownLayout, "this-device") == 0,
+        "Intentional creates must still conflict if an object already exists.");
+    Assert(CloudSyncTransferPolicy.UploadRevision(oldPending, knownLayout, null, "this-device") == 577,
+        "A remote-only version must not become the local baseline implicitly.");
+
+    var pendingState = new CloudObjectSyncState();
+    var baseline = new Dictionary<string, CloudObjectSyncCacheEntry>
+    {
+        ["settings.general"] = new() { ObjectId = "settings.general", Revision = 5, Payload = JsonSerializer.SerializeToElement(new { enabled = false }) }
+    };
+    var write = new AccountConfigObjectWrite("settings.general", new LauncherConfigObjectEnvelope
+        { ObjectId = "settings.general", Payload = JsonSerializer.SerializeToElement(new { enabled = true }) });
+    CloudPendingChanges.Capture(pendingState, [write], baseline);
+    Assert(pendingState.PendingOperations[write.ObjectId].LastExpectedRevision == 5, "Offline edits must retain the observed base revision.");
+    baseline[write.ObjectId].Revision = 8;
+    CloudPendingChanges.Capture(pendingState, [write], baseline);
+    Assert(pendingState.PendingOperations[write.ObjectId].LastExpectedRevision == 5, "Downloading a new baseline must not authorize overwriting it.");
+    var uploadedOnly = new CloudObjectSyncState();
+    uploadedOnly.LocalBaselines[write.ObjectId] = new CloudObjectSyncCacheEntry
+        { ObjectId = write.ObjectId, Revision = 5, Payload = write.Envelope.Payload };
+    uploadedOnly.Objects[write.ObjectId] = new CloudObjectSyncCacheEntry
+        { ObjectId = write.ObjectId, Revision = 8, Payload = JsonSerializer.SerializeToElement(new { enabled = false }) };
+    CloudPendingChanges.RecordApplied(uploadedOnly, [write]);
+    CloudPendingChanges.Capture(uploadedOnly, [write], uploadedOnly.LocalBaselines);
+    Assert(uploadedOnly.LocalBaselines[write.ObjectId].Revision == 5 && uploadedOnly.PendingOperations.Count == 0,
+        "Upload-only preflight must not turn an unapplied remote change into a new local edit.");
+    var received = new AccountConfigObjectWrite(write.ObjectId, new LauncherConfigObjectEnvelope
+        { ObjectId = write.ObjectId, Payload = uploadedOnly.Objects[write.ObjectId].Payload });
+    CloudPendingChanges.RecordApplied(uploadedOnly, [received]);
+    Assert(uploadedOnly.LocalBaselines[write.ObjectId].Revision == 8, "The local baseline advances when remote data is actually applied.");
+    var freshState = new CloudObjectSyncState();
+    CloudPendingChanges.Capture(freshState, [write], new Dictionary<string, CloudObjectSyncCacheEntry>());
+    Assert(freshState.PendingOperations.Count == 0, "New-device defaults must not become offline edits.");
+    freshState.Conflicts[write.ObjectId] = new CloudObjectConflictRecord { ObjectId = write.ObjectId };
+    CloudPendingChanges.Capture(freshState, [write], baseline);
+    Assert(freshState.PendingOperations.Count == 0, "Unresolved conflicts must not be resubmitted by unrelated edits.");
+    var testRoot = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "yanzi-state-test-" + Guid.NewGuid().ToString("N"));
+    System.IO.Directory.CreateDirectory(testRoot);
+    try
+    {
+        var accountA = new CloudObjectSyncState { UserId = "account-a" };
+        accountA.Objects["settings.general"] = new CloudObjectSyncCacheEntry
+            { ObjectId = "settings.general", Revision = 10, Payload = JsonSerializer.SerializeToElement(new { enabled = false }) };
+        accountA.PendingObjectIds.Add("settings.general");
+        accountA.PendingOperations["settings.general"] = new CloudObjectPendingOperation { ObjectId = "settings.general", LastExpectedRevision = 0 };
+        CloudObjectSyncStateStore.SaveAt(testRoot, accountA);
+        CloudObjectSyncStateStore.SaveAt(testRoot, new CloudObjectSyncState { UserId = "account-b" });
+        Assert(CloudObjectSyncStateStore.LoadAt(testRoot, "account-a").PendingOperations.Count == 1,
+            "Switching accounts must preserve the first account's offline edits.");
+        Assert(CloudObjectSyncStateStore.LoadAt(testRoot, "account-a").PendingOperations["settings.general"].LastExpectedRevision == 0,
+            "A persisted create operation must not silently rebase to a remote revision on load.");
+        accountA.LastSyncedRevision = 9;
+        CloudObjectSyncStateStore.SaveAt(testRoot, accountA);
+        var accountPath = CloudObjectSyncStateStore.AccountPath(testRoot, "account-a");
+        System.IO.File.WriteAllText(accountPath, "broken");
+        var recovered = CloudObjectSyncStateStore.LoadAt(testRoot, "account-a");
+        Assert(recovered.RecoveredFromBackup && recovered.PendingOperations.Count == 1,
+            "Damaged state must recover a valid previous copy with offline edits.");
+        CloudObjectSyncStateStore.SaveAt(testRoot, recovered);
+        Assert(System.IO.Directory.GetFiles(System.IO.Path.GetDirectoryName(accountPath)!, "*.corrupt-*").Length == 1,
+            "Recovery must preserve damaged original for diagnosis.");
+        System.IO.File.WriteAllText(accountPath, "broken again");
+        var recoveredAgain = CloudObjectSyncStateStore.LoadAt(testRoot, "account-a");
+        Assert(recoveredAgain.RecoveredFromBackup && recoveredAgain.PendingOperations.Count == 1,
+            "Saving a recovered state must keep the known-good backup available for a second primary-file failure.");
+        CloudObjectSyncStateStore.SaveAt(testRoot, recoveredAgain);
+        System.IO.File.WriteAllText(accountPath, "broken");
+        System.IO.File.WriteAllText(accountPath + ".bak", "broken too");
+        var blocked = CloudObjectSyncStateStore.LoadAt(testRoot, "account-a");
+        Assert(!string.IsNullOrEmpty(blocked.PersistenceError), "Unreadable state must block synchronization, not look like a new device.");
+        var saveBlocked = false;
+        try { CloudObjectSyncStateStore.SaveAt(testRoot, blocked); }
+        catch (System.IO.IOException) { saveBlocked = true; }
+        Assert(saveBlocked && System.IO.File.ReadAllText(accountPath) == "broken", "Blocked recovery must not replace original data.");
+    }
+    finally { System.IO.Directory.Delete(testRoot, recursive: true); }
+
+    Assert(PersonalSyncAuthority.SelectMode(new SyncSession { UserId = "account", ExpiresAt = 1 }, false) == PersonalConfigSyncMode.UploadOnlyBackup,
+        "Expired authentication must never promote a backup to configuration authority.");
+    Assert(PersonalSyncAuthority.SelectMode(null, true) == PersonalConfigSyncMode.UploadOnlyBackup,
+        "A saved account login must keep personal storage in backup mode while reconnecting.");
+    Assert(PersonalSyncAuthority.SelectMode(null, false) == PersonalConfigSyncMode.Bidirectional,
+        "Standalone users must retain personal synchronization.");
+    var page = new CloudSyncObjectListResponse
+    {
+        CurrentRevision = 30, CursorRevision = 20,
+        Objects = [new CloudSyncObjectRecord { ObjectId = "a", Revision = 20 }]
+    };
+    Assert(CloudSyncProgress.DownloadCursor(10, page) == 20, "A concurrent server write must not advance the downloaded cursor.");
+    Assert(CloudSyncProgress.DownloadCursor(20, new CloudSyncObjectListResponse { CurrentRevision = 40, CursorRevision = 40 }) == 20,
+        "An empty response from an older server must not skip an unseen write.");
+    Assert(CloudSyncProgress.DownloadCursor(20, new CloudSyncObjectListResponse
+        { Objects = [new CloudSyncObjectRecord { ObjectId = "b", Revision = 21 }] }) == 21,
+        "A following page must still receive the other device's write.");
+    var when = new DateTime(2026, 9, 22, 1, 0, 0, DateTimeKind.Utc);
+    var first = LauncherConfigObjectStore.CreateRestorePoint([], [], when, "test");
+    var second = LauncherConfigObjectStore.CreateRestorePoint([], [], when, "test");
+    Assert(first.RestorePointId != second.RestorePointId && LauncherConfigObjectStore.GetRestorePointPath(first) != LauncherConfigObjectStore.GetRestorePointPath(second),
+        "Backups with the same timestamp must not overwrite one another.");
+    foreach (var invalid in new[] { "{}", "null", "{\"restorePoints\":null}", "{\"restorePoints\":[null]}" })
+    {
+        var rejected = false;
+        try { LauncherConfigObjectStore.DeserializeHistoryIndex(System.Text.Encoding.UTF8.GetBytes(invalid)); }
+        catch (JsonException) { rejected = true; }
+        Assert(rejected, "Malformed history must never be treated as an empty backup directory.");
+    }
+    var malformed = new LauncherConfigHistoryIndex { RestorePoints = [new LauncherConfigRestorePointInfo
+        { RestorePointId = "test", Path = "state/config-history/points/../../index.json", Sha256 = new string('a', 64) }] };
+    var unsafePathRejected = false;
+    try { LauncherConfigObjectStore.DeserializeHistoryIndex(LauncherConfigObjectStore.SerializeHistoryIndex(malformed)); }
+    catch (JsonException) { unsafePathRejected = true; }
+    Assert(unsafePathRejected, "History cleanup must not follow paths outside the backup directory.");
+    Console.WriteLine("Sync architecture safety passed: download watermarks, interleaved changes, unique backups, strict history index, stable authority.");
+}
+
+static void VerifySyncConflictExperience()
+{
+    static JsonElement Payload(string json) => JsonSerializer.Deserialize<JsonElement>(json);
+    static LauncherConfigObjectEnvelope Envelope(string json, bool deleted = false) => new()
+        { ObjectId = "settings.mouseTriggers", Payload = Payload(json), Deleted = deleted };
+    Assert(LauncherConfigObjectStore.HasEquivalentPayload(Envelope("{\"a\":1,\"b\":2}"), Envelope("{\"b\":2,\"a\":1}")), "Object property order must not create a conflict.");
+    Assert(!LauncherConfigObjectStore.HasEquivalentPayload(Envelope("[1,2]"), Envelope("[2,1]")), "Array order must remain meaningful.");
+    Assert(!LauncherConfigObjectStore.HasEquivalentPayload(Envelope("{}"), Envelope("{}", true)), "Deletion must remain a real difference.");
+    var state = new CloudObjectSyncState();
+    const string id = "settings.mouseTriggers";
+    var conflict = new CloudObjectConflictRecord { ObjectId = id, LocalPayload = Payload("{\"rightButtonLongPress\":true}"), RemoteRevision = 2 };
+    state.Conflicts[id] = conflict;
+    state.Objects[id] = new CloudObjectSyncCacheEntry { ObjectId = id, Revision = 3, Payload = Payload("{\"rightButtonLongPress\":false}"), UpdatedByDeviceName = "Other" };
+    state.PendingOperations[id] = new CloudObjectPendingOperation { ObjectId = id };
+    Assert(CloudConflictReconciler.Reconcile(state) == 0 && conflict.RemoteRevision == 3, "Real differences must survive and track latest remote revision.");
+    Assert(SyncUserText.Differences(conflict, state.Objects[id]).Contains("右键长按"), "Known differences need understandable names.");
+    state.Objects[id].Revision = 1;
+    state.Objects[id].Payload = conflict.LocalPayload;
+    Assert(CloudConflictReconciler.Reconcile(state) == 0 && state.Conflicts.Count == 1, "Older cache must not erase conflict.");
+    state.Objects[id].Revision = 4;
+    Assert(CloudConflictReconciler.Reconcile(state) == 1 && state.Conflicts.Count == 0, "Equal preserved content must reconcile.");
+    Assert(state.PendingOperations.ContainsKey(id), "Reconciliation must preserve newer pending edits.");
+    Assert(SyncUserText.Device("a", "PC", "a") == "本机", "Own device needs a friendly label.");
+    Assert(SyncUserText.Device("b", "PC", "a") == "PC", "Same display name must not imply same device.");
+    Assert(SyncUserText.Device(null, null, "a") != "本机", "Unknown identity must not imply this device.");
+    Console.WriteLine("Sync UX verification passed: semantic equality, preserved conflicts, revision refresh, pending edits, friendly labels.");
+}
 
 static void VerifySyncCoverageCatalog()
 {
@@ -237,6 +721,28 @@ static void VerifyExtensionAuthoritySelection()
             PersonalSyncService.ChooseExtensionEntry(local, remote, PersonalConfigSyncMode.Bidirectional),
             remote),
         "Standalone personal sync no longer selected the newer remote extension entry.");
+    var backupLocal = new WebDavSyncEntry
+    {
+        ExtensionId = "demo", Version = "0.2.5", PackageHash = "local",
+        UpdatedByDeviceId = "desktop", Revision = 29, BaseRevision = 21
+    };
+    var backupRemote = new WebDavSyncEntry
+    {
+        ExtensionId = "demo", Version = "0.2.5", PackageHash = "remote",
+        UpdatedByDeviceId = "notebook", Revision = 21
+    };
+    Assert(!PersonalSyncService.ShouldPublishAccountBackup(backupLocal, backupRemote, "desktop"),
+        "A same-version extension on one PC must not repeatedly replace another device's backup.");
+    backupLocal.Version = "0.2.6";
+    Assert(PersonalSyncService.ShouldPublishAccountBackup(backupLocal, backupRemote, "desktop"),
+        "A genuinely newer extension version must be backed up.");
+    backupLocal.Version = "0.2.5";
+    backupRemote.UpdatedByDeviceId = "desktop";
+    Assert(PersonalSyncService.ShouldPublishAccountBackup(backupLocal, backupRemote, "desktop"),
+        "Same-device new edits should update their own previously confirmed backup.");
+    backupRemote.Deleted = true;
+    Assert(!PersonalSyncService.ShouldPublishAccountBackup(backupLocal, backupRemote, "desktop"),
+        "A backup deletion must not be silently recreated by a local stale installation.");
     local.BaseRevision = 10;
     local.BasePackageHash = "base";
     local.BaseDeleted = false;
@@ -281,6 +787,29 @@ static void VerifyExtensionDataObjects()
            }, ExtensionDataObjectStore.ComputeContentHash(string.Empty), localDeleted: true),
         "A stale extension-data deletion could overwrite a newer remote value without conflict.");
 
+    var rapidEditState = new ExtensionDataSyncState
+    {
+        Pending = true,
+        LocalContentHash = second.ContentHash,
+        LastRemoteRevision = first.Revision
+    };
+    ExtensionDataSyncStateStore.ApplySynced(rapidEditState, first);
+    Assert(rapidEditState.Pending && rapidEditState.LocalContentHash == second.ContentHash,
+        "Completing an older upload cleared a newer local edit.");
+    first.UpdatedByDeviceId = "this-device";
+    Assert(ExtensionStorageService.ShouldSkipCloudRefresh(rapidEditState, first, "this-device"),
+        "A pending edit conflicted with an earlier upload from the same device.");
+    Assert(!ExtensionStorageService.ShouldSkipCloudRefresh(rapidEditState, first, "other-device"),
+        "A concurrent edit from another device was silently ignored.");
+    ExtensionDataSyncStateStore.ApplySynced(rapidEditState, second);
+    Assert(!rapidEditState.Pending && rapidEditState.LastRemoteRevision == second.Revision,
+        "Completing the latest upload did not clear its pending state.");
+    ExtensionDataSyncStateStore.ApplySynced(rapidEditState, first);
+    Assert(rapidEditState.LastRemoteRevision == second.Revision && rapidEditState.LocalContentHash == second.ContentHash,
+        "A delayed response moved the extension-data baseline backward.");
+    Assert(ExtensionStorageService.ShouldSkipCloudRefresh(rapidEditState, first, "other-device"),
+        "An older remote read was allowed to replace a newer baseline.");
+
     var roundTrip = ExtensionDataObjectStore.Deserialize(
         ExtensionDataObjectStore.Serialize(second),
         second.ExtensionId,
@@ -303,7 +832,30 @@ static void VerifyExtensionDataObjects()
         rejectedTamper = true;
     }
     Assert(rejectedTamper, "Extension-data content hash validation accepted a tampered object.");
-    Console.WriteLine("Extension data verification passed: per-key revisions, immutable history references, stable paths, hash validation.");
+
+    var accountObjectId = AccountExtensionDataStore.BuildObjectId(
+        "private.notes",
+        "folders/today.json");
+    Assert(
+        accountObjectId == "extensionData.v1.6a8d75c74bfb4e2d8130ec7d7adbfe3e9580e9b77fa80410aa434517fea2537f",
+        "Windows account extension-data object ID no longer matches the cross-platform SHA-256 contract.");
+
+    var accountPayload = AccountExtensionDataStore.CreatePayloadElement(
+        "private.notes",
+        "folders/today.json",
+        "hello");
+    Assert(
+        accountPayload.TryGetProperty("extensionId", out var extensionIdProperty) &&
+        extensionIdProperty.GetString() == "private.notes" &&
+        accountPayload.TryGetProperty("key", out var keyProperty) &&
+        keyProperty.GetString() == "folders/today.json" &&
+        accountPayload.TryGetProperty("content", out var contentProperty) &&
+        contentProperty.GetString() == "hello" &&
+        accountPayload.TryGetProperty("contentHash", out _) &&
+        !accountPayload.TryGetProperty("ExtensionId", out _),
+        "Account extension-data payload must use the Android-compatible camelCase wire contract.");
+
+    Console.WriteLine("Extension data verification passed: per-key revisions, immutable history references, stable paths, hashes, cross-platform wire contract.");
 }
 
 static CloudQuickPanelConfigSnapshot CreateSnapshot() => new()
@@ -320,6 +872,10 @@ static CloudQuickPanelConfigSnapshot CreateSnapshot() => new()
     ],
     SelectedQuickPanelGlobalGroupId = "g1",
     SelectedQuickPanelContextGroupId = "c1",
+    AppShortcutBindings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["wechat"] = "Alt+W"
+    },
     RadialMenu = new RadialMenuSettings
     {
         SelectedPageId = "r1",
@@ -336,4 +892,236 @@ static T Clone<T>(T value) => JsonSerializer.Deserialize<T>(JsonSerializer.Seria
 static void Assert(bool condition, string message)
 {
     if (!condition) throw new InvalidOperationException(message);
+}
+
+static void VerifyKnownApplicationCatalog()
+{
+    var wechat = KnownApplicationCatalog.Match("微信", @"C:\Program Files (x86)\Tencent\WeChat\WeChat.exe");
+    Assert(wechat?.Id == "wechat", "WeChat must resolve to a stable application identity.");
+    Assert(wechat?.ExtensionId == "app-known-wechat", "WeChat stable command ID changed unexpectedly.");
+
+    Assert(KnownApplicationCatalog.TryGetById("7zip", out var sevenZip), "7-Zip must exist in the trusted application catalog.");
+    var placeholder = KnownApplicationCatalog.CreatePlaceholder(sevenZip);
+    Assert(placeholder.ExtensionId == "app-known-7zip" &&
+           placeholder.LaunchTarget == "yanzi-app:7zip" &&
+           placeholder.Subtitle.Contains("未安装", StringComparison.Ordinal),
+        "Missing trusted applications must produce an installable placeholder instead of a machine-specific path.");
+
+    Console.WriteLine("Known application catalog verification passed: stable identity and install placeholder.");
+}
+
+static void VerifySyncPackageSafety()
+{
+    static void Reject(Action action, string message)
+    {
+        try { action(); }
+        catch (InvalidDataException) { return; }
+        throw new Exception(message);
+    }
+    Assert(SyncPackageSafety.ReadIndex(null).Items.Count == 0, "Missing index should initialize an empty repository.");
+    foreach (var json in new[] { "", "{", "null", "{}", "{\"items\":null}", "{\"items\":[null]}", "{\"schemaVersion\":99,\"items\":[]}" })
+        Reject(() => SyncPackageSafety.ReadIndex(System.Text.Encoding.UTF8.GetBytes(json)), "Corrupt index was treated as empty: " + json);
+    var valid = new WebDavSyncIndex { Items = [new WebDavSyncEntry { ExtensionId = "safe-id", Deleted = true }] };
+    Assert(SyncPackageSafety.ReadIndex(JsonSerializer.SerializeToUtf8Bytes(valid)).Items.Count == 1, "Valid tombstone rejected.");
+    valid.Items.Add(new WebDavSyncEntry { ExtensionId = "SAFE-ID", Deleted = true });
+    Reject(() => SyncPackageSafety.ReadIndex(JsonSerializer.SerializeToUtf8Bytes(valid)), "Duplicate IDs accepted.");
+    var root = Path.Combine(Path.GetTempPath(), "yanzi-sync-verification-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(root);
+    try
+    {
+        foreach (var id in new[] { "..", "../outside", "a/b", "a\\b", "C:\\outside", "name:stream", "trailing.", ".yanzi-old", " " })
+            Reject(() => SyncPackageSafety.ResolveExtensionDirectory(root, id), "Unsafe extension path accepted: " + id);
+        var target = SyncPackageSafety.ResolveExtensionDirectory(root, "extension");
+        Directory.CreateDirectory(target);
+        File.WriteAllText(Path.Combine(target, "original.txt"), "original");
+        using var stream = new MemoryStream();
+        using (var archive = new System.IO.Compression.ZipArchive(stream, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+        using (var writer = new StreamWriter(archive.CreateEntry("new.txt").Open())) writer.Write("updated");
+        using var hostileStream = new MemoryStream();
+        using (var hostileArchive = new System.IO.Compression.ZipArchive(hostileStream, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+        using (var writer = new StreamWriter(hostileArchive.CreateEntry("../escaped.txt").Open())) writer.Write("escape");
+        try { SyncPackageSafety.ReplaceDirectoryAsync(target, hostileStream.ToArray(), default).GetAwaiter().GetResult(); throw new Exception("ZIP traversal accepted."); }
+        catch (IOException) { }
+        Assert(!File.Exists(Path.Combine(root, "escaped.txt")) && File.Exists(Path.Combine(target, "original.txt")), "ZIP traversal damaged files outside staging.");
+        var bytes = stream.ToArray();
+        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes));
+        SyncPackageSafety.VerifyHash(bytes, hash.ToLowerInvariant());
+        Reject(() => SyncPackageSafety.VerifyHash(bytes, new string('0', 64)), "Hash mismatch accepted.");
+        Reject(() => SyncPackageSafety.ReplaceDirectoryAsync(target, [1, 2, 3], default).GetAwaiter().GetResult(), "Corrupt ZIP accepted.");
+        Assert(File.ReadAllText(Path.Combine(target, "original.txt")) == "original", "Failed extraction damaged original files.");
+        using var canceled = new CancellationTokenSource();
+        canceled.Cancel();
+        try { SyncPackageSafety.ReplaceDirectoryAsync(target, bytes, canceled.Token).GetAwaiter().GetResult(); throw new Exception("Cancellation ignored."); }
+        catch (OperationCanceledException) { }
+        Assert(File.Exists(Path.Combine(target, "original.txt")), "Cancellation damaged original files.");
+        // An occupied destination forces promotion to fail; it must remain untouched.
+        var blocked = Path.Combine(root, "occupied");
+        File.WriteAllText(blocked, "keep");
+        try { SyncPackageSafety.ReplaceDirectoryAsync(blocked, bytes, default).GetAwaiter().GetResult(); throw new Exception("Occupied destination accepted."); }
+        catch (IOException) { }
+        Assert(File.ReadAllText(blocked) == "keep", "Failed promotion damaged destination.");
+        SyncPackageSafety.ReplaceDirectoryAsync(target, bytes, default).GetAwaiter().GetResult();
+        Assert(File.ReadAllText(Path.Combine(target, "new.txt")) == "updated" && !File.Exists(Path.Combine(target, "original.txt")), "Replacement did not commit.");
+        Assert(!Directory.EnumerateDirectories(root, ".yanzi-*").Any(), "Temporary directories leaked.");
+    }
+    finally { Directory.Delete(root, recursive: true); }
+    Console.WriteLine("Sync package safety passed: corrupt indexes, duplicate IDs, path traversal, hashes, extraction failures, cancellation and replacement.");
+}
+static void VerifyExtensionPackageStability()
+{
+    var directory = Path.Combine(Path.GetTempPath(), "yanzi-package-stability-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(directory);
+    try
+    {
+        File.WriteAllText(Path.Combine(directory, "manifest.json"), "{\"id\":\"test-extension\",\"name\":\"测试小程序\"}");
+        File.WriteAllText(Path.Combine(directory, "content.txt"), "stable content");
+        var command = new CommandItem("T", "测试小程序", "", "小程序", "#000000", null, [],
+            source: CommandSource.LocalExtension, extensionId: "test-extension", extensionDirectoryPath: directory);
+        var first = ExtensionPackageService.BuildPackage(command, "0.1.0");
+
+        File.WriteAllText(Path.Combine(directory, ".yanzi-inline-123.ps1"), "temporary script");
+        File.WriteAllText(Path.Combine(directory, "debug.log"), "runtime trace");
+        File.WriteAllText(Path.Combine(directory, "content.txt.bak"), "old content");
+        File.WriteAllText(Path.Combine(directory, "main.cs.bak-20260927-before-edit"), "old source");
+        File.WriteAllText(Path.Combine(directory, "manifest.json.backup-20260927"), "old manifest");
+        var backupDirectory = Path.Combine(directory, "Backups");
+        Directory.CreateDirectory(backupDirectory);
+        File.WriteAllText(Path.Combine(backupDirectory, "content.txt"), "old content");
+        var cacheDirectory = Path.Combine(directory, ".yanzi-csharp-cache", "test", "bin", "Release", "net9.0");
+        Directory.CreateDirectory(cacheDirectory);
+        File.WriteAllBytes(Path.Combine(cacheDirectory, "YanziExtension.dll"), [1, 2, 3]);
+        var second = ExtensionPackageService.BuildPackage(command, "0.1.0");
+        Assert(first.SequenceEqual(second), "An inline runtime temp file changed the extension package hash.");
+        using var archive = new System.IO.Compression.ZipArchive(new MemoryStream(second));
+        Assert(archive.Entries.Any(entry => entry.FullName == "content.txt"), "Real extension content was omitted from the package.");
+        Assert(!archive.Entries.Any(entry => entry.FullName.StartsWith(".yanzi-inline-", StringComparison.OrdinalIgnoreCase)),
+            "An inline runtime temp file was included in the package.");
+    }
+    finally
+    {
+        Directory.Delete(directory, recursive: true);
+    }
+
+    Console.WriteLine("Extension package stability passed: runtime temp files do not change package bytes.");
+}
+
+static void VerifySearchInteractionSafety()
+{
+    using var pipeline = new SearchPipelineManager();
+    var first = pipeline.CreateSession("old", "file");
+    var canceled = false;
+    using var registration = first.Token.Register(() => canceled = true);
+    var waiting = Task.Delay(TimeSpan.FromMinutes(1), first.Token);
+    var second = pipeline.CreateSession("new", "all");
+    Assert(canceled && first.Token.IsCancellationRequested, "Replacing a search must cancel its in-flight work.");
+    try { waiting.GetAwaiter().GetResult(); throw new Exception("Old search delay was not canceled."); }
+    catch (OperationCanceledException) { }
+    Assert(!pipeline.IsActive(first) && pipeline.IsActive(second), "Late results must not remain active.");
+    pipeline.CancelActive();
+    Assert(second.Token.IsCancellationRequested && !pipeline.IsActive(second), "Hiding/editing must invalidate active work.");
+    second.Dispose();
+    Assert(second.Token.IsCancellationRequested, "Disposed sessions must expose a safe captured token.");
+    using (var throwing = new SearchSession(99, "test", "provider"))
+    {
+        throwing.Token.Register(() => throw new InvalidOperationException("provider cancellation failed"));
+        throwing.Dispose();
+        Assert(throwing.Token.IsCancellationRequested, "A provider cancellation callback must not break session cleanup.");
+    }
+    for (var i = 0; i < 1000; i++)
+    {
+        var previous = pipeline.CreateSession("a", "file");
+        var current = pipeline.CreateSession("ab", "file");
+        Assert(previous.Token.IsCancellationRequested && pipeline.IsActive(current), "Rapid input left stale work active.");
+    }
+
+    var results = new BulkObservableCollection<string>(["one", "two", "three"]);
+    var changes = new List<System.Collections.Specialized.NotifyCollectionChangedEventArgs>();
+    results.CollectionChanged += (_, e) => changes.Add(e);
+    results.ReplaceAll(new[] { "one", "two", "three" }.Where(_ => true));
+    Assert(changes.Count == 0, "Identical search results should not reset WPF containers/selection.");
+    results.ReplaceAll(results.Where(x => x != "two"));
+    Assert(results.SequenceEqual(["one", "three"]) && changes.Count == 1, "Lazy self-filtering must be snapshotted before clearing.");
+    results.ReplaceAll(results);
+    Assert(changes.Count == 1 && results.Count == 2, "Self replacement must preserve results without a reset.");
+    results[0] = "updated";
+    var replacement = changes.Last();
+    Assert((string?)replacement.NewItems?[0] == "updated" && (string?)replacement.OldItems?[0] == "one", "WPF replacement notification has reversed values.");
+    results.ReplaceAll(Array.Empty<string>());
+    var emptyChanges = changes.Count;
+    results.ReplaceAll(Enumerable.Empty<string>());
+    Assert(results.Count == 0 && changes.Count == emptyChanges, "Repeated empty results should not reset the list.");
+    Console.WriteLine("Search interaction safety passed: cancellation, late-result rejection, disposed tokens, rapid input, stable collections and lazy/self updates.");
+}
+
+static void VerifyBackpackResponsiveness()
+{
+    foreach (var threshold in new[] { 50, 120, 200, 250, 350, 500, 1500 })
+        Assert(AppSettingsStore.NormalizeLongPressMilliseconds(threshold) == threshold, "User long-press threshold was overwritten.");
+    Assert(AppSettingsStore.NormalizeLongPressMilliseconds(-1) == 50 &&
+           AppSettingsStore.NormalizeLongPressMilliseconds(5000) == 1500, "Long-press bounds were not enforced.");
+    using var cache = new QuickPanelSnapshotCache();
+    var key = new QuickPanelSnapshotKey(1, "explorer", "global", "context", false, false, 2);
+    Assert(!cache.CanReuse(key), "Uninitialized panel cache was reused.");
+    cache.UpdateKey(key);
+    Assert(cache.CanReuse(key), "Unchanged panel failed to reuse slots.");
+    foreach (var changed in new[] {
+        key with { SettingsVersion = 2 }, key with { ContextProcess = "notepad" },
+        key with { GlobalGroupId = "other" }, key with { ContextGroupId = "other" },
+        key with { GlobalFavorites = true }, key with { ContextFavorites = true },
+        key with { CommandsCount = 3 } })
+        Assert(!cache.CanReuse(changed), "Changed panel configuration reused stale slots.");
+    Assert(!cache.CanReuse(null), "Unverifiable settings were reused.");
+    cache.Invalidate();
+    Assert(!cache.CanReuse(key), "Invalidated panel cache was reused.");
+    cache.UpdateKey(key);
+    Assert(cache.CanReuse(key), "Updated panel cache was not reusable.");
+    cache.Dispose();
+    Assert(!cache.CanReuse(key), "Disposed panel cache remained reusable.");
+    Console.WriteLine("Backpack responsiveness safety passed: unchanged-slot reuse, configuration invalidation and threshold preservation.");
+}
+
+static void VerifyQuickWindowSwitchSafety()
+{
+    // 1. 目标判定规则验证
+    Assert(QuickWindowSwitchService.IsToggleEligibleTarget("shell:Desktop"), "shell:Desktop 应该支持智能窗口切换。");
+    Assert(QuickWindowSwitchService.IsToggleEligibleTarget("shell:Downloads"), "shell:Downloads 应该支持智能窗口切换。");
+    Assert(QuickWindowSwitchService.IsToggleEligibleTarget("notepad.exe"), "notepad.exe 应该支持智能窗口切换。");
+    Assert(QuickWindowSwitchService.IsToggleEligibleTarget(@"C:\Windows\notepad.exe"), "完整路径可执行文件应该支持智能窗口切换。");
+    Assert(QuickWindowSwitchService.IsToggleEligibleTarget("calc"), "通用命令应该支持智能窗口切换。");
+    Assert(!QuickWindowSwitchService.IsToggleEligibleTarget("https://yanzi.luoluoluo.cc.cd"), "网页网址不应支持智能窗口切换。");
+    Assert(!QuickWindowSwitchService.IsToggleEligibleTarget("http://127.0.0.1:8080"), "HTTP 网址不应支持智能窗口切换。");
+    Assert(!QuickWindowSwitchService.IsToggleEligibleTarget(""), "空字符串不应支持智能窗口切换。");
+
+    // 2. Manifest 序列化与反序列化验证
+    var options = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+    var jsonWithToggleTrue = "{\"name\":\"测试\",\"toggleWindow\":true}";
+    var manifest1 = JsonSerializer.Deserialize<LocalExtensionManifest>(jsonWithToggleTrue, options);
+    Assert(manifest1?.ToggleWindow == true, "反序列化 toggleWindow: true 失败。");
+
+    var jsonWithToggleFalse = "{\"name\":\"测试\",\"toggleWindow\":false}";
+    var manifest2 = JsonSerializer.Deserialize<LocalExtensionManifest>(jsonWithToggleFalse, options);
+    Assert(manifest2?.ToggleWindow == false, "反序列化 toggleWindow: false 失败。");
+
+    var jsonWithoutToggle = "{\"name\":\"测试\"}";
+    var manifest3 = JsonSerializer.Deserialize<LocalExtensionManifest>(jsonWithoutToggle, options);
+    Assert(manifest3?.ToggleWindow == null, "未显式指定 toggleWindow 时应为 null。");
+
+    // 3. CommandItem 默认与显式设置验证
+    var cmdDefault = new CommandItem("T", "测试默认", "subtitle", "小程序", "#000000", "notepad.exe", []);
+    Assert(cmdDefault.ToggleWindow == true, "CommandItem 默认 ToggleWindow 应该为 true。");
+
+    var cmdDisabled = new CommandItem("T", "测试关闭", "subtitle", "小程序", "#000000", "notepad.exe", [], toggleWindow: false);
+    Assert(cmdDisabled.ToggleWindow == false, "CommandItem 显式关闭 ToggleWindow 应该为 false。");
+
+    Console.WriteLine("Quick window switch safety passed: eligibility check, manifest roundtrip, default value fallback and CommandItem mapping.");
+}
+
+sealed class VerificationAccountObjectRepository(CloudSyncObjectListResponse page)
+    : IAccountObjectRepository<CloudSyncObjectListResponse>
+{
+    public Task<CloudSyncObjectListResponse> ReadSnapshotAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult(page);
+
+    public Task<CloudSyncObjectListResponse> ReadChangesAsync(long cursor, CancellationToken cancellationToken = default) =>
+        Task.FromResult(page);
 }

@@ -45,13 +45,13 @@
                         DockPanel.Dock="Right"
                         HorizontalAlignment="Right"
                         VerticalAlignment="Top"
-                        Background="#20FFFFFF"
+                        Background="{DynamicResource OverlayHover}"
                         Foreground="#AAFFFFFF"
                         CornerRadius="14"/>
             </DockPanel>
 
             <!-- Bottom Action Bar -->
-            <Border DockPanel.Dock="Bottom" Margin="0,16,0,0" Padding="0,12,0,0" BorderThickness="0,1,0,0" BorderBrush="#1AFFFFFF">
+            <Border DockPanel.Dock="Bottom" Margin="0,16,0,0" Padding="0,12,0,0" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource OverlayBorder}">
                 <DockPanel>
                     <TextBlock x:Name="StatusMessageText"
                                Text="请按照指引开启权限，开启后点击「检查并重新连接」"
@@ -82,14 +82,14 @@
                 <!-- Left Column: Instructions Guide -->
                 <Border Grid.Column="0"
                         Background="#12FFFFFF"
-                        BorderBrush="#1AFFFFFF"
+                        BorderBrush="{DynamicResource OverlayBorder}"
                         BorderThickness="1"
                         CornerRadius="12"
                         Padding="14">
                     <DockPanel LastChildFill="True">
                         <StackPanel DockPanel.Dock="Bottom" Margin="0,12,0,0" Spacing="6">
                             <TextBlock Text="💡 提示：若设置列表中未出现燕子，请点击下方在访达中定位并直接拖拽入列表"
-                                       Foreground="#80FFFFFF"
+                                       Foreground="{DynamicResource OverlayTextMuted}"
                                        FontSize="10"
                                        TextWrapping="Wrap"/>
                             <Button Content="📁 在访达中定位应用"
@@ -136,12 +136,12 @@
                 <!-- Right Column: Permission Status Cards -->
                 <StackPanel Grid.Column="2" Spacing="12">
                     <!-- Accessibility Permission Card -->
-                    <Border Background="#14161616" BorderThickness="1" BorderBrush="#1AFFFFFF" CornerRadius="12" Padding="14">
+                    <Border Background="#14161616" BorderThickness="1" BorderBrush="{DynamicResource OverlayBorder}" CornerRadius="12" Padding="14">
                         <StackPanel Spacing="10">
                             <DockPanel>
                                 <StackPanel Spacing="2" DockPanel.Dock="Left">
                                     <TextBlock Text="1. 辅助功能 (Accessibility)" Foreground="White" FontSize="13" FontWeight="SemiBold"/>
-                                    <TextBlock Text="用于捕获全局按键、模拟输入与无缝交互" Foreground="#80FFFFFF" FontSize="10"/>
+                                    <TextBlock Text="用于捕获全局按键、模拟输入与无缝交互" Foreground="{DynamicResource OverlayTextMuted}" FontSize="10"/>
                                 </StackPanel>
                                 <Border x:Name="AccessibilityBadge"
                                         DockPanel.Dock="Right"
@@ -167,7 +167,7 @@
                                 <Button Content="一键请求授权"
                                         Click="RequestAccessibility_Click"
                                         FontSize="11"
-                                        Background="#20FFFFFF"
+                                        Background="{DynamicResource OverlayHover}"
                                         Padding="12,6"
                                         CornerRadius="6"/>
                             </StackPanel>
@@ -175,12 +175,12 @@
                     </Border>
 
                     <!-- Input Monitoring Permission Card -->
-                    <Border Background="#14161616" BorderThickness="1" BorderBrush="#1AFFFFFF" CornerRadius="12" Padding="14">
+                    <Border Background="#14161616" BorderThickness="1" BorderBrush="{DynamicResource OverlayBorder}" CornerRadius="12" Padding="14">
                         <StackPanel Spacing="10">
                             <DockPanel>
                                 <StackPanel Spacing="2" DockPanel.Dock="Left">
                                     <TextBlock Text="2. 输入监控 (Input Monitoring)" Foreground="White" FontSize="13" FontWeight="SemiBold"/>
-                                    <TextBlock Text="用于全局右键长按呼出背包、拖拽轮盘与手势" Foreground="#80FFFFFF" FontSize="10"/>
+                                    <TextBlock Text="用于全局右键长按呼出背包、拖拽轮盘与手势" Foreground="{DynamicResource OverlayTextMuted}" FontSize="10"/>
                                 </StackPanel>
                                 <Border x:Name="InputMonitoringBadge"
                                         DockPanel.Dock="Right"
@@ -206,7 +206,7 @@
                                 <Button Content="一键请求授权"
                                         Click="RequestInputMonitoring_Click"
                                         FontSize="11"
-                                        Background="#20FFFFFF"
+                                        Background="{DynamicResource OverlayHover}"
                                         Padding="12,6"
                                         CornerRadius="6"/>
                             </StackPanel>

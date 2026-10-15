@@ -1,6 +1,26 @@
-const mobilePollRateLimitMap = new Map();
-const mobilePollRateLimitMaxEntries = 5000;
+import { createSyncApi } from './sync-api.js';
+import { findReusablePrivateArchive } from './private-archive-reuse.js';
+import { isCloudServicePath, needsTopLevelCloudAuth, isVipActive, readVipEntitlement, passesLoginRateLimit } from './cloud-access-policy.js';
+import { upgradePageHtml, upgradePageScript } from './upgrade-page.js';
+import { cleanupEnvironment } from './device-environment.js';
+import { createDeviceApi } from './device-api.js';
+import { createDeviceRepository } from './device-repository.js';
+import { createSyncObjectRepository } from './sync-object-repository.js';
+import { readJson } from './request-json.js';
+import { HttpError } from './http-error.js';
+import { normalizeDevicePayload, normalizeDeviceMessagePayload, normalizeDeviceId, normalizeOptionalDeviceId, normalizeDevicePlatform, normalizeOptionalDevicePlatform, normalizeMessageKind, normalizeMessageId, normalizeMessageLimit, normalizeShortText, normalizeOptionalString, normalizeJsonObject, normalizeOptionalIsoDate } from './device-payload.js';
+import { handleAttachments, ownedAttachment, cleanupAttachments, MessagingError } from './mobile-attachments.js';
+import { authorizeDeviceCredential } from './device-credentials.js';
+import { accountLanLink } from './account-lan-links.js';
+import { sendOfflinePush } from './mobile-push.js';
+import { handleApplicationPlatform } from './application-platform.js';
+import { handleExternalAccess, cleanupExternalAccess } from './external-access.js';
+import { handleRecordApi } from './record-api.js';
+import { DEVICE_MESSAGE_PROTOCOL, acceptsAccountChat, isAccountChat, messageMatchesDevice,
+  isExecutionMessage, canonicalMessageJson, executionDeadline, traceContext } from './device-message-protocol.js';
+export { DeviceRelay } from './device-relay.js';
 const TOKEN_TTL_SECONDS = 60 * 60 * 24 * 30;
+const DEVICE_ONLINE_WINDOW_MS = 2 * 60 * 1000;
 const PASSWORD_ITERATIONS = 100000;
 const VERIFICATION_CODE_TTL_MINUTES = 10;
 const PUBLIC_SITE_ORIGIN = "https://yanzi.luoluoluo.cc.cd";
@@ -47,24 +67,125 @@ const PUBLIC_STORE_EXTENSION_IDS_SQL = PUBLIC_STORE_EXTENSIONS
   .join(", ");
 
 
+// Request-scoped attribution: only authenticated users, never raw identifiers.
+const requestIdentity = new WeakMap();
+const loginAttemptIdentity = new WeakMap();
+const TELEMETRY_ERROR_CODES = new Set(['user_not_found', 'invalid_credentials', 'login_rate_limited',
+  'vip_required', 'unauthorized', 'token_expired', 'device_credential_revoked', 'device_scope_denied',
+  'not_found', 'internal_error', 'export_rate_limited']);
+// Read-only operator correlation against registered random user/device IDs.
+// Never use this for email addresses, passwords, network addresses or login attempts.
+async function identityLookupRef(domain, value) {
+  if (!value) return null;
+  const bytes = new TextEncoder().encode(`yanzi-lookup-${domain}-v1:${value}`);
+  return bytesToHex(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))).slice(0, 24);
+}
+function safeClientVersion(value) {
+  const version = String(value || '').trim().toLowerCase();
+  return /^\d{1,4}(?:\.\d{1,4}){1,3}(?:[-.][a-z0-9]{1,16})?$/.test(version) ? version : 'unknown';
+}
+function safeDeviceClaim(request) {
+  const value = request.headers.get('x-yanzi-device-id') || '';
+  return /^[a-zA-Z0-9_-]{8,100}$/.test(value) ? value : null;
+}
+const cloudVipCache = new Map();
+async function cachedCloudVipRecord(env, userId) {
+  const now = Date.now();
+  let cached = cloudVipCache.get(userId);
+  if (!cached || cached.checkedUntil < now) {
+    // Indexed read only; no D1 schema/table writes on status polling.
+    const {row} = await readVipEntitlement(env.DB, userId, now);
+    cached = {row, checkedUntil:now + 15000};
+    if (cloudVipCache.size >= 2000) cloudVipCache.clear();
+    cloudVipCache.set(userId, cached);
+  }
+  return cached.row;
+}
+async function ensureCloudVipUser(env, userId) {
+  if (env.CLOUD_VIP_ONLY !== 'true') return;
+  const id = String(userId || '');
+  if (!id) throw new HttpError(401, 'unauthorized', 'Authentication required');
+  if (!isVipActive(await cachedCloudVipRecord(env, id), Date.now()))
+    throw new HttpError(403, 'vip_required', '云服务需要有效 VIP 会员；本地免费功能不受影响。', {
+      upgradeUrl: 'https://wzyp.cn/shop/4AOUCE2B',
+      activationPath: '/v1/licenses/redeem',
+      exportPath: '/v1/user/cloud-export',
+      retryAfterSeconds: 1800
+    });
+}
+async function finalizeCloudAuth(request, env, auth) {
+  recordAuthenticatedUser(request, auth);
+  if (isCloudServicePath(new URL(request.url).pathname))
+    await ensureCloudVipUser(env, auth?.userId);
+  return auth;
+}
+async function limitLoginBeforeDatabase(request, env, email) {
+  if (!env.LOGIN_RATE_LIMITER?.limit) return;
+  const ip = request.headers.get('cf-connecting-ip') || 'unknown';
+  const key = await anonymousKey(env, 'login-limit', `${email}:${ip}`);
+  if (!key) return;
+  if (!(await passesLoginRateLimit(env.LOGIN_RATE_LIMITER, key)))
+    throw new HttpError(429, 'login_rate_limited', 'Too many login attempts; try again in one minute');
+}
+
+async function anonymousKey(env, domain, value) {
+  if (!env.AUTH_TOKEN_SECRET || !value) return null;
+  const digest = await hmacSha256(env.AUTH_TOKEN_SECRET, `yanzi-telemetry-${domain}-v1:${value}`);
+  return digest.slice(0, 16);
+}
+function recordAuthenticatedUser(request, auth) {
+  if (auth?.userId) requestIdentity.set(request, { userId: String(auth.userId), deviceId: auth.deviceId ? String(auth.deviceId) : null });
+  return auth;
+}
 export default {
-  async fetch(request, env) {
+  async scheduled(event, env, ctx) { ctx.waitUntil(cleanupAttachments(env)); ctx.waitUntil(cleanupExternalAccess(env)); ctx.waitUntil(cleanupEnvironment(env)); },
+  async fetch(request, env, ctx) {
+    const started = Date.now();
+    const path = new URL(request.url).pathname;
+    // Never log raw path segments: they may contain access tokens or personal data.
+    const family = path.startsWith("/v1/") ? path.split("/")[2] : "";
+    const route = path === "/health" ? "/health" :
+      ["sync", "auth", "devices", "device", "messaging", "messages", "records", "apps", "applications", "me"].includes(family) ? `/v1/${family}` : "/other";
+    // Fixed allowlist: never persist untrusted client headers or identifying values.
+    // Bounded endpoint classification for read amplification investigation; no raw URL or query.
+    const endpoint = path === '/v1/me/devices' ? 'devices_list' :
+      path === '/v1/me/mobile/messages' ? 'messages_list' :
+      path === '/v1/me/mobile/messages/events' ? 'messages_events' :
+      path === '/v1/sync/changes' ? 'sync_changes' :
+      path === '/v1/sync/objects' ? 'sync_objects' :
+      path === '/v1/sync/capabilities' ? 'sync_capabilities' :
+      path === '/v1/applications/access-requests' ? 'access_requests' : 'other';
+    const rawClient = request.headers.get("x-yanzi-client") || "";
+    const client = ["desktop", "server", "android", "mobile", "web"].includes(rawClient) ? rawClient : "unknown";
+    let status = 500;
+    let category = "server_error";
+    let failureCode = null;
     try {
-      return await handleRequest(request, env);
+      const response = await handleRequest(request, env, ctx);
+      status = response.status;
+      category = status >= 500 ? "server_error" : status >= 400 ? "client_error" : "ok";
+      return response;
     } catch (error) {
-      if (error instanceof HttpError) {
-        return withCors(
-          json(
-            {
-              error: error.code,
-              message: error.message,
-              ...(error.details ? { details: error.details } : {})
-            },
-            error.status
-          )
+      if (error instanceof HttpError || error instanceof MessagingError) {
+        status = error.status;
+        failureCode = TELEMETRY_ERROR_CODES.has(error.code) ? error.code : 'other_handled_error';
+        category = "handled_error";
+        const rejected = json(
+          {
+            error: error.code,
+            message: error.message,
+            ...(error.details ? { details: error.details } : {})
+          },
+          error.status
         );
+        if (error.code === 'login_rate_limited' || error.code === 'export_rate_limited') {
+          rejected.headers.set('retry-after', '60');
+          rejected.headers.set('cache-control', 'no-store');
+        }
+        return withCors(rejected);
       }
 
+      failureCode = 'internal_error';
       return withCors(
         json(
           {
@@ -74,18 +195,66 @@ export default {
           500
         )
       );
+    } finally {
+      // No credentials, query strings, message bodies or device identifiers.
+      const successSampleRate = 0.1; // Keep errors at 100%; bound normal-request telemetry overhead.
+      if (status >= 400 || Math.random() < successSampleRate) {
+        const auth = requestIdentity.get(request);
+        const claimedDevice = safeDeviceClaim(request);
+        console.log(JSON.stringify({ event: "yanzi_request", method: request.method,
+          route: route.slice(0, 160), endpoint, client,
+          client_version: safeClientVersion(request.headers.get('x-yanzi-client-version')),
+          status, category, failure_code: failureCode, duration_ms: Date.now() - started,
+          sample_rate: status >= 400 ? 1 : successSampleRate,
+          user_key: await anonymousKey(env, "user", auth?.userId),
+          user_lookup_ref: await identityLookupRef('user', auth?.userId),
+          device_lookup_ref: await identityLookupRef('device', auth?.userId && (auth.deviceId || claimedDevice)
+            ? `${auth.userId}:${auth.deviceId || claimedDevice}` : null),
+          device_lookup_trust: auth?.deviceId ? 'verified' : auth?.userId && claimedDevice ? 'claimed' : null,
+          verified_device_key: await anonymousKey(env, "device", auth?.deviceId && auth?.userId ? `${auth.userId}:${auth.deviceId}` : null),
+          claimed_device_key: await anonymousKey(env, "device-claim", claimedDevice),
+          attempted_account_key: await anonymousKey(env, "login-attempt", loginAttemptIdentity.get(request)),
+          network_key: await anonymousKey(env, 'network-' + new Date().toISOString().slice(0, 10),
+            request.headers.get('cf-connecting-ip')) }));
+      }
     }
   }
 };
 
-async function handleRequest(request, env) {
+async function handleRequest(request, env, ctx) {
   const url = new URL(request.url);
 
   if (request.method === "OPTIONS") {
     return withCors(new Response(null, { status: 204 }));
   }
+  // Protect formerly public, resource-consuming catalogue and community APIs.
+  // Auth is checked ahead of R2/D1 reads, without trusting client version headers.
+  if (env.CLOUD_VIP_ONLY === 'true' && needsTopLevelCloudAuth(url.pathname)) {
+    await requireAuth(request, env);
+  }
+
+  const platformApi = {
+    requireAuth, ensureCloudVipUser, verifyToken, signToken, read: readUserSyncObject,
+    write: writeUserSyncObject, json, HttpError
+  };
+  const externalResponse = await handleExternalAccess(request, env, platformApi);
+  if (externalResponse) return externalResponse;
+  const recordResponse = await handleRecordApi(request, env, platformApi);
+  if (recordResponse) return recordResponse;
+  const applicationResponse = await handleApplicationPlatform(request, env, platformApi);
+  if (applicationResponse) return applicationResponse;
+  const syncResponse = await handleSyncApi(request, env, ctx);
+  if (syncResponse) return syncResponse;
+  const deviceResponse = await handleDeviceApi(request, env, ctx);
+  if (deviceResponse) return deviceResponse;
 
   if (url.pathname.startsWith("/downloads/") && request.method === "GET") {
+    // Paid application packages are not free anonymous R2 egress. Keep signed
+    // Android release/upgrade manifests public so users can obtain an updated client.
+    if (env.CLOUD_VIP_ONLY === 'true' && url.pathname.startsWith('/downloads/applications/')) {
+      const auth = await requireAuth(request, env);
+      await ensureCloudVipUser(env, auth.userId);
+    }
     const key = url.pathname.substring(1);
     const object = await env.PACKAGES.get(key);
     if (!object) {
@@ -94,20 +263,36 @@ async function handleRequest(request, env) {
     const headers = new Headers();
     object.writeHttpMetadata(headers);
     headers.set("etag", object.httpEtag || "");
-    headers.set("Content-Type", "application/zip");
+    if (!headers.has("Content-Type")) headers.set("Content-Type", key.endsWith('.apk')
+      ? "application/vnd.android.package-archive" : key.endsWith('.json') ? "application/json; charset=utf-8" : "application/zip");
+    headers.set("Cache-Control", key.endsWith('releases.json') ? "public, max-age=60" : "public, max-age=3600");
     headers.set("Access-Control-Allow-Origin", "*");
     return new Response(object.body, { headers });
   }
 
   if (url.pathname === "/v1/debug/list-packages" && request.method === "GET") {
-    const list = await env.PACKAGES.list();
+    const auth = await requireAuth(request, env);
+    if (!isAdminUser(auth, env)) throw new HttpError(403, 'admin_required', 'Administrator required');
+    const list = await env.PACKAGES.list({ prefix: 'downloads/' });
     const keys = list.objects.map(obj => obj.key);
     return json({ count: keys.length, keys });
   }
 
+  if (url.pathname === '/upgrade' && request.method === 'GET') {
+    return new Response(upgradePageHtml, {headers:{'content-type':'text/html; charset=utf-8',
+      'content-security-policy':"default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'",
+      'cache-control':'public, max-age=3600'}});
+  }
+  if (url.pathname === '/upgrade.js' && request.method === 'GET') {
+    return new Response(upgradePageScript, {headers:{'content-type':'application/javascript; charset=utf-8',
+      'cache-control':'public, max-age=3600',
+      'x-content-type-options':'nosniff'}});
+  }
+
   if (url.pathname === "/health") {
-    const result = await env.DB.prepare("select datetime('now') as now").first();
-    return json({ ok: true, now: result?.now ?? null });
+    // Never spend a D1 read for an unauthenticated health probe.
+    // Database availability is verified separately by protected internal checks.
+    return json({ ok: true, now: isoNow(), foundationRevision: "2026-10-03-domains-v1", deviceEnvironmentProtocol: 1 });
   }
 
   if (url.pathname === "/v1/auth/register" && request.method === "POST") {
@@ -205,6 +390,7 @@ async function handleRequest(request, env) {
       ).bind(email)
     ]);
 
+    recordAuthenticatedUser(request, { userId });
     return json(await buildAuthResponse(env, { userId, username, email }));
   }
 
@@ -269,6 +455,9 @@ async function handleRequest(request, env) {
   if (url.pathname === "/v1/auth/login" && request.method === "POST") {
     const payload = await readJson(request);
     const email = normalizeEmail(payload.email || payload.username);
+    // Attempted account is NOT an authenticated user; only emit its keyed digest.
+    loginAttemptIdentity.set(request, email);
+    await limitLoginBeforeDatabase(request, env, email);
     const password = validatePassword(payload.password);
     const authVersion = payload.authVersion || "";
     const legacyPassword = payload.legacyPassword ? validatePassword(payload.legacyPassword) : null;
@@ -338,6 +527,7 @@ async function handleRequest(request, env) {
     }
 
     await touchUser(env, user.user_id);
+    recordAuthenticatedUser(request, { userId: user.user_id });
     return json(await buildAuthResponse(env, { userId: user.user_id, username: user.username, email: user.email }));
   }
 
@@ -464,11 +654,20 @@ async function handleRequest(request, env) {
       ).bind(now, user.user_id)
     ]);
 
+    recordAuthenticatedUser(request, { userId: user.user_id });
     return json(await buildAuthResponse(env, { userId: user.user_id, username: user.username, email: user.email }));
   }
 
   if (url.pathname === "/v1/auth/me" && request.method === "GET") {
     const auth = await requireAuth(request, env);
+    const vipInfo = await getUserVipInfo(env, auth.userId);
+    // Legacy clients poll account status. Never create/query the wish-wall tables
+    // for free users who cannot access that paid cloud feature.
+    if (env.CLOUD_VIP_ONLY === 'true' && !vipInfo.isVip) {
+      return json({userId:auth.userId, username:auth.username, email:auth.email,
+        points:0, wishesCount:0, acceptedCount:0, isAdmin:isAdminUser(auth, env),
+        ...vipInfo});
+    }
     let points = 0;
     let wishesCount = 0;
     let acceptedCount = 0;
@@ -492,7 +691,262 @@ async function handleRequest(request, env) {
       points,
       wishesCount,
       acceptedCount,
-      isAdmin: isAdminUser(auth, env)
+      isAdmin: isAdminUser(auth, env),
+      ...vipInfo
+    });
+  }
+
+  // --- VIP 会员与卡密 License 相关 API ---
+  if (url.pathname === "/v1/user/vip-status" && request.method === "GET") {
+    const auth = await requireAuth(request, env);
+    const vipInfo = await getUserVipInfo(env, auth.userId);
+    return json({
+      ok: true,
+      userId: auth.userId,
+      username: auth.username,
+      ...vipInfo
+    });
+  }
+
+  // Membership discovery works for free users (including older signed-in clients).
+  if (url.pathname === "/v1/user/cloud-access" && request.method === "GET") {
+    const auth = await requireAuth(request, env);
+    const vipInfo = await getUserVipInfo(env, auth.userId);
+    const response = json({ ok: true, ...vipInfo,
+      cloudVipOnly: env.CLOUD_VIP_ONLY === 'true',
+      canUseCloud: env.CLOUD_VIP_ONLY !== 'true' || vipInfo.isVip,
+      freeVersionCeiling: '1.0',
+      upgradeUrl: 'https://wzyp.cn/shop/4AOUCE2B',
+      redeemPath: '/v1/licenses/redeem',
+      exportPath: '/v1/user/cloud-export',
+      message: vipInfo.isVip ? '会员云服务已开通' : '本地免费功能继续可用，云服务及后续版本需要激活 VIP'
+    });
+    response.headers.set('cache-control', 'no-store');
+    return response;
+  }
+
+  // Authenticated historical data portability. Read-only and paginated to avoid
+  // breaking users' access to their own pre-existing data after membership expiry.
+  if (url.pathname === "/v1/user/cloud-export" && request.method === "GET") {
+    const auth = await requireAuth(request, env);
+    const rawCursor = url.searchParams.get('cursor') ?? '0';
+    if (!/^(?:0|[1-9][0-9]{0,15})$/.test(rawCursor) || !Number.isSafeInteger(Number(rawCursor)))
+      throw new HttpError(400, 'invalid_export_cursor', 'Invalid export cursor');
+    if (env.EXPORT_RATE_LIMITER?.limit) {
+      const key = await anonymousKey(env, 'export', auth.userId);
+      if (!(await passesLoginRateLimit(env.EXPORT_RATE_LIMITER, key)))
+        throw new HttpError(429, 'export_rate_limited', 'Export temporarily rate limited; retry in one minute');
+    }
+    const page = await readUserSyncObjects(env, auth.userId, Number(rawCursor), 100);
+    const response = json({ok:true, format:'yanzi-cloud-sync-objects-v1',
+      note:'Snapshot of sync objects only; attachments and external storage must be exported separately.',
+      ...page});
+    response.headers.set('cache-control','no-store');
+    response.headers.set('content-disposition','attachment; filename="yanzi-sync-objects.json"');
+    return response;
+  }
+
+  if (url.pathname === "/v1/licenses/redeem" && request.method === "POST") {
+    const auth = await requireAuth(request, env);
+    const payload = await readJson(request);
+    const rawCode = String(payload?.code || "").trim().toUpperCase();
+    if (!rawCode) {
+      throw new HttpError(400, "code_required", "请输入卡密激活码");
+    }
+
+    await ensureLicenseTables(env);
+    const license = await env.DB.prepare(
+      "select code, type, duration_days, status, used_by_user_id from license_keys where code = ?"
+    ).bind(rawCode).first();
+
+    if (!license) {
+      throw new HttpError(404, "invalid_license", "激活码不存在，请核对后重试");
+    }
+
+    if (license.status === "used") {
+      throw new HttpError(400, "license_already_used", "该激活码已被使用");
+    }
+
+    if (license.status === "revoked") {
+      throw new HttpError(400, "license_revoked", "该激活码已作废");
+    }
+
+    const currentUser = await env.DB.prepare(
+      "select vip_expire_at, vip_type from users where user_id = ?"
+    ).bind(auth.userId).first();
+
+    const now = new Date();
+    let newVipType = license.type;
+    let newExpireAt;
+
+    if (license.type === "lifetime" || currentUser?.vip_type === "lifetime") {
+      newVipType = "lifetime";
+      newExpireAt = "2099-12-31T23:59:59.000Z";
+    } else {
+      let baseTime = now.getTime();
+      if (currentUser?.vip_expire_at) {
+        const existingExpire = new Date(currentUser.vip_expire_at).getTime();
+        if (existingExpire > baseTime) {
+          baseTime = existingExpire;
+        }
+      }
+      const addDays = Number(license.duration_days) || (license.type === "year" ? 365 : 30);
+      newExpireAt = new Date(baseTime + addDays * 86400 * 1000).toISOString();
+    }
+
+    const nowIso = now.toISOString();
+
+    await env.DB.batch([
+      env.DB.prepare(
+        `update license_keys
+         set status = 'used',
+             used_by_user_id = ?,
+             used_at = ?
+         where code = ? and status = 'unused'`
+      ).bind(auth.userId, nowIso, rawCode),
+      env.DB.prepare(
+        `update users
+         set vip_expire_at = ?,
+             vip_type = ?,
+             updated_at = ?
+         where user_id = ?`
+      ).bind(newExpireAt, newVipType, nowIso, auth.userId)
+    ]);
+
+    cloudVipCache.delete(auth.userId);
+    const updatedVipInfo = await getUserVipInfo(env, auth.userId);
+
+    return json({
+      ok: true,
+      message: "激活成功！感谢您对燕子开发维护的支持。",
+      code: rawCode,
+      ...updatedVipInfo
+    });
+  }
+
+  if (url.pathname === "/v1/licenses/generate" && request.method === "POST") {
+    const adminSecret = request.headers.get("x-admin-secret");
+    let isAuthorized = Boolean(adminSecret && env.AUTH_TOKEN_SECRET && adminSecret === env.AUTH_TOKEN_SECRET);
+
+    if (!isAuthorized) {
+      try {
+        const auth = await requireAuth(request, env);
+        isAuthorized = isAdminUser(auth, env);
+      } catch (e) {
+        // 未认证
+      }
+    }
+
+    if (!isAuthorized) {
+      throw new HttpError(403, "admin_required", "需要管理员权限");
+    }
+
+    const payload = await readJson(request);
+    const count = Math.min(Math.max(1, parseInt(payload?.count || "1", 10)), 500);
+    const type = String(payload?.type || "year").toLowerCase();
+    const batchTag = String(payload?.batchTag || `batch_${isoNow().slice(0, 10)}`).trim();
+
+    let durationDays = 365;
+    let typePrefix = "1Y";
+    if (type === "month") {
+      durationDays = 30;
+      typePrefix = "1M";
+    } else if (type === "lifetime") {
+      durationDays = 36500;
+      typePrefix = "LIFE";
+    }
+
+    await ensureLicenseTables(env);
+    const nowIso = isoNow();
+    const generatedCodes = [];
+    const statements = [];
+
+    const chars = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+    for (let i = 0; i < count; i++) {
+      let part1 = "";
+      let part2 = "";
+      let part3 = "";
+      const randomBytes = new Uint8Array(12);
+      crypto.getRandomValues(randomBytes);
+      for (let j = 0; j < 4; j++) part1 += chars[randomBytes[j] % chars.length];
+      for (let j = 4; j < 8; j++) part2 += chars[randomBytes[j] % chars.length];
+      for (let j = 8; j < 12; j++) part3 += chars[randomBytes[j] % chars.length];
+      const code = `YZ-${typePrefix}-${part1}-${part2}-${part3}`;
+      generatedCodes.push(code);
+
+      statements.push(
+        env.DB.prepare(
+          `insert into license_keys (code, type, duration_days, batch_tag, status, created_at)
+           values (?, ?, ?, ?, 'unused', ?)`
+        ).bind(code, type, durationDays, batchTag, nowIso)
+      );
+    }
+
+    const chunkSize = 50;
+    for (let i = 0; i < statements.length; i += chunkSize) {
+      await env.DB.batch(statements.slice(i, i + chunkSize));
+    }
+
+    return json({
+      ok: true,
+      count: generatedCodes.length,
+      type,
+      batchTag,
+      codes: generatedCodes
+    });
+  }
+
+  if (url.pathname === "/v1/licenses/list" && request.method === "GET") {
+    const adminSecret = request.headers.get("x-admin-secret");
+    let isAuthorized = Boolean(adminSecret && env.AUTH_TOKEN_SECRET && adminSecret === env.AUTH_TOKEN_SECRET);
+    if (!isAuthorized) {
+      try {
+        const auth = await requireAuth(request, env);
+        isAuthorized = isAdminUser(auth, env);
+      } catch (e) {}
+    }
+    if (!isAuthorized) {
+      throw new HttpError(403, "admin_required", "需要管理员权限");
+    }
+
+    await ensureLicenseTables(env);
+    const status = url.searchParams.get("status") || "all";
+    const batchTag = url.searchParams.get("batchTag");
+
+    let query = "select code, type, duration_days, batch_tag, status, used_by_user_id, used_at, created_at from license_keys";
+    const conditions = [];
+    const params = [];
+    if (status !== "all") {
+      conditions.push("status = ?");
+      params.push(status);
+    }
+    if (batchTag) {
+      conditions.push("batch_tag = ?");
+      params.push(batchTag);
+    }
+    if (conditions.length > 0) {
+      query += " where " + conditions.join(" and ");
+    }
+    query += " order by created_at desc limit 500";
+
+    let stmt = env.DB.prepare(query);
+    if (params.length > 0) {
+      stmt = stmt.bind(...params);
+    }
+    const result = await stmt.all();
+
+    const summary = await env.DB.prepare(`
+      select
+        count(*) as total,
+        sum(case when status = 'unused' then 1 else 0 end) as unused_count,
+        sum(case when status = 'used' then 1 else 0 end) as used_count
+      from license_keys
+    `).first();
+
+    return json({
+      ok: true,
+      summary,
+      licenses: result.results || []
     });
   }
 
@@ -563,181 +1017,6 @@ async function handleRequest(request, env) {
     const wishId = decodeURIComponent(wishDetailMatch[1]);
     const result = await deleteWish(env, auth, wishId);
     return json({ ok: true, ...result });
-  }
-
-  if (url.pathname === "/v1/sync/capabilities" && request.method === "GET") {
-    const auth = await requireAuth(request, env);
-    await ensureUser(env, auth.userId);
-    const table = await env.DB.prepare(
-      `select name from sqlite_master where type = 'table' and name = 'user_sync_objects'`
-    ).first();
-    const historyTable = await env.DB.prepare(
-      `select name from sqlite_master where type = 'table' and name = 'user_sync_object_history'`
-    ).first();
-    const objectSyncAvailable = Boolean(table?.name);
-    const objectsAuthoritative = objectSyncAvailable &&
-      String(env.SYNC_OBJECTS_AUTHORITATIVE || "").trim().toLowerCase() === "true";
-    return json({
-      ok: true,
-      protocolVersion: 2,
-      objectSyncAvailable,
-      objectHistoryAvailable: Boolean(historyTable?.name),
-      objectsAuthoritative,
-      legacySnapshotReadSupported: true,
-      legacySnapshotWriteRequired: !objectsAuthoritative,
-      maxObjectPayloadBytes: 1024 * 1024
-    });
-  }
-
-  if (url.pathname === "/v1/sync/objects" && request.method === "GET") {
-    const auth = await requireAuth(request, env);
-    const result = await readUserSyncObjects(env, auth.userId, 0, 1000);
-    return json({ ok: true, userId: auth.userId, ...result });
-  }
-
-  if (url.pathname === "/v1/sync/changes" && request.method === "GET") {
-    const auth = await requireAuth(request, env);
-    const sinceRevision = normalizeSyncRevision(url.searchParams.get("since"), "since");
-    const requestedLimit = Number(url.searchParams.get("limit") || 200);
-    const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 500) : 200;
-    const result = await readUserSyncObjects(env, auth.userId, sinceRevision, limit);
-    return json({ ok: true, userId: auth.userId, sinceRevision, ...result });
-  }
-
-  if (url.pathname === "/v1/sync/history" && request.method === "GET") {
-    const auth = await requireAuth(request, env);
-    const objectId = normalizeSyncObjectId(url.searchParams.get("objectId"));
-    const beforeRevision = normalizeSyncRevision(url.searchParams.get("before"), "before");
-    const requestedLimit = Number(url.searchParams.get("limit") || 50);
-    const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 200) : 50;
-    const result = await readUserSyncObjectHistory(env, auth.userId, objectId, beforeRevision, limit);
-    return json({ ok: true, userId: auth.userId, objectId, ...result });
-  }
-
-  const syncObjectRestoreMatch = url.pathname.match(/^\/v1\/sync\/objects\/([^/]+)\/restore$/);
-  if (syncObjectRestoreMatch && request.method === "POST") {
-    const auth = await requireAuth(request, env);
-    const objectId = normalizeSyncObjectId(decodeURIComponent(syncObjectRestoreMatch[1]));
-    const payload = await readJson(request);
-    const restoreRevision = normalizeSyncRevision(payload.restoreRevision, "restoreRevision");
-    if (restoreRevision <= 0) {
-      throw new HttpError(400, "invalid_restore_revision", "restoreRevision must be a positive revision");
-    }
-    const historical = await env.DB.prepare(
-      `select schema_version, deleted, payload_json
-       from user_sync_object_history
-       where user_id = ? and object_id = ? and revision = ?`
-    ).bind(auth.userId, objectId, restoreRevision).first();
-    if (!historical) {
-      throw new HttpError(404, "sync_history_not_found", "requested sync object version was not found");
-    }
-    let historicalPayload = {};
-    try {
-      historicalPayload = JSON.parse(String(historical.payload_json || "{}"));
-    } catch {
-      historicalPayload = {};
-    }
-    const result = await writeUserSyncObject(env, auth.userId, objectId, {
-      schemaVersion: Number(historical.schema_version || 1),
-      expectedRevision: payload.expectedRevision,
-      deleted: Boolean(historical.deleted),
-      payload: historicalPayload,
-      updatedByDeviceId: payload.updatedByDeviceId,
-      updatedByDeviceName: payload.updatedByDeviceName
-    }, { operation: "restore", restoredFromRevision: restoreRevision });
-    return json({ ok: true, userId: auth.userId, object: result, restoredFromRevision: restoreRevision });
-  }
-
-  const syncObjectMatch = url.pathname.match(/^\/v1\/sync\/objects\/([^/]+)$/);
-  if (syncObjectMatch && request.method === "PUT") {
-    const auth = await requireAuth(request, env);
-    const objectId = normalizeSyncObjectId(decodeURIComponent(syncObjectMatch[1]));
-    const payload = await readJson(request);
-    const result = await writeUserSyncObject(env, auth.userId, objectId, payload);
-    return json({ ok: true, userId: auth.userId, object: result });
-  }
-
-  if ((url.pathname === "/v1/me/yanm-state" || url.pathname === "/v1/me/yanm-webdav-state") && request.method === "GET") {
-    const auth = await requireAuth(request, env);
-    const snapshot = await readYanmStateForUser(env, auth.userId);
-    if (!snapshot) {
-      throw new HttpError(404, "yanm_state_missing", "Yanm state was not found in account cloud snapshot");
-    }
-
-    const viewUrl = await getYanmStateViewUrl(env, auth.userId);
-
-    return json({
-      ok: true,
-      userId: auth.userId,
-      source: snapshot.source || "cloud-config",
-      warning: snapshot.warning || "",
-      diagnostics: snapshot.diagnostics || null,
-      updatedAtUtc: snapshot.updatedAtUtc || null,
-      yanm: snapshot.yanm || null,
-      bytes: snapshot.bytes,
-      viewUrl: viewUrl || null
-    });
-  }
-
-  if (url.pathname === "/v1/sync/webdav-config" && request.method === "GET") {
-    const auth = await requireAuth(request, env);
-    const config = await getUserWebDavConfig(env, auth.userId);
-    return json({
-      ok: true,
-      enabled: config.enabled,
-      serverUrl: config.serverUrl,
-      rootPath: config.rootPath,
-      username: config.username,
-      password: config.password
-    });
-  }
-
-  if ((url.pathname === "/v1/me/yanm-state" || url.pathname === "/v1/me/yanm-webdav-state") && request.method === "PUT") {
-    const auth = await requireAuth(request, env);
-    const payload = await readJson(request);
-    if (!payload.yanm || typeof payload.yanm !== "object") {
-      throw new HttpError(400, "invalid_yanm", "Yanm payload is required");
-    }
-
-    const updatedAtUtc = normalizeOptionalIsoDate(payload.updatedAtUtc) || isoNow();
-    const result = await writeYanmStateForUser(env, auth.userId, {
-      updatedAtUtc,
-      yanm: payload.yanm
-    });
-
-    const viewUrl = await getYanmStateViewUrl(env, auth.userId);
-
-    return json({
-      ok: true,
-      userId: auth.userId,
-      source: result.source,
-      updatedAtUtc: result.updatedAtUtc || updatedAtUtc,
-      changed: result.changed !== false,
-      bytes: result.bytes,
-      viewUrl: viewUrl || null
-    });
-  }
-
-  if (url.pathname === "/v1/me/yanm-state/component-state" && request.method === "PUT") {
-    const auth = await requireAuth(request, env);
-    const payload = await readJson(request);
-    const componentStatePatch = normalizeYanmComponentStatePatch(payload);
-    // 组件状态是服务端按 key 合并的显式变更，使用服务端时间避免设备时钟漂移
-    // 把一个刚写入的补丁伪装成旧状态。
-    const updatedAtUtc = isoNow();
-    const result = await patchYanmComponentStateForUser(env, auth.userId, componentStatePatch, updatedAtUtc);
-    const viewUrl = await getYanmStateViewUrl(env, auth.userId);
-
-    return json({
-      ok: true,
-      userId: auth.userId,
-      source: result.source,
-      updatedAtUtc: result.updatedAtUtc || updatedAtUtc,
-      changedKeys: result.changedKeys || Object.keys(componentStatePatch),
-      changed: result.changed !== false,
-      bytes: result.bytes,
-      viewUrl: viewUrl || null
-    });
   }
 
   if (url.pathname === "/v1/app/update/latest" && request.method === "GET") {
@@ -824,14 +1103,16 @@ async function handleRequest(request, env) {
         platforms: platforms
       };
 
-      return withCors(json(payload));
+      const result = withCors(json(payload));
+      result.headers.set('cache-control', 'public, max-age=300');
+      return result;
     } catch (err) {
       console.error("Fetch GitHub releases failed:", err);
       // 容错：如果 GitHub 接口报错，返回兜底配置
       const fallbackVersion = "0.3.19";
       const fallbackWinUrl = `https://github.com/luoluoluo22/yanzi/releases/download/v${fallbackVersion}/Yanzi-win-Setup-${fallbackVersion}.exe`;
       const fallbackMacUrl = `https://github.com/luoluoluo22/yanzi/releases/download/v${fallbackVersion}/Yanzi-${fallbackVersion}.dmg`;
-      
+
       const fallbackPlatforms = {
         windows: {
           name: "Windows",
@@ -1363,8 +1644,8 @@ async function handleRequest(request, env) {
     } else {
       const preset = PUBLIC_STORE_EXTENSION_MAP.get(extensionId);
       if (preset && preset.package_path) {
-        archiveKey = preset.package_path.startsWith("/") 
-          ? preset.package_path.substring(1) 
+        archiveKey = preset.package_path.startsWith("/")
+          ? preset.package_path.substring(1)
           : preset.package_path;
         latestVersion = preset.latest_version || "latest";
       }
@@ -1686,23 +1967,31 @@ async function handleRequest(request, env) {
     }
 
     const revision = currentRevision + 1;
-    const archiveKey = `users/${auth.userId}/extensions/${extensionId}/archive-history/${revision}-${sha256}.zip`;
+    // Reuse immutable bytes within the same account/extension if SHA matches.
+    // D1 history revisions remain independently restorable.
+    const reusableKey = await findReusablePrivateArchive(
+      env, auth.userId, extensionId, sha256, bytes.byteLength
+    );
+    const archiveKey = reusableKey ||
+      `users/${auth.userId}/extensions/${extensionId}/archive-history/${revision}-${sha256}.zip`;
     const now = isoNow();
     const deviceId = String(request.headers.get("x-yanzi-device-id") || "").slice(0, 200);
     const deviceName = String(request.headers.get("x-yanzi-device-name") || "").slice(0, 200);
 
-    await env.PACKAGES.put(archiveKey, bytes, {
-      httpMetadata: {
-        contentType: request.headers.get("content-type") || "application/zip"
-      },
-      customMetadata: {
-        userId: auth.userId,
-        extensionId,
-        version,
-        sha256,
-        private: "true"
-      }
-    });
+    if (!reusableKey) {
+      await env.PACKAGES.put(archiveKey, bytes, {
+        httpMetadata: {
+          contentType: request.headers.get("content-type") || "application/zip"
+        },
+        customMetadata: {
+          userId: auth.userId,
+          extensionId,
+          version,
+          sha256,
+          private: "true"
+        }
+      });
+    }
 
     const results = await env.DB.batch([
       env.DB.prepare(
@@ -1747,7 +2036,8 @@ async function handleRequest(request, env) {
     ]);
 
     if (Number(results?.[0]?.meta?.changes || 0) === 0) {
-      await env.PACKAGES.delete(archiveKey);
+      // A reused object remains referenced by old revisions.
+      if (!reusableKey) await env.PACKAGES.delete(archiveKey);
       const latest = await env.DB.prepare(
         `select revision from user_extension_archive_heads where user_id = ? and extension_id = ?`
       ).bind(auth.userId, extensionId).first();
@@ -1818,464 +2108,6 @@ async function handleRequest(request, env) {
       `attachment; filename="${extensionId}-${row.latest_version || "latest"}.zip"`
     );
     return withCors(new Response(object.body, { headers }));
-  }
-
-  if (url.pathname === "/v1/me/devices" && request.method === "GET") {
-    const auth = await requireAuth(request, env);
-    await ensureUser(env, auth.userId);
-
-    const rows = await env.DB.prepare(
-      `select
-        device_id,
-        platform,
-        display_name,
-        capabilities_json,
-        last_seen_at,
-        created_at,
-        updated_at
-      from user_devices
-      where user_id = ?
-      order by updated_at desc`
-    )
-      .bind(auth.userId)
-      .all();
-
-    return json({
-      ok: true,
-      userId: auth.userId,
-      items: (rows.results ?? []).map(serializeDeviceRecord)
-    });
-  }
-
-  if (url.pathname === "/v1/me/devices" && request.method === "POST") {
-    const auth = await requireAuth(request, env);
-    const payload = await readJson(request);
-    await ensureUser(env, auth.userId);
-
-    const device = normalizeDevicePayload(payload);
-    const existingDeviceOwner = await env.DB.prepare(
-      `select user_id
-       from user_devices
-       where device_id = ?`
-    )
-      .bind(device.deviceId)
-      .first();
-    if (existingDeviceOwner && String(existingDeviceOwner.user_id) !== auth.userId) {
-      throw new HttpError(409, "device_id_taken", "Device ID is already bound to another account");
-    }
-
-    const now = isoNow();
-    await env.DB.prepare(
-      `insert into user_devices (
-        device_id,
-        user_id,
-        platform,
-        display_name,
-        push_token,
-        capabilities_json,
-        last_seen_at,
-        created_at,
-        updated_at
-      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      on conflict(device_id) do update set
-        platform = excluded.platform,
-        display_name = excluded.display_name,
-        push_token = excluded.push_token,
-        capabilities_json = excluded.capabilities_json,
-        last_seen_at = excluded.last_seen_at,
-        updated_at = excluded.updated_at`
-    )
-      .bind(
-        device.deviceId,
-        auth.userId,
-        device.platform,
-        device.displayName,
-        device.pushToken,
-        JSON.stringify(device.capabilities),
-        now,
-        now,
-        now
-      )
-      .run();
-
-    return json({
-      ok: true,
-      userId: auth.userId,
-      device: {
-        deviceId: device.deviceId,
-        platform: device.platform,
-        displayName: device.displayName,
-        capabilities: device.capabilities,
-        lastSeenAt: now
-      }
-    });
-  }
-
-  if (url.pathname === "/v1/me/mobile/messages" && request.method === "POST") {
-    const auth = await requireAuth(request, env);
-    const payload = await readJson(request);
-    await ensureUser(env, auth.userId);
-
-    const message = normalizeDeviceMessagePayload(payload);
-    if (message.sourceDeviceId) {
-      await ensureOwnedDevice(env, auth.userId, message.sourceDeviceId);
-      await touchDevice(env, auth.userId, message.sourceDeviceId);
-    }
-
-    if (message.targetDeviceId) {
-      await ensureOwnedDevice(env, auth.userId, message.targetDeviceId);
-    }
-
-    const now = isoNow();
-    const messageId = `msg_${randomHex(12)}`;
-    await env.DB.prepare(
-      `insert into device_messages (
-        message_id,
-        user_id,
-        source_device_id,
-        target_device_id,
-        target_platform,
-        kind,
-        title,
-        body_text,
-        payload_json,
-        status,
-        created_at,
-        expires_at
-      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`
-    )
-      .bind(
-        messageId,
-        auth.userId,
-        message.sourceDeviceId,
-        message.targetDeviceId,
-        message.targetPlatform,
-        message.kind,
-        message.title,
-        message.bodyText,
-        JSON.stringify(message.payload),
-        now,
-        message.expiresAt
-      )
-      .run();
-
-    await notifyDeviceRelay(env, auth.userId);
-
-    return json({
-      ok: true,
-      userId: auth.userId,
-      messageId,
-      createdAt: now
-    });
-  }
-
-  if (url.pathname === "/v1/me/mobile/messages/ws" && request.method === "GET") {
-    const auth = await requireAuth(request, env);
-    const deviceId = normalizeDeviceId(url.searchParams.get("deviceId"));
-    await ensureUser(env, auth.userId);
-    await ensureOwnedDevice(env, auth.userId, deviceId);
-
-    if (!env.DEVICE_RELAY) {
-      throw new HttpError(503, "relay_unavailable", "Device relay is not configured");
-    }
-
-    return env.DEVICE_RELAY.getByName(auth.userId).fetch(request);
-  }
-
-  if (url.pathname === "/v1/me/mobile/messages/events" && request.method === "GET") {
-    const auth = await requireAuth(request, env);
-    const deviceId = normalizeDeviceId(url.searchParams.get("deviceId"));
-    await ensureUser(env, auth.userId);
-    const device = await ensureOwnedDevice(env, auth.userId, deviceId);
-    await touchDevice(env, auth.userId, deviceId);
-
-    const { readable, writable } = new TransformStream();
-    const writer = writable.getWriter();
-    const encoder = new TextEncoder();
-
-    let isClosed = false;
-
-    request.signal.addEventListener("abort", () => {
-      isClosed = true;
-    });
-
-    const sendSseMessage = async (data) => {
-      try {
-        await writer.write(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
-      } catch (err) {
-        isClosed = true;
-      }
-    };
-
-    const pollIntervalMs = 2000;
-    const maxStreamDurationMs = 30 * 60 * 1000;
-    const startedAt = Date.now();
-    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-    (async () => {
-      try {
-        await sendSseMessage({ type: "connected" });
-
-        while (!isClosed && Date.now() - startedAt < maxStreamDurationMs) {
-          const rows = await env.DB.prepare(
-            `select
-              message_id,
-              source_device_id,
-              target_device_id,
-              target_platform,
-              kind,
-              title,
-              body_text,
-              payload_json,
-              status,
-              created_at,
-              delivered_at,
-              acked_at,
-              expires_at
-            from device_messages
-            where user_id = ?
-              and status = 'pending'
-              and (expires_at is null or expires_at > ?)
-              and (
-                target_device_id = ?
-                or (
-                  target_device_id is null
-                  and target_platform = ?
-                )
-              )
-            order by created_at asc`
-          )
-            .bind(auth.userId, isoNow(), deviceId, device.platform)
-            .all();
-
-          const items = (rows.results ?? []).map(serializeDeviceMessageRecord);
-          if (items.length > 0) {
-            await sendSseMessage({ type: "messages", items });
-
-            const deliveredAt = isoNow();
-            await env.DB.prepare(
-              `update device_messages
-               set delivered_at = coalesce(delivered_at, ?)
-               where user_id = ?
-                 and message_id in (${items.map(() => "?").join(",")})`
-            )
-              .bind(deliveredAt, auth.userId, ...items.map((item) => item.messageId))
-              .run();
-          }
-
-          if (isClosed || Date.now() - startedAt >= maxStreamDurationMs) {
-            break;
-          }
-
-          await sleep(pollIntervalMs);
-        }
-      } catch (err) {
-        // SSE loop exception
-      } finally {
-        isClosed = true;
-        try {
-          await writer.close();
-        } catch (e) {}
-      }
-    })();
-
-    return new Response(readable, {
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        "Connection": "keep-alive",
-        "Access-Control-Allow-Origin": "*"
-      }
-    });
-  }
-
-  if (url.pathname === "/v1/me/mobile/messages" && request.method === "GET") {
-    const auth = await requireAuth(request, env);
-    const deviceId = normalizeDeviceId(url.searchParams.get("deviceId"));
-
-    const now = Date.now();
-    const rateLimitKey = `${auth.userId}:${deviceId}`;
-    const lastRequestTime = mobilePollRateLimitMap.get(rateLimitKey) || 0;
-    mobilePollRateLimitMap.set(rateLimitKey, now);
-    if (mobilePollRateLimitMap.size > mobilePollRateLimitMaxEntries) {
-      const oldestKey = mobilePollRateLimitMap.keys().next().value;
-      if (oldestKey !== undefined) {
-        mobilePollRateLimitMap.delete(oldestKey);
-      }
-    }
-    if (now - lastRequestTime < 3000) {
-      return json({
-        ok: true,
-        userId: auth.userId,
-        deviceId,
-        items: []
-      });
-    }
-
-    const limit = normalizeMessageLimit(url.searchParams.get("limit"));
-    await ensureUser(env, auth.userId);
-    const device = await ensureOwnedDevice(env, auth.userId, deviceId);
-    await touchDevice(env, auth.userId, deviceId);
-
-    const rows = await env.DB.prepare(
-      `select
-        message_id,
-        source_device_id,
-        target_device_id,
-        target_platform,
-        kind,
-        title,
-        body_text,
-        payload_json,
-        status,
-        created_at,
-        delivered_at,
-        acked_at,
-        expires_at
-      from device_messages
-      where user_id = ?
-        and status = 'pending'
-        and (expires_at is null or expires_at > ?)
-        and (
-          target_device_id = ?
-          or (
-            target_device_id is null
-            and target_platform = ?
-          )
-        )
-      order by created_at asc
-      limit ?`
-    )
-      .bind(auth.userId, isoNow(), deviceId, device.platform, limit)
-      .all();
-
-    const items = (rows.results ?? []).map(serializeDeviceMessageRecord);
-    if (items.length > 0) {
-      const deliveredAt = isoNow();
-      await env.DB.prepare(
-        `update device_messages
-         set delivered_at = coalesce(delivered_at, ?)
-         where user_id = ?
-           and message_id in (${items.map(() => "?").join(",")})`
-      )
-        .bind(deliveredAt, auth.userId, ...items.map((item) => item.messageId))
-        .run();
-    }
-
-    return json({
-      ok: true,
-      userId: auth.userId,
-      deviceId,
-      items
-    });
-  }
-
-  const deviceMessageAckMatch = url.pathname.match(/^\/v1\/me\/mobile\/messages\/([^/]+)\/ack$/);
-  if (deviceMessageAckMatch && request.method === "POST") {
-    const auth = await requireAuth(request, env);
-    const messageId = normalizeMessageId(decodeURIComponent(deviceMessageAckMatch[1]));
-    const payload = await readJson(request);
-    const deviceId = normalizeDeviceId(payload.deviceId);
-    await ensureUser(env, auth.userId);
-    await ensureOwnedDevice(env, auth.userId, deviceId);
-    await touchDevice(env, auth.userId, deviceId);
-
-    const success = payload.success;
-    const resultText = payload.result || "";
-
-    let newStatus = "acked";
-    let updatedPayloadJson = null;
-
-    if (success !== undefined) {
-      newStatus = success ? "completed" : "failed";
-      const msgRow = await env.DB.prepare(
-        "select payload_json from device_messages where user_id = ? and message_id = ?"
-      )
-        .bind(auth.userId, messageId)
-        .first();
-
-      let originPayload = {};
-      try {
-        if (msgRow && msgRow.payload_json) {
-          originPayload = JSON.parse(msgRow.payload_json);
-        }
-      } catch (e) {}
-
-      originPayload.executionResult = {
-        success: !!success,
-        output: resultText,
-        time: isoNow()
-      };
-      updatedPayloadJson = JSON.stringify(originPayload);
-    }
-
-    let result;
-    if (updatedPayloadJson) {
-      result = await env.DB.prepare(
-        `update device_messages
-         set status = ?,
-             acked_at = ?,
-             payload_json = ?
-         where user_id = ?
-           and message_id = ?
-           and status = 'pending'`
-      )
-        .bind(newStatus, isoNow(), updatedPayloadJson, auth.userId, messageId)
-        .run();
-    } else {
-      result = await env.DB.prepare(
-        `update device_messages
-         set status = 'acked',
-             acked_at = ?
-         where user_id = ?
-           and message_id = ?
-           and status = 'pending'`
-      )
-        .bind(isoNow(), auth.userId, messageId)
-        .run();
-    }
-
-    return json({
-      ok: true,
-      userId: auth.userId,
-      messageId,
-      acked: Number(result.meta?.changes ?? 0) > 0
-    });
-  }
-
-  const singleMessageMatch = url.pathname.match(/^\/v1\/me\/mobile\/messages\/([^/]+)$/);
-  if (singleMessageMatch && request.method === "GET") {
-    const auth = await requireAuth(request, env);
-    const messageId = normalizeMessageId(decodeURIComponent(singleMessageMatch[1]));
-    await ensureUser(env, auth.userId);
-
-    const row = await env.DB.prepare(
-      `select
-        message_id,
-        source_device_id,
-        target_device_id,
-        target_platform,
-        kind,
-        title,
-        body_text,
-        payload_json,
-        status,
-        created_at,
-        delivered_at,
-        acked_at,
-        expires_at
-      from device_messages
-      where user_id = ?
-        and message_id = ?`
-    )
-      .bind(auth.userId, messageId)
-      .first();
-
-    if (!row) {
-      throw new HttpError(404, "message_not_found", "Message not found");
-    }
-
-    return json(serializeDeviceMessageRecord(row));
   }
 
   const myExtensionMatch = url.pathname.match(/^\/v1\/me\/extensions\/([^/]+)$/);
@@ -2368,6 +2200,32 @@ async function handleRequest(request, env) {
   return json({ error: "not_found", message: "Route not found" }, 404);
 }
 
+async function getUserVipInfo(env, userId) {
+  try {
+    const userRecord = await cachedCloudVipRecord(env, String(userId));
+
+    if (!userRecord) {
+      return { isVip: false, vipType: null, vipExpireAt: null, daysRemaining: 0 };
+    }
+
+    const isLifetime = userRecord.vip_type === "lifetime";
+    const expiryTime = userRecord.vip_expire_at ? new Date(userRecord.vip_expire_at).getTime() : 0;
+    const nowTime = Date.now();
+    const hasValidExpiry = expiryTime > nowTime;
+    const daysRemaining = isLifetime ? 99999 : (hasValidExpiry ? Math.ceil((expiryTime - nowTime) / (86400 * 1000)) : 0);
+
+    return {
+      isVip: Boolean(isLifetime || hasValidExpiry),
+      vipType: userRecord.vip_type || null,
+      vipExpireAt: userRecord.vip_expire_at || null,
+      daysRemaining
+    };
+  } catch (e) {
+    console.warn("getUserVipInfo error:", e);
+    return { isVip: false, vipType: null, vipExpireAt: null, daysRemaining: 0 };
+  }
+}
+
 async function buildAuthResponse(env, user) {
   const now = Math.floor(Date.now() / 1000);
   const expiresAt = now + TOKEN_TTL_SECONDS;
@@ -2379,12 +2237,15 @@ async function buildAuthResponse(env, user) {
     exp: expiresAt
   });
 
+  const vipInfo = await getUserVipInfo(env, user.userId);
+
   return {
     accessToken,
     expiresAt,
     userId: user.userId,
     username: user.username,
-    email: user.email ?? null
+    email: user.email ?? null,
+    ...vipInfo
   };
 }
 
@@ -2396,15 +2257,17 @@ async function requireAuth(request, env) {
     const token = header.slice(7).trim();
     try {
       const payload = await verifyToken(env, token);
-      if (payload?.sub && payload?.username) {
-        return {
+      if (payload?.sub && payload?.username && payload.type === 'device')
+        return await finalizeCloudAuth(request, env, await authorizeDeviceCredential(request, env, payload, HttpError));
+      if (payload?.sub && payload?.username && !payload.type) {
+        return await finalizeCloudAuth(request, env, {
           userId: String(payload.sub),
           username: String(payload.username),
           email: payload.email ? String(payload.email) : null
-        };
+        });
       }
     } catch (tokenErr) {
-      if (tokenErr.status === 401 && tokenErr.code === "token_expired") {
+      if (tokenErr.status === 403 || tokenErr.status === 401 && ["token_expired", "device_credential_revoked"].includes(tokenErr.code)) {
         throw tokenErr;
       }
     }
@@ -2443,16 +2306,17 @@ async function requireAuth(request, env) {
               Number(user.password_iterations || PASSWORD_ITERATIONS)
           );
             if (passwordHash === user.password_hash) {
-              return {
+              return await finalizeCloudAuth(request, env, {
                 userId: String(user.user_id),
                 username: String(user.username),
                 email: user.email ? String(user.email) : null
-              };
+              });
             }
           }
         }
       }
     } catch (basicAuthErr) {
+      if (basicAuthErr instanceof HttpError && basicAuthErr.code === 'vip_required') throw basicAuthErr;
       // 捕获 Base64 编码或数据库请求异常
     }
   }
@@ -2626,262 +2490,6 @@ function validatePassword(value) {
   }
 
   return password;
-}
-
-function normalizeDevicePayload(payload) {
-  return {
-    deviceId: normalizeDeviceId(payload.deviceId || payload.device_id),
-    platform: normalizeDevicePlatform(payload.platform),
-    displayName: normalizeShortText(payload.displayName || payload.display_name || payload.name, "displayName", 80),
-    pushToken: normalizeOptionalString(payload.pushToken || payload.push_token, 512),
-    capabilities: normalizeJsonObject(payload.capabilities, "capabilities")
-  };
-}
-
-function normalizeDeviceMessagePayload(payload) {
-  const targetDeviceId = normalizeOptionalDeviceId(payload.targetDeviceId || payload.target_device_id);
-  const targetPlatform = targetDeviceId
-    ? null
-    : normalizeOptionalDevicePlatform(payload.targetPlatform || payload.target_platform) || "desktop";
-
-  return {
-    sourceDeviceId: normalizeOptionalDeviceId(payload.sourceDeviceId || payload.source_device_id),
-    targetDeviceId,
-    targetPlatform,
-    kind: normalizeMessageKind(payload.kind),
-    title: normalizeOptionalString(payload.title, 120),
-    bodyText: normalizeOptionalString(payload.text || payload.bodyText || payload.body_text || payload.body, 4000),
-    payload: normalizeJsonObject(payload.payload, "payload"),
-    expiresAt: normalizeOptionalIsoDate(payload.expiresAt || payload.expires_at)
-  };
-}
-
-function normalizeDeviceId(value) {
-  const id = String(value || "").trim();
-  if (!/^[a-zA-Z0-9_.:-]{6,96}$/.test(id)) {
-    throw new HttpError(400, "invalid_device_id", "deviceId must be 6-96 chars: a-z, 0-9, _, ., :, -");
-  }
-
-  return id;
-}
-
-function normalizeOptionalDeviceId(value) {
-  if (value == null || String(value).trim() === "") {
-    return null;
-  }
-
-  return normalizeDeviceId(value);
-}
-
-function normalizeDevicePlatform(value) {
-  const platform = String(value || "").trim().toLowerCase();
-  if (!/^(desktop|android|ios|web)$/.test(platform)) {
-    throw new HttpError(400, "invalid_platform", "platform must be desktop, android, ios, or web");
-  }
-
-  return platform;
-}
-
-function normalizeOptionalDevicePlatform(value) {
-  if (value == null || String(value).trim() === "") {
-    return null;
-  }
-
-  return normalizeDevicePlatform(value);
-}
-
-function normalizeMessageKind(value) {
-  const kind = String(value || "text").trim().toLowerCase();
-  if (!/^[a-z0-9_.:-]{1,40}$/.test(kind)) {
-    throw new HttpError(400, "invalid_message_kind", "kind must be 1-40 lowercase chars");
-  }
-
-  return kind;
-}
-
-function normalizeMessageId(value) {
-  const id = String(value || "").trim();
-  if (!/^msg_[a-f0-9]{24}$/.test(id)) {
-    throw new HttpError(400, "invalid_message_id", "messageId format is invalid");
-  }
-
-  return id;
-}
-
-function normalizeMessageLimit(value) {
-  const limit = Number.parseInt(String(value || "20"), 10);
-  if (!Number.isFinite(limit)) {
-    return 20;
-  }
-
-  return Math.min(Math.max(limit, 1), 50);
-}
-
-function normalizeShortText(value, fieldName, maxLength) {
-  const text = String(value || "").trim();
-  if (!text) {
-    throw new HttpError(400, `invalid_${fieldName}`, `${fieldName} is required`);
-  }
-
-  return text.slice(0, maxLength);
-}
-
-function normalizeOptionalString(value, maxLength) {
-  if (value == null) {
-    return null;
-  }
-
-  const text = String(value).trim();
-  return text ? text.slice(0, maxLength) : null;
-}
-
-function normalizeJsonObject(value, fieldName) {
-  if (value == null) {
-    return {};
-  }
-
-  if (typeof value !== "object" || Array.isArray(value)) {
-    throw new HttpError(400, `invalid_${fieldName}`, `${fieldName} must be an object`);
-  }
-
-  return value;
-}
-
-async function ensureOwnedDevice(env, userId, deviceId) {
-  const device = await env.DB.prepare(
-    `select device_id, platform, display_name
-     from user_devices
-     where user_id = ? and device_id = ?`
-  )
-    .bind(userId, deviceId)
-    .first();
-
-  if (!device) {
-    throw new HttpError(404, "device_not_found", "Device was not found in this account");
-  }
-
-  return {
-    deviceId: device.device_id,
-    platform: device.platform,
-    displayName: device.display_name
-  };
-}
-
-async function touchDevice(env, userId, deviceId) {
-  await env.DB.prepare(
-    `update user_devices
-     set last_seen_at = ?,
-         updated_at = ?
-     where user_id = ? and device_id = ?`
-  )
-    .bind(isoNow(), isoNow(), userId, deviceId)
-    .run();
-}
-
-async function getPendingDeviceMessageItems(env, userId, deviceId, platform, limit = 20) {
-  const rows = await env.DB.prepare(
-    `select
-      message_id,
-      source_device_id,
-      target_device_id,
-      target_platform,
-      kind,
-      title,
-      body_text,
-      payload_json,
-      status,
-      created_at,
-      delivered_at,
-      acked_at,
-      expires_at
-    from device_messages
-    where user_id = ?
-      and status = 'pending'
-      and (expires_at is null or expires_at > ?)
-      and (
-        target_device_id = ?
-        or (
-          target_device_id is null
-          and target_platform = ?
-        )
-      )
-    order by created_at asc
-    limit ?`
-  )
-    .bind(userId, isoNow(), deviceId, platform, limit)
-    .all();
-
-  return (rows.results ?? []).map(serializeDeviceMessageRecord);
-}
-
-async function markDeviceMessagesDelivered(env, userId, items) {
-  if (!items || items.length === 0) {
-    return;
-  }
-
-  await env.DB.prepare(
-    `update device_messages
-     set delivered_at = coalesce(delivered_at, ?)
-     where user_id = ?
-       and message_id in (${items.map(() => "?").join(",")})`
-  )
-    .bind(isoNow(), userId, ...items.map((item) => item.messageId))
-    .run();
-}
-
-async function notifyDeviceRelay(env, userId) {
-  if (!env.DEVICE_RELAY) {
-    return;
-  }
-
-  try {
-    await env.DEVICE_RELAY
-      .getByName(userId)
-      .fetch(new Request("https://device-relay.internal/internal/device-relay/notify", {
-        method: "POST"
-      }));
-  } catch {
-    // The HTTP polling fallback will pick up pending messages if the relay is unavailable.
-  }
-}
-
-function serializeDeviceRecord(row) {
-  return {
-    deviceId: row.device_id,
-    platform: row.platform,
-    displayName: row.display_name,
-    capabilities: parseJsonObject(row.capabilities_json),
-    lastSeenAt: row.last_seen_at,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at
-  };
-}
-
-function serializeDeviceMessageRecord(row) {
-  return {
-    messageId: row.message_id,
-    sourceDeviceId: row.source_device_id || null,
-    targetDeviceId: row.target_device_id || null,
-    targetPlatform: row.target_platform || null,
-    kind: row.kind,
-    title: row.title || "",
-    text: row.body_text || "",
-    payload: parseJsonObject(row.payload_json),
-    status: row.status,
-    createdAt: row.created_at,
-    deliveredAt: row.delivered_at || null,
-    ackedAt: row.acked_at || null,
-    expiresAt: row.expires_at || null
-  };
-}
-
-function parseJsonObject(value) {
-  try {
-    const parsed = JSON.parse(value || "{}");
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
-  } catch {
-    return {};
-  }
 }
 
 async function sendVerificationEmail(env, email, username, code) {
@@ -3336,227 +2944,6 @@ function serializeAppRelease(row, channel = DEFAULT_APP_UPDATE_CHANNEL) {
     updated_by_username: merged.updated_by_username,
     managed: Boolean(row)
   };
-}
-
-async function ensureUser(env, userId) {
-  await env.DB.prepare(
-    `insert into users (user_id, created_at, updated_at)
-     values (?, ?, ?)
-     on conflict(user_id) do update set updated_at = excluded.updated_at`
-  )
-    .bind(userId, isoNow(), isoNow())
-    .run();
-}
-
-function normalizeSyncObjectId(value) {
-  const objectId = String(value || "").trim();
-  if (!/^[A-Za-z0-9._:-]{1,120}$/.test(objectId)) {
-    throw new HttpError(400, "invalid_sync_object_id", "objectId contains unsupported characters or is too long");
-  }
-  return objectId;
-}
-
-function normalizeSyncRevision(value, fieldName = "revision") {
-  if (value === null || value === undefined || value === "") {
-    return 0;
-  }
-  const revision = Number(value);
-  if (!Number.isSafeInteger(revision) || revision < 0) {
-    throw new HttpError(400, "invalid_sync_revision", `${fieldName} must be a non-negative safe integer`);
-  }
-  return revision;
-}
-
-function serializeUserSyncObject(row) {
-  let payload = {};
-  try {
-    payload = JSON.parse(String(row.payload_json || "{}"));
-  } catch {
-    payload = {};
-  }
-  return {
-    objectId: String(row.object_id || ""),
-    schemaVersion: Number(row.schema_version || 1),
-    revision: Number(row.object_revision || 0),
-    updatedAtUtc: String(row.updated_at || ""),
-    updatedByDeviceId: row.updated_by_device_id ? String(row.updated_by_device_id) : null,
-    updatedByDeviceName: row.updated_by_device_name ? String(row.updated_by_device_name) : null,
-    deleted: Boolean(row.deleted),
-    payload
-  };
-}
-
-function serializeUserSyncObjectHistory(row) {
-  return {
-    ...serializeUserSyncObject({ ...row, object_revision: row.revision }),
-    operation: String(row.operation || "update"),
-    restoredFromRevision: row.restored_from_revision == null
-      ? null
-      : Number(row.restored_from_revision)
-  };
-}
-
-async function getUserSyncRevision(env, userId) {
-  const row = await env.DB.prepare(
-    `select revision from user_sync_revisions where user_id = ?`
-  ).bind(userId).first();
-  return Number(row?.revision || 0);
-}
-
-async function readUserSyncObjects(env, userId, sinceRevision, limit) {
-  await ensureUser(env, userId);
-  const rows = await env.DB.prepare(
-    `select object_id, schema_version, object_revision, updated_at,
-            updated_by_device_id, updated_by_device_name, deleted, payload_json
-     from user_sync_objects
-     where user_id = ? and object_revision > ?
-     order by object_revision asc
-     limit ?`
-  ).bind(userId, sinceRevision, limit + 1).all();
-  const allRows = rows.results || [];
-  const hasMore = allRows.length > limit;
-  const selectedRows = hasMore ? allRows.slice(0, limit) : allRows;
-  const objects = selectedRows.map(serializeUserSyncObject);
-  const currentRevision = await getUserSyncRevision(env, userId);
-  const cursorRevision = objects.length > 0
-    ? objects[objects.length - 1].revision
-    : currentRevision;
-  return { currentRevision, cursorRevision, hasMore, objects };
-}
-
-async function readUserSyncObjectHistory(env, userId, objectId, beforeRevision, limit) {
-  await ensureUser(env, userId);
-  const rows = await env.DB.prepare(
-    `select object_id, revision, schema_version, updated_at,
-            updated_by_device_id, updated_by_device_name, deleted, payload_json,
-            operation, restored_from_revision
-     from user_sync_object_history
-     where user_id = ? and object_id = ? and (? = 0 or revision < ?)
-     order by revision desc
-     limit ?`
-  ).bind(userId, objectId, beforeRevision, beforeRevision, limit + 1).all();
-  const allRows = rows.results || [];
-  const hasMore = allRows.length > limit;
-  const selectedRows = hasMore ? allRows.slice(0, limit) : allRows;
-  const versions = selectedRows.map(serializeUserSyncObjectHistory);
-  const currentRevision = await getUserSyncRevision(env, userId);
-  const nextBeforeRevision = versions.length > 0
-    ? versions[versions.length - 1].revision
-    : beforeRevision;
-  return { currentRevision, nextBeforeRevision, hasMore, versions };
-}
-
-async function writeUserSyncObject(env, userId, objectId, input, writeMetadata = {}) {
-  const expectedRevision = normalizeSyncRevision(input.expectedRevision, "expectedRevision");
-  const schemaVersion = Number(input.schemaVersion ?? 1);
-  if (!Number.isInteger(schemaVersion) || schemaVersion < 1 || schemaVersion > 1000) {
-    throw new HttpError(400, "invalid_sync_schema_version", "schemaVersion must be an integer between 1 and 1000");
-  }
-  if (!Object.prototype.hasOwnProperty.call(input, "payload")) {
-    throw new HttpError(400, "sync_payload_required", "payload is required");
-  }
-
-  const deleted = input.deleted === true;
-  const updatedByDeviceId = String(input.updatedByDeviceId || "").trim().slice(0, 200) || null;
-  const updatedByDeviceName = String(input.updatedByDeviceName || "").trim().slice(0, 200) || null;
-  const safePayload = objectId === "settings.ai"
-    ? scrubAiSecretsFromValue(input.payload ?? {})
-    : input.payload ?? {};
-  const payloadJson = JSON.stringify(safePayload);
-  if (textEncoder.encode(payloadJson).length > 1024 * 1024) {
-    throw new HttpError(413, "sync_payload_too_large", "sync object payload exceeds 1 MiB");
-  }
-
-  await ensureUser(env, userId);
-  const now = isoNow();
-  const operation = writeMetadata.operation === "restore"
-    ? "restore"
-    : deleted ? "delete" : expectedRevision === 0 ? "create" : "update";
-  const restoredFromRevision = operation === "restore"
-    ? normalizeSyncRevision(writeMetadata.restoredFromRevision, "restoredFromRevision")
-    : null;
-  const results = await env.DB.batch([
-    env.DB.prepare(
-      `insert into user_sync_revisions (user_id, revision, updated_at)
-       values (?, 0, ?)
-       on conflict(user_id) do nothing`
-    ).bind(userId, now),
-    env.DB.prepare(
-      `insert into user_sync_objects (
-         user_id, object_id, schema_version, object_revision, updated_at,
-         updated_by_device_id, updated_by_device_name, deleted, payload_json
-       )
-       select ?, ?, ?, revisions.revision + 1, ?, ?, ?, ?, ?
-       from user_sync_revisions revisions
-       where revisions.user_id = ?
-         and (
-           (? = 0 and not exists (
-             select 1 from user_sync_objects existing
-             where existing.user_id = ? and existing.object_id = ?
-           ))
-           or
-           (? > 0 and exists (
-             select 1 from user_sync_objects existing
-             where existing.user_id = ? and existing.object_id = ? and existing.object_revision = ?
-           ))
-         )
-       on conflict(user_id, object_id) do update set
-         schema_version = excluded.schema_version,
-         object_revision = excluded.object_revision,
-         updated_at = excluded.updated_at,
-         updated_by_device_id = excluded.updated_by_device_id,
-         updated_by_device_name = excluded.updated_by_device_name,
-         deleted = excluded.deleted,
-         payload_json = excluded.payload_json`
-    ).bind(
-      userId, objectId, schemaVersion, now,
-      updatedByDeviceId, updatedByDeviceName, deleted ? 1 : 0, payloadJson,
-      userId,
-      expectedRevision, userId, objectId,
-      expectedRevision, userId, objectId, expectedRevision
-    ),
-    env.DB.prepare(
-      `insert into user_sync_object_history (
-         user_id, object_id, revision, schema_version, updated_at,
-         updated_by_device_id, updated_by_device_name, deleted, payload_json,
-         operation, restored_from_revision
-       )
-       select objects.user_id, objects.object_id, objects.object_revision,
-              objects.schema_version, objects.updated_at, objects.updated_by_device_id,
-              objects.updated_by_device_name, objects.deleted, objects.payload_json, ?, ?
-       from user_sync_objects objects
-       join user_sync_revisions revisions on revisions.user_id = objects.user_id
-       where objects.user_id = ? and objects.object_id = ?
-         and objects.object_revision = revisions.revision + 1`
-    ).bind(operation, restoredFromRevision, userId, objectId),
-    env.DB.prepare(
-      `update user_sync_revisions
-       set revision = revision + 1, updated_at = ?
-       where user_id = ?
-         and exists (
-           select 1 from user_sync_objects objects
-           where objects.user_id = user_sync_revisions.user_id
-             and objects.object_id = ?
-             and objects.object_revision = user_sync_revisions.revision + 1
-         )`
-    ).bind(now, userId, objectId)
-  ]);
-
-  if (Number(results?.[1]?.meta?.changes || 0) === 0) {
-    const current = await env.DB.prepare(
-      `select object_revision from user_sync_objects where user_id = ? and object_id = ?`
-    ).bind(userId, objectId).first();
-    const error = new HttpError(409, "sync_revision_conflict", "sync object revision does not match expectedRevision");
-    error.details = { objectId, expectedRevision, currentRevision: Number(current?.object_revision || 0) };
-    throw error;
-  }
-
-  const row = await env.DB.prepare(
-    `select object_id, schema_version, object_revision, updated_at,
-            updated_by_device_id, updated_by_device_name, deleted, payload_json
-     from user_sync_objects where user_id = ? and object_id = ?`
-  ).bind(userId, objectId).first();
-  return serializeUserSyncObject(row);
 }
 
 async function upsertPrivateExtensionMetadata(env, auth, extensionId, manifest) {
@@ -5154,31 +4541,9 @@ function base64EncodeUtf8(value) {
   return btoa(binary);
 }
 
-function normalizeOptionalIsoDate(value) {
-  if (!value) {
-    return null;
-  }
-
-  const date = new Date(String(value));
-  if (Number.isNaN(date.getTime())) {
-    throw new HttpError(400, "invalid_updated_at", "updatedAtUtc must be a valid datetime");
-  }
-
-  return date.toISOString();
-}
-
 function trimForMessage(value) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
   return text.length > 240 ? `${text.slice(0, 240)}...` : text;
-}
-
-async function readJson(request) {
-  const body = await request.json();
-  if (!body || typeof body !== "object") {
-    throw new HttpError(400, "invalid_json", "Request body must be a JSON object");
-  }
-
-  return body;
 }
 
 function json(data, status = 200) {
@@ -5194,10 +4559,10 @@ function json(data, status = 200) {
 
 function withCors(response) {
   response.headers.set("access-control-allow-origin", "*");
-  response.headers.set("access-control-allow-methods", "GET,POST,PUT,DELETE,OPTIONS");
+  response.headers.set("access-control-allow-methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
   response.headers.set(
     "access-control-allow-headers",
-    "content-type,authorization,accept,origin,x-yanzi-client,x-yanzi-client-version,x-api-version,x-client-version"
+    "content-type,authorization,accept,origin,x-yanzi-client,x-yanzi-client-version,x-yanzi-device-id,x-api-version,x-client-version"
   );
   return response;
 }
@@ -5252,14 +4617,6 @@ function generateVerificationCode() {
 }
 
 const textEncoder = new TextEncoder();
-
-class HttpError extends Error {
-  constructor(status, code, message) {
-    super(message);
-    this.status = status;
-    this.code = code;
-  }
-}
 
 class WebDavHttpError extends HttpError {
   constructor(status, code, message, diagnostics) {
@@ -5694,6 +5051,19 @@ async function getUserPointsDetail(env, userId) {
       points: userPoints?.points ?? 0,
       wishesCount: userPoints?.wishes_count ?? 0,
       acceptedCount: userPoints?.accepted_count ?? 0,
+      transactions: transactions || []
+    };
+  } catch (err) {
+    console.warn("getUserPointsDetail fallback:", err);
+    return {
+      points: 0,
+      wishesCount: 0,
+      acceptedCount: 0,
+      transactions: []
+    };
+  }
+}
+
 async function updateWish(env, auth, wishId, payload) {
   await ensureWishWallTables(env);
   const wish = await env.DB.prepare("SELECT * FROM wishes WHERE id = ?").bind(wishId).first();
@@ -5742,3 +5112,46 @@ async function deleteWish(env, auth, wishId) {
 
   return { ok: true, deleted: true, wishId };
 }
+
+let _licenseTablesInitialized = false;
+async function ensureLicenseTables(env) {
+  if (_licenseTablesInitialized) return;
+  try {
+    await env.DB.prepare(`
+      CREATE TABLE IF NOT EXISTS license_keys (
+        code TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        duration_days INTEGER NOT NULL DEFAULT 0,
+        batch_tag TEXT,
+        status TEXT NOT NULL DEFAULT 'unused',
+        used_by_user_id TEXT,
+        used_at TEXT,
+        created_at TEXT NOT NULL
+      )
+    `).run();
+
+    try {
+      await env.DB.prepare("ALTER TABLE users ADD COLUMN vip_expire_at TEXT").run();
+    } catch (e) {
+      // Column might already exist
+    }
+    try {
+      await env.DB.prepare("ALTER TABLE users ADD COLUMN vip_type TEXT").run();
+    } catch (e) {
+      // Column might already exist
+    }
+
+    _licenseTablesInitialized = true;
+  } catch (e) {
+    console.warn("ensureLicenseTables error:", e);
+  }
+}
+
+
+
+const { getSyncDatabase, ensureUser, normalizeSyncObjectId, normalizeSyncRevision, serializeUserSyncObject, serializeUserSyncObjectHistory, getUserSyncRevision, readUserSyncObjects, readUserSyncObject, readUserSyncObjectHistory, writeUserSyncObject } = createSyncObjectRepository({ HttpError, isoNow, scrubAiSecretsFromValue, textEncoder });
+const { ensureOwnedDevice, touchDevice, getPendingDeviceMessagePage, getPendingDeviceMessageItems, markDeviceMessagesDelivered, notifyDeviceRelay, serializeDeviceRecord, deviceNetworkLocation, serializeDeviceMessageRecord, parseJsonObject, expireDeviceCommands } = createDeviceRepository({ DEVICE_MESSAGE_PROTOCOL, DEVICE_ONLINE_WINDOW_MS, HttpError, acceptsAccountChat, ensureUser, isoNow });
+
+const { handleDeviceApi } = createDeviceApi({ DEVICE_MESSAGE_PROTOCOL, HttpError, acceptsAccountChat, accountLanLink, canonicalMessageJson, deviceNetworkLocation, ensureOwnedDevice, ensureUser, executionDeadline, expireDeviceCommands, getPendingDeviceMessagePage, getPendingDeviceMessageItems, isAccountChat, isExecutionMessage, isoNow, json, messageMatchesDevice, normalizeDeviceId, normalizeDeviceMessagePayload, normalizeDevicePayload, normalizeMessageId, normalizeMessageLimit, normalizeShortText, notifyDeviceRelay, ownedAttachment, parseJsonObject, randomHex, readJson, requireAuth, sendOfflinePush, serializeDeviceMessageRecord, serializeDeviceRecord, signToken, touchDevice, traceContext });
+
+const { handleSyncApi } = createSyncApi({ HttpError, ensureUser, getUserWebDavConfig, getYanmStateViewUrl, handleAttachments, hmacSha256, isoNow, json, normalizeOptionalIsoDate, normalizeSyncObjectId, normalizeSyncRevision, normalizeYanmComponentStatePatch, notifyDeviceRelay, patchYanmComponentStateForUser, readJson, readUserSyncObject, readUserSyncObjectHistory, readUserSyncObjects, readYanmStateForUser, requireAuth, writeUserSyncObject, writeYanmStateForUser });

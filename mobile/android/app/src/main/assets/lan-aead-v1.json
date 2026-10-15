@@ -1,0 +1,9 @@
+{
+  "protocol": "yanzi.lan.aead.v1",
+  "key": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+  "nonce": "ICEiIyQlJicoKSor",
+  "aad": "{\"source\":\"phone-vector\",\"target\":\"desktop-vector\",\"requestId\":\"00000000-0000-0000-0000-000000000001\",\"timestamp\":1790899200000,\"path\":\"/v1/me/mobile/messages\",\"method\":\"POST\",\"contentType\":\"application/json\"}",
+  "plaintext": "{\"kind\":\"text\",\"text\":\"燕子互通\",\"clientMessageId\":\"vector-message\"}",
+  "ciphertext": "qRjNGQL8ODQ4CCe2tTrY26QslOilukEJ62OJv9lu5JucDn8mogdWtn2YAOYVbGy7g02Jx/4eF0O4BxxpI8AnsL1Vvmrx8sfruAfh55s7XB3U9lfueWCfSw==",
+  "sha256": "eace3e3b7ed5511461293de6e104a306a32a3a532e56eb43cfeaf916bfa3f87c"
+}

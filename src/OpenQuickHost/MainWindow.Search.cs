@@ -38,6 +38,10 @@ public partial class MainWindow
 
     private void ApplyFilter(string? query)
     {
+        IsSearchResultsPending = false;
+        IsFileSearching = false;
+        IsFileSearchSetupSuggested = false;
+        SearchFeedbackText = "没有找到匹配结果，试试更短的关键词或切换搜索范围。";
         var parsed = ParseSearchQuery(query);
         var normalizedQueryText = query ?? string.Empty;
         var preserveSelection = _hasAppliedFilterOnce &&
@@ -45,6 +49,7 @@ public partial class MainWindow
                                 string.Equals(parsed.ScopeKey, _lastAppliedFilterScopeKey, StringComparison.OrdinalIgnoreCase);
         var previousSelectedCommand = SelectedCommand;
         _activeFilterScopeKey = parsed.ScopeKey;
+        OnPropertyChanged(nameof(IsAllScopeActive));
         UpdateSearchScopeCounts(parsed);
         _activeQueryArgument = string.Empty;
 
@@ -85,6 +90,7 @@ public partial class MainWindow
             if (!_appSettings.EnableEverything)
             {
                 IsFileSearching = false;
+                SearchFeedbackText = "文件搜索未启用，可通过上方开关开启。";
                 FilteredCommands.Clear();
                 SelectedCommand = null;
                 CommandList.SelectedItem = null;
@@ -98,7 +104,7 @@ public partial class MainWindow
                 return;
             }
 
-            _ = ApplyFileSearchResultsAsync(session, parsed.Term);
+            _ = RunSearchTaskAsync(session, () => ApplyFileSearchResultsAsync(session, parsed.Term), "正在查找文件…");
             return;
         }
 
@@ -107,13 +113,13 @@ public partial class MainWindow
         if (TryGetPinnedSearchProviderCommand(parsed.ScopeKey, out var providerCommand))
         {
             var providerTerm = NormalizePinnedSearchProviderInlineQuery(providerCommand, parsed.ScopeKey, parsed.Term);
-            _ = ApplyExtensionSearchProviderResultsAsync(session, providerCommand, parsed.ScopeKey, providerTerm);
+            _ = RunSearchTaskAsync(session, () => ApplyExtensionSearchProviderResultsAsync(session, providerCommand, parsed.ScopeKey, providerTerm), $"正在搜索 {providerCommand.Title}…");
             return;
         }
 
         if (TryResolveInlineSearchProviderCommand(parsed, query, out var inlineProviderCommand, out var inlineProviderTerm))
         {
-            _ = ApplyExtensionSearchProviderResultsAsync(session, inlineProviderCommand, parsed.ScopeKey, inlineProviderTerm);
+            _ = RunSearchTaskAsync(session, () => ApplyExtensionSearchProviderResultsAsync(session, inlineProviderCommand, parsed.ScopeKey, inlineProviderTerm), $"正在搜索 {inlineProviderCommand.Title}…");
             return;
         }
 
@@ -174,13 +180,14 @@ public partial class MainWindow
         OnPropertyChanged(nameof(FooterHint));
         OnPropertyChanged(nameof(IsFileSearchScopeActive));
         OnPropertyChanged(nameof(IsFileSearchEnabledInHomeView));
+        OnPropertyChanged(nameof(IsAllScopeActive));
 
         // Tier 2 (异步流式 Async Tier)：全范围 Everything 检索流式追加，增量平滑合并
         if (string.Equals(parsed.ScopeKey, SearchScopeAll, StringComparison.OrdinalIgnoreCase) &&
             !string.IsNullOrWhiteSpace(parsed.Term) &&
             _appSettings.EnableEverything)
         {
-            _ = StreamAllScopeFileResultsAsync(session, parsed.Term, matches, preserveSelection, previousSelectedCommand);
+            _ = RunSearchTaskAsync(session, () => StreamAllScopeFileResultsAsync(session, parsed.Term, matches, preserveSelection, previousSelectedCommand));
         }
     }
 
@@ -337,7 +344,7 @@ public partial class MainWindow
         {
             "all" or "全部" => SearchScopeAll,
             "extension" or "ext" or "扩展" or "插件" => SearchScopeExtension,
-            "application" or "app" or "应用" or "程序" => SearchScopeApplication,
+            "application" or "app" or "软件" or "应用" or "程序" => SearchScopeApplication,
             "file" or "files" or "everything" or "文件" => SearchScopeFile,
             "system" or "sys" or "设置" or "系统" => SearchScopeSystem,
             "yanyu" or "yan" or "燕语" or "文本指令" => SearchScopeYanyu,
@@ -591,7 +598,7 @@ public partial class MainWindow
             SearchScopeStore => command.Source == CommandSource.Cloud,
             SearchScopeApplication => command.Source == CommandSource.Application,
             SearchScopeFile => command.Source == CommandSource.File,
-            SearchScopeSystem => command.Category.Contains("系统", StringComparison.OrdinalIgnoreCase),
+            SearchScopeSystem => command.Source != CommandSource.LocalExtension && command.Category.Contains("系统", StringComparison.OrdinalIgnoreCase),
             SearchScopeYanyu => command.Category.Contains("燕语", StringComparison.OrdinalIgnoreCase),
             _ when SearchScopeTab.TryParsePinnedCommandScope(scope, out var extensionId) =>
                 command.ExtensionId.Equals(extensionId, StringComparison.OrdinalIgnoreCase),
@@ -1085,21 +1092,25 @@ public partial class MainWindow
             : _lastActionableCommand;
         if (sourceCommand == null)
         {
-            SyncStatus = "没有可设置快捷键的扩展。";
+            SyncStatus = "没有可设置快捷键的命令。";
             return Task.CompletedTask;
         }
 
-        var extension = ResolveRunnableCommand(sourceCommand);
-        if (extension.Source != CommandSource.LocalExtension)
+        var resolved = ResolveRunnableCommand(sourceCommand);
+        var isLocalExtension = resolved.Source == CommandSource.LocalExtension;
+        var isCustomConfigurable = !isLocalExtension && !IsInternalCommand(resolved) && 
+                                   (resolved.Source == CommandSource.Application || resolved.Source == CommandSource.Local);
+
+        if (!isLocalExtension && !isCustomConfigurable)
         {
-            SyncStatus = "当前选中项不是本地小程序，不能直接设置快捷键。";
+            SyncStatus = "当前选中项不支持设置快捷键。";
             return Task.CompletedTask;
         }
 
         var dialog = new HotkeyCaptureWindow(
             "设置快捷键",
             "窗口激活后，直接按一次新的组合键即可完成录制。需要清除时可点“清空”。",
-            extension.GlobalShortcut ?? string.Empty,
+            resolved.GlobalShortcut ?? string.Empty,
             allowEmpty: true)
         {
             Owner = this
@@ -1111,22 +1122,82 @@ public partial class MainWindow
 
         try
         {
-            if (!string.IsNullOrWhiteSpace(dialog.ShortcutText) &&
-                (!TryParseHotkey(dialog.ShortcutText, out _, out _) || IsDoubleTapShortcut(dialog.ShortcutText)))
+            var newShortcut = dialog.ShortcutText?.Trim();
+            if (!string.IsNullOrWhiteSpace(newShortcut) &&
+                (!TryParseHotkey(newShortcut, out _, out _) || IsDoubleTapShortcut(newShortcut)))
             {
                 SyncStatus = "快捷键格式无效。示例：Ctrl+Alt+T";
                 return Task.CompletedTask;
             }
 
-            var updated = LocalExtensionCatalog.SetGlobalShortcut(extension.ExtensionId, dialog.ShortcutText);
-            UpsertLocalExtensionCommand(updated);
-            ApplyFilter(SearchBox.Text);
-            SelectedCommand = _allCommands.FirstOrDefault(x => x.ExtensionId.Equals(updated.ExtensionId, StringComparison.OrdinalIgnoreCase));
-            CommandList.SelectedItem = SelectedCommand;
-            LastRunMessage = string.IsNullOrWhiteSpace(updated.GlobalShortcut)
-                ? $"已清除快捷键：{updated.Title}"
-                : $"已设置快捷键：{updated.Title} -> {updated.GlobalShortcut}";
-            QueueBackgroundWebDavSync("extension-shortcut");
+            if (isLocalExtension)
+            {
+                var updated = LocalExtensionCatalog.SetGlobalShortcut(resolved.ExtensionId, newShortcut);
+                UpsertLocalExtensionCommand(updated);
+                ApplyFilter(SearchBox.Text);
+                SelectedCommand = _allCommands.FirstOrDefault(x => x.ExtensionId.Equals(updated.ExtensionId, StringComparison.OrdinalIgnoreCase));
+                CommandList.SelectedItem = SelectedCommand;
+                LastRunMessage = string.IsNullOrWhiteSpace(updated.GlobalShortcut)
+                    ? $"已清除快捷键：{updated.Title}"
+                    : $"已设置快捷键：{updated.Title} -> {updated.GlobalShortcut}";
+                QueuePrivateExtensionUpsertToAccount(updated.ExtensionId);
+                QueueBackgroundWebDavSync("extension-shortcut");
+            }
+            else if (isCustomConfigurable)
+            {
+                _appSettings.CustomCommandShortcuts ??= new(StringComparer.OrdinalIgnoreCase);
+                _appSettings.AppShortcutBindings ??= new(StringComparer.OrdinalIgnoreCase);
+                KnownApplicationCatalog.TryGetByExtensionId(resolved.ExtensionId, out var knownApplication);
+
+                if (string.IsNullOrWhiteSpace(newShortcut))
+                {
+                    _appSettings.CustomCommandShortcuts.Remove(resolved.ExtensionId);
+                    if (!string.IsNullOrWhiteSpace(resolved.OpenTarget))
+                    {
+                        _appSettings.CustomCommandShortcuts.Remove(resolved.OpenTarget);
+                    }
+
+                    if (knownApplication != null)
+                    {
+                        _appSettings.AppShortcutBindings.Remove(knownApplication.Id);
+                    }
+                }
+                else
+                {
+                    _appSettings.CustomCommandShortcuts[resolved.ExtensionId] = newShortcut;
+                    if (!string.IsNullOrWhiteSpace(resolved.OpenTarget))
+                    {
+                        _appSettings.CustomCommandShortcuts[resolved.OpenTarget] = newShortcut;
+                    }
+
+                    if (knownApplication != null)
+                    {
+                        _appSettings.AppShortcutBindings[knownApplication.Id] = newShortcut;
+                    }
+                }
+
+                _appSettings.LauncherConfigUpdatedAtUtc = DateTime.UtcNow.ToString("O");
+                AppSettingsStore.Save(_appSettings);
+
+                foreach (var cmd in _allCommands.Where(x => x.ExtensionId.Equals(resolved.ExtensionId, StringComparison.OrdinalIgnoreCase)))
+                {
+                    cmd.UpdateGlobalShortcut(string.IsNullOrWhiteSpace(newShortcut) ? null : newShortcut);
+                }
+                foreach (var cmd in FilteredCommands.Where(x => x.ExtensionId.Equals(resolved.ExtensionId, StringComparison.OrdinalIgnoreCase)))
+                {
+                    cmd.UpdateGlobalShortcut(string.IsNullOrWhiteSpace(newShortcut) ? null : newShortcut);
+                }
+
+                RefreshExtensionHotkeys();
+                ApplyFilter(SearchBox.Text);
+                SelectedCommand = _allCommands.FirstOrDefault(x => x.ExtensionId.Equals(resolved.ExtensionId, StringComparison.OrdinalIgnoreCase));
+                CommandList.SelectedItem = SelectedCommand;
+
+                LastRunMessage = string.IsNullOrWhiteSpace(newShortcut)
+                    ? $"已清除快捷键：{resolved.Title}"
+                    : $"已设置快捷键：{resolved.Title} -> {newShortcut}";
+                QueueBackgroundWebDavSync("command-shortcut");
+            }
         }
         catch (Exception ex)
         {
@@ -1140,6 +1211,7 @@ public partial class MainWindow
     {
         if (string.IsNullOrWhiteSpace(query))
         {
+            SearchFeedbackText = "输入文件名或路径，开始搜索本机文件。";
             IsFileSearching = false;
             if (!_searchPipelineManager.IsActive(session))
             {
@@ -1172,9 +1244,7 @@ public partial class MainWindow
             return;
         }
 
-        FileSearchingText = !EverythingSearchService.IsDatabaseLoaded()
-            ? "Everything 正在初始化索引，请稍候..."
-            : "搜索中...";
+        FileSearchingText = "正在查找文件…";
         IsFileSearching = true;
 
         var (response, fileCommands) = await Task.Run(() =>
@@ -1215,10 +1285,10 @@ public partial class MainWindow
         {
             if (!string.IsNullOrWhiteSpace(response.ErrorMessage))
             {
-                SyncStatus = response.ErrorMessage;
+                SearchFeedbackText = response.ErrorMessage;
             }
 
-            MaybePromptEverythingManualInitialization(query);
+            SuggestEverythingManualInitialization(query);
 
             FilteredCommands.Clear();
             SelectedCommand = null;
@@ -1241,10 +1311,10 @@ public partial class MainWindow
 
         if (fileCommands.Count == 0)
         {
-            MaybePromptEverythingManualInitialization(query);
+            SuggestEverythingManualInitialization(query);
         }
 
-        _ = LoadFileIconsAsync(session, fileCommands);
+        _ = RunSearchTaskAsync(session, () => LoadFileIconsAsync(session, fileCommands));
     }
 
     private async Task StreamAllScopeFileResultsAsync(
@@ -1341,7 +1411,7 @@ public partial class MainWindow
         var fileCommands = merged.Where(static item => item.Source == CommandSource.File).ToList();
         if (fileCommands.Count > 0 && !session.Token.IsCancellationRequested)
         {
-            _ = LoadFileIconsAsync(session, fileCommands);
+            _ = RunSearchTaskAsync(session, () => LoadFileIconsAsync(session, fileCommands));
         }
     }
 
@@ -1406,7 +1476,7 @@ public partial class MainWindow
         {
             if (!string.IsNullOrWhiteSpace(response.ErrorMessage))
             {
-                SyncStatus = response.ErrorMessage;
+                SearchFeedbackText = response.ErrorMessage;
             }
 
             FilteredCommands.Clear();
@@ -1435,10 +1505,10 @@ public partial class MainWindow
 
         if (resultCommands.Count == 0)
         {
-            SyncStatus = $"{providerCommand.Title} 没有找到匹配结果。";
+            SearchFeedbackText = $"{providerCommand.Title} 没有找到匹配结果，试试其他关键词。";
         }
 
-        _ = LoadFileIconsAsync(session, resultCommands);
+        _ = RunSearchTaskAsync(session, () => LoadFileIconsAsync(session, resultCommands));
     }
 
     private static CommandItem BuildCommandFromResultItem(ResultProviderItem result)
@@ -1544,7 +1614,7 @@ public partial class MainWindow
         }, session.Token);
     }
 
-    private void MaybePromptEverythingManualInitialization(string query)
+    private void SuggestEverythingManualInitialization(string query)
     {
         if (string.IsNullOrWhiteSpace(query))
         {
@@ -1561,35 +1631,8 @@ public partial class MainWindow
             return;
         }
 
-        var now = DateTimeOffset.UtcNow;
-        if (now - _lastFileSearchManualInitPromptAt < TimeSpan.FromSeconds(10))
-        {
-            return;
-        }
-
-        _lastFileSearchManualInitPromptAt = now;
-        SyncStatus = EverythingRuntimeService.IsProcessRunning()
-            ? "Everything 已启动，但索引尚未完成初始化。"
-            : "Everything 尚未完成初始化，文件搜索暂时不可用。";
-        HostAssets.AppendLog("File search prompt: Everything runtime is not initialized; showing manual initialization hint.");
-        var result = System.Windows.MessageBox.Show(
-            "文件搜索引擎已启动，但当前还没有完成索引初始化。\n\n点击“是”后，燕子会直接打开 Everything，让它弹出原生授权/初始化提示。完成后回到燕子重新搜索即可。",
-            "文件搜索需要初始化",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Information);
-        if (result != MessageBoxResult.Yes)
-        {
-            return;
-        }
-
-        if (EverythingRuntimeService.ShowInteractiveSetup())
-        {
-            SyncStatus = "已打开 Everything 初始化窗口，请按提示完成授权。";
-        }
-        else
-        {
-            SyncStatus = "无法打开 Everything 初始化窗口，请手动从托盘打开一次 Everything。";
-        }
+        IsFileSearchSetupSuggested = true;
+        SearchFeedbackText = "文件搜索尚未完成初始化，可打开搜索服务完成授权，再回来重试。";
     }
 
     private bool TryShowNativeFileContextMenu()
@@ -1616,6 +1659,12 @@ public partial class MainWindow
             return false;
         }
 
+        if (menu.Items.Count > 1 && menu.Items[0] is MenuItem backItem && menu.Items[1] is Separator topSep)
+        {
+            backItem.Visibility = keyboardInvoked ? Visibility.Visible : Visibility.Collapsed;
+            topSep.Visibility = keyboardInvoked ? Visibility.Visible : Visibility.Collapsed;
+        }
+
         menu.PlacementTarget = placementTarget ?? CommandList;
         menu.Placement = keyboardInvoked && placementTarget != null
             ? System.Windows.Controls.Primitives.PlacementMode.Right
@@ -1635,6 +1684,12 @@ public partial class MainWindow
         if (TryFindResource("GenericResultContextMenu") is not System.Windows.Controls.ContextMenu menu)
         {
             return false;
+        }
+
+        if (menu.Items.Count > 1 && menu.Items[0] is MenuItem backItem && menu.Items[1] is Separator topSep)
+        {
+            backItem.Visibility = keyboardInvoked ? Visibility.Visible : Visibility.Collapsed;
+            topSep.Visibility = keyboardInvoked ? Visibility.Visible : Visibility.Collapsed;
         }
 
         foreach (var item in menu.Items.OfType<MenuItem>())
@@ -2292,6 +2347,11 @@ public partial class MainWindow
         if (command.Keywords.Any(k => k.Contains(query, StringComparison.OrdinalIgnoreCase)))
         {
             return new CommandMatch(true, 140);
+        }
+
+        if (!string.IsNullOrWhiteSpace(command.GlobalShortcut) && command.GlobalShortcut.Contains(query, StringComparison.OrdinalIgnoreCase))
+        {
+            return new CommandMatch(true, 180);
         }
 
         return new CommandMatch(false, 0);

@@ -30,11 +30,11 @@
                 <DropShadowEffect Color="Black" BlurRadius="8" ShadowDepth="2" Opacity="0.5"/>
             </Border.Effect>
             <StackPanel Orientation="Horizontal">
-                <TextBlock Text="🎯 正在选择目标窗口 (按 ESC 取消) | " Foreground="#FFA0A0A0" FontSize="12" VerticalAlignment="Center"/>
-                <TextBlock x:Name="WindowTitleText" Text="无" Foreground="White" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center"/>
-                <TextBlock Text=" (" Foreground="#FFA0A0A0" FontSize="12" VerticalAlignment="Center"/>
-                <TextBlock x:Name="ProcessNameText" Text="无" Foreground="#FF00BCF2" FontSize="12" VerticalAlignment="Center"/>
-                <TextBlock Text=")" Foreground="#FFA0A0A0" FontSize="12" VerticalAlignment="Center"/>
+                <TextBlock Text="🎯 正在选择目标窗口 (按 ESC 取消) | " Foreground="#FFA0A0A0" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center"/>
+                <TextBlock x:Name="WindowTitleText" Text="无" Foreground="White" FontWeight="SemiBold" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center"/>
+                <TextBlock Text=" (" Foreground="#FFA0A0A0" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center"/>
+                <TextBlock x:Name="ProcessNameText" Text="无" Foreground="#FF00BCF2" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center"/>
+                <TextBlock Text=")" Foreground="#FFA0A0A0" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center"/>
             </StackPanel>
         </Border>
     </Canvas>

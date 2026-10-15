@@ -1,0 +1,280 @@
+using System.Net;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
+
+namespace OpenQuickHost.Sync;
+
+public sealed partial class CloudSyncClient
+{
+    private static readonly HttpRequestOptionsKey<long> SessionGenerationKey = new("Yanzi.SessionGeneration");
+    private static bool IsPaidCloudRequestPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return false;
+        // Query parameters do not change the entitlement domain. In particular,
+        // historical export must stay reachable even after cloud 403 cooldown.
+        var route = path.Split('?', 2)[0];
+        if (!route.StartsWith("/v1/", StringComparison.Ordinal)) return false;
+        if (route.StartsWith("/v1/auth/", StringComparison.Ordinal) ||
+            route.StartsWith("/v1/licenses/", StringComparison.Ordinal)) return false;
+        return route != "/v1/user/vip-status" && route != "/v1/user/cloud-access" &&
+               route != "/v1/user/cloud-export" && route != "/v1/app/update/latest";
+    }
+
+    private HttpRequestMessage CreateJsonRequest(HttpMethod method, string path, string body, bool includeAuth)
+    {
+        var request = CreateRequest(method, path, includeAuth);
+        request.Content = new StringContent(body, Encoding.UTF8, "application/json");
+        return request;
+    }
+
+    private HttpRequestMessage CreateRequest(HttpMethod method, string path, bool includeAuth)
+    {
+        if (IsPaidCloudRequestPath(path) &&
+            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() < Interlocked.Read(ref _cloudMembershipDeniedUntilUnixMs))
+            throw new CloudVipRequiredException();
+        var request = new HttpRequestMessage(method, path);
+        request.Options.Set(SessionGenerationKey, AccountCoordinator.Generation);
+        request.Version = HttpVersion.Version11;
+        request.VersionPolicy = HttpVersionPolicy.RequestVersionOrLower;
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        if (includeAuth && HasValidSession())
+        {
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _session!.AccessToken);
+        }
+
+        return request;
+    }
+
+    private async Task<HttpResponseMessage> SendJsonAsync(HttpMethod method, string path, object body, bool includeAuth, CancellationToken cancellationToken)
+    {
+        using var request = CreateJsonRequest(method, path, JsonSerializer.Serialize(body), includeAuth);
+        return await SendAsyncWithFallback(request, cancellationToken);
+    }
+
+    private async Task<HttpResponseMessage> SendAsyncWithFallback(HttpMethod method, string path, bool includeAuth, CancellationToken cancellationToken)
+    {
+        using var request = CreateRequest(method, path, includeAuth);
+        return await SendAsyncWithFallback(request, cancellationToken);
+    }
+
+    private async Task<HttpResponseMessage> SendAsyncWithFallback(HttpRequestMessage request, CancellationToken cancellationToken, bool largeTransfer = false)
+    {
+        ThrowIfTransportCoolingDown(cancellationToken);
+        var generation = request.Options.TryGetValue(SessionGenerationKey, out var savedGeneration)
+            ? savedGeneration : AccountCoordinator.Generation;
+        AccountCoordinator.RequireCurrent(generation);
+        Exception? lastError = null;
+        // A failed proxy/TLS handshake must not lock the user's sign-in behind a WAF exit node.
+        // For this POST, retry only when the connection could not have delivered a request.
+        var path = request.RequestUri?.IsAbsoluteUri == true
+            ? request.RequestUri.AbsolutePath : request.RequestUri?.OriginalString;
+        var isLogin = request.Method == HttpMethod.Post && path == "/v1/auth/login";
+        var attempts = largeTransfer
+            ? new (HttpClient client, string label)[]
+            {
+                (_largeTransferHttpClient, "proxy-large"),
+                (_directLargeTransferHttpClient, "direct-large"),
+                (_largeTransferHttpClient, "proxy-large-retry")
+            }
+            : isLogin
+                ? new (HttpClient client, string label)[]
+                {
+                    (_directHttpClient, "login-direct"),
+                    (_httpClient, "login-proxy")
+                }
+                : new (HttpClient client, string label)[]
+                {
+                    (_httpClient, "proxy"),
+                    (_directHttpClient, "direct"),
+                    (_httpClient, "proxy-retry")
+                };
+        var maxAttempts = isLogin ? 2 : IsIdempotentMethod(request.Method) ? attempts.Length : 1;
+
+        for (var index = 0; index < maxAttempts; index++)
+        {
+            try
+            {
+                AccountCoordinator.RequireCurrent(generation);
+                using var attemptRequest = await CloneRequestAsync(request, cancellationToken);
+                var response = await attempts[index].client.SendAsync(attemptRequest, cancellationToken);
+                try { AccountCoordinator.RequireCurrent(generation); }
+                catch { response.Dispose(); throw; }
+                ResetTransportBackoff();
+                return response;
+            }
+            catch (Exception ex) when (AccountCoordinator.Generation == generation &&
+                (isLogin ? IsSafeAuthTransportFallback(ex) : IsRetryableTransportException(ex, cancellationToken)) &&
+                !cancellationToken.IsCancellationRequested && index < maxAttempts - 1)
+            {
+                lastError = ex;
+                CloudSyncDiagnostics.Log(
+                    "CloudSyncClient.Http",
+                    "Retryable request failure",
+                    ("method", request.Method.Method),
+                    ("uri", request.RequestUri?.ToString()),
+                    ("attempt", index + 1),
+                    ("channel", attempts[index].label),
+                    ("error", ex.Message));
+                await Task.Delay(TimeSpan.FromMilliseconds(250 * (index + 1)), cancellationToken);
+            }
+            catch (Exception ex) when (AccountCoordinator.Generation == generation && IsRetryableTransportException(ex, cancellationToken))
+            {
+                lastError = ex;
+                RegisterTransportFailure();
+                break;
+            }
+        }
+
+        CloudSyncDiagnostics.Log(
+            "CloudSyncClient.Http",
+            "Request failed after fallback",
+            ("method", request.Method.Method),
+            ("uri", request.RequestUri?.ToString()),
+            ("error", lastError?.Message));
+        throw lastError ?? new HttpRequestException("Cloud request failed before receiving a response.");
+    }
+
+    private static HttpClient CreateHttpClient(
+        string baseUrl,
+        bool useProxy,
+        TimeSpan timeout)
+    {
+        var handler = new HttpClientHandler
+        {
+            UseProxy = useProxy
+        };
+
+        var client = new HttpClient(handler)
+        {
+            BaseAddress = new Uri(baseUrl, UriKind.Absolute),
+            Timeout = timeout,
+            DefaultRequestVersion = HttpVersion.Version11,
+            DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrLower
+        };
+        var runtimeVersion = typeof(CloudSyncClient).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
+        client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("YanziClient-Desktop", runtimeVersion));
+        client.DefaultRequestHeaders.TryAddWithoutValidation("X-Yanzi-Client", "desktop");
+        client.DefaultRequestHeaders.TryAddWithoutValidation("X-Yanzi-Client-Version", runtimeVersion);
+        client.DefaultRequestHeaders.TryAddWithoutValidation("X-Yanzi-Device-Id", DeviceIdentityStore.GetOrCreateDesktopDeviceId());
+        return client;
+    }
+
+    // Only retry login POST after a TLS/connection handshake failure. A timeout or
+    // truncated response could mean the server already processed the login request.
+    private static bool IsSafeAuthTransportFallback(Exception ex)
+    {
+        if (ex is not HttpRequestException http || http.StatusCode != null) return false;
+        if (http.InnerException is System.Security.Authentication.AuthenticationException) return true;
+        if (http.InnerException is System.Net.Sockets.SocketException socket)
+            return socket.SocketErrorCode is
+                System.Net.Sockets.SocketError.ConnectionRefused or
+                System.Net.Sockets.SocketError.HostNotFound or
+                System.Net.Sockets.SocketError.NetworkUnreachable;
+        return http.Message.Contains("SSL connection could not be established", StringComparison.OrdinalIgnoreCase) ||
+               http.Message.Contains("Connection refused", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsRetryableTransportException(Exception ex, CancellationToken cancellationToken)
+    {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return false;
+        }
+
+        if (ex is HttpRequestException httpException && httpException.StatusCode == null)
+        {
+            return true;
+        }
+
+        if (ex is OperationCanceledException)
+        {
+            return true; // HttpClient timeout, rather than caller cancellation.
+        }
+
+        var message = ex.ToString();
+        return message.Contains("SSL connection could not be established", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("unexpected EOF", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("0 bytes from the transport stream", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("response ended prematurely", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("ResponseEnded", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("request was canceled", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("operation was canceled", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("timed out", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsIdempotentMethod(HttpMethod method) =>
+        method == HttpMethod.Get || method == HttpMethod.Head ||
+        method == HttpMethod.Put || method == HttpMethod.Delete ||
+        method == HttpMethod.Options;
+
+    private void ThrowIfTransportCoolingDown(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_transportRetryLock)
+        {
+            if (DateTimeOffset.UtcNow < _transportRetryAfterUtc)
+            {
+                throw new HttpRequestException("网络连接暂时不可用，稍后自动重试。");
+            }
+        }
+    }
+
+    private void RegisterTransportFailure()
+    {
+        lock (_transportRetryLock)
+        {
+            _consecutiveTransportFailures = Math.Min(_consecutiveTransportFailures + 1, 8);
+            if (_consecutiveTransportFailures < 2)
+            {
+                return;
+            }
+
+            var delaySeconds = Math.Min(15 * (1 << Math.Min(_consecutiveTransportFailures - 2, 5)), 300);
+            _transportRetryAfterUtc = DateTimeOffset.UtcNow.AddSeconds(delaySeconds);
+            CloudSyncDiagnostics.Log("CloudSyncClient.Http", "Transport retry cooldown", ("seconds", delaySeconds), ("failures", _consecutiveTransportFailures));
+        }
+    }
+
+    private void ResetTransportBackoff()
+    {
+        lock (_transportRetryLock)
+        {
+            _consecutiveTransportFailures = 0;
+            _transportRetryAfterUtc = DateTimeOffset.MinValue;
+        }
+    }
+
+    public void ResumeTransportAfterNetworkChange() => ResetTransportBackoff();
+
+    private static async Task<HttpRequestMessage> CloneRequestAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        var bytes = request.Content == null ? null : await request.Content.ReadAsByteArrayAsync(cancellationToken);
+        var clone = new HttpRequestMessage(request.Method, request.RequestUri)
+        {
+            Version = request.Version,
+            VersionPolicy = request.VersionPolicy
+        };
+
+        foreach (var header in request.Headers)
+        {
+            clone.Headers.TryAddWithoutValidation(header.Key, header.Value);
+        }
+
+        if (request.Content == null)
+        {
+            return clone;
+        }
+
+        var content = new ByteArrayContent(bytes!);
+        foreach (var header in request.Content.Headers)
+        {
+            content.Headers.TryAddWithoutValidation(header.Key, header.Value);
+        }
+
+        clone.Content = content;
+        return clone;
+    }
+
+}

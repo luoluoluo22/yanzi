@@ -4,6 +4,15 @@
 
 ---
 
+## 0. 持续开发与按需发布（2026-10-10 起优先执行）
+
+> [!IMPORTANT]
+> **开发即验证，验证后及时合并，合并不等于发布。**
+> 所有 Agent 在修改代码前先阅读根目录 [AGENTS.md](../AGENTS.md) 和 [持续开发、验证、合并与按需发布规范](../docs/development-integration-release-policy.md)。分支上的开发过程可分步 Commit，关联测试与审查通过即可合并 main；不得将未验收代码并入 main。合并到 main 默认不更新用户正式安装版，不自动启动、关闭或重启正式进程；只有存在明确的发布/部署意图时才执行发布门禁。
+> Cloudflare main 变更会触发实际生产部署，必须执行专门的线上授权/迁移门禁；不能将该特殊情况误称为“只提交代码”。
+> 与以下旧版“自动启动”“自主公开发布”等要求冲突时，以 2026-10-10 新规范为准。
+
+---
 ## 1. 脚本编码规范与 PowerShell 兼容性
 
 > [!IMPORTANT]
@@ -57,3 +66,146 @@
 >    custom_domain = true
 >    ```
 
+---
+
+## 4. 开发构建后的运行时验证与正式实例隔离
+
+> [!IMPORTANT]
+> 1. `dotnet build` 通过（0 错误）表示编译通过，**不等于应立即部署或重启用户正在使用的正式程序**；常态开发先做受影响模块的自动测试，再按新规范合并代码。
+> 2. 需要窗口、宿主或浏览器交互验证时，优先使用隔离开发实例、独立进程或明确的热重载机制，并核对当前运行的其他 Agent/任务；不得默认执行 `Stop-Process -Name Yanzi -Force`。
+> 3. 只有用户明确请求本机正式安装、更新或发布，或命中预先明确批准的具体部署任务时，才允许切换正式程序；此时必须遵守备份、健康检查、版本核验和回滚门禁。
+> 4. 发布源码已通过相应门禁的情况下，可直接复用现有 Commit/tag 构建；无需为发布目的重新提交未变化源码。
+
+---
+## 5. 燕子小程序（Extension）开发与测试规约
+
+> [!IMPORTANT]
+> **扩展体系核心规范参考**
+> 在新增、修改或维护燕子本地小程序时，必须深入阅读并严格遵循以下三份标准规范文档：
+> 1. [《燕子小程序（Extension）开发规范指南》](file:///F:/Desktop/kaifa/OpenQuickHost/docs/extension-development-specification.md)：规定了 manifest.json 配置字典、独立源码文件模式、输入捕获优先级模型与交互原则；
+> 2. [《C# 扩展运行时（YanziActionContext）API 参考》](file:///F:/Desktop/kaifa/OpenQuickHost/docs/csharp-runtime-api-reference.md)：说明了 Roslyn 动态编译机制、`YanziActionContext` 暴露的通知/日志/存储方法以及代码最佳范式；
+> 3. [《LocalAgentApi 接口清单》](file:///F:/Desktop/kaifa/OpenQuickHost/docs/local-agent-api-reference.md)：汇总了本地代理服务的 RESTful 接口，包含扩展执行、存储读写与桌面通知的端点说明。
+
+> [!CAUTION]
+> **小程序架构边界与交互防线**
+> 1. **代码边界解耦**：小程序具备完整的 .NET 9 BCL 与 Win32 互操作能力，应当自身闭环解决问题。**严禁为了单个小程序的功能改动燕子主程序源代码**。
+> 2. **UNIX 静默交互哲学**：高频触发的快捷类小程序，**成功执行一律静默（不弹通知、不弹确认窗）**；只有当执行异常、文件不存在、启动失败时，才调用桌面通知报警。
+> 3. **API 自动化测试入参规范**：调用 `POST /v1/extensions/{id}/run` 进行本地测试时，JSON Body 传递的输入参数字段名必须为 **`input`**（小写），切勿写错为 `inputText`。
+> 4. **精炼命名规范（轮盘与背包呈现）**：小程序名称必须简练利落，**最长建议不超过 6 个字，以 2 ~ 4 个字为最佳**（如“日历”、“截图”、“智能识别”）。由于小程序会在【轮盘背包（Backpack）】和【燕环（RadialMenu）】槽位中高频呈现，过长的名称会导致扇区槽位内文字拥挤排版、折行重叠或被省略号截断。
+> 5. **物理位置绝对规范（严禁在 Git 仓库内开发小程序）**：
+>    - **唯一合法物理位置**：所有用户级、自用或新开发的小程序，其代码、脚本与 `manifest.json` **必须且只能保存在用户本地数据目录**：
+>      `%LOCALAPPDATA%\OpenQuickHost\Extensions\<extensionId>\`
+>      （绝对路径示例：`C:\Users\Administrator\AppData\Local\OpenQuickHost\Extensions\<id>\`）；
+>    - **专属业务持久化数据**：小程序运行时产生的所有数据文件必须存放在：
+>      `%LOCALAPPDATA%\OpenQuickHost\ExtensionStorage\<extensionId>\`（或通过 `context.ExtensionDataDirectory` 读写）；
+>    - **严禁污染 Git 代码树**：**严禁在 Git 仓库工程树内（如根目录或 `extensions/` 目录下）创建、存放或提交任何自用小程序代码**！燕子仓库保持宿主框架的纯净，所有小程序的编写、调试与热加载，一律且唯一在 `%LOCALAPPDATA%\OpenQuickHost\Extensions\` 下闭环进行。
+
+
+
+
+
+---
+
+### Windows 小程序动工前的强制流程
+
+> [!IMPORTANT]
+> **先读 [`docs/miniapps/DEVELOPMENT_WORKFLOW.md`](../docs/miniapps/DEVELOPMENT_WORKFLOW.md)，再定位 `%LOCALAPPDATA%\OpenQuickHost\Extensions\<id>`。**
+> 每次新建、修复或移植：①读取用户目录 manifest/入口与现状；②备份并逐文件对比（禁止用旧仓库副本覆盖）；③仅在用户目录修改；④凭据只引用既有环境变量管理器；⑤测试编译/运行/回退；⑥依赖既有自动同步，不自建同步或提交业务源码；⑦仅在真实核对云端和目标设备后报告“跨设备同步成功”。
+> **小程序源码修改不得创建宿主仓库业务 PR**。只有通用 API、SDK、文档、测试或 CI 需要变更时，才另行修改宿主 Git，运行 `scripts/verify-miniapp-repository-isolation.ps1` 并遵守发布门禁。
+
+---
+
+### 浏览器助手 / 网页小程序开发完成后的强制刷新验收
+
+> [!IMPORTANT]
+> **“代码已修改”不等于“开发完成”。浏览器助手或网页小程序的开发完成条件必须包含扩展自重载与当前页面刷新。**
+> 1. 只要本次修改涉及 `browser-extension/`、`browser-extension/webapps/`、Popup、Service Worker 或任一网页小程序 content script，完成代码修改与语法检查后，AI Agent **必须调用项目现有的浏览器扩展自重载链路**，不得仅告诉用户“手动刷新/手动重载扩展”。
+> 2. 标准执行入口为 `scripts/dev-browser-extension-refresh.ps1`。该脚本读取燕子当前 `appsettings.local.json` 中的 Local Agent API 端口与 Token，并调用 `POST /v1/browser/reload`。
+> 3. 扩展收到重载请求后，必须先写入 `yanziPendingExtensionReloadRefresh`，再执行 `chrome.runtime.reload()`；新版 Service Worker 启动后由 `refreshWebAppTabsAfterExtensionReload()` **自动刷新当前所有已安装网页小程序所匹配的标签页**，确保页面不继续运行旧 content script。
+> 4. 验收至少确认：
+>    - `POST /v1/browser/reload` 返回 HTTP 202；
+>    - 扩展重新连接；
+>    - 日志出现 `Browser extension reload ACK`；
+>    - 日志出现 `Browser extension runtime ready`，并记录 `refreshedWebAppTabs`；
+>    - 用户当前正在使用的目标网页已经重新加载为最新代码。
+> 5. 如果 Local Agent API 暂时不可用，但燕子进程应当在线，先恢复/重启燕子 Local Agent API，再重试自动刷新；**不能把“API 未启动”当作跳过刷新步骤的理由**。
+> 6. 只有在浏览器本身未运行、扩展未安装/未连接或当前机器客观无法进行真实页面验收时，才允许结束时明确标注“未完成运行时刷新验收”；其他情况下必须刷新后才能宣称开发完成。
+> 7. 以后修改网页小程序时，默认形成固定闭环：**修改 → 静态检查/测试 → 扩展自重载 → 自动刷新匹配网页 → 运行时验收**。
+> 8. 网页小程序版本号必须保持一致：`webapps/catalog.json` 中的版本与 content script 对外 probe 返回的版本必须同步更新；刷新后应通过 `probe_webapps` 确认运行时报告的版本就是最新版本。
+
+---
+
+## 6. 自主开发与跨平台验证入口
+
+> [!IMPORTANT]
+> 后续 AI Agent 修改 Android 移动端、同步层或跨平台小程序能力前，**必须先阅读 `mobile/android/DEVELOPMENT_STATUS.md`**，以恢复当前真实实现、已验证结论、已知问题和下一步，不要仅依据旧 README 或历史聊天重新推断。
+>
+> 后续 AI Agent 修改桌面端、同步层或 Android 移动端时，优先使用仓库内统一脚本完成闭环，避免临时拼接命令导致 SDK、ADB 或测试设备不一致。
+
+- 全环境检查：`scripts\dev-check.ps1`
+  - 验证 Git/.NET/JDK/Node/Android SDK。
+  - 构建桌面解决方案与 Android APK。
+  - 运行 `Yanzi.SyncVerification`。
+- Android 模拟器：`scripts\dev-emulator.ps1`
+  - 默认使用专用 AVD `YanziApi30`。
+  - 真机与模拟器同时在线时，开发安装优先使用模拟器。
+  - `-Stop` 可关闭模拟器，`-WipeData` 可创建干净测试状态。
+- Android 开发闭环：`scripts\dev-android-loop.ps1`
+  - 构建、覆盖安装、启动、检查前台 Activity、UIAutomator 文本节点、logcat 和截图。
+  - 测试产物写入 `%TEMP%\YanziDev`，不得污染 Git 工作区。
+- 桌面开发闭环：`scripts\dev-desktop-loop.ps1`
+  - 构建、终止旧 Yanzi 进程并使用独立 Win32 进程启动新版本。
+- 完整回归入口：`scripts\dev-smoke.ps1`
+  - 依次执行环境检查、桌面/Android 构建、同步验证、Worker 语法检查、Android UI smoke、燕幕对象同步、小程序对象同步、Windows↔Android 共享存储测试。
+  - 集成测试结束后必须清空模拟器内的临时测试账号数据，再做一次 clean smoke，最后重新启动桌面燕子。
+- Android 破坏性集成测试默认只允许在 `emulator-*` 上执行：
+  - `scripts\test-android-object-sync.ps1`
+  - `scripts\test-mobile-extension-storage.ps1`
+  - `scripts\test-cross-platform-extension-storage.ps1`
+  - `scripts\test-mobile-extension-definition-sync.ps1`
+  - `scripts\test-unified-extension-catalog.ps1`
+  - 测试脚本必须自行清空测试 App 数据并注入临时本地 Worker 账号，保证测试间互不污染。
+  - 唯一真机例外是隔离包 `cc.luoluoluo.yanzi.mobile.dev`；必须通过 `scripts\test-real-phone-dev-object-sync.ps1` 或显式 `-AllowPhysicalDev` 进入，绝不能对生产包执行 `pm clear`。
+
+### 真实手机 Dev 隔离开发
+
+- 用户要求：日常真机回归默认不主动熄屏，避免亮屏后需要反复手动解锁。确需熄屏验证时，只在最终验收阶段执行一次；消息回归通过显式 `-IncludeFinalScreenOff` 开启。
+
+- Android 新增独立 `dev` build type：
+  - applicationId：`cc.luoluoluo.yanzi.mobile.dev`
+  - application label：`燕子 Dev`
+  - 与生产/历史包 `cc.luoluoluo.yanzi.mobile` 可同时安装。
+- 构建：`scripts\build-android-mvp.ps1 -Configuration dev`
+  - 输出：`mobile\android\app\build\manual-dev\yanzi-mobile-dev.apk`
+- 真机安装/启动 smoke：`scripts\dev-real-phone.ps1`
+  - 只安装/覆盖 `.dev` 包；
+  - 安装前后必须核对生产包版本与 APK 路径不变；
+  - 产物写入 `%TEMP%\YanziDev\real-phone`。
+- 真机 Object Sync：`scripts\test-real-phone-dev-object-sync.ps1`
+  - 使用 `adb reverse` 把真机 Dev 指向本机临时 Worker；
+  - 使用临时测试账号，不需要真实账号 Token，不访问线上同步数据；
+  - 结束时撤销 reverse、清空 Dev 测试数据并重新启动 Dev；
+  - 必须再次确认生产包未变化。
+- 广播 Action、Widget Action、taskAffinity 和 FileProvider authority 必须基于 `BuildConfig.APPLICATION_ID` / `${applicationId}`，禁止重新写死生产 applicationId，否则 Dev 与生产版会串扰。
+- 后台 `mobile-js` 运行时必须保持 WebView 强引用直到 `done/fail`，结束后主动 destroy；headless 路径调用状态/UI 更新时必须允许 View 尚未创建。
+
+### 统一小程序跨平台约定
+
+- **同一个小程序使用同一个 `extensionId`**，不要为 Android 另造一套身份。
+- Windows 包与手机 `mobile-js` 是同一小程序的不同 runtime：
+  - 手机存在 runtime 时，统一目录默认本机执行；
+  - 手机没有 runtime、但账号存在 Windows 小程序时，手机向电脑发送执行请求；
+  - 同时存在两个 runtime 时，长按可显式选择手机或电脑。
+- 手机小程序定义的账号权威数据使用 Object Sync：
+  - 索引：`mobileExtensions.index.v1`
+  - 定义：`mobileExtension.v1.<sha256(extensionId)>`
+  - 修改只写单个定义对象；删除使用 tombstone，并更新索引。
+  - Android `SharedPreferences.mobileExtensions` 与 Windows `MobileExtensionsJson` 只作为设备缓存/兼容数据，不作为账号权威来源。
+- 小程序业务数据统一使用：
+  - `extensionData.v1.<sha256(extensionId + "\0" + key)>`
+  - Windows 与 Android 必须共享同一个对象 ID、revision、409 冲突和 tombstone 语义。
+- 对象 payload 的跨语言字段名统一使用 **camelCase**；Android 读取历史数据时可兼容 PascalCase，但新写入不得继续制造 PascalCase 对象。
+- 手机定义读取必须先 GET 索引对象，再按索引精确 GET 定义对象；不要为了读取手机小程序扫描整页账号同步对象。
+- 本地 Worker 测试端口必须通过 `scripts\dev-test-worker.ps1` 清理完整 Wrangler 进程树，不能只终止 `workerd.exe`。
+
+真实手机上的已安装燕子可能使用不同 debug 签名。未经确认不得卸载、清除数据或替换真实手机上的正式/历史版本来解决签名冲突；默认使用专用模拟器进行反复安装与破坏性测试。

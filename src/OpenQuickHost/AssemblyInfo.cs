@@ -2,6 +2,8 @@ using System.Windows;
 using System.Runtime.CompilerServices;
 
 [assembly: InternalsVisibleTo("Yanzi.SyncVerification")]
+[assembly: InternalsVisibleTo("Yanzi.CapabilityVerification")]
+[assembly: InternalsVisibleTo("Yanzi.RuntimeProfileVerification")]
 
 [assembly:ThemeInfo(
     ResourceDictionaryLocation.None,            //where theme specific resource dictionaries are located

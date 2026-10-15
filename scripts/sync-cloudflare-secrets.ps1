@@ -1,7 +1,15 @@
 param (
     [string]$AccountId = "cc88cc0084b504db93ccd9462af37212",
-    [string]$ScriptName = "yanzi-sync"
+    [string]$ScriptName = "yanzi-sync",
+    [switch]$ConfirmProductionSecretSync
 )
+
+# Never mutate production secrets as a side effect of Git push.
+# A human/operator must opt in explicitly when rotating a credential.
+if (-not $ConfirmProductionSecretSync) {
+    Write-Host "[Cloudflare Sync] Skipped; production secret updates require -ConfirmProductionSecretSync."
+    exit 0
+}
 
 $ErrorActionPreference = "Continue"
 $rootDir = Resolve-Path (Join-Path $PSScriptRoot "..")
@@ -40,30 +48,8 @@ $headers = @{
     "Content-Type"  = "application/json"
 }
 
-# 1. Deploy latest version
-try {
-    $versionsUrl = "https://api.cloudflare.com/client/v4/accounts/$AccountId/workers/scripts/$ScriptName/versions"
-    $versionsRes = Invoke-RestMethod -Uri $versionsUrl -Method Get -Headers $headers
-    if ($versionsRes.success -and $versionsRes.result.items.Count -gt 0) {
-        $latestVersionId = $versionsRes.result.items[0].id
-        $deployUrl = "https://api.cloudflare.com/client/v4/accounts/$AccountId/workers/scripts/$ScriptName/deployments"
-        $deployBody = @{
-            versions = @(
-                @{
-                    version_id = $latestVersionId
-                    percentage = 100
-                }
-            )
-        } | ConvertTo-Json -Depth 5
-
-        Invoke-RestMethod -Uri $deployUrl -Method Post -Headers $headers -Body $deployBody | Out-Null
-        Write-Host "[Cloudflare Sync] Latest version ($latestVersionId) deployed successfully."
-    }
-} catch {
-    Write-Host "[Cloudflare Sync] Note on deploying latest version: $_"
-}
-
-# 2. Upload secrets
+# Bind secrets only. Worker code deployment is handled by Git-triggered Cloudflare Builds.
+# Upload secrets
 $secretsToUpload = @()
 if ($authTokenSecret) { $secretsToUpload += @{ name = "AUTH_TOKEN_SECRET"; text = $authTokenSecret; type = "secret_text" } }
 if ($resendKey)         { $secretsToUpload += @{ name = "RESEND_API_KEY"; text = $resendKey; type = "secret_text" } }

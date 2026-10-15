@@ -78,7 +78,7 @@
                 </Grid>
 
                 <!-- Search Input Bar -->
-                <Border Height="40" Background="#27272A" CornerRadius="10" BorderBrush="#3F3F46" BorderThickness="1" Padding="12,0">
+                <Border Height="40" Background="{DynamicResource OverlaySurface}" CornerRadius="10" BorderBrush="{DynamicResource OverlayBorderStrong}" BorderThickness="1" Padding="12,0">
                     <Grid ColumnDefinitions="Auto,*">
                         <TextBlock Text="🔍" FontSize="13" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="#A1A1AA"/>
                         <TextBox x:Name="SearchBox" Grid.Column="1"
@@ -108,11 +108,11 @@
             <!-- Bottom Action Buttons -->
             <StackPanel DockPanel.Dock="Bottom" Margin="0,14,0,0" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
                 <Button Content="📁 浏览本地应用/文件..." Click="AddLocalFile_Click"
-                        Background="#27272A" Foreground="White" BorderBrush="#3F3F46" BorderThickness="1" CornerRadius="8" Padding="12,7" FontSize="12.5"/>
+                        Background="{DynamicResource OverlaySurface}" Foreground="White" BorderBrush="{DynamicResource OverlayBorderStrong}" BorderThickness="1" CornerRadius="8" Padding="12,7" FontSize="12.5"/>
                 <Button x:Name="CopyPromptButton" Content="📋 复制小程序提示词" Click="CopyPrompt_Click"
-                        Background="#27272A" Foreground="#D4D4D8" BorderBrush="#3F3F46" BorderThickness="1" CornerRadius="8" Padding="12,7" FontSize="12.5"/>
+                        Background="{DynamicResource OverlaySurface}" Foreground="#D4D4D8" BorderBrush="{DynamicResource OverlayBorderStrong}" BorderThickness="1" CornerRadius="8" Padding="12,7" FontSize="12.5"/>
                 <Button x:Name="DeleteCommandButton" Content="🗑️ 清空此插槽" Click="DeleteCommand_Click"
-                        Background="#27272A" Foreground="#F87171" BorderBrush="#3F3F46" BorderThickness="1" CornerRadius="8" Padding="12,7" FontSize="12.5"/>
+                        Background="{DynamicResource OverlaySurface}" Foreground="#F87171" BorderBrush="{DynamicResource OverlayBorderStrong}" BorderThickness="1" CornerRadius="8" Padding="12,7" FontSize="12.5"/>
                 <Button Content="确定添加到插槽" Click="Confirm_Click"
                         Background="#3B82F6" Foreground="White" FontWeight="SemiBold" CornerRadius="8" Padding="18,7" FontSize="12.5"/>
             </StackPanel>
@@ -144,7 +144,7 @@
                             <Grid ColumnDefinitions="Auto,*,Auto" VerticalAlignment="Center">
                                 <!-- Icon / Glyph -->
                                 <Border Grid.Column="0" Width="36" Height="36" CornerRadius="8"
-                                        Background="#27272A" Margin="0,0,12,0" ClipToBounds="True">
+                                        Background="{DynamicResource OverlaySurface}" Margin="0,0,12,0" ClipToBounds="True">
                                     <Grid>
                                         <Image Source="{Binding Icon}" Width="36" Height="36" Stretch="Uniform"
                                                IsVisible="{Binding HasIcon}" HorizontalAlignment="Center" VerticalAlignment="Center"/>

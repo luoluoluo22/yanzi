@@ -30,7 +30,7 @@ namespace OpenQuickHost
                     {
                         "all" => "全部",
                         "extension" => BrandTerms.Current.MiniApp,
-                        "application" => "应用",
+                        "application" => "软件",
                         "file" => "文件",
                         "system" => "系统",
                         "yanyu" => BrandTerms.Current.YanVoice,

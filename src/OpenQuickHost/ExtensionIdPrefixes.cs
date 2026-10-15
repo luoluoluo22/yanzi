@@ -11,4 +11,7 @@ public static class ExtensionIdPrefixes
 
     /// <summary>搜索/文件系统结果直开槽位：后跟 OpenTarget 路径或结果 Id。</summary>
     public const string SearchResult = "result::";
+
+    /// <summary>已安装小程序声明的、可供燕环调用的动作。</summary>
+    public const string ExtensionAction = "appact::";
 }

@@ -21,6 +21,18 @@ public sealed class AuthResponse
     public string Username { get; init; } = string.Empty;
 
     public string? Email { get; init; }
+
+    [JsonPropertyName("isVip")]
+    public bool IsVip { get; init; }
+
+    [JsonPropertyName("vipType")]
+    public string? VipType { get; init; }
+
+    [JsonPropertyName("vipExpireAt")]
+    public string? VipExpireAt { get; init; }
+
+    [JsonPropertyName("daysRemaining")]
+    public int DaysRemaining { get; init; }
 }
 
 public sealed class SendCodeResponse
@@ -43,6 +55,66 @@ public sealed class AuthMeResponse
     public string? Email { get; init; }
 
     public bool IsAdmin { get; init; }
+
+    [JsonPropertyName("isVip")]
+    public bool IsVip { get; init; }
+
+    [JsonPropertyName("vipType")]
+    public string? VipType { get; init; }
+
+    [JsonPropertyName("vipExpireAt")]
+    public string? VipExpireAt { get; init; }
+
+    [JsonPropertyName("daysRemaining")]
+    public int DaysRemaining { get; init; }
+}
+
+public sealed class VipStatusResponse
+{
+    [JsonPropertyName("ok")]
+    public bool Ok { get; init; }
+
+    [JsonPropertyName("userId")]
+    public string UserId { get; init; } = string.Empty;
+
+    [JsonPropertyName("username")]
+    public string Username { get; init; } = string.Empty;
+
+    [JsonPropertyName("isVip")]
+    public bool IsVip { get; init; }
+
+    [JsonPropertyName("vipType")]
+    public string? VipType { get; init; }
+
+    [JsonPropertyName("vipExpireAt")]
+    public string? VipExpireAt { get; init; }
+
+    [JsonPropertyName("daysRemaining")]
+    public int DaysRemaining { get; init; }
+}
+
+public sealed class RedeemLicenseResponse
+{
+    [JsonPropertyName("ok")]
+    public bool Ok { get; init; }
+
+    [JsonPropertyName("message")]
+    public string Message { get; init; } = string.Empty;
+
+    [JsonPropertyName("code")]
+    public string Code { get; init; } = string.Empty;
+
+    [JsonPropertyName("isVip")]
+    public bool IsVip { get; init; }
+
+    [JsonPropertyName("vipType")]
+    public string? VipType { get; init; }
+
+    [JsonPropertyName("vipExpireAt")]
+    public string? VipExpireAt { get; init; }
+
+    [JsonPropertyName("daysRemaining")]
+    public int DaysRemaining { get; init; }
 }
 
 public sealed class AppUpdateInfoResponse
@@ -179,6 +251,9 @@ public sealed class UserExtensionRecord
 {
     [JsonPropertyName("user_id")]
     public string UserId { get; init; } = string.Empty;
+
+    [JsonPropertyName("publisher_user_id")]
+    public string PublisherUserId { get; init; } = string.Empty;
 
     [JsonPropertyName("extension_id")]
     public string ExtensionId { get; init; } = string.Empty;
@@ -345,6 +420,15 @@ public sealed class CloudSyncObjectListResponse
     public bool HasMore { get; init; }
 
     public IReadOnlyList<CloudSyncObjectRecord> Objects { get; init; } = [];
+}
+
+public sealed class SecretVaultKeyResponse
+{
+    public bool Ok { get; init; }
+
+    public int Version { get; init; }
+
+    public string Key { get; init; } = string.Empty;
 }
 
 public sealed class CloudSyncCapabilitiesResponse

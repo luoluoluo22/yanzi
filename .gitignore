@@ -9,6 +9,7 @@ artifacts/
 .wrangler/
 cloudflare/.wrangler/
 cloudflare/node_modules/
+tools/chatgpt-bridge/node_modules/
 website/downloads/*.zip
 !website/downloads/open-yanzi-github.zip
 !website/downloads/open-yanzi-homepage.zip
@@ -16,6 +17,8 @@ build-verify*/
 mobile/android/.gradle/
 mobile/android/local.properties
 mobile/android/app/build/
+mobile/android/calendar/build/
+mobile/android/data-sdk/build/
 
 *.user
 *.suo
@@ -60,3 +63,36 @@ env.md
 *.token*
 *.secret*
 .tmp-repro/
+
+# Local conversation attachments and UI snapshots
+.codex-remote-attachments/
+mobile/android/.ui-backup-*/
+
+licenses_*.txt
+licenses_output.txt
+
+cards_*.txt
+*.license.txt
+
+# Python validation caches
+__pycache__/
+
+# JavaScript dependencies
+**/node_modules/
+
+# Ephemeral local development and test outputs
+.tmp/
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.coverage
+**/coverage/
+**/test-results/
+**/playwright-report/
+**/.next/
+**/.turbo/
+**/.parcel-cache/
+
+# Local credential provisioning script (contains machine-specific secret)
+scripts/set-yanzi-github-token.ps1
+src/OpenQuickHost/Sync/*.cs.bak-*

@@ -1,0 +1,15 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ChatGPT 后台工作台</title><link rel="stylesheet" href="/style.css"></head><body><main>
+<h1>ChatGPT 后台工作台</h1><p id="connection" role="status">连接检查中…</p>
+<p>在已登录的浏览器后台标签页中执行。关闭此页面后，后台服务仍可执行已保存的任务。</p>
+<form id="task"><label>操作<select id="action"><option value="chatgpt_send">发送消息并等待回复</option><option value="chatgpt_new_chat">新建后台聊天</option><option value="chatgpt_messages">读取聊天消息</option><option value="chatgpt_status">查看 ChatGPT 标签页</option><option value="chatgpt_close">关闭指定工作台标签页</option><option value="chatgpt_cleanup">清理空闲工作台标签页</option></select></label>
+<label>消息<textarea id="prompt" rows="6" placeholder="输入发送给 ChatGPT 的内容"></textarea></label>
+<div class="row"><label>标签页 ID（留空则复用后台页并新建聊天）<input id="tabId" type="number" min="0"></label><label>回复超时（秒）<input id="timeout" type="number" min="10" max="600" value="180"></label></div>
+<label>标签页策略<select id="tabPolicy"><option value="reuse">复用空闲工作台后台页（默认）</option><option value="new">始终创建新标签页</option></select></label>
+<label><input id="closeAfter" type="checkbox">任务成功后关闭工作台标签页</label><p>只清理工作台创建的空闲后台页；已有用户页面、草稿、生成中及前台页面会保留。</p>
+<label><input id="temporary" type="checkbox" checked>临时聊天（默认，发送前确认页面模式）</label>
+<label>触发方式<select id="trigger"><option value="now">立即执行</option><option value="at">指定时间</option><option value="interval">每隔一段时间</option><option value="event">收到指定事件</option></select></label>
+<label id="at-row" hidden>执行时间（本机时区）<input id="at" type="datetime-local"></label><label id="interval-row" hidden>间隔秒数（至少 60）<input id="interval" type="number" min="60" value="3600"></label><label id="event-row" hidden>事件名称<input id="event" placeholder="file.changed"></label>
+<button>提交任务</button></form><p id="feedback" role="status"></p>
+<h2>触发事件</h2><form id="emit"><input id="event-name" placeholder="file.changed" aria-label="事件名称" required><button>发送事件</button></form>
+<h2>已保存计划</h2><div id="schedules"></div><h2>任务与结果</h2><p>超时或连接中断后，请先检查聊天。系统不会自动重发已经开始的请求。</p><div id="jobs"></div>
+</main><script src="/app.js"></script></body></html>

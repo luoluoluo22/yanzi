@@ -4,9 +4,12 @@
     <TargetFramework>net9.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <UseWPF>true</UseWPF>
     <AssemblyName>Yanzi.SyncVerification</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <Using Include="System.IO" />
+    <Using Include="System.Net.Http" />
     <ProjectReference Include="..\OpenQuickHost\OpenQuickHost.csproj" />
   </ItemGroup>
 </Project>

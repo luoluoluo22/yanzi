@@ -24,13 +24,12 @@ public sealed class BulkObservableCollection<T> : Collection<T>, INotifyCollecti
 
     public void ReplaceAll(IEnumerable<T> items)
     {
-        var newItems = items as IReadOnlyCollection<T> ?? (List<T>)items;
-        ((List<T>)Items).Clear();
-        if (newItems.Count > 0)
-        {
-            ((List<T>)Items).Capacity = newItems.Count;
-            ((List<T>)Items).AddRange(newItems);
-        }
+        // Snapshot first: callers may pass a lazy query over this collection itself.
+        var newItems = items.ToList();
+        var current = (List<T>)Items;
+        if (current.SequenceEqual(newItems)) return;
+        current.Clear();
+        current.AddRange(newItems);
 
         OnPropertyChanged(CountString);
         OnPropertyChanged(IndexerName);
@@ -87,7 +86,7 @@ public sealed class BulkObservableCollection<T> : Collection<T>, INotifyCollecti
         var original = Items[index];
         ((List<T>)Items)[index] = item;
         OnPropertyChanged(IndexerName);
-        OnCollectionChanged(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Replace, original, item, index));
+        OnCollectionChanged(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Replace, item, original, index));
     }
 
     public void Move(int oldIndex, int newIndex)

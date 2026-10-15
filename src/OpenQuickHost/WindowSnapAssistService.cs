@@ -67,6 +67,7 @@ public sealed class WindowSnapAssistService : IDisposable
 
     public void Start()
     {
+        if (!HostRuntimeProfile.GlobalListenersEnabled) return;
         if (_timer.IsEnabled)
         {
             return;

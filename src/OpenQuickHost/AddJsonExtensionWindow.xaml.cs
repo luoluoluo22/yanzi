@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -38,6 +39,7 @@ public partial class AddJsonExtensionWindow : Window
     private static readonly MediaBrush BorderStrongBrush = CreateBrush("#1FFFFFFF");
     private static readonly MediaBrush GreenBrush = CreateBrush("#FF34D399");
     private static readonly MediaBrush RedBrush = CreateBrush("#FFF87171");
+    private static readonly MediaBrush AmberBrush = CreateBrush("#FFFBBF24");
     private static readonly MediaBrush Text2Brush = CreateBrush("#FF9090A8");
     private static readonly MediaBrush Text3Brush = CreateBrush("#FF5A5A72");
 
@@ -50,15 +52,25 @@ public partial class AddJsonExtensionWindow : Window
     private LocalExtensionHostedViewManifest? _manualHostedView;
     private LocalExtensionSearchProviderManifest? _manualSearchProvider;
     private LocalExtensionMouseGestureManifest? _manualMouseGesture;
+    private LocalExtensionIdleTriggerManifest? _manualIdleTrigger;
     private string? _manualUiMode;
+    private string? _manualWorkingDirectory;
+    private bool? _manualRunAsAdmin;
+    private bool? _manualWaitForExit;
+    private string? _manualEntryType;
     private bool _lastJsonValid;
     private bool _testCompleted;
     private bool _testSucceeded;
     private bool _manualMode;
     private bool _aiPromptCopied;
+    private bool _isAiAutoGenerating;
     private bool _isInitializing = true;
     private bool _suppressEditTracking;
     private EditSource _lastEditedSource = EditSource.Unknown;
+    private CancellationTokenSource? _testCts;
+    private System.Windows.Threading.DispatcherTimer? _testTimer;
+    private DateTime _testStartTime;
+    private bool _isTestRunning;
 
     public bool WasAccepted { get; private set; }
     public CommandItem? PersistedCommand { get; private set; }
@@ -71,6 +83,7 @@ public partial class AddJsonExtensionWindow : Window
         ShowInTaskbar = true;
         AddHandler(System.Windows.Controls.Primitives.TextBoxBase.TextChangedEvent, new TextChangedEventHandler(AnyTextBox_TextChanged));
         AddHandler(Keyboard.PreviewKeyDownEvent, new System.Windows.Input.KeyEventHandler(TextBoxClipboard_PreviewKeyDown), true);
+        Closing += (_, _) => CancelRunningTest();
         BuiltInIconsList.ItemsSource = _builtInIcons;
         _isEditMode = isEditMode;
         _initialJson = initialJson ?? string.Empty;
@@ -435,6 +448,10 @@ public partial class AddJsonExtensionWindow : Window
         var agentServer = ((App)System.Windows.Application.Current).AgentApiServer;
         bool isConnected = agentServer != null && agentServer.IsBrowserConnected;
         string browserName = agentServer?.ConnectedBrowserName ?? "";
+        var runningBrowsers = isConnected
+            ? Array.Empty<string>()
+            : LocalAgentApiServer.GetRunningBrowserNames();
+        bool browserRunning = runningBrowsers.Count > 0;
 
         // 1. 刷新顶部状态胶囊与呼吸指示灯
         if (BrowserStatusDot != null && BrowserStatusText != null && BrowserConnectionStatusBadge != null)
@@ -447,13 +464,21 @@ public partial class AddJsonExtensionWindow : Window
                 BrowserConnectionStatusBadge.Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x18, 0x22, 0xC5, 0x5E));
                 BrowserConnectionStatusBadge.BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x33, 0x22, 0xC5, 0x5E));
             }
+            else if (browserRunning)
+            {
+                BrowserStatusDot.Fill = AmberBrush;
+                BrowserStatusText.Text = $"{string.Join(" / ", runningBrowsers)} 已启动，助手未连接";
+                BrowserStatusText.Foreground = AmberBrush;
+                BrowserConnectionStatusBadge.Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x18, 0xFB, 0xBF, 0x24));
+                BrowserConnectionStatusBadge.BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x33, 0xFB, 0xBF, 0x24));
+            }
             else
             {
-                BrowserStatusDot.Fill = RedBrush;
-                BrowserStatusText.Text = "浏览器助手未连接";
-                BrowserStatusText.Foreground = RedBrush;
-                BrowserConnectionStatusBadge.Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x1A, 0xF8, 0x71, 0x71));
-                BrowserConnectionStatusBadge.BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x33, 0xF8, 0x71, 0x71));
+                BrowserStatusDot.Fill = Text3Brush;
+                BrowserStatusText.Text = "浏览器未启动";
+                BrowserStatusText.Foreground = Text2Brush;
+                BrowserConnectionStatusBadge.Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x12, 0x90, 0x90, 0xA8));
+                BrowserConnectionStatusBadge.BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x24, 0x90, 0x90, 0xA8));
             }
         }
 
@@ -477,11 +502,22 @@ public partial class AddJsonExtensionWindow : Window
     {
         var agentServer = ((App)System.Windows.Application.Current).AgentApiServer;
         bool isConnected = agentServer != null && agentServer.IsBrowserConnected;
+        var runningBrowsers = LocalAgentApiServer.GetRunningBrowserNames();
+        bool browserRunning = runningBrowsers.Count > 0;
+
         if (isConnected)
         {
             System.Windows.MessageBox.Show(
                 $"燕子浏览器助手当前已正常连接并就绪 ({agentServer?.ConnectedBrowserName ?? "已连接"})。\n\n本地端口：53919\n在 AI 对话框发送需求后，将自动通过浏览器助手与网页端协同生成小程序。",
                 "浏览器助手连接正常",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }
+        else if (!browserRunning)
+        {
+            System.Windows.MessageBox.Show(
+                "当前没有检测到已运行的 Edge、Chrome 或其他受支持浏览器。\n\n请先打开浏览器。若燕子浏览器助手已经安装，浏览器启动后会自动尝试连接桌面端。",
+                "浏览器未启动",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
         }
@@ -493,8 +529,8 @@ public partial class AddJsonExtensionWindow : Window
                 BrowserExtensionGuideBanner.Visibility = Visibility.Visible;
             }
             System.Windows.MessageBox.Show(
-                "燕子浏览器助手目前未与桌面端建立连接。\n\n请按以下步骤操作：\n1. 打开 Chrome 或 Edge 浏览器扩展管理页 (chrome://extensions 或 edge://extensions)；\n2. 点击燕子浏览器助手的【🔄 重新加载】按钮；\n3. 点击浏览器右上角的“燕子浏览器助手”图标 ->【重新连接服务】。\n\n连接成功后本指示灯将实时变为绿色 🟢。",
-                "浏览器助手未连接",
+                $"检测到 {string.Join("、", runningBrowsers)} 正在运行，但燕子浏览器助手没有连接到桌面端。\n\n请打开浏览器扩展管理页，确认燕子浏览器助手已启用；必要时点击【重新加载】或在助手面板中选择【重新连接服务】。",
+                "浏览器已启动，助手未连接",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
         }
@@ -750,6 +786,7 @@ public partial class AddJsonExtensionWindow : Window
             ManualTestSummaryText.Text = "✅ DeepSeek 已完成代码修复，正在重新自动试运行...";
 
             // 写入编辑器
+            jsonResult = FormatJsonText(jsonResult);
             ManualJsonInputBox.Text = jsonResult;
             if (_isJsonEditorReady && JsonWebViewEditor != null && JsonWebViewEditor.Visibility == Visibility.Visible)
             {
@@ -1498,6 +1535,12 @@ public partial class AddJsonExtensionWindow : Window
 
     private async void DeepSeekAutoGenerateButton_Click(object sender, RoutedEventArgs e)
     {
+        // Enter bypasses the disabled send button; don't submit while already generating.
+        if (_isAiAutoGenerating)
+        {
+            return;
+        }
+
         try
         {
             ErrorText.Visibility = Visibility.Collapsed;
@@ -1614,6 +1657,7 @@ public partial class AddJsonExtensionWindow : Window
             SetAiAutoGeneratingState(false, null);
 
             // 写入编辑器
+            jsonResult = FormatJsonText(jsonResult);
             ManualJsonInputBox.Text = jsonResult;
             if (_isJsonEditorReady && JsonWebViewEditor != null && JsonWebViewEditor.Visibility == Visibility.Visible)
             {
@@ -1664,10 +1708,18 @@ public partial class AddJsonExtensionWindow : Window
 
     private void SetAiAutoGeneratingState(bool isGenerating, string? statusText)
     {
+        _isAiAutoGenerating = isGenerating;
         if (ManualDeepSeekButton != null)
         {
             ManualDeepSeekButton.IsEnabled = !isGenerating;
             ManualDeepSeekButton.Opacity = isGenerating ? 0.6 : 1.0;
+            ManualDeepSeekButton.ToolTip = isGenerating ? "正在生成，请等待完成，避免重复提交" : "发送需求 (Enter 发送，Shift+Enter 换行)";
+        }
+
+        if (AiGeneratingStatusText != null)
+        {
+            AiGeneratingStatusText.Text = isGenerating ? "AI 正在生成，最长等待约 2 分钟…" : string.Empty;
+            AiGeneratingStatusText.Visibility = isGenerating ? Visibility.Visible : Visibility.Collapsed;
         }
     }
 
@@ -1718,6 +1770,7 @@ public partial class AddJsonExtensionWindow : Window
         sb.AppendLine("【输出要求】：");
         sb.AppendLine("1. 遵循 Yanzi 小程序 manifest 规范；");
         sb.AppendLine("2. 仅输出更新后的完整合法 JSON 代码块（包裹在 ```json 与 ``` 中），不要输出多余废话。");
+        sb.AppendLine("3. 保留当前小程序的 id；删除未使用的可选字段，不要输出值为 null 的字段。");
         return sb.ToString();
     }
 
@@ -1935,8 +1988,17 @@ public partial class AddJsonExtensionWindow : Window
         {
             ErrorText.Visibility = Visibility.Collapsed;
             var normalizedJson = ResolveJsonForSave();
-            _ = JsonSerializer.Deserialize<LocalExtensionManifest>(normalizedJson, CreateJsonOptions())
+            var manifest = JsonSerializer.Deserialize<LocalExtensionManifest>(normalizedJson, CreateJsonOptions())
                 ?? throw new InvalidOperationException("JSON 解析失败。");
+            if (_isEditMode)
+            {
+                var original = JsonSerializer.Deserialize<LocalExtensionManifest>(_initialJson, CreateJsonOptions());
+                if (string.IsNullOrWhiteSpace(original?.Id) ||
+                    !string.Equals(manifest.Id, original.Id, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException("编辑小程序时不能修改内部 ID。若要创建新小程序，请使用“新建”或“创建副本”。");
+                }
+            }
 
             // 记忆用户在保存时所在的 Tab 页面（简单小程序还是 AI 生成）
             var currentTab = (SimpleModeTab?.IsChecked == true || SimpleModePanel?.Visibility == Visibility.Visible) ? "simple" : "ai";
@@ -1945,6 +2007,20 @@ public partial class AddJsonExtensionWindow : Window
             settings.LastExtensionEditorTab = currentTab;
             AppSettingsStore.Save(settings);
             _settings.LastExtensionEditorTab = currentTab;
+
+            // 若为 C# 独立源文件模式，且代码框中有内容，同步写入本地源文件
+            if (CSharpModeEntryRadio?.IsChecked == true &&
+                string.Equals(manifest.Runtime, "csharp", StringComparison.OrdinalIgnoreCase))
+            {
+                var extDir = Path.Combine(LocalExtensionCatalog.CatalogRootPath, manifest.Id);
+                Directory.CreateDirectory(extDir);
+                var entryFile = string.IsNullOrWhiteSpace(manifest.Entry) ? "main.cs" : manifest.Entry;
+                var targetPath = Path.Combine(extDir, entryFile);
+                if (CSharpScriptBox != null && !string.IsNullOrWhiteSpace(CSharpScriptBox.Text))
+                {
+                    File.WriteAllText(targetPath, CSharpScriptBox.Text, new UTF8Encoding(false));
+                }
+            }
 
             if (Owner is MainWindow mainWindow)
             {
@@ -2072,9 +2148,15 @@ public partial class AddJsonExtensionWindow : Window
 
     private void UpdateWindowHeightForStep()
     {
-        // 优化后的编辑器固定大尺寸，提供沉浸式编辑体验
-        Width = 1200;
-        MinWidth = 1080;
+        if (IsLoaded)
+        {
+            // 窗口加载呈现后，不再在刷新状态时重设窗口尺寸，防止用户调整尺寸被重置或卡片切换时宽度突变
+            return;
+        }
+
+        // 优化后的编辑器固定大尺寸，提供沉浸式编辑体验（与 XAML 默认宽高 1240x880 保持严格一致）
+        Width = 1240;
+        MinWidth = 1100;
         MaxWidth = double.PositiveInfinity;
         ApplyWindowHeight(preferredHeight: 880, minimumHeight: 760);
     }
@@ -2229,7 +2311,8 @@ public partial class AddJsonExtensionWindow : Window
 
     private string ResolveJsonForSave()
     {
-        if (_lastEditedSource == EditSource.Form)
+        var isSimpleMode = SimpleModeTab?.IsChecked == true || SimpleModePanel?.Visibility == Visibility.Visible;
+        if (isSimpleMode || _lastEditedSource == EditSource.Form)
         {
             try
             {
@@ -2404,6 +2487,10 @@ public partial class AddJsonExtensionWindow : Window
             if (!string.Equals(ManualJsonInputBox.Text, formatted, StringComparison.Ordinal))
             {
                 ManualJsonInputBox.Text = formatted;
+                if (_isJsonEditorReady && JsonWebViewEditor != null && JsonWebViewEditor.Visibility == Visibility.Visible)
+                {
+                    _ = JsonWebViewEditor.ExecuteScriptAsync($"setValue({JsonSerializer.Serialize(formatted)})");
+                }
             }
 
             ManualJsonInputBox.CaretIndex = 0;
@@ -2596,6 +2683,7 @@ public partial class AddJsonExtensionWindow : Window
             Description = NullIfEmpty(DescriptionBox.Text),
             Keywords = SplitCsv(KeywordsBox.Text),
             OpenTarget = NullIfEmpty(OpenTargetBox.Text),
+            ToggleWindow = ToggleWindowModeCheck?.IsChecked,
             QueryPrefixes = SplitCsv(QueryPrefixesBox.Text),
             QueryTargetTemplate = NullIfEmpty(QueryTargetTemplateBox.Text),
             Icon = NullIfEmpty(IconBox.Text),
@@ -2607,7 +2695,11 @@ public partial class AddJsonExtensionWindow : Window
             GlobalShortcut = NullIfEmpty(GlobalShortcutBox.Text),
             HotkeyBehavior = NullIfEmpty(HotkeyBehaviorBox.Text),
             Runtime = runtime,
-            UiMode = string.Equals(runtime, "csharp", StringComparison.OrdinalIgnoreCase) ? NullIfEmpty(_manualUiMode) : null,
+            UiMode = NullIfEmpty(_manualUiMode),
+            WorkingDirectory = NullIfEmpty(_manualWorkingDirectory),
+            RunAsAdmin = _manualRunAsAdmin,
+            WaitForExit = _manualWaitForExit,
+            EntryType = NullIfEmpty(_currentSimpleType ?? _manualEntryType),
             EntryMode = entryMode,
             Entry = NullIfEmpty(EntryBox.Text),
             Permissions = SplitCsv(PermissionsBox.Text),
@@ -2615,12 +2707,13 @@ public partial class AddJsonExtensionWindow : Window
             {
                 Source = ScriptSourceBox.Text.ReplaceLineEndings("\r\n")
             },
-            Startup = (string.IsNullOrWhiteSpace(StartupModeBox.Text) && string.IsNullOrWhiteSpace(StartupScheduleBox.Text))
+            Startup = (string.IsNullOrWhiteSpace(StartupModeBox.Text) && string.IsNullOrWhiteSpace(StartupScheduleBox.Text) && _manualIdleTrigger == null)
                 ? null
                 : new LocalExtensionStartupManifest
                 {
                     Mode = NullIfEmpty(StartupModeBox.Text),
-                    Schedule = NullIfEmpty(StartupScheduleBox.Text)
+                    Schedule = NullIfEmpty(StartupScheduleBox.Text),
+                    Idle = _manualIdleTrigger
                 },
             SearchProvider = _manualSearchProvider,
             MouseGesture = NormalizeMouseGestureForManifest(_manualMouseGesture)
@@ -2704,6 +2797,7 @@ public partial class AddJsonExtensionWindow : Window
         DescriptionBox.Text = manifest.Description ?? string.Empty;
         KeywordsBox.Text = manifest.Keywords == null ? string.Empty : string.Join(", ", manifest.Keywords);
         OpenTargetBox.Text = manifest.OpenTarget ?? string.Empty;
+        ToggleWindowModeCheck.IsChecked = manifest.ToggleWindow ?? true;
         QueryPrefixesBox.Text = manifest.QueryPrefixes == null ? string.Empty : string.Join(", ", manifest.QueryPrefixes);
         QueryTargetTemplateBox.Text = manifest.QueryTargetTemplate ?? string.Empty;
         IconBox.Text = manifest.Icon ?? string.Empty;
@@ -2720,7 +2814,12 @@ public partial class AddJsonExtensionWindow : Window
         _manualHostedView = manifest.HostedView;
         _manualSearchProvider = manifest.SearchProvider;
         _manualMouseGesture = manifest.MouseGesture;
+        _manualIdleTrigger = manifest.Startup?.Idle;
         _manualUiMode = manifest.UiMode;
+        _manualWorkingDirectory = manifest.WorkingDirectory;
+        _manualRunAsAdmin = manifest.RunAsAdmin;
+        _manualWaitForExit = manifest.WaitForExit;
+        _manualEntryType = manifest.EntryType;
         SafeRefreshIconPreview();
     }
 
@@ -2908,7 +3007,10 @@ public partial class AddJsonExtensionWindow : Window
         }
     }
 
-    private async Task<TestExecutionResult> RunExtensionTestAsync(bool useManualJson)
+    private async Task<TestExecutionResult> RunExtensionTestAsync(
+        bool useManualJson,
+        Action<string>? onOutputLine = null,
+        CancellationToken cancellationToken = default)
     {
         var normalizedJson = ExtractJsonPayload(useManualJson ? ManualJsonInputBox.Text : AiJsonInputBox.Text);
         var manifest = JsonSerializer.Deserialize<LocalExtensionManifest>(normalizedJson, CreateJsonOptions())
@@ -2923,6 +3025,7 @@ public partial class AddJsonExtensionWindow : Window
         {
             var tempDirectory = Path.Combine(Path.GetTempPath(), "yanzi-extension-test", Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(tempDirectory);
+            File.WriteAllText(Path.Combine(tempDirectory, "manifest.json"), normalizedJson, new UTF8Encoding(false));
             try
             {
                 var command = BuildTestCommand(manifest, tempDirectory);
@@ -2955,23 +3058,80 @@ public partial class AddJsonExtensionWindow : Window
 
         if (!string.IsNullOrWhiteSpace(manifest.Runtime))
         {
-            if (!string.Equals(manifest.EntryMode, "inline", StringComparison.OrdinalIgnoreCase))
-            {
-                return new TestExecutionResult(
-                    false,
-                    "当前 JSON 使用的是外部脚本入口，测试前需要先保存脚本文件到小程序目录。",
-                    logBuilder.AppendLine("当前只支持直接测试内联脚本小程序。").ToString());
-            }
+            var isInline = string.Equals(manifest.EntryMode, "inline", StringComparison.OrdinalIgnoreCase);
+            var isCSharp = string.Equals(manifest.Runtime, "csharp", StringComparison.OrdinalIgnoreCase) ||
+                           string.Equals(manifest.Runtime, "cs", StringComparison.OrdinalIgnoreCase) ||
+                           string.Equals(manifest.Runtime, "c#", StringComparison.OrdinalIgnoreCase);
 
             var tempDirectory = Path.Combine(Path.GetTempPath(), "yanzi-extension-test", Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(tempDirectory);
+            File.WriteAllText(Path.Combine(tempDirectory, "manifest.json"), normalizedJson, new UTF8Encoding(false));
+
+            if (!isInline)
+            {
+                var entryFile = string.IsNullOrWhiteSpace(manifest.Entry) ? (isCSharp ? "main.cs" : "main.ps1") : manifest.Entry;
+                var codeContent = isCSharp ? CSharpScriptBox?.Text : PowerShellScriptBox?.Text;
+                if (!string.IsNullOrWhiteSpace(codeContent))
+                {
+                    File.WriteAllText(Path.Combine(tempDirectory, entryFile), codeContent, new UTF8Encoding(false));
+                }
+                else
+                {
+                    var existingDir = Path.Combine(LocalExtensionCatalog.CatalogRootPath, manifest.Id);
+                    var existingFile = Path.Combine(existingDir, entryFile);
+                    if (File.Exists(existingFile))
+                    {
+                        File.Copy(existingFile, Path.Combine(tempDirectory, entryFile), true);
+                    }
+                    else
+                    {
+                        return new TestExecutionResult(
+                            false,
+                            "未找到外部入口脚本文件，请先编写代码或确保文件存在。",
+                            logBuilder.AppendLine($"缺少入口脚本文件：{entryFile}").ToString());
+                    }
+                }
+            }
             var retainTempDirectory = false;
             try
             {
                 var command = BuildTestCommand(manifest, tempDirectory);
-                var result = await Task.Run(
-                    () => ScriptExtensionRunner.ExecuteAsync(command, "测试输入", "extension-editor-test"),
-                    CancellationToken.None);
+                var testInput = string.IsNullOrWhiteSpace(TestArgumentBox?.Text) ? "测试输入" : TestArgumentBox.Text;
+                var result = await ScriptExtensionRunner.ExecuteAsync(
+                    command,
+                    testInput,
+                    "extension-editor-test",
+                    onOutputLine,
+                    cancellationToken);
+
+                if (result.IsCancelled)
+                {
+                    var hasOutput = !string.IsNullOrWhiteSpace(result.Output);
+                    logBuilder.AppendLine("=========================================");
+                    logBuilder.AppendLine("【状态】测试已手动终止。");
+                    if (hasOutput)
+                    {
+                        logBuilder.AppendLine("【说明】检测到已产生启动输出。若该脚本为常驻后台服务/守护进程，说明已成功拉起，可直接保存小程序。");
+                    }
+                    else
+                    {
+                        logBuilder.AppendLine("【说明】脚本在输出前已手动终止。");
+                    }
+                    if (!string.IsNullOrWhiteSpace(result.Error))
+                    {
+                        logBuilder.AppendLine($"【提示】{result.Error}");
+                    }
+                    logBuilder.AppendLine("=========================================");
+
+                    return new TestExecutionResult(
+                        Success: true,
+                        Summary: hasOutput
+                            ? "服务测试已终止。已成功捕获启动输出，可直接保存小程序。"
+                            : "测试已手动终止，可继续编辑或直接保存。",
+                        Log: logBuilder.ToString(),
+                        IsServiceCancelled: true);
+                }
+
                 logBuilder.AppendLine($"执行结果：{(result.Success ? "成功" : "失败")}");
                 logBuilder.AppendLine($"退出码：{result.ExitCode}");
                 logBuilder.AppendLine();
@@ -3026,6 +3186,7 @@ public partial class AddJsonExtensionWindow : Window
         {
             var tempDirectory = Path.Combine(Path.GetTempPath(), "yanzi-extension-test", Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(tempDirectory);
+            File.WriteAllText(Path.Combine(tempDirectory, "manifest.json"), normalizedJson, new UTF8Encoding(false));
             try
             {
                 var command = BuildTestCommand(manifest, tempDirectory);
@@ -3058,11 +3219,24 @@ public partial class AddJsonExtensionWindow : Window
             // 系统协议（shell:、ms-settings:、ms-photos: 之类）和 PATH 查得到的可执行文件也算合法目标
             var isShellProtocol = target.Contains(':') && !Path.IsPathFullyQualified(target);
             var resolvedFromPath = !exists && TryResolveExecutableOnPath(target);
-            Process.Start(new ProcessStartInfo
+
+            var toggleEnabled = manifest.ToggleWindow ?? true;
+            if (toggleEnabled && QuickWindowSwitchService.IsToggleEligibleTarget(target))
             {
-                FileName = target,
-                UseShellExecute = true
-            });
+                var toggleResult = QuickWindowSwitchService.ExecuteToggleOrLaunch(
+                    target,
+                    arguments: null,
+                    workingDirectory: null,
+                    title: manifest.Name);
+                logBuilder.AppendLine("类型：打开目标小程序 (智能窗口切换)");
+                logBuilder.AppendLine($"目标：{target}");
+                logBuilder.AppendLine($"切换动作：{toggleResult.Action}");
+                logBuilder.AppendLine($"消息：{toggleResult.Message}");
+                return new TestExecutionResult(true, $"测试通过：{toggleResult.Message}", logBuilder.ToString());
+            }
+
+            var startPsi = QuickWindowSwitchService.CreateLaunchProcessStartInfo(target);
+            Process.Start(startPsi);
             logBuilder.AppendLine("类型：打开目标小程序");
             logBuilder.AppendLine($"目标：{target}");
             logBuilder.AppendLine($"本地存在：{exists}");
@@ -3122,6 +3296,43 @@ public partial class AddJsonExtensionWindow : Window
         return false;
     }
 
+    public void CancelRunningTest()
+    {
+        HostAssets.AppendLog($"CancelRunningTest called: _isTestRunning={_isTestRunning}, hasCts={_testCts != null}");
+
+        if (HeaderTestButton != null)
+        {
+            HeaderTestButton.Content = "正在终止...";
+            HeaderTestButton.IsEnabled = false;
+        }
+        if (ManualStopTestButton != null)
+        {
+            ManualStopTestButton.Content = "正在终止...";
+            ManualStopTestButton.IsEnabled = false;
+        }
+        if (ManualTestSummaryText != null)
+        {
+            ManualTestSummaryText.Text = "正在终止测试进程并释放端口，请稍等...";
+        }
+
+        if (_isTestRunning && _testCts != null && !_testCts.IsCancellationRequested)
+        {
+            try
+            {
+                _testCts.Cancel();
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"CancelRunningTest failed: {ex.Message}");
+            }
+        }
+    }
+
+    private void ManualStopTestButton_Click(object sender, RoutedEventArgs e)
+    {
+        CancelRunningTest();
+    }
+
     private async Task RunTestAndRenderAsync(
         System.Windows.Controls.Button triggerButton,
         Border resultPanel,
@@ -3130,26 +3341,79 @@ public partial class AddJsonExtensionWindow : Window
         System.Windows.Controls.Button copyFailureButton,
         bool useManualJson)
     {
+        if (_isTestRunning)
+        {
+            CancelRunningTest();
+            return;
+        }
+
+        _isTestRunning = true;
+        _testCts = new CancellationTokenSource();
+        _testStartTime = DateTime.Now;
+
         try
         {
             ErrorText.Visibility = Visibility.Collapsed;
-            triggerButton.IsEnabled = false;
-            triggerButton.Content = "测试中...";
+
+            // 联动底栏试运行按钮：变为红色的终止运行按钮，方便一键停止
+            if (HeaderTestButton != null)
+            {
+                HeaderTestButton.Content = "■ 终止运行";
+                HeaderTestButton.Foreground = RedBrush;
+                HeaderTestButton.IsEnabled = true;
+            }
+            if (ManualStopTestButton != null)
+            {
+                ManualStopTestButton.Visibility = Visibility.Visible;
+            }
+
+            triggerButton.IsEnabled = true;
+            triggerButton.Content = "■ 终止运行";
+
             resultPanel.Visibility = Visibility.Visible;
             copyFailureButton.Visibility = Visibility.Collapsed;
             copyFailureButton.Content = "复制日志";
             copyFailureButton.Background = MediaBrushes.Transparent;
             copyFailureButton.BorderBrush = BorderStrongBrush;
-            summaryText.Text = "正在执行测试，请稍等。";
+            summaryText.Foreground = (System.Windows.Media.Brush)FindResource("BrushTextSec");
+            summaryText.Text = "正在启动测试进程 (0秒)... 若为常驻服务，确认输出后可点击【终止运行】完成测试";
             logTextBox.Text = string.Empty;
+
+            _testTimer = new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(500)
+            };
+            _testTimer.Tick += (_, _) =>
+            {
+                if (!_isTestRunning) return;
+                var elapsed = (int)(DateTime.Now - _testStartTime).TotalSeconds;
+                summaryText.Text = elapsed >= 2
+                    ? $"正在运行 ({elapsed}秒)... 若为常驻服务，确认输出后可随时点击【终止运行】"
+                    : $"正在启动测试进程 ({elapsed}秒)...";
+            };
+            _testTimer.Start();
+
             await Dispatcher.Yield(DispatcherPriority.Background);
 
-            var result = await RunExtensionTestAsync(useManualJson);
+            Action<string> onOutputLine = line =>
+            {
+                Dispatcher.InvokeAsync(() =>
+                {
+                    if (logTextBox.Text.Length > 0 && !logTextBox.Text.EndsWith('\n') && !logTextBox.Text.EndsWith('\r'))
+                    {
+                        logTextBox.AppendText(Environment.NewLine);
+                    }
+                    logTextBox.AppendText(line + Environment.NewLine);
+                    logTextBox.ScrollToEnd();
+                }, DispatcherPriority.Background);
+            };
+
+            var result = await RunExtensionTestAsync(useManualJson, onOutputLine, _testCts.Token);
             _testCompleted = true;
             _testSucceeded = result.Success;
 
-            // 成功时不弹日志面板打扰用户，只有失败时才弹出
-            if (result.Success)
+            // 成功时如果不是常驻服务手动终止，自动隐藏面板；若是常驻服务终止完成，必须保留面板呈现捕获到的启动输出
+            if (result.Success && !result.IsServiceCancelled)
             {
                 resultPanel.Visibility = Visibility.Collapsed;
             }
@@ -3158,14 +3422,27 @@ public partial class AddJsonExtensionWindow : Window
                 resultPanel.Visibility = Visibility.Visible;
             }
 
-            summaryText.Foreground = result.Success ? GreenBrush : RedBrush;
+            if (result.IsServiceCancelled)
+            {
+                // 手动终止属于用户正常操作，绝不当作报错，不展示 DeepSeek 修复
+                summaryText.Foreground = (System.Windows.Media.Brush)FindResource("BrushTextMain");
+                if (ManualAiFixTestFailureButton != null)
+                {
+                    ManualAiFixTestFailureButton.Visibility = Visibility.Collapsed;
+                }
+            }
+            else
+            {
+                summaryText.Foreground = result.Success ? GreenBrush : RedBrush;
+                if (ManualAiFixTestFailureButton != null)
+                {
+                    ManualAiFixTestFailureButton.Visibility = result.Success ? Visibility.Collapsed : Visibility.Visible;
+                }
+            }
+
             summaryText.Text = result.Summary;
             logTextBox.Text = result.Log;
             copyFailureButton.Visibility = string.IsNullOrWhiteSpace(result.Log) ? Visibility.Collapsed : Visibility.Visible;
-            if (ManualAiFixTestFailureButton != null)
-            {
-                ManualAiFixTestFailureButton.Visibility = result.Success ? Visibility.Collapsed : Visibility.Visible;
-            }
 
             // 更新 AI 对话区最新版本卡片的运行状态标识
             if (_currentAiSession != null)
@@ -3175,6 +3452,18 @@ public partial class AddJsonExtensionWindow : Window
                 {
                     latestMsg.TestStatus = result.Success ? "success" : "failed";
                 }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            _testCompleted = true;
+            _testSucceeded = true;
+            resultPanel.Visibility = Visibility.Visible;
+            summaryText.Foreground = (System.Windows.Media.Brush)FindResource("BrushTextMain");
+            summaryText.Text = "测试已手动终止，可继续编辑或直接保存。";
+            if (ManualAiFixTestFailureButton != null)
+            {
+                ManualAiFixTestFailureButton.Visibility = Visibility.Collapsed;
             }
         }
         catch (Exception ex)
@@ -3193,6 +3482,29 @@ public partial class AddJsonExtensionWindow : Window
         }
         finally
         {
+            _isTestRunning = false;
+            if (_testTimer != null)
+            {
+                _testTimer.Stop();
+                _testTimer = null;
+            }
+            if (_testCts != null)
+            {
+                _testCts.Dispose();
+                _testCts = null;
+            }
+
+            if (HeaderTestButton != null)
+            {
+                HeaderTestButton.Content = "试运行";
+                HeaderTestButton.ClearValue(System.Windows.Controls.Button.ForegroundProperty);
+                HeaderTestButton.IsEnabled = _lastJsonValid;
+            }
+            if (ManualStopTestButton != null)
+            {
+                ManualStopTestButton.Visibility = Visibility.Collapsed;
+            }
+
             triggerButton.IsEnabled = _lastJsonValid;
             triggerButton.Content = "测试小程序";
             RefreshAllState();
@@ -3245,7 +3557,11 @@ public partial class AddJsonExtensionWindow : Window
             entryMode: manifest.EntryMode,
             inlineScriptSource: manifest.Script?.Source,
             iconReference: manifest.Icon,
-            searchProvider: manifest.SearchProvider?.ToDefinition(manifest.OpenTarget));
+            searchProvider: manifest.SearchProvider?.ToDefinition(manifest.OpenTarget),
+            toggleWindow: manifest.ToggleWindow ?? true,
+            workingDirectory: manifest.WorkingDirectory,
+            runAsAdmin: manifest.RunAsAdmin ?? false,
+            waitForExit: manifest.WaitForExit ?? true);
     }
 
     private static string BuildGenerationPrompt(string request)
@@ -3266,6 +3582,8 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("- 宿主 context 只提供管家能力：InputText、LaunchSource、ExtensionDirectory、ExtensionDataDirectory、Now、Permissions、State、SetStateAsync、Storage、ViewState、UpdateView。其它功能请用 C# / PowerShell / Windows 原生能力实现。");
         builder.AppendLine("- 如果需要向绑定的手机端发送横幅通知，请向本机的燕子服务发送 HTTP POST 请求到 http://127.0.0.1:{端口}/v1/notify（默认端口 53919，Header 需携带 Authorization: Bearer yanzi-local-dev-token），Body 格式为 {\"title\":\"标题\",\"body\":\"内容\"}，且必须使用绝对标准的 UTF-8 编码字节流发送，否则手机上会显示 ??? 乱码。");
         builder.AppendLine();
+        builder.AppendLine(YanziCapabilityRequirementResolver.BuildAuthoringPrompt());
+        builder.AppendLine();
         builder.AppendLine("选择策略：");
         builder.AppendLine("- 能用 openTarget 或 queryTargetTemplate 完成就不要写脚本。");
         builder.AppendLine("- 系统配置和命令行自动化优先 PowerShell；复杂应用逻辑和窗口工具优先 C#。");
@@ -3282,12 +3600,12 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("输出要求：");
         builder.AppendLine("- 只返回一个 ```json 代码块，不要解释，不要额外文字。");
         builder.AppendLine("- JSON 必须能被 System.Text.Json 解析；不要写注释、尾随逗号或 null 字段。");
-        builder.AppendLine("- 必填字段：id、name、version、category、description、keywords。");
-        builder.AppendLine("- 常用字段：icon、accentHex、openTarget、queryPrefixes、queryTargetTemplate、runtime、entryMode、entry、permissions、script.source、hostedViewXaml、uiMode。");
-        builder.AppendLine("- id 用英文小写、数字、短横线；accentHex 支持 #RRGGBB 或 #AARRGGBB。");
+        builder.AppendLine("- 新建小程序只需 name 和实现功能所需的字段；id 由程序在保存时生成，version 默认 0.1.0，分类、描述和关键词按需提供。");
+        builder.AppendLine("- 常用字段：icon、accentHex、openTarget、queryPrefixes、queryTargetTemplate、runtime、entryMode、entry、permissions、requires、provides、script.source、hostedViewXaml、uiMode。");
+        builder.AppendLine("- accentHex 支持 #RRGGBB 或 #AARRGGBB。");
         builder.AppendLine();
         builder.AppendLine("最小示例：");
-        builder.AppendLine("打开类：{\"id\":\"open-settings\",\"name\":\"打开设置\",\"version\":\"0.1.0\",\"category\":\"系统\",\"description\":\"打开 Windows 设置。\",\"keywords\":[\"设置\"],\"icon\":\"mdi:cog\",\"openTarget\":\"ms-settings:\"}");
+        builder.AppendLine("打开类：{\"name\":\"打开设置\",\"openTarget\":\"ms-settings:\"}");
         builder.AppendLine("PowerShell：{\"id\":\"ps-demo\",\"name\":\"PowerShell 示例\",\"version\":\"0.1.0\",\"category\":\"脚本\",\"description\":\"执行 PowerShell。\",\"keywords\":[\"ps\"],\"runtime\":\"powershell\",\"entryMode\":\"inline\",\"permissions\":[],\"script\":{\"source\":\"param([string]$InputText = \\\"\\\", [string]$ContextPath = \\\"\\\")\\nWrite-Output $InputText\"}}");
         builder.AppendLine("C#：{\"id\":\"csharp-demo\",\"name\":\"C# 示例\",\"version\":\"0.1.0\",\"category\":\"脚本\",\"description\":\"执行 C#。\",\"keywords\":[\"csharp\"],\"runtime\":\"csharp\",\"entryMode\":\"inline\",\"permissions\":[],\"script\":{\"source\":\"public static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        return Task.FromResult(context.InputText ?? string.Empty);\\n    }\\n}\"}}");
         return builder.ToString();
@@ -3316,6 +3634,7 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("1. 只返回一个 ```json 代码块，不要解释，不要额外文字");
         builder.AppendLine("2. JSON 必须能直接被 System.Text.Json 解析");
         builder.AppendLine("3. 如果最简单的配置就能实现，不要过度设计");
+        builder.AppendLine("3.1 新建时只需 name 与实现功能所需的字段；id 由程序保存时生成，version 默认 0.1.0；不要输出值为 null 的字段");
         builder.AppendLine("4. 优先选择最贴近需求的方案：");
         builder.AppendLine("   - 打开类：优先用 openTarget");
         builder.AppendLine("   - 搜索类：优先用 queryPrefixes + queryTargetTemplate");
@@ -3349,9 +3668,9 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("5.3 如果需求是独立弹窗小工具、原生窗口小应用、独立编辑器，而不是寄生在宿主里的工作区，优先输出 native-window，而不是 hostedViewXaml");
         builder.AppendLine();
         builder.AppendLine("三、字段说明");
-        builder.AppendLine("- id：小程序唯一标识，只能英文小写、数字、短横线，例如 \"open-project-folder\"");
+        builder.AppendLine("- id：小程序内部唯一标识；新建时省略，由程序自动生成；修改已有小程序时保留原 id");
         builder.AppendLine("- name：小程序显示名称");
-        builder.AppendLine("- version：版本号，默认 \"0.1.0\"");
+        builder.AppendLine("- version：可选版本号，默认 \"0.1.0\"");
         builder.AppendLine("- category：分类，例如 \"扩展\"、\"网页搜索\"、\"效率工具\"");
         builder.AppendLine("- description：一句话描述小程序用途");
         builder.AppendLine("- keywords：搜索关键词数组");
@@ -4457,6 +4776,7 @@ Write-Output "说明：这是模板输出，后续可以替换为真实翻译 AP
             AllowTrailingCommas = true,
             ReadCommentHandling = JsonCommentHandling.Skip,
             WriteIndented = true,
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
             Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
         };
     }
@@ -4470,9 +4790,17 @@ Write-Output "说明：这是模板输出，后续可以替换为真实翻译 AP
             CommentHandling = JsonCommentHandling.Skip
         };
 
-        using var document = JsonDocument.Parse(normalizedJson, documentOptions);
-        var root = document.RootElement.Clone();
-        return JsonSerializer.Serialize(root, CreateJsonOptions());
+        var root = JsonNode.Parse(normalizedJson, documentOptions: documentOptions)
+            ?? throw new InvalidOperationException("JSON 解析失败。");
+        if (root is JsonObject manifest)
+        {
+            foreach (var property in manifest.Where(property => property.Value is null).Select(property => property.Key).ToArray())
+            {
+                manifest.Remove(property);
+            }
+        }
+
+        return root.ToJsonString(CreateJsonOptions());
     }
 
     private static LocalExtensionManifest ParseManifestFromJson(string json, string source)
@@ -4649,7 +4977,7 @@ Write-Output "说明：这是模板输出，后续可以替换为真实翻译 AP
         Done
     }
 
-    private sealed record TestExecutionResult(bool Success, string Summary, string Log);
+    private sealed record TestExecutionResult(bool Success, string Summary, string Log, bool IsServiceCancelled = false);
 
     #region Advanced Editor & Inline Script Upgrades
 
@@ -4683,7 +5011,7 @@ Write-Output "说明：这是模板输出，后续可以替换为真实翻译 AP
         {
             var userDataFolder = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "OpenQuickHost",
+                HostRuntimeProfile.DataDirectoryName,
                 "JsonEditorWebView2");
             Directory.CreateDirectory(userDataFolder);
             var env = await CoreWebView2Environment.CreateAsync(null, userDataFolder);
@@ -4727,7 +5055,7 @@ Write-Output "说明：这是模板输出，后续可以替换为真实翻译 AP
         {
             var userDataFolder2 = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "OpenQuickHost",
+                HostRuntimeProfile.DataDirectoryName,
                 "ScriptEditorWebView2");
             Directory.CreateDirectory(userDataFolder2);
             var env2 = await CoreWebView2Environment.CreateAsync(null, userDataFolder2);

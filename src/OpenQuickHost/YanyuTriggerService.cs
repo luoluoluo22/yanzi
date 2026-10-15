@@ -70,6 +70,7 @@ public static class YanyuTriggerService
 
     public static void Start(Action<YanyuTriggerEvent> onRuleTriggered)
     {
+        if (!HostRuntimeProfile.GlobalListenersEnabled) return;
         if (IsRunning)
         {
             UpdateRules(AppSettingsStore.Load().YanyuRules);

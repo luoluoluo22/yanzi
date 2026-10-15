@@ -147,6 +147,7 @@ public static class MouseGestureService
     /// </summary>
     public static void Start(Action<string, string>? logger = null)
     {
+        if (!HostRuntimeProfile.GlobalListenersEnabled) return;
         _onLog = logger;
         OverlayWindowManager.RegisterSuppressionHandler(CancelActiveGesture);
 

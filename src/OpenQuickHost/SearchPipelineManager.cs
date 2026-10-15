@@ -7,13 +7,14 @@ namespace OpenQuickHost;
 /// </summary>
 public sealed class SearchSession : IDisposable
 {
-    private bool _disposed;
+    private int _disposed;
 
     public int SessionId { get; }
     public string Query { get; }
     public string ScopeKey { get; }
     public CancellationTokenSource Cts { get; }
-    public CancellationToken Token => Cts.Token;
+    // A captured token remains readable by in-flight work after its source is disposed.
+    public CancellationToken Token { get; }
     public DateTime CreatedAtUtc { get; } = DateTime.UtcNow;
 
     public SearchSession(int sessionId, string query, string scopeKey)
@@ -22,13 +23,14 @@ public sealed class SearchSession : IDisposable
         Query = query ?? string.Empty;
         ScopeKey = scopeKey ?? string.Empty;
         Cts = new CancellationTokenSource();
+        Token = Cts.Token;
     }
 
     public void Cancel()
     {
         try
         {
-            if (!_disposed && !Cts.IsCancellationRequested)
+            if (Volatile.Read(ref _disposed) == 0 && !Token.IsCancellationRequested)
             {
                 Cts.Cancel();
             }
@@ -39,10 +41,11 @@ public sealed class SearchSession : IDisposable
 
     public void Dispose()
     {
-        if (_disposed) return;
-        _disposed = true;
-        Cancel();
-        Cts.Dispose();
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+        try { Cts.Cancel(); }
+        catch (ObjectDisposedException) { }
+        catch (AggregateException) { }
+        finally { Cts.Dispose(); }
     }
 }
 

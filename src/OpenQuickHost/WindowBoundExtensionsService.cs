@@ -38,6 +38,7 @@ public sealed class WindowBoundExtensionsService : IDisposable
 
     public void Start(WindowBindingSettings settings)
     {
+        if (!HostRuntimeProfile.GlobalListenersEnabled) return;
         _settings = settings ?? new WindowBindingSettings();
         EnsureWinEventHooks();
         if (!_fallbackTimer.IsEnabled)
@@ -51,6 +52,7 @@ public sealed class WindowBoundExtensionsService : IDisposable
 
     public void Reload(WindowBindingSettings settings)
     {
+        if (!HostRuntimeProfile.GlobalListenersEnabled) return;
         _settings = settings ?? new WindowBindingSettings();
         if (!_settings.Enabled)
         {

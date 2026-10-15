@@ -1,4 +1,4 @@
-(function() {
+﻿(function() {
   const API_BASE = "https://sync.luoluoluo.cc.cd";
   const TOKEN_KEY = "yanzi.auth.token";
   const USER_KEY = "yanzi.auth.user";
@@ -186,7 +186,7 @@
       nav.dataset.repairedDocsNav = "1";
       nav.innerHTML = `
         <a href="/">首页</a>
-        <a href="/store.html">扩展商店</a>
+        <a href="/store.html">小程序商店</a>
         <a href="/yanm.html">燕幕</a>
         <a href="/docs/product-overview.html" class="active">文档</a>
         <a href="https://wwbnh.lanzout.com/b0pnkaj6j" target="_blank" rel="noopener noreferrer">免费下载</a>

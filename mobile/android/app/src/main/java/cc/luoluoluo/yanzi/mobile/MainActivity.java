@@ -1,6 +1,6 @@
 /*
  * Decompiled with CFR 0.152.
- * 
+ *
  * Could not load the following classes:
  *  android.app.Activity
  *  android.app.AlertDialog
@@ -70,6 +70,7 @@
 package cc.luoluoluo.yanzi.mobile;
 
 import android.app.Activity;
+import static cc.luoluoluo.yanzi.mobile.MobileJson.*;
 import android.app.AlertDialog;
 import android.appwidget.AppWidgetManager;
 import android.content.ClipData;
@@ -159,6 +160,7 @@ import java.lang.reflect.Method;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.text.SimpleDateFormat;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -180,7 +182,8 @@ public class MainActivity
 extends Activity {
     public static Context sContext;
     public static MainActivity sInstance;
-    private static final String DEFAULT_BASE_URL = "https://sync.luoluoluo.cc.cd";
+    public static volatile boolean sForeground;
+    private static final String DEFAULT_BASE_URL = MobileSessionStore.DEFAULT_BASE_URL;
     private static final String CACHE_REMOTE_EXTENSIONS = "cacheRemoteExtensionsJson";
     private static final String CACHE_YANM = "cacheYanmJson";
     private static final int REQUEST_PICK_PHOTO = 4101;
@@ -195,6 +198,7 @@ extends Activity {
     private HorizontalScrollView aiAttachmentScrollView;
     private LinearLayout aiAttachmentContainer;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private static final ExecutorService messageExecutor = Executors.newSingleThreadExecutor();
     private SharedPreferences prefs;
     private String deviceId;
     private androidx.core.widget.NestedScrollView mainScrollView;
@@ -216,11 +220,13 @@ extends Activity {
         @Override
         public void onReceive(Context context, Intent intent) {
             String msg = intent.getStringExtra("message");
-            android.util.Log.i("MainActivity", "Received CHAT_MESSAGE broadcast, msg=" + msg);
+            String kind = intent.getStringExtra("kind");
+            String sourceDeviceId = intent.getStringExtra("sourceDeviceId");
+            String sourceDeviceName = intent.getStringExtra("sourceDeviceName");
+            long time = intent.getLongExtra("time", System.currentTimeMillis());
+            android.util.Log.i("MainActivity", "Received CHAT_MESSAGE broadcast, kind=" + kind + ", source=" + sourceDeviceName);
             if (msg != null) {
-                MainActivity.this.runOnUiThread(() -> {
-                    MainActivity.this.renderChatMessage("desktop", "text", msg, true);
-                });
+                MainActivity.this.runOnUiThread(() -> MainActivity.this.loadChatHistory());
             }
         }
     };
@@ -232,6 +238,7 @@ extends Activity {
     private TextView mobileExtensionSectionTitle;
     private TextView mobileExtensionTestResult;
     private LinearLayout mobileExtensionListView;
+    private TextView mobileExtensionListTitle;
     private LinearLayout mobileExtensionEditorView;
     private GridLayout mobileExtensionGrid;
     private LinearLayout extensionList;
@@ -240,6 +247,13 @@ extends Activity {
     private LinearLayout mobileExtensionTabPage;
     private LinearLayout desktopExtensionTabPage;
     private LinearLayout profileTabPage;
+    private HomeDashboardView.Result homeDashboard;
+    private DeveloperDashboardView.Result developerDashboard;
+    private ApplicationCatalogView applicationStore;
+    private DesktopDashboardView.Result desktopDashboard;
+    private View bottomTabs;
+    private String selectedTab = "";
+    private int pendingMessageSends;
     private android.widget.ImageView profileAvatarView;
     private android.widget.TextView profileNameView;
     private android.widget.TextView profileSubtextView;
@@ -252,6 +266,7 @@ extends Activity {
     private View desktopExtensionTabButton;
     private View profileTabButton;
     private View desktopConnectionDot;
+    private long lastRenderedChatTimeMs = Long.MIN_VALUE;
     private android.os.Handler connectionCheckHandler;
     private Runnable connectionCheckRunnable;
     private boolean isDesktopConnected = false;
@@ -269,6 +284,7 @@ extends Activity {
     private EditText fsSearchInput;
     private boolean isFsUploading = false;
     private Button loginButton;
+    private TextView accountLoginStatusText;
     private AlertDialog accountDialog;
     private Button overlayButton;
     private EditText searchDesktopExtensionsInput;
@@ -309,7 +325,7 @@ extends Activity {
     private DrawerLayout aiDrawerLayout;
     private LinearLayout aiSessionListDrawer;
     private List<RemoteExtension> currentDesktopExtensions = new ArrayList<RemoteExtension>();
-    private static final String DEFAULT_SYSTEM_PROMPT = 
+    private static final String DEFAULT_SYSTEM_PROMPT =
             "\u4f60\u662f\u71d5\u5b50\u624b\u673a\u7aef AI \u52a9\u624b\u3002\u4f60\u53ef\u4ee5\u89e3\u7b54\u95ee\u9898\uff0c\u4e5f\u53ef\u4ee5\u8c03\u7528\u672c\u5730\u624b\u673a\u5de5\u5177\u3002\n" +
             "\u4f60\u53ef\u4ee5\u81ea\u4e3b\u5224\u65ad\u662f\u5426\u9700\u8981\u8c03\u7528\u5de5\u5177\u3002\u5982\u679c\u9700\u8981\u8c03\u7528\u5de5\u5177\uff0c\u8bf7\u8f93\u51fa\u4e00\u6bb5\u5305\u88f9\u5728 ```json \u5185\u90e8\u7684 JSON \u4ee3\u7801\u5757\uff1a\n" +
             "```json\n" +
@@ -387,6 +403,60 @@ extends Activity {
     private Button chatSendButton;
     private Button chatPhotoButton;
     private Button chatFileButton;
+    private ChatConversation chatConversation = ChatConversation.group();
+    private ChatConversation attachmentConversation;
+    private String chatHistoryAccount="";
+
+    private String chatPreferenceKey(String suffix) {
+        return "chatObjects."+ChatHistoryStore.accountKey(this)+"."+suffix;
+    }
+
+    private void selectChatConversation(ChatConversation target) {
+        if (chatInputEditText != null) prefs.edit().putString(chatPreferenceKey("draft."+chatConversation.id),
+            chatInputEditText.getText().toString()).apply();
+        chatConversation=target;
+        if (chatInputEditText != null) {
+            chatInputEditText.setText(prefs.getString(chatPreferenceKey("draft."+target.id),""));
+            chatInputEditText.setHint(target.agent ? "给反重力发送消息…" : "发送消息…");
+        }
+        prefs.edit().putLong(chatPreferenceKey("seen."+target.id),System.currentTimeMillis()).apply();
+        if (desktopDashboard != null) desktopDashboard.conversation(target.agent?"反重力":target.name,this::showChatConversations);
+        if (chatAttachBtn != null) chatAttachBtn.setVisibility(target.agent?View.GONE:View.VISIBLE);
+        selectSubTab(0); loadChatHistory();
+    }
+
+    private void showChatConversations() {
+        final String account=ChatHistoryStore.accountKey(this);
+        final String cacheKey=chatPreferenceKey("contacts");
+        JSONArray cached=new JSONArray();
+        try {cached=new JSONArray(prefs.getString(cacheKey,"[]"));} catch(Exception ignored) {}
+        final List<ChatConversation> contacts=ChatConversation.contacts(cached,deviceId);
+        if(contacts.stream().noneMatch(c->c.id.equals(chatConversation.id))) contacts.add(chatConversation);
+        final ChatConversationAdapter adapter=new ChatConversationAdapter(this,contacts,chatConversation.id);
+        final AlertDialog dialog=new AlertDialog.Builder(this).setTitle("聊天对象")
+            .setSingleChoiceItems(adapter,-1,(d,which)->{
+                if(account.equals(ChatHistoryStore.accountKey(this))) selectChatConversation(contacts.get(which));
+                d.dismiss();
+            }).setNegativeButton("取消",null).create();
+        dialog.show();
+        this.executor.execute(() -> {
+            final JSONArray devices;
+            try {
+                devices=MobileMessageClient.readSystemFirst(normalizedBaseUrl(),"/v1/me/devices",requireToken()).optJSONArray("items");
+            } catch(Exception unavailable) {
+                this.runOnUiThread(()->{if(dialog.isShowing()) dialog.setTitle("聊天对象 · 使用缓存");});
+                return;
+            }
+            this.runOnUiThread(() -> {
+                if(isFinishing() || !dialog.isShowing() || !account.equals(ChatHistoryStore.accountKey(this))) return;
+                if(devices!=null) prefs.edit().putString(cacheKey,devices.toString()).apply();
+                contacts.clear();contacts.addAll(ChatConversation.contacts(devices,deviceId));
+                if(contacts.stream().noneMatch(c->c.id.equals(chatConversation.id))) contacts.add(chatConversation);
+                adapter.notifyDataSetChanged();
+                for(int i=0;i<contacts.size();i++) if(contacts.get(i).id.equals(chatConversation.id)) dialog.getListView().setItemChecked(i,true);
+            });
+        });
+    }
     private TextView flatLogTv;
     private androidx.core.widget.NestedScrollView flatLogScrollView;
     private android.widget.Button btnShowFileManager;
@@ -411,7 +481,7 @@ extends Activity {
     private android.view.GestureDetector tabGestureDetector;
 
     private final Map<String, WebView> activeYanmWebViews = new HashMap<String, WebView>();
-    private WebView activeMobileScriptRunner;
+    private final MobileWebViewRuntime scriptRuntime = new MobileWebViewRuntime();
     private View photoProgressView;
     private final Handler yanmSyncHandler = new Handler(Looper.getMainLooper());
     private final Handler diagnosticRefreshHandler = new Handler(Looper.getMainLooper());
@@ -433,7 +503,7 @@ extends Activity {
         @Override
         public void onReceive(Context context, Intent intent) {
             Log.d("Yanzi", "BroadcastReceiver onReceive action: " + intent.getAction());
-            if ("cc.luoluoluo.yanzi.mobile.SCREENSHOT_SUCCESS".equals(intent.getAction())) {
+            if ((BuildConfig.APPLICATION_ID + ".SCREENSHOT_SUCCESS").equals(intent.getAction())) {
                 String base64Data = intent.getStringExtra("image_base64");
                 Log.d("Yanzi", "BroadcastReceiver got base64 data length: " + (base64Data != null ? base64Data.length() : 0));
                 if (base64Data != null) {
@@ -443,9 +513,128 @@ extends Activity {
         }
     };
 
+    private void requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+                    != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 9101);
+            }
+        }
+    }
+
     protected void onCreate(Bundle savedInstanceState) {
         if (this.getIntent() != null) {
-            if (this.getIntent().hasExtra("run_remote_extension_id")) {
+            if (BuildConfig.DEBUG && BuildConfig.APPLICATION_ID.endsWith(".dev")
+                    && this.getIntent().getBooleanExtra("verify_desktop_lan", false)) {
+                super.onCreate(savedInstanceState);
+                sContext = getApplicationContext();
+                this.prefs = this.getSharedPreferences("yanzi-mobile", MODE_PRIVATE);
+                this.deviceId = this.getOrCreateDeviceId();
+                new Thread(() -> {
+                    JSONObject report = new JSONObject();
+                    try {
+                        File configFile = new File(getFilesDir(), "lan-verification.json");
+                        JSONObject config = new JSONObject(new String(java.nio.file.Files.readAllBytes(configFile.toPath()), StandardCharsets.UTF_8));
+                        DeviceProtocolVectors.verify(sContext);
+                        if (config.has("securePair")) SecureLanConnection.importPair(sContext, config.getJSONObject("securePair"));
+                        LanDiscoveryManager.cachedLanBaseUrl = config.getString("lanBaseUrl");
+                        LanDiscoveryManager.cachedLanApiToken = config.getString("lanToken");
+                        org.json.JSONArray results = new org.json.JSONArray();
+                        org.json.JSONArray steps = config.getJSONArray("steps");
+                        for (int i = 0; i < steps.length(); i++) {
+                            if (config.optBoolean("forceLanFailure", false)) LanDiscoveryManager.cachedLanBaseUrl = config.getString("lanBaseUrl");
+                            JSONObject step = steps.getJSONObject(i);
+                            long start = System.currentTimeMillis();
+                            JSONObject result = new JSONObject().put("kind", step.getString("kind"));
+                            try {
+                                String kind = step.getString("kind");
+                                if (kind.equals("file") || kind.equals("photo")) {
+                                    File file = new File(getFilesDir(), step.getString("phoneFile"));
+                                    String id = MobileDesktopTransfer.sendFile(sContext, config.getString("cloudBaseUrl"),
+                                            config.getString("cloudToken"), this.deviceId, kind, step.getString("name"),
+                                            kind.equals("photo") ? "image/jpeg" : "application/octet-stream", file, "LAN verification");
+                                    result.put("messageId", id);
+                                } else {
+                                    result.put("response", YanziApiClient.requestDesktopLocalApi(step.getString("path"),
+                                            config.getString("cloudToken"), "LAN verification", "POST", step.getJSONObject("payload")));
+                                }
+                                result.put("success", true);
+                            } catch (Exception ex) { result.put("success", false).put("error", ex.getClass().getSimpleName()).put("detail", ex.getMessage()); }
+                            result.put("durationMs", System.currentTimeMillis() - start);
+                            results.put(result);
+                        }
+                        report.put("results", results);
+                    } catch (Exception ex) {
+                        try { report.put("error", ex.getClass().getSimpleName()); } catch (Exception ignored) { }
+                    } finally {
+                        try (OutputStream output = new FileOutputStream(new File(getFilesDir(), "lan-verification-result.json"))) {
+                            output.write(report.toString().getBytes(StandardCharsets.UTF_8));
+                        } catch (Exception ignored) { }
+                        runOnUiThread(this::finish);
+                    }
+                }).start();
+                return;
+            }
+            if (BuildConfig.DEBUG && BuildConfig.APPLICATION_ID.endsWith(".dev")
+                    && this.getIntent().hasExtra("verify_message_text")) {
+                super.onCreate(savedInstanceState);
+                sContext = getApplicationContext();
+                this.prefs = this.getSharedPreferences("yanzi-mobile", MODE_PRIVATE);
+                this.deviceId = this.getOrCreateDeviceId();
+                new Thread(() -> {
+                    try {
+                        String kind = getIntent().getStringExtra("verify_message_kind");
+                        if (!"run-shell".equals(kind) && !"file".equals(kind) && !"photo".equals(kind)) kind = "text";
+                        String verifyBase = this.normalizedBaseUrl();
+                        String verifyToken = this.requireToken();
+                        JSONObject verificationPayload = new JSONObject();
+                        if ("file".equals(kind) || "photo".equals(kind)) {
+                            java.io.File attachment = new java.io.File(getCacheDir(), "verification-attachment");
+                            JSONObject uploaded = MobileAttachmentClient.upload(verifyBase, verifyToken,
+                                    "photo".equals(kind) ? "phone-verification.png" : "phone-verification.bin",
+                                    "photo".equals(kind) ? "image/png" : "application/octet-stream", attachment);
+                            verificationPayload.put("attachmentId", uploaded.getString("attachmentId"))
+                                    .put("fileName", uploaded.getString("fileName"))
+                                    .put("size", uploaded.getLong("size")).put("sha256", uploaded.getString("sha256"));
+                        }
+                        JSONObject submitted = MobileMessageClient.request(verifyBase, "/v1/me/mobile/messages", verifyToken, "POST",
+                                new JSONObject().put("sourceDeviceId", this.deviceId).put("targetPlatform", "desktop")
+                                        .put("kind", kind).put("title", "Dev verification")
+                                        .put("text", getIntent().getStringExtra("verify_message_text"))
+                                        .put("payload", verificationPayload));
+                        Log.i("YanziMessageBridge", "Phone verification message submitted");
+                        if ("run-shell".equals(kind)) {
+                            boolean completed = false;
+                            for (int attempt = 0; attempt < 40; attempt++) {
+                                Thread.sleep(500);
+                                JSONObject detail = MobileMessageClient.request(verifyBase, "/v1/me/mobile/messages/"
+                                        + submitted.getString("messageId"), verifyToken, "GET", null);
+                                if ("completed".equals(detail.optString("status"))) {
+                                    JSONObject result = detail.getJSONObject("payload").getJSONObject("executionResult");
+                                    if (!result.optBoolean("success") || !result.optString("output").contains("phone-roundtrip-result"))
+                                        throw new IllegalStateException("Unexpected desktop result");
+                                    Log.i("YanziMessageBridge", "Phone read desktop execution result: PASSED");
+                                    completed = true;
+                                    break;
+                                }
+                                if ("failed".equals(detail.optString("status"))) throw new IllegalStateException("Desktop execution failed");
+                            }
+                            if (!completed) throw new IllegalStateException("Desktop result timeout");
+                        }
+                    } catch (Exception ex) {
+                        Log.e("YanziMessageBridge", "Phone verification submission failed: " + ex.getClass().getSimpleName());
+                    } finally { runOnUiThread(this::finish); }
+                }).start();
+                return;
+            }
+            if (this.getIntent().getBooleanExtra("diagnose_extension_storage_headless", false)) {
+                super.onCreate(savedInstanceState);
+                sContext = this;
+                this.prefs = this.getSharedPreferences("yanzi-mobile", 0);
+                this.deviceId = this.getOrCreateDeviceId();
+                this.runHeadlessAccountExtensionStorageDiagnostic(this.getIntent());
+                return;
+            }            if (this.getIntent().hasExtra("run_remote_extension_id")) {
                 super.onCreate(savedInstanceState);
                 sContext = this;
                 this.prefs = this.getSharedPreferences("yanzi-mobile", 0);
@@ -488,17 +677,19 @@ extends Activity {
             }
         }
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            this.registerReceiver(this.screenshotReceiver, 
-                new android.content.IntentFilter("cc.luoluoluo.yanzi.mobile.SCREENSHOT_SUCCESS"), 
+            this.registerReceiver(this.screenshotReceiver,
+                new android.content.IntentFilter(BuildConfig.APPLICATION_ID + ".SCREENSHOT_SUCCESS"),
                 Context.RECEIVER_NOT_EXPORTED);
         } else {
-            this.registerReceiver(this.screenshotReceiver, 
-                new android.content.IntentFilter("cc.luoluoluo.yanzi.mobile.SCREENSHOT_SUCCESS"));
+            this.registerReceiver(this.screenshotReceiver,
+                new android.content.IntentFilter(BuildConfig.APPLICATION_ID + ".SCREENSHOT_SUCCESS"));
         }
         sContext = this;
         sInstance = this;
+        MobileNotificationManager.ensureChannels(this);
+        MobilePushSupport.initialize(this);
+        requestNotificationPermissionIfNeeded();
         LanDiscoveryManager.discover((Context)this);
-        this.startService(new Intent((Context)this, FloatingWheelService.class));
         this.prefs = this.getSharedPreferences("yanzi-mobile", 0);
         this.isTtsEnabled = this.prefs.getBoolean("isTtsEnabled", false);
         MobileIconLibrary.init((Context)this);
@@ -556,21 +747,38 @@ extends Activity {
 
     protected void onResume() {
         super.onResume();
+        if(this.applicationStore!=null)this.applicationStore.resume();
+        // The isolated transfer fixture owns its temporary pairing; background account
+        // refresh must not replace it while the encrypted transfer is in progress.
+        if (BuildConfig.DEBUG && BuildConfig.APPLICATION_ID.endsWith(".dev")
+                && getIntent().getBooleanExtra("verify_desktop_lan", false)) return;
+        sForeground = true;
+        ExternalAccessManager.foreground(this);
+        UpdateManager.resumePendingInstall(this);
+        try {
+            this.startService(new Intent(this, FloatingWheelService.class));
+            this.getWindow().getDecorView().postDelayed(() -> FloatingWheelService.setAppForeground(true), 150L);
+        } catch (IllegalStateException ex) {
+            Log.w("YanziMessageBridge", "Floating service start deferred until next foreground resume");
+        }
+        if (prefs.getBoolean("deviceLoginRemoved", false)) handleRemovedDeviceSession();
+        verifyDeviceSessionOnEntry();
+        DeviceHeartbeatService.startIfLoggedIn(this);
         if (this.overlayButton != null) {
             this.overlayButton.setText((CharSequence)(FloatingWheelService.isRunning ? "\u5173\u95ed\u60ac\u6d6e\u8f6e\u76d8" : "\u6253\u5f00\u60ac\u6d6e\u8f6e\u76d8"));
         }
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            this.registerReceiver(this.yanmSyncReceiver, 
-                new android.content.IntentFilter("cc.luoluoluo.yanzi.mobile.SYNC_YANM"), 
+            this.registerReceiver(this.yanmSyncReceiver,
+                new android.content.IntentFilter(BuildConfig.APPLICATION_ID + ".SYNC_YANM"),
                 Context.RECEIVER_NOT_EXPORTED);
-            this.registerReceiver(this.chatMessageReceiver, 
-                new android.content.IntentFilter("cc.luoluoluo.yanzi.mobile.CHAT_MESSAGE"), 
+            this.registerReceiver(this.chatMessageReceiver,
+                new android.content.IntentFilter(BuildConfig.APPLICATION_ID + ".CHAT_MESSAGE"),
                 Context.RECEIVER_NOT_EXPORTED);
         } else {
-            this.registerReceiver(this.yanmSyncReceiver, 
-                new android.content.IntentFilter("cc.luoluoluo.yanzi.mobile.SYNC_YANM"));
-            this.registerReceiver(this.chatMessageReceiver, 
-                new android.content.IntentFilter("cc.luoluoluo.yanzi.mobile.CHAT_MESSAGE"));
+            this.registerReceiver(this.yanmSyncReceiver,
+                new android.content.IntentFilter(BuildConfig.APPLICATION_ID + ".SYNC_YANM"));
+            this.registerReceiver(this.chatMessageReceiver,
+                new android.content.IntentFilter(BuildConfig.APPLICATION_ID + ".CHAT_MESSAGE"));
         }
         LanDiscoveryManager.discover((Context)this);
         this.syncClipboard();
@@ -590,6 +798,7 @@ extends Activity {
         }
         this.updateProfileHeader();
         this.loadChatHistory();
+        this.renderLocalMobileExtensions();
     }
 
     private void syncClipboard() {
@@ -597,17 +806,20 @@ extends Activity {
             try {
                 String token = this.prefs.getString("token", "").trim();
                 if (token.isEmpty()) return;
-                
+
                 String baseUrl = this.normalizedBaseUrl();
-                
+
                 final String[] localTextHolder = new String[]{""};
                 final boolean[] hasClipHolder = new boolean[]{false};
+                final boolean[] sensitiveClipHolder = new boolean[]{false};
                 this.runOnUiThread(() -> {
                     try {
                         android.content.ClipboardManager cm = (android.content.ClipboardManager) this.getSystemService(Context.CLIPBOARD_SERVICE);
                         if (cm != null && cm.hasPrimaryClip()) {
                             android.content.ClipData data = cm.getPrimaryClip();
-                            if (data != null && data.getItemCount() > 0) {
+                            sensitiveClipHolder[0] = data != null && data.getDescription().getExtras() != null
+                                    && data.getDescription().getExtras().getBoolean("android.content.extra.IS_SENSITIVE", false);
+                            if (!sensitiveClipHolder[0] && data != null && data.getItemCount() > 0) {
                                 CharSequence text = data.getItemAt(0).getText();
                                 if (text != null) {
                                     localTextHolder[0] = text.toString();
@@ -617,28 +829,29 @@ extends Activity {
                     } catch (Exception ignored) {}
                     hasClipHolder[0] = true;
                 });
-                
+
                 int waits = 0;
                 while (!hasClipHolder[0] && waits < 10) {
                     Thread.sleep(50);
                     waits++;
                 }
-                
+
                 String localText = localTextHolder[0];
+                if (sensitiveClipHolder[0]) return;
                 String lastSyncedText = this.prefs.getString("last_synced_clipboard", "");
-                
+
                 boolean writeToPc = false;
                 if (!localText.isEmpty() && !localText.equals(lastSyncedText)) {
                     writeToPc = true;
                 }
-                
+
                 JSONObject payload = new JSONObject()
                     .put("text", (Object)localText)
                     .put("write", writeToPc);
-                    
+
                 JSONObject res = YanziApiClient.postJson(baseUrl, "/v1/clipboard/sync", payload, token, "\u540c\u6b65\u526a\u8d34\u677f");
                 String pcText = res.optString("text", "");
-                
+
                 if (!pcText.isEmpty() && !pcText.equals(localText)) {
                     this.runOnUiThread(() -> {
                         try {
@@ -667,76 +880,76 @@ extends Activity {
                 this.fileListLayout.addView((View)this.textView("\u6b63\u5728\u52a0\u8f7d\u6587\u4ef6\u5217\u8868...", 14, Color.rgb(148, 163, 184), false));
             }
         });
-        
+
         this.executor.execute(() -> {
             try {
                 String token = this.prefs.getString("token", "").trim();
                 if (token.isEmpty()) return;
-                
+
                 String baseUrl = this.normalizedBaseUrl();
                 JSONObject payload = new JSONObject().put("path", (Object)targetPath);
                 JSONObject res = YanziApiClient.postJson(baseUrl, "/v1/fs/list", payload, token, "\u83b7\u53d6\u6587\u4ef6\u5217\u8868");
-                
+
                 String processedPath = res.optString("currentPath", res.optString("path", ""));
                 JSONArray items = res.optJSONArray("items");
-                
+
                 this.runOnUiThread(() -> {
                     this.currentPath = processedPath;
                     if (this.tvCurrentPath != null) {
                         this.tvCurrentPath.setText((CharSequence)(processedPath.isEmpty() ? "\u5f53\u524d\u8def\u5f84: [\u76d8\u7b26\u6839\u89c6\u5b9a]" : "\u5f53\u524d\u8def\u5f84: " + processedPath));
                     }
                     this.renderBreadcrumbs(processedPath);
-                    
+
                     if (this.fileListLayout == null) return;
                     this.fileListLayout.removeAllViews();
-                    
+
                     if (items == null || items.length() == 0) {
                         this.fileListLayout.addView((View)this.textView("\u6b64\u6587\u4ef6\u5939\u4e3a\u7a7a\u3002", 14, Color.rgb(148, 163, 184), false));
                         return;
                     }
-                    
+
                     for (int i = 0; i < items.length(); ++i) {
                         JSONObject item = items.optJSONObject(i);
                         if (item == null) continue;
-                        
+
                         String name = item.optString("name", "");
                         boolean isDir = item.optBoolean("isDir", false);
                         long size = item.optLong("size", 0L);
-                        
+
                         LinearLayout row = new LinearLayout((Context)this);
                         row.setOrientation(0);
                         row.setGravity(16);
                         row.setPadding(0, this.dp(8), 0, this.dp(8));
                         row.setClickable(true);
                         row.setTag((Object)name);
-                        
+
                         TextView tvEmoji = this.textView(this.getFileTypeIcon(name, isDir), 16, -1, false);
                         row.addView((View)tvEmoji, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-2, -2));
-                        
+
                         LinearLayout textContainer = new LinearLayout((Context)this);
                         textContainer.setOrientation(1);
-                        
+
                         TextView tvName = this.textView(name, 14, Color.WHITE, false);
                         tvName.setEllipsize(android.text.TextUtils.TruncateAt.END);
                         tvName.setSingleLine(true);
                         textContainer.addView((View)tvName);
-                        
+
                         if (!isDir) {
                             String sizeStr = size < 1024 ? size + " B" : (size < 1024 * 1024 ? (size / 1024) + " KB" : (size / (1024 * 1024)) + " MB");
                             TextView tvSize = this.textView(sizeStr, 11, Color.rgb(148, 163, 184), false);
                             textContainer.addView((View)tvSize);
                         }
-                        
+
                         LinearLayout.LayoutParams tcParams = new LinearLayout.LayoutParams(0, -2, 1.0f);
                         tcParams.leftMargin = this.dp(10);
                         row.addView((View)textContainer, (ViewGroup.LayoutParams)tcParams);
-                        
+
                         Runnable openFileRunnable = () -> {
                             String separator = processedPath.endsWith("\\") || processedPath.endsWith("/") ? "" : "\\";
                             String fullFilePath = processedPath + separator + name;
                             boolean isText = this.isTextFile(name);
                             boolean isImage = this.isImageFile(name);
-                            
+
                             if (isText || isImage) {
                                 Toast.makeText(this.getApplicationContext(), isImage ? "正在加载图片..." : "正在加载文件内容...", Toast.LENGTH_SHORT).show();
                                 this.executor.execute(() -> {
@@ -798,10 +1011,10 @@ extends Activity {
                             btnOpen.setOnClickListener(v -> openFileRunnable.run());
                             row.addView((View)btnOpen, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(60), this.dp(30)));
                         }
-                        
+
                         View divider = new View((Context)this);
                         divider.setBackgroundColor(Color.rgb(30, 41, 59));
-                        
+
                         this.fileListLayout.addView((View)row);
                         this.fileListLayout.addView(divider, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, this.dp(1)));
                     }
@@ -824,6 +1037,10 @@ extends Activity {
     }
 
     protected void onPause() {
+        if(this.chatInputEditText!=null && this.prefs!=null) this.prefs.edit()
+            .putString(chatPreferenceKey("draft."+chatConversation.id),chatInputEditText.getText().toString()).apply();
+        sForeground = false;
+        FloatingWheelService.setAppForeground(false);
         this.diagnosticRefreshHandler.removeCallbacks(this.diagnosticRefreshRunnable);
         this.autoCloudUpdateHandler.removeCallbacks(this.autoCloudUpdateRunnable);
         this.stopWakeListening(false);
@@ -838,10 +1055,12 @@ extends Activity {
             this.unregisterReceiver(this.chatMessageReceiver);
         } catch (Exception ignored) {}
         super.onPause();
+        ExternalAccessManager.background(this);
     }
 
     @Override
     protected void onDestroy() {
+        if(this.applicationStore!=null)this.applicationStore.close();
         try {
             this.unregisterReceiver(this.screenshotReceiver);
         } catch (Exception e) {}
@@ -854,6 +1073,7 @@ extends Activity {
         }
         this.destroySpeechRecognizer();
         this.releaseWakeListening();
+        this.destroyAllMobileScriptRunners();
         if (sInstance == this) {
             sInstance = null;
         }
@@ -932,7 +1152,9 @@ extends Activity {
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == 9001) {
+        if (requestCode == 9101) {
+            DeviceHeartbeatService.startIfLoggedIn(this);
+        } else if (requestCode == 9001) {
             if (grantResults.length > 0 && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) {
                 this.launchCamera();
             } else {
@@ -984,10 +1206,10 @@ extends Activity {
                 String imageFileName = "JPEG_" + timeStamp + "_";
                 File storageDir = this.getExternalFilesDir(Environment.DIRECTORY_PICTURES);
                 this.cameraPhotoFile = File.createTempFile(imageFileName, ".jpg", storageDir);
-                
-                this.cameraPhotoUri = androidx.core.content.FileProvider.getUriForFile(this, 
-                        "cc.luoluoluo.yanzi.mobile.fileprovider", this.cameraPhotoFile);
-                
+
+                this.cameraPhotoUri = androidx.core.content.FileProvider.getUriForFile(this,
+                        BuildConfig.APPLICATION_ID + ".fileprovider", this.cameraPhotoFile);
+
                 intent.putExtra(android.provider.MediaStore.EXTRA_OUTPUT, this.cameraPhotoUri);
                 this.startActivityForResult(intent, REQUEST_CODE_TAKE_PHOTO);
             } catch (Exception e) {
@@ -1007,7 +1229,7 @@ extends Activity {
                 BitmapFactory.Options options = new BitmapFactory.Options();
                 options.inJustDecodeBounds = true;
                 BitmapFactory.decodeStream(is, null, options);
-                
+
                 int maxDim = Math.max(options.outWidth, options.outHeight);
                 int inSampleSize = 1;
                 if (maxDim > 1024) {
@@ -1015,7 +1237,7 @@ extends Activity {
                 }
                 options.inJustDecodeBounds = false;
                 options.inSampleSize = inSampleSize;
-                
+
                 try (InputStream is2 = this.getContentResolver().openInputStream(uri)) {
                     Bitmap bmp = BitmapFactory.decodeStream(is2, null, options);
                     if (bmp != null) {
@@ -1042,7 +1264,7 @@ extends Activity {
             if (!Settings.canDrawOverlays(this)) {
                 Toast.makeText(this, "需要悬浮窗权限，请先开启悬浮轮盘以获得授权", Toast.LENGTH_LONG).show();
                 try {
-                    Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, 
+                    Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                             Uri.parse("package:" + this.getPackageName()));
                     this.startActivity(intent);
                 } catch (Exception e) {
@@ -1055,7 +1277,7 @@ extends Activity {
             Toast.makeText(this, "截图失败：请先前往无障碍设置开启 燕子 辅助功能", Toast.LENGTH_LONG).show();
             return;
         }
-        
+
         try {
             Intent intent = new Intent(this, FloatingScreenshotService.class);
             this.startService(intent);
@@ -1084,7 +1306,7 @@ extends Activity {
         String name = "未知文件";
         long size = 0;
         String mimeType = this.getContentResolver().getType(uri);
-        
+
         try (Cursor cursor = this.getContentResolver().query(uri, null, null, null, null)) {
             if (cursor != null && cursor.moveToFirst()) {
                 int nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
@@ -1099,7 +1321,7 @@ extends Activity {
         } catch (Exception e) {
             Log.e("Yanzi", "Query uri failed", e);
         }
-        
+
         if (name == null || name.isEmpty()) {
             name = uri.getLastPathSegment();
         }
@@ -1116,7 +1338,7 @@ extends Activity {
                     BitmapFactory.Options options = new BitmapFactory.Options();
                     options.inJustDecodeBounds = true;
                     BitmapFactory.decodeStream(is, null, options);
-                    
+
                     int width = options.outWidth;
                     int height = options.outHeight;
                     int maxDim = Math.max(width, height);
@@ -1124,10 +1346,10 @@ extends Activity {
                     if (maxDim > 1024) {
                         inSampleSize = maxDim / 1024;
                     }
-                    
+
                     options.inJustDecodeBounds = false;
                     options.inSampleSize = inSampleSize;
-                    
+
                     try (InputStream is2 = this.getContentResolver().openInputStream(uri)) {
                         Bitmap bmp = BitmapFactory.decodeStream(is2, null, options);
                         if (bmp != null) {
@@ -1174,28 +1396,28 @@ extends Activity {
             return;
         }
         this.aiAttachmentScrollView.setVisibility(View.VISIBLE);
-        
+
         for (int i = 0; i < this.pendingAttachments.size(); i++) {
             AttachmentInfo attach = this.pendingAttachments.get(i);
             final int index = i;
-            
+
             LinearLayout card = new LinearLayout((Context)this);
             card.setOrientation(0);
             card.setGravity(16);
             card.setPadding(this.dp(8), this.dp(8), this.dp(8), this.dp(8));
-            
+
             LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
                     this.dp(160),
                     this.dp(60)
             );
             cardParams.setMargins(0, 0, this.dp(10), 0);
             card.setLayoutParams((ViewGroup.LayoutParams)cardParams);
-            
+
             GradientDrawable cardBg = new GradientDrawable();
             cardBg.setColor(Color.rgb(31, 41, 55));
             cardBg.setCornerRadius((float)this.dp(8));
             card.setBackground((Drawable)cardBg);
-            
+
             if (attach.isImage) {
                 ImageView iv = new ImageView((Context)this);
                 iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
@@ -1235,31 +1457,31 @@ extends Activity {
                 fileIcon.setGravity(17);
                 card.addView((View)fileIcon, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(44), this.dp(44)));
             }
-            
+
             LinearLayout textLayout = new LinearLayout((Context)this);
             textLayout.setOrientation(1);
             textLayout.setGravity(16);
-            
+
             TextView nameTv = new TextView((Context)this);
             nameTv.setText((CharSequence)attach.name);
             nameTv.setTextColor(-1);
             nameTv.setTextSize(12.0f);
             nameTv.setSingleLine(true);
             nameTv.setEllipsize(TextUtils.TruncateAt.END);
-            
+
             TextView sizeTv = new TextView((Context)this);
             String sizeStr = attach.size < 1024 ? attach.size + " B" : (attach.size < 1024 * 1024 ? (attach.size / 1024) + " KB" : String.format(Locale.getDefault(), "%.1f MB", attach.size / (1024.0 * 1024.0)));
             sizeTv.setText((CharSequence)sizeStr);
             sizeTv.setTextColor(Color.rgb(156, 163, 175));
             sizeTv.setTextSize(10.0f);
-            
+
             textLayout.addView((View)nameTv);
             textLayout.addView((View)sizeTv);
-            
+
             LinearLayout.LayoutParams textLayoutParams = new LinearLayout.LayoutParams(0, -2, 1.0f);
             textLayoutParams.setMargins(this.dp(6), 0, this.dp(6), 0);
             card.addView((View)textLayout, (ViewGroup.LayoutParams)textLayoutParams);
-            
+
             TextView deleteBtn = new TextView((Context)this);
             deleteBtn.setText((CharSequence)"✕");
             deleteBtn.setTextColor(Color.rgb(239, 68, 68));
@@ -1271,7 +1493,7 @@ extends Activity {
                 this.refreshAttachmentCards();
             });
             card.addView((View)deleteBtn, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-2, -2));
-            
+
             this.aiAttachmentContainer.addView((View)card);
         }
     }
@@ -1283,7 +1505,8 @@ extends Activity {
         String action = intent.getAction();
         if (action.endsWith(".extensions")) {
             this.selectTab("desktop");
-            this.setStatus("\u5df2\u4ece\u60ac\u6d6e\u8f6e\u76d8\u8fdb\u5165\u8fdc\u7a0b\u6269\u5c55\u3002\u70b9\u51fb\u6269\u5c55\u56fe\u6807\u4f1a\u8ba9\u7535\u8111\u7aef\u6267\u884c\u3002");
+            this.selectSubTab(1);
+            this.setStatus("已进入电脑小程序，点击即可在电脑运行。");
             this.refreshExtensions(true);
             this.scrollToView((View)this.extensionList);
         } else if (action.endsWith(".pick-photo")) {
@@ -1296,6 +1519,17 @@ extends Activity {
         } else if (action.endsWith(".run-mobile-extension")) {
             this.selectTab("mobile");
             this.openMobileExtensionEditor("\u8fd0\u884c\u624b\u673a\u6269\u5c55\uff1a\u786e\u8ba4 JSON \u540e\u70b9\u51fb\u201c\u8fd0\u884c\u624b\u673a\u811a\u672c\u201d\u3002");
+        } else if (action.endsWith(".sync-mobile-extensions")) {
+            this.selectTab("mobile");
+            this.setStatus("\u6b63\u5728\u540c\u6b65\u8d26\u53f7\u624b\u673a\u5c0f\u7a0b\u5e8f...");
+            this.syncMobileExtensionsFromCloud();
+        } else if (action.endsWith(".diagnose-cloud")) {
+            this.selectTab("profile");
+            this.diagnoseCloudConnectivity();
+        } else if (BuildConfig.APPLICATION_ID.endsWith(".dev")
+                && action.endsWith(".diagnose-extension-storage")) {
+            this.selectTab("profile");
+            this.diagnoseAccountExtensionStorage(intent);
         } else if (action.endsWith(".compose-text")) {
             this.selectTab("profile");
             this.focusTextComposer("\u4ece\u60ac\u6d6e\u8f6e\u76d8\u8fdb\u5165\u6587\u672c\u53d1\u9001\u3002\u8f93\u5165\u5185\u5bb9\u540e\u70b9\u51fb\u201c\u53d1\u9001\u5230\u7535\u8111\u201d\u3002");
@@ -1371,17 +1605,36 @@ extends Activity {
             this.prefs.edit().putString("aiSystemPrompt", DEFAULT_SYSTEM_PROMPT).apply();
         }
         this.aiTabPage.setOrientation(1);
-        this.aiTabPage.setBackgroundColor(Color.rgb((int)17, (int)17, (int)17));
+        this.aiTabPage.setBackgroundColor(ThemeConfig.COLOR_BACKGROUND);
         this.aiDrawerLayout = new DrawerLayout((Context)this);
         this.aiDrawerLayout.setFitsSystemWindows(true);
         android.widget.RelativeLayout mainContent = new android.widget.RelativeLayout((Context)this);
         LinearLayout topBar = new LinearLayout((Context)this);
         topBar.setId(10001);
         topBar.setOrientation(0);
-        topBar.setPadding(this.dp(16), this.dp(16), this.dp(16), this.dp(16));
+        topBar.setPadding(this.dp(12), this.dp(4), this.dp(12), this.dp(2));
         topBar.setGravity(16);
-        topBar.setBackgroundColor(Color.rgb(17, 17, 17));
-        
+        topBar.setBackgroundColor(ThemeConfig.COLOR_BACKGROUND);
+
+        View aiToolbarSpacer = new View((Context)this);
+        topBar.addView(aiToolbarSpacer, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, 1, 1.0f));
+
+        TextView aiDataBtn = YanziUiKit.text(this, "数据", 13, YanziUiKit.SECONDARY, true);
+        aiDataBtn.setGravity(Gravity.CENTER);
+        aiDataBtn.setPadding(this.dp(12), this.dp(8), this.dp(12), this.dp(8));
+        aiDataBtn.setClickable(true);
+        aiDataBtn.setFocusable(true);
+        aiDataBtn.setOnClickListener(v -> this.startActivity(new Intent(this, AiDataAccessActivity.class)));
+        topBar.addView((View)aiDataBtn);
+
+        TextView aiHistoryBtn = YanziUiKit.text(this, "历史", 13, YanziUiKit.SECONDARY, true);
+        aiHistoryBtn.setGravity(Gravity.CENTER);
+        aiHistoryBtn.setPadding(this.dp(12), this.dp(8), this.dp(12), this.dp(8));
+        aiHistoryBtn.setClickable(true);
+        aiHistoryBtn.setFocusable(true);
+        aiHistoryBtn.setOnClickListener(v -> this.aiDrawerLayout.openDrawer(Gravity.LEFT));
+        topBar.addView((View)aiHistoryBtn);
+
         android.widget.RelativeLayout.LayoutParams topParams = new android.widget.RelativeLayout.LayoutParams(-1, -2);
         topParams.addRule(android.widget.RelativeLayout.ALIGN_PARENT_TOP);
         mainContent.addView((View)topBar, (ViewGroup.LayoutParams)topParams);
@@ -1390,6 +1643,7 @@ extends Activity {
         this.aiChatHistory = new LinearLayout((Context)this);
         this.aiChatHistory.setOrientation(1);
         this.aiChatHistory.setPadding(this.dp(16), this.dp(8), this.dp(16), this.dp(16));
+        chatScroll.setBackgroundColor(ThemeConfig.COLOR_BACKGROUND);
         chatScroll.addView((View)this.aiChatHistory);
 
         View.OnLongClickListener clearHistoryListener = v -> {
@@ -1419,7 +1673,7 @@ extends Activity {
         chatParams.addRule(android.widget.RelativeLayout.BELOW, 10001);
         chatParams.addRule(android.widget.RelativeLayout.ABOVE, 10002);
         mainContent.addView((View)chatScroll, (ViewGroup.LayoutParams)chatParams);
-        
+
         this.aiAttachmentScrollView = new HorizontalScrollView((Context)this);
         this.aiAttachmentScrollView.setVisibility(View.GONE);
         this.aiAttachmentScrollView.setBackgroundColor(Color.rgb(26, 26, 26));
@@ -1432,7 +1686,7 @@ extends Activity {
 
         LinearLayout bottomShell = new LinearLayout((Context)this);
         bottomShell.setOrientation(1);
-        bottomShell.setBackgroundColor(Color.rgb((int)22, (int)22, (int)22));
+        bottomShell.setBackground(YanziUiKit.bg(Color.rgb(10, 21, 35), 18, YanziUiKit.STROKE, 1));
         this.ttsStopButton = this.button("停止朗读");
         this.ttsStopButton.setTextColor(Color.rgb((int)248, (int)250, (int)252));
         GradientDrawable stopTtsBg = new GradientDrawable();
@@ -1526,7 +1780,7 @@ extends Activity {
         speakParams.rightMargin = this.dp(4);
         bottomArea.addView((View)this.holdToSpeakBtn, (ViewGroup.LayoutParams)speakParams);
 
-        this.aiChatInput = this.multiInput("\u7535\u8111\u6269\u5c55 | \u624b\u673a\u6269\u5c55 | \u71d5\u5e55", "");
+        this.aiChatInput = this.multiInput("告诉燕子你要做什么…", "");
         this.aiChatInput.setTextSize(14.0f);
         this.aiChatInput.setBackground(null);
         this.aiChatInput.setPadding(this.dp(12), this.dp(10), this.dp(12), this.dp(10));
@@ -1560,6 +1814,7 @@ extends Activity {
         this.aiSendButtonDefaultBackground = this.aiSendButton.getBackground();
         this.aiSendButton.setOnClickListener(v -> this.handleAiSendButtonClick());
         bottomArea.addView((View)this.aiSendButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(70), this.dp(48)));
+        bottomShell.addView((View)bottomArea, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -2));
         bottomShell.setId(10002);
         android.widget.RelativeLayout.LayoutParams bottomParams = new android.widget.RelativeLayout.LayoutParams(-1, -2);
         bottomParams.addRule(android.widget.RelativeLayout.ALIGN_PARENT_BOTTOM);
@@ -1595,8 +1850,8 @@ extends Activity {
         this.mainScrollView = scrollView = new androidx.core.widget.NestedScrollView((Context)this);
         LinearLayout root = new LinearLayout((Context)this);
         root.setOrientation(1);
-        root.setPadding(this.dp(20), this.dp(24), this.dp(20), this.dp(24));
-        scrollView.addView((View)root);
+        root.setPadding(this.dp(16), this.dp(18), this.dp(16), this.dp(16));
+        scrollView.addView((View)root, (ViewGroup.LayoutParams)new android.widget.FrameLayout.LayoutParams(-1, -2));
         this.swipeRefresh = new SwipeRefreshLayout((Context)this) {
             private float startX;
             private float startY;
@@ -1612,19 +1867,30 @@ extends Activity {
                     case android.view.MotionEvent.ACTION_MOVE:
                         float diffX = Math.abs(ev.getX() - startX);
                         float diffY = Math.abs(ev.getY() - startY);
-                        
+
                         // 1. 如果水平滑动位移明显大于垂直位移，说明是左右滑动切换 Tab，不予拦截
                         if (diffX > touchSlop && diffX > diffY) {
                             return false;
                         }
-                        
-                        // 2. 增加下滑距离判定：下拉距离不到 30dp 时，不予拦截，给子 View 自主滚动机会
+
+                        // 2. 向上滑动永远交给内容滚动；SwipeRefresh 只处理从顶部向下拉。
+                        if (ev.getY() < startY) {
+                            return false;
+                        }
+
+                        // 3. 下拉距离不到 30dp 时，不予拦截，给子 View 自主滚动机会。
                         if (diffY < MainActivity.this.dp(30)) {
                             return false;
                         }
-                        
-                        // 3. 聊天页下拉应滚动消息，不触发全局刷新。
-                        if (MainActivity.this.desktopExtensionTabPage != null && 
+
+                        // 4. 当前内容还能向上滚时，不应触发下拉刷新。
+                        if (MainActivity.this.mainScrollView != null
+                                && MainActivity.this.mainScrollView.canScrollVertically(-1)) {
+                            return false;
+                        }
+
+                        // 5. 聊天页下拉应滚动消息，不触发全局刷新。
+                        if (MainActivity.this.desktopExtensionTabPage != null &&
                             MainActivity.this.desktopExtensionTabPage.getVisibility() == android.view.View.VISIBLE) {
                             if (MainActivity.this.currentSubTabIndex == 0) {
                                 return false;
@@ -1670,108 +1936,32 @@ extends Activity {
         root.addView((View)this.yanmTabPage);
         root.addView((View)this.mobileExtensionTabPage);
         root.addView((View)this.profileTabPage);
-        LinearLayout yanmHeader = new LinearLayout((Context)this);
-        yanmHeader.setOrientation(LinearLayout.HORIZONTAL);
-        yanmHeader.setGravity(Gravity.CENTER_VERTICAL);
-        
-        TextView yanmTitle = this.textView("\u71d5\u5e55", 28, -1, true);
-        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(0, -2, 1.0f);
-        yanmHeader.addView((View)yanmTitle, (ViewGroup.LayoutParams)titleParams);
-        
-        Button btnSyncLog = new Button((Context)this);
-        btnSyncLog.setText((CharSequence)"\u540c\u6b65\u8bb0\u5f55");
-        btnSyncLog.setTextColor(Color.rgb(34, 211, 238));
-        btnSyncLog.setBackgroundColor(Color.TRANSPARENT);
-        btnSyncLog.setTextSize(14f);
-        btnSyncLog.setAllCaps(false);
-        this.yanmTabPage.addView((View)yanmHeader);
-        
-        this.yanmTabPage.addView((View)this.textView("\u67e5\u770b\u548c\u64cd\u4f5c\u7535\u8111\u7aef\u540c\u6b65\u7684\u71d5\u5e55\u7ec4\u4ef6\u3002", 14, Color.rgb((int)182, (int)194, (int)214), false));
-        this.yanmList = new GridLayout((Context)this);
-        this.yanmList.setColumnCount(1);
-        this.yanmList.setAlignmentMode(0);
-        this.yanmList.setUseDefaultMargins(false);
-        this.yanmTabPage.addView((View)this.yanmList, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -2));
+        this.homeDashboard = HomeDashboardView.populate(
+                this,
+                this.yanmTabPage);
+        this.yanmList = this.homeDashboard.yanmList;
+        this.developerDashboard = DeveloperDashboardView.populate(
+                this,
+                this.mobileExtensionTabPage,
+                () -> this.selectMobileSubTab(0),
+                () -> this.selectMobileSubTab(1),
+                () -> this.selectMobileSubTab(2));
 
-        LinearLayout flatLogPanel = new LinearLayout((Context)this);
-        flatLogPanel.setOrientation(LinearLayout.VERTICAL);
-        flatLogPanel.setPadding(0, this.dp(16), 0, 0);
-        
-        LinearLayout flatLogHeader = new LinearLayout((Context)this);
-        flatLogHeader.setOrientation(LinearLayout.HORIZONTAL);
-        flatLogHeader.setGravity(Gravity.CENTER_VERTICAL);
-        flatLogHeader.setPadding(0, 0, 0, this.dp(8));
-        
-        TextView flatLogTitle = this.textView("\u540c\u6b65\u4e0e\u8fde\u63a5\u65e5\u5fd7", 16, ThemeConfig.COLOR_TEXT_PRIMARY, true);
-        flatLogHeader.addView((View)flatLogTitle, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -2, 1.0f));
-        
-        Button btnCopyLog = this.button("\u590d\u5236");
-        btnCopyLog.setTextSize(12f);
-        btnCopyLog.setPadding(this.dp(8), this.dp(4), this.dp(8), this.dp(4));
-        btnCopyLog.setOnClickListener(v -> {
-            String logText = this.getYanmSyncLogs();
-            ClipboardManager manager = (ClipboardManager)this.getSystemService("clipboard");
-            if (manager != null) {
-                manager.setPrimaryClip(ClipData.newPlainText("logs", logText));
-                Toast.makeText(this.getApplicationContext(), "\u65e5\u5fd7\u5df2\u590d\u5236", Toast.LENGTH_SHORT).show();
-            }
-        });
-        
-        Button btnClearLog = this.button("\u6e05\u7a7a");
-        btnClearLog.setTextSize(12f);
-        btnClearLog.setPadding(this.dp(8), this.dp(4), this.dp(8), this.dp(4));
-        btnClearLog.setOnClickListener(v -> {
-            MobileDiagnostics.clear((Context)this);
-            this.flatLogTv.setText("");
-            Toast.makeText(this.getApplicationContext(), "\u65e5\u5fd7\u5df2\u6e05\u7a7a", Toast.LENGTH_SHORT).show();
-        });
-        
-        LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(this.dp(60), this.dp(32));
-        btnLp.leftMargin = this.dp(8);
-        flatLogHeader.addView((View)btnCopyLog, (ViewGroup.LayoutParams)btnLp);
-        flatLogHeader.addView((View)btnClearLog, (ViewGroup.LayoutParams)btnLp);
-        flatLogPanel.addView((View)flatLogHeader);
-        
-        this.flatLogScrollView = new androidx.core.widget.NestedScrollView((Context)this);
-        this.flatLogScrollView.setBackgroundColor(ThemeConfig.COLOR_BACKGROUND);
-        this.flatLogScrollView.setPadding(this.dp(10), this.dp(10), this.dp(10), this.dp(10));
-        
-        GradientDrawable gdLog = new GradientDrawable();
-        gdLog.setColor(ThemeConfig.COLOR_CARD_BACKGROUND);
-        gdLog.setCornerRadius((float)this.dp(8));
-        this.flatLogScrollView.setBackground((Drawable)gdLog);
-        
-        this.flatLogTv = new TextView((Context)this);
-        this.flatLogTv.setTextSize(11f);
-        this.flatLogTv.setTextColor(ThemeConfig.COLOR_TEXT_SECONDARY);
-        this.flatLogTv.setTypeface(Typeface.MONOSPACE);
-        this.flatLogTv.setText((CharSequence)this.getYanmSyncLogs());
-        this.flatLogScrollView.addView((View)this.flatLogTv);
-        
-        flatLogPanel.addView((View)this.flatLogScrollView, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, this.dp(180)));
-        this.yanmTabPage.addView((View)flatLogPanel);
         // 手机端子 Tab 栏
         this.mobileSubTabBar = new LinearLayout((Context)this);
         mobileSubTabBar.setOrientation(0);
         mobileSubTabBar.setGravity(16);
-        mobileSubTabBar.setPadding(this.dp(16), this.dp(16), this.dp(16), this.dp(8));
-        
+        mobileSubTabBar.setPadding(this.dp(8), this.dp(6), this.dp(8), this.dp(6));
+        mobileSubTabBar.setBackground(YanziUiKit.bg(YanziUiKit.CARD_ALT, 16, YanziUiKit.STROKE, 1));
+
         this.btnShowMobileExtensions = new android.widget.Button((Context)this);
-        this.btnShowMobileExtensions.setText((CharSequence)"\u6269\u5c55"); // "扩展"
+        this.btnShowMobileExtensions.setText((CharSequence)"小程序");
         this.btnShowMobileExtensions.setTextColor(Color.rgb(148, 163, 184));
         this.btnShowMobileExtensions.setBackgroundColor(Color.TRANSPARENT);
         this.btnShowMobileExtensions.setPadding(this.dp(12), this.dp(8), this.dp(12), this.dp(8));
         this.btnShowMobileExtensions.setAllCaps(false);
         this.btnShowMobileExtensions.setTextSize(13f);
-        
-        this.btnShowMobileDocs = new android.widget.Button((Context)this);
-        this.btnShowMobileDocs.setText((CharSequence)"\u6587\u6863"); // "文档"
-        this.btnShowMobileDocs.setTextColor(Color.rgb(148, 163, 184));
-        this.btnShowMobileDocs.setBackgroundColor(Color.TRANSPARENT);
-        this.btnShowMobileDocs.setPadding(this.dp(12), this.dp(8), this.dp(12), this.dp(8));
-        this.btnShowMobileDocs.setAllCaps(false);
-        this.btnShowMobileDocs.setTextSize(13f);
-        
+
         this.btnShowMobileShell = new android.widget.Button((Context)this);
         this.btnShowMobileShell.setText((CharSequence)"\u624b\u673a\u7ec8\u7aef"); // "手机终端"
         this.btnShowMobileShell.setTextColor(Color.rgb(148, 163, 184));
@@ -1779,36 +1969,49 @@ extends Activity {
         this.btnShowMobileShell.setPadding(this.dp(12), this.dp(8), this.dp(12), this.dp(8));
         this.btnShowMobileShell.setAllCaps(false);
         this.btnShowMobileShell.setTextSize(13f);
-        
+
         LinearLayout.LayoutParams mobileBtnParams = new LinearLayout.LayoutParams(-2, this.dp(36));
         mobileBtnParams.rightMargin = this.dp(8);
         mobileSubTabBar.addView((View)this.btnShowMobileExtensions, (ViewGroup.LayoutParams)mobileBtnParams);
-        mobileSubTabBar.addView((View)this.btnShowMobileDocs, (ViewGroup.LayoutParams)mobileBtnParams);
         mobileSubTabBar.addView((View)this.btnShowMobileShell, (ViewGroup.LayoutParams)mobileBtnParams);
-        
+
         this.btnShowMobileExtensions.setOnClickListener(v -> this.selectMobileSubTab(0));
-        this.btnShowMobileDocs.setOnClickListener(v -> this.selectMobileSubTab(1));
         this.btnShowMobileShell.setOnClickListener(v -> this.selectMobileSubTab(2));
-        
-        this.mobileExtensionTabPage.addView((View)mobileSubTabBar);
+
 
         this.mobileExtensionListView = new LinearLayout((Context)this);
         this.mobileExtensionListView.setOrientation(1);
         this.mobileExtensionListView.setPadding(this.dp(16), this.dp(8), this.dp(16), this.dp(16));
-        
+
+        LinearLayout miniProgramHeader = new LinearLayout((Context)this);
+        miniProgramHeader.setOrientation(LinearLayout.HORIZONTAL);
+        miniProgramHeader.setGravity(Gravity.CENTER_VERTICAL);
+        miniProgramHeader.setPadding(0, this.dp(4), 0, this.dp(10));
+        this.mobileExtensionListTitle = YanziUiKit.text(
+                this,
+                "本机小程序 · " + this.readLocalMobileExtensions().length(),
+                13,
+                YanziUiKit.SECONDARY,
+                true);
+        miniProgramHeader.addView(
+                this.mobileExtensionListTitle,
+                new LinearLayout.LayoutParams(0, -2, 1f));
+
+        TextView newMiniProgram = YanziUiKit.text(this, "+ 新建小程序", 13, YanziUiKit.BLUE, true);
+        newMiniProgram.setPadding(this.dp(10), this.dp(8), 0, this.dp(8));
+        newMiniProgram.setClickable(true);
+        newMiniProgram.setFocusable(true);
+        newMiniProgram.setOnClickListener(v -> this.openNewMobileExtensionEditor());
+        miniProgramHeader.addView(newMiniProgram);
+        this.mobileExtensionListView.addView(miniProgramHeader);
+
         this.mobileExtensionEditorView = new LinearLayout((Context)this);
         this.mobileExtensionEditorView.setOrientation(1);
         this.mobileExtensionEditorView.setPadding(this.dp(6), this.dp(12), this.dp(6), this.dp(12));
         this.mobileExtensionEditorView.setVisibility(View.GONE);
-        
-        this.mobileDocsScrollView = new androidx.core.widget.NestedScrollView((Context)this);
-        this.mobileDocsScrollView.setNestedScrollingEnabled(true);
-        this.mobileDocsScrollView.setPadding(this.dp(16), this.dp(8), this.dp(16), this.dp(16));
-        
-        this.mobileDocsContainer = new android.widget.LinearLayout((Context)this);
-        this.mobileDocsContainer.setOrientation(1);
-        this.mobileDocsScrollView.addView((View)this.mobileDocsContainer, (ViewGroup.LayoutParams)new android.widget.FrameLayout.LayoutParams(-1, -2));
-        
+
+        this.applicationStore=new ApplicationCatalogView(this,true);
+        View storePage=this.applicationStore.createView();
         this.mobileShellContainer = new android.widget.LinearLayout((Context)this);
         this.mobileShellContainer.setOrientation(1);
         this.mobileShellContainer.setPadding(this.dp(16), this.dp(8), this.dp(16), this.dp(16));
@@ -1816,12 +2019,12 @@ extends Activity {
         // 新建并配置 ViewPager
         this.mobileViewPager = new androidx.viewpager.widget.ViewPager((Context)this);
         this.mobileViewPager.setId(android.view.View.generateViewId());
-        
+
         final java.util.List<View> mobilePages = new java.util.ArrayList<>();
         mobilePages.add(this.mobileExtensionListView);
-        mobilePages.add(this.mobileDocsScrollView);
+        mobilePages.add(storePage);
         mobilePages.add(this.mobileShellContainer);
-        
+
         this.mobileViewPager.setAdapter(new androidx.viewpager.widget.PagerAdapter() {
             @Override
             public int getCount() {
@@ -1842,16 +2045,16 @@ extends Activity {
                 container.removeView((View)object);
             }
         });
-        
+
         this.mobileViewPager.addOnPageChangeListener(new androidx.viewpager.widget.ViewPager.OnPageChangeListener() {
             @Override
             public void onPageScrolled(int position, float positionOffset, int positionOffsetPixels) {}
-            
+
             @Override
             public void onPageSelected(int position) {
                 MainActivity.this.selectMobileSubTab(position);
             }
-            
+
             @Override
             public void onPageScrollStateChanged(int state) {}
         });
@@ -1863,43 +2066,22 @@ extends Activity {
         }
         this.mobileExtensionTabPage.addView((View)this.mobileViewPager, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, mobilePagerHeight));
         this.mobileExtensionTabPage.addView((View)this.mobileExtensionEditorView);
-        
+
         // 渲染文档内容
-        this.buildMobileDocsView(this.mobileDocsContainer);
+        // Documentation is no longer a phone workspace.
         // 渲染终端内容
         this.buildMobileShellView(this.mobileShellContainer);
-        
+
         // 默认选中第一个子 Tab
         this.selectMobileSubTab(0);
-        
-        // 渲染 List 页面头部 (移除了大标题，只保留新建按钮，置右排布)
-        LinearLayout listHeader = new LinearLayout((Context)this);
-        listHeader.setOrientation(0);
-        listHeader.setGravity(5); // Gravity.RIGHT is 5
-        listHeader.setPadding(0, 0, 0, this.dp(12));
-        
-        // 加一个漂亮的“新建”按钮在主列表右上角
-        Button newExtBtn = this.button("\u65b0\u5efa\u6269\u5c55");
-        newExtBtn.setOnClickListener(v -> {
-            this.isEditingMobileExtension = true;
-            this.mobileExtensionInput.setText((CharSequence)this.defaultMobileExtensionJson());
-            this.updateMobileExtensionFieldsFromDraft();
-            // 在编辑状态下，隐藏 ViewPager，显示编辑界面
-            this.mobileViewPager.setVisibility(View.GONE);
-            if (this.mobileSubTabBar != null) this.mobileSubTabBar.setVisibility(View.GONE);
-            this.mobileExtensionEditorView.setVisibility(View.VISIBLE);
-            this.setStatus("\u65b0\u5efa\u6269\u5c55\u8349\u7a3f");
-        });
-        listHeader.addView((View)newExtBtn, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-2, this.dp(40)));
-        this.mobileExtensionListView.addView((View)listHeader);
-        
+
         // 网格展示容器
         this.mobileExtensionGrid = new GridLayout((Context)this);
         this.mobileExtensionGrid.setColumnCount(4); // 4 列网格
         this.mobileExtensionGrid.setAlignmentMode(0);
         this.mobileExtensionGrid.setUseDefaultMargins(true);
         this.mobileExtensionListView.addView((View)this.mobileExtensionGrid, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -2));
-        
+
         // 在编辑二级界面最上面，增加一个返回导航栏！
         LinearLayout editorNavBar = new LinearLayout((Context)this);
         editorNavBar.setOrientation(0);
@@ -1910,41 +2092,50 @@ extends Activity {
             this.isEditingMobileExtension = false;
             this.mobileExtensionEditorView.setVisibility(View.GONE);
             this.mobileViewPager.setVisibility(View.VISIBLE);
-            if (this.mobileSubTabBar != null) this.mobileSubTabBar.setVisibility(View.VISIBLE);
-            this.setStatus("\u5df2\u8fd4\u56de\u624b\u673a\u6269\u5c55\u5217\u8868");
+            this.setStatus("已返回手机小程序列表");
         });
         editorNavBar.addView((View)backBtn, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-2, this.dp(40)));
-        TextView navTitle = this.textView("  \u7f16\u8f91\u624b\u673a\u6269\u5c55", 18, -1, true);
+        TextView navTitle = this.textView("  编辑手机小程序", 18, -1, true);
         editorNavBar.addView((View)navTitle);
         this.mobileExtensionEditorView.addView((View)editorNavBar);
-        
+
         this.buildMobileExtensionEditor(this.mobileExtensionEditorView);
+        this.desktopDashboard = DesktopDashboardView.populate(
+                this,
+                this.desktopExtensionTabPage,
+                () -> this.selectSubTab(0),
+                () -> this.selectSubTab(1),
+                () -> this.selectSubTab(2),
+                () -> this.selectSubTab(3));
+        this.desktopDashboard.conversation(chatConversation.name,this::showChatConversations);
+
         // 子 Tab 条
         LinearLayout subTabBar = new LinearLayout((Context)this);
         subTabBar.setOrientation(0);
         subTabBar.setGravity(16);
-        subTabBar.setPadding(this.dp(20), 0, this.dp(20), this.dp(12));
-        
+        subTabBar.setPadding(this.dp(8), this.dp(6), this.dp(8), this.dp(6));
+        subTabBar.setBackground(YanziUiKit.bg(YanziUiKit.CARD_ALT, 16, YanziUiKit.STROKE, 1));
+
         this.btnShowChat = new Button((Context)this);
         this.btnShowChat.setText((CharSequence)"聊天");
-        this.btnShowChat.setTextColor(Color.rgb(34, 211, 238));
+        this.btnShowChat.setTextColor(YanziUiKit.BLUE);
         this.btnShowChat.setPadding(this.dp(12), this.dp(8), this.dp(12), this.dp(8));
         this.btnShowChat.setAllCaps(false);
         this.btnShowChat.setTextSize(13f);
-        
+
         GradientDrawable activeBg = new GradientDrawable();
         activeBg.setCornerRadius((float)this.dp(8));
         activeBg.setColor(Color.argb(20, 34, 211, 238));
         this.btnShowChat.setBackground((android.graphics.drawable.Drawable)activeBg);
 
         this.btnShowExtensions = new Button((Context)this);
-        this.btnShowExtensions.setText((CharSequence)"电脑扩展");
+        this.btnShowExtensions.setText((CharSequence)"小程序");
         this.btnShowExtensions.setTextColor(Color.rgb(148, 163, 184));
         this.btnShowExtensions.setBackgroundColor(Color.TRANSPARENT);
         this.btnShowExtensions.setPadding(this.dp(12), this.dp(8), this.dp(12), this.dp(8));
         this.btnShowExtensions.setAllCaps(false);
         this.btnShowExtensions.setTextSize(13f);
-        
+
         this.btnShowFileManager = new Button((Context)this);
         this.btnShowFileManager.setText((CharSequence)"文件管理");
         this.btnShowFileManager.setTextColor(Color.rgb(148, 163, 184));
@@ -1960,32 +2151,32 @@ extends Activity {
         this.btnShowShell.setPadding(this.dp(12), this.dp(8), this.dp(12), this.dp(8));
         this.btnShowShell.setAllCaps(false);
         this.btnShowShell.setTextSize(13f);
-        
+
         LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(-2, this.dp(36));
         btnParams.rightMargin = this.dp(8);
         subTabBar.addView((View)this.btnShowChat, (ViewGroup.LayoutParams)btnParams);
         subTabBar.addView((View)this.btnShowExtensions, (ViewGroup.LayoutParams)btnParams);
         subTabBar.addView((View)this.btnShowFileManager, (ViewGroup.LayoutParams)btnParams);
         subTabBar.addView((View)this.btnShowShell, (ViewGroup.LayoutParams)btnParams);
-        
+
         LinearLayout desktopHeader = new LinearLayout((Context)this);
         desktopHeader.setOrientation(0);
         desktopHeader.setGravity(16);
         desktopHeader.setPadding(this.dp(20), this.dp(24), this.dp(20), this.dp(10));
-        
-        TextView tvTitle = this.textView("电脑", 28, -1, true);
-        desktopHeader.addView((View)tvTitle);
-        
+
+
+
         this.tvDesktopConnectionStatus = new TextView((Context)this);
         this.tvDesktopConnectionStatus.setTextSize(14f);
         this.tvDesktopConnectionStatus.setPadding(this.dp(8), this.dp(6), 0, 0);
         this.tvDesktopConnectionStatus.setTextColor(Color.rgb(148, 163, 184));
-        desktopHeader.addView((View)this.tvDesktopConnectionStatus);
-        
-        this.desktopExtensionTabPage.addView((View)desktopHeader);
-        
+        this.tvDesktopConnectionStatus.setVisibility(View.GONE);
+
+        // Connection state still updates tvDesktopConnectionStatus; the new dashboard owns the visible header.
+
         this.offlineHintView = new LinearLayout((Context)this);
         this.offlineHintView.setOrientation(1);
+        this.offlineHintView.setVisibility(View.GONE);
         this.offlineHintView.setGravity(17);
         this.offlineHintView.setPadding(0, this.dp(100), 0, this.dp(100));
 
@@ -2005,18 +2196,17 @@ extends Activity {
         this.offlineHintView.addView((View)this.tvDesktopOfflineTitle);
         this.offlineHintView.addView((View)this.tvDesktopOfflineDesc);
         this.desktopExtensionTabPage.addView((View)this.offlineHintView);
-        
+
         this.mainDesktopContentLayout = new LinearLayout((Context)this);
         this.mainDesktopContentLayout.setOrientation(1);
         this.mainDesktopContentLayout.setVisibility(0);
-        this.mainDesktopContentLayout.addView((View)subTabBar);
         this.desktopExtensionTabPage.addView((View)this.mainDesktopContentLayout, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, 0, 1.0f));
-        
+
         LinearLayout extensionsContainer = new LinearLayout((Context)this);
         this.extensionsContainer = extensionsContainer;
         extensionsContainer.setOrientation(1);
         extensionsContainer.setPadding(this.dp(20), 0, this.dp(20), 0);
-        
+
         LinearLayout fileManagerContainer = new LinearLayout((Context)this);
         this.fileManagerContainer = fileManagerContainer;
         fileManagerContainer.setOrientation(1);
@@ -2024,18 +2214,18 @@ extends Activity {
         LinearLayout shellContainer = new LinearLayout((Context)this);
         this.shellContainer = shellContainer;
         shellContainer.setOrientation(1);
-        
+
         this.desktopViewPager = new androidx.viewpager.widget.ViewPager((Context)this);
         this.desktopViewPager.setId(android.view.View.generateViewId());
-        
+
         LinearLayout chatContainer = this.buildChatContainer();
-        
+
         final List<View> pages = new java.util.ArrayList<>();
         pages.add(chatContainer);
         pages.add(extensionsContainer);
         pages.add(fileManagerContainer);
         pages.add(shellContainer);
-        
+
         this.desktopViewPager.setAdapter(new androidx.viewpager.widget.PagerAdapter() {
             @Override
             public int getCount() {
@@ -2056,25 +2246,25 @@ extends Activity {
                 container.removeView((View)object);
             }
         });
-        
+
         this.desktopViewPager.addOnPageChangeListener(new androidx.viewpager.widget.ViewPager.OnPageChangeListener() {
             @Override
             public void onPageScrolled(int position, float positionOffset, int positionOffsetPixels) {}
-            
+
             @Override
             public void onPageSelected(int position) {
                 MainActivity.this.selectSubTab(position);
             }
-            
+
             @Override
             public void onPageScrollStateChanged(int state) {}
         });
-        
+
         this.btnShowChat.setOnClickListener(v -> this.selectSubTab(0));
         this.btnShowExtensions.setOnClickListener(v -> this.selectSubTab(1));
         this.btnShowFileManager.setOnClickListener(v -> this.selectSubTab(2));
         this.btnShowShell.setOnClickListener(v -> this.selectSubTab(3));
-        
+
         this.mainDesktopContentLayout.addView((View)this.desktopViewPager, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, 0, 1.0f));
 
         LinearLayout extensionsSearchRow = new LinearLayout((Context)this);
@@ -2082,27 +2272,27 @@ extends Activity {
         extensionsSearchRow.setGravity(16);
         LinearLayout.LayoutParams searchRowParams = new LinearLayout.LayoutParams(-1, -2);
         searchRowParams.setMargins(0, this.dp(10), 0, this.dp(10));
-        
+
         this.searchDesktopExtensionsInput = new EditText((Context)this);
-        this.searchDesktopExtensionsInput.setHint((CharSequence)"\u641c\u7d22\u7b5b\u9009\u6269\u5c55...");
+        this.searchDesktopExtensionsInput.setHint((CharSequence)"\u641c\u7d22\u5c0f\u7a0b\u5e8f...");
         this.searchDesktopExtensionsInput.setTextColor(-1);
         this.searchDesktopExtensionsInput.setHintTextColor(Color.rgb((int)148, (int)163, (int)184));
         this.searchDesktopExtensionsInput.setBackgroundColor(Color.rgb((int)15, (int)23, (int)42));
         this.searchDesktopExtensionsInput.setPadding(this.dp(10), this.dp(8), this.dp(10), this.dp(8));
         this.searchDesktopExtensionsInput.setSingleLine(true);
-        
+
         Button btnSearchExtensions = new Button((Context)this);
         btnSearchExtensions.setText((CharSequence)"搜索");
         btnSearchExtensions.setTextColor(-1);
         btnSearchExtensions.setBackgroundColor(Color.rgb(30, 41, 59));
         btnSearchExtensions.setAllCaps(false);
-        
+
         LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(0, -2, 1.0f);
         inputParams.rightMargin = this.dp(8);
         extensionsSearchRow.addView((View)this.searchDesktopExtensionsInput, (ViewGroup.LayoutParams)inputParams);
         extensionsSearchRow.addView((View)btnSearchExtensions, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(70), this.dp(36)));
         extensionsContainer.addView((View)extensionsSearchRow);
-        
+
         this.searchDesktopExtensionsInput.addTextChangedListener(new TextWatcher(){
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
             public void onTextChanged(CharSequence s, int start, int before, int count) {
@@ -2118,7 +2308,7 @@ extends Activity {
             }
             MainActivity.this.hideKeyboard((View)MainActivity.this.searchDesktopExtensionsInput);
         });
-        
+
         this.extensionList = new LinearLayout((Context)this);
         this.extensionList.setOrientation(1);
 
@@ -2126,7 +2316,7 @@ extends Activity {
         extensionsScrollView.setNestedScrollingEnabled(true);
         extensionsScrollView.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
         extensionsScrollView.addView((View)this.extensionList);
-        
+
         LinearLayout.LayoutParams extScrollParams = new LinearLayout.LayoutParams(-1, 0, 1.0f);
         extensionsContainer.addView((View)extensionsScrollView, (ViewGroup.LayoutParams)extScrollParams);
         this.renderCachedExtensions();
@@ -2135,13 +2325,13 @@ extends Activity {
         LinearLayout shellPanel = new LinearLayout((Context)this);
         shellPanel.setOrientation(1);
         shellPanel.setPadding(0, this.dp(8), 0, this.dp(16));
-        
+
         // 顶部小指示栏（macOS 终端窗口风格小圆点 + 标题）
         LinearLayout shellTitleBar = new LinearLayout((Context)this);
         shellTitleBar.setOrientation(0);
         shellTitleBar.setGravity(16);
         shellTitleBar.setPadding(0, 0, 0, this.dp(6));
-        
+
         int[] dotColors = {Color.rgb(239, 68, 68), Color.rgb(245, 158, 11), Color.rgb(34, 197, 94)};
         for (int c : dotColors) {
             View dot = new View((Context)this);
@@ -2153,12 +2343,12 @@ extends Activity {
             dp.rightMargin = this.dp(6);
             shellTitleBar.addView(dot, dp);
         }
-        
+
         TextView shellTitle = this.textView("PowerShell", 14, Color.rgb(156, 163, 175), true);
         shellTitle.setTypeface(Typeface.MONOSPACE);
         shellTitleBar.addView(shellTitle);
         shellPanel.addView(shellTitleBar);
-        
+
         // 1. 输出局部 ScrollView (sv) 在上方
         androidx.core.widget.NestedScrollView sv = new androidx.core.widget.NestedScrollView((Context)this);
         sv.setNestedScrollingEnabled(true);
@@ -2171,25 +2361,25 @@ extends Activity {
         this.tvShellOutput.setTextSize(11f);
         this.tvShellOutput.setText((CharSequence)"等待命令输入...");
         this.tvShellOutput.setVisibility(8);
-        
+
         sv.addView((View)this.tvShellOutput);
         LinearLayout.LayoutParams outputParams = new LinearLayout.LayoutParams(-1, 0, 1.0f);
         shellPanel.addView((View)sv, (ViewGroup.LayoutParams)outputParams);
-        
+
         // 2. 输入行在下方
         LinearLayout shellInputRow = new LinearLayout((Context)this);
         shellInputRow.setOrientation(0);
         shellInputRow.setGravity(16);
         shellInputRow.setPadding(this.dp(4), this.dp(4), this.dp(4), this.dp(4));
         shellInputRow.setBackgroundColor(Color.rgb(15, 23, 42)); // 极深灰底框
-        
+
         TextView tvPrompt = new TextView((Context)this);
         tvPrompt.setText("PS > ");
         tvPrompt.setTextColor(Color.rgb(34, 211, 238)); // 青色高亮提示符
         tvPrompt.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
         tvPrompt.setTextSize(13f);
         shellInputRow.addView(tvPrompt);
-        
+
         this.etShellInput = new EditText((Context)this);
         this.etShellInput.setHint((CharSequence)"输入命令...");
         this.etShellInput.setTextColor(-1);
@@ -2200,23 +2390,23 @@ extends Activity {
         this.etShellInput.setTypeface(Typeface.MONOSPACE);
         this.etShellInput.setTextSize(13f);
         this.etShellInput.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEND);
-        
+
         Button btnRunShell = new Button((Context)this);
         btnRunShell.setText((CharSequence)"执行");
         btnRunShell.setTextColor(-1);
         btnRunShell.setBackgroundColor(Color.rgb(30, 41, 59));
         btnRunShell.setAllCaps(false);
         btnRunShell.setTextSize(11f);
-        
+
         LinearLayout.LayoutParams shellInputParams = new LinearLayout.LayoutParams(0, -2, 1.0f);
         shellInputParams.rightMargin = this.dp(6);
         shellInputRow.addView((View)this.etShellInput, (ViewGroup.LayoutParams)shellInputParams);
         shellInputRow.addView((View)btnRunShell, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(55), this.dp(30)));
-        
+
         LinearLayout.LayoutParams inputRowParams = new LinearLayout.LayoutParams(-1, -2);
         inputRowParams.topMargin = this.dp(6);
         shellPanel.addView((View)shellInputRow, inputRowParams);
-        
+
         // 3. 快捷辅助按键栏 (Extra Keys)
         HorizontalScrollView extraKeysScroll = new HorizontalScrollView((Context)this);
         extraKeysScroll.setHorizontalScrollBarEnabled(false);
@@ -2224,7 +2414,7 @@ extends Activity {
         extraKeysLayout.setOrientation(0);
         extraKeysLayout.setGravity(16);
         extraKeysScroll.addView((View)extraKeysLayout);
-        
+
         String[] keys = {"TAB", "Ctrl+C", "↑", "↓", "CLS", "HELP"};
         for (String key : keys) {
             Button kBtn = new Button((Context)this);
@@ -2234,11 +2424,11 @@ extends Activity {
             kBtn.setAllCaps(false);
             kBtn.setTextSize(11f);
             kBtn.setPadding(this.dp(10), 0, this.dp(10), 0);
-            
+
             LinearLayout.LayoutParams kp = new LinearLayout.LayoutParams(-2, this.dp(28));
             kp.rightMargin = this.dp(6);
             extraKeysLayout.addView((View)kBtn, (ViewGroup.LayoutParams)kp);
-            
+
             if ("TAB".equals(key)) {
                 kBtn.setOnClickListener(v -> {
                     String currentText = this.etShellInput.getText().toString();
@@ -2300,38 +2490,38 @@ extends Activity {
                 });
             }
         }
-        
+
         LinearLayout.LayoutParams ekParams = new LinearLayout.LayoutParams(-1, -2);
         ekParams.topMargin = this.dp(6);
         shellPanel.addView((View)extraKeysScroll, (ViewGroup.LayoutParams)ekParams);
         shellContainer.addView((View)shellPanel, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -1));
-        
+
         // 软键盘 Enter 直接执行
         this.etShellInput.setOnEditorActionListener((v, actionId, event) -> {
-            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEND || 
+            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEND ||
                 actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) {
                 btnRunShell.performClick();
                 return true;
             }
             return false;
         });
-        
+
         btnRunShell.setOnClickListener(v -> {
             String cmd = this.etShellInput.getText().toString().trim();
             if (cmd.isEmpty()) return;
-            
+
             // 记录命令历史
             if (this.shellHistory.isEmpty() || !this.shellHistory.get(this.shellHistory.size() - 1).equals(cmd)) {
                 this.shellHistory.add(cmd);
             }
             this.shellHistoryIndex = this.shellHistory.size();
-            
+
             this.tvShellOutput.setVisibility(0);
             this.tvShellOutput.setTextColor(-256);
             this.tvShellOutput.setText((CharSequence)("正在执行命令...\n> " + cmd));
             this.adjustViewPagerHeight();
             this.shellScrollView.post(() -> this.shellScrollView.fullScroll(android.view.View.FOCUS_DOWN));
-            
+
             this.executor.execute(() -> {
                 try {
                     String baseUrl = this.normalizedBaseUrl();
@@ -2359,12 +2549,12 @@ extends Activity {
         // YanPath UI
         LinearLayout fsPanel = new LinearLayout((Context)this);
         fsPanel.setOrientation(1);
-        
+
         LinearLayout pathRow = new LinearLayout((Context)this);
         pathRow.setOrientation(0);
         pathRow.setGravity(16);
         pathRow.setPadding(0, this.dp(2), 0, this.dp(6));
-        
+
         Button btnBack = new Button((Context)this);
         btnBack.setText((CharSequence)"←");
         btnBack.setTextColor(-1);
@@ -2373,27 +2563,27 @@ extends Activity {
         btnBack.setTextSize(16f);
         btnBack.setTypeface(Typeface.DEFAULT_BOLD);
         btnBack.setPadding(0, 0, 0, 0);
-        
+
         LinearLayout.LayoutParams backParams = new LinearLayout.LayoutParams(this.dp(36), this.dp(32));
         backParams.rightMargin = this.dp(8);
         pathRow.addView((View)btnBack, (ViewGroup.LayoutParams)backParams);
-        
+
         this.breadcrumbsScrollView = new HorizontalScrollView((Context)this);
         this.breadcrumbsScrollView.setHorizontalScrollBarEnabled(false);
         this.breadcrumbsLayout = new LinearLayout((Context)this);
         this.breadcrumbsLayout.setOrientation(0);
         this.breadcrumbsLayout.setGravity(16);
         this.breadcrumbsScrollView.addView((View)this.breadcrumbsLayout, new ViewGroup.LayoutParams(-2, -1));
-        
+
         pathRow.addView((View)this.breadcrumbsScrollView, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -2, 1.0f));
         fsPanel.addView((View)pathRow);
-        
+
         LinearLayout fsSearchRow = new LinearLayout((Context)this);
         fsSearchRow.setOrientation(0);
         fsSearchRow.setGravity(16);
         LinearLayout.LayoutParams fsSearchParams = new LinearLayout.LayoutParams(-1, -2);
         fsSearchParams.setMargins(0, this.dp(4), 0, this.dp(6));
-        
+
         Button btnPlusMenu = new Button((Context)this);
         btnPlusMenu.setText((CharSequence)"+");
         btnPlusMenu.setTextColor(-1);
@@ -2402,7 +2592,7 @@ extends Activity {
         btnPlusMenu.setTextSize(18f);
         btnPlusMenu.setTypeface(Typeface.DEFAULT_BOLD);
         btnPlusMenu.setPadding(0, 0, 0, 0);
-        
+
         btnPlusMenu.setOnClickListener(v -> {
             PopupMenu popup = new PopupMenu(this, v);
             popup.getMenu().add(0, 1, 1, (CharSequence)"文件");
@@ -2433,14 +2623,14 @@ extends Activity {
         this.fsSearchInput.setPadding(this.dp(10), this.dp(8), this.dp(10), this.dp(8));
         this.fsSearchInput.setSingleLine(true);
         this.fsSearchInput.setTextSize(13f);
-        
+
         Button btnFsSearch = new Button((Context)this);
         btnFsSearch.setText((CharSequence)"搜索");
         btnFsSearch.setTextColor(-1);
         btnFsSearch.setBackgroundColor(Color.rgb(30, 41, 59));
         btnFsSearch.setAllCaps(false);
         btnFsSearch.setTextSize(12f);
-        
+
         LinearLayout.LayoutParams plusParams = new LinearLayout.LayoutParams(this.dp(36), this.dp(36));
         plusParams.rightMargin = this.dp(6);
         fsSearchRow.addView((View)btnPlusMenu, (ViewGroup.LayoutParams)plusParams);
@@ -2450,7 +2640,7 @@ extends Activity {
         fsSearchRow.addView((View)this.fsSearchInput, (ViewGroup.LayoutParams)fsInputParams);
         fsSearchRow.addView((View)btnFsSearch, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(this.dp(60), this.dp(36)));
         fsPanel.addView((View)fsSearchRow);
-        
+
         this.fsSearchInput.addTextChangedListener(new android.text.TextWatcher() {
             @Override
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
@@ -2465,19 +2655,19 @@ extends Activity {
             MainActivity.this.filterFsList(this.fsSearchInput.getText().toString());
             this.hideKeyboard((View)this.fsSearchInput);
         });
-        
+
         this.fileListLayout = new LinearLayout((Context)this);
         this.fileListLayout.setOrientation(1);
-        
+
         ScrollView fileListScrollView = new ScrollView((Context)this);
         fileListScrollView.setNestedScrollingEnabled(true);
         fileListScrollView.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
         fileListScrollView.addView((View)this.fileListLayout);
-        
+
         LinearLayout.LayoutParams listScrollParams = new LinearLayout.LayoutParams(-1, 0, 1.0f);
         fsPanel.addView((View)fileListScrollView, (ViewGroup.LayoutParams)listScrollParams);
         fileManagerContainer.addView((View)fsPanel, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -1));
-        
+
         btnBack.setOnClickListener(v -> {
             if (this.currentPath == null || this.currentPath.isEmpty() || this.currentPath.equalsIgnoreCase("Desktop")) {
                 this.loadFileList("Desktop");
@@ -2507,122 +2697,61 @@ extends Activity {
         Button accessibilityButton = this.button("\u65e0\u969c\u788d\u670d\u52a1");
 
         this.setupProfileHeader();
+
+        this.profileTabPage.addView(YanziUiKit.row(this, "clipboard-check-outline", YanziUiKit.BLUE, "任务中心＋数据恢复", "查询执行结果、预览并恢复云端历史", () -> startActivity(new Intent(this, TaskRecoveryActivity.class))), YanziUiKit.cardLp(this));
+
+        this.profileTabPage.addView((View)YanziUiKit.sectionLabel(this, "同步与权限"));
+
         boolean autoUpdate = this.prefs.getBoolean("auto_cloud_update", false);
-        LinearLayout itemCloud = this.createSwitchListItem("\u542f\u52a8\u65f6\u81ea\u52a8\u540c\u6b65\u71d5\u5e55", autoUpdate, (buttonView, isChecked) -> {
+        LinearLayout itemCloud = YanziUiKit.switchRow(this, "cloud-sync-outline", YanziUiKit.GREEN, "自动同步燕幕", "保持手机与电脑的燕幕状态一致", autoUpdate, (buttonView, isChecked) -> {
             this.prefs.edit().putBoolean("auto_cloud_update", isChecked).apply();
-            this.setStatus(isChecked ? "\u5df2\u542f\u7528\u542f\u52a8\u65f6\u81ea\u52a8\u540c\u6b65" : "\u5df2\u5173\u95ed\u542f\u52a8\u65f6\u81ea\u52a8\u540c\u6b65");
+            this.setStatus(isChecked ? "已启用自动同步" : "已关闭自动同步");
+            this.autoCloudUpdateHandler.removeCallbacks(this.autoCloudUpdateRunnable);
+            if (isChecked) this.autoCloudUpdateHandler.postDelayed(this.autoCloudUpdateRunnable, 1000L);
         });
-        
-        LinearLayout group1 = this.createListGroup(itemCloud);
-        this.profileTabPage.addView((View)group1);
-        
+        this.profileTabPage.addView((View)itemCloud, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
+
         boolean wheelEnabled = this.prefs.getBoolean("floatingWheelEnabled", true);
-        LinearLayout itemWheel = this.createSwitchListItem("\u60ac\u6d6e\u8f6e\u76d8", wheelEnabled, (buttonView, isChecked) -> {
+        LinearLayout itemWheel = YanziUiKit.switchRow(this, "gesture-tap-hold", YanziUiKit.PURPLE, "悬浮轮盘", "离开燕子后显示，燕子前台自动隐藏", wheelEnabled, (buttonView, isChecked) -> {
             this.prefs.edit().putBoolean("floatingWheelEnabled", isChecked).apply();
             this.startService(new Intent((Context)this, FloatingWheelService.class));
             if (isChecked) {
                 this.startFloatingWheel();
-                this.setStatus("\u60ac\u6d6e\u8f6e\u76d8\u5df2\u5f00\u542f\u3002");
-                this.overlayButton.setText((CharSequence)"\u5173\u95ed\u60ac\u6d6e\u8f6e\u76d8");
+                FloatingWheelService.setAppForeground(true);
+                this.setStatus("悬浮轮盘已开启。");
+                if (this.overlayButton != null) this.overlayButton.setText("关闭悬浮轮盘");
             } else {
-                this.setStatus("\u60ac\u6d6e\u8f6e\u76d8\u5df2\u5173\u95ed\u3002");
-                this.overlayButton.setText((CharSequence)"\u6253\u5f00\u60ac\u6d6e\u8f6e\u76d8");
+                this.setStatus("悬浮轮盘已关闭。");
+                if (this.overlayButton != null) this.overlayButton.setText("打开悬浮轮盘");
             }
         });
-        
-        LinearLayout itemAccessibility = this.createListItem("\u65e0\u969c\u788d\u670d\u52a1", null, () -> this.openAccessibilitySettings());
-        
-        String currentVer = "0.2.18";
-        try {
-            currentVer = this.getPackageManager().getPackageInfo(this.getPackageName(), 0).versionName;
-        } catch (Exception ignored) {}
-        LinearLayout itemCheckUpdate = this.createListItem("\u68c0\u67e5\u66f4\u65b0", "v" + currentVer, () -> {
-            UpdateManager.checkUpdate(MainActivity.this, true);
-        });
-        
-        LinearLayout group2 = this.createListGroup(itemWheel, itemAccessibility, itemCheckUpdate);
-        this.profileTabPage.addView((View)group2);
+        this.profileTabPage.addView((View)itemWheel, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
 
-        LinearLayout runLogPanel = new LinearLayout((Context)this);
-        runLogPanel.setOrientation(LinearLayout.VERTICAL);
-        runLogPanel.setPadding(0, this.dp(16), 0, 0);
-        
-        LinearLayout runLogHeader = new LinearLayout((Context)this);
-        runLogHeader.setOrientation(LinearLayout.HORIZONTAL);
-        runLogHeader.setGravity(Gravity.CENTER_VERTICAL);
-        runLogHeader.setPadding(0, 0, 0, this.dp(8));
-        
-        TextView runLogTitle = this.textView("\u8fd0\u884c\u65e5\u5fd7", 16, ThemeConfig.COLOR_TEXT_PRIMARY, true);
-        runLogHeader.addView((View)runLogTitle, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -2, 1.0f));
-        
-        Button btnCopyRunLog = this.button("\u590d\u5236");
-        btnCopyRunLog.setTextSize(12f);
-        btnCopyRunLog.setPadding(this.dp(8), this.dp(4), this.dp(8), this.dp(4));
-        btnCopyRunLog.setOnClickListener(v -> {
-            this.copyDiagnostics();
-            Toast.makeText(this.getApplicationContext(), "\u65e5\u5fd7\u5df2\u590d\u5236", Toast.LENGTH_SHORT).show();
-        });
-        
-        Button btnClearRunLog = this.button("\u6e05\u7a7a");
-        btnClearRunLog.setTextSize(12f);
-        btnClearRunLog.setPadding(this.dp(8), this.dp(4), this.dp(8), this.dp(4));
-        btnClearRunLog.setOnClickListener(v -> {
-            this.diagnosticLog.setLength(0);
-            MobileDiagnostics.clear((Context)this);
-            this.statusText.setText((CharSequence)"");
-            this.setStatus("\u65e5\u5fd7\u5df2\u6e05\u7a7a\u3002");
-            Toast.makeText(this.getApplicationContext(), "\u65e5\u5fd7\u5df2\u6e05\u7a7a", Toast.LENGTH_SHORT).show();
-        });
-        
-        LinearLayout.LayoutParams runBtnLp = new LinearLayout.LayoutParams(this.dp(60), this.dp(32));
-        runBtnLp.leftMargin = this.dp(8);
-        runLogHeader.addView((View)btnCopyRunLog, (ViewGroup.LayoutParams)runBtnLp);
-        runLogHeader.addView((View)btnClearRunLog, (ViewGroup.LayoutParams)runBtnLp);
-        runLogPanel.addView((View)runLogHeader);
-        
-        androidx.core.widget.NestedScrollView runLogScroll = new androidx.core.widget.NestedScrollView((Context)this);
-        runLogScroll.setBackgroundColor(ThemeConfig.COLOR_BACKGROUND);
-        runLogScroll.setPadding(this.dp(10), this.dp(10), this.dp(10), this.dp(10));
-        
-        GradientDrawable gdRunLog = new GradientDrawable();
-        gdRunLog.setColor(ThemeConfig.COLOR_CARD_BACKGROUND);
-        gdRunLog.setCornerRadius((float)this.dp(8));
-        runLogScroll.setBackground((Drawable)gdRunLog);
-        
-        this.statusText.setTextSize(11f);
-        this.statusText.setTextColor(ThemeConfig.COLOR_TEXT_SECONDARY);
-        this.statusText.setTypeface(Typeface.MONOSPACE);
-        this.statusText.setText((CharSequence)this.diagnosticLog.toString());
-        runLogScroll.addView((View)this.statusText);
-        
-        runLogPanel.addView((View)runLogScroll, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, this.dp(150)));
-        this.profileTabPage.addView((View)runLogPanel);
-        
-        TextView tvAbout = new TextView((Context)this);
-        tvAbout.setTextSize(12f);
-        tvAbout.setTextColor(Color.rgb(100, 116, 139));
-        tvAbout.setGravity(Gravity.CENTER);
-        
-        long installTime = 0L;
-        try {
-            installTime = this.getPackageManager().getPackageInfo((String)this.getPackageName(), (int)0).lastUpdateTime;
-        } catch (Exception e) {}
-        String timeStr = "";
-        if (installTime > 0L) {
-            timeStr = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(new Date(installTime));
-        }
-        String aboutText = "\u8bbe\u5907 ID: " + this.deviceId + "\n\u7f16\u8bd1\u5b89\u88c5: " + timeStr;
-        tvAbout.setText((CharSequence)aboutText);
-        tvAbout.setPadding(0, this.dp(16), 0, this.dp(24));
-        this.profileTabPage.addView((View)tvAbout);
+        LinearLayout notifyRow = YanziUiKit.row(this, "bell-outline", YanziUiKit.ORANGE, "消息通知", "声音、振动、横幅与锁屏提醒", this::openNotificationSettings);
+        this.profileTabPage.addView((View)notifyRow, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
+
+        LinearLayout itemAccessibility = YanziUiKit.row(this, "accessibility", YanziUiKit.BLUE, "无障碍服务", "只在自动化需要时开启", this::openAccessibilitySettings);
+        this.profileTabPage.addView((View)itemAccessibility, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
+
+        this.profileTabPage.addView((View)YanziUiKit.sectionLabel(this, "关于"));
+
+        String currentVer = "0.2.18";
+        try { currentVer = this.getPackageManager().getPackageInfo(this.getPackageName(), 0).versionName; } catch (Exception ignored) {}
+        final String versionLabel = currentVer;
+        LinearLayout itemCheckUpdate = YanziUiKit.row(this, "download-outline", YanziUiKit.GREEN, "检查更新", "当前 v" + versionLabel, null);
+        BusyButton checkUpdateBusy = new BusyButton(itemCheckUpdate);
+        itemCheckUpdate.setOnClickListener(v -> UpdateManager.checkUpdate(MainActivity.this, true, checkUpdateBusy));
+        this.profileTabPage.addView((View)itemCheckUpdate, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
+
         shell.addView((View)this.swipeRefresh, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, 0, 1.0f));
         this.setupAiTabPage();
         this.loadAiHistory();
         shell.addView((View)this.aiTabPage, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, 0, 1.0f));
         shell.addView((View)this.desktopExtensionTabPage, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, 0, 1.0f));
-        shell.addView((View)this.buildBottomTabs(), (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, this.dp(64)));
+        this.bottomTabs = this.buildBottomTabs();
+        shell.addView(this.bottomTabs, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, this.dp(64)));
         this.setContentView((View)shell);
-        this.selectTab("yanm");
+        this.selectTab("desktop");
         this.setStatus(this.prefs.getString("token", "").trim().isEmpty() ? "\u8bf7\u5148\u767b\u5f55\u71d5\u5b50\u8d26\u53f7\u3002" : "\u5df2\u52a0\u8f7d\u672c\u5730\u767b\u5f55\u6001\u3002");
         this.renderCachedYanm();
         if (!this.prefs.getString("token", "").trim().isEmpty()) {
@@ -2648,17 +2777,21 @@ extends Activity {
         LinearLayout tabs = new LinearLayout((Context)this);
         tabs.setOrientation(0);
         tabs.setGravity(16);
-        tabs.setPadding(this.dp(4), this.dp(2), this.dp(4), this.dp(2));
-        tabs.setBackgroundColor(ThemeConfig.COLOR_BACKGROUND);
-        this.yanmTabButton = this.tabButton("燕幕", "dashboard", "yanm");
+        tabs.setPadding(this.dp(8), this.dp(2), this.dp(8), this.dp(2));
+        GradientDrawable tabsBg = new GradientDrawable();
+        tabsBg.setColor(Color.rgb(7, 16, 29));
+        tabsBg.setCornerRadii(new float[]{this.dp(20), this.dp(20), this.dp(20), this.dp(20), 0, 0, 0, 0});
+        tabsBg.setStroke(this.dp(1), Color.rgb(25, 46, 70));
+        tabs.setBackground((Drawable)tabsBg);
+        this.yanmTabButton = this.tabButton("燕幕", "home", "yanm");
         this.mobileExtensionTabButton = this.tabButton("手机", "cellphone", "mobile");
-        this.aiTabButton = this.tabButton("AI", "chat", "ai");
-        this.desktopExtensionTabButton = this.tabButton("电脑", "laptop", "desktop");
+        this.aiTabButton = this.tabButton("AI", "creation", "ai");
+        this.desktopExtensionTabButton = this.tabButton("电脑", DesktopDashboardView.COMPUTER_ICON, "desktop");
         this.profileTabButton = this.tabButton("我的", "account", "profile");
-        tabs.addView(this.yanmTabButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -1, 1.0f));
+        tabs.addView(this.desktopExtensionTabButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -1, 1.0f));
         tabs.addView(this.mobileExtensionTabButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -1, 1.0f));
         tabs.addView(this.aiTabButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -1, 1.0f));
-        tabs.addView(this.desktopExtensionTabButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -1, 1.0f));
+        tabs.addView(this.yanmTabButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -1, 1.0f));
         tabs.addView(this.profileTabButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -1, 1.0f));
         return tabs;
     }
@@ -2667,13 +2800,13 @@ extends Activity {
         LinearLayout container = new LinearLayout((Context)this);
         container.setOrientation(1);
         container.setGravity(17);
-        container.setPadding(0, this.dp(6), 0, this.dp(6));
+        container.setPadding(0, this.dp(4), 0, this.dp(3));
         container.setClickable(true);
         container.setFocusable(true);
         ImageView iconView = new ImageView((Context)this);
         Path path = MobileIconLibrary.resolveOrDefault(iconName);
         iconView.setImageDrawable(new PathDrawable(path, Color.WHITE));
-        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(this.dp(22), this.dp(22));
+        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(this.dp(20), this.dp(20));
         iconView.setLayoutParams((ViewGroup.LayoutParams)iconParams);
         TextView textView = new TextView((Context)this);
         textView.setText((CharSequence)text);
@@ -2703,7 +2836,10 @@ extends Activity {
         }
         container.addView((View)textView);
         container.setTag((Object)new View[]{iconView, textView});
-        container.setOnClickListener(v -> this.selectTab(key));
+        container.setOnClickListener(v -> {
+            if ("desktop".equals(key) && "desktop".equals(selectedTab)) showDesktopConnectionDetails();
+            else selectTab(key);
+        });
         return container;
     }
 
@@ -2711,6 +2847,7 @@ extends Activity {
         if (this.yanmTabPage == null || this.mobileExtensionTabPage == null || this.desktopExtensionTabPage == null || this.profileTabPage == null || this.aiTabPage == null) {
             return;
         }
+        this.selectedTab = key;
         boolean isYanm = "yanm".equals(key);
         boolean isMobile = "mobile".equals(key);
         boolean isAi = "ai".equals(key);
@@ -2727,8 +2864,13 @@ extends Activity {
         this.styleTabButton(this.aiTabButton, isAi);
         this.styleTabButton(this.desktopExtensionTabButton, isDesktop);
         this.styleTabButton(this.profileTabButton, isProfile);
-        if (isDesktop) {
+        updateDesktopTabConnection();
+        if (isDesktop || isYanm) {
             this.checkConnectionAsync();
+        }
+        if(isMobile){this.selectMobileSubTab(this.currentMobileSubTab);if(this.currentMobileSubTab==0)this.syncMobileExtensionsFromCloud();}
+        if (isAi) {
+            this.refreshSettings();
         }
         if (this.mainScrollView != null) {
             this.mainScrollView.post(() -> this.mainScrollView.smoothScrollTo(0, 0));
@@ -2743,8 +2885,9 @@ extends Activity {
         boolean isDesktopChat = this.desktopExtensionTabPage != null
             && this.desktopExtensionTabPage.getVisibility() == View.VISIBLE
             && this.currentSubTabIndex == 0;
-        this.swipeRefresh.setEnabled(!isDesktopChat);
-        if (isDesktopChat) {
+        boolean isStore=this.mobileExtensionTabPage!=null&&this.mobileExtensionTabPage.getVisibility()==View.VISIBLE&&this.currentMobileSubTab==1;
+        this.swipeRefresh.setEnabled(!isDesktopChat&&!isStore);
+        if (isDesktopChat||isStore) {
             this.swipeRefresh.setRefreshing(false);
         }
     }
@@ -2753,7 +2896,7 @@ extends Activity {
         if (tabView == null) {
             return;
         }
-        int color = selected ? Color.rgb((int)34, (int)211, (int)238) : Color.rgb((int)100, (int)116, (int)139);
+        int color = selected ? Color.rgb(79, 140, 255) : Color.rgb(120, 137, 162);
         View[] tag = (View[])tabView.getTag();
         if (tag != null && tag.length == 2) {
             ImageView iconView = (ImageView)tag[0];
@@ -2762,8 +2905,8 @@ extends Activity {
             textView.setTextColor(color);
         }
         GradientDrawable background = new GradientDrawable();
-        background.setCornerRadius((float)this.dp(12));
-        background.setColor(selected ? Color.argb((int)20, (int)34, (int)211, (int)238) : 0);
+        background.setCornerRadius((float)this.dp(14));
+        background.setColor(selected ? Color.argb(10, 79, 140, 255) : Color.TRANSPARENT);
         tabView.setBackground((Drawable)background);
     }
 
@@ -2774,23 +2917,33 @@ extends Activity {
         this.showKeyboard((View)this.textInput);
     }
 
+    private void openNewMobileExtensionEditor() {
+        this.isEditingMobileExtension = true;
+        this.mobileExtensionInput.setText((CharSequence)this.defaultMobileExtensionJson());
+        this.updateMobileExtensionFieldsFromDraft();
+        this.mobileViewPager.setVisibility(View.GONE);
+        if (this.mobileSubTabBar != null) this.mobileSubTabBar.setVisibility(View.GONE);
+        this.mobileExtensionEditorView.setVisibility(View.VISIBLE);
+        this.setStatus("新建小程序草稿");
+    }
+
     private void buildMobileExtensionEditor(LinearLayout root) {
         LinearLayout header = new LinearLayout((Context)this);
         header.setOrientation(0);
         header.setGravity(16);
-        this.mobileExtensionSectionTitle = this.sectionTitle("\u624b\u673a\u6269\u5c55\u7f16\u8f91\u5668");
+        this.mobileExtensionSectionTitle = this.sectionTitle("\u624b\u673a\u8fd0\u884c\u65f6\u5f00\u53d1");
         header.addView((View)this.mobileExtensionSectionTitle, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -2, 1.0f));
         Button promptButton = this.button("\u590d\u5236\u63d0\u793a\u8bcd");
         header.addView((View)promptButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-2, this.dp(40)));
         root.addView((View)header);
-        
+
         // 1. 手动调整卡片
         LinearLayout helperPanel = this.card();
         LinearLayout.LayoutParams helperParams = new LinearLayout.LayoutParams(-1, -2);
         helperParams.setMargins(0, this.dp(8), 0, this.dp(8));
         helperPanel.setLayoutParams((ViewGroup.LayoutParams)helperParams);
-        this.mobileExtensionIdInput = this.input("\u6269\u5c55 ID", "mobile-copy-shared-text");
-        this.mobileExtensionNameInput = this.input("\u6269\u5c55\u540d\u79f0", "\u590d\u5236\u5f53\u524d\u8f93\u5165");
+        this.mobileExtensionIdInput = this.input("小程序 ID", "mobile-copy-shared-text");
+        this.mobileExtensionNameInput = this.input("小程序名称", "\u590d\u5236\u5f53\u524d\u8f93\u5165");
         this.mobileExtensionIconInput = this.input("\u56fe\u6807", "mdi:content-copy");
         this.mobileExtensionDescriptionInput = this.multiInput("\u63cf\u8ff0", "\u628a\u5f53\u524d\u8f93\u5165\u6846\u5185\u5bb9\u590d\u5236\u5230\u624b\u673a\u526a\u8d34\u677f\u3002");
         this.mobileExtensionDescriptionInput.setMinLines(3);
@@ -2798,25 +2951,25 @@ extends Activity {
         helperPanel.addView((View)this.mobileExtensionNameInput);
         helperPanel.addView((View)this.mobileExtensionIconInput);
         helperPanel.addView((View)this.mobileExtensionDescriptionInput);
-        Button saveDraftButton = this.button("\u4fdd\u5b58\u6269\u5c55");
+        Button saveDraftButton = this.button("保存小程序");
         helperPanel.addView((View)saveDraftButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, this.dp(42)));
         root.addView((View)helperPanel);
-        
+
         // 2. JSON 区卡片
         LinearLayout codePanel = this.card();
         LinearLayout.LayoutParams codeParams = new LinearLayout.LayoutParams(-1, -2);
         codeParams.setMargins(0, this.dp(8), 0, this.dp(8));
         codePanel.setLayoutParams((ViewGroup.LayoutParams)codeParams);
         codePanel.addView((View)this.textView("JSON \u533a", 16, -1, true));
-        this.mobileExtensionInput = this.multiInput("\u624b\u673a\u6269\u5c55 JSON / mobile-js", this.prefs.getString("mobileExtensionDraft", this.defaultMobileExtensionJson()));
+        this.mobileExtensionInput = this.multiInput("手机小程序 JSON / mobile-js", this.prefs.getString("mobileExtensionDraft", this.defaultMobileExtensionJson()));
         this.mobileExtensionInput.setMinLines(18);
         codePanel.addView((View)this.mobileExtensionInput, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -2));
         Button pasteJsonButton = this.button("\u4e00\u952e\u7c98\u8d34 JSON");
         codePanel.addView((View)pasteJsonButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, this.dp(42)));
         LinearLayout bottomActions = new LinearLayout((Context)this);
         bottomActions.setOrientation(0);
-        Button testButton = this.button("\u6d4b\u8bd5\u6269\u5c55");
-        Button runButton = this.button("\u4fdd\u5b58\u6269\u5c55");
+        Button testButton = this.button("测试小程序");
+        Button runButton = this.button("保存小程序");
         bottomActions.addView((View)testButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, this.dp(44), 1.0f));
         bottomActions.addView((View)runButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, this.dp(44), 1.0f));
         codePanel.addView((View)bottomActions);
@@ -2826,7 +2979,7 @@ extends Activity {
         this.mobileExtensionTestResult.setBackgroundColor(Color.rgb((int)22, (int)22, (int)22));
         codePanel.addView((View)this.mobileExtensionTestResult);
         root.addView((View)codePanel);
-        
+
         // 3. 模板示例卡片（默认折叠）
         LinearLayout templatePanel = this.card();
         LinearLayout.LayoutParams templateParams = new LinearLayout.LayoutParams(-1, -2);
@@ -2857,7 +3010,7 @@ extends Activity {
         });
         templatePanel.addView((View)templateContainer);
         root.addView((View)templatePanel);
-        
+
         promptButton.setOnClickListener(v -> this.copyMobileExtensionPrompt());
         saveDraftButton.setOnClickListener(v -> this.saveMobileExtensionDraft());
         pasteJsonButton.setOnClickListener(v -> this.pasteJsonIntoMobileExtensionEditor());
@@ -2900,7 +3053,7 @@ extends Activity {
             this.mobileExtensionInput.setText((CharSequence)pretty);
             this.mobileExtensionInput.setSelection(pretty.length());
             this.updateMobileExtensionFieldsFromDraft();
-            this.updateMobileScriptResult("JSON \u683c\u5f0f\u6b63\u786e\uff1a" + MainActivity.firstNonEmpty(json.optString("name"), json.optString("id"), "\u672a\u547d\u540d\u6269\u5c55"), false);
+            this.updateMobileScriptResult("JSON \u683c\u5f0f\u6b63\u786e\uff1a" + MobileJson.firstNonEmpty(json.optString("name"), json.optString("id"), "\u672a\u547d\u540d\u6269\u5c55"), false);
             this.setStatus("\u5df2\u7c98\u8d34\u5e76\u68c0\u6d4b JSON \u683c\u5f0f\u3002");
         }
         catch (Exception ex) {
@@ -2914,7 +3067,7 @@ extends Activity {
         try {
             JSONObject json = this.parseDraftObject();
             if (updateResult) {
-                this.updateMobileScriptResult("JSON \u683c\u5f0f\u6b63\u786e\uff1a" + MainActivity.firstNonEmpty(json.optString("name"), json.optString("id"), "\u672a\u547d\u540d\u6269\u5c55"), false);
+                this.updateMobileScriptResult("JSON \u683c\u5f0f\u6b63\u786e\uff1a" + MobileJson.firstNonEmpty(json.optString("name"), json.optString("id"), "\u672a\u547d\u540d\u6269\u5c55"), false);
             }
             return true;
         }
@@ -2956,10 +3109,10 @@ extends Activity {
     private void updateMobileExtensionFieldsFromDraft() {
         try {
             JSONObject json = this.parseDraftObject();
-            this.mobileExtensionIdInput.setText((CharSequence)MainActivity.firstNonEmpty(json.optString("id"), "mobile-copy-shared-text"));
-            this.mobileExtensionNameInput.setText((CharSequence)MainActivity.firstNonEmpty(json.optString("name"), "\u590d\u5236\u5f53\u524d\u8f93\u5165"));
-            this.mobileExtensionDescriptionInput.setText((CharSequence)MainActivity.firstNonEmpty(json.optString("description"), "\u624b\u673a\u672c\u5730\u6269\u5c55"));
-            this.mobileExtensionIconInput.setText((CharSequence)MainActivity.firstNonEmpty(json.optString("icon"), "mdi:content-copy"));
+            this.mobileExtensionIdInput.setText((CharSequence)MobileJson.firstNonEmpty(json.optString("id"), "mobile-copy-shared-text"));
+            this.mobileExtensionNameInput.setText((CharSequence)MobileJson.firstNonEmpty(json.optString("name"), "\u590d\u5236\u5f53\u524d\u8f93\u5165"));
+            this.mobileExtensionDescriptionInput.setText((CharSequence)MobileJson.firstNonEmpty(json.optString("description"), "\u624b\u673a\u672c\u5730\u6269\u5c55"));
+            this.mobileExtensionIconInput.setText((CharSequence)MobileJson.firstNonEmpty(json.optString("icon"), "mdi:content-copy"));
         }
         catch (Exception exception) {
             // empty catch block
@@ -2967,7 +3120,7 @@ extends Activity {
     }
 
     private File resolveMobileScriptFile(String name) throws Exception {
-        String value = MainActivity.firstNonEmpty(name, "notes.txt").replace("\\", "_").replace("/", "_").replace("..", "_");
+        String value = MobileJson.firstNonEmpty(name, "notes.txt").replace("\\", "_").replace("/", "_").replace("..", "_");
         File dir = this.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS);
         if (dir == null) {
             dir = new File(this.getFilesDir(), "mobile-script-files");
@@ -2980,7 +3133,7 @@ extends Activity {
 
     private static String buildJsonErrorResult(String message) {
         try {
-            return new JSONObject().put("ok", false).put("error", (Object)MainActivity.firstNonEmpty(message, "unknown error")).toString();
+            return new JSONObject().put("ok", false).put("error", (Object)MobileJson.firstNonEmpty(message, "unknown error")).toString();
         }
         catch (Exception ignored) {
             return "{\"ok\":false,\"error\":\"unknown error\"}";
@@ -3001,6 +3154,10 @@ extends Activity {
                 manager.showSoftInput(view, 1);
             }
         }, 250L);
+    }
+
+    private void openNotificationSettings() {
+        this.startActivity(new Intent(this, NotificationSettingsActivity.class));
     }
 
     private void startFloatingWheel() {
@@ -3043,7 +3200,7 @@ extends Activity {
     }
 
     private void copyMobileExtensionPrompt() {
-        String prompt = "\u4f60\u6b63\u5728\u4e3a\u71d5\u5b50\u79fb\u52a8\u7aef\u7f16\u5199\u624b\u673a\u6269\u5c55\u3002\u53ea\u5141\u8bb8\u8f93\u51fa JSON\uff0c\u4e0d\u8981\u89e3\u91ca\u3002\\n\u8fd0\u884c\u65f6\u4f7f\u7528 runtime=\\\"mobile-js\\\"\uff0c\u4e0d\u8981\u4f7f\u7528 C#\u3001PowerShell\u3001Windows \u8def\u5f84\u3001WPF \u6216\u684c\u9762 API\u3002\\n\u4f18\u5148\u8bbe\u8ba1\u672c\u673a\u53ef\u6267\u884c\u80fd\u529b\uff0c\u518d\u6309\u9700\u8865\u5145\u53d1\u5230\u7535\u8111\u3002\u53ef\u7528 permissions\uff1aclipboard.read\u3001clipboard.write\u3001browser.open\u3001file.read\u3001file.write\u3001http.request\u3001desktop.message\u3001share.text\u3002\\n\u811a\u672c\u5165\u53e3\u4f7f\u7528 async function run(context)\uff0c\u53ef\u8c03\u7528 context.mobile.toast(text)\u3001getSharedText()\u3001getClipboardText()\u3001setClipboardText(text)\u3001openUrl(url)\u3001pickPhoto()\u3001readTextFile(name)\u3001saveTextFile(name,text)\u3001appendTextFile(name,text)\u3001httpGet(url)\u3001httpPostJson(url,jsonText)\u3001sendToDesktop(text)\u3002\\n\u8f93\u51fa\u5b57\u6bb5\u81f3\u5c11\u5305\u542b id\u3001name\u3001version\u3001category\u3001description\u3001icon\u3001runtime\u3001permissions\u3001script.source\u3002";
+        String prompt = "\u4f60\u6b63\u5728\u4e3a\u71d5\u5b50\u79fb\u52a8\u7aef\u7f16\u5199\u624b\u673a\u6269\u5c55\u3002\u53ea\u5141\u8bb8\u8f93\u51fa JSON\uff0c\u4e0d\u8981\u89e3\u91ca\u3002\\n\u8fd0\u884c\u65f6\u4f7f\u7528 runtime=\\\"mobile-js\\\"\uff0c\u4e0d\u8981\u4f7f\u7528 C#\u3001PowerShell\u3001Windows \u8def\u5f84\u3001WPF \u6216\u684c\u9762 API\u3002\\n\u4f18\u5148\u8bbe\u8ba1\u672c\u673a\u53ef\u6267\u884c\u80fd\u529b\uff0c\u518d\u6309\u9700\u8865\u5145\u53d1\u5230\u7535\u8111\u3002\u53ef\u7528 permissions\uff1aclipboard.read\u3001clipboard.write\u3001browser.open\u3001file.read\u3001file.write\u3001storage.read\u3001storage.write\u3001http.request\u3001desktop.message\u3001share.text\u3002\\n\u811a\u672c\u5165\u53e3\u4f7f\u7528 async function run(context)\uff0c\u53ef\u8c03\u7528 context.mobile.toast(text)\u3001getSharedText()\u3001getClipboardText()\u3001setClipboardText(text)\u3001openUrl(url)\u3001pickPhoto()\u3001readTextFile(name)\u3001saveTextFile(name,text)\u3001appendTextFile(name,text)\u3001context.storage.readText(key)\u3001context.storage.writeText(key,text,expectedRevision)\u3001context.storage.deleteText(key,expectedRevision)\u3001httpGet(url)\u3001httpPostJson(url,jsonText)\u3001sendToDesktop(text)\u3002\\n\u8f93\u51fa\u5b57\u6bb5\u81f3\u5c11\u5305\u542b id\u3001name\u3001version\u3001category\u3001description\u3001icon\u3001runtime\u3001permissions\u3001script.source\u3002";
         ClipboardManager manager = (ClipboardManager)this.getSystemService("clipboard");
         manager.setPrimaryClip(ClipData.newPlainText((CharSequence)"Yanzi mobile extension prompt", (CharSequence)prompt));
         this.setStatus("\u5df2\u590d\u5236\u624b\u673a\u7aef\u6269\u5c55\u63d0\u793a\u8bcd\u3002");
@@ -3070,12 +3227,12 @@ extends Activity {
                 this.mobileExtensionInput.setText(draft);
             }
 
-            String id = MainActivity.firstNonEmpty(inputId, "mobile-extension-draft");
-            String name = MainActivity.firstNonEmpty(inputName, "\u624b\u673a\u6269\u5c55\u8349\u7a3f");
+            String id = MobileJson.firstNonEmpty(inputId, "mobile-extension-draft");
+            String name = MobileJson.firstNonEmpty(inputName, "\u624b\u673a\u6269\u5c55\u8349\u7a3f");
             if (draft.trim().startsWith("{") && draft.trim().endsWith("}")) {
                 JSONObject json = new JSONObject(draft);
-                id = MainActivity.firstNonEmpty(json.optString("id"), id);
-                name = MainActivity.firstNonEmpty(json.optString("name"), json.optString("displayName"), name);
+                id = MobileJson.firstNonEmpty(json.optString("id"), id);
+                name = MobileJson.firstNonEmpty(json.optString("name"), json.optString("displayName"), name);
             }
             this.prefs.edit().putString("mobileExtensionDraft", draft).putString("mobileExtensionDraftId", id).putString("mobileExtensionDraftName", name).apply();
             if (draft.trim().startsWith("{") && draft.trim().endsWith("}")) {
@@ -3114,14 +3271,23 @@ extends Activity {
 
             this.prefs.edit().putString("mobileExtensionDraft", draft).apply();
             this.updateMobileExtensionFieldsFromDraft();
+            String runtimeExtensionId = MobileJson.firstNonEmpty(
+                    inputId, "mobile-extension-draft");
+            if (draft.trim().startsWith("{") && draft.trim().endsWith("}")) {
+                runtimeExtensionId = MobileJson.firstNonEmpty(
+                        new JSONObject(draft).optString("id"),
+                        runtimeExtensionId);
+            }
             String source = MainActivity.extractMobileScriptSource(draft);
             if (source.trim().isEmpty()) {
                 throw new IllegalStateException("\u811a\u672c\u4e3a\u7a7a\u3002");
             }
             this.updateMobileScriptResult("\u6b63\u5728\u6d4b\u8bd5...", false);
-            this.activeMobileScriptRunner = runner = new WebView((Context)this);
+            this.scriptRuntime.active = runner = new WebView((Context)this);
             runner.getSettings().setJavaScriptEnabled(true);
-            runner.addJavascriptInterface((Object)new MobileJsBridge(), "yanziMobileJsHost");
+            runner.addJavascriptInterface(
+                    (Object)new MobileJsBridge(runtimeExtensionId),
+                    "yanziMobileJsHost");
             String html = this.buildMobileScriptHtml(source);
             runner.loadDataWithBaseURL("http://localhost/", html, "text/html", "UTF-8", null);
             this.setStatus("\u624b\u673a\u811a\u672c\u5df2\u542f\u52a8\u3002");
@@ -3157,7 +3323,7 @@ extends Activity {
 
     private JSONArray readLocalMobileExtensions() {
         try {
-            return new JSONArray(this.prefs.getString("mobileExtensions", "[]"));
+            return this.withBundledMobileExtensions(new JSONArray(this.prefs.getString("mobileExtensions", "[]")));
         }
         catch (Exception ex) {
             return new JSONArray();
@@ -3165,7 +3331,9 @@ extends Activity {
     }
 
     private void upsertLocalMobileExtension(JSONObject json) throws Exception {
-        String id = MainActivity.firstNonEmpty(json.optString("id"), "mobile-extension-" + System.currentTimeMillis());
+        // An explicit edit becomes a user-owned definition; bundle updates must preserve it.
+        json.remove("bundled");
+        String id = MobileJson.firstNonEmpty(json.optString("id"), "mobile-extension-" + System.currentTimeMillis());
         json.put("id", (Object)id);
         JSONArray array = this.readLocalMobileExtensions();
         JSONArray next = new JSONArray();
@@ -3184,6 +3352,7 @@ extends Activity {
             next.put((Object)json);
         }
         this.prefs.edit().putString("mobileExtensions", next.toString()).apply();
+        this.pushMobileExtensionDefinitionToAccount(json);
         this.pushMobileExtensionsToCloud();
     }
 
@@ -3197,7 +3366,9 @@ extends Activity {
         }
         this.prefs.edit().putString("mobileExtensions", next.toString()).apply();
         this.renderLocalMobileExtensions();
+        MobileEnvironment.WORK.execute(()->{try{if(MobileEnvironment.config(this,id).optBoolean("enabled"))MobileEnvironment.disable(this,id);}catch(Exception ignored){}});
         this.setStatus("\u5df2\u5220\u9664\u624b\u673a\u6269\u5c55\uff1a" + id);
+        this.deleteMobileExtensionDefinitionFromAccount(id);
         this.pushMobileExtensionsToCloud();
     }
 
@@ -3206,61 +3377,62 @@ extends Activity {
             return;
         }
         this.mobileExtensionGrid.removeAllViews();
-        
+
         JSONArray array = this.readLocalMobileExtensions();
+        if (this.mobileExtensionListTitle != null) this.mobileExtensionListTitle.setText("本机小程序 · " + array.length());
         if (array.length() == 0) {
-            TextView emptyTv = this.textView("\u6682\u65e0\u672c\u673a\u6269\u5c55\u3002", 12, Color.rgb((int)148, (int)163, (int)184), false);
+            TextView emptyTv = this.textView("暂无本机小程序。", 12, Color.rgb((int)148, (int)163, (int)184), false);
             emptyTv.setPadding(this.dp(16), this.dp(16), this.dp(16), this.dp(16));
             this.mobileExtensionGrid.addView((View)emptyTv);
             return;
         }
-        
+
         for (int i = 0; i < array.length(); ++i) {
             JSONObject item = array.optJSONObject(i);
             if (item == null) continue;
             String id = item.optString("id");
-            String name = MainActivity.firstNonEmpty(item.optString("name"), item.optString("displayName"), id);
-            
+            String name = MobileJson.firstNonEmpty(item.optString("name"), item.optString("displayName"), id);
+
             LinearLayout card = new LinearLayout((Context)this);
             card.setOrientation(1);
             card.setGravity(17);
-            
+
             GridLayout.LayoutParams params = new GridLayout.LayoutParams();
-            params.width = this.dp(80);
+            params.width = Math.max(this.dp(56),(this.getResources().getDisplayMetrics().widthPixels-this.dp(64))/4-this.dp(8));
             params.height = this.dp(110);
-            params.setMargins(this.dp(8), this.dp(8), this.dp(8), this.dp(8));
+            params.setMargins(this.dp(4), this.dp(8), this.dp(4), this.dp(8));
             card.setLayoutParams((ViewGroup.LayoutParams)params);
-            
+
             String iconName = item.optString("icon", "mdi:play");
             if (iconName.startsWith("mdi:")) {
                 iconName = iconName.substring(4);
             }
             android.graphics.Path path = MobileIconLibrary.resolveOrDefault(iconName);
-            
+
             LinearLayout iconLayout = new LinearLayout((Context)this);
             iconLayout.setGravity(17);
             GradientDrawable iconBg = new GradientDrawable();
             iconBg.setShape(GradientDrawable.OVAL);
-            
+
             int colorIndex = Math.abs(id.hashCode()) % 5;
             int iconBgColor = Color.rgb(59, 130, 246);
             if (colorIndex == 1) iconBgColor = Color.rgb(16, 185, 129);
             else if (colorIndex == 2) iconBgColor = Color.rgb(239, 68, 68);
             else if (colorIndex == 3) iconBgColor = Color.rgb(245, 158, 11);
             else if (colorIndex == 4) iconBgColor = Color.rgb(139, 92, 246);
-            
+
             iconBg.setColor(iconBgColor);
             iconLayout.setBackground((Drawable)iconBg);
-            
+
             LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(this.dp(52), this.dp(52));
             iconParams.bottomMargin = this.dp(6);
             iconLayout.setLayoutParams((ViewGroup.LayoutParams)iconParams);
-            
+
             ImageView iconImg = new ImageView((Context)this);
             iconImg.setImageDrawable((Drawable)new PathDrawable(path, Color.WHITE));
             iconImg.setPadding(this.dp(13), this.dp(13), this.dp(13), this.dp(13));
             iconLayout.addView((View)iconImg, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -1));
-            
+
             TextView nameTv = new TextView((Context)this);
             nameTv.setText((CharSequence)name);
             nameTv.setTextColor(Color.WHITE);
@@ -3269,10 +3441,10 @@ extends Activity {
             nameTv.setSingleLine(true);
             nameTv.setEllipsize(android.text.TextUtils.TruncateAt.END);
             nameTv.setPadding(this.dp(4), 0, this.dp(4), 0);
-            
+
             card.addView((View)iconLayout);
             card.addView((View)nameTv);
-            
+
             card.setOnClickListener(v -> {
                 String code = item.optString("code");
                 if (code == null || code.isEmpty()) {
@@ -3283,14 +3455,14 @@ extends Activity {
                 }
                 if (code != null && !code.isEmpty()) {
                     this.setStatus("\u6b63\u5728\u6267\u884c\u6269\u5c55\uff1a" + name);
-                    this.executeMobileScriptHeadless(code, name, result -> {
+                    this.executeMobileScriptHeadless(code, name, id, result -> {
                         this.setStatus("\u6269\u5c55\u6267\u884c\u7ed3\u679c\uff1a" + result);
                     });
                 } else {
                     this.setStatus("\u6269\u5c55\u65e0\u53ef\u6267\u884c\u4ee3\u7801");
                 }
             });
-            
+
             card.setOnLongClickListener(v -> {
                 PopupMenu popup = new PopupMenu((Context)this, (View)card);
                 popup.getMenu().add(0, 1, 0, (CharSequence)"\u6267\u884c");
@@ -3324,7 +3496,7 @@ extends Activity {
                 popup.show();
                 return true;
             });
-            
+
             this.mobileExtensionGrid.addView((View)card);
         }
     }
@@ -3353,65 +3525,531 @@ extends Activity {
         }
     }
 
-    private void loginAndRegister() {
-        if (this.loginButton != null) {
-            this.loginButton.setEnabled(false);
+    private void setAccountLoginFeedback(String text, boolean error) {
+        if (this.accountLoginStatusText == null) {
+            return;
         }
-        this.setStatus("\u6b63\u5728\u767b\u5f55...");
+        String value = text == null ? "" : text.trim();
+        if (value.isEmpty()) {
+            this.accountLoginStatusText.setText((CharSequence)"");
+            this.accountLoginStatusText.setVisibility(View.GONE);
+            return;
+        }
+        this.accountLoginStatusText.setTextColor(
+                error
+                        ? Color.rgb((int)248, (int)113, (int)113)
+                        : Color.rgb((int)148, (int)163, (int)184));
+        this.accountLoginStatusText.setText((CharSequence)value);
+        this.accountLoginStatusText.setVisibility(View.VISIBLE);
+    }
+
+    private void setLoginBusy(boolean busy) {
+        if (this.loginButton == null) {
+            return;
+        }
+        this.loginButton.setEnabled(!busy);
+        this.loginButton.setText((CharSequence)(busy ? "登录中…" : "登录"));
+    }
+
+    private void loginAndRegister() {
+        String email = this.emailInput == null
+                ? ""
+                : this.emailInput.getText().toString().trim();
+        String password = this.passwordInput == null
+                ? ""
+                : this.passwordInput.getText().toString();
+
+        if (email.isEmpty()) {
+            this.setAccountLoginFeedback("请输入邮箱。", true);
+            return;
+        }
+        if (password.isEmpty()) {
+            this.setAccountLoginFeedback("请输入密码。", true);
+            return;
+        }
+
+        this.setLoginBusy(true);
+        this.setAccountLoginFeedback("正在登录…", false);
+        this.setStatus("正在登录...");
+        Log.i("MainActivity", "Account login request started.");
+
         this.executor.execute(() -> {
             String token = "";
             String username = "";
             String baseUrl = this.normalizedBaseUrl();
-            String email = this.emailInput.getText().toString().trim();
             try {
-                JSONObject loginRes = YanziApiClient.loginResponse(baseUrl, email, this.passwordInput.getText().toString());
+                JSONObject loginRes =
+                        YanziApiClient.loginResponse(baseUrl, email, password);
                 token = loginRes.getString("accessToken");
                 username = loginRes.optString("username", "");
             }
             catch (Exception ex) {
+                String message = ex.getMessage() == null
+                        ? ex.toString()
+                        : ex.getMessage();
+                Log.w("MainActivity", "Account login failed: " + message);
                 this.runOnUiThread(() -> {
-                    this.setStatus("\u767b\u5f55\u5931\u8d25\uff1a" + ex.getMessage());
-                    if (this.loginButton != null) {
-                        this.loginButton.setEnabled(true);
-                    }
+                    this.setStatus("登录失败：" + message);
+                    this.setAccountLoginFeedback("登录失败：" + message, true);
+                    this.setLoginBusy(false);
                 });
                 return;
             }
+
             final String finalToken = token;
             final String finalUsername = username;
-            this.runOnUiThread(() -> this.setStatus("\u767b\u5f55\u6210\u529f\uff0c\u6b63\u5728\u6ce8\u518c\u624b\u673a\u8bbe\u5907..."));
+            this.runOnUiThread(() -> {
+                this.setStatus("登录成功，正在注册手机设备...");
+                this.setAccountLoginFeedback(
+                        "登录成功，正在注册手机设备…",
+                        false);
+            });
+
             try {
-                YanziApiClient.registerDevice(baseUrl, finalToken, this.deviceId, this.buildDeviceName());
-                this.prefs.edit().putString("baseUrl", baseUrl).putString("email", email).putString("password", this.passwordInput.getText().toString()).putString("token", finalToken).putString("username", finalUsername).apply();
-                this.runOnUiThread(() -> {
-                    this.setStatus("\u767b\u5f55\u6210\u529f\uff0c\u8bbe\u5907\u5df2\u6ce8\u518c\u3002");
-                    if (this.loginButton != null) {
-                        this.loginButton.setEnabled(true);
+                String previousDeviceId = this.deviceId;
+                this.prefs.edit().putString("email", email).commit();
+                String registeredDeviceId = MobileDeviceIdentity.stableDeviceId(this);
+                YanziApiClient.registerDevice(
+                        baseUrl,
+                        finalToken,
+                        registeredDeviceId,
+                        this.buildDeviceName(), true);
+                this.deviceId = registeredDeviceId;
+                this.prefs.edit().putString("deviceId", registeredDeviceId).commit();
+                if (!previousDeviceId.equals(registeredDeviceId)) {
+                    try {
+                        MobileMessageClient.requestWithoutQueue(baseUrl, "/v1/me/devices/" + previousDeviceId, finalToken, "DELETE", null);
+                    } catch (Exception ignored) {
+                        Log.w("YanziSession", "Old installation registration cleanup deferred");
                     }
+                }
+                this.prefs.edit()
+                        .putString("baseUrl", baseUrl)
+                        .putString("email", email)
+                        .putString("password", password)
+                        .putString("token", finalToken)
+                        .remove("deviceLoginRemoved")
+                        .putString("username", finalUsername)
+                        .apply();
+                Log.i("MainActivity", "Account login and device registration succeeded.");
+                this.runOnUiThread(() -> {
+                    DeviceHeartbeatService.startIfLoggedIn(this);
+                    this.setStatus("登录成功，设备已注册。");
+                    this.setAccountLoginFeedback("登录成功。", false);
+                    this.setLoginBusy(false);
                     this.refreshExtensions();
                     this.refreshYanm();
                     this.updateProfileHeader();
                     if (MainActivity.this.accountDialog != null) {
                         MainActivity.this.accountDialog.dismiss();
-                        MainActivity.this.accountDialog = null;
                     }
                 });
             }
             catch (Exception ex) {
-                this.prefs.edit().putString("baseUrl", baseUrl).putString("email", email).putString("password", this.passwordInput.getText().toString()).putString("token", finalToken).putString("username", finalUsername).apply();
+                String message = ex.getMessage() == null
+                        ? ex.toString()
+                        : ex.getMessage();
+                this.prefs.edit()
+                        .putString("baseUrl", baseUrl)
+                        .putString("email", email)
+                        .remove("password")
+                        .remove("token")
+                        .putString("username", finalUsername)
+                        .apply();
+                Log.w(
+                        "MainActivity",
+                        "Account login succeeded but device registration failed: "
+                                + message);
                 this.runOnUiThread(() -> {
-                    this.setStatus("\u767b\u5f55\u6210\u529f\uff0c\u4f46\u8bbe\u5907\u6ce8\u518c\u5931\u8d25\uff1a" + ex.getMessage());
-                    if (this.loginButton != null) {
-                        this.loginButton.setEnabled(true);
-                    }
+                    this.setStatus(
+                            "登录成功，但设备注册失败：" + message);
+                    DeviceHeartbeatService.startIfLoggedIn(this);
+                    this.setAccountLoginFeedback(
+                            "设备注册失败，请重新登录。",
+                            true);
+                    this.setLoginBusy(false);
+                    this.refreshExtensions();
+                    this.refreshYanm();
                     this.updateProfileHeader();
-                    if (MainActivity.this.accountDialog != null) {
-                        MainActivity.this.accountDialog.dismiss();
-                        MainActivity.this.accountDialog = null;
-                    }
                 });
             }
         });
+    }
+
+    private void diagnoseCloudConnectivity() {
+        this.setStatus("正在检测云端连接...");
+        this.executor.execute(() -> {
+            try {
+                String baseUrl = this.normalizedBaseUrl();
+                JSONObject result = YanziApiClient.getJson(
+                        baseUrl,
+                        "/health",
+                        null,
+                        "云端诊断");
+                boolean ok = result.optBoolean("ok", false);
+                Log.i(
+                        "MainActivity",
+                        "Cloud diagnostic completed: ok=" + ok);
+                this.runOnUiThread(() -> this.setStatus(
+                        ok
+                                ? "云端连接正常。"
+                                : "云端已响应，但健康状态异常。"));
+            }
+            catch (Exception ex) {
+                String message = ex.getMessage() == null
+                        ? ex.toString()
+                        : ex.getMessage();
+                Log.w(
+                        "MainActivity",
+                        "Cloud diagnostic failed: " + message);
+                this.runOnUiThread(() -> this.setStatus(
+                        "云端连接失败：" + message));
+            }
+        });
+    }
+
+    private void runHeadlessAccountExtensionStorageDiagnostic(Intent intent) {
+        String extensionId = intent.getStringExtra("test_extension_id");
+        String key = intent.getStringExtra("test_key");
+        String expectedDesktopValue =
+                intent.getStringExtra("expected_desktop_value");
+        String mobileValue = intent.getStringExtra("test_mobile_value");
+
+        Thread diagnosticThread = new Thread(() -> {
+            try {
+                if (extensionId == null
+                        || extensionId.trim().isEmpty()
+                        || key == null
+                        || key.trim().isEmpty()
+                        || expectedDesktopValue == null
+                        || mobileValue == null) {
+                    throw new IllegalArgumentException(
+                            "Headless storage diagnostic parameters missing.");
+                }
+
+                String testExtensionId = extensionId.trim();
+                String testKey = key.trim();
+                String baseUrl = this.normalizedBaseUrl();
+                String token = this.requireToken();
+
+                JSONObject first = null;
+                for (int attempt = 1; attempt <= 8; attempt++) {
+                    try {
+                        first = MobileExtensionStorageClient.read(
+                                baseUrl,
+                                token,
+                                testExtensionId,
+                                testKey);
+                    }
+                    catch (Exception ex) {
+                        if (!MainActivity.isUnauthorized(ex)) {
+                            throw ex;
+                        }
+                        token = this.refreshToken();
+                        first = MobileExtensionStorageClient.read(
+                                baseUrl,
+                                token,
+                                testExtensionId,
+                                testKey);
+                    }
+
+                    boolean exists = first.optBoolean("exists", false);
+                    long observedRevision =
+                            first.optLong("revision", 0L);
+                    boolean contentMatch =
+                            expectedDesktopValue.equals(
+                                    first.optString("content", ""));
+
+                    Log.i(
+                            "MainActivity",
+                            "Headless storage first read: attempt="
+                                    + attempt
+                                    + ", exists="
+                                    + exists
+                                    + ", revision="
+                                    + observedRevision
+                                    + ", contentMatch="
+                                    + contentMatch);
+
+                    if (exists
+                            && observedRevision > 0L
+                            && contentMatch) {
+                        break;
+                    }
+
+                    if (attempt < 8) {
+                        Thread.sleep(1000L);
+                    }
+                }
+
+                long firstRevision = first == null
+                        ? 0L
+                        : first.optLong("revision", 0L);
+                if (first == null
+                        || !first.optBoolean("exists", false)
+                        || firstRevision <= 0L
+                        || !expectedDesktopValue.equals(
+                                first.optString("content", ""))) {
+                    throw new IllegalStateException(
+                            "Headless diagnostic did not read Windows value.");
+                }
+
+                JSONObject write =
+                        MobileExtensionStorageClient.write(
+                                baseUrl,
+                                token,
+                                this.getOrCreateDeviceId(),
+                                MainActivity.buildDeviceDisplayName(),
+                                testExtensionId,
+                                testKey,
+                                mobileValue,
+                                firstRevision);
+
+                if (!write.optBoolean("ok", false)
+                        || write.optBoolean("conflict", false)) {
+                    throw new IllegalStateException(
+                            "Headless diagnostic write failed or conflicted.");
+                }
+
+                long writeRevision = write.optLong("revision", 0L);
+                JSONObject verify = null;
+                for (int attempt = 1; attempt <= 8; attempt++) {
+                    verify = MobileExtensionStorageClient.read(
+                            baseUrl,
+                            token,
+                            testExtensionId,
+                            testKey);
+
+                    boolean exists = verify.optBoolean("exists", false);
+                    long observedRevision =
+                            verify.optLong("revision", 0L);
+                    boolean contentMatch =
+                            mobileValue.equals(
+                                    verify.optString("content", ""));
+
+                    Log.i(
+                            "MainActivity",
+                            "Headless storage verify read: attempt="
+                                    + attempt
+                                    + ", exists="
+                                    + exists
+                                    + ", revision="
+                                    + observedRevision
+                                    + ", contentMatch="
+                                    + contentMatch);
+
+                    if (exists
+                            && observedRevision == writeRevision
+                            && contentMatch) {
+                        break;
+                    }
+
+                    if (attempt < 8) {
+                        Thread.sleep(1000L);
+                    }
+                }
+
+                if (verify == null
+                        || !verify.optBoolean("exists", false)
+                        || verify.optLong("revision", 0L) != writeRevision
+                        || !mobileValue.equals(
+                                verify.optString("content", ""))) {
+                    throw new IllegalStateException(
+                            "Headless diagnostic verify failed.");
+                }
+
+                Log.i(
+                        "MainActivity",
+                        "Headless account storage diagnostic PASSED: "
+                                + "firstRevision="
+                                + firstRevision
+                                + ", writeRevision="
+                                + writeRevision);
+            }
+            catch (Exception ex) {
+                Log.e(
+                        "MainActivity",
+                        "Headless account storage diagnostic FAILED: "
+                                + (ex.getMessage() == null
+                                        ? ex.toString()
+                                        : ex.getMessage()),
+                        ex);
+            }
+            finally {
+                this.runOnUiThread(this::finish);
+            }
+        }, "yanzi-headless-storage-diagnostic");
+        diagnosticThread.start();
+    }
+
+    private JSONArray withBundledMobileExtensions(JSONArray definitions) {
+        try {
+            JSONArray merged = new JSONArray();
+            java.util.HashSet<String> ids = new java.util.HashSet<>();
+            for (int i = 0; i < definitions.length(); i++) {
+                JSONObject item = definitions.optJSONObject(i);
+                if (item != null && !item.optBoolean("bundled", false)) {
+                    ids.add(item.optString("id")); merged.put(item);
+                }
+            }
+            String[] files = getAssets().list("mobile-extensions");
+            if (files != null) for (String file : files) {
+                if (!file.endsWith(".json")) continue;
+                try (java.io.InputStream stream = getAssets().open("mobile-extensions/" + file)) {
+                    java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+                    byte[] buffer = new byte[4096]; int count;
+                    while ((count = stream.read(buffer)) != -1) bytes.write(buffer, 0, count);
+                    JSONObject item = new JSONObject(new String(bytes.toByteArray(), java.nio.charset.StandardCharsets.UTF_8));
+                    if (ids.add(item.getString("id"))) merged.put(item.put("bundled", true));
+                }
+            }
+            return merged;
+        } catch (Exception failure) { Log.w("YanziExtensions", "Bundled definitions unavailable"); }
+        return definitions;
+    }
+    private void diagnoseAccountExtensionStorage(Intent intent) {
+        String extensionId = intent.getStringExtra("test_extension_id");
+        String key = intent.getStringExtra("test_key");
+        String expectedDesktopValue =
+                intent.getStringExtra("expected_desktop_value");
+        String mobileValue = intent.getStringExtra("test_mobile_value");
+
+        if (extensionId == null
+                || extensionId.trim().isEmpty()
+                || key == null
+                || key.trim().isEmpty()
+                || expectedDesktopValue == null
+                || mobileValue == null) {
+            Log.w(
+                    "MainActivity",
+                    "Account storage diagnostic missing test parameters.");
+            this.setStatus("小程序云数据诊断参数不完整。");
+            return;
+        }
+
+        final String testExtensionId = extensionId.trim();
+        final String testKey = key.trim();
+
+        this.setStatus("正在验证手机读写小程序云数据...");
+        Thread diagnosticThread = new Thread(() -> {
+            try {
+                String baseUrl = this.normalizedBaseUrl();
+                String token = this.requireToken();
+
+                JSONObject first;
+                try {
+                    first = MobileExtensionStorageClient.read(
+                            baseUrl,
+                            token,
+                            testExtensionId,
+                            testKey);
+                }
+                catch (Exception ex) {
+                    if (!MainActivity.isUnauthorized(ex)) {
+                        throw ex;
+                    }
+                    token = this.refreshToken();
+                    first = MobileExtensionStorageClient.read(
+                            baseUrl,
+                            token,
+                            testExtensionId,
+                            testKey);
+                }
+
+                boolean firstExists = first.optBoolean("exists", false);
+                long firstRevision = first.optLong("revision", 0L);
+                String firstContent = first.optString("content", "");
+
+                if (!firstExists
+                        || firstRevision <= 0L
+                        || !expectedDesktopValue.equals(firstContent)) {
+                    throw new IllegalStateException(
+                            "手机未读取到 Windows 刚写入的测试值。");
+                }
+
+                JSONObject write;
+                try {
+                    write = MobileExtensionStorageClient.write(
+                            baseUrl,
+                            token,
+                            this.getOrCreateDeviceId(),
+                            MainActivity.buildDeviceDisplayName(),
+                            testExtensionId,
+                            testKey,
+                            mobileValue,
+                            firstRevision);
+                }
+                catch (Exception ex) {
+                    if (!MainActivity.isUnauthorized(ex)) {
+                        throw ex;
+                    }
+                    token = this.refreshToken();
+                    write = MobileExtensionStorageClient.write(
+                            baseUrl,
+                            token,
+                            this.getOrCreateDeviceId(),
+                            MainActivity.buildDeviceDisplayName(),
+                            testExtensionId,
+                            testKey,
+                            mobileValue,
+                            firstRevision);
+                }
+
+                if (!write.optBoolean("ok", false)
+                        || write.optBoolean("conflict", false)) {
+                    throw new IllegalStateException(
+                            "手机写入测试值失败或发生 revision 冲突。");
+                }
+
+                long writeRevision = write.optLong("revision", 0L);
+                if (writeRevision <= firstRevision) {
+                    throw new IllegalStateException(
+                            "手机写入后 revision 未递增。");
+                }
+
+                JSONObject verify =
+                        MobileExtensionStorageClient.read(
+                                baseUrl,
+                                token,
+                                testExtensionId,
+                                testKey);
+                long verifyRevision = verify.optLong("revision", 0L);
+                String verifyContent = verify.optString("content", "");
+
+                if (!verify.optBoolean("exists", false)
+                        || verifyRevision != writeRevision
+                        || !mobileValue.equals(verifyContent)) {
+                    throw new IllegalStateException(
+                            "手机写入后的回读校验失败。");
+                }
+
+                Log.i(
+                        "MainActivity",
+                        "Account storage diagnostic PASSED: firstRevision="
+                                + firstRevision
+                                + ", writeRevision="
+                                + writeRevision
+                                + ", verifyRevision="
+                                + verifyRevision);
+
+                this.runOnUiThread(() -> this.setStatus(
+                        "小程序云数据手机读写验证成功。"));
+            }
+            catch (Exception ex) {
+                String message = ex.getMessage() == null
+                        ? ex.toString()
+                        : ex.getMessage();
+
+                Log.e(
+                        "MainActivity",
+                        "Account storage diagnostic FAILED: " + message,
+                        ex);
+
+                this.runOnUiThread(() -> this.setStatus(
+                        "小程序云数据验证失败：" + message));
+            }
+        }, "yanzi-extension-storage-diagnostic");
+        diagnosticThread.start();
     }
 
     private void sendToDesktop() {
@@ -3420,13 +4058,17 @@ extends Activity {
 
     private void sendTextValueToDesktop(String text, String pendingStatus) {
         this.setStatus(pendingStatus);
-        this.executor.execute(() -> {
+        beginMessageSend();
+        MobileSessionStore.Snapshot sendSession = MobileSessionStore.snapshot(this);
+        long queuedAt = android.os.SystemClock.elapsedRealtime();
+        messageExecutor.execute(() -> {
+            android.util.Log.i("YanziSend", "queue_wait_ms=" + (android.os.SystemClock.elapsedRealtime() - queuedAt));
             try {
+                sendSession.requireCurrent();
                 String messageId;
                 String baseUrl = this.normalizedBaseUrl();
                 String token = this.requireToken();
                 try {
-                    YanziApiClient.registerDevice(baseUrl, token, this.deviceId, this.buildDeviceName());
                     messageId = YanziApiClient.sendTextToDesktop(baseUrl, token, this.deviceId, text);
                 }
                 catch (Exception ex) {
@@ -3434,15 +4076,14 @@ extends Activity {
                         throw ex;
                     }
                     token = this.refreshToken();
-                    YanziApiClient.registerDevice(baseUrl, token, this.deviceId, this.buildDeviceName());
                     messageId = YanziApiClient.sendTextToDesktop(baseUrl, token, this.deviceId, text);
                 }
                 String sentMessageId = messageId;
-                this.runOnUiThread(() -> this.setStatus("\u5df2\u53d1\u9001\u5230\u4e91\u7aef\uff0cmessageId=" + sentMessageId + "\u3002\u7535\u8111\u7aef\u5728\u7ebf\u65f6\u4f1a\u5728 5 \u79d2\u5185\u6536\u5230\u3002"));
+                this.runOnUiThread(() -> this.setStatus("消息已提交，id=" + sentMessageId));
             }
             catch (Exception ex) {
                 this.runOnUiThread(() -> this.setStatus("\u53d1\u9001\u5931\u8d25\uff1a" + ex.getMessage()));
-            }
+            } finally { finishMessageSend(); }
         });
     }
 
@@ -3461,8 +4102,13 @@ extends Activity {
     private void sendPhotoToDesktop(Uri uri) {
         this.setStatus("\u6b63\u5728\u5904\u7406\u7167\u7247...");
         this.showPhotoProgress("\u6b63\u5728\u53d1\u9001\u7167\u7247...");
-        this.executor.execute(() -> {
+        beginMessageSend();
+        MobileSessionStore.Snapshot sendSession = MobileSessionStore.snapshot(this);
+        long queuedAt = android.os.SystemClock.elapsedRealtime();
+        messageExecutor.execute(() -> {
+            android.util.Log.i("YanziSend", "queue_wait_ms=" + (android.os.SystemClock.elapsedRealtime() - queuedAt));
             try {
+                sendSession.requireCurrent();
                 String messageId;
                 byte[] jpegBytes = this.readJpegBytesFromUri(uri);
                 int[] size = MainActivity.readImageSizeFromJpegBytes(jpegBytes);
@@ -3471,7 +4117,6 @@ extends Activity {
                 String baseUrl = this.normalizedBaseUrl();
                 String token = this.requireToken();
                 try {
-                    YanziApiClient.registerDevice(baseUrl, token, this.deviceId, this.buildDeviceName());
                     messageId = YanziApiClient.sendPhotoToDesktop(baseUrl, token, this.deviceId, jpegBytes, width, height);
                 }
                 catch (Exception ex) {
@@ -3479,13 +4124,12 @@ extends Activity {
                         throw ex;
                     }
                     token = this.refreshToken();
-                    YanziApiClient.registerDevice(baseUrl, token, this.deviceId, this.buildDeviceName());
                     messageId = YanziApiClient.sendPhotoToDesktop(baseUrl, token, this.deviceId, jpegBytes, width, height);
                 }
                 String sentMessageId = messageId;
                 this.runOnUiThread(() -> {
                     this.hidePhotoProgress();
-                    this.setStatus("\u7167\u7247\u5df2\u53d1\u9001\u5230\u4e91\u7aef\uff0cmessageId=" + sentMessageId + "\u3002\u7535\u8111\u7aef\u5728\u7ebf\u65f6\u4f1a\u5728 5 \u79d2\u5185\u6536\u5230\u3002");
+                    this.setStatus("\u7167\u7247\u5df2\u53d1\u9001\uff0cmessageId=" + sentMessageId + "\u3002\u7b49\u5f85\u7535\u8111\u63a5\u6536\u3002");
                 });
             }
             catch (Exception ex) {
@@ -3493,7 +4137,7 @@ extends Activity {
                     this.hidePhotoProgress();
                     this.setStatus("\u7167\u7247\u53d1\u9001\u5931\u8d25\uff1a" + ex.getMessage());
                 });
-            }
+            } finally { finishMessageSend(); }
         });
     }
 
@@ -3544,30 +4188,83 @@ extends Activity {
     private void refreshExtensions(boolean keepExisting) {
         if (!keepExisting || this.extensionList.getChildCount() == 0) {
             this.extensionList.removeAllViews();
-            this.extensionList.addView((View)this.textView("\u6b63\u5728\u8bfb\u53d6\u8d26\u53f7\u6269\u5c55...", 13, Color.rgb((int)148, (int)163, (int)184), false));
+            this.extensionList.addView((View)this.textView(
+                    "\u6b63\u5728\u8bfb\u53d6\u8d26\u53f7\u5c0f\u7a0b\u5e8f...",
+                    13,
+                    Color.rgb((int)148, (int)163, (int)184),
+                    false));
         } else {
-            this.setStatus("\u6b63\u5728\u540e\u53f0\u5237\u65b0\u7535\u8111\u6269\u5c55...");
+            this.setStatus("\u6b63\u5728\u540e\u53f0\u5237\u65b0\u8d26\u53f7\u5c0f\u7a0b\u5e8f...");
         }
+
         this.executor.execute(() -> {
             try {
-                List<RemoteExtension> extensions;
+                List<RemoteExtension> desktopExtensions;
                 String baseUrl = this.normalizedBaseUrl();
                 String token = this.requireToken();
                 LanDiscoveryManager.discoverNow((Context)this);
+
                 try {
-                    extensions = YanziApiClient.fetchRunnableExtensions(baseUrl, token);
+                    desktopExtensions =
+                            YanziApiClient.fetchRunnableExtensions(baseUrl, token);
                 }
                 catch (Exception ex) {
                     if (!MainActivity.isUnauthorized(ex)) {
                         throw ex;
                     }
                     token = this.refreshToken();
-                    extensions = YanziApiClient.fetchRunnableExtensions(baseUrl, token);
+                    desktopExtensions =
+                            YanziApiClient.fetchRunnableExtensions(baseUrl, token);
                 }
-                List<RemoteExtension> loadedExtensions = extensions;
+
+                JSONArray mobileDefinitions = this.readLocalMobileExtensions();
+                try {
+                    JSONObject state =
+                            MobileExtensionDefinitionSyncClient.fetchState(
+                                    baseUrl,
+                                    token);
+
+                    if (!state.optBoolean("initialized", false)
+                            && mobileDefinitions.length() > 0) {
+                        state = MobileExtensionDefinitionSyncClient.seedIfMissing(
+                                baseUrl,
+                                token,
+                                this.deviceId,
+                                this.buildDeviceName(),
+                                mobileDefinitions);
+                    }
+
+                    if (state.optBoolean("initialized", false)) {
+                        JSONArray accountDefinitions =
+                                state.optJSONArray("extensions");
+                        mobileDefinitions = this.withBundledMobileExtensions(accountDefinitions == null
+                                ? new JSONArray()
+                                : accountDefinitions);
+                        this.prefs.edit()
+                                .putString(
+                                        "mobileExtensions",
+                                        mobileDefinitions.toString())
+                                .apply();
+                    }
+                }
+                catch (Exception mobileSyncEx) {
+                    Log.w(
+                            "MainActivity",
+                            "Unified catalog: mobile runtime sync unavailable; using local cache.",
+                            mobileSyncEx);
+                }
+
+                List<RemoteExtension> loadedDesktopExtensions =
+                        desktopExtensions;
+                List<RemoteExtension> unifiedExtensions =
+                        this.mergeUnifiedExtensions(
+                                desktopExtensions,
+                                mobileDefinitions);
+
                 this.runOnUiThread(() -> {
-                    this.cacheRemoteExtensions(loadedExtensions);
-                    this.renderExtensions(loadedExtensions);
+                    this.cacheRemoteExtensions(loadedDesktopExtensions);
+                    this.renderExtensions(unifiedExtensions);
+                    this.renderLocalMobileExtensions();
                     if (this.swipeRefresh != null) {
                         this.swipeRefresh.setRefreshing(false);
                     }
@@ -3577,9 +4274,15 @@ extends Activity {
                 this.runOnUiThread(() -> {
                     if (!keepExisting || this.extensionList.getChildCount() == 0) {
                         this.extensionList.removeAllViews();
-                        this.extensionList.addView((View)this.textView("\u6269\u5c55\u5217\u8868\u8bfb\u53d6\u5931\u8d25\u3002", 13, Color.rgb((int)248, (int)113, (int)113), false));
+                        this.extensionList.addView((View)this.textView(
+                                "\u5c0f\u7a0b\u5e8f\u5217\u8868\u8bfb\u53d6\u5931\u8d25\u3002",
+                                13,
+                                Color.rgb((int)248, (int)113, (int)113),
+                                false));
                     }
-                    this.setStatus("\u6269\u5c55\u5217\u8868\u8bfb\u53d6\u5931\u8d25\uff1a" + ex.getMessage());
+                    this.setStatus(
+                            "\u5c0f\u7a0b\u5e8f\u5217\u8868\u8bfb\u53d6\u5931\u8d25\uff1a"
+                                    + ex.getMessage());
                     if (this.swipeRefresh != null) {
                         this.swipeRefresh.setRefreshing(false);
                     }
@@ -3589,14 +4292,96 @@ extends Activity {
     }
 
     private void renderCachedExtensions() {
-        List<RemoteExtension> cached = this.readCachedExtensions();
+        List<RemoteExtension> cached = this.mergeUnifiedExtensions(
+                this.readCachedExtensions(),
+                this.readLocalMobileExtensions());
         if (cached.isEmpty()) {
             this.extensionList.removeAllViews();
-            this.extensionList.addView((View)this.textView("\u6682\u65e0\u7535\u8111\u6269\u5c55\u7f13\u5b58\u3002\u8fdb\u5165\u540e\u4f1a\u540e\u53f0\u62c9\u53d6\uff0c\u4e5f\u53ef\u70b9\u51fb\u201c\u5237\u65b0\u6269\u5c55\u5217\u8868\u201d\u3002", 13, Color.rgb((int)148, (int)163, (int)184), false));
+            this.extensionList.addView((View)this.textView(
+                    "\u6682\u65e0\u53ef\u7528\u5c0f\u7a0b\u5e8f\u7f13\u5b58\u3002\u8fdb\u5165\u540e\u4f1a\u540e\u53f0\u5237\u65b0\u3002",
+                    13,
+                    Color.rgb((int)148, (int)163, (int)184),
+                    false));
             return;
         }
         this.renderExtensions(cached);
-        this.extensionList.addView((View)this.textView("\u5f53\u524d\u663e\u793a\u7f13\u5b58\uff0c\u540e\u53f0\u4f1a\u81ea\u52a8\u5237\u65b0\u3002", 11, Color.rgb((int)103, (int)232, (int)249), false));
+        this.extensionList.addView((View)this.textView(
+                "\u5f53\u524d\u663e\u793a\u7f13\u5b58\uff0c\u540e\u53f0\u4f1a\u81ea\u52a8\u5237\u65b0\u3002",
+                11,
+                Color.rgb((int)103, (int)232, (int)249),
+                false));
+    }
+
+    private List<RemoteExtension> mergeUnifiedExtensions(
+            List<RemoteExtension> desktopExtensions,
+            JSONArray mobileDefinitions) {
+        java.util.LinkedHashMap<String, RemoteExtension> merged =
+                new java.util.LinkedHashMap<String, RemoteExtension>();
+
+        if (desktopExtensions != null) {
+            for (RemoteExtension desktop : desktopExtensions) {
+                if (desktop == null || desktop.extensionId == null
+                        || desktop.extensionId.trim().isEmpty()) {
+                    continue;
+                }
+                merged.put(
+                        desktop.extensionId,
+                        new RemoteExtension(
+                                desktop.extensionId,
+                                desktop.name,
+                                desktop.description,
+                                desktop.icon,
+                                desktop.accentHex,
+                                true,
+                                desktop.hasMobileRuntime));
+            }
+        }
+
+        if (mobileDefinitions != null) {
+            for (int i = 0; i < mobileDefinitions.length(); i++) {
+                JSONObject definition = mobileDefinitions.optJSONObject(i);
+                if (definition == null) continue;
+
+                String extensionId = definition.optString("id", "").trim();
+                if (extensionId.isEmpty()) continue;
+
+                RemoteExtension desktop = merged.get(extensionId);
+                String mobileName = MobileJson.firstNonEmpty(
+                        definition.optString("name"),
+                        definition.optString("displayName"),
+                        extensionId);
+                String mobileDescription = definition.optString("description", "");
+                String mobileIcon = definition.optString("icon", "");
+                String mobileAccent = MobileJson.firstNonEmpty(
+                        definition.optString("accentHex"),
+                        definition.optString("accent_hex"));
+
+                merged.put(
+                        extensionId,
+                        new RemoteExtension(
+                                extensionId,
+                                desktop == null
+                                        ? mobileName
+                                        : MobileJson.firstNonEmpty(desktop.name, mobileName),
+                                desktop == null
+                                        ? mobileDescription
+                                        : MobileJson.firstNonEmpty(
+                                                desktop.description,
+                                                mobileDescription),
+                                desktop == null
+                                        ? mobileIcon
+                                        : MobileJson.firstNonEmpty(desktop.icon, mobileIcon),
+                                desktop == null
+                                        ? mobileAccent
+                                        : MobileJson.firstNonEmpty(
+                                                desktop.accentHex,
+                                                mobileAccent),
+                                desktop != null && desktop.hasDesktopRuntime,
+                                true));
+            }
+        }
+
+        return new ArrayList<RemoteExtension>(merged.values());
     }
 
     private void cacheRemoteExtensions(List<RemoteExtension> extensions) {
@@ -3620,10 +4405,10 @@ extends Activity {
             for (int i = 0; i < array.length(); ++i) {
                 JSONObject item = array.optJSONObject(i);
                 if (item == null) continue;
-                String extensionId = MainActivity.firstNonEmpty(item.optString("extensionId"), item.optString("extension_id"), item.optString("ExtensionId"), item.optString("Extension_id"));
+                String extensionId = MobileJson.firstNonEmpty(item.optString("extensionId"), item.optString("extension_id"), item.optString("ExtensionId"), item.optString("Extension_id"));
                 if (extensionId.isEmpty()) continue;
-                String accentHex = MainActivity.firstNonEmpty(item.optString("accentHex"), item.optString("accent_hex"), item.optString("AccentHex"));
-                items.add(new RemoteExtension(extensionId, MainActivity.firstNonEmpty(item.optString("name"), item.optString("Name"), extensionId), MainActivity.firstNonEmpty(item.optString("description"), item.optString("Description")), MainActivity.firstNonEmpty(item.optString("icon"), item.optString("Icon")), accentHex));
+                String accentHex = MobileJson.firstNonEmpty(item.optString("accentHex"), item.optString("accent_hex"), item.optString("AccentHex"));
+                items.add(new RemoteExtension(extensionId, MobileJson.firstNonEmpty(item.optString("name"), item.optString("Name"), extensionId), MobileJson.firstNonEmpty(item.optString("description"), item.optString("Description")), MobileJson.firstNonEmpty(item.optString("icon"), item.optString("Icon")), accentHex));
             }
         }
         catch (Exception exception) {
@@ -3636,17 +4421,18 @@ extends Activity {
         this.currentDesktopExtensions = extensions;
         String query = this.searchDesktopExtensionsInput != null && this.searchDesktopExtensionsInput.getText() != null ? this.searchDesktopExtensionsInput.getText().toString().trim().toLowerCase() : "";
         ArrayList<RemoteExtension> filtered = new ArrayList<RemoteExtension>();
-        if (query.isEmpty()) {
-            filtered.addAll(extensions);
-        } else {
-            for (RemoteExtension e : extensions) {
-                if ((e.name == null || !e.name.toLowerCase().contains(query)) && (e.description == null || !e.description.toLowerCase().contains(query))) continue;
-                filtered.add(e);
-            }
+        for(RemoteExtension e:extensions){
+            if(!e.hasDesktopRuntime)continue;
+            if(!query.isEmpty()&&(e.name==null||!e.name.toLowerCase().contains(query))&&(e.description==null||!e.description.toLowerCase().contains(query)))continue;
+            filtered.add(e);
         }
         this.extensionList.removeAllViews();
         if (filtered.isEmpty()) {
-            this.extensionList.addView((View)this.textView("\u6682\u65e0\u53ef\u8fdc\u7a0b\u6267\u884c\u6269\u5c55\u3002", 13, Color.rgb((int)148, (int)163, (int)184), false));
+            this.extensionList.addView((View)this.textView(
+                    "\u6682\u65e0\u53ef\u7528\u5c0f\u7a0b\u5e8f\u3002",
+                    13,
+                    Color.rgb((int)148, (int)163, (int)184),
+                    false));
             return;
         }
         this.extensionList.setGravity(Gravity.CENTER_HORIZONTAL);
@@ -3660,9 +4446,12 @@ extends Activity {
         for (RemoteExtension extension : filtered) {
             LinearLayout card = this.iconCard();
             card.setGravity(17);
-            card.setOnClickListener(v -> this.runRemoteExtension(extension, (View)card));
+            card.setOnClickListener(
+                    v -> this.runRemoteExtension(extension, (View)card));
             card.setOnLongClickListener(v -> {
-                this.showSetWidgetExtensionDialog(extension);
+                this.showUnifiedExtensionActions(
+                        extension,
+                        (View)card);
                 return true;
             });
             GridLayout.LayoutParams cardParams = new GridLayout.LayoutParams();
@@ -3702,9 +4491,172 @@ extends Activity {
             LinearLayout.LayoutParams nameParams = new LinearLayout.LayoutParams(-1, -2);
             nameParams.gravity = 1;
             card.addView((View)name, (ViewGroup.LayoutParams)nameParams);
+
             grid.addView((View)card);
         }
         this.adjustViewPagerHeight();
+    }
+
+
+    private JSONObject findLocalMobileExtensionDefinition(String extensionId) {
+        if (extensionId == null || extensionId.trim().isEmpty()) {
+            return null;
+        }
+
+        JSONArray array = this.readLocalMobileExtensions();
+        for (int i = 0; i < array.length(); i++) {
+            JSONObject item = array.optJSONObject(i);
+            if (item == null) continue;
+            if (extensionId.equals(item.optString("id", ""))) {
+                return item;
+            }
+        }
+        return null;
+    }
+
+    private static String mobileExtensionSource(JSONObject definition) {
+        if (definition == null) {
+            return "";
+        }
+
+        String source = definition.optString("code", "");
+        if (!source.isEmpty()) {
+            return source;
+        }
+
+        JSONObject script = definition.optJSONObject("script");
+        return script == null ? "" : script.optString("source", "");
+    }
+
+    private void runUnifiedExtension(
+            RemoteExtension extension,
+            View cardView) {
+        if (extension == null) {
+            return;
+        }
+
+        if (extension.hasMobileRuntime) {
+            this.runLocalMobileExtensionInPlace(extension, cardView);
+            return;
+        }
+
+        if (extension.hasDesktopRuntime) {
+            this.runRemoteExtension(extension, cardView);
+            return;
+        }
+
+        this.setStatus("\u5c0f\u7a0b\u5e8f\u6ca1\u6709\u53ef\u7528\u7684\u8fd0\u884c\u65f6\uff1a"
+                + extension.name);
+    }
+
+    private void runLocalMobileExtensionInPlace(
+            RemoteExtension extension,
+            View cardView) {
+        JSONObject definition =
+                this.findLocalMobileExtensionDefinition(extension.extensionId);
+
+        if (definition == null) {
+            if (extension.hasDesktopRuntime) {
+                this.runRemoteExtension(extension, cardView);
+                return;
+            }
+            this.setStatus("\u672a\u627e\u5230\u624b\u673a\u8fd0\u884c\u65f6\uff1a"
+                    + extension.name);
+            return;
+        }
+
+        String source = MainActivity.mobileExtensionSource(definition);
+        if (source.isEmpty()) {
+            if (extension.hasDesktopRuntime) {
+                this.runRemoteExtension(extension, cardView);
+                return;
+            }
+            this.setStatus("\u5c0f\u7a0b\u5e8f\u65e0\u53ef\u6267\u884c\u7684\u624b\u673a\u4ee3\u7801\uff1a"
+                    + extension.name);
+            return;
+        }
+
+        if (cardView != null) {
+            cardView.setEnabled(false);
+            cardView.setAlpha(0.65f);
+        }
+
+        this.setStatus("\u6b63\u5728\u624b\u673a\u672c\u673a\u8fd0\u884c\uff1a"
+                + extension.name);
+
+        this.executeMobileScriptHeadless(
+                source,
+                extension.name,
+                extension.extensionId,
+                result -> this.runOnUiThread(() -> {
+                    if (cardView != null) {
+                        cardView.setEnabled(true);
+                        cardView.setAlpha(1.0f);
+                    }
+                    if (result != null && !result.trim().isEmpty()
+                            && !result.startsWith("\u5931\u8d25:")) {
+                        this.setStatus("\u5df2\u5728\u624b\u673a\u672c\u673a\u5b8c\u6210\uff1a"
+                                + extension.name);
+                    }
+                }));
+    }
+
+    private void showUnifiedExtensionActions(
+            RemoteExtension extension,
+            View cardView) {
+        if (extension == null) {
+            return;
+        }
+
+        if (extension.hasMobileRuntime && extension.hasDesktopRuntime) {
+            String[] actions = new String[]{
+                    "\u624b\u673a\u8fd0\u884c",
+                    "\u7535\u8111\u8fd0\u884c",
+                    "\u66f4\u591a\u8bbe\u7f6e"
+            };
+            new AlertDialog.Builder((Context)this)
+                    .setTitle((CharSequence)extension.name)
+                    .setItems(actions, (dialog, which) -> {
+                        if (which == 0) {
+                            this.runLocalMobileExtensionInPlace(
+                                    extension,
+                                    cardView);
+                        } else if (which == 1) {
+                            this.runRemoteExtension(
+                                    extension,
+                                    cardView);
+                        } else {
+                            this.showSetWidgetExtensionDialog(extension);
+                        }
+                    })
+                    .show();
+            return;
+        }
+
+        if (extension.hasMobileRuntime) {
+            String[] actions = new String[]{
+                    "\u624b\u673a\u8fd0\u884c",
+                    "\u6dfb\u52a0\u684c\u9762\u56fe\u6807"
+            };
+            new AlertDialog.Builder((Context)this)
+                    .setTitle((CharSequence)extension.name)
+                    .setItems(actions, (dialog, which) -> {
+                        if (which == 0) {
+                            this.runLocalMobileExtensionInPlace(
+                                    extension,
+                                    cardView);
+                        } else {
+                            this.createLocalMobileExtensionShortcut(
+                                    extension.extensionId,
+                                    extension.name,
+                                    extension.icon);
+                        }
+                    })
+                    .show();
+            return;
+        }
+
+        this.showSetWidgetExtensionDialog(extension);
     }
 
     private void runRemoteExtension(RemoteExtension extension, View cardView) {
@@ -3772,6 +4724,9 @@ extends Activity {
                             finished = true;
                             break;
                         }
+                        if ("unknown".equals(status) || "expired".equals(status) || "cancelled".equals(status)) {
+                            statusResult = status; execOutput = "结果待确认或请求已结束；未自动重复执行，请在目标设备确认。"; finished = true; break;
+                        }
                         if ("failed".equals(status)) {
                             JSONObject execRes;
                             statusResult = "failed";
@@ -3806,6 +4761,8 @@ extends Activity {
                     if ("completed".equals(finalStatus)) {
                         new AlertDialog.Builder((Context)this).setTitle((CharSequence)"\u6267\u884c\u6210\u529f").setMessage((CharSequence)("\u6269\u5c55 [" + extension.name + "] \u6267\u884c\u6210\u529f\uff01\n\n\u8fd4\u56de\u7ed3\u679c\uff1a\n" + finalOutput)).setPositiveButton((CharSequence)"\u786e\u5b9a", null).show();
                         this.setStatus("\u6269\u5c55\u6267\u884c\u6210\u529f\uff1a" + extension.name);
+                    } else if ("unknown".equals(finalStatus) || "expired".equals(finalStatus) || "cancelled".equals(finalStatus)) {
+                        Toast.makeText(this.getApplicationContext(), finalOutput, Toast.LENGTH_LONG).show();
                     } else if ("failed".equals(finalStatus)) {
                         new AlertDialog.Builder((Context)this).setTitle((CharSequence)"\u6267\u884c\u5931\u8d25").setMessage((CharSequence)("\u6269\u5c55 [" + extension.name + "] \u6267\u884c\u5931\u8d25\uff01\n\n\u9519\u8bef\u4fe1\u606f\uff1a\n" + finalOutput)).setPositiveButton((CharSequence)"\u786e\u5b9a", null).show();
                         this.setStatus("\u6269\u5c55\u6267\u884c\u5931\u8d25\uff1a" + extension.name);
@@ -3821,11 +4778,44 @@ extends Activity {
             catch (Exception ex) {
                 restoreUi.run();
                 this.runOnUiThread(() -> {
-                    new AlertDialog.Builder((Context)this).setTitle((CharSequence)"\u53d1\u9001\u8bf7\u6c42\u5931\u8d25").setMessage((CharSequence)ex.getMessage()).setPositiveButton((CharSequence)"\u786e\u5b9a", null).show();
+                    if (ex instanceof MobileApiClient.MissingSourceDeviceException) {
+                        handleRemovedDeviceSession();
+                    } else {
+                        new AlertDialog.Builder((Context)this).setTitle((CharSequence)"\u53d1\u9001\u8bf7\u6c42\u5931\u8d25").setMessage((CharSequence)ex.getMessage()).setPositiveButton((CharSequence)"\u786e\u5b9a", null).show();
+                    }
                     this.setStatus("\u6269\u5c55\u6267\u884c\u53d1\u9001\u5931\u8d25\uff1a" + ex.getMessage());
                 });
             }
         });
+    }
+
+    private void verifyDeviceSessionOnEntry() {
+        final String token = prefs.getString("token", "");
+        final String source = deviceId;
+        if (token.isEmpty()) return;
+        executor.execute(() -> {
+            try {
+                MobileDeviceSession.requireRegistered(normalizedBaseUrl(), token, source);
+            } catch (MobileApiClient.MissingSourceDeviceException removed) {
+                runOnUiThread(() -> {
+                    if (token.equals(prefs.getString("token", "")) || prefs.getBoolean("deviceLoginRemoved", false)) handleRemovedDeviceSession();
+                });
+            } catch (Exception unavailable) {
+                Log.w("YanziSession", "Device validation deferred: " + unavailable.getClass().getSimpleName());
+            }
+        });
+    }
+
+    private void handleRemovedDeviceSession() {
+        if (prefs.getString("token", "").isEmpty() && !prefs.getBoolean("deviceLoginRemoved", false)) return;
+        MobileDeviceSession.clearRemovedLogin(this);
+        prefs.edit().remove("deviceLoginRemoved").apply();
+        updateProfileHeader();
+        setStatus("本机已被移除，请重新登录。");
+        if (accountDialog != null) accountDialog.dismiss();
+        new AlertDialog.Builder(this).setTitle("本机已被移除")
+                .setMessage("此设备已从账号中删除，登录状态已退出。请重新登录后再连接电脑。")
+                .setPositiveButton("重新登录", (dialog, which) -> showAccountSettingsDialog()).show();
     }
 
     private void refreshYanm() {
@@ -3935,17 +4925,21 @@ extends Activity {
 
     private void selectSubTab(int index) {
         if (index < 0 || index > 3) return;
+        boolean changed = this.currentSubTabIndex != index;
         this.currentSubTabIndex = index;
-        
+
         this.runOnUiThread(() -> {
+            if (this.desktopDashboard != null) {
+                this.desktopDashboard.select(index);
+            }
             if (this.desktopViewPager != null && this.desktopViewPager.getCurrentItem() != index) {
                 this.desktopViewPager.setCurrentItem(index, true);
             }
-            
+
             android.graphics.drawable.GradientDrawable activeBg = new android.graphics.drawable.GradientDrawable();
-            activeBg.setCornerRadius((float)this.dp(8));
-            activeBg.setColor(Color.argb(20, 34, 211, 238));
-            
+            activeBg.setCornerRadius((float)this.dp(12));
+            activeBg.setColor(Color.argb(32, 79, 140, 255));
+
             if (this.btnShowChat != null) {
                 this.btnShowChat.setTextColor(Color.rgb(148, 163, 184));
                 this.btnShowChat.setBackgroundColor(Color.TRANSPARENT);
@@ -3962,20 +4956,24 @@ extends Activity {
                 this.btnShowShell.setTextColor(Color.rgb(148, 163, 184));
                 this.btnShowShell.setBackgroundColor(Color.TRANSPARENT);
             }
-            
+
             if (index == 0) {
+                if(changed) this.loadChatHistory();
                 if (this.btnShowChat != null) {
-                    this.btnShowChat.setTextColor(Color.rgb(34, 211, 238));
+                    this.btnShowChat.setTextColor(YanziUiKit.BLUE);
                     this.btnShowChat.setBackground((android.graphics.drawable.Drawable)activeBg);
                 }
             } else if (index == 1) {
                 if (this.btnShowExtensions != null) {
-                    this.btnShowExtensions.setTextColor(Color.rgb(34, 211, 238));
+                    this.btnShowExtensions.setTextColor(YanziUiKit.BLUE);
                     this.btnShowExtensions.setBackground((android.graphics.drawable.Drawable)activeBg);
+                }
+                if (changed) {
+                    this.refreshExtensions(true);
                 }
             } else if (index == 2) {
                 if (this.btnShowFileManager != null) {
-                    this.btnShowFileManager.setTextColor(Color.rgb(34, 211, 238));
+                    this.btnShowFileManager.setTextColor(YanziUiKit.BLUE);
                     this.btnShowFileManager.setBackground((android.graphics.drawable.Drawable)activeBg);
                 }
                 if (this.currentPath == null) {
@@ -3983,7 +4981,7 @@ extends Activity {
                 }
             } else if (index == 3) {
                 if (this.btnShowShell != null) {
-                    this.btnShowShell.setTextColor(Color.rgb(34, 211, 238));
+                    this.btnShowShell.setTextColor(YanziUiKit.BLUE);
                     this.btnShowShell.setBackground((android.graphics.drawable.Drawable)activeBg);
                 }
             }
@@ -4006,7 +5004,7 @@ extends Activity {
             view = this.shellContainer;
         }
         if (view == null) return;
-        
+
         final View finalView = view;
         this.desktopViewPager.post(() -> {
             try {
@@ -4031,44 +5029,57 @@ extends Activity {
         });
     }
 
+    private static final long CLOUD_PRESENCE_REFRESH_MS = 30000L;
+    private static final long CLOUD_PRESENCE_RETRY_MS = 15000L;
+    private final java.util.concurrent.atomic.AtomicBoolean connectionCheckBusy = new java.util.concurrent.atomic.AtomicBoolean();
+    private DesktopCloudPresence cachedDesktopCloudPresence;
+    private long nextDesktopCloudPresenceRefreshAt;
+    private String cachedDesktopCloudPresenceSession = "";
+
     private void checkConnectionAsync() {
+        if (!connectionCheckBusy.compareAndSet(false, true)) return;
         this.executor.execute(() -> {
+            try {
+            MobileSessionStore.Snapshot connectionSession = MobileSessionStore.snapshot(this);
             boolean connected = false;
             String type = "";
             String offlineTitle = "电脑端未上线";
             String offlineDesc = "请确认电脑端程序已开启并在运行中";
-            String lanBaseUrl = cc.luoluoluo.yanzi.mobile.LanDiscoveryManager.getLanBaseUrl((Context)this);
-            if (lanBaseUrl == null) {
-                lanBaseUrl = cc.luoluoluo.yanzi.mobile.LanDiscoveryManager.cachedLanBaseUrl;
-            }
-            if (lanBaseUrl != null) {
-                try {
-                    String cleanUrl = lanBaseUrl;
-                    if (cleanUrl.endsWith("/")) {
-                        cleanUrl = cleanUrl.substring(0, cleanUrl.length() - 1);
-                    }
-                    java.net.URL url = new java.net.URL(cleanUrl + "/health");
-                    java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
-                    conn.setRequestMethod("GET");
-                    conn.setConnectTimeout(2000);
-                    conn.setReadTimeout(2000);
-                    int code = conn.getResponseCode();
-                    if (code == 200 || code == 401) {
-                        connected = true;
-                        type = "lan";
-                    }
-                    conn.disconnect();
-                } catch (Exception e) {
-                }
+            LanConnectionHealth.Status lanStatus = LanDiscoveryManager.checkHealth(this);
+            if (lanStatus != LanConnectionHealth.Status.UNAVAILABLE) {
+                connected = true;
+                type = lanStatus == LanConnectionHealth.Status.AVAILABLE ? "lan" : "reconnecting";
             }
             if (!connected) {
+                AccountLanConnections.refresh(this, this.normalizedBaseUrl(), this.prefs.getString("token", ""), this.deviceId);
                 String token = this.prefs != null ? this.prefs.getString("token", "").trim() : "";
                 if (token.isEmpty()) {
                     offlineTitle = "请先登录账号";
                     offlineDesc = "登录后才能通过云端设备表确认电脑端是否在线。";
                 } else {
-                    try {
-                        DesktopCloudPresence presence = this.fetchDesktopCloudPresence(this.normalizedBaseUrl(), token);
+                    String baseUrl = this.normalizedBaseUrl();
+                    String cloudSession = baseUrl + "\n" + token;
+                    long now = android.os.SystemClock.elapsedRealtime();
+                    if (!cloudSession.equals(this.cachedDesktopCloudPresenceSession)) {
+                        this.cachedDesktopCloudPresenceSession = cloudSession;
+                        this.cachedDesktopCloudPresence = null;
+                        this.nextDesktopCloudPresenceRefreshAt = 0L;
+                    }
+                    DesktopCloudPresence presence = this.cachedDesktopCloudPresence;
+                    if (presence == null || now >= this.nextDesktopCloudPresenceRefreshAt) {
+                        try {
+                            presence = this.fetchDesktopCloudPresence(baseUrl, token);
+                            this.cachedDesktopCloudPresence = presence;
+                            this.nextDesktopCloudPresenceRefreshAt = now + CLOUD_PRESENCE_REFRESH_MS;
+                        } catch (Exception e) {
+                            this.nextDesktopCloudPresenceRefreshAt = now + CLOUD_PRESENCE_RETRY_MS;
+                            if (presence == null) {
+                                offlineTitle = "云端不可达";
+                                offlineDesc = "无法确认电脑端是否启动：" + MainActivity.shortMessage(e);
+                            }
+                        }
+                    }
+                    if (presence != null) {
                         if (presence.online) {
                             connected = true;
                             type = "cloud";
@@ -4076,9 +5087,6 @@ extends Activity {
                             offlineTitle = presence.title;
                             offlineDesc = presence.description;
                         }
-                    } catch (Exception e) {
-                        offlineTitle = "云端不可达";
-                        offlineDesc = "无法确认电脑端是否启动：" + MainActivity.shortMessage(e);
                     }
                 }
             }
@@ -4087,19 +5095,59 @@ extends Activity {
             final String finalOfflineTitle = offlineTitle;
             final String finalOfflineDesc = offlineDesc;
             this.runOnUiThread(() -> {
+                try { connectionSession.requireCurrent(); } catch (Exception changed) { return; }
                 this.isDesktopConnected = finalConnected;
                 this.desktopConnectionType = finalType;
                 this.desktopOfflineTitle = finalOfflineTitle;
                 this.desktopOfflineDesc = finalOfflineDesc;
                 this.updateConnectionUi();
             });
+            } finally { connectionCheckBusy.set(false); }
         });
     }
 
-    private void updateConnectionUi() {
-        if (this.desktopConnectionDot != null) {
-            this.desktopConnectionDot.setVisibility(this.isDesktopConnected ? View.VISIBLE : View.GONE);
+    private void showDesktopConnectionDetails() {
+        startActivity(new Intent(this, LanPairingActivity.class)
+                .putExtra("connectionType", desktopConnectionType)
+                .putExtra("connected", isDesktopConnected)
+                .putExtra("offlineReason", desktopOfflineDesc));
+    }
+
+    private void updateDesktopTabConnection() {
+        if (desktopExtensionTabButton == null) return;
+        String type = !isDesktopConnected ? "offline" : desktopConnectionType;
+        String icon = "lan".equals(type) || "reconnecting".equals(type) ? "lan-connect"
+                : "cloud".equals(type) ? "cloud-outline" : "cloud-off-outline";
+        int color = "lan".equals(type) ? YanziUiKit.GREEN : "reconnecting".equals(type) ? YanziUiKit.ORANGE
+                : "cloud".equals(type) ? YanziUiKit.BLUE : YanziUiKit.RED;
+        String state = "lan".equals(type) ? "局域网在线" : "reconnecting".equals(type) ? "局域网重连中"
+                : "cloud".equals(type) ? "云端在线" : "离线";
+        View[] views = (View[]) desktopExtensionTabButton.getTag();
+        ((ImageView) views[0]).setImageDrawable(new PathDrawable(MobileIconLibrary.resolveOrDefault(icon), color));
+        ((ImageView) views[0]).setColorFilter(color);
+        desktopExtensionTabButton.setContentDescription("电脑，" + state + ("desktop".equals(selectedTab) ? "，再次点击查看连接详情" : ""));
+        if (desktopConnectionDot != null) {
+            desktopConnectionDot.setVisibility(View.VISIBLE);
+            GradientDrawable dot = new GradientDrawable();
+            dot.setShape(GradientDrawable.OVAL); dot.setColor(color);
+            desktopConnectionDot.setBackground(dot);
         }
+    }
+
+    private void beginMessageSend() {
+        runOnUiThread(() -> { pendingMessageSends++; updateBottomTabsVisibility(); });
+    }
+
+    private void finishMessageSend() {
+        runOnUiThread(() -> { pendingMessageSends = Math.max(0, pendingMessageSends - 1); updateBottomTabsVisibility(); });
+    }
+
+    private void updateBottomTabsVisibility() {
+        if (bottomTabs != null) bottomTabs.setVisibility(pendingMessageSends > 0 || isAiLoading ? View.GONE : View.VISIBLE);
+    }
+
+    private void updateConnectionUi() {
+        updateDesktopTabConnection();
         if (this.isDesktopConnected) {
             if (this.offlineHintView != null) {
                 this.offlineHintView.setVisibility(View.GONE);
@@ -4108,7 +5156,10 @@ extends Activity {
                 this.mainDesktopContentLayout.setVisibility(View.VISIBLE);
             }
             if (this.tvDesktopConnectionStatus != null) {
-                if ("lan".equals(this.desktopConnectionType)) {
+                if ("reconnecting".equals(this.desktopConnectionType)) {
+                    this.tvDesktopConnectionStatus.setText(" (局域网重连中)");
+                    this.tvDesktopConnectionStatus.setTextColor(Color.rgb(245, 158, 11));
+                } else if ("lan".equals(this.desktopConnectionType)) {
                     this.tvDesktopConnectionStatus.setText(" (局域网)");
                     this.tvDesktopConnectionStatus.setTextColor(Color.rgb(34, 197, 94));
                 } else {
@@ -4139,8 +5190,22 @@ extends Activity {
     private DesktopCloudPresence fetchDesktopCloudPresence(String baseUrl, String token) throws Exception {
         JSONObject payload = YanziApiClient.doRequest(baseUrl, "/v1/me/devices", token, "读取电脑在线状态", "GET", null, 5000);
         JSONArray items = payload.optJSONArray("items");
+        long serverNowMs = MainActivity.parseIsoTimeMs(payload.optString("serverNow", ""));
+        if (serverNowMs <= 0L) {
+            try {
+                JSONObject health = YanziApiClient.doRequest(baseUrl, "/health", token, "读取云端时间", "GET", null, 5000);
+                serverNowMs = MainActivity.parseIsoTimeMs(health.optString("now", ""));
+            }
+            catch (Exception ignored) {
+                // Legacy or temporarily unreachable health endpoint; local clock is the final fallback only.
+            }
+        }
+        long referenceNowMs = serverNowMs > 0L ? serverNowMs : System.currentTimeMillis();
         long newestSeenAtMs = 0L;
         String newestDisplayName = "";
+        long newestOnlineSeenAtMs = 0L;
+        String newestOnlineDisplayName = "";
+        boolean serverProvidedOnline = false;
         if (items != null) {
             for (int i = 0; i < items.length(); ++i) {
                 JSONObject item = items.optJSONObject(i);
@@ -4148,17 +5213,28 @@ extends Activity {
                     continue;
                 }
                 long seenAtMs = MainActivity.parseIsoTimeMs(item.optString("lastSeenAt", ""));
+                String displayName = item.optString("displayName", item.optString("deviceId", "电脑端"));
                 if (seenAtMs > newestSeenAtMs) {
                     newestSeenAtMs = seenAtMs;
-                    newestDisplayName = item.optString("displayName", item.optString("deviceId", "电脑端"));
+                    newestDisplayName = displayName;
+                }
+                if (item.has("online") && !item.isNull("online")) {
+                    serverProvidedOnline = true;
+                    if (item.optBoolean("online", false) && seenAtMs >= newestOnlineSeenAtMs) {
+                        newestOnlineSeenAtMs = seenAtMs;
+                        newestOnlineDisplayName = displayName;
+                    }
                 }
             }
         }
         if (newestSeenAtMs <= 0L) {
             return DesktopCloudPresence.offline("未发现电脑端设备", "请在电脑端登录同一账号，并保持燕子电脑端程序运行。");
         }
-        long ageMs = Math.max(0L, System.currentTimeMillis() - newestSeenAtMs);
-        if (ageMs <= DESKTOP_ONLINE_WINDOW_MS) {
+        if (serverProvidedOnline && newestOnlineSeenAtMs > 0L) {
+            return DesktopCloudPresence.online(newestOnlineDisplayName);
+        }
+        long ageMs = Math.max(0L, referenceNowMs - newestSeenAtMs);
+        if (!serverProvidedOnline && ageMs <= DESKTOP_ONLINE_WINDOW_MS) {
             return DesktopCloudPresence.online(newestDisplayName);
         }
         return DesktopCloudPresence.offline("电脑端疑似未启动", newestDisplayName + " 最后在线 " + MainActivity.formatRelativeDuration(ageMs) + "，请确认电脑端程序已开启并联网。");
@@ -4168,12 +5244,20 @@ extends Activity {
         if (value == null || value.trim().isEmpty()) {
             return 0L;
         }
+        String normalized = value.trim();
         try {
-            return Instant.parse(value.trim()).toEpochMilli();
+            return Instant.parse(normalized).toEpochMilli();
         }
-        catch (Exception ex) {
-            return 0L;
+        catch (Exception ignored) {
         }
+        try {
+            if (normalized.matches("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}")) {
+                return Instant.parse(normalized.replace(' ', 'T') + "Z").toEpochMilli();
+            }
+        }
+        catch (Exception ignored) {
+        }
+        return 0L;
     }
 
     private static String formatRelativeDuration(long durationMs) {
@@ -4379,8 +5463,8 @@ extends Activity {
     private boolean isImageFile(String fileName) {
         if (fileName == null) return false;
         String nameLower = fileName.toLowerCase(java.util.Locale.ROOT);
-        return nameLower.endsWith(".png") || nameLower.endsWith(".jpg") || nameLower.endsWith(".jpeg") 
-            || nameLower.endsWith(".gif") || nameLower.endsWith(".webp") || nameLower.endsWith(".bmp") 
+        return nameLower.endsWith(".png") || nameLower.endsWith(".jpg") || nameLower.endsWith(".jpeg")
+            || nameLower.endsWith(".gif") || nameLower.endsWith(".webp") || nameLower.endsWith(".bmp")
             || nameLower.endsWith(".ico") || nameLower.endsWith(".svg");
     }
 
@@ -4446,12 +5530,12 @@ extends Activity {
     private boolean isTextFile(String fileName) {
         if (fileName == null) return false;
         String nameLower = fileName.toLowerCase(java.util.Locale.ROOT);
-        return nameLower.endsWith(".txt") || nameLower.endsWith(".json") || nameLower.endsWith(".js") 
-            || nameLower.endsWith(".py") || nameLower.endsWith(".md") || nameLower.endsWith(".html") 
-            || nameLower.endsWith(".css") || nameLower.endsWith(".xml") || nameLower.endsWith(".ini") 
-            || nameLower.endsWith(".conf") || nameLower.endsWith(".yaml") || nameLower.endsWith(".yml") 
-            || nameLower.endsWith(".sh") || nameLower.endsWith(".bat") || nameLower.endsWith(".ps1") 
-            || nameLower.endsWith(".cs") || nameLower.endsWith(".java") || nameLower.endsWith(".cpp") 
+        return nameLower.endsWith(".txt") || nameLower.endsWith(".json") || nameLower.endsWith(".js")
+            || nameLower.endsWith(".py") || nameLower.endsWith(".md") || nameLower.endsWith(".html")
+            || nameLower.endsWith(".css") || nameLower.endsWith(".xml") || nameLower.endsWith(".ini")
+            || nameLower.endsWith(".conf") || nameLower.endsWith(".yaml") || nameLower.endsWith(".yml")
+            || nameLower.endsWith(".sh") || nameLower.endsWith(".bat") || nameLower.endsWith(".ps1")
+            || nameLower.endsWith(".cs") || nameLower.endsWith(".java") || nameLower.endsWith(".cpp")
             || nameLower.endsWith(".h") || nameLower.endsWith(".c") || nameLower.endsWith(".log")
             || nameLower.endsWith(".patch") || nameLower.endsWith(".diff") || nameLower.endsWith(".properties");
     }
@@ -4543,7 +5627,7 @@ extends Activity {
         new AlertDialog.Builder((Context)this).setTitle((CharSequence)"\u8c03\u6574\u7ec4\u4ef6\u987a\u5e8f").setItems(options, (dialog, which) -> {
             ArrayList<String> list = new ArrayList<String>();
             for (JSONObject comp : components) {
-                String id = MainActivity.firstNonEmpty(comp.optString("id"), comp.optString("Id"), comp.optString("title"), comp.optString("Title"), comp.optString("name"), comp.optString("Name"));
+                String id = MobileJson.firstNonEmpty(comp.optString("id"), comp.optString("Id"), comp.optString("title"), comp.optString("Title"), comp.optString("name"), comp.optString("Name"));
                 list.add(id);
             }
             String target = (String)list.remove(currentIndex);
@@ -4584,7 +5668,7 @@ extends Activity {
                     settings = YanziApiClient.fetchSettings(baseUrl, token);
                 }
                 JSONObject loadedSettings = settings;
-                
+
                 try {
                     String pConfig = YanziApiClient.fetchPersonalConfig(baseUrl, token);
                     this.prefs.edit().putString("personalSyncConfig", pConfig).apply();
@@ -4616,6 +5700,7 @@ extends Activity {
 
     private void setAiLoadingState(boolean loading) {
         this.isAiLoading = loading;
+        updateBottomTabsVisibility();
         if (this.aiSendButton != null) {
             if (loading) {
                 this.aiSendButton.setBackground(this.createStopIconDrawable());
@@ -4658,10 +5743,10 @@ extends Activity {
         if (text.isEmpty() && this.pendingAttachments.isEmpty()) {
             return;
         }
-        
+
         StringBuilder textWithFiles = new StringBuilder(text);
         ArrayList<AttachmentInfo> imgs = new ArrayList<>();
-        
+
         for (AttachmentInfo attach : this.pendingAttachments) {
             if (attach.isImage) {
                 imgs.add(attach);
@@ -4680,27 +5765,29 @@ extends Activity {
                 }
             }
         }
-        
+
         for (AttachmentInfo img : imgs) {
             if (textWithFiles.length() > 0) {
                 textWithFiles.append("\n");
             }
             textWithFiles.append("[图片: ").append(img.name).append("]");
         }
-        
+
         this.activeImageAttachments.clear();
         this.activeImageAttachments.addAll(imgs);
-        
+
         this.pendingAttachments.clear();
         this.refreshAttachmentCards();
-        
+
         this.sendAiChat(textWithFiles.toString());
     }
 
     private void sendAiChat(String text) {
         String aiBaseUrl = this.prefs.getString("aiBaseUrl", "");
         if (aiBaseUrl.isEmpty()) {
-            this.setStatus("\u8bf7\u5148\u8fde\u63a5 PC \u7aef\u540c\u6b65 AI \u914d\u7f6e\u3002");
+            this.refreshSettings();
+            this.addAiChatMessage("系统", "尚未同步到电脑端 AI 配置。已自动尝试刷新，请稍后再试；你也可以先使用“数据”管理授权。", Color.rgb(248, 180, 90), false);
+            this.aiChatInput.setText((CharSequence)"");
             return;
         }
         this.addAiChatMessage("\u6211", text, -1, true);
@@ -4767,7 +5854,7 @@ extends Activity {
         String title = toolCall.optString("title", "");
         String html = toolCall.optString("html", "");
         String mode = toolCall.optString("mode", "");
-        String stateKey = MainActivity.firstNonEmpty(toolCall.optString("stateKey", ""), toolCall.optString("key", ""));
+        String stateKey = MobileJson.firstNonEmpty(toolCall.optString("stateKey", ""), toolCall.optString("key", ""));
         String value = toolCall.has("value") ? toolCall.optString("value", "") : "";
         String code = toolCall.optString("code", "");
         int htmlHash = html.isEmpty() ? 0 : html.hashCode();
@@ -4900,6 +5987,7 @@ extends Activity {
                                 JSONObject eObj = new JSONObject();
                                 eObj.put("id", (Object)e.extensionId);
                                 eObj.put("name", (Object)e.name);
+                                eObj.put("runtime", (Object)e.runtimeLabel());
                                 extListPrompt.put((Object)eObj);
                             }
                             catch (Exception eObj) {}
@@ -4910,8 +5998,8 @@ extends Activity {
                         String yanmStr = this.prefs.getString(CACHE_YANM, "{}");
                         JSONObject yanmObj = new JSONObject(yanmStr);
                         JSONArray yanmList = new JSONArray();
-                        JSONArray components = MainActivity.firstArray(yanmObj, "components", "Components");
-                        JSONObject state = MainActivity.firstObject(yanmObj, "componentState", "ComponentState");
+                        JSONArray components = MobileJson.firstArray(yanmObj, "components", "Components");
+                        JSONObject state = MobileJson.firstObject(yanmObj, "componentState", "ComponentState");
                         if (state == null) {
                             state = new JSONObject();
                         }
@@ -5109,7 +6197,7 @@ extends Activity {
                                     java.util.regex.Pattern pId = java.util.regex.Pattern.compile("\"id\"\\s*:\\s*\"([^\"]+)\"");
                                     java.util.regex.Matcher mId = pId.matcher(jsonContent);
                                     if (mId.find()) tempToolCall.put("id", (Object)mId.group(1));
-                                    
+
                                     java.util.regex.Pattern pAction = java.util.regex.Pattern.compile("\"action\"\\s*:\\s*\"([^\"]+)\"");
                                     java.util.regex.Matcher mAction = pAction.matcher(jsonContent);
                                     if (mAction.find()) tempToolCall.put("action", (Object)mAction.group(1));
@@ -5130,6 +6218,7 @@ extends Activity {
                                             eObj.put("id", (Object)e.extensionId);
                                             eObj.put("name", (Object)e.name);
                                             eObj.put("desc", (Object)e.description);
+                                            eObj.put("runtime", (Object)e.runtimeLabel());
                                             extList.put((Object)eObj);
                                         }
                                     }
@@ -5199,9 +6288,10 @@ extends Activity {
                                             JSONObject item = locals.optJSONObject(i);
                                             if (item == null || !id.equals(item.optString("id"))) continue;
                                             isMobile = true;
-                                            String code = item.optString("code");
+                                            String code =
+                                                    MainActivity.mobileExtensionSource(item);
                                             if (code != null && !code.isEmpty()) {
-                                                this.executeMobileScriptHeadless(code, item.optString("name", id), result -> {
+                                                this.executeMobileScriptHeadless(code, item.optString("name", id), id, result -> {
                                                     this.finishAiToolCall(activeToolCallKey);
                                                     this.sendAiSystemFeedback("execute_extension", "\u3010\u7cfb\u7edf\u53cd\u9988\u3011\u6269\u5c55\u6267\u884c\u7ed3\u679c\uff1a" + result + "\n\u8bf7\u6839\u636e\u7ed3\u679c\u76f4\u63a5\u4f7f\u7528\u81ea\u7136\u8bed\u8a00\u56de\u590d\u7528\u6237\uff0c\u7edd\u5bf9\u4e0d\u8981\u518d\u6b21\u8c03\u7528\u672c\u5de5\u5177\uff01");
                                                 });
@@ -5241,7 +6331,7 @@ extends Activity {
                                 }
                                 if ("view_yanm_state".equals(toolName)) {
                                     String id = toolCall.optString("id");
-                                    String stateKey = MainActivity.firstNonEmpty(toolCall.optString("stateKey", ""), toolCall.optString("key", ""));
+                                    String stateKey = MobileJson.firstNonEmpty(toolCall.optString("stateKey", ""), toolCall.optString("key", ""));
                                     this.runOnUiThread(() -> {
                                         try {
                                             this.addAiChatMessage("\u5de5\u5177\u8c03\u7528:view_yanm_state", content, Color.rgb((int)167, (int)243, (int)208), true);
@@ -5260,7 +6350,7 @@ extends Activity {
                                 }
                                 if ("update_yanm_state".equals(toolName)) {
                                     String id = toolCall.optString("id");
-                                    String stateKey = MainActivity.firstNonEmpty(toolCall.optString("stateKey", ""), toolCall.optString("key", ""));
+                                    String stateKey = MobileJson.firstNonEmpty(toolCall.optString("stateKey", ""), toolCall.optString("key", ""));
                                     String value = this.readAiToolString(toolCall, "value", "text", "content");
                                     this.runOnUiThread(() -> {
                                         this.addAiChatMessage("\u5de5\u5177\u8c03\u7528:update_yanm_state", content, Color.rgb((int)167, (int)243, (int)208), true);
@@ -5284,7 +6374,7 @@ extends Activity {
                                         try {
                                             JSONObject result;
                                             if (toolCall.has("value") || toolCall.has("stateKey") || toolCall.has("key")) {
-                                                String stateKey = MainActivity.firstNonEmpty(toolCall.optString("stateKey", ""), toolCall.optString("key", ""));
+                                                String stateKey = MobileJson.firstNonEmpty(toolCall.optString("stateKey", ""), toolCall.optString("key", ""));
                                                 String value = this.readAiToolString(toolCall, "value", "text", "content");
                                                 result = this.updateYanmStateFromAi(id, stateKey, value);
                                             } else {
@@ -5530,10 +6620,10 @@ extends Activity {
                 JSONObject msg = loadedHistory.getJSONObject(i);
                 String role = msg.optString("role");
                 String content = msg.optString("content");
-                
+
                 String toolName = this.parseToolName(content);
                 boolean isToolCall = toolName != null;
-                
+
                 if (isToolCall) {
                     String feedbackText = "";
                     for (int j = i + 1; j < Math.min(i + 4, len); ++j) {
@@ -5561,7 +6651,7 @@ extends Activity {
                     merged[i] = true;
                     continue;
                 }
-                
+
                 if ("user".equals(role)) {
                     boolean isRealUser = msg.optBoolean("is_real_user", false);
                     if (isRealUser) {
@@ -5598,33 +6688,32 @@ extends Activity {
 
     private void checkShowAiEmptyState() {
         if (this.aiMessagesHistory == null || this.aiMessagesHistory.length() == 0) {
-            String[] prompts;
             this.aiChatHistory.removeAllViews();
             this.aiEmptyStateContainer = new LinearLayout((Context)this);
-            this.aiEmptyStateContainer.setOrientation(1);
-            this.aiEmptyStateContainer.setGravity(17);
-            this.aiEmptyStateContainer.setPadding(0, this.dp(40), 0, this.dp(20));
-            TextView title = this.textView("\u71d5\u5b50", 20, -1, true);
-            title.setGravity(17);
-            this.aiEmptyStateContainer.addView((View)title, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -2));
-            TextView subtitle = this.textView("\u4f60\u53ef\u4ee5\u95ee\u6211\u4efb\u4f55\u95ee\u9898\uff0c\u6216\u8005\u6267\u884c\u672c\u673a\u6269\u5c55", 14, Color.rgb((int)156, (int)163, (int)175), false);
-            subtitle.setGravity(17);
-            subtitle.setPadding(0, this.dp(8), 0, this.dp(24));
-            this.aiEmptyStateContainer.addView((View)subtitle, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -2));
-            for (String p : prompts = new String[]{"\u67e5\u770b\u63d2\u4ef6\u5217\u8868", "\u67e5\u8be2\u8bbe\u5907\u72b6\u6001", "\u5199\u4e00\u6bb5\u6b22\u8fce\u8bed"}) {
-                Button btn = this.button(p);
-                btn.setBackgroundColor(Color.argb((int)80, (int)255, (int)255, (int)255));
-                btn.setTextColor(-1);
-                btn.setOnClickListener(v -> {
-                    if (this.aiChatInput != null) {
-                        this.aiChatInput.setText((CharSequence)p);
-                        this.sendAiChat();
-                    }
-                });
-                LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, this.dp(44));
-                params.bottomMargin = this.dp(12);
-                this.aiEmptyStateContainer.addView((View)btn, (ViewGroup.LayoutParams)params);
-            }
+            this.aiEmptyStateContainer.setOrientation(LinearLayout.VERTICAL);
+            this.aiEmptyStateContainer.setGravity(Gravity.CENTER_HORIZONTAL);
+            this.aiEmptyStateContainer.setPadding(this.dp(18), this.dp(36), this.dp(18), this.dp(12));
+
+            TextView title = YanziUiKit.text(
+                    this,
+                    "有什么要做的？",
+                    20,
+                    YanziUiKit.TEXT,
+                    true);
+            title.setGravity(Gravity.CENTER);
+            this.aiEmptyStateContainer.addView((View)title);
+
+            TextView hint = YanziUiKit.text(
+                    this,
+                    "可以整理安排、查看电脑状态、处理便签内容。需要数据时，燕子只会使用你已授权的范围。",
+                    12,
+                    YanziUiKit.SECONDARY,
+                    false);
+            hint.setGravity(Gravity.CENTER);
+            LinearLayout.LayoutParams hintLp = new LinearLayout.LayoutParams(-1, -2);
+            hintLp.topMargin = this.dp(8);
+            this.aiEmptyStateContainer.addView((View)hint, (ViewGroup.LayoutParams)hintLp);
+
             this.aiChatHistory.addView((View)this.aiEmptyStateContainer, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -2));
         }
     }
@@ -5764,11 +6853,11 @@ extends Activity {
                         displayText = "\ud83d\udd27 \u4f7f\u7528\u5de5\u5177: execute_extension (id: " + toolCall.optString("id") + ")";
                     } else if ("view_yanm_state".equals(toolName)) {
                         String toolId = toolCall.optString("id");
-                        String stateKey = MainActivity.firstNonEmpty(toolCall.optString("stateKey", ""), toolCall.optString("key", ""));
+                        String stateKey = MobileJson.firstNonEmpty(toolCall.optString("stateKey", ""), toolCall.optString("key", ""));
                         displayText = "\ud83d\udd27 \u4f7f\u7528\u5de5\u5177: view_yanm_state" + (toolId.isEmpty() ? "" : " (id: " + toolId + ")") + (stateKey.isEmpty() ? "" : " (key: " + stateKey + ")");
                     } else if ("update_yanm_state".equals(toolName)) {
                         String toolId = toolCall.optString("id");
-                        String stateKey = MainActivity.firstNonEmpty(toolCall.optString("stateKey", ""), toolCall.optString("key", ""));
+                        String stateKey = MobileJson.firstNonEmpty(toolCall.optString("stateKey", ""), toolCall.optString("key", ""));
                         displayText = "\ud83d\udd27 \u4f7f\u7528\u5de5\u5177: update_yanm_state" + (toolId.isEmpty() ? "" : " (id: " + toolId + ")") + (stateKey.isEmpty() ? "" : " (key: " + stateKey + ")");
                     } else if ("update_yanm_component".equals(toolName)) {
                         displayText = "\ud83d\udd27 \u4f7f\u7528\u5de5\u5177: update_yanm_component (id: " + toolCall.optString("id") + ")";
@@ -5798,26 +6887,21 @@ extends Activity {
         boolean isFeedback = "\u7cfb\u7edf\u53cd\u9988".equals(sender) || (sender != null && sender.startsWith("\u7cfb\u7edf\u53cd\u9988"));
         boolean isToolMsg = sender != null && sender.startsWith("\u5de5\u5177\u8c03\u7528:");
         if (isUser) {
-            msgContainer.setGravity(0x800005);
-            tv = new TextView((Context)this);
-            tv.setText((CharSequence)displayText, TextView.BufferType.SPANNABLE);
-            tv.setTextColor(Color.rgb((int)74, (int)222, (int)128));
-            tv.setTextSize(2, 14.0f);
-            tv.setPadding(this.dp(12), this.dp(8), this.dp(12), this.dp(8));
-            tv.setTextIsSelectable(true);
+            msgContainer.setGravity(Gravity.END);
+            LinearLayout userBubble = new LinearLayout(this);
+            userBubble.setOrientation(LinearLayout.VERTICAL);
+            userBubble.setPadding(dp(12), dp(8), dp(12), dp(8));
             GradientDrawable bg = new GradientDrawable();
-            bg.setColor(Color.argb((int)30, (int)74, (int)222, (int)128));
-            bg.setCornerRadius((float)this.dp(12));
-            tv.setBackground((Drawable)bg);
-            tv.setOnLongClickListener(v -> {
+            bg.setColor(Color.rgb(37, 99, 235));
+            bg.setCornerRadius(dp(12));
+            userBubble.setBackground(bg);
+            ChatRichText.render(userBubble, displayText,
+                    Math.max(dp(160), getResources().getDisplayMetrics().widthPixels - dp(110)));
+            userBubble.setOnLongClickListener(v -> {
                 this.showAiMessageMenu(info);
                 return true;
             });
-            msgContainer.setOnLongClickListener(v -> {
-                this.showAiMessageMenu(info);
-                return true;
-            });
-            msgContainer.addView((View)tv, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-2, -2));
+            msgContainer.addView(userBubble, new LinearLayout.LayoutParams(-2, -2));
         } else if (isToolMsg) {
             msgContainer.setGravity(0x800003);
             LinearLayout header = new LinearLayout((Context)this);
@@ -5831,28 +6915,28 @@ extends Activity {
             headerText.setTextSize(2, 12.0f);
             headerText.setPadding(0, this.dp(4), 0, this.dp(4));
             header.addView((View)headerText);
-            
+
             LinearLayout contentContainer = new LinearLayout((Context)this);
             contentContainer.setOrientation(1);
             contentContainer.setVisibility(8);
-            
+
             TextView contentText1 = new TextView((Context)this);
             contentText1.setText((CharSequence)("AI \u539f\u59cb\u56de\u590d\uff1a\n" + displayText), TextView.BufferType.SPANNABLE);
             contentText1.setTextColor(Color.rgb(156, 163, 175));
             contentText1.setTextSize(2, 12.0f);
             contentText1.setPadding(this.dp(8), this.dp(4), this.dp(8), this.dp(4));
             contentText1.setTextIsSelectable(true);
-            
+
             TextView contentText2 = new TextView((Context)this);
             contentText2.setText((CharSequence)("\u7cfb\u7edf\u6267\u884c\u7ed3\u679c\uff0c\u8be6\u60c5\u5982\u4e0b\uff1a\n\u2699\ufe0f \u6b63\u5728\u6267\u884c\u5de5\u5177..."), TextView.BufferType.SPANNABLE);
             contentText2.setTextColor(Color.rgb(156, 163, 175));
             contentText2.setTextSize(2, 12.0f);
             contentText2.setPadding(this.dp(8), this.dp(4), this.dp(8), this.dp(8));
             contentText2.setTextIsSelectable(true);
-            
+
             contentContainer.addView(contentText1);
             contentContainer.addView(contentText2);
-            
+
             header.setOnClickListener(v -> {
                 boolean isHidden = contentContainer.getVisibility() == 8;
                 contentContainer.setVisibility(isHidden ? 0 : 8);
@@ -5876,7 +6960,7 @@ extends Activity {
             });
             msgContainer.addView((View)header);
             msgContainer.addView((View)contentContainer);
-            
+
             info.feedbackTextView = contentText2;
             this.currentActiveToolMessageInfo = info;
         } else if (isFeedback) {
@@ -6001,7 +7085,7 @@ extends Activity {
 
     private void renderYanm(JSONObject yanm) {
         this.currentYanmSnapshot = yanm;
-        this.currentYanmState = MainActivity.firstObject(yanm, "componentState", "ComponentState");
+        this.currentYanmState = MobileJson.firstObject(yanm, "componentState", "ComponentState");
         if (this.currentYanmState == null) {
             this.currentYanmState = new JSONObject();
             try {
@@ -6020,7 +7104,10 @@ extends Activity {
         }
         this.activeYanmWebViews.clear();
         this.yanmList.removeAllViews();
-        JSONArray components = MainActivity.firstArray(yanm, "components", "Components");
+        JSONArray components = MobileJson.firstArray(yanm, "components", "Components");
+        if (this.homeDashboard != null) {
+            this.homeDashboard.updateYanmState(components == null ? 0 : components.length(), this.expandedComponentIds.size());
+        }
         if (components == null || components.length() == 0) {
             this.yanmList.addView((View)this.textView("\u6682\u65e0\u71d5\u5e55\u7ec4\u4ef6\u3002", 13, Color.rgb((int)148, (int)163, (int)184), false));
             return;
@@ -6030,7 +7117,7 @@ extends Activity {
         for (int i = 0; i < components.length(); ++i) {
             JSONObject comp = components.optJSONObject(i);
             if (comp == null) continue;
-            String compId = MainActivity.firstNonEmpty(comp.optString("id"), comp.optString("Id"), comp.optString("title"), comp.optString("Title"), comp.optString("name"), comp.optString("Name"), "comp_" + i);
+            String compId = MobileJson.firstNonEmpty(comp.optString("id"), comp.optString("Id"), comp.optString("title"), comp.optString("Title"), comp.optString("name"), comp.optString("Name"), "comp_" + i);
             int sortedIndex = this.sortedComponentIds.indexOf(compId);
             if (sortedIndex >= 0) {
                 sortedList.add(comp);
@@ -6039,8 +7126,8 @@ extends Activity {
             remainingList.add(comp);
         }
         sortedList.sort((c1, c2) -> {
-            String id1 = MainActivity.firstNonEmpty(c1.optString("id"), c1.optString("Id"), c1.optString("title"), c1.optString("Title"), c1.optString("name"), c1.optString("Name"));
-            String id2 = MainActivity.firstNonEmpty(c2.optString("id"), c2.optString("Id"), c2.optString("title"), c2.optString("Title"), c2.optString("name"), c2.optString("Name"));
+            String id1 = MobileJson.firstNonEmpty(c1.optString("id"), c1.optString("Id"), c1.optString("title"), c1.optString("Title"), c1.optString("name"), c1.optString("Name"));
+            String id2 = MobileJson.firstNonEmpty(c2.optString("id"), c2.optString("Id"), c2.optString("title"), c2.optString("Title"), c2.optString("name"), c2.optString("Name"));
             return Integer.compare(this.sortedComponentIds.indexOf(id1), this.sortedComponentIds.indexOf(id2));
         });
         ArrayList<JSONObject> finalComponents = new ArrayList<JSONObject>(sortedList);
@@ -6048,9 +7135,9 @@ extends Activity {
         int i = 0;
         while (i < finalComponents.size()) {
             JSONObject component = (JSONObject)finalComponents.get(i);
-            String title = MainActivity.firstNonEmpty(component.optString("title"), component.optString("Title"), component.optString("name"), component.optString("Name"), "\u7ec4\u4ef6 " + (i + 1));
-            String type = MainActivity.firstNonEmpty(component.optString("type"), component.optString("Type"), component.optString("kind"), component.optString("Kind"), "component");
-            String componentId = MainActivity.firstNonEmpty(component.optString("id"), component.optString("Id"), title);
+            String title = MobileJson.firstNonEmpty(component.optString("title"), component.optString("Title"), component.optString("name"), component.optString("Name"), "\u7ec4\u4ef6 " + (i + 1));
+            String type = MobileJson.firstNonEmpty(component.optString("type"), component.optString("Type"), component.optString("kind"), component.optString("Kind"), "component");
+            String componentId = MobileJson.firstNonEmpty(component.optString("id"), component.optString("Id"), title);
             LinearLayout card = this.card();
             card.setTag((Object)("yanm_comp_" + componentId));
             LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(-1, -2);
@@ -6061,7 +7148,7 @@ extends Activity {
             headerLayout.setGravity(16);
             TextView titleView = this.textView(title, 16, -1, true);
             headerLayout.addView((View)titleView, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -2, 1.0f));
-            String html = MainActivity.firstNonEmpty(component.optString("html"), component.optString("Html"), component.optString("markup"), component.optString("Markup"), component.optString("contentHtml"), component.optString("ContentHtml"));
+            String html = MobileJson.firstNonEmpty(component.optString("html"), component.optString("Html"), component.optString("markup"), component.optString("Markup"), component.optString("contentHtml"), component.optString("ContentHtml"));
             TextView arrowView = null;
             if (!html.isEmpty()) {
                 boolean isExpanded = this.expandedComponentIds.contains(componentId);
@@ -6261,7 +7348,7 @@ extends Activity {
         if (existing != null && !existing.trim().isEmpty()) {
             return existing;
         }
-        String created = "android-" + UUID.randomUUID();
+        String created = MobileDeviceIdentity.stableDeviceId(this);
         this.prefs.edit().putString("deviceId", created).apply();
         return created;
     }
@@ -6270,34 +7357,16 @@ extends Activity {
         return MainActivity.buildDeviceDisplayName();
     }
 
-    private static String buildDeviceDisplayName() {
-        String marketName = MainActivity.firstNonEmpty(MainActivity.getSystemProperty("ro.product.marketname"), MainActivity.getSystemProperty("ro.vendor.product.marketname"), MainActivity.getSystemProperty("ro.product.vendor.marketname"), MainActivity.getSystemProperty("ro.product.odm.marketname"), MainActivity.getSystemProperty("ro.config.marketing_name"));
-        if (!marketName.isEmpty()) {
-            return marketName;
-        }
-        String maker = Build.MANUFACTURER == null ? "" : Build.MANUFACTURER.trim();
-        String model = Build.MODEL == null ? "" : Build.MODEL.trim();
-        String name = (maker + " " + model).trim();
-        return name.trim().isEmpty() ? "Android \u624b\u673a" : name;
-    }
-
-    private static String getSystemProperty(String key) {
-        try {
-            Class<?> systemProperties = Class.forName("android.os.SystemProperties");
-            Method get = systemProperties.getMethod("get", String.class);
-            Object value = get.invoke(null, key);
-            return value == null ? "" : value.toString().trim();
-        }
-        catch (Exception ignored) {
-            return "";
-        }
-    }
+    static String buildDeviceDisplayName() { return MobileDeviceIdentity.buildDeviceDisplayName(); }
 
     private void setStatus(String status) {
         this.diagnosticLog.setLength(0);
         this.diagnosticLog.append(MobileDiagnostics.append((Context)this, status));
-        this.statusText.setText((CharSequence)this.diagnosticLog.toString());
+        final String diagnosticText = this.diagnosticLog.toString();
         this.runOnUiThread(() -> {
+            if (this.statusText != null) {
+                this.statusText.setText((CharSequence)diagnosticText);
+            }
             if (this.flatLogTv != null) {
                 this.flatLogTv.setText((CharSequence)this.getYanmSyncLogs());
                 if (this.flatLogScrollView != null) {
@@ -6356,13 +7425,13 @@ extends Activity {
                 JSONObject cloudConfig = new JSONObject(configStr);
                 boolean enabled = cloudConfig.optBoolean("enabled", false);
                 String provider = cloudConfig.optString("provider", "none");
-                
+
                 if (enabled && !"none".equals(provider)) {
                     JSONObject secrets = cloudConfig.optJSONObject("secrets");
                     JSONObject settings = cloudConfig.optJSONObject("settings");
                     if (secrets == null) secrets = new JSONObject();
                     if (settings == null) settings = new JSONObject();
-                    
+
                     SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ROOT);
                     sdf.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
                     String timeStr = sdf.format(new Date());
@@ -6370,7 +7439,7 @@ extends Activity {
                             .put("updatedAtUtc", (Object)timeStr)
                             .put("yanm", (Object)snapshot);
                     String wrapperStr = wrapper.toString();
-                    
+
                     if ("webdav".equals(provider)) {
                         JSONObject webDav = settings.optJSONObject("webDav");
                         String password = secrets.optString("webDavPassword", "");
@@ -6380,7 +7449,7 @@ extends Activity {
                             config.rootPath = webDav.optString("pathPrefix", "");
                             config.username = webDav.optString("username", "");
                             config.password = password;
-                            
+
                             YanziApiClient.putWebDavBytes(config, "state/yanm-state.json", wrapperStr.getBytes(StandardCharsets.UTF_8), "application/json");
                             this.runOnUiThread(() -> {
                                 this.setStatus("燕幕状态已同步到云端(WebDAV)：" + reason);
@@ -6397,7 +7466,7 @@ extends Activity {
                             String branch = gitHub.optString("branch", "main");
                             String pathPrefix = gitHub.optString("pathPrefix", "");
                             String relPath = pathPrefix.isEmpty() ? "state/yanm-state.json" : (pathPrefix.endsWith("/") ? pathPrefix : pathPrefix + "/") + "state/yanm-state.json";
-                            
+
                             YanziApiClient.uploadFileToGitHub(token, owner, repo, branch, relPath, wrapperStr);
                             this.runOnUiThread(() -> {
                                 this.setStatus("燕幕状态已同步到云端(GitHub)：" + reason);
@@ -6414,7 +7483,7 @@ extends Activity {
                             String branch = gitee.optString("branch", "master");
                             String pathPrefix = gitee.optString("pathPrefix", "");
                             String relPath = pathPrefix.isEmpty() ? "state/yanm-state.json" : (pathPrefix.endsWith("/") ? pathPrefix : pathPrefix + "/") + "state/yanm-state.json";
-                            
+
                             YanziApiClient.uploadFileToGitee(token, owner, repo, branch, relPath, wrapperStr);
                             this.runOnUiThread(() -> {
                                 this.setStatus("燕幕状态已同步到云端(Gitee)：" + reason);
@@ -6424,7 +7493,7 @@ extends Activity {
                         }
                     }
                 }
-                
+
                 String baseUrl = this.normalizedBaseUrl();
                 String token = this.requireToken();
                 try {
@@ -6534,8 +7603,8 @@ extends Activity {
         if (id == null || id.trim().isEmpty()) {
             JSONObject result = new JSONObject();
             JSONArray items = new JSONArray();
-            JSONArray components = MainActivity.firstArray(yanm, "components", "Components");
-            JSONObject state = MainActivity.firstObject(yanm, "componentState", "ComponentState");
+            JSONArray components = MobileJson.firstArray(yanm, "components", "Components");
+            JSONObject state = MobileJson.firstObject(yanm, "componentState", "ComponentState");
             if (state == null) {
                 state = new JSONObject();
             }
@@ -6559,9 +7628,9 @@ extends Activity {
         if (index < 0) {
             throw new IllegalStateException("未找到 ID 或标题为 " + id + " 的燕幕组件。");
         }
-        JSONArray components = MainActivity.firstArray(yanm, "components", "Components");
+        JSONArray components = MobileJson.firstArray(yanm, "components", "Components");
         JSONObject component = components.optJSONObject(index);
-        JSONObject state = MainActivity.firstObject(yanm, "componentState", "ComponentState");
+        JSONObject state = MobileJson.firstObject(yanm, "componentState", "ComponentState");
         if (state == null) {
             state = new JSONObject();
         }
@@ -6575,7 +7644,7 @@ extends Activity {
     }
 
     private JSONObject buildYanmStateViewResult(JSONObject yanm, String id, String stateKey) throws Exception {
-        JSONObject state = MainActivity.firstObject(yanm, "componentState", "ComponentState");
+        JSONObject state = MobileJson.firstObject(yanm, "componentState", "ComponentState");
         if (state == null) {
             state = new JSONObject();
         }
@@ -6608,7 +7677,7 @@ extends Activity {
             if (index < 0) {
                 throw new IllegalStateException("未找到 ID 或标题为 " + trimmedId + " 的燕幕组件。");
             }
-            JSONArray components = MainActivity.firstArray(yanm, "components", "Components");
+            JSONArray components = MobileJson.firstArray(yanm, "components", "Components");
             component = components.optJSONObject(index);
             String componentId = MainActivity.getYanmComponentId(component, index);
             if (resolvedKey.isEmpty()) {
@@ -6652,7 +7721,7 @@ extends Activity {
             if (index < 0) {
                 throw new IllegalStateException("未找到 ID 或标题为 " + trimmedId + " 的燕幕组件。");
             }
-            JSONArray components = MainActivity.firstArray(yanm, "components", "Components");
+            JSONArray components = MobileJson.firstArray(yanm, "components", "Components");
             component = components.optJSONObject(index);
             String componentId = MainActivity.getYanmComponentId(component, index);
             if (resolvedKey.isEmpty()) {
@@ -6663,7 +7732,7 @@ extends Activity {
             throw new IllegalStateException("缺少 stateKey；修改燕幕正文必须指定 stateKey 或组件 id。");
         }
 
-        JSONObject state = MainActivity.firstObject(yanm, "componentState", "ComponentState");
+        JSONObject state = MobileJson.firstObject(yanm, "componentState", "ComponentState");
         if (state == null) {
             state = new JSONObject();
         }
@@ -6701,7 +7770,7 @@ extends Activity {
         if (index < 0) {
             throw new IllegalStateException("未找到 ID 或标题为 " + id + " 的燕幕组件。");
         }
-        JSONArray components = MainActivity.firstArray(yanm, "components", "Components");
+        JSONArray components = MobileJson.firstArray(yanm, "components", "Components");
         JSONObject component = components.optJSONObject(index);
         boolean titleChanged = false;
         boolean htmlChanged = false;
@@ -6730,7 +7799,7 @@ extends Activity {
     }
 
     private void commitYanmSnapshotFromAi(JSONObject yanm, String reason) throws Exception {
-        JSONObject state = MainActivity.firstObject(yanm, "componentState", "ComponentState");
+        JSONObject state = MobileJson.firstObject(yanm, "componentState", "ComponentState");
         if (state == null) {
             state = new JSONObject();
             yanm.put("componentState", (Object)state);
@@ -6745,7 +7814,7 @@ extends Activity {
     }
 
     private void commitYanmComponentStateFromAi(JSONObject yanm, String stateKey, String value, String reason) throws Exception {
-        JSONObject state = MainActivity.firstObject(yanm, "componentState", "ComponentState");
+        JSONObject state = MobileJson.firstObject(yanm, "componentState", "ComponentState");
         if (state == null) {
             state = new JSONObject();
             yanm.put("componentState", (Object)state);
@@ -6769,7 +7838,7 @@ extends Activity {
         JSONObject result = new JSONObject()
                 .put("id", (Object)componentId)
                 .put("title", (Object)title)
-                .put("type", (Object)MainActivity.firstNonEmpty(component.optString("type"), component.optString("Type"), component.optString("kind"), component.optString("Kind"), "component"))
+                .put("type", (Object)MobileJson.firstNonEmpty(component.optString("type"), component.optString("Type"), component.optString("kind"), component.optString("Kind"), "component"))
                 .put("stateKey", (Object)stateKey)
                 .put("stateLength", stateValue.length())
                 .put("hasHtml", !html.isEmpty())
@@ -6806,7 +7875,7 @@ extends Activity {
         if (yanm == null || componentIdOrTitle == null || componentIdOrTitle.trim().isEmpty()) {
             return -1;
         }
-        JSONArray components = MainActivity.firstArray(yanm, "components", "Components");
+        JSONArray components = MobileJson.firstArray(yanm, "components", "Components");
         if (components == null) {
             return -1;
         }
@@ -6826,7 +7895,7 @@ extends Activity {
     }
 
     private static String getYanmComponentId(JSONObject component, int index) {
-        return MainActivity.firstNonEmpty(
+        return MobileJson.firstNonEmpty(
                 component == null ? "" : component.optString("id"),
                 component == null ? "" : component.optString("Id"),
                 component == null ? "" : component.optString("title"),
@@ -6837,7 +7906,7 @@ extends Activity {
     }
 
     private static String getYanmComponentTitle(JSONObject component, int index) {
-        return MainActivity.firstNonEmpty(
+        return MobileJson.firstNonEmpty(
                 component == null ? "" : component.optString("title"),
                 component == null ? "" : component.optString("Title"),
                 component == null ? "" : component.optString("name"),
@@ -6846,7 +7915,7 @@ extends Activity {
     }
 
     private static String getYanmComponentHtml(JSONObject component) {
-        return MainActivity.firstNonEmpty(
+        return MobileJson.firstNonEmpty(
                 component == null ? "" : component.optString("html"),
                 component == null ? "" : component.optString("Html"),
                 component == null ? "" : component.optString("markup"),
@@ -6868,22 +7937,156 @@ extends Activity {
         return text.substring(0, maxLength) + "...";
     }
 
+
+    private JSONObject fetchAccountMobileExtensionDefinitionState() throws Exception {
+        String baseUrl = this.normalizedBaseUrl();
+        String token = this.requireToken();
+        try {
+            return MobileExtensionDefinitionSyncClient.fetchState(baseUrl, token);
+        }
+        catch (Exception ex) {
+            if (!MainActivity.isUnauthorized(ex)) {
+                throw ex;
+            }
+            token = this.refreshToken();
+            return MobileExtensionDefinitionSyncClient.fetchState(baseUrl, token);
+        }
+    }
+
+    private void pushMobileExtensionDefinitionToAccount(JSONObject definition) {
+        final String definitionJson = definition.toString();
+        this.executor.execute(() -> {
+            try {
+                JSONObject current = new JSONObject(definitionJson);
+                String baseUrl = this.normalizedBaseUrl();
+                String token = this.requireToken();
+                try {
+                    MobileExtensionDefinitionSyncClient.upsert(
+                            baseUrl,
+                            token,
+                            this.deviceId,
+                            this.buildDeviceName(),
+                            current);
+                }
+                catch (Exception ex) {
+                    if (!MainActivity.isUnauthorized(ex)) {
+                        throw ex;
+                    }
+                    token = this.refreshToken();
+                    MobileExtensionDefinitionSyncClient.upsert(
+                            baseUrl,
+                            token,
+                            this.deviceId,
+                            this.buildDeviceName(),
+                            current);
+                }
+                Log.i("MainActivity",
+                        "Mobile extension definition synced via object protocol: "
+                                + current.optString("id", ""));
+            }
+            catch (Exception ex) {
+                Log.e("MainActivity",
+                        "Failed to sync mobile extension definition to account objects",
+                        ex);
+            }
+        });
+    }
+
+    private void deleteMobileExtensionDefinitionFromAccount(String extensionId) {
+        final String id = extensionId == null ? "" : extensionId.trim();
+        if (id.isEmpty()) {
+            return;
+        }
+        this.executor.execute(() -> {
+            try {
+                String baseUrl = this.normalizedBaseUrl();
+                String token = this.requireToken();
+                try {
+                    MobileExtensionDefinitionSyncClient.delete(
+                            baseUrl,
+                            token,
+                            this.deviceId,
+                            this.buildDeviceName(),
+                            id);
+                }
+                catch (Exception ex) {
+                    if (!MainActivity.isUnauthorized(ex)) {
+                        throw ex;
+                    }
+                    token = this.refreshToken();
+                    MobileExtensionDefinitionSyncClient.delete(
+                            baseUrl,
+                            token,
+                            this.deviceId,
+                            this.buildDeviceName(),
+                            id);
+                }
+                Log.i("MainActivity",
+                        "Mobile extension definition tombstoned via object protocol: "
+                                + id);
+            }
+            catch (Exception ex) {
+                Log.e("MainActivity",
+                        "Failed to delete mobile extension definition from account objects",
+                        ex);
+            }
+        });
+    }
+
+    private void seedMobileExtensionDefinitionsToAccount(JSONArray extensions) {
+        final String snapshot = extensions.toString();
+        this.executor.execute(() -> {
+            try {
+                JSONArray local = new JSONArray(snapshot);
+                String baseUrl = this.normalizedBaseUrl();
+                String token = this.requireToken();
+                try {
+                    MobileExtensionDefinitionSyncClient.seedIfMissing(
+                            baseUrl,
+                            token,
+                            this.deviceId,
+                            this.buildDeviceName(),
+                            local);
+                }
+                catch (Exception ex) {
+                    if (!MainActivity.isUnauthorized(ex)) {
+                        throw ex;
+                    }
+                    token = this.refreshToken();
+                    MobileExtensionDefinitionSyncClient.seedIfMissing(
+                            baseUrl,
+                            token,
+                            this.deviceId,
+                            this.buildDeviceName(),
+                            local);
+                }
+                Log.i("MainActivity",
+                        "Mobile extension definitions migrated to object protocol.");
+            }
+            catch (Exception ex) {
+                Log.e("MainActivity",
+                        "Failed to seed mobile extension definitions to account objects",
+                        ex);
+            }
+        });
+    }
+
     private void pushMobileExtensionsToCloud() {
         this.executor.execute(() -> {
             try {
                 String localJson = this.readLocalMobileExtensions().toString();
-                
+
                 String configStr = this.prefs.getString("personalSyncConfig", "{}");
                 JSONObject cloudConfig = new JSONObject(configStr);
                 boolean enabled = cloudConfig.optBoolean("enabled", false);
                 String provider = cloudConfig.optString("provider", "none");
-                
+
                 if (enabled && !"none".equals(provider)) {
                     JSONObject secrets = cloudConfig.optJSONObject("secrets");
                     JSONObject settings = cloudConfig.optJSONObject("settings");
                     if (secrets == null) secrets = new JSONObject();
                     if (settings == null) settings = new JSONObject();
-                    
+
                     if ("webdav".equals(provider)) {
                         JSONObject webDav = settings.optJSONObject("webDav");
                         String password = secrets.optString("webDavPassword", "");
@@ -6893,7 +8096,7 @@ extends Activity {
                             config.rootPath = webDav.optString("pathPrefix", "");
                             config.username = webDav.optString("username", "");
                             config.password = password;
-                            
+
                             YanziApiClient.putWebDavBytes(config, "mobile-extensions.json", localJson.getBytes(StandardCharsets.UTF_8), "application/json");
                             Log.i("MainActivity", "Successfully pushed mobile extensions to WebDAV");
                             return;
@@ -6907,7 +8110,7 @@ extends Activity {
                             String branch = gitHub.optString("branch", "main");
                             String pathPrefix = gitHub.optString("pathPrefix", "");
                             String relPath = pathPrefix.isEmpty() ? "mobile-extensions.json" : (pathPrefix.endsWith("/") ? pathPrefix : pathPrefix + "/") + "mobile-extensions.json";
-                            
+
                             YanziApiClient.uploadFileToGitHub(token, owner, repo, branch, relPath, localJson);
                             Log.i("MainActivity", "Successfully pushed mobile extensions to GitHub");
                             return;
@@ -6921,27 +8124,17 @@ extends Activity {
                             String branch = gitee.optString("branch", "master");
                             String pathPrefix = gitee.optString("pathPrefix", "");
                             String relPath = pathPrefix.isEmpty() ? "mobile-extensions.json" : (pathPrefix.endsWith("/") ? pathPrefix : pathPrefix + "/") + "mobile-extensions.json";
-                            
+
                             YanziApiClient.uploadFileToGitee(token, owner, repo, branch, relPath, localJson);
                             Log.i("MainActivity", "Successfully pushed mobile extensions to Gitee");
                             return;
                         }
                     }
                 }
-                
-                try {
-                    String baseUrl = this.normalizedBaseUrl();
-                    String token = this.requireToken();
-                    YanziApiClient.putMobileExtensions(baseUrl, token, localJson);
-                } catch (Exception ex) {
-                    if (MainActivity.isUnauthorized(ex)) {
-                        String token = this.refreshToken();
-                        String baseUrl = this.normalizedBaseUrl();
-                        YanziApiClient.putMobileExtensions(baseUrl, token, localJson);
-                    } else {
-                        throw ex;
-                    }
-                }
+
+                Log.d(
+                        "MainActivity",
+                        "Mobile extension account sync uses object protocol; no legacy account list upload is needed.");
             } catch (Exception e) {
                 Log.e("MainActivity", "Failed to push mobile extensions to cloud", e);
             }
@@ -6949,21 +8142,56 @@ extends Activity {
     }
 
     private void syncMobileExtensionsFromCloud() {
+        Log.i("MainActivity", "MobileDefinitionSync: requested");
         this.executor.execute(() -> {
             try {
+                Log.i("MainActivity", "MobileDefinitionSync: worker started");
                 String cloudJsonStr = null;
-                
+
+                try {
+                    JSONObject accountState = this.fetchAccountMobileExtensionDefinitionState();
+                    Log.i(
+                            "MainActivity",
+                            "MobileDefinitionSync: account available="
+                                    + accountState.optBoolean("available", false)
+                                    + ", initialized="
+                                    + accountState.optBoolean("initialized", false));
+                    if (accountState.optBoolean("available", false)
+                            && accountState.optBoolean("initialized", false)) {
+                        final JSONArray accountExtensions =
+                                accountState.optJSONArray("extensions") == null
+                                        ? new JSONArray()
+                                        : accountState.optJSONArray("extensions");
+                        final String accountSnapshot = accountExtensions.toString();
+                        this.runOnUiThread(() -> {
+                            this.prefs.edit()
+                                    .putString("mobileExtensions", accountSnapshot)
+                                    .apply();
+                            this.renderLocalMobileExtensions();
+                            this.setStatus("手机小程序已从账号对象同步。");
+                        });
+                        return;
+                    }
+                }
+                catch (Exception accountEx) {
+                    Log.w(
+                            "MainActivity",
+                            "Account mobile extension object sync unavailable; falling back to legacy/personal backup.",
+                            accountEx);
+                }
+
+
                 String configStr = this.prefs.getString("personalSyncConfig", "{}");
                 JSONObject cloudConfig = new JSONObject(configStr);
                 boolean enabled = cloudConfig.optBoolean("enabled", false);
                 String provider = cloudConfig.optString("provider", "none");
-                
+
                 if (enabled && !"none".equals(provider)) {
                     JSONObject secrets = cloudConfig.optJSONObject("secrets");
                     JSONObject settings = cloudConfig.optJSONObject("settings");
                     if (secrets == null) secrets = new JSONObject();
                     if (settings == null) settings = new JSONObject();
-                    
+
                     if ("webdav".equals(provider)) {
                         JSONObject webDav = settings.optJSONObject("webDav");
                         String password = secrets.optString("webDavPassword", "");
@@ -6973,7 +8201,7 @@ extends Activity {
                             config.rootPath = webDav.optString("pathPrefix", "");
                             config.username = webDav.optString("username", "");
                             config.password = password;
-                            
+
                             byte[] data = YanziApiClient.getWebDavBytes(config, "mobile-extensions.json");
                             cloudJsonStr = (data == null) ? "[]" : new String(data, StandardCharsets.UTF_8);
                         }
@@ -6986,7 +8214,7 @@ extends Activity {
                             String branch = gitHub.optString("branch", "main");
                             String pathPrefix = gitHub.optString("pathPrefix", "");
                             String relPath = pathPrefix.isEmpty() ? "mobile-extensions.json" : (pathPrefix.endsWith("/") ? pathPrefix : pathPrefix + "/") + "mobile-extensions.json";
-                            
+
                             cloudJsonStr = YanziApiClient.fetchFileFromGitHub(token, owner, repo, branch, relPath);
                         }
                     } else if ("gitee".equals(provider)) {
@@ -6998,34 +8226,49 @@ extends Activity {
                             String branch = gitee.optString("branch", "master");
                             String pathPrefix = gitee.optString("pathPrefix", "");
                             String relPath = pathPrefix.isEmpty() ? "mobile-extensions.json" : (pathPrefix.endsWith("/") ? pathPrefix : pathPrefix + "/") + "mobile-extensions.json";
-                            
+
                             cloudJsonStr = YanziApiClient.fetchFileFromGitee(token, owner, repo, branch, relPath);
                         }
                     }
                 }
-                
+
                 if (cloudJsonStr == null) {
+                    Log.i("MainActivity", "MobileDefinitionSync: trying legacy source before object migration");
                     String baseUrl = this.normalizedBaseUrl();
                     String token = this.requireToken();
                     try {
                         cloudJsonStr = YanziApiClient.fetchMobileExtensions(baseUrl, token);
-                    } catch (Exception ex) {
-                        if (!MainActivity.isUnauthorized(ex)) {
-                            throw ex;
+                    }
+                    catch (Exception ex) {
+                        if (MainActivity.isUnauthorized(ex)) {
+                            try {
+                                token = this.refreshToken();
+                                cloudJsonStr = YanziApiClient.fetchMobileExtensions(baseUrl, token);
+                            }
+                            catch (Exception legacyRetryEx) {
+                                Log.i(
+                                        "MainActivity",
+                                        "Legacy mobile extension account endpoint unavailable; keeping local definitions for object migration.");
+                                cloudJsonStr = "[]";
+                            }
                         }
-                        token = this.refreshToken();
-                        cloudJsonStr = YanziApiClient.fetchMobileExtensions(baseUrl, token);
+                        else {
+                            Log.i(
+                                    "MainActivity",
+                                    "Legacy mobile extension account endpoint unavailable; keeping local definitions for object migration.");
+                            cloudJsonStr = "[]";
+                        }
                     }
                 }
-                
+
                 final String finalCloudJson = cloudJsonStr;
                 this.runOnUiThread(() -> {
                     try {
                         JSONArray cloudArray = new JSONArray(finalCloudJson);
                         JSONArray localArray = this.readLocalMobileExtensions();
-                        
+
                         java.util.Map<String, JSONObject> mergedMap = new java.util.LinkedHashMap<>();
-                        
+
                         for (int i = 0; i < localArray.length(); ++i) {
                             JSONObject item = localArray.optJSONObject(i);
                             if (item != null) {
@@ -7035,7 +8278,7 @@ extends Activity {
                                 }
                             }
                         }
-                        
+
                         for (int i = 0; i < cloudArray.length(); ++i) {
                             JSONObject item = cloudArray.optJSONObject(i);
                             if (item != null) {
@@ -7045,18 +8288,19 @@ extends Activity {
                                 }
                             }
                         }
-                        
+
                         JSONArray mergedArray = new JSONArray();
                         for (JSONObject obj : mergedMap.values()) {
                             mergedArray.put(obj);
                         }
-                        
+
                         this.prefs.edit().putString("mobileExtensions", mergedArray.toString()).apply();
                         this.renderLocalMobileExtensions();
-                        this.setStatus("\u624b\u673a\u6269\u5c55\u5df2\u540c\u6b65\u3002");
-                        
+                        this.setStatus("\u624b\u673a\u5c0f\u7a0b\u5e8f\u5df2\u540c\u6b65\u3002");
+
+                        this.seedMobileExtensionDefinitionsToAccount(mergedArray);
                         this.pushMobileExtensionsToCloud();
-                        
+
                     } catch (Exception e) {
                         this.setStatus("\u540c\u6b65\u624b\u673a\u6269\u5c55\u89e3\u6790\u5931\u8d25\uff1a" + e.getMessage());
                     }
@@ -7178,32 +8422,6 @@ extends Activity {
         return intent.getStringExtra("android.intent.extra.TEXT");
     }
 
-    private static String firstNonEmpty(String ... values) {
-        for (String value : values) {
-            if (value == null || value.trim().isEmpty()) continue;
-            return value.trim();
-        }
-        return "";
-    }
-
-    private static JSONArray firstArray(JSONObject object, String ... keys) {
-        for (String key : keys) {
-            JSONArray value = object.optJSONArray(key);
-            if (value == null) continue;
-            return value;
-        }
-        return null;
-    }
-
-    private static JSONObject firstObject(JSONObject object, String ... keys) {
-        for (String key : keys) {
-            JSONObject value = object.optJSONObject(key);
-            if (value == null) continue;
-            return value;
-        }
-        return null;
-    }
-
     private static String stripHtml(String html) {
         if (html == null) {
             return "";
@@ -7220,8 +8438,8 @@ extends Activity {
     }
 
     private static String summarizeYanmComponent(JSONObject component) {
-        String text = MainActivity.firstNonEmpty(component.optString("html"), component.optString("Html"), component.optString("markup"), component.optString("Markup"), component.optString("contentHtml"), component.optString("ContentHtml"), component.optString("text"), component.optString("Text"), component.optString("content"), component.optString("Content"), component.optString("note"), component.optString("Note"), component.optString("description"), component.optString("Description"));
-        if (text.isEmpty() && (text = MainActivity.firstNonEmpty(component.optString("title"), component.optString("Title"), component.optString("name"), component.optString("Name"), "")).isEmpty()) {
+        String text = MobileJson.firstNonEmpty(component.optString("html"), component.optString("Html"), component.optString("markup"), component.optString("Markup"), component.optString("contentHtml"), component.optString("ContentHtml"), component.optString("text"), component.optString("Text"), component.optString("content"), component.optString("Content"), component.optString("note"), component.optString("Note"), component.optString("description"), component.optString("Description"));
+        if (text.isEmpty() && (text = MobileJson.firstNonEmpty(component.optString("title"), component.optString("Title"), component.optString("name"), component.optString("Name"), "")).isEmpty()) {
             text = "\u65e0\u53ef\u7528\u5185\u5bb9";
         }
         text = MainActivity.stripHtml(text);
@@ -7241,26 +8459,91 @@ extends Activity {
     }
 
     private String buildMobileScriptHtml(String source) {
-        return "<!doctype html><html><body><script>window.context={mobile:{toast:function(text){yanziMobileJsHost.toast(String(text||''));},sendToDesktop:function(text){yanziMobileJsHost.sendToDesktop(String(text||''));},done:function(text){yanziMobileJsHost.done(String(text||''));},fail:function(text){yanziMobileJsHost.fail(String(text||''));},getSharedText:function(){return yanziMobileJsHost.getSharedText();},getClipboardText:function(){return Promise.resolve(yanziMobileJsHost.getClipboardText());},setClipboardText:function(text){return Promise.resolve(yanziMobileJsHost.setClipboardText(String(text||'')));},openUrl:function(url){return Promise.resolve(yanziMobileJsHost.openUrl(String(url||'')));},pickPhoto:function(){return Promise.resolve(yanziMobileJsHost.pickPhoto());},readTextFile:function(name){return Promise.resolve(JSON.parse(yanziMobileJsHost.readTextFile(String(name||''))));},saveTextFile:function(name,text){return Promise.resolve(JSON.parse(yanziMobileJsHost.saveTextFile(String(name||''),String(text||''))));},appendTextFile:function(name,text){return Promise.resolve(JSON.parse(yanziMobileJsHost.appendTextFile(String(name||''),String(text||''))));},httpGet:function(url){return Promise.resolve(JSON.parse(yanziMobileJsHost.httpGet(String(url||''))));},httpPostJson:function(url,jsonText){return Promise.resolve(JSON.parse(yanziMobileJsHost.httpPostJson(String(url||''),String(jsonText||''))));},getBatteryLevel:function(){return yanziMobileJsHost.getBatteryLevel();},getScreenBrightness:function(){return yanziMobileJsHost.getScreenBrightness();},setScreenBrightness:function(val){yanziMobileJsHost.setScreenBrightness(Number(val||0));},getLocation:function(){return Promise.resolve(JSON.parse(yanziMobileJsHost.getLocation()));},listScriptFiles:function(){return Promise.resolve(JSON.parse(yanziMobileJsHost.listScriptFiles()));},deleteScriptFile:function(name){return Promise.resolve(JSON.parse(yanziMobileJsHost.deleteScriptFile(String(name||''))));}}};async function __run(){try{" + source + "\n;if(typeof run==='function'){await run(window.context);}yanziMobileJsHost.done('\u811a\u672c\u6267\u884c\u5b8c\u6210');}catch(e){yanziMobileJsHost.fail(String(e&&e.message?e.message:e));}}__run();</script></body></html>";
+        return "<!doctype html><html><body><script>window.__yanziStorageCallbacks={};window.__yanziStorageReply=function(id,value){var cb=window.__yanziStorageCallbacks[id];if(cb){delete window.__yanziStorageCallbacks[id];cb(value);}};function __yanziStorage(op,key,text,revision){return new Promise(function(resolve){var id=String(Date.now())+Math.random();window.__yanziStorageCallbacks[id]=resolve;yanziMobileJsHost.storageRequest(id,op,String(key||''),String(text||''),revision);});}window.context={mobile:{openEnvironmentSettings:function(){yanziMobileJsHost.openEnvironmentSettings();},getAccountId:function(){return yanziMobileJsHost.getAccountId();},toast:function(text){yanziMobileJsHost.toast(String(text||''));},sendToDesktop:function(text){yanziMobileJsHost.sendToDesktop(String(text||''));},done:function(text){yanziMobileJsHost.done(String(text||''));},fail:function(text){yanziMobileJsHost.fail(String(text||''));},getSharedText:function(){return yanziMobileJsHost.getSharedText();},getClipboardText:function(){return Promise.resolve(yanziMobileJsHost.getClipboardText());},setClipboardText:function(text){return Promise.resolve(yanziMobileJsHost.setClipboardText(String(text||'')));},openUrl:function(url){return Promise.resolve(yanziMobileJsHost.openUrl(String(url||'')));},pickPhoto:function(){return Promise.resolve(yanziMobileJsHost.pickPhoto());},readTextFile:function(name){return Promise.resolve(JSON.parse(yanziMobileJsHost.readTextFile(String(name||''))));},saveTextFile:function(name,text){return Promise.resolve(JSON.parse(yanziMobileJsHost.saveTextFile(String(name||''),String(text||''))));},appendTextFile:function(name,text){return Promise.resolve(JSON.parse(yanziMobileJsHost.appendTextFile(String(name||''),String(text||''))));},httpGet:function(url){return Promise.resolve(JSON.parse(yanziMobileJsHost.httpGet(String(url||''))));},httpPostJson:function(url,jsonText){return Promise.resolve(JSON.parse(yanziMobileJsHost.httpPostJson(String(url||''),String(jsonText||''))));},getBatteryLevel:function(){return yanziMobileJsHost.getBatteryLevel();},getScreenBrightness:function(){return yanziMobileJsHost.getScreenBrightness();},setScreenBrightness:function(val){yanziMobileJsHost.setScreenBrightness(Number(val||0));},getLocation:function(){return Promise.resolve(JSON.parse(yanziMobileJsHost.getLocation()));},listScriptFiles:function(){return Promise.resolve(JSON.parse(yanziMobileJsHost.listScriptFiles()));},deleteScriptFile:function(name){return Promise.resolve(JSON.parse(yanziMobileJsHost.deleteScriptFile(String(name||''))));}},storage:{readText:function(key){return __yanziStorage('read',key,'',0);},writeText:function(key,text,expectedRevision){var rev=expectedRevision==null?-1:Number(expectedRevision);if(!isFinite(rev))rev=-1;return __yanziStorage('write',key,text,rev);},deleteText:function(key,expectedRevision){var rev=expectedRevision==null?-1:Number(expectedRevision);if(!isFinite(rev))rev=-1;return __yanziStorage('delete',key,'',rev);}}};async function __run(){try{" + source + "\n;if(typeof run==='function'){await run(window.context);}yanziMobileJsHost.done('\u811a\u672c\u6267\u884c\u5b8c\u6210');}catch(e){yanziMobileJsHost.fail(String(e&&e.message?e.message:e));}}__run();</script></body></html>";
     }
 
     private void executeMobileScriptHeadless(String source, String taskName, ScriptCallback callback) {
+        this.executeMobileScriptHeadless(
+                source, taskName, "mobile-direct-code", callback);
+    }
+
+    private void executeMobileScriptHeadless(
+            String source,
+            String taskName,
+            String extensionId,
+            ScriptCallback callback) {
         this.runOnUiThread(() -> {
-            block2: {
-                try {
-                    WebView runner = new WebView((Context)this);
-                    runner.getSettings().setJavaScriptEnabled(true);
-                    runner.addJavascriptInterface((Object)new MobileJsBridge(callback), "yanziMobileJsHost");
-                    runner.loadDataWithBaseURL("http://localhost/", this.buildMobileScriptHtml(source), "text/html", "UTF-8", null);
+            String runnerId = "mobile-js-" + System.nanoTime();
+            WebView runner = null;
+            try {
+                runner = new WebView((Context)this);
+                this.scriptRuntime.headless.put(runnerId, runner);
+                runner.getSettings().setJavaScriptEnabled(true);
+                runner.getSettings().setDomStorageEnabled(true);
+                WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG);
+                runner.addJavascriptInterface(
+                        (Object)new MobileJsBridge(
+                                extensionId,
+                                callback,
+                                runnerId),
+                        "yanziMobileJsHost");
+                runner.loadDataWithBaseURL(
+                        "http://localhost/",
+                        this.buildMobileScriptHtml(source),
+                        "text/html",
+                        "UTF-8",
+                        null);
+                JSONObject definition = this.findLocalMobileExtensionDefinition(extensionId);
+                if (definition != null && "mobile-view".equals(definition.optString("uiMode"))) {
+                    runner.getSettings().setDomStorageEnabled(true);
+                    runner.setWebChromeClient(new android.webkit.WebChromeClient() {
+                        @Override public boolean onJsConfirm(WebView view, String url, String message, android.webkit.JsResult result) {
+                            new AlertDialog.Builder(MainActivity.this).setMessage(message)
+                                    .setPositiveButton("确认", (dialog, which) -> result.confirm())
+                                    .setNegativeButton("取消", (dialog, which) -> result.cancel())
+                                    .setOnCancelListener(dialog -> result.cancel()).show();
+                            return true;
+                        }
+                    });
+                    android.app.Dialog view = new android.app.Dialog(this);
+                    view.setTitle(taskName);
+                    view.setContentView(runner);
+                    view.setOnDismissListener(dialog -> {
+                        this.releaseHeadlessMobileScriptRunner(runnerId);
+                        if (callback != null) callback.onResult(taskName + "已关闭");
+                    });
+                    view.show();
+                    if (view.getWindow() != null) view.getWindow().setLayout(-1, -1);
                 }
-                catch (Exception e) {
-                    this.setStatus("\u540e\u53f0\u811a\u672c\u6267\u884c\u5931\u8d25: " + taskName + " - " + e.getMessage());
-                    if (callback == null) break block2;
-                    callback.onResult("\u540e\u53f0\u811a\u672c\u6267\u884c\u5931\u8d25: " + e.getMessage());
+            }
+            catch (Exception e) {
+                this.releaseHeadlessMobileScriptRunner(runnerId);
+                this.setStatus(
+                        "\u540e\u53f0\u811a\u672c\u6267\u884c\u5931\u8d25: "
+                                + taskName + " - " + e.getMessage());
+                if (callback != null) {
+                    callback.onResult(
+                            "\u540e\u53f0\u811a\u672c\u6267\u884c\u5931\u8d25: "
+                                    + e.getMessage());
                 }
             }
         });
     }
+
+    private void scheduleMobileScriptRunnerCleanup(String runnerId) {
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            if (runnerId != null && !runnerId.trim().isEmpty()) {
+                this.releaseHeadlessMobileScriptRunner(runnerId);
+            } else {
+                this.releaseActiveMobileScriptRunner();
+            }
+        }, 350L);
+    }
+
+    private void releaseHeadlessMobileScriptRunner(String runnerId) { scriptRuntime.release(runnerId); }
+    private void releaseActiveMobileScriptRunner() { scriptRuntime.releaseActive(); }
+    private void destroyMobileScriptRunner(WebView runner) { MobileWebViewRuntime.destroy(runner); }
+    private void destroyAllMobileScriptRunners() { scriptRuntime.close(); }
 
     private void updateAllAppWidgets() {
         try {
@@ -7353,7 +8636,7 @@ extends Activity {
             }
             if (code != null && !code.isEmpty()) {
                 Toast.makeText((Context)this, "\u6b63\u5728\u8fd0\u884c\u6269\u5c55\uff1a" + name, Toast.LENGTH_SHORT).show();
-                this.executeMobileScriptHeadless(code, name, result -> {
+                this.executeMobileScriptHeadless(code, name, id, result -> {
                     this.runOnUiThread(() -> this.finish());
                 });
             } else {
@@ -7376,13 +8659,13 @@ extends Activity {
                     shortcutIntent.putExtra("run_mobile_extension_id", id);
                     shortcutIntent.putExtra("run_mobile_extension_name", name);
                     shortcutIntent.addFlags(0x14000000);
-                    
+
                     int size = 192;
                     Bitmap bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
                     Canvas canvas = new Canvas(bitmap);
                     Paint bgPaint = new Paint(1);
                     bgPaint.setStyle(Paint.Style.FILL);
-                    
+
                     int colorIndex = Math.abs(id.hashCode()) % 5;
                     int iconBgColor = Color.rgb(59, 130, 246);
                     if (colorIndex == 1) iconBgColor = Color.rgb(16, 185, 129);
@@ -7390,10 +8673,10 @@ extends Activity {
                     else if (colorIndex == 3) iconBgColor = Color.rgb(245, 158, 11);
                     else if (colorIndex == 4) iconBgColor = Color.rgb(139, 92, 246);
                     bgPaint.setColor(iconBgColor);
-                    
+
                     float radius = (float)size * 0.22f;
                     canvas.drawRoundRect(new RectF(0.0f, 0.0f, (float)size, (float)size), radius, radius, bgPaint);
-                    
+
                     String cleanIcon = iconName;
                     if (cleanIcon.startsWith("mdi:")) {
                         cleanIcon = cleanIcon.substring(4);
@@ -7417,7 +8700,7 @@ extends Activity {
                             canvas.drawPath(path, iconPaint);
                         }
                     }
-                    
+
                     Icon icon = Icon.createWithBitmap(bitmap);
                     ShortcutInfo shortcutInfo = new ShortcutInfo.Builder((Context)this, "mobext_" + id)
                         .setShortLabel((CharSequence)name)
@@ -7461,7 +8744,7 @@ extends Activity {
                     }
                 }
             }
-            
+
             int freeSlot = -1;
             for (int slot = 0; slot < 6; ++slot) {
                 if (!occupied[slot]) {
@@ -7469,12 +8752,12 @@ extends Activity {
                     break;
                 }
             }
-            
+
             if (freeSlot == -1) {
                 Toast.makeText((Context)this, "\u71d5\u73af\u8f6e\u76d8\u5df2\u6ee1\u0020(\u5171\u00206\u0020\u4e2a\u69fd\u4f4d)\uff0c\u8bf7\u5148\u5728\u60ac\u6d6e\u8f6e\u76d8\u4e0a\u957f\u6309\u5df2\u6709\u63d2\u69fd\u8fdb\u884c\u6e05\u9664\u3002", Toast.LENGTH_LONG).show();
                 return;
             }
-            
+
             JSONObject targetItem = null;
             for (int i = 0; i < array.length(); ++i) {
                 JSONObject item = array.optJSONObject(i);
@@ -7483,7 +8766,7 @@ extends Activity {
                     break;
                 }
             }
-            
+
             if (targetItem != null) {
                 targetItem.put("_wheelSlot", freeSlot);
                 this.prefs.edit().putString("mobileExtensions", array.toString()).apply();
@@ -7632,6 +8915,9 @@ extends Activity {
                             finished = true;
                             break;
                         }
+                        if ("unknown".equals(status) || "expired".equals(status) || "cancelled".equals(status)) {
+                            statusResult = status; execOutput = "结果待确认或请求已结束；未自动重复执行，请在目标设备确认。"; finished = true; break;
+                        }
                         if ("failed".equals(status)) {
                             JSONObject execRes;
                             statusResult = "failed";
@@ -7669,6 +8955,8 @@ extends Activity {
                             showMsg = showMsg + "\n\u7ed3\u679c: " + (cleanOut.length() > 60 ? cleanOut.substring(0, 60) + "..." : cleanOut);
                         }
                         Toast.makeText((Context)this.getApplicationContext(), (CharSequence)showMsg, (int)1).show();
+                    } else if ("unknown".equals(finalStatus) || "expired".equals(finalStatus) || "cancelled".equals(finalStatus)) {
+                        Toast.makeText(this.getApplicationContext(), finalOutput, Toast.LENGTH_LONG).show();
                     } else if ("failed".equals(finalStatus)) {
                         Toast.makeText((Context)this.getApplicationContext(), (CharSequence)("\u6269\u5c55 [" + extensionName + "] \u6267\u884c\u5931\u8d25\uff01\n\u9519\u8bef: " + finalOutput), (int)1).show();
                     } else if ("acked".equals(finalStatus)) {
@@ -7678,6 +8966,8 @@ extends Activity {
                     if (callback != null) {
                         if ("completed".equals(finalStatus)) {
                             callback.onResult(finalOutput.isEmpty() ? "\u6267\u884c\u6210\u529f\u65e0\u8f93\u51fa" : finalOutput);
+                        } else if ("unknown".equals(finalStatus) || "expired".equals(finalStatus) || "cancelled".equals(finalStatus)) {
+                            callback.onResult("状态: " + finalStatus + "\n" + finalOutput);
                         } else if ("failed".equals(finalStatus)) {
                             callback.onResult("\u6267\u884c\u5931\u8d25\uff1a" + finalOutput);
                         } else {
@@ -7701,36 +8991,6 @@ extends Activity {
         public void onResult(String var1);
     }
 
-    private static final class RemoteExtension {
-        final String extensionId;
-        final String name;
-        final String description;
-        final String icon;
-        final String accentHex;
-
-        RemoteExtension(String extensionId, String name, String description, String icon, String accentHex) {
-            this.extensionId = extensionId;
-            this.name = name;
-            this.description = description;
-            this.icon = icon == null ? "" : icon;
-            this.accentHex = accentHex == null ? "" : accentHex;
-        }
-
-        RemoteExtension(String extensionId, String name, String description, String icon) {
-            this(extensionId, name, description, icon, "");
-        }
-
-        String iconText() {
-            String value = this.icon.trim();
-            if (value.startsWith("mdi:")) {
-                String namePart = value.substring(4).replace("-", " ").trim();
-                return namePart.isEmpty() ? "\u71d5" : namePart.substring(0, 1).toUpperCase(Locale.ROOT);
-            }
-            String base = this.name.trim().isEmpty() ? this.extensionId : this.name.trim();
-            return base.isEmpty() ? "\u71d5" : base.substring(0, 1).toUpperCase(Locale.ROOT);
-        }
-    }
-
     private static final class MobileExtensionTemplate {
         final String name;
         final String description;
@@ -7744,19 +9004,66 @@ extends Activity {
     }
 
     private class MobileJsBridge {
+        private final String extensionId;
+        private final String storageAccountId;
+        private final String runnerId;
+        private final java.util.concurrent.atomic.AtomicBoolean terminalDelivered =
+                new java.util.concurrent.atomic.AtomicBoolean(false);
         private ScriptCallback callback;
 
         public MobileJsBridge() {
+            this("mobile-direct-code", null);
+        }
+
+        public MobileJsBridge(String extensionId) {
+            this(extensionId, null);
         }
 
         public MobileJsBridge(ScriptCallback callback) {
+            this("mobile-direct-code", callback);
+        }
+
+        public MobileJsBridge(String extensionId, ScriptCallback callback) {
+            this(extensionId, callback, null);
+        }
+
+        public MobileJsBridge(
+                String extensionId,
+                ScriptCallback callback,
+                String runnerId) {
+            String value = extensionId == null ? "" : extensionId.trim();
+            this.extensionId = value.isEmpty() ? "mobile-direct-code" : value;
             this.callback = callback;
+            this.runnerId = runnerId;
+            this.storageAccountId = this.getAccountId();
         }
 
         @JavascriptInterface
         public void toast(String text) {
             MainActivity.this.appendMobileShellLog("[API] toast: " + text);
             MainActivity.this.runOnUiThread(() -> Toast.makeText((Context)MainActivity.this, (CharSequence)text, (int)0).show());
+        }
+
+        @JavascriptInterface
+        public void openEnvironmentSettings() {
+            MainActivity.this.runOnUiThread(() -> {
+                try {
+                    if (MainActivity.this.isFinishing() || MainActivity.this.isDestroyed()
+                        || !storageAccountId.equals(getAccountId())) throw new IllegalStateException("请在当前账号前台打开小程序");
+                    boolean allowed = false;
+                    JSONArray definitions = MainActivity.this.readLocalMobileExtensions();
+                    for (int i=0;i<definitions.length();i++) {
+                        JSONObject definition=definitions.optJSONObject(i);
+                        if(definition!=null && extensionId.equals(definition.optString("id"))) {
+                            JSONArray permissions=definition.optJSONArray("permissions");
+                            if(permissions!=null)for(int j=0;j<permissions.length();j++)
+                                if("device.environment".equals(permissions.optString(j)))allowed=true;
+                        }
+                    }
+                    if(!allowed)throw new SecurityException("小程序未声明 device.environment 能力");
+                    MainActivity.this.startActivity(new Intent(MainActivity.this,EnvironmentSettingsActivity.class).putExtra("extensionId",extensionId));
+                } catch(Exception e) { Toast.makeText(MainActivity.this,e.getMessage(),Toast.LENGTH_LONG).show(); }
+            });
         }
 
         @JavascriptInterface
@@ -7854,6 +9161,74 @@ extends Activity {
         }
 
         @JavascriptInterface
+        public String storageReadText(String key) {
+            MainActivity.this.appendMobileShellLog(
+                    "[API] storage.readText: " + this.extensionId + "/" + key);
+            try {
+                return this.readAccountStorage(key).toString();
+            }
+            catch (Exception ex) {
+                return MainActivity.buildJsonErrorResult(ex.getMessage());
+            }
+        }
+
+        @JavascriptInterface
+        public String getAccountId() {
+            try { return ExtensionStorageProvider.accountId(MainActivity.this.prefs.getString("token", "")); }
+            catch (Exception failure) { return ""; }
+        }
+
+        @JavascriptInterface
+        public void storageRequest(String requestId, String operation, String key, String content, long revision) {
+            final String account = this.storageAccountId;
+            MainActivity.this.executor.execute(() -> {
+                String result;
+                try {
+                    if (!account.equals(getAccountId())) throw new IllegalStateException("账号已切换");
+                    JSONObject value;
+                    if ("read".equals(operation)) value = this.readAccountStorage(key);
+                    else if ("write".equals(operation)) value = this.writeAccountStorage(key, content, revision, false);
+                    else if ("delete".equals(operation)) value = this.writeAccountStorage(key, "", revision, true);
+                    else throw new IllegalArgumentException("不支持的存储操作");
+                    if (!account.equals(getAccountId())) throw new IllegalStateException("账号已切换");
+                    result = value.toString();
+                } catch (Exception failure) { result = MainActivity.buildJsonErrorResult(failure.getMessage()); }
+                final String response = result;
+                MainActivity.this.runOnUiThread(() -> {
+                    WebView view = this.runnerId == null ? MainActivity.this.scriptRuntime.active
+                            : MainActivity.this.scriptRuntime.headless.get(this.runnerId);
+                    if (view != null && !this.terminalDelivered.get()) view.evaluateJavascript(
+                            "window.__yanziStorageReply(" + JSONObject.quote(requestId) + "," + response + ")", null);
+                });
+            });
+        }
+
+        @JavascriptInterface
+        public String storageWriteText(String key, String text, long expectedRevision) {
+            MainActivity.this.appendMobileShellLog(
+                    "[API] storage.writeText: " + this.extensionId + "/" + key
+                            + " (len=" + (text != null ? text.length() : 0) + ")");
+            try {
+                return this.writeAccountStorage(key, text, expectedRevision, false).toString();
+            }
+            catch (Exception ex) {
+                return MainActivity.buildJsonErrorResult(ex.getMessage());
+            }
+        }
+
+        @JavascriptInterface
+        public String storageDeleteText(String key, long expectedRevision) {
+            MainActivity.this.appendMobileShellLog(
+                    "[API] storage.deleteText: " + this.extensionId + "/" + key);
+            try {
+                return this.writeAccountStorage(key, "", expectedRevision, true).toString();
+            }
+            catch (Exception ex) {
+                return MainActivity.buildJsonErrorResult(ex.getMessage());
+            }
+        }
+
+        @JavascriptInterface
         public String httpGet(String url) {
             MainActivity.this.appendMobileShellLog("[API] httpGet: " + url);
             return this.runHttpRequest("GET", url, null, null);
@@ -7867,6 +9242,9 @@ extends Activity {
 
         @JavascriptInterface
         public void done(String text) {
+            if (!this.terminalDelivered.compareAndSet(false, true)) {
+                return;
+            }
             MainActivity.this.appendMobileShellLog("[API] done: " + text);
             MainActivity.this.runOnUiThread(() -> {
                 MainActivity.this.updateMobileScriptResult(text, false);
@@ -7874,11 +9252,15 @@ extends Activity {
                 if (this.callback != null) {
                     this.callback.onResult(text);
                 }
+                MainActivity.this.scheduleMobileScriptRunnerCleanup(this.runnerId);
             });
         }
 
         @JavascriptInterface
         public void fail(String text) {
+            if (!this.terminalDelivered.compareAndSet(false, true)) {
+                return;
+            }
             MainActivity.this.appendMobileShellLog("[API] fail: " + text);
             MainActivity.this.runOnUiThread(() -> {
                 MainActivity.this.updateMobileScriptResult("\u6d4b\u8bd5\u5931\u8d25\uff1a " + text, true);
@@ -7886,6 +9268,7 @@ extends Activity {
                 if (this.callback != null) {
                     this.callback.onResult("\u5931\u8d25: " + text);
                 }
+                MainActivity.this.scheduleMobileScriptRunnerCleanup(this.runnerId);
             });
         }
 
@@ -7985,6 +9368,56 @@ extends Activity {
                 return new JSONObject().put("ok", deleted).toString();
             } catch (Exception e) {
                 return MainActivity.buildJsonErrorResult(e.getMessage());
+            }
+        }
+
+        private JSONObject readAccountStorage(String key) throws Exception {
+            String baseUrl = MainActivity.this.normalizedBaseUrl();
+            String token = MainActivity.this.requireToken();
+            try {
+                return MobileExtensionStorageClient.read(
+                        baseUrl, token, this.extensionId, key);
+            }
+            catch (Exception ex) {
+                if (!MainActivity.isUnauthorized(ex)) {
+                    throw ex;
+                }
+                token = MainActivity.this.refreshToken();
+                return MobileExtensionStorageClient.read(
+                        baseUrl, token, this.extensionId, key);
+            }
+        }
+
+        private JSONObject writeAccountStorage(
+                String key,
+                String content,
+                long expectedRevision,
+                boolean deleted) throws Exception {
+            String baseUrl = MainActivity.this.normalizedBaseUrl();
+            String token = MainActivity.this.requireToken();
+            String deviceId = MainActivity.this.getOrCreateDeviceId();
+            String deviceName = MainActivity.buildDeviceDisplayName();
+            try {
+                return deleted
+                        ? MobileExtensionStorageClient.delete(
+                                baseUrl, token, deviceId, deviceName,
+                                this.extensionId, key, expectedRevision)
+                        : MobileExtensionStorageClient.write(
+                                baseUrl, token, deviceId, deviceName,
+                                this.extensionId, key, content, expectedRevision);
+            }
+            catch (Exception ex) {
+                if (!MainActivity.isUnauthorized(ex)) {
+                    throw ex;
+                }
+                token = MainActivity.this.refreshToken();
+                return deleted
+                        ? MobileExtensionStorageClient.delete(
+                                baseUrl, token, deviceId, deviceName,
+                                this.extensionId, key, expectedRevision)
+                        : MobileExtensionStorageClient.write(
+                                baseUrl, token, deviceId, deviceName,
+                                this.extensionId, key, content, expectedRevision);
             }
         }
 
@@ -8089,7 +9522,7 @@ extends Activity {
                     MainActivity.this.currentYanmSnapshot = new JSONObject();
                 }
                 MainActivity.this.currentYanmSnapshot.put("componentState", (Object)MainActivity.this.currentYanmState);
-                
+
                 final String finalKey = actualKey;
                 MainActivity.this.runOnUiThread(() -> {
                     MainActivity.this.prefs.edit().putString(CACHE_YANM, MainActivity.this.currentYanmSnapshot.toString()).apply();
@@ -8116,759 +9549,8 @@ extends Activity {
         }
     }
 
-    public static final class YanziApiClient {
-        public static boolean sLanFailedThisSession = false;
-
-        static String login(String baseUrl, String email, String password) throws Exception {
-            return loginResponse(baseUrl, email, password).getString("accessToken");
-        }
-
-        static JSONObject loginResponse(String baseUrl, String email, String password) throws Exception {
-            JSONObject payload = new JSONObject().put("email", (Object)email).put("password", (Object)password);
-            return YanziApiClient.postJson(baseUrl, "/v1/auth/login", payload, null, "\u767b\u5f55");
-        }
-
-        static void registerDevice(String baseUrl, String token, String deviceId, String displayName) throws Exception {
-            JSONObject capabilities = new JSONObject().put("shareText", true).put("sendToDesktop", true);
-            JSONObject payload = new JSONObject().put("deviceId", (Object)deviceId).put("platform", (Object)"android").put("displayName", (Object)displayName).put("capabilities", (Object)capabilities);
-            YanziApiClient.postJson(baseUrl, "/v1/me/devices", payload, token, "\u8bbe\u5907\u6ce8\u518c");
-        }
-
-        static String sendTextToDesktop(String baseUrl, String token, String sourceDeviceId, String text) throws Exception {
-            JSONObject payload = new JSONObject().put("sourceDeviceId", (Object)sourceDeviceId).put("targetPlatform", (Object)"desktop").put("kind", (Object)"text").put("title", (Object)"\u624b\u673a\u53d1\u6765\u6d88\u606f").put("text", (Object)text).put("payload", (Object)new JSONObject().put("source", (Object)"android").put("sourceDeviceName", (Object)MainActivity.buildDeviceDisplayName()).put("createdAt", System.currentTimeMillis()));
-            return YanziApiClient.postJson(baseUrl, "/v1/me/mobile/messages", payload, token, "\u53d1\u9001\u6d88\u606f").optString("messageId", "unknown");
-        }
-
-        static String sendPhotoToDesktop(String baseUrl, String token, String sourceDeviceId, byte[] jpegBytes, int width, int height) throws Exception {
-            String base64 = Base64.encodeToString((byte[])jpegBytes, (int)2);
-            String screenshotDataUrl = "base64," + base64;
-            return YanziApiClient.postScreenshotDirectMessage(baseUrl, token, sourceDeviceId, screenshotDataUrl, jpegBytes.length, width, height);
-        }
-
-        private static String postScreenshotDirectMessage(String baseUrl, String token, String sourceDeviceId, String screenshotDataUrl, int bytes, int width, int height) throws Exception {
-            JSONObject payload = new JSONObject().put("sourceDeviceId", (Object)sourceDeviceId).put("targetPlatform", (Object)"desktop").put("kind", (Object)"screenshot").put("title", (Object)"\u624b\u673a\u7167\u7247").put("text", (Object)("\u624b\u673a\u7167\u7247\uff1a" + width + "x" + height)).put("payload", (Object)new JSONObject().put("source", (Object)"android-mobile").put("sourceDeviceName", (Object)MainActivity.buildDeviceDisplayName()).put("screenshotMime", (Object)"image/jpeg").put("screenshotWidth", width).put("screenshotHeight", height).put("screenshotBytes", bytes).put("screenshotDataUrl", (Object)screenshotDataUrl).put("expiresAt", System.currentTimeMillis() + 2592000000L).put("createdAt", System.currentTimeMillis()));
-            return YanziApiClient.postJson(baseUrl, "/v1/me/mobile/messages", payload, token, "\u53d1\u9001\u7167\u7247").optString("messageId", "unknown");
-        }
-
-        private static WebDavConfig fetchWebDavConfig(String baseUrl, String token) throws Exception {
-            JSONObject json = YanziApiClient.getJson(baseUrl, "/v1/sync/webdav-config", token, "\u8bfb\u53d6 WebDAV");
-            WebDavConfig config = new WebDavConfig();
-            config.serverUrl = json.optString("serverUrl", "https://dav.jianguoyun.com/dav/");
-            config.rootPath = json.optString("rootPath", "/yanzi");
-            config.username = json.optString("username", "");
-            config.password = json.optString("password", "");
-            if (!json.optBoolean("enabled", false) || config.username.trim().isEmpty() || config.password.trim().isEmpty()) {
-                throw new IllegalStateException("\u8d26\u53f7\u672a\u914d\u7f6e\u53ef\u7528\u7684 WebDAV\u3002");
-            }
-            return config;
-        }
-
-        private static String uploadMobilePhotoToWebDav(WebDavConfig config, byte[] bytes) throws Exception {
-            String day = new SimpleDateFormat("yyyyMMdd", Locale.ROOT).format(new Date());
-            String fileName = "mobile-photo-" + day + "-" + UUID.randomUUID().toString().replace("-", "") + ".jpg";
-            YanziApiClient.putWebDavBytes(config, fileName, bytes, "image/jpeg");
-            return fileName;
-        }
-
-
-        private static void putWebDavBytes(WebDavConfig config, String relativePath, byte[] bytes, String contentType) throws Exception {
-            HttpURLConnection connection = YanziApiClient.openWebDav(config, relativePath);
-            connection.setRequestMethod("PUT");
-            connection.setConnectTimeout(15000);
-            connection.setReadTimeout(30000);
-            connection.setDoOutput(true);
-            connection.setRequestProperty("Content-Type", contentType);
-            connection.setFixedLengthStreamingMode(bytes.length);
-            connection.connect();
-            try (OutputStream output = connection.getOutputStream();){
-                output.write(bytes);
-            }
-            String body = YanziApiClient.readBody(connection);
-            if (connection.getResponseCode() < 200 || connection.getResponseCode() >= 300) {
-                throw new IllegalStateException("WebDAV \u4e0a\u4f20\u5931\u8d25\uff0cHTTP " + connection.getResponseCode() + "\uff1a" + body);
-            }
-        }
-
-        private static HttpURLConnection openWebDav(WebDavConfig config, String relativePath) throws Exception {
-            String root;
-            String server;
-            String string = server = config.serverUrl == null ? "" : config.serverUrl.trim();
-            if (!server.endsWith("/")) {
-                server = server + "/";
-            }
-            String string2 = root = config.rootPath == null ? "" : config.rootPath.trim();
-            if (!root.startsWith("/")) {
-                root = "/" + root;
-            }
-            if (!root.endsWith("/")) {
-                root = root + "/";
-            }
-            String path = root + relativePath;
-            while (path.contains("//")) {
-                path = path.replace("//", "/");
-            }
-            URL url = new URL(server + path.substring(1));
-            HttpURLConnection connection = (HttpURLConnection)url.openConnection();
-            connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36");
-            String userpass = (config.username == null ? "" : config.username) + ":" + (config.password == null ? "" : config.password);
-            String encoded = Base64.encodeToString((byte[])userpass.getBytes(StandardCharsets.UTF_8), (int)2);
-            connection.setRequestProperty("Authorization", "Basic " + encoded);
-            return connection;
-        }
-
-        public static String runExtensionOnDesktop(String baseUrl, String token, String sourceDeviceId, String sourceDeviceName, String extensionId, String inputText) throws Exception {
-            JSONObject payload = new JSONObject().put("sourceDeviceId", (Object)sourceDeviceId).put("targetPlatform", (Object)"desktop").put("kind", (Object)"run-extension").put("title", (Object)"\u624b\u673a\u8bf7\u6c42\u6267\u884c\u6269\u5c55").put("text", (Object)(inputText == null ? "" : inputText)).put("payload", (Object)new JSONObject().put("source", (Object)"android").put("sourceDeviceName", (Object)sourceDeviceName).put("extensionId", (Object)extensionId).put("createdAt", System.currentTimeMillis()));
-            return YanziApiClient.postJson(baseUrl, "/v1/me/mobile/messages", payload, token, "\u6267\u884c\u6269\u5c55").optString("messageId", "unknown");
-        }
-
-        public static JSONObject fetchMessageDetail(String baseUrl, String token, String messageId) throws Exception {
-            return YanziApiClient.getJson(baseUrl, "/v1/me/mobile/messages/" + YanziApiClient.encodePath(messageId), token, "\u83b7\u53d6\u6d88\u606f\u8be6\u60c5");
-        }
-
-        static List<RemoteExtension> fetchRunnableExtensions(String baseUrl, String token) throws Exception {
-            JSONObject payload = YanziApiClient.getJson(baseUrl, "/v1/me/extensions", token, "读取扩展列表");
-            JSONArray items = payload.optJSONArray("items");
-            ArrayList<RemoteExtension> result = new ArrayList<RemoteExtension>();
-            if (items == null) {
-                return result;
-            }
-
-            java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(8);
-            List<java.util.concurrent.Future<RemoteExtension>> futures = new ArrayList<java.util.concurrent.Future<RemoteExtension>>();
-
-            for (int i = 0; i < items.length(); ++i) {
-                JSONObject item = items.optJSONObject(i);
-                if (item == null || item.optInt("enabled", 1) == 0) continue;
-                final String extensionId = MainActivity.firstNonEmpty(new String[]{item.optString("extension_id"), item.optString("extensionId"), item.optString("ExtensionId"), item.optString("Extension_id")});
-                if (extensionId.isEmpty() || "yanzi-webdav-settings".equals(extensionId) || "yanzi-webdav-setting".equals(extensionId) || "yanzi-quickpanel-settings".equals(extensionId) || "yanzi-quickpanel-setting".equals(extensionId) || "yanzi-personal-sync-settings".equals(extensionId) || "yanzi-personal-sync-setting".equals(extensionId) || "yanzi-ai-settings".equals(extensionId) || "yanzi-ai-setting".equals(extensionId) || "yanzi-general-settings".equals(extensionId) || "yanzi-general-setting".equals(extensionId)) continue;
-                final RemoteExtension installedSummary = YanziApiClient.remoteExtensionFromInstalledItem(item, extensionId);
-                
-                futures.add(pool.submit(new java.util.concurrent.Callable<RemoteExtension>() {
-                    @Override
-                    public RemoteExtension call() {
-                        try {
-                            JSONObject detail = YanziApiClient.getJson(baseUrl, "/v1/extensions/" + YanziApiClient.encodePath(extensionId), token, "读取扩展详情");
-                            JSONObject manifest = detail.optJSONObject("manifest");
-                            String name = MainActivity.firstNonEmpty(new String[]{detail.optString("display_name"), detail.optString("displayName"), detail.optString("DisplayName"), detail.optString("name"), detail.optString("Name"), manifest == null ? "" : manifest.optString("name"), manifest == null ? "" : manifest.optString("Name"), manifest == null ? "" : manifest.optString("display_name"), manifest == null ? "" : manifest.optString("displayName"), manifest == null ? "" : manifest.optString("DisplayName"), installedSummary.name, extensionId});
-                            String description = MainActivity.firstNonEmpty(new String[]{detail.optString("description"), detail.optString("Description"), manifest == null ? "" : manifest.optString("description"), manifest == null ? "" : manifest.optString("Description"), installedSummary.description});
-                            String icon = MainActivity.firstNonEmpty(new String[]{detail.optString("icon"), detail.optString("Icon"), manifest == null ? "" : manifest.optString("icon"), manifest == null ? "" : manifest.optString("Icon"), installedSummary.icon});
-                            String accentHex = MainActivity.firstNonEmpty(new String[]{detail.optString("accent_hex"), detail.optString("accentHex"), detail.optString("AccentHex"), manifest == null ? "" : manifest.optString("accent_hex"), manifest == null ? "" : manifest.optString("accentHex"), manifest == null ? "" : manifest.optString("AccentHex"), installedSummary.accentHex});
-                            return new RemoteExtension(extensionId, name, description, icon, accentHex);
-                        }
-                        catch (Exception ignored) {
-                            return installedSummary;
-                        }
-                    }
-                }));
-            }
-
-            for (java.util.concurrent.Future<RemoteExtension> future : futures) {
-                try {
-                    result.add(future.get());
-                }
-                catch (Exception ignored) {}
-            }
-            pool.shutdown();
-            return result;
-        }
-
-        private static RemoteExtension remoteExtensionFromInstalledItem(JSONObject item, String extensionId) {
-            JSONObject settings = null;
-            try {
-                String settingsJson = item.optString("settings_json", "");
-                if (!settingsJson.trim().isEmpty()) {
-                    settings = new JSONObject(settingsJson);
-                } else {
-                    settings = item.optJSONObject("settings");
-                }
-            }
-            catch (Exception ignored) {}
-            JSONObject manifest = settings == null ? null : settings.optJSONObject("manifest");
-            String name = MainActivity.firstNonEmpty(new String[]{
-                item.optString("display_name"), item.optString("displayName"), item.optString("name"),
-                settings == null ? "" : settings.optString("display_name"),
-                settings == null ? "" : settings.optString("displayName"),
-                settings == null ? "" : settings.optString("name"),
-                settings == null ? "" : settings.optString("title"),
-                manifest == null ? "" : manifest.optString("displayName"),
-                manifest == null ? "" : manifest.optString("name"),
-                extensionId
-            });
-            String description = MainActivity.firstNonEmpty(new String[]{
-                item.optString("description"),
-                settings == null ? "" : settings.optString("description"),
-                manifest == null ? "" : manifest.optString("description"),
-                "扩展详情暂不可用，仍可尝试远程执行。"
-            });
-            String icon = MainActivity.firstNonEmpty(new String[]{
-                item.optString("icon"),
-                settings == null ? "" : settings.optString("icon"),
-                manifest == null ? "" : manifest.optString("icon")
-            });
-            String accentHex = MainActivity.firstNonEmpty(new String[]{
-                item.optString("accent_hex"), item.optString("accentHex"),
-                settings == null ? "" : settings.optString("accent_hex"),
-                settings == null ? "" : settings.optString("accentHex"),
-                manifest == null ? "" : manifest.optString("accent_hex"),
-                manifest == null ? "" : manifest.optString("accentHex")
-            });
-            return new RemoteExtension(extensionId, name, description, icon, accentHex);
-        }
-
-        static JSONObject fetchYanmState(String baseUrl, String token) throws Exception {
-            JSONObject payload = YanziApiClient.getJson(baseUrl, "/v1/me/yanm-state", token, "\u8bfb\u53d6\u71d5\u5e55");
-            JSONObject yanm = payload.optJSONObject("yanm");
-            if (yanm == null) {
-                throw new IllegalStateException("\u8d26\u53f7\u4e91\u7aef\u6ca1\u6709\u71d5\u5e55\u6570\u636e\u3002");
-            }
-            String viewUrl = payload.optString("viewUrl", "");
-            if (!viewUrl.isEmpty() && sContext != null) {
-                sContext.getSharedPreferences("yanzi-mobile", 0).edit().putString("yanm_view_url", viewUrl).apply();
-            }
-            return yanm;
-        }
-
-        static JSONObject fetchSettings(String baseUrl, String token) throws Exception {
-            JSONObject payload = YanziApiClient.getJson(baseUrl, "/v1/settings", token, "\u8bfb\u53d6\u914d\u7f6e");
-            JSONObject settings = payload.optJSONObject("settings");
-            if (settings == null) {
-                throw new IllegalStateException("\u672a\u80fd\u83b7\u53d6\u5230\u4e91\u7aef\u914d\u7f6e\u3002");
-            }
-            return settings;
-        }
-
-        static JSONObject putYanmState(String baseUrl, String token, JSONObject yanm) throws Exception {
-            JSONObject payload = new JSONObject().put("updatedAtUtc", (Object)new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ROOT).format(new Date())).put("yanm", (Object)yanm);
-            JSONObject res = YanziApiClient.putJson(baseUrl, "/v1/me/yanm-state", payload, token, "\u540c\u6b65\u71d5\u5e55");
-            String viewUrl = res.optString("viewUrl", "");
-            if (!viewUrl.isEmpty() && sContext != null) {
-                sContext.getSharedPreferences("yanzi-mobile", 0).edit().putString("yanm_view_url", viewUrl).apply();
-            }
-            return res;
-        }
-
-        static JSONObject putYanmComponentState(String baseUrl, String token, JSONObject componentState) throws Exception {
-            JSONObject payload = new JSONObject()
-                    .put("updatedAtUtc", (Object)new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ROOT).format(new Date()))
-                    .put("componentState", (Object)componentState);
-            JSONObject res = YanziApiClient.putJson(baseUrl, "/v1/me/yanm-state/component-state", payload, token, "\u540c\u6b65\u71d5\u5e55\u540e\u7aef\u6570\u636e");
-            String viewUrl = res.optString("viewUrl", "");
-            if (!viewUrl.isEmpty() && sContext != null) {
-                sContext.getSharedPreferences("yanzi-mobile", 0).edit().putString("yanm_view_url", viewUrl).apply();
-            }
-            return res;
-        }
-
-        static String fetchPersonalConfig(String baseUrl, String token) throws Exception {
-            JSONObject payload = YanziApiClient.getJson(baseUrl, "/v1/sync/personal-config", token, "\u8bfb\u53d6\u540c\u6b65\u914d\u7f6e");
-            return payload.toString();
-        }
-
-        static String fetchMobileExtensions(String baseUrl, String token) throws Exception {
-            JSONObject payload = YanziApiClient.getJson(baseUrl, "/v1/me/mobile/extensions", token, "\u8bfb\u53d6\u624b\u673a\u6269\u5c55");
-            return payload.optString("extensions", "[]");
-        }
-
-        static void putMobileExtensions(String baseUrl, String token, String extensionsJson) throws Exception {
-            JSONObject payload = new JSONObject().put("extensions", (Object)extensionsJson);
-            YanziApiClient.putJson(baseUrl, "/v1/me/mobile/extensions", payload, token, "\u540c\u6b65\u624b\u673a\u6269\u5c55");
-        }
-
-        static byte[] getWebDavBytes(WebDavConfig config, String relativePath) throws Exception {
-            HttpURLConnection connection = YanziApiClient.openWebDav(config, relativePath);
-            connection.setRequestMethod("GET");
-            int status = connection.getResponseCode();
-            if (status == 404) {
-                return null;
-            }
-            if (status < 200 || status >= 300) {
-                throw new IllegalStateException("WebDAV GET failed: " + status);
-            }
-            InputStream is = connection.getInputStream();
-            ByteArrayOutputStream bos = new ByteArrayOutputStream();
-            byte[] buffer = new byte[8192];
-            int len;
-            while ((len = is.read(buffer)) != -1) {
-                bos.write(buffer, 0, len);
-            }
-            is.close();
-            return bos.toByteArray();
-        }
-
-        static String fetchFileFromGitHub(String token, String owner, String repo, String branch, String relativePath) throws Exception {
-            String urlStr = "https://api.github.com/repos/" + encodePath(owner) + "/" + encodePath(repo) + "/contents/" + encodePath(relativePath) + "?ref=" + encodePath(branch);
-            URL url = new URL(urlStr);
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            conn.setRequestMethod("GET");
-            conn.setRequestProperty("Authorization", "Bearer " + token.trim());
-            conn.setRequestProperty("Accept", "application/vnd.github.raw");
-            conn.setRequestProperty("User-Agent", "Yanzi-Mobile/0.1");
-            
-            int code = conn.getResponseCode();
-            if (code == 404) {
-                return "[]";
-            }
-            if (code < 200 || code >= 300) {
-                throw new java.io.IOException("GitHub read failed: " + code);
-            }
-            InputStream is = conn.getInputStream();
-            ByteArrayOutputStream bos = new ByteArrayOutputStream();
-            byte[] buf = new byte[8192];
-            int len;
-            while ((len = is.read(buf)) != -1) {
-                bos.write(buf, 0, len);
-            }
-            is.close();
-            return bos.toString("UTF-8");
-        }
-
-        static void uploadFileToGitHub(String token, String owner, String repo, String branch, String relativePath, String content) throws Exception {
-            String sha = null;
-            String urlStr = "https://api.github.com/repos/" + encodePath(owner) + "/" + encodePath(repo) + "/contents/" + encodePath(relativePath) + "?ref=" + encodePath(branch);
-            URL url = new URL(urlStr);
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            conn.setRequestMethod("GET");
-            conn.setRequestProperty("Authorization", "Bearer " + token.trim());
-            conn.setRequestProperty("Accept", "application/json");
-            conn.setRequestProperty("User-Agent", "Yanzi-Mobile/0.1");
-            
-            int code = conn.getResponseCode();
-            if (code == 200) {
-                InputStream is = conn.getInputStream();
-                ByteArrayOutputStream bos = new ByteArrayOutputStream();
-                byte[] buf = new byte[8192];
-                int len;
-                while ((len = is.read(buf)) != -1) {
-                    bos.write(buf, 0, len);
-                }
-                is.close();
-                JSONObject res = new JSONObject(bos.toString("UTF-8"));
-                sha = res.optString("sha", null);
-            }
-            
-            HttpURLConnection putConn = (HttpURLConnection) new URL("https://api.github.com/repos/" + encodePath(owner) + "/" + encodePath(repo) + "/contents/" + encodePath(relativePath)).openConnection();
-            putConn.setRequestMethod("PUT");
-            putConn.setRequestProperty("Authorization", "Bearer " + token.trim());
-            putConn.setRequestProperty("Content-Type", "application/json");
-            putConn.setRequestProperty("User-Agent", "Yanzi-Mobile/0.1");
-            putConn.setDoOutput(true);
-            
-            JSONObject payload = new JSONObject();
-            payload.put("message", "Sync mobile-extensions.json from Mobile");
-            String base64Content = Base64.encodeToString(content.getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
-            payload.put("content", base64Content);
-            if (sha != null) {
-                payload.put("sha", sha);
-            }
-            payload.put("branch", branch);
-            
-            OutputStream os = putConn.getOutputStream();
-            os.write(payload.toString().getBytes(StandardCharsets.UTF_8));
-            os.flush();
-            os.close();
-            
-            int putCode = putConn.getResponseCode();
-            if (putCode < 200 || putCode >= 300) {
-                throw new java.io.IOException("GitHub write failed: " + putCode);
-            }
-        }
-
-        static String fetchFileFromGitee(String token, String owner, String repo, String branch, String relativePath) throws Exception {
-            String urlStr = "https://gitee.com/api/v5/repos/" + encodePath(owner) + "/" + encodePath(repo) + "/contents/" + encodePath(relativePath) + "?access_token=" + token.trim() + "&ref=" + encodePath(branch);
-            URL url = new URL(urlStr);
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            conn.setRequestMethod("GET");
-            conn.setRequestProperty("User-Agent", "Yanzi-Mobile/0.1");
-            
-            int code = conn.getResponseCode();
-            if (code == 404) {
-                return "[]";
-            }
-            if (code < 200 || code >= 300) {
-                throw new java.io.IOException("Gitee read failed: " + code);
-            }
-            InputStream is = conn.getInputStream();
-            ByteArrayOutputStream bos = new ByteArrayOutputStream();
-            byte[] buf = new byte[8192];
-            int len;
-            while ((len = is.read(buf)) != -1) {
-                bos.write(buf, 0, len);
-            }
-            is.close();
-            JSONObject res = new JSONObject(bos.toString("UTF-8"));
-            String contentBase64 = res.optString("content", "");
-            if (contentBase64.isEmpty()) {
-                return "[]";
-            }
-            byte[] decoded = Base64.decode(contentBase64, Base64.DEFAULT);
-            return new String(decoded, StandardCharsets.UTF_8);
-        }
-
-        static void uploadFileToGitee(String token, String owner, String repo, String branch, String relativePath, String content) throws Exception {
-            String sha = null;
-            String urlStr = "https://gitee.com/api/v5/repos/" + encodePath(owner) + "/" + encodePath(repo) + "/contents/" + encodePath(relativePath) + "?access_token=" + token.trim() + "&ref=" + encodePath(branch);
-            URL url = new URL(urlStr);
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            conn.setRequestMethod("GET");
-            conn.setRequestProperty("User-Agent", "Yanzi-Mobile/0.1");
-            
-            int code = conn.getResponseCode();
-            if (code == 200) {
-                InputStream is = conn.getInputStream();
-                ByteArrayOutputStream bos = new ByteArrayOutputStream();
-                byte[] buf = new byte[8192];
-                int len;
-                while ((len = is.read(buf)) != -1) {
-                    bos.write(buf, 0, len);
-                }
-                is.close();
-                JSONObject res = new JSONObject(bos.toString("UTF-8"));
-                sha = res.optString("sha", null);
-            }
-            
-            HttpURLConnection putConn = (HttpURLConnection) new URL("https://gitee.com/api/v5/repos/" + encodePath(owner) + "/" + encodePath(repo) + "/contents/" + encodePath(relativePath)).openConnection();
-            putConn.setRequestMethod("PUT");
-            putConn.setRequestProperty("Content-Type", "application/json");
-            putConn.setRequestProperty("User-Agent", "Yanzi-Mobile/0.1");
-            putConn.setDoOutput(true);
-            
-            JSONObject payload = new JSONObject();
-            payload.put("access_token", token.trim());
-            payload.put("message", "Sync mobile-extensions.json from Mobile");
-            String base64Content = Base64.encodeToString(content.getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
-            payload.put("content", base64Content);
-            if (sha != null) {
-                payload.put("sha", sha);
-            }
-            payload.put("branch", branch);
-            
-            OutputStream os = putConn.getOutputStream();
-            os.write(payload.toString().getBytes(StandardCharsets.UTF_8));
-            os.flush();
-            os.close();
-            
-            int putCode = putConn.getResponseCode();
-            if (putCode < 200 || putCode >= 300) {
-                throw new java.io.IOException("Gitee write failed: " + putCode);
-            }
-        }
-
-        private static JSONObject putJson(String baseUrl, String path, JSONObject payload, String token, String action) throws Exception {
-            if (YanziApiClient.isDesktopLocalApi(path)) {
-                return YanziApiClient.requestDesktopLocalApi(path, token, action, "PUT", payload);
-            }
-            if (!sLanFailedThisSession && YanziApiClient.shouldUseLan(path)) {
-                String lanBaseUrl;
-                String string = lanBaseUrl = sContext != null ? LanDiscoveryManager.getLanBaseUrl(sContext) : LanDiscoveryManager.cachedLanBaseUrl;
-                if (lanBaseUrl != null) {
-                    try {
-                        String lanToken = sContext != null ? LanDiscoveryManager.getLanApiToken(sContext) : LanDiscoveryManager.cachedLanApiToken;
-                        int timeoutMs = 1500;
-                        if (path.contains("/shell/run") || path.contains("/fs/write") || path.contains("/fs/read")) {
-                            timeoutMs = 8000;
-                        }
-                        JSONObject result = YanziApiClient.doRequest(lanBaseUrl, path, lanToken != null ? lanToken : token, action, "PUT", payload, timeoutMs);
-                        YanziApiClient.handleLanSuccess(action, path);
-                        return result;
-                    }
-                    catch (Exception e) {
-                        YanziApiClient.handleLanFailure(action, e);
-                    }
-                }
-            }
-            return YanziApiClient.doRequest(baseUrl, path, token, action, "PUT", payload, 15000);
-        }
-
-        private static JSONObject postJson(String baseUrl, String path, JSONObject payload, String token, String action) throws Exception {
-            if (YanziApiClient.isDesktopLocalApi(path)) {
-                return YanziApiClient.requestDesktopLocalApi(path, token, action, "POST", payload);
-            }
-            if (!sLanFailedThisSession && YanziApiClient.shouldUseLan(path)) {
-                String lanBaseUrl;
-                String string = lanBaseUrl = sContext != null ? LanDiscoveryManager.getLanBaseUrl(sContext) : LanDiscoveryManager.cachedLanBaseUrl;
-                if (lanBaseUrl != null) {
-                    try {
-                        String lanToken = sContext != null ? LanDiscoveryManager.getLanApiToken(sContext) : LanDiscoveryManager.cachedLanApiToken;
-                        int timeoutMs = 1500;
-                        if (path.contains("/shell/run") || path.contains("/fs/write") || path.contains("/fs/read")) {
-                            timeoutMs = 8000;
-                        }
-                        JSONObject result = YanziApiClient.doRequest(lanBaseUrl, path, lanToken != null ? lanToken : token, action, "POST", payload, timeoutMs);
-                        YanziApiClient.handleLanSuccess(action, path);
-                        return result;
-                    }
-                    catch (Exception e) {
-                        YanziApiClient.handleLanFailure(action, e);
-                    }
-                }
-            }
-            return YanziApiClient.doRequest(baseUrl, path, token, action, "POST", payload, 15000);
-        }
-
-        private static JSONObject getJson(String baseUrl, String path, String token, String action) throws Exception {
-            if (YanziApiClient.isDesktopLocalApi(path)) {
-                return YanziApiClient.requestDesktopLocalApi(path, token, action, "GET", null);
-            }
-            if (!sLanFailedThisSession && YanziApiClient.shouldUseLan(path)) {
-                String lanBaseUrl;
-                String string = lanBaseUrl = sContext != null ? LanDiscoveryManager.getLanBaseUrl(sContext) : LanDiscoveryManager.cachedLanBaseUrl;
-                if (lanBaseUrl != null) {
-                    try {
-                        String lanToken = sContext != null ? LanDiscoveryManager.getLanApiToken(sContext) : LanDiscoveryManager.cachedLanApiToken;
-                        int timeoutMs = 1500;
-                        if (path.contains("/shell/run") || path.contains("/fs/write") || path.contains("/fs/read")) {
-                            timeoutMs = 8000;
-                        }
-                        JSONObject result = YanziApiClient.doRequest(lanBaseUrl, path, lanToken != null ? lanToken : token, action, "GET", null, timeoutMs);
-                        YanziApiClient.handleLanSuccess(action, path);
-                        return result;
-                    }
-                    catch (Exception e) {
-                        YanziApiClient.handleLanFailure(action, e);
-                    }
-                }
-            }
-            return YanziApiClient.doRequest(baseUrl, path, token, action, "GET", null, 15000);
-        }
-
-        private static boolean shouldUseLan(String path) {
-            return !path.startsWith("/v1/auth/login");
-        }
-
-        private static boolean isDesktopLocalApi(String path) {
-            return path.startsWith("/v1/fs/") || path.equals("/v1/shell/run");
-        }
-
-        private static String getDeviceIdStatic(Context context) {
-            if (context != null) {
-                SharedPreferences p = context.getSharedPreferences("yanzi-mobile", 0);
-                String id = p.getString("deviceId", null);
-                if (id != null && !id.trim().isEmpty()) return id;
-                String created = "android-" + java.util.UUID.randomUUID();
-                p.edit().putString("deviceId", created).apply();
-                return created;
-            }
-            return "android-mobile-fallback";
-        }
-
-        private static String extractRelayResultPayload(JSONObject detail) {
-            if (detail == null) return "";
-            JSONObject payload = detail.optJSONObject("payload");
-            if (payload != null) {
-                JSONObject execResult = payload.optJSONObject("executionResult");
-                if (execResult != null) {
-                    String output = execResult.optString("output", "");
-                    if (!output.trim().isEmpty()) return output;
-                }
-                String payloadResp = payload.optString("responsePayload", payload.optString("output", ""));
-                if (!payloadResp.trim().isEmpty()) return payloadResp;
-            }
-            String resp = detail.optString("responsePayload", detail.optString("ackedOutput", detail.optString("result", "")));
-            if (!resp.trim().isEmpty()) return resp;
-            return "";
-        }
-
-        private static JSONObject requestCloudRelayApi(String path, String token, String action, String method, JSONObject payload) throws Exception {
-            long startTime = System.currentTimeMillis();
-            android.util.Log.i("YanziRelay", "==> [START] requestCloudRelayApi: path=" + path + ", action=" + action);
-            String baseUrl = "https://sync.luoluoluo.cc.cd";
-            String deviceId = getDeviceIdStatic(sContext);
-            String deviceName = MainActivity.buildDeviceDisplayName();
-            try {
-                YanziApiClient.registerDevice(baseUrl, token, deviceId, deviceName);
-                android.util.Log.i("YanziRelay", "--> Registered device: id=" + deviceId + " (" + (System.currentTimeMillis() - startTime) + "ms)");
-            } catch (Exception regEx) {
-                android.util.Log.w("YanziRelay", "--> Register device failed: " + regEx.getMessage());
-            }
-
-            String kind = "run-powershell";
-            if (path.startsWith("/v1/fs/list")) {
-                kind = "fs-list";
-            } else if (path.startsWith("/v1/fs/read")) {
-                kind = "fs-read";
-            } else if (path.startsWith("/v1/fs/write")) {
-                kind = "fs-write";
-            } else if (path.equals("/v1/shell/run")) {
-                kind = "run-powershell";
-            }
-
-            String cmdText = payload == null ? "" : payload.optString("command", payload.optString("text", ""));
-            JSONObject msgPayload = payload != null ? payload : new JSONObject().put("path", (Object)path);
-
-            JSONObject relayPayload = new JSONObject()
-                .put("sourceDeviceId", (Object)deviceId)
-                .put("targetPlatform", (Object)"desktop")
-                .put("kind", (Object)kind)
-                .put("title", (Object)action)
-                .put("text", (Object)cmdText)
-                .put("payload", (Object)msgPayload);
-
-            long postStart = System.currentTimeMillis();
-            JSONObject postRes = YanziApiClient.postJson(baseUrl, "/v1/me/mobile/messages", relayPayload, token, action);
-            String messageId = postRes.optString("messageId", "");
-            android.util.Log.i("YanziRelay", "--> Post relay message OK: messageId=" + messageId + " (" + (System.currentTimeMillis() - postStart) + "ms)");
-
-            if (messageId.isEmpty()) {
-                throw new IllegalStateException("中继消息投递失败");
-            }
-
-            long pollStart = System.currentTimeMillis();
-            for (int attempt = 0; attempt < 35; attempt++) {
-                int sleepMs = attempt < 15 ? 150 : 350;
-                Thread.sleep(sleepMs);
-                try {
-                    JSONObject detail = fetchMessageDetail(baseUrl, token, messageId);
-                    String status = detail.optString("status", "");
-                    String respPayload = extractRelayResultPayload(detail);
-                    android.util.Log.i("YanziRelay", "--> Poll attempt #" + attempt + ": status=" + status + ", payloadLength=" + respPayload.length() + " (" + (System.currentTimeMillis() - pollStart) + "ms)");
-
-                    if ("completed".equalsIgnoreCase(status) || "acked".equalsIgnoreCase(status) || "executed".equalsIgnoreCase(status) || !respPayload.isEmpty()) {
-                        if (!respPayload.trim().isEmpty()) {
-                            android.util.Log.i("YanziRelay", "<== [SUCCESS] Relay completed in " + (System.currentTimeMillis() - startTime) + "ms total!");
-                            try {
-                                return new JSONObject(respPayload);
-                            } catch (Exception e) {
-                                return new JSONObject().put("output", (Object)respPayload).put("exitCode", 0);
-                            }
-                        }
-                    }
-                } catch (Exception pollEx) {
-                    android.util.Log.w("YanziRelay", "--> Poll attempt #" + attempt + " error: " + pollEx.getMessage());
-                }
-            }
-            throw new IllegalStateException("远程设备未响应，请确认电脑处于在线状态。");
-        }
-
-        private static JSONObject requestDesktopLocalApi(String path, String token, String action, String method, JSONObject payload) throws Exception {
-            long lanStart = System.currentTimeMillis();
-            String lanBaseUrl = sContext != null ? LanDiscoveryManager.getLanBaseUrl(sContext) : LanDiscoveryManager.cachedLanBaseUrl;
-            android.util.Log.i("YanziRelay", "==> requestDesktopLocalApi: lanBaseUrl=" + lanBaseUrl);
-
-            if (lanBaseUrl != null && !lanBaseUrl.trim().isEmpty() && !lanBaseUrl.contains("127.0.0.1")) {
-                try {
-                    String lanToken = sContext != null ? LanDiscoveryManager.getLanApiToken(sContext) : LanDiscoveryManager.cachedLanApiToken;
-                    int timeoutMs = 800;
-                    JSONObject result = YanziApiClient.doRequest(lanBaseUrl, path, lanToken != null ? lanToken : token, action, method, payload, timeoutMs);
-                    YanziApiClient.handleLanSuccess(action, path);
-                    android.util.Log.i("YanziRelay", "<== LAN Direct OK in " + (System.currentTimeMillis() - lanStart) + "ms");
-                    return result;
-                } catch (Exception e) {
-                    android.util.Log.i("YanziRelay", "--> LAN Direct failed (" + (System.currentTimeMillis() - lanStart) + "ms): " + e.getMessage());
-                    if (sContext != null) LanDiscoveryManager.clearLanBaseUrl(sContext);
-                }
-            }
-
-            android.util.Log.i("YanziRelay", "--> Fallback to Cloud Relay");
-            try {
-                return requestCloudRelayApi(path, token, action, method, payload);
-            } catch (Exception relayEx) {
-                throw new IllegalStateException("远程中继响应失败：" + relayEx.getMessage(), relayEx);
-            }
-        }
-
-        private static String toUserMessage(Exception ex) {
-            if (ex == null) {
-                return "未知错误";
-            }
-            String message = ex.getMessage();
-            if (message == null || message.trim().isEmpty()) {
-                message = ex.toString();
-            }
-            return message;
-        }
-
-        private static void handleLanSuccess(String action, String path) {
-            if (sContext != null) {
-                MobileDiagnostics.append(sContext, "\u5c40\u57df\u7f51\u76f4\u8fde\u6210\u529f(" + action + "): " + path);
-            }
-        }
-
-        private static void handleLanFailure(String action, Exception e) {
-            sLanFailedThisSession = true;
-            String message = e.getMessage() == null ? e.toString() : e.getMessage();
-            Log.w((String)"ApiClient", (String)("LAN fallback failed: " + message));
-            if (sContext != null) {
-                MobileDiagnostics.append(sContext, "\u5c40\u57df\u7f51\u76f4\u8fde\u5931\u8d25(" + action + ")\uff0c\u5df2\u56de\u9000\u516c\u7f51\uff1a" + message);
-                LanDiscoveryManager.clearLanBaseUrl(sContext);
-            } else {
-                LanDiscoveryManager.cachedLanBaseUrl = null;
-                LanDiscoveryManager.cachedLanApiToken = null;
-            }
-        }
-
-        private static JSONObject doRequest(String baseUrl, String path, String token, String action, String method, JSONObject payload, int timeoutMs) throws Exception {
-            HttpURLConnection connection = (HttpURLConnection)new URL(baseUrl + path).openConnection();
-            connection.setRequestMethod(method);
-            connection.setConnectTimeout(timeoutMs);
-            connection.setReadTimeout(timeoutMs);
-            connection.setRequestProperty("User-Agent", "YanziClient-Mobile/0.1.0");
-            connection.setRequestProperty("X-Yanzi-Client", "mobile");
-            connection.setRequestProperty("X-Yanzi-Client-Version", "0.1.0");
-            connection.setRequestProperty("Accept", "application/json");
-            if (payload != null) {
-                connection.setDoOutput(true);
-                connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
-            }
-            if (token != null && !token.trim().isEmpty()) {
-                connection.setRequestProperty("Authorization", "Bearer " + token);
-            }
-            if (payload != null) {
-                try (OutputStreamWriter writer = new OutputStreamWriter(connection.getOutputStream(), StandardCharsets.UTF_8);){
-                    writer.write(payload.toString());
-                }
-            }
-            String body = YanziApiClient.readBody(connection);
-            if (connection.getResponseCode() < 200 || connection.getResponseCode() >= 300) {
-                String message = body;
-                try {
-                    message = new JSONObject(body).optString("message", body);
-                }
-                catch (Exception exception) {
-                    // empty catch block
-                }
-                throw new IllegalStateException(YanziApiClient.formatError(action, path, connection.getResponseCode(), message));
-            }
-            return body.trim().isEmpty() ? new JSONObject() : new JSONObject(body);
-        }
-
-        private static String encodePath(String value) {
-            return value.replace(" ", "%20").replace("/", "%2F");
-        }
-
-        private static String formatError(String action, String path, int statusCode, String message) {
-            String trimmed;
-            String string = trimmed = message == null ? "" : message.trim();
-            if (statusCode == 404 && trimmed.toLowerCase().contains("route not found")) {
-                return action + "\u63a5\u53e3\u4e0d\u5b58\u5728\uff0c\u8bf7\u786e\u8ba4\u4e91\u7aef\u5730\u5740\u662f " + MainActivity.DEFAULT_BASE_URL + "\uff0c\u5e76\u786e\u8ba4 Worker \u5df2\u53d1\u5e03\u79fb\u52a8\u7aef\u63a5\u53e3\uff1a" + path;
-            }
-            if (trimmed.isEmpty()) {
-                return action + "\u5931\u8d25\uff0cHTTP " + statusCode;
-            }
-            return trimmed;
-        }
-
-        private static String readBody(HttpURLConnection connection) throws Exception {
-            InputStream stream = connection.getResponseCode() >= 200 && connection.getResponseCode() < 300 ? connection.getInputStream() : connection.getErrorStream();
-            StringBuilder builder = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8));){
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    builder.append(line);
-                }
-            }
-            return builder.toString();
-        }
-
-        private static final class WebDavConfig {
-            String serverUrl;
-            String rootPath;
-            String username;
-            String password;
-
-            private WebDavConfig() {
-            }
-        }
-    }
+    /** Compatibility facade; account and transport code lives outside the Activity. */
+    public static final class YanziApiClient extends MobileApiClient { }
 
     private static class AttachmentInfo {
         String name;
@@ -8908,10 +9590,10 @@ extends Activity {
         PopupMenu popup = new PopupMenu((Context)this, info.view);
         popup.getMenu().add(0, 1, 0, (CharSequence)"\u590d\u5236");
         popup.getMenu().add(0, 2, 1, (CharSequence)"\u9009\u62e9\u6587\u672c");
-        
+
         boolean isUserMsg = "\u6211".equals(info.sender);
         boolean isAiMsg = "AI".equals(info.sender);
-        
+
         if (isAiMsg && info.historyIndex != -1) {
             popup.getMenu().add(0, 3, 2, (CharSequence)"\u91cd\u65b0\u751f\u6210");
         }
@@ -8926,7 +9608,7 @@ extends Activity {
         }
         popup.getMenu().add(0, 7, 6, (CharSequence)"朗读文本");
         popup.getMenu().add(0, 99, 7, (CharSequence)"清空全部历史");
-        
+
         popup.setOnMenuItemClickListener(item -> {
             if (item.getItemId() == 99) {
                 new android.app.AlertDialog.Builder(this)
@@ -9109,165 +9791,9 @@ extends Activity {
 
     private void renderMarkdownMessage(LinearLayout container, String text, int textColor, AiMessageInfo info) {
         if (text == null || text.isEmpty()) return;
-        
-        String[] lines = text.split("\n", -1);
-        ArrayList<String> currentTextBlock = new ArrayList<>();
-        ArrayList<String> currentTableBlock = new ArrayList<>();
-        
-        for (String line : lines) {
-            String trimmed = line.trim();
-            boolean isTable = trimmed.startsWith("|") && trimmed.endsWith("|");
-            
-            if (isTable) {
-                if (!currentTextBlock.isEmpty()) {
-                    renderNormalTextBlock(container, TextUtils.join("\n", currentTextBlock), textColor, info);
-                    currentTextBlock.clear();
-                }
-                currentTableBlock.add(line);
-            } else {
-                if (!currentTableBlock.isEmpty()) {
-                    renderTableBlock(container, currentTableBlock);
-                    currentTableBlock.clear();
-                }
-                currentTextBlock.add(line);
-            }
-        }
-        
-        if (!currentTextBlock.isEmpty()) {
-            renderNormalTextBlock(container, TextUtils.join("\n", currentTextBlock), textColor, info);
-        }
-        if (!currentTableBlock.isEmpty()) {
-            renderTableBlock(container, currentTableBlock);
-        }
-    }
-
-    private void renderNormalTextBlock(LinearLayout container, String text, int textColor, AiMessageInfo info) {
-        if (text == null || text.trim().isEmpty()) return;
-        TextView tv = new TextView(container.getContext());
-        tv.setText(parseMarkdownToSpanned(text), TextView.BufferType.SPANNABLE);
-        tv.setTextColor(textColor);
-        tv.setTextSize(2, 14.0f);
-        tv.setPadding(dp(4), dp(4), dp(4), dp(4));
-        tv.setTextIsSelectable(true);
-        tv.setOnLongClickListener(v -> {
-            this.showAiMessageMenu(info);
-            return true;
-        });
-        
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, 
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        container.addView(tv, params);
-    }
-
-    private void renderTableBlock(LinearLayout container, ArrayList<String> tableLines) {
-        Context context = container.getContext();
-        HorizontalScrollView hsv = new HorizontalScrollView(context);
-        hsv.setFillViewport(true);
-        
-        LinearLayout.LayoutParams hsvParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, 
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        hsvParams.setMargins(0, dp(8), 0, dp(8));
-        hsv.setLayoutParams(hsvParams);
-        
-        TableLayout tableLayout = new TableLayout(context);
-        tableLayout.setStretchAllColumns(true);
-        
-        GradientDrawable tableBg = new GradientDrawable();
-        tableBg.setColor(Color.rgb(17, 24, 39));
-        tableBg.setCornerRadius(dp(8));
-        tableBg.setStroke(dp(1), Color.rgb(75, 85, 99));
-        tableLayout.setBackground(tableBg);
-        tableLayout.setPadding(dp(1), dp(1), dp(1), dp(1));
-        
-        TableLayout.LayoutParams tableParams = new TableLayout.LayoutParams(
-                TableLayout.LayoutParams.MATCH_PARENT, 
-                TableLayout.LayoutParams.WRAP_CONTENT);
-        tableLayout.setLayoutParams(tableParams);
-        
-        boolean isHeader = true;
-        int rowIndex = 0;
-        
-        for (String line : tableLines) {
-            String trimmed = line.trim();
-            if (trimmed.replaceAll("[|\\s-:]", "").isEmpty()) {
-                continue;
-            }
-            
-            String[] rawCells = trimmed.split("\\|", -1);
-            if (rawCells.length <= 1) continue;
-            
-            int startCell = trimmed.startsWith("|") ? 1 : 0;
-            int endCell = trimmed.endsWith("|") ? rawCells.length - 1 : rawCells.length;
-            
-            ArrayList<String> cells = new ArrayList<>();
-            for (int c = startCell; c < endCell; c++) {
-                cells.add(rawCells[c].trim());
-            }
-            
-            TableRow row = new TableRow(context);
-            
-            GradientDrawable rowBg = new GradientDrawable();
-            if (isHeader) {
-                rowBg.setColor(Color.rgb(30, 41, 59));
-            } else {
-                rowBg.setColor(rowIndex % 2 == 0 ? Color.rgb(17, 24, 39) : Color.rgb(31, 41, 55));
-            }
-            row.setBackground(rowBg);
-            
-            for (String cellText : cells) {
-                TextView cellTv = new TextView(context);
-                cellTv.setText(parseMarkdownToSpanned(cellText), TextView.BufferType.SPANNABLE);
-                cellTv.setTextSize(2, 12.0f);
-                cellTv.setPadding(dp(10), dp(8), dp(10), dp(8));
-                cellTv.setGravity(Gravity.CENTER);
-                
-                if (isHeader) {
-                    cellTv.setTextColor(Color.WHITE);
-                    cellTv.setTypeface(null, Typeface.BOLD);
-                } else {
-                    cellTv.setTextColor(Color.rgb(229, 231, 235));
-                }
-                row.addView(cellTv);
-            }
-            
-            tableLayout.addView(row);
-            isHeader = false;
-            rowIndex++;
-        }
-        
-        hsv.addView(tableLayout);
-        container.addView(hsv);
-    }
-
-    private android.text.Spanned parseMarkdownToSpanned(String text) {
-        if (text == null) return new android.text.SpannableString("");
-        String escaped = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
-        
-        escaped = escaped.replaceAll("(?m)^######\\s+(.*?)\\s*$", "<h6>$1</h6>");
-        escaped = escaped.replaceAll("(?m)^#####\\s+(.*?)\\s*$", "<h5>$1</h5>");
-        escaped = escaped.replaceAll("(?m)^####\\s+(.*?)\\s*$", "<h4>$1</h4>");
-        escaped = escaped.replaceAll("(?m)^###\\s+(.*?)\\s*$", "<h3>$1</h3>");
-        escaped = escaped.replaceAll("(?m)^##\\s+(.*?)\\s*$", "<h2>$1</h2>");
-        escaped = escaped.replaceAll("(?m)^#\\s+(.*?)\\s*$", "<h1>$1</h1>");
-        
-        escaped = escaped.replaceAll("\\*\\*(.*?)\\*\\*", "<b>$1</b>");
-        escaped = escaped.replaceAll("\\*(.*?)\\*", "<i>$1</i>");
-        escaped = escaped.replaceAll("__(.*?)__", "<u>$1</u>");
-        escaped = escaped.replaceAll("`(.*?)`", "<tt><font color=\"#4ADE80\">$1</font></tt>");
-        escaped = escaped.replaceAll("(?m)^\\s*-\\s+(.*)$", "&bull; $1");
-        escaped = escaped.replaceAll("(?m)^\\s*\\*\\s+(.*)$", "&bull; $1");
-        escaped = escaped.replace("\n", "<br/>");
-        
-        // Remove trailing <br/> added right after heading tags
-        escaped = escaped.replaceAll("</h([1-6])><br/>", "</h$1>");
-
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
-            return Html.fromHtml(escaped, Html.FROM_HTML_MODE_LEGACY);
-        } else {
-            return Html.fromHtml(escaped);
-        }
+        // Device messages and AI responses share the same selectable, link-aware renderer.
+        ChatRichText.render(container, text,
+                Math.max(dp(180), getResources().getDisplayMetrics().widthPixels - dp(64)));
     }
 
     private void toggleTtsStatus(ImageView speakBtn) {
@@ -9352,6 +9878,12 @@ extends Activity {
     }
 
     private void startWakeListening() {
+        if (!BuildConfig.BUNDLED_WAKE_MODEL) {
+            isWakeListeningEnabled = false;
+            updateWakeToggleButton();
+            Toast.makeText(this, "精简开发版暂未打包离线唤醒模型", Toast.LENGTH_SHORT).show();
+            return;
+        }
         if (!this.isWakeListeningEnabled || this.isWakeListeningActive || this.isWakeModelLoading || this.isWakeTriggeredSpeech || this.isWakeTriggeredSpeechSessionActive) {
             return;
         }
@@ -9560,7 +10092,7 @@ extends Activity {
         this.isSpeechListening = false;
         this.pendingStopSpeech = false;
         this.updateSpeechVolumeWave(0.0f);
-        
+
         if (recognizerToDestroy != null) {
             new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
                 try {
@@ -9910,11 +10442,11 @@ extends Activity {
             @Override
             public void onError(int error) {
                 Log.e("YanziVoice", "Speech recognition error: " + error);
-                if ((error == android.speech.SpeechRecognizer.ERROR_NETWORK || 
-                     error == android.speech.SpeechRecognizer.ERROR_SERVER || 
-                     error == android.speech.SpeechRecognizer.ERROR_CLIENT) && 
+                if ((error == android.speech.SpeechRecognizer.ERROR_NETWORK ||
+                     error == android.speech.SpeechRecognizer.ERROR_SERVER ||
+                     error == android.speech.SpeechRecognizer.ERROR_CLIENT) &&
                     MainActivity.this.speechRetryCount < 3) {
-                    
+
                     MainActivity.this.speechRetryCount++;
                     if (MainActivity.this.currentSpeechPackage != null) {
                         MainActivity.this.failedSpeechPackages.add(MainActivity.this.currentSpeechPackage);
@@ -10174,13 +10706,21 @@ extends Activity {
 
     private void selectMobileSubTab(int index) {
         if (index < 0 || index > 2) return;
+        boolean changed=this.currentMobileSubTab!=index;
         this.currentMobileSubTab = index;
-        
+        this.updateSwipeRefreshEnabledForCurrentView();
+        if(index==0&&this.mobileExtensionGrid!=null&&changed)this.syncMobileExtensionsFromCloud();
+        if(index==1&&this.applicationStore!=null)this.applicationStore.show();
+
         this.runOnUiThread(() -> {
+            if (this.developerDashboard != null) {
+                this.developerDashboard.selectWorkspace(index);
+            }
+
             android.graphics.drawable.GradientDrawable activeBg = new android.graphics.drawable.GradientDrawable();
-            activeBg.setCornerRadius((float)this.dp(8));
-            activeBg.setColor(Color.argb(20, 34, 211, 238));
-            
+            activeBg.setCornerRadius((float)this.dp(12));
+            activeBg.setColor(Color.argb(32, 79, 140, 255));
+
             if (this.btnShowMobileExtensions != null) {
                 this.btnShowMobileExtensions.setTextColor(Color.rgb(148, 163, 184));
                 this.btnShowMobileExtensions.setBackgroundColor(Color.TRANSPARENT);
@@ -10193,28 +10733,28 @@ extends Activity {
                 this.btnShowMobileShell.setTextColor(Color.rgb(148, 163, 184));
                 this.btnShowMobileShell.setBackgroundColor(Color.TRANSPARENT);
             }
-            
+
             if (index == 0) {
                 if (this.btnShowMobileExtensions != null) {
-                    this.btnShowMobileExtensions.setTextColor(Color.rgb(34, 211, 238));
+                    this.btnShowMobileExtensions.setTextColor(YanziUiKit.BLUE);
                     this.btnShowMobileExtensions.setBackground((android.graphics.drawable.Drawable)activeBg);
                 }
             } else if (index == 1) {
                 if (this.btnShowMobileDocs != null) {
-                    this.btnShowMobileDocs.setTextColor(Color.rgb(34, 211, 238));
+                    this.btnShowMobileDocs.setTextColor(YanziUiKit.BLUE);
                     this.btnShowMobileDocs.setBackground((android.graphics.drawable.Drawable)activeBg);
                 }
             } else if (index == 2) {
                 if (this.btnShowMobileShell != null) {
-                    this.btnShowMobileShell.setTextColor(Color.rgb(34, 211, 238));
+                    this.btnShowMobileShell.setTextColor(YanziUiKit.BLUE);
                     this.btnShowMobileShell.setBackground((android.graphics.drawable.Drawable)activeBg);
                 }
             }
-            
+
             if (this.mobileViewPager != null && this.mobileViewPager.getCurrentItem() != index) {
                 this.mobileViewPager.setCurrentItem(index, true);
             }
-            
+
             if (index == 0) {
                 if (this.isEditingMobileExtension) {
                     if (this.mobileViewPager != null) this.mobileViewPager.setVisibility(View.GONE);
@@ -10231,10 +10771,10 @@ extends Activity {
     }
 
     private void buildMobileDocsView(LinearLayout container) {
-        TextView descText = this.textView("\u624b\u673a\u6269\u5c55\u57fa\u4e8e\u8f6b\u91cf\u7ea7 JavaScript \u73af\u5883\u6267\u884c\u3002\u60a8\u53ef\u4ee5\u5728\u811a\u672c\u7684 async function run(context) \u4e2d\u8c03\u7528\u4ee5\u4e0b context.mobile API\u3002", 13, Color.rgb(182, 194, 214), false);
+        TextView descText = this.textView("手机小程序基于轻量级 JavaScript 环境执行。你可以在脚本的 async function run(context) 中调用以下 context.mobile API。", 13, Color.rgb(182, 194, 214), false);
         descText.setPadding(0, this.dp(4), 0, this.dp(12));
         container.addView((View)descText);
-        
+
         java.util.List<DocItem> docs = new java.util.ArrayList<>();
         docs.add(new DocItem("context.mobile.toast(text)", "\u5f39\u51fa\u7cfb\u7edf Toast \u63d0\u793a\u6d88\u606f\uff0c\u65e0\u8fd4\u56de\u503c\u3002", "text (string): \u63d0\u793a\u6587\u672c", "context.mobile.toast('Hello');"));
         docs.add(new DocItem("context.mobile.sendToDesktop(text)", "\u53d1\u9001\u6587\u672c\u6d88\u606f\u5230\u5f53\u524d\u5df2\u8fde\u63a5\u7684\u7535\u8111\u7aef\uff08\u9700\u5728\u7ebf\uff0c\u65e0\u8fd4\u56de\u503c\uff09\u3002", "text (string): \u53d1\u9001\u5185\u5bb9", "context.mobile.sendToDesktop('hi');"));
@@ -10246,6 +10786,9 @@ extends Activity {
         docs.add(new DocItem("context.mobile.readTextFile(name)", "\u5f02\u6b65\u5728\u624b\u673a\u79c1\u6709\u811a\u672c\u5b58\u50a8\u533a\u4e2d\u8bfb\u53d6\u630f\u5b9a\u540d\u79f0\u7684\u6587\u672c\u6587\u4ef6\u3002", "name (string): \u6587\u4ef6\u540d", "const res = await context.mobile.readTextFile('data.txt');\nif (res.ok) { context.mobile.toast(res.text); }"));
         docs.add(new DocItem("context.mobile.saveTextFile(name, text)", "\u5f02\u6b65\u5728\u624b\u673a\u79c1\u6709\u811a\u672c\u5b58\u50a8\u533a\u4e2d\u4fdd\u5b58/\u91cd\u5199\u6587\u672c\u6587\u4ef6\u3002", "name (string): \u6587\u4ef6\u540d\ntext (string): \u5199\u5165\u5185\u5bb9", "await context.mobile.saveTextFile('data.txt', 'hello');"));
         docs.add(new DocItem("context.mobile.appendTextFile(name, text)", "\u5f02\u6b65\u5728\u624b\u673a\u79c1\u6709\u811a\u672c\u5b58\u50a8\u533a\u4e2d\u8ffd\u52a0\u6587\u672c\u5185\u5bb9\u3002", "name (string): \u6587\u4ef6\u540d\ntext (string): \u8ffd\u52a0\u5185\u5bb9", "await context.mobile.appendTextFile('log.txt', '\\nnew log');"));
+        docs.add(new DocItem("context.storage.readText(key)", "\u8bfb\u53d6\u5f53\u524d\u5c0f\u7a0b\u5e8f\u8d26\u53f7\u4e91\u7aef\u6570\u636e\uff0c\u4e0e Windows context.Storage \u5171\u7528 extensionId + key \u547d\u540d\u7a7a\u95f4\u3002", "key (string): \u6570\u636e\u952e", "const r = await context.storage.readText('settings.json');\nif (r.ok && r.exists) context.mobile.toast(r.content);"));
+        docs.add(new DocItem("context.storage.writeText(key, text, expectedRevision)", "\u5199\u5165\u5f53\u524d\u5c0f\u7a0b\u5e8f\u8d26\u53f7\u4e91\u7aef\u6570\u636e\u3002expectedRevision \u53ef\u7701\u7565\uff0c\u5e76\u53d1\u4fee\u6539\u4f1a\u8fd4\u56de conflict=true\u3002", "key, text; expectedRevision (number, optional)", "const r = await context.storage.writeText('settings.json', JSON.stringify({enabled:true}));"));
+        docs.add(new DocItem("context.storage.deleteText(key, expectedRevision)", "\u4f7f\u7528 tombstone \u5220\u9664\u5f53\u524d\u5c0f\u7a0b\u5e8f\u7684\u4e91\u7aef\u6570\u636e\uff0c\u4e0d\u4f7f\u7528\u7a7a\u503c\u9690\u5f0f\u5220\u9664\u3002", "key; expectedRevision (number, optional)", "await context.storage.deleteText('settings.json');"));
         docs.add(new DocItem("context.mobile.httpGet(url)", "\u5f02\u6b65\u53d1\u9001 HTTP GET \u8bf7\u6c42\uff0c\u8fd4\u56de JSON \u54cd\u5e94\u3002", "url (string): \u8bf7\u6c42\u7f51\u5740", "const res = await context.mobile.httpGet('https://api.github.com');"));
         docs.add(new DocItem("context.mobile.httpPostJson(url, jsonText)", "\u5f02\u6b65\u53d1\u9001 HTTP POST JSON \u8bf7\u6c42\u3002", "url (string): \u8bf7\u6c42\u7f51\u5740\njsonText (string): JSON\u5b57\u7b26\u4e32", "const res = await context.mobile.httpPostJson('https://example.com/api', JSON.stringify({a:1}));"));
         docs.add(new DocItem("context.mobile.done(text)", "\u6807\u8bb0\u5f53\u524d\u811a\u672c\u6210\u529f\u8fd0\u884c\u5b8c\u6210\uff0c\u5e76\u901a\u77e5\u9000\u51fa\u3002", "text (string): \u5b8c\u6210\u6d88\u606f", "context.mobile.done('\u6267\u884c\u6210\u529f');"));
@@ -10256,68 +10799,68 @@ extends Activity {
         docs.add(new DocItem("context.mobile.getLocation()", "\u5f02\u6b65\u83b7\u53d6\u57fa\u4e8e IP \u7f51\u7edc\u7684\u7c97\u7565\u5730\u7406\u5b9a\u4f4d\u4fe8\u606f\u3002", "\u65e0", "const loc = await context.mobile.getLocation();"));
         docs.add(new DocItem("context.mobile.listScriptFiles()", "\u5f02\u6b65\u83b7\u53d6\u624b\u673a\u79c1\u6709\u811a\u672c\u76ee\u5f55\u4e0b\u7684\u5168\u90e8\u6587\u4ef6\u5217\u8868\u3002", "\u65e0", "const res = await context.mobile.listScriptFiles();"));
         docs.add(new DocItem("context.mobile.deleteScriptFile(name)", "\u5f02\u6b65\u5220\u9664\u79c1\u6709\u811a\u672c\u76ee\u5f55\u4e0b\u7684\u630f\u5b9a\u6587\u4ef6\u3002", "name (string): \u6587\u4ef6\u540d", "const res = await context.mobile.deleteScriptFile('temp.txt');"));
-        
+
         for (DocItem item : docs) {
             LinearLayout card = new LinearLayout((Context)this);
             card.setOrientation(1);
             card.setPadding(this.dp(12), this.dp(12), this.dp(12), this.dp(12));
-            
+
             LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(-1, -2);
             cardParams.bottomMargin = this.dp(12);
             card.setLayoutParams((ViewGroup.LayoutParams)cardParams);
-            
+
             android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
             bg.setColor(Color.rgb(30, 41, 59));
             bg.setCornerRadius((float)this.dp(8));
             card.setBackground((android.graphics.drawable.Drawable)bg);
-            
+
             TextView nameTv = new TextView((Context)this);
             nameTv.setText((CharSequence)item.name);
             nameTv.setTextColor(Color.rgb(34, 211, 238));
             nameTv.setTextSize(15f);
             nameTv.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
             card.addView((View)nameTv);
-            
+
             TextView descTv = new TextView((Context)this);
             descTv.setText((CharSequence)("\u529f\u80fd\uff1a" + item.desc));
             descTv.setTextColor(Color.rgb(226, 232, 240));
             descTv.setTextSize(13f);
             descTv.setPadding(0, this.dp(6), 0, 0);
             card.addView((View)descTv);
-            
+
             TextView paramsTv = new TextView((Context)this);
             paramsTv.setText((CharSequence)("\u53c2\u6570\uff1a" + item.params));
             paramsTv.setTextColor(Color.rgb(148, 163, 184));
             paramsTv.setTextSize(12f);
             paramsTv.setPadding(0, this.dp(4), 0, 0);
             card.addView((View)paramsTv);
-            
+
             TextView exampleTv = new TextView((Context)this);
             exampleTv.setText((CharSequence)item.example);
             exampleTv.setTextColor(Color.rgb(167, 243, 208));
             exampleTv.setTextSize(11f);
             exampleTv.setTypeface(Typeface.MONOSPACE);
             exampleTv.setPadding(this.dp(10), this.dp(8), this.dp(10), this.dp(8));
-            
+
             LinearLayout.LayoutParams exParams = new LinearLayout.LayoutParams(-1, -2);
             exParams.topMargin = this.dp(8);
             exampleTv.setLayoutParams((ViewGroup.LayoutParams)exParams);
-            
+
             android.graphics.drawable.GradientDrawable exBg = new android.graphics.drawable.GradientDrawable();
             exBg.setColor(Color.rgb(15, 23, 42));
             exBg.setCornerRadius((float)this.dp(4));
             exampleTv.setBackground((android.graphics.drawable.Drawable)exBg);
-            
+
             card.addView((View)exampleTv);
             container.addView((View)card);
         }
     }
 
     private void buildMobileShellView(LinearLayout container) {
-        TextView descText = this.textView("\u5728\u6b64\u53ef\u76f2\u63a5\u7f16\u5199\u5e76\u8fd0\u884c JS \u811a\u672c\uff0c\u6216\u67e5\u770b\u6269\u5c55\u7684 API \u8c03\u7528\u65e5\u5fd7\u3002", 13, Color.rgb(182, 194, 214), false);
+        TextView descText = this.textView("在此可以直接编写并运行 JS 脚本，也可以查看小程序的 API 调用日志。", 13, Color.rgb(182, 194, 214), false);
         descText.setPadding(0, this.dp(4), 0, this.dp(12));
         container.addView((View)descText);
-        
+
         LinearLayout logLayout = new LinearLayout((Context)this);
         logLayout.setOrientation(1);
         android.graphics.drawable.GradientDrawable logBg = new android.graphics.drawable.GradientDrawable();
@@ -10325,11 +10868,11 @@ extends Activity {
         logBg.setCornerRadius((float)this.dp(8));
         logLayout.setBackground((android.graphics.drawable.Drawable)logBg);
         logLayout.setPadding(this.dp(12), this.dp(12), this.dp(12), this.dp(12));
-        
+
         LinearLayout.LayoutParams logLayoutParams = new LinearLayout.LayoutParams(-1, this.dp(200));
         logLayoutParams.bottomMargin = this.dp(12);
         logLayout.setLayoutParams((ViewGroup.LayoutParams)logLayoutParams);
-        
+
         this.svMobileShellLog = new androidx.core.widget.NestedScrollView((Context)this);
         this.svMobileShellLog.setNestedScrollingEnabled(true);
         this.tvMobileShellLog = new TextView((Context)this);
@@ -10337,19 +10880,19 @@ extends Activity {
         this.tvMobileShellLog.setTextColor(Color.rgb(34, 211, 238));
         this.tvMobileShellLog.setTextSize(12f);
         this.tvMobileShellLog.setTypeface(Typeface.MONOSPACE);
-        
+
         this.svMobileShellLog.addView((View)this.tvMobileShellLog, (ViewGroup.LayoutParams)new FrameLayout.LayoutParams(-1, -2));
         logLayout.addView((View)this.svMobileShellLog, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -1));
         container.addView((View)logLayout);
-        
+
         LinearLayout actionRow = new LinearLayout((Context)this);
         actionRow.setOrientation(0);
         actionRow.setGravity(16);
         actionRow.setPadding(0, 0, 0, this.dp(8));
-        
+
         TextView inputTitle = this.textView("\u8f93\u5165 JS \u4ee3\u7801\uff1a", 14, -1, true);
         actionRow.addView((View)inputTitle, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -2, 1.0f));
-        
+
         android.widget.Button btnClearLog = new android.widget.Button((Context)this);
         btnClearLog.setText((CharSequence)"\u6e05\u9664\u65e5\u5fd7");
         btnClearLog.setTextColor(Color.rgb(148, 163, 184));
@@ -10359,7 +10902,7 @@ extends Activity {
         btnClearLog.setOnClickListener(v -> this.tvMobileShellLog.setText((CharSequence)""));
         actionRow.addView((View)btnClearLog, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-2, this.dp(30)));
         container.addView((View)actionRow);
-        
+
         this.etMobileShellInput = new EditText((Context)this);
         this.etMobileShellInput.setHint((CharSequence)"context.mobile.toast('Hello Yanzi!');");
         this.etMobileShellInput.setHintTextColor(Color.rgb(100, 116, 139));
@@ -10368,18 +10911,18 @@ extends Activity {
         this.etMobileShellInput.setTypeface(Typeface.MONOSPACE);
         this.etMobileShellInput.setGravity(83);
         this.etMobileShellInput.setPadding(this.dp(10), this.dp(10), this.dp(10), this.dp(10));
-        
+
         LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(-1, this.dp(100));
         inputParams.bottomMargin = this.dp(12);
         this.etMobileShellInput.setLayoutParams((ViewGroup.LayoutParams)inputParams);
-        
+
         android.graphics.drawable.GradientDrawable inputBg = new android.graphics.drawable.GradientDrawable();
         inputBg.setColor(Color.rgb(15, 23, 42));
         inputBg.setCornerRadius((float)this.dp(6));
         inputBg.setStroke(this.dp(1), Color.rgb(51, 65, 85));
         this.etMobileShellInput.setBackground((android.graphics.drawable.Drawable)inputBg);
         container.addView((View)this.etMobileShellInput);
-        
+
         android.widget.Button btnRun = this.button("\u8fd0\u884c\u4ee3\u7801");
         btnRun.setOnClickListener(v -> {
             String code = this.etMobileShellInput.getText().toString();
@@ -10454,23 +10997,23 @@ extends Activity {
 
     private void showYanmSyncLogsDialog() {
         AlertDialog.Builder builder = new AlertDialog.Builder((Context)this);
-        
+
         LinearLayout layout = new LinearLayout((Context)this);
         layout.setOrientation(LinearLayout.VERTICAL);
         layout.setPadding(this.dp(20), this.dp(20), this.dp(20), this.dp(20));
         layout.setBackgroundColor(ThemeConfig.COLOR_CARD_BACKGROUND);
-        
+
         LinearLayout titleBar = new LinearLayout((Context)this);
         titleBar.setOrientation(LinearLayout.HORIZONTAL);
         titleBar.setGravity(Gravity.CENTER_VERTICAL);
-        
+
         TextView titleTv = new TextView((Context)this);
         titleTv.setText((CharSequence)"\u71d5\u5e55\u540c\u6b65\u4e0e\u8fde\u63a5\u65e5\u5fd7");
         titleTv.setTextSize(18f);
         titleTv.setTextColor(ThemeConfig.COLOR_TEXT_PRIMARY);
         titleTv.setTypeface(null, Typeface.BOLD);
         titleBar.addView((View)titleTv, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -2, 1.0f));
-        
+
         Button btnRefresh = new Button((Context)this);
         btnRefresh.setText((CharSequence)"\u5237\u65b0");
         btnRefresh.setTextSize(12f);
@@ -10478,34 +11021,34 @@ extends Activity {
         btnRefresh.setBackgroundColor(Color.TRANSPARENT);
         btnRefresh.setPadding(this.dp(8), this.dp(4), this.dp(8), this.dp(4));
         titleBar.addView((View)btnRefresh, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-2, -2));
-        
+
         layout.addView((View)titleBar);
-        
+
         View divider = new View((Context)this);
         divider.setBackgroundColor(ThemeConfig.COLOR_DIVIDER);
         LinearLayout.LayoutParams divParams = new LinearLayout.LayoutParams(-1, this.dp(1));
         divParams.topMargin = this.dp(10);
         divParams.bottomMargin = this.dp(10);
         layout.addView(divider, (ViewGroup.LayoutParams)divParams);
-        
+
         androidx.core.widget.NestedScrollView scrollView = new androidx.core.widget.NestedScrollView((Context)this);
         scrollView.setPadding(this.dp(10), this.dp(10), this.dp(10), this.dp(10));
         scrollView.setBackgroundColor(ThemeConfig.COLOR_BACKGROUND);
-        
+
         TextView logTv = new TextView((Context)this);
         logTv.setTextSize(12f);
         logTv.setTextColor(Color.rgb(212, 212, 216));
         logTv.setTypeface(Typeface.MONOSPACE);
-        
+
         logTv.setText((CharSequence)this.getYanmSyncLogs());
         scrollView.addView((View)logTv);
         layout.addView((View)scrollView, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, this.dp(300)));
-        
+
         LinearLayout actionsLayout = new LinearLayout((Context)this);
         actionsLayout.setOrientation(LinearLayout.HORIZONTAL);
         actionsLayout.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
         actionsLayout.setPadding(0, this.dp(12), 0, 0);
-        
+
         String viewUrl = this.getSharedPreferences("yanzi-mobile", 0).getString("yanm_view_url", "");
         if (viewUrl != null && !viewUrl.trim().isEmpty()) {
             Button btnGoCloud = new Button((Context)this);
@@ -10523,33 +11066,33 @@ extends Activity {
             });
             actionsLayout.addView((View)btnGoCloud);
         }
-        
+
         Button btnClear = new Button((Context)this);
         btnClear.setText((CharSequence)"\u6e05\u9664");
         btnClear.setTextSize(13f);
         btnClear.setTextColor(Color.rgb(239, 68, 68));
         btnClear.setBackgroundColor(Color.TRANSPARENT);
         actionsLayout.addView((View)btnClear);
-        
+
         Button btnCopy = new Button((Context)this);
         btnCopy.setText((CharSequence)"\u590d\u5236");
         btnCopy.setTextSize(13f);
         btnCopy.setTextColor(Color.rgb(34, 211, 238));
         btnCopy.setBackgroundColor(Color.TRANSPARENT);
         actionsLayout.addView((View)btnCopy);
-        
+
         Button btnClose = new Button((Context)this);
         btnClose.setText((CharSequence)"\u5173\u95ed");
         btnClose.setTextSize(13f);
         btnClose.setTextColor(Color.WHITE);
         btnClose.setBackgroundColor(Color.TRANSPARENT);
         actionsLayout.addView((View)btnClose);
-        
+
         layout.addView((View)actionsLayout);
-        
+
         builder.setView((View)layout);
         AlertDialog dialog = builder.create();
-        
+
         btnRefresh.setOnClickListener(v -> {
             logTv.setText((CharSequence)this.getYanmSyncLogs());
         });
@@ -10565,7 +11108,7 @@ extends Activity {
             }
         });
         btnClose.setOnClickListener(v -> dialog.dismiss());
-        
+
         dialog.show();
         if (dialog.getWindow() != null) {
             GradientDrawable drawable = new GradientDrawable();
@@ -10582,32 +11125,32 @@ extends Activity {
         row.setPadding(this.dp(16), this.dp(14), this.dp(16), this.dp(14));
         row.setClickable(true);
         row.setFocusable(true);
-        
+
         TextView titleTv = new TextView((Context)this);
         titleTv.setText((CharSequence)title);
         titleTv.setTextSize(15f);
         titleTv.setTextColor(ThemeConfig.COLOR_TEXT_PRIMARY);
         row.addView((View)titleTv, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -2, 1.0f));
-        
+
         LinearLayout rightLayout = new LinearLayout((Context)this);
         rightLayout.setOrientation(LinearLayout.HORIZONTAL);
         rightLayout.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-        
+
         final TextView subTv = new TextView((Context)this);
         subTv.setText((CharSequence)(subText == null ? "" : subText));
         subTv.setTextSize(13f);
         subTv.setTextColor(ThemeConfig.COLOR_TEXT_SECONDARY);
         subTv.setPadding(0, 0, this.dp(8), 0);
         rightLayout.addView((View)subTv);
-        
+
         TextView chevron = new TextView((Context)this);
         chevron.setText((CharSequence)">");
         chevron.setTextSize(14f);
         chevron.setTextColor(ThemeConfig.COLOR_TEXT_MUTED);
         rightLayout.addView((View)chevron);
-        
+
         row.addView((View)rightLayout, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-2, -2));
-        
+
         row.setOnTouchListener(new View.OnTouchListener() {
             @Override
             public boolean onTouch(View v, android.view.MotionEvent event) {
@@ -10619,13 +11162,13 @@ extends Activity {
                 return false;
             }
         });
-        
+
         row.setOnClickListener(v -> {
             if (onClick != null) {
                 onClick.run();
             }
         });
-        
+
         row.setTag(subTv);
         return row;
     }
@@ -10640,7 +11183,7 @@ extends Activity {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.bottomMargin = this.dp(12);
         group.setLayoutParams((ViewGroup.LayoutParams)lp);
-        
+
         for (int i = 0; i < items.length; i++) {
             group.addView((View)items[i]);
             if (i < items.length - 1) {
@@ -10656,62 +11199,39 @@ extends Activity {
     }
 
     private void setupProfileHeader() {
+        LinearLayout card = YanziUiKit.tintedCard(this, Color.rgb(13,31,49), Color.rgb(35,66,100));
         LinearLayout header = new LinearLayout((Context)this);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(this.dp(8), this.dp(16), this.dp(8), this.dp(24));
         header.setClickable(true);
         header.setFocusable(true);
-        
+
         this.profileAvatarView = new android.widget.ImageView((Context)this);
-        int avatarSize = this.dp(60);
+        int avatarSize = this.dp(56);
         LinearLayout.LayoutParams avatarParams = new LinearLayout.LayoutParams(avatarSize, avatarSize);
-        avatarParams.rightMargin = this.dp(16);
+        avatarParams.rightMargin = this.dp(14);
         this.profileAvatarView.setLayoutParams((ViewGroup.LayoutParams)avatarParams);
-        
         int resId = this.getResources().getIdentifier("yanzi_launcher_bitmap", "drawable", this.getPackageName());
-        if (resId == 0) {
-            resId = this.getResources().getIdentifier("yanzi_launcher", "drawable", this.getPackageName());
-        }
-        if (resId == 0) {
-            resId = this.getResources().getIdentifier("ic_launcher", "drawable", this.getPackageName());
-        }
-        if (resId != 0) {
-            this.profileAvatarView.setImageResource(resId);
-        }
-        
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
-            this.profileAvatarView.setClipToOutline(true);
-            this.profileAvatarView.setOutlineProvider(new android.view.ViewOutlineProvider() {
-                @Override
-                public void getOutline(View view, android.graphics.Outline outline) {
-                    outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), (float)MainActivity.this.dp(12));
-                }
-            });
-        }
-        
+        if (resId == 0) resId = this.getResources().getIdentifier("yanzi_launcher", "drawable", this.getPackageName());
+        if (resId == 0) resId = this.getResources().getIdentifier("ic_launcher", "drawable", this.getPackageName());
+        if (resId != 0) this.profileAvatarView.setImageResource(resId);
+
         LinearLayout textLayout = new LinearLayout((Context)this);
         textLayout.setOrientation(LinearLayout.VERTICAL);
-        
-        this.profileNameView = new android.widget.TextView((Context)this);
-        this.profileNameView.setTextSize(18f);
-        this.profileNameView.setTextColor(-1);
-        this.profileNameView.setTypeface(null, Typeface.BOLD);
-        
-        this.profileSubtextView = new android.widget.TextView((Context)this);
-        this.profileSubtextView.setTextSize(13f);
-        this.profileSubtextView.setTextColor(Color.rgb(161, 161, 170));
+        this.profileNameView = YanziUiKit.text(this, "未登录", 18, YanziUiKit.TEXT, true);
+        this.profileSubtextView = YanziUiKit.text(this, "点击登录同步服务", 12, YanziUiKit.SECONDARY, false);
         this.profileSubtextView.setPadding(0, this.dp(4), 0, 0);
-        
         textLayout.addView((View)this.profileNameView);
         textLayout.addView((View)this.profileSubtextView);
-        
+
         header.addView((View)this.profileAvatarView);
         header.addView((View)textLayout, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -2, 1.0f));
-        
+        TextView manage = YanziUiKit.link(this, "账号", this::showAccountSettingsDialog);
+        header.addView((View)manage);
         header.setOnClickListener(v -> this.showAccountSettingsDialog());
-        
-        this.profileTabPage.addView((View)header);
+        card.addView((View)header);
+
+        this.profileTabPage.addView((View)card, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
     }
 
     private void updateProfileHeader() {
@@ -10731,7 +11251,8 @@ extends Activity {
         }
         if (username != null && !username.trim().isEmpty()) {
             this.profileNameView.setText((CharSequence)username);
-            this.profileSubtextView.setVisibility(View.GONE);
+            this.profileSubtextView.setText((CharSequence)((email == null || email.trim().isEmpty() ? "燕子账号" : email) + " · 已同步"));
+            this.profileSubtextView.setVisibility(View.VISIBLE);
             this.profileAvatarView.setAlpha(1.0f);
         } else {
             this.profileNameView.setText((CharSequence)"\u672a\u767b\u5f55");
@@ -10754,6 +11275,14 @@ extends Activity {
         }
         dialogLayout.addView((View)this.emailInput);
         dialogLayout.addView((View)this.passwordInput);
+        this.accountLoginStatusText = this.textView(
+                "",
+                12,
+                Color.rgb((int)148, (int)163, (int)184),
+                false);
+        this.accountLoginStatusText.setPadding(0, this.dp(8), 0, 0);
+        this.accountLoginStatusText.setVisibility(View.GONE);
+        dialogLayout.addView((View)this.accountLoginStatusText);
         LinearLayout buttonsLayout = new LinearLayout((Context)this);
         buttonsLayout.setOrientation(0);
         buttonsLayout.setPadding(0, this.dp(10), 0, 0);
@@ -10764,7 +11293,7 @@ extends Activity {
         buttonsLayout.addView((View)this.loginButton, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, this.dp(44), 1.0f));
         buttonsLayout.addView((View)logoutBtn, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, this.dp(44), 1.0f));
         dialogLayout.addView((View)buttonsLayout);
-        
+
         AlertDialog dialog = new AlertDialog.Builder((Context)this, 16974545)
             .setTitle((CharSequence)"\u8d26\u53f7")
             .setView((View)dialogLayout)
@@ -10773,8 +11302,13 @@ extends Activity {
         this.accountDialog = dialog;
         dialog.setOnDismissListener(d -> {
             this.accountDialog = null;
+            this.accountLoginStatusText = null;
+            if (this.loginButton != null) {
+                this.loginButton.setEnabled(true);
+                this.loginButton.setText((CharSequence)"登录");
+            }
         });
-            
+
         logoutBtn.setOnClickListener(v1 -> {
             this.prefs.edit().putString("token", "").putString("email", "").putString("username", "").apply();
             this.setStatus("\u5df2\u6e05\u9664\u67ac\u5730\u767b\u5f55\u6001\u3002");
@@ -10814,26 +11348,26 @@ extends Activity {
         dialogLayout.setOrientation(LinearLayout.VERTICAL);
         dialogLayout.setPadding(this.dp(20), this.dp(20), this.dp(20), this.dp(20));
         dialogLayout.setBackgroundColor(ThemeConfig.COLOR_CARD_BACKGROUND);
-        
+
         LinearLayout rowSwitch = new LinearLayout((Context)this);
         rowSwitch.setOrientation(LinearLayout.HORIZONTAL);
         rowSwitch.setGravity(Gravity.CENTER_VERTICAL);
         rowSwitch.setPadding(0, 0, 0, this.dp(16));
-        
+
         TextView labelSwitch = this.textView("\u5f00\u542f\u4e91\u7aef\u81ea\u52a8\u66f4\u65b0", 15, -1, false);
         android.widget.Switch sw = new android.widget.Switch((Context)this);
         sw.setChecked(this.prefs.getBoolean("auto_cloud_update", false));
-        
+
         rowSwitch.addView((View)labelSwitch, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -2, 1.0f));
         rowSwitch.addView((View)sw, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-2, -2));
         dialogLayout.addView((View)rowSwitch);
-        
+
         LinearLayout rowFreq = new LinearLayout((Context)this);
         rowFreq.setOrientation(LinearLayout.VERTICAL);
-        
+
         TextView labelFreq = this.textView("\u66f4\u65b0\u9891\u7387\u0020\u0028\u79d2\u0029", 14, Color.rgb(148, 163, 184), false);
         rowFreq.addView((View)labelFreq);
-        
+
         final EditText etInterval = new EditText((Context)this);
         etInterval.setInputType(2);
         etInterval.setTextColor(-1);
@@ -10841,10 +11375,10 @@ extends Activity {
         etInterval.setText((CharSequence)String.valueOf(currentInterval));
         etInterval.setPadding(this.dp(8), this.dp(8), this.dp(8), this.dp(8));
         etInterval.setBackgroundColor(Color.rgb(30, 30, 30));
-        
+
         rowFreq.addView((View)etInterval, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -2));
         dialogLayout.addView((View)rowFreq);
-        
+
         AlertDialog dialog = new AlertDialog.Builder((Context)this, 16974545)
             .setTitle((CharSequence)"\u4e91\u7aef\u81ea\u52a8\u66f4\u65b0\u914d\u7f6e")
             .setView((View)dialogLayout)
@@ -10858,12 +11392,12 @@ extends Activity {
                 if (interval < 10) {
                     interval = 10;
                 }
-                
+
                 this.prefs.edit()
                     .putBoolean("auto_cloud_update", autoUpdate)
                     .putInt("auto_cloud_update_interval", interval)
                     .apply();
-                
+
                 this.autoCloudUpdateHandler.removeCallbacks(this.autoCloudUpdateRunnable);
                 if (autoUpdate) {
                     this.autoCloudUpdateHandler.postDelayed(this.autoCloudUpdateRunnable, 1000L);
@@ -10884,6 +11418,7 @@ extends Activity {
     }
 
     private void pickChatPhoto() {
+        this.attachmentConversation=this.chatConversation;
         try {
             Intent intent = new Intent("android.intent.action.OPEN_DOCUMENT");
             intent.addCategory("android.intent.category.OPENABLE");
@@ -10896,6 +11431,7 @@ extends Activity {
     }
 
     private void pickChatFile() {
+        this.attachmentConversation=this.chatConversation;
         try {
             Intent intent = new Intent("android.intent.action.GET_CONTENT");
             intent.setType("*/*");
@@ -10908,53 +11444,74 @@ extends Activity {
     }
 
     private void sendPhotoToDesktopChat(Uri uri) {
-        this.setStatus("\u6b63\u5728\u5904\u7406\u7167\u7247...");
-        this.showPhotoProgress("\u6b63\u5728\u53d1\u9001\u7167\u7247...");
-        this.renderChatMessage("self", "photo", uri.toString(), true);
-        this.saveChatMessageToLocal("self", "photo", uri.toString());
-        
-        this.executor.execute(() -> {
+        final ChatConversation recipient=attachmentConversation==null?chatConversation:attachmentConversation;
+        attachmentConversation=null;
+        if(recipient.agent) { this.setStatus("反重力当前支持文字消息。");return; }
+        this.setStatus("正在处理照片...");
+        this.showPhotoProgress("正在发送照片...");
+
+        beginMessageSend();
+        MobileSessionStore.Snapshot sendSession = MobileSessionStore.snapshot(this);
+        long queuedAt = android.os.SystemClock.elapsedRealtime();
+        messageExecutor.execute(() -> {
+            android.util.Log.i("YanziSend", "queue_wait_ms=" + (android.os.SystemClock.elapsedRealtime() - queuedAt));
             try {
+                sendSession.requireCurrent();
                 byte[] jpegBytes = this.readJpegBytesFromUri(uri);
+                File stablePhoto = ChatHistoryStore.persistPhoto(this, jpegBytes);
+                String stablePath = stablePhoto.getAbsolutePath();
+                long sentAt = System.currentTimeMillis();
+                String localDeviceName = MainActivity.buildDeviceDisplayName();
+                this.runOnUiThread(() -> {
+                    MobileChatController.append(this,this.deviceId,"self","photo",stablePath,sentAt,recipient.id);
+                    this.loadChatHistory();
+                });
+
                 int[] size = MainActivity.readImageSizeFromJpegBytes(jpegBytes);
                 int width = size[0];
                 int height = size[1];
-                
+
                 String baseUrl = this.normalizedBaseUrl();
                 String token = this.requireToken();
                 String messageId;
                 try {
-                    YanziApiClient.registerDevice(baseUrl, token, this.deviceId, this.buildDeviceName());
-                    messageId = YanziApiClient.sendPhotoToDesktop(baseUrl, token, this.deviceId, jpegBytes, width, height);
+                    messageId = MobileDesktopTransfer.sendBytes(this,baseUrl,token,this.deviceId,"photo",
+                        "photo-"+sentAt+".jpg","image/jpeg",jpegBytes,"手机照片 "+width+"x"+height,recipient);
                 } catch (Exception ex) {
-                    if (!MainActivity.isUnauthorized(ex)) {
-                        throw ex;
-                    }
+                    if (!MainActivity.isUnauthorized(ex)) throw ex;
                     token = this.refreshToken();
-                    YanziApiClient.registerDevice(baseUrl, token, this.deviceId, this.buildDeviceName());
-                    messageId = YanziApiClient.sendPhotoToDesktop(baseUrl, token, this.deviceId, jpegBytes, width, height);
+                    messageId = MobileDesktopTransfer.sendBytes(this,baseUrl,token,this.deviceId,"photo",
+                        "photo-"+sentAt+".jpg","image/jpeg",jpegBytes,"手机照片 "+width+"x"+height,recipient);
                 }
                 final String finalMsgId = messageId;
                 this.runOnUiThread(() -> {
                     this.hidePhotoProgress();
-                    this.setStatus("\u7167\u7247\u5df2\u53d1\u9001\uff0cid=" + finalMsgId);
+                    this.setStatus("照片已发送，id=" + finalMsgId);
                 });
             } catch (Exception ex) {
                 this.runOnUiThread(() -> {
                     this.hidePhotoProgress();
-                    this.setStatus("\u53d1\u9001\u5931\u8d25\uff1a" + ex.getMessage());
-                    this.renderChatMessage("system", "text", "\u7167\u7247\u53d1\u9001\u5931\u8d25\uff1a" + ex.getMessage(), true);
+                    this.setStatus("发送失败：" + ex.getMessage());
+                    this.renderChatMessage("system", "text", "照片发送失败：" + ex.getMessage(), true);
                 });
-            }
+            } finally { finishMessageSend(); }
         });
     }
 
     private void sendFileToDesktopChat(Uri uri) {
+        final ChatConversation recipient=attachmentConversation==null?chatConversation:attachmentConversation;
+        attachmentConversation=null;
+        if(recipient.agent) { this.setStatus("反重力当前支持文字消息。");return; }
         this.setStatus("\u6b63\u5728\u5904\u7406\u6587\u4ef6...");
         this.showPhotoProgress("\u6b63\u5728\u53d1\u9001\u6587\u4ef6...");
-        
-        this.executor.execute(() -> {
+
+        beginMessageSend();
+        MobileSessionStore.Snapshot sendSession = MobileSessionStore.snapshot(this);
+        long queuedAt = android.os.SystemClock.elapsedRealtime();
+        messageExecutor.execute(() -> {
+            android.util.Log.i("YanziSend", "queue_wait_ms=" + (android.os.SystemClock.elapsedRealtime() - queuedAt));
             try {
+                sendSession.requireCurrent();
                 String fileName = "file_" + System.currentTimeMillis();
                 long fileSize = 0;
                 android.database.Cursor cursor = this.getContentResolver().query(uri, null, null, null, null);
@@ -10977,64 +11534,35 @@ extends Activity {
                         cursor.close();
                     }
                 }
-                
+
                 final String finalFileName = fileName;
                 if (fileSize > 30 * 1024 * 1024) {
                     throw new IllegalStateException("\u4e0d\u652f\u6301\u53d1\u9001\u8d85\u8fc7 30MB \u7684\u5927\u6587\u4ef6");
                 }
-                
-                java.io.InputStream inputStream = this.getContentResolver().openInputStream(uri);
-                if (inputStream == null) {
-                    throw new java.io.IOException("\u65e0\u6cd5\u6253\u5f00\u8f93\u5165\u6d41");
-                }
-                java.io.ByteArrayOutputStream byteBuffer = new java.io.ByteArrayOutputStream();
-                byte[] buffer = new byte[8192];
-                int len;
-                while ((len = inputStream.read(buffer)) != -1) {
-                    byteBuffer.write(buffer, 0, len);
-                }
-                inputStream.close();
-                byte[] bytes = byteBuffer.toByteArray();
-                
+
                 String baseUrl = this.normalizedBaseUrl();
                 String token = this.requireToken();
-                YanziApiClient.WebDavConfig config;
+                String messageId;
+                File stagedFile = File.createTempFile("desktop-file-", ".tmp", getCacheDir());
                 try {
-                    config = YanziApiClient.fetchWebDavConfig(baseUrl, token);
-                } catch (Exception ex) {
-                    if (MainActivity.isUnauthorized(ex)) {
-                        token = this.refreshToken();
-                        config = YanziApiClient.fetchWebDavConfig(baseUrl, token);
-                    } else {
-                        throw new IllegalStateException("\u65e0\u6cd5\u83b7\u53d6 WebDAV \u914d\u7f6e\uff0c\u8bf7\u786e\u8ba4\u5df2\u5728\u7535\u8111\u6216\u6211\u7684\u9875\u9762\u914d\u7f6e\u4e86\u575a\u679c\u4e91\u670d\u52a1\uff1a" + ex.getMessage());
+                    try (InputStream input = getContentResolver().openInputStream(uri); OutputStream output = new FileOutputStream(stagedFile)) {
+                        if (input == null) throw new java.io.IOException("无法打开文件");
+                        byte[] buffer = new byte[65536]; int count; long total = 0;
+                        while ((count = input.read(buffer)) > 0) {
+                            total += count;
+                            if (total > MobileAttachmentClient.LIMIT) throw new java.io.IOException("文件不能超过 30 MB");
+                            output.write(buffer, 0, count);
+                        }
                     }
-                }
-                
-                String relativePath = "temp-mobile-upload-" + System.currentTimeMillis() + "-" + finalFileName;
-                this.runOnUiThread(() -> this.setStatus("\u6b63\u5728\u4e0a\u4f20\u5230\u4e91\u7aef..."));
-                YanziApiClient.putWebDavBytes(config, relativePath, bytes, "application/octet-stream");
-                
+                    messageId = MobileDesktopTransfer.sendFile(this, baseUrl, token, this.deviceId,
+                            "file", finalFileName, "application/octet-stream", stagedFile, "手机文件：" + finalFileName,recipient);
+                } finally { stagedFile.delete(); }
+
                 this.runOnUiThread(() -> {
-                    this.renderChatMessage("self", "file", finalFileName, true);
-                    this.saveChatMessageToLocal("self", "file", finalFileName);
+                    MobileChatController.append(this,this.deviceId,"self","file",finalFileName,System.currentTimeMillis(),recipient.id);
+                    this.loadChatHistory();
                 });
-                
-                JSONObject payload = new JSONObject();
-                payload.put("sourceDeviceId", (Object)this.deviceId);
-                payload.put("targetPlatform", (Object)"desktop");
-                payload.put("kind", (Object)"file");
-                payload.put("title", (Object)finalFileName);
-                payload.put("text", (Object)("\u624b\u673a\u6587\u4ef6\uff1a" + finalFileName));
-                
-                JSONObject innerPayload = new JSONObject();
-                innerPayload.put("source", (Object)"android");
-                innerPayload.put("sourceDeviceName", (Object)MainActivity.buildDeviceDisplayName());
-                innerPayload.put("createdAt", System.currentTimeMillis());
-                innerPayload.put("webDavPath", (Object)relativePath);
-                payload.put("payload", (Object)innerPayload);
-                
-                String messageId = YanziApiClient.postJson(baseUrl, "/v1/me/mobile/messages", payload, token, "\u53d1\u9001\u6587\u4ef6").optString("messageId", "unknown");
-                
+
                 this.runOnUiThread(() -> {
                     this.hidePhotoProgress();
                     this.setStatus("\u6587\u4ef6\u5df2\u6210\u529f\u53d1\u9001\uff0cid=" + messageId);
@@ -11045,51 +11573,88 @@ extends Activity {
                     this.setStatus("\u53d1\u9001\u5931\u8d25\uff1a" + ex.getMessage());
                     this.renderChatMessage("system", "text", "\u6587\u4ef6\u53d1\u9001\u5931\u8d25\uff1a" + ex.getMessage(), true);
                 });
-            }
+            } finally { finishMessageSend(); }
         });
     }
 
     private void handleSendChatMessageClick() {
         if (this.chatInputEditText == null) return;
+        if(!chatHistoryAccount.equals(ChatHistoryStore.accountKey(this))) {loadChatHistory();setStatus("账号已改变，请重新输入消息。");return;}
         String text = this.chatInputEditText.getText().toString().trim();
         if (text.isEmpty()) return;
-        
+        final ChatConversation recipient=this.chatConversation;
+
         this.chatInputEditText.setText("");
-        this.setStatus("\u6b63\u5728\u53d1\u9001\u5230\u7535\u8111...");
-        this.renderChatMessage("self", "text", text, true);
-        this.saveChatMessageToLocal("self", "text", text);
-        
-        this.executor.execute(() -> {
+        this.setStatus("正在发送...");
+        long sentAt = System.currentTimeMillis();
+        this.renderChatMessage("self", "text", text, sentAt, this.deviceId, MainActivity.buildDeviceDisplayName(), true);
+        MobileChatController.append(this,this.deviceId,"self","text",text,sentAt,recipient.id);
+
+        beginMessageSend();
+        MobileSessionStore.Snapshot sendSession = MobileSessionStore.snapshot(this);
+        long queuedAt = android.os.SystemClock.elapsedRealtime();
+        messageExecutor.execute(() -> {
+            android.util.Log.i("YanziSend", "queue_wait_ms=" + (android.os.SystemClock.elapsedRealtime() - queuedAt));
             try {
+                sendSession.requireCurrent();
                 String baseUrl = this.normalizedBaseUrl();
                 String token = this.requireToken();
                 String messageId = "";
                 try {
-                    YanziApiClient.registerDevice(baseUrl, token, this.deviceId, this.buildDeviceName());
-                    messageId = YanziApiClient.sendTextToDesktop(baseUrl, token, this.deviceId, text);
+                    messageId = YanziApiClient.sendConversation(baseUrl,token,this.deviceId,recipient,text);
                 } catch (Exception ex) {
                     if (!MainActivity.isUnauthorized(ex)) {
                         throw ex;
                     }
                     token = this.refreshToken();
-                    YanziApiClient.registerDevice(baseUrl, token, this.deviceId, this.buildDeviceName());
-                    messageId = YanziApiClient.sendTextToDesktop(baseUrl, token, this.deviceId, text);
+                    messageId = YanziApiClient.sendConversation(baseUrl,token,this.deviceId,recipient,text);
                 }
                 final String finalMsgId = messageId;
                 this.runOnUiThread(() -> this.setStatus("\u6d88\u606f\u5df2\u53d1\u9001\uff0cid=" + finalMsgId));
+                if(recipient.agent) {
+                    for(int attempts=0;attempts<20;attempts++) {
+                        JSONObject detail=YanziApiClient.fetchMessageDetail(baseUrl,token,messageId);
+                        JSONObject actual=detail.optJSONObject("message"); if(actual!=null) detail=actual;
+                        String state=detail.optString("status");
+                        if(state.equals("failed") || state.equals("expired") || state.equals("cancelled") || state.equals("unknown")) {
+                            JSONObject p=detail.optJSONObject("payload");
+                            JSONObject r=p==null?null:p.optJSONObject("executionResult");
+                            throw new IllegalStateException(r==null?detail.optString("result","反重力请求："+state):r.optString("output","反重力请求："+state));
+                        }
+                        if(state.equals("completed") || state.equals("acked")) {
+                            if(text.startsWith("/")) {
+                                JSONObject p=detail.optJSONObject("payload");
+                                JSONObject r=p==null?null:p.optJSONObject("executionResult");
+                                String output=r==null?detail.optString("result",""):r.optString("output","");
+                                if(!output.isEmpty()) {
+                                    final String commandOutput=output;
+                                    this.runOnUiThread(()->{
+                                        try {sendSession.requireCurrent();} catch(Exception changed) {return;}
+                                        MobileChatController.append(this,this.deviceId,"peer","text",commandOutput,System.currentTimeMillis(),recipient.id);
+                                        loadChatHistory();
+                                    });
+                                }
+                            }
+                            break;
+                        }
+                        Thread.sleep(1000);
+                    }
+                }
             } catch (Exception ex) {
                 this.runOnUiThread(() -> {
+                    try {sendSession.requireCurrent();} catch(Exception changed) {return;}
                     this.setStatus("\u53d1\u9001\u5931\u8d25\uff1a" + ex.getMessage());
-                    this.renderChatMessage("system", "text", "\u53d1\u9001\u5931\u8d25\uff1a" + ex.getMessage(), true);
+                    MobileChatController.append(this,this.deviceId,"system","text","发送失败："+ex.getMessage(),System.currentTimeMillis(),recipient.id);
+                    this.loadChatHistory();
                 });
-            }
+            } finally { finishMessageSend(); }
         });
     }
 
     private LinearLayout buildChatContainer() {
         this.chatContainerLayout = new LinearLayout((Context)this);
         this.chatContainerLayout.setOrientation(LinearLayout.VERTICAL);
-        
+
         ScrollView scroll = new ScrollView((Context)this);
         this.chatMessageScrollView = scroll;
         scroll.setFillViewport(true);
@@ -11112,17 +11677,17 @@ extends Activity {
         });
         this.chatMessageListLayout = new LinearLayout((Context)this);
         this.chatMessageListLayout.setOrientation(LinearLayout.VERTICAL);
-        this.chatMessageListLayout.setPadding(0, this.dp(8), 0, this.dp(8));
+        this.chatMessageListLayout.setPadding(this.dp(14), this.dp(12), this.dp(14), this.dp(12));
         scroll.addView((View)this.chatMessageListLayout, (ViewGroup.LayoutParams)new FrameLayout.LayoutParams(-1, -1));
-        
+
         LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, 0, 1.0f);
         this.chatContainerLayout.addView((View)scroll, (ViewGroup.LayoutParams)scrollParams);
-        
+
         LinearLayout inputRow = new LinearLayout((Context)this);
         inputRow.setOrientation(LinearLayout.HORIZONTAL);
         inputRow.setGravity(Gravity.CENTER_VERTICAL);
         inputRow.setPadding(this.dp(8), this.dp(8), this.dp(8), this.dp(8));
-        
+
         this.chatVoiceToggleBtn = new ImageView((Context)this);
         this.chatVoiceToggleBtn.setClickable(true);
         this.chatVoiceToggleBtn.setFocusable(true);
@@ -11147,13 +11712,20 @@ extends Activity {
         voiceToggleParams.rightMargin = this.dp(8);
         inputRow.addView((View)this.chatVoiceToggleBtn, (ViewGroup.LayoutParams)voiceToggleParams);
 
-        this.chatInputEditText = this.input("发送给电脑...", "");
+        this.chatInputEditText = this.input("发送消息...", "");
+        this.chatInputEditText.setSingleLine(false);
+        this.chatInputEditText.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+                | android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                | android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        this.chatInputEditText.setMinHeight(this.dp(40));
+        this.chatInputEditText.setMaxLines(5);
+        this.chatInputEditText.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
         GradientDrawable inputBg = new GradientDrawable();
         inputBg.setColor(ThemeConfig.COLOR_CARD_BACKGROUND);
         inputBg.setCornerRadius((float)this.dp(8));
         this.chatInputEditText.setBackground((Drawable)inputBg);
-        
-        LinearLayout.LayoutParams editParams = new LinearLayout.LayoutParams(0, this.dp(40), 1.0f);
+
+        LinearLayout.LayoutParams editParams = new LinearLayout.LayoutParams(0, -2, 1.0f);
         editParams.rightMargin = this.dp(8);
         inputRow.addView((View)this.chatInputEditText, (ViewGroup.LayoutParams)editParams);
 
@@ -11202,7 +11774,7 @@ extends Activity {
         LinearLayout.LayoutParams speakParams = new LinearLayout.LayoutParams(0, this.dp(40), 1.0f);
         speakParams.rightMargin = this.dp(8);
         inputRow.addView((View)this.chatHoldToSpeakBtn, (ViewGroup.LayoutParams)speakParams);
-        
+
         this.chatAttachBtn = new ImageView((Context)this);
         this.chatAttachBtn.setClickable(true);
         this.chatAttachBtn.setFocusable(true);
@@ -11234,9 +11806,9 @@ extends Activity {
         this.chatSendButton.setOnClickListener(v -> this.handleSendChatMessageClick());
         LinearLayout.LayoutParams sendParams = new LinearLayout.LayoutParams(this.dp(60), this.dp(40));
         inputRow.addView((View)this.chatSendButton, (ViewGroup.LayoutParams)sendParams);
-        
+
         this.chatContainerLayout.addView((View)inputRow);
-        
+
         this.loadChatHistory();
         return this.chatContainerLayout;
     }
@@ -11268,6 +11840,7 @@ extends Activity {
     }
 
     private void launchCameraForChat() {
+        this.attachmentConversation=this.chatConversation;
         Intent intent = new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
         if (intent.resolveActivity(this.getPackageManager()) != null) {
             try {
@@ -11275,10 +11848,10 @@ extends Activity {
                 String imageFileName = "JPEG_" + timeStamp + "_";
                 File storageDir = this.getExternalFilesDir(Environment.DIRECTORY_PICTURES);
                 this.cameraPhotoFile = File.createTempFile(imageFileName, ".jpg", storageDir);
-                
-                this.cameraPhotoUri = androidx.core.content.FileProvider.getUriForFile(this, 
-                        "cc.luoluoluo.yanzi.mobile.fileprovider", this.cameraPhotoFile);
-                
+
+                this.cameraPhotoUri = androidx.core.content.FileProvider.getUriForFile(this,
+                        BuildConfig.APPLICATION_ID + ".fileprovider", this.cameraPhotoFile);
+
                 intent.putExtra(android.provider.MediaStore.EXTRA_OUTPUT, this.cameraPhotoUri);
                 this.startActivityForResult(intent, 4104);
             } catch (Exception e) {
@@ -11288,126 +11861,231 @@ extends Activity {
     }
 
     private void saveChatMessageToLocal(String role, String kind, String content) {
-        try {
-            String historyJson = this.prefs.getString("desktop_chat_history", "[]");
-            JSONArray arr = new JSONArray(historyJson);
-            JSONObject obj = new JSONObject();
-            obj.put("role", (Object)role);
-            obj.put("kind", (Object)kind);
-            obj.put("content", (Object)content);
-            obj.put("time", System.currentTimeMillis());
-            arr.put((Object)obj);
-            
-            if (arr.length() > 50) {
-                JSONArray newArr = new JSONArray();
-                for (int i = arr.length() - 50; i < arr.length(); ++i) {
-                    newArr.put(arr.get(i));
-                }
-                arr = newArr;
-            }
-            this.prefs.edit().putString("desktop_chat_history", arr.toString()).apply();
-        } catch (Exception ignored) {}
+        this.saveChatMessageToLocal(role, kind, content, System.currentTimeMillis());
     }
-    
+
+    private void saveChatMessageToLocal(String role, String kind, String content, long time) {
+        MobileChatController.append(this, this.deviceId, role, kind, content, time,chatConversation.id);
+    }
+
     private void loadChatHistory() {
-        android.util.Log.i("MainActivity", "loadChatHistory: chatMessageListLayout=" + this.chatMessageListLayout);
         if (this.chatMessageListLayout == null) return;
+        String account=ChatHistoryStore.accountKey(this);
+        if(!chatHistoryAccount.isEmpty() && !chatHistoryAccount.equals(account)) {
+            chatConversation=ChatConversation.group();
+            if(chatInputEditText!=null) chatInputEditText.setText("");
+            if(desktopDashboard!=null) desktopDashboard.conversation("群聊",this::showChatConversations);
+            if(chatAttachBtn!=null) chatAttachBtn.setVisibility(View.VISIBLE);
+        }
+        chatHistoryAccount=account;
         this.chatMessageListLayout.removeAllViews();
-        String historyJson = this.prefs.getString("desktop_chat_history", "[]");
-        android.util.Log.i("MainActivity", "loadChatHistory: historyJson=" + historyJson);
-        try {
-            JSONArray arr = new JSONArray(historyJson);
-            for (int i = 0; i < arr.length(); ++i) {
-                JSONObject obj = arr.getJSONObject(i);
-                this.renderChatMessage(obj.optString("role"), obj.optString("kind"), obj.optString("content"), false);
-            }
-        } catch (Exception e) {
-            android.util.Log.e("MainActivity", "loadChatHistory error", e);
+        this.lastRenderedChatTimeMs = Long.MIN_VALUE;
+        if(this.prefs!=null && sForeground && "desktop".equals(selectedTab) && currentSubTabIndex==0)
+            this.prefs.edit().putLong(chatPreferenceKey("seen."+chatConversation.id),System.currentTimeMillis()).apply();
+        JSONArray arr = ChatHistoryStore.load(this,chatConversation.id);
+        for (int i = 0; i < arr.length(); ++i) {
+            JSONObject obj = arr.optJSONObject(i);
+            if (obj == null) continue;
+            String kind = obj.optString("kind", "text");
+            String content = obj.optString("content", "");
+            if (MobileChatController.isDevelopmentChatArtifact(kind, content)) continue;
+            this.renderChatMessage(
+                    obj.optString("role", "peer"),
+                    kind,
+                    content,
+                    obj.optLong("time", System.currentTimeMillis()),
+                    obj.optString("sourceDeviceId", ""),
+                    obj.optString("sourceDeviceName", ""),
+                    false);
+        }
+        if (this.chatMessageListLayout.getParent() instanceof ScrollView) {
+            ScrollView sv = (ScrollView)this.chatMessageListLayout.getParent();
+            sv.post(() -> sv.fullScroll(View.FOCUS_DOWN));
         }
     }
 
     public static void onReceivedChatMessage(String msg) {
-        onReceivedChatMessage("text", msg);
+        onReceivedChatMessage("text", msg, "", "电脑", System.currentTimeMillis());
+    }
+
+    public static void onAccountSnapshotChanged() {
+        MainActivity activity = sInstance;
+        if (activity != null) activity.runOnUiThread(() -> {
+            if (sInstance != activity || activity.isFinishing()) return;
+            if (activity.yanmList != null) activity.renderCachedYanm();
+            activity.updateAllAppWidgets();
+        });
     }
 
     public static void onReceivedChatMessage(String kind, String msg) {
-        android.util.Log.i("MainActivity", "onReceivedChatMessage static callback, kind=" + kind + ", msg=" + msg + ", sInstance=" + sInstance);
-        if (sInstance != null) {
-            sInstance.runOnUiThread(() -> {
-                sInstance.renderChatMessage("desktop", kind, msg, true);
+        onReceivedChatMessage(kind, msg, "", "电脑", System.currentTimeMillis());
+    }
+
+    public static void onReceivedChatMessage(String kind, String msg, String sourceDeviceId,
+                                             String sourceDeviceName, long time) {
+        android.util.Log.i("MainActivity", "onReceivedChatMessage, kind=" + kind +
+                ", source=" + sourceDeviceName + ", sInstance=" + sInstance);
+        MainActivity activity = sInstance;
+        if (activity != null) {
+            activity.runOnUiThread(() -> {
+                if (sInstance != activity || activity.isFinishing()) return;
+                activity.loadChatHistory();
             });
         }
     }
 
     private void renderChatMessage(String role, String kind, String content, boolean scrollToBottom) {
+        String sourceName = "self".equals(role) ? MainActivity.buildDeviceDisplayName()
+                : ("system".equals(role) ? "" : "电脑");
+        this.renderChatMessage(role, kind, content, System.currentTimeMillis(),
+                "self".equals(role) ? this.deviceId : "", sourceName, scrollToBottom);
+    }
+
+    private void renderChatMessage(String role, String kind, String content, long time,
+                                   String sourceDeviceId, String sourceDeviceName,
+                                   boolean scrollToBottom) {
+        if (MobileChatController.isDevelopmentChatArtifact(kind, content)) return;
         this.runOnUiThread(() -> {
             if (this.chatMessageListLayout == null) return;
-            
+
+            long messageTime = time > 0 ? time : System.currentTimeMillis();
+            if (ChatTimelinePolicy.shouldShowTime(this.lastRenderedChatTimeMs, messageTime)) {
+                this.appendChatTimeMarker(messageTime);
+            }
+            if (messageTime > this.lastRenderedChatTimeMs) this.lastRenderedChatTimeMs = messageTime;
+
+            boolean isSelf = "self".equals(role);
+            boolean isSystem = "system".equals(role);
+
             LinearLayout bubbleContainer = new LinearLayout((Context)this);
             bubbleContainer.setOrientation(LinearLayout.HORIZONTAL);
-            bubbleContainer.setPadding(0, this.dp(4), 0, this.dp(4));
-            
-            boolean isSelf = "self".equals(role);
-            bubbleContainer.setGravity(isSelf ? Gravity.END : Gravity.START);
-            
+            bubbleContainer.setGravity(isSystem ? Gravity.CENTER : (isSelf ? Gravity.END : Gravity.START));
+            bubbleContainer.setPadding(0, this.dp(5), 0, this.dp(5));
+
+            if (isSystem) {
+                TextView systemText = new TextView((Context)this);
+                systemText.setText((CharSequence)content);
+                systemText.setTextColor(ThemeConfig.COLOR_TEXT_SECONDARY);
+                systemText.setTextSize(12f);
+                systemText.setGravity(Gravity.CENTER);
+                systemText.setPadding(this.dp(10), this.dp(5), this.dp(10), this.dp(5));
+
+                GradientDrawable systemBg = new GradientDrawable();
+                systemBg.setColor(Color.rgb(20, 28, 39));
+                systemBg.setCornerRadius((float)this.dp(10));
+                systemText.setBackground((Drawable)systemBg);
+
+                LinearLayout.LayoutParams systemLp = new LinearLayout.LayoutParams(-2, -2);
+                systemLp.leftMargin = this.dp(42);
+                systemLp.rightMargin = this.dp(42);
+                bubbleContainer.addView((View)systemText, (ViewGroup.LayoutParams)systemLp);
+                this.chatMessageListLayout.addView((View)bubbleContainer,
+                        (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -2));
+                if (scrollToBottom && this.chatMessageListLayout.getParent() instanceof ScrollView) {
+                    ScrollView sv = (ScrollView)this.chatMessageListLayout.getParent();
+                    sv.post(() -> sv.fullScroll(View.FOCUS_DOWN));
+                }
+                return;
+            }
+
+            LinearLayout messageColumn = new LinearLayout((Context)this);
+            messageColumn.setOrientation(LinearLayout.VERTICAL);
+            messageColumn.setGravity(isSelf ? Gravity.END : Gravity.START);
+
+            if (!isSelf) {
+                String labelValue = ChatHistoryStore.resolveDeviceName(
+                        this, sourceDeviceId, sourceDeviceName);
+                TextView sender = new TextView((Context)this);
+                sender.setText(labelValue);
+                sender.setTextSize(12f);
+                sender.setTextColor(Color.rgb(125, 138, 154));
+                sender.setMaxLines(1);
+                sender.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                LinearLayout.LayoutParams senderLp = new LinearLayout.LayoutParams(-2, -2);
+                senderLp.bottomMargin = this.dp(4);
+                messageColumn.addView(sender, senderLp);
+            }
+
             LinearLayout bubble = new LinearLayout((Context)this);
             bubble.setOrientation(LinearLayout.VERTICAL);
-            bubble.setPadding(this.dp(12), this.dp(8), this.dp(12), this.dp(8));
-            
+            bubble.setPadding(this.dp(13), this.dp(9), this.dp(13), this.dp(9));
+
             GradientDrawable gd = new GradientDrawable();
-            gd.setColor(isSelf ? Color.rgb(30, 41, 59) : ThemeConfig.COLOR_CARD_BACKGROUND);
-            gd.setCornerRadius((float)this.dp(12));
+            gd.setColor(isSelf ? Color.rgb(37, 99, 235) : Color.rgb(24, 34, 48));
+            gd.setCornerRadius((float)this.dp(11));
             bubble.setBackground((Drawable)gd);
-            
+
+            int maxBubbleWidth = Math.max(this.dp(180),
+                    getResources().getDisplayMetrics().widthPixels - this.dp(118));
+
             if ("photo".equals(kind)) {
-                TextView label = new TextView((Context)this);
-                label.setText((CharSequence)"[\u7167\u7247]");
-                label.setTextColor(ThemeConfig.COLOR_TEXT_PRIMARY);
-                label.setTextSize(14f);
-                bubble.addView((View)label);
-                
-                if (content.startsWith("content://") || content.startsWith("file://")) {
+                boolean shown = false;
+                if (content != null && (content.startsWith("content://") || content.startsWith("file://") || content.startsWith("/"))) {
                     try {
                         ImageView iv = new ImageView((Context)this);
-                        iv.setPadding(0, this.dp(4), 0, 0);
-                        LinearLayout.LayoutParams imgLp = new LinearLayout.LayoutParams(this.dp(120), this.dp(120));
+                        iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                        iv.setAdjustViewBounds(true);
+                        iv.setMaxWidth(this.dp(240));
+                        iv.setMaxHeight(this.dp(300));
+                        LinearLayout.LayoutParams imgLp = new LinearLayout.LayoutParams(-2, -2);
                         iv.setLayoutParams((ViewGroup.LayoutParams)imgLp);
-                        iv.setImageURI(Uri.parse(content));
-                        bubble.addView((View)iv);
+                        Uri imageUri = content.startsWith("/") ? Uri.fromFile(new java.io.File(content)) : Uri.parse(content);
+                        iv.setImageURI(imageUri);
+                        if (iv.getDrawable() != null) {
+                            bubble.addView((View)iv);
+                            shown = true;
+                        }
                     } catch (Exception ignored) {}
+                }
+                if (!shown) {
+                    TextView missing = new TextView((Context)this);
+                    missing.setText("照片不可用");
+                    missing.setTextColor(Color.rgb(203, 213, 225));
+                    missing.setTextSize(13f);
+                    missing.setMaxWidth(maxBubbleWidth);
+                    bubble.addView((View)missing);
                 }
             } else if ("file".equals(kind)) {
                 TextView fileLabel = new TextView((Context)this);
-                fileLabel.setText((CharSequence)("[\u6587\u4ef6] " + content));
-                fileLabel.setTextColor(ThemeConfig.COLOR_TEXT_PRIMARY);
+                String fileName = content.startsWith("/")
+                        ? new java.io.File(content).getName().replaceFirst("^att_[a-f0-9]{32}-", "")
+                        : content;
+                fileLabel.setText("文件 · " + fileName);
+                fileLabel.setTextColor(Color.WHITE);
                 fileLabel.setTextSize(14f);
+                fileLabel.setMaxWidth(maxBubbleWidth);
                 bubble.addView((View)fileLabel);
+                if (content.startsWith("/")) bubble.setOnClickListener(v -> {
+                    try {
+                        Uri fileUri = androidx.core.content.FileProvider.getUriForFile(
+                                this, BuildConfig.APPLICATION_ID + ".fileprovider", new java.io.File(content));
+                        startActivity(new Intent(Intent.ACTION_VIEW)
+                                .setDataAndType(fileUri, "application/octet-stream")
+                                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION));
+                    } catch (Exception ex) {
+                        Toast.makeText(this, "没有可打开此文件的应用", Toast.LENGTH_SHORT).show();
+                    }
+                });
             } else {
-                TextView text = new TextView((Context)this);
-                text.setText((CharSequence)content);
-                text.setTextColor(ThemeConfig.COLOR_TEXT_PRIMARY);
-                text.setTextSize(14f);
-                bubble.addView((View)text);
+                // Text is rendered as safe Markdown: selectable spans and tappable HTTP(S) links.
+                ChatRichText.render(bubble, content, maxBubbleWidth);
             }
-            
+
             bubble.setOnLongClickListener(v -> {
                 PopupMenu popup = new PopupMenu((Context)MainActivity.this, bubble);
                 popup.getMenu().add(0, 1, 0, "复制消息");
-                popup.getMenu().add(0, 2, 0, "清理全部消息");
+                popup.getMenu().add(0, 2, 0, "清理当前会话");
                 popup.setOnMenuItemClickListener(item -> {
                     int id = item.getItemId();
                     if (id == 1) {
                         try {
-                            android.content.ClipboardManager clipboard = (android.content.ClipboardManager) MainActivity.this.getSystemService(Context.CLIPBOARD_SERVICE);
+                            android.content.ClipboardManager clipboard =
+                                    (android.content.ClipboardManager) MainActivity.this.getSystemService(Context.CLIPBOARD_SERVICE);
                             if (clipboard != null) {
                                 String clipText = content;
-                                if ("photo".equals(kind)) {
-                                    clipText = "[图片] " + content;
-                                } else if ("file".equals(kind)) {
-                                    clipText = "[文件] " + content;
-                                }
-                                android.content.ClipData clip = android.content.ClipData.newPlainText("Copied Chat Message", clipText);
-                                clipboard.setPrimaryClip(clip);
+                                if ("photo".equals(kind)) clipText = "[图片] " + content;
+                                else if ("file".equals(kind)) clipText = "[文件] " + content;
+                                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Copied Chat Message", clipText));
                                 Toast.makeText(MainActivity.this, "消息已复制到剪贴板", Toast.LENGTH_SHORT).show();
                             }
                         } catch (Exception ex) {
@@ -11415,38 +12093,64 @@ extends Activity {
                         }
                     } else if (id == 2) {
                         new android.app.AlertDialog.Builder((Context)MainActivity.this)
-                            .setTitle("提示")
-                            .setMessage("确定要清理全部聊天消息吗？")
-                            .setPositiveButton("确定", (dialog, which) -> {
-                                MainActivity.this.prefs.edit().putString("desktop_chat_history", "[]").apply();
-                                MainActivity.this.loadChatHistory();
-                                Toast.makeText(MainActivity.this, "聊天历史已清理", Toast.LENGTH_SHORT).show();
-                            })
-                            .setNegativeButton("取消", null)
-                            .show();
+                                .setTitle("提示")
+                                .setMessage("确定要清理当前对象的聊天消息吗？")
+                                .setPositiveButton("确定", (dialog, which) -> {
+                                    ChatHistoryStore.clearConversation(MainActivity.this,chatConversation.id);
+                                    MainActivity.this.loadChatHistory();
+                                    Toast.makeText(MainActivity.this, "聊天历史已清理", Toast.LENGTH_SHORT).show();
+                                })
+                                .setNegativeButton("取消", null)
+                                .show();
                     }
                     return true;
                 });
                 popup.show();
                 return true;
             });
-            
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
-            if (isSelf) {
-                lp.leftMargin = this.dp(60);
-            } else {
-                lp.rightMargin = this.dp(60);
-            }
-            bubbleContainer.addView((View)bubble, (ViewGroup.LayoutParams)lp);
-            this.chatMessageListLayout.addView((View)bubbleContainer);
-            
-            if (scrollToBottom) {
-                if (this.chatMessageListLayout.getParent() instanceof ScrollView) {
-                    ScrollView sv = (ScrollView)this.chatMessageListLayout.getParent();
-                    sv.post(() -> sv.fullScroll(View.FOCUS_DOWN));
-                }
+
+            messageColumn.addView(bubble, new LinearLayout.LayoutParams(-2, -2));
+            LinearLayout.LayoutParams columnLp = new LinearLayout.LayoutParams(-2, -2);
+            if (isSelf) columnLp.leftMargin = this.dp(54);
+            else columnLp.rightMargin = this.dp(54);
+            bubbleContainer.addView((View)messageColumn, (ViewGroup.LayoutParams)columnLp);
+
+            this.chatMessageListLayout.addView((View)bubbleContainer,
+                    (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -2));
+
+            if (scrollToBottom && this.chatMessageListLayout.getParent() instanceof ScrollView) {
+                ScrollView sv = (ScrollView)this.chatMessageListLayout.getParent();
+                sv.post(() -> sv.fullScroll(View.FOCUS_DOWN));
             }
         });
+    }
+
+    private void appendChatTimeMarker(long time) {
+        TextView marker = new TextView((Context)this);
+        marker.setText(formatChatMessageTime(time));
+        marker.setTextColor(Color.rgb(112, 126, 145));
+        marker.setTextSize(12f);
+        marker.setGravity(Gravity.CENTER);
+        marker.setPadding(this.dp(8), this.dp(9), this.dp(8), this.dp(4));
+        this.chatMessageListLayout.addView(marker,
+                new LinearLayout.LayoutParams(-1, -2));
+    }
+
+    private String formatChatMessageTime(long time) {
+        java.util.Calendar now = java.util.Calendar.getInstance();
+        java.util.Calendar value = java.util.Calendar.getInstance();
+        value.setTimeInMillis(time);
+        boolean sameDay = now.get(java.util.Calendar.YEAR) == value.get(java.util.Calendar.YEAR)
+                && now.get(java.util.Calendar.DAY_OF_YEAR) == value.get(java.util.Calendar.DAY_OF_YEAR);
+        if (sameDay) return new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date(time));
+        java.util.Calendar yesterday = (java.util.Calendar) now.clone();
+        yesterday.add(java.util.Calendar.DAY_OF_YEAR, -1);
+        boolean isYesterday = yesterday.get(java.util.Calendar.YEAR) == value.get(java.util.Calendar.YEAR)
+                && yesterday.get(java.util.Calendar.DAY_OF_YEAR) == value.get(java.util.Calendar.DAY_OF_YEAR);
+        if (isYesterday) return "昨天 " + new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date(time));
+        if (now.get(java.util.Calendar.YEAR) == value.get(java.util.Calendar.YEAR))
+            return new SimpleDateFormat("M月d日 HH:mm", Locale.getDefault()).format(new Date(time));
+        return new SimpleDateFormat("yyyy年M月d日 HH:mm", Locale.getDefault()).format(new Date(time));
     }
 
     private LinearLayout createSwitchListItem(String title, boolean checked, android.widget.CompoundButton.OnCheckedChangeListener listener) {
@@ -11454,19 +12158,18 @@ extends Activity {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(this.dp(16), this.dp(10), this.dp(16), this.dp(10));
-        
+
         TextView titleTv = new TextView((Context)this);
         titleTv.setText((CharSequence)title);
         titleTv.setTextSize(15f);
         titleTv.setTextColor(ThemeConfig.COLOR_TEXT_PRIMARY);
         row.addView((View)titleTv, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, -2, 1.0f));
-        
+
         android.widget.Switch sw = new android.widget.Switch((Context)this);
         sw.setChecked(checked);
         sw.setOnCheckedChangeListener(listener);
         row.addView((View)sw, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-2, -2));
-        
+
         return row;
     }
 }
-

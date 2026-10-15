@@ -1,0 +1,8 @@
+app/playlists.json
+app/songs.json
+app/control.json
+app/data.local.js
+daemon.log
+sync_daemon.pid
+__pycache__/
+*.pyc

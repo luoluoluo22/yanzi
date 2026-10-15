@@ -13,7 +13,7 @@ public enum PersonalConfigSyncMode
     Disabled
 }
 
-public sealed class PersonalSyncService
+public sealed partial class PersonalSyncService
 {
     private const string RemoteIndexPath = "index.json";
     private static readonly SemaphoreSlim OperationLock = new(1, 1);
@@ -23,6 +23,11 @@ public sealed class PersonalSyncService
     {
         _backend = PersonalSyncBackendFactory.Create(settings, requireEnabled)
             ?? throw new InvalidOperationException("个人同步未完整配置。");
+    }
+
+    internal PersonalSyncService(IPersonalSyncBackend backend)
+    {
+        _backend = backend ?? throw new ArgumentNullException(nameof(backend));
     }
 
     public string SyncRootDisplay => _backend.DisplayRoot;
@@ -50,6 +55,8 @@ public sealed class PersonalSyncService
         string key,
         CancellationToken cancellationToken = default)
     {
+        if (!ExtensionDevicePolicy.ShouldSyncData(extensionId))
+            return new ExtensionDataReadResult(null, null, false);
         var objectBytes = await _backend.TryReadBytesAsync(
             ExtensionDataObjectStore.BuildObjectPath(extensionId, key),
             cancellationToken);
@@ -97,6 +104,8 @@ public sealed class PersonalSyncService
         bool deleted,
         CancellationToken cancellationToken)
     {
+        if (!ExtensionDevicePolicy.ShouldSyncData(extensionId))
+            throw new InvalidOperationException("设备独立数据不能写入个人云端。");
         var currentBytes = await _backend.TryReadBytesAsync(
             ExtensionDataObjectStore.BuildObjectPath(extensionId, key),
             cancellationToken);
@@ -129,6 +138,7 @@ public sealed class PersonalSyncService
                     "text/plain; charset=utf-8",
                     cancellationToken);
             }
+            await PublishExtensionDataKeysAsync(extensionId, [key], cancellationToken);
             return new ExtensionDataWriteResult(observed, true);
         }
 
@@ -200,6 +210,7 @@ public sealed class PersonalSyncService
                 "text/plain; charset=utf-8",
                 cancellationToken);
         }
+        await PublishExtensionDataKeysAsync(extensionId, [key], cancellationToken);
         return new ExtensionDataWriteResult(confirmed, true);
     }
 
@@ -395,9 +406,8 @@ public sealed class PersonalSyncService
                 }
                 catch (FileNotFoundException ex)
                 {
-                    HostAssets.AppendLog($"Personal sync remote package missing; removing stale index entry: id={remoteEntry.ExtensionId}, path={remoteEntry.PackagePath}, error={ex.Message}");
-                    remoteIndexChanged = true;
-                    continue;
+                    // A transient 404 is not evidence of an intentional deletion.
+                    throw new InvalidDataException("远端扩展包暂不可用，已停止同步并保留索引，请稍后重试。", ex);
                 }
 
                 mergedMap[extensionId] = remoteEntry;
@@ -414,6 +424,27 @@ public sealed class PersonalSyncService
 
                 mergedMap[extensionId] = localEntry;
                 remoteIndexChanged = true;
+                continue;
+            }
+
+            if (packagesUploadOnly)
+            {
+                // An account session uses the private extension library as the installer authority.
+                // The Gitee repository is a backup. Different PCs may package the same version
+                // differently; never ping-pong those binaries at each login.
+                if (ShouldPublishAccountBackup(localEntry, remoteEntry,
+                        DeviceIdentityStore.GetOrCreateDesktopDeviceId()) &&
+                    snapshot.PackageBytesByExtensionId.ContainsKey(extensionId))
+                {
+                    await UploadPackageIfNeededAsync(localEntry, snapshot.PackageBytesByExtensionId, cancellationToken);
+                    mergedMap[extensionId] = localEntry;
+                    uploaded++;
+                    remoteIndexChanged = true;
+                }
+                else
+                {
+                    mergedMap[extensionId] = remoteEntry;
+                }
                 continue;
             }
 
@@ -434,9 +465,8 @@ public sealed class PersonalSyncService
                 }
                 catch (FileNotFoundException ex)
                 {
-                    ExtensionSyncConflictStore.Remove(extensionId);
-                    HostAssets.AppendLog(
-                        $"Personal sync conflict remote package missing; local version retained: id={extensionId}, error={ex.Message}");
+                    // A transient 404 is not evidence of an intentional deletion.
+                    throw new InvalidDataException("远端扩展包暂不可用，已停止同步并保留索引，请稍后重试。", ex);
                 }
             }
 
@@ -451,6 +481,20 @@ public sealed class PersonalSyncService
                     await UploadPackageIfNeededAsync(winner, snapshot.PackageBytesByExtensionId, cancellationToken);
                     uploaded++;
                 }
+                else if (!winner.Deleted &&
+                         snapshot.PackageBytesByExtensionId.TryGetValue(extensionId, out var verifyBytes) &&
+                         verifyBytes.Length > 5 * 1024 * 1024 &&
+                         string.Equals(ComputeSha256(verifyBytes), winner.PackageHash, StringComparison.OrdinalIgnoreCase))
+                {
+                    // An apparently uploaded large package may have been truncated by Gitee.
+                    var observed = await _backend.TryReadBytesAsync(winner.PackagePath, cancellationToken);
+                    if (observed == null ||
+                        !string.Equals(ComputeSha256(observed), winner.PackageHash, StringComparison.OrdinalIgnoreCase))
+                    {
+                        await UploadPackageIfNeededAsync(winner, snapshot.PackageBytesByExtensionId, cancellationToken);
+                        uploaded++;
+                    }
+                }
                 else if (winner.Deleted != loser.Deleted ||
                          !string.Equals(winner.UpdatedAtUtc, loser.UpdatedAtUtc, StringComparison.Ordinal))
                 {
@@ -461,25 +505,16 @@ public sealed class PersonalSyncService
             {
                 try
                 {
-                    if (await ApplyRemoteEntryAsync(winner, cancellationToken))
+                    if (!ExtensionContentEquivalent(localEntry, winner) &&
+                        await ApplyRemoteEntryAsync(winner, cancellationToken))
                     {
                         pulled++;
                     }
                 }
                 catch (FileNotFoundException ex)
                 {
-                    HostAssets.AppendLog($"Personal sync remote package missing; keeping local entry and repairing remote index: id={winner.ExtensionId}, path={winner.PackagePath}, error={ex.Message}");
-                    if (localEntry is { Deleted: false })
-                    {
-                        await UploadPackageIfNeededAsync(localEntry, snapshot.PackageBytesByExtensionId, cancellationToken);
-                        uploaded++;
-                        winner = localEntry;
-                    }
-                    else
-                    {
-                        remoteIndexChanged = true;
-                        continue;
-                    }
+                    // A transient 404 is not evidence of an intentional deletion.
+                    throw new InvalidDataException("远端扩展包暂不可用，已停止同步并保留索引，请稍后重试。", ex);
                 }
 
             }
@@ -503,13 +538,21 @@ public sealed class PersonalSyncService
                 .ToList()
         };
 
-        if (remoteIndexChanged || !IndexesEquivalent(remoteIndex, mergedIndex))
+        var purgedPackagesCleaned = await CleanupPurgedRemotePackagesAsync(mergedIndex, cancellationToken);
+        if (remoteIndexChanged || purgedPackagesCleaned || !IndexesEquivalent(remoteIndex, mergedIndex))
         {
             await SaveRemoteIndexAsync(mergedIndex, cancellationToken);
         }
 
-        await CleanupPurgedRemotePackagesAsync(mergedIndex, cancellationToken);
-        SaveLocalIndex(ClearLocalPendingFlags(mergedIndex));
+        var localIndex = ClearLocalPendingFlags(mergedIndex);
+        var localIndexMap = localIndex.Items.ToDictionary(item => item.ExtensionId, StringComparer.OrdinalIgnoreCase);
+        foreach (var command in LocalExtensionCatalog.LoadCommands())
+        {
+            if (!localIndexMap.TryGetValue(command.ExtensionId, out var entry) || entry.Deleted)
+                continue;
+            entry.LocalContentHash = ComputeSha256(ExtensionPackageService.BuildPackage(command, command.DeclaredVersion));
+        }
+        SaveLocalIndex(localIndex);
         var preferRemoteConfigOnConflict = pulled > 0 && uploaded == 0;
         var (configUploaded, configPulled) = configSyncMode switch
         {
@@ -918,7 +961,7 @@ public sealed class PersonalSyncService
             updatedAtUtc,
             "launcher-config-sync");
         var pointBytes = LauncherConfigObjectStore.SerializeRestorePoint(point);
-        var pointPath = LauncherConfigObjectStore.GetRestorePointPath(updatedAtUtc);
+        var pointPath = LauncherConfigObjectStore.GetRestorePointPath(point);
         var sha256 = Convert.ToHexString(SHA256.HashData(pointBytes)).ToLowerInvariant();
         await _backend.WriteBytesAsync(pointPath, pointBytes, "application/json", cancellationToken);
 
@@ -930,8 +973,7 @@ public sealed class PersonalSyncService
         }
         catch (JsonException ex)
         {
-            HostAssets.AppendLog($"Personal sync restore index was invalid and will be rebuilt: {ex.Message}");
-            index = new LauncherConfigHistoryIndex();
+            throw new InvalidDataException("云端备份目录损坏，已停止更新目录以保留历史备份。", ex);
         }
         index.RestorePoints.RemoveAll(item => item.RestorePointId.Equals(point.RestorePointId, StringComparison.Ordinal));
         index.RestorePoints.Add(new LauncherConfigRestorePointInfo
@@ -1068,6 +1110,12 @@ public sealed class PersonalSyncService
             settings.EnableEverything = incoming.EnableEverything;
         }
         settings.LauncherHotkey = incoming.LauncherHotkey;
+        if (snapshot.AppShortcutBindings != null)
+        {
+            settings.AppShortcutBindings = new Dictionary<string, string>(
+                incoming.AppShortcutBindings,
+                StringComparer.OrdinalIgnoreCase);
+        }
         settings.LaunchAtStartup = incoming.LaunchAtStartup;
         settings.RefreshCloudOnStartup = incoming.RefreshCloudOnStartup;
         settings.CloseToTray = incoming.CloseToTray;
@@ -1424,28 +1472,32 @@ public sealed class PersonalSyncService
         var packageBytesByExtensionId = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
         var existingIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var command in LocalExtensionCatalog.LoadCommands())
+        foreach (var command in LocalExtensionCatalog.LoadAllCommands())
         {
+            if (!ExtensionDevicePolicy.ShouldSyncPackage(command.ExtensionId)) continue;
             if (string.IsNullOrWhiteSpace(command.ExtensionDirectoryPath) || !Directory.Exists(command.ExtensionDirectoryPath))
             {
                 continue;
             }
 
             var packageBytes = ExtensionPackageService.BuildPackage(command, command.DeclaredVersion);
-            var packageHash = ComputeSha256(packageBytes);
+            var localContentHash = ComputeSha256(packageBytes);
             existingIds.Add(command.ExtensionId);
             stateMap.TryGetValue(command.ExtensionId, out var previous);
+            var contentUnchanged = previous != null && !previous.Deleted &&
+                string.Equals(string.IsNullOrWhiteSpace(previous.LocalContentHash) ? previous.PackageHash : previous.LocalContentHash,
+                    localContentHash, StringComparison.OrdinalIgnoreCase);
+            var packageHash = contentUnchanged ? previous!.PackageHash : localContentHash;
             var updatedAtUtc = previous == null
                 ? GetDirectoryLastWriteUtc(command.ExtensionDirectoryPath).ToString("O")
-                : !previous.Deleted && string.Equals(previous.PackageHash, packageHash, StringComparison.OrdinalIgnoreCase)
+                : contentUnchanged
                     ? previous.UpdatedAtUtc
                     : DateTimeOffset.UtcNow.ToString("O");
-            var contentChanged = previous == null || previous.Revision <= 0 || previous.Deleted ||
-                                 !string.Equals(previous.PackageHash, packageHash, StringComparison.OrdinalIgnoreCase) ||
+            var contentChanged = previous == null || previous.Revision <= 0 || !contentUnchanged ||
                                  !string.Equals(previous.Title, command.Title, StringComparison.Ordinal) ||
                                  !string.Equals(previous.Category, command.Category ?? "扩展", StringComparison.Ordinal) ||
                                  !string.Equals(previous.Version, command.DeclaredVersion, StringComparison.OrdinalIgnoreCase);
-            var packagePath = BuildRemotePackagePath(command.ExtensionId, packageHash);
+            var packagePath = contentUnchanged && previous != null ? previous.PackagePath : BuildRemotePackagePath(command.ExtensionId, packageHash);
             var entry = new WebDavSyncEntry
             {
                 ExtensionId = command.ExtensionId,
@@ -1453,6 +1505,7 @@ public sealed class PersonalSyncService
                 Category = command.Category ?? "扩展",
                 Version = command.DeclaredVersion,
                 PackageHash = packageHash,
+                LocalContentHash = localContentHash,
                 PackagePath = packagePath,
                 UpdatedAtUtc = updatedAtUtc,
                 Revision = contentChanged ? ExtensionSyncRevision.Next(previous?.Revision ?? 0) : previous!.Revision,
@@ -1499,6 +1552,7 @@ public sealed class PersonalSyncService
                 Category = stateEntry.Category,
                 Version = stateEntry.Version,
                 PackageHash = stateEntry.PackageHash,
+                LocalContentHash = stateEntry.LocalContentHash,
                 PackagePath = stateEntry.PackagePath,
                 UpdatedAtUtc = stateEntry.Deleted ? stateEntry.UpdatedAtUtc : DateTimeOffset.UtcNow.ToString("O"),
                 Revision = stateEntry.Revision > 0
@@ -1526,19 +1580,7 @@ public sealed class PersonalSyncService
     private async Task<WebDavSyncIndex> LoadRemoteIndexAsync(CancellationToken cancellationToken)
     {
         var bytes = await _backend.TryReadBytesAsync(RemoteIndexPath, cancellationToken);
-        if (bytes == null || bytes.Length == 0)
-        {
-            return new WebDavSyncIndex();
-        }
-
-        try
-        {
-            return JsonSerializer.Deserialize<WebDavSyncIndex>(bytes, JsonOptions) ?? new WebDavSyncIndex();
-        }
-        catch
-        {
-            return new WebDavSyncIndex();
-        }
+        return SyncPackageSafety.ReadIndex(bytes);
     }
 
     private Task SaveRemoteIndexAsync(WebDavSyncIndex index, CancellationToken cancellationToken)
@@ -1571,12 +1613,17 @@ public sealed class PersonalSyncService
         return _backend.WriteBytesAsync(RemoteIndexPath, bytes, "application/json", cancellationToken);
     }
 
-    private async Task CleanupPurgedRemotePackagesAsync(WebDavSyncIndex index, CancellationToken cancellationToken)
+    private async Task<bool> CleanupPurgedRemotePackagesAsync(WebDavSyncIndex index, CancellationToken cancellationToken)
     {
+        var cleaned = false;
         foreach (var item in index.Items.Where(entry => entry.Purged && !string.IsNullOrWhiteSpace(entry.PackagePath)))
         {
             await _backend.DeleteFileAsync(item.PackagePath, cancellationToken);
+            item.PackagePath = string.Empty;
+            cleaned = true;
         }
+
+        return cleaned;
     }
 
     private async Task UploadPackageIfNeededAsync(WebDavSyncEntry entry, IReadOnlyDictionary<string, byte[]> packageBytesByExtensionId, CancellationToken cancellationToken)
@@ -1617,7 +1664,10 @@ public sealed class PersonalSyncService
 
     private async Task<bool> ApplyRemoteEntryAsync(WebDavSyncEntry entry, CancellationToken cancellationToken)
     {
-        var localDirectory = Path.Combine(HostAssets.ExtensionsPath, entry.ExtensionId);
+        var localDirectory = SyncPackageSafety.ResolveExtensionDirectory(HostAssets.ExtensionsPath, entry.ExtensionId);
+        // Locally private packages must not be replaced or removed by remote sync.
+        if (File.Exists(Path.Combine(localDirectory, "manifest.json")) &&
+            !ExtensionDevicePolicy.ShouldSyncPackage(entry.ExtensionId)) return false;
         if (entry.Purged)
         {
             var changed = false;
@@ -1653,44 +1703,33 @@ public sealed class PersonalSyncService
 
         var packageBytes = await _backend.TryReadBytesAsync(entry.PackagePath, cancellationToken)
             ?? throw new FileNotFoundException($"远端扩展包不存在：{entry.PackagePath}");
+        try { SyncPackageSafety.VerifyHash(packageBytes, entry.PackageHash); }
+        catch (InvalidDataException ex)
+        {
+            throw new InvalidDataException($"远端扩展包损坏：id={entry.ExtensionId}, path={entry.PackagePath}, expected={entry.PackageHash}, actual={ComputeSha256(packageBytes)}, bytes={packageBytes.Length}", ex);
+        }
         if (!TryValidateZipArchive(packageBytes, out var packageError))
         {
             throw new InvalidDataException($"远端扩展包无效：{entry.PackagePath}，detail={packageError}");
         }
 
+        // An account-wide index can list packages targeted to another computer.
+        // Verify the embedded policy before touching this machine's installation.
+        using (var zipStream = new MemoryStream(packageBytes, writable: false))
+        using (var zip = new ZipArchive(zipStream, ZipArchiveMode.Read))
+        {
+            var manifestEntry = zip.GetEntry("manifest.json");
+            if (manifestEntry == null) throw new InvalidDataException("扩展包缺少 manifest.json。");
+            using var reader = new StreamReader(manifestEntry.Open(), Encoding.UTF8);
+            var manifestText = await reader.ReadToEndAsync(cancellationToken);
+            if (!ExtensionDevicePolicy.CanSyncInstall(manifestText)) return false;
+        }
         await ReplaceDirectoryFromPackageAsync(Path.Combine(HostAssets.ExtensionsPath, entry.ExtensionId), packageBytes, cancellationToken);
         return true;
     }
 
-    private static async Task ReplaceDirectoryFromPackageAsync(string targetDirectory, byte[] packageBytes, CancellationToken cancellationToken)
-    {
-        Directory.CreateDirectory(HostAssets.ExtensionsPath);
-        var tempDirectory = Path.Combine(HostAssets.ExtensionsPath, $".yanzi-sync-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(tempDirectory);
-
-        try
-        {
-            await using var stream = new MemoryStream(packageBytes, writable: false);
-            using (var archive = new ZipArchive(stream, ZipArchiveMode.Read))
-            {
-                archive.ExtractToDirectory(tempDirectory, overwriteFiles: true);
-            }
-
-            if (Directory.Exists(targetDirectory))
-            {
-                Directory.Delete(targetDirectory, recursive: true);
-            }
-
-            Directory.Move(tempDirectory, targetDirectory);
-        }
-        finally
-        {
-            if (Directory.Exists(tempDirectory))
-            {
-                Directory.Delete(tempDirectory, recursive: true);
-            }
-        }
-    }
+    private static Task ReplaceDirectoryFromPackageAsync(string targetDirectory, byte[] packageBytes, CancellationToken cancellationToken)
+        => SyncPackageSafety.ReplaceDirectoryAsync(targetDirectory, packageBytes, cancellationToken);
 
     private static WebDavSyncIndex ClearLocalPendingFlags(WebDavSyncIndex index)
     {
@@ -1708,6 +1747,7 @@ public sealed class PersonalSyncService
                 Category = item.Category,
                 Version = item.Version,
                 PackageHash = item.PackageHash,
+                LocalContentHash = item.LocalContentHash,
                 PackagePath = item.PackagePath,
                 UpdatedAtUtc = item.UpdatedAtUtc,
                 Revision = item.Revision,
@@ -1727,6 +1767,34 @@ public sealed class PersonalSyncService
     private static int CompareEntries(WebDavSyncEntry left, WebDavSyncEntry right)
     {
         return ExtensionSyncRevision.Compare(left, right);
+    }
+
+    internal static bool ShouldPublishAccountBackup(
+        WebDavSyncEntry local, WebDavSyncEntry remote, string deviceId)
+    {
+        // A deletion in the backup repository must not be silently resurrected by an
+        // unrelated device. Explicit publishing remains available through the account library.
+        if (local.Deleted || local.Purged || remote.Deleted || remote.Purged ||
+            string.Equals(local.PackageHash, remote.PackageHash, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        static bool ParseVersion(string? text, out Version value)
+        {
+            value = new Version(0, 0);
+            return Version.TryParse((text ?? string.Empty).TrimStart('v', 'V'), out value!);
+        }
+
+        if (ParseVersion(local.Version, out var currentVersion) &&
+            ParseVersion(remote.Version, out var previousVersion) &&
+            currentVersion.CompareTo(previousVersion) > 0)
+            return true;
+
+        // Same-version hot edits may update a backup only when this exact device owns
+        // the remote version and has changed relative to its verified local baseline.
+        return !string.IsNullOrWhiteSpace(deviceId) &&
+               string.Equals(local.UpdatedByDeviceId, deviceId, StringComparison.OrdinalIgnoreCase) &&
+               string.Equals(remote.UpdatedByDeviceId, deviceId, StringComparison.OrdinalIgnoreCase) &&
+               local.BaseRevision >= remote.Revision && local.Revision > remote.Revision;
     }
 
     internal static WebDavSyncEntry ChooseExtensionEntry(
@@ -1783,9 +1851,11 @@ public sealed class PersonalSyncService
             return false;
         }
 
-        for (var index = 0; index < left.Items.Count; index++)
+        var rightMap = right.Items.ToDictionary(item => item.ExtensionId, StringComparer.OrdinalIgnoreCase);
+        foreach (var leftItem in left.Items)
         {
-            if (!EntriesEquivalent(left.Items[index], right.Items[index]))
+            if (!rightMap.TryGetValue(leftItem.ExtensionId, out var rightItem) ||
+                !EntriesEquivalent(leftItem, rightItem))
             {
                 return false;
             }

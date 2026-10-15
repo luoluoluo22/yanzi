@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#07111f" />
+  <title>网络之网 · 3D 世界模型</title>
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">◉</div>
+        <div>
+          <div class="brand-title">网络之网</div>
+          <div class="brand-subtitle">3D · 时间 · 跨网络世界模型</div>
+        </div>
+      </div>
+      <div class="top-actions">
+        <div class="search-wrap">
+          <span>⌕</span>
+          <input id="searchInput" placeholder="搜索节点，例如：反馈 / 钱 / 信任" />
+        </div>
+        <button class="ghost-btn" id="rotateBtn">自动旋转</button>
+        <button class="ghost-btn" id="reflowBtn">重排布局</button>
+        <button class="ghost-btn" id="resetBtn">重置视角</button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <aside class="panel left-panel">
+        <div class="panel-kicker">NETWORK LAYERS</div>
+        <h2>局部网络</h2>
+        <p class="panel-copy">每张网内部高密度连接；只有少数节点跨层。</p>
+        <div id="layerList" class="layer-list"></div>
+
+        <div class="divider"></div>
+
+        <div class="panel-kicker">VIEW</div>
+        <div class="toggle-row">
+          <span>聚焦选中关系</span>
+          <label class="switch">
+            <input id="focusToggle" type="checkbox" />
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="toggle-row">
+          <span>显示跨层支柱</span>
+          <label class="switch">
+            <input id="pillarToggle" type="checkbox" checked />
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div class="legend-card">
+          <div><span class="legend-dot node-dot"></span>普通节点</div>
+          <div><span class="legend-dot bridge-dot"></span>跨层节点</div>
+          <div><span class="legend-line"></span>关系</div>
+        </div>
+      </aside>
+
+      <section class="stage">
+        <div id="scene"></div>
+
+        <div class="scene-tip">
+          <strong>左键拖动</strong>旋转 · <strong>中键拖动</strong>平移画布 · <strong>滚轮</strong>缩放 · <strong>单击关系</strong>编辑机制
+        </div>
+
+        <div class="stage-badge">
+          <span class="pulse"></span>
+          <span id="stageBadgeText">T3 · 跨网连接</span>
+        </div>
+      </section>
+
+      <aside class="panel right-panel">
+        <div id="inspectorEmpty" class="inspector-empty">
+          <div class="empty-orbit">
+            <span></span><span></span><span></span>
+            <div>●</div>
+          </div>
+          <h2>点击节点或关系</h2>
+          <p>单击节点会自动聚焦它所在的网络平面；单击关系线或机制标签可以直接编辑机制。</p>
+        </div>
+
+        <div id="inspector" class="inspector hidden">
+          <div class="panel-kicker" id="nodeType">NODE</div>
+          <div class="node-heading">
+            <div>
+              <h2 id="nodeTitle"></h2>
+              <div id="nodeSubtitle" class="node-subtitle"></div>
+            </div>
+            <div id="nodeSymbol" class="node-symbol"></div>
+          </div>
+          <div id="networkTags" class="network-tags"></div>
+          <p id="nodeDescription" class="node-description"></p>
+
+          <div class="inspector-section">
+            <div class="section-title">关系路径 · 点击可编辑</div>
+            <div id="relationList" class="relation-list"></div>
+          </div>
+
+          <div class="inspector-section">
+            <div class="section-title">跨网入口</div>
+            <div id="crossLinks" class="cross-links"></div>
+          </div>
+
+          <div class="inspector-section">
+            <div class="section-title">进入模型的时间</div>
+            <div id="nodeTime" class="time-chip"></div>
+          </div>
+        </div>
+
+        <div id="relationInspector" class="inspector hidden">
+          <div class="panel-kicker">RELATION / MECHANISM</div>
+          <div class="node-heading">
+            <div>
+              <h2 id="relationTitle">关系机制</h2>
+              <div id="relationSubtitle" class="node-subtitle"></div>
+            </div>
+            <div class="node-symbol">↔</div>
+          </div>
+
+          <div class="inspector-section">
+            <label class="field-label" for="relationType">关系类型</label>
+            <select id="relationType" class="editor-field">
+              <option value="因果">因果</option>
+              <option value="相关">相关</option>
+              <option value="约束">约束</option>
+              <option value="反馈">反馈</option>
+              <option value="交换">交换</option>
+              <option value="代理">代理</option>
+              <option value="跨网">跨网</option>
+            </select>
+          </div>
+
+          <div class="inspector-section">
+            <label class="field-label" for="mechanismName">机制名称</label>
+            <input id="mechanismName" class="editor-field" />
+          </div>
+
+          <div class="inspector-section">
+            <label class="field-label" for="mechanismDetail">机制说明</label>
+            <textarea id="mechanismDetail" class="editor-field editor-textarea" rows="7"></textarea>
+          </div>
+
+          <div class="editor-actions">
+            <button id="cancelRelationBtn" class="cross-link">返回节点</button>
+            <button id="saveRelationBtn" class="save-btn">保存机制</button>
+          </div>
+          <div id="relationSaveState" class="save-state"></div>
+        </div>
+      </aside>
+    </main>
+
+    <footer class="timeline">
+      <button id="playBtn" class="play-btn" aria-label="播放时间演化">▶</button>
+      <div class="timeline-main">
+        <div class="timeline-header">
+          <div>
+            <div class="panel-kicker">TIME DIMENSION</div>
+            <strong id="timeTitle">T3 · 跨网连接</strong>
+          </div>
+          <span id="timeDescription">人、钱、资源、反馈、风险开始穿过多张网络。</span>
+        </div>
+        <input id="timeSlider" class="time-slider" type="range" min="0" max="4" value="3" step="1" />
+        <div id="timeTicks" class="time-ticks"></div>
+      </div>
+    </footer>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

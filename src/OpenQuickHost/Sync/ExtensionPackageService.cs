@@ -12,7 +12,7 @@ public static class ExtensionPackageService
 {
     public static string ExtensionsRootPath => HostAssets.ExtensionsPath;
 
-    public static byte[] BuildPackage(CommandItem command, string version, string? iconOverride = null)
+    public static byte[] BuildPackage(CommandItem command, string version, string? iconOverride = null, bool includeUserShortcut = true)
     {
         var extensionsRoot = Path.GetFullPath(ExtensionsRootPath);
         var appDataRoot = Path.GetDirectoryName(extensionsRoot);
@@ -26,7 +26,7 @@ public static class ExtensionPackageService
             !string.Equals(dirPath, extensionsRoot, StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(dirPath, appDataRoot, StringComparison.OrdinalIgnoreCase))
         {
-            return BuildDirectoryPackage(dirPath, iconOverride);
+            return BuildDirectoryPackage(dirPath, iconOverride, includeUserShortcut);
         }
 
         using var stream = new MemoryStream();
@@ -82,18 +82,19 @@ public static class ExtensionPackageService
         writer.Write(JsonSerializer.Serialize(data, JsonOptions));
     }
 
-    private static byte[] BuildDirectoryPackage(string directoryPath, string? iconOverride)
+    private static byte[] BuildDirectoryPackage(string directoryPath, string? iconOverride, bool includeUserShortcut)
     {
         using var stream = new MemoryStream();
         using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
         {
-            WriteManifestEntry(archive, directoryPath, iconOverride);
+            WriteManifestEntry(archive, directoryPath, iconOverride, includeUserShortcut);
             
             // 使用固定的时间戳（2020-01-01），确保相同内容生成相同的hash
             var fixedTimestamp = new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero);
             
             foreach (var filePath in Directory.EnumerateFiles(directoryPath, "*", SearchOption.AllDirectories)
-                         .Where(path => ShouldIncludeInPackage(directoryPath, path)))
+                         .Where(path => ShouldIncludeInPackage(directoryPath, path))
+                         .OrderBy(path => Path.GetRelativePath(directoryPath, path), StringComparer.Ordinal))
             {
                 var relativePath = Path.GetRelativePath(directoryPath, filePath);
                 if (string.Equals(relativePath, "manifest.json", StringComparison.OrdinalIgnoreCase))
@@ -111,10 +112,64 @@ public static class ExtensionPackageService
             }
         }
 
+        var dependencyDlls = Directory
+            .EnumerateFiles(directoryPath, "*.dll", SearchOption.AllDirectories)
+            .Where(path => ShouldIncludeInPackage(directoryPath, path))
+            .Select(path => Path.GetRelativePath(directoryPath, path))
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (dependencyDlls.Length > 0)
+        {
+            HostAssets.AppendLog(
+                $"Extension package built: id={Path.GetFileName(directoryPath)}, zipBytes={stream.Length}, includeUserShortcut={includeUserShortcut}, dependencyDlls={string.Join(",", dependencyDlls)}");
+        }
+
         return stream.ToArray();
     }
 
-    private static void WriteManifestEntry(ZipArchive archive, string directoryPath, string? iconOverride)
+    internal static string? ResolvePortableIconReference(string directory, string? iconReference)
+    {
+        if (string.IsNullOrWhiteSpace(iconReference)) return null;
+        if (!Uri.TryCreate(iconReference, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp))
+        {
+            if (iconReference.Contains(':') || Path.IsPathRooted(iconReference)) return null;
+            try
+            {
+                var root = Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+                var path = Path.GetFullPath(Path.Combine(directory, iconReference));
+                if (path.StartsWith(root, StringComparison.OrdinalIgnoreCase) && File.Exists(path) &&
+                    IsIconFile(path))
+                    return iconReference.Replace('\\', '/');
+            }
+            catch (ArgumentException) { }
+            return null;
+        }
+
+        // Legacy account archives contain protected URL references even when the
+        // same icon.png is already packaged. Unauthenticated image requests get 401.
+        var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var isAccountIcon = segments.Length == 5 && segments[0] == "v1" &&
+                            segments[1] == "me" && segments[2] == "extensions" &&
+                            segments[4] == "icon";
+        var isStoreIcon = segments.Length == 4 && segments[0] == "v1" &&
+                          segments[1] == "extensions" && segments[3] == "icon";
+        if (!isAccountIcon && !isStoreIcon) return null;
+
+        foreach (var fileName in new[] { "icon.png", "icon.webp", "icon.jpg", "icon.jpeg",
+                                         "icon.ico", "icon.svg", "icon.gif", "icon.bmp" })
+        {
+            if (File.Exists(Path.Combine(directory, fileName))) return fileName;
+        }
+        return null;
+    }
+
+    private static bool IsIconFile(string path) =>
+        Path.GetExtension(path).ToLowerInvariant() is
+            ".png" or ".webp" or ".jpg" or ".jpeg" or ".ico" or ".svg" or ".gif" or ".bmp";
+
+    private static void WriteManifestEntry(ZipArchive archive, string directoryPath, string? iconOverride, bool includeUserShortcut)
     {
         var manifestPath = Path.Combine(directoryPath, "manifest.json");
         if (!File.Exists(manifestPath))
@@ -130,30 +185,67 @@ public static class ExtensionPackageService
             throw new InvalidOperationException("扩展目录中的 manifest.json 缺少 id 或 name。");
         }
 
+        // Cloud icon URLs belong in account/store metadata, not in portable archives.
+        var bundledIcon = ResolvePortableIconReference(directoryPath, manifest.Icon);
+        var selectedIcon = bundledIcon ?? (string.IsNullOrWhiteSpace(iconOverride)
+            ? manifest.Icon
+            : iconOverride);
+        var packagedManifest = manifest with { Icon = selectedIcon };
+
+        if (!includeUserShortcut)
+        {
+            packagedManifest = packagedManifest with { GlobalShortcut = null };
+        }
+
         WriteJsonEntry(
             archive,
             "manifest.json",
-            string.IsNullOrWhiteSpace(iconOverride)
-                ? manifest
-                : manifest with { Icon = iconOverride });
+            packagedManifest);
     }
 
-    private static bool ShouldIncludeInPackage(string rootDirectory, string filePath)
+    internal static bool ShouldIncludeInPackage(string rootDirectory, string filePath)
     {
         var relativePath = Path.GetRelativePath(rootDirectory, filePath);
         var normalizedRelativePath = relativePath.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
         var segments = normalizedRelativePath.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
 
-        if (normalizedRelativePath.StartsWith(".yanzi-csharp-cache" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        // 内联脚本执行时生成的临时文件不属于小程序内容。将其打包会让每次运行都产生新哈希并重复上传。
+        if (segments.Length == 1 &&
+            (segments[0].StartsWith(".yanzi-inline-", StringComparison.OrdinalIgnoreCase) ||
+             segments[0].Equals("debug.log", StringComparison.OrdinalIgnoreCase) ||
+             segments[0].Equals("rice-cooker-link.json", StringComparison.OrdinalIgnoreCase) ||
+             segments[0].EndsWith(".local.json", StringComparison.OrdinalIgnoreCase) ||
+             segments[0].EndsWith(".user.json", StringComparison.OrdinalIgnoreCase)))
         {
-            return normalizedRelativePath.EndsWith(
-                Path.Combine("bin", "Release", "net9.0", "YanziExtension.dll"),
-                StringComparison.OrdinalIgnoreCase);
+            return false;
+        }
+
+        if (normalizedRelativePath.Equals(".yanzi-csharp-cache", StringComparison.OrdinalIgnoreCase) ||
+            normalizedRelativePath.StartsWith(".yanzi-csharp-cache" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
         }
 
         if (segments.Any(static segment =>
+                segment.Equals("node_modules", StringComparison.OrdinalIgnoreCase) ||
+                segment.Equals(".runtime", StringComparison.OrdinalIgnoreCase) ||
+                segment.Equals(".raccoon-runtime", StringComparison.OrdinalIgnoreCase) ||
+                segment.Equals(".git", StringComparison.OrdinalIgnoreCase) ||
+                segment.Equals(".env", StringComparison.OrdinalIgnoreCase) ||
+                (segment.StartsWith(".env.", StringComparison.OrdinalIgnoreCase) &&
+                 !segment.Equals(".env.example", StringComparison.OrdinalIgnoreCase))))
+        {
+            return false;
+        }
+if (segments.Any(static segment =>
                 segment.Equals("bin", StringComparison.OrdinalIgnoreCase) ||
-                segment.Equals("obj", StringComparison.OrdinalIgnoreCase)))
+                segment.Equals("obj", StringComparison.OrdinalIgnoreCase) ||
+                segment.Equals("backup", StringComparison.OrdinalIgnoreCase) ||
+                segment.Equals("backups", StringComparison.OrdinalIgnoreCase) ||
+                segment.EndsWith(".bak", StringComparison.OrdinalIgnoreCase) ||
+                segment.Contains(".bak-", StringComparison.OrdinalIgnoreCase) ||
+                segment.EndsWith(".backup", StringComparison.OrdinalIgnoreCase) ||
+                segment.Contains(".backup-", StringComparison.OrdinalIgnoreCase)))
         {
             return false;
         }

@@ -1,18 +1,22 @@
-param(
+﻿param(
     [int]$Port = 8799,
     [ValidateSet("true", "false")]
     [string]$AuthorityMode = "true"
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "dev-test-worker.ps1")
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $configPath = Join-Path $repoRoot "cloudflare\wrangler.toml"
 $testSecret = "yanzi-local-object-sync-test"
-$logPath = Join-Path $env:TEMP "yanzi-cloud-object-sync-test.log"
-$errorPath = Join-Path $env:TEMP "yanzi-cloud-object-sync-test.err"
-Remove-Item -LiteralPath $logPath, $errorPath -Force -ErrorAction SilentlyContinue
+$artifact = Join-Path $env:TEMP ("YanziDev/cloud-object-sync/" + [Guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Force -Path $artifact | Out-Null
+$statePath = Join-Path $artifact "worker-state"
+$logPath = Join-Path $artifact "worker.log"
+$errorPath = Join-Path $artifact "worker.err"
+Stop-YanziLocalWorkerPort -Port $Port
 
-& npx.cmd wrangler d1 migrations apply openquickhost-sync-db --local --config $configPath | Out-Null
+& npx.cmd wrangler d1 migrations apply openquickhost-sync-db --local --persist-to $statePath --config $configPath | Out-Null
 if ($LASTEXITCODE -ne 0) {
     throw "Failed to apply local D1 migrations before protocol test."
 }
@@ -37,7 +41,7 @@ $objectsAuthoritative = $AuthorityMode -eq "true"
 $authoritativeValue = $AuthorityMode
 $worker = Start-Process `
     -FilePath "npx.cmd" `
-    -ArgumentList @("wrangler", "dev", "--local", "--port", $Port, "--config", $configPath, "--var", "AUTH_TOKEN_SECRET:$testSecret", "--var", "SYNC_OBJECTS_AUTHORITATIVE:$authoritativeValue") `
+    -ArgumentList @("wrangler", "dev", "--local", "--persist-to", $statePath, "--port", $Port, "--config", $configPath, "--var", "AUTH_TOKEN_SECRET:$testSecret", "--var", "SYNC_OBJECTS_AUTHORITATIVE:$authoritativeValue") `
     -WorkingDirectory $repoRoot `
     -WindowStyle Hidden `
     -RedirectStandardOutput $logPath `
@@ -83,6 +87,14 @@ try {
 
     $created = Invoke-RestMethod -Uri "$baseUrl/v1/sync/objects/$objectId" -Method Put -Headers $headers -ContentType "application/json" -Body $createBody
     if ($created.object.revision -le 0) { throw "Create did not return a positive revision." }
+
+    $createdReadback = Invoke-RestMethod -Uri "$baseUrl/v1/sync/objects/$objectId" -Method Get -Headers $headers
+    if (-not $createdReadback.object -or
+        $createdReadback.object.objectId -ne $objectId -or
+        $createdReadback.object.revision -ne $created.object.revision -or
+        [string]$createdReadback.object.payload.value -ne "first") {
+        throw "Single-object GET did not return the object created by PUT."
+    }
 
     $deviceBBody = @{
         schemaVersion = 1
@@ -151,6 +163,18 @@ try {
         $historyAfterRestore.versions[0].restoredFromRevision -ne $created.object.revision) {
         throw "Restore provenance was not recorded in history."
     }
+
+    $deleteBody = @{ schemaVersion = 1; expectedRevision = $restored.object.revision; deleted = $true; payload = @{} } | ConvertTo-Json -Compress
+    $deleted = Invoke-RestMethod -Uri "$baseUrl/v1/sync/objects/$objectId" -Method Put -Headers $headers -ContentType "application/json" -Body $deleteBody
+    $recoverDeletedBody = @{ expectedRevision = $deleted.object.revision; restoreRevision = $created.object.revision } | ConvertTo-Json -Compress
+    $recoveredDeleted = Invoke-RestMethod -Uri "$baseUrl/v1/sync/objects/$objectId/restore" -Method Post -Headers $headers -ContentType "application/json" -Body $recoverDeletedBody
+    if ($recoveredDeleted.object.deleted -or $recoveredDeleted.object.payload.value -ne "first" -or $recoveredDeleted.object.revision -ne $deleted.object.revision + 1) { throw "Deleted content recovery did not produce a live new version." }
+    $staleRestoreStatus = 0
+    try { Invoke-RestMethod -Uri "$baseUrl/v1/sync/objects/$objectId/restore" -Method Post -Headers $headers -ContentType "application/json" -Body $recoverDeletedBody | Out-Null }
+    catch { $staleRestoreStatus = [int]$_.Exception.Response.StatusCode }
+    if ($staleRestoreStatus -ne 409) { throw "Stale restore must return 409 without overwriting recovered content." }
+    $afterStaleRestore = Invoke-RestMethod -Uri "$baseUrl/v1/sync/objects/$objectId" -Headers $headers
+    if ($afterStaleRestore.object.revision -ne $recoveredDeleted.object.revision) { throw "Rejected stale restore consumed a revision." }
 
     $yanmBody = @{
         updatedAtUtc = [DateTime]::UtcNow.ToString("O")
@@ -243,10 +267,12 @@ try {
     }
     if ($invalidStatus -ne 401) { throw "Expected invalid token signature 401, got $invalidStatus." }
 
-    Write-Output "Cloud object sync protocol test passed: authoritative=$authoritativeValue, create=$($created.object.revision), deviceB=$($deviceB.object.revision), retry=$($updated.object.revision), restore=$($restored.object.revision), history=4, yanmPatch=preserved, aiSecrets=scrubbed, repoSecrets=scrubbed, conflict=409+$($conflictDetails.details.currentRevision), invalidToken=401"
+    Write-Output "Cloud object sync protocol test passed: authoritative=$authoritativeValue, create=$($created.object.revision), deviceB=$($deviceB.object.revision), retry=$($updated.object.revision), restore=$($restored.object.revision), history=4, deletedRecovery=passed, staleRestore=409, yanmPatch=preserved, aiSecrets=scrubbed, repoSecrets=scrubbed, conflict=409+$($conflictDetails.details.currentRevision), invalidToken=401"
 }
 finally {
+    Stop-YanziLocalWorkerPort -Port $Port
     if (-not $worker.HasExited) {
         & taskkill /PID $worker.Id /T /F | Out-Null
     }
+    Write-Output "Artifacts: $artifact"
 }

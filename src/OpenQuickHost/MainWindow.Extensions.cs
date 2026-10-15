@@ -16,7 +16,19 @@ namespace OpenQuickHost;
 public partial class MainWindow
 {
     private const uint InputKeyboard = 1;
+    private const uint KeyeventfExtendedkey = 0x0001;
     private const uint KeyeventfKeyup = 0x0002;
+    private const uint MapvkVkToVsc = 0;
+
+    private const ushort VkLControl = 0xA2;
+    private const ushort VkRControl = 0xA3;
+    private const ushort VkLMenu = 0xA4;    // Left Alt
+    private const ushort VkRMenu = 0xA5;    // Right Alt
+    private const ushort VkLShift = 0xA0;
+    private const ushort VkRShift = 0xA1;
+    private const ushort VkLWin = 0x5B;
+    private const ushort VkRWin = 0x5C;
+
     private static readonly IntPtr SimulatedInputMarker = new(0x59414E5B);
     private static readonly SemaphoreSlim CSharpPrebuildGate = new(1, 1);
 
@@ -176,6 +188,11 @@ public partial class MainWindow
         var settings = AppSettingsStore.Load();
         settings.RecentlyAddedExtensionIds ??= [];
         settings.UnreadNewExtensionIds ??= [];
+        settings.KnownExtensionIds ??= [];
+        if (!settings.KnownExtensionIds.Contains(extensionId, StringComparer.OrdinalIgnoreCase))
+        {
+            settings.KnownExtensionIds.Add(extensionId);
+        }
         settings.RecentlyAddedExtensionIds.RemoveAll(id => id.Equals(extensionId, StringComparison.OrdinalIgnoreCase));
         settings.UnreadNewExtensionIds.RemoveAll(id => id.Equals(extensionId, StringComparison.OrdinalIgnoreCase));
         settings.RecentlyAddedExtensionIds.Insert(0, extensionId);
@@ -192,7 +209,7 @@ public partial class MainWindow
 
         AppSettingsStore.Save(settings);
         _appSettings = settings;
-        _windowBoundExtensionsService.Reload(_appSettings.WindowBindings);
+        _windowBoundExtensionsService?.Reload(_appSettings.WindowBindings);
     }
 
     private void RemoveExtensionUiTracking(string extensionId)
@@ -206,8 +223,10 @@ public partial class MainWindow
         var changed = false;
         settings.RecentlyAddedExtensionIds ??= [];
         settings.UnreadNewExtensionIds ??= [];
+        settings.KnownExtensionIds ??= [];
         changed |= settings.RecentlyAddedExtensionIds.RemoveAll(id => id.Equals(extensionId, StringComparison.OrdinalIgnoreCase)) > 0;
         changed |= settings.UnreadNewExtensionIds.RemoveAll(id => id.Equals(extensionId, StringComparison.OrdinalIgnoreCase)) > 0;
+        changed |= settings.KnownExtensionIds.RemoveAll(id => id.Equals(extensionId, StringComparison.OrdinalIgnoreCase)) > 0;
         if (!changed)
         {
             return;
@@ -215,7 +234,74 @@ public partial class MainWindow
 
         AppSettingsStore.Save(settings);
         _appSettings = settings;
-        _windowBoundExtensionsService.Reload(_appSettings.WindowBindings);
+        _windowBoundExtensionsService?.Reload(_appSettings.WindowBindings);
+    }
+
+    public void SyncNewlyDiscoveredLocalExtensions(IEnumerable<CommandItem> commands)
+    {
+        var localCommands = commands
+            .Where(static x => x.Source == CommandSource.LocalExtension && !string.IsNullOrWhiteSpace(x.ExtensionId))
+            .ToList();
+        if (localCommands.Count == 0)
+        {
+            return;
+        }
+
+        var settings = AppSettingsStore.Load();
+        settings.KnownExtensionIds ??= [];
+        settings.RecentlyAddedExtensionIds ??= [];
+        settings.UnreadNewExtensionIds ??= [];
+
+        var currentLocalIds = localCommands
+            .Select(static x => x.ExtensionId)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var changed = false;
+
+        if (settings.KnownExtensionIds.Count == 0)
+        {
+            // 首次引入已知列表基准（或全新纯净安装）：将当前磁盘全部已有扩展登记为基准
+            settings.KnownExtensionIds = new List<string>(currentLocalIds);
+            changed = true;
+        }
+        else
+        {
+            // 找出当前磁盘存在但尚未在 KnownExtensionIds 中记录的全新扩展
+            var newlyDiscoveredIds = currentLocalIds
+                .Where(id => !settings.KnownExtensionIds.Contains(id, StringComparer.OrdinalIgnoreCase))
+                .ToList();
+
+            if (newlyDiscoveredIds.Count > 0)
+            {
+                changed = true;
+                foreach (var newId in newlyDiscoveredIds)
+                {
+                    settings.KnownExtensionIds.Add(newId);
+                    settings.RecentlyAddedExtensionIds.RemoveAll(id => id.Equals(newId, StringComparison.OrdinalIgnoreCase));
+                    settings.UnreadNewExtensionIds.RemoveAll(id => id.Equals(newId, StringComparison.OrdinalIgnoreCase));
+                    settings.RecentlyAddedExtensionIds.Insert(0, newId);
+                    settings.UnreadNewExtensionIds.Insert(0, newId);
+                }
+
+                if (settings.RecentlyAddedExtensionIds.Count > 50)
+                {
+                    settings.RecentlyAddedExtensionIds = settings.RecentlyAddedExtensionIds.Take(50).ToList();
+                }
+
+                if (settings.UnreadNewExtensionIds.Count > 50)
+                {
+                    settings.UnreadNewExtensionIds = settings.UnreadNewExtensionIds.Take(50).ToList();
+                }
+            }
+        }
+
+        if (changed)
+        {
+            AppSettingsStore.Save(settings);
+            _appSettings = settings;
+            _windowBoundExtensionsService?.Reload(_appSettings.WindowBindings);
+        }
     }
 
     private void ApplyNewExtensionState(CommandItem command)
@@ -410,14 +496,25 @@ public partial class MainWindow
 
     private CommandItem ResolveRunnableCommand(CommandItem command)
     {
-        if (command.Source != CommandSource.Cloud)
+        // Wheel/quick-panel slots may retain an older CommandItem after a manifest
+        // changes. Always resolve local extensions against the current catalog at
+        // execution time; a host restart must not be required to run new code.
+        if (command.Source == CommandSource.LocalExtension &&
+            !string.IsNullOrWhiteSpace(command.ExtensionId))
         {
-            return command;
+            return LocalExtensionCatalog.LoadCommands().FirstOrDefault(item =>
+                item.ExtensionId.Equals(command.ExtensionId, StringComparison.OrdinalIgnoreCase))
+                ?? command;
         }
 
-        return _localExtensionIndex.TryGetValue(command.ExtensionId, out var localExtension)
-            ? localExtension
-            : command;
+        if (command.Source == CommandSource.Cloud)
+        {
+            return _localExtensionIndex.TryGetValue(command.ExtensionId, out var localExtension)
+                ? ResolveRunnableCommand(localExtension)
+                : command;
+        }
+
+        return command;
     }
 
     public CommandItem? OpenAddExtensionForSlot(Window? owner = null)
@@ -508,6 +605,13 @@ public partial class MainWindow
 
     public void ShowPanel()
     {
+        if (HostRuntimeProfile.IsRuntime) { SharedRuntimeHost.Current?.RequestShell("launcher.show"); return; }
+        var activeHwnd = Win32Native.GetForegroundWindow();
+        if (activeHwnd != IntPtr.Zero && !WindowSensorHelper.IsCurrentProcessWindow(activeHwnd))
+        {
+            _previousForegroundWindow = activeHwnd;
+        }
+
         HasBeenShown = true;
         ShowInTaskbar = true;
         if (!IsVisible)
@@ -521,6 +625,7 @@ public partial class MainWindow
             WindowState = WindowState.Normal;
         }
 
+        ResumeSearchAfterShow();
         RefreshWindowDpiIfNeeded(_dpiRefreshRequested);
 
         Topmost = true;
@@ -537,11 +642,13 @@ public partial class MainWindow
 
     public void ShowMousePanel()
     {
+        if (HostRuntimeProfile.IsRuntime) { SharedRuntimeHost.Current?.RequestShell("mouse.show"); return; }
         _quickPanel?.ShowAtMouse();
     }
 
     public void HideMousePanel()
     {
+        if (HostRuntimeProfile.IsRuntime) { SharedRuntimeHost.Current?.RequestShell("mouse.hide"); return; }
         _quickPanel?.Hide();
     }
 
@@ -565,18 +672,28 @@ public partial class MainWindow
 
     private void StartStartupExtensions()
     {
+        if (!HostRuntimeProfile.OwnsBackgroundServices) return;
         _ = Task.Run(async () =>
         {
             // 给软件一点初始化时间
             await Task.Delay(3000);
-            
+
+            // Scheduler 属于宿主级后台能力，不依赖小程序启动完成。
+            await Dispatcher.InvokeAsync(StartExtensionScheduler);
+
             var startupCommands = _allCommands
                 .Where(x => x.Startup?.Mode == "on_app_launch")
                 .ToList();
 
-            foreach (var command in startupCommands)
+            async Task StartStartupCommandAsync(CommandItem command)
             {
-                await Dispatcher.InvokeAsync(async () => 
+                if (RunningExtensionRegistry.IsRunning(command.ExtensionId))
+                {
+                    HostAssets.AppendLog($"Startup extension already running, skipping: {command.Title} ({command.ExtensionId})");
+                    return;
+                }
+
+                await Dispatcher.InvokeAsync(async () =>
                 {
                     try
                     {
@@ -588,22 +705,50 @@ public partial class MainWindow
                         HostAssets.AppendLog($"Failed to start extension {command.Title}: {ex.Message}");
                     }
                 });
-                
-                // 多个自启动扩展之间稍微间隔下，避免瞬间压力过大
+
                 await Task.Delay(500);
             }
 
-            // 启动定时调度服务
-            await Dispatcher.InvokeAsync(() => StartExtensionScheduler());
+            // 同时配置了 on_app_launch 与 idle 的小程序必须先以 app-startup 身份常驻，
+            // 再开启 Idle Trigger；否则机器在 Runtime 重启前已经闲置足够久时，
+            // Idle Trigger 会抢先把它以 launchSource=idle 启动。
+            var idleStartupCommands = startupCommands
+                .Where(x => x.Startup?.Idle?.Enabled == true)
+                .ToList();
+            try
+            {
+                foreach (var command in idleStartupCommands)
+                {
+                    await StartStartupCommandAsync(command);
+                }
+            }
+            finally
+            {
+                // Even if a startup extension fails, the idle dispatcher must survive Runtime startup.
+                await Dispatcher.InvokeAsync(StartExtensionIdleTriggerService);
+            }
+
+            foreach (var command in startupCommands.Except(idleStartupCommands))
+            {
+                await StartStartupCommandAsync(command);
+            }
+
         });
     }
 
     private ExtensionSchedulerService? _extensionScheduler;
+    private ExtensionIdleTriggerService? _extensionIdleTriggerService;
 
     private void StartExtensionScheduler()
     {
         _extensionScheduler ??= new ExtensionSchedulerService(this);
         _extensionScheduler.Start();
+    }
+
+    private void StartExtensionIdleTriggerService()
+    {
+        _extensionIdleTriggerService ??= new ExtensionIdleTriggerService(this);
+        _extensionIdleTriggerService.Start();
     }
 
     /// <summary>
@@ -612,6 +757,14 @@ public partial class MainWindow
     public async Task ExecuteScheduledExtensionAsync(CommandItem command)
     {
         await ExecuteCommandAsync(command, launchSource: "scheduler");
+    }
+
+    /// <summary>
+    /// 供 ExtensionIdleTriggerService 调用，执行闲置触发的小程序。
+    /// </summary>
+    public async Task ExecuteIdleTriggeredExtensionAsync(CommandItem command)
+    {
+        await ExecuteCommandAsync(command, launchSource: "idle");
     }
 
     /// <summary>
@@ -815,11 +968,17 @@ public partial class MainWindow
         }
 
         var result = new List<RadialMenuRuntimeItem>();
+        bool isAppPage = targetPage != null && !string.IsNullOrEmpty(targetPage.ContextProcessName);
+        RadialMenuPageSettings? globalPage = isAppPage
+            ? radial.Pages.FirstOrDefault(item => string.IsNullOrEmpty(item.ContextProcessName))
+            : null;
+
         for (var index = 0; index < RadialMenuSettings.TotalSlotCount; index++)
         {
             string? extensionId = null;
             string? displayTitle = null;
             string? childPageId = null;
+            bool isShadow = false;
 
             if (targetPage != null)
             {
@@ -828,11 +987,37 @@ public partial class MainWindow
                 childPageId = targetPage.ChildPageIds.ElementAtOrDefault(index);
             }
 
+            // 如果当前在应用专属轮盘下，且该槽位未配置专属内容且未显式屏蔽（"__disabled__" / "__empty__"）
+            if (isAppPage &&
+                string.IsNullOrWhiteSpace(extensionId) &&
+                string.IsNullOrWhiteSpace(childPageId) &&
+                globalPage != null)
+            {
+                var globalExtId = globalPage.Slots.ElementAtOrDefault(index);
+                var globalChildId = globalPage.ChildPageIds.ElementAtOrDefault(index);
+                if (!string.IsNullOrWhiteSpace(globalExtId) || !string.IsNullOrWhiteSpace(globalChildId))
+                {
+                    extensionId = globalExtId;
+                    displayTitle = globalPage.SlotTitles.ElementAtOrDefault(index);
+                    childPageId = globalChildId;
+                    isShadow = true;
+                }
+            }
+            else if (string.Equals(extensionId, "__disabled__", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(extensionId, "__empty__", StringComparison.OrdinalIgnoreCase))
+            {
+                // 显式屏蔽该槽位，不继承全局
+                extensionId = null;
+                displayTitle = null;
+                childPageId = null;
+                isShadow = false;
+            }
+
             var command = string.IsNullOrWhiteSpace(extensionId)
                 ? null
                 : ResolveRadialCommand(extensionId, allCommands, displayTitle);
             
-            result.Add(new RadialMenuRuntimeItem(command, childPageId ?? string.Empty));
+            result.Add(new RadialMenuRuntimeItem(command, childPageId ?? string.Empty, isShadow));
         }
 
         return result;
@@ -865,6 +1050,76 @@ public partial class MainWindow
             resultKind: isFolder ? ResultItemKind.Folder : ResultItemKind.File,
             resultProviderTitle: "文件",
             iconSourceOverride: NativeFileIconService.GetIcon(fullPath, isFolder));
+    }
+
+    public const string QuickNotePrefix = "quicknote:";
+
+    public static bool IsQuickNoteCommand(CommandItem? command)
+    {
+        if (command == null) return false;
+        return command.ExtensionId.StartsWith(QuickNotePrefix, StringComparison.OrdinalIgnoreCase) ||
+               (string.Equals(command.Category, "便签", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(command.OpenTarget) && File.Exists(command.OpenTarget));
+    }
+
+    public static CommandItem CreateQuickNoteCommand(string path, string? extensionId = null, string? displayTitle = null)
+    {
+        var fullPath = Path.GetFullPath(path);
+        string text = string.Empty;
+        if (File.Exists(fullPath))
+        {
+            try
+            {
+                text = File.ReadAllText(fullPath, System.Text.Encoding.UTF8);
+            }
+            catch
+            {
+                // Ignore
+            }
+        }
+
+        var effectiveTitle = displayTitle;
+        if (string.IsNullOrWhiteSpace(effectiveTitle))
+        {
+            var firstLine = text.Replace("\r", "").Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            if (firstLine.Length > 0 && !string.IsNullOrWhiteSpace(firstLine[0]))
+            {
+                effectiveTitle = firstLine[0].Trim();
+                if (effectiveTitle.Length > 16) effectiveTitle = effectiveTitle[..16] + "...";
+            }
+            else
+            {
+                effectiveTitle = "便签 " + DateTime.Now.ToString("MM-dd HH:mm");
+            }
+        }
+
+        var effExtensionId = !string.IsNullOrWhiteSpace(extensionId) ? extensionId : $"{QuickNotePrefix}{fullPath}";
+        return new CommandItem(
+            glyph: "文",
+            title: effectiveTitle,
+            subtitle: "点击打开便签编辑窗口",
+            category: "便签",
+            accentHex: "#FF10B981",
+            openTarget: fullPath,
+            keywords: [effectiveTitle, "便签", "文本", "note"],
+            source: CommandSource.Local,
+            extensionId: effExtensionId,
+            iconReference: "mdi:note-text");
+    }
+
+    public static void OpenQuickNoteEditor(CommandItem command, Window? owner = null, Action<string, string>? onSaved = null)
+    {
+        var targetFile = command.OpenTarget;
+        if (string.IsNullOrWhiteSpace(targetFile) && command.ExtensionId.StartsWith(QuickNotePrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            targetFile = command.ExtensionId[QuickNotePrefix.Length..];
+        }
+
+        if (string.IsNullOrWhiteSpace(targetFile))
+        {
+            return;
+        }
+
+        PastedTextEditorWindow.Open(targetFile, command.Title, owner, onSaved);
     }
 
     public CommandItem? ResolveSlotCommand(string? extensionId, IReadOnlyList<CommandItem>? allCommands = null, string? displayTitle = null)
@@ -904,6 +1159,45 @@ public partial class MainWindow
                 iconReference: "mdi:shortcut");
         }
 
+        if (extensionId.StartsWith(ExtensionIdPrefixes.ExtensionAction, StringComparison.OrdinalIgnoreCase))
+        {
+            var identity = extensionId[ExtensionIdPrefixes.ExtensionAction.Length..];
+            var divider = identity.LastIndexOf("::", StringComparison.Ordinal);
+            if (divider <= 0 || divider + 2 >= identity.Length)
+                return null;
+            var targetId = identity[..divider];
+            var action = identity[(divider + 2)..];
+            var target = allCommands.FirstOrDefault(c =>
+                c.ExtensionId.Equals(targetId, StringComparison.OrdinalIgnoreCase) &&
+                c.Source == CommandSource.LocalExtension && c.App != null &&
+                c.App.ControlActions?.Contains(action, StringComparer.OrdinalIgnoreCase) == true &&
+                IsExtensionEnabled(c.ExtensionId) &&
+                ExtensionDevicePolicy.CanRun(c.ExtensionId));
+            if (target == null) return null;
+            return new CommandItem(
+                glyph: "扩",
+                title: string.IsNullOrWhiteSpace(displayTitle) ? $"{target.Title} · {action}" : displayTitle.Trim(),
+                subtitle: $"执行小程序动作：{target.Title} / {action}",
+                category: "小程序动作",
+                accentHex: "#FF64748B",
+                openTarget: null,
+                keywords: [target.Title, action, "小程序动作"],
+                source: CommandSource.Local,
+                extensionId: extensionId,
+                iconReference: "mdi:puzzle");
+        }
+
+        if (extensionId.StartsWith(QuickNotePrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            var path = extensionId[QuickNotePrefix.Length..];
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return null;
+            }
+
+            return CreateQuickNoteCommand(path, extensionId, displayTitle);
+        }
+
         const string filePrefix = ExtensionIdPrefixes.SearchResult;
         if (extensionId.StartsWith(filePrefix, StringComparison.OrdinalIgnoreCase))
         {
@@ -918,6 +1212,10 @@ public partial class MainWindow
 
         if (File.Exists(extensionId) || Directory.Exists(extensionId))
         {
+            if (File.Exists(extensionId) && extensionId.StartsWith(HostAssets.PastedNotesPath, StringComparison.OrdinalIgnoreCase))
+            {
+                return CreateQuickNoteCommand(extensionId, $"{QuickNotePrefix}{Path.GetFullPath(extensionId)}", displayTitle);
+            }
             return CreateFileShortcutCommand(extensionId, $"{ExtensionIdPrefixes.SearchResult}{Path.GetFullPath(extensionId)}", displayTitle);
         }
 
@@ -929,6 +1227,45 @@ public partial class MainWindow
         return ResolveSlotCommand(extensionId, allCommands, displayTitle);
     }
 
+    private async Task<bool> TryExecuteExtensionActionAsync(CommandItem runnable)
+    {
+        if (!runnable.ExtensionId.StartsWith(ExtensionIdPrefixes.ExtensionAction, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        try
+        {
+            var identity = runnable.ExtensionId[ExtensionIdPrefixes.ExtensionAction.Length..];
+            var delimiter = identity.LastIndexOf("::", StringComparison.Ordinal);
+            if (delimiter <= 0 || delimiter + 2 >= identity.Length)
+                throw new ArgumentException("无效的小程序动作绑定。");
+            var targetId = identity[..delimiter];
+            var action = identity[(delimiter + 2)..];
+            var target = _allCommands.FirstOrDefault(c =>
+                c.ExtensionId.Equals(targetId, StringComparison.OrdinalIgnoreCase) &&
+                c.Source == CommandSource.LocalExtension && c.App != null &&
+                c.App.ControlActions?.Contains(action, StringComparer.OrdinalIgnoreCase) == true &&
+                IsExtensionEnabled(c.ExtensionId) &&
+                ExtensionDevicePolicy.CanRun(c.ExtensionId));
+            if (target == null)
+                throw new InvalidOperationException("目标小程序未安装、不可用或未声明该动作。");
+
+            var result = await AppExtensionWindow.ExecuteExtensionControlAsync(target, action);
+            var detail = result.TryGetProperty("playing", out var state) &&
+                state.ValueKind is JsonValueKind.True or JsonValueKind.False
+                ? (state.GetBoolean() ? "运行中" : "已停止") : "已完成";
+            RecordCommandUsage(runnable);
+            HostAssets.AppendRecent(runnable.Title);
+            HostAssets.AppendLog($"Extension action succeeded: extension={targetId}, action={action}");
+            LastRunMessage = $"{target.Title}：{action} {detail}";
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"Extension action failed: slot={runnable.ExtensionId}, error={ex}");
+            LastRunMessage = $"小程序动作失败：{ex.Message}";
+        }
+        return true;
+    }
+
     private async Task<bool> TryExecuteSimulatedKeystrokeAsync(CommandItem runnable)
     {
         const string simulatedKeyPrefix = ExtensionIdPrefixes.SimulatedKey;
@@ -938,7 +1275,7 @@ public partial class MainWindow
         }
 
         var shortcut = runnable.ExtensionId[simulatedKeyPrefix.Length..].Trim();
-        if (!TryParseSimulatedShortcut(shortcut, out var modifiers, out var key))
+        if (!TryParseSimulatedShortcut(shortcut, out var modifierKeys, out var key))
         {
             HostAssets.AppendLog($"Simulated keystroke parse failed: {shortcut}");
             LastRunMessage = $"模拟按键无效：{shortcut}";
@@ -947,15 +1284,21 @@ public partial class MainWindow
 
         try
         {
-            // 模拟按键必须发给“用户此刻的目标窗口”：启动器自己持有焦点时不先收起，
-            // SendInput 会把组合键打进启动器自己的搜索框
+            // 模拟按键必须发给“用户此刻的目标窗口”：
+            // 1. 若启动器搜索主窗口当前可见，先收起并等待窗口切换完成，避免组合键打进启动器自身搜索框
             if (IsVisible)
             {
                 HideToTray();
                 await Task.Delay(150);
             }
+            else
+            {
+                // 2. 若从燕环轮盘、快捷面板或手势隐藏后触发，给予目标前台窗口（如 Blender、VSCode 等）
+                // 充足的焦点切换与事件循环就绪缓冲，防止在 WM_ACTIVATE / WM_SETFOCUS 过渡期丢失修饰键
+                await Task.Delay(80);
+            }
 
-            var sent = SendSimulatedKeystroke(modifiers, key, out var inputCount, out var lastError);
+            var (sent, inputCount, lastError) = await SendSimulatedKeystrokeAsync(modifierKeys, key);
             HostAssets.AppendLog($"Simulated keystroke SendInput: shortcut={shortcut}, sent={sent}/{inputCount}, inputSize={Marshal.SizeOf<INPUT>()}, lastError={lastError}.");
             if (sent != inputCount)
             {
@@ -976,9 +1319,9 @@ public partial class MainWindow
         return true;
     }
 
-    private static bool TryParseSimulatedShortcut(string shortcut, out uint modifiers, out Key key)
+    private static bool TryParseSimulatedShortcut(string shortcut, out List<ushort> modifierKeys, out Key key)
     {
-        modifiers = 0;
+        modifierKeys = new List<ushort>(4);
         key = Key.None;
         if (string.IsNullOrWhiteSpace(shortcut) || IsDoubleTapShortcut(shortcut))
         {
@@ -997,39 +1340,26 @@ public partial class MainWindow
             var segment = segments[index];
             var lower = segment.ToLowerInvariant();
 
-            switch (lower)
+            ushort modVk = lower switch
             {
-                case "ctrl":
-                case "control":
-                case "lctrl":
-                case "rctrl":
-                case "leftctrl":
-                case "rightctrl":
-                    modifiers |= ModControl;
-                    continue;
-                case "alt":
-                case "menu":
-                case "lalt":
-                case "ralt":
-                case "leftalt":
-                case "rightalt":
-                    modifiers |= ModAlt;
-                    continue;
-                case "shift":
-                case "lshift":
-                case "rshift":
-                case "leftshift":
-                case "rightshift":
-                    modifiers |= ModShift;
-                    continue;
-                case "win":
-                case "windows":
-                case "lwin":
-                case "rwin":
-                case "leftwin":
-                case "rightwin":
-                    modifiers |= ModWin;
-                    continue;
+                "ctrl" or "control" or "lctrl" or "leftctrl" => VkLControl,
+                "rctrl" or "rightctrl" => VkRControl,
+                "alt" or "menu" or "lalt" or "leftalt" => VkLMenu,
+                "ralt" or "rightalt" => VkRMenu,
+                "shift" or "lshift" or "leftshift" => VkLShift,
+                "rshift" or "rightshift" => VkRShift,
+                "win" or "windows" or "lwin" or "leftwin" => VkLWin,
+                "rwin" or "rightwin" => VkRWin,
+                _ => 0
+            };
+
+            if (modVk != 0)
+            {
+                if (!modifierKeys.Contains(modVk))
+                {
+                    modifierKeys.Add(modVk);
+                }
+                continue;
             }
 
             if (key != Key.None)
@@ -1081,84 +1411,87 @@ public partial class MainWindow
             }
         }
 
-        return modifiers != 0 || key != Key.None;
+        return modifierKeys.Count > 0 || key != Key.None;
     }
 
-    private static uint SendSimulatedKeystroke(uint modifiers, Key key, out int inputCount, out int lastError)
+    private static async Task<(uint Sent, int TotalInputs, int LastError)> SendSimulatedKeystrokeAsync(IReadOnlyList<ushort> modKeys, Key key)
     {
-        var modKeys = new List<ushort>(4);
-        if ((modifiers & ModControl) != 0)
-        {
-            modKeys.Add(0x11); // VK_CONTROL
-        }
+        uint totalSent = 0;
+        var totalInputs = 0;
+        var lastError = 0;
 
-        if ((modifiers & ModAlt) != 0)
+        void SendBatch(params INPUT[] batch)
         {
-            modKeys.Add(0x12); // VK_MENU
-        }
+            if (batch.Length == 0)
+            {
+                return;
+            }
 
-        if ((modifiers & ModShift) != 0)
-        {
-            modKeys.Add(0x10); // VK_SHIFT
+            totalInputs += batch.Length;
+            var sent = SendInput((uint)batch.Length, batch, Marshal.SizeOf<INPUT>());
+            if (sent < batch.Length)
+            {
+                lastError = Marshal.GetLastWin32Error();
+            }
+            totalSent += sent;
         }
-
-        if ((modifiers & ModWin) != 0)
-        {
-            modKeys.Add(0x5B); // VK_LWIN
-        }
-
-        var inputs = new List<INPUT>(8);
 
         if (key != Key.None)
         {
             var mainVk = (ushort)KeyInterop.VirtualKeyFromKey(key);
 
-            // 1. 先按下所有修饰键
-            foreach (var modVk in modKeys)
+            // 1. 如果有修饰键，先按顺序按下所有修饰键
+            if (modKeys.Count > 0)
             {
-                inputs.Add(CreateKeyInput(modVk, keyUp: false));
+                var modDown = modKeys.Select(vk => CreateKeyInput(vk, keyUp: false)).ToArray();
+                SendBatch(modDown);
+                // 给前台目标程序（如 Blender、Photoshop、VSCode 等）消息循环充分的时间更新修饰键状态缓存
+                await Task.Delay(30);
             }
 
-            // 2. 按下并释放主按键
-            inputs.Add(CreateKeyInput(mainVk, keyUp: false));
-            inputs.Add(CreateKeyInput(mainVk, keyUp: true));
+            // 2. 按下主按键
+            SendBatch(CreateKeyInput(mainVk, keyUp: false));
 
-            // 3. 逆序释放所有修饰键
-            for (var index = modKeys.Count - 1; index >= 0; index--)
+            // 3. 保持主按键处于按压状态（行程驻留），确保事件循环能够检测到主键按下时的修饰键状态
+            await Task.Delay(30);
+
+            // 4. 释放主按键
+            SendBatch(CreateKeyInput(mainVk, keyUp: true));
+
+            // 5. 如果有修饰键，逆序释放所有修饰键
+            if (modKeys.Count > 0)
             {
-                inputs.Add(CreateKeyInput(modKeys[index], keyUp: true));
+                await Task.Delay(20);
+                var modUp = modKeys.Reverse().Select(vk => CreateKeyInput(vk, keyUp: true)).ToArray();
+                SendBatch(modUp);
             }
         }
         else
         {
-            // 纯修饰键模拟（如单 Ctrl、单 Alt、单 Win、单 Shift 或 Ctrl+Alt 等）
-            // 1. 顺序按下所有修饰键
-            foreach (var modVk in modKeys)
+            // 纯修饰键模拟（如单独模拟 Win 或 Shift）
+            if (modKeys.Count > 0)
             {
-                inputs.Add(CreateKeyInput(modVk, keyUp: false));
-            }
-
-            // 2. 逆序释放所有修饰键
-            for (var index = modKeys.Count - 1; index >= 0; index--)
-            {
-                inputs.Add(CreateKeyInput(modKeys[index], keyUp: true));
+                var modDown = modKeys.Select(vk => CreateKeyInput(vk, keyUp: false)).ToArray();
+                SendBatch(modDown);
+                await Task.Delay(35);
+                var modUp = modKeys.Reverse().Select(vk => CreateKeyInput(vk, keyUp: true)).ToArray();
+                SendBatch(modUp);
             }
         }
 
-        inputCount = inputs.Count;
-        if (inputCount == 0)
-        {
-            lastError = 0;
-            return 0;
-        }
-
-        var sent = SendInput((uint)inputs.Count, inputs.ToArray(), Marshal.SizeOf<INPUT>());
-        lastError = Marshal.GetLastWin32Error();
-        return sent;
+        return (totalSent, totalInputs, lastError);
     }
 
     private static INPUT CreateKeyInput(ushort virtualKey, bool keyUp)
     {
+        var scanCode = (ushort)MapVirtualKey(virtualKey, MapvkVkToVsc);
+        var flags = keyUp ? KeyeventfKeyup : 0u;
+
+        if (IsExtendedKey(virtualKey))
+        {
+            flags |= KeyeventfExtendedkey;
+        }
+
         return new INPUT
         {
             type = InputKeyboard,
@@ -1167,10 +1500,29 @@ public partial class MainWindow
                 ki = new KEYBDINPUT
                 {
                     wVk = virtualKey,
-                    dwFlags = keyUp ? KeyeventfKeyup : 0,
-                    dwExtraInfo = SimulatedInputMarker
+                    wScan = scanCode,
+                    dwFlags = flags,
+                    dwExtraInfo = InputHookService.SyntheticInputMarker
                 }
             }
+        };
+    }
+
+    private static bool IsExtendedKey(ushort vk)
+    {
+        return vk switch
+        {
+            VkRControl or VkRMenu => true,
+            VkLWin or VkRWin => true,
+            0x21 or 0x22 => true, // VK_PRIOR (PageUp), VK_NEXT (PageDown)
+            0x23 or 0x24 => true, // VK_END, VK_HOME
+            0x25 or 0x26 or 0x27 or 0x28 => true, // VK_LEFT, VK_UP, VK_RIGHT, VK_DOWN
+            0x2D or 0x2E => true, // VK_INSERT, VK_DELETE
+            0x5D => true,         // VK_APPS
+            0x6F => true,         // VK_DIVIDE
+            0x2C => true,         // VK_SNAPSHOT (PrintScreen)
+            0x90 => true,         // VK_NUMLOCK
+            _ => false
         };
     }
 
@@ -1293,6 +1645,7 @@ public partial class MainWindow
 
     public void PauseListenerServices()
     {
+        // Listeners are owned in-process by Yanzi.exe.
         _listenerServicesPaused = true;
         StopMousePanelService();
         KeyboardDoubleTapService.Stop();
@@ -1310,6 +1663,7 @@ public partial class MainWindow
 
     public void ResumeListenerServices()
     {
+        // Listeners are owned in-process by Yanzi.exe.
         _listenerServicesPaused = false;
         InputHookService.ReloadSettings();
         StartMousePanelService();
@@ -1427,17 +1781,18 @@ public partial class MainWindow
 
     public void HideToTray()
     {
-        _searchPipelineManager.CancelActive();
         if (OwnedWindows.OfType<Window>().Any(static w => w.IsVisible))
         {
             return;
         }
 
+        SuspendSearchForHide();
+
         if (IsRadialPickerMode)
         {
             SetSearchScopePopupOpen(false);
             if (CapsGuidePopup != null) CapsGuidePopup.IsOpen = false;
-            if (FooterQuickMenuPopup != null) FooterQuickMenuPopup.IsOpen = false;
+            CloseFooterQuickMenu();
             Hide();
             return;
         }
@@ -1445,12 +1800,13 @@ public partial class MainWindow
         ShowInTaskbar = false;
         SetSearchScopePopupOpen(false);
         if (CapsGuidePopup != null) CapsGuidePopup.IsOpen = false;
-        if (FooterQuickMenuPopup != null) FooterQuickMenuPopup.IsOpen = false;
+        CloseFooterQuickMenu();
         Hide();
     }
 
     public void TogglePanelVisibility()
     {
+        if (HostRuntimeProfile.IsRuntime) { SharedRuntimeHost.Current?.RequestShell("launcher.toggle"); return; }
         if (IsVisible)
         {
             HideToTray();
@@ -1505,6 +1861,10 @@ public partial class MainWindow
     {
         if (AllowClose)
         {
+            _extensionScheduler?.Stop();
+            _extensionIdleTriggerService?.Stop();
+            _searchDebounceTimer.Stop();
+            _searchPipelineManager.Dispose();
             NetworkChange.NetworkAvailabilityChanged -= NetworkChange_NetworkAvailabilityChanged;
             NetworkChange.NetworkAddressChanged -= NetworkChange_NetworkAddressChanged;
             Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= SystemEvents_DisplaySettingsChanged;
@@ -1575,7 +1935,8 @@ public partial class MainWindow
             CapsGuidePopup.IsOpen = false;
         }
 
-        if (_isPinned || !IsVisible || IsRadialPickerMode)
+        // AI chat remains visible while the clipboard popup takes focus.
+        if (_isPinned || IsAiChatMode || !IsVisible || IsRadialPickerMode)
         {
             return;
         }
@@ -1595,7 +1956,7 @@ public partial class MainWindow
             return;
         }
 
-        if (FooterQuickMenuPopup.IsOpen || CommandList.ContextMenu?.IsOpen == true)
+        if (_footerQuickMenu?.IsOpen == true || _activeAiChatMenu?.IsOpen == true || CommandList.ContextMenu?.IsOpen == true)
         {
             return;
         }
@@ -1615,7 +1976,7 @@ public partial class MainWindow
         if (!IsVisible)
         {
             if (CapsGuidePopup != null) CapsGuidePopup.IsOpen = false;
-            if (FooterQuickMenuPopup != null) FooterQuickMenuPopup.IsOpen = false;
+            CloseFooterQuickMenu();
         }
     }
 
@@ -1880,6 +2241,7 @@ public partial class MainWindow
 
     private void RefreshExtensionHotkeys()
     {
+        if (!HostRuntimeProfile.GlobalListenersEnabled) return;
         if (_source == null)
         {
             return;
@@ -1888,10 +2250,19 @@ public partial class MainWindow
         UnregisterExtensionHotkeys();
         _nextExtensionHotkeyId = 0x5400;
 
-        foreach (var command in _localExtensionIndex.Values
+        var extensionCommands = _localExtensionIndex.Values
                      .Where(command => IsExtensionEnabled(command.ExtensionId))
-                     .Where(static x => !string.IsNullOrWhiteSpace(x.GlobalShortcut))
-                     .OrderBy(static x => x.Title, StringComparer.OrdinalIgnoreCase))
+                     .Where(static x => !string.IsNullOrWhiteSpace(x.GlobalShortcut));
+
+        var otherCommands = _allCommands
+                     .Where(static x => x.Source != CommandSource.LocalExtension && !string.IsNullOrWhiteSpace(x.GlobalShortcut));
+
+        var allHotkeys = extensionCommands
+                     .Concat(otherCommands)
+                     .DistinctBy(static x => x.ExtensionId)
+                     .OrderBy(static x => x.Title, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var command in allHotkeys)
         {
             if (!TryParseHotkey(command.GlobalShortcut!, out var modifiers, out var key))
             {
@@ -1899,7 +2270,7 @@ public partial class MainWindow
                 continue;
             }
 
-            if (key == Key.None || modifiers == 0)
+            if (key == Key.None || (modifiers == 0 && !HotkeyHelper.IsFunctionOrSpecialKey(key)))
             {
                 HostAssets.AppendLog($"Unsupported extension shortcut skipped: {command.Title} -> {command.GlobalShortcut}");
                 continue;
@@ -1959,8 +2330,36 @@ public partial class MainWindow
 
         var segments = shortcut
             .Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (segments.Length < 2)
+        if (segments.Length == 0)
         {
+            return false;
+        }
+
+        if (segments.Length == 1)
+        {
+            try
+            {
+                var singleKey = segments[0].ToLowerInvariant() switch
+                {
+                    "space" => Key.Space,
+                    "enter" => Key.Enter,
+                    "tab" => Key.Tab,
+                    "esc" or "escape" => Key.Escape,
+                    _ => (Key)new KeyConverter().ConvertFromInvariantString(segments[0])!
+                };
+
+                if (HotkeyHelper.IsFunctionOrSpecialKey(singleKey))
+                {
+                    key = singleKey;
+                    modifiers = 0;
+                    return true;
+                }
+            }
+            catch
+            {
+                return false;
+            }
+
             return false;
         }
 
@@ -2019,6 +2418,7 @@ public partial class MainWindow
 
     private bool RefreshLauncherHotkeyRegistration()
     {
+        if (!HostRuntimeProfile.GlobalListenersEnabled) return true;
         if (_source == null)
         {
             return false;
@@ -2060,6 +2460,7 @@ public partial class MainWindow
 
     private bool RefreshYanmHotkeyRegistration()
     {
+        if (!HostRuntimeProfile.GlobalListenersEnabled) return true;
         if (_source == null)
         {
             return false;
@@ -2093,6 +2494,7 @@ public partial class MainWindow
 
     private bool RefreshRadialHotkeyRegistration()
     {
+        if (!HostRuntimeProfile.GlobalListenersEnabled) return true;
         if (_source == null)
         {
             return false;
@@ -2126,6 +2528,7 @@ public partial class MainWindow
 
     private bool RefreshWindowSnapAssistHotkeyRegistration()
     {
+        if (!HostRuntimeProfile.GlobalListenersEnabled) return true;
         if (_source == null)
         {
             return false;
@@ -2257,6 +2660,9 @@ public partial class MainWindow
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+
+    [DllImport("user32.dll")]
+    private static extern uint MapVirtualKey(uint uCode, uint uMapType);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct INPUT
@@ -2390,6 +2796,11 @@ public partial class MainWindow
 
     private void ReplaceLocalExtensions(IReadOnlyList<CommandItem> commands, string? statusText)
     {
+        SyncNewlyDiscoveredLocalExtensions(commands);
+
+        // Refresh all cached launcher, wheel and quick-panel command entries in
+        // one UI-thread pass. A live extension instance remains running; only
+        // subsequent launches use the new manifest/source.
         _isReplacingLocalExtensions = true;
         try
         {
@@ -2881,6 +3292,30 @@ public partial class MainWindow
         return true;
     }
 
+    public bool TryCopyExtensionDirectoryPath(string extensionId, out string message)
+    {
+        message = string.Empty;
+        if (!_localExtensionIndex.TryGetValue(extensionId, out var command) ||
+            string.IsNullOrWhiteSpace(command.ExtensionDirectoryPath) ||
+            !Directory.Exists(command.ExtensionDirectoryPath))
+        {
+            message = "小程序目录不存在。";
+            return false;
+        }
+
+        try
+        {
+            ClipboardService.SetText(command.ExtensionDirectoryPath!);
+            message = $"已复制路径：{command.ExtensionDirectoryPath}";
+            return true;
+        }
+        catch (Exception ex)
+        {
+            message = $"复制路径失败：{FormatExceptionMessage(ex)}";
+            return false;
+        }
+    }
+
     public Task<(bool ok, string message)> UpdateExtensionShortcutFromSettingsAsync(string extensionId, string? shortcut)
     {
         try
@@ -2894,6 +3329,7 @@ public partial class MainWindow
             var updated = LocalExtensionCatalog.SetGlobalShortcut(extensionId, shortcut);
             UpsertLocalExtensionCommand(updated);
             ApplyFilter(SearchBox.Text);
+            QueuePrivateExtensionUpsertToAccount(updated.ExtensionId);
             QueueBackgroundWebDavSync("extension-shortcut-settings");
 
             var message = string.IsNullOrWhiteSpace(updated.GlobalShortcut)

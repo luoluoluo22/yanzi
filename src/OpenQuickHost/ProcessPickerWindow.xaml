@@ -44,10 +44,10 @@
                             <TextBlock Text="全屏应用自动禁用"
                                        Foreground="White"
                                        FontWeight="SemiBold"
-                                       FontSize="13" />
+                                       FontSize="{DynamicResource FontSizeNormal}" />
                             <TextBlock Text="检测到前台为全屏应用（如独占全屏/全屏无边框游戏）时，自动视为黑名单并暂停快捷呼出"
                                        Foreground="#9EFFFFFF"
-                                       FontSize="11"
+                                       FontSize="{DynamicResource FontSizeSmall}"
                                        Margin="0,3,0,0"
                                        TextWrapping="Wrap" />
                         </StackPanel>
@@ -74,7 +74,7 @@
                                 <StackPanel Orientation="Horizontal">
                                     <Image Source="{Binding Icon}" Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center" />
                                     <TextBlock Text="{Binding ProcessName}" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="White" />
-                                    <Button Content="✕" Width="16" Height="16" Click="RemoveBlacklistItem_Click" Padding="0" Foreground="#FFAAAAAA" FontSize="10" Background="Transparent" BorderThickness="0" Cursor="Hand" />
+                                    <Button Content="✕" Width="16" Height="16" Click="RemoveBlacklistItem_Click" Padding="0" Foreground="#FFAAAAAA" FontSize="{DynamicResource FontSizeTiny}" Background="Transparent" BorderThickness="0" Cursor="Hand" />
                                 </StackPanel>
                             </Border>
                         </DataTemplate>

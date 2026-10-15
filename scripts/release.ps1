@@ -55,7 +55,7 @@ if ($currentVersion -ne $plainVersion) {
 $notesFile = Join-Path $root "RELEASE_NOTES.md"
 if ([string]::IsNullOrWhiteSpace($Notes)) {
     if (Test-Path $notesFile) {
-        $rawNotes = (Get-Content $notesFile -Raw).Trim()
+        $rawNotes = (Get-Content $notesFile -Raw -Encoding UTF8).Trim()
         if (-not [string]::IsNullOrWhiteSpace($rawNotes) -and $rawNotes -notmatch "请在此编辑更新说明") {
             $Notes = $rawNotes
         }

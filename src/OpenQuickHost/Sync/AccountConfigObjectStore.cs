@@ -100,12 +100,19 @@ internal static class AccountConfigObjectStore
         CloudQuickPanelConfigSnapshot? baseSnapshot,
         IEnumerable<LauncherConfigObjectEnvelope> objects)
     {
-        var snapshot = baseSnapshot == null ? new CloudQuickPanelConfigSnapshot() : Clone(baseSnapshot);
-        var objectMap = objects
+        var objectList = objects.ToList();
+        var composedStatic = LauncherConfigObjectStore.Compose(
+            baseSnapshot,
+            objectList,
+            out _,
+            preferObjectsOverBase: true);
+        var snapshot = composedStatic
+            ?? (baseSnapshot == null ? new CloudQuickPanelConfigSnapshot() : Clone(baseSnapshot));
+        var objectMap = objectList
             .Where(static item => !item.Deleted)
             .GroupBy(static item => item.ObjectId, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(static group => group.Key, static group => group.Last(), StringComparer.OrdinalIgnoreCase);
-        var applied = false;
+        var applied = composedStatic != null;
         var latestUpdatedAtUtc = TryParseUtc(snapshot.UpdatedAtUtc) ?? DateTime.MinValue;
 
         if (objectMap.TryGetValue(QuickPanelIndexObjectId, out var quickIndexEnvelope))

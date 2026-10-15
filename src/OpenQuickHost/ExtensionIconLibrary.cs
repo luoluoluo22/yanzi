@@ -43,6 +43,8 @@ internal static class ExtensionIconLibrary
         ["circle-outline"] = "M12,2A10,10 0 1,0 22,12A10,10 0 0,0 12,2M12,4A8,8 0 1,1 4,12A8,8 0 0,1 12,4Z",
         ["refresh"] = "M21,12C21,16.97 16.97,21 12,21C7.03,21 3,16.97 3,12C3,7.03 7.03,3 12,3C14.76,3 17.22,4.25 18.86,6.21 M21,3V8H16",
         ["sync"] = "M12,6V9L16,5L12,1V4A8,8 0 0,0 4,12C4,13.43 4.37,14.77 5.03,15.94L6.47,14.5C6.17,13.73 6,12.89 6,12A6,6 0 0,1 12,6M18.97,8.06L17.53,9.5C17.83,10.27 18,11.11 18,12A6,6 0 0,1 12,18V15L8,19L12,23V20A8,8 0 0,0 20,12C20,10.57 19.63,9.23 18.97,8.06Z",
+        ["startup"] = "M13.13,22.19L11.5,18.36C13.07,17.78 14.54,17 15.9,16.09L13.13,22.19M5.64,12.5L1.81,10.87L7.91,8.1C7,9.46 6.22,10.93 5.64,12.5M21.61,2.39C21.61,2.39 16.66,0.27 11,5.93C8.81,8.12 7.5,10.53 6.65,12.64C6.37,13.34 6.56,14.16 7.14,14.74L9.26,16.86C9.84,17.44 10.66,17.63 11.36,17.35C13.47,16.5 15.88,15.19 18.07,13C23.73,7.34 21.61,2.39 21.61,2.39M14.54,9.46C13.76,8.68 13.76,7.41 14.54,6.63C15.32,5.85 16.59,5.85 17.37,6.63C18.14,7.41 18.14,8.68 17.37,9.46C16.59,10.24 15.32,10.24 14.54,9.46M6.24,22L9.88,18.36C9.54,18.27 9.21,18.12 8.91,17.91L4.83,19.83L6.24,22M2,17.76L4.17,19.17L6.09,15.09C5.88,14.79 5.73,14.46 5.64,14.12L2,17.76Z",
+        ["rocket"] = "M13.13,22.19L11.5,18.36C13.07,17.78 14.54,17 15.9,16.09L13.13,22.19M5.64,12.5L1.81,10.87L7.91,8.1C7,9.46 6.22,10.93 5.64,12.5M21.61,2.39C21.61,2.39 16.66,0.27 11,5.93C8.81,8.12 7.5,10.53 6.65,12.64C6.37,13.34 6.56,14.16 7.14,14.74L9.26,16.86C9.84,17.44 10.66,17.63 11.36,17.35C13.47,16.5 15.88,15.19 18.07,13C23.73,7.34 21.61,2.39 21.61,2.39M14.54,9.46C13.76,8.68 13.76,7.41 14.54,6.63C15.32,5.85 16.59,5.85 17.37,6.63C18.14,7.41 18.14,8.68 17.37,9.46C16.59,10.24 15.32,10.24 14.54,9.46M6.24,22L9.88,18.36C9.54,18.27 9.21,18.12 8.91,17.91L4.83,19.83L6.24,22M2,17.76L4.17,19.17L6.09,15.09C5.88,14.79 5.73,14.46 5.64,14.12L2,17.76Z",
         ["pause"] = "M14,19H18V5H14M6,19H10V5H6V19Z",
         ["logout"] = "M19,3H5C3.89,3 3,3.89 3,5V9H5V5H19V19H5V15H3V19C3,20.11 3.89,21 5,21H19C20.11,21 21,20.11 21,19V5C21,3.89 20.11,3 19,3M10.08,15.58L11.5,17L16.5,12L11.5,7L10.08,8.41L12.67,11H3V13H12.67L10.08,15.58Z",
         ["shortcut"] = "M19,10H17V8H19M19,13H17V11H19M16,10H14V8H16M16,13H14V11H16M16,17H8V15H16M7,10H5V8H7M7,13H5V11H7M8,11H10V13H8M8,8H10V10H8M11,11H13V13H11M11,8H13V10H11M20,5H4C2.89,5 2,5.89 2,7V17A2,2 0 0,0 4,19H20A2,2 0 0,0 22,17V7C22,5.89 21.1,5 20,5Z",
@@ -58,12 +60,17 @@ internal static class ExtensionIconLibrary
         ["monitor-dashboard"] = "M21,16H3V4H21V16M21,2H3C1.89,2 1,2.89 1,4V16A2,2 0 0,0 3,18H10V20H8V22H16V20H14V18H21A2,2 0 0,0 23,16V4C23,2.89 22.1,2 21,2Z",
         ["edit"] = "M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z",
         ["store"] = "M12,18H6V14H12M21,14V12L20,7H4L3,12V14H4V20H14V14H18V20H20V14M20,4H4V6H20V4Z",
+        ["warehouse"] = "M6 19H8V21H6V19M12 3L2 8V21H4V13H20V21H22V8L12 3M8 11H4V9H8V11M14 11H10V9H14V11M20 11H16V9H20V11M6 15H8V17H6V15M10 15H12V17H10V15M10 19H12V21H10V19M14 19H16V21H14V19Z",
         ["stop"] = "M6,6H18V18H6V6Z",
         ["backpack"] = "M19 18V10C19 6.13 15.87 3 12 3C8.13 3 5 6.13 5 10V18C5 19.1 5.9 20 7 20H17C18.1 20 19 19.1 19 18M12 5C14.76 5 17 7.24 17 10V11H7V10C7 7.24 9.24 5 12 5M7 13H17V18H7V13M9 8H15V9.5H9V8Z",
         ["trophy"] = "M18 2H6V4H4C2.9 4 2 4.9 2 6V8C2 10.2 3.8 12 6 12H7.1C7.8 13.8 9.3 15.1 11 15.7V18H8V20H16V18H13V15.7C14.7 15.1 16.2 13.8 16.9 12H18C20.2 12 22 10.2 22 8V6C22 4.9 21.1 4 20 4H18V2M4 6H6V10C4.9 10 4 9.1 4 8V6M20 8C20 9.1 19.1 10 18 10V6H20V8Z",
         ["broom"] = "M19.36,2.72L20.78,4.14L15.06,9.85C16.13,11.39 16.28,13.47 15.38,15.17L12.06,11.85L10.65,13.26L13.97,16.58C12.27,17.48 10.19,17.33 8.65,16.26L2.94,21.97L1.5,20.55L7.24,14.83C6.17,13.29 6.02,11.21 6.92,9.51L10.24,12.83L11.65,11.42L8.33,8.1C10.03,7.2 12.11,7.35 13.65,8.42L19.36,2.72Z",
         ["view-grid"] = "M3,3H10V10H3V3M14,3H21V10H14V3M3,14H10V21H3V14M14,14H21V21H14V14Z",
-        ["view-list"] = "M4,4.5A1.5,1.5 0 0,1 5.5,6A1.5,1.5 0 0,1 4,7.5A1.5,1.5 0 0,1 2.5,6A1.5,1.5 0 0,1 4,4.5M8,5H21V7H8V5M4,10.5A1.5,1.5 0 0,1 5.5,12A1.5,1.5 0 0,1 4,13.5A1.5,1.5 0 0,1 2.5,12A1.5,1.5 0 0,1 4,10.5M8,11H21V13H8V11M4,16.5A1.5,1.5 0 0,1 5.5,18A1.5,1.5 0 0,1 4,19.5A1.5,1.5 0 0,1 2.5,18A1.5,1.5 0 0,1 4,16.5M8,17H21V19H8V17Z"
+        ["view-list"] = "M4,4.5A1.5,1.5 0 0,1 5.5,6A1.5,1.5 0 0,1 4,7.5A1.5,1.5 0 0,1 2.5,6A1.5,1.5 0 0,1 4,4.5M8,5H21V7H8V5M4,10.5A1.5,1.5 0 0,1 5.5,12A1.5,1.5 0 0,1 4,13.5A1.5,1.5 0 0,1 2.5,12A1.5,1.5 0 0,1 4,10.5M8,11H21V13H8V11M4,16.5A1.5,1.5 0 0,1 5.5,18A1.5,1.5 0 0,1 4,19.5A1.5,1.5 0 0,1 2.5,18A1.5,1.5 0 0,1 4,16.5M8,17H21V19H8V17Z",
+        ["volume-high"] = "M14,3.23V5.29C16.89,6.15 19,8.83 19,12C19,15.17 16.89,17.84 14,18.7V20.77C18,19.86 21,16.28 21,12C21,7.72 18,4.14 14,3.23M16.5,12C16.5,10.23 15.5,8.71 14,7.97V16C15.5,15.29 16.5,13.76 16.5,12M3,9V15H7L12,20V4L7,9H3Z",
+        ["volume-medium"] = "M5,9V15H9L14,20V4L9,9H5M18.5,12C18.5,10.23 17.5,8.71 16,7.97V16C17.5,15.29 18.5,13.76 18.5,12Z",
+        ["volume-low"] = "M7,9V15H11L16,20V4L11,9H7Z",
+        ["volume-off"] = "M12,4L9.91,6.09L12,8.18M4.27,3L3,4.27L7.73,9H3V15H7L12,20V13.27L16.25,17.53C15.58,18.04 14.83,18.46 14,18.7V20.77C15.38,20.45 16.63,19.82 17.68,18.96L19.73,21L21,19.73L4.27,3M19,12C19,12.82 18.83,13.61 18.53,14.32L20,15.79C20.64,14.63 21,13.35 21,12C21,7.72 18,4.14 14,3.23V5.29C16.89,6.15 19,8.83 19,12M16.5,12C16.5,10.23 15.5,8.71 14,7.97V10.18L16.45,12.63C16.5,12.43 16.5,12.21 16.5,12Z"
     };
 
     private static readonly IReadOnlyDictionary<string, string> SvgAssetIcons = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -129,33 +136,16 @@ internal static class ExtensionIconLibrary
 
     private static readonly IReadOnlyDictionary<string, string> IconAliases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
     {
-        ["notebook-outline"] = "note",
-        ["notebook-edit-outline"] = "pen",
-        ["note-text-outline"] = "note",
-        ["clipboard-outline"] = "clipboard",
-        ["clipboard-text"] = "clipboard",
-        ["clipboard-text-outline"] = "clipboard",
-        ["clipboard-check"] = "clipboard",
-        ["clipboard-check-outline"] = "clipboard",
-        ["clipboard-edit"] = "clipboard",
-        ["clipboard-edit-outline"] = "clipboard",
-        ["content-copy"] = "clipboard",
-        ["text-box-edit-outline"] = "pen",
-        ["text-box-search-outline"] = "note",
-        ["monitor-dashboard"] = "dashboard",
-        ["view-dashboard-outline"] = "dashboard",
-        ["application-outline"] = "dashboard",
-        ["cog-outline"] = "settings",
-        ["folder-search-outline"] = "folder",
-        ["folder-cog-outline"] = "folder",
-        ["file-search-outline"] = "file",
-        ["code-json"] = "form",
-        ["code-tags"] = "code",
-        ["console"] = "terminal",
-        ["counter"] = "timer",
-        ["compass-outline"] = "location",
-        ["notebook"] = "note",
-        ["magnify"] = "search"
+        // UI actions share one semantic icon vocabulary across menus, cards and dialogs.
+        ["clipboard"] = "clipboard-outline",
+        ["copy"] = "content-copy",
+        ["note"] = "file-document-outline",
+        ["file"] = "file-outline",
+        ["window"] = "window-maximize",
+        ["running"] = "play-circle-outline",
+        ["help-docs"] = "book-open-page-variant",
+        ["open-folder"] = "folder-open-outline",
+        ["trash"] = "delete-outline"
     };
 
     private static readonly IReadOnlyDictionary<string, string> AppIcons = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -187,6 +177,7 @@ internal static class ExtensionIconLibrary
     private static readonly Dictionary<string, ImageSource?> ImageCache = new(StringComparer.OrdinalIgnoreCase);
     public static event Action<string, ImageSource?>? RemoteIconDownloaded;
     private static readonly HashSet<string> DownloadingUrls = [];
+    private static readonly Dictionary<string, DateTimeOffset> RejectedRemoteIcons = new(StringComparer.OrdinalIgnoreCase);
     private static readonly Lazy<IReadOnlyDictionary<string, string>> FullMdiIcons = new(LoadFullMdiIcons);
 
     public static IReadOnlyList<ExtensionIconOption> GetBuiltInOptions()
@@ -298,17 +289,46 @@ internal static class ExtensionIconLibrary
 
     public static ImageSource? ResolveImageSource(string? iconReference, string? extensionDirectoryPath)
     {
-        if (iconReference != null && iconReference.StartsWith("shell:AppsFolder\\", StringComparison.OrdinalIgnoreCase))
+        if (!string.IsNullOrWhiteSpace(iconReference))
         {
-            if (ImageCache.TryGetValue(iconReference, out var cachedUwpImage))
+            var trimmedRef = iconReference.Trim();
+            if (NativeFileIconService.IsDesktopTarget(trimmedRef))
             {
-                return cachedUwpImage;
+                return NativeFileIconService.GetDesktopIcon();
             }
-            var uwpIcon = NativeFileIconService.GetIcon(iconReference, isFolder: false);
-            if (uwpIcon != null)
+
+            if (NativeFileIconService.IsDownloadsTarget(trimmedRef))
             {
-                ImageCache[iconReference] = uwpIcon;
-                return uwpIcon;
+                return NativeFileIconService.GetDownloadsIcon();
+            }
+
+            if (trimmedRef.StartsWith("shell:AppsFolder\\", StringComparison.OrdinalIgnoreCase))
+            {
+                if (ImageCache.TryGetValue(trimmedRef, out var cachedUwpImage))
+                {
+                    return cachedUwpImage;
+                }
+                var uwpIcon = NativeFileIconService.GetIcon(trimmedRef, isFolder: false);
+                if (uwpIcon != null)
+                {
+                    ImageCache[trimmedRef] = uwpIcon;
+                    return uwpIcon;
+                }
+            }
+
+            if (trimmedRef.StartsWith("shell:", StringComparison.OrdinalIgnoreCase) ||
+                trimmedRef.StartsWith("stock:", StringComparison.OrdinalIgnoreCase))
+            {
+                if (ImageCache.TryGetValue(trimmedRef, out var cachedShell))
+                {
+                    return cachedShell;
+                }
+                var shellIcon = NativeFileIconService.GetIcon(trimmedRef, isFolder: true);
+                if (shellIcon != null)
+                {
+                    ImageCache[trimmedRef] = shellIcon;
+                    return shellIcon;
+                }
             }
         }
 
@@ -329,7 +349,7 @@ internal static class ExtensionIconLibrary
                 ? new Uri(resolvedPath, UriKind.Absolute).LocalPath
                 : (File.Exists(resolvedPath) || Directory.Exists(resolvedPath) ? resolvedPath : null);
 
-            HostAssets.AppendLog($"[IconLog] ResolveImageSource: iconReference='{iconReference}', resolvedPath='{resolvedPath}', localPath='{localPath}', exists={(!string.IsNullOrWhiteSpace(localPath) && (File.Exists(localPath) || Directory.Exists(localPath)))}.");
+            HostAssets.AppendDebug($"[IconLog] ResolveImageSource: iconReference='{iconReference}', resolvedPath='{resolvedPath}', localPath='{localPath}', exists={(!string.IsNullOrWhiteSpace(localPath) && (File.Exists(localPath) || Directory.Exists(localPath)))}.");
 
             if (!string.IsNullOrWhiteSpace(localPath) && (File.Exists(localPath) || Directory.Exists(localPath)))
             {
@@ -341,7 +361,10 @@ internal static class ExtensionIconLibrary
                 }
 
                 var systemIcon = NativeFileIconService.GetIcon(localPath, Directory.Exists(localPath));
-                HostAssets.AppendLog($"[IconLog] NativeFileIconService.GetIcon for '{localPath}' returned {(systemIcon != null ? "SUCCESS" : "NULL")}.");
+                if (systemIcon == null)
+                {
+                    HostAssets.AppendDebug($"[IconLog] NativeFileIconService.GetIcon returned NULL for '{localPath}'.");
+                }
                 if (systemIcon != null)
                 {
                     ImageCache[resolvedPath] = systemIcon;
@@ -351,7 +374,7 @@ internal static class ExtensionIconLibrary
                 if (CanExtractAssociatedIcon(localPath))
                 {
                     var extracted = TryExtractAssociatedIcon(localPath);
-                    HostAssets.AppendLog($"[IconLog] TryExtractAssociatedIcon for '{localPath}' returned {(extracted != null ? "SUCCESS" : "NULL")}.");
+                    HostAssets.AppendDebug($"[IconLog] TryExtractAssociatedIcon for '{localPath}' returned {(extracted != null ? "SUCCESS" : "NULL")}.");
                     if (extracted != null)
                     {
                         ImageCache[resolvedPath] = extracted;
@@ -707,7 +730,7 @@ internal static class ExtensionIconLibrary
     {
         try
         {
-            var resource = System.Windows.Application.GetResourceStream(new Uri("pack://application:,,,/Assets/mdi-icons.json", UriKind.Absolute));
+            var resource = System.Windows.Application.GetResourceStream(new Uri("/Yanzi;component/Assets/mdi-icons.json", UriKind.Relative));
             if (resource == null)
             {
                 HostAssets.AppendLog("Full MDI icon resource not found: Assets/mdi-icons.json");
@@ -727,23 +750,37 @@ internal static class ExtensionIconLibrary
 
     private static Geometry LoadSvgAssetGeometry(string fileName)
     {
-        var resource = System.Windows.Application.GetResourceStream(new Uri($"pack://application:,,,/Assets/Icons/{fileName}", UriKind.Absolute))
+        var resource = System.Windows.Application.GetResourceStream(new Uri($"/Yanzi;component/Assets/Icons/{fileName}", UriKind.Relative))
             ?? throw new InvalidOperationException($"Icon resource not found: {fileName}");
 
         using var stream = resource.Stream;
         var document = XDocument.Load(stream);
-        var pathData = document
+        var paths = document
             .Descendants()
-            .FirstOrDefault(static element => string.Equals(element.Name.LocalName, "path", StringComparison.OrdinalIgnoreCase))
-            ?.Attribute("d")
-            ?.Value;
+            .Where(static element => string.Equals(element.Name.LocalName, "path", StringComparison.OrdinalIgnoreCase))
+            .Select(static element => element.Attribute("d")?.Value)
+            .Where(static data => !string.IsNullOrWhiteSpace(data))
+            .ToArray();
 
-        if (string.IsNullOrWhiteSpace(pathData))
+        if (paths.Length == 0)
         {
             throw new InvalidOperationException($"Icon resource has no path data: {fileName}");
         }
 
-        var geometry = Geometry.Parse(pathData);
+        Geometry geometry;
+        if (paths.Length == 1)
+        {
+            geometry = Geometry.Parse(paths[0]!);
+        }
+        else
+        {
+            var group = new GeometryGroup { FillRule = FillRule.Nonzero };
+            foreach (var path in paths)
+            {
+                group.Children.Add(Geometry.Parse(path!));
+            }
+            geometry = group;
+        }
         var bounds = geometry.Bounds;
         if (!bounds.IsEmpty && (Math.Abs(bounds.X) > double.Epsilon || Math.Abs(bounds.Y) > double.Epsilon))
         {
@@ -882,12 +919,34 @@ internal static class ExtensionIconLibrary
         var cachePath = Path.Combine(cacheDirectory, ComputeCacheName(uri.AbsoluteUri));
         if (File.Exists(cachePath))
         {
-            return new Uri(cachePath).AbsoluteUri;
+            try
+            {
+                using var cached = File.OpenRead(cachePath);
+                var prefix = new byte[Math.Min(256, (int)Math.Min(cached.Length, 256))];
+                _ = cached.Read(prefix);
+                if (!LooksLikeErrorPage(prefix))
+                {
+                    return new Uri(cachePath).AbsoluteUri;
+                }
+
+                cached.Close();
+                File.Delete(cachePath);
+                ImageCache.Remove(new Uri(cachePath).AbsoluteUri);
+                HostAssets.AppendLog($"Rejected invalid cached icon response: host={uri.Host}, key={Path.GetFileName(cachePath)}.");
+            }
+            catch (IOException)
+            {
+                return null;
+            }
         }
 
         var url = uri.AbsoluteUri;
         lock (DownloadingUrls)
         {
+            if (RejectedRemoteIcons.TryGetValue(url, out var retryAfter) && retryAfter > DateTimeOffset.UtcNow)
+            {
+                return null;
+            }
             if (DownloadingUrls.Contains(url))
             {
                 return null;
@@ -902,6 +961,16 @@ internal static class ExtensionIconLibrary
                 var bytes = await IconHttpClient.GetByteArrayAsync(uri);
                 if (bytes.Length > 0)
                 {
+                    if (LooksLikeErrorPage(bytes))
+                    {
+                        lock (DownloadingUrls)
+                        {
+                            RejectedRemoteIcons[url] = DateTimeOffset.UtcNow.AddHours(1);
+                        }
+                        HostAssets.AppendLog($"Remote icon returned an error page: host={uri.Host}, key={Path.GetFileName(cachePath)}.");
+                        return;
+                    }
+
                     File.WriteAllBytes(cachePath, bytes);
 
                     var dispatcher = System.Windows.Application.Current?.Dispatcher;
@@ -926,7 +995,7 @@ internal static class ExtensionIconLibrary
             }
             catch (Exception ex)
             {
-                HostAssets.AppendLog($"Failed to download remote icon {url}: {ex.Message}");
+                HostAssets.AppendLog($"Failed to download remote icon: host={uri.Host}, key={Path.GetFileName(cachePath)}, error={ex.Message}");
             }
             finally
             {
@@ -944,6 +1013,14 @@ internal static class ExtensionIconLibrary
     {
         var hash = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
         return hash + ".img";
+    }
+
+    private static bool LooksLikeErrorPage(ReadOnlySpan<byte> bytes)
+    {
+        var text = System.Text.Encoding.UTF8.GetString(bytes[..Math.Min(bytes.Length, 256)]).TrimStart('\uFEFF', ' ', '\r', '\n', '\t');
+        return text.StartsWith("<!doctype html", StringComparison.OrdinalIgnoreCase) ||
+               text.StartsWith("<html", StringComparison.OrdinalIgnoreCase) ||
+               text.StartsWith("{\"error", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool TryParseBuiltinReference(string? iconReference, out string library, out string name)

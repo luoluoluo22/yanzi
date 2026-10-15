@@ -6,9 +6,9 @@
   <link rel="icon" href="/assets/logo-white-transparent.png" type="image/png">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>燕子扩展商店</title>
+  <title>燕子小程序商店</title>
   <link rel="canonical" href="https://yanzi.luoluoluo.cc.cd/store.html">
-  <meta name="description" content="燕子扩展商店，帮你快速找到常用工具和现成扩展。">
+  <meta name="description" content="燕子小程序商店，帮你快速找到常用工具和现成小程序。">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link
@@ -228,6 +228,43 @@
       line-height: 1.8;
       font-size: 1.1rem;
     }
+
+    .store-owner-panel {
+      margin-top: 1.75rem;
+      padding: 1.25rem 1.5rem;
+      border-radius: 12px;
+      background: rgba(239, 68, 68, 0.06);
+      border: 1px dashed rgba(239, 68, 68, 0.35);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1.25rem;
+      flex-wrap: wrap;
+    }
+
+    .store-owner-btn-danger {
+      background: rgba(239, 68, 68, 0.12);
+      border: 1px solid #ef4444;
+      color: #ef4444;
+      cursor: pointer;
+      padding: 0.55rem 1.25rem;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.9rem;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+
+    .store-owner-btn-danger:hover:not(:disabled) {
+      background: rgba(239, 68, 68, 0.25);
+      border-color: #f87171;
+      color: #fff;
+    }
+
+    .store-owner-btn-danger:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
   </style>
   </head>
 
@@ -243,7 +280,7 @@
       </div>
       <nav>
         <a href="/">首页</a>
-        <a href="/store.html" class="active">扩展商店</a>
+        <a href="/store.html" class="active">小程序商店</a>
         <a href="/yanm.html">燕幕</a>
         <a href="/docs/product-overview.html">文档</a>
         <a href="/index.html#download">免费下载</a>
@@ -260,7 +297,7 @@
         <div class="store-search-container">
           <div class="store-search-wrapper">
             <span class="search-icon">🔍</span>
-            <input id="store-search" class="store-search-input" type="search" placeholder="搜索扩展名、关键词...">
+            <input id="store-search" class="store-search-input" type="search" placeholder="搜索小程序、关键词...">
           </div>
           <div style="margin-top: 1.5rem; display: flex; justify-content: center; gap: 1.5rem;">
             <p id="store-status" style="margin: 0; font-size: 0.9rem; color: var(--text-dim);">找一找适合你的现成工具</p>
@@ -333,7 +370,7 @@
         storeStatus.textContent = totalItems ? `共 ${totalItems} 个工具` : "找一找适合你的现成工具";
 
         if (!items.length) {
-          storeGrid.innerHTML = `<p style="grid-column: 1/-1; text-align: center; padding: 4rem; color: var(--text-dim);">没有找到匹配的扩展</p>`;
+          storeGrid.innerHTML = `<p style="grid-column: 1/-1; text-align: center; padding: 4rem; color: var(--text-dim);">没有找到匹配的小程序</p>`;
           renderPagination();
           return;
         }
@@ -360,6 +397,26 @@
         renderPagination();
       }
 
+      function isCurrentUserPublisher(item) {
+        if (!item) return false;
+        const user = window.YanziAuth ? window.YanziAuth.getUser() : null;
+        if (!user) return false;
+
+        const currentUserId = String(user.userId || user.id || "").trim();
+        const currentUsername = String(user.username || "").trim().toLowerCase();
+
+        const itemPublisherId = String(item.publisher_user_id || "").trim();
+        const itemPublisherName = String(item.publisher_username || "").trim().toLowerCase();
+
+        if (itemPublisherId && currentUserId && itemPublisherId === currentUserId) {
+          return true;
+        }
+        if (itemPublisherName && currentUsername && itemPublisherName === currentUsername) {
+          return true;
+        }
+        return false;
+      }
+
       function renderDetail(item) {
         document.body.classList.add("view-mode-detail");
         window.scrollTo(0, 0);
@@ -377,18 +434,38 @@
           : `<button class="button primary" style="flex: 1; opacity: 0.5; cursor: not-allowed;" type="button" disabled>暂无安装包</button>`;
 
         const downloadBtnMarkup = hasArchive
-          ? `<a class="button secondary" style="flex: 1; text-align: center; display: inline-flex; align-items: center; justify-content: center;" href="${escapeHtml(getPackageUrl(item))}">下载扩展包</a>`
-          : `<a class="button secondary" style="flex: 1; opacity: 0.5; cursor: not-allowed; pointer-events: none; text-align: center; display: inline-flex; align-items: center; justify-content: center;" href="javascript:void(0);" disabled>暂无扩展包</a>`;
+          ? `<a class="button secondary" style="flex: 1; text-align: center; display: inline-flex; align-items: center; justify-content: center;" href="${escapeHtml(getPackageUrl(item))}">下载小程序包</a>`
+          : `<a class="button secondary" style="flex: 1; opacity: 0.5; cursor: not-allowed; pointer-events: none; text-align: center; display: inline-flex; align-items: center; justify-content: center;" href="javascript:void(0);" disabled>暂无小程序包</a>`;
 
         const archiveNoticeMarkup = hasArchive
           ? ""
-          : `<p style="margin-top: 1rem; font-size: 0.9rem; color: #ffaa00;">提示：该扩展的发布者尚未上传安装包。</p>`;
+          : `<p style="margin-top: 1rem; font-size: 0.9rem; color: #ffaa00;">提示：该小程序的发布者尚未上传安装包。</p>`;
+
+        const isOwner = isCurrentUserPublisher(item);
+        const ownerActionMarkup = isOwner
+          ? `
+          <div class="store-owner-panel">
+            <div style="flex: 1; min-width: 240px;">
+              <div style="font-weight: 600; color: #f87171; font-size: 0.95rem; display: flex; align-items: center; gap: 6px;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                发布者管理
+              </div>
+              <div style="font-size: 0.85rem; color: var(--text-dim); margin-top: 4px;">
+                检测到你是该小程序的原发布者。如果此小程序本地已删除、废弃或无需在线公开，可直接将其从商店下线。
+              </div>
+            </div>
+            <button id="btn-unpublish-extension" class="store-owner-btn-danger" type="button">
+              从商店下线
+            </button>
+          </div>
+          `
+          : "";
 
         storeDetail.innerHTML = `
         <div class="back-nav">
           <button class="back-button" onclick="goBack()">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
-            返回扩展商店
+            返回小程序商店
           </button>
         </div>
         <div class="detail-head">
@@ -411,6 +488,7 @@
             ${downloadBtnMarkup}
           </div>
           ${archiveNoticeMarkup}
+          ${ownerActionMarkup}
 
           ${buildInstallAssist(item)}
           
@@ -424,6 +502,33 @@
           button.addEventListener("click", () => {
             const protocol = button.getAttribute("data-install-protocol");
             if (protocol) location.href = protocol;
+          });
+        }
+
+        const unpublishBtn = storeDetail.querySelector("#btn-unpublish-extension");
+        if (unpublishBtn) {
+          unpublishBtn.addEventListener("click", async () => {
+            const displayName = item.display_name || item.extension_id;
+            if (!confirm(`确定要将小程序「${displayName}」从商店下线吗？\n\n下线后其他用户将无法在小程序商店中浏览和安装此小程序。`)) {
+              return;
+            }
+            unpublishBtn.disabled = true;
+            unpublishBtn.textContent = "正在下线...";
+            try {
+              if (!window.YanziAuth || !window.YanziAuth.getToken()) {
+                throw new Error("未检测到登录状态，请先登录发布者账号。");
+              }
+              await window.YanziAuth.api(`/v1/extensions/${encodeURIComponent(item.extension_id)}`, {
+                method: "DELETE"
+              });
+              alert(`小程序「${displayName}」已成功从商店下线！`);
+              goBack();
+              await loadStorePage(currentPage);
+            } catch (err) {
+              alert("下线失败：" + (err.message || "未知错误"));
+              unpublishBtn.disabled = false;
+              unpublishBtn.textContent = "从商店下线";
+            }
           });
         }
       }
@@ -528,7 +633,7 @@
           currentPage = Number(payload.page || 1);
           return Array.isArray(payload.items) ? payload.items : [];
         } catch {
-          storeStatus.textContent = "扩展数据加载失败";
+          storeStatus.textContent = "小程序数据加载失败";
           totalItems = 0;
           totalPages = 1;
           return [];
@@ -563,7 +668,7 @@
           }
         } catch {
           document.body.classList.add("view-mode-detail");
-          renderEmptyDetail("加载失败", "没有找到对应的扩展详情。");
+          renderEmptyDetail("加载失败", "没有找到对应的小程序详情。");
         }
       }
 
@@ -655,16 +760,55 @@
         }).format(date);
       }
 
+      const PRESET_ACCENTS = [
+        "#0ea5e9", // 天蓝
+        "#3b82f6", // 经典蓝
+        "#6366f1", // 靛蓝
+        "#8b5cf6", // 紫罗兰
+        "#a855f7", // 炫彩紫
+        "#ec4899", // 桃粉
+        "#f43f5e", // 珊瑚红
+        "#f97316", // 活力橙
+        "#10b981", // 翡翠绿
+        "#14b8a6", // 青绿
+        "#06b6d4"  // 湖蓝
+      ];
+
+      function getDeterministicColor(str) {
+        let hash = 0;
+        const text = String(str || "yanzi");
+        for (let i = 0; i < text.length; i++) {
+          hash = (hash << 5) - hash + text.charCodeAt(i);
+          hash |= 0;
+        }
+        const index = Math.abs(hash) % PRESET_ACCENTS.length;
+        return PRESET_ACCENTS[index];
+      }
+
+      function handleStoreIconError(img, fallbackColor, displayName) {
+        img.onerror = null;
+        img.src = "/assets/logo-white-transparent.png";
+        img.style.filter = "drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2))";
+        const wrapper = img.closest(".store-card-icon-wrapper");
+        if (wrapper) {
+          const bg = fallbackColor || getDeterministicColor(displayName);
+          wrapper.style.setProperty("background", bg, "important");
+          wrapper.style.setProperty("border", "none", "important");
+          wrapper.style.setProperty("color", "#ffffff", "important");
+        }
+      }
+
       function renderIconMarkup(item, size) {
         const icon = String(item.icon || item.manifest?.icon || "").trim();
+        const color = normalizeCssColor(item.accent_hex || item.manifest?.accentHex || item.manifest?.accent_hex, item.display_name);
         const isDefaultLogo = !icon || icon.includes("logo-white-transparent") || icon.includes("logo-white.png");
-        
+
         if (isDefaultLogo) {
-          return `<img src="/assets/logo-white-transparent.png" alt="${escapeHtml(item.display_name)}" width="${size}" height="${size}" loading="lazy">`;
+          return `<img src="/assets/logo-white-transparent.png" alt="${escapeHtml(item.display_name)}" width="${size}" height="${size}" loading="lazy" style="filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));">`;
         }
 
         if (/^https?:\/\//i.test(icon)) {
-          return `<img src="${escapeHtml(icon)}" alt="${escapeHtml(item.display_name)}" width="${size}" height="${size}" loading="lazy" referrerpolicy="no-referrer">`;
+          return `<img src="${escapeHtml(icon)}" alt="${escapeHtml(item.display_name)}" width="${size}" height="${size}" loading="lazy" referrerpolicy="no-referrer" onerror="handleStoreIconError(this, '${escapeHtml(color)}', '${escapeHtml(item.display_name)}')">`;
         }
 
         const mdiName = normalizeMdiIconName(icon);
@@ -673,31 +817,39 @@
           return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="${escapeHtml(mdiPath)}" fill="currentColor"></path></svg>`;
         }
 
-        return `<img src="/assets/logo-white-transparent.png" alt="${escapeHtml(item.display_name)}" width="${size}" height="${size}" loading="lazy">`;
+        return `<img src="/assets/logo-white-transparent.png" alt="${escapeHtml(item.display_name)}" width="${size}" height="${size}" loading="lazy" style="filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));">`;
       }
 
-      function normalizeCssColor(hex) {
-        if (!hex || typeof hex !== "string") return "#38BDF8";
+      function normalizeCssColor(hex, displayName = "") {
+        if (!hex || typeof hex !== "string") {
+          return getDeterministicColor(displayName);
+        }
         hex = hex.trim();
         if (hex.startsWith("#") && hex.length === 9) {
-          // #FFEC4899 (ARGB) -> #EC4899 (RGB)
-          return "#" + hex.slice(3);
+          const alpha = hex.slice(1, 3).toLowerCase();
+          const rgb = hex.slice(3);
+          if (alpha === "00" || rgb === "000000") {
+            return getDeterministicColor(displayName);
+          }
+          return "#" + rgb;
+        }
+        if (hex === "#000000" || hex === "#000" || hex.toLowerCase() === "transparent") {
+          return getDeterministicColor(displayName);
         }
         return hex;
       }
 
       function getIconWrapperStyle(item, isDetail = false) {
         const icon = String(item.icon || item.manifest?.icon || "").trim();
-        const isDefaultLogo = !icon || icon.includes("logo-white-transparent") || icon.includes("logo-white.png") || !/^https?:\/\//i.test(icon);
-        const isImage = !isDefaultLogo && /^https?:\/\//i.test(icon);
-        const rawColor = item.accent_hex || item.manifest?.accentHex || item.manifest?.accent_hex || "#38BDF8";
-        const color = normalizeCssColor(rawColor);
-        
-        if (isImage) {
+        const isDefaultLogo = !icon || icon.includes("logo-white-transparent") || icon.includes("logo-white.png");
+        const hasCustomImage = !isDefaultLogo && /^https?:\/\//i.test(icon);
+        const color = normalizeCssColor(item.accent_hex || item.manifest?.accentHex || item.manifest?.accent_hex, item.display_name);
+
+        if (hasCustomImage) {
           if (isDetail) {
-            return `width: 48px; height: 48px; border-radius: 12px; margin-bottom: 0; background: transparent !important; border: 1px solid var(--border) !important;`;
+            return `width: 48px; height: 48px; border-radius: 12px; margin-bottom: 0; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; overflow: hidden;`;
           }
-          return `background: transparent !important; border: 1px solid var(--border) !important;`;
+          return `background: rgba(255, 255, 255, 0.05); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; overflow: hidden;`;
         } else {
           if (isDetail) {
             return `width: 48px; height: 48px; border-radius: 12px; margin-bottom: 0; background: ${color} !important; border: none !important; color: white !important; display: flex; align-items: center; justify-content: center;`;
@@ -762,6 +914,12 @@
       });
 
       initStore();
+
+      window.addEventListener("yanzi-auth-changed", () => {
+        if (currentDetailItem && document.body.classList.contains("view-mode-detail")) {
+          renderDetail(currentDetailItem);
+        }
+      });
     </script>
   <script src="/assets/auth.js?v=20260701-4"></script>
   </body>

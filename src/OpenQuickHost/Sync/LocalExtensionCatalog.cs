@@ -3,6 +3,7 @@ using System.IO;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Globalization;
 using System.Threading.Tasks;
 
@@ -155,12 +156,16 @@ public static class LocalExtensionCatalog
         }
     }
 
-    public static IReadOnlyList<CommandItem> LoadCommands()
-    {
-        return LoadEntries()
-            .Select(CreateCommand)
-            .ToList();
-    }
+    public static IReadOnlyList<CommandItem> LoadCommands() =>
+        LoadEntries()
+            .Where(entry => (entry.Manifest.DevicePolicy ?? new LocalExtensionDevicePolicy())
+                .AllowsDevice(ExtensionDevicePolicy.CurrentDeviceId))
+            .Select(CreateCommand).ToList();
+
+    // Include locally installed, hidden packages only when constructing sync state,
+    // never when displaying commands or registering shortcuts/startup tasks.
+    public static IReadOnlyList<CommandItem> LoadAllCommands() =>
+        LoadEntries().Select(CreateCommand).ToList();
 
     public static CommandItem CreateCommand(LocalExtensionCatalogEntry entry)
     {
@@ -193,7 +198,11 @@ public static class LocalExtensionCatalog
             queryTargetTemplate: manifest.QueryTargetTemplate,
             startup: manifest.Startup?.ToDefinition(),
             searchProvider: manifest.SearchProvider?.ToDefinition(manifest.OpenTarget),
-            isPublishedInStore: manifest.IsPublished == true);
+            isPublishedInStore: manifest.IsPublished == true,
+            toggleWindow: manifest.ToggleWindow ?? true,
+            workingDirectory: manifest.WorkingDirectory,
+            runAsAdmin: manifest.RunAsAdmin ?? false,
+            waitForExit: manifest.WaitForExit ?? true);
     }
 
     public static void SetExtensionPublishedState(string extensionId, bool isPublished)
@@ -675,6 +684,14 @@ public static class YanziAction
             manifest = manifest with { Id = CreateAvailableSystemExtensionId() };
         }
 
+        if (manifest.Id is "." or ".." ||
+            manifest.Id.EndsWith(' ') || manifest.Id.EndsWith('.') ||
+            manifest.Id.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ||
+            !string.Equals(Path.GetFileName(manifest.Id), manifest.Id, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("小程序内部 ID 无效，不能包含路径或系统保留字符。");
+        }
+
         var extensionDirectory = Path.Combine(CatalogRootPath, manifest.Id);
         Directory.CreateDirectory(extensionDirectory);
         manifest = NormalizeManifestForPersistence(manifest, extensionDirectory);
@@ -710,7 +727,11 @@ public static class YanziAction
             queryPrefixes: manifest.QueryPrefixes,
             queryTargetTemplate: manifest.QueryTargetTemplate,
             startup: manifest.Startup?.ToDefinition(),
-            searchProvider: manifest.SearchProvider?.ToDefinition(manifest.OpenTarget));
+            searchProvider: manifest.SearchProvider?.ToDefinition(manifest.OpenTarget),
+            toggleWindow: manifest.ToggleWindow ?? true,
+            workingDirectory: manifest.WorkingDirectory,
+            runAsAdmin: manifest.RunAsAdmin ?? false,
+            waitForExit: manifest.WaitForExit ?? true);
     }
 
     public static string LoadManifestJson(string extensionId)
@@ -761,6 +782,7 @@ public static class YanziAction
             Version = manifest.Version,
             Category = manifest.Category,
             Description = manifest.Description,
+            DevicePolicy = manifest.DevicePolicy,
             Keywords = manifest.Keywords,
             OpenTarget = manifest.OpenTarget,
             Icon = manifest.Icon,
@@ -778,6 +800,7 @@ public static class YanziAction
             EntryMode = manifest.EntryMode,
             Entry = manifest.Entry,
             Permissions = manifest.Permissions,
+            Provides = manifest.Provides,
             Script = manifest.Script,
             Startup = manifest.Startup,
             SearchProvider = manifest.SearchProvider,
@@ -817,14 +840,16 @@ public static class YanziAction
         var normalizedMode = string.IsNullOrWhiteSpace(mode) ? null : mode.Trim();
         var normalizedSchedule = string.IsNullOrWhiteSpace(schedule) ? null : schedule.Trim();
         var manifest = ParseManifest(File.ReadAllText(manifestPath));
+        var idle = manifest.Startup?.Idle;
         var updated = manifest with
         {
-            Startup = normalizedMode == null && normalizedSchedule == null
+            Startup = normalizedMode == null && normalizedSchedule == null && idle == null
                 ? null
                 : new LocalExtensionStartupManifest
                 {
                     Mode = normalizedMode,
-                    Schedule = normalizedSchedule
+                    Schedule = normalizedSchedule,
+                    Idle = idle
                 }
         };
 
@@ -859,8 +884,10 @@ public static class YanziAction
             Version = "0.1.0",
             Category = "快捷方式",
             Description = "示例：打开当前用户桌面目录。",
+            DevicePolicy = new LocalExtensionDevicePolicy(),
             Keywords = ["桌面", "desktop", "打开"],
             OpenTarget = "shell:Desktop",
+            ToggleWindow = true,
             Icon = "mdi:monitor-dashboard"
         };
 
@@ -1117,6 +1144,7 @@ public static class YanziAction
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         PropertyNameCaseInsensitive = true,
         WriteIndented = true,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
 }
@@ -1133,9 +1161,15 @@ public sealed record LocalExtensionManifest
 
     public string? Description { get; init; }
 
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public LocalExtensionDevicePolicy? DevicePolicy { get; init; }
+
     public string[]? Keywords { get; init; }
 
     public string? OpenTarget { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? ToggleWindow { get; init; }
 
     public string[]? QueryPrefixes { get; init; }
 
@@ -1167,6 +1201,12 @@ public sealed record LocalExtensionManifest
 
     public string[]? Permissions { get; init; }
 
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string[]? Requires { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<YanziCapabilityDeclaration>? Provides { get; init; }
+
     public LocalExtensionInlineScriptManifest? Script { get; init; }
 
     public LocalExtensionStartupManifest? Startup { get; init; }
@@ -1174,6 +1214,15 @@ public sealed record LocalExtensionManifest
     public LocalExtensionSearchProviderManifest? SearchProvider { get; init; }
 
     public LocalExtensionMouseGestureManifest? MouseGesture { get; init; }
+
+    public string? WorkingDirectory { get; init; }
+
+    public bool? RunAsAdmin { get; init; }
+
+    public bool? WaitForExit { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? EntryType { get; init; }
 
     public bool? IsPublished { get; init; }
 }
@@ -1187,6 +1236,10 @@ public sealed class LocalExtensionAppManifest
     public string Entry { get; init; } = "app/index.html";
 
     public bool? SingleInstance { get; init; }
+
+    public bool? RunInBackground { get; init; }
+
+    public LocalExtensionControlManifest? Controls { get; init; }
 
     public LocalExtensionHostedViewWindowManifest? Window { get; init; }
 
@@ -1209,8 +1262,15 @@ public sealed class LocalExtensionAppManifest
             Storage?.Engine ?? "files",
             Storage?.Sync ?? "webdav",
             Storage?.Namespace,
-            Bridge?.Apis ?? []);
+            Bridge?.Apis ?? [],
+            RunInBackground ?? false,
+            Controls?.Actions ?? []);
     }
+}
+
+public sealed class LocalExtensionControlManifest
+{
+    public string[] Actions { get; init; } = [];
 }
 
 public sealed class LocalExtensionAppStorageManifest
@@ -1241,9 +1301,36 @@ public sealed record LocalExtensionStartupManifest
     /// </summary>
     public string? Schedule { get; init; }
 
+    /// <summary>
+    /// 闲置触发。只有鼠标/键盘持续无输入，且没有全屏前台窗口时才计入闲置。
+    /// </summary>
+    public LocalExtensionIdleTriggerManifest? Idle { get; init; }
+
     public ExtensionStartupDefinition ToDefinition()
     {
-        return new ExtensionStartupDefinition(Mode, Schedule);
+        return new ExtensionStartupDefinition(Mode, Schedule, Idle?.ToDefinition());
+    }
+}
+public sealed record LocalExtensionIdleTriggerManifest
+{
+    public bool Enabled { get; init; } = true;
+
+    /// <summary>连续无键鼠输入多少分钟后进入可触发状态。</summary>
+    public int AfterMinutes { get; init; } = 5;
+
+    /// <summary>持续闲置时再次触发的间隔；0 表示本次闲置只触发一次。</summary>
+    public int RepeatMinutes { get; init; } = 0;
+
+    /// <summary>前台存在覆盖整个显示器的窗口时暂停闲置判定。</summary>
+    public bool PauseWhenFullscreen { get; init; } = true;
+
+    public ExtensionIdleTriggerDefinition ToDefinition()
+    {
+        return new ExtensionIdleTriggerDefinition(
+            Enabled,
+            Math.Clamp(AfterMinutes, 1, 1440),
+            Math.Clamp(RepeatMinutes, 0, 1440),
+            PauseWhenFullscreen);
     }
 }
 

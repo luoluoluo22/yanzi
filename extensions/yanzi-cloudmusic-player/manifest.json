@@ -1,0 +1,49 @@
+{
+  "id": "yanzi-cloudmusic-player",
+  "name": "网易云音乐",
+  "version": "1.2.1",
+  "category": "小程序",
+  "description": "网易云音乐专属独立播放器，聚合“每日推荐”与“我喜欢的音乐”，纯本地读取推荐歌单与播放控制，仅限本机专属。",
+  "keywords": [
+    "音乐",
+    "网易云",
+    "每日推荐",
+    "我喜欢的音乐",
+    "我喜欢",
+    "播放器",
+    "music",
+    "player"
+  ],
+  "icon": "mdi:music-box-outline",
+  "accentHex": "#FFEC4141",
+  "devicePolicy": {
+    "mode": "selected",
+    "deviceIds": [],
+    "packageSync": "none",
+    "dataSync": "device"
+  },
+  "runtime": "web-app",
+  "app": {
+    "type": "webview",
+    "entry": "app/index.html",
+    "singleInstance": true,
+    "window": {
+      "width": 1020,
+      "height": 680,
+      "minWidth": 820,
+      "minHeight": 560,
+      "hideTitleBar": false
+    },
+    "runInBackground": true,
+    "controls": {
+      "actions": [
+        "status",
+        "play",
+        "pause",
+        "toggle",
+        "next",
+        "prev"
+      ]
+    }
+  }
+}

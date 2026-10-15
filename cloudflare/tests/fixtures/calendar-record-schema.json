@@ -1,0 +1,14 @@
+{
+  "format": "records-v1",
+  "key": "calendar.v1.json",
+  "itemIdField": "Id",
+  "createdTimeField": "CreatedTime",
+  "defaults": {"IsAlarm":false,"IsTriggered":false,"AlarmTime":null},
+  "resetOnChange": {"IsTriggered":["AlarmTime","IsAlarm"]},
+  "fields": {
+    "title": {"name":"Title","type":"string","required":true,"maxLength":1000},
+    "date": {"name":"TargetDate","type":"date","required":true,"format":"local-midnight"},
+    "alarmTime": {"name":"AlarmTime","type":"datetime","nullable":true},
+    "isAlarm": {"name":"IsAlarm","type":"boolean"}
+  }
+}

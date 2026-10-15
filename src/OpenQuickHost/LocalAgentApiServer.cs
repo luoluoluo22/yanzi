@@ -10,7 +10,7 @@ using OpenQuickHost.Sync;
 
 namespace OpenQuickHost;
 
-public sealed class LocalAgentApiServer : IDisposable
+public sealed partial class LocalAgentApiServer : IDisposable
 {
     private WebSocket? _activeBrowserSocket;
     private static int _nextWsId;
@@ -18,10 +18,169 @@ public sealed class LocalAgentApiServer : IDisposable
     public bool IsBrowserConnected => _activeBrowserSocket != null && _activeBrowserSocket.State == WebSocketState.Open;
     public string ConnectedBrowserName { get; private set; } = "";
 
+    private static readonly (string ProcessName, string DisplayName)[] SupportedBrowserProcesses =
+    [
+        ("msedge", "Edge"),
+        ("chrome", "Chrome"),
+        ("firefox", "Firefox"),
+        ("brave", "Brave"),
+        ("opera", "Opera"),
+        ("vivaldi", "Vivaldi")
+    ];
+    private static readonly object BrowserProcessCacheLock = new();
+    private static string[] _cachedRunningBrowserNames = [];
+    private static long _browserProcessCacheExpiresAt;
+
+    public static IReadOnlyList<string> GetRunningBrowserNames()
+    {
+        var now = Environment.TickCount64;
+        lock (BrowserProcessCacheLock)
+        {
+            if (now < _browserProcessCacheExpiresAt)
+                return _cachedRunningBrowserNames;
+
+            var result = new List<string>();
+            foreach (var (processName, displayName) in SupportedBrowserProcesses)
+            {
+                System.Diagnostics.Process[] processes = [];
+                try
+                {
+                    processes = System.Diagnostics.Process.GetProcessesByName(processName);
+                    if (processes.Length > 0)
+                        result.Add(displayName);
+                }
+                catch
+                {
+                    // Process enumeration can fail transiently; treat that browser as unknown/not detected.
+                }
+                finally
+                {
+                    foreach (var process in processes)
+                    {
+                        try { process.Dispose(); } catch { }
+                    }
+                }
+            }
+
+            _cachedRunningBrowserNames = result.ToArray();
+            _browserProcessCacheExpiresAt = now + 2000;
+            return _cachedRunningBrowserNames;
+        }
+    }
+
+    public bool IsSupportedBrowserRunning => GetRunningBrowserNames().Count > 0;
+
+    private object BuildBrowserUnavailableResponse()
+    {
+        var runningBrowsers = GetRunningBrowserNames();
+        var browserRunning = runningBrowsers.Count > 0;
+        HostAssets.AppendLog(browserRunning
+            ? $"[LocalAgentApi] Browser unavailable: browser_extension_not_connected, detected={string.Join(",", runningBrowsers)}"
+            : "[LocalAgentApi] Browser unavailable: browser_not_running, no supported browser process detected.");
+
+        return new
+        {
+            error = browserRunning
+                ? "browser_extension_not_connected"
+                : "browser_not_running",
+            message = browserRunning
+                ? $"检测到 {string.Join("、", runningBrowsers)} 正在运行，但燕子浏览器助手未连接。"
+                : "未检测到已运行的受支持浏览器，请先打开 Edge、Chrome 或其他已安装燕子浏览器助手的浏览器。",
+            browserRunning,
+            extensionConnected = false,
+            detectedBrowsers = runningBrowsers
+        };
+    }
     public static string LastKnownMobileDeviceModel { get; set; } = "";
     public static event Action<string>? MobileDeviceConnected;
 
     private static readonly ConcurrentDictionary<string, TaskCompletionSource<JsonElement>> _pendingBrowserTasks = new(StringComparer.OrdinalIgnoreCase);
+    private readonly SemaphoreSlim _browserSendGate = new(1, 1);
+
+    public async Task<(bool success, string taskId, string status, string? message, JsonElement? data)> RunBrowserTaskAsync(
+        IReadOnlyDictionary<string, object?> payload,
+        int timeoutSeconds = 30)
+    {
+        var browserSocket = _activeBrowserSocket;
+        if (browserSocket == null || browserSocket.State != WebSocketState.Open)
+        {
+            var runningBrowsers = GetRunningBrowserNames();
+            var message = runningBrowsers.Count > 0
+                ? $"检测到 {string.Join("、", runningBrowsers)} 正在运行，但燕子浏览器助手未连接。"
+                : "未检测到已运行的受支持浏览器，请先打开浏览器。";
+            return (false, "", "unavailable", message, null);
+        }
+
+        timeoutSeconds = Math.Clamp(timeoutSeconds, 5, 120);
+        var taskId = Guid.NewGuid().ToString("N");
+        var taskPayload = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var pair in payload)
+            taskPayload[pair.Key] = pair.Value;
+
+        taskPayload["type"] = "task_request";
+        taskPayload["taskId"] = taskId;
+        if (!taskPayload.ContainsKey("action"))
+            taskPayload["action"] = "workflow";
+
+        var tcs = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _pendingBrowserTasks[taskId] = tcs;
+
+        try
+        {
+            var sendBuffer = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(taskPayload));
+            await _browserSendGate.WaitAsync(_cts.Token);
+            try
+            {
+                browserSocket = _activeBrowserSocket;
+                if (browserSocket == null || browserSocket.State != WebSocketState.Open)
+                    return (false, taskId, "unavailable", "燕子浏览器助手连接已断开。", null);
+
+                await browserSocket.SendAsync(
+                    new ArraySegment<byte>(sendBuffer),
+                    WebSocketMessageType.Text,
+                    true,
+                    _cts.Token);
+            }
+            finally
+            {
+                _browserSendGate.Release();
+            }
+
+            using var delayCts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
+            var completed = await Task.WhenAny(
+                tcs.Task,
+                Task.Delay(Timeout.Infinite, delayCts.Token));
+
+            if (completed != tcs.Task)
+                return (false, taskId, "timeout", $"浏览器任务超过 {timeoutSeconds} 秒未返回。", null);
+
+            var result = await tcs.Task;
+            var status = result.TryGetProperty("status", out var statusProp)
+                ? statusProp.GetString() ?? ""
+                : "";
+            var message = result.TryGetProperty("message", out var messageProp)
+                ? messageProp.GetString()
+                : null;
+            JsonElement? data = result.TryGetProperty("data", out var dataProp)
+                ? dataProp.Clone()
+                : null;
+
+            return (
+                string.Equals(status, "success", StringComparison.OrdinalIgnoreCase),
+                taskId,
+                status,
+                message,
+                data);
+        }
+        catch (Exception ex)
+        {
+            return (false, taskId, "error", ex.Message, null);
+        }
+        finally
+        {
+            _pendingBrowserTasks.TryRemove(taskId, out _);
+        }
+    }
 
     public async Task<(bool success, string? jsonResult, string? error)> RunBrowserAiPromptTransferAsync(
         string prompt,
@@ -52,7 +211,27 @@ public sealed class LocalAgentApiServer : IDisposable
         try
         {
             var sendBuffer = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(taskPayload));
-            await _activeBrowserSocket.SendAsync(new ArraySegment<byte>(sendBuffer), WebSocketMessageType.Text, true, _cts.Token);
+            // The same browser socket is shared with other tasks: serialize writes.
+            // Bound a stalled send independently of the AI generation timeout.
+            using var sendCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
+            sendCts.CancelAfter(TimeSpan.FromSeconds(15));
+            await _browserSendGate.WaitAsync(sendCts.Token);
+            try
+            {
+                var socket = _activeBrowserSocket;
+                if (socket == null || socket.State != WebSocketState.Open)
+                {
+                    _pendingBrowserTasks.TryRemove(taskId, out _);
+                    return (false, null, "浏览器助手连接已断开，请重新连接后重试。");
+                }
+
+                await socket.SendAsync(new ArraySegment<byte>(sendBuffer), WebSocketMessageType.Text, true, sendCts.Token);
+            }
+            finally
+            {
+                _browserSendGate.Release();
+            }
+
             HostAssets.AppendLog($"[LocalAgentApi] Dispatched AI prompt transfer task to browser extension: taskId={taskId}, site={aiSite}, promptLength={prompt.Length}");
         }
         catch (Exception ex)
@@ -66,6 +245,7 @@ public sealed class LocalAgentApiServer : IDisposable
             var completedTask = await Task.WhenAny(tcs.Task, Task.Delay(Timeout.Infinite, delayCts.Token));
             if (completedTask == tcs.Task)
             {
+                _pendingBrowserTasks.TryRemove(taskId, out _);
                 var resultDoc = await tcs.Task;
                 string? status = resultDoc.TryGetProperty("status", out var statusProp) ? statusProp.GetString() : null;
                 string? message = resultDoc.TryGetProperty("message", out var msgProp) ? msgProp.GetString() : null;
@@ -95,11 +275,16 @@ public sealed class LocalAgentApiServer : IDisposable
 
     private readonly string _prefix;
     private readonly string _token;
+    // Exposed only inside the desktop application for its local Settings window.
+    // Never serialize this into /docs or any unauthenticated API response.
+    internal string TokenForSettings => _token;
+    internal bool IsListening => _listener.IsListening;
     private readonly Action<string?> _onMutated;
     private readonly Action? _onTriggerSync;
     private readonly Func<string, Task<(bool ok, string message)>>? _onPublishExtension;
     private readonly Func<string, Task<(bool ok, string message)>>? _onUnpublishExtension;
     private readonly Func<string, Task<(bool ok, string message)>>? _onInstallExtension;
+    private readonly Func<string, Task<(bool ok, string message)>>? _onDeleteExtension;
     private readonly Func<Task<AuthMeResponse?>>? _onGetMe;
     private readonly Func<string, string, Task>? _onShowNotification;
     private readonly Func<string, string, Task>? _onPushToMobile;
@@ -109,11 +294,13 @@ public sealed class LocalAgentApiServer : IDisposable
     private readonly CancellationTokenSource _cts = new();
     private Task? _loopTask;
     private static readonly ConcurrentDictionary<string, CancellationTokenSource> _runningTasks = new(StringComparer.OrdinalIgnoreCase);
+    // Prevent concurrent deployment, execution, and stop calls from racing with a reload.
+    private static readonly ConcurrentDictionary<string, byte> _deployingExtensions = new(StringComparer.OrdinalIgnoreCase);
     private static readonly ConcurrentDictionary<string, LocalMobileMessageDetail> _localMobileMessages = new(StringComparer.OrdinalIgnoreCase);
 
     public LocalAgentApiServer(
-        string prefix, 
-        string token, 
+        string prefix,
+        string token,
         Action<string?> onMutated,
         Action? onTriggerSync = null,
         Func<string, Task<(bool ok, string message)>>? onPublishExtension = null,
@@ -123,7 +310,8 @@ public sealed class LocalAgentApiServer : IDisposable
         Func<string, string, Task>? onShowNotification = null,
         Func<string, string, Task>? onPushToMobile = null,
         Func<DeviceMessageRecord, Task<(bool success, string output)>>? onMobileMessage = null,
-        Action<string, bool>? onSettingsChanged = null)
+        Action<string, bool>? onSettingsChanged = null,
+        Func<string, Task<(bool ok, string message)>>? onDeleteExtension = null)
     {
         _prefix = prefix.EndsWith("/", StringComparison.Ordinal) ? prefix : prefix + "/";
         _token = token;
@@ -132,6 +320,7 @@ public sealed class LocalAgentApiServer : IDisposable
         _onPublishExtension = onPublishExtension;
         _onUnpublishExtension = onUnpublishExtension;
         _onInstallExtension = onInstallExtension;
+        _onDeleteExtension = onDeleteExtension;
         _onGetMe = onGetMe;
         _onShowNotification = onShowNotification;
         _onPushToMobile = onPushToMobile;
@@ -142,6 +331,7 @@ public sealed class LocalAgentApiServer : IDisposable
 
     public void Start()
     {
+        YanziBuiltinCapabilityRegistration.Register();
         _listener.Start();
         _loopTask = Task.Run(ListenLoopAsync);
         HostAssets.AppendLog($"Local Agent API started at {_prefix}");
@@ -149,6 +339,7 @@ public sealed class LocalAgentApiServer : IDisposable
 
     public void Stop()
     {
+        EndAllUiSessions("agent_api_stopped");
         _cts.Cancel();
         if (_listener.IsListening)
         {
@@ -222,6 +413,12 @@ public sealed class LocalAgentApiServer : IDisposable
                 path = "/";
             }
 
+            if (await TrySecureLanAsync(request, response, path)) return;
+            if (request.RemoteEndPoint is { } remotePeer && !System.Net.IPAddress.IsLoopback(remotePeer.Address))
+            {
+                await WriteJsonAsync(response, 426, new { error = "encrypted_lan_required", protocol = "yanzi.lan.aead.v1" });
+                return;
+            }
             if (request.HttpMethod == "OPTIONS")
             {
                 response.StatusCode = 204;
@@ -265,7 +462,7 @@ public sealed class LocalAgentApiServer : IDisposable
                             browserName = "Safari";
                         }
                         ConnectedBrowserName = browserName;
-                        
+
                         var oldSocket = Interlocked.Exchange(ref _activeBrowserSocket, webSocket);
                         if (oldSocket != null && oldSocket != webSocket)
                         {
@@ -292,6 +489,85 @@ public sealed class LocalAgentApiServer : IDisposable
                 return;
             }
 
+            if (request.HttpMethod == "GET" && path == "/v1/browser/status")
+            {
+                if (!IsAuthorized(request))
+                {
+                    await WriteJsonAsync(response, 401, new { error = "unauthorized" });
+                    return;
+                }
+
+                var extensionConnected = IsBrowserConnected;
+                var runningBrowsers = extensionConnected
+                    ? (IReadOnlyList<string>)(string.IsNullOrWhiteSpace(ConnectedBrowserName)
+                        ? Array.Empty<string>()
+                        : new[] { ConnectedBrowserName })
+                    : GetRunningBrowserNames();
+                var browserRunning = extensionConnected || runningBrowsers.Count > 0;
+                var state = extensionConnected
+                    ? "connected"
+                    : browserRunning
+                        ? "browser_extension_not_connected"
+                        : "browser_not_running";
+
+                await WriteJsonAsync(response, 200, new
+                {
+                    ok = true,
+                    state,
+                    browserRunning,
+                    extensionConnected,
+                    connectedBrowser = extensionConnected ? ConnectedBrowserName : "",
+                    detectedBrowsers = runningBrowsers
+                });
+                return;
+            }
+            if (request.HttpMethod == "POST" && path == "/v1/browser/reload")
+            {
+                if (!IsAuthorized(request))
+                {
+                    await WriteJsonAsync(response, 401, new { error = "unauthorized" });
+                    return;
+                }
+
+                var browserSocket = _activeBrowserSocket;
+                if (browserSocket == null || browserSocket.State != WebSocketState.Open)
+                {
+                    await WriteJsonAsync(response, 503, BuildBrowserUnavailableResponse());
+                    return;
+                }
+
+                var requestId = Guid.NewGuid().ToString("N");
+                var payload = JsonSerializer.Serialize(new
+                {
+                    type = "browser_extension_reload",
+                    requestId
+                });
+
+                try
+                {
+                    var sendBuffer = Encoding.UTF8.GetBytes(payload);
+                    await browserSocket.SendAsync(
+                        new ArraySegment<byte>(sendBuffer),
+                        WebSocketMessageType.Text,
+                        true,
+                        _cts.Token);
+                    HostAssets.AppendLog($"[LocalAgentApi] Browser extension reload requested: requestId={requestId}, browser={ConnectedBrowserName}");
+                    await WriteJsonAsync(response, 202, new
+                    {
+                        ok = true,
+                        status = "accepted",
+                        requestId,
+                        browser = ConnectedBrowserName
+                    });
+                }
+                catch (Exception ex)
+                {
+                    HostAssets.AppendLog($"[LocalAgentApi] Browser extension reload dispatch failed: {ex.Message}");
+                    await WriteJsonAsync(response, 500, new { error = "failed_to_send_reload: " + ex.Message });
+                }
+                return;
+            }
+
             if (request.HttpMethod == "POST" && path == "/v1/browser/execute")
             {
                 if (!IsAuthorized(request))
@@ -302,7 +578,7 @@ public sealed class LocalAgentApiServer : IDisposable
 
                 if (_activeBrowserSocket == null || _activeBrowserSocket.State != WebSocketState.Open)
                 {
-                    await WriteJsonAsync(response, 503, new { error = "browser_extension_not_connected" });
+                    await WriteJsonAsync(response, 503, BuildBrowserUnavailableResponse());
                     return;
                 }
 
@@ -314,12 +590,21 @@ public sealed class LocalAgentApiServer : IDisposable
 
                 var taskId = Guid.NewGuid().ToString("N");
                 var taskPayload = new Dictionary<string, object>();
+                var executionTimeoutSeconds = 30;
                 try
                 {
                     var jsonDoc = JsonDocument.Parse(body);
                     foreach (var prop in jsonDoc.RootElement.EnumerateObject())
                     {
                         taskPayload[prop.Name] = prop.Value;
+                        if (
+                            prop.NameEquals("timeoutSeconds") &&
+                            prop.Value.ValueKind == JsonValueKind.Number &&
+                            prop.Value.TryGetInt32(out var requestedTimeoutSeconds)
+                        )
+                        {
+                            executionTimeoutSeconds = Math.Clamp(requestedTimeoutSeconds, 5, 600);
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -350,7 +635,7 @@ public sealed class LocalAgentApiServer : IDisposable
                     return;
                 }
 
-                using (var delayCts = new CancellationTokenSource(TimeSpan.FromSeconds(30)))
+                using (var delayCts = new CancellationTokenSource(TimeSpan.FromSeconds(executionTimeoutSeconds)))
                 {
                     var completedTask = await Task.WhenAny(tcs.Task, Task.Delay(Timeout.Infinite, delayCts.Token));
                     if (completedTask == tcs.Task)
@@ -358,14 +643,14 @@ public sealed class LocalAgentApiServer : IDisposable
                         var resultDoc = await tcs.Task;
                         var responseData = new Dictionary<string, object?>();
                         responseData["taskId"] = taskId;
-                        
-                        if (resultDoc.TryGetProperty("status", out var statusProp)) 
+
+                        if (resultDoc.TryGetProperty("status", out var statusProp))
                             responseData["status"] = statusProp.GetString();
-                        if (resultDoc.TryGetProperty("message", out var msgProp)) 
+                        if (resultDoc.TryGetProperty("message", out var msgProp))
                             responseData["message"] = msgProp.GetString();
-                        if (resultDoc.TryGetProperty("data", out var dataProp)) 
+                        if (resultDoc.TryGetProperty("data", out var dataProp))
                             responseData["data"] = dataProp;
-                        
+
                         int httpStatus = 200;
                         if (responseData.TryGetValue("status", out var st) && st?.ToString() == "error")
                         {
@@ -377,7 +662,11 @@ public sealed class LocalAgentApiServer : IDisposable
                     else
                     {
                         _pendingBrowserTasks.TryRemove(taskId, out _);
-                        await WriteJsonAsync(response, 504, new { error = "browser_execution_timeout" });
+                        await WriteJsonAsync(response, 504, new
+                        {
+                            error = "browser_execution_timeout",
+                            timeoutSeconds = executionTimeoutSeconds
+                        });
                     }
                 }
                 return;
@@ -385,6 +674,13 @@ public sealed class LocalAgentApiServer : IDisposable
 
             if (request.HttpMethod == "GET" && (path == "/docs" || path == "/" || path == "/index.html"))
             {
+                // The console holds privileged credentials; never execute third-party scripts.
+                response.Headers["Content-Security-Policy"] =
+                    "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; " +
+                    "connect-src 'self'; img-src 'self' blob: data:; " +
+                    "base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+                response.Headers["Cache-Control"] = "no-store";
+                response.Headers["X-Content-Type-Options"] = "nosniff";
                 response.ContentType = "text/html; charset=utf-8";
                 response.StatusCode = 200;
                 var html = GetDocsHtml();
@@ -402,17 +698,17 @@ public sealed class LocalAgentApiServer : IDisposable
                     await WriteJsonAsync(response, 401, new { error = "unauthorized" });
                     return;
                 }
-                
+
                 string body;
                 using (var reader = new StreamReader(request.InputStream, request.ContentEncoding))
                 {
                     body = await reader.ReadToEndAsync();
                 }
-                
+
                 string title = "Yanzi 通知";
                 string text = "";
-                
-                try 
+
+                try
                 {
                     var json = JsonDocument.Parse(body).RootElement;
                     if (json.TryGetProperty("title", out var t)) title = t.GetString() ?? title;
@@ -423,7 +719,7 @@ public sealed class LocalAgentApiServer : IDisposable
                 {
                     _ = Task.Run(() => _onPushToMobile(title, text));
                 }
-                
+
                 await WriteJsonAsync(response, 200, new { success = true });
                 return;
             }
@@ -455,1266 +751,14 @@ public sealed class LocalAgentApiServer : IDisposable
                 return;
             }
 
+            if (await TryHandleConsoleLogoutAsync(request, response, path))
+                return;
             if (!IsAuthorized(request))
             {
                 await WriteJsonAsync(response, 401, new { error = "unauthorized" });
                 return;
             }
-
-            if (request.HttpMethod == "POST" && path == "/v1/clipboard/sync")
-            {
-                var payload = await ReadJsonBodyAsync(request);
-                var clientText = GetString(payload, "text");
-                bool isWrite = false;
-                if (payload.ValueKind == JsonValueKind.Object && payload.TryGetProperty("write", out var writeProp))
-                {
-                    isWrite = writeProp.ValueKind == JsonValueKind.True;
-                }
-
-                string currentPcText = "";
-                try
-                {
-                    if (isWrite && !string.IsNullOrEmpty(clientText))
-                    {
-                        ClipboardService.SetText(clientText);
-                    }
-                    currentPcText = ClipboardService.GetText() ?? "";
-                }
-                catch (Exception ex)
-                {
-                    currentPcText = "[错误] 无法访问 PC 剪贴板: " + ex.Message;
-                }
-
-                await WriteJsonAsync(response, 200, new
-                {
-                    ok = true,
-                    text = currentPcText
-                });
-                return;
-            }
-
-            if (request.HttpMethod == "POST" && path == "/v1/shell/run")
-            {
-                var payload = await ReadJsonBodyAsync(request);
-                var command = GetString(payload, "command");
-
-                if (string.IsNullOrEmpty(command))
-                {
-                    await WriteJsonAsync(response, 400, new { error = "Command is required" });
-                    return;
-                }
-
-                try
-                {
-                    using var process = new System.Diagnostics.Process();
-                    process.StartInfo.FileName = "powershell.exe";
-                    // Prepend progress preference silencer to avoid CLIXML progress streams in stderr
-                    var prependedCommand = "$ProgressPreference = 'SilentlyContinue';\r\n" + command;
-                    var bytes = Encoding.Unicode.GetBytes(prependedCommand);
-                    var base64 = Convert.ToBase64String(bytes);
-                    
-                    process.StartInfo.Arguments = $"-NoProfile -NonInteractive -EncodedCommand {base64}";
-                    process.StartInfo.RedirectStandardOutput = true;
-                    process.StartInfo.RedirectStandardError = true;
-                    process.StartInfo.UseShellExecute = false;
-                    process.StartInfo.CreateNoWindow = true;
-
-                    var outputBuilder = new StringBuilder();
-                    var errorBuilder = new StringBuilder();
-
-                    process.OutputDataReceived += (s, e) => { if (e.Data != null) outputBuilder.AppendLine(e.Data); };
-                    process.ErrorDataReceived += (s, e) => { if (e.Data != null) errorBuilder.AppendLine(e.Data); };
-
-                    process.Start();
-                    process.BeginOutputReadLine();
-                    process.BeginErrorReadLine();
-
-                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-                    try
-                    {
-                        await process.WaitForExitAsync(cts.Token);
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        process.Kill(true);
-                        await WriteJsonAsync(response, 200, new
-                        {
-                            ok = false,
-                            output = outputBuilder.ToString() + "\r\n[API 错误] 命令执行超时 (15秒)",
-                            exitCode = -1
-                        });
-                        return;
-                    }
-
-                    var output = outputBuilder.ToString();
-                    var error = errorBuilder.ToString();
-
-                    // If error output contains only CLIXML progress data on a successful exit, discard it to avoid confusing the user
-                    if (!string.IsNullOrEmpty(error) && process.ExitCode == 0 && error.Contains("CLIXML") && error.Contains("progress"))
-                    {
-                        error = "";
-                    }
-                    var combinedOutput = string.IsNullOrEmpty(error) ? output : $"{output}\r\n[错误输出]\r\n{error}";
-
-                    await WriteJsonAsync(response, 200, new
-                    {
-                        ok = true,
-                        output = combinedOutput,
-                        exitCode = process.ExitCode
-                    });
-                }
-                catch (Exception ex)
-                {
-                    await WriteJsonAsync(response, 500, new { error = ex.Message });
-                }
-                return;
-            }
-
-            if (request.HttpMethod == "POST" && path == "/v1/fs/list")
-            {
-                var payload = await ReadJsonBodyAsync(request);
-                var targetPath = GetString(payload, "path");
-
-                try
-                {
-                    var items = new List<object>();
-                    string currentPath = "";
-
-                    if (string.IsNullOrEmpty(targetPath) || string.Equals(targetPath, "Desktop", StringComparison.OrdinalIgnoreCase))
-                    {
-                        targetPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
-                    }
-
-                    if (string.IsNullOrEmpty(targetPath))
-                    {
-                        foreach (var drive in DriveInfo.GetDrives())
-                        {
-                            if (drive.IsReady)
-                            {
-                                items.Add(new
-                                {
-                                    name = drive.Name,
-                                    isDir = true,
-                                    size = 0L,
-                                    lastModified = 0L
-                                });
-                            }
-                        }
-
-                        var specialDirs = new[]
-                        {
-                            Environment.SpecialFolder.Desktop,
-                            Environment.SpecialFolder.MyDocuments,
-                            Environment.SpecialFolder.UserProfile
-                        };
-                        foreach (var dir in specialDirs)
-                        {
-                            var dirPath = Environment.GetFolderPath(dir);
-                            if (!string.IsNullOrEmpty(dirPath))
-                            {
-                                items.Add(new
-                                {
-                                    name = dirPath,
-                                    isDir = true,
-                                    size = 0L,
-                                    lastModified = 0L
-                                });
-                            }
-                        }
-                        currentPath = "";
-                    }
-                    else
-                    {
-                        currentPath = Path.GetFullPath(targetPath);
-                        if (Directory.Exists(currentPath))
-                        {
-                            foreach (var dir in Directory.GetDirectories(currentPath))
-                            {
-                                try
-                                {
-                                    var dirInfo = new DirectoryInfo(dir);
-                                    if ((dirInfo.Attributes & FileAttributes.Hidden) != 0 || (dirInfo.Attributes & FileAttributes.System) != 0)
-                                    {
-                                        continue;
-                                    }
-                                    items.Add(new
-                                    {
-                                        name = Path.GetFileName(dir),
-                                        isDir = true,
-                                        size = 0L,
-                                        lastModified = new DateTimeOffset(dirInfo.LastWriteTimeUtc).ToUnixTimeMilliseconds()
-                                    });
-                                }
-                                catch {}
-                            }
-
-                            foreach (var file in Directory.GetFiles(currentPath))
-                            {
-                                try
-                                {
-                                    var fileInfo = new FileInfo(file);
-                                    if ((fileInfo.Attributes & FileAttributes.Hidden) != 0 || (fileInfo.Attributes & FileAttributes.System) != 0)
-                                    {
-                                        continue;
-                                    }
-                                    items.Add(new
-                                    {
-                                        name = Path.GetFileName(file),
-                                        isDir = false,
-                                        size = fileInfo.Length,
-                                        lastModified = new DateTimeOffset(fileInfo.LastWriteTimeUtc).ToUnixTimeMilliseconds()
-                                    });
-                                }
-                                catch {}
-                            }
-                        }
-                        else
-                        {
-                            await WriteJsonAsync(response, 404, new { error = "Directory not found" });
-                            return;
-                        }
-                    }
-
-                    await WriteJsonAsync(response, 200, new
-                    {
-                        ok = true,
-                        path = currentPath,
-                        items
-                    });
-                }
-                catch (Exception ex)
-                {
-                    await WriteJsonAsync(response, 500, new { error = ex.Message });
-                }
-                return;
-            }
-
-            if (request.HttpMethod == "POST" && path == "/v1/fs/read")
-            {
-                var payload = await ReadJsonBodyAsync(request);
-                var targetPath = ResolveFsPath(GetString(payload, "path"));
-
-                if (string.IsNullOrEmpty(targetPath))
-                {
-                    await WriteJsonAsync(response, 400, new { error = "Path is required" });
-                    return;
-                }
-
-                try
-                {
-                    var fullPath = Path.GetFullPath(targetPath);
-                    if (!File.Exists(fullPath))
-                    {
-                        await WriteJsonAsync(response, 404, new { error = "File not found" });
-                        return;
-                    }
-
-                    var fileInfo = new FileInfo(fullPath);
-                    if (fileInfo.Length > 10 * 1024 * 1024)
-                    {
-                        await WriteJsonAsync(response, 400, new { error = "File is too large to read (max 10MB)" });
-                        return;
-                    }
-
-                    var ext = fileInfo.Extension.ToLowerInvariant();
-                    bool isImage = ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".gif" || ext == ".webp" || ext == ".bmp" || ext == ".ico";
-                    if (isImage)
-                    {
-                        var bytes = File.ReadAllBytes(fullPath);
-                        var base64 = Convert.ToBase64String(bytes);
-                        await WriteJsonAsync(response, 200, new
-                        {
-                            ok = true,
-                            path = fullPath,
-                            content = base64,
-                            isBase64 = true,
-                            ext = ext
-                        });
-                        return;
-                    }
-
-                    string content = File.ReadAllText(fullPath, Encoding.UTF8);
-                    await WriteJsonAsync(response, 200, new
-                    {
-                        ok = true,
-                        path = fullPath,
-                        content = content,
-                        isBase64 = false,
-                        ext = ext
-                    });
-                }
-                catch (Exception ex)
-                {
-                    await WriteJsonAsync(response, 500, new { error = ex.Message });
-                }
-                return;
-            }
-
-            if (request.HttpMethod == "POST" && path == "/v1/fs/write")
-            {
-                var payload = await ReadJsonBodyAsync(request);
-                var targetPath = GetString(payload, "path");
-                var content = GetString(payload, "content");
-
-                if (string.IsNullOrEmpty(targetPath))
-                {
-                    await WriteJsonAsync(response, 400, new { error = "Path is required" });
-                    return;
-                }
-
-                var isBase64 = false;
-                if (payload.ValueKind == JsonValueKind.Object && payload.TryGetProperty("base64", out var base64Val))
-                {
-                    if (base64Val.ValueKind == JsonValueKind.True)
-                    {
-                        isBase64 = true;
-                    }
-                    else if (base64Val.ValueKind == JsonValueKind.False)
-                    {
-                        isBase64 = false;
-                    }
-                    else if (base64Val.ValueKind == JsonValueKind.String)
-                    {
-                        bool.TryParse(base64Val.GetString(), out isBase64);
-                    }
-                }
-
-                try
-                {
-                    var fullPath = Path.GetFullPath(targetPath);
-                    var dir = Path.GetDirectoryName(fullPath);
-                    if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-                    {
-                        Directory.CreateDirectory(dir);
-                    }
-                    if (isBase64)
-                    {
-                        var bytes = Convert.FromBase64String(content ?? string.Empty);
-                        File.WriteAllBytes(fullPath, bytes);
-                    }
-                    else
-                    {
-                        File.WriteAllText(fullPath, content ?? string.Empty, Encoding.UTF8);
-                    }
-                    await WriteJsonAsync(response, 200, new
-                    {
-                        ok = true,
-                        path = fullPath
-                    });
-                }
-                catch (Exception ex)
-                {
-                    await WriteJsonAsync(response, 500, new { error = ex.Message });
-                }
-                return;
-            }
-
-
-            if (request.HttpMethod == "POST" && path == "/v1/me/devices")
-            {
-                var payload = await ReadJsonBodyAsync(request);
-                var deviceId = GetString(payload, "deviceId") ?? "android-lan";
-                
-                LastKnownMobileDeviceModel = MobileDeviceNameNormalizer.Normalize(deviceId);
-                MobileDeviceConnected?.Invoke(LastKnownMobileDeviceModel);
-
-                await WriteJsonAsync(response, 200, new
-                {
-                    ok = true,
-                    source = "local-agent-api",
-                    deviceId
-                });
-                return;
-            }
-
-            if (request.HttpMethod == "GET" && path == "/v1/logs")
-            {
-                var maxLinesStr = request.QueryString["maxLines"];
-                if (!int.TryParse(maxLinesStr, out var maxLines) || maxLines <= 0)
-                {
-                    maxLines = 1000;
-                }
-                var lines = HostAssets.ReadHostLogTailLines(1024 * 512, maxLines);
-                await WriteJsonAsync(response, 200, new { ok = true, logs = lines });
-                return;
-            }
-
-            if (request.HttpMethod == "GET" && path == "/v1/extensions/template")
-            {
-                await WriteJsonAsync(response, 200, new { template = LocalExtensionCatalog.CreateTemplateJson() });
-                return;
-            }
-
-            if (request.HttpMethod == "GET" && path == "/v1/extensions")
-            {
-                var items = LocalExtensionCatalog.LoadCommands().Select(ToDto).ToList();
-                await WriteJsonAsync(response, 200, new { items });
-                return;
-            }
-
-            if (request.HttpMethod == "GET" && path == "/v1/me/extensions")
-            {
-                var items = LocalExtensionCatalog.LoadCommands()
-                    .Select(command => new
-                    {
-                        user_id = "local",
-                        userId = "local",
-                        extension_id = command.ExtensionId,
-                        extensionId = command.ExtensionId,
-                        installed_version = command.DeclaredVersion,
-                        installedVersion = command.DeclaredVersion,
-                        enabled = 1,
-                        settings_json = string.Empty,
-                        settingsJson = string.Empty,
-                        updated_at = string.Empty,
-                        updatedAt = string.Empty
-                    })
-                    .ToList();
-                await WriteJsonAsync(response, 200, new
-                {
-                    ok = true,
-                    userId = "local",
-                    source = "local-agent-api",
-                    items
-                });
-                return;
-            }
-
-            if (request.HttpMethod == "GET" && path == "/v1/quickpanel/groups")
-            {
-                var settings = AppSettingsStore.Load();
-                await WriteJsonAsync(response, 200, new { 
-                    selectedGroupId = settings.SelectedQuickPanelGlobalGroupId,
-                    groups = settings.QuickPanelGlobalGroups 
-                });
-                return;
-            }
-
-            if (request.HttpMethod == "POST" && path == "/v1/quickpanel/groups")
-            {
-                var payload = await ReadJsonBodyAsync(request);
-                var id = GetString(payload, "id") ?? Guid.NewGuid().ToString("N");
-                var name = GetString(payload, "name");
-                if (string.IsNullOrWhiteSpace(name))
-                {
-                    await WriteJsonAsync(response, 400, new { error = "name_required" });
-                    return;
-                }
-
-                var settings = AppSettingsStore.Load();
-                settings.QuickPanelGlobalGroups.Add(new QuickPanelGroupSettings
-                {
-                    Id = id,
-                    Name = name,
-                    Slots = Enumerable.Repeat<string?>(null, 12).ToList(),
-                    SlotItems = Enumerable.Repeat<QuickPanelSlotItem?>(null, 12).ToList()
-                });
-                AppSettingsStore.Save(settings);
-                _onMutated(null);
-                await WriteJsonAsync(response, 200, new { ok = true, id });
-                return;
-            }
-
-            if (request.HttpMethod == "POST" && path == "/v1/quickpanel/add")
-            {
-                var payload = await ReadJsonBodyAsync(request);
-                var extensionId = GetString(payload, "extensionId");
-                var groupId = GetString(payload, "groupId");
-                if (string.IsNullOrWhiteSpace(extensionId))
-                {
-                    await WriteJsonAsync(response, 400, new { error = "extensionId_required" });
-                    return;
-                }
-
-                var settings = AppSettingsStore.Load();
-                var group = !string.IsNullOrWhiteSpace(groupId) 
-                    ? settings.QuickPanelGlobalGroups.FirstOrDefault(item => string.Equals(item.Id, groupId, StringComparison.OrdinalIgnoreCase))
-                    : settings.QuickPanelGlobalGroups.FirstOrDefault(item => string.Equals(item.Id, settings.SelectedQuickPanelGlobalGroupId, StringComparison.OrdinalIgnoreCase))
-                      ?? settings.QuickPanelGlobalGroups.FirstOrDefault();
-
-                if (group == null)
-                {
-                    await WriteJsonAsync(response, 400, new { error = "no_quickpanel_group" });
-                    return;
-                }
-
-                group.SlotItems ??= new List<QuickPanelSlotItem?>();
-                while (group.SlotItems.Count < 12)
-                {
-                    group.SlotItems.Add(null);
-                }
-
-                if (group.SlotItems.Any(slot =>
-                        slot != null &&
-                        ((!slot.IsFolder && string.Equals(slot.ExtensionId, extensionId, StringComparison.OrdinalIgnoreCase)) ||
-                         (slot.IsFolder && slot.FolderExtensionIds != null && slot.FolderExtensionIds.Any(id => string.Equals(id, extensionId, StringComparison.OrdinalIgnoreCase))))))
-                {
-                    await WriteJsonAsync(response, 200, new { ok = true, message = "already_exists" });
-                    return;
-                }
-
-                var index = group.SlotItems.FindIndex(item => item == null);
-                if (index >= 0)
-                {
-                    group.SlotItems[index] = new QuickPanelSlotItem { ExtensionId = extensionId };
-                    group.Slots = group.SlotItems.Select(item => item != null && !item.IsFolder ? item.ExtensionId : null).ToList();
-                    
-                    if (string.Equals(group.Id, settings.SelectedQuickPanelGlobalGroupId, StringComparison.OrdinalIgnoreCase))
-                    {
-                        settings.QuickPanelSlots ??= new List<string?>();
-                        while (settings.QuickPanelSlots.Count <= index)
-                        {
-                            settings.QuickPanelSlots.Add(null);
-                        }
-                        settings.QuickPanelSlots[index] = extensionId;
-                    }
-
-                    AppSettingsStore.Save(settings);
-                    _onMutated(null);
-                    await WriteJsonAsync(response, 200, new { ok = true, index, groupId = group.Id });
-                    return;
-                }
-
-                await WriteJsonAsync(response, 400, new { error = "quickpanel_full" });
-                return;
-            }
-
-            if (request.HttpMethod == "POST" && path == "/v1/app/notify")
-            {
-                var payload = await ReadJsonBodyAsync(request);
-                var title = GetString(payload, "title") ?? "Yanzi";
-                var message = GetString(payload, "message") ?? string.Empty;
-
-                if (_onShowNotification != null)
-                {
-                    await _onShowNotification(title, message);
-                }
-
-                await WriteJsonAsync(response, 200, new { ok = true });
-                return;
-            }
-
-            if (request.HttpMethod == "POST" && path == "/v1/me/mobile/messages")
-            {
-                if (_onMobileMessage == null)
-                {
-                    await WriteJsonAsync(response, 400, new { error = "not_supported" });
-                    return;
-                }
-                var payload = await ReadJsonBodyAsync(request);
-
-                var sourceDeviceId = GetString(payload, "sourceDeviceId");
-                if (!string.IsNullOrEmpty(sourceDeviceId))
-                {
-                    LastKnownMobileDeviceModel = MobileDeviceNameNormalizer.Normalize(sourceDeviceId);
-                    MobileDeviceConnected?.Invoke(LastKnownMobileDeviceModel);
-                }
-
-                var messageId = Guid.NewGuid().ToString("N");
-                var message = new DeviceMessageRecord
-                {
-                    MessageId = messageId,
-                    SourceDeviceId = sourceDeviceId ?? "lan",
-                    TargetPlatform = GetString(payload, "targetPlatform") ?? "desktop",
-                    Kind = GetString(payload, "kind") ?? "text",
-                    Title = GetString(payload, "title") ?? "局域网消息",
-                    Text = GetString(payload, "text") ?? "",
-                    CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(),
-                    Payload = new Dictionary<string, JsonElement>()
-                };
-
-                if (payload.TryGetProperty("payload", out var payloadObj) && payloadObj.ValueKind == JsonValueKind.Object)
-                {
-                    foreach (var prop in payloadObj.EnumerateObject())
-                    {
-                        message.Payload[prop.Name] = prop.Value;
-                    }
-                }
-
-                var result = await _onMobileMessage(message);
-                var completedMessage = CreateLocalMobileMessageDetail(message, result.success, result.output);
-                _localMobileMessages[messageId] = completedMessage;
-                TrimLocalMobileMessages();
-                await WriteJsonAsync(response, 200, new { ok = true, messageId, success = result.success, output = result.output });
-                return;
-            }
-
-            if (request.HttpMethod == "GET" && path.StartsWith("/v1/me/mobile/messages/", StringComparison.Ordinal))
-            {
-                var messageId = Uri.UnescapeDataString(path["/v1/me/mobile/messages/".Length..]);
-                if (_localMobileMessages.TryGetValue(messageId, out var message))
-                {
-                    await WriteJsonAsync(response, 200, message);
-                    return;
-                }
-
-                await WriteJsonAsync(response, 404, new { error = "not_found" });
-                return;
-            }
-
-            if (request.HttpMethod == "POST" && path.EndsWith("/run", StringComparison.Ordinal) && path.StartsWith("/v1/extensions/", StringComparison.Ordinal))
-            {
-                var id = Uri.UnescapeDataString(path["/v1/extensions/".Length..^"/run".Length]);
-                var payload = await ReadJsonBodyAsync(request);
-                var input = GetString(payload, "input");
-                
-                var commands = LocalExtensionCatalog.LoadCommands();
-                var command = commands.FirstOrDefault(c => string.Equals(c.ExtensionId, id, StringComparison.OrdinalIgnoreCase));
-                if (command == null)
-                {
-                    await WriteJsonAsync(response, 404, new { error = "not_found" });
-                    return;
-                }
-
-                if (_runningTasks.ContainsKey(id))
-                {
-                    await WriteJsonAsync(response, 400, new { error = "already_running" });
-                    return;
-                }
-
-                try
-                {
-                    using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
-                    _runningTasks[id] = cts;
-                    ScriptExecutionResult result;
-                    try
-                    {
-                        result = await ScriptExtensionRunner.ExecuteAsync(command, input, "agent-api", cts.Token);
-                    }
-                    finally
-                    {
-                        _runningTasks.TryRemove(id, out _);
-                    }
-
-                    await WriteJsonAsync(response, 200, new { 
-                        ok = true, 
-                        success = result.Success, 
-                        output = result.Output, 
-                        error = result.Error,
-                        exitCode = result.ExitCode 
-                    });
-                }
-                catch (Exception ex)
-                {
-                    await WriteJsonAsync(response, 500, new { error = ex.Message });
-                }
-                return;
-            }
-
-            if (request.HttpMethod == "GET" && path.StartsWith("/v1/extensions/", StringComparison.Ordinal) && path.EndsWith("/status", StringComparison.Ordinal))
-            {
-                var id = Uri.UnescapeDataString(path["/v1/extensions/".Length..^"/status".Length]);
-                var isRunning = _runningTasks.ContainsKey(id);
-                await WriteJsonAsync(response, 200, new { ok = true, isRunning });
-                return;
-            }
-
-            if (request.HttpMethod == "POST" && path.StartsWith("/v1/extensions/", StringComparison.Ordinal) && path.EndsWith("/stop", StringComparison.Ordinal))
-            {
-                var id = Uri.UnescapeDataString(path["/v1/extensions/".Length..^"/stop".Length]);
-                var stoppedAny = false;
-
-                // 1. 尝试停止轻量级后台Task
-                if (_runningTasks.TryGetValue(id, out var cts))
-                {
-                    try { cts.Cancel(); } catch { }
-                    _runningTasks.TryRemove(id, out _);
-                    stoppedAny = true;
-                }
-
-                // 2. 尝试停止常驻的托管扩展或进程 (来自 RunningExtensionRegistry)
-                var runningInstances = RunningExtensionRegistry.GetSnapshot()
-                    .Where(x => string.Equals(x.ExtensionId, id, StringComparison.OrdinalIgnoreCase))
-                    .ToList();
-
-                foreach (var instance in runningInstances)
-                {
-                    if (RunningExtensionRegistry.TryTerminate(instance.InstanceId, out _))
-                    {
-                        stoppedAny = true;
-                    }
-                }
-
-                if (stoppedAny)
-                {
-                    await WriteJsonAsync(response, 200, new { ok = true, stopped = true });
-                }
-                else
-                {
-                    await WriteJsonAsync(response, 200, new { ok = true, stopped = false, reason = "not_running" });
-                }
-                return;
-            }
-
-            if (request.HttpMethod == "POST" && path.StartsWith("/v1/webview/", StringComparison.Ordinal) && path.EndsWith("/execute", StringComparison.Ordinal))
-            {
-                var id = Uri.UnescapeDataString(path["/v1/webview/".Length..^"/execute".Length]);
-                var payload = await ReadJsonBodyAsync(request);
-                var script = GetString(payload, "script");
-                if (string.IsNullOrWhiteSpace(script))
-                {
-                    await WriteJsonAsync(response, 400, new { error = "script_required" });
-                    return;
-                }
-
-                if (!HostObjectRegistry.TryGetObject(id, out var obj))
-                {
-                    await WriteJsonAsync(response, 404, new { error = "object_not_found" });
-                    return;
-                }
-
-                if (obj is not Microsoft.Web.WebView2.Wpf.WebView2 webView)
-                {
-                    await WriteJsonAsync(response, 400, new { 
-                        error = "type_mismatch", 
-                        expected = typeof(Microsoft.Web.WebView2.Wpf.WebView2).AssemblyQualifiedName,
-                        actual = obj?.GetType().AssemblyQualifiedName 
-                    });
-                    return;
-                }
-
-                try
-                {
-                    var resultJson = await webView.Dispatcher.InvokeAsync(async () =>
-                    {
-                        return await webView.ExecuteScriptAsync(script);
-                    }).Task.Unwrap();
-
-                    var result = System.Text.Json.JsonSerializer.Deserialize<string>(resultJson);
-                    await WriteJsonAsync(response, 200, new { ok = true, result });
-                }
-                catch (Exception ex)
-                {
-                    await WriteJsonAsync(response, 500, new { error = "execution_failed", detail = ex.Message });
-                }
-                return;
-            }
-
-            if (request.HttpMethod == "GET" && path == "/v1/sync/webdav-config")
-            {
-                await WriteJsonAsync(response, 200, GetWebDavConfigDto());
-                return;
-            }
-
-            if (request.HttpMethod == "GET" && path == "/v1/sync/personal-config")
-            {
-                var settings = AppSettingsStore.Load();
-                var secrets = PersonalSyncSecretStore.Load();
-                await WriteJsonAsync(response, 200, new
-                {
-                    ok = true,
-                    enabled = settings.PersonalSync.Enabled,
-                    provider = settings.PersonalSync.Provider,
-                    settings = settings.PersonalSync,
-                    secrets = secrets
-                });
-                return;
-            }
-
-            if (request.HttpMethod == "POST" && path == "/v1/sync/trigger")
-            {
-                if (_onTriggerSync != null)
-                {
-                    _onTriggerSync();
-                }
-
-                await WriteJsonAsync(response, 200, new { ok = true, message = "sync triggered" });
-                return;
-            }
-
-            if (request.HttpMethod == "GET" && path.StartsWith("/v1/storage/", StringComparison.Ordinal))
-            {
-                var extensionId = Uri.UnescapeDataString(path["/v1/storage/".Length..]);
-                var key = GetQueryString(request, "key");
-                if (string.IsNullOrWhiteSpace(key))
-                {
-                    await WriteJsonAsync(response, 400, new { error = "key_required" });
-                    return;
-                }
-
-                var scope = GetQueryString(request, "scope");
-                var result = await ExtensionStorageService.ReadTextAsync(extensionId, key, scope);
-                await WriteJsonAsync(response, 200, new
-                {
-                    found = result.Found,
-                    content = result.Content,
-                    source = result.Source,
-                    localPath = result.LocalPath
-                });
-                return;
-            }
-
-            if (request.HttpMethod == "DELETE" && path.StartsWith("/v1/storage/", StringComparison.Ordinal))
-            {
-                var extensionId = Uri.UnescapeDataString(path["/v1/storage/".Length..]);
-                var key = GetQueryString(request, "key");
-                if (string.IsNullOrWhiteSpace(key))
-                {
-                    await WriteJsonAsync(response, 400, new { error = "key_required" });
-                    return;
-                }
-                var scope = GetQueryString(request, "scope");
-                var result = await ExtensionStorageService.DeleteTextAsync(extensionId, key, scope);
-                await WriteJsonAsync(response, 200, new
-                {
-                    ok = true,
-                    localPath = result.LocalPath,
-                    cloudSaved = result.CloudSaved,
-                    result.Scope,
-                    cloudMessage = result.CloudMessage
-                });
-                return;
-            }
-
-            if (request.HttpMethod == "GET" && path.StartsWith("/v1/extensions/", StringComparison.Ordinal) && !path.StartsWith("/v1/extensions/recycle-bin", StringComparison.Ordinal))
-            {
-                var id = Uri.UnescapeDataString(path["/v1/extensions/".Length..]);
-                var manifest = LocalExtensionCatalog.LoadManifestJson(id);
-                var command = LocalExtensionCatalog.LoadCommands()
-                    .FirstOrDefault(item => string.Equals(item.ExtensionId, id, StringComparison.OrdinalIgnoreCase));
-                var accentHex = command?.AccentBrush is System.Windows.Media.SolidColorBrush accentBrush
-                    ? accentBrush.Color.ToString()
-                    : string.Empty;
-                await WriteJsonAsync(response, 200, new
-                {
-                    id,
-                    extension_id = id,
-                    extensionId = id,
-                    manifest,
-                    display_name = command?.Title ?? id,
-                    displayName = command?.Title ?? id,
-                    name = command?.Title ?? id,
-                    description = command?.Subtitle ?? string.Empty,
-                    icon = command?.IconReference ?? string.Empty,
-                    accent_hex = accentHex,
-                    accentHex = accentHex,
-                    version = command?.DeclaredVersion ?? string.Empty
-                });
-                return;
-            }
-
-            if (request.HttpMethod == "POST" && path == "/v1/extensions")
-            {
-                var payload = await ReadJsonBodyAsync(request);
-                var manifest = GetString(payload, "manifest");
-                if (string.IsNullOrWhiteSpace(manifest))
-                {
-                    await WriteJsonAsync(response, 400, new { error = "manifest_required" });
-                    return;
-                }
-
-                var command = LocalExtensionCatalog.SaveJsonExtension(manifest, forceNewSystemId: true);
-                _onMutated(command.ExtensionId);
-                MainWindow.QueueCSharpPrebuild(command, "api-add");
-                await WriteJsonAsync(response, 201, new { item = ToDto(command) });
-                return;
-            }
-
-            if (request.HttpMethod == "POST" && path.StartsWith("/v1/storage/", StringComparison.Ordinal) && path.EndsWith("/sync", StringComparison.Ordinal))
-            {
-                var extensionId = Uri.UnescapeDataString(path["/v1/storage/".Length..^"/sync".Length]);
-                _ = Task.Run(() => ExtensionStorageService.SyncLocalDirectoryToCloudAsync(extensionId, _cts.Token), _cts.Token);
-                await WriteJsonAsync(response, 200, new { ok = true, message = $"sync started for extension data: {extensionId}" });
-                return;
-            }
-
-            if (request.HttpMethod == "PUT" && path.StartsWith("/v1/storage/", StringComparison.Ordinal))
-            {
-                var extensionId = Uri.UnescapeDataString(path["/v1/storage/".Length..]);
-                var payload = await ReadJsonBodyAsync(request);
-                var key = GetString(payload, "key");
-                if (string.IsNullOrWhiteSpace(key))
-                {
-                    await WriteJsonAsync(response, 400, new { error = "key_required" });
-                    return;
-                }
-
-                var content = GetString(payload, "content") ?? string.Empty;
-                var scope = GetString(payload, "scope");
-                var result = await ExtensionStorageService.WriteTextAsync(extensionId, key, content, scope);
-                await WriteJsonAsync(response, 200, new
-                {
-                    ok = true,
-                    localPath = result.LocalPath,
-                    cloudSaved = result.CloudSaved,
-                    result.Scope,
-                    cloudMessage = result.CloudMessage
-                });
-                return;
-            }
-
-            if (request.HttpMethod == "PUT" && path.StartsWith("/v1/extensions/", StringComparison.Ordinal))
-            {
-                var id = Uri.UnescapeDataString(path["/v1/extensions/".Length..]);
-                var payload = await ReadJsonBodyAsync(request);
-                var manifest = GetString(payload, "manifest");
-                if (string.IsNullOrWhiteSpace(manifest))
-                {
-                    await WriteJsonAsync(response, 400, new { error = "manifest_required" });
-                    return;
-                }
-
-                using var document = JsonDocument.Parse(manifest);
-                if (!document.RootElement.TryGetProperty("id", out var idElement) ||
-                    !string.Equals(idElement.GetString(), id, StringComparison.OrdinalIgnoreCase))
-                {
-                    await WriteJsonAsync(response, 400, new { error = "id_mismatch" });
-                    return;
-                }
-
-                var command = LocalExtensionCatalog.SaveJsonExtension(manifest, forceNewSystemId: false);
-                _onMutated(command.ExtensionId);
-                MainWindow.QueueCSharpPrebuild(command, "api-edit");
-                await WriteJsonAsync(response, 200, new { item = ToDto(command) });
-                return;
-            }
-
-            if (request.HttpMethod == "PATCH" && path.EndsWith("/rename", StringComparison.Ordinal))
-            {
-                var id = Uri.UnescapeDataString(path["/v1/extensions/".Length..^"/rename".Length]);
-                var payload = await ReadJsonBodyAsync(request);
-                var name = GetString(payload, "name");
-                if (string.IsNullOrWhiteSpace(name))
-                {
-                    await WriteJsonAsync(response, 400, new { error = "name_required" });
-                    return;
-                }
-
-                var command = LocalExtensionCatalog.RenameExtension(id, name);
-                _onMutated(command.ExtensionId);
-                await WriteJsonAsync(response, 200, new { item = ToDto(command) });
-                return;
-            }
-
-            if (request.HttpMethod == "PATCH" && path.EndsWith("/shortcut", StringComparison.Ordinal))
-            {
-                var id = Uri.UnescapeDataString(path["/v1/extensions/".Length..^"/shortcut".Length]);
-                var payload = await ReadJsonBodyAsync(request);
-                var shortcut = GetString(payload, "shortcut");
-                var command = LocalExtensionCatalog.SetGlobalShortcut(id, shortcut);
-                _onMutated(command.ExtensionId);
-                await WriteJsonAsync(response, 200, new { item = ToDto(command) });
-                return;
-            }
-
-            if (request.HttpMethod == "DELETE" && path.StartsWith("/v1/extensions/", StringComparison.Ordinal) && !path.StartsWith("/v1/extensions/recycle-bin", StringComparison.Ordinal))
-            {
-                var id = Uri.UnescapeDataString(path["/v1/extensions/".Length..]);
-                var commands = LocalExtensionCatalog.LoadCommands();
-                var command = commands.FirstOrDefault(c => string.Equals(c.ExtensionId, id, StringComparison.OrdinalIgnoreCase));
-                ExtensionRecycleBinService.MoveToRecycleBin(id, command?.ExtensionDirectoryPath);
-                _onMutated(id);
-                await WriteJsonAsync(response, 200, new { ok = true, id });
-                return;
-            }
-
-            if (request.HttpMethod == "POST" && path.StartsWith("/v1/extensions/", StringComparison.Ordinal) && path.EndsWith("/publish", StringComparison.Ordinal))
-            {
-                var id = Uri.UnescapeDataString(path["/v1/extensions/".Length..^"/publish".Length]);
-                if (_onPublishExtension == null)
-                {
-                    await WriteJsonAsync(response, 400, new { error = "publish_not_supported" });
-                    return;
-                }
-                
-                var (ok, message) = await _onPublishExtension(id);
-                if (ok)
-                {
-                    await WriteJsonAsync(response, 200, new { ok = true, message });
-                }
-                else
-                {
-                    await WriteJsonAsync(response, 400, new { error = "publish_failed", detail = message });
-                }
-                return;
-            }
-
-            if (request.HttpMethod == "POST" && path.StartsWith("/v1/extensions/", StringComparison.Ordinal) && path.EndsWith("/unpublish", StringComparison.Ordinal))
-            {
-                var id = Uri.UnescapeDataString(path["/v1/extensions/".Length..^"/unpublish".Length]);
-                if (_onUnpublishExtension == null)
-                {
-                    await WriteJsonAsync(response, 400, new { error = "unpublish_not_supported" });
-                    return;
-                }
-                
-                var (ok, message) = await _onUnpublishExtension(id);
-                if (ok)
-                {
-                    await WriteJsonAsync(response, 200, new { ok = true, message });
-                }
-                else
-                {
-                    await WriteJsonAsync(response, 400, new { error = "unpublish_failed", detail = message });
-                }
-                return;
-            }
-
-            if (request.HttpMethod == "GET" && path == "/v1/extensions/recycle-bin")
-            {
-                var items = ExtensionRecycleBinService.LoadEntries().Select(x => new
-                {
-                    itemId = x.ItemId,
-                    extensionId = x.ExtensionId,
-                    title = x.Title,
-                    deletedAt = x.DeletedAtUtc,
-                    category = x.Category
-                }).ToList();
-                await WriteJsonAsync(response, 200, new { items });
-                return;
-            }
-
-            if (request.HttpMethod == "POST" && path.StartsWith("/v1/extensions/recycle-bin/", StringComparison.Ordinal) && path.EndsWith("/restore", StringComparison.Ordinal))
-            {
-                var id = Uri.UnescapeDataString(path["/v1/extensions/recycle-bin/".Length..^"/restore".Length]);
-                var restored = ExtensionRecycleBinService.RestoreFromRecycleBin(id);
-                _onMutated(null);
-                await WriteJsonAsync(response, 200, new { ok = true, id });
-                return;
-            }
-
-            if (request.HttpMethod == "DELETE" && path.StartsWith("/v1/extensions/recycle-bin/", StringComparison.Ordinal))
-            {
-                var id = Uri.UnescapeDataString(path["/v1/extensions/recycle-bin/".Length..]);
-                var deleted = ExtensionRecycleBinService.DeletePermanently(id);
-                _onMutated(null);
-                await WriteJsonAsync(response, 200, new { ok = true, id });
-                return;
-            }
-
-            if (request.HttpMethod == "POST" && path.StartsWith("/v1/store/extensions/", StringComparison.Ordinal) && path.EndsWith("/install", StringComparison.Ordinal))
-            {
-                var id = Uri.UnescapeDataString(path["/v1/store/extensions/".Length..^"/install".Length]);
-                if (_onInstallExtension == null)
-                {
-                    await WriteJsonAsync(response, 400, new { error = "install_not_supported" });
-                    return;
-                }
-                
-                var (ok, message) = await _onInstallExtension(id);
-                if (ok)
-                {
-                    await WriteJsonAsync(response, 200, new { ok = true, message });
-                }
-                else
-                {
-                    await WriteJsonAsync(response, 400, new { error = "install_failed", detail = message });
-                }
-                return;
-            }
-
-            if (request.HttpMethod == "GET" && path == "/v1/user/me")
-            {
-                if (_onGetMe == null)
-                {
-                    await WriteJsonAsync(response, 400, new { error = "auth_not_supported" });
-                    return;
-                }
-                var me = await _onGetMe();
-                await WriteJsonAsync(response, 200, new { ok = true, user = me });
-                return;
-            }
-
-            if (request.HttpMethod == "GET" && path == "/v1/settings")
-            {
-                var settings = AppSettingsStore.Load();
-                await WriteJsonAsync(response, 200, new { ok = true, settings });
-                return;
-            }
-
-            if (request.HttpMethod == "GET" && path == "/v1/me/yanm-state")
-            {
-                await WriteYanmStateAsync(response, AppSettingsStore.Load());
-                return;
-            }
-
-            if (request.HttpMethod == "PUT" && path == "/v1/me/yanm-state")
-            {
-                var payload = await ReadJsonBodyAsync(request);
-                if (!payload.TryGetProperty("yanm", out var yanmElement) || yanmElement.ValueKind != JsonValueKind.Object)
-                {
-                    await WriteJsonAsync(response, 400, new { error = "yanm_required" });
-                    return;
-                }
-
-                var yanm = JsonSerializer.Deserialize<YanmSettings>(yanmElement.GetRawText(), JsonOptions) ?? new YanmSettings();
-                var settings = AppSettingsStore.Load();
-                settings.Yanm = yanm;
-                var updatedAtUtc = GetString(payload, "updatedAtUtc");
-                settings.YanmStateUpdatedAtUtc = string.IsNullOrWhiteSpace(updatedAtUtc)
-                    ? DateTime.UtcNow.ToString("O")
-                    : updatedAtUtc;
-                AppSettingsStore.Save(settings);
-                _onSettingsChanged?.Invoke("api-yanm-state-updated", true);
-                
-                if (_onPushToMobile != null)
-                {
-                    _ = Task.Run(async () =>
-                    {
-                        try
-                        {
-                            await _onPushToMobile("YanziSync", "yanm_updated");
-                        }
-                        catch {}
-                    });
-                }
-                
-                await WriteYanmStateAsync(response, AppSettingsStore.Load());
-                return;
-            }
-
-            if (request.HttpMethod == "PUT" && path == "/v1/me/yanm-state/component-state")
-            {
-                var payload = await ReadJsonBodyAsync(request);
-                var patch = ReadYanmComponentStatePatch(payload);
-                if (patch.Count == 0)
-                {
-                    await WriteJsonAsync(response, 400, new { error = "component_state_required" });
-                    return;
-                }
-
-                var settings = AppSettingsStore.Load();
-                settings.Yanm ??= new YanmSettings();
-                settings.Yanm.ComponentState ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                foreach (var item in patch)
-                {
-                    settings.Yanm.ComponentState[item.Key] = item.Value;
-                }
-
-                var updatedAtUtc = GetString(payload, "updatedAtUtc");
-                settings.YanmStateUpdatedAtUtc = string.IsNullOrWhiteSpace(updatedAtUtc)
-                    ? DateTime.UtcNow.ToString("O")
-                    : updatedAtUtc;
-                AppSettingsStore.Save(settings);
-                _onSettingsChanged?.Invoke("api-yanm-component-state-updated", false);
-
-                if (_onPushToMobile != null)
-                {
-                    _ = Task.Run(async () =>
-                    {
-                        try
-                        {
-                            await _onPushToMobile("YanziSync", "yanm_updated");
-                        }
-                        catch {}
-                    });
-                }
-
-                await WriteYanmStateAsync(response, AppSettingsStore.Load());
-                return;
-            }
-
-            if (request.HttpMethod == "GET" && path == "/v1/me/mobile/extensions")
-            {
-                var settings = AppSettingsStore.Load();
-                var list = settings.MobileExtensionsJson ?? "[]";
-                await WriteJsonAsync(response, 200, new { ok = true, extensions = list });
-                return;
-            }
-
-            if (request.HttpMethod == "PUT" && path == "/v1/me/mobile/extensions")
-            {
-                var payload = await ReadJsonBodyAsync(request);
-                if (!payload.TryGetProperty("extensions", out var extElement) || extElement.ValueKind != JsonValueKind.String)
-                {
-                    await WriteJsonAsync(response, 400, new { error = "extensions_string_required" });
-                    return;
-                }
-                var extensionsStr = extElement.GetString() ?? "[]";
-                var settings = AppSettingsStore.Load();
-                settings.MobileExtensionsJson = extensionsStr;
-                AppSettingsStore.Save(settings);
-                _onSettingsChanged?.Invoke("api-mobile-extensions-updated", true);
-                await WriteJsonAsync(response, 200, new { ok = true });
-                return;
-            }
-
-            if (request.HttpMethod == "PATCH" && path == "/v1/settings")
-            {
-                var payload = await ReadJsonBodyAsync(request);
-                var settings = AppSettingsStore.Load();
-                if (payload.TryGetProperty("themeMode", out var themeEl) && themeEl.ValueKind == JsonValueKind.String)
-                {
-                    settings.ThemeMode = themeEl.GetString()!;
-                }
-                if (payload.TryGetProperty("launchAtStartup", out var launchEl) && (launchEl.ValueKind == JsonValueKind.True || launchEl.ValueKind == JsonValueKind.False))
-                {
-                    settings.LaunchAtStartup = launchEl.GetBoolean();
-                }
-                AppSettingsStore.Save(settings);
-                _onMutated(null);
-                await WriteJsonAsync(response, 200, new { ok = true, settings });
-                return;
-            }
-
-            if (request.HttpMethod == "DELETE" && path == "/v1/quickpanel/remove")
-            {
-                var extensionId = request.QueryString["extensionId"];
-                if (string.IsNullOrWhiteSpace(extensionId))
-                {
-                    await WriteJsonAsync(response, 400, new { error = "missing_extensionId" });
-                    return;
-                }
-                
-                var settings = AppSettingsStore.Load();
-                var removed = false;
-                foreach (var group in settings.QuickPanelGlobalGroups)
-                {
-                    if (group.Slots != null)
-                    {
-                        for (int i = 0; i < group.Slots.Count; i++)
-                        {
-                            if (string.Equals(group.Slots[i], extensionId, StringComparison.OrdinalIgnoreCase))
-                            {
-                                group.Slots[i] = null;
-                                if (group.SlotItems != null && i < group.SlotItems.Count)
-                                {
-                                    group.SlotItems[i] = null;
-                                }
-                                removed = true;
-                            }
-                        }
-                    }
-                }
-                if (removed)
-                {
-                    AppSettingsStore.Save(settings);
-                    _onMutated(null);
-                }
-                await WriteJsonAsync(response, 200, new { ok = true, removed });
-                return;
-            }
-
-            if (request.HttpMethod == "PUT" && path == "/v1/quickpanel/reorder")
-            {
-                var payload = await ReadJsonBodyAsync(request);
-                var groupId = GetString(payload, "groupId");
-                var items = payload.TryGetProperty("items", out var itemsEl) && itemsEl.ValueKind == JsonValueKind.Array 
-                    ? itemsEl.EnumerateArray().Select(e => e.GetString() ?? "").Where(s => !string.IsNullOrEmpty(s)).ToList()
-                    : new List<string>();
-                
-                if (string.IsNullOrWhiteSpace(groupId))
-                {
-                    await WriteJsonAsync(response, 400, new { error = "missing_groupId" });
-                    return;
-                }
-
-                var settings = AppSettingsStore.Load();
-                var group = settings.QuickPanelGlobalGroups.FirstOrDefault(g => g.Id == groupId);
-                if (group != null)
-                {
-                    group.Slots = items.Select(x => string.IsNullOrEmpty(x) ? null : x).ToList();
-                    group.SlotItems = new List<QuickPanelSlotItem?>(new QuickPanelSlotItem?[group.Slots.Count]);
-                    AppSettingsStore.Save(settings);
-                    _onMutated(null);
-                    await WriteJsonAsync(response, 200, new { ok = true });
-                }
-                else
-                {
-                    await WriteJsonAsync(response, 404, new { error = "group_not_found" });
-                }
-                return;
-            }
+            if (await GetAuthenticatedRouter().TryHandleAsync(request, response, path)) return;
 
             await WriteJsonAsync(response, 404, new { error = "not_found" });
         }
@@ -1726,6 +770,10 @@ public sealed class LocalAgentApiServer : IDisposable
         {
             await WriteJsonAsync(response, 404, new { error = ex.Message });
         }
+        catch (UiApiException ex)
+        {
+            await WriteJsonAsync(response, ex.Status, new { ok = false, error = ex.Code });
+        }
         catch (InvalidOperationException ex)
         {
             await WriteJsonAsync(response, 400, new { error = ex.Message });
@@ -1735,6 +783,78 @@ public sealed class LocalAgentApiServer : IDisposable
             HostAssets.AppendLog($"Local Agent API request error: {ex.Message}");
             await WriteJsonAsync(response, 500, new { error = "internal_error", detail = ex.Message });
         }
+    }
+
+    private LocalApiRouter? _authenticatedRouter;
+    private LocalApiRouter GetAuthenticatedRouter()
+    {
+        var existing = Volatile.Read(ref _authenticatedRouter);
+        if (existing != null) return existing;
+        var router = new LocalApiRouter();
+        router.Add((request, path) => request.HttpMethod == "GET" && path == "/v1/me/devices/peers", HandleAccountRoute0Async);
+        router.AddHandled(TryHandleMobileDeviceApiAsync);
+        router.AddHandled(TryCompanionFiles);
+        router.Add((request, path) => request.HttpMethod == "GET" && path == "/v1/me/devices/protocol", HandleAccountRoute3Async);
+        router.AddHandled(TryHandleConsoleSessionApiAsync);
+        router.AddHandled(TryPairingApiAsync);
+        router.AddHandled(TryHandleCapabilityApiAsync);
+        router.AddHandled(TryTransferSessionsAsync);
+        router.AddHandled(TryHandleLanTransferApiAsync);
+        router.AddHandled(TryHandleUiApiAsync);
+        router.Add((request, path) => request.HttpMethod == "POST" && path == "/v1/clipboard/sync", HandleAccountRoute10Async);
+        router.Add((request, path) => request.HttpMethod == "POST" && path == "/v1/shell/run", HandleFilesRoute11Async);
+        router.Add((request, path) => request.HttpMethod == "POST" && path == "/v1/fs/list", HandleFilesRoute12Async);
+        router.Add((request, path) => request.HttpMethod == "POST" && path == "/v1/fs/read", HandleFilesRoute13Async);
+        router.Add((request, path) => request.HttpMethod == "POST" && path == "/v1/fs/write", HandleFilesRoute14Async);
+        router.Add((request, path) => request.HttpMethod == "POST" && path == "/v1/me/devices", HandleAccountRoute15Async);
+        router.Add((request, path) => request.HttpMethod == "GET" && path == "/v1/logs", HandleAccountRoute16Async);
+        router.Add((request, path) => request.HttpMethod == "GET" && path == "/v1/extensions/template", HandleExtensionsRoute17Async);
+        router.Add((request, path) => request.HttpMethod == "GET" && path == "/v1/extensions", HandleExtensionsRoute18Async);
+        router.Add((request, path) => request.HttpMethod == "GET" && path == "/v1/me/extensions", HandleExtensionsRoute19Async);
+        router.Add((request, path) => request.HttpMethod == "GET" && path == "/v1/quickpanel/groups", HandleSettingsRoute20Async);
+        router.Add((request, path) => request.HttpMethod == "POST" && path == "/v1/quickpanel/groups", HandleSettingsRoute21Async);
+        router.Add((request, path) => request.HttpMethod == "POST" && path == "/v1/quickpanel/add", HandleSettingsRoute22Async);
+        router.Add((request, path) => request.HttpMethod == "POST" && path == "/v1/app/notify", HandleAccountRoute23Async);
+        router.Add((request, path) => request.HttpMethod == "POST" && path == "/v1/me/mobile/messages", HandleAccountRoute24Async);
+        router.Add((request, path) => request.HttpMethod == "GET" && path.StartsWith("/v1/me/mobile/messages/", StringComparison.Ordinal), HandleAccountRoute25Async);
+        router.Add((request, path) => request.HttpMethod == "POST" && path.StartsWith("/v1/extensions/", StringComparison.Ordinal) && path.EndsWith("/build", StringComparison.Ordinal), HandleExtensionsRoute26Async);
+        router.Add((request, path) => request.HttpMethod == "POST" && path.StartsWith("/v1/extensions/", StringComparison.Ordinal) && path.EndsWith("/reload", StringComparison.Ordinal), HandleExtensionsRoute27Async);
+        router.Add((request, path) => request.HttpMethod == "POST" && path.EndsWith("/run", StringComparison.Ordinal) && path.StartsWith("/v1/extensions/", StringComparison.Ordinal), HandleExtensionsRoute28Async);
+        router.Add((request, path) => request.HttpMethod == "GET" && path.StartsWith("/v1/extensions/", StringComparison.Ordinal) && path.EndsWith("/logs", StringComparison.Ordinal), HandleExtensionsRoute29Async);
+        router.Add((request, path) => request.HttpMethod == "GET" && path.StartsWith("/v1/extensions/", StringComparison.Ordinal) && path.EndsWith("/status", StringComparison.Ordinal), HandleExtensionsRoute30Async);
+        router.Add((request, path) => request.HttpMethod == "POST" && path.StartsWith("/v1/extensions/", StringComparison.Ordinal) && path.EndsWith("/stop", StringComparison.Ordinal), HandleExtensionsRoute31Async);
+        router.Add((request, path) => request.HttpMethod == "POST" && path.StartsWith("/v1/webview/", StringComparison.Ordinal) && path.EndsWith("/execute", StringComparison.Ordinal), HandleExtensionsRoute32Async);
+        router.Add((request, path) => request.HttpMethod == "GET" && path == "/v1/sync/webdav-config", HandleAccountRoute33Async);
+        router.Add((request, path) => request.HttpMethod == "GET" && path == "/v1/sync/personal-config", HandleAccountRoute34Async);
+        router.Add((request, path) => request.HttpMethod == "POST" && path == "/v1/sync/trigger", HandleAccountRoute35Async);
+        router.Add((request, path) => path.StartsWith("/v1/account-storage/", StringComparison.Ordinal), HandleExtensionsRoute36Async);
+        router.Add((request, path) => request.HttpMethod == "GET" && path.StartsWith("/v1/storage/", StringComparison.Ordinal), HandleExtensionsRoute37Async);
+        router.Add((request, path) => request.HttpMethod == "DELETE" && path.StartsWith("/v1/storage/", StringComparison.Ordinal), HandleExtensionsRoute38Async);
+        router.Add((request, path) => request.HttpMethod == "GET" && path.StartsWith("/v1/extensions/", StringComparison.Ordinal) && !path.StartsWith("/v1/extensions/recycle-bin", StringComparison.Ordinal), HandleExtensionsRoute39Async);
+        router.Add((request, path) => request.HttpMethod == "POST" && path == "/v1/extensions", HandleExtensionsRoute40Async);
+        router.Add((request, path) => request.HttpMethod == "POST" && path.StartsWith("/v1/storage/", StringComparison.Ordinal) && path.EndsWith("/sync", StringComparison.Ordinal), HandleExtensionsRoute41Async);
+        router.Add((request, path) => request.HttpMethod == "PUT" && path.StartsWith("/v1/storage/", StringComparison.Ordinal), HandleExtensionsRoute42Async);
+        router.Add((request, path) => request.HttpMethod == "PUT" && path.StartsWith("/v1/extensions/", StringComparison.Ordinal), HandleExtensionsRoute43Async);
+        router.Add((request, path) => request.HttpMethod == "PATCH" && path.EndsWith("/rename", StringComparison.Ordinal), HandleAccountRoute44Async);
+        router.Add((request, path) => request.HttpMethod == "PATCH" && path.EndsWith("/shortcut", StringComparison.Ordinal), HandleAccountRoute45Async);
+        router.Add((request, path) => request.HttpMethod == "DELETE" && path.StartsWith("/v1/extensions/", StringComparison.Ordinal) && !path.StartsWith("/v1/extensions/recycle-bin", StringComparison.Ordinal), HandleExtensionsRoute46Async);
+        router.Add((request, path) => request.HttpMethod == "POST" && path.StartsWith("/v1/extensions/", StringComparison.Ordinal) && path.EndsWith("/publish", StringComparison.Ordinal), HandleExtensionsRoute47Async);
+        router.Add((request, path) => request.HttpMethod == "POST" && path.StartsWith("/v1/extensions/", StringComparison.Ordinal) && path.EndsWith("/unpublish", StringComparison.Ordinal), HandleExtensionsRoute48Async);
+        router.Add((request, path) => request.HttpMethod == "GET" && path == "/v1/extensions/recycle-bin", HandleExtensionsRoute49Async);
+        router.Add((request, path) => request.HttpMethod == "POST" && path.StartsWith("/v1/extensions/recycle-bin/", StringComparison.Ordinal) && path.EndsWith("/restore", StringComparison.Ordinal), HandleExtensionsRoute50Async);
+        router.Add((request, path) => request.HttpMethod == "DELETE" && path.StartsWith("/v1/extensions/recycle-bin/", StringComparison.Ordinal), HandleExtensionsRoute51Async);
+        router.Add((request, path) => request.HttpMethod == "POST" && path.StartsWith("/v1/store/extensions/", StringComparison.Ordinal) && path.EndsWith("/install", StringComparison.Ordinal), HandleExtensionsRoute52Async);
+        router.Add((request, path) => request.HttpMethod == "GET" && path == "/v1/user/me", HandleAccountRoute53Async);
+        router.Add((request, path) => request.HttpMethod == "GET" && path == "/v1/settings", HandleSettingsRoute54Async);
+        router.Add((request, path) => request.HttpMethod == "GET" && path == "/v1/me/yanm-state", HandleSettingsRoute55Async);
+        router.Add((request, path) => request.HttpMethod == "PUT" && path == "/v1/me/yanm-state", HandleSettingsRoute56Async);
+        router.Add((request, path) => request.HttpMethod == "PUT" && path == "/v1/me/yanm-state/component-state", HandleSettingsRoute57Async);
+        router.Add((request, path) => request.HttpMethod == "GET" && path == "/v1/me/mobile/extensions", HandleSettingsRoute58Async);
+        router.Add((request, path) => request.HttpMethod == "PUT" && path == "/v1/me/mobile/extensions", HandleSettingsRoute59Async);
+        router.Add((request, path) => request.HttpMethod == "PATCH" && path == "/v1/settings", HandleSettingsRoute60Async);
+        router.Add((request, path) => request.HttpMethod == "DELETE" && path == "/v1/quickpanel/remove", HandleSettingsRoute61Async);
+        router.Add((request, path) => request.HttpMethod == "PUT" && path == "/v1/quickpanel/reorder", HandleSettingsRoute62Async);
+        return Interlocked.CompareExchange(ref _authenticatedRouter, router, null) ?? router;
     }
 
     private bool IsAuthorized(HttpListenerRequest request)
@@ -1753,7 +873,8 @@ public sealed class LocalAgentApiServer : IDisposable
         }
 
         var incoming = request.Headers["X-Yanzi-Token"];
-        return string.Equals(incoming, _token, StringComparison.Ordinal);
+        return string.Equals(incoming, _token, StringComparison.Ordinal) ||
+               IsValidConsoleCookie(request);
     }
 
     private static Task WriteYanmStateAsync(HttpListenerResponse response, AppSettings settings)
@@ -1809,7 +930,8 @@ public sealed class LocalAgentApiServer : IDisposable
             globalShortcut = x.GlobalShortcut,
             runtime = x.Runtime,
             entry = x.EntryPoint,
-            permissions = x.Permissions
+            permissions = x.Permissions,
+            capabilities = YanziAgentCapabilityCatalog.ForExtension(x)
         };
     }
 
@@ -2006,10 +1128,7 @@ public sealed class LocalAgentApiServer : IDisposable
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Swallow (燕子) Local Agent API Console</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js"></script>
+    <title>燕子 · 本地 Agent API 控制台</title>
     <style>
         :root {
             --bg-color: #0b0f19;
@@ -2268,18 +1387,30 @@ public sealed class LocalAgentApiServer : IDisposable
             font-family: 'Consolas', monospace;
             font-size: 12px;
         }
+        .capability-contract { max-height: 280px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+        .catalog-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        .catalog-table th, .catalog-table td { padding: 9px; border-bottom: 1px solid var(--border-color); text-align: left; overflow-wrap: anywhere; }
+        .catalog-scroll { max-height: 260px; overflow: auto; margin-top: 12px; }
+        .capability-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+        button:disabled { opacity: .45; cursor: not-allowed; }
+        @media (max-width: 1000px) {
+            .container { grid-template-columns: minmax(0, 1fr); }
+            .sidebar { position: static; height: auto; }
+            .panel-response { min-height: 220px; }
+        }
     </style>
 </head>
 <body>
     <div class="header">
-        <h1>Swallow (燕子) Local Agent API Console</h1>
-        <div class="badge-service">API Online</div>
+        <h1>燕子 · 本地 Agent API 控制台</h1>
+        <div class="badge-service">API 服务正常</div>
     </div>
     <div class="container">
+        <datalist id="available-program-ids"></datalist>
         <div class="api-list">
             <!-- Diagnostics -->
             <div class="api-section">
-                <h3 class="api-section-title">Diagnostics & Health</h3>
+                <h3 class="api-section-title">诊断与健康检查</h3>
                 <div class="card">
                     <div class="card-header" onclick="toggleCard(this)">
                         <span class="method get">GET</span>
@@ -2288,141 +1419,246 @@ public sealed class LocalAgentApiServer : IDisposable
                     </div>
                     <div class="card-body">
                         <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">检查 API 监听器是否运行正常。</p>
-                        <button class="btn-send" onclick="testHealth()">Send Request</button>
+                        <button class="btn-send" onclick="testHealth()">发送请求</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="api-section" id="capability-console">
+                <h3 class="api-section-title">AI 能力目录与调用</h3>
+                <p><a href="/pair" target="_blank" rel="noopener">同账号设备连接状态</a>（请先完成下方控制台鉴权）</p>
+                <div class="card expanded">
+                    <div class="card-header" onclick="toggleCard(this)">
+                        <span class="method get">目录</span>
+                        <span class="path">/v1/agent/catalog</span>
+                        <span class="desc">小程序及对应能力</span>
+                    </div>
+                    <div class="card-body">
+                        <p style="font-size:13px;color:var(--text-muted)">读取本机实际安装的小程序、能力契约和可用状态。选择能力，填写参数后可直接调用。</p>
+                        <div class="capability-actions">
+                            <button class="btn-send" onclick="refreshCapabilityCatalog(true)">刷新能力目录</button>
+                            <button class="btn-send" onclick="sendRequest('GET', '/v1/agent/openapi.json')">读取 AI 接口规范</button>
+                            <button class="btn-send" id="copy-capability-catalog" onclick="copyCapabilityCatalog()" disabled>复制 AI 能力目录</button>
+                            <button class="btn-send" onclick="sendRequest('GET', '/v1/capabilities/calls')">查看调用记录</button>
+                        </div>
+                        <p id="capability-load-state" role="status" aria-live="polite" style="font-size:12px;color:var(--text-muted)">请先验证本地 API 身份</p>
+                        <details>
+                            <summary>已安装小程序及对应能力</summary>
+                            <div class="catalog-scroll">
+                                <table class="catalog-table"><thead><tr><th>小程序</th><th>运行状态</th><th>可用 / 声明能力</th></tr></thead><tbody id="capability-programs"></tbody></table>
+                            </div>
+                        </details>
+                        <div class="form-group">
+                            <label for="capability-provider">能力提供者</label>
+                            <select class="form-control" id="capability-provider" onchange="filterCapabilityOptions()" disabled><option value="">请先读取能力目录</option></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="capability-name">对应能力</label>
+                            <select class="form-control" id="capability-name" onchange="onSelectedCapabilityChanged()" disabled><option value="">请选择能力</option></select>
+                        </div>
+                        <p id="capability-availability" role="status" aria-live="polite" style="font-size:12px;color:var(--text-muted)">尚未选择能力</p>
+                        <details open><summary>能力说明、输入输出 Schema 与权限</summary><pre class="capability-contract" id="capability-contract">选择能力后显示契约。</pre></details>
+                        <div class="form-group">
+                            <label for="capability-payload">调用参数（JSON，按照 inputSchema 填写）</label>
+                            <textarea class="form-control" id="capability-payload" rows="5" spellcheck="false">{}</textarea>
+                        </div>
+                        <div class="capability-actions">
+                            <button class="btn-send" id="invoke-capability" onclick="testInvokeCapability()" disabled>调用所选能力</button>
+                            <button class="btn-send" id="start-capability-provider" onclick="startCapabilityProvider()" disabled>启动提供小程序</button>
+                        </div>
                     </div>
                 </div>
             </div>
 
             <!-- Extensions -->
             <div class="api-section">
-                <h3 class="api-section-title">Extension Management</h3>
+                <h3 class="api-section-title">小程序管理</h3>
                 <div class="card">
                     <div class="card-header" onclick="toggleCard(this)">
                         <span class="method get">GET</span>
                         <span class="path">/v1/extensions</span>
-                        <span class="desc">获取已安装扩展列表</span>
+                        <span class="desc">读取已安装小程序</span>
                     </div>
                     <div class="card-body">
-                        <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">列出当前燕子启动器中加载的所有本地扩展信息。</p>
-                        <button class="btn-send" onclick="testListExtensions()">Send Request</button>
+                        <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">读取当前燕子中实际安装的小程序，不依赖示例 ID。</p>
+                        <button class="btn-send" onclick="testListExtensions()">发送请求</button>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header" onclick="toggleCard(this)">
+                        <span class="method post">接口</span>
+                        <span class="path">/v1/extensions/{id}/status · build · reload</span>
+                        <span class="desc">开发与重载</span>
+                    </div>
+                    <div class="card-body">
+                        <p style="font-size:13px; color:var(--text-muted);">GET 查询状态；POST 编译只构建不停止；POST 重载先编译再启动。重载不保证运行时失败后的自动回滚。</p>
+                        <div class="form-group">
+                            <label>小程序 ID</label>
+                            <input type="text" class="form-control" id="deploy-ext-id" list="available-program-ids" placeholder="先读取已安装小程序">
+                        </div>
+                        <button class="btn-send" onclick="testDeployment('status')">查看状态</button>
+                        <button class="btn-send" onclick="testDeployment('build')">编译</button>
+                        <button class="btn-send" onclick="testDeployment('reload')">重载</button>
                     </div>
                 </div>
                 <div class="card">
                     <div class="card-header" onclick="toggleCard(this)">
                         <span class="method post">POST</span>
                         <span class="path">/v1/extensions/{id}/run</span>
-                        <span class="desc">执行扩展</span>
+                        <span class="desc">运行小程序</span>
                     </div>
                     <div class="card-body">
-                        <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">触发执行指定 ID 的扩展脚本或可执行文件。</p>
+                        <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">运行指定小程序脚本或可执行文件。</p>
                         <div class="form-group">
-                            <label>Extension ID</label>
-                            <input type="text" class="form-control" id="run-ext-id" placeholder="例如: text-length-counter">
+                            <label>小程序 ID</label>
+                            <input type="text" class="form-control" id="run-ext-id" list="available-program-ids" placeholder="先读取已安装小程序">
                         </div>
                         <div class="form-group">
-                            <label>Input Text (输入内容)</label>
-                            <textarea class="form-control" id="run-input" placeholder="作为参数传给扩展..."></textarea>
+                            <label>运行参数（文本）</label>
+                            <textarea class="form-control" id="run-input" placeholder="作为参数传给所选小程序…"></textarea>
                         </div>
-                        <button class="btn-send" onclick="testRunExtension()">Send Request</button>
+                        <button class="btn-send" onclick="testRunExtension()">发送请求</button>
                     </div>
                 </div>
                 <div class="card">
                     <div class="card-header" onclick="toggleCard(this)">
                         <span class="method post">POST</span>
                         <span class="path">/v1/extensions/{id}/stop</span>
-                        <span class="desc">停止扩展</span>
+                        <span class="desc">停止小程序</span>
                     </div>
                     <div class="card-body">
                         <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">中止或终止指定 ID 的运行中进程或后台任务。</p>
                         <div class="form-group">
-                            <label>Extension ID</label>
-                            <input type="text" class="form-control" id="stop-ext-id" placeholder="例如: text-length-counter">
+                            <label>小程序 ID</label>
+                            <input type="text" class="form-control" id="stop-ext-id" list="available-program-ids" placeholder="先读取已安装小程序">
                         </div>
-                        <button class="btn-send" onclick="testStopExtension()">Send Request</button>
+                        <button class="btn-send" onclick="testStopExtension()">发送请求</button>
                     </div>
                 </div>
                 <div class="card">
                     <div class="card-header" onclick="toggleCard(this)">
                         <span class="method delete">DELETE</span>
                         <span class="path">/v1/extensions/{id}</span>
-                        <span class="desc">将扩展移至回收站</span>
+                        <span class="desc">将小程序移至回收站</span>
                     </div>
                     <div class="card-body">
-                        <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">将本地特定 ID 的扩展移动到回收站（软删除）。</p>
+                        <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">将指定小程序移入回收站（软删除）。</p>
                         <div class="form-group">
-                            <label>Extension ID</label>
-                            <input type="text" class="form-control" id="delete-ext-id" placeholder="例如: text-counter-pro">
+                            <label>小程序 ID</label>
+                            <input type="text" class="form-control" id="delete-ext-id" list="available-program-ids" placeholder="先读取已安装小程序">
                         </div>
-                        <button class="btn-send" onclick="testDeleteExtension()">Send Request</button>
+                        <button class="btn-send" onclick="testDeleteExtension()">发送请求</button>
                     </div>
                 </div>
                 <div class="card">
                     <div class="card-header" onclick="toggleCard(this)">
                         <span class="method delete">DELETE</span>
                         <span class="path">/v1/extensions/recycle-bin/{id}</span>
-                        <span class="desc">彻底删除扩展</span>
+                        <span class="desc">彻底删除小程序</span>
                     </div>
                     <div class="card-body">
-                        <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">从回收站中永久清除特定 ID 的扩展，此操作不可逆。</p>
+                        <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">从回收站中永久删除指定小程序，此操作不可逆。</p>
                         <div class="form-group">
-                            <label>Extension ID</label>
-                            <input type="text" class="form-control" id="purge-ext-id" placeholder="例如: text-counter-pro">
+                            <label>小程序 ID</label>
+                            <input type="text" class="form-control" id="purge-ext-id" list="available-program-ids" placeholder="先读取已安装小程序">
                         </div>
-                        <button class="btn-send" onclick="testPurgeExtension()">Send Request</button>
+                        <button class="btn-send" onclick="testPurgeExtension()">发送请求</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Scoped extension UI capture and automation -->
+            <div class="api-section">
+                <h3 class="api-section-title">小程序界面测试</h3>
+                <div class="card expanded">
+                    <div class="card-header" onclick="toggleCard(this)">
+                        <span class="method post">界面</span>
+                        <span class="path">/v1/extensions/{id}/ui/*</span>
+                        <span class="desc">窗口截图与 UI 自动化</span>
+                    </div>
+                    <div class="card-body">
+                        <p style="font-size:13px; color:var(--text-muted);">只访问指定小程序窗口，不会捕获整个桌面。日历失去焦点后可在后台截图，无需重新弹出；自动化点击则会主动显示日历。须先填写本地 API Token。</p>
+                        <div class="form-group">
+                            <label>小程序 ID</label>
+                            <select class="form-control" id="ui-ext-id" onchange="onSelectedProgramChanged()" disabled><option value="">请先登录并读取已安装小程序</option></select>
+                        </div>
+                        <button class="btn-send" onclick="refreshInstalledPrograms(true)">刷新小程序列表</button><span id="program-load-state" aria-live="polite" style="margin-left:10px;font-size:12px;color:var(--text-muted)">尚未读取</span><br><button class="btn-send" onclick="testUi('windows')">窗口列表</button>
+                        <button class="btn-send" onclick="testUi('open')">打开窗口</button>
+                        <button class="btn-send" onclick="testUi('elements')">查看控件</button>
+                        <button class="btn-send" onclick="testUi('capture')">截图</button>
+                        <div style="margin-top:14px;padding:12px;border:1px solid #3777CE;border-radius:9px;background:rgba(45,113,210,.09)">
+                            <strong style="color:#93C5FD">AI 自动化会话 · 蓝色屏幕边框与操作提示</strong>
+                            <div id="ui-session-state" style="font-size:12px;color:#AAA;margin:7px 0">尚未建立会话。普通自动化操作会显示短暂的测试提示。</div>
+                            <button class="btn-send" onclick="testUiSession('start')">开始窗口测试</button>
+                            <button class="btn-send" onclick="testUiSession('foreground')">前台测试（需确认）</button>
+                            <button class="btn-send" onclick="testUiSession('pause')">暂停</button>
+                            <button class="btn-send" onclick="testUiSession('resume')">继续</button>
+                            <button class="btn-send" onclick="testUiSession('stop')">结束</button>
+                            <button class="btn-send" onclick="testUiSession('status')">状态</button>
+                            <p style="font-size:11px;color:#A8BFEA;margin:9px 0 0">检测到用户操作会自动暂停；此时需在桌面蓝色工具条上手动点击继续。紧急停止：Ctrl+Alt+Shift+F12。前台模式暂不注入系统鼠标输入。</p>
+                        </div>
+                        <div class="form-group" style="margin-top:12px">
+                            <label>界面操作步骤（JSON；先读取控件 ID）</label>
+                            <textarea class="form-control" id="ui-action-json" rows="5" placeholder="先选择小程序，点击“查看控件”，再填写控件 ID 与操作步骤。"></textarea>
+                        </div>
+                        <button class="btn-send" onclick="testUi('actions')">执行操作并截图</button>
+                        <div style="margin-top:12px">
+                            <img id="ui-preview" alt="小程序界面截图" style="display:none;max-width:100%;border-radius:8px;border:1px solid #444" />
+                        </div>
                     </div>
                 </div>
             </div>
 
             <!-- Storage -->
             <div class="api-section">
-                <h3 class="api-section-title">Extension Storage</h3>
+                <h3 class="api-section-title">小程序数据存储</h3>
                 <div class="card">
                     <div class="card-header" onclick="toggleCard(this)">
                         <span class="method get">GET</span>
                         <span class="path">/v1/storage/{id}</span>
-                        <span class="desc">读取扩展存储数据</span>
+                        <span class="desc">读取小程序存储数据</span>
                     </div>
                     <div class="card-body">
-                        <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">读取某个扩展存放在沙盒里的配置、笔记或其他文本数据。</p>
+                        <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">读取某个小程序存放在沙盒里的配置、笔记或其他文本数据。</p>
                         <div class="form-group">
-                            <label>Extension ID</label>
-                            <input type="text" class="form-control" id="get-store-id" placeholder="例如: yanzi-notes">
+                            <label>小程序 ID</label>
+                            <input type="text" class="form-control" id="get-store-id" list="available-program-ids" placeholder="先读取已安装小程序">
                         </div>
                         <div class="form-group">
-                            <label>Storage Key (存储键/相对路径)</label>
+                            <label>存储键（相对路径）</label>
                             <input type="text" class="form-control" id="get-store-key" placeholder="例如: notes/index.json">
                         </div>
-                        <button class="btn-send" onclick="testGetStorage()">Send Request</button>
+                        <button class="btn-send" onclick="testGetStorage()">发送请求</button>
                     </div>
                 </div>
                 <div class="card">
                     <div class="card-header" onclick="toggleCard(this)">
                         <span class="method put">PUT</span>
                         <span class="path">/v1/storage/{id}</span>
-                        <span class="desc">修改/写入扩展数据</span>
+                        <span class="desc">修改/写入小程序数据</span>
                     </div>
                     <div class="card-body">
-                        <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">覆写或创建某个扩展沙盒中的键值文件，支持本地和云端的自动更新。</p>
+                        <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">覆写或创建某个小程序沙盒中的键值文件，支持本地和云端的自动更新。</p>
                         <div class="form-group">
-                            <label>Extension ID</label>
-                            <input type="text" class="form-control" id="put-store-id" placeholder="例如: yanzi-notes">
+                            <label>小程序 ID</label>
+                            <input type="text" class="form-control" id="put-store-id" list="available-program-ids" placeholder="先读取已安装小程序">
                         </div>
                         <div class="form-group">
-                            <label>Storage Key</label>
+                            <label>存储键</label>
                             <input type="text" class="form-control" id="put-store-key" placeholder="例如: notes/index.json">
                         </div>
                         <div class="form-group">
-                            <label>Content (写入内容)</label>
+                            <label>写入内容</label>
                             <textarea class="form-control" id="put-store-content" placeholder="写入的 JSON 或文本..."></textarea>
                         </div>
-                        <button class="btn-send" onclick="testPutStorage()">Send Request</button>
+                        <button class="btn-send" onclick="testPutStorage()">发送请求</button>
                     </div>
                 </div>
             </div>
 
             <!-- Yanm Status -->
             <div class="api-section">
-                <h3 class="api-section-title">Yanm Overlay Control</h3>
+                <h3 class="api-section-title">燕幕状态管理</h3>
                 <div class="card">
                     <div class="card-header" onclick="toggleCard(this)">
                         <span class="method get">GET</span>
@@ -2431,7 +1667,7 @@ public sealed class LocalAgentApiServer : IDisposable
                     </div>
                     <div class="card-body">
                         <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">获取当前燕幕的组件状态、便签内容和组件列表。</p>
-                        <button class="btn-send" onclick="testGetYanmState()">Send Request</button>
+                        <button class="btn-send" onclick="testGetYanmState()">发送请求</button>
                     </div>
                 </div>
                 <div class="card">
@@ -2443,10 +1679,10 @@ public sealed class LocalAgentApiServer : IDisposable
                     <div class="card-body">
                         <p style="font-size:13px; color:var(--text-muted); margin: 0 0 10px 0;">修改燕幕便签组件的内容或组件布局状态，立即反映在屏幕上。</p>
                         <div class="form-group">
-                            <label>Yanm Settings Payload (JSON)</label>
+                            <label>燕幕配置数据（JSON）</label>
                             <textarea class="form-control" id="put-yanm-content" placeholder='例如: {"componentState": {"note": "新便签内容"}}'></textarea>
                         </div>
-                        <button class="btn-send" onclick="testPutYanmState()">Send Request</button>
+                        <button class="btn-send" onclick="testPutYanmState()">发送请求</button>
                     </div>
                 </div>
             </div>
@@ -2455,117 +1691,405 @@ public sealed class LocalAgentApiServer : IDisposable
         <div class="sidebar">
             <!-- Credentials Panel -->
             <div class="panel panel-credentials">
-                <h4 class="panel-title">Credentials Configuration</h4>
+                <h4 class="panel-title">身份验证</h4>
                 <div class="form-group" style="margin-top:0;">
-                    <label>Base URL</label>
+                    <label>服务地址</label>
                     <input type="text" class="form-control" id="base-url" readonly>
                 </div>
                 <div class="form-group">
                     <label>X-Yanzi-Token</label>
                     <div class="token-container">
-                        <input type="password" class="form-control" id="api-token" value="__YANZI_TOKEN__">
-                        <button class="btn-action" onclick="toggleTokenVisibility()">Show</button>
-                        <button class="btn-action" onclick="copyToken()">Copy</button>
+                        <input type="password" class="form-control" id="api-token" value=""
+                            autocomplete="off" spellcheck="false" placeholder="首次使用：从燕子设置中粘贴 Token">
+                        <button id="token-visibility-button" class="btn-action" onclick="toggleTokenVisibility()">显示</button>
+                        <button class="btn-action" onclick="copyToken()">复制</button>
                     </div>
+                    <p id="console-auth-state" aria-live="polite" style="font-size:12px;color:var(--text-muted);margin:10px 0">正在检测本机登录状态…</p>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:9px">
+                        <button class="btn-action" onclick="rememberConsoleLogin()">验证并记住此浏览器</button>
+                        <button class="btn-action" onclick="signOutConsole()">退出并清除此浏览器的登录</button>
+                    </div>
+                    <p style="font-size:12px;color:var(--text-muted);margin:10px 0 0">
+                        获取方式：燕子 → 设置 → 常规 → 本地 Agent API → 复制 Token。首次验证后使用 HttpOnly 登录 Cookie，
+                        无需每次粘贴，也不会将原始 Token 保存到网页存储。使用公用电脑时请退出登录；
+                        清除浏览器 Cookie 或修改燕子 Token 后需要重新验证。
+                    </p>
                 </div>
             </div>
 
             <!-- Response Panel -->
             <div class="panel panel-response">
-                <h4 class="panel-title">Response Monitor</h4>
+                <h4 class="panel-title">响应监视器</h4>
                 <div class="res-meta">
-                    <div>Status: <span id="res-status" class="status-badge" style="display:inline-block; min-width:40px; text-align:center;">-</span></div>
-                    <div>Latency: <span id="res-time">-</span></div>
+                    <div>状态：<span id="res-status" class="status-badge" style="display:inline-block; min-width:40px; text-align:center;">-</span></div>
+                    <div>耗时：<span id="res-time">-</span></div>
                 </div>
                 <div class="res-container">
-                    <pre><code id="res-body" class="language-json">No requests sent yet.</code></pre>
+                    <pre><code id="res-body" class="language-json">尚未发送请求。</code></pre>
                 </div>
             </div>
         </div>
     </div>
 
     <script>
-        // Set dynamic base URL
+        // Console login uses an HttpOnly, SameSite=Strict cookie. No raw token
+        // is persisted in JS-accessible localStorage or injected in public HTML.
         document.getElementById('base-url').value = window.location.origin;
+        const calendarExample = JSON.stringify({
+            captureEach: true,
+            actions: [
+                {type: 'invoke', automationId: 'calendar.add',
+                 waitFor: 'calendar.editor.title'},
+                {type: 'invoke', automationId: 'calendar.editor.cancel'}
+            ]
+        }, null, 2);
+        let activePrograms = [];
+        let capabilityCatalog = null;
+        let filteredCapabilities = [];
+        let capabilityCatalogRequest = 0;
+
+        function resetCapabilityCatalog(message) {
+            ++capabilityCatalogRequest;
+            capabilityCatalog = null;
+            filteredCapabilities = [];
+            document.getElementById('capability-provider').replaceChildren(new Option('请先读取能力目录', ''));
+            document.getElementById('capability-provider').disabled = true;
+            document.getElementById('capability-name').replaceChildren(new Option('请选择能力', ''));
+            document.getElementById('capability-name').disabled = true;
+            document.getElementById('capability-programs').replaceChildren();
+            document.getElementById('capability-contract').textContent = '选择能力后显示契约。';
+            document.getElementById('capability-availability').textContent = '尚未选择能力';
+            document.getElementById('capability-load-state').textContent = message;
+            document.getElementById('capability-payload').value = '{}';
+            for (const id of ['invoke-capability', 'start-capability-provider', 'copy-capability-catalog'])
+                document.getElementById(id).disabled = true;
+        }
+
+        async function refreshCapabilityCatalog(showInMonitor = false) {
+            const requestId = ++capabilityCatalogRequest;
+            const token = document.getElementById('api-token').value.trim();
+            document.getElementById('capability-load-state').textContent = '正在读取能力目录…';
+            try {
+                const response = await fetch('/v1/agent/catalog', {
+                    headers: token ? {'X-Yanzi-Token': token} : {}, credentials: 'same-origin', cache: 'no-store'
+                });
+                const data = await response.json();
+                if (requestId !== capabilityCatalogRequest) return;
+                if (!response.ok) {
+                    if (showInMonitor) showResponse(response.status, data);
+                    throw new Error(response.status === 401 ? '请先验证本地 API 身份' : 'HTTP ' + response.status);
+                }
+                capabilityCatalog = data;
+                const provider = document.getElementById('capability-provider');
+                const oldProvider = provider.value;
+                provider.replaceChildren(new Option('全部小程序与宿主能力', ''), new Option('宿主内置能力', 'host:'));
+                const rows = document.getElementById('capability-programs');
+                rows.replaceChildren();
+                for (const program of data.extensions) {
+                    const capabilities = program.capabilities || [];
+                    provider.add(new Option((program.title || program.id) + ' · ' + capabilities.length + ' 项能力', 'extension:' + program.id));
+                    const row = document.createElement('tr');
+                    const title = document.createElement('td');
+                    const button = document.createElement('button');
+                    button.className = 'btn-action';
+                    button.textContent = program.title || program.id;
+                    button.title = program.id;
+                    button.addEventListener('click', () => { provider.value = 'extension:' + program.id; filterCapabilityOptions(); });
+                    title.appendChild(button);
+                    const state = document.createElement('td');
+                    state.textContent = program.isRunning ? '运行中' : '未运行';
+                    const count = document.createElement('td');
+                    count.textContent = capabilities.filter(x => x.available).length + ' / ' + capabilities.length;
+                    row.append(title, state, count);
+                    rows.appendChild(row);
+                }
+                provider.disabled = false;
+                if (Array.from(provider.options).some(x => x.value === oldProvider)) provider.value = oldProvider;
+                document.getElementById('copy-capability-catalog').disabled = false;
+                const total = data.extensions.flatMap(x => x.capabilities || []).concat(data.hostCapabilities || []);
+                document.getElementById('capability-load-state').textContent =
+                    data.extensions.length + ' 个小程序 · ' + total.filter(x => x.available).length + ' 项当前可调用能力';
+                filterCapabilityOptions();
+                if (showInMonitor) showResponse(200, data);
+            } catch (error) {
+                if (requestId === capabilityCatalogRequest) resetCapabilityCatalog('读取失败：' + error.message);
+            }
+        }
+
+        function filterCapabilityOptions() {
+            const selector = document.getElementById('capability-name');
+            const oldName = selector.value;
+            const provider = document.getElementById('capability-provider').value;
+            const catalog = capabilityCatalog;
+            filteredCapabilities = catalog ?
+                (provider === 'host:' ? catalog.hostCapabilities :
+                 provider.startsWith('extension:') ? catalog.extensions.find(x => x.id === provider.slice(10))?.capabilities || [] :
+                 catalog.extensions.flatMap(x => x.capabilities || []).concat(catalog.hostCapabilities || [])) : [];
+            selector.replaceChildren(new Option(filteredCapabilities.length ? '请选择能力' : '该提供者尚未声明能力', ''));
+            for (const capability of filteredCapabilities) {
+                selector.add(new Option(capability.name + ' · ' + (capability.available ? '可调用' : '尚未注册'), capabilitySelectionKey(capability)));
+            }
+            selector.disabled = filteredCapabilities.length === 0;
+            if (filteredCapabilities.some(x => capabilitySelectionKey(x) === oldName)) selector.value = oldName;
+            onSelectedCapabilityChanged();
+        }
+
+        function capabilitySelectionKey(capability) {
+            return JSON.stringify([capability.providerExtensionId, capability.name]);
+        }
+
+        function selectedCapability() {
+            return filteredCapabilities.find(x => capabilitySelectionKey(x) === document.getElementById('capability-name').value);
+        }
+
+        function capabilitySample(schema, depth = 0) {
+            if (depth > 5) return null;
+            if (schema.default !== undefined) return schema.default;
+            if (schema.examples?.length) return schema.examples[0];
+            if (schema.enum?.length) return schema.enum[0];
+            if (schema.type === 'object') {
+                const value = {};
+                for (const key of schema.required || []) value[key] = capabilitySample(schema.properties?.[key] || {}, depth + 1);
+                return value;
+            }
+            if (schema.type === 'array') return [];
+            if (schema.type === 'boolean') return false;
+            if (schema.type === 'integer' || schema.type === 'number') return 0;
+            if (schema.type === 'string') return '';
+            return {};
+        }
+
+        function onSelectedCapabilityChanged() {
+            const capability = selectedCapability();
+            const provider = capabilityCatalog?.extensions.find(x => x.id === capability?.providerExtensionId);
+            document.getElementById('capability-contract').textContent = capability ? JSON.stringify(capability, null, 2) : '选择能力后显示契约。';
+            document.getElementById('capability-availability').textContent = !capability ? '尚未选择能力' :
+                capability.available ? '当前可调用 · 提供者：' + capability.providerExtensionId :
+                '尚未注册。可启动提供小程序后刷新目录；运行中的提供者需要实际注册 Handler。';
+            document.getElementById('capability-payload').value = JSON.stringify(capabilitySample(capability?.inputSchema || {}), null, 2);
+            document.getElementById('invoke-capability').disabled = !capability?.available;
+            document.getElementById('start-capability-provider').disabled = !provider || provider.isRunning || capability.available;
+        }
+
+        async function testInvokeCapability() {
+            const capability = selectedCapability();
+            if (!capability?.available) return;
+            let payload;
+            try { payload = JSON.parse(document.getElementById('capability-payload').value); }
+            catch { return showResponse(400, {error: '调用参数必须是有效 JSON'}); }
+            await sendRequest('POST', '/v1/capabilities/invoke', {name: capability.name, payload});
+        }
+
+        async function startCapabilityProvider() {
+            const capability = selectedCapability();
+            const provider = capabilityCatalog?.extensions.find(x => x.id === capability?.providerExtensionId);
+            if (!provider || provider.isRunning) return;
+            const result = await sendRequest('POST', provider.runEndpoint, {input: '', launchSource: 'app-startup'});
+            if (result?.success) await refreshCapabilityCatalog();
+        }
+
+        async function copyCapabilityCatalog() {
+            if (!capabilityCatalog) return;
+            try {
+                await navigator.clipboard.writeText(JSON.stringify(capabilityCatalog, null, 2));
+                document.getElementById('capability-load-state').textContent = '已复制 AI 能力目录（不含 Token）';
+            } catch { document.getElementById('capability-load-state').textContent = '复制失败，请使用刷新能力目录后的响应内容。'; }
+        }
+
+        function setAuthState(message, success = false) {
+            const status = document.getElementById('console-auth-state');
+            status.textContent = message;
+            status.style.color = success ? '#6ee7b7' : 'var(--text-muted)';
+        }
 
         function toggleCard(header) {
-            const card = header.parentElement;
-            card.classList.toggle('expanded');
+            header.parentElement.classList.toggle('expanded');
         }
 
         function toggleTokenVisibility() {
-            const tokenInput = document.getElementById('api-token');
-            const showBtn = event.target;
-            if (tokenInput.type === 'password') {
-                tokenInput.type = 'text';
-                showBtn.textContent = 'Hide';
-            } else {
-                tokenInput.type = 'password';
-                showBtn.textContent = 'Show';
+            const input = document.getElementById('api-token');
+            const button = document.getElementById('token-visibility-button');
+            input.type = input.type === 'password' ? 'text' : 'password';
+            button.textContent = input.type === 'password' ? '显示' : '隐藏';
+        }
+
+        async function copyToken() {
+            const value = document.getElementById('api-token').value;
+            if (!value) return alert('登录后的原始 Token 不在网页中保存；如需复制，请到燕子设置界面获取。');
+            try {
+                await navigator.clipboard.writeText(value);
+                setAuthState('已复制到剪贴板。请妥善保管。', true);
+            } catch (error) {
+                setAuthState('复制失败，请检查浏览器剪贴板权限。');
             }
         }
 
-        function copyToken() {
-            const tokenInput = document.getElementById('api-token');
-            navigator.clipboard.writeText(tokenInput.value);
-            const copyBtn = event.target;
-            const originalText = copyBtn.textContent;
-            copyBtn.textContent = 'Copied!';
-            setTimeout(() => {
-                copyBtn.textContent = originalText;
-            }, 1500);
+        async function rememberConsoleLogin() {
+            const input = document.getElementById('api-token');
+            const token = input.value.trim();
+            if (!token) {
+                return setAuthState('请先从燕子设置中复制 Token 并粘贴。');
+            }
+            setAuthState('正在验证并创建本机登录…');
+            try {
+                const result = await fetch('/v1/console/login', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    cache: 'no-store',
+                    headers: {'Content-Type': 'application/json', 'X-Yanzi-Token': token},
+                    body: '{}'
+                });
+                if (!result.ok) throw new Error('Token 验证失败（HTTP ' + result.status + '）');
+                input.value = '';
+                input.type = 'password';
+                document.getElementById('token-visibility-button').textContent = '显示';
+                setAuthState('已记住此浏览器：下次打开控制台可直接使用。', true);
+                await refreshInstalledPrograms();
+            } catch (error) {
+                setAuthState(error.message + '；请检查设置中的当前 Token。');
+            }
+        }
+
+        async function signOutConsole() {
+            try {
+                const result = await fetch('/v1/console/logout', {
+                    method: 'POST', credentials: 'same-origin',
+                    headers: {'Content-Type': 'application/json'}, body: '{}'
+                });
+                if (!result.ok) throw new Error('退出失败（HTTP ' + result.status + '）');
+                document.getElementById('api-token').value = '';
+                resetInstalledPrograms('已退出，请重新验证后读取小程序');
+                setAuthState('已清除当前浏览器的登录 Cookie。');
+            } catch (error) {
+                setAuthState('无法退出登录：' + error.message);
+            }
+        }
+
+        function resetInstalledPrograms(message) {
+            resetCapabilityCatalog(message);
+            activePrograms = [];
+            const selector = document.getElementById('ui-ext-id');
+            selector.replaceChildren(new Option('请先读取已安装小程序', ''));
+            selector.disabled = true;
+            document.getElementById('available-program-ids').replaceChildren();
+            document.getElementById('program-load-state').textContent = message;
+            document.getElementById('ui-action-json').value = '';
+        }
+
+        function onSelectedProgramChanged() {
+            const selected = document.getElementById('ui-ext-id').value;
+            const editor = document.getElementById('ui-action-json');
+            if (selected === 'taskbar-calendar' && !editor.value.trim())
+                editor.value = calendarExample;
+            else if (selected !== 'taskbar-calendar' && editor.value.trim() === calendarExample)
+                editor.value = '';
+        }
+
+        async function refreshInstalledPrograms(showInMonitor = false) {
+            const manuallyEnteredToken = document.getElementById('api-token').value.trim();
+            const headers = manuallyEnteredToken ? {'X-Yanzi-Token': manuallyEnteredToken} : {};
+            const status = document.getElementById('program-load-state');
+            status.textContent = '正在读取…';
+            try {
+                const result = await fetch('/v1/extensions', {
+                    method: 'GET', headers, cache: 'no-store', credentials: 'same-origin'
+                });
+                if (result.status === 401) {
+                    resetInstalledPrograms('身份验证失效');
+                    setAuthState('登录失效。请到燕子设置中复制当前 Token，重新验证。');
+                    return;
+                }
+                if (!result.ok) throw new Error('HTTP ' + result.status);
+                const data = await result.json();
+                activePrograms = Array.isArray(data.items)
+                    ? data.items.filter(item => item && typeof item.id === 'string' && item.id.trim())
+                        .sort((a, b) => (a.title || a.id).localeCompare(b.title || b.id, 'zh-CN'))
+                    : [];
+                const selector = document.getElementById('ui-ext-id');
+                const oldSelection = selector.value;
+                selector.replaceChildren(new Option('请选择已安装小程序', ''));
+                const suggestions = document.getElementById('available-program-ids');
+                suggestions.replaceChildren();
+                for (const program of activePrograms) {
+                    selector.add(new Option((program.title || program.id) + ' · ' + program.id, program.id));
+                    suggestions.appendChild(new Option(program.id));
+                }
+                selector.disabled = activePrograms.length === 0;
+                if (activePrograms.some(program => program.id === oldSelection))
+                    selector.value = oldSelection;
+                status.textContent = '已读取 ' + activePrograms.length + ' 个小程序';
+                setAuthState('本机 API 已登录，可以直接操作已安装小程序。', true);
+                await refreshCapabilityCatalog();
+                if (showInMonitor) showResponse(200, {ok: true, items: activePrograms});
+            } catch (error) {
+                resetInstalledPrograms('读取失败');
+                setAuthState('获取小程序列表失败：' + error.message);
+            }
+        }
+
+        const statusTranslations = {
+            200: '成功', 201: '已创建', 202: '已接受', 204: '已完成',
+            400: '请求错误', 401: '未授权', 403: '禁止访问', 404: '未找到',
+            405: '不支持该操作', 409: '状态冲突', 413: '请求过大',
+            422: '无法处理', 429: '请求过多', 500: '服务器错误',
+            503: '服务不可用'
+        };
+
+        function showResponse(status, value, duration = '-') {
+            const statusEl = document.getElementById('res-status');
+            statusEl.textContent = status + ' ' + (statusTranslations[status] || '请求完成');
+            statusEl.className = 'status-badge ' +
+                (status >= 200 && status < 300 ? 'status-ok' : 'status-error');
+            document.getElementById('res-time').textContent =
+                duration === '-' ? '-' : duration + ' 毫秒';
+            const code = document.getElementById('res-body');
+            code.textContent = typeof value === 'string'
+                ? value : JSON.stringify(value, null, 2);
         }
 
         async function sendRequest(method, path, body = null) {
-            const origin = window.location.origin;
-            const token = document.getElementById('api-token').value;
-            const url = origin + path;
-            const startTime = performance.now();
-            const statusEl = document.getElementById('res-status');
-            const timeEl = document.getElementById('res-time');
-            const codeEl = document.getElementById('res-body');
-            
-            statusEl.textContent = 'Sending...';
-            timeEl.textContent = '-';
-            codeEl.textContent = 'Loading...';
-            codeEl.className = 'language-json';
-
-            const headers = {
-                'Content-Type': 'application/json'
-            };
-            if (token) {
-                headers['X-Yanzi-Token'] = token;
-            }
-
-            const options = {
-                method: method,
-                headers: headers
-            };
-            if (body && (method === 'POST' || method === 'PUT')) {
-                options.body = typeof body === 'string' ? body : JSON.stringify(body);
-            }
-
+            const token = document.getElementById('api-token').value.trim();
+            const headers = {'Content-Type': 'application/json'};
+            if (token) headers['X-Yanzi-Token'] = token;
+            const options = {method, headers, credentials: 'same-origin'};
+            if (method === 'POST' || method === 'PUT')
+                options.body = typeof body === 'string' ? body : JSON.stringify(body ?? {});
+            showResponse(0, '正在发送…');
+            const start = performance.now();
             try {
-                const response = await fetch(url, options);
-                const duration = (performance.now() - startTime).toFixed(1);
-                statusEl.textContent = response.status + ' ' + response.statusText;
-                statusEl.className = 'status-badge ' + (response.status >= 200 && response.status < 300 ? 'status-ok' : 'status-error');
-                timeEl.textContent = duration + ' ms';
-                
-                let text = await response.text();
-                try {
-                    const parsed = JSON.parse(text);
-                    codeEl.textContent = JSON.stringify(parsed, null, 2);
-                } catch {
-                    codeEl.textContent = text;
+                const response = await fetch(window.location.origin + path, options);
+                const duration = (performance.now() - start).toFixed(1);
+                const raw = await response.text();
+                let data;
+                try { data = JSON.parse(raw); }
+                catch { data = raw; }
+                showResponse(response.status, data, duration);
+                if (response.status === 401) {
+                    resetInstalledPrograms('身份验证失效');
+                    setAuthState('尚未登录或 Token 已失效；请到燕子设置中获取当前 Token。');
                 }
-                hljs.highlightElement(codeEl);
-            } catch (err) {
-                const duration = (performance.now() - startTime).toFixed(1);
-                statusEl.textContent = 'Error';
-                statusEl.className = 'status-badge status-error';
-                timeEl.textContent = duration + ' ms';
-                codeEl.textContent = err.toString();
+                return response.ok ? data : null;
+            } catch (error) {
+                showResponse(0, '请求失败：' + error.message,
+                    (performance.now() - start).toFixed(1));
+                return null;
+            }
+        }
+
+        async function bootstrapConsole() {
+            resetInstalledPrograms('请先登录并读取已安装小程序');
+            try {
+                const response = await fetch('/v1/console/session', {
+                    credentials: 'same-origin', cache: 'no-store'
+                });
+                if (response.ok) {
+                    setAuthState('已恢复此浏览器的本机登录状态。', true);
+                    await refreshInstalledPrograms();
+                } else {
+                    setAuthState('首次使用：在燕子设置中复制 Token，点击“验证并记住此浏览器”。');
+                }
+            } catch {
+                setAuthState('暂时无法连接本地 API 服务，请检查燕子是否已启动。');
             }
         }
 
@@ -2574,38 +2098,125 @@ public sealed class LocalAgentApiServer : IDisposable
         }
 
         function testListExtensions() {
-            sendRequest('GET', '/v1/extensions');
+            refreshInstalledPrograms(true);
+        }
+
+        function testDeployment(action) {
+            const id = document.getElementById('deploy-ext-id').value.trim();
+            if (!id) return alert('请先选择或填写已安装的小程序 ID');
+            if (!['status', 'build', 'reload'].includes(action)) return;
+            if (action === 'reload' && !confirm('重新加载会关闭当前实例；运行时失败时不会自动回滚。是否继续？')) return;
+            const endpoint = `/v1/extensions/${encodeURIComponent(id)}/${action}`;
+            sendRequest(action === 'status' ? 'GET' : 'POST', endpoint);
+        }
+
+        async function testUiSession(action) {
+            const id = document.getElementById('ui-ext-id').value.trim();
+            const indicator = document.getElementById('ui-session-state');
+            if (!id) return alert('请先读取并选择小程序');
+            let method = 'GET', path = '', body = null;
+            if (action === 'start' || action === 'foreground') {
+                if (window.yanziCurrentUiSessionId) {
+                    return alert('请先结束已有会话');
+                }
+                if (action === 'foreground' &&
+                    !confirm('前台测试将显示蓝色屏幕边缘和 AI 光标提示。真实用户输入会自动暂停。继续吗？'))
+                    return;
+                method = 'POST';
+                path = '/v1/extensions/' + encodeURIComponent(id) + '/ui/sessions';
+                body = {
+                    mode: action === 'foreground' ? 'foreground' : 'scoped',
+                    userConsent: action === 'foreground',
+                    launchIfNeeded: true
+                };
+            } else {
+                const sessionId = window.yanziCurrentUiSessionId;
+                if (!sessionId) return alert('尚未建立 UI 会话');
+                path = '/v1/ui/sessions/' + sessionId;
+                if (action !== 'status') {
+                    method = action === 'stop' ? 'DELETE' : 'POST';
+                    if (action !== 'stop') path += '/' + action;
+                }
+            }
+            const response = await sendRequest(method, path, body);
+            if (!response) return;
+            if (response.session?.sessionId)
+                window.yanziCurrentUiSessionId = response.session.sessionId;
+            if (response.ended) window.yanziCurrentUiSessionId = null;
+            indicator.textContent = response.session
+                ? ({active:'测试中',paused:'已暂停',ended:'已结束'}[response.session.state] || response.session.state) + ' · ' + response.session.stage +
+                  ' · ' + ({scoped:'小程序窗口',foreground:'前台提示'}[response.session.mode] || response.session.mode) + ' · 会话 ' +
+                  response.session.sessionId.slice(0, 8)
+                : response.ended ? '会话已结束，边框与光标提示已释放'
+                : '无法获取会话状态';
+        }
+
+        async function testUi(action) {
+            const id = document.getElementById('ui-ext-id').value.trim();
+            if (!id) return alert('请先读取并选择小程序');
+            const prefix = '/v1/extensions/' + encodeURIComponent(id) + '/ui/';
+            let method = 'GET', route = action, body = null;
+            if (action === 'open') {
+                method = 'POST'; body = {launchIfNeeded: true};
+            } else if (action === 'capture') {
+                method = 'POST'; body = {mode: 'auto', launchIfNeeded: false};
+            } else if (action === 'actions') {
+                method = 'POST';
+                try { body = JSON.parse(document.getElementById('ui-action-json').value); }
+                catch { return alert('操作步骤必须是有效的 JSON'); }
+                if (!confirm('即将操作所选扩展的真实窗口。请勿在测试脚本中触发真实数据保存或删除。')) return;
+            }
+            if (body && window.yanziCurrentUiSessionId && (action === 'capture' || action === 'actions'))
+                body.sessionId = window.yanziCurrentUiSessionId;
+            const payload = await sendRequest(method, prefix + route, body);
+            if (action !== 'capture' && action !== 'actions') return;
+            try {
+                const snapshots = action === 'capture' ? [payload.capture] : payload.captures;
+                const last = snapshots?.[snapshots.length - 1];
+                if (!last?.imageUrl) return;
+                const token = document.getElementById('api-token').value.trim();
+                const headers = token ? {'X-Yanzi-Token': token} : {};
+                const result = await fetch(last.imageUrl, {headers, cache: 'no-store', credentials: 'same-origin'});
+                if (!result.ok) throw new Error('截图请求失败（HTTP ' + result.status + '）');
+                const preview = document.getElementById('ui-preview');
+                if (preview.dataset.objectUrl) URL.revokeObjectURL(preview.dataset.objectUrl);
+                preview.dataset.objectUrl = URL.createObjectURL(await result.blob());
+                preview.src = preview.dataset.objectUrl;
+                preview.style.display = 'block';
+            } catch (err) {
+                document.getElementById('res-body').textContent += '\n图片预览失败：' + err.message;
+            }
         }
 
         function testRunExtension() {
             const id = document.getElementById('run-ext-id').value.trim();
             const input = document.getElementById('run-input').value;
-            if (!id) return alert('请输入 Extension ID');
+            if (!id) return alert('请先选择或填写已安装的小程序 ID');
             sendRequest('POST', `/v1/extensions/${encodeURIComponent(id)}/run`, { input });
         }
 
         function testStopExtension() {
             const id = document.getElementById('stop-ext-id').value.trim();
-            if (!id) return alert('请输入 Extension ID');
+            if (!id) return alert('请先选择或填写已安装的小程序 ID');
             sendRequest('POST', `/v1/extensions/${encodeURIComponent(id)}/stop`);
         }
 
         function testDeleteExtension() {
             const id = document.getElementById('delete-ext-id').value.trim();
-            if (!id) return alert('请输入 Extension ID');
+            if (!id) return alert('请先选择或填写已安装的小程序 ID');
             sendRequest('DELETE', `/v1/extensions/${encodeURIComponent(id)}`);
         }
 
         function testPurgeExtension() {
             const id = document.getElementById('purge-ext-id').value.trim();
-            if (!id) return alert('请输入 Extension ID');
+            if (!id) return alert('请先选择或填写已安装的小程序 ID');
             sendRequest('DELETE', `/v1/extensions/recycle-bin/${encodeURIComponent(id)}`);
         }
 
         function testGetStorage() {
             const id = document.getElementById('get-store-id').value.trim();
             const key = document.getElementById('get-store-key').value.trim();
-            if (!id || !key) return alert('请输入 Extension ID 和 Storage Key');
+            if (!id || !key) return alert('请输入小程序 ID 和存储键');
             sendRequest('GET', `/v1/storage/${encodeURIComponent(id)}?key=${encodeURIComponent(key)}`);
         }
 
@@ -2613,7 +2224,7 @@ public sealed class LocalAgentApiServer : IDisposable
             const id = document.getElementById('put-store-id').value.trim();
             const key = document.getElementById('put-store-key').value.trim();
             const content = document.getElementById('put-store-content').value;
-            if (!id || !key) return alert('请输入 Extension ID 和 Storage Key');
+            if (!id || !key) return alert('请输入小程序 ID 和存储键');
             sendRequest('PUT', `/v1/storage/${encodeURIComponent(id)}`, { key, content });
         }
 
@@ -2623,7 +2234,7 @@ public sealed class LocalAgentApiServer : IDisposable
 
         function testPutYanmState() {
             const content = document.getElementById('put-yanm-content').value.trim();
-            if (!content) return alert('请输入 Yanm Settings Payload JSON');
+            if (!content) return alert('请输入燕幕配置 JSON');
             try {
                 const parsed = JSON.parse(content);
                 sendRequest('PUT', '/v1/me/yanm-state', parsed);
@@ -2631,11 +2242,137 @@ public sealed class LocalAgentApiServer : IDisposable
                 alert('JSON 格式错误: ' + e.message);
             }
         }
+        bootstrapConsole();
     </script>
 </body>
 </html>
 """;
-        return html.Replace("__YANZI_TOKEN__", _token ?? string.Empty);
+        // /docs is public on loopback: never embed an API credential in HTML.
+        return html.Replace("__YANZI_TOKEN__", string.Empty);
+    }
+
+    private async Task SendBrowserWebAppStorageResponseAsync(WebSocket webSocket, object payload)
+    {
+        if (webSocket.State != WebSocketState.Open)
+        {
+            return;
+        }
+
+        var bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload));
+        await webSocket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, _cts.Token);
+    }
+
+    private async Task HandleBrowserWebAppStorageMessageAsync(
+        WebSocket webSocket,
+        JsonElement json,
+        string messageType,
+        int socketId)
+    {
+        var requestId = json.TryGetProperty("requestId", out var requestIdProp)
+            ? requestIdProp.GetString() ?? string.Empty
+            : string.Empty;
+        var appId = json.TryGetProperty("appId", out var appIdProp)
+            ? appIdProp.GetString() ?? string.Empty
+            : string.Empty;
+        var key = json.TryGetProperty("key", out var keyProp)
+            ? keyProp.GetString() ?? string.Empty
+            : string.Empty;
+
+        if (string.IsNullOrWhiteSpace(requestId) ||
+            string.IsNullOrWhiteSpace(appId) ||
+            string.IsNullOrWhiteSpace(key))
+        {
+            await SendBrowserWebAppStorageResponseAsync(webSocket, new
+            {
+                type = "webapp_storage_response",
+                requestId,
+                operation = messageType,
+                ok = false,
+                available = false,
+                error = "requestId/appId/key is required"
+            });
+            return;
+        }
+
+        var extensionId = "browser.webapp." + appId.Trim();
+
+        try
+        {
+            if (messageType == "webapp_storage_get")
+            {
+                var result = await AccountExtensionDataStore.TryReadAsync(extensionId, key, _cts.Token);
+                await SendBrowserWebAppStorageResponseAsync(webSocket, new
+                {
+                    type = "webapp_storage_response",
+                    requestId,
+                    operation = "get",
+                    ok = true,
+                    available = result.Available,
+                    exists = result.Exists,
+                    revision = result.Revision,
+                    content = result.Content
+                });
+                return;
+            }
+
+            if (messageType == "webapp_storage_put")
+            {
+                var content = json.TryGetProperty("content", out var contentProp)
+                    ? contentProp.GetString() ?? string.Empty
+                    : string.Empty;
+                if (Encoding.UTF8.GetByteCount(content) > 2 * 1024 * 1024)
+                {
+                    throw new InvalidOperationException("网页小程序单项同步数据不能超过 2MB。");
+                }
+
+                var result = await AccountExtensionDataStore.WriteAsync(
+                    extensionId,
+                    key,
+                    content,
+                    cancellationToken: _cts.Token);
+                await SendBrowserWebAppStorageResponseAsync(webSocket, new
+                {
+                    type = "webapp_storage_response",
+                    requestId,
+                    operation = "put",
+                    ok = true,
+                    available = result.Available,
+                    revision = result.Revision
+                });
+                HostAssets.AppendLog($"[BrowserWS #{socketId}] Web app cloud data saved: app={appId}, key={key}, revision={result.Revision}");
+                return;
+            }
+
+            if (messageType == "webapp_storage_delete")
+            {
+                var result = await AccountExtensionDataStore.DeleteAsync(
+                    extensionId,
+                    key,
+                    cancellationToken: _cts.Token);
+                await SendBrowserWebAppStorageResponseAsync(webSocket, new
+                {
+                    type = "webapp_storage_response",
+                    requestId,
+                    operation = "delete",
+                    ok = true,
+                    available = result.Available,
+                    revision = result.Revision
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"[BrowserWS #{socketId}] Web app storage error: {ex.Message}");
+            await SendBrowserWebAppStorageResponseAsync(webSocket, new
+            {
+                type = "webapp_storage_response",
+                requestId,
+                operation = messageType,
+                ok = false,
+                available = true,
+                error = ex.Message
+            });
+        }
     }
 
     private async Task HandleBrowserWebSocketLoopAsync(WebSocket webSocket, int socketId, string browserName)
@@ -2655,7 +2392,7 @@ public sealed class LocalAgentApiServer : IDisposable
                 if (result.MessageType == WebSocketMessageType.Text)
                 {
                     var rawJson = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                    
+
                     if (!result.EndOfMessage)
                     {
                         using var ms = new MemoryStream();
@@ -2683,6 +2420,31 @@ public sealed class LocalAgentApiServer : IDisposable
                             else if (msgType == "register")
                             {
                                 HostAssets.AppendLog($"[BrowserWS #{socketId}] Registered successfully from {browserName}.");
+                            }
+                            else if (msgType is "webapp_storage_get" or "webapp_storage_put" or "webapp_storage_delete")
+                            {
+                                await HandleBrowserWebAppStorageMessageAsync(webSocket, json, msgType, socketId);
+                            }
+                            else if (msgType == "browser_extension_reload_ack")
+                            {
+                                var requestId = json.TryGetProperty("requestId", out var reloadRequestId)
+                                    ? reloadRequestId.GetString() ?? string.Empty
+                                    : string.Empty;
+                                var version = json.TryGetProperty("version", out var reloadVersion)
+                                    ? reloadVersion.GetString() ?? string.Empty
+                                    : string.Empty;
+                                HostAssets.AppendLog($"[BrowserWS #{socketId}] Browser extension reload ACK: requestId={requestId}, version={version}");
+                            }
+                            else if (msgType == "browser_extension_runtime_ready")
+                            {
+                                var version = json.TryGetProperty("version", out var runtimeVersion)
+                                    ? runtimeVersion.GetString() ?? string.Empty
+                                    : string.Empty;
+                                var refreshedTabs = json.TryGetProperty("refreshedWebAppTabs", out var refreshedTabsProp) &&
+                                                    refreshedTabsProp.TryGetInt32(out var refreshedTabCount)
+                                    ? refreshedTabCount
+                                    : 0;
+                                HostAssets.AppendLog($"[BrowserWS #{socketId}] Browser extension runtime ready: version={version}, refreshedWebAppTabs={refreshedTabs}");
                             }
                             else if (msgType == "task_response")
                             {
