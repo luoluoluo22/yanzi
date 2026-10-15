@@ -147,6 +147,14 @@ export default {
     const route = path === "/health" ? "/health" :
       ["sync", "auth", "devices", "device", "messaging", "messages", "records", "apps", "applications", "me"].includes(family) ? `/v1/${family}` : "/other";
     // Fixed allowlist: never persist untrusted client headers or identifying values.
+    // Bounded endpoint classification for read amplification investigation; no raw URL or query.
+    const endpoint = path === '/v1/me/devices' ? 'devices_list' :
+      path === '/v1/me/mobile/messages' ? 'messages_list' :
+      path === '/v1/me/mobile/messages/events' ? 'messages_events' :
+      path === '/v1/sync/changes' ? 'sync_changes' :
+      path === '/v1/sync/objects' ? 'sync_objects' :
+      path === '/v1/sync/capabilities' ? 'sync_capabilities' :
+      path === '/v1/applications/access-requests' ? 'access_requests' : 'other';
     const rawClient = request.headers.get("x-yanzi-client") || "";
     const client = ["desktop", "server", "android", "mobile", "web"].includes(rawClient) ? rawClient : "unknown";
     let status = 500;
@@ -189,12 +197,12 @@ export default {
       );
     } finally {
       // No credentials, query strings, message bodies or device identifiers.
-      const successSampleRate = 0.1;
+      const successSampleRate = 1; // Temporary full metadata-only sampling; review after attribution.
       if (status >= 400 || Math.random() < successSampleRate) {
         const auth = requestIdentity.get(request);
         const claimedDevice = safeDeviceClaim(request);
         console.log(JSON.stringify({ event: "yanzi_request", method: request.method,
-          route: route.slice(0, 160), client,
+          route: route.slice(0, 160), endpoint, client,
           client_version: safeClientVersion(request.headers.get('x-yanzi-client-version')),
           status, category, failure_code: failureCode, duration_ms: Date.now() - started,
           sample_rate: status >= 400 ? 1 : successSampleRate,
