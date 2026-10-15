@@ -31,8 +31,8 @@ if ($CheckInstalled) {
     }
     $processes = @(Get-CimInstance Win32_Process -Filter "Name = 'Yanzi.exe' OR Name = 'Yanzi.Runtime.exe'")
     $shell = @($processes | Where-Object {
-        $_.ExecutablePath -and [IO.Path]::GetFullPath($_.ExecutablePath).Equals($official, [StringComparison]::OrdinalIgnoreCase)
-        -and $_.CommandLine -notmatch '(?i)(?:^|\\s)--runtime(?:\\s|$)'
+        $_.ExecutablePath -and [IO.Path]::GetFullPath($_.ExecutablePath).Equals($official, [StringComparison]::OrdinalIgnoreCase) -and
+        $_.CommandLine -notmatch '(?i)(?:^|\s)--runtime(?:\s|$)'
     })
     if ($shell.Count -ne 1) { throw "Expected one installed Shell, found $($shell.Count)." }
     $background = @($processes | Where-Object { $_.Name -eq 'Yanzi.Runtime.exe' })
