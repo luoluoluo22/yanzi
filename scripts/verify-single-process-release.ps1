@@ -1,4 +1,4 @@
-param([string]$Version = '1.0.22')
+param([string]$Version = '1.0.23')
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 [xml]$project=Get-Content (Join-Path $root 'src\OpenQuickHost\OpenQuickHost.csproj') -Encoding UTF8
