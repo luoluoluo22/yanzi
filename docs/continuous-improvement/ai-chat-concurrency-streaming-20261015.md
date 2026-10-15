@@ -25,4 +25,3 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-ai-chat-regre
 \`\`\`
 
 生产环境第三方 SSE 兼容性需在持有合法供应商凭证的设备上完成真实请求验收；编译及模拟 SSE 成功不代表第三方站点通过。
-
