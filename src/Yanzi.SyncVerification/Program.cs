@@ -5,6 +5,10 @@ using Yanzi.Core;
 if (args.Contains("--chat-conversation-metadata")) { ChatConversationMetadataVerification.Run(); return; }
 if (args.Contains("--mobile-extension-catalog")) { await MobileExtensionCatalogVerification.RunAsync(); return; }
 
+if (args.Contains("--github-backup-existing-restore")) { await GitHubHistoricalRestoreVerification.RunAsync(); return; }
+
+if (args.Contains("--github-chunk-live-smoke")) { await GitHubChunkLiveSmoke.RunAsync(); return; }
+
 if (args.Contains("--github-secondary-backup-verify")) { await GitHubSecondaryBackupVerification.RunAsync(args.Contains("--live")); return; }
 
 if (args.Contains("--task-recovery")) { PlatformTaskVerification.Run(); return; }

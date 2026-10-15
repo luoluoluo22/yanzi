@@ -6,6 +6,12 @@ internal static class GitHubSecondaryBackupVerification
 {
     public static async Task RunAsync(bool live)
     {
+        var unconfirmed = AppSettingsStore.Load();
+        unconfirmed.PersonalSync.GitHubBackupEnabled = true;
+        unconfirmed.PersonalSync.GitHubBackupRecoveryKeyConfirmed = false;
+        var guarded = await GitHubSecondaryBackupService.BackupAsync(unconfirmed, force: true);
+        if (guarded.Created || guarded.Status != "offline-recovery-key-not-confirmed")
+            throw new Exception("Backup must not run before offline key export confirmation.");
         var key = RandomNumberGenerator.GetBytes(32);
         var incorrect = RandomNumberGenerator.GetBytes(32);
         var root = Path.Combine(Path.GetTempPath(), "yanzi-restore-audit-" + Guid.NewGuid().ToString("N"));
