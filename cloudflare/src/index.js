@@ -197,7 +197,7 @@ export default {
       );
     } finally {
       // No credentials, query strings, message bodies or device identifiers.
-      const successSampleRate = 1; // Temporary full metadata-only sampling; review after attribution.
+      const successSampleRate = 0.1; // Keep errors at 100%; bound normal-request telemetry overhead.
       if (status >= 400 || Math.random() < successSampleRate) {
         const auth = requestIdentity.get(request);
         const claimedDevice = safeDeviceClaim(request);
