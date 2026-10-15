@@ -613,7 +613,12 @@ async function loadTrack(song, autoPlay = true, options = {}) {
       if (MusicSession.isPreview(audio.duration, MusicSession.parseDuration(song.duration))) {
         const localSource = audio.src;
         if (seekSeconds > 0) pendingSeek = { songId: Number(song.song_id), seconds: seekSeconds };
-        const fresh = MusicSession.freshUrl(
+        // First-party account lookup wins when the current account can
+        // receive an authorized, non-preview audio URL. Otherwise keep legacy
+        // preview behavior rather than making an unlicensed song look complete.
+        const accountSource = await window.YanziAuthorizedMusic?.resolve(song.song_id);
+        if (generation !== loadGeneration) return false;
+        const fresh = accountSource?.url || MusicSession.freshUrl(
           'https://api.injahow.cn/meting/?type=url&id=' + encodeURIComponent(song.song_id));
         audio.src = fresh;
         const usable = await waitForMediaMetadata(4500);
@@ -625,7 +630,9 @@ async function loadTrack(song, autoPlay = true, options = {}) {
       }
     }
   } else if (isRemoteAudio(storedSource)) {
-    audio.src = MusicSession.freshUrl(storedSource);
+    const accountSource = await window.YanziAuthorizedMusic?.resolve(song.song_id);
+    if (generation !== loadGeneration) return false;
+    audio.src = accountSource?.url || MusicSession.freshUrl(storedSource);
     audio.load();
   } else {
     const verified = await getCachedAudio(song.song_id);
@@ -1743,6 +1750,11 @@ window.yanziExtensionControl = async function (action) {
       case 'toggle': succeeded = await togglePlay(); break;
       case 'play': succeeded = await playAudio(); break;
       case 'pause': pauseAudio(); succeeded = true; break;
+      case 'authStatus': {
+        const service = await window.YanziAuthorizedMusic?.status();
+        return { ok: true, action, available: !!service?.ok,
+          connected: !!service?.connected, source: 'private-netease-account-service' };
+      }
       case 'status': succeeded = true; break;
       case 'favorites':
       case 'recommend':

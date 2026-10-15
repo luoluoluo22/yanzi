@@ -1,8 +1,15 @@
+# Runtime dependencies installed locally on the authorized device
+service/node_modules/
+service/backend-test-*.log
+service/sdk-probe.cjs
+app/private-service-config.js
 app/playlists.json
 app/songs.json
 app/control.json
-app/data.local.js
+app/data.js
+*.dpapi
 daemon.log
 sync_daemon.pid
+app/data.local.js
 __pycache__/
 *.pyc

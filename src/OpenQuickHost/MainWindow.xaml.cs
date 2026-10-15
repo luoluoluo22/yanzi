@@ -5825,7 +5825,8 @@ public sealed record AppExtensionDefinition(
     string? Namespace,
     IReadOnlyList<string> BridgeApis,
     bool RunInBackground = false,
-    IReadOnlyList<string>? ControlActions = null);
+    IReadOnlyList<string>? ControlActions = null,
+    string? PrivateServiceEntry = null);
 
 public enum CommandSource
 {

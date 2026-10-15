@@ -43,6 +43,8 @@ public partial class AppExtensionWindow : Window
         new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly SemaphoreSlim _controlActionGate = new(1, 1);
     private static CoreWebView2Environment? _environment;
+    private System.Diagnostics.Process? _privateServiceProcess;
+
 
     public AppExtensionWindow(CommandItem command, string? initialInput, string launchSource)
     {
@@ -350,6 +352,16 @@ public partial class AppExtensionWindow : Window
         if (_runningControlledInstanceId != Guid.Empty)
             RunningExtensionRegistry.Remove(_runningControlledInstanceId, "controlled app window closed");
         BackgroundWindows.Remove(this);
+        try
+        {
+            if (_privateServiceProcess is { HasExited: false })
+                _privateServiceProcess.Kill(entireProcessTree: true);
+            _privateServiceProcess?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"Private extension service cleanup failed: {_command.ExtensionId}, {ex.GetType().Name}");
+        }
         Browser.Dispose();
         if (!_definition.SingleInstance)
         {
@@ -379,6 +391,7 @@ public partial class AppExtensionWindow : Window
                 return;
             }
 
+            await StartPrivateServiceAsync();
             await Browser.EnsureCoreWebView2Async(await GetEnvironmentAsync());
             Browser.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
             Browser.CoreWebView2.Settings.AreDevToolsEnabled = true;
@@ -559,6 +572,60 @@ public partial class AppExtensionWindow : Window
         }
 
         return fullPath;
+    }
+
+    // Opt-in helper owned by a device-locked private extension, never by public apps.
+    // Lifecycle follows the existing WebView; hidden windows retain it, stop kills it.
+    private async Task StartPrivateServiceAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_definition.PrivateServiceEntry)) return;
+        var policy = Sync.ExtensionDevicePolicy.ForExtension(_command.ExtensionId);
+        if (!string.Equals(policy.Mode, "selected", StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(policy.PackageSync, "none", StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(policy.DataSync, "device", StringComparison.OrdinalIgnoreCase) ||
+            !policy.AllowsDevice(Sync.ExtensionDevicePolicy.CurrentDeviceId))
+            throw new InvalidOperationException("私有后台服务仅允许在已授权且禁用同步的个人小程序中启动。");
+
+        var extensionRoot = Path.GetFullPath(_command.ExtensionDirectoryPath
+            ?? throw new InvalidOperationException("扩展目录缺失"));
+        var entry = Path.GetFullPath(Path.Combine(extensionRoot,
+            _definition.PrivateServiceEntry.Replace('/', Path.DirectorySeparatorChar)));
+        if (!entry.StartsWith(extensionRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+            || !entry.EndsWith(".cjs", StringComparison.OrdinalIgnoreCase)
+            || !File.Exists(entry))
+            throw new InvalidOperationException("私有后台服务入口不安全或不存在。");
+        var node = @"C:\Program Files\nodejs\node.exe";
+        if (!File.Exists(node))
+        {
+            HostAssets.AppendLog($"Private extension service missing local Node.js: {_command.ExtensionId}");
+            return; // Existing personal app can still use its legacy audio sources.
+        }
+        var configFile = Path.Combine(extensionRoot, "app", "private-service-config.js");
+        var startTime = DateTime.UtcNow;
+        var start = new System.Diagnostics.ProcessStartInfo(node)
+        {
+            WorkingDirectory = extensionRoot,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = false,
+            RedirectStandardError = false
+        };
+        start.ArgumentList.Add(entry);
+        _privateServiceProcess = System.Diagnostics.Process.Start(start);
+        if (_privateServiceProcess == null)
+            throw new InvalidOperationException("无法启动私人小程序服务。");
+        for (var retry = 0; retry < 55; retry++)
+        {
+            if (_privateServiceProcess.HasExited) break;
+            if (File.Exists(configFile) && File.GetLastWriteTimeUtc(configFile) >= startTime)
+                return;
+            await Task.Delay(100);
+        }
+        HostAssets.AppendLog($"Private extension helper did not become ready: {_command.ExtensionId}");
+        try { if (!_privateServiceProcess.HasExited) _privateServiceProcess.Kill(entireProcessTree: true); }
+        catch { }
+        _privateServiceProcess.Dispose();
+        _privateServiceProcess = null;
     }
 
     private static async Task<CoreWebView2Environment> GetEnvironmentAsync()

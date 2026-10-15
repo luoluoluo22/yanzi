@@ -1241,6 +1241,8 @@ public sealed class LocalExtensionAppManifest
 
     public LocalExtensionControlManifest? Controls { get; init; }
 
+    public LocalExtensionPrivateServiceManifest? PrivateService { get; init; }
+
     public LocalExtensionHostedViewWindowManifest? Window { get; init; }
 
     public LocalExtensionAppStorageManifest? Storage { get; init; }
@@ -1264,8 +1266,14 @@ public sealed class LocalExtensionAppManifest
             Storage?.Namespace,
             Bridge?.Apis ?? [],
             RunInBackground ?? false,
-            Controls?.Actions ?? []);
+            Controls?.Actions ?? [],
+            PrivateService?.Entry);
     }
+}
+
+public sealed class LocalExtensionPrivateServiceManifest
+{
+    public string? Entry { get; init; }
 }
 
 public sealed class LocalExtensionControlManifest
