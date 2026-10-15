@@ -6,9 +6,12 @@ public static class HostRuntimeProfile
     public static bool IsRuntime { get; } =
         string.Equals(System.IO.Path.GetFileNameWithoutExtension(Environment.ProcessPath), "Yanzi.Runtime", StringComparison.OrdinalIgnoreCase)
         || Environment.GetCommandLineArgs().Any(arg => arg.Equals("--runtime", StringComparison.OrdinalIgnoreCase));
-    public static bool IsShell => !IsRuntime;
+    // The installed Yanzi.exe owns both the UI and background services.
+    // Separate shell/Runtime mode is reserved for explicitly isolated development.
+    public static bool IsUnified => !IsRuntime && !IsDevelopment;
+    public static bool IsShell => !IsRuntime && !IsUnified;
     public static string? RuntimeDataRoot { get; } = ResolveRuntimeDataRoot();
-    public static bool OwnsBackgroundServices => IsRuntime;
+    public static bool OwnsBackgroundServices => IsRuntime || IsUnified;
     public static bool IsDevelopment { get; } = !IsRuntime && ResolveDevelopment(Environment.GetCommandLineArgs());
     public static string AppId => IsRuntime ? RuntimeDataRoot == null ? "Yanzi.OpenQuickHost" : "Yanzi.Runtime.Test." + RuntimeRpc.PipeName
         : IsDevelopment ? "Yanzi.OpenQuickHost.Dev.Shell" : "Yanzi.OpenQuickHost.Shell";
@@ -30,12 +33,7 @@ public static class HostRuntimeProfile
 
     private static bool ResolveDevelopment(string[] args)
     {
-        if (args.Any(arg => arg.Equals("--dev", StringComparison.OrdinalIgnoreCase))) return true;
-#if DEBUG
-        return true;
-#else
-        return false;
-#endif
+        return args.Any(arg => arg.Equals("--dev", StringComparison.OrdinalIgnoreCase));
     }
 
     internal static AppSettings ApplySettings(AppSettings settings)

@@ -93,7 +93,7 @@ public partial class App : WpfApplication
         try { System.IO.Directory.SetCurrentDirectory(System.IO.Path.GetTempPath()); } catch { /* ignore */ }
 
         // 1. 必须最先执行，拦截 Velopack 的命令行钩子（如快捷方式生成、升级更新等）
-        if (!HostRuntimeProfile.IsDevelopment && HostRuntimeProfile.IsShell) Velopack.VelopackApp.Build()
+        if (!HostRuntimeProfile.IsDevelopment && !HostRuntimeProfile.IsRuntime) Velopack.VelopackApp.Build()
             .SetLogger(new OpenQuickHost.Sync.HostVelopackLogger())
             .OnAfterInstallFastCallback(v =>
             {
@@ -190,7 +190,11 @@ public partial class App : WpfApplication
 
                 // 普通二次启动只需快速唤起；开发重启则给优雅退出更充足的 IPC 建连时间。
                 using var cts = new CancellationTokenSource(shutdownRequested ? 1500 : 300);
-                _ = _singleInstanceService.SendToPrimaryInstanceAsync(message, cts.Token).GetAwaiter().GetResult();
+                // Never block the WPF dispatcher on an async named-pipe operation:
+                // continuations can need that dispatcher, deadlocking a secondary process.
+                // Bound the wait so repeated launches cannot leave extra Yanzi.exe processes.
+                var delivery = Task.Run(() => _singleInstanceService.SendToPrimaryInstanceAsync(message, cts.Token));
+                _ = delivery.Wait(shutdownRequested ? 1800 : 450);
             }
             catch
             {
@@ -257,10 +261,12 @@ public partial class App : WpfApplication
 
             // 无论前台还是后台启动，都必须初始化后台核心服务（WebDAV、Everything、WindowBinding、鼠标手势等）
             window.InitializeBackgroundServices();
-            if (HostRuntimeProfile.IsRuntime)
+            if (HostRuntimeProfile.OwnsBackgroundServices)
             {
                 _sharedRuntimeHost = new SharedRuntimeHost(window);
                 _sharedRuntimeHost.Start();
+                if (HostRuntimeProfile.IsUnified)
+                    window.SetRuntimeConnectionStatus($"单程序运行 · PID {Environment.ProcessId}");
             }
             else
             {
