@@ -98,7 +98,7 @@ async function getPendingDeviceMessagePage(env, userId, deviceId, platform, limi
     rows = await env.DB.prepare(
       `SELECT * FROM (
          SELECT m.*, q.sequence
-         FROM device_messages m
+         FROM device_messages m INDEXED BY idx_device_messages_user_target
          JOIN device_message_sequence q ON q.user_id = m.user_id AND q.message_id = m.message_id
          WHERE m.user_id = ? AND m.status = 'pending' AND m.target_device_id = ?
            AND q.sequence <= ? AND (m.expires_at IS NULL OR m.expires_at > ?)
