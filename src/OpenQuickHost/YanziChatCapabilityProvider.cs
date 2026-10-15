@@ -17,6 +17,13 @@ public static class YanziChatCapabilityProvider
       "required":["messageId","targetDeviceId","targetName","kind","status","delivered","acked","ackedAt","waitTimedOut","error"]}
     """);
 
+    private static readonly JsonElement StreamResultSchema = YanziCapabilitySchema.Parse("""
+    {"type":"object","properties":{
+      "transport":{"type":"string","enum":["lan","cloud"]},
+      "messageId":{"type":"string"},"targetDeviceId":{"type":"string"},"seq":{"type":"integer"}},
+      "required":["transport","messageId","targetDeviceId","seq"],"additionalProperties":false}
+    """);
+
     public static IReadOnlyList<YanziCapabilityProviderDefinition> GetProviders() =>
     [
         new()
@@ -38,6 +45,24 @@ public static class YanziChatCapabilityProvider
             OutputSchema = ResultSchema,
             Permissions = ["device.message.send"], Category = "messaging",
             Handler = SendAsync
+        },
+        new()
+        {
+            Name = "chat.stream",
+            Description = "向指定手机发送临时 AI 流式快照。优先使用已认证局域网；公网仅作回退。流式快照不进入聊天历史，最终完整答案仍应使用 chat.send 发送一次。",
+            InputSchema = YanziCapabilitySchema.Parse("""
+            {"type":"object","properties":{
+              "target":{"type":"string","minLength":1},
+              "conversationId":{"type":"string","minLength":1},
+              "streamId":{"type":"string","minLength":8},
+              "state":{"type":"string","enum":["start","update","cancelled","error","complete"]},
+              "seq":{"type":"integer","minimum":0},
+              "text":{"type":"string"}},
+              "required":["target","conversationId","streamId","state","seq","text"],"additionalProperties":false}
+            """),
+            OutputSchema = StreamResultSchema,
+            Permissions = ["device.message.send"], Category = "messaging",
+            Handler = StreamAsync
         },
         new()
         {
@@ -166,6 +191,75 @@ public static class YanziChatCapabilityProvider
             string status=ex is OperationCanceledException&&!state.Submitted?"cancelled":state.Submitted?"unknown":"failed";
             return YanziTaskService.Finish(task.TaskId,new ChatDeliveryResult("",target?.DeviceId??"",target?.DisplayName??"账号所有设备",content.Kind,status,false,false,"",false,ex.Message));
         }
+    }
+
+    private const string StreamPrefix = "\u001eYANZI_STREAM:";
+
+    private static string StreamClientMessageId(string streamId, int seq)
+    {
+        var bytes = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(streamId + ":" + seq));
+        return Convert.ToHexString(bytes.AsSpan(0, 16)).ToLowerInvariant();
+    }
+
+    private static async Task<object?> StreamAsync(object? payload)
+    {
+        var input = (JsonElement)payload!;
+        var targetDeviceId = GetString(input, "target")!.Trim();
+        var conversationId = GetString(input, "conversationId")!.Trim();
+        var streamId = GetString(input, "streamId")!.Trim();
+        var state = GetString(input, "state")!.Trim();
+        var text = GetString(input, "text") ?? "";
+        var seq = input.GetProperty("seq").GetInt32();
+        if (targetDeviceId.Length > 128) throw new ArgumentException("target 最长 128 字符。");
+        if (conversationId.Length > 200) throw new ArgumentException("conversationId 最长 200 字符。");
+        if (streamId.Length < 8 || streamId.Length > 128) throw new ArgumentException("streamId 长度需为 8 至 128 字符。");
+        if (text.Length > 44000) throw new ArgumentException("流式文本单次快照最多 44000 字符。");
+        var control = StreamPrefix + JsonSerializer.Serialize(new
+        {
+            v = 1,
+            id = streamId,
+            conversationId,
+            state,
+            seq,
+            text
+        });
+        var clientMessageId = StreamClientMessageId(streamId, seq);
+        var sourceDeviceId = DeviceIdentityStore.GetOrCreateDesktopDeviceId();
+        var sourceDeviceName = DeviceIdentityStore.GetDesktopDisplayName();
+
+        var peer = YanziPeerRegistry.Resolve(targetDeviceId);
+        if (peer != null)
+        {
+            try
+            {
+                using var handler = new SecureLanHttpHandler(peer.DeviceId, peer.Address, peer.Port);
+                using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(3) };
+                var body = JsonSerializer.Serialize(new
+                {
+                    title = "YanziChat",
+                    message = control,
+                    kind = "text",
+                    clientMessageId,
+                    sourceDeviceId,
+                    sourceDeviceName,
+                    payload = new { conversationId, transientStream = true, streamId, seq }
+                });
+                using var content = new StringContent(body, System.Text.Encoding.UTF8, "application/json");
+                using var response = await client.PostAsync($"http://{peer.Address}:{peer.Port}/", content);
+                response.EnsureSuccessStatusCode();
+                return new { transport = "lan", messageId = "", targetDeviceId, seq };
+            }
+            catch (Exception error)
+            {
+                HostAssets.AppendLog($"AI stream LAN unavailable for {targetDeviceId}; falling back to cloud: {error.GetType().Name}: {error.Message}");
+            }
+        }
+
+        // Live previews must bypass the durable chat outbox and D1 message storage.
+        var cloud = await GetCloudAsync();
+        await cloud.SendTransientChatStreamAsync(sourceDeviceId, targetDeviceId, control);
+        return new { transport = "cloud", messageId = "", targetDeviceId, seq };
     }
 
     private static async Task<object?> StatusAsync(object? payload)
