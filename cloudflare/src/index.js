@@ -200,7 +200,7 @@ export default {
       );
     } finally {
       // No credentials, query strings, message bodies or device identifiers.
-      const successSampleRate = 0.1; // Errors 100%, successful requests 10%.
+      const successSampleRate = 0.1; // Keep errors at 100%; bound normal-request telemetry overhead.
       if (status >= 400 || Math.random() < successSampleRate) {
         const auth = requestIdentity.get(request);
         const claimedDevice = safeDeviceClaim(request);

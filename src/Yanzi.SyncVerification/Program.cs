@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using OpenQuickHost;
 using OpenQuickHost.Sync;
 using Yanzi.Core;
@@ -15,6 +15,8 @@ if (args.Length == 2 && args[0] == "--release-readiness")
     return;
 }
 
+if (args.Contains("--ai-chat-parallel")) { AiChatRequestTrackerVerification.Run(); return; }
+if (args.Contains("--ai-chat-sse")) { await AiChatSseVerification.RunAsync(); return; }
 if (args.Contains("--single-process")) { SingleProcessVerification.Run(); return; }
 
 if (args.Contains("--cloud-login-retry")) { CloudLoginRetryVerification.Run(); return; }
