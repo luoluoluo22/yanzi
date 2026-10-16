@@ -1,3 +1,4 @@
+import { meterD1 } from './d1-request-meter.js';
 import { createSyncApi } from './sync-api.js';
 import { findReusablePrivateArchive } from './private-archive-reuse.js';
 import { isCloudServicePath, needsTopLevelCloudAuth, isVipActive, readVipEntitlement, passesLoginRateLimit } from './cloud-access-policy.js';
@@ -141,6 +142,8 @@ export default {
   async scheduled(event, env, ctx) { ctx.waitUntil(cleanupAttachments(env)); ctx.waitUntil(cleanupExternalAccess(env)); ctx.waitUntil(cleanupEnvironment(env)); },
   async fetch(request, env, ctx) {
     const started = Date.now();
+    const metered = env.DB ? meterD1(env.DB) : null;
+    const requestEnv = metered ? { ...env, DB: metered.db } : env;
     const path = new URL(request.url).pathname;
     // Never log raw path segments: they may contain access tokens or personal data.
     const family = path.startsWith("/v1/") ? path.split("/")[2] : "";
@@ -161,7 +164,7 @@ export default {
     let category = "server_error";
     let failureCode = null;
     try {
-      const response = await handleRequest(request, env, ctx);
+      const response = await handleRequest(request, requestEnv, ctx);
       status = response.status;
       category = status >= 500 ? "server_error" : status >= 400 ? "client_error" : "ok";
       return response;
@@ -197,7 +200,7 @@ export default {
       );
     } finally {
       // No credentials, query strings, message bodies or device identifiers.
-      const successSampleRate = 1; // Temporary full metadata-only sampling; review after attribution.
+      const successSampleRate = 0.1; // Errors 100%, successful requests 10%.
       if (status >= 400 || Math.random() < successSampleRate) {
         const auth = requestIdentity.get(request);
         const claimedDevice = safeDeviceClaim(request);
@@ -206,6 +209,7 @@ export default {
           client_version: safeClientVersion(request.headers.get('x-yanzi-client-version')),
           status, category, failure_code: failureCode, duration_ms: Date.now() - started,
           sample_rate: status >= 400 ? 1 : successSampleRate,
+          d1: metered?.usage || null,
           user_key: await anonymousKey(env, "user", auth?.userId),
           user_lookup_ref: await identityLookupRef('user', auth?.userId),
           device_lookup_ref: await identityLookupRef('device', auth?.userId && (auth.deviceId || claimedDevice)
