@@ -21,6 +21,12 @@ final class MobileDeviceCapabilities {
         items.put(descriptor("mobile.apps.openUri", false, new JSONArray().put("uri").put("app")));
         items.put(descriptor("mobile.apps.shareText", false, new JSONArray().put("text").put("app")));
         items.put(descriptor("mobile.apps.settings", false, new JSONArray().put("app")));
+        items.put(descriptor("mobile.screen.status", true, new JSONArray()));
+        items.put(descriptor("mobile.screen.capture", true, new JSONArray()));
+        items.put(descriptor("mobile.screen.tree", true, new JSONArray()));
+        items.put(descriptor("mobile.screen.tap", false, new JSONArray().put("x").put("y")));
+        items.put(descriptor("mobile.screen.swipe", false, new JSONArray().put("x").put("y").put("x2").put("y2")));
+        items.put(descriptor("mobile.screen.action", false, new JSONArray().put("action")));
         return items;
     }
 
@@ -112,6 +118,13 @@ final class MobileDeviceCapabilities {
             case "mobile.apps.shareText":
             case "mobile.apps.settings":
                 return MobileAppCapabilities.invoke(context, name, arguments);
+            case "mobile.screen.status":
+            case "mobile.screen.capture":
+            case "mobile.screen.tree":
+            case "mobile.screen.tap":
+            case "mobile.screen.swipe":
+            case "mobile.screen.action":
+                return MobileRemoteControl.invoke(context, name, arguments);
             case "mobile.files.read": {
                 String fileName = arguments.getString("name");
                 if (fileName.isEmpty() || fileName.contains("/") || fileName.contains("\\") || fileName.equals(".") || fileName.equals("..")) throw new IOException("file_scope_denied");
