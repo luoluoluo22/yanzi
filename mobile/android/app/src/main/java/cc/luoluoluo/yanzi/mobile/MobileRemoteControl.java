@@ -71,7 +71,7 @@ final class MobileRemoteControl {
             }
             case "mobile.screen.tree":
                 return onMain(() -> {
-                    AccessibilityNodeInfo root = service.getRootInActiveWindow();
+                    AccessibilityNodeInfo root = service.getRootForControl();
                     if (root == null) throw new IllegalStateException("active_window_unavailable");
                     JSONArray nodes = new JSONArray();
                     int[] seen = {0};

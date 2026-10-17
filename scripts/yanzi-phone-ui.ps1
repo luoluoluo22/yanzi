@@ -35,7 +35,15 @@ function Call-Capability([string]$name,[hashtable]$parameters){
         expiresAt=[DateTimeOffset]::UtcNow.AddSeconds(105).ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
         payload=@{name=$name;arguments=$parameters}
     }
-    $msg=Invoke-RestMethod $root -Method Post -Headers $headers -Body ($envelope|ConvertTo-Json -Depth 16 -Compress) -ContentType "application/json" -TimeoutSec 20
+    $json=$envelope|ConvertTo-Json -Depth 16 -Compress
+    if($name -eq "mobile.ui.task.start"){
+        # PowerShell 5 wraps top-level JSON arrays in {"value":...,"Count":...}.
+        # Preserve the validated source JSON array exactly, without transforming it to a PSCustomObject.
+        $json=$json.Replace('"__YANZI_RAW_UI_STEPS_JSON__"',$script:RawUiStepsJson)
+    }
+    # Windows PowerShell 5 defaults to legacy encodings for string bodies; always transmit UTF-8.
+    $bodyBytes=[System.Text.Encoding]::UTF8.GetBytes($json)
+    $msg=Invoke-RestMethod $root -Method Post -Headers $headers -Body $bodyBytes -ContentType "application/json; charset=utf-8" -TimeoutSec 20
     if(-not $msg.messageId){throw "Cloud did not accept $name"}
     for($i=0;$i -lt 24;$i++){
         Start-Sleep -Milliseconds 1100
@@ -86,8 +94,10 @@ if($Action -eq "task-start"){
     if(-not $StepsFile){throw "For task-start specify -StepsFile (UTF-8 JSON array of steps)."}
     $json=Get-Content $StepsFile -Raw -Encoding UTF8
     if(-not $json.TrimStart().StartsWith("[")){throw "The task file must contain a JSON array of steps."}
-    $steps=@(ConvertFrom-Json -InputObject $json)
-    $args.steps=$steps
+    # Validate JSON, then splice the raw JSON array into the outgoing envelope.
+    $null=ConvertFrom-Json -InputObject $json
+    $script:RawUiStepsJson=$json.Trim()
+    $args.steps="__YANZI_RAW_UI_STEPS_JSON__"
 }
 if($Action -in @("task-status","task-cancel") -and $TaskId){$args.taskId=$TaskId}
 $response=Call-Capability $names[$Action] $args

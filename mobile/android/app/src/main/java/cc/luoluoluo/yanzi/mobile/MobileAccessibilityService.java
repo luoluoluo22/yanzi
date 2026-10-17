@@ -7,6 +7,9 @@ import android.hardware.HardwareBuffer;
 import android.os.Build;
 import android.view.Display;
 import android.view.accessibility.AccessibilityEvent;
+import android.view.accessibility.AccessibilityNodeInfo;
+import android.view.accessibility.AccessibilityWindowInfo;
+import java.util.List;
 
 import java.io.ByteArrayOutputStream;
 import java.util.Base64;
@@ -26,6 +29,34 @@ public class MobileAccessibilityService extends AccessibilityService {
     }
 
     static MobileAccessibilityService connectedInstance() { return activeInstance; }
+
+    /**
+     * Return only the active/focused application window. MIUI can temporarily
+     * return null from getRootInActiveWindow after app switches or overlays.
+     * Never pick an arbitrary background app window as a fallback.
+     * Call only from the main thread.
+     */
+    AccessibilityNodeInfo getRootForControl() {
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (root != null) return root;
+        List<AccessibilityWindowInfo> windows = getWindows();
+        if (windows == null) return null;
+        for (int pass = 0; pass < 2; pass++) {
+            for (AccessibilityWindowInfo window : windows) {
+                if (window == null || window.getType() != AccessibilityWindowInfo.TYPE_APPLICATION)
+                    continue;
+                if (pass == 0 ? !window.isFocused() : !window.isActive()) continue;
+                AccessibilityNodeInfo candidate = window.getRoot();
+                if (candidate == null) continue;
+                if (candidate.getPackageName() == null) {
+                    candidate.recycle();
+                    continue;
+                }
+                return candidate;
+            }
+        }
+        return null;
+    }
 
     public static boolean captureJpegBase64(ScreenshotCallback callback) {
         MobileAccessibilityService service = activeInstance;

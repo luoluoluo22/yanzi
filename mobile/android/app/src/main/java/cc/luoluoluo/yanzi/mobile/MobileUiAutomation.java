@@ -180,7 +180,7 @@ final class MobileUiAutomation {
 
     private static Match search(MobileAccessibilityService service, JSONObject args) throws Exception {
         JSONObject s = selector(args);
-        AccessibilityNodeInfo root = service.getRootInActiveWindow();
+        AccessibilityNodeInfo root = service.getRootForControl();
         if (root == null) throw new IllegalStateException("active_window_unavailable");
         try {
             String pkg = root.getPackageName() == null ? "" : root.getPackageName().toString();
@@ -335,7 +335,7 @@ final class MobileUiAutomation {
             throw new IllegalArgumentException("invalid_task_step_count");
         MobileAccessibilityService service = require(context, true);
         String pkg = onMain(() -> {
-            AccessibilityNodeInfo root = service.getRootInActiveWindow();
+            AccessibilityNodeInfo root = service.getRootForControl();
             if (root == null) throw new IllegalStateException("active_window_unavailable");
             try { return root.getPackageName() == null ? "" : root.getPackageName().toString(); }
             finally { root.recycle(); }
