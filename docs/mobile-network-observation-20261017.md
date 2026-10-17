@@ -1,5 +1,7 @@
 # 燕子 K70 网络采样首轮实验（2026-10-17）
 
+**后续结果：PCAPdroid 已在 K70 安装，获用户确认的 Android VPN 授权，实际运行采集，并成功导出 170 条连接记录；详见 [PCAPdroid 真机首轮验收](mobile-pcapdroid-capture-20261017.md)。本文件中的“尚未安装”仅是更早阶段的历史记录。**
+
 ## 已落地工具
 
 Windows 本机基于 ADB 的非 Root 网络连接元数据采样器：`scripts/yanzi-phone-network-sample.py`。不需在手机开启 VPN，不注入证书，不获取 TLS 明文，不上传原始数据。
@@ -25,12 +27,12 @@ Windows 本机基于 ADB 的非 Root 网络连接元数据采样器：`scripts/y
 
 开发者签名证书 SHA-256：`ca59622be5fed99a072a4b03e9a1aa05ac26354d3ffb1a2c7208cdd755463456`。
 
-PCAPdroid 安装尝试被 Android 拒绝，ADB 输出 `INSTALL_FAILED_USER_RESTRICTED: Install canceled by user`。因此 **尚未安装/启用**，不能声称已经开始抓取数据包。未尝试绕过用户安装决定或安卓 VPN 授权。
+早期 PCAPdroid 安装尝试被 Android 拒绝，ADB 输出 `INSTALL_FAILED_USER_RESTRICTED: Install canceled by user`。**后续用户已手动安装成功，并授予 VPN 权限；采集结果和结束状态见 [最新验收记录](mobile-pcapdroid-capture-20261017.md)。**未尝试绕过用户安装决定或安卓 VPN 授权。
 
 已经把官方 APK 复制到手机公共下载目录：`Download/PCAPdroid_v2.0.2.apk`。需在手机文件管理器手动安装，并在 PCAPdroid 中首次启动抓包时手动允许 Android 的 VPN 连接授权。它使用本机 `VpnService` 处理流量，不连接远程 VPN 服务器；一个 Android 用户同一时间通常只能启用一个 VPN，因此不能与其他 VPN 无根并行。
 
 ## 下一轮可观测性验证
 
-待用户完成 PCAPdroid 安装及 VPN 授权后，先只过滤燕子 App 和一个用户主动测试的公开网页（例如 example.com），抓取短时间流量以验证应用归属、IP/端口、DNS/TLS 主机名、明文 HTTP 可见部分及 PCAP 文件导出。暂时不开 TLS 解密、根证书安装、代理劫持或手机全局长期抓取；任何需要读私人聊天消息的业务应使用独立的授权与数据采集路径。
+首轮已经在用户授权后完成「无转储」模式下的真实网络连接捕获和 CSV 导出（不包含 PCAP 原始数据包）。后续可考虑只过滤燕子 App 和一个用户主动测试的公开网页（例如 example.com），抓取短时间流量以验证应用归属、IP/端口、DNS/TLS 主机名与有限的 PCAP 文件导出。暂时不开 TLS 解密、根证书安装、代理劫持或手机全局长期抓取；任何需要读私人聊天消息的业务应使用独立的授权与数据采集路径。
 
 本次网络实验没有将任何完整 URL、聊天内容、手机号码、账户凭证或流量负载加入 Git。
