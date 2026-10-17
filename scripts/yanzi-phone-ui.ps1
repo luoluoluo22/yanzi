@@ -1,5 +1,5 @@
 ﻿param(
-    [ValidateSet("status","find","click","type","wait","verify","task-start","task-status","task-cancel")]
+    [ValidateSet("status","find","click","type","wait","verify","task-start","task-status","task-cancel","task-history")]
     [string]$Action="status",
     [Parameter(Mandatory=$true)][string]$TargetDeviceId,
     [Parameter(Mandatory=$true)][string]$SourceDeviceId,
@@ -14,6 +14,8 @@
     [switch]$ExpectAbsent,
     [string]$TextValue="",
     [string]$StepsFile="",
+    [string[]]$AllowedPackages=@(),
+    [int]$HistoryLimit=10,
     [string]$TaskId="",
     [int]$TimeoutMs=5000
 )
@@ -26,7 +28,7 @@ $names=@{
     "status"="mobile.ui.status";"find"="mobile.ui.find";"click"="mobile.ui.click";
     "type"="mobile.ui.type";"wait"="mobile.ui.wait";"verify"="mobile.ui.verify";
     "task-start"="mobile.ui.task.start";"task-status"="mobile.ui.task.status";
-    "task-cancel"="mobile.ui.task.cancel"
+    "task-cancel"="mobile.ui.task.cancel";"task-history"="mobile.ui.task.history"
 }
 function Call-Capability([string]$name,[hashtable]$parameters){
     $envelope=@{
@@ -98,7 +100,9 @@ if($Action -eq "task-start"){
     $null=ConvertFrom-Json -InputObject $json
     $script:RawUiStepsJson=$json.Trim()
     $args.steps="__YANZI_RAW_UI_STEPS_JSON__"
+    if($AllowedPackages.Count -gt 0){$args.allowedPackages=[string[]]$AllowedPackages}
 }
 if($Action -in @("task-status","task-cancel") -and $TaskId){$args.taskId=$TaskId}
+if($Action -eq "task-history"){$args.limit=[Math]::Max(1,[Math]::Min(20,$HistoryLimit))}
 $response=Call-Capability $names[$Action] $args
 $response|ConvertTo-Json -Depth 7
