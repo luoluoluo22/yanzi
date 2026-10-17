@@ -1295,8 +1295,11 @@ public partial class MainWindow
                             var command = commands.FirstOrDefault(c => string.Equals(c.ExtensionId, extIdToDelete, StringComparison.OrdinalIgnoreCase));
                             if (command != null)
                             {
+                                WebDavSyncService.MarkExtensionDeletedLocally(extIdToDelete, command.DeclaredVersion);
                                 ExtensionRecycleBinService.MoveToRecycleBin(extIdToDelete, command.ExtensionDirectoryPath);
                                 ReloadLocalExtensionsFromExternal();
+                                QueuePrivateExtensionRemovalFromAccount(extIdToDelete);
+                                QueueBackgroundWebDavSync("extension-ai-delete", forceImmediate: true);
                                 return true;
                             }
                             return false;

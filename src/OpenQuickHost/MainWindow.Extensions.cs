@@ -3209,7 +3209,7 @@ public partial class MainWindow
             CommandList.SelectedItem = SelectedCommand;
             LastRunMessage = $"已从回收站恢复{BrandTerms.Current.MiniApp}：{command.Title}";
             SyncStatus = $"已恢复{BrandTerms.Current.MiniApp}：{command.Title}";
-            QueuePrivateExtensionUpsertToAccount(command.ExtensionId);
+            QueuePrivateExtensionUpsertToAccount(command.ExtensionId, allowRestore: true);
             QueueBackgroundWebDavSync("extension-restore-settings");
             return Task.FromResult((true, $"已恢复{BrandTerms.Current.MiniApp}：{command.Title}"));
         }
