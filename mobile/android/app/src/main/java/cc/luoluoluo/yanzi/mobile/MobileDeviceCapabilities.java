@@ -35,6 +35,7 @@ final class MobileDeviceCapabilities {
         items.put(descriptor("mobile.ui.verify", true, new JSONArray().put("selector")));
         items.put(descriptor("mobile.ui.task.start", false, new JSONArray().put("steps")));
         items.put(descriptor("mobile.ui.task.status", true, new JSONArray().put("taskId")));
+        items.put(descriptor("mobile.ui.task.history", true, new JSONArray().put("limit")));
         items.put(descriptor("mobile.ui.task.cancel", false, new JSONArray().put("taskId")));
         items.put(descriptor("mobile.screen.status", true, new JSONArray()));
         items.put(descriptor("mobile.screen.capture", true, new JSONArray()));
@@ -148,6 +149,7 @@ final class MobileDeviceCapabilities {
             case "mobile.ui.verify":
             case "mobile.ui.task.start":
             case "mobile.ui.task.status":
+            case "mobile.ui.task.history":
             case "mobile.ui.task.cancel":
                 return MobileUiAutomation.invoke(context, name, arguments);
             case "mobile.screen.status":

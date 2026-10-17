@@ -1,6 +1,9 @@
 package cc.luoluoluo.yanzi.mobile;
 
 import android.accessibilityservice.AccessibilityService;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.app.KeyguardManager;
 import android.content.Context;
 import android.content.SharedPreferences;
@@ -29,6 +32,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 final class MobileUiAutomation {
     private static final String ENABLE_KEY = "remoteUiAutomationEnabled";
     private static final String TASK_STATE_KEY = "remoteUiTaskSummary";
+    private static final String TASK_HISTORY_KEY = "remoteUiTaskHistory";
+    private static final int MAX_HISTORY = 20;
+    private static final int MAX_APPS = 4;
     private static final int MAX_TEXT = 500;
     private static final int MAX_STEPS = 12;
     private static final int MAX_NODES = 500;
@@ -82,6 +88,7 @@ final class MobileUiAutomation {
         if (args == null) args = new JSONObject();
         if ("mobile.ui.status".equals(name)) return status(context);
         if ("mobile.ui.task.status".equals(name)) return taskStatus(context, args);
+        if ("mobile.ui.task.history".equals(name)) return taskHistory(context, args);
         if ("mobile.ui.task.cancel".equals(name)) {
             require(context, true);
             return cancelTask(context, args);
@@ -301,8 +308,13 @@ final class MobileUiAutomation {
         final AtomicBoolean cancelled = new AtomicBoolean(false);
         final String packageName;
         final JSONArray steps;
+        final int allowedPackageCount;
         final long startAt = SystemClock.elapsedRealtime();
-        Task(JSONArray steps, String packageName) { this.steps = steps; this.packageName = packageName; }
+        Task(JSONArray steps, String packageName, int allowedPackageCount) {
+            this.steps = steps;
+            this.packageName = packageName;
+            this.allowedPackageCount = allowedPackageCount;
+        }
     }
 
     private static JSONObject taskStatus(Context context, JSONObject args) throws Exception {
@@ -318,10 +330,36 @@ final class MobileUiAutomation {
                         && (running == null || !running.id.equals(state.optString("taskId")))) {
                     state.put("state", "interrupted").put("reason", "process_restarted");
                     saveSummary(context, state);
+                    appendHistory(context, state);
                 }
             }
         }
         return state;
+    }
+
+    private static JSONObject taskHistory(Context context, JSONObject args) throws Exception {
+        int limit = Math.min(MAX_HISTORY, Math.max(1, args.optInt("limit", 10)));
+        JSONArray stored = new JSONArray(prefs(context).getString(TASK_HISTORY_KEY, "[]"));
+        JSONArray returned = new JSONArray();
+        for (int i = stored.length() - 1; i >= 0 && returned.length() < limit; i--)
+            returned.put(stored.getJSONObject(i));
+        return new JSONObject().put("items", returned).put("count", returned.length());
+    }
+
+    /** Keep only machine metadata, no selectors, typed strings or UI content. */
+    private static void appendHistory(Context context, JSONObject state) throws Exception {
+        JSONArray saved = new JSONArray(prefs(context).getString(TASK_HISTORY_KEY, "[]"));
+        JSONObject row = new JSONObject();
+        for (String key : new String[]{"taskId", "state", "packageName", "totalSteps",
+                "completedSteps", "createdAt", "updatedAt", "reason", "currentStep", "attempt"}) {
+            if (state.has(key)) row.put(key, state.get(key));
+        }
+        saved.put(row);
+        JSONArray bounded = new JSONArray();
+        for (int i = Math.max(0, saved.length() - MAX_HISTORY); i < saved.length(); i++)
+            bounded.put(saved.get(i));
+        if (!prefs(context).edit().putString(TASK_HISTORY_KEY, bounded.toString()).commit())
+            throw new IOException("ui_task_history_persist_failed");
     }
 
     private static void saveSummary(Context context, JSONObject data) throws Exception {
@@ -342,28 +380,207 @@ final class MobileUiAutomation {
         });
         String expected = args.optString("packageName", pkg);
         if (pkg.isEmpty() || !pkg.equals(expected)) throw new IllegalStateException("foreground_package_mismatch");
+        // Switching applications is not implicit. The invoking account must specify
+        // every package in an explicit allowlist, including the initial app.
+        JSONArray allow = args.optJSONArray("allowedPackages");
+        if (allow == null) allow = new JSONArray().put(pkg);
+        if (allow.length() < 1 || allow.length() > MAX_APPS)
+            throw new IllegalArgumentException("invalid_allowed_app_count");
+        java.util.HashSet<String> approved = new java.util.HashSet<>();
+        for (int i = 0; i < allow.length(); i++) {
+            String candidate = allow.getString(i);
+            if (!candidate.matches("[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z0-9_]+)+")
+                    || !approved.add(candidate))
+                throw new IllegalArgumentException("invalid_or_duplicate_allowed_package");
+            if (context.getPackageManager().getLaunchIntentForPackage(candidate) == null)
+                throw new IllegalArgumentException("allowed_app_not_launchable");
+        }
+        if (!approved.contains(pkg)) throw new SecurityException("initial_app_not_approved");
+        String expectedPackage = pkg;
         JSONArray validated = new JSONArray();
         for (int i = 0; i < steps.length(); i++) {
             JSONObject step = steps.getJSONObject(i);
             String action = step.getString("action");
-            if (!action.equals("find") && !action.equals("click") && !action.equals("type")
-                    && !action.equals("wait") && !action.equals("verify"))
+            boolean transition = "openApp".equals(action);
+            if (!transition && !action.equals("find") && !action.equals("click")
+                    && !action.equals("type") && !action.equals("wait") && !action.equals("verify"))
                 throw new IllegalArgumentException("unsupported_ui_task_action:" + action);
-            selector(step);
-            if ("type".equals(action) && step.getString("value").length() > MAX_TEXT)
-                throw new IllegalArgumentException("ui_text_too_long");
-            validated.put(new JSONObject(step.toString()).put("packageName", pkg));
+            int attempts = step.optInt("maxAttempts", 1);
+            if (attempts < 1 || attempts > 3)
+                throw new IllegalArgumentException("invalid_max_attempts");
+            if (attempts > 1 && !action.equals("find") && !action.equals("wait")
+                    && !action.equals("verify"))
+                throw new SecurityException("retry_only_allowed_for_read_only_steps");
+            int retryDelayMs = step.optInt("retryDelayMs", 350);
+            if (retryDelayMs < 150 || retryDelayMs > 1500)
+                throw new IllegalArgumentException("invalid_retry_delay");
+            JSONObject validatedStep = new JSONObject(step.toString());
+            if (transition) {
+                if (!args.has("allowedPackages"))
+                    throw new SecurityException("explicit_app_allowlist_required");
+                String dest = step.getString("packageName");
+                if (!approved.contains(dest))
+                    throw new SecurityException("app_transition_not_approved");
+                validatedStep.put("fromPackageName", expectedPackage);
+                expectedPackage = dest;
+            } else {
+                selector(step);
+                if ("type".equals(action) && step.getString("value").length() > MAX_TEXT)
+                    throw new IllegalArgumentException("ui_text_too_long");
+                String declared = step.optString("packageName", expectedPackage);
+                if (!declared.equals(expectedPackage))
+                    throw new SecurityException("step_package_must_match_current_app");
+                validatedStep.put("packageName", expectedPackage);
+            }
+            validated.put(validatedStep);
         }
         synchronized (TASK_LOCK) {
             if (running != null) throw new IllegalStateException("ui_task_already_running");
-            final Task task = new Task(validated, pkg);
+            final Task task = new Task(validated, pkg, approved.size());
             JSONObject state = new JSONObject().put("taskId", task.id).put("state", "running")
-                    .put("packageName", pkg).put("totalSteps", validated.length())
-                    .put("completedSteps", 0).put("createdAt", System.currentTimeMillis());
+                    .put("packageName", pkg).put("allowedPackageCount", approved.size())
+                    .put("totalSteps", validated.length()).put("completedSteps", 0)
+                    .put("createdAt", System.currentTimeMillis());
             saveSummary(context, state);
             running = task;
             WORKER.submit(() -> runTask(context.getApplicationContext(), task));
             return state;
+        }
+    }
+
+    private static boolean retryable(String action, Exception error) {
+        if (!action.equals("find") && !action.equals("wait") && !action.equals("verify"))
+            return false;
+        String m = error.getMessage();
+        return m != null && (m.startsWith("ui_target_not_found")
+                || m.startsWith("ui_wait_timeout")
+                || m.startsWith("ui_verification_failed")
+                || m.startsWith("active_window_unavailable"));
+    }
+
+    private static void ensureForeground(MobileAccessibilityService service, String expected)
+            throws Exception {
+        String actual = onMain(() -> {
+            AccessibilityNodeInfo root = service.getRootForControl();
+            if (root == null) throw new IllegalStateException("active_window_unavailable");
+            try { return root.getPackageName() == null ? "" : root.getPackageName().toString(); }
+            finally { root.recycle(); }
+        });
+        if (!expected.equals(actual)) throw new SecurityException("foreground_package_mismatch");
+    }
+
+    private static String foregroundPackage(MobileAccessibilityService service) throws Exception {
+        return onMain(() -> {
+            AccessibilityNodeInfo root = service.getRootForControl();
+            if (root == null) return "";
+            try { return root.getPackageName() == null ? "" : root.getPackageName().toString(); }
+            finally { root.recycle(); }
+        });
+    }
+
+    private static String launcherPackage(Context context) {
+        Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
+        ResolveInfo info = context.getPackageManager().resolveActivity(home,
+                PackageManager.MATCH_DEFAULT_ONLY);
+        return info == null || info.activityInfo == null ? "" : info.activityInfo.packageName;
+    }
+
+    private static void launchFromVisibleHome(Context context,
+            MobileAccessibilityService service, String from, String dest,
+            String label, Task task) throws Exception {
+        // Background activity launches are restricted on Android 10+/MIUI.
+        // Accessibility HOME + visible, exact-label shortcut is a user-visible
+        // fallback. No ADB, invisible package launch, arbitrary coordinates or
+        // unapproved third-party package control is permitted.
+        ensureForeground(service, from);
+        String launcher = launcherPackage(context);
+        if (launcher.isEmpty()) throw new IllegalStateException("launcher_not_found");
+        boolean accepted = onMain(() ->
+                service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME));
+        if (!accepted) throw new IllegalStateException("home_action_rejected");
+        long homeDeadline = SystemClock.elapsedRealtime() + 3500;
+        while (!launcher.equals(foregroundPackage(service))) {
+            if (task.cancelled.get()) throw new InterruptedException("ui_task_cancelled");
+            if (SystemClock.elapsedRealtime() >= homeDeadline)
+                throw new IllegalStateException("launcher_not_foreground");
+            Thread.sleep(150);
+        }
+        JSONObject query = new JSONObject().put("packageName", launcher)
+                .put("selector", new JSONObject().put("text", label));
+        try {
+            click(service, query);
+        } catch (IllegalStateException ex) {
+            if (!"ui_target_not_found".equals(ex.getMessage()))
+                throw ex;
+            query.put("selector", new JSONObject().put("description", label));
+            try {
+                click(service, query);
+            } catch (IllegalStateException missing) {
+                if ("ui_target_not_found".equals(missing.getMessage()))
+                    throw new IllegalStateException("app_shortcut_not_visible_on_home");
+                throw missing;
+            }
+        }
+        long openDeadline = SystemClock.elapsedRealtime() + 6000;
+        while (true) {
+            if (task.cancelled.get()) throw new InterruptedException("ui_task_cancelled");
+            require(context, true);
+            String current = foregroundPackage(service);
+            if (dest.equals(current)) return;
+            // The launcher remains the only acceptable intermediary.
+            if (!launcher.equals(current) && !current.isEmpty())
+                throw new SecurityException("unexpected_foreground_during_app_transition");
+            if (SystemClock.elapsedRealtime() >= openDeadline)
+                throw new IllegalStateException("ui_app_transition_timeout");
+            Thread.sleep(200);
+        }
+    }
+
+    private static void openApp(Context context, MobileAccessibilityService service,
+            JSONObject step, Task task) throws Exception {
+        String from = step.getString("fromPackageName");
+        String dest = step.getString("packageName");
+        ensureForeground(service, from);
+        if (task.cancelled.get()) throw new InterruptedException("ui_task_cancelled");
+        if (dest.equals(from)) return;
+        JSONObject app = MobileAppCapabilities.invoke(context, "mobile.apps.info",
+                new JSONObject().put("app", dest));
+        String label = app.getString("name");
+        MobileAppCapabilities.invoke(context, "mobile.apps.open",
+                new JSONObject().put("app", dest));
+        long directDeadline = SystemClock.elapsedRealtime() + 1400;
+        while (SystemClock.elapsedRealtime() < directDeadline) {
+            if (task.cancelled.get()) throw new InterruptedException("ui_task_cancelled");
+            require(context, true);
+            String current = foregroundPackage(service);
+            if (dest.equals(current)) return;
+            if (!current.isEmpty() && !from.equals(current))
+                throw new SecurityException("unexpected_foreground_during_app_transition");
+            Thread.sleep(140);
+        }
+        // Fall back only if the original app is still foreground.
+        launchFromVisibleHome(context, service, from, dest, label, task);
+    }
+
+    private static void performStep(Context context, MobileAccessibilityService service,
+            JSONObject step, Task task, String action) throws Exception {
+        switch (action) {
+            case "openApp": openApp(context, service, step, task); break;
+            case "find": {
+                JSONObject found = find(service, step);
+                if (!found.getBoolean("found"))
+                    throw new IllegalStateException("ui_target_not_found");
+                break;
+            }
+            case "click": click(service, step); break;
+            case "type": type(service, step); break;
+            case "wait":
+                waitFor(context, service, step, task,
+                        Math.min(MAX_WAIT_MS, Math.max(300L,
+                                MAX_TASK_MS - (SystemClock.elapsedRealtime() - task.startAt))));
+                break;
+            case "verify": verify(service, step); break;
+            default: throw new IllegalArgumentException("unsupported_ui_task_action");
         }
     }
 
@@ -375,24 +592,31 @@ final class MobileUiAutomation {
                 if (task.cancelled.get()) throw new InterruptedException("ui_task_cancelled");
                 if (SystemClock.elapsedRealtime() - task.startAt >= MAX_TASK_MS)
                     throw new IllegalStateException("ui_task_deadline_exceeded");
-                MobileAccessibilityService service = require(context, true);
                 JSONObject step = task.steps.getJSONObject(i);
                 String action = step.getString("action");
-                // No screen/text contents or typed strings are ever stored as job state.
-                switch (action) {
-                    case "find": {
-                        JSONObject found = find(service, step);
-                        if (!found.getBoolean("found")) throw new IllegalStateException("ui_target_not_found");
+                int attempts = step.optInt("maxAttempts", 1);
+                state.put("currentStep", i + 1);
+                state.put("currentAction", action);
+                for (int attempt = 1; attempt <= attempts; attempt++) {
+                    if (task.cancelled.get()) throw new InterruptedException("ui_task_cancelled");
+                    if (SystemClock.elapsedRealtime() - task.startAt >= MAX_TASK_MS)
+                        throw new IllegalStateException("ui_task_deadline_exceeded");
+                    state.put("attempt", attempt).put("updatedAt", System.currentTimeMillis());
+                    saveSummary(context, state);
+                    MobileAccessibilityService service = require(context, true);
+                    try {
+                        performStep(context, service, step, task, action);
                         break;
+                    } catch (Exception ex) {
+                        if (attempt >= attempts || !retryable(action, ex)) throw ex;
+                        long backoff = step.optInt("retryDelayMs", 350);
+                        long deadline = MAX_TASK_MS - (SystemClock.elapsedRealtime() - task.startAt);
+                        if (deadline < backoff + 200)
+                            throw new IllegalStateException("ui_task_deadline_exceeded");
+                        state.put("retryCount", state.optInt("retryCount", 0) + 1);
+                        saveSummary(context, state);
+                        Thread.sleep(backoff);
                     }
-                    case "click": click(service, step); break;
-                    case "type": type(service, step); break;
-                    case "wait":
-                        waitFor(context, service, step, task,
-                                Math.min(MAX_WAIT_MS, Math.max(300L,
-                                        MAX_TASK_MS - (SystemClock.elapsedRealtime() - task.startAt)))); break;
-                    case "verify": verify(service, step); break;
-                    default: throw new IllegalArgumentException("unsupported_ui_task_action");
                 }
                 if (task.cancelled.get()) throw new InterruptedException("ui_task_cancelled");
                 state.put("completedSteps", i + 1).put("updatedAt", System.currentTimeMillis());
@@ -403,14 +627,17 @@ final class MobileUiAutomation {
             try {
                 if (state == null) state = new JSONObject().put("taskId", task.id);
                 state.put("state", task.cancelled.get() || ex instanceof InterruptedException ? "cancelled" : "failed");
-                // Only machine-readable error codes; no selector / UI text logged or retained.
                 String reason = ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();
-                state.put("reason", bounded(reason));
-                state.put("updatedAt", System.currentTimeMillis());
+                state.put("reason", bounded(reason)).put("updatedAt", System.currentTimeMillis());
             } catch (Exception ignored) {}
         } finally {
             synchronized (TASK_LOCK) {
-                try { if (state != null) saveSummary(context, state); } catch (Exception ignored) {}
+                try {
+                    if (state != null) {
+                        saveSummary(context, state);
+                        appendHistory(context, state);
+                    }
+                } catch (Exception ignored) {}
                 if (running == task) running = null;
             }
         }
