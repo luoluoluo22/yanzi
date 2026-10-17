@@ -25,6 +25,8 @@ public class MobileAccessibilityService extends AccessibilityService {
         return activeInstance != null;
     }
 
+    static MobileAccessibilityService connectedInstance() { return activeInstance; }
+
     public static boolean captureJpegBase64(ScreenshotCallback callback) {
         MobileAccessibilityService service = activeInstance;
         if (service == null) {

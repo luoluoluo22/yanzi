@@ -432,7 +432,16 @@ public class DeviceHeartbeatService extends Service {
                 if (keys.size() >= 100) for (String key : keys.subList(0,keys.size()-99)) edit.remove(key);
                 if (!edit.putString(resultKey,ack.toString()).commit()) throw new java.io.IOException("capability_result_commit_failed");
             }
-            if (valid(token,device)) acknowledge(base, token, id, ack);
+            if (valid(token,device)) {
+                acknowledge(base, token, id, ack);
+                // Do not keep sensitive screen pixels/text in the durable message journal.
+                String capabilityName = message.optJSONObject("payload") == null ? ""
+                        : message.getJSONObject("payload").optString("name", "");
+                if ("mobile.screen.capture".equals(capabilityName)
+                        || "mobile.screen.tree".equals(capabilityName)) {
+                    state.edit().remove(resultKey).apply();
+                }
+            }
         }
     }
     private void backoff() {

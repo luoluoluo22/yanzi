@@ -3279,6 +3279,31 @@ extends Activity {
 
         LinearLayout itemAccessibility = YanziUiKit.row(this, "accessibility", YanziUiKit.BLUE, "无障碍服务", "只在自动化需要时开启", this::openAccessibilitySettings);
         this.profileTabPage.addView((View)itemAccessibility, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
+        // Local, explicit consent for remote screenshots, accessibility tree and gestures.
+        // Having accessibility enabled for local screenshots does not automatically enable remote access.
+        boolean remoteScreenEnabled = this.prefs.getBoolean("remoteScreenControlEnabled", false);
+        LinearLayout remoteScreenRow = YanziUiKit.switchRow(this, "shield-account", YanziUiKit.BLUE,
+                "远程屏幕控制", "允许燕子远程查看界面、截图和执行点击；可随时关闭", remoteScreenEnabled,
+                (buttonView, isChecked) -> {
+                    if (!isChecked) {
+                        this.prefs.edit().putBoolean("remoteScreenControlEnabled", false).apply();
+                        this.setStatus("已关闭远程屏幕控制。");
+                        return;
+                    }
+                    new android.app.AlertDialog.Builder(this)
+                            .setTitle("允许远程屏幕控制？")
+                            .setMessage("启用后，已登录的燕子账户可远程获取屏幕截图、界面文字，并执行点击、滑动和系统导航。请勿在处理密码、验证码或敏感信息时保持开启。设备锁定时禁止操作。")
+                            .setPositiveButton("允许", (dialog, which) -> {
+                                this.prefs.edit().putBoolean("remoteScreenControlEnabled", true).apply();
+                                if (!MobileAccessibilityService.isEnabled()) openAccessibilitySettings();
+                                else this.setStatus("已允许远程屏幕控制。");
+                            })
+                            .setNegativeButton("取消", (dialog, which) -> buttonView.setChecked(false))
+                            .setOnCancelListener(dialog -> buttonView.setChecked(false))
+                            .show();
+                });
+        this.profileTabPage.addView((View)remoteScreenRow, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
+
 
         this.profileTabPage.addView((View)YanziUiKit.sectionLabel(this, "关于"));
 
