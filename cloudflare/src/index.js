@@ -2121,6 +2121,22 @@ async function handleRequest(request, env, ctx) {
     const payload = await readJson(request);
     await ensureUser(env, auth.userId);
 
+    // Deleting an extension is an account-wide tombstone, not just a missing row.
+    // A stale/offline desktop must never re-add it during its next auto-sync.
+    const existingAssociation = await env.DB.prepare(
+      "select enabled, settings_json from user_extensions where user_id = ? and extension_id = ?"
+    ).bind(auth.userId, extensionId).first();
+    let isDeleted = false;
+    try {
+      isDeleted = existingAssociation?.enabled === 0 &&
+        JSON.parse(existingAssociation.settings_json || "{}")._yanziDeleted === true;
+    } catch {
+      isDeleted = false;
+    }
+    if (isDeleted && payload.restoreDeleted !== true) {
+      return json({ error: "extension_deleted", message: "Restore the extension explicitly before re-enabling it." }, 409);
+    }
+
     let settings = payload.settings ?? {};
     if (extensionId === "yanzi-quickpanel-settings") {
       const existing = await env.DB.prepare(
@@ -2153,7 +2169,7 @@ async function handleRequest(request, env, ctx) {
       settings = scrubPersonalSyncSecretsFromValue(settings);
     }
 
-    await env.DB.prepare(
+    const upsertResult = await env.DB.prepare(
       `insert into user_extensions (
         user_id,
         extension_id,
@@ -2166,7 +2182,8 @@ async function handleRequest(request, env, ctx) {
         installed_version = excluded.installed_version,
         enabled = excluded.enabled,
         settings_json = excluded.settings_json,
-        updated_at = excluded.updated_at`
+        updated_at = excluded.updated_at
+      where ? = 1 or coalesce(json_extract(user_extensions.settings_json, '$._yanziDeleted'), 0) != 1`
     )
       .bind(
         auth.userId,
@@ -2174,10 +2191,14 @@ async function handleRequest(request, env, ctx) {
         String(payload.installedVersion ?? payload.version ?? "0.0.0").slice(0, 50),
         payload.enabled === false ? 0 : 1,
         JSON.stringify(settings),
-        isoNow()
+        isoNow(),
+        payload.restoreDeleted === true ? 1 : 0
       )
       .run();
 
+    if (Number(upsertResult.meta?.changes ?? 0) === 0) {
+      return json({ error: "extension_deleted", message: "The extension was deleted on another device." }, 409);
+    }
     return json({ ok: true, userId: auth.userId, extensionId });
   }
 
@@ -2186,11 +2207,21 @@ async function handleRequest(request, env, ctx) {
     const extensionId = decodeURIComponent(myExtensionMatch[1]);
     await ensureUser(env, auth.userId);
 
+    // Keep a durable account-scoped tombstone so an offline desktop cannot
+    // recreate this association during background sync. Original extension
+    // package data is retained for a deliberate recycle-bin restore.
+    const deletedAt = isoNow();
     const result = await env.DB.prepare(
-      `delete from user_extensions
-       where user_id = ? and extension_id = ?`
+      `insert into user_extensions
+         (user_id, extension_id, installed_version, enabled, settings_json, updated_at)
+       select ?, extension_id, '0.0.0', 0, ?, ?
+       from extensions where extension_id = ?
+       on conflict(user_id, extension_id) do update set
+         enabled = 0, settings_json = excluded.settings_json,
+         updated_at = excluded.updated_at`
     )
-      .bind(auth.userId, extensionId)
+      .bind(auth.userId, JSON.stringify({ _yanziDeleted: true, deletedAt }),
+        deletedAt, extensionId)
       .run();
 
     return json({

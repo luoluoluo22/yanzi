@@ -1312,6 +1312,33 @@ public partial class MainWindow
                     item => item.ExtensionId,
                     item => item,
                     StringComparer.OrdinalIgnoreCase);
+                var accountDeletedIds = cloudExtensions
+                    .Where(IsAccountExtensionTombstoned)
+                    .Select(static item => item.ExtensionId)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                if (accountDeletedIds.Count > 0)
+                {
+                    await Dispatcher.InvokeAsync(() => ApplyAccountExtensionDeletions(accountDeletedIds));
+                }
+                var deletedLocalIds = LoadPersonalSyncDeletedExtensionIds();
+                // Retry pending deletion whenever account sync succeeds, even
+                // if WebDAV/personal-sync is disabled or was offline earlier.
+                foreach (var deletedId in deletedLocalIds)
+                {
+                    if (cloudRecordMap.TryGetValue(deletedId, out var entry) &&
+                        IsAccountExtensionTombstoned(entry))
+                        continue;
+                    try
+                    {
+                        await _cloudSyncClient.RemoveUserExtensionAsync(deletedId);
+                        cloudRecordMap.Remove(deletedId);
+                        HostAssets.AppendLog($"Account extension delete synchronized: {deletedId}");
+                    }
+                    catch (Exception ex)
+                    {
+                        HostAssets.AppendLog($"Account extension delete retry pending: {deletedId}: {ex.Message}");
+                    }
+                }
 
                 int successCount = 0;
                 int unchangedCount = 0;
@@ -1331,6 +1358,12 @@ public partial class MainWindow
                         try
                         {
                             cloudRecordMap.TryGetValue(cmd.ExtensionId, out var cloudRecord);
+                            if (IsAccountExtensionTombstoned(cloudRecord) ||
+                                deletedLocalIds.Contains(cmd.ExtensionId))
+                            {
+                                skipCount++;
+                                continue;
+                            }
                             if (cloudRecord != null &&
                                 !string.IsNullOrWhiteSpace(cloudRecord.PublisherUserId) &&
                                 !string.Equals(cloudRecord.PublisherUserId, _cloudSyncClient.CurrentUserId, StringComparison.Ordinal))
@@ -1405,14 +1438,22 @@ public partial class MainWindow
         }
         _ = Task.Run(async () =>
         {
+            await _extensionUploadLock.WaitAsync();
             try
             {
+                // Ignore a queued deletion when the user has already restored it.
+                if (!LoadPersonalSyncDeletedExtensionIds().Contains(extensionId))
+                    return;
                 await _cloudSyncClient.RemoveUserExtensionAsync(extensionId);
                 HostAssets.AppendLog($"Removed deleted extension from account private library: {extensionId}");
             }
             catch (Exception ex)
             {
                 HostAssets.AppendLog($"Deferred account private extension removal: id={extensionId}, error={ex.Message}");
+            }
+            finally
+            {
+                _extensionUploadLock.Release();
             }
         });
     }
@@ -1434,7 +1475,7 @@ public partial class MainWindow
                     var cloudExtensions = await _cloudSyncClient.GetUserExtensionsAsync();
                     var record = cloudExtensions.FirstOrDefault(item => item.ExtensionId.Equals(extensionId, StringComparison.OrdinalIgnoreCase));
                     var expectedRevision = record?.ArchiveRevision ?? 0;
-                    await SyncPrivateExtensionToAccountAsync(command, expectedRevision);
+                    await SyncPrivateExtensionToAccountAsync(command, expectedRevision, allowRestore: true);
                 }
             }
             catch (Exception ex)
@@ -1444,7 +1485,7 @@ public partial class MainWindow
         });
     }
 
-    private async Task SyncPrivateExtensionToAccountAsync(CommandItem command, int expectedRevision = 0)
+    private async Task SyncPrivateExtensionToAccountAsync(CommandItem command, int expectedRevision = 0, bool allowRestore = false)
     {
         if (_cloudSyncClient == null) return;
         await _extensionUploadLock.WaitAsync();
@@ -1470,7 +1511,8 @@ public partial class MainWindow
                 publishedIcon,
                 includeUserShortcut: false);
             await _cloudSyncClient.UploadPrivateExtensionArchiveAsync(command, packageBytes, version, expectedRevision);
-            await _cloudSyncClient.UpsertUserExtensionAsync(command, publishedIcon, hasArchive: true);
+            await _cloudSyncClient.UpsertUserExtensionAsync(command, publishedIcon,
+                hasArchive: true, restoreDeleted: allowRestore);
         }
         finally
         {
@@ -1586,6 +1628,7 @@ public partial class MainWindow
             try
             {
                 var accountIds = (await _cloudSyncClient.GetUserExtensionsAsync())
+                    .Where(item => !IsAccountExtensionTombstoned(item))
                     .Select(static item => item.ExtensionId)
                     .ToHashSet(StringComparer.OrdinalIgnoreCase);
                 var removed = 0;
@@ -1609,6 +1652,47 @@ public partial class MainWindow
                 _accountDeletionReconcileLock.Release();
             }
         });
+    }
+
+    private void ApplyAccountExtensionDeletions(IReadOnlySet<string> deletedIds)
+    {
+        var removed = 0;
+        foreach (var command in LocalExtensionCatalog.LoadCommands())
+        {
+            if (command.Source != CommandSource.LocalExtension ||
+                IsInternalCommand(command) ||
+                !deletedIds.Contains(command.ExtensionId) ||
+                string.IsNullOrWhiteSpace(command.ExtensionDirectoryPath) ||
+                !Directory.Exists(command.ExtensionDirectoryPath))
+                continue;
+
+            // A cloud tombstone is the account owner's delete operation;
+            // preserve local files in the recycle bin, never erase user data.
+            WebDavSyncService.MarkExtensionDeletedLocally(command.ExtensionId, command.DeclaredVersion);
+            ExtensionRecycleBinService.MoveToRecycleBin(command.ExtensionId, command.ExtensionDirectoryPath);
+            RemoveExtensionFromQuickPanelSettings(command.ExtensionId);
+            removed++;
+        }
+        if (removed == 0) return;
+        ReloadLocalExtensionsFromExternal();
+        QueueBackgroundWebDavSync("extension-account-removed", forceImmediate: true);
+        HostAssets.AppendLog($"Applied account extension tombstones locally: count={removed}");
+    }
+
+    private static bool IsAccountExtensionTombstoned(UserExtensionRecord? record)
+    {
+        if (record == null || record.Enabled != 0 || string.IsNullOrWhiteSpace(record.SettingsJson))
+            return false;
+        try
+        {
+            using var data = JsonDocument.Parse(record.SettingsJson);
+            return data.RootElement.TryGetProperty("_yanziDeleted", out var deleted) &&
+                   deleted.ValueKind == JsonValueKind.True;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     private static bool IsAccountExtensionNewer(CommandItem command, UserExtensionRecord record)
