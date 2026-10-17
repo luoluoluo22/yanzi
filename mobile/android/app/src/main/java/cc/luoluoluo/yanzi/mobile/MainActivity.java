@@ -3303,6 +3303,34 @@ extends Activity {
                             .show();
                 });
         this.profileTabPage.addView((View)remoteScreenRow, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
+
+        boolean uiAutomationEnabled = this.prefs.getBoolean("remoteUiAutomationEnabled", false);
+        LinearLayout uiAutomationRow = YanziUiKit.switchRow(this, "gesture-tap-hold", YanziUiKit.PURPLE,
+                "远程界面自动化", "可定位控件、输入文字，并运行可取消的自动化任务；需要无障碍", uiAutomationEnabled,
+                (buttonView, isChecked) -> {
+                    if (!isChecked) {
+                        this.prefs.edit().putBoolean("remoteUiAutomationEnabled", false).apply();
+                        this.setStatus("已禁用远程界面自动化，正在执行的任务将停止。");
+                        return;
+                    }
+                    if (!this.prefs.getBoolean("remoteScreenControlEnabled", false)) {
+                        buttonView.setChecked(false);
+                        this.setStatus("请先开启「远程屏幕控制」。");
+                        return;
+                    }
+                    new android.app.AlertDialog.Builder(this)
+                            .setTitle("允许远程界面自动化？")
+                            .setMessage("启用后，已登录的燕子账户可对当前解锁屏幕中的非密码输入框设置文字、点击控件，并运行最长85秒的多步骤任务。任务会拒绝跨应用操作；授权可随时关闭。请勿在涉及支付、个人资料或验证码的界面保持开启。")
+                            .setPositiveButton("允许", (dialog, which) -> {
+                                this.prefs.edit().putBoolean("remoteUiAutomationEnabled", true).apply();
+                                if (!MobileAccessibilityService.isEnabled()) openAccessibilitySettings();
+                                else this.setStatus("已允许远程界面自动化。");
+                            })
+                            .setNegativeButton("取消", (dialog, which) -> buttonView.setChecked(false))
+                            .setOnCancelListener(dialog -> buttonView.setChecked(false))
+                            .show();
+                });
+        this.profileTabPage.addView((View)uiAutomationRow, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
         // Reading files and writing files are independent remote permissions.
         // Neither is implicitly granted by Accessibility or remote screen control.
         boolean sharedFilesEnabled = this.prefs.getBoolean("remoteSharedFilesReadEnabled", false);
