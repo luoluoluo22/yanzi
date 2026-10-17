@@ -42,6 +42,18 @@ final class ChatObjectsVerification {
             require(ChatConversation.group().envelope("android-self","我的手机","hello").getString("routing").equals("account-chat"),"Group routing preserved");
             require(ChatConversation.incoming(new JSONObject().put("sourceDeviceId","desktop-a").put("targetDeviceId","android-self"))
                 .equals(computer.id),"Direct receiver identifies sender");
+            require(ChatConversation.incoming(new JSONObject().put("sourceDeviceId","server-42")
+                .put("targetDeviceId","android-self").put("title","YanziChat")
+                .put("payload",new JSONObject().put("source","server").put("purpose","notification")))
+                .equals(ChatConversation.GROUP),"Legacy server notification appears in group");
+            require(ChatConversation.incoming(new JSONObject().put("sourceDeviceId","server-42")
+                .put("targetDeviceId","android-self").put("title","YanziChat")
+                .put("payload",new JSONObject().put("conversationId","group").put("accountChat",true)))
+                .equals(ChatConversation.GROUP),"Explicit server notification appears in group");
+            require(ChatConversation.incoming(new JSONObject().put("sourceDeviceId","server-42")
+                .put("targetDeviceId","android-self").put("title","YanziChat")
+                .put("payload",new JSONObject().put("conversationId","device:server-42")))
+                .equals("device:server-42"),"Explicit private server message stays private");
             require(ChatConversation.incoming(new JSONObject().put("sourceDeviceId","desktop-a").put("payload",new JSONObject().put("conversationId",agent.id))).equals(agent.id),"Agent metadata selects agent thread");
             require(ChatConversation.incoming(new JSONObject().put("sourceDeviceId","desktop-a").put("targetDeviceId","android-self").put("text","【反重力】\n旧宿主回复")).equals(agent.id),"Old adapter reply compatibility");
             for(ChatConversation target:new ChatConversation[]{agent,computer,phone})
