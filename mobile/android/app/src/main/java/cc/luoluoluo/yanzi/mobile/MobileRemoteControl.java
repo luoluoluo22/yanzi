@@ -69,6 +69,13 @@ final class MobileRemoteControl {
                 if (result.get() == null) throw new IllegalStateException("screenshot_empty");
                 return result.get();
             }
+            case "mobile.screen.inspect": {
+                final String target = args.optString("packageName", "");
+                if (!MobilePublicFeedSnapshot.allowedPackage(target)) {
+                    throw new SecurityException("public_feed_package_not_allowed");
+                }
+                return onMain(() -> MobilePublicFeedSnapshot.capture(service, target));
+            }
             case "mobile.screen.tree":
                 return onMain(() -> {
                     AccessibilityNodeInfo root = service.getRootForControl();

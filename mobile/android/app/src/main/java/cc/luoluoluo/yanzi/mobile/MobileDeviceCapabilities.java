@@ -40,6 +40,7 @@ final class MobileDeviceCapabilities {
         items.put(descriptor("mobile.screen.status", true, new JSONArray()));
         items.put(descriptor("mobile.screen.capture", true, new JSONArray()));
         items.put(descriptor("mobile.screen.tree", true, new JSONArray()));
+        items.put(descriptor("mobile.screen.inspect", true, new JSONArray().put("packageName")));
         items.put(descriptor("mobile.screen.tap", false, new JSONArray().put("x").put("y")));
         items.put(descriptor("mobile.screen.swipe", false, new JSONArray().put("x").put("y").put("x2").put("y2")));
         items.put(descriptor("mobile.screen.action", false, new JSONArray().put("action")));
@@ -155,6 +156,7 @@ final class MobileDeviceCapabilities {
             case "mobile.screen.status":
             case "mobile.screen.capture":
             case "mobile.screen.tree":
+            case "mobile.screen.inspect":
             case "mobile.screen.tap":
             case "mobile.screen.swipe":
             case "mobile.screen.action":

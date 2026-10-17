@@ -437,6 +437,7 @@ public class DeviceHeartbeatService extends Service {
                         : message.getJSONObject("payload").optString("name", "");
                 if ("mobile.screen.capture".equals(capabilityName)
                         || "mobile.screen.tree".equals(capabilityName)
+                        || "mobile.screen.inspect".equals(capabilityName)
                         || "mobile.storage.list".equals(capabilityName)
                         || "mobile.storage.read".equals(capabilityName)
                         || "mobile.storage.write".equals(capabilityName)
