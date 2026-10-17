@@ -2756,6 +2756,59 @@ extends Activity {
                             .show();
                 });
         this.profileTabPage.addView((View)remoteScreenRow, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
+        // Reading files and writing files are independent remote permissions.
+        // Neither is implicitly granted by Accessibility or remote screen control.
+        boolean sharedFilesEnabled = this.prefs.getBoolean("remoteSharedFilesReadEnabled", false);
+        LinearLayout remoteFilesRow = YanziUiKit.switchRow(this, "folder-outline", YanziUiKit.BLUE,
+                "远程文件读取", "读取公共存储的下载、文档和照片；另需 Android 文件管理授权", sharedFilesEnabled,
+                (buttonView, isChecked) -> {
+                    if (!isChecked) {
+                        this.prefs.edit().putBoolean("remoteSharedFilesReadEnabled", false)
+                                .putBoolean("remoteSharedFilesWriteEnabled", false).apply();
+                        this.setStatus("已禁用远程文件访问和写入。");
+                        return;
+                    }
+                    new android.app.AlertDialog.Builder(this)
+                            .setTitle("授权远程读取手机文件？")
+                            .setMessage("燕子账户将可远程列出、读取公共存储中的文件及图片。无法访问其他 App 的私有数据。还需在 Android「所有文件访问权限」中手动允许燕子；随时可在此关闭。")
+                            .setPositiveButton("允许读取", (dialog, which) -> {
+                                this.prefs.edit().putBoolean("remoteSharedFilesReadEnabled", true).apply();
+                                if (!MobileSharedStorage.hasAndroidPermission()) openSharedStoragePermissionSettings();
+                                else this.setStatus("已开启远程文件读取。");
+                            })
+                            .setNegativeButton("取消", (dialog, which) -> buttonView.setChecked(false))
+                            .setOnCancelListener(dialog -> buttonView.setChecked(false))
+                            .show();
+                });
+        this.profileTabPage.addView((View)remoteFilesRow, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
+        boolean sharedWriteEnabled = this.prefs.getBoolean("remoteSharedFilesWriteEnabled", false);
+        LinearLayout remoteFileWriteRow = YanziUiKit.switchRow(this, "file-edit-outline", YanziUiKit.ORANGE,
+                "远程新建文件", "单独授权；仅允许新建文件，禁止覆盖或删除已有文件", sharedWriteEnabled,
+                (buttonView, isChecked) -> {
+                    if (!isChecked) {
+                        this.prefs.edit().putBoolean("remoteSharedFilesWriteEnabled", false).apply();
+                        this.setStatus("已关闭远程文件写入。");
+                        return;
+                    }
+                    if (!this.prefs.getBoolean("remoteSharedFilesReadEnabled", false)) {
+                        buttonView.setChecked(false);
+                        this.setStatus("请先开启远程文件读取。");
+                        return;
+                    }
+                    new android.app.AlertDialog.Builder(this)
+                            .setTitle("允许远程新建文件？")
+                            .setMessage("启用后，已登录的燕子账户可在手机公共存储中远程创建新文件。仅能创建不存在的文件，不允许覆盖、修改或删除现有文件。可随时关闭。")
+                            .setPositiveButton("允许新建", (dialog, which) -> {
+                                this.prefs.edit().putBoolean("remoteSharedFilesWriteEnabled", true).apply();
+                                if (!MobileSharedStorage.hasAndroidPermission()) openSharedStoragePermissionSettings();
+                                else this.setStatus("已允许远程新建文件。");
+                            })
+                            .setNegativeButton("取消", (dialog, which) -> buttonView.setChecked(false))
+                            .setOnCancelListener(dialog -> buttonView.setChecked(false))
+                            .show();
+                });
+        this.profileTabPage.addView((View)remoteFileWriteRow, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
+
 
 
         this.profileTabPage.addView((View)YanziUiKit.sectionLabel(this, "关于"));
@@ -2789,6 +2842,23 @@ extends Activity {
         new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
             UpdateManager.checkUpdate(MainActivity.this, false);
         }, 2000L);
+    }
+
+    private void openSharedStoragePermissionSettings() {
+        try {
+            android.content.Intent intent = new android.content.Intent(
+                    android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                    android.net.Uri.parse("package:" + getPackageName()));
+            startActivity(intent);
+            setStatus("请在系统设置中允许燕子「管理所有文件」，返回燕子后生效。");
+        } catch (Exception ex) {
+            try {
+                startActivity(new android.content.Intent(
+                        android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION));
+            } catch (Exception ignored) {
+                setStatus("无法直接打开设置。请手动在系统设置搜索「所有文件访问权限」，允许燕子。");
+            }
+        }
     }
 
     private LinearLayout createTabPage() {

@@ -432,11 +432,16 @@ public class DeviceHeartbeatService extends Service {
             }
             if (valid(token,device)) {
                 acknowledge(base, token, id, ack);
-                // Do not keep sensitive screen pixels/text in the durable message journal.
+                // Screen, file and photo content/results must not remain on-device after ACK.
                 String capabilityName = message.optJSONObject("payload") == null ? ""
                         : message.getJSONObject("payload").optString("name", "");
                 if ("mobile.screen.capture".equals(capabilityName)
-                        || "mobile.screen.tree".equals(capabilityName)) {
+                        || "mobile.screen.tree".equals(capabilityName)
+                        || "mobile.storage.list".equals(capabilityName)
+                        || "mobile.storage.read".equals(capabilityName)
+                        || "mobile.storage.write".equals(capabilityName)
+                        || "mobile.photos.list".equals(capabilityName)
+                        || "mobile.photos.preview".equals(capabilityName)) {
                     state.edit().remove(resultKey).apply();
                 }
             }

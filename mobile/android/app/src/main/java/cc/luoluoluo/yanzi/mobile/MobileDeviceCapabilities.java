@@ -21,6 +21,12 @@ final class MobileDeviceCapabilities {
         items.put(descriptor("mobile.apps.openUri", false, new JSONArray().put("uri").put("app")));
         items.put(descriptor("mobile.apps.shareText", false, new JSONArray().put("text").put("app")));
         items.put(descriptor("mobile.apps.settings", false, new JSONArray().put("app")));
+        items.put(descriptor("mobile.storage.status", true, new JSONArray()));
+        items.put(descriptor("mobile.storage.list", true, new JSONArray().put("path")));
+        items.put(descriptor("mobile.storage.read", true, new JSONArray().put("path").put("offset").put("length")));
+        items.put(descriptor("mobile.storage.write", false, new JSONArray().put("path").put("content")));
+        items.put(descriptor("mobile.photos.list", true, new JSONArray()));
+        items.put(descriptor("mobile.photos.preview", true, new JSONArray().put("path")));
         items.put(descriptor("mobile.screen.status", true, new JSONArray()));
         items.put(descriptor("mobile.screen.capture", true, new JSONArray()));
         items.put(descriptor("mobile.screen.tree", true, new JSONArray()));
@@ -118,6 +124,13 @@ final class MobileDeviceCapabilities {
             case "mobile.apps.shareText":
             case "mobile.apps.settings":
                 return MobileAppCapabilities.invoke(context, name, arguments);
+            case "mobile.storage.status":
+            case "mobile.storage.list":
+            case "mobile.storage.read":
+            case "mobile.storage.write":
+            case "mobile.photos.list":
+            case "mobile.photos.preview":
+                return MobileSharedStorage.invoke(context, name, arguments);
             case "mobile.screen.status":
             case "mobile.screen.capture":
             case "mobile.screen.tree":
