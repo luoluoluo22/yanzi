@@ -1458,7 +1458,7 @@ public partial class MainWindow
         });
     }
 
-    internal void QueuePrivateExtensionUpsertToAccount(string extensionId)
+    internal void QueuePrivateExtensionUpsertToAccount(string extensionId, bool allowRestore = false)
     {
         if (_cloudSyncClient == null || !_cloudSyncClient.HasCredential || string.IsNullOrWhiteSpace(extensionId))
         {
@@ -1475,7 +1475,7 @@ public partial class MainWindow
                     var cloudExtensions = await _cloudSyncClient.GetUserExtensionsAsync();
                     var record = cloudExtensions.FirstOrDefault(item => item.ExtensionId.Equals(extensionId, StringComparison.OrdinalIgnoreCase));
                     var expectedRevision = record?.ArchiveRevision ?? 0;
-                    await SyncPrivateExtensionToAccountAsync(command, expectedRevision, allowRestore: true);
+                    await SyncPrivateExtensionToAccountAsync(command, expectedRevision, allowRestore: allowRestore);
                 }
             }
             catch (Exception ex)
@@ -1491,6 +1491,10 @@ public partial class MainWindow
         await _extensionUploadLock.WaitAsync();
         try
         {
+            // A delete can happen while an earlier upload is waiting on this lock.
+            // Only the current, explicitly restored local state may be uploaded.
+            if (LoadPersonalSyncDeletedExtensionIds().Contains(command.ExtensionId))
+                return;
             string? publishedIcon = null;
             try
             {
@@ -5711,7 +5715,7 @@ public partial class MainWindow
                 var installed = await ExtensionInstallService.InstallPackageAsync(packageBytes, extensionId);
                 WebDavSyncService.MarkExtensionRestoredLocally(installed.ExtensionId, installed.Version);
                 ReloadLocalExtensionsFromExternal();
-                QueuePrivateExtensionUpsertToAccount(installed.ExtensionId);
+                QueuePrivateExtensionUpsertToAccount(installed.ExtensionId, allowRestore: true);
             }
 
             ExtensionSyncConflictStore.Remove(extensionId);
