@@ -25,7 +25,7 @@ import java.util.UUID;
  */
 final class ChatHistoryStore extends SQLiteOpenHelper {
     private static final String DB_NAME = "yanzi-chat-history.db";
-    private static final int DB_VERSION = 2;
+    private static final int DB_VERSION = 3;
     private static final String LEGACY_KEY = "desktop_chat_history";
     private static final String MIGRATION_KEY = "chat_history_sqlite_migrated_v1";
     private static final Object LOCK = new Object();
@@ -63,6 +63,15 @@ final class ChatHistoryStore extends SQLiteOpenHelper {
         if (oldVersion < 2) {
             db.execSQL("ALTER TABLE chat_messages ADD COLUMN conversation_id TEXT NOT NULL DEFAULT 'group'");
             db.execSQL("CREATE INDEX chat_messages_conversation_time ON chat_messages(account_id,conversation_id,time_ms,id)");
+        }
+        if (oldVersion < 3) {
+            // Recover already-saved server notifications previously routed to an
+            // invisible device:server-* conversation. Leave explicitly routed
+            // agent sessions and all ordinary device chats untouched.
+            db.execSQL("UPDATE chat_messages SET conversation_id='group' " +
+                    "WHERE role='peer' AND kind IN ('text','notify') " +
+                    "AND source_device_id LIKE 'server-%' " +
+                    "AND conversation_id=('device:' || source_device_id)");
         }
     }
 

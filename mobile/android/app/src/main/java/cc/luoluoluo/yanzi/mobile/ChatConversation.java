@@ -34,6 +34,14 @@ final class ChatConversation {
         String source=message.optString("sourceDeviceId");
         if(id.startsWith("agent:")) return id;
         if(GROUP.equals(id)) return GROUP;
+        // A server notification targets this phone for delivery, not a private chat.
+        // Older server senders omitted conversationId, which hid messages under
+        // device:server-* even though the server is not a selectable chat contact.
+        if (id.isEmpty() && ((payload != null
+                && "server".equals(payload.optString("source"))
+                && "notification".equals(payload.optString("purpose")))
+                || (source.startsWith("server-") && "YanziChat".equals(message.optString("title")))))
+            return GROUP;
         // Compatibility with the first local adapter, which used plain chat.send.
         if((message.optString("text").startsWith("【反重力】") || message.optString("requestId").startsWith("agy-"))
                 && source.startsWith("desktop-")
