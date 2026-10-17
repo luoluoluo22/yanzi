@@ -684,7 +684,7 @@ public sealed partial class CloudSyncClient
         return string.IsNullOrWhiteSpace(payload.IconUrl) ? iconReference : payload.IconUrl;
     }
 
-    public async Task UpsertUserExtensionAsync(CommandItem command, string? iconOverride = null, bool hasArchive = false, CancellationToken cancellationToken = default)
+    public async Task UpsertUserExtensionAsync(CommandItem command, string? iconOverride = null, bool hasArchive = false, CancellationToken cancellationToken = default, bool restoreDeleted = false)
     {
         await EnsureAuthenticatedAsync(cancellationToken);
         var icon = string.IsNullOrWhiteSpace(iconOverride) ? command.IconReference : iconOverride;
@@ -696,6 +696,7 @@ public sealed partial class CloudSyncClient
         {
             installedVersion = command.DeclaredVersion,
             enabled = true,
+            restoreDeleted,
             settings = new
             {
                 source = "openquickhost-desktop",
