@@ -4386,7 +4386,7 @@ extends Activity {
 
                 this.runOnUiThread(() -> {
                     this.cacheRemoteExtensions(loadedDesktopExtensions);
-                    this.renderExtensions(unifiedExtensions);
+                    this.renderExtensions(unifiedExtensions, true);
                     this.renderLocalMobileExtensions();
                     if (this.swipeRefresh != null) {
                         this.swipeRefresh.setRefreshing(false);
@@ -4540,11 +4540,66 @@ extends Activity {
         return items;
     }
 
+    private String desktopExtensionOrderKey() {
+        return "desktop.extensionOrder." + ChatHistoryStore.accountKey(this);
+    }
+
+    /** Only a successful full refresh updates the stored catalog. Cached/search renders are read-only. */
+    private List<RemoteExtension> orderedDesktopExtensions(List<RemoteExtension> extensions, boolean fullRefresh) {
+        ArrayList<String> available = new ArrayList<>();
+        java.util.LinkedHashMap<String, RemoteExtension> byId = new java.util.LinkedHashMap<>();
+        for (RemoteExtension extension : extensions) {
+            if (extension == null || extension.extensionId == null || extension.extensionId.isEmpty()) continue;
+            if (!byId.containsKey(extension.extensionId)) {
+                byId.put(extension.extensionId, extension);
+                if (extension.hasDesktopRuntime) available.add(extension.extensionId);
+            }
+        }
+        ArrayList<String> saved = new ArrayList<>();
+        try {
+            JSONArray array = new JSONArray(this.prefs.getString(desktopExtensionOrderKey(), "[]"));
+            for (int i = 0; i < array.length(); i++) {
+                String id = array.optString(i, "");
+                if (!id.isEmpty()) saved.add(id);
+            }
+        } catch (Exception ignored) {}
+        List<String> order = DesktopExtensionOrder.reconcile(saved, available);
+        if (fullRefresh) this.prefs.edit()
+                .putString(desktopExtensionOrderKey(), new JSONArray(order).toString()).apply();
+        ArrayList<RemoteExtension> result = new ArrayList<>();
+        for (String id : order) result.add(byId.remove(id));
+        result.addAll(byId.values());
+        return result;
+    }
+
+    private void saveDesktopExtensionOrder(GridLayout grid) {
+        JSONArray ids = new JSONArray();
+        for (int i = 0; i < grid.getChildCount(); i++) {
+            Object id = grid.getChildAt(i).getTag();
+            if (id instanceof String) ids.put((String) id);
+        }
+        // Persist the complete catalog, including entries currently beyond the visible grid.
+        ArrayList<String> stored = new ArrayList<>();
+        for (int i = 0; i < ids.length(); i++) stored.add(ids.optString(i));
+        for (RemoteExtension extension : currentDesktopExtensions) {
+            if (extension.hasDesktopRuntime && !stored.contains(extension.extensionId))
+                stored.add(extension.extensionId);
+        }
+        this.prefs.edit().putString(desktopExtensionOrderKey(),
+                new JSONArray(stored).toString()).commit();
+        this.currentDesktopExtensions = orderedDesktopExtensions(currentDesktopExtensions, false);
+        this.setStatus("小程序顺序已固定，后续新添加的会排在末尾");
+    }
+
     private void renderExtensions(List<RemoteExtension> extensions) {
-        this.currentDesktopExtensions = extensions;
+        this.renderExtensions(extensions, false);
+    }
+
+    private void renderExtensions(List<RemoteExtension> extensions, boolean fullRefresh) {
+        this.currentDesktopExtensions = orderedDesktopExtensions(extensions, fullRefresh);
         String query = this.searchDesktopExtensionsInput != null && this.searchDesktopExtensionsInput.getText() != null ? this.searchDesktopExtensionsInput.getText().toString().trim().toLowerCase() : "";
         ArrayList<RemoteExtension> filtered = new ArrayList<RemoteExtension>();
-        for(RemoteExtension e:extensions){
+        for(RemoteExtension e:this.currentDesktopExtensions){
             if(!e.hasDesktopRuntime)continue;
             if(!query.isEmpty()&&(e.name==null||!e.name.toLowerCase().contains(query))&&(e.description==null||!e.description.toLowerCase().contains(query)))continue;
             filtered.add(e);
@@ -4571,10 +4626,17 @@ extends Activity {
             card.setGravity(17);
             card.setOnClickListener(
                     v -> this.runRemoteExtension(extension, (View)card));
+            card.setTag(extension.extensionId);
             card.setOnLongClickListener(v -> {
-                this.showUnifiedExtensionActions(
-                        extension,
-                        (View)card);
+                if (!query.isEmpty()) {
+                    this.setStatus("清除搜索后可长按拖动排序");
+                    return true;
+                }
+                android.content.ClipData clip = android.content.ClipData.newPlainText(
+                        "yanzi-extension-order", extension.extensionId);
+                boolean started = card.startDragAndDrop(clip,
+                        new View.DragShadowBuilder(card), card, 0);
+                if (!started) this.showUnifiedExtensionActions(extension, card);
                 return true;
             });
             GridLayout.LayoutParams cardParams = new GridLayout.LayoutParams();
@@ -4614,9 +4676,45 @@ extends Activity {
             LinearLayout.LayoutParams nameParams = new LinearLayout.LayoutParams(-1, -2);
             nameParams.gravity = 1;
             card.addView((View)name, (ViewGroup.LayoutParams)nameParams);
+            TextView more = this.textView("⋯", 17, Color.rgb(148, 163, 184), false);
+            more.setGravity(Gravity.CENTER);
+            more.setContentDescription("更多设置：" + extension.name);
+            more.setOnClickListener(v -> this.showUnifiedExtensionActions(extension, card));
+            card.addView(more, new LinearLayout.LayoutParams(-1, this.dp(22)));
 
             grid.addView((View)card);
         }
+        grid.setOnDragListener((view, event) -> {
+            switch (event.getAction()) {
+                case android.view.DragEvent.ACTION_DRAG_STARTED:
+                    return query.isEmpty() && event.getLocalState() instanceof View
+                            && grid.indexOfChild((View)event.getLocalState()) >= 0;
+                case android.view.DragEvent.ACTION_DRAG_LOCATION: {
+                    View moving = (View)event.getLocalState();
+                    int oldIndex = grid.indexOfChild(moving);
+                    if (oldIndex < 0) return true;
+                    for (int i = 0; i < grid.getChildCount(); i++) {
+                        View target = grid.getChildAt(i);
+                        if (target == moving) continue;
+                        if (event.getX() >= target.getLeft() && event.getX() <= target.getRight()
+                                && event.getY() >= target.getTop() && event.getY() <= target.getBottom()) {
+                            grid.removeView(moving);
+                            grid.addView(moving, i);
+                            break;
+                        }
+                    }
+                    return true;
+                }
+                case android.view.DragEvent.ACTION_DROP:
+                    this.saveDesktopExtensionOrder(grid);
+                    return true;
+                case android.view.DragEvent.ACTION_DRAG_ENDED:
+                    if (!event.getResult()) this.renderExtensions(this.currentDesktopExtensions);
+                    return true;
+                default:
+                    return true;
+            }
+        });
         this.adjustViewPagerHeight();
     }
 

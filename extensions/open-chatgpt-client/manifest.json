@@ -1,0 +1,17 @@
+{
+  "id": "open-chatgpt-client",
+  "name": "打开 ChatGPT",
+  "version": "1.0.0",
+  "category": "小程序",
+  "description": "在电脑端打开已安装的 ChatGPT Windows 客户端。",
+  "keywords": [
+    "ChatGPT",
+    "GPT",
+    "OpenAI",
+    "聊天",
+    "AI"
+  ],
+  "openTarget": "shell:AppsFolder\\OpenAI.Codex_2p2nqsd0c76g0!App",
+  "icon": "mdi:robot-outline",
+  "accentHex": "#FF0F766E"
+}
