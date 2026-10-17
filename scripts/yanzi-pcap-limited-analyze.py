@@ -199,6 +199,8 @@ def main():
     p.add_argument("--adb",default="adb")
     p.add_argument("--serial",default="e3e68545")
     p.add_argument("--remote-path",default="/sdcard/Download/PCAPdroid/"+APP_PCAP_NAME)
+    p.add_argument("--target-app",default="cc.luoluoluo.yanzi.mobile",
+                   help="Package selected in PCAPdroid app_filter; recorded as capture provenance")
     p.add_argument("--retention-days",type=int,default=7)
     p.add_argument("--output-root",type=Path,default=Path(os.getenv("LOCALAPPDATA","."))/
                    "OpenQuickHost"/"NetworkCaptures"/"K70")
@@ -274,7 +276,7 @@ def main():
                     break
     summary={
         "schema_version":1,"source":"PCAPdroid filtered app PCAP, no TLS decryption",
-        "target_application_package":"cc.luoluoluo.yanzi.mobile",
+        "target_application_package":args.target_app,
         "pcap_sha256":digest,
         "pcap_bytes":size,"packet_count":pktcount,"unparsed_packets":invalid,
         "ip_versions":dict(ipversions),"protocols":dict(protocols),
