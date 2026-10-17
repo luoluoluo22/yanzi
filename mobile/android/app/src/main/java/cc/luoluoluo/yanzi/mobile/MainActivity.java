@@ -5042,6 +5042,7 @@ extends Activity {
         int cellWidth = Math.max(this.dp(72), (screenWidth - this.dp(40)) / 4);
         for (RemoteExtension extension : filtered) {
             LinearLayout card = this.iconCard();
+            card.setPadding(this.dp(3), this.dp(3), this.dp(3), this.dp(2));
             card.setGravity(17);
             card.setOnClickListener(
                     v -> this.runRemoteExtension(extension, (View)card));
@@ -5061,7 +5062,7 @@ extends Activity {
             GridLayout.LayoutParams cardParams = new GridLayout.LayoutParams();
             cardParams.width = cellWidth;
             cardParams.height = -2;
-            cardParams.setMargins(this.dp(2), this.dp(3), this.dp(2), this.dp(3));
+            cardParams.setMargins(this.dp(1), this.dp(1), this.dp(1), this.dp(1));
             card.setLayoutParams((ViewGroup.LayoutParams)cardParams);
             Path path = MobileIconLibrary.resolveOrDefault(extension.icon);
             ImageView img = new ImageView((Context)this);
@@ -5084,22 +5085,27 @@ extends Activity {
             img.setBackground((Drawable)gd);
             img.setImageDrawable((Drawable)new PathDrawable(path, -1));
             img.setPadding(this.dp(8), this.dp(8), this.dp(8), this.dp(8));
-            ImageView iconView = img;
-            LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(this.dp(54), this.dp(54));
+            android.widget.FrameLayout iconHolder = new android.widget.FrameLayout(this);
+            LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(this.dp(50), this.dp(50));
             iconParams.setMargins(0, 0, 0, this.dp(1));
-            iconParams.gravity = 1;
-            card.addView((View)iconView, (ViewGroup.LayoutParams)iconParams);
-            TextView name = this.textView(extension.name, 11, -1, false);
-            name.setGravity(17);
-            name.setMaxLines(2);
-            LinearLayout.LayoutParams nameParams = new LinearLayout.LayoutParams(-1, -2);
-            nameParams.gravity = 1;
-            card.addView((View)name, (ViewGroup.LayoutParams)nameParams);
-            TextView more = this.textView("⋯", 17, Color.rgb(148, 163, 184), false);
+            iconParams.gravity = Gravity.CENTER_HORIZONTAL;
+            iconHolder.addView(img, new android.widget.FrameLayout.LayoutParams(-1, -1));
+            TextView more = this.textView("⋯", 15, Color.WHITE, false);
             more.setGravity(Gravity.CENTER);
+            more.setBackgroundColor(Color.argb(140, 15, 23, 42));
             more.setContentDescription("更多设置：" + extension.name);
             more.setOnClickListener(v -> this.showUnifiedExtensionActions(extension, card));
-            card.addView(more, new LinearLayout.LayoutParams(-1, this.dp(22)));
+            android.widget.FrameLayout.LayoutParams moreParams =
+                    new android.widget.FrameLayout.LayoutParams(
+                            this.dp(23), this.dp(21), Gravity.RIGHT | Gravity.TOP);
+            iconHolder.addView(more, moreParams);
+            card.addView(iconHolder, iconParams);
+            TextView name = this.textView(extension.name, 11, -1, false);
+            name.setGravity(Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+            name.setMaxLines(2);
+            LinearLayout.LayoutParams nameParams = new LinearLayout.LayoutParams(-1, -2);
+            nameParams.gravity = Gravity.CENTER_HORIZONTAL;
+            card.addView(name, nameParams);
 
             grid.addView((View)card);
         }
@@ -5296,7 +5302,38 @@ extends Activity {
             return;
         }
 
-        this.showSetWidgetExtensionDialog(extension);
+        new AlertDialog.Builder(this)
+                .setTitle(extension.name)
+                .setItems(new String[]{"更多设置", "从账号云端目录移除"}, (dialog, which) -> {
+                    if (which == 0) this.showSetWidgetExtensionDialog(extension);
+                    else this.confirmRemoveCloudExtension(extension);
+                }).show();
+    }
+
+    private void confirmRemoveCloudExtension(RemoteExtension extension) {
+        new AlertDialog.Builder(this)
+                .setTitle("从云端移除：" + extension.name)
+                .setMessage("将从本账号同步目录移除这个小程序，不会删除电脑上的文件。"
+                        + "如果电脑还安装着它并重新同步，可能再次出现。")
+                .setNegativeButton("取消", null)
+                .setPositiveButton("移除", (dialog, which) -> this.executor.execute(() -> {
+                    try {
+                        String id = MobileApiClient.encodePath(extension.extensionId);
+                        MobileApiClient.doRequest(this.normalizedBaseUrl(),
+                                "/v1/me/extensions/" + id,
+                                this.requireToken(), "移除云端小程序", "DELETE", null, 15000);
+                        this.runOnUiThread(() -> {
+                            ArrayList<RemoteExtension> left = new ArrayList<>(this.currentDesktopExtensions);
+                            left.removeIf(e -> e.extensionId.equals(extension.extensionId));
+                            this.cacheRemoteExtensions(left);
+                            this.renderExtensions(left, true);
+                            this.setStatus("已从云端目录移除：" + extension.name);
+                        });
+                    } catch (Exception ex) {
+                        this.runOnUiThread(() -> this.setStatus(
+                                "移除失败：" + ex.getMessage()));
+                    }
+                })).show();
     }
 
     private void runRemoteExtension(RemoteExtension extension, View cardView) {
