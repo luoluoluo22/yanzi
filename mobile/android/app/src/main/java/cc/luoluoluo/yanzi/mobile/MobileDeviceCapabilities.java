@@ -27,6 +27,15 @@ final class MobileDeviceCapabilities {
         items.put(descriptor("mobile.storage.write", false, new JSONArray().put("path").put("content")));
         items.put(descriptor("mobile.photos.list", true, new JSONArray()));
         items.put(descriptor("mobile.photos.preview", true, new JSONArray().put("path")));
+        items.put(descriptor("mobile.ui.status", true, new JSONArray()));
+        items.put(descriptor("mobile.ui.find", true, new JSONArray().put("selector")));
+        items.put(descriptor("mobile.ui.click", false, new JSONArray().put("selector")));
+        items.put(descriptor("mobile.ui.type", false, new JSONArray().put("selector").put("value")));
+        items.put(descriptor("mobile.ui.wait", true, new JSONArray().put("selector")));
+        items.put(descriptor("mobile.ui.verify", true, new JSONArray().put("selector")));
+        items.put(descriptor("mobile.ui.task.start", false, new JSONArray().put("steps")));
+        items.put(descriptor("mobile.ui.task.status", true, new JSONArray().put("taskId")));
+        items.put(descriptor("mobile.ui.task.cancel", false, new JSONArray().put("taskId")));
         items.put(descriptor("mobile.screen.status", true, new JSONArray()));
         items.put(descriptor("mobile.screen.capture", true, new JSONArray()));
         items.put(descriptor("mobile.screen.tree", true, new JSONArray()));
@@ -131,6 +140,16 @@ final class MobileDeviceCapabilities {
             case "mobile.photos.list":
             case "mobile.photos.preview":
                 return MobileSharedStorage.invoke(context, name, arguments);
+            case "mobile.ui.status":
+            case "mobile.ui.find":
+            case "mobile.ui.click":
+            case "mobile.ui.type":
+            case "mobile.ui.wait":
+            case "mobile.ui.verify":
+            case "mobile.ui.task.start":
+            case "mobile.ui.task.status":
+            case "mobile.ui.task.cancel":
+                return MobileUiAutomation.invoke(context, name, arguments);
             case "mobile.screen.status":
             case "mobile.screen.capture":
             case "mobile.screen.tree":

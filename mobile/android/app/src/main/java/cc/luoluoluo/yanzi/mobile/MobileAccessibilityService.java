@@ -100,7 +100,7 @@ public class MobileAccessibilityService extends AccessibilityService {
     protected void onServiceConnected() {
         super.onServiceConnected();
         activeInstance = this;
-        MobileDiagnostics.append(this, "无障碍服务已连接，当前仅启用截图能力。");
+        MobileDiagnostics.append(this, "无障碍服务已连接；远控与自动化仍受燕子独立开关限制。");
     }
 
     @Override

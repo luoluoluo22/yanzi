@@ -441,7 +441,15 @@ public class DeviceHeartbeatService extends Service {
                         || "mobile.storage.read".equals(capabilityName)
                         || "mobile.storage.write".equals(capabilityName)
                         || "mobile.photos.list".equals(capabilityName)
-                        || "mobile.photos.preview".equals(capabilityName)) {
+                        || "mobile.photos.preview".equals(capabilityName)
+                        || "mobile.ui.find".equals(capabilityName)
+                        || "mobile.ui.click".equals(capabilityName)
+                        || "mobile.ui.type".equals(capabilityName)
+                        || "mobile.ui.wait".equals(capabilityName)
+                        || "mobile.ui.verify".equals(capabilityName)
+                        || "mobile.ui.task.start".equals(capabilityName)
+                        || "mobile.ui.task.status".equals(capabilityName)
+                        || "mobile.ui.task.cancel".equals(capabilityName)) {
                     state.edit().remove(resultKey).apply();
                 }
             }
