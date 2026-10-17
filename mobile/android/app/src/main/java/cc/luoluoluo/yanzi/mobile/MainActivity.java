@@ -5304,7 +5304,7 @@ extends Activity {
 
         new AlertDialog.Builder(this)
                 .setTitle(extension.name)
-                .setItems(new String[]{"更多设置", "从账号云端目录移除"}, (dialog, which) -> {
+                .setItems(new String[]{"更多设置", "删除小程序（同步到其他设备）"}, (dialog, which) -> {
                     if (which == 0) this.showSetWidgetExtensionDialog(extension);
                     else this.confirmRemoveCloudExtension(extension);
                 }).show();
@@ -5312,22 +5312,22 @@ extends Activity {
 
     private void confirmRemoveCloudExtension(RemoteExtension extension) {
         new AlertDialog.Builder(this)
-                .setTitle("从云端移除：" + extension.name)
-                .setMessage("将从本账号同步目录移除这个小程序，不会删除电脑上的文件。"
-                        + "如果电脑还安装着它并重新同步，可能再次出现。")
+                .setTitle("从账号删除：" + extension.name)
+                .setMessage("删除将同步至账号下的其他电脑；安装新版燕子的电脑收到删除标记后，"
+                        + "会将对应小程序移入回收站。只有主动恢复才会重新出现在列表中。")
                 .setNegativeButton("取消", null)
                 .setPositiveButton("移除", (dialog, which) -> this.executor.execute(() -> {
                     try {
                         String id = MobileApiClient.encodePath(extension.extensionId);
                         MobileApiClient.doRequest(this.normalizedBaseUrl(),
                                 "/v1/me/extensions/" + id,
-                                this.requireToken(), "移除云端小程序", "DELETE", null, 15000);
+                                this.requireToken(), "同步删除小程序", "DELETE", null, 15000);
                         this.runOnUiThread(() -> {
                             ArrayList<RemoteExtension> left = new ArrayList<>(this.currentDesktopExtensions);
                             left.removeIf(e -> e.extensionId.equals(extension.extensionId));
                             this.cacheRemoteExtensions(left);
                             this.renderExtensions(left, true);
-                            this.setStatus("已从云端目录移除：" + extension.name);
+                            this.setStatus("已同步删除：" + extension.name);
                         });
                     } catch (Exception ex) {
                         this.runOnUiThread(() -> this.setStatus(
