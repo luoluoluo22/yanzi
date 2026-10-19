@@ -474,7 +474,9 @@ public sealed partial class LocalAgentApiServer : IDisposable
                         BrowserConnectionChanged?.Invoke(true);
                         HostAssets.AppendLog($"[BrowserWS #{socketId}] Connected from {browserName}.");
 
-                        await HandleBrowserWebSocketLoopAsync(webSocket, socketId, browserName);
+                        await HandleBrowserWebSocketLoopAsync(webSocket, socketId, browserName,
+                            context.Request.Headers["Origin"]?.StartsWith("chrome-extension://", StringComparison.OrdinalIgnoreCase) == true ||
+                            context.Request.Headers["Origin"]?.StartsWith("moz-extension://", StringComparison.OrdinalIgnoreCase) == true);
                     }
                     catch (Exception ex)
                     {
@@ -2375,7 +2377,7 @@ public sealed partial class LocalAgentApiServer : IDisposable
         }
     }
 
-    private async Task HandleBrowserWebSocketLoopAsync(WebSocket webSocket, int socketId, string browserName)
+    private async Task HandleBrowserWebSocketLoopAsync(WebSocket webSocket, int socketId, string browserName, bool trustedExtensionOrigin)
     {
         var buffer = new byte[1024 * 64];
         try
@@ -2420,6 +2422,18 @@ public sealed partial class LocalAgentApiServer : IDisposable
                             else if (msgType == "register")
                             {
                                 HostAssets.AppendLog($"[BrowserWS #{socketId}] Registered successfully from {browserName}.");
+                            }
+                            else if (msgType == "opencli_request")
+                            {
+                                var requestId = json.TryGetProperty("requestId", out var openCliRequestId)
+                                    ? openCliRequestId.GetString() ?? "" : "";
+                                var site = json.TryGetProperty("site", out var openCliSite)
+                                    ? openCliSite.GetString() ?? "" : "";
+                                var operation = json.TryGetProperty("operation", out var openCliOperation)
+                                    ? openCliOperation.GetString() ?? "" : "";
+                                // Do not block websocket heartbeats while OpenCLI runs.
+                                _ = Task.Run(() => HandleOpenCliBrowserRequestAsync(
+                                    webSocket, requestId, site, operation, trustedExtensionOrigin));
                             }
                             else if (msgType is "webapp_storage_get" or "webapp_storage_put" or "webapp_storage_delete")
                             {

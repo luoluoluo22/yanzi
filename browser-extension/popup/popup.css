@@ -520,3 +520,25 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .panel-tabs button, .webapp-card { transition: none; }
 }
+
+/* On-demand personal-data reader. Constrain records inside the popup. */
+.opencli-panel { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.opencli-panel h2 { font-size: 16px; }
+.opencli-panel label { font-size: 12px; color: var(--text-muted); }
+.opencli-panel select {
+  width: 100%; background: #111827; color: var(--text-main);
+  border: 1px solid var(--glass-border); padding: 9px; border-radius: 8px;
+}
+.opencli-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.opencli-actions button {
+  padding: 8px 12px; border: 1px solid rgba(6,182,212,.3); border-radius: 8px;
+  background: rgba(6,182,212,.1); color: var(--text-main); cursor: pointer;
+}
+.opencli-actions button:disabled { opacity: .4; cursor: default; }
+.opencli-status, .opencli-summary { font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.opencli-status { color: var(--text-muted); }
+.opencli-result {
+  min-height: 70px; max-height: 290px; overflow: auto; white-space: pre-wrap;
+  overflow-wrap: anywhere; background: #0c1422; border: 1px solid var(--glass-border);
+  padding: 10px; border-radius: 8px; font: 11px/1.55 Consolas, monospace;
+}
