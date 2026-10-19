@@ -6,6 +6,19 @@ const chatGptExecutionWaiters = [];
 const chatGptReservedTabs = new Set();
 const chatGptTabWaiters = new Map();
 let xhsLocalFeedGenerationPromise = null;
+let xhsLocalFeedGenerationTabId = null;
+let xhsLocalFeedGenerationCancelled = false;
+let xhsLocalFeedGenerationPaused = false;
+const XHS_LOCAL_FEED_STORAGE_KEY = "yanzi.xhs.local-feed.v2";
+
+function cancelXhsLocalFeedGeneration() {
+  xhsLocalFeedGenerationPaused = true;
+  if (!xhsLocalFeedGenerationPromise) return;
+  xhsLocalFeedGenerationCancelled = true;
+  if (xhsLocalFeedGenerationTabId) {
+    void chrome.tabs.remove(xhsLocalFeedGenerationTabId).catch(() => {});
+  }
+}
 const XHS_EVALUATION_TAB_TTL_MS = 60 * 1000;
 const XHS_EVALUATION_ALARM_PREFIX = "xhs-evaluation-close:";
 const chatGptAssetWaiters = new Map();
@@ -781,6 +794,7 @@ async function runIsolatedChatGptTask(task) {
     if (!chatGptOperations.has(task.action)) {
       throw new Error("不支持的 ChatGPT 操作");
     }
+    if (task.isCancelled?.()) throw new Error("兴趣生成已暂停");
 
     const newChatUrl = task.temporary === false
       ? "https://chatgpt.com/"
@@ -790,8 +804,11 @@ async function runIsolatedChatGptTask(task) {
       url: newChatUrl,
       active: false
     });
+    task.onTabCreated?.(tab.id);
+    if (task.isCancelled?.()) throw new Error("兴趣生成已暂停");
 
     await waitChatGptTab(tab.id);
+    if (task.isCancelled?.()) throw new Error("兴趣生成已暂停");
     await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       files: ["chatgpt-content.js"]
@@ -1177,9 +1194,12 @@ async function generateXhsLocalFeedNotes(message) {
     action: "chatgpt_send",
     prompt: buildXhsLocalFeedPrompt({ ...message, count: requestedCount }),
     temporary: true,
-    timeoutSeconds: 360
+    timeoutSeconds: 360,
+    isCancelled: () => xhsLocalFeedGenerationCancelled,
+    onTabCreated: tabId => { xhsLocalFeedGenerationTabId = tabId; }
   });
 
+  if (xhsLocalFeedGenerationCancelled) throw new Error("兴趣生成已暂停");
   if (response?.status !== "success") {
     throw new Error(response?.message || "ChatGPT 本地笔记生成失败");
   }
@@ -1250,22 +1270,45 @@ function queueXhsLocalFeedGeneration(message) {
     return xhsLocalFeedGenerationPromise;
   }
 
+  xhsLocalFeedGenerationCancelled = false;
+  xhsLocalFeedGenerationTabId = null;
   const run = generateXhsLocalFeedNotes(message);
   xhsLocalFeedGenerationPromise = run.finally(() => {
     xhsLocalFeedGenerationPromise = null;
+    xhsLocalFeedGenerationTabId = null;
   });
   return xhsLocalFeedGenerationPromise;
 }
 
+chrome.storage?.onChanged?.addListener?.((changes, areaName) => {
+  if (areaName !== "local" || !changes?.[XHS_LOCAL_FEED_STORAGE_KEY]?.newValue) return;
+  xhsLocalFeedGenerationPaused =
+    changes[XHS_LOCAL_FEED_STORAGE_KEY].newValue.preferences?.generationEnabled === false;
+  if (xhsLocalFeedGenerationPaused) cancelXhsLocalFeedGeneration();
+});
+
 chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
   if (message?.type === "yanzi_xhs_generate_local_notes") {
-    queueXhsLocalFeedGeneration(message)
+    chrome.storage.local.get(XHS_LOCAL_FEED_STORAGE_KEY)
+      .then(stored => {
+        if (xhsLocalFeedGenerationPaused ||
+            stored?.[XHS_LOCAL_FEED_STORAGE_KEY]?.preferences?.generationEnabled === false) {
+          throw new Error("兴趣自动生成已暂停");
+        }
+        return queueXhsLocalFeedGeneration(message);
+      })
       .then(data => sendResponse({ ok: true, ...data }))
       .catch(error => sendResponse({
         ok: false,
         error: error?.message || String(error)
       }));
     return true;
+  }
+
+  if (message?.type === "yanzi_xhs_cancel_local_notes") {
+    cancelXhsLocalFeedGeneration();
+    sendResponse({ ok: true });
+    return;
   }
 
   if (message?.type === "yanzi_xhs_evaluate_note") {

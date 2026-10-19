@@ -5,7 +5,7 @@
       "id": "xiaohongshu.filter",
       "name": "小红书增强",
       "description": "增强小红书信息流：支持内容过滤、兴趣建模、AI 个性化笔记、探索空间网络、来源话题、反馈评价与历史笔记，并允许燕子自定义内容混入瀑布流。",
-      "version": "0.7.22",
+      "version": "0.7.23",
       "category": "内容增强",
       "matches": ["https://www.xiaohongshu.com/*"],
       "contentScript": "webapps/xiaohongshu-filter/content.js",
