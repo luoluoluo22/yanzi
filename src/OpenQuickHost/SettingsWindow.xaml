@@ -2846,6 +2846,10 @@
                                                             <TextBlock Text="{Binding Name}" Foreground="{DynamicResource BrushTextMain}" FontWeight="SemiBold" TextWrapping="Wrap" ToolTip="{Binding DeviceId}"/>
                                                             <TextBlock Text="{Binding Status}" Foreground="{Binding StatusBrush}" Margin="0,4,0,0"/>
                                                             <TextBlock Text="{Binding Detail}" Foreground="{DynamicResource BrushTextSec}" TextWrapping="Wrap" Margin="0,4,0,0" FontSize="{DynamicResource FontSizeSmall}"/>
+                                                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                                                <TextBox Text="{Binding RemarkDraft, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" MaxLength="80" Width="180" ToolTip="账号共享备注，最多 40 个字符；留空可恢复型号名称" AutomationProperties.Name="设备备注"/>
+                                                                <Button Content="保存备注" Tag="{Binding}" Style="{StaticResource SecondaryBtn}" Margin="8,0,0,0" Padding="10,4" Click="NestDeviceRemark_Click"/>
+                                                            </StackPanel>
                                                         </StackPanel>
                                                         <Button Grid.Column="2" Content="{Binding ActionLabel}" Tag="{Binding}" Style="{StaticResource SecondaryBtn}" Padding="10,4" VerticalAlignment="Center" Click="NestDeviceAction_Click"/>
                                                     </Grid>

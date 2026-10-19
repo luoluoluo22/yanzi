@@ -12,6 +12,15 @@ public static class YanziDeviceCapabilityProvider
     {
         yield return new()
         {
+            Name = "device.remark.set",
+            Description = "Set or clear an account-synced device remark; works for offline devices. Empty remark restores the model name.",
+            Permissions = ["device.write"], Category = "devices", RiskLevel = "medium",
+            InputSchema = YanziCapabilitySchema.Parse("""{"type":"object","properties":{"target":{"type":"string","minLength":1},"remark":{"type":"string","maxLength":80}},"required":["target","remark"],"additionalProperties":false}"""),
+            OutputSchema = YanziCapabilitySchema.Parse("""{"type":"object"}"""),
+            Handler = RemarkAsync
+        };
+        yield return new()
+        {
             Name = "device.list",
             Description = "列出当前燕子账号已连接设备、在线状态和本地别名",
             Permissions = ["device.read"], Category = "devices",
@@ -74,10 +83,13 @@ public static class YanziDeviceCapabilityProvider
         var devices = source.ToArray();
         var aliases = LoadAliases();
         query = query.Trim();
-        if (aliases.TryGetValue(query, out var aliased)) query = aliased;
         var matches = devices.Where(d => string.Equals(d.DeviceId, query, StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (matches.Length == 1) return matches[0];
+        aliases.TryGetValue(query, out var aliased);
         if (matches.Length == 0)
-            matches = devices.Where(d => string.Equals(d.DisplayName, query, StringComparison.OrdinalIgnoreCase)).ToArray();
+            matches = devices.Where(d => string.Equals(d.DisplayName, query, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(d.ModelName, query, StringComparison.OrdinalIgnoreCase)
+                || (aliased != null && string.Equals(d.DeviceId, aliased, StringComparison.OrdinalIgnoreCase))).ToArray();
         if (matches.Length == 0)
             matches = devices.Where(d => d.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray();
         return matches.Length switch
@@ -102,7 +114,7 @@ public static class YanziDeviceCapabilityProvider
         {
             items = devices.Select(d => new
             {
-                deviceId = d.DeviceId, displayName = d.DisplayName, platform = d.Platform,
+                deviceId = d.DeviceId, displayName = d.DisplayName, modelName = d.ModelName, remark = d.Remark, platform = d.Platform,
                 online = d.Online, lastSeenAt = d.LastSeenAt, lastLocation = d.LastLocation,
                 aliases = aliases.Where(a => string.Equals(a.Value, d.DeviceId, StringComparison.OrdinalIgnoreCase)).Select(a => a.Key).ToArray()
             }).ToArray()
@@ -173,6 +185,14 @@ public static class YanziDeviceCapabilityProvider
             await Task.Delay(650, timeout.Token);
         }
         throw new TimeoutException("Raccoon execution result is not yet known. Query the message ID before any retry.");
+    }
+
+    private static async Task<object?> RemarkAsync(object? payload)
+    {
+        var input = (JsonElement)payload!;
+        var (cloud, devices) = await LoadDevicesAsync();
+        var device = Resolve(devices, input.GetProperty("target").GetString()!);
+        return await cloud.SetPeerDeviceRemarkAsync(device.DeviceId, input.GetProperty("remark").GetString()!);
     }
 
     private static async Task<object?> AliasAsync(object? payload)

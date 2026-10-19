@@ -1,4 +1,5 @@
 import { handleEnvironment } from './device-environment.js';
+import { handleDeviceRemark } from './device-remarks.js';
 export function selectImplicitExecutionTarget(rows, isOnline) {
   const candidates = Array.isArray(rows) ? rows : [];
   const online = candidates.filter(item => isOnline(item));
@@ -11,6 +12,8 @@ export function selectImplicitExecutionTarget(rows, isOnline) {
 export function createDeviceApi(api) {
   const { DEVICE_MESSAGE_PROTOCOL, HttpError, acceptsAccountChat, accountLanLink, canonicalMessageJson, deviceNetworkLocation, ensureOwnedDevice, ensureUser, executionDeadline, expireDeviceCommands, getPendingDeviceMessagePage, getPendingDeviceMessageItems, isAccountChat, isExecutionMessage, isoNow, json, messageMatchesDevice, normalizeDeviceId, normalizeDeviceMessagePayload, normalizeDevicePayload, normalizeMessageId, normalizeMessageLimit, normalizeShortText, notifyDeviceRelay, ownedAttachment, parseJsonObject, randomHex, readJson, requireAuth, sendOfflinePush, serializeDeviceMessageRecord, serializeDeviceRecord, signToken, touchDevice, traceContext } = api;
 async function handleDeviceApi(request, env, ctx) {
+  const remark = await handleDeviceRemark(request, env, api);
+  if (remark) return remark;
   const environment = await handleEnvironment(request, env, api);
   if (environment) return environment;
   const url = new URL(request.url);
@@ -65,6 +68,9 @@ async function handleDeviceApi(request, env, ctx) {
     if (parseJsonObject(existingDeviceOwner?.capabilities_json).disabled === true && !reactivate)
       throw new HttpError(403, 'device_removed', 'This device registration has been removed');
     delete device.capabilities.disabled;
+    // Device registrations (including scoped credentials) cannot change account-owned labels.
+    delete device.capabilities.accountRemark;
+    delete device.capabilities.accountRemarkUpdatedAt;
     if (reactivate) device.capabilities.disabled = false;
     delete device.capabilities.networkLocation;
     const location = deviceNetworkLocation(request);

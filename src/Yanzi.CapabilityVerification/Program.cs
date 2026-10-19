@@ -26,6 +26,7 @@ if (args.Length == 1 && args[0] == "--lanzou") { await LanzouCapabilityVerificat
 if (args.Length == 1 && args[0] == "--cnblogs-import") { CnblogsVerification.ImportLocalToken(); return; }
 if (args.Length == 2 && args[0] == "--cnblogs-live-read") { await CnblogsVerification.VerifyLiveReadAsync(long.Parse(args[1])); return; }
 if (args.Length == 1 && args[0] == "--tasks") { TaskVerification.Run(); return; }
+if (args.Length == 1 && args[0] == "--device-remarks") { DeviceRemarksVerification.Run(); return; }
 YanziBuiltinCapabilityRegistration.Register();
 if (args.Length == 1 && args[0] == "--dependency-status")
 {

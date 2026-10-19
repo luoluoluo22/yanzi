@@ -200,13 +200,18 @@ async function notifyDeviceRelay(env, userId, event) {
 }
 
 function serializeDeviceRecord(row, referenceNowMs = Date.now()) {
+  const capabilities = parseJsonObject(row.capabilities_json);
+  const remark = typeof capabilities.accountRemark === 'string' ? capabilities.accountRemark : '';
   const lastSeenAtMs = Date.parse(String(row.last_seen_at || ""));
   const online = Number.isFinite(lastSeenAtMs)
     && Math.max(0, referenceNowMs - lastSeenAtMs) <= DEVICE_ONLINE_WINDOW_MS;
   return {
     deviceId: row.device_id,
     platform: row.platform,
-    displayName: row.display_name,
+    displayName: remark || row.display_name,
+    modelName: row.display_name,
+    remark,
+    remarkUpdatedAt: capabilities.accountRemarkUpdatedAt || null,
     capabilities: parseJsonObject(row.capabilities_json),
     needsMessageUpgrade: row.platform === 'android' && !parseJsonObject(row.capabilities_json).receiveMobileMessages,
     lastSeenAt: row.last_seen_at,
