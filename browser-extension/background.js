@@ -219,7 +219,7 @@ function handleTask(task) {
   }
 
   if (task.action === "opencli_read") {
-    void globalThis.yanziOpenCliPerformRead(task.site, task.operation)
+    void globalThis.yanziOpenCliPerformRead(task.site, task.operation, task.page ?? 1)
       .then(result => sendBrowserTaskResponse(task, result?.ok ? "success" : "error", result?.data || null, result?.error || ""))
       .catch(err => sendBrowserTaskResponse(task, "error", null, err.message));
     return;

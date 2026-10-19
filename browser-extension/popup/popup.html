@@ -102,6 +102,11 @@
           <button id="opencli-read" type="button">读取数据</button>
           <button id="opencli-copy" type="button" disabled>复制 JSON</button>
         </div>
+        <div id="opencli-pagination" class="opencli-pagination" hidden>
+          <button type="button" id="opencli-prev" disabled>上一页</button>
+          <span id="opencli-page-label">第 1 页</span>
+          <button type="button" id="opencli-next" disabled>下一页</button>
+        </div>
         <p class="opencli-status" id="opencli-status" role="status" aria-live="polite"></p>
         <p class="opencli-summary" id="opencli-summary"></p>
         <pre class="opencli-result" id="opencli-result" aria-label="读取结果"></pre>

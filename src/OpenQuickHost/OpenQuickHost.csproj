@@ -3,10 +3,10 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net9.0-windows</TargetFramework>
-    <Version>1.0.35</Version>
-    <FileVersion>1.0.35.0</FileVersion>
-    <AssemblyVersion>1.0.35.0</AssemblyVersion>
-    <InformationalVersion>1.0.35</InformationalVersion>
+    <Version>1.0.36</Version>
+    <FileVersion>1.0.36.0</FileVersion>
+    <AssemblyVersion>1.0.36.0</AssemblyVersion>
+    <InformationalVersion>1.0.36</InformationalVersion>
     <Nullable>enable</Nullable>
     <NoWarn>$(NoWarn);1701;1603</NoWarn>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -54,6 +54,8 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
+    <!-- Authenticated, read-only OpenCLI cursor adapter bundled into Yanzi host releases. -->
+    <None Include="OpenCliAdapters\*.mjs" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <!-- Verified Quark transfer adapter scripts bundled into Yanzi host releases. -->
     <None Include="CapabilityScripts\QuarkDrive\*.py" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Include="CapabilityScripts\BaiduNetdisk\*.py" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

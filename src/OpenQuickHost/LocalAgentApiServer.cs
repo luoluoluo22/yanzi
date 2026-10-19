@@ -2433,8 +2433,12 @@ public sealed partial class LocalAgentApiServer : IDisposable
                                     ? openCliSite.GetString() ?? "" : "";
                                 var operation = json.TryGetProperty("operation", out var openCliOperation)
                                     ? openCliOperation.GetString() ?? "" : "";
+                                var page = json.TryGetProperty("page", out var openCliPage) &&
+                                           openCliPage.ValueKind == JsonValueKind.Number &&
+                                           openCliPage.TryGetInt32(out var requestedPage)
+                                    ? requestedPage : 1;
                                 _ = Task.Run(() => HandleOpenCliBrowserRequestAsync(
-                                    webSocket, requestId, site, operation, trustedExtensionOrigin));
+                                    webSocket, requestId, site, operation, page, trustedExtensionOrigin));
                             }
                             else if (msgType is "webapp_storage_get" or "webapp_storage_put" or "webapp_storage_delete")
                             {

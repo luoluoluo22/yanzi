@@ -19,17 +19,17 @@ public sealed partial class LocalAgentApiServer
         {
             ["xiaohongshu/profile"] = ("xiaohongshu", ["creator-profile"]),
             ["xiaohongshu/stats"] = ("xiaohongshu", ["creator-stats", "--period", "seven"]),
-            ["xiaohongshu/notes"] = ("xiaohongshu", ["creator-notes", "--limit", "5"]),
+            ["xiaohongshu/notes"] = ("xiaohongshu", ["creator-notes", "--limit", "20"]),
             ["bilibili/profile"] = ("bilibili", ["whoami"]),
             ["bilibili/history"] = ("bilibili", ["history", "--limit", "5"]),
             ["bilibili/following"] = ("bilibili", ["following"]),
             ["douyin/profile"] = ("douyin", ["profile"]),
-            ["douyin/videos"] = ("douyin", ["videos", "--limit", "5"])
+            ["douyin/videos"] = ("douyin", ["videos", "--limit", "20"])
         };
     private static readonly SemaphoreSlim OpenCliReadGate = new(1, 1);
 
     private async Task HandleOpenCliBrowserRequestAsync(WebSocket browserSocket, string requestId,
-        string site, string operation, bool trustedExtensionOrigin)
+        string site, string operation, int page, bool trustedExtensionOrigin)
     {
         object payload;
         var key = site + "/" + operation;
@@ -37,7 +37,8 @@ public sealed partial class LocalAgentApiServer
         {
             payload = new { type = "opencli_response", requestId, ok = false, error = "extension_origin_required" };
         }
-        else if (!Guid.TryParse(requestId, out _) || !OpenCliReads.TryGetValue(key, out var command))
+        else if (!Guid.TryParse(requestId, out _) || !OpenCliReads.TryGetValue(key, out var command) ||
+                 page < 1 || page > 20 || (key != "douyin/videos" && page != 1))
         {
             payload = new { type = "opencli_response", requestId, ok = false, error = "unsupported_read_operation" };
         }
@@ -51,8 +52,11 @@ public sealed partial class LocalAgentApiServer
                 await OpenCliReadGate.WaitAsync(waitCts.Token);
                 try
                 {
-                    var data = await ExecuteReadOnlyOpenCliAsync(command.Site, command.Args, waitCts.Token);
-                    payload = new { type = "opencli_response", requestId, ok = true, site, operation, data };
+                    var args = key == "douyin/videos"
+                        ? [.. command.Args, "--page", page.ToString(System.Globalization.CultureInfo.InvariantCulture)]
+                        : command.Args;
+                    var data = await ExecuteReadOnlyOpenCliAsync(command.Site, args, waitCts.Token);
+                    payload = new { type = "opencli_response", requestId, ok = true, site, operation, page, data };
                 }
                 finally { OpenCliReadGate.Release(); }
             }
@@ -88,10 +92,15 @@ public sealed partial class LocalAgentApiServer
     private static async Task<JsonElement> ExecuteReadOnlyOpenCliAsync(string site, string[] args,
         CancellationToken cancellationToken)
     {
-        // Invoke the installed npm package through Node, never through a shell.
-        var script = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "npm", "node_modules", "@jackwener", "opencli", "dist", "src", "main.js");
+        // Invoke a fixed audited reader through Node, never through a shell.
+        // OpenCLI 1.8.6's Douyin --page uses an ineffective page_num parameter.
+        // The bundled adapter follows the API's max_cursor instead.
+        var cursorReader = site == "douyin" && args.Length > 0 && args[0] == "videos";
+        var script = cursorReader
+            ? Path.Combine(AppContext.BaseDirectory, "OpenCliAdapters", "douyin-cursor-reader.mjs")
+            : Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "npm", "node_modules", "@jackwener", "opencli", "dist", "src", "main.js");
         if (!File.Exists(script))
             throw new FileNotFoundException("OpenCLI 未安装，请先执行 npm install -g @jackwener/opencli。");
 
@@ -107,10 +116,18 @@ public sealed partial class LocalAgentApiServer
             CreateNoWindow = true
         };
         start.ArgumentList.Add(script);
-        start.ArgumentList.Add(site);
-        foreach (var arg in args) start.ArgumentList.Add(arg);
-        start.ArgumentList.Add("--format");
-        start.ArgumentList.Add("json");
+        if (cursorReader)
+        {
+            // Page has already been validated as a bounded integer by the WebSocket handler.
+            start.ArgumentList.Add(args[^1]);
+        }
+        else
+        {
+            start.ArgumentList.Add(site);
+            foreach (var arg in args) start.ArgumentList.Add(arg);
+            start.ArgumentList.Add("--format");
+            start.ArgumentList.Add("json");
+        }
         using var process = new Process { StartInfo = start };
         if (!process.Start()) throw new InvalidOperationException("无法启动 OpenCLI。");
         var stdout = process.StandardOutput.ReadToEndAsync();

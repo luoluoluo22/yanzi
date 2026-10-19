@@ -45,4 +45,19 @@ const result = await response;
 assert.equal(result.ok, true);
 assert.equal(result.data[0].title, "safe");
 assert.equal(Object.keys(ctx).includes("yanziOpenCliPending"), false);
-console.log("OpenCLI browser bridge contract OK");
+for (const page of [0, 21, 1.5, "2"]) {
+  const denied = await invoke({ action: "yanzi_opencli_read", site: "douyin", operation: "videos", page });
+  assert.equal(denied.ok, false, "invalid page must be denied");
+}
+const deniedXhsPage = await invoke({ action: "yanzi_opencli_read", site: "xiaohongshu", operation: "notes", page: 2 });
+assert.equal(deniedXhsPage.ok, false, "only Douyin videos support pagination");
+assert.equal(outbound.length, 1, "invalid requests must not reach the host");
+const pagedResponse = invoke({ action: "yanzi_opencli_read", site: "douyin", operation: "videos", page: 2 });
+assert.equal(outbound.length, 2);
+assert.equal(outbound[1].page, 2);
+ctx.handleYanziOpenCliResponse({ requestId: outbound[1].requestId, ok: true, page: 2, data: [{ aweme_id: "safe-id" }] });
+const pagedResult = await pagedResponse;
+assert.equal(pagedResult.ok, true);
+assert.equal(pagedResult.page, 2);
+assert.equal(pagedResult.data[0].aweme_id, "safe-id");
+console.log("OpenCLI browser bridge contract and pagination OK");
