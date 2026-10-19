@@ -7,7 +7,7 @@
         MinWidth="840"
         MinHeight="400"
         Background="{DynamicResource BrushBG}"
-        Foreground="White"
+        Foreground="{DynamicResource BrushTextMain}"
         WindowStartupLocation="CenterScreen">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
@@ -26,7 +26,7 @@
             </Grid.ColumnDefinitions>
             <StackPanel Grid.Column="0" VerticalAlignment="Center">
                 <TextBlock Text="正在运行的小程序" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" />
-                <TextBlock x:Name="SummaryTextBlock" Margin="0,6,0,0" Foreground="#FF9CA3AF" />
+                <TextBlock x:Name="SummaryTextBlock" Margin="0,6,0,0" Foreground="{DynamicResource BrushTextSec}" />
             </StackPanel>
             <Button Grid.Column="1"
                     Width="90"
@@ -48,7 +48,7 @@
                           Margin="10"
                           Background="Transparent"
                           BorderThickness="0"
-                          Foreground="White">
+                          Foreground="{DynamicResource BrushTextMain}">
                     <ListView.View>
                         <GridView>
                             <GridViewColumn Header="名称" Width="210">
@@ -106,7 +106,7 @@
                                                         Margin="0,0,-1.5,-1.5"
                                                         IsHitTestVisible="False" />
                                             </Grid>
-                                            <TextBlock Text="{Binding Title}" VerticalAlignment="Center" Foreground="White" />
+                                            <TextBlock Text="{Binding Title}" VerticalAlignment="Center" Foreground="{DynamicResource BrushTextMain}" />
                                         </StackPanel>
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
