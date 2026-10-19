@@ -12,6 +12,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using OpenQuickHost.CSharpRuntime;
+using Yanzi.UI.Wpf;
 
 public static class YanziAction
 {
@@ -76,12 +77,14 @@ public sealed class CapabilityLabWindow : Window
     private readonly Button _refreshAllButton = new();
     private readonly Button _runAllButton = new();
     private readonly string _experimentRoot;
+    private readonly TextBlock _npmStatus = new();
+    private readonly TextBlock _npxStatus = new();
 
     private static readonly CapabilitySpec[] Specs =
     {
         new("git", "Git", "git>=2.40", "版本控制 · 时间胶囊提交"),
         new("python", "Python", "python>=3.12", "纯标准库 · 曼德勃罗图"),
-        new("node", "Node.js", "node>=22", "异步运行时 · 并行加密链"),
+        new("node", "Node.js / npm / npx", "node>=22", "异步计算 · 离线安装包及命令执行"),
         new("ffmpeg", "FFmpeg", "ffmpeg>=7", "音视频工具链 · 合成测试片")
     };
 
@@ -100,6 +103,8 @@ public sealed class CapabilityLabWindow : Window
         Background = Brush("#0B0F14");
         Foreground = Brush("#E5E7EB");
         FontFamily = new FontFamily("Microsoft YaHei UI, Segoe UI");
+        YanziUi.ApplyTo(this, YanziTheme.Dark);
+        SetResourceReference(Window.BackgroundProperty, "Yanzi.Color.Background");
         Content = BuildUi();
 
         Loaded += async (_, _) =>
@@ -190,13 +195,15 @@ public sealed class CapabilityLabWindow : Window
 
         var logBorder = new Border
         {
-            Background = Brush("#101720"),
-            BorderBrush = Brush("#1F2937"),
+            Background = null,
+            BorderBrush = null,
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(14),
             Padding = new Thickness(14)
         };
 
+        logBorder.SetResourceReference(Border.BackgroundProperty, "Yanzi.Color.Card");
+        logBorder.SetResourceReference(Border.BorderBrushProperty, "Yanzi.Color.Border");
         var logGrid = new Grid();
         logGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         logGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
@@ -243,12 +250,14 @@ public sealed class CapabilityLabWindow : Window
     {
         var container = new Border
         {
-            Background = Brush("#111821"),
-            BorderBrush = Brush("#202B38"),
+            Background = null,
+            BorderBrush = null,
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(14),
             Padding = new Thickness(16)
         };
+        container.SetResourceReference(Border.BackgroundProperty, "Yanzi.Color.Card");
+        container.SetResourceReference(Border.BorderBrushProperty, "Yanzi.Color.Border");
 
         var stack = new StackPanel();
         var top = new Grid();
@@ -272,19 +281,16 @@ public sealed class CapabilityLabWindow : Window
         });
         top.Children.Add(title);
 
-        var badge = new Border
+        // Shared 22-DIP capsule Badge, not a stretchable hand-built Border.
+        var badge = new YanziBadge
         {
+            Content = "未检查",
+            Variant = YanziBadgeVariant.Secondary,
             Background = Brush("#1F2937"),
-            CornerRadius = new CornerRadius(10),
-            Padding = new Thickness(9, 4, 9, 4)
+            Foreground = Brush("#94A3B8"),
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Top
         };
-        var badgeText = new TextBlock
-        {
-            Text = "未检查",
-            FontSize = 11,
-            Foreground = Brush("#94A3B8")
-        };
-        badge.Child = badgeText;
         Grid.SetColumn(badge, 1);
         top.Children.Add(badge);
         stack.Children.Add(top);
@@ -317,6 +323,16 @@ public sealed class CapabilityLabWindow : Window
             Margin = new Thickness(0, 4, 0, 0)
         };
         stack.Children.Add(path);
+
+        if (spec.Name == "node")
+        {
+            var packageTools = new StackPanel { Margin = new Thickness(0, 8, 0, 0) };
+            ConfigureToolStatus(_npmStatus, "npm");
+            ConfigureToolStatus(_npxStatus, "npx");
+            packageTools.Children.Add(_npmStatus);
+            packageTools.Children.Add(_npxStatus);
+            stack.Children.Add(packageTools);
+        }
 
         var progress = new ProgressBar
         {
@@ -360,7 +376,7 @@ public sealed class CapabilityLabWindow : Window
         stack.Children.Add(buttons);
 
         container.Child = stack;
-        var card = new CapabilityCard(spec, container, badge, badgeText, version, path, progress, stage, check, ensure, experiment);
+        var card = new CapabilityCard(spec, container, badge, version, path, progress, stage, check, ensure, experiment);
         check.Click += async (_, _) => await CheckAsync(card);
         ensure.Click += async (_, _) => await EnsureAsync(card);
         experiment.Click += async (_, _) => await RunExperimentAsync(card);
@@ -396,6 +412,8 @@ public sealed class CapabilityLabWindow : Window
                 new { name = card.Spec.Requirement });
             var available = ReadBool(data, "available");
             ApplyStatus(card, data, available);
+            if (card.Spec.Name == "node")
+                await RefreshNodeToolsAsync(ReadString(data, "path"), available);
             if (log)
                 AddLog($"[{card.Spec.DisplayName}] 检查完成：{(available ? "满足" : "未满足")} {ReadString(data, "version") ?? ""}");
             return available;
@@ -430,6 +448,8 @@ public sealed class CapabilityLabWindow : Window
             await UpdateProgressFromHostAsync(card);
             var available = ReadBool(data, "available");
             ApplyStatus(card, data, available);
+            if (card.Spec.Name == "node")
+                await RefreshNodeToolsAsync(ReadString(data, "path"), available);
             AddLog(
                 $"[{card.Spec.DisplayName}] 准备结果：{(available ? "可用" : "失败")}；" +
                 $"version={ReadString(data, "version") ?? "—"}；provider={ReadString(data, "provider") ?? "—"}");
@@ -493,6 +513,8 @@ public sealed class CapabilityLabWindow : Window
                 _ => "未定义实验"
             };
 
+            if (card.Spec.Name == "node")
+                await RefreshNodeToolsAsync(path, true);
             AddLog($"[{card.Spec.DisplayName}] 实验完成：{result}");
             SetCardStage(card, "completed", "实验执行完成", 100);
         }
@@ -567,7 +589,107 @@ public sealed class CapabilityLabWindow : Window
         EnsureSuccess(run, "Node.js");
         var jsonPath = Path.Combine(folder, "crypto-result.json");
         File.WriteAllText(jsonPath, run.StdOut.Trim(), new UTF8Encoding(false));
-        return $"完成 8 路并行 SHA-256 哈希链：{Compact(run.StdOut)}";
+        var npmNpxResult = await RunNpmNpxExperimentAsync(node, folder);
+        return $"完成 8 路并行 SHA-256 哈希链：{Compact(run.StdOut)}；{npmNpxResult}";
+    }
+
+    private async Task RefreshNodeToolsAsync(string? node, bool available)
+    {
+        await CheckNodeToolAsync(node, available, "npm", _npmStatus);
+        await CheckNodeToolAsync(node, available, "npx", _npxStatus);
+    }
+
+    private async Task CheckNodeToolAsync(string? node, bool available, string tool, TextBlock label)
+    {
+        if (!available || string.IsNullOrWhiteSpace(node) || !File.Exists(node))
+        {
+            SetToolStatus(label, tool, "等待 Node 就绪", false);
+            return;
+        }
+
+        var directory = Path.GetDirectoryName(node)!;
+        var commandFile = Path.Combine(directory, tool + ".cmd");
+        var cli = NodeToolCliPath(node, tool);
+        if (!File.Exists(commandFile) || !File.Exists(cli))
+        {
+            SetToolStatus(label, tool, "缺少命令或 CLI 文件", false);
+            AddLog($"[{tool}] 当前 Node 安装缺少 {tool}.cmd 或 {Path.GetFileName(cli)}");
+            return;
+        }
+
+        try
+        {
+            // Directly run the official npm/npx CLI with this exact Node runtime.
+            // This avoids PowerShell execution policies and Windows .cmd quoting.
+            var result = await RunProcessAsync(node, new[] { cli, "--version" }, directory);
+            EnsureSuccess(result, tool);
+            var version = result.StdOut.Trim();
+            if (string.IsNullOrWhiteSpace(version))
+                throw new InvalidDataException(tool + " 没有输出版本号");
+            SetToolStatus(label, tool, "v" + version.TrimStart('v'), true);
+        }
+        catch (Exception ex)
+        {
+            SetToolStatus(label, tool, "不可用：" + Compact(ex.Message), false);
+            AddLog($"[{tool}] 独立检测失败：{ex.Message}");
+        }
+    }
+
+    private static string NodeToolCliPath(string node, string tool)
+        => Path.Combine(Path.GetDirectoryName(node)!, "node_modules", "npm", "bin",
+            tool == "npx" ? "npx-cli.js" : "npm-cli.js");
+
+    private async Task<string> RunNpmNpxExperimentAsync(string node, string folder)
+    {
+        var npmCli = NodeToolCliPath(node, "npm");
+        var npxCli = NodeToolCliPath(node, "npx");
+        if (!File.Exists(npmCli) || !File.Exists(npxCli))
+            throw new FileNotFoundException("Node 运行时缺少 npm 或 npx CLI，无法完成包管理实验。");
+
+        var smoke = Path.Combine(folder, "npm-npx-smoke");
+        var package = Path.Combine(smoke, "probe-package");
+        Directory.CreateDirectory(package);
+        try
+        {
+            // Local file dependency, offline and without lifecycle scripts:
+            // no registry access, global packages or installed user tools are changed.
+            File.WriteAllText(Path.Combine(package, "package.json"),
+                "{\"name\":\"yanzi-npm-smoke-cli\",\"version\":\"1.0.0\"," +
+                "\"bin\":{\"yanzi-npm-smoke-cli\":\"cli.js\"}}", new UTF8Encoding(false));
+            File.WriteAllText(Path.Combine(package, "cli.js"),
+                "#!/usr/bin/env node\nconsole.log('YANZI_NPX_OK');\n", new UTF8Encoding(false));
+            File.WriteAllText(Path.Combine(smoke, "package.json"),
+                "{\"private\":true,\"dependencies\":{\"yanzi-npm-smoke-cli\":\"file:./probe-package\"}}",
+                new UTF8Encoding(false));
+
+            var install = await RunProcessAsync(node, new[]
+            {
+                npmCli, "install", "--offline", "--ignore-scripts", "--no-audit", "--no-fund"
+            }, smoke);
+            EnsureSuccess(install, "npm 离线本地依赖安装");
+            if (!File.Exists(Path.Combine(smoke, "node_modules", ".bin", "yanzi-npm-smoke-cli.cmd")))
+                throw new InvalidDataException("npm 没有生成本地命令入口。");
+
+            var execute = await RunProcessAsync(node, new[]
+            {
+                npxCli, "--offline", "--no-install", "yanzi-npm-smoke-cli"
+            }, smoke);
+            EnsureSuccess(execute, "npx 本地命令执行");
+            if (!execute.StdOut.Contains("YANZI_NPX_OK", StringComparison.Ordinal))
+                throw new InvalidDataException("npx 命令输出没有通过校验。");
+
+            var summary = "npm 离线本地安装通过；npx 无下载执行本地 CLI 通过";
+            File.WriteAllText(Path.Combine(folder, "npm-npx-result.txt"),
+                summary + Environment.NewLine + DateTimeOffset.Now.ToString("O"),
+                new UTF8Encoding(false));
+            return summary;
+        }
+        finally
+        {
+            try { Directory.Delete(smoke, recursive: true); }
+            catch (IOException ex) { AddLog("[npm/npx] 测试临时目录清理失败：" + ex.Message); }
+            catch (UnauthorizedAccessException ex) { AddLog("[npm/npx] 测试临时目录清理失败：" + ex.Message); }
+        }
     }
 
     private async Task<string> RunFfmpegExperimentAsync(string ffmpeg)
@@ -654,6 +776,13 @@ public sealed class CapabilityLabWindow : Window
         foreach (var argument in arguments)
             process.StartInfo.ArgumentList.Add(argument);
 
+        // npx launches child executables through PATH. Portable Node may not be on
+        // the user's global PATH, so give only this child process the Node directory.
+        var executableDirectory = Path.GetDirectoryName(executable);
+        if (!string.IsNullOrWhiteSpace(executableDirectory))
+            process.StartInfo.Environment["PATH"] = executableDirectory + Path.PathSeparator +
+                (Environment.GetEnvironmentVariable("PATH") ?? string.Empty);
+
         if (!process.Start())
             throw new InvalidOperationException("无法启动进程：" + executable);
 
@@ -686,18 +815,14 @@ public sealed class CapabilityLabWindow : Window
 
         if (available)
         {
-            card.Badge.Background = Brush("#123C2A");
-            card.BadgeText.Foreground = Brush("#6EE7B7");
-            card.BadgeText.Text = "已就绪";
+            SetBadgeStatus(card, "已就绪", "#123C2A", "#6EE7B7");
             card.Progress.Value = 100;
             card.Stage.Text = "满足 " + card.Spec.Requirement;
             card.Stage.Foreground = Brush("#6EE7B7");
         }
         else
         {
-            card.Badge.Background = Brush("#3B2C16");
-            card.BadgeText.Foreground = Brush("#FBBF24");
-            card.BadgeText.Text = "需准备";
+            SetBadgeStatus(card, "需准备", "#3B2C16", "#FBBF24");
             card.Progress.Value = 0;
             card.Stage.Text = string.IsNullOrWhiteSpace(error) ? "未满足版本要求" : error;
             card.Stage.Foreground = Brush("#FBBF24");
@@ -713,25 +838,26 @@ public sealed class CapabilityLabWindow : Window
 
         if (state == "failed")
         {
-            card.Badge.Background = Brush("#3F1D24");
-            card.BadgeText.Foreground = Brush("#FCA5A5");
-            card.BadgeText.Text = "失败";
+            SetBadgeStatus(card, "失败", "#3F1D24", "#FCA5A5");
             card.Stage.Foreground = Brush("#FCA5A5");
         }
         else if (state == "completed")
         {
-            card.Badge.Background = Brush("#123C2A");
-            card.BadgeText.Foreground = Brush("#6EE7B7");
-            card.BadgeText.Text = "已完成";
+            SetBadgeStatus(card, "已完成", "#123C2A", "#6EE7B7");
             card.Stage.Foreground = Brush("#6EE7B7");
         }
         else
         {
-            card.Badge.Background = Brush("#172554");
-            card.BadgeText.Foreground = Brush("#93C5FD");
-            card.BadgeText.Text = state == "installing" ? "安装中" : state == "verifying" ? "验证中" : "检测中";
+            SetBadgeStatus(card, state == "installing" ? "安装中" : state == "verifying" ? "验证中" : "检测中", "#172554", "#93C5FD");
             card.Stage.Foreground = Brush("#93C5FD");
         }
+    }
+
+    private static void SetBadgeStatus(CapabilityCard card, string label, string background, string foreground)
+    {
+        card.Badge.Content = label;
+        card.Badge.Background = Brush(background);
+        card.Badge.Foreground = Brush(foreground);
     }
 
     private void SetCardBusy(CapabilityCard card, bool busy)
@@ -760,16 +886,29 @@ public sealed class CapabilityLabWindow : Window
         _context.Log(message);
     }
 
+    private static void ConfigureToolStatus(TextBlock label, string tool)
+    {
+        label.Text = tool + "：未检查";
+        label.FontSize = 11.5;
+        label.Margin = new Thickness(0, 2, 0, 0);
+        label.Foreground = Brush("#94A3B8");
+        label.TextTrimming = TextTrimming.CharacterEllipsis;
+    }
+
+    private static void SetToolStatus(TextBlock label, string tool, string result, bool ready)
+    {
+        label.Text = tool + "：" + result;
+        label.ToolTip = label.Text;
+        label.Foreground = Brush(ready ? "#6EE7B7" : "#FBBF24");
+    }
+
     private static void ConfigureButton(Button button, string text, bool primary)
     {
         button.Content = text;
-        button.Padding = new Thickness(13, 7, 13, 7);
-        button.Background = Brush(primary ? "#2563EB" : "#18212C");
-        button.Foreground = Brush(primary ? "#FFFFFF" : "#CBD5E1");
-        button.BorderBrush = Brush(primary ? "#3B82F6" : "#2A3645");
-        button.BorderThickness = new Thickness(1);
         button.Cursor = Cursors.Hand;
-        button.FontSize = 12;
+        YanziUi.WithStyle(button, primary
+            ? YanziUi.Styles.PrimaryButton
+            : YanziUi.Styles.SecondaryButton);
     }
 
     private static SolidColorBrush Brush(string hex)
@@ -831,8 +970,7 @@ public sealed class CapabilityLabWindow : Window
     {
         public CapabilitySpec Spec { get; }
         public Border Container { get; }
-        public Border Badge { get; }
-        public TextBlock BadgeText { get; }
+        public YanziBadge Badge { get; }
         public TextBlock Version { get; }
         public TextBlock Path { get; }
         public ProgressBar Progress { get; }
@@ -844,8 +982,7 @@ public sealed class CapabilityLabWindow : Window
         public CapabilityCard(
             CapabilitySpec spec,
             Border container,
-            Border badge,
-            TextBlock badgeText,
+            YanziBadge badge,
             TextBlock version,
             TextBlock path,
             ProgressBar progress,
@@ -857,7 +994,6 @@ public sealed class CapabilityLabWindow : Window
             Spec = spec;
             Container = container;
             Badge = badge;
-            BadgeText = badgeText;
             Version = version;
             Path = path;
             Progress = progress;
