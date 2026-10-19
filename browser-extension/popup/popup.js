@@ -1,7 +1,7 @@
 document.addEventListener("DOMContentLoaded", () => {
   function showPanel(name) {
     document.querySelectorAll('[data-panel]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.panel === name)));
-    for (const panel of ['overview', 'market', 'api', 'logs']) document.getElementById('panel-' + panel).hidden = panel !== name;
+    for (const panel of ['overview', 'market', 'opencli', 'api', 'logs']) document.getElementById('panel-' + panel).hidden = panel !== name;
     if (name === 'market') loadWebAppMarket();
   }
   document.querySelectorAll('[data-panel]').forEach(button => button.onclick = () => showPanel(button.dataset.panel));

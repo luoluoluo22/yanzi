@@ -21,6 +21,7 @@
     <nav class="panel-tabs" aria-label="控制台页面">
       <button type="button" data-panel="market" aria-pressed="true">网页小程序</button>
       <button type="button" data-panel="overview" aria-pressed="false">连接与服务</button>
+      <button type="button" data-panel="opencli" aria-pressed="false">个人数据</button>
       <button type="button" data-panel="api" aria-pressed="false">API 接入</button>
       <button type="button" data-panel="logs" aria-pressed="false">执行日志</button>
     </nav>
@@ -85,6 +86,27 @@
         </div>
       </section>
     </div>
+    <div class="panel-content" id="panel-opencli" hidden>
+      <section class="glass-card opencli-panel">
+        <h2>个人数据读取</h2>
+        <p class="guide-help">通过本机 OpenCLI 和已登录浏览器读取账号数据。只读、手动触发，不同步至云端。</p>
+        <label for="opencli-site">平台</label>
+        <select id="opencli-site">
+          <option value="xiaohongshu">小红书</option>
+          <option value="bilibili">哔哩哔哩</option>
+          <option value="douyin">抖音</option>
+        </select>
+        <label for="opencli-operation">数据类型</label>
+        <select id="opencli-operation"></select>
+        <div class="opencli-actions">
+          <button id="opencli-read" type="button">读取数据</button>
+          <button id="opencli-copy" type="button" disabled>复制 JSON</button>
+        </div>
+        <p class="opencli-status" id="opencli-status" role="status" aria-live="polite"></p>
+        <p class="opencli-summary" id="opencli-summary"></p>
+        <pre class="opencli-result" id="opencli-result" aria-label="读取结果"></pre>
+      </section>
+    </div>
     <div class="panel-content" id="panel-api" hidden>
       <a class="guide-link" href="api.html" target="_blank" rel="noopener">在新标签页查看完整文档 ↗</a>
       <section class="glass-card" data-api-guide></section>
@@ -103,5 +125,6 @@
   </div>
   <script src="api-guide.js"></script>
   <script src="popup.js"></script>
+  <script src="opencli-panel.js"></script>
 </body>
 </html>
