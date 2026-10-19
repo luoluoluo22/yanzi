@@ -22,6 +22,17 @@ public static class KeyboardDoubleTapService
     private const int VkRWin = 0x5C;
     private const int VkCapsLock = 0x14;
     private const uint LlkhfInjected = 0x00000010;
+    // Only synthetic Ctrl/Alt events from the installed key mapper may be used for
+    // double-tap recognition. Unmarked SendInput/keybd_event traffic remains excluded.
+    public const uint MappedModifierInputTag = 0x594B4D50; // 'YKMP'
+
+    internal static bool ShouldProcessDoubleTapKey(uint flags, nint extraInfo, int vkCode)
+    {
+        if ((flags & LlkhfInjected) == 0) return true;
+        return extraInfo == (nint)MappedModifierInputTag &&
+               vkCode is VkLControl or VkRControl or VkLMenu or VkRMenu;
+    }
+
 
     private static readonly LowLevelKeyboardProc Proc = HookCallback;
     private static IntPtr _hookId = IntPtr.Zero;
@@ -243,12 +254,11 @@ public static class KeyboardDoubleTapService
         {
             var message = wParam.ToInt32();
             var info = Marshal.PtrToStructure<KbdLlHookStruct>(lParam);
-            if ((info.flags & LlkhfInjected) != 0)
+            var vkCode = (int)info.vkCode;
+            if (!ShouldProcessDoubleTapKey(info.flags, info.dwExtraInfo, vkCode))
             {
                 return CallNextHookEx(_hookId, nCode, wParam, lParam);
             }
-
-            var vkCode = (int)info.vkCode;
             var suppress = false;
 
             if (message is WmKeyDown or WmSysKeyDown)

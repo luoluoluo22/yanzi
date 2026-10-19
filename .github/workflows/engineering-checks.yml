@@ -60,6 +60,7 @@ jobs:
         run: |
           dotnet run --project src/Yanzi.SyncVerification -c Debug -- --local-api-boundaries
           dotnet run --project src/Yanzi.SyncVerification -c Debug --no-build -- --github-private-backup-policy
+          dotnet run --project src/Yanzi.SyncVerification -c Debug --no-build -- --keyboard-remap-doubletap
       - name: Migrated D1 device and SDK regression
         run: |
           ./scripts/test-worker-ownership.ps1
