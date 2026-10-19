@@ -11,8 +11,8 @@
         Style="{StaticResource DialogWindow}">
     <Border Margin="1"
             CornerRadius="0"
-            Background="#F2161616"
-            BorderBrush="#22FFFFFF"
+            Background="{DynamicResource BrushBG}"
+            BorderBrush="{DynamicResource BrushBorder}"
             BorderThickness="1">
         <Grid Margin="24">
             <Grid.RowDefinitions>
@@ -29,8 +29,8 @@
                            Style="{StaticResource DescriptionText}" />
 
                 <Border x:Name="FullscreenSwitchPanel"
-                        Background="#18FFFFFF"
-                        BorderBrush="#25FFFFFF"
+                        Background="{DynamicResource BrushInputBG}"
+                        BorderBrush="{DynamicResource BrushBorder}"
                         BorderThickness="1"
                         CornerRadius="6"
                         Padding="14,10"
@@ -42,11 +42,11 @@
                         </Grid.ColumnDefinitions>
                         <StackPanel VerticalAlignment="Center">
                             <TextBlock Text="全屏应用自动禁用"
-                                       Foreground="White"
+                                       Foreground="{DynamicResource BrushTextMain}"
                                        FontWeight="SemiBold"
                                        FontSize="{DynamicResource FontSizeNormal}" />
                             <TextBlock Text="检测到前台为全屏应用（如独占全屏/全屏无边框游戏）时，自动视为黑名单并暂停快捷呼出"
-                                       Foreground="#9EFFFFFF"
+                                       Foreground="{DynamicResource BrushTextSec}"
                                        FontSize="{DynamicResource FontSizeSmall}"
                                        Margin="0,3,0,0"
                                        TextWrapping="Wrap" />
@@ -70,11 +70,11 @@
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Border Background="#2EFFFFFF" CornerRadius="4" Margin="0,0,8,8" Padding="8,4">
+                            <Border Background="{DynamicResource BrushListViewItemSelectedBG}" CornerRadius="4" Margin="0,0,8,8" Padding="8,4">
                                 <StackPanel Orientation="Horizontal">
                                     <Image Source="{Binding Icon}" Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center" />
-                                    <TextBlock Text="{Binding ProcessName}" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="White" />
-                                    <Button Content="✕" Width="16" Height="16" Click="RemoveBlacklistItem_Click" Padding="0" Foreground="#FFAAAAAA" FontSize="{DynamicResource FontSizeTiny}" Background="Transparent" BorderThickness="0" Cursor="Hand" />
+                                    <TextBlock Text="{Binding ProcessName}" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="{DynamicResource BrushTextMain}" />
+                                    <Button Content="✕" Width="16" Height="16" Click="RemoveBlacklistItem_Click" Padding="0" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" Background="Transparent" BorderThickness="0" Cursor="Hand" />
                                 </StackPanel>
                             </Border>
                         </DataTemplate>
@@ -110,7 +110,7 @@
                     
                     <TextBlock x:Name="PlaceholderTextBlock"
                                Text="选择运行中的进程"
-                               Foreground="#7FFFFFFF"
+                               Foreground="{DynamicResource BrushTextMuted}"
                                IsHitTestVisible="False"
                                VerticalAlignment="Center"
                                Margin="12,0,0,0"
