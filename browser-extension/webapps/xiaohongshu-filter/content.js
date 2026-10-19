@@ -1,6 +1,6 @@
 (() => {
   const APP_ID = "xiaohongshu.filter";
-  const APP_VERSION = "0.7.22";
+  const APP_VERSION = "0.7.23";
   const RULES_KEY = "rules";
   const SETTINGS_KEY = "settings";
   const NOTE_STATS_KEY = "noteStats";
@@ -182,6 +182,7 @@
     },
     preferences: {
       interests: [],
+      generationEnabled: true,
       systemPrompt: LOCAL_FEED_DEFAULT_SYSTEM_PROMPT,
       updatedAt: 0
     },
@@ -687,6 +688,10 @@
         border-top-color: #f4f4f5 !important;
         animation: yanzi-xhs-interest-status-spin .8s linear infinite !important;
       }
+      .yanzi-xhs-interest-status[data-state="paused"] .yanzi-xhs-interest-status-ring {
+        border-color: #71717a !important;
+        opacity: .65 !important;
+      }
       .yanzi-xhs-interest-status[data-state="ready"] .yanzi-xhs-interest-status-ring {
         border-color: #34c759 !important;
         box-shadow: 0 0 0 1px rgba(52,199,89,.08) !important;
@@ -938,6 +943,26 @@
       .yanzi-xhs-evaluation-head strong {
         font-size: 15px !important;
         font-weight: 650 !important;
+      }
+      .yanzi-xhs-interest-head-actions {
+        display: flex !important;
+        align-items: center !important;
+        gap: 8px !important;
+      }
+      .yanzi-xhs-generation-toggle {
+        border: 1px solid rgba(52,199,89,.38) !important;
+        border-radius: 999px !important;
+        background: rgba(52,199,89,.12) !important;
+        color: #86efac !important;
+        padding: 6px 10px !important;
+        font-size: 12px !important;
+        cursor: pointer !important;
+        white-space: nowrap !important;
+      }
+      .yanzi-xhs-generation-toggle[data-enabled="0"] {
+        border-color: rgba(161,161,170,.35) !important;
+        background: rgba(161,161,170,.10) !important;
+        color: #a1a1aa !important;
       }
       .yanzi-xhs-interest-close,
       .yanzi-xhs-evaluation-close {
@@ -2065,6 +2090,7 @@
       },
       preferences: {
         interests: [],
+        generationEnabled: true,
         systemPrompt: LOCAL_FEED_DEFAULT_SYSTEM_PROMPT,
         updatedAt: 0
       },
@@ -2552,6 +2578,7 @@
 
     const preferences = {
       interests,
+      generationEnabled: value.preferences?.generationEnabled !== false,
       systemPrompt: String(value.preferences?.systemPrompt || LOCAL_FEED_DEFAULT_SYSTEM_PROMPT)
         .trim()
         .slice(0, LOCAL_FEED_SYSTEM_PROMPT_MAX_CHARS) || LOCAL_FEED_DEFAULT_SYSTEM_PROMPT,
@@ -2628,6 +2655,7 @@
     localFeedState.preferences = {
       interests: (localFeedState.preferences?.interests || [])
         .slice(0, LOCAL_FEED_MAX_INTERESTS),
+      generationEnabled: localFeedState.preferences?.generationEnabled !== false,
       systemPrompt: String(
         localFeedState.preferences?.systemPrompt || LOCAL_FEED_DEFAULT_SYSTEM_PROMPT
       ).trim().slice(0, LOCAL_FEED_SYSTEM_PROMPT_MAX_CHARS) || LOCAL_FEED_DEFAULT_SYSTEM_PROMPT,
@@ -2964,8 +2992,12 @@
     return false;
   }
 
+  function isLocalFeedGenerationEnabled() {
+    return localFeedState.preferences?.generationEnabled !== false;
+  }
+
   async function maybeReplenishLocalFeed() {
-    if (!LOCAL_TEST_NOTES_ENABLED) return;
+    if (!LOCAL_TEST_NOTES_ENABLED || !localFeedLoaded || !isLocalFeedGenerationEnabled()) return;
     reconcileLocalFeedAssignmentsWithDom();
     if (getLocalFeedFutureSupply() > LOCAL_FEED_REPLENISH_THRESHOLD) return;
 
@@ -3011,22 +3043,24 @@
       const currentPreferencesUpdatedAt = Number(
         localFeedState.preferences?.updatedAt || 0
       );
-      if (currentPreferencesUpdatedAt !== requestPreferencesUpdatedAt) {
+      if (currentPreferencesUpdatedAt !== requestPreferencesUpdatedAt || !isLocalFeedGenerationEnabled()) {
         localFeedState.generation = {
           ...localFeedState.generation,
           inFlight: false,
           startedAt: 0,
           requestPreferencesUpdatedAt: 0,
-          lastError: "兴趣已在生成期间更新，旧批次已丢弃"
+          lastError: isLocalFeedGenerationEnabled() ? "兴趣已在生成期间更新，旧批次已丢弃" : ""
         };
         await persistLocalFeedState();
         updateInterestNavButton();
 
-        clearTimeout(localFeedRetryTimer);
-        localFeedRetryTimer = setTimeout(() => {
-          localFeedRetryTimer = null;
-          void maybeReplenishLocalFeed();
-        }, 500);
+        if (isLocalFeedGenerationEnabled()) {
+          clearTimeout(localFeedRetryTimer);
+          localFeedRetryTimer = setTimeout(() => {
+            localFeedRetryTimer = null;
+            void maybeReplenishLocalFeed();
+          }, 500);
+        }
         return;
       }
 
@@ -3135,16 +3169,20 @@
         inFlight: false,
         startedAt: 0,
         requestPreferencesUpdatedAt: 0,
-        lastError: trimText(error?.message || String(error), 300)
+        lastError: isLocalFeedGenerationEnabled()
+          ? trimText(error?.message || String(error), 300)
+          : ""
       };
       await persistLocalFeedState();
       updateInterestNavButton();
 
-      clearTimeout(localFeedRetryTimer);
-      localFeedRetryTimer = setTimeout(() => {
-        localFeedRetryTimer = null;
-        void maybeReplenishLocalFeed();
-      }, LOCAL_FEED_GENERATION_RETRY_MS);
+      if (isLocalFeedGenerationEnabled()) {
+        clearTimeout(localFeedRetryTimer);
+        localFeedRetryTimer = setTimeout(() => {
+          localFeedRetryTimer = null;
+          void maybeReplenishLocalFeed();
+        }, LOCAL_FEED_GENERATION_RETRY_MS);
+      }
     }
   }
 
@@ -3750,6 +3788,36 @@
     await persistLocalFeedState();
     renderInterestPanel();
     updateInterestNavButton();
+  }
+
+  async function setLocalFeedGenerationEnabled(value) {
+    const next = Boolean(value);
+    if (isLocalFeedGenerationEnabled() === next) return;
+
+    clearTimeout(localFeedRetryTimer);
+    localFeedRetryTimer = null;
+    if (!next) {
+      void chrome.runtime.sendMessage({ type: "yanzi_xhs_cancel_local_notes" }).catch(() => {});
+    }
+    localFeedState.preferences = {
+      ...localFeedState.preferences,
+      generationEnabled: next,
+      updatedAt: Math.max(Date.now(), Number(localFeedState.preferences?.updatedAt || 0) + 1)
+    };
+    if (!next) {
+      localFeedState.generation = {
+        ...localFeedState.generation,
+        inFlight: false,
+        startedAt: 0,
+        requestPreferencesUpdatedAt: 0,
+        lastError: ""
+      };
+    }
+    await persistLocalFeedState();
+    renderInterestPanel();
+    updateInterestNavButton();
+    showToast(next ? "兴趣自动生成已开启" : "兴趣自动生成已暂停，不再请求 GPT 笔记");
+    if (next) void maybeReplenishLocalFeed();
   }
 
   async function updateLocalFeedSystemPrompt(nextPrompt) {
@@ -4399,7 +4467,10 @@
     panel.innerHTML = [
       '<div class="yanzi-xhs-interest-head">',
       '<strong>兴趣与探索</strong>',
+      '<div class="yanzi-xhs-interest-head-actions">',
+      '<button type="button" class="yanzi-xhs-generation-toggle" role="switch" aria-checked="true">自动生成：开启</button>',
       '<button type="button" class="yanzi-xhs-interest-close" aria-label="关闭">×</button>',
+      '</div>',
       '</div>',
       '<div class="yanzi-xhs-interest-tabs">',
       '<button type="button" class="yanzi-xhs-interest-tab" data-view="topics" data-active="1">兴趣主题</button>',
@@ -4535,6 +4606,9 @@
       }
     };
 
+    panel.querySelector(".yanzi-xhs-generation-toggle").addEventListener("click", () => {
+      void setLocalFeedGenerationEnabled(!isLocalFeedGenerationEnabled());
+    });
     panel.querySelector(".yanzi-xhs-interest-close").addEventListener("click", () => {
       panel.hidden = true;
     });
@@ -4582,6 +4656,15 @@
   function renderInterestPanel() {
     const panel = document.querySelector(".yanzi-xhs-interest-panel");
     if (!panel) return;
+
+    const generationEnabled = isLocalFeedGenerationEnabled();
+    const generationToggle = panel.querySelector(".yanzi-xhs-generation-toggle");
+    generationToggle.dataset.enabled = generationEnabled ? "1" : "0";
+    generationToggle.setAttribute("aria-checked", String(generationEnabled));
+    generationToggle.textContent = generationEnabled ? "自动生成：开启" : "自动生成：关闭";
+    generationToggle.title = generationEnabled
+      ? "关闭后停止向 GPT 请求新笔记，已有笔记继续保留"
+      : "开启后按库存情况恢复 GPT 自动补货";
 
     const interests = localFeedState.preferences?.interests || [];
     const chips = panel.querySelector(".yanzi-xhs-interest-chips");
@@ -4673,7 +4756,7 @@
       item => item.enabled
     ).length;
     panel.querySelector(".yanzi-xhs-interest-status").textContent =
-      interests.length
+      !generationEnabled ? "自动生成已暂停 · 历史笔记仍保留" : interests.length
         ? "已启用 " + enabledInterestCount + " / " + interests.length +
           " 个主题 · 下一轮补货生效"
         : "未设置主题";
@@ -4844,6 +4927,9 @@
   }
 
   function localFeedLoadIndicatorState() {
+    if (!isLocalFeedGenerationEnabled()) {
+      return { state: "paused", label: "AI 笔记已暂停", detail: "不会再请求 GPT 生成新笔记" };
+    }
     const generation = localFeedState.generation || {};
     const futureSupply = getLocalFeedFutureSupply();
     const lastError = normalizeText(generation.lastError);
@@ -4913,6 +4999,7 @@
       indicator.title = loadStatus.label + "：" + loadStatus.detail;
     }
     button.dataset.loadState = loadStatus.state;
+    button.dataset.generationEnabled = isLocalFeedGenerationEnabled() ? "1" : "0";
 
     const interestText = interests.length
       ? "已启用 " + count + " / " + interests.length + " 个兴趣主题"
@@ -7489,6 +7576,7 @@
         localFeedDislikes: localFeedState.feedback.filter(item => item.value === "dislike").length,
         localFeedBatchSize: LOCAL_FEED_BATCH_SIZE,
         localFeedInterests: (localFeedState.preferences?.interests || []).slice(),
+        localFeedGenerationEnabled: isLocalFeedGenerationEnabled(),
         localFeedEvaluationsPending: (localFeedState.evaluations || [])
           .filter(item => item.kind !== "chat" && !item.usedAt)
           .map(item => ({
@@ -7583,6 +7671,10 @@
 
     localFeedState = incoming;
     localFeedLoaded = true;
+    if (!isLocalFeedGenerationEnabled()) {
+      clearTimeout(localFeedRetryTimer);
+      localFeedRetryTimer = null;
+    }
     renderInterestPanel();
     updateInterestNavButton();
     scheduleFilter(document);
