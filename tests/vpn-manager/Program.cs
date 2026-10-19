@@ -27,12 +27,7 @@ internal static class Program
     {
         if (args.Contains("--install-core"))
         {
-            var type = typeof(OpenQuickHost.AppEnvironmentVariableStore).Assembly.GetType("OpenQuickHost.YanziPortableMihomoInstaller")
-                ?? throw new Exception("Mihomo installer missing");
-            var method = type.GetMethod("EnsureAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)
-                ?? throw new Exception("Mihomo EnsureAsync missing");
-            var pending = (Task<string>)method.Invoke(null, new object?[] { new Version(1, 19, 31), CancellationToken.None })!;
-            var path = await pending;
+            var path = await MihomoRuntimeInstaller.EnsureAsync(new Version(1, 19, 31), CancellationToken.None);
             if (!File.Exists(path) || File.ReadAllBytes(path).Length < 5_000_000) throw new Exception("Installed Mihomo binary invalid");
             if (File.Exists(Path.Combine(Path.GetDirectoryName(path)!, "core.zip"))) throw new Exception("Installer retained download archive");
             var probe = new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = false, CreateNoWindow = true,
