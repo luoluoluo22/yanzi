@@ -313,6 +313,30 @@ public partial class App : WpfApplication
                     System.Windows.Threading.DispatcherPriority.ApplicationIdle);
             }
 
+            // Development-only running-list preview with in-memory fixture entries for scroll/theme QA.
+            // The entries exist only in this isolated dev process and are never persisted.
+            if (HostRuntimeProfile.IsDevelopment && e.Args.Any(static arg =>
+                    arg.Equals("--running-extensions-preview", StringComparison.OrdinalIgnoreCase)))
+            {
+                _ = Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    for (var index = 1; index <= 18; index++)
+                    {
+                        var extensionId = $"ui-preview-{index:00}";
+                        RunningExtensionRegistry.RegisterManagedExtension(
+                            extensionId,
+                            $"预览小程序 {index:00}",
+                            "preview",
+                            "ui-preview",
+                            static () => true,
+                            () => RunningExtensionRegistry.RemoveByExtensionId(extensionId, "preview terminate"),
+                            out _);
+                    }
+
+                    OpenRunningExtensionsWindow();
+                }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            }
+
             // Development-only visual review of the actual Yanyu editor. Never persists preview edits.
             if (HostRuntimeProfile.IsDevelopment && e.Args.Any(static arg =>
                     arg.Equals("--yanyu-preview", StringComparison.OrdinalIgnoreCase)))

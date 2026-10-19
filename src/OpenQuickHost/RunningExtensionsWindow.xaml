@@ -6,8 +6,8 @@
         Height="560"
         MinWidth="840"
         MinHeight="400"
-        Background="{DynamicResource BrushBG}"
-        Foreground="White"
+        Background="{DynamicResource Yanzi.Color.Background}"
+        Foreground="{DynamicResource Yanzi.Color.Foreground}"
         WindowStartupLocation="CenterScreen">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
@@ -26,21 +26,21 @@
             </Grid.ColumnDefinitions>
             <StackPanel Grid.Column="0" VerticalAlignment="Center">
                 <TextBlock Text="正在运行的小程序" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" />
-                <TextBlock x:Name="SummaryTextBlock" Margin="0,6,0,0" Foreground="#FF9CA3AF" />
+                <TextBlock x:Name="SummaryTextBlock" Margin="0,6,0,0" Foreground="{DynamicResource Yanzi.Color.MutedForeground}" />
             </StackPanel>
             <Button Grid.Column="1"
                     Width="90"
                     Height="34"
                     HorizontalAlignment="Right"
                     VerticalAlignment="Center"
-                    Style="{StaticResource SecondaryBtn}"
+                    Style="{DynamicResource Yanzi.Button.Outline}"
                     Click="RefreshButton_Click"
                     Content="刷新" />
         </Grid>
 
         <Border Grid.Row="1"
-                Background="{DynamicResource BrushInputBG}"
-                BorderBrush="{DynamicResource BrushBorder}"
+                Background="{DynamicResource Yanzi.Color.Card}"
+                BorderBrush="{DynamicResource Yanzi.Color.Border}"
                 BorderThickness="1"
                 CornerRadius="12">
             <Grid>
@@ -48,7 +48,7 @@
                           Margin="10"
                           Background="Transparent"
                           BorderThickness="0"
-                          Foreground="White">
+                          Foreground="{DynamicResource Yanzi.Color.Foreground}">
                     <ListView.View>
                         <GridView>
                             <GridViewColumn Header="名称" Width="210">
@@ -106,7 +106,7 @@
                                                         Margin="0,0,-1.5,-1.5"
                                                         IsHitTestVisible="False" />
                                             </Grid>
-                                            <TextBlock Text="{Binding Title}" VerticalAlignment="Center" Foreground="White" />
+                                            <TextBlock Text="{Binding Title}" VerticalAlignment="Center" Foreground="{DynamicResource Yanzi.Color.Foreground}" />
                                         </StackPanel>
                                     </DataTemplate>
                                 </GridViewColumn.CellTemplate>
@@ -161,7 +161,7 @@
                 <TextBlock x:Name="EmptyStateTextBlock"
                            Text="当前没有正在运行的小程序。"
                            FontSize="{DynamicResource FontSizeLargePlus}"
-                           Foreground="{DynamicResource BrushTextMuted}"
+                           Foreground="{DynamicResource Yanzi.Color.MutedForeground}"
                            HorizontalAlignment="Center"
                            VerticalAlignment="Center"
                            Visibility="Collapsed" />
@@ -170,7 +170,7 @@
 
         <TextBlock Grid.Row="2"
                    Margin="4,12,0,0"
-                   Foreground="{DynamicResource BrushTextMuted}"
+                   Foreground="{DynamicResource Yanzi.Color.MutedForeground}"
                    Text="展示当前持续运行的小程序；“宿主内”表示与燕子共享进程，均可随时结束。" />
     </Grid>
 </Window>
