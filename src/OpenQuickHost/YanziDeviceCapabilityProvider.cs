@@ -15,7 +15,7 @@ public static class YanziDeviceCapabilityProvider
             Name = "device.remark.set",
             Description = "Set or clear an account-synced device remark; works for offline devices. Empty remark restores the model name.",
             Permissions = ["device.write"], Category = "devices", RiskLevel = "medium",
-            InputSchema = YanziCapabilitySchema.Parse("""{"type":"object","properties":{"target":{"type":"string","minLength":1},"remark":{"type":"string","maxLength":80}},"required":["target","remark"],"additionalProperties":false}"""),
+            InputSchema = YanziCapabilitySchema.Parse("""{"type":"object","properties":{"target":{"type":"string","minLength":1},"remark":{"type":"string"}},"required":["target","remark"],"additionalProperties":false}"""),
             OutputSchema = YanziCapabilitySchema.Parse("""{"type":"object"}"""),
             Handler = RemarkAsync
         };

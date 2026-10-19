@@ -23,7 +23,13 @@ internal static class DeviceRemarksVerification
         catch (TargetInvocationException error) when (error.InnerException is ArgumentException) { }
         var idCollision = new[] { rows[0], rows[1] with { DisplayName = "remark-test-a" } };
         Check(Find("remark-test-a", idCollision).DeviceId == "remark-test-a");
-        Check(YanziDeviceCapabilityProvider.Create().Any(item => item.Name == "device.remark.set"));
+        var providers = YanziDeviceCapabilityProvider.Create().ToArray();
+        Check(providers.Any(item => item.Name == "device.remark.set"));
+        foreach (var provider in providers)
+        {
+            YanziCapabilitySchema.ValidateDefinition(provider.InputSchema);
+            YanziCapabilitySchema.ValidateDefinition(provider.OutputSchema);
+        }
         Console.WriteLine("Device remarks verification: 6 checks passed.");
     }
 }
