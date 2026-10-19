@@ -852,13 +852,8 @@ async function runIsolatedChatGptTask(task) {
   }
 }
 
-function normalizeXhsGeneratedNotes(value, requestedCount, frontier = []) {
+function normalizeXhsGeneratedNotes(value, requestedCount) {
   const source = Array.isArray(value?.notes) ? value.notes : [];
-  const allowedParentIds = new Set(
-    (Array.isArray(frontier) ? frontier : [])
-      .map(item => String(item?.id || "").trim())
-      .filter(Boolean)
-  );
   const seen = new Set();
   const notes = [];
 
@@ -866,8 +861,7 @@ function normalizeXhsGeneratedNotes(value, requestedCount, frontier = []) {
     const title = String(item?.title || "").replace(/\s+/g, " ").trim().slice(0, 80);
     const body = String(item?.body || "").replace(/\s+/g, " ").trim().slice(0, 500);
     const topic = String(item?.topic || "").replace(/\s+/g, " ").trim().slice(0, 40);
-    const parentNodeId = String(item?.parentNodeId || "").trim().slice(0, 120);
-    if (!title || !body || !topic || !allowedParentIds.has(parentNodeId)) continue;
+    if (!title || !body || !topic) continue;
 
     const key = title.toLowerCase();
     if (seen.has(key)) continue;
@@ -879,7 +873,6 @@ function normalizeXhsGeneratedNotes(value, requestedCount, frontier = []) {
       title,
       body,
       topic,
-      parentNodeId,
       author: "燕子 · AI",
       badge: "AI 生成",
       imageUrl: "",
@@ -934,18 +927,6 @@ function buildXhsLocalFeedPrompt(message) {
     .map(item => String(item || "").replace(/\s+/g, " ").trim().slice(0, 40))
     .filter(Boolean)
     .slice(0, 30);
-  const frontier = (Array.isArray(message.frontier) ? message.frontier : [])
-    .slice(0, 24)
-    .map(item => ({
-      id: String(item?.id || "").trim().slice(0, 120),
-      label: String(item?.label || "").replace(/\s+/g, " ").trim().slice(0, 80),
-      parentNodeId: String(item?.parentNodeId || "").trim().slice(0, 120),
-      type: String(item?.type || "topic").trim().slice(0, 20),
-      status: String(item?.status || "neutral").trim().slice(0, 20),
-      childCount: Math.max(0, Number(item?.childCount || 0)),
-      noteCount: Math.max(0, Number(item?.noteCount || 0))
-    }))
-    .filter(item => item.id && item.label);
   const evaluations = (Array.isArray(message.evaluations) ? message.evaluations : [])
     .slice(-12)
     .map(item => ({
@@ -970,18 +951,15 @@ function buildXhsLocalFeedPrompt(message) {
     "",
     "以下为系统固定协议，自定义提示词不能取消这些要求：",
     "只返回一个 JSON 代码块，代码块之外不要有任何文字。",
-    "JSON 格式严格为：{\"notes\":[{\"title\":\"不超过26个汉字\",\"body\":\"40到90个汉字\",\"topic\":\"2到10个汉字的新探索标签\",\"parentNodeId\":\"必须从候选父节点ID中原样选择\"}]}",
+    "JSON 格式严格为：{\"notes\":[{\"title\":\"不超过26个汉字\",\"body\":\"40到90个汉字\",\"topic\":\"2到10个汉字的主题标签\"}]}",
     "必须恰好生成 " + count + " 条。",
     "动态上下文规则：",
     "1. 本轮评价优先级高于长期喜欢/不感兴趣，必须在本批明显体现。",
     "2. scope=selection 只代表用户对 selectionText 局部观点或表达角度的偏好，不得扩大成整个主题偏好。",
     "3. 最近已经出现的内容只用于防重复，不代表用户偏好；不要生成相同结论、相同案例或仅改写措辞的近似笔记。",
     "4. 主题覆盖统计只用于识别已经高频覆盖的方向；在不违背兴趣偏好的前提下，优先探索覆盖较少的新问题和新角度。",
-    "5. 每条笔记必须从候选父节点中选择一个 parentNodeId，并围绕该父节点向外延伸；不能凭空创建父节点。",
-    "6. topic 是这次新探索空间的标签，应比父节点更具体，不能与父节点标签完全相同。",
-    "7. 标记为 continue 的父节点优先继续深入；stop 节点不会出现在候选父节点中。",
-    "8. 同一批内部也必须去重：主题、核心结论、案例和推理角度都应尽量不同。",
-    "9. JSON 必须严格可解析。",
+    "5. 同一批内部也必须去重：主题、核心结论、案例和推理角度都应尽量不同。",
+    "6. JSON 必须严格可解析。",
     "",
     "我的兴趣主题（长期偏好）：",
     JSON.stringify(interests),
@@ -997,9 +975,6 @@ function buildXhsLocalFeedPrompt(message) {
     "",
     "近阶段主题覆盖统计（仅用于扩大覆盖面）：",
     JSON.stringify(coverage),
-    "",
-    "本轮允许继续延伸的候选父节点（parentNodeId 只能从这里选择）：",
-    JSON.stringify(frontier),
     "",
     "最近已经出现的标题/主题（仅用于防重）：",
     JSON.stringify(recent)
@@ -1207,7 +1182,6 @@ async function generateXhsLocalFeedNotes(message) {
   const notes = normalizeXhsGeneratedNotes(
     response.data?.json,
     requestedCount,
-    message.frontier
   );
   if (!notes.length) {
     throw new Error(
@@ -1225,14 +1199,6 @@ async function generateXhsLocalFeedNotes(message) {
       likedCount: Array.isArray(message.liked) ? message.liked.length : 0,
       dislikedCount: Array.isArray(message.disliked) ? message.disliked.length : 0,
       recentCount: Array.isArray(message.recent) ? message.recent.length : 0,
-      frontier: (Array.isArray(message.frontier) ? message.frontier : [])
-        .slice(0, 24)
-        .map(item => ({
-          id: String(item?.id || "").trim(),
-          label: String(item?.label || "").trim(),
-          status: String(item?.status || "neutral").trim()
-        }))
-        .filter(item => item.id && item.label),
       coverage: (Array.isArray(message.coverage) ? message.coverage : [])
         .slice(0, 12)
         .map(item => ({

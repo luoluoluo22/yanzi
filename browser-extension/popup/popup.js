@@ -31,17 +31,31 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     marketList.innerHTML = apps.map(app => {
-      const capabilities = (app.capabilities || []).map(item => `<span>${escapeHtml(item)}</span>`).join('');
+      const allCapabilities = Array.isArray(app.capabilities) ? app.capabilities : [];
+      const summaryCapabilities = Array.isArray(app.summaryCapabilities) && app.summaryCapabilities.length
+        ? app.summaryCapabilities.slice(0, 4)
+        : allCapabilities.slice(0, 4);
+      const capabilities = summaryCapabilities
+        .map(item => `<span>${escapeHtml(item)}</span>`)
+        .join('');
+      const more = allCapabilities.length > summaryCapabilities.length
+        ? `<span class="webapp-capability-more">共 ${allCapabilities.length} 项功能</span>`
+        : '';
       return `<article class="webapp-card">
         <div class="webapp-card-head">
-          <div>
+          <div class="webapp-card-title">
             <div class="webapp-title-row"><strong>${escapeHtml(app.name)}</strong><span class="webapp-version">v${escapeHtml(app.version || '')}</span></div>
             <div class="webapp-meta">${escapeHtml(app.category || '网页能力')} · ${escapeHtml(app.id)}</div>
           </div>
           <button type="button" class="webapp-toggle ${app.installed ? 'installed' : ''}" data-webapp-toggle="${escapeHtml(app.id)}" data-installed="${app.installed ? '1' : '0'}">${app.installed ? '已安装' : '安装'}</button>
         </div>
-        <p>${escapeHtml(app.description || '')}</p>
-        <div class="webapp-capabilities">${capabilities}</div>
+        <div class="webapp-card-body">
+          <p>${escapeHtml(app.description || '')}</p>
+          <div class="webapp-card-side">
+            <div class="webapp-capabilities-label">主要能力</div>
+            <div class="webapp-capabilities">${capabilities}${more}</div>
+          </div>
+        </div>
       </article>`;
     }).join('');
   }
