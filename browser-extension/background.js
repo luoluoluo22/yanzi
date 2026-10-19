@@ -218,6 +218,12 @@ function handleTask(task) {
     return;
   }
 
+  if (task.action === "opencli_read") {
+    void globalThis.yanziOpenCliPerformRead(task.site, task.operation)
+      .then(result => sendBrowserTaskResponse(task, result?.ok ? "success" : "error", result?.data || null, result?.error || ""))
+      .catch(err => sendBrowserTaskResponse(task, "error", null, err.message));
+    return;
+  }
   if (task.action === "lanzou_network_control") {
     void globalThis.handleLanzouNetworkControl(task)
       .then(data => sendBrowserTaskResponse(task, "success", data))

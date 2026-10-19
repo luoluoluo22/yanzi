@@ -18,6 +18,53 @@ globalThis.handleYanziOpenCliResponse = (message) => {
   });
 };
 
+globalThis.yanziOpenCliPerformRead = (site, operation) => new Promise((resolve) => {
+  if (!Object.hasOwn(YANZI_OPENCLI_READS, site) ||
+      !YANZI_OPENCLI_READS[site].includes(operation)) {
+    resolve({ ok: false, error: "不允许的读取操作" });
+    return;
+  }
+  if (!globalThis.yanziBrowserHost?.isConnected()) {
+    resolve({ ok: false, error: "燕子主程序未连接" });
+    return;
+  }
+  const requestId = crypto.randomUUID();
+  const timer = setTimeout(() => {
+    yanziOpenCliPending.delete(requestId);
+    resolve({ ok: false, error: "OpenCLI 读取超时" });
+  }, 110000);
+  yanziOpenCliPending.set(requestId, { sendResponse: resolve, timer });
+  try {
+    globalThis.yanziBrowserHost.send({ type: "opencli_request", requestId, site, operation });
+  } catch (error) {
+    clearTimeout(timer);
+    yanziOpenCliPending.delete(requestId);
+    resolve({ ok: false, error: String(error?.message || error) });
+  }
+});
+
+globalThis.yanziOpenCliPerformRead = (site, operation) => new Promise(resolve => {
+  if (!Object.hasOwn(YANZI_OPENCLI_READS, site) || !YANZI_OPENCLI_READS[site].includes(operation)) {
+    resolve({ok:false,error:"不允许的读取操作"}); return;
+  }
+  if (!globalThis.yanziBrowserHost?.isConnected()) {
+    resolve({ok:false,error:"燕子主程序未连接"}); return;
+  }
+  const requestId = crypto.randomUUID();
+  const timer = setTimeout(() => {
+    yanziOpenCliPending.delete(requestId);
+    resolve({ok:false,error:"OpenCLI 读取超时"});
+  }, 110000);
+  yanziOpenCliPending.set(requestId,{sendResponse:resolve,timer});
+  try {
+    globalThis.yanziBrowserHost.send({type:"opencli_request",requestId,site,operation});
+  } catch(error) {
+    clearTimeout(timer);
+    yanziOpenCliPending.delete(requestId);
+    resolve({ok:false,error:error?.message||"调用失败"});
+  }
+});
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.action !== "yanzi_opencli_read") return;
   if (sender.id !== chrome.runtime.id ||
