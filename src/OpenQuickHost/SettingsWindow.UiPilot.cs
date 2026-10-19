@@ -7,9 +7,9 @@ using Yanzi.UI.Wpf;
 namespace OpenQuickHost;
 
 /// <summary>
-/// Progressive adoption of Yanzi.UI.Wpf in the actual SettingsWindow.
+/// Permanent use of Yanzi.UI.Wpf components in the actual SettingsWindow.
 /// Original controls, bindings, command handlers and settings remain intact.
-/// The non-persistent preview toggle reversibly changes only visual Styles.
+/// Shared UI styles are applied permanently to the real settings controls.
 /// </summary>
 public partial class SettingsWindow
 {
@@ -32,18 +32,17 @@ public partial class SettingsWindow
     private bool _uiPilotReady;
     private bool _unifiedSettingsOn;
     private YanziSettingsSectionCard? _uiPilotCard;
-    private readonly List<UIElement> _originalGeneralRows = [];
-    private readonly Dictionary<FrameworkElement, object> _originalStyles = new();
+    private readonly HashSet<FrameworkElement> _styledControls = [];
 
     private void InitializeSettingsUiPilot()
     {
         if (_uiPilotReady) return;
         if (HostRuntimeProfile.IsDevelopment && Environment.GetCommandLineArgs().Any(static arg =>
                 arg.Equals("--settings-preview", StringComparison.OrdinalIgnoreCase)))
-            Title = "燕子设置 · 统一 UI 试用（开发版）";
+            Title = "燕子设置 · 统一 UI（开发版）";
 
         YanziUi.ApplyTo(this, PilotTheme());
-        YanziUi.WithStyle(UnifiedUiPreviewToggle, YanziUi.Styles.SwitchShadcn);
+
         _uiPilotReady = true;
 
         foreach (var name in UnifiedSections)
@@ -58,7 +57,7 @@ public partial class SettingsWindow
                     () => StyleSettingsSubtree(section));
             };
         }
-        SetSettingsUiPilot(UnifiedUiPreviewToggle.IsChecked == true);
+        ApplyUnifiedSettingsUi();
     }
 
     private YanziTheme PilotTheme()
@@ -85,130 +84,112 @@ public partial class SettingsWindow
             YanziUi.ApplyTo(this, PilotTheme());
     }
 
-    private void UnifiedUiPreviewToggle_Changed(object sender, RoutedEventArgs e)
+    private void ApplyUnifiedSettingsUi()
     {
-        if (_uiPilotReady)
-            SetSettingsUiPilot(UnifiedUiPreviewToggle.IsChecked == true);
+        if (_unifiedSettingsOn) return;
+        _unifiedSettingsOn = true;
+        BuildGeneralSettingsCard();
+        foreach (var name in UnifiedSections)
+            if (FindName(name) is FrameworkElement section)
+                StyleSettingsSubtree(section);
+        HostAssets.AppendLog("Unified UI components applied permanently across all settings sections.");
     }
-
-    private void SetSettingsUiPilot(bool enabled)
-    {
-        if (enabled == _unifiedSettingsOn) return;
-        _unifiedSettingsOn = enabled;
-        if (enabled)
-        {
-            BuildGeneralSettingsCard();
-            foreach (var name in UnifiedSections)
-                if (FindName(name) is FrameworkElement section)
-                    StyleSettingsSubtree(section);
-            HostAssets.AppendLog("Unified UI settings enabled across all sections (styles only).");
-        }
-        else
-        {
-            RestoreStyles();
-            RestoreGeneralSettingsRows();
-            HostAssets.AppendLog("Unified UI settings disabled: original controls and styles restored.");
-        }
-    }
-
     private void BuildGeneralSettingsCard()
     {
         if (_uiPilotCard is not null) return;
-        // Ten real controls: 5 setting rows followed by their legacy dividers.
-        var source = GeneralSectionRoot.Children.Cast<UIElement>().Skip(1).Take(10).ToArray();
+        // Five real settings rows followed by their legacy dividers.
+        var source = GeneralSectionRoot.Children.Cast<UIElement>().Take(10).ToArray();
         if (source.Length != 10 || Enumerable.Range(0, 5)
             .Any(i => source[2 * i] is not Grid || source[2 * i + 1] is not System.Windows.Shapes.Rectangle))
             throw new InvalidOperationException("General settings rows changed unexpectedly.");
 
-        _originalGeneralRows.Clear();
-        _originalGeneralRows.AddRange(source);
         var section = new YanziSettingsSectionCard("基础设置", "主题、启动和托盘行为 · 实际设置")
         {
             Margin = new Thickness(0, 0, 0, 16)
         };
-        // Remove the original trailing divider. The rounded card border now
-        // provides the final visual edge; there is no detached bottom line.
+        // The card supplies the final edge; discard the original trailing divider.
         foreach (var child in source)
             GeneralSectionRoot.Children.Remove(child);
         for (int i = 0; i < 5; i++)
             section.AddRow(source[i * 2], i == 0 ? null : source[i * 2 - 1]);
 
-        GeneralSectionRoot.Children.Insert(1, section);
+        GeneralSectionRoot.Children.Insert(0, section);
         _uiPilotCard = section;
     }
-
-    private void RestoreGeneralSettingsRows()
-    {
-        if (_uiPilotCard is null) return;
-        GeneralSectionRoot.Children.Remove(_uiPilotCard);
-        int index = 1;
-        foreach (var child in _originalGeneralRows)
-        {
-            if (_uiPilotCard.Rows.Children.Contains(child))
-                _uiPilotCard.Rows.Children.Remove(child);
-            GeneralSectionRoot.Children.Insert(index++, child);
-        }
-        _originalGeneralRows.Clear();
-        _uiPilotCard = null;
-    }
-
     private void StyleSettingsSubtree(DependencyObject root)
     {
-        int previous = _originalStyles.Count;
+        int previous = _styledControls.Count;
         var legacySwitch = TryFindResource("RaycastSwitchStyle") as Style;
         var legacySurface = TryFindResource("SurfaceCard") as Style;
+        var legacyPrimaryButton = TryFindResource("PrimaryBtn") as Style;
+        var legacySecondaryButton = TryFindResource("SecondaryBtn") as Style;
+        var legacyGhostButton = TryFindResource("GhostButtonStyle") as Style;
+        var legacyInlineLinkButton = TryFindResource("InlineLinkButtonStyle") as Style;
+        var legacyDarkComboBox = TryFindResource("DarkComboBoxStyle") as Style;
+
         Walk(root, current =>
         {
             switch (current)
             {
-                case System.Windows.Controls.ComboBox combo when
-                    combo.ItemContainerStyle is null && combo.Tag?.ToString() != "KeepNativeStyle":
+                case System.Windows.Controls.ComboBox combo when combo.Tag?.ToString() != "KeepNativeStyle"
+                    && combo.ItemTemplate is null && combo.ItemTemplateSelector is null
+                    && (legacyDarkComboBox is null || !ReferenceEquals(combo.Style, legacyDarkComboBox)):
                     SetStyleIfNeeded(combo, YanziUi.Styles.Select);
                     break;
-                case PasswordBox password:
+                case System.Windows.Controls.PasswordBox password:
                     SetStyleIfNeeded(password, YanziUi.Styles.Password);
                     break;
+                case System.Windows.Controls.TextBox input when input.AcceptsReturn && !input.IsReadOnly
+                    && input.BorderThickness != new Thickness(0)
+                    && input.Tag?.ToString() != "KeepNativeStyle":
+                    SetStyleIfNeeded(input, YanziUi.Styles.TextareaSoft);
+                    break;
                 case System.Windows.Controls.TextBox input when !input.AcceptsReturn && !input.IsReadOnly
-                    && input.Width is not (>= 0 and < 78):
+                    && input.BorderThickness != new Thickness(0)
+                    && input.Width is not (>= 0 and < 78)
+                    && input.Tag?.ToString() != "KeepNativeStyle":
                     SetStyleIfNeeded(input, YanziUi.Styles.Input);
                     break;
-                case System.Windows.Controls.CheckBox check when ReferenceEquals(check.Style, legacySwitch):
+                case System.Windows.Controls.CheckBox check when legacySwitch is not null && ReferenceEquals(check.Style, legacySwitch):
                     SetStyleIfNeeded(check, YanziUi.Styles.SwitchShadcn);
                     break;
-                case Border border when ReferenceEquals(border.Style, legacySurface):
+                case System.Windows.Controls.CheckBox check when check.ReadLocalValue(FrameworkElement.StyleProperty)
+                    == DependencyProperty.UnsetValue:
+                    var isRightAlignedToggle = check.HorizontalAlignment == System.Windows.HorizontalAlignment.Right;
+                    SetStyleIfNeeded(check, isRightAlignedToggle
+                        ? YanziUi.Styles.SwitchShadcn
+                        : YanziUi.Styles.CheckBox);
+                    break;
+                case System.Windows.Controls.Border border when legacySurface is not null && ReferenceEquals(border.Style, legacySurface):
                     SetStyleIfNeeded(border, "Yanzi.Settings.Surface");
                     break;
-                case System.Windows.Controls.Button button when button.Content is string label
-                    && label.Length >= 2 && button.Width is >= 100
-                    && button.Template is null:
-                    SetStyleIfNeeded(button, YanziUi.Styles.OutlineButton);
+                case System.Windows.Controls.Button button when button.Content is string buttonLabel && buttonLabel.Trim().Length >= 2
+                    && button.Tag?.ToString() != "KeepNativeStyle"
+                    && button.ReadLocalValue(System.Windows.Controls.Control.TemplateProperty) == DependencyProperty.UnsetValue:
+                    if (legacyPrimaryButton is not null && ReferenceEquals(button.Style, legacyPrimaryButton))
+                        SetStyleIfNeeded(button, YanziUi.Styles.DefaultButton);
+                    else if (legacySecondaryButton is not null && ReferenceEquals(button.Style, legacySecondaryButton))
+                        SetStyleIfNeeded(button, YanziUi.Styles.OutlineButton);
+                    else if (legacyGhostButton is not null && ReferenceEquals(button.Style, legacyGhostButton))
+                        SetStyleIfNeeded(button, YanziUi.Styles.GhostButton);
+                    else if (legacyInlineLinkButton is not null && ReferenceEquals(button.Style, legacyInlineLinkButton))
+                        SetStyleIfNeeded(button, YanziUi.Styles.LinkButton);
+                    else if (button.ReadLocalValue(FrameworkElement.StyleProperty) == DependencyProperty.UnsetValue)
+                        SetStyleIfNeeded(button, YanziUi.Styles.OutlineButton);
                     break;
             }
         });
-        int styled = _originalStyles.Count - previous;
+
+        int styled = _styledControls.Count - previous;
         if (styled > 0 && root is FrameworkElement section)
             HostAssets.AppendLog($"Unified UI section={section.Name}, newStyledControls={styled}.");
     }
-
     private void SetStyleIfNeeded(FrameworkElement element, string resourceKey)
     {
-        if (_originalStyles.ContainsKey(element)) return;
-        _originalStyles.Add(element, element.ReadLocalValue(FrameworkElement.StyleProperty));
+        if (_styledControls.Contains(element)) return;
         element.SetResourceReference(FrameworkElement.StyleProperty, resourceKey);
+        _styledControls.Add(element);
     }
-
-    private void RestoreStyles()
-    {
-        foreach (var entry in _originalStyles)
-        {
-            if (entry.Value == DependencyProperty.UnsetValue)
-                entry.Key.ClearValue(FrameworkElement.StyleProperty);
-            else
-                entry.Key.SetValue(FrameworkElement.StyleProperty, entry.Value);
-        }
-        _originalStyles.Clear();
-    }
-
     private static void Walk(DependencyObject root, Action<DependencyObject> visit)
     {
         var seen = new HashSet<DependencyObject>();
