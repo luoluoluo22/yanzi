@@ -688,8 +688,8 @@
           links: [
             { label: "镜像下载 (极速 .exe)", url: "https://ghfast.top/https://github.com/luoluoluo22/yanzi/releases/download/v1.0.26/Yanzi-win-Setup-1.0.26.exe", badge: "免翻墙" },
             { label: "GitHub 下载 (.exe)", url: "https://github.com/luoluoluo22/yanzi/releases/download/v1.0.26/Yanzi-win-Setup-1.0.26.exe" },
-            { label: "蓝奏云网盘下载 (提取码 62yn)", url: "https://wwbnh.lanzout.com/b0pnkaj6j", code: "62yn", codeTitle: "蓝奏云提取码" },
-            { label: "夸克网盘下载 (提取码 dWvh)", url: "https://pan.quark.cn/s/1ef15a1cafe1?pwd=dWvh", code: "dWvh", codeTitle: "夸克网盘提取码" },
+            { label: "蓝奏云网盘（可能非最新版，提取码 62yn）", url: "https://wwbnh.lanzout.com/b0pnkaj6j", code: "62yn", codeTitle: "蓝奏云提取码" },
+            { label: "夸克网盘（可能非最新版，提取码 dWvh）", url: "https://pan.quark.cn/s/1ef15a1cafe1?pwd=dWvh", code: "dWvh", codeTitle: "夸克网盘提取码" },
             { label: "便携免安装版 (.zip)", url: "https://github.com/luoluoluo22/yanzi/releases/download/v1.0.26/Yanzi-win-Portable-1.0.26.zip" }
           ]
         },
@@ -707,7 +707,7 @@
             { label: "镜像下载 (极速 .dmg)", url: "https://ghfast.top/https://github.com/luoluoluo22/yanzi/releases/download/macos-v0.1.0/Yanzi-macos-v0.1.0.dmg", badge: "极速" },
             { label: "GitHub 下载 (.dmg)", url: "https://github.com/luoluoluo22/yanzi/releases/download/macos-v0.1.0/Yanzi-macos-v0.1.0.dmg" },
             { label: "免安装便携版 (.zip)", url: "https://github.com/luoluoluo22/yanzi/releases/download/macos-v0.1.0/Yanzi-macos-v0.1.0.zip" },
-            { label: "夸克网盘下载 (提取码 dWvh)", url: "https://pan.quark.cn/s/1ef15a1cafe1?pwd=dWvh", code: "dWvh", codeTitle: "夸克网盘提取码" }
+            { label: "夸克网盘（可能非最新版，提取码 dWvh）", url: "https://pan.quark.cn/s/1ef15a1cafe1?pwd=dWvh", code: "dWvh", codeTitle: "夸克网盘提取码" }
           ]
         },
         android: {
@@ -723,7 +723,7 @@
           links: [
             { label: "GitHub 下载 (.apk)", url: "https://github.com/luoluoluo22/yanzi/releases/download/android-v0.2.76/yanzi-mobile-0.2.76.apk" },
             { label: "蓝奏云网盘 (可能非最新版，提取码 92ty)", url: "https://wwbnh.lanzout.com/b0pnm6z2j", code: "92ty", codeTitle: "蓝奏云提取码" },
-            { label: "夸克网盘下载 (提取码 dWvh)", url: "https://pan.quark.cn/s/1ef15a1cafe1?pwd=dWvh", code: "dWvh", codeTitle: "夸克网盘提取码" }
+            { label: "夸克网盘（可能非最新版，提取码 dWvh）", url: "https://pan.quark.cn/s/1ef15a1cafe1?pwd=dWvh", code: "dWvh", codeTitle: "夸克网盘提取码" }
           ]
         }
       };
@@ -746,15 +746,15 @@
                 { label: `镜像下载 (极速 .dmg)`, url: p.mirror_url, badge: "极速" },
                 { label: `GitHub 下载 (.dmg)`, url: p.download_url },
                 { label: "免安装便携版 (.zip)", url: `https://github.com/luoluoluo22/yanzi/releases/download/macos-v${p.version || ver}/Yanzi-macos-v${p.version || ver}.zip` },
-                { label: "夸克网盘下载 (提取码 dWvh)", url: "https://pan.quark.cn/s/1ef15a1cafe1?pwd=dWvh", code: "dWvh", codeTitle: "夸克网盘提取码" }
+                { label: "夸克网盘（可能非最新版，提取码 dWvh）", url: "https://pan.quark.cn/s/1ef15a1cafe1?pwd=dWvh", code: "dWvh", codeTitle: "夸克网盘提取码" }
               ];
             } else if (key === "windows") {
               config.primaryUrl = p.mirror_url || p.download_url || config.primaryUrl;
               config.links = [
                 { label: `镜像下载 (极速 .exe)`, url: p.mirror_url, badge: "免翻墙" },
                 { label: `GitHub 下载 (.exe)`, url: p.download_url },
-                { label: "蓝奏云网盘下载 (提取码 62yn)", url: p.lanzou_url || "https://wwbnh.lanzout.com/b0pnkaj6j", code: "62yn", codeTitle: "蓝奏云提取码" },
-                { label: `夸克网盘下载 (提取码 dWvh)`, url: p.quark_url || "https://pan.quark.cn/s/1ef15a1cafe1?pwd=dWvh", code: "dWvh", codeTitle: "夸克网盘提取码" },
+                { label: "蓝奏云网盘（可能非最新版，提取码 62yn）", url: p.lanzou_url || "https://wwbnh.lanzout.com/b0pnkaj6j", code: "62yn", codeTitle: "蓝奏云提取码" },
+                { label: `夸克网盘（可能非最新版，提取码 dWvh）`, url: p.quark_url || "https://pan.quark.cn/s/1ef15a1cafe1?pwd=dWvh", code: "dWvh", codeTitle: "夸克网盘提取码" },
                 { label: `便携免安装版 (.zip)`, url: p.portable_url || `https://github.com/luoluoluo22/yanzi/releases/download/v${ver}/Yanzi-win-Portable-${ver}.zip` }
               ];
             } else if (key === "android" && p.has_asset && p.download_url) {
