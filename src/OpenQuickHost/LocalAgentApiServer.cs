@@ -475,8 +475,10 @@ public sealed partial class LocalAgentApiServer : IDisposable
                         HostAssets.AppendLog($"[BrowserWS #{socketId}] Connected from {browserName}.");
 
                         await HandleBrowserWebSocketLoopAsync(webSocket, socketId, browserName,
-                            context.Request.Headers["Origin"]?.StartsWith("chrome-extension://", StringComparison.OrdinalIgnoreCase) == true ||
-                            context.Request.Headers["Origin"]?.StartsWith("moz-extension://", StringComparison.OrdinalIgnoreCase) == true);
+                            !string.IsNullOrWhiteSpace(settings.OpenCliTrustedExtensionId) &&
+                            string.Equals(context.Request.Headers["Origin"]?.TrimEnd('/'),
+                                "chrome-extension://" + settings.OpenCliTrustedExtensionId,
+                                StringComparison.OrdinalIgnoreCase));
                     }
                     catch (Exception ex)
                     {

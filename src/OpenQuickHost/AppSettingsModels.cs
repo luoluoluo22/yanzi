@@ -110,6 +110,9 @@ public QuickPanelMouseTriggerSettings QuickPanelMouseTriggers { get; set; } = ne
 
     public bool EnableBrowserHelper { get; set; } = true;
 
+    // Only this explicitly paired local browser extension may request personal OpenCLI data.
+    public string OpenCliTrustedExtensionId { get; set; } = "";
+
     public bool EnableWanPush { get; set; } = false;
 
     public bool EnableEverything { get; set; } = true;
