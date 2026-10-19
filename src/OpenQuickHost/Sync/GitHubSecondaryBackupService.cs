@@ -60,7 +60,7 @@ public static class GitHubSecondaryBackupService
                 {
                     var payload = Encrypt(plain, key);
                     var backend = new GitHubPersonalSyncBackend(settings.PersonalSync.GitHub, secrets);
-                    await backend.ProbeAsync(cancellationToken);
+                    await backend.VerifyPrivateRepositoryAsync(cancellationToken);
                     var device = new string(Environment.MachineName.ToLowerInvariant()
                         .Where(c => char.IsAsciiLetterOrDigit(c) || c == '-').ToArray());
                     if (device.Length == 0) device = "device";
@@ -274,6 +274,7 @@ public static class GitHubSecondaryBackupService
             throw new ArgumentException("Unrecognized GitHub recovery snapshot path.", nameof(path));
         var backend = new GitHubPersonalSyncBackend(settings.PersonalSync.GitHub,
             PersonalSyncSecretStore.Load());
+        await backend.VerifyPrivateRepositoryAsync(cancellationToken);
         var snapshot = await GitHubBackupChunkTransport.DownloadVerifiedChunksAsync(backend, path, cancellationToken);
         var key = LoadOrCreateKey();
         try { return RestoreToIsolatedDirectory(snapshot, key, directory); }

@@ -306,6 +306,29 @@ internal sealed class GitHubPersonalSyncBackend : PersonalSyncBackendBase
         _httpClient.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("Yanzi", "0.1"));
     }
 
+    /// <summary>Disaster-recovery copies must never be placed in public or archived GitHub repositories.</summary>
+    internal async Task VerifyPrivateRepositoryAsync(CancellationToken cancellationToken = default)
+    {
+        var owner = await ResolveOwnerAsync(cancellationToken);
+        using var response = await _httpClient.GetAsync(
+            $"https://api.github.com/repos/{Uri.EscapeDataString(owner)}/{Uri.EscapeDataString(_config.Repo)}",
+            cancellationToken);
+        if (!response.IsSuccessStatusCode)
+            throw await PersonalSyncFailure.CreateFailureAsync("GitHub", response, cancellationToken);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(cancellationToken));
+        AssertPrivateBackupRepository(document.RootElement);
+    }
+
+    internal static void AssertPrivateBackupRepository(JsonElement repository)
+    {
+        if (!repository.TryGetProperty("private", out var privacy) ||
+            privacy.ValueKind != JsonValueKind.True)
+            throw new InvalidOperationException("Disaster-backup repository must be private.");
+        if (repository.TryGetProperty("archived", out var archived) &&
+            archived.ValueKind == JsonValueKind.True)
+            throw new InvalidOperationException("Archived repositories cannot receive disaster backups.");
+    }
+
     public override string DisplayRoot => $"github://{GetConfiguredOwnerDisplay()}/{_config.Repo}@{ResolveBranch()}";
 
     public override async Task ProbeAsync(CancellationToken cancellationToken)

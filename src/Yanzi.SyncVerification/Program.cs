@@ -1,9 +1,11 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using OpenQuickHost;
 using OpenQuickHost.Sync;
 using Yanzi.Core;
 if (args.Contains("--chat-conversation-metadata")) { ChatConversationMetadataVerification.Run(); return; }
 if (args.Contains("--mobile-extension-catalog")) { await MobileExtensionCatalogVerification.RunAsync(); return; }
+
+if (args.Contains("--github-private-backup-policy")) { GitHubPrivateBackupPolicyVerification.Run(); return; }
 
 if (args.Contains("--github-secondary-backup-verify")) { await GitHubSecondaryBackupVerification.RunAsync(args.Contains("--live")); return; }
 
