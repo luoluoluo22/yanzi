@@ -9,7 +9,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/OpenQuickHost/OpenQuickHost.csproj" />
-    <Compile Include="../../extensions/vpn-manager/VpnManager.cs" />
+    <Compile Include="../../tools/vpn-manager/VpnManager.cs" />
     <Compile Include="Program.cs" />
   </ItemGroup>
 </Project>
