@@ -241,6 +241,8 @@ public partial class App : WpfApplication
         }
 
         if (HostRuntimeProfile.OwnsBackgroundServices) _ = Task.Run(() => OpenQuickHost.Sync.ExtensionRecycleBinService.PurgeExpiredItems(30));
+        // Keep only bounded, known-safe Yanzi installer snapshots on installed unified hosts.
+        YanziArtifactRetentionService.Start();
 
         ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown;
 
