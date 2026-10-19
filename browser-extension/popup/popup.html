@@ -7,23 +7,50 @@
 </head>
 <body>
   <div class="app-container">
-    <!-- Header -->
     <header class="app-header">
-      <div class="logo-wrapper">
-        <img src="../assets/icon48.png" alt="燕子启动器 Logo" class="app-logo-img">
+      <div class="app-brand">
+        <div class="logo-wrapper">
+          <img src="../assets/icon48.png" alt="燕子启动器 Logo" class="app-logo-img">
+        </div>
+        <div class="brand">
+          <h1>燕子浏览器助手</h1>
+          <p>让浏览更智能，让知识触手可及</p>
+        </div>
       </div>
-      <div class="brand">
-        <h1>燕子浏览器助手</h1>
-        <p>Yanzi Browser Helper</p>
+      <div class="header-meta">
+        <span class="version-badge" id="extension-version">v0.5.61</span>
+        <span class="header-meta-label">本地优先</span>
       </div>
     </header>
 
-    <nav class="panel-tabs" aria-label="控制台页面">
-      <button type="button" data-panel="market" aria-pressed="true">网页小程序</button>
-      <button type="button" data-panel="overview" aria-pressed="false">连接与服务</button>
-      <button type="button" data-panel="api" aria-pressed="false">API 接入</button>
-      <button type="button" data-panel="logs" aria-pressed="false">执行日志</button>
-    </nav>
+    <div class="app-workspace">
+      <aside class="app-sidebar">
+        <div class="sidebar-section-label">工作区</div>
+        <nav class="panel-tabs" aria-label="控制台页面">
+          <button type="button" data-panel="market" aria-pressed="true">
+            <span class="sidebar-icon" aria-hidden="true">▦</span>
+            <span class="sidebar-item-copy"><strong>网页小程序</strong><small>发现与使用</small></span>
+          </button>
+          <button type="button" data-panel="overview" aria-pressed="false">
+            <span class="sidebar-icon" aria-hidden="true">↔</span>
+            <span class="sidebar-item-copy"><strong>连接与服务</strong><small>账号 · 同步 · 存储</small></span>
+          </button>
+          <button type="button" data-panel="api" aria-pressed="false">
+            <span class="sidebar-icon sidebar-code-icon" aria-hidden="true">&lt;/&gt;</span>
+            <span class="sidebar-item-copy"><strong>API 接入</strong><small>开发与集成</small></span>
+          </button>
+          <button type="button" data-panel="logs" aria-pressed="false">
+            <span class="sidebar-icon" aria-hidden="true">◷</span>
+            <span class="sidebar-item-copy"><strong>执行日志</strong><small>运行记录 · 调试</small></span>
+          </button>
+        </nav>
+        <div class="sidebar-spacer"></div>
+        <section class="sidebar-help-card">
+          <div class="sidebar-help-title"><span aria-hidden="true">✦</span> 帮帮忙</div>
+          <p>复制小程序的开发背景，让其他 AI 快速接手。</p>
+        </section>
+      </aside>
+      <main class="app-main">
     <div class="panel-content" id="panel-overview" hidden>
     <section class="status-section glass-card">
       <div class="status-row">
@@ -47,17 +74,27 @@
     <footer class="app-footer"><button id="reconnect-btn" class="btn primary-btn btn-glow">重新连接燕子主程序</button></footer>
     </div>
     <div class="panel-content" id="panel-market">
-      <section class="glass-card market-intro">
-        <div class="section-title-row">
-          <h2>网页小程序市场</h2>
+      <section class="market-intro">
+        <div class="market-intro-heading">
+          <div>
+            <h2>网页小程序</h2>
+            <p>按网站组合燕子能力。搜索名称、功能或标签，快速定位需要维护的小程序。</p>
+          </div>
           <span class="log-count" id="market-count">0 个</span>
         </div>
-        <p>按网站安装燕子能力。安装状态与网页小程序数据会在燕子连接后同步到账号云。</p>
-        <div class="guide-actions">
+        <div class="market-intro-actions">
+          <span class="market-sync-status" id="market-sync-status" role="status" aria-live="polite"></span>
           <button type="button" id="sync-webapps">立即同步</button>
-          <span class="market-sync-status" id="market-sync-status"></span>
         </div>
       </section>
+      <label class="market-search">
+        <span class="market-search-icon" aria-hidden="true">⌕</span>
+        <input id="market-search" type="search" autocomplete="off" placeholder="搜索小程序、功能、标签…" aria-label="搜索小程序、功能和标签">
+        <kbd id="market-search-shortcut">Ctrl K</kbd>
+      </label>
+      <nav id="market-categories" class="market-categories" aria-label="小程序分类筛选">
+        <button type="button" class="market-category-chip" data-market-category="全部" aria-pressed="true"><span>全部</span><small>0</small></button>
+      </nav>
       <section id="market-list" class="market-list" aria-live="polite">
         <div class="market-empty">正在读取网页小程序…</div>
       </section>
@@ -99,6 +136,8 @@
         <div class="log-placeholder">暂无任何执行日志</div>
       </div>
     </section>
+    </div>
+      </main>
     </div>
   </div>
   <script src="api-guide.js"></script>
