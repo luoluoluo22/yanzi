@@ -10,6 +10,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Yanzi.UI.Wpf\Yanzi.UI.Wpf.csproj"/>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3912.50" />
     <Content Include="Assets\*.jpg" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
