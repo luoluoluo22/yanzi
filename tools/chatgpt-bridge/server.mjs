@@ -6,6 +6,8 @@ import { join, dirname, basename, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {sanitizeNetworkEvidence, classifyJobNetwork, isAllowedProgressStage} from './network-evidence.mjs';
 import { createOriginBinding, validateFeedbackRequest, makeFeedbackTask } from './origin-routing.mjs';
+import { DeliveryLedger } from './delivery-ledger.mjs';
+import { handleDeliveryApi } from './delivery-api.mjs';
 import { validateSubagentCreate, validateSubagentMessage, childIdentityFromReply, createSubagentRecord, makeContinuationTask, makeParentSummary, validateManagedParentCreate, createManagedParentRecord, makeManagedParentReturnTask } from './subagent-routing.mjs';
 
 const FILE_MIME_TYPES = {
@@ -119,11 +121,12 @@ export function validateTask(input) {
     newChat: input.newChat, temporary, tabPolicy: input.tabPolicy || 'reuse', closeAfter: input.closeAfter === true, includePageSnapshot: input.includePageSnapshot === true, durationMs: input.action === 'chatgpt_network_probe' ? (input.durationMs ?? 4000) : undefined, publicProbe:input.action === 'chatgpt_network_probe' && input.publicProbe === true, timeoutSeconds: input.timeoutSeconds ?? (input.action === 'chatgpt_image' ? 900 : 180) };
 }
 
-export async function createBridge({ port = 53921, directory, now = Date.now, allowTestSocket = false } = {}) {
+export async function createBridge({ port = 53921, directory, now = Date.now, allowTestSocket = false, enableDeliveryLedger = false } = {}) {
   mkdirSync(directory, { recursive: true });
   const assetsDirectory = join(directory, 'assets');
   mkdirSync(assetsDirectory, { recursive: true });
   const statePath = join(directory, 'state.json');
+  const deliveryLedger = enableDeliveryLedger ? new DeliveryLedger(join(directory, 'delivery-ledger.json'), { clock: now }) : null;
   const tokenPath = join(directory, 'api-token.txt');
   const token = existsSync(tokenPath) ? readFileSync(tokenPath, 'utf8').trim() : randomBytes(32).toString('hex');
   if (!existsSync(tokenPath)) writeFileSync(tokenPath, token, { mode: 0o600 });
@@ -647,6 +650,10 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
     if (!authorize(req)) return reply(401, { error: 'unauthorized' });
     if (req.method !== 'GET' && req.headers['x-bridge-request'] !== '1') return reply(403, { error: 'missing_request_header' });
     try {
+      if (path.startsWith('/api/delivery-runs')) {
+        if (!deliveryLedger) return reply(404, { error: 'delivery_ledger_disabled' });
+        return await handleDeliveryApi({ ledger: deliveryLedger, path, method: req.method, body: () => body(req), reply });
+      }
       if (req.method === 'GET' && path === '/api/jobs') return reply(200, state.jobs.slice().reverse());
       if (req.method === 'GET' && path.startsWith('/api/jobs/')) {
         const job = state.jobs.find(j => j.id === path.slice(10));
