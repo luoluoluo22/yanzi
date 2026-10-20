@@ -1,7 +1,7 @@
 {
   "id": "capability-lab",
   "name": "能力实验室",
-  "version": "0.2.0",
+  "version": "0.2.2",
   "category": "开发工具",
   "description": "查看燕子宿主基础能力的状态、准备进度，并用真实脚本验证 Git、Python、Node.js、npm、npx 与 FFmpeg。",
   "keywords": ["能力", "依赖", "Git", "Python", "Node", "npm", "npx", "FFmpeg", "实验"],

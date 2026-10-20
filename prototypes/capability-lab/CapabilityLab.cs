@@ -686,7 +686,15 @@ public sealed class CapabilityLabWindow : Window
         }
         finally
         {
-            try { Directory.Delete(smoke, recursive: true); }
+            try
+            {
+                var packageLink = Path.Combine(smoke, "node_modules", "yanzi-npm-smoke-cli");
+                if (Directory.Exists(packageLink) &&
+                    (File.GetAttributes(packageLink) & FileAttributes.ReparsePoint) != 0)
+                    Directory.Delete(packageLink);
+                if (Directory.Exists(smoke))
+                    Directory.Delete(smoke, recursive: true);
+            }
             catch (IOException ex) { AddLog("[npm/npx] 测试临时目录清理失败：" + ex.Message); }
             catch (UnauthorizedAccessException ex) { AddLog("[npm/npx] 测试临时目录清理失败：" + ex.Message); }
         }
@@ -770,6 +778,8 @@ public sealed class CapabilityLabWindow : Window
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8,
                 CreateNoWindow = true
             }
         };
