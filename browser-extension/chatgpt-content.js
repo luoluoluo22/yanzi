@@ -206,6 +206,18 @@
     if (saveControl && new URL(location.href).searchParams.get('temporary-chat') === 'true') return 'save-chat-control';
     return null;
   }
+  // A verified temporary chat can lose its heading/button after a reply.
+  // Only relax post-send DOM checks; before sending we still require DOM proof.
+  function verifiedTemporaryReplyContext(confirmedAtSend, sentConversationId) {
+    if (!confirmedAtSend) return false;
+    try {
+      const url = new URL(location.href);
+      const currentConversationId = url.pathname.match(/^\/c\/([^/]+)/)?.[1] || null;
+      return url.origin === "https://chatgpt.com"
+        && url.searchParams.get("temporary-chat") === "true"
+        && (!sentConversationId || currentConversationId === sentConversationId);
+    } catch { return false; }
+  }
   const meta = () => ({ url: location.href, conversationId: location.pathname.match(/^\/c\/([^/]+)/)?.[1] || null, visibility: document.visibilityState, temporary: Boolean(temporaryEvidence()), temporaryEvidence: temporaryEvidence(), automationRevision: '2026-10-06-send-ack-watchdog-v2' });
   const pageSnapshots = () => {
     const legacy = Array.from(document.querySelectorAll(
@@ -578,6 +590,7 @@
         return button && !button.disabled ? button : null;
       }, Math.min(deadline, Date.now() + 10000), "等待发送按钮");
       if (task.temporary === true && !temporaryEvidence()) throw new Error('临时聊天状态已改变，未发送消息');
+      const confirmedTemporaryAtSend = task.temporary === true && Boolean(temporaryEvidence());
       if (["chatgpt_feedback_send", "chatgpt_subagent_continue"].includes(task.action)) {
         const currentId = location.pathname.match(/^\/c\/([^/]+)/)?.[1];
         if (currentId !== task.expectedConversationId || temporaryEvidence())
@@ -593,6 +606,7 @@
         const currentDraft = (currentInput?.value || currentInput?.innerText || "").trim();
         return currentDraft ? null : true;
       }, Math.min(deadline, Date.now() + 15000), "确认消息已发送");
+      const sentConversationId = location.pathname.match(/^\/c\/([^/]+)/)?.[1] || null;
       let last = "", lastImages = "", changedAt = Date.now();
       const durableTask = Number(task.timeoutSeconds) === 0;
       const stalledForMs = 5 * 60 * 1000;
@@ -649,9 +663,16 @@
           replyHasCompletionControls() &&
           Date.now() - changedAt >= 3000
         ) {
-          if (task.temporary === true && !temporaryEvidence()) throw new Error('回复完成后无法确认临时状态，已保留页面供检查');
+          const replyModeEvidence = temporaryEvidence();
+          const verifiedSession = task.temporary === true
+            && verifiedTemporaryReplyContext(confirmedTemporaryAtSend, sentConversationId);
+          if (task.temporary === true && !replyModeEvidence
+              && !verifiedSession)
+            throw new Error('回复完成后临时聊天会话身份不符，已保留页面供检查');
           return {
             ...meta(),
+            temporary: Boolean(replyModeEvidence || verifiedSession),
+            temporaryEvidence: replyModeEvidence || (verifiedSession ? 'verified-send-url-and-conversation' : null),
             ...latest,
             images: latest?.images || [],
             uploadedFiles,
