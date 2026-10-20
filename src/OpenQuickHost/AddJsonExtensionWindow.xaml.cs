@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -418,6 +419,8 @@ public partial class AddJsonExtensionWindow : Window
     }
 
     private bool _isExtensionGuideDismissed = false;
+    private DateTime _browserProfileScannedAtUtc = DateTime.MinValue;
+    private IReadOnlyList<BrowserHelperBootstrap.BrowserProfile> _browserProfiles = Array.Empty<BrowserHelperBootstrap.BrowserProfile>();
     private System.Windows.Threading.DispatcherTimer? _browserExtensionCheckTimer;
 
     private void StartBrowserExtensionStateWatcher()
@@ -452,6 +455,13 @@ public partial class AddJsonExtensionWindow : Window
             ? Array.Empty<string>()
             : LocalAgentApiServer.GetRunningBrowserNames();
         bool browserRunning = runningBrowsers.Count > 0;
+        if (!isConnected && DateTime.UtcNow - _browserProfileScannedAtUtc > TimeSpan.FromSeconds(20))
+        {
+            _browserProfileScannedAtUtc = DateTime.UtcNow;
+            _browserProfiles = BrowserHelperBootstrap.Inspect();
+        }
+        var installedProfile = _browserProfiles.FirstOrDefault(p => p.Installed);
+        var installedEnabled = _browserProfiles.Any(p => p.Installed && p.Enabled);
 
         // 1. 刷新顶部状态胶囊与呼吸指示灯
         if (BrowserStatusDot != null && BrowserStatusText != null && BrowserConnectionStatusBadge != null)
@@ -467,7 +477,8 @@ public partial class AddJsonExtensionWindow : Window
             else if (browserRunning)
             {
                 BrowserStatusDot.Fill = AmberBrush;
-                BrowserStatusText.Text = $"{string.Join(" / ", runningBrowsers)} 已启动，助手未连接";
+                BrowserStatusText.Text = installedEnabled ? "助手已安装但未连接"
+                    : installedProfile != null ? "助手已禁用或未就绪" : "未安装燕子浏览器助手";
                 BrowserStatusText.Foreground = AmberBrush;
                 BrowserConnectionStatusBadge.Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x18, 0xFB, 0xBF, 0x24));
                 BrowserConnectionStatusBadge.BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x33, 0xFB, 0xBF, 0x24));
@@ -475,15 +486,29 @@ public partial class AddJsonExtensionWindow : Window
             else
             {
                 BrowserStatusDot.Fill = Text3Brush;
-                BrowserStatusText.Text = "浏览器未启动";
+                BrowserStatusText.Text = installedEnabled ? "助手已安装 · 浏览器未运行"
+                    : installedProfile != null ? "助手已安装但未启用" : "浏览器未启动 · 待安装助手";
                 BrowserStatusText.Foreground = Text2Brush;
                 BrowserConnectionStatusBadge.Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x12, 0x90, 0x90, 0xA8));
                 BrowserConnectionStatusBadge.BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x24, 0x90, 0x90, 0xA8));
             }
         }
 
-        // 2. 刷新引导横幅
+        // 2. 区分未安装、已禁用和已安装但未连接；浏览器连接握手才算最终验收成功。
         if (BrowserExtensionGuideBanner == null) return;
+        if (BrowserExtensionGuideTitle != null && BrowserExtensionGuideDescription != null && BrowserExtensionSetupButton != null)
+        {
+            BrowserExtensionGuideTitle.Text = installedEnabled ? "燕子浏览器助手已安装，但尚未连接"
+                : installedProfile != null ? "燕子浏览器助手已安装，但未启用"
+                : "尚未安装燕子浏览器助手";
+            BrowserExtensionGuideDescription.Text = installedEnabled
+                ? "请检查浏览器助手是否启用、点击重新连接服务，连接成功后此提示自动关闭。"
+                : installedProfile != null
+                    ? "检测到浏览器配置文件中存在扩展，请在扩展管理页启用，然后连接桌面端。"
+                    : "燕子已内置扩展安装包，可以准备稳定目录并引导你完成浏览器的必要授权。";
+            BrowserExtensionSetupButton.Content = installedEnabled ? "打开浏览器检查连接"
+                : installedProfile != null ? "前往启用扩展" : "安装浏览器助手";
+        }
         if (isConnected)
         {
             _isExtensionGuideDismissed = false;
@@ -558,99 +583,61 @@ public partial class AddJsonExtensionWindow : Window
     {
         try
         {
-            var extPath = FindBrowserExtensionDirectory();
-            if (string.IsNullOrEmpty(extPath) || !Directory.Exists(extPath))
+            _browserProfiles = BrowserHelperBootstrap.Inspect();
+            _browserProfileScannedAtUtc = DateTime.UtcNow;
+            var profile = _browserProfiles.FirstOrDefault(p => p.Installed)
+                ?? _browserProfiles.FirstOrDefault(p => p.Browser == "Edge")
+                ?? _browserProfiles.FirstOrDefault();
+            if (profile == null)
             {
-                ShowError("未找到内置的浏览器插件目录。");
+                ShowError("尚未检测到 Edge、Chrome 或 Brave。请先安装一种受支持的浏览器。");
                 return;
             }
 
-            // 1. 在资源管理器中高亮定位 manifest.json 文件或文件夹
-            var manifestFile = Path.Combine(extPath, "manifest.json");
-            if (File.Exists(manifestFile))
+            if (!profile.Installed)
             {
-                Process.Start("explorer.exe", $"/select,\"{manifestFile}\"");
-            }
-            else
-            {
-                Process.Start("explorer.exe", $"\"{extPath}\"");
-            }
-
-            // 2. 唤起默认浏览器打开小程序管理页
-            try
-            {
-                Process.Start(new ProcessStartInfo
+                var bundled = BrowserHelperBootstrap.FindBundledDirectory();
+                if (bundled == null)
                 {
-                    FileName = "chrome://extensions",
-                    UseShellExecute = true
-                });
-            }
-            catch
-            {
-                try
-                {
-                    Process.Start(new ProcessStartInfo
-                    {
-                        FileName = "edge://extensions",
-                        UseShellExecute = true
-                    });
+                    ShowError("安装包缺少内置的浏览器助手文件。请修复或重新安装燕子。");
+                    return;
                 }
-                catch (Exception ex)
-                {
-                    HostAssets.AppendLog($"AddJsonExtension: failed to open edge://extensions: {ex.Message}");
-                }
+                // Use an installation-independent path. Replacing the desktop version must not
+                // invalidate the Chrome/Edge unpacked-extension reference.
+                var stable = BrowserHelperBootstrap.EnsureStableBundle(bundled);
+                Process.Start("explorer.exe", $"/select,\\\"{Path.Combine(stable, "manifest.json")}\\\"");
             }
-
-            System.Windows.MessageBox.Show(
-                this,
-                "已为你打开插件目录与浏览器小程序页！\n\n【极速加载步骤】：\n1. 开启浏览器右上角的「开发者模式」；\n2. 将高亮选中的 browser-extension 文件夹直接拖入浏览器即可！\n\n安装完成后燕子将自动感知并就绪。",
-                "燕子浏览器助手加载指引",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
+            BrowserHelperBootstrap.OpenExtensionSettings(profile);
+            var instructions = profile.Installed
+                ? profile.Enabled
+                    ? "检测到助手已启用，但没有连接桌面端。请在扩展页重新加载扩展，并在助手面板中选择【重新连接服务】。"
+                    : "检测到助手已安装但未启用。请在扩展页开启【燕子浏览器助手】，然后重新连接服务。"
+                : "已自动准备好稳定目录中的燕子浏览器助手。\\n\\n首次安装需要在浏览器内授权：\\n1. 在扩展管理页面启用【开发者模式】；\\n2. 点击【加载已解压的扩展程序】；\\n3. 在已打开的文件资源管理器中复制 BrowserHelper 文件夹路径并选中该文件夹。\\n\\n之后燕子升级将继续使用同一路径，不需要重复加载。";
+            System.Windows.MessageBox.Show(this, instructions,
+                "燕子浏览器助手 · 安装与修复", MessageBoxButton.OK, MessageBoxImage.Information);
+            UpdateBrowserExtensionBannerVisibility();
         }
         catch (Exception ex)
         {
-            HostAssets.AppendLog($"Quick install browser extension failed: {ex}");
-            ShowError($"打开插件目录失败：{ex.Message}");
+            HostAssets.AppendLog($"Browser helper setup failed: {ex}");
+            ShowError($"浏览器助手安装/修复失败：{ex.Message}");
         }
     }
 
     private void OpenExtensionTutorial_Click(object sender, RoutedEventArgs e)
     {
-        try
-        {
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = "https://github.com/luoluoluo22/yanzi#readme",
-                UseShellExecute = true
-            });
-        }
-        catch
-        {
-            QuickInstallBrowserExtension_Click(sender, e);
-        }
-    }
-
-    private static string? FindBrowserExtensionDirectory()
-    {
-        try
-        {
-            var baseDir = AppDomain.CurrentDomain.BaseDirectory;
-            var dir1 = Path.Combine(baseDir, "browser-extension");
-            if (Directory.Exists(dir1)) return dir1;
-
-            var dir2 = Path.GetFullPath(Path.Combine(baseDir, @"..\..\..\..\browser-extension"));
-            if (Directory.Exists(dir2)) return dir2;
-
-            var dir3 = Path.GetFullPath(Path.Combine(baseDir, @"..\..\..\browser-extension"));
-            if (Directory.Exists(dir3)) return dir3;
-        }
-        catch (Exception ex)
-        {
-            HostAssets.AppendLog($"AddJsonExtension: browser-extension dir probe failed: {ex.Message}");
-        }
-
-        return null;
+        _browserProfileScannedAtUtc = DateTime.MinValue;
+        _isExtensionGuideDismissed = false;
+        UpdateBrowserExtensionBannerVisibility();
+        var agentServer = ((App)System.Windows.Application.Current).AgentApiServer;
+        var connected = agentServer?.IsBrowserConnected == true;
+        var installed = _browserProfiles.FirstOrDefault(p => p.Installed);
+        var message = connected ? "浏览器助手已连接，功能验收通过。"
+            : installed is null ? "尚未检测到浏览器助手，请点击【安装浏览器助手】。"
+            : installed.Enabled ? "扩展已启用，但尚未和燕子桌面端建立连接。"
+            : "扩展已安装但未启用，请点击【前往启用扩展】。";
+        System.Windows.MessageBox.Show(this, message, "浏览器助手重新检测",
+            MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     private void CustomPromptTextBox_GotFocus(object sender, RoutedEventArgs e)

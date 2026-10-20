@@ -394,6 +394,31 @@ public partial class App : WpfApplication
             // 5. 标识整个应用的所有核心初始化步骤均顺利执行完成，正式转换为运行期柔性容错模式
             _isAppFullyInitialized = true;
 
+            // Run once per Windows user: stage the packaged extension outside the versioned app
+            // directory and notify on fresh devices. Browser consent is never bypassed.
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    var bundled = BrowserHelperBootstrap.FindBundledDirectory();
+                    if (bundled == null) return;
+                    BrowserHelperBootstrap.EnsureStableBundle(bundled);
+                    var profiles = BrowserHelperBootstrap.Inspect();
+                    if (profiles.Count == 0 || profiles.Any(p => p.Installed)) return;
+                    var notice = System.IO.Path.Combine(
+                        BrowserHelperBootstrap.StableDirectory, ".first-start-notice");
+                    if (System.IO.File.Exists(notice)) return;
+                    System.IO.File.WriteAllText(notice, DateTime.UtcNow.ToString("O"));
+                    _ = Dispatcher.BeginInvoke(new Action(() =>
+                        ShowDesktopNotification("燕子浏览器助手",
+                            "已为这台电脑准备浏览器助手。首次使用请在燕子 AI 对话中完成浏览器授权安装。")));
+                }
+                catch (Exception ex)
+                {
+                    HostAssets.AppendLog($"BrowserHelper bootstrap: {ex.Message}");
+                }
+            });
+
             // 预加载设置窗口并提前创建 HWND 与 DWM 深色环境，避免第一次打开时因主线程创建句柄和排版引发首屏闪白或卡顿
             _ = Dispatcher.BeginInvoke(new Action(() =>
             {
