@@ -13,7 +13,7 @@ const checks = Object.fromEntries(['e2e', 'standards', 'spec'].map(name => [
 test('opt-in Bridge delivery API uses existing auth, bounded leases and persistence', async t => {
   const directory = mkdtempSync(join(tmpdir(), 'yanzi-ledger-http-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
-  const bridge = await createBridge({ directory, port: 0, enableDeliveryLedger: true });
+  const bridge = await createBridge({ directory, port: 0, enableDeliveryLedger: true, integrationVerifier: async () => ({ ciPassed: true, proof: 'Trusted test verifier confirmed CI and merged PR' }) });
   t.after(() => bridge.close());
   const path = '/api/delivery-runs';
   const request = async (suffix, method = 'GET', value, extraHeaders = {}) => {

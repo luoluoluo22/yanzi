@@ -121,7 +121,7 @@ export function validateTask(input) {
     newChat: input.newChat, temporary, tabPolicy: input.tabPolicy || 'reuse', closeAfter: input.closeAfter === true, includePageSnapshot: input.includePageSnapshot === true, durationMs: input.action === 'chatgpt_network_probe' ? (input.durationMs ?? 4000) : undefined, publicProbe:input.action === 'chatgpt_network_probe' && input.publicProbe === true, timeoutSeconds: input.timeoutSeconds ?? (input.action === 'chatgpt_image' ? 900 : 180) };
 }
 
-export async function createBridge({ port = 53921, directory, now = Date.now, allowTestSocket = false, enableDeliveryLedger = false } = {}) {
+export async function createBridge({ port = 53921, directory, now = Date.now, allowTestSocket = false, enableDeliveryLedger = false, integrationVerifier = null } = {}) {
   mkdirSync(directory, { recursive: true });
   const assetsDirectory = join(directory, 'assets');
   mkdirSync(assetsDirectory, { recursive: true });
@@ -652,7 +652,7 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
     try {
       if (path.startsWith('/api/delivery-runs')) {
         if (!deliveryLedger) return reply(404, { error: 'delivery_ledger_disabled' });
-        return await handleDeliveryApi({ ledger: deliveryLedger, path, method: req.method, body: () => body(req), reply });
+        return await handleDeliveryApi({ ledger: deliveryLedger, path, method: req.method, body: () => body(req), reply, integrationVerifier });
       }
       if (req.method === 'GET' && path === '/api/jobs') return reply(200, state.jobs.slice().reverse());
       if (req.method === 'GET' && path.startsWith('/api/jobs/')) {

@@ -16,7 +16,8 @@ function taskGraph(input) {
     throw new Error('tasks_invalid');
   const ids = new Set();
   for (const task of input) {
-    if (!validId(task.id) || ids.has(task.id) || !Array.isArray(task.dependsOn))
+    if (!validId(task.id) || ids.has(task.id) || !Array.isArray(task.dependsOn) ||
+        (task.prompt != null && (typeof task.prompt !== 'string' || !task.prompt.trim() || task.prompt.length > 4000)))
       throw new Error('task_id_or_dependencies_invalid');
     ids.add(task.id);
   }
@@ -101,7 +102,7 @@ export class DeliveryLedger {
   createRun({ runId, tasks }) {
     if (!validId(runId)) throw new Error('run_id_invalid');
     taskGraph(tasks);
-    const spec = tasks.map(t => ({ id: t.id, dependsOn: [...t.dependsOn] }));
+    const spec = tasks.map(t => ({ id: t.id, dependsOn: [...t.dependsOn], prompt: t.prompt ?? null }));
     return this.change(data => {
       if (data.runs[runId]) {
         if (JSON.stringify(data.runs[runId].spec) !== JSON.stringify(spec))
@@ -111,7 +112,7 @@ export class DeliveryLedger {
       if (Object.keys(data.runs).length >= 128) throw new Error('ledger_capacity_reached');
       const run = { id: runId, spec, createdAt: this.clock(), events: [],
         tasks: Object.fromEntries(spec.map((t, index) => [t.id, {
-          id: t.id, order: index, dependsOn: t.dependsOn, phase: 'queued',
+          id: t.id, order: index, dependsOn: t.dependsOn, prompt: t.prompt, phase: 'queued',
           generation: 1, reviewFailures: 0, lease: null,
           candidate: null, checks: null, mergedCommit: null,
         }])) };
@@ -169,7 +170,7 @@ export class DeliveryLedger {
       candidate.phase = { development: 'developing', reviewer: 'reviewing',
         integration: 'integrating' }[role];
       this.event(run, 'claimed', candidate.id, { role, workerId, generation: candidate.generation });
-      return { runId, taskId: candidate.id, ...lease, candidate: clone(candidate.candidate) };
+      return { runId, taskId: candidate.id, prompt: candidate.prompt, ...lease, candidate: clone(candidate.candidate) };
     });
   }
 
@@ -182,6 +183,41 @@ export class DeliveryLedger {
         task.lease.generation !== task.generation)
       throw new Error('lease_mismatch');
     return { run, task };
+  }
+
+  renewLease({ runId, taskId, workerId, leaseId, leaseMs = 15 * 60 * 1000 }) {
+    if (!Number.isInteger(leaseMs) || leaseMs < 1000 || leaseMs > 60 * 60 * 1000)
+      throw new Error('lease_duration_invalid');
+    return this.change(data => {
+      const run = this.getRun(data, runId);
+      this.expire(run);
+      const task = run.tasks[taskId];
+      if (!task || !task.lease || task.lease.id !== leaseId ||
+          task.lease.workerId !== workerId || task.lease.generation !== task.generation)
+        throw new Error('lease_mismatch');
+      task.lease.expiresAt = this.clock() + leaseMs;
+      this.event(run, 'lease_renewed', taskId, { role: task.lease.role });
+      return task.lease;
+    });
+  }
+
+  blockClaim({ runId, taskId, workerId, leaseId, reason }) {
+    if (typeof reason !== 'string' || !reason.trim() || reason.length > 1000)
+      throw new Error('block_reason_invalid');
+    return this.change(data => {
+      const run = this.getRun(data, runId);
+      this.expire(run);
+      const task = run.tasks[taskId];
+      if (!task || !task.lease || task.lease.id !== leaseId ||
+          task.lease.workerId !== workerId || task.lease.generation !== task.generation)
+        throw new Error('lease_mismatch');
+      const role = task.lease.role;
+      task.lease = null;
+      task.phase = 'blocked';
+      task.blockedReason = reason;
+      this.event(run, 'claim_blocked', taskId, { role, reason });
+      return task;
+    });
   }
 
   completeDevelopment(input) {
