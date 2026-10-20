@@ -3,7 +3,7 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net9.0-windows</TargetFramework>
-    <Version>1.0.26</Version>
+    <Version>1.0.27</Version>
     <FileVersion>1.0.26.0</FileVersion>
     <AssemblyVersion>1.0.26.0</AssemblyVersion>
     <InformationalVersion>1.0.26</InformationalVersion>
