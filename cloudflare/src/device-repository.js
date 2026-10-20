@@ -104,7 +104,7 @@ async function getPendingDeviceMessagePage(env, userId, deviceId, platform, limi
            AND q.sequence <= ? AND (m.expires_at IS NULL OR m.expires_at > ?)
          UNION ALL
          SELECT m.*, q.sequence
-         FROM device_messages m
+         FROM device_messages m INDEXED BY idx_device_messages_user_target
          JOIN device_message_sequence q ON q.user_id = m.user_id AND q.message_id = m.message_id
          WHERE m.user_id = ? AND m.status = 'pending' AND m.target_device_id IS NULL
            AND m.target_platform = ? AND q.sequence <= ?
