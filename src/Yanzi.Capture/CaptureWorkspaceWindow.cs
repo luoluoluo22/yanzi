@@ -44,6 +44,13 @@ public sealed class CaptureWorkspaceWindow : Window
     private readonly TextBlock _hint = new();
     private readonly TextBlock _sizeBadge = new();
     private readonly Border _sizeBadgeShell = new();
+    private readonly Canvas _crosshair = new()
+    {
+        Width = 32,
+        Height = 32,
+        IsHitTestVisible = false,
+        Visibility = Visibility.Collapsed
+    };
     private readonly Border _toolbar = new();
     private readonly Border _ratioControl = new();
     private readonly Border _ratioFlyout = new();
@@ -107,7 +114,9 @@ public sealed class CaptureWorkspaceWindow : Window
         ShowInTaskbar = false;
         Topmost = true;
         Background = Brushes.Black;
-        Cursor = Cursors.Cross;
+        // The default dark system crosshair blends into the capture dimmer.
+        // Draw an accessible blue-and-white target instead.
+        Cursor = Cursors.None;
         Left = 0;
         Top = 0;
         SizeToContent = SizeToContent.Manual;
@@ -125,12 +134,14 @@ public sealed class CaptureWorkspaceWindow : Window
             UpdateSaveButtonLabel();
             Activate();
             Focus();
+            UpdateCrosshair(Mouse.GetPosition(_canvas));
         };
 
         SizeChanged += (_, _) => UpdateScale();
 
         PreviewMouseLeftButtonDown += OnPreviewMouseDown;
         PreviewMouseMove += OnPreviewMouseMove;
+        MouseLeave += (_, _) => _crosshair.Visibility = Visibility.Collapsed;
         PreviewMouseLeftButtonUp += OnPreviewMouseUp;
         PreviewKeyDown += OnPreviewKeyDown;
     }
@@ -249,6 +260,38 @@ public sealed class CaptureWorkspaceWindow : Window
         BuildRatioFlyout();
         Panel.SetZIndex(_ratioFlyout, 47);
         _canvas.Children.Add(_ratioFlyout);
+
+        var reticleGeometry = Geometry.Parse(
+            "M 16,1 L 16,11 M 16,21 L 16,31 M 1,16 L 11,16 M 21,16 L 31,16");
+        _crosshair.Children.Add(new System.Windows.Shapes.Path
+        {
+            Data = reticleGeometry,
+            Stroke = Brushes.White,
+            StrokeThickness = 5,
+            StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round
+        });
+        _crosshair.Children.Add(new System.Windows.Shapes.Path
+        {
+            Data = reticleGeometry,
+            Stroke = Brush("#00A3FF"),
+            StrokeThickness = 2.8,
+            StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round
+        });
+        var reticleCenter = new Ellipse
+        {
+            Width = 6,
+            Height = 6,
+            Fill = Brush("#00A3FF"),
+            Stroke = Brushes.White,
+            StrokeThickness = 1.5
+        };
+        Canvas.SetLeft(reticleCenter, 13);
+        Canvas.SetTop(reticleCenter, 13);
+        _crosshair.Children.Add(reticleCenter);
+        Panel.SetZIndex(_crosshair, 100);
+        _canvas.Children.Add(_crosshair);
 
         root.Children.Add(_canvas);
         if (_openSettings is not null)
@@ -1466,11 +1509,19 @@ public sealed class CaptureWorkspaceWindow : Window
         object sender,
         MouseEventArgs e)
     {
+        var point = e.GetPosition(_canvas);
+        var overSettings = _floatingSettingsButton is not null &&
+            IsDescendantOf(_floatingSettingsButton, e.OriginalSource as DependencyObject);
+        if (!overSettings && (_session is null ||
+            (_selectionDragging && _activeHandle == SelectionHandle.Create)))
+            UpdateCrosshair(point);
+        else
+            _crosshair.Visibility = Visibility.Collapsed;
+
         if (!_selectionDragging)
             return;
 
-        var point = ClampDip(
-            e.GetPosition(_canvas));
+        point = ClampDip(point);
 
         _workingRectDip =
             CalculateAdjustedRect(
@@ -1481,6 +1532,20 @@ public sealed class CaptureWorkspaceWindow : Window
 
         ShowSelectionPreview(_workingRectDip);
         e.Handled = true;
+    }
+
+    private void UpdateCrosshair(Point position)
+    {
+        if (position.X < 0 || position.Y < 0 ||
+            position.X > _canvas.ActualWidth || position.Y > _canvas.ActualHeight)
+        {
+            _crosshair.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        Canvas.SetLeft(_crosshair, position.X - 16);
+        Canvas.SetTop(_crosshair, position.Y - 16);
+        _crosshair.Visibility = Visibility.Visible;
     }
 
     private void OnPreviewMouseUp(
@@ -1495,6 +1560,11 @@ public sealed class CaptureWorkspaceWindow : Window
 
         _selectionDragging = false;
         Mouse.Capture(null);
+        if (_session is not null)
+        {
+            _crosshair.Visibility = Visibility.Collapsed;
+            Cursor = Cursors.Arrow;
+        }
 
         var finalDip = ClampRect(
             Normalize(_workingRectDip));
@@ -1562,6 +1632,16 @@ public sealed class CaptureWorkspaceWindow : Window
         _startRectDip = startingRect;
         _workingRectDip = startingRect;
         _selectionDragging = true;
+        if (handle == SelectionHandle.Create)
+        {
+            Cursor = Cursors.None;
+            UpdateCrosshair(pointer);
+        }
+        else if (_session is not null)
+        {
+            _crosshair.Visibility = Visibility.Collapsed;
+            Cursor = Cursors.Arrow;
+        }
 
         if (_session is not null)
         {
@@ -1603,6 +1683,8 @@ public sealed class CaptureWorkspaceWindow : Window
         _session = new CaptureSession(
             _screen,
             pixels);
+        _crosshair.Visibility = Visibility.Collapsed;
+        Cursor = Cursors.Arrow;
 
         _editor = new EditorSurface(
             _session.Document)
