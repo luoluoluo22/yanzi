@@ -17,6 +17,13 @@ public sealed class CaptureOverlayWindow : Window
     private ImageBrush? _selectionBrush;
     private readonly TextBlock _hint = new();
     private readonly TextBlock _sizeBadge = new();
+    private readonly Canvas _crosshair = new()
+    {
+        Width = 32,
+        Height = 32,
+        IsHitTestVisible = false,
+        Visibility = Visibility.Collapsed
+    };
     private Point _start;
     private bool _dragging;
     private double _scaleX = 1;
@@ -39,7 +46,9 @@ public sealed class CaptureOverlayWindow : Window
         ShowInTaskbar = false;
         Topmost = true;
         Background = Brushes.Black;
-        Cursor = Cursors.Cross;
+        // WPF's default dark crosshair disappears against the dimmed screenshot.
+        // Render a high-contrast blue reticle above the overlay instead.
+        Cursor = Cursors.None;
         Left = 0;
         Top = 0;
         SizeToContent = SizeToContent.Manual;
@@ -95,6 +104,37 @@ public sealed class CaptureOverlayWindow : Window
         _sizeBadge.Visibility = Visibility.Collapsed;
         _canvas.Children.Add(_sizeBadge);
 
+        var crosshairGeometry = Geometry.Parse(
+            "M 16,1 L 16,11 M 16,21 L 16,31 M 1,16 L 11,16 M 21,16 L 31,16");
+        _crosshair.Children.Add(new Path
+        {
+            Data = crosshairGeometry,
+            Stroke = Brushes.White,
+            StrokeThickness = 5,
+            StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round
+        });
+        _crosshair.Children.Add(new Path
+        {
+            Data = crosshairGeometry,
+            Stroke = new SolidColorBrush(Color.FromRgb(0, 163, 255)),
+            StrokeThickness = 2.8,
+            StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round
+        });
+        var center = new Ellipse
+        {
+            Width = 6,
+            Height = 6,
+            Fill = new SolidColorBrush(Color.FromRgb(0, 163, 255)),
+            Stroke = Brushes.White,
+            StrokeThickness = 1.5
+        };
+        Canvas.SetLeft(center, 13);
+        Canvas.SetTop(center, 13);
+        _crosshair.Children.Add(center);
+        _canvas.Children.Add(_crosshair);
+
         root.Children.Add(_canvas);
         Content = root;
 
@@ -131,6 +171,7 @@ public sealed class CaptureOverlayWindow : Window
                 ("scaleY", _scaleY));
 
             Activate();
+            UpdateCrosshair(Mouse.GetPosition(_canvas));
             CaptureDiagnostics.Mark("overlay.activated");
         };
         SizeChanged += (_, _) =>
@@ -140,6 +181,7 @@ public sealed class CaptureOverlayWindow : Window
         };
         MouseLeftButtonDown += BeginSelection;
         MouseMove += UpdateSelection;
+        MouseLeave += (_, _) => _crosshair.Visibility = Visibility.Collapsed;
         MouseLeftButtonUp += CompleteSelection;
         CaptureDiagnostics.Mark("overlay.ctor.end",
             ("width", Width),
@@ -167,8 +209,24 @@ public sealed class CaptureOverlayWindow : Window
 
     private void UpdateSelection(object sender, MouseEventArgs e)
     {
+        var position = e.GetPosition(_canvas);
+        UpdateCrosshair(position);
         if (!_dragging) return;
-        UpdateSelectionVisual(_start, e.GetPosition(_canvas));
+        UpdateSelectionVisual(_start, position);
+    }
+
+    private void UpdateCrosshair(Point position)
+    {
+        if (position.X < 0 || position.Y < 0 ||
+            position.X > _canvas.ActualWidth || position.Y > _canvas.ActualHeight)
+        {
+            _crosshair.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        Canvas.SetLeft(_crosshair, position.X - 16);
+        Canvas.SetTop(_crosshair, position.Y - 16);
+        _crosshair.Visibility = Visibility.Visible;
     }
 
     private void CompleteSelection(object sender, MouseButtonEventArgs e)
