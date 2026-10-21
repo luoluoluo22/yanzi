@@ -337,8 +337,8 @@ th, td { text-align: left; padding: 8px 5px; border-bottom: 1px solid #253246; o
   --helper-surface: rgba(15, 23, 42, .76);
 }
 body {
-  width: min(760px, 100vw);
-  height: min(600px, 100vh);
+  width: 760px;
+  height: 600px;
   overflow: hidden;
   background: #080d17;
 }
@@ -507,7 +507,7 @@ body {
 .webapp-rule-item button { width: 24px; height: 24px; border: 0; border-radius: 6px; background: transparent; color: var(--text-muted); font-size: 17px; line-height: 1; }
 .webapp-rule-item button:hover { background: rgba(255,255,255,.06); color: #fff; }
 @media (max-width: 640px) {
-  body { width: 100vw; }
+  /* Avoid circular popup viewport sizing: 100vw can collapse Chrome/Edge action popups. */
   .app-workspace { grid-template-columns: 132px minmax(0, 1fr); }
   .app-sidebar { padding-inline: 7px; }
   .panel-tabs button { gap: 7px; padding-inline: 7px; }
