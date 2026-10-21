@@ -12,6 +12,7 @@ MANUAL_RELEASE_WORKFLOWS = (
     ".github/workflows/publish-application-release.yml",
     ".github/workflows/publish-desktop-v1018.yml",
     ".github/workflows/publish-desktop-v1019.yml",
+    ".github/workflows/publish-desktop-v1028.yml",
     ".github/workflows/publish-mobile-and-notes.yml",
 )
 
