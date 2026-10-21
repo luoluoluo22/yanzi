@@ -84,6 +84,8 @@ internal static class BrowserHelperBootstrap
             foreach (var profile in profiles)
             {
                 var installed = InspectPreferences(Path.Combine(profile, "Preferences"));
+                if (!installed.Installed)
+                    installed = InspectPreferences(Path.Combine(profile, "Secure Preferences"));
                 results.Add(new BrowserProfile(browser, executable, dataDir, Path.GetFileName(profile),
                     installed.Installed, installed.Enabled, installed.Id, installed.Version));
             }
@@ -109,22 +111,74 @@ internal static class BrowserHelperBootstrap
             {
                 if (item.Value.ValueKind != JsonValueKind.Object) continue;
                 var setting = item.Value;
-                if (!setting.TryGetProperty("manifest", out var manifest)
-                    || manifest.ValueKind != JsonValueKind.Object || !IsYanziManifest(manifest))
-                    continue;
-                var version = manifest.TryGetProperty("version", out var v) && v.ValueKind == JsonValueKind.String
-                    ? v.GetString() : null;
-                var enabled = setting.TryGetProperty("state", out var state)
-                              && state.ValueKind == JsonValueKind.Number && state.TryGetInt32(out var value)
-                              && value == 1;
-                return (true, enabled, item.Name, version);
+                string? version = null;
+                bool isYanzi = false;
+                if (setting.TryGetProperty("manifest", out var manifest)
+                    && manifest.ValueKind == JsonValueKind.Object)
+                {
+                    isYanzi = IsYanziManifest(manifest);
+                    if (isYanzi && manifest.TryGetProperty("version", out var v)
+                        && v.ValueKind == JsonValueKind.String)
+                        version = v.GetString();
+                }
+                else if (setting.TryGetProperty("path", out var unpackedPath)
+                         && unpackedPath.ValueKind == JsonValueKind.String)
+                {
+                    // Edge may record unpacked extensions only in "Secure Preferences",
+                    // without a manifest or state property. Verify their real package identity.
+                    var file = Path.Combine(unpackedPath.GetString() ?? "", "manifest.json");
+                    if (File.Exists(file))
+                    {
+                        using var package = JsonDocument.Parse(File.ReadAllText(file));
+                        isYanzi = IsYanziManifest(package.RootElement);
+                        if (isYanzi && package.RootElement.TryGetProperty("version", out var v)
+                            && v.ValueKind == JsonValueKind.String)
+                            version = v.GetString();
+                    }
+                }
+                if (!isYanzi) continue;
+
+                var explicitDisabled = setting.TryGetProperty("state", out var state)
+                                       && state.ValueKind == JsonValueKind.Number
+                                       && state.TryGetInt32(out var stateValue) && stateValue != 1;
+                var disableReasons = setting.TryGetProperty("disable_reasons", out var reasons)
+                                     && reasons.ValueKind == JsonValueKind.Number
+                                     && reasons.TryGetInt32(out var reasonValue) && reasonValue != 0;
+                return (true, !explicitDisabled && !disableReasons, item.Name, version);
             }
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException
+                                  or ArgumentException)
         {
-            // Chrome/Edge can write Preferences concurrently. Treat unreadable data as unknown.
+            // The browser can update these files concurrently; an unreadable profile is unknown.
         }
         return default;
+    }
+
+    /// <summary>
+    /// Writes a public, port-only connection hint alongside the unpacked extension.
+    /// No API token, password or private user setting is copied into the browser package.
+    /// </summary>
+    internal static string WriteRuntimeConfiguration(int port, string? destinationOverride = null)
+    {
+        if (port is < 1 or > 65535) throw new ArgumentOutOfRangeException(nameof(port));
+        var directory = destinationOverride ?? StableDirectory;
+        if (!File.Exists(Path.Combine(directory, "manifest.json")))
+            throw new FileNotFoundException("浏览器助手稳定目录尚未初始化。");
+        var path = Path.Combine(directory, "yanzi-connection.json");
+        var contents = JsonSerializer.Serialize(new { apiPort = port });
+        if (File.Exists(path) && File.ReadAllText(path) == contents) return path;
+        var temp = path + ".tmp-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            File.WriteAllText(temp, contents, new UTF8Encoding(false));
+            File.Move(temp, path, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temp)) File.Delete(temp);
+        }
+        return path;
     }
 
     private static string? FindExecutable(string exeName, params string[] relative)
