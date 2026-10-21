@@ -8,6 +8,7 @@ import {sanitizeNetworkEvidence, classifyJobNetwork, isAllowedProgressStage} fro
 import { createOriginBinding, validateFeedbackRequest, makeFeedbackTask } from './origin-routing.mjs';
 import { DeliveryLedger } from './delivery-ledger.mjs';
 import { createBrowserWake } from './browser-wake.mjs';
+import { agentContext, bootstrapTask, verifyBootstrapAck } from './agent-context.mjs';
 import { listBrowserCapabilities, resolveBrowserCapability } from './capability-registry.mjs';
 import { handleDeliveryApi } from './delivery-api.mjs';
 import { validateSubagentCreate, validateSubagentMessage, childIdentityFromReply, createSubagentRecord, makeContinuationTask, makeParentSummary, validateManagedParentCreate, createManagedParentRecord, makeManagedParentReturnTask } from './subagent-routing.mjs';
@@ -155,6 +156,12 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
   const parentWaiters=new Set();
   for (const job of state.jobs) if (job.status === 'running') Object.assign(job, { status: 'interrupted', message: '服务重启；请求可能已发送，请先查看聊天，未自动重试', completedAt: now() });
   for (const agent of state.subagents) {
+    if(agent.status==='bootstrapping' && agent.bootstrap?.jobId) {
+      const job=state.jobs.find(j=>j.id===agent.bootstrap.jobId);
+      if(job && ['interrupted','timeout','error'].includes(job.status)) {
+        agent.status='needs_review';agent.bootstrap.status='needs_review';
+      }
+    }
     if (['starting','working'].includes(agent.status)) {
       const current=state.jobs.find(job=>job.id===agent.lastJobId);
       if (current?.status !== 'queued')
@@ -162,6 +169,12 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
     }
   }
   for(const parent of state.managedParents) {
+    if(parent.status==='bootstrapping' && parent.bootstrap?.jobId) {
+      const job=state.jobs.find(j=>j.id===parent.bootstrap.jobId);
+      if(job && ['interrupted','timeout','error'].includes(job.status)) {
+        parent.status='needs_review';parent.bootstrap.status='needs_review';
+      }
+    }
     if (['starting','processing'].includes(parent.status)) {
       const pending=state.jobs.find(job=>job.id===parent.lastJobId);
       if(pending?.status!=='queued')parent.status='needs_review';
@@ -283,6 +296,25 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
       message,
       completedAt: now()
     });
+    // Bootstrap has a separate source and cannot recursively re-bootstrap.
+    // Uncertain sends never get retried without a reconciliation step.
+    if(entry.job.source.startsWith('agent-bootstrap:')) {
+      const [,kind,id]=entry.job.source.split(':');
+      const record=kind==='supervisor'
+        ? state.managedParents.find(p=>p.id===id)
+        : state.subagents.find(a=>a.id===id);
+      if(record?.bootstrap?.jobId===jobId) {
+        const sameIdentity=status==='success' &&
+          data?.url?.split(/[?#]/)[0].replace(/\/$/,'')===record.url &&
+          data?.conversationId===record.conversationId && data?.temporary===false;
+        const confirmed=sameIdentity && verifyBootstrapAck(data?.text,id);
+        record.bootstrap.status=confirmed?'confirmed':'needs_review';
+        record.bootstrap.completedAt=now();
+        record.bootstrap.error=confirmed?null:(message || 'bootstrap_ack_or_identity_missing');
+        record.status=confirmed?'ready':'needs_review';
+        if(confirmed && kind==='supervisor')flushManagedParentPending(record);
+      }
+    }
     if (entry.job.source.startsWith('managed-parent:') ||
         entry.job.source.startsWith('managed-parent-return:')) {
       const isDelivery=entry.job.source.startsWith('managed-parent-return:');
@@ -305,6 +337,19 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
             entry.job.message='managed_parent_identity_unverified';
           }
         } else parent.status='needs_review';
+        if(!isDelivery && parent.status==='ready' && parent.bootstrap?.enabled &&
+           !parent.bootstrap.jobId) {
+          try {
+            const task=bootstrapTask(agentContext('supervisor',parent));
+            const bootJob=enqueue(task,'agent-bootstrap:supervisor:'+parent.id,{deferPump:true});
+            parent.bootstrap.jobId=bootJob.id;
+            parent.bootstrap.status='queued';
+            parent.status='bootstrapping';
+          } catch(error) {
+            parent.bootstrap.status='needs_review';parent.bootstrap.error=error.message;
+            parent.status='needs_review';
+          }
+        }
         if(!isDelivery && parent.status==='ready')flushManagedParentPending(parent);
         if(isDelivery) {
           const delivery=parent.deliveries.find(d=>d.returnJobId===jobId);
@@ -338,6 +383,20 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
           }
         } else {
           agent.status='needs_review'; // Submission may have reached the page.
+        }
+        if(jobId===agent.initialJobId && agent.status==='ready' &&
+           agent.bootstrap?.enabled && !agent.bootstrap.jobId) {
+          try {
+            const parent=state.managedParents.find(p=>p.id===agent.parentManagedId);
+            const task=bootstrapTask(agentContext('child',agent,parent));
+            const bootJob=enqueue(task,'agent-bootstrap:child:'+agent.id,{deferPump:true});
+            agent.bootstrap.jobId=bootJob.id;
+            agent.bootstrap.status='queued';
+            agent.status='bootstrapping';
+          } catch(error) {
+            agent.bootstrap.status='needs_review';agent.bootstrap.error=error.message;
+            agent.status='needs_review';
+          }
         }
         if(agent.parentOriginId && !agent.rounds.find(r=>r.jobId===jobId)?.returnJobId)
           enqueueSubagentReturn(agent,entry.job);
@@ -545,7 +604,7 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
   }
 
   function parseManagedParentIdentity(parent) {
-    return parent?.conversationId && parent?.url && !['needs_review'].includes(parent.status);
+    return parent?.conversationId && parent?.url && ['ready','processing'].includes(parent.status);
   }
 
   function flushManagedParentPending(parent) {
@@ -723,13 +782,30 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
           hasMore:events.length===100
         });
       }
+      const contextRoute=/^\/api\/agents\/([0-9a-f-]{36})\/context$/.exec(path);
+      if(contextRoute && req.method==='GET') {
+        const id=contextRoute[1];
+        const parent=state.managedParents.find(p=>p.id===id);
+        const child=state.subagents.find(a=>a.id===id);
+        if(!parent && !child)return reply(404,{error:'agent_not_found'});
+        return reply(200,agentContext(parent?'supervisor':'child',parent||child));
+      }
+      if(req.method==='GET' && path==='/api/agents') {
+        return reply(200,[
+          ...state.managedParents.map(p=>({id:p.id,role:'supervisor',status:p.status,
+            url:p.url,bootstrap:p.bootstrap||null})),
+          ...state.subagents.map(a=>({id:a.id,role:'child',status:a.status,
+            parentAgentId:a.parentManagedId||null,url:a.url,bootstrap:a.bootstrap||null}))
+        ]);
+      }
       if(req.method==='GET' && path==='/api/managed-parents')
         return reply(200,state.managedParents.slice().reverse());
       if(req.method==='POST' && path==='/api/managed-parents') {
         const input=validateManagedParentCreate(await body(req));
         const prior=state.managedParentRequests.find(r=>r.requestKey===input.requestKey);
         if(prior) {
-          if(prior.prompt!==input.prompt)throw new Error('managed_parent_request_key_conflict');
+          if(prior.prompt!==input.prompt || Boolean(prior.bootstrap)!==input.bootstrap)
+            throw new Error('managed_parent_request_key_conflict');
           const parent=state.managedParents.find(p=>p.id===prior.parentId);
           return reply(parent?200:410,parent||{error:'managed_parent_history_expired'});
         }
@@ -741,7 +817,7 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
         job.source='managed-parent:'+parent.id;
         state.managedParents.push(parent);
         state.managedParentRequests.push({requestKey:input.requestKey,
-          parentId:parent.id,prompt:input.prompt});
+          parentId:parent.id,prompt:input.prompt,bootstrap:input.bootstrap});
         persist();pump();
         return reply(202,parent);
       }
@@ -766,6 +842,7 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
           const parent=state.managedParents.find(p=>p.id===payload.parentManagedId);
           if(!parent)throw new Error('managed_parent_not_found');
           if(payload.parentOriginId)throw new Error('choose_managed_parent_or_origin_not_both');
+          if(parent.bootstrap?.enabled)payload.bootstrap=true;
           if(payload.parentTaskId && payload.parentTaskId!==parent.taskId)
             throw new Error('managed_parent_task_id_conflict');
           payload.parentTaskId=parent.taskId;
@@ -775,7 +852,8 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
           if(previous.prompt!==payload.prompt ||
               previous.parentOriginId!==payload.parentOriginId ||
               (previous.parentTaskId||null)!==(payload.parentTaskId||null) ||
-              (previous.parentManagedId||null)!==(payload.parentManagedId||null))
+              (previous.parentManagedId||null)!==(payload.parentManagedId||null) ||
+              Boolean(previous.bootstrap)!==Boolean(payload.bootstrap))
             throw new Error('subagent_request_key_conflict');
           const agent=state.subagents.find(a=>a.id===previous.subagentId);
           return reply(agent?200:410,agent||{error:'subagent_history_expired'});
@@ -797,7 +875,7 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
         state.subagentRequests.push({requestKey:payload.requestKey,
           subagentId:agent.id,prompt:payload.prompt,
           parentOriginId:payload.parentOriginId,parentTaskId:payload.parentTaskId,
-          parentManagedId:payload.parentManagedId});
+          parentManagedId:payload.parentManagedId,bootstrap:payload.bootstrap});
         persist();
         emitParentEvent(agent,job,'subagent_dispatched');
         pump();

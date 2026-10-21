@@ -20,6 +20,8 @@ export function validateSubagentCreate(input) {
     throw new Error('subagent_parent_origin_invalid');
   if (input.title != null && (typeof input.title !== 'string' || input.title.length > 140))
     throw new Error('subagent_title_invalid');
+  if (input.bootstrap != null && typeof input.bootstrap !== 'boolean')
+    throw new Error('subagent_bootstrap_invalid');
   if (input.timeoutSeconds != null &&
       (!Number.isInteger(input.timeoutSeconds) || (input.timeoutSeconds !== 0 &&
         (input.timeoutSeconds < 10 || input.timeoutSeconds > 1200))))
@@ -30,7 +32,8 @@ export function validateSubagentCreate(input) {
     parentOriginId: input.parentOriginId || null,
     parentTaskId: input.parentTaskId || null,
     parentManagedId: input.parentManagedId || null,
-    timeoutSeconds: input.timeoutSeconds ?? 180
+    timeoutSeconds: input.timeoutSeconds ?? 180,
+    bootstrap: input.bootstrap ?? false
   };
 }
 
@@ -58,7 +61,9 @@ export function createSubagentRecord(input, jobId, now = Date.now()) {
     id: randomUUID(), title: input.title, parentOriginId: input.parentOriginId,
     parentTaskId: input.parentTaskId, parentManagedId: input.parentManagedId,
     createdAt: now, status: 'starting', initialJobId: jobId, lastJobId: jobId,
-    tabId: null, url: null, conversationId: null, rounds: [{jobId, round: 1, startedAt:now}]
+    tabId: null, url: null, conversationId: null,
+    bootstrap: {enabled:Boolean(input.bootstrap),status:input.bootstrap?'awaiting_url':'disabled',jobId:null,version:1},
+    rounds: [{jobId, round: 1, startedAt:now}]
   };
 }
 
@@ -105,8 +110,11 @@ export function validateManagedParentCreate(input) {
     throw new Error('managed_parent_prompt_invalid');
   if (input.title != null && (typeof input.title !== 'string' || input.title.length > 140))
     throw new Error('managed_parent_title_invalid');
+  if(input.bootstrap!=null && typeof input.bootstrap!=='boolean')
+    throw new Error('managed_parent_bootstrap_invalid');
   return {requestKey:input.requestKey,prompt:input.prompt.trim(),
-    title:(input.title||'燕子父 Agent').trim()||'燕子父 Agent'};
+    title:(input.title||'燕子父 Agent').trim()||'燕子父 Agent',
+    bootstrap: input.bootstrap ?? false};
 }
 
 export function createManagedParentRecord(input, jobId, timestamp=Date.now()) {
@@ -114,6 +122,7 @@ export function createManagedParentRecord(input, jobId, timestamp=Date.now()) {
   return {id,taskId:'managed-parent:'+id,title:input.title,
     createdAt:timestamp,status:'starting',initialJobId:jobId,lastJobId:jobId,
     conversationId:null,url:null,tabId:null,
+    bootstrap:{enabled:Boolean(input.bootstrap),status:input.bootstrap?'awaiting_url':'disabled',jobId:null,version:1},
     deliveries:[],lastResponse:null};
 }
 
