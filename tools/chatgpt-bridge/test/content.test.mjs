@@ -181,3 +181,28 @@ test('native rich editor insertion activates disabled send button without synthe
   assert.equal(nativeCalls,1);
   assert.equal(clicked,1);
 });
+
+test('current Chinese Copy message action marks the latest settled reply as finished', async t => {
+  const p=page(t,'<main><div role="textbox" contenteditable="true"></div><button aria-label="发送">send</button><section id="turn"></section></main>');
+  const turn=p.win.document.querySelector('#turn');
+  const send=p.win.document.querySelector('button');
+  send.onclick=()=>{
+    turn.innerHTML='<div data-chatgpt-search-unit-key="v1:user">PROMPT_CURRENT</div>'+
+      '<div data-chatgpt-search-unit-key="v1:assistant">NEW_REPLY_OK</div>'+
+      '<button aria-label="复制消息">Copy</button>';
+  };
+  const pending=p.run({action:'chatgpt_send',prompt:'PROMPT_CURRENT',timeoutSeconds:15});
+  await p.clock.tickAsync(5500);
+  const out=await pending;
+  assert.equal(out.status,'success');
+  assert.equal(out.data.text,'NEW_REPLY_OK');
+});
+
+test('current completion labels cannot make an old response count as this task', async t => {
+  const p=page(t,'<main><div role="textbox" contenteditable="true"></div><button aria-label="发送">Send</button><div data-chatgpt-search-unit-key="old:assistant">OLD_REPLY</div><button aria-label="重新生成回复">Regenerate</button></main>');
+  const pending=p.run({action:'chatgpt_send',prompt:'NEW_PROMPT',timeoutSeconds:10});
+  await p.clock.tickAsync(11000);
+  const out=await pending;
+  assert.equal(out.status,'error');
+  assert.match(out.message,/超时/);
+});

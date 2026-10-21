@@ -1,5 +1,6 @@
 (() => {
   let busy = false;
+  let lastEditorInputStatus = null;
   const inputSelector = '#prompt-textarea, main [contenteditable="true"][role="textbox"]';
   const sendSelector = 'button[data-testid="send-button"], button[aria-label="Send prompt"], button[aria-label="发送提示"], main button[aria-label="发送"], main button[aria-label="Send"]';
   const stopSelector = 'button[data-testid="stop-button"], button[aria-label="Stop generating"], button[aria-label="停止生成"], main button[aria-label="停止"], main button[aria-label="Stop"]';
@@ -187,7 +188,9 @@
     // Require an explicit action control that ChatGPT exposes only after a turn is settled.
     const actionLabels = /^(复制|Copy|重新生成|Regenerate|重试|Retry|赞|踩|Good response|Bad response|Share|分享|评价回复)$/i;
     return Array.from((document.querySelector('main') || document).querySelectorAll('button')).some(button =>
-      actionLabels.test((button.getAttribute('aria-label') || button.textContent || '').trim())
+      (actionLabels.test((button.getAttribute('aria-label') || button.textContent || '').trim()) ||
+        /^(?:复制消息|重新生成回复|朗读|Copy message|Regenerate response|Read aloud)$/i.test(
+          (button.getAttribute('aria-label') || button.textContent || '').trim()))
     );
   }
   function temporaryEvidence() {
@@ -375,6 +378,17 @@
 
   const diagnostics = () => ({
     ...meta(), title: document.title, readyState: document.readyState,
+    editor: (() => {
+      const box=document.querySelector(inputSelector);
+      const button=document.querySelector(sendSelector);
+      return {
+        visibility:document.visibilityState,documentHasFocus:document.hasFocus(),
+        focusedEditor:Boolean(box && document.activeElement===box),
+        editorChars:(box?.value || box?.innerText || box?.textContent || '').length,
+        sendPresent:Boolean(button),sendDisabled:button?.disabled ?? null,
+        lastInsertion:lastEditorInputStatus
+      };
+    })(),
     inputs: Array.from(document.querySelectorAll('textarea, [contenteditable="true"]')).map(el => ({ tag: el.tagName, id: el.id, role: el.getAttribute('role'), placeholder: el.getAttribute('placeholder') })),
     buttons: Array.from((document.querySelector('main') || document).querySelectorAll('button')).map(el => ({ label: el.getAttribute('aria-label'), testId: el.getAttribute('data-testid'), disabled: el.disabled })).slice(-20),
     notice: document.querySelector(inputSelector) ? '' : (document.querySelector('main')?.innerText || document.body.innerText || '').slice(0, 600)
@@ -593,6 +607,13 @@
           }));
           input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: task.prompt }));
         }
+        lastEditorInputStatus={
+          nativeAttempted:typeof document.execCommand==='function',
+          nativeSucceeded:nativeInserted,
+          focusedEditor:document.activeElement===input,
+          insertedChars:(input.innerText||input.textContent||'').length,
+          sendDisabledImmediately:document.querySelector(sendSelector)?.disabled??null
+        };
       }
 
       const uploadedFiles = await uploadAttachments(task.attachments, deadline);
@@ -719,6 +740,10 @@
       }
       throw new Error("等待回复超时；消息可能已发送，请查询聊天后再决定是否重试");
     } catch (error) {
+      if (error?.message?.includes('等待发送按钮超时')) {
+        error.code='send_button_unavailable';
+        error.deliveryPhase=messageSubmitted?'after_send':'before_send';
+      }
       if (error?.code === 'account_load_failed') {
         error.deliveryPhase = messageSubmitted ? 'after_send' : 'before_send';
         if (messageSubmitted) error.message += '；消息可能已发送，禁止自动刷新或重发';
