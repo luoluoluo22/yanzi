@@ -35,6 +35,10 @@ npm ci
 {"action":"chatgpt_send","prompt":"只回复：后台测试成功","newChat":true,"timeoutSeconds":180}
 ```
 
+## Agent 元信息注册与回传（0.3.5）
+
+面向托管主管和子 Agent 的身份注册、验证后一次性 Bootstrap、Agent Context SDK、自身身份查询和 ChatGPT 同账号写任务串行调度见 [AGENT_CONTEXT.md](./AGENT_CONTEXT.md)。新模式创建托管主管时传 `bootstrap:true`；旧 API 仍保持默认兼容。初始消息建议只做会话注册，等拿到身份信息后再执行涉及自身路由的脚本任务。
+
 ## OpenCLI 风格能力网关（0.3.1）
 
 新接口 `GET /api/capabilities` 提供真实可执行的网站能力目录及参数结构；`POST /api/capabilities/execute` 按 `site.command` 或 `capability` 提交异步任务，复用现有 `/api/jobs/{id}` 轮询、认证、权限及并发锁，不提供任意网页脚本执行能力。首批支持 `chatgpt.ask`、`chatgpt.read`、`chatgpt.new`、`chatgpt.status`、`chatgpt.image`、`chatgpt.images`、`chatgpt.cleanup`，不虚报尚未实现的模型切换或第三方网站写入。完整请求示例与扩展约束见 [CAPABILITIES.md](./CAPABILITIES.md)。

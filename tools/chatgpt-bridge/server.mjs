@@ -124,7 +124,7 @@ export function validateTask(input) {
     newChat: input.newChat, temporary, tabPolicy: input.tabPolicy || 'reuse', closeAfter: input.closeAfter === true, includePageSnapshot: input.includePageSnapshot === true, durationMs: input.action === 'chatgpt_network_probe' ? (input.durationMs ?? 4000) : undefined, publicProbe:input.action === 'chatgpt_network_probe' && input.publicProbe === true, timeoutSeconds: input.timeoutSeconds ?? (input.action === 'chatgpt_image' ? 900 : 180) };
 }
 
-export async function createBridge({ port = 53921, directory, now = Date.now, allowTestSocket = false, enableDeliveryLedger = false, integrationVerifier = null, browserWake } = {}) {
+export async function createBridge({ port = 53921, directory, now = Date.now, allowTestSocket = false, enableDeliveryLedger = false, integrationVerifier = null, browserWake, maxChatGptWrites = null } = {}) {
   // Production-only default. Inject a fake in tests; never launch from port-zero tests.
   const wake = browserWake === undefined
     ? (port === 53921 && !allowTestSocket ? createBrowserWake() : null)
@@ -181,6 +181,18 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
     }
   }
   const MAX_CONCURRENT_JOBS = 4;
+  // ChatGPT's shared account composer may disable Send in other tabs while a
+  // request is generating. Keep provider writes serial in production, while
+  // allowing reads and other independent operations to use the existing pool.
+  const CHATGPT_WRITE_LIMIT = maxChatGptWrites == null
+    ? (allowTestSocket ? 4 : 1)
+    : maxChatGptWrites;
+  if(!Number.isInteger(CHATGPT_WRITE_LIMIT) || CHATGPT_WRITE_LIMIT < 1 ||
+     CHATGPT_WRITE_LIMIT > MAX_CONCURRENT_JOBS)
+    throw new Error('invalid_chatgpt_write_limit');
+  const isChatGptWrite = item =>
+    ['chatgpt_send','chatgpt_feedback_send','chatgpt_subagent_continue','chatgpt_image']
+      .includes(item?.task?.action);
   let socket = null, extensionVersion = null;
   const activeJobs = new Map();
   let origin;
@@ -414,11 +426,31 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
   function pump() {
     if (socket?.readyState !== WebSocket.OPEN) return;
 
+    // A failed supervisor cannot accept queued child summaries. Park those
+    // deliveries explicitly rather than leaving a permanent queued head.
+    let blocked=false;
+    for(const job of state.jobs) {
+      if(job.status!=='queued' || !job.source.startsWith('managed-parent-return:'))
+        continue;
+      const parentId=job.source.slice('managed-parent-return:'.length).split(':')[0];
+      const parent=state.managedParents.find(p=>p.id===parentId);
+      if(parent?.status==='needs_review') {
+        job.status='needs_review';job.completedAt=now();
+        job.message='parent_needs_review_delivery_not_sent';
+        const delivery=parent.deliveries.find(d=>d.returnJobId===job.id);
+        if(delivery){delivery.status='needs_review';delivery.error=job.message;}
+        blocked=true;
+      }
+    }
+    if(blocked)persist();
+
     while (activeJobs.size < MAX_CONCURRENT_JOBS) {
       // One pending message at a time per managed parent. If the parent is
       // initializing or its last result is uncertain, leave delivery queued.
+      const activeWrites=[...activeJobs.values()].filter(e=>isChatGptWrite(e.job)).length;
       const job = state.jobs.find(item => {
         if(item.status!=='queued')return false;
+        if(isChatGptWrite(item) && activeWrites>=CHATGPT_WRITE_LIMIT)return false;
         if(!item.source.startsWith('managed-parent-return:'))return true;
         const parentId=item.source.slice('managed-parent-return:'.length).split(':')[0];
         const parent=state.managedParents.find(p=>p.id===parentId);

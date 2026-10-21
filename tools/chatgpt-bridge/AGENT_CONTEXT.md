@@ -81,3 +81,19 @@ app directory. Never copy that token or browser cookies into the prompt.
 - Explicitly chosen saved conversations are required. Temporary chats are not
   valid durable agent identities.
 - Existing legacy created agents without bootstrap remain backward-compatible.
+
+## Shared ChatGPT account write concurrency (Bridge 0.3.5)
+
+Production Bridge limits *ChatGPT website writes* to **one active browser write**
+across its owned tabs. Multiple registered agents and read-only jobs still
+coexist. This is necessary because ChatGPT's web composer can leave Send and
+other controls disabled in sibling tabs while another conversation is
+generating. The historic pool remains four slots for read-only and independent
+work; isolated tests can override `maxChatGptWrites`. This is **per local
+Bridge/account**, not a distributed lock across several devices logged into the
+same account. A future cross-device coordinator must acquire a per-account
+lease if shared accounts span PCs.
+
+When a supervisor becomes `needs_review`, any queued result delivery
+targeting it is marked `needs_review` rather than remaining in `queued`
+forever. No uncertain submission is automatically retried.
