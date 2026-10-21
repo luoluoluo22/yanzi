@@ -159,3 +159,25 @@ test('subagent continuation checks expected conversation before submitting',asyn
   assert.equal(result.status,'error');
   assert.equal(p.win.document.querySelector('#prompt-textarea').textContent,'');
 });
+
+test('native rich editor insertion activates disabled send button without synthetic DOM draft', async t => {
+  const p=page(t,'<main><div role="textbox" contenteditable="true"></div><button aria-label="发送" disabled>send</button></main>');
+  const input=p.win.document.querySelector('[role="textbox"]');
+  const button=p.win.document.querySelector('button');
+  let nativeCalls=0,clicked=0;
+  p.win.document.execCommand=(action,showUi,text)=>{
+    assert.equal(action,'insertText');
+    nativeCalls++;
+    input.textContent=text;
+    button.disabled=false; // Stateful editor enables Send from a native input update.
+    return true;
+  };
+  button.onclick=()=>{clicked++;add(p.win,'user','TEXT_NATIVE_OK');add(p.win,'assistant','ACK_NATIVE_OK');};
+  const pending=p.run({action:'chatgpt_send',prompt:'TEXT_NATIVE_OK',temporary:false,timeoutSeconds:20});
+  await p.clock.tickAsync(5000);
+  const result=await pending;
+  assert.equal(result.status,'success');
+  assert.equal(result.data.text,'ACK_NATIVE_OK');
+  assert.equal(nativeCalls,1);
+  assert.equal(clicked,1);
+});

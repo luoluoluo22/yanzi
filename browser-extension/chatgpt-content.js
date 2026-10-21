@@ -573,14 +573,27 @@
         // ChatGPT restores the same draft across new tabs. Submit only the exact requested text.
       } else if (input.tagName === "TEXTAREA") {
         Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(input, task.prompt);
+        input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: task.prompt }));
       } else {
-        input.replaceChildren(...task.prompt.split("\n").map(line => {
-          const p = document.createElement("p");
-          p.textContent = line || "\u200b";
-          return p;
-        }));
+        // ChatGPT uses a stateful contenteditable editor (Lexical/ProseMirror).
+        // Direct replaceChildren + untrusted InputEvent can leave Send disabled
+        // even though text is visibly present. Browser-native insertText emits
+        // the editor's real input event and updates its application state.
+        input.focus();
+        let nativeInserted = false;
+        try {
+          if (typeof document.execCommand === "function")
+            nativeInserted = document.execCommand("insertText", false, task.prompt) === true;
+        } catch { /* older WebViews may not support native contenteditable input */ }
+        if (!nativeInserted) {
+          input.replaceChildren(...task.prompt.split("\n").map(line => {
+            const p = document.createElement("p");
+            p.textContent = line || "\u200b";
+            return p;
+          }));
+          input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: task.prompt }));
+        }
       }
-      input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: task.prompt }));
 
       const uploadedFiles = await uploadAttachments(task.attachments, deadline);
 

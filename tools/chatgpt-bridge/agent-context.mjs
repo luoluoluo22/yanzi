@@ -33,19 +33,20 @@ export function bootstrapTask(context) {
   const parsed = parseConversationUrl(context.conversationUrl);
   if (!parsed || parsed.conversationId !== context.conversationId) throw new Error('bootstrap_url_invalid');
   const payload = { ...context, bootstrap: { ...context.bootstrap, status: 'registered' } };
-  const message = [
-    '[YANZI_AGENT_BOOTSTRAP_V1]',
-    '你现在是燕子托管的 Agent。以下元信息来自本地 Agent Registry，是你自己的稳定身份。',
-    '本消息不是用户的新任务；不要再次派生子任务，也不要自行重复发回此初始化消息。',
-    JSON.stringify(payload, null, 2),
-    '在你的后续脚本中，必须使用上方 agentId 来指明自身身份；不能用当前活跃标签页猜测。',
-    '查询自身元信息：GET http://127.0.0.1:53921/api/agents/' + context.agentId + '/context',
-    '本机调用要通过已获授权的燕子/浣熊执行器，并使用 Bridge 的本地鉴权。不要在网页输出或转发密钥。',
-    context.role === 'supervisor'
-      ? '派发子 Agent：POST /api/subagents 并填入 parentManagedId=' + context.agentId + '，bootstrap=true；子任务完成后燕子自动汇总并返回当前对话。'
-      : '你的父级 agentId=' + (context.parentAgentId || '未绑定') + '；由燕子根据任务关系将完成事件回传父级，不需要你猜测父聊天 URL。',
-    '确认已读取身份后只回复 YANZI_BOOTSTRAP_ACK:' + context.agentId
-  ].join('\n');
+  // Single-line text prevents some ChatGPT rich-text editors from losing the
+  // send-button state when many paragraph nodes are inserted programmatically.
+  // Full authoritative context stays queryable via the local Agent Registry.
+  const compact = {
+    agentId:context.agentId,role:context.role,taskId:context.taskId,
+    conversationId:context.conversationId,conversationUrl:context.conversationUrl,
+    parentAgentId:context.parentAgentId,replyTo:context.replyTo,
+    capabilities:context.capabilities
+  };
+  const message =
+    '[YANZI_AGENT_BOOTSTRAP_V1] 此消息只注册你的身份，不派生任务。元信息=' +
+    JSON.stringify(compact) + '。查询完整身份：GET http://127.0.0.1:53921/api/agents/' +
+    context.agentId + '/context，必须通过已授权的本地燕子/浣熊工具，禁止泄露密钥。' +
+    '子任务结果由燕子按 parentAgentId 自动返回。只回复 YANZI_BOOTSTRAP_ACK:' + context.agentId;
   return {
     action: 'chatgpt_subagent_continue',
     prompt: message,
