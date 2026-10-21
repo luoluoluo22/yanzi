@@ -31,6 +31,19 @@ try
     File.WriteAllText(prefs, "invalid-json");
     Assert(!BrowserHelperBootstrap.InspectPreferences(prefs).Installed, "invalid profile does not crash");
 
+    // Edge Secure Preferences can omit manifest and state, but keeps the verified unpacked path.
+    var secureDirectory = Path.Combine(root, "secure-unpacked");
+    Directory.CreateDirectory(secureDirectory);
+    File.WriteAllText(Path.Combine(secureDirectory, "manifest.json"),
+        "{\\\"name\\\":\\\"燕子浏览器助手 (Yanzi Browser Helper)\\\",\\\"version\\\":\\\"0.5.63\\\"}");
+    WritePrefs(new Dictionary<string, object> {
+        ["secureedgeextension"] = new { path = secureDirectory, location = 4, disable_reasons = 0 }
+    });
+    var secure = BrowserHelperBootstrap.InspectPreferences(prefs);
+    Assert(secure.Installed && secure.Enabled && secure.Version == "0.5.63", "Edge unpacked extension detected without embedded manifest or state");
+    File.WriteAllText(Path.Combine(secureDirectory, "manifest.json"), "{\\\"name\\\":\\\"Unrelated extension\\\"}");
+    Assert(!BrowserHelperBootstrap.InspectPreferences(prefs).Installed, "unrelated unpacked extension ignored");
+
     var source = Path.Combine(root, "package");
     var target = Path.Combine(root, "stable");
     Directory.CreateDirectory(source);
@@ -38,6 +51,11 @@ try
     File.WriteAllText(Path.Combine(source, "background.js"), "const a=1;");
     var result = BrowserHelperBootstrap.EnsureStableBundle(source, target);
     Assert(result == target && File.Exists(Path.Combine(target, "background.js")), "package deployed to stable directory");
+    var configPath = BrowserHelperBootstrap.WriteRuntimeConfiguration(42980, target);
+    Assert(JsonDocument.Parse(File.ReadAllText(configPath)).RootElement.GetProperty("apiPort").GetInt32() == 42980,
+        "current desktop API port exported without credentials");
+    BrowserHelperBootstrap.WriteRuntimeConfiguration(42980, target);
+    Assert(File.ReadAllText(configPath) == "{\\\"apiPort\\\":42980}", "port configuration remains idempotent");
     var hash1 = File.ReadAllText(Path.Combine(target, ".yanzi-bundle-sha256"));
     BrowserHelperBootstrap.EnsureStableBundle(source, target);
     Assert(File.ReadAllText(Path.Combine(target, ".yanzi-bundle-sha256")) == hash1 && !Directory.Exists(target + ".previous"), "same bundle is idempotent");
