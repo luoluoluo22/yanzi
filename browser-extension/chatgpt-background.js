@@ -650,6 +650,54 @@ async function runChatGptTask(task) {
         type: "yanzi_chatgpt_task",
         task
       });
+      // Reload only a Yanzi-owned, inactive NEW conversation whose content
+      // script explicitly proved that no send was attempted. Never retry a
+      // failed/uncertain in-flight response, manual tab or bound parent chat.
+      let accountRefreshes = 0;
+      const isPreSendAccountFailure = item =>
+        item?.status === "error" && item.errorCode === "account_load_failed" &&
+        item.deliveryPhase === "before_send";
+      while (isPreSendAccountFailure(response) && accountRefreshes < 2) {
+        const current = await chrome.tabs.get(tab.id);
+        if (!freshChat || task.tabId != null || !owns(current) ||
+            current.active || current.pinned || current.discarded ||
+            !/^https:\/\/chatgpt\.com\//.test(current.url || "")) break;
+        // Re-check the actual page, rather than trusting a stale response.
+        const [probe] = await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: () => {
+            if (document.querySelector('#prompt-textarea, main [contenteditable="true"][role="textbox"]')) return false;
+            const main = document.querySelector("main") || document.body;
+            return /无法加载你的账户|无法加载您的账户|Unable to load your account|Couldn't load your account|We couldn't load your account/i
+              .test((main?.innerText || main?.textContent || "").slice(0, 1200));
+          }
+        });
+        if (probe?.result !== true) break;
+        await new Promise(resolve => setTimeout(resolve, 1200 * (accountRefreshes + 1)));
+        const beforeReload = await chrome.tabs.get(tab.id);
+        if (beforeReload.active || beforeReload.pinned || !owns(beforeReload) ||
+            beforeReload.url !== current.url) break;
+        await chrome.tabs.reload(tab.id);
+        accountRefreshes++;
+        await waitChatGptTab(tab.id);
+        await withChatGptPageScriptTimeout(() => chrome.scripting.executeScript({
+          target: { tabId: tab.id }, files: ["chatgpt-content.js"]
+        }), 12000);
+        response = await chrome.tabs.sendMessage(tab.id, {
+          type: "yanzi_chatgpt_task", task
+        });
+      }
+      if (accountRefreshes) {
+        response = {
+          ...response,
+          data: { ...(response?.data || {}), accountPageRecovery: { refreshes: accountRefreshes,
+            recovered: response?.status === "success" } },
+          ...(isPreSendAccountFailure(response) ? {
+            message: "ChatGPT 账户页面自动刷新 " + accountRefreshes +
+              " 次后仍加载失败；未发送消息，请检查浏览器账户状态"
+          } : {})
+        };
+      }
     } catch (error) {
       if (task.action !== "chatgpt_send" ||
           !/message channel closed before a response|message port closed before a response|Extension context invalidated/i.test(error?.message || ""))

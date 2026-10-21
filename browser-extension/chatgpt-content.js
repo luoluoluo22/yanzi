@@ -392,6 +392,15 @@
   if (globalThis.__yanziChatGptInstalled) return;
   globalThis.__yanziChatGptInstalled = true;
   function checkPage() {
+    // Identify the account failure screen before waiting for a missing composer.
+    const main = document.querySelector('main') || document.body;
+    const accountNotice = (main?.innerText || main?.textContent || '').slice(0, 1200);
+    if (!document.querySelector(inputSelector) &&
+        /无法加载你的账户|无法加载您的账户|Unable to load your account|Couldn't load your account|We couldn't load your account/i.test(accountNotice)) {
+      const error = new Error('ChatGPT 无法加载账户页面，请刷新后重试；如持续失败，请检查登录状态');
+      error.code = 'account_load_failed';
+      throw error;
+    }
     if (document.querySelector('a[href*="/auth/login"], button[data-testid="login-button"]')) throw new Error("ChatGPT 未登录，请在浏览器中登录");
     if (document.querySelector('iframe[src*="challenges.cloudflare.com"], #challenge-running')) throw new Error("ChatGPT 需要人工完成验证");
   }
@@ -511,6 +520,8 @@
   async function execute(task) {
     if (busy) throw new Error("页面正在执行其他请求");
     busy = true;
+    // Only a strictly pre-send account error can be safely retried.
+    let messageSubmitted = false;
     try {
       const defaultTimeoutSeconds = task.action === "chatgpt_image" ? 900 : 180;
       const requestedTimeoutSeconds = Number(task.timeoutSeconds);
@@ -583,6 +594,7 @@
         if (currentId !== task.expectedConversationId || temporaryEvidence())
           throw new Error("发送前对话已切换，反馈未发送");
       }
+      messageSubmitted = true;
       send.click();
       await waitFor(() => {
         const currentMessages = messages();
@@ -693,12 +705,21 @@
         await pause(500);
       }
       throw new Error("等待回复超时；消息可能已发送，请查询聊天后再决定是否重试");
+    } catch (error) {
+      if (error?.code === 'account_load_failed') {
+        error.deliveryPhase = messageSubmitted ? 'after_send' : 'before_send';
+        if (messageSubmitted) error.message += '；消息可能已发送，禁止自动刷新或重发';
+      }
+      throw error;
     } finally { busy = false; }
   }
   chrome.runtime.onMessage.addListener((message, sender, respond) => {
     if (message.type !== "yanzi_chatgpt_task" || message.task.action === 'chatgpt_messages') return;
     execute(message.task).then(data => respond({ status: "success", data }))
-      .catch(error => respond({ status: "error", data: { diagnostics: diagnostics() }, message: error.message }));
+      .catch(error => respond({ status: "error", data: { diagnostics: diagnostics() },
+        ...(error?.code ? { errorCode: error.code } : {}),
+        ...(error?.deliveryPhase ? { deliveryPhase: error.deliveryPhase } : {}),
+        message: error.message }));
     return true;
   });
 })();

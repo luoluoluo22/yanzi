@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import {sanitizeNetworkEvidence, classifyJobNetwork, isAllowedProgressStage} from './network-evidence.mjs';
 import { createOriginBinding, validateFeedbackRequest, makeFeedbackTask } from './origin-routing.mjs';
 import { DeliveryLedger } from './delivery-ledger.mjs';
+import { createBrowserWake } from './browser-wake.mjs';
 import { listBrowserCapabilities, resolveBrowserCapability } from './capability-registry.mjs';
 import { handleDeliveryApi } from './delivery-api.mjs';
 import { validateSubagentCreate, validateSubagentMessage, childIdentityFromReply, createSubagentRecord, makeContinuationTask, makeParentSummary, validateManagedParentCreate, createManagedParentRecord, makeManagedParentReturnTask } from './subagent-routing.mjs';
@@ -122,7 +123,16 @@ export function validateTask(input) {
     newChat: input.newChat, temporary, tabPolicy: input.tabPolicy || 'reuse', closeAfter: input.closeAfter === true, includePageSnapshot: input.includePageSnapshot === true, durationMs: input.action === 'chatgpt_network_probe' ? (input.durationMs ?? 4000) : undefined, publicProbe:input.action === 'chatgpt_network_probe' && input.publicProbe === true, timeoutSeconds: input.timeoutSeconds ?? (input.action === 'chatgpt_image' ? 900 : 180) };
 }
 
-export async function createBridge({ port = 53921, directory, now = Date.now, allowTestSocket = false, enableDeliveryLedger = false, integrationVerifier = null } = {}) {
+export async function createBridge({ port = 53921, directory, now = Date.now, allowTestSocket = false, enableDeliveryLedger = false, integrationVerifier = null, browserWake } = {}) {
+  // Production-only default. Inject a fake in tests; never launch from port-zero tests.
+  const wake = browserWake === undefined
+    ? (port === 53921 && !allowTestSocket ? createBrowserWake() : null)
+    : browserWake;
+  function requestBrowserWake() {
+    if (!wake) return;
+    Promise.resolve().then(() => wake.request()).catch(error =>
+      console.warn('ChatGPT browser wake failed:', error?.message || error));
+  }
   mkdirSync(directory, { recursive: true });
   const assetsDirectory = join(directory, 'assets');
   mkdirSync(assetsDirectory, { recursive: true });
@@ -417,7 +427,10 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
     if (state.jobs.filter(j => ['queued', 'running'].includes(j.status)).length >= 100) throw new Error('待执行任务已达 100 个');
     const job = { id: randomUUID(), task, source, status: 'queued', createdAt: now() };
     state.jobs.push(job); persist();
-    if (!deferPump) pump();
+    if (!deferPump) {
+      pump();
+      if (socket?.readyState !== WebSocket.OPEN) requestBrowserWake();
+    }
     return job;
   }
   function enqueueVerifiedParentFeedback(parent, input) {
@@ -974,6 +987,8 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
   origin = `http://127.0.0.1:${server.address().port}`;
   persist();
   const timer = setInterval(tick, 1000);
+  if (state.jobs.some(job => job.status === 'queued') &&
+      socket?.readyState !== WebSocket.OPEN) requestBrowserWake();
   return { origin, token, state, tick, enqueue, close: async () => {
     clearInterval(timer);
     socket?.terminate();

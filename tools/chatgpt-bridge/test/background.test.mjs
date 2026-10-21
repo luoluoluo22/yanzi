@@ -5,9 +5,10 @@ import vm from 'node:vm';
 const source = readFileSync(new URL('../../../browser-extension/chatgpt-background.js', import.meta.url), 'utf8');
 function worker(tabs = [], options = {}) {
   tabs.forEach(tab => { tab.status ||= 'complete'; });
-  const created = [], injected = [], commands = [], removed = [], updated = [];
+  const created = [], injected = [], commands = [], removed = [], updated = [], reloaded = [];
+  let remainingAccountFailures = options.accountFailures || 0;
   const storage = { chatgptManagedTabs: options.managed || {} };
-  const context = vm.createContext({ console, URL, setTimeout: options.scriptHang || options.networkProbe ? fn => setTimeout(fn,0) : () => 0,
+  const context = vm.createContext({ console, URL, setTimeout: options.scriptHang || options.networkProbe || options.accountFailures || options.alwaysAccountError ? fn => setTimeout(fn,0) : () => 0,
     clearTimeout: () => {}, clearInterval:()=>{}, setInterval: () => 0,
     WebSocket: class { static OPEN = 1; readyState = 0; },
     chrome: {
@@ -21,20 +22,64 @@ function worker(tabs = [], options = {}) {
         get: async id => tabs.find(tab => tab.id === id),
         update: async (id, changes) => { updated.push({ id, changes }); return Object.assign(tabs.find(tab => tab.id === id), changes); },
         remove: async id => { removed.push(id); tabs.splice(tabs.findIndex(tab => tab.id === id), 1); },
-        sendMessage: async (id, task) => { commands.push({ id, task }); const tab = tabs.find(tab => tab.id === id); if (task.task.action === 'chatgpt_send') tab.url = 'https://chatgpt.com/c/test-' + id; return { status: options.failure ? 'error' : 'success', data: { text: 'OK', visibility: 'hidden', url: tab.url } }; }
+        reload: async id => { reloaded.push(id); const tab = tabs.find(tab => tab.id === id); tab.status = 'complete'; return tab; },
+        sendMessage: async (id, task) => { commands.push({ id, task }); const tab = tabs.find(tab => tab.id === id);
+          if (options.alwaysAccountError || remainingAccountFailures-- > 0) return {
+            status: 'error', errorCode: 'account_load_failed',
+            deliveryPhase: options.afterSend ? 'after_send' : 'before_send',
+            data: { diagnostics: { notice: '无法加载你的账户' } }, message: 'account failure'
+          };
+          if (task.task.action === 'chatgpt_send') tab.url = 'https://chatgpt.com/c/test-' + id;
+          return { status: options.failure ? 'error' : 'success', data: { text: 'OK', visibility: 'hidden', url: tab.url } }; }
       },
       scripting: { executeScript: async request => {
           if(options.scriptHang)return new Promise(()=>{});
-          if (request.func) return [{ result: !options.draft }];
+          if (request.func) return [{ result: options.accountFailures || options.alwaysAccountError ? true : !options.draft }];
           injected.push(request);
         } }
     }
   });
   vm.runInContext(source, context);
-  return { created, injected, commands, removed, updated, storage,
+  return { created, injected, commands, removed, updated, reloaded, storage,
     setObserver: value=>{context.yanziChatGptNetworkObserver=value;},
     run: task => context.runChatGptTask(task) };
 }
+test('owned background account failure refreshes once and retries only before send', async () => {
+  const w = worker([], { accountFailures: 1 });
+  const r = await w.run({ taskId: 'recovery-once', action: 'chatgpt_send', prompt: 'PING', timeoutSeconds: 50 });
+  assert.equal(r.status, 'success');
+  assert.deepEqual(w.reloaded, [100]);
+  assert.equal(w.commands.length, 2);
+  assert.equal(r.data.accountPageRecovery.refreshes, 1);
+  assert.equal(r.data.accountPageRecovery.recovered, true);
+});
+
+test('persistent account failure stops after two refreshes and preserves the tab', async () => {
+  const w = worker([], { alwaysAccountError: true });
+  const r = await w.run({ taskId: 'recovery-limit', action: 'chatgpt_send', prompt: 'PING', timeoutSeconds: 50 });
+  assert.equal(r.status, 'error');
+  assert.equal(w.reloaded.length, 2);
+  assert.equal(w.commands.length, 3);
+  assert.match(r.message, /自动刷新 2 次后仍加载失败/);
+  assert.deepEqual(w.removed, []);
+});
+
+test('never refresh after possible delivery, even on an owned background tab', async () => {
+  const w = worker([], { accountFailures: 1, afterSend: true });
+  const r = await w.run({ taskId: 'post-submit', action: 'chatgpt_send', prompt: 'PING' });
+  assert.equal(r.status, 'error');
+  assert.equal(w.reloaded.length, 0);
+  assert.equal(w.commands.length, 1);
+});
+
+test('never refresh a user-controlled tab with an account error', async () => {
+  const w = worker([{ id: 17, url: 'https://chatgpt.com/c/user', active: true }], { accountFailures: 1 });
+  const r = await w.run({ taskId: 'manual-tab', action: 'chatgpt_send', tabId: 17, prompt: 'PING' });
+  assert.equal(r.status, 'error');
+  assert.equal(w.reloaded.length, 0);
+  assert.equal(w.commands.length, 1);
+});
+
 test('creates inactive new-chat tab and returns its ID', async () => {
   const w = worker([{ id: 1, url: 'https://chatgpt.com/c/user' }]);
   const result = await w.run({ taskId: 'a', action: 'chatgpt_new_chat' });

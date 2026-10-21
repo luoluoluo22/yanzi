@@ -39,6 +39,16 @@ npm ci
 
 新接口 `GET /api/capabilities` 提供真实可执行的网站能力目录及参数结构；`POST /api/capabilities/execute` 按 `site.command` 或 `capability` 提交异步任务，复用现有 `/api/jobs/{id}` 轮询、认证、权限及并发锁，不提供任意网页脚本执行能力。首批支持 `chatgpt.ask`、`chatgpt.read`、`chatgpt.new`、`chatgpt.status`、`chatgpt.image`、`chatgpt.images`、`chatgpt.cleanup`，不虚报尚未实现的模型切换或第三方网站写入。完整请求示例与扩展约束见 [CAPABILITIES.md](./CAPABILITIES.md)。
 
+## 无浏览器时按任务唤醒（后台工作台 0.3.2）
+
+存在排队任务且扩展尚未连接时，Windows 版后台工作台检查 `msedge.exe` 是否在运行；如果确实未运行，寻找本机 Edge 安装路径并以最小化窗口启动 `https://chatgpt.com/`，由浏览器扩展自行重连并继续原任务。已有 Edge 进程时不重复启动；90 秒冷却防止频繁唤醒，多个同时请求共享一次检查。没有排队任务时不会启动浏览器，不会绕过账户登录、验证码或网页安全限制，也不会自动重发可能已经发送的任务。此功能保留现有本机回环鉴权。
+
+## ChatGPT 账户加载失败的安全恢复（浏览器助手 0.5.65）
+
+页面显示“无法加载你的账户 / Unable to load your account”且没有输入框时，内容脚本立即返回明确的 `account_load_failed`，而不是等待发送按钮超时。仅对燕子拥有的**非活动新建后台聊天**，并且明确确认消息尚未点击发送时，扩展最多间隔递增地刷新 2 次，刷新后重新检查页面状态与临时聊天模式。恢复次数记录在结果 `accountPageRecovery.refreshes`。仍失败则停止并提示人工检查登录状态。
+
+如果已经点击发送（结果可能不确定）、正在操作用户标签页、固定标签页、绑定的父子 Agent 对话或存在人工验证，不自动刷新或重发，避免重复消息或破坏上下文。错误页和正常聊天引用错误文案的区分、刷新上限、恢复成功与不重发均有自动化测试。
+
 ## 临时聊天（默认）
 
 浏览器助手 0.2.2 默认 `temporary:true`，新建或复用页时进入 `https://chatgpt.com/?temporary-chat=true`。发送前必须确认网页的临时聊天标题、已启用控件，或当前页面的 `Save chat` 控件与临时模式参数。URL 参数本身不算确认依据；无法确认时拒绝发送，不降级到正式聊天。回复完成时再次确认模式。
