@@ -1268,7 +1268,7 @@ public partial class MainWindow
 
             try
             {
-                foreach (var file in Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories))
+                foreach (var file in ExtensionSyncIgnorePolicy.EnumerateIncludedFiles(directory))
                 {
                     if (ExtensionPackageService.ShouldIncludeInPackage(directory, file) &&
                         File.GetLastWriteTimeUtc(file) >= cutoff)
@@ -1703,15 +1703,34 @@ public partial class MainWindow
     {
         var localVersion = (command.DeclaredVersion ?? "").Trim().TrimStart('v', 'V');
         var remoteVersion = (record.LatestVersion ?? "").Trim().TrimStart('v', 'V');
-        return Version.TryParse(localVersion, out var local) &&
-               Version.TryParse(remoteVersion, out var remote) &&
-               remote > local;
+        if (!Version.TryParse(localVersion, out var local) ||
+            !Version.TryParse(remoteVersion, out var remote))
+            return false;
+        if (remote != local) return remote > local;
+        // 同版本跨设备修改也属于新快照，不能仅按 manifest 版本跳过。
+        if (!record.HasArchive || string.IsNullOrWhiteSpace(record.ArchiveSha256)) return false;
+        try
+        {
+            var version = string.IsNullOrWhiteSpace(command.DeclaredVersion) ? "0.1.0" : command.DeclaredVersion;
+            var package = ExtensionPackageService.BuildPackage(command, version,
+                GetArchivedManifestIcon(record.ManifestJson), includeUserShortcut: false);
+            return !Convert.ToHexString(SHA256.HashData(package)).Equals(
+                record.ArchiveSha256, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"Account extension hash comparison skipped: id={command.ExtensionId}, error={ex.Message}");
+            return false;
+        }
     }
 
     private static void BackupExtensionBeforeCloudUpgrade(CommandItem command)
     {
         var source = command.ExtensionDirectoryPath;
         if (string.IsNullOrWhiteSpace(source) || !Directory.Exists(source)) return;
+        // Git worktrees will never be replaced by account packages. Avoid
+        // recursively copying the entire .git object store on every cloud pull.
+        if (ExtensionGitSafety.HasGitWorktree(source)) return;
         var id = command.ExtensionId;
         if (id != Path.GetFileName(id))
             throw new InvalidOperationException("Invalid extension ID for backup path");

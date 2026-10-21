@@ -1673,6 +1673,7 @@ public sealed partial class PersonalSyncService
             var changed = false;
             if (Directory.Exists(localDirectory))
             {
+                ExtensionGitSafety.GuardDeletion(localDirectory, "删除/清除");
                 Directory.Delete(localDirectory, recursive: true);
                 changed = true;
             }
@@ -1689,6 +1690,7 @@ public sealed partial class PersonalSyncService
         {
             if (Directory.Exists(localDirectory))
             {
+                ExtensionGitSafety.GuardDeletion(localDirectory, "删除/清除");
                 Directory.Delete(localDirectory, recursive: true);
                 return true;
             }

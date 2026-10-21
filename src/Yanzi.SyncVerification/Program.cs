@@ -143,6 +143,7 @@ if (args.Contains("--fresh-account-sync"))
     return;
 }
 
+if (args.Contains("--git-native-sync")) { GitNativeExtensionVerification.Run(); return; }
 ReleaseReadinessVerification.VerifyUninstallDataRetention();
 VerifyExtensionPackageStability();
 await PortableIconSyncVerification.RunAsync();
