@@ -35,6 +35,10 @@ npm ci
 {"action":"chatgpt_send","prompt":"只回复：后台测试成功","newChat":true,"timeoutSeconds":180}
 ```
 
+## OpenCLI 风格能力网关（0.3.1）
+
+新接口 `GET /api/capabilities` 提供真实可执行的网站能力目录及参数结构；`POST /api/capabilities/execute` 按 `site.command` 或 `capability` 提交异步任务，复用现有 `/api/jobs/{id}` 轮询、认证、权限及并发锁，不提供任意网页脚本执行能力。首批支持 `chatgpt.ask`、`chatgpt.read`、`chatgpt.new`、`chatgpt.status`、`chatgpt.image`、`chatgpt.images`、`chatgpt.cleanup`，不虚报尚未实现的模型切换或第三方网站写入。完整请求示例与扩展约束见 [CAPABILITIES.md](./CAPABILITIES.md)。
+
 ## 临时聊天（默认）
 
 浏览器助手 0.2.2 默认 `temporary:true`，新建或复用页时进入 `https://chatgpt.com/?temporary-chat=true`。发送前必须确认网页的临时聊天标题、已启用控件，或当前页面的 `Save chat` 控件与临时模式参数。URL 参数本身不算确认依据；无法确认时拒绝发送，不降级到正式聊天。回复完成时再次确认模式。

@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import {sanitizeNetworkEvidence, classifyJobNetwork, isAllowedProgressStage} from './network-evidence.mjs';
 import { createOriginBinding, validateFeedbackRequest, makeFeedbackTask } from './origin-routing.mjs';
 import { DeliveryLedger } from './delivery-ledger.mjs';
+import { listBrowserCapabilities, resolveBrowserCapability } from './capability-registry.mjs';
 import { handleDeliveryApi } from './delivery-api.mjs';
 import { validateSubagentCreate, validateSubagentMessage, childIdentityFromReply, createSubagentRecord, makeContinuationTask, makeParentSummary, validateManagedParentCreate, createManagedParentRecord, makeManagedParentReturnTask } from './subagent-routing.mjs';
 
@@ -653,6 +654,12 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
       if (path.startsWith('/api/delivery-runs')) {
         if (!deliveryLedger) return reply(404, { error: 'delivery_ledger_disabled' });
         return await handleDeliveryApi({ ledger: deliveryLedger, path, method: req.method, body: () => body(req), reply, integrationVerifier });
+      }
+      if (req.method === 'GET' && path === '/api/capabilities') return reply(200, listBrowserCapabilities());
+      if (req.method === 'POST' && path === '/api/capabilities/execute') {
+        const resolved = resolveBrowserCapability(await body(req));
+        return reply(202, { capability: resolved.capability,
+          job: enqueue(resolved.task, 'capability:' + resolved.capability) });
       }
       if (req.method === 'GET' && path === '/api/jobs') return reply(200, state.jobs.slice().reverse());
       if (req.method === 'GET' && path.startsWith('/api/jobs/')) {

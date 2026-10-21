@@ -16,7 +16,13 @@
     event: { name: '触发已注册事件', method: 'POST', path: '/api/events', body: { name: 'file.changed' }, note: '返回 jobs 列表；使用每个任务的 id 查询结果。事件数据不会拼入提示词。' },
     pause: { name: '暂停计划', method: 'PATCH', path: '/api/schedules/{id}', body: { enabled: false }, note: '把 {id} 换成计划 id。' }
   };
+  samples.capabilities = { name: '发现网站能力', method: 'GET', path: '/api/capabilities' };
+  samples.capabilityAsk = { name: '统一能力调用（ChatGPT）', method: 'POST', path: '/api/capabilities/execute',
+    body: { capability: 'chatgpt.ask', arguments: { prompt: '只回复：OK', temporary: true, closeAfter: true } },
+    note: '返回 job.id；通过 /api/jobs/{id} 查询结果。' };
   const endpoints = [
+    ['GET', '/api/capabilities', '获取网站能力及参数结构'],
+    ['POST', '/api/capabilities/execute', '统一能力调用，202 返回 job 对象'],
     ['GET', '/health', '服务和扩展连接状态（无需鉴权）'],
     ['POST', '/api/jobs', '提交任务，202 返回 id，异步执行'],
     ['GET', '/api/jobs/{id}', '查询 status、data 和 message'],
@@ -27,7 +33,8 @@
   ];
   function example(key, language) {
     const s = samples[key], json = s.body ? JSON.stringify(s.body, null, 2) : '';
-    const polls = s.path === '/api/jobs' && s.method === 'POST';
+    const polls = (s.path === '/api/jobs' || s.path === '/api/capabilities/execute') && s.method === 'POST';
+    const nestedJob = s.path === '/api/capabilities/execute';
     if (language === 'http') return `${s.method} ${base}${s.path}\nAuthorization: Bearer <从令牌文件读取>\n${s.method === 'GET' ? '' : 'X-Bridge-Request: 1\nContent-Type: application/json\n'}${json ? '\n' + json : ''}`;
     if (language === 'powershell') return String.raw`[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $base = '${base}'
@@ -38,7 +45,7 @@ ${polls ? String.raw`$deadline = (Get-Date).AddSeconds(270)
 do {
     if ((Get-Date) -gt $deadline) { throw '查询超时；请检查原任务，不要自动重新提交' }
     Start-Sleep -Seconds 1
-    $job = Invoke-RestMethod "$base/api/jobs/$($result.id)" -Headers $headers
+    $job = Invoke-RestMethod "$base/api/jobs/$(${nestedJob ? 'result.job.id' : 'result.id'})" -Headers $headers
 } while ($job.status -in @('queued', 'running'))
 if ($job.status -ne 'success') { throw ($job | ConvertTo-Json -Depth 20) }
 $job.data | ConvertTo-Json -Depth 30` : '$result | ConvertTo-Json -Depth 30'}`;
@@ -59,7 +66,7 @@ ${polls ? `deadline = time.monotonic() + 270
 while True:
     if time.monotonic() > deadline:
         raise TimeoutError('查询超时；检查原任务，不要自动重新提交')
-    job = api('/api/jobs/' + result['id'])
+    job = api('/api/jobs/' + ${nestedJob ? "result['job']['id']" : "result['id']"})
     if job['status'] not in ('queued', 'running'):
         break
     time.sleep(1)
@@ -84,7 +91,7 @@ ${polls ? `const deadline = Date.now() + 270000;
 let job;
 while (true) {
   if (Date.now() > deadline) throw new Error('查询超时；检查原任务，不要自动重新提交');
-  job = await api('/api/jobs/' + result.id);
+  job = await api('/api/jobs/' + ${nestedJob ? 'result.job.id' : 'result.id'});
   if (!['queued', 'running'].includes(job.status)) break;
   await new Promise(resolve => setTimeout(resolve, 1000));
 }
