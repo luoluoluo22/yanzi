@@ -379,11 +379,14 @@ public partial class App : WpfApplication
                     var bundled = BrowserHelperBootstrap.FindBundledDirectory();
                     if (bundled == null) return;
                     BrowserHelperBootstrap.EnsureStableBundle(bundled);
+                    BrowserHelperBootstrap.WriteRuntimeConfiguration(settings.AgentApiPort);
                     var profiles = BrowserHelperBootstrap.Inspect();
                     if (profiles.Count == 0 || profiles.Any(p => p.Installed)) return;
                     var notice = System.IO.Path.Combine(
                         BrowserHelperBootstrap.StableDirectory, ".first-start-notice");
-                    if (System.IO.File.Exists(notice)) return;
+                    if (System.IO.File.Exists(notice)
+                        && DateTime.TryParse(System.IO.File.ReadAllText(notice), out var lastShown)
+                        && DateTime.UtcNow - lastShown.ToUniversalTime() < TimeSpan.FromDays(1)) return;
                     System.IO.File.WriteAllText(notice, DateTime.UtcNow.ToString("O"));
                     _ = Dispatcher.BeginInvoke(new Action(() =>
                         ShowDesktopNotification("燕子浏览器助手",
