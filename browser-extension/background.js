@@ -12,7 +12,35 @@ const PONG_TIMEOUT_MS = 45000;
 let lastPongAt = Date.now();
 let pendingLogs = [];
 let logFlushTimer = null;
-let localWsUrl = "ws://127.0.0.1:53919/v1/browser/ws";
+const DEFAULT_LOCAL_WS_URL = "ws://127.0.0.1:53919/v1/browser/ws";
+let localWsUrl = DEFAULT_LOCAL_WS_URL;
+
+async function discoverDesktopWebSocket() {
+  try {
+    const url = chrome.runtime.getURL("yanzi-connection.json");
+    const response = await fetch(url, { cache: "no-store" });
+    if (!response.ok) return null; // Store builds may not include a desktop sidecar.
+    const data = await response.json();
+    const port = Number(data?.apiPort);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
+    return `ws://127.0.0.1:${port}/v1/browser/ws`;
+  } catch {
+    return null;
+  }
+}
+
+async function refreshDesktopWebSocketConfiguration() {
+  const stored = await chrome.storage.local.get({
+    localWsUrl: DEFAULT_LOCAL_WS_URL, manualLocalWsUrl: false
+  });
+  const discovered = stored.manualLocalWsUrl ? null : await discoverDesktopWebSocket();
+  const nextUrl = discovered || stored.localWsUrl || DEFAULT_LOCAL_WS_URL;
+  if (localWsUrl !== nextUrl) localWsUrl = nextUrl;
+  if (discovered && discovered !== stored.localWsUrl) {
+    await chrome.storage.local.set({ localWsUrl: discovered });
+  }
+}
+
 
 // 辅助函数：更新连接状态到本地存储，供 popup 读取
 function updateStatus(status) {
@@ -190,7 +218,7 @@ function scheduleReconnect(reason = "unknown") {
   logEvent(`连接已断开 (${reason})，将在 ${reconnectDelay / 1000} 秒后尝试重新连接...`);
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
-    connectWebSocket("reconnect_timer");
+    refreshDesktopWebSocketConfiguration().finally(() => connectWebSocket("reconnect_timer"));
     reconnectDelay = Math.min(reconnectDelay * 2, maxReconnectDelay);
   }, reconnectDelay);
 }
@@ -753,12 +781,10 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 
 // 初始化连接
-chrome.storage.local.get({ localWsUrl }, (config) => {
-  localWsUrl = config.localWsUrl;
-  connectWebSocket();
-});
+refreshDesktopWebSocketConfiguration().finally(() => connectWebSocket("startup"));
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local" || !changes.localWsUrl) return;
+  if (localWsUrl === changes.localWsUrl.newValue) return;
   localWsUrl = changes.localWsUrl.newValue;
   const old = ws;
   ws = null;

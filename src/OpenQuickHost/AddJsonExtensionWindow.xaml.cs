@@ -605,6 +605,9 @@ public partial class AddJsonExtensionWindow : Window
                 // Use an installation-independent path. Replacing the desktop version must not
                 // invalidate the Chrome/Edge unpacked-extension reference.
                 var stable = BrowserHelperBootstrap.EnsureStableBundle(bundled);
+                BrowserHelperBootstrap.WriteRuntimeConfiguration(_settings.AgentApiPort);
+                try { System.Windows.Clipboard.SetText(stable); }
+                catch (Exception copyError) { HostAssets.AppendLog($"Browser helper path copy failed: {copyError.Message}"); }
                 Process.Start("explorer.exe", $"/select,\\\"{Path.Combine(stable, "manifest.json")}\\\"");
             }
             BrowserHelperBootstrap.OpenExtensionSettings(profile);
@@ -612,7 +615,7 @@ public partial class AddJsonExtensionWindow : Window
                 ? profile.Enabled
                     ? "检测到助手已启用，但没有连接桌面端。请在扩展页重新加载扩展，并在助手面板中选择【重新连接服务】。"
                     : "检测到助手已安装但未启用。请在扩展页开启【燕子浏览器助手】，然后重新连接服务。"
-                : "已自动准备好稳定目录中的燕子浏览器助手。\\n\\n首次安装需要在浏览器内授权：\\n1. 在扩展管理页面启用【开发者模式】；\\n2. 点击【加载已解压的扩展程序】；\\n3. 在已打开的文件资源管理器中复制 BrowserHelper 文件夹路径并选中该文件夹。\\n\\n之后燕子升级将继续使用同一路径，不需要重复加载。";
+                : "已自动准备好稳定目录中的燕子浏览器助手。\\n\\n首次安装需要在浏览器内授权：\\n1. 在扩展管理页面启用【开发者模式】；\\n2. 点击【加载已解压的扩展程序】；\\n3. 已尝试复制 BrowserHelper 路径到剪贴板：在文件夹选择窗口中粘贴该路径并确认。\\n\\n之后燕子升级将继续使用同一路径，不需要重复加载。";
             System.Windows.MessageBox.Show(this, instructions,
                 "燕子浏览器助手 · 安装与修复", MessageBoxButton.OK, MessageBoxImage.Information);
             UpdateBrowserExtensionBannerVisibility();

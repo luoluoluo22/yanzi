@@ -437,7 +437,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("save-port").addEventListener("click", () => {
     const port = Number(portInput.value);
     if (!Number.isInteger(port) || port < 1 || port > 65535) return;
-    chrome.storage.local.set({ localWsUrl: `ws://127.0.0.1:${port}/v1/browser/ws` });
+    chrome.storage.local.set({ localWsUrl: `ws://127.0.0.1:${port}/v1/browser/ws`, manualLocalWsUrl: true });
   });
   chrome.storage.onChanged.addListener(changes => {
     if (changes.chatgptBridgeStatus) document.getElementById("chatgpt-status").textContent = changes.chatgptBridgeStatus.newValue === "connected" ? "已连接" : "未连接";
