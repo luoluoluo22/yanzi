@@ -48,6 +48,8 @@ jobs:
           dotnet run --project tests/BrowserHelperBootstrapVerification/BrowserHelperBootstrapVerification.csproj -c Debug
           node --check browser-extension/background.js
           node --check browser-extension/workflow-orchestrator.js
+          node --check scripts/ego-extension-dev-check.mjs
+          node --check scripts/ego-extension-dev-reload.mjs
           node --check browser-extension/workflow-checkpoints.js
           node --check browser-extension/popup/popup.js
       - name: Agent task integration policy regression

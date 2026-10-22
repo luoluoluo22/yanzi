@@ -13,6 +13,31 @@ namespace OpenQuickHost;
 public sealed partial class LocalAgentApiServer : IDisposable
 {
     private WebSocket? _activeBrowserSocket;
+    private readonly ConcurrentDictionary<WebSocket, string> _browserConnections = new();
+    private readonly object _browserRoutingLock = new();
+
+    // Ego is preferred for Agent workflows when available; Edge remains connected
+    // and is automatically selected when Ego disconnects.
+    private void RefreshPrimaryBrowser()
+    {
+        bool connected;
+        lock (_browserRoutingLock)
+        {
+            var alive = _browserConnections.Where(pair => pair.Key.State == WebSocketState.Open).ToArray();
+            var chosen = alive.FirstOrDefault(pair => pair.Value == "Ego");
+            if (chosen.Key == null)
+                chosen = alive.FirstOrDefault(pair => pair.Key == _activeBrowserSocket);
+            if (chosen.Key == null)
+                chosen = alive.FirstOrDefault(pair => pair.Value == "Edge");
+            if (chosen.Key == null)
+                chosen = alive.FirstOrDefault();
+
+            _activeBrowserSocket = chosen.Key;
+            ConnectedBrowserName = chosen.Key == null ? "" : chosen.Value;
+            connected = chosen.Key != null;
+        }
+        BrowserConnectionChanged?.Invoke(connected);
+    }
     private static int _nextWsId;
     public event Action<bool>? BrowserConnectionChanged;
     public bool IsBrowserConnected => _activeBrowserSocket != null && _activeBrowserSocket.State == WebSocketState.Open;
@@ -21,6 +46,7 @@ public sealed partial class LocalAgentApiServer : IDisposable
     private static readonly (string ProcessName, string DisplayName)[] SupportedBrowserProcesses =
     [
         ("msedge", "Edge"),
+        ("ego", "Ego"),
         ("chrome", "Chrome"),
         ("firefox", "Firefox"),
         ("brave", "Brave"),
@@ -461,17 +487,14 @@ public sealed partial class LocalAgentApiServer : IDisposable
                         {
                             browserName = "Safari";
                         }
-                        ConnectedBrowserName = browserName;
+                        // Browser origin can only designate a known local client type.
+                        // The extension in Ego explicitly opts in with ?browser=ego.
+                        if (string.Equals(context.Request.QueryString["browser"], "ego",
+                                StringComparison.OrdinalIgnoreCase))
+                            browserName = "Ego";
 
-                        var oldSocket = Interlocked.Exchange(ref _activeBrowserSocket, webSocket);
-                        if (oldSocket != null && oldSocket != webSocket)
-                        {
-                            HostAssets.AppendLog($"[BrowserWS #{socketId}] Replaced existing WebSocket session.");
-                            try { await oldSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "New connection established", CancellationToken.None); } catch {}
-                            oldSocket.Dispose();
-                        }
-
-                        BrowserConnectionChanged?.Invoke(true);
+                        _browserConnections[webSocket] = browserName;
+                        RefreshPrimaryBrowser();
                         HostAssets.AppendLog($"[BrowserWS #{socketId}] Connected from {browserName}.");
 
                         await HandleBrowserWebSocketLoopAsync(webSocket, socketId, browserName);
@@ -517,6 +540,11 @@ public sealed partial class LocalAgentApiServer : IDisposable
                     browserRunning,
                     extensionConnected,
                     connectedBrowser = extensionConnected ? ConnectedBrowserName : "",
+                    connectedBrowsers = _browserConnections
+                        .Where(pair => pair.Key.State == WebSocketState.Open)
+                        .Select(pair => pair.Value)
+                        .Distinct()
+                        .ToArray(),
                     detectedBrowsers = runningBrowsers
                 });
                 return;
@@ -2473,11 +2501,8 @@ public sealed partial class LocalAgentApiServer : IDisposable
         }
         finally
         {
-            if (Interlocked.CompareExchange(ref _activeBrowserSocket, null, webSocket) == webSocket)
-            {
-                ConnectedBrowserName = "";
-                BrowserConnectionChanged?.Invoke(false);
-            }
+            _browserConnections.TryRemove(webSocket, out _);
+            RefreshPrimaryBrowser();
             try
             {
                 if (webSocket.State == WebSocketState.Open || webSocket.State == WebSocketState.CloseReceived)
