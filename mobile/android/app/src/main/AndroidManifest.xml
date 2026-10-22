@@ -130,6 +130,10 @@
         </receiver>
 
         <activity android:name=".ApplicationCatalogActivity" android:exported="false" />
+        <activity
+            android:name=".RemoteDesktopActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize" />
         <activity android:name=".AiDataAccessActivity" android:exported="false" />
         <activity android:name=".ExternalAccessActivity" android:exported="false" />
         <!-- Yanm Widget Provider -->
