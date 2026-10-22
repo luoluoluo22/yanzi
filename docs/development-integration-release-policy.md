@@ -8,6 +8,35 @@
 
 Git Commit（保存开发过程）、Merge（集成已验证代码）和 Release / Deployment（交付或安装）是不同操作。**允许在验证前将 WIP Commit 提交到隔离功能分支**；**禁止将未通过合并门禁的变更直接纳入 main**。合并后不得自动安装、重启、打 Tag、推送 Release 或分发 APK，除非存在本次明确的发布/部署意图或具体已授权的自动化策略。
 
+## 多 AI 开发任务强制收尾门禁（2026-10-22）
+
+当前已发现：多个 AI 在不同 worktree 开发，代码完成和正式构建之间缺少必经的 main 集成环节。v1.0.40 正式包内置浏览器助手 0.5.63，而另一工作区已有未合并的 0.5.69，属于典型的“开发成果滞留在分支”问题。
+
+**无论使用 ChatGPT、Antigravity、Gemini、浣熊 MCP，还是燕子内部的子 Agent，每次可交付的开发任务必须遵循同一事务：**
+
+1. 在独立工作树完成开发和目标场景验收；只提交本任务经过检查的文件，不得抢占其他 Agent 的工作区或使用 `git add .`。
+2. 调用 `scripts/finish-agent-task.ps1 -VerificationScript <仓库内的可重复验收脚本> -Apply`。脚本要求干净的已提交分支、最新 `origin/main` 基线、无敏感文件、测试通过，然后推送该分支、创建或复用 PR。
+3. 在 PR 同时通过 `portable-contracts` 与 `desktop-and-worker` 等检查且 GitHub 判断可以无冲突合并时，脚本执行 squash merge。完成后重新 fetch `main`，验证实际合并提交已存在；才允许标记 `integrationStatus: merged`。
+4. **冲突/失败/超时 ≠ 完成。** 发生阻断时保留分支、PR 与工作区，报告具体阻断原因和任务责任人，修复后再次执行。不得强制 `push --force` 或用 `ours/theirs` 整体覆盖他人的代码。
+5. 生产 Cloudflare 后端路径、`wrangler.jsonc` 与部署 workflow 的变更会触发真实部署；默认阻止自动合并，只有明确批准生产部署后才允许 `-AllowProductionDeploy`，并执行专门的迁移与生产验收。
+6. 自动合并 **不等于自动打包或部署**。Windows、Android、浏览器扩展的正式安装/发布仍需要独立发布门禁；正式发布只能从包含目标改动的已验证集成提交或经批准的发布提交构建。
+
+示例（在功能分支的独立 worktree 中）：
+
+```powershell
+# 先提交自己已经测试的代码。默认只显示计划：
+.\scripts\finish-agent-task.ps1 -VerificationScript .\scripts\test-your-feature.ps1
+
+# 确认差异与测试后，执行推送、PR、CI 及自动集成：
+.\scripts\finish-agent-task.ps1 -VerificationScript .\scripts\test-your-feature.ps1 -Apply
+```
+
+注意：仓库 GitHub 设置当前不启用原生 `allow_auto_merge`；脚本在 CI 通过后执行受控合并，而不是提前设置无条件自动合并。分支缺少独立可重复的验收脚本时，不具备“已开发完成”的定义。
+
+### 每位 AI 的结束报告
+
+必须附上：`taskId`、`branch`、`sourceCommit`、`prUrl`、`checks`、`integrationStatus`（`merged|awaiting-ci|blocked`）、`mainMergeCommit`（确实已合并时）、`releasePerformed`。主管 Agent 对未合并的子 Agent 结果应重新分派集成任务，不能仅汇总子任务为完成。
+
 ## 常态开发（不等到发布才提交）
 
 1. **开始任务**：核对仓库 URL、当前分支、远程最新 HEAD、其他 Agent 的任务和工作区脏状态。本机、笔记本与服务器每个并行任务使用独立分支 / worktree；不得覆盖其他任务未提交代码。远程更新时先 fetch，检查 ahead/behind 和冲突风险。

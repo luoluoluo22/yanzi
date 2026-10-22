@@ -46,6 +46,9 @@ jobs:
           dotnet run --project tests/BrowserHelperBootstrapVerification/BrowserHelperBootstrapVerification.csproj -c Debug
           node --check browser-extension/background.js
           node --check browser-extension/popup/popup.js
+      - name: Agent task integration policy regression
+        shell: pwsh
+        run: ./scripts/test-agent-finish-policy.ps1
       - name: Desktop build
         run: dotnet build OpenQuickHost.sln -c Debug -v:minimal
       - name: Settings ownership and object conflict regression
