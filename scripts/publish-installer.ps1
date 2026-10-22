@@ -120,6 +120,9 @@ Assert-PayloadFile "NativeWindowRefs\System.Windows.Forms.dll"
 
 & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'verify-release-layout.ps1') -PublishDirectory $publishDir -ExpectedVersion $assemblyVersion
 if ($LASTEXITCODE -ne 0) { throw 'Single-process release layout verification failed.' }
+# Verify browser helper matches the committed, non-regressed source.
+& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'verify-browser-extension-payload.ps1') -RepositoryRoot $root -PublishDirectory $publishDir -RequireCleanGit
+if ($LASTEXITCODE -ne 0) { throw 'Bundled browser extension source parity check failed.' }
 Write-Host "Published installer payload:"
 Write-Host "  $publishDir"
 
@@ -210,6 +213,14 @@ if (-not $SkipInstaller) {
     $zipFile = Join-Path $installerOutDir "Yanzi-win-Portable.zip"
     if (-not (Test-Path $zipFile)) { throw 'Velopack portable package is missing.' }
     Rename-Item -LiteralPath $zipFile -NewName "Yanzi-win-Portable-$Version.zip" -Force
+    # Inspect actual full and portable archive contents.
+    foreach ($archiveFile in @(
+        (Join-Path $installerOutDir "Yanzi-$Version-full.nupkg"),
+        (Join-Path $installerOutDir "Yanzi-win-Portable-$Version.zip")
+    )) {
+        & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'verify-browser-extension-payload.ps1') -RepositoryRoot $root -PublishDirectory $publishDir -RequireCleanGit -ArchivePath $archiveFile
+        if ($LASTEXITCODE -ne 0) { throw "Browser extension archive verification failed: $archiveFile" }
+    }
 
     # 智能保留最近 2 个版本的 full.nupkg 作为下次本地增量基准，仅清理历史旧 exe/zip 和过期 delta 包
     if (-not $KeepHistoricalPackages) {

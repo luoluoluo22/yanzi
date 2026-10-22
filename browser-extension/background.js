@@ -231,6 +231,18 @@ function handleTask(task) {
     return;
   }
 
+  if (typeof task.action === "string" && task.action.startsWith("gemini_")) {
+    const runner = globalThis.yanziGeminiBackground?.runGeminiTask;
+    if (typeof runner !== "function") {
+      sendBrowserTaskResponse(task, "error", null, "Gemini background handler unavailable");
+      return;
+    }
+    void runner(task)
+      .then(res => sendBrowserTaskResponse(task, res?.status || "error", res?.data, res?.message || ""))
+      .catch(error => sendBrowserTaskResponse(task, "error", null, error?.message || "gemini task failed"));
+    return;
+  }
+
   if (task.action === "probe_webapps") {
     void handleWebAppProbeTask(task);
     return;
@@ -771,4 +783,4 @@ globalThis.yanziBrowserHost = {
   isConnected: () => Boolean(ws && ws.readyState === WebSocket.OPEN),
   log: logEvent
 };
-importScripts("chatgpt-network-observer.js", "chatgpt-background.js", "webapps/runtime-background.js", "opencli-background.js");
+importScripts("chatgpt-network-observer.js", "chatgpt-background.js", "gemini-network-observer.js", "gemini-background.js", "webapps/runtime-background.js", "opencli-background.js");
