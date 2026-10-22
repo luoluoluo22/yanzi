@@ -223,6 +223,37 @@ public static class YanziBrowserCapabilityProvider
         return await ExecuteBrowserTaskAsync(input, task);
     }
 
+    private static async Task<object?> SnapshotAsync(object? payload)
+    {
+        var input = (JsonElement)payload!;
+        var url = RequireHttpUrl(input.GetProperty("url").GetString()!);
+        var step = new Dictionary<string, object?> { ["type"] = "snapshot", ["key"] = "semantic" };
+        if (input.TryGetProperty("limit", out var limit) && limit.TryGetInt32(out var limitValue))
+            step["limit"] = limitValue;
+        if (input.TryGetProperty("maxTextLength", out var textLength) && textLength.TryGetInt32(out var textLengthValue))
+            step["maxTextLength"] = textLengthValue;
+        return await ExecuteBrowserTaskAsync(input, new Dictionary<string, object?>
+        {
+            ["action"] = "workflow",
+            ["url"] = url,
+            ["steps"] = new object[] { step },
+            ["closeOnComplete"] = GetCloseOnComplete(input),
+            ["timeoutSeconds"] = input.TryGetProperty("timeoutSeconds", out var duration) && duration.TryGetInt32(out var timeoutValue)
+                ? timeoutValue : 30
+        });
+    }
+
+    private static async Task<object?> WorkflowStatusAsync(object? payload)
+    {
+        var input = (JsonElement)payload!;
+        var request = new Dictionary<string, object?> { ["action"] = "workflow_state" };
+        if (input.ValueKind == JsonValueKind.Object &&
+            input.TryGetProperty("taskId", out var id) &&
+            id.ValueKind == JsonValueKind.String)
+            request["targetTaskId"] = id.GetString();
+        return await ExecuteBrowserTaskAsync(input, request);
+    }
+
     private static async Task<object?> WorkflowAsync(object? payload)
     {
         var input = (JsonElement)payload!;
