@@ -27,7 +27,7 @@ public static class YanziBrowserCapabilityProvider
             Permissions = ["browser.read"],
             Category = "browser",
             InputSchema = YanziCapabilitySchema.Parse("""
-            {"type":"object","properties":{"taskId":{"type":"string","maxLength":128}},"additionalProperties":false}
+            {"type":"object","properties":{"taskId":{"type":"string","maxLength":128},"browser":{"type":"string","minLength":1,"maxLength":50},"connectionId":{"type":"string","minLength":1,"maxLength":128}},"additionalProperties":false}
             """),
             OutputSchema = YanziCapabilitySchema.Parse("""{"type":"object"}"""),
             Handler = WorkflowStatusAsync
@@ -46,6 +46,8 @@ public static class YanziBrowserCapabilityProvider
                 "url":{"type":"string","minLength":1},
                 "limit":{"type":"integer","minimum":1,"maximum":120},
                 "maxTextLength":{"type":"integer","minimum":30,"maximum":250},
+                "browser":{"type":"string","minLength":1,"maxLength":50},
+                "connectionId":{"type":"string","minLength":1,"maxLength":128},
                 "closeOnComplete":{"type":"boolean"},
                 "timeoutSeconds":{"type":"integer","minimum":5,"maximum":120}
               },
@@ -69,6 +71,8 @@ public static class YanziBrowserCapabilityProvider
               "properties":{
                 "url":{"type":"string","minLength":1},
                 "selectors":{"type":"object"},
+                "browser":{"type":"string","minLength":1,"maxLength":50},
+                "connectionId":{"type":"string","minLength":1,"maxLength":128},
                 "closeOnComplete":{"type":"boolean"},
                 "timeoutSeconds":{"type":"integer","minimum":5,"maximum":120}
               },
@@ -102,6 +106,8 @@ public static class YanziBrowserCapabilityProvider
                   "additionalProperties":false
                 }},
                 "clickSelector":{"type":"string"},
+                "browser":{"type":"string","minLength":1,"maxLength":50},
+                "connectionId":{"type":"string","minLength":1,"maxLength":128},
                 "closeOnComplete":{"type":"boolean"},
                 "timeoutSeconds":{"type":"integer","minimum":5,"maximum":120}
               },
@@ -126,6 +132,8 @@ public static class YanziBrowserCapabilityProvider
               "properties":{
                 "url":{"type":"string","minLength":1},
                 "steps":{"type":"array","items":{"type":"object"}},
+                "browser":{"type":"string","minLength":1,"maxLength":50},
+                "connectionId":{"type":"string","minLength":1,"maxLength":128},
                 "closeOnComplete":{"type":"boolean"},
                 "timeoutSeconds":{"type":"integer","minimum":5,"maximum":120}
               },
@@ -147,6 +155,7 @@ public static class YanziBrowserCapabilityProvider
             enabled = settings.EnableBrowserHelper,
             connected = server?.IsBrowserConnected == true,
             browser = server?.ConnectedBrowserName ?? "",
+            connections = server?.ConnectedBrowserSessions ?? [],
             localApiListening = server?.IsListening == true,
             provider = "yanzi-browser-extension",
             supportedWorkflowSteps = new[] { "wait", "waitForUrl", "assert", "navigate", "fill", "click", "scroll", "scrape", "fetch" }
@@ -286,6 +295,16 @@ public static class YanziBrowserCapabilityProvider
                              timeout.TryGetInt32(out var timeoutValue)
             ? timeoutValue
             : 30;
+
+        // Routing is handled by the host, not the page script. The browser and
+        // connectionId are never persisted in form data or executed as page JS.
+        foreach (var field in new[] { "browser", "connectionId" })
+        {
+            if (input.ValueKind == JsonValueKind.Object &&
+                input.TryGetProperty(field, out var route) &&
+                route.ValueKind == JsonValueKind.String)
+                task[field] = route.GetString();
+        }
 
         var result = await server.RunBrowserTaskAsync(task, timeoutSeconds);
         if (!result.success)

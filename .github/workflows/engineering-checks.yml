@@ -21,6 +21,8 @@ jobs:
         run: node --test cloudflare/src/*.test.mjs cloudflare/tests/*.test.mjs protocol/sdk/*.test.mjs sdk/javascript/*.test.mjs
       - name: Browser workflow checkpoint and recovery regression
         run: node scripts/test-browser-workflow-checkpoints.cjs
+      - name: Browser multi-extension routing and response ownership
+        run: dotnet run --project scripts/BrowserMultiSessionTests/BrowserMultiSessionTests.csproj -c Release
       - name: R2 capacity monitor regressions
         run: python3 -m unittest scripts/cloudflare/test_r2_storage_guard.py
       - name: Platform independent account and settings scenarios

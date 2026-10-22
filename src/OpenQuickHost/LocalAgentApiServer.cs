@@ -13,31 +13,6 @@ namespace OpenQuickHost;
 public sealed partial class LocalAgentApiServer : IDisposable
 {
     private WebSocket? _activeBrowserSocket;
-    private readonly ConcurrentDictionary<WebSocket, string> _browserConnections = new();
-    private readonly object _browserRoutingLock = new();
-
-    // Ego is preferred for Agent workflows when available; Edge remains connected
-    // and is automatically selected when Ego disconnects.
-    private void RefreshPrimaryBrowser()
-    {
-        bool connected;
-        lock (_browserRoutingLock)
-        {
-            var alive = _browserConnections.Where(pair => pair.Key.State == WebSocketState.Open).ToArray();
-            var chosen = alive.FirstOrDefault(pair => pair.Value == "Ego");
-            if (chosen.Key == null)
-                chosen = alive.FirstOrDefault(pair => pair.Key == _activeBrowserSocket);
-            if (chosen.Key == null)
-                chosen = alive.FirstOrDefault(pair => pair.Value == "Edge");
-            if (chosen.Key == null)
-                chosen = alive.FirstOrDefault();
-
-            _activeBrowserSocket = chosen.Key;
-            ConnectedBrowserName = chosen.Key == null ? "" : chosen.Value;
-            connected = chosen.Key != null;
-        }
-        BrowserConnectionChanged?.Invoke(connected);
-    }
     private static int _nextWsId;
     public event Action<bool>? BrowserConnectionChanged;
     public bool IsBrowserConnected => _activeBrowserSocket != null && _activeBrowserSocket.State == WebSocketState.Open;
@@ -121,13 +96,14 @@ public sealed partial class LocalAgentApiServer : IDisposable
     public static event Action<string>? MobileDeviceConnected;
 
     private static readonly ConcurrentDictionary<string, TaskCompletionSource<JsonElement>> _pendingBrowserTasks = new(StringComparer.OrdinalIgnoreCase);
-    private readonly SemaphoreSlim _browserSendGate = new(1, 1);
 
     public async Task<(bool success, string taskId, string status, string? message, JsonElement? data)> RunBrowserTaskAsync(
         IReadOnlyDictionary<string, object?> payload,
         int timeoutSeconds = 30)
     {
-        var browserSocket = _activeBrowserSocket;
+        var selected = SelectBrowser(RouteValue(payload, "connectionId") ?? RouteValue(payload, "browserId"),
+            RouteValue(payload, "browser"));
+        var browserSocket = selected?.Socket;
         if (browserSocket == null || browserSocket.State != WebSocketState.Open)
         {
             var runningBrowsers = GetRunningBrowserNames();
@@ -143,34 +119,21 @@ public sealed partial class LocalAgentApiServer : IDisposable
         foreach (var pair in payload)
             taskPayload[pair.Key] = pair.Value;
 
+        taskPayload.Remove("connectionId");
+        taskPayload.Remove("browserId");
+        taskPayload.Remove("browser");
         taskPayload["type"] = "task_request";
         taskPayload["taskId"] = taskId;
         if (!taskPayload.ContainsKey("action"))
             taskPayload["action"] = "workflow";
 
         var tcs = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _pendingBrowserTasks[taskId] = tcs;
+        RegisterPendingBrowserTask(taskId, browserSocket, tcs);
 
         try
         {
             var sendBuffer = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(taskPayload));
-            await _browserSendGate.WaitAsync(_cts.Token);
-            try
-            {
-                browserSocket = _activeBrowserSocket;
-                if (browserSocket == null || browserSocket.State != WebSocketState.Open)
-                    return (false, taskId, "unavailable", "燕子浏览器助手连接已断开。", null);
-
-                await browserSocket.SendAsync(
-                    new ArraySegment<byte>(sendBuffer),
-                    WebSocketMessageType.Text,
-                    true,
-                    _cts.Token);
-            }
-            finally
-            {
-                _browserSendGate.Release();
-            }
+            await SendBrowserFrameAsync(browserSocket, sendBuffer, _cts.Token);
 
             using var delayCts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
             var completed = await Task.WhenAny(
@@ -204,7 +167,7 @@ public sealed partial class LocalAgentApiServer : IDisposable
         }
         finally
         {
-            _pendingBrowserTasks.TryRemove(taskId, out _);
+            ClearPendingBrowserTask(taskId);
         }
     }
 
@@ -214,10 +177,10 @@ public sealed partial class LocalAgentApiServer : IDisposable
         int timeoutSeconds = 120,
         bool isNewSession = false)
     {
-        if (_activeBrowserSocket == null || _activeBrowserSocket.State != WebSocketState.Open)
-        {
+        // Keep legacy AI browser sessions on signed-in Edge when possible.
+        var transferBrowser = SelectBrowser(preferEdge: true);
+        if (transferBrowser == null)
             return (false, null, "燕子浏览器助手未连接。请先打开浏览器并确保已启用“燕子浏览器助手”插件。");
-        }
 
         var taskId = Guid.NewGuid().ToString("N");
         var taskPayload = new Dictionary<string, object>
@@ -232,37 +195,20 @@ public sealed partial class LocalAgentApiServer : IDisposable
         };
 
         var tcs = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _pendingBrowserTasks[taskId] = tcs;
+        RegisterPendingBrowserTask(taskId, transferBrowser.Socket, tcs);
 
         try
         {
             var sendBuffer = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(taskPayload));
-            // The same browser socket is shared with other tasks: serialize writes.
-            // Bound a stalled send independently of the AI generation timeout.
             using var sendCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
             sendCts.CancelAfter(TimeSpan.FromSeconds(15));
-            await _browserSendGate.WaitAsync(sendCts.Token);
-            try
-            {
-                var socket = _activeBrowserSocket;
-                if (socket == null || socket.State != WebSocketState.Open)
-                {
-                    _pendingBrowserTasks.TryRemove(taskId, out _);
-                    return (false, null, "浏览器助手连接已断开，请重新连接后重试。");
-                }
-
-                await socket.SendAsync(new ArraySegment<byte>(sendBuffer), WebSocketMessageType.Text, true, sendCts.Token);
-            }
-            finally
-            {
-                _browserSendGate.Release();
-            }
+            await SendBrowserFrameAsync(transferBrowser.Socket, sendBuffer, sendCts.Token);
 
             HostAssets.AppendLog($"[LocalAgentApi] Dispatched AI prompt transfer task to browser extension: taskId={taskId}, site={aiSite}, promptLength={prompt.Length}");
         }
         catch (Exception ex)
         {
-            _pendingBrowserTasks.TryRemove(taskId, out _);
+            ClearPendingBrowserTask(taskId);
             return (false, null, $"向浏览器助手发送指令失败: {ex.Message}");
         }
 
@@ -271,7 +217,7 @@ public sealed partial class LocalAgentApiServer : IDisposable
             var completedTask = await Task.WhenAny(tcs.Task, Task.Delay(Timeout.Infinite, delayCts.Token));
             if (completedTask == tcs.Task)
             {
-                _pendingBrowserTasks.TryRemove(taskId, out _);
+                ClearPendingBrowserTask(taskId);
                 var resultDoc = await tcs.Task;
                 string? status = resultDoc.TryGetProperty("status", out var statusProp) ? statusProp.GetString() : null;
                 string? message = resultDoc.TryGetProperty("message", out var msgProp) ? msgProp.GetString() : null;
@@ -293,7 +239,7 @@ public sealed partial class LocalAgentApiServer : IDisposable
             }
             else
             {
-                _pendingBrowserTasks.TryRemove(taskId, out _);
+                ClearPendingBrowserTask(taskId);
                 return (false, null, $"AI 响应超时（等待超过 {timeoutSeconds} 秒未返回）");
             }
         }
@@ -493,8 +439,7 @@ public sealed partial class LocalAgentApiServer : IDisposable
                                 StringComparison.OrdinalIgnoreCase))
                             browserName = "Ego";
 
-                        _browserConnections[webSocket] = browserName;
-                        RefreshPrimaryBrowser();
+                        RegisterBrowser(webSocket, socketId, browserName);
                         HostAssets.AppendLog($"[BrowserWS #{socketId}] Connected from {browserName}.");
 
                         await HandleBrowserWebSocketLoopAsync(webSocket, socketId, browserName);
@@ -540,11 +485,9 @@ public sealed partial class LocalAgentApiServer : IDisposable
                     browserRunning,
                     extensionConnected,
                     connectedBrowser = extensionConnected ? ConnectedBrowserName : "",
-                    connectedBrowsers = _browserConnections
-                        .Where(pair => pair.Key.State == WebSocketState.Open)
-                        .Select(pair => pair.Value)
-                        .Distinct()
-                        .ToArray(),
+                    connectedBrowsers = GetConnectedBrowserNames(),
+                    connections = GetConnectedBrowserDetails(),
+                    connectedCount = GetConnectedBrowserDetails().Length,
                     detectedBrowsers = runningBrowsers
                 });
                 return;
@@ -557,10 +500,11 @@ public sealed partial class LocalAgentApiServer : IDisposable
                     return;
                 }
 
-                var browserSocket = _activeBrowserSocket;
+                var reloadBrowser = SelectBrowser(request.QueryString["connectionId"], request.QueryString["browser"]);
+                var browserSocket = reloadBrowser?.Socket;
                 if (browserSocket == null || browserSocket.State != WebSocketState.Open)
                 {
-                    await WriteJsonAsync(response, 503, BuildBrowserUnavailableResponse());
+                    await WriteJsonAsync(response, 503, new { error = "browser_connection_unavailable" });
                     return;
                 }
 
@@ -574,18 +518,15 @@ public sealed partial class LocalAgentApiServer : IDisposable
                 try
                 {
                     var sendBuffer = Encoding.UTF8.GetBytes(payload);
-                    await browserSocket.SendAsync(
-                        new ArraySegment<byte>(sendBuffer),
-                        WebSocketMessageType.Text,
-                        true,
-                        _cts.Token);
-                    HostAssets.AppendLog($"[LocalAgentApi] Browser extension reload requested: requestId={requestId}, browser={ConnectedBrowserName}");
+                    await SendBrowserFrameAsync(browserSocket, sendBuffer, _cts.Token);
+                    HostAssets.AppendLog($"[LocalAgentApi] Browser extension reload requested: requestId={requestId}, browser={reloadBrowser!.BrowserName}");
                     await WriteJsonAsync(response, 202, new
                     {
                         ok = true,
                         status = "accepted",
                         requestId,
-                        browser = ConnectedBrowserName
+                        browser = reloadBrowser!.BrowserName,
+                        connectionId = reloadBrowser.ConnectionId
                     });
                 }
                 catch (Exception ex)
@@ -641,24 +582,42 @@ public sealed partial class LocalAgentApiServer : IDisposable
                     return;
                 }
 
+                var requestedConnection = taskPayload.TryGetValue("connectionId", out var cid)
+                    ? cid?.ToString() : taskPayload.TryGetValue("browserId", out var legacy)
+                        ? legacy?.ToString() : null;
+                var requestedName = taskPayload.TryGetValue("browser", out var browserNameRequest)
+                    ? browserNameRequest?.ToString() : null;
+                var destination = SelectBrowser(requestedConnection, requestedName);
+                if (destination == null)
+                {
+                    await WriteJsonAsync(response, 503, new
+                    {
+                        error = "browser_connection_unavailable",
+                        connectionId = requestedConnection,
+                        browser = requestedName
+                    });
+                    return;
+                }
+
+                taskPayload.Remove("connectionId");
+                taskPayload.Remove("browserId");
+                taskPayload.Remove("browser");
                 taskPayload["type"] = "task_request";
                 taskPayload["taskId"] = taskId;
                 if (!taskPayload.ContainsKey("action"))
-                {
                     taskPayload["action"] = "workflow";
-                }
 
                 var tcs = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
-                _pendingBrowserTasks[taskId] = tcs;
+                RegisterPendingBrowserTask(taskId, destination.Socket, tcs);
 
                 try
                 {
                     var sendBuffer = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(taskPayload));
-                    await _activeBrowserSocket.SendAsync(new ArraySegment<byte>(sendBuffer), WebSocketMessageType.Text, true, _cts.Token);
+                    await SendBrowserFrameAsync(destination.Socket, sendBuffer, _cts.Token);
                 }
                 catch (Exception ex)
                 {
-                    _pendingBrowserTasks.TryRemove(taskId, out _);
+                    ClearPendingBrowserTask(taskId);
                     await WriteJsonAsync(response, 500, new { error = "failed_to_send_to_extension: " + ex.Message });
                     return;
                 }
@@ -671,6 +630,8 @@ public sealed partial class LocalAgentApiServer : IDisposable
                         var resultDoc = await tcs.Task;
                         var responseData = new Dictionary<string, object?>();
                         responseData["taskId"] = taskId;
+                        responseData["connectionId"] = destination.ConnectionId;
+                        responseData["browser"] = destination.BrowserName;
 
                         if (resultDoc.TryGetProperty("status", out var statusProp))
                             responseData["status"] = statusProp.GetString();
@@ -689,7 +650,7 @@ public sealed partial class LocalAgentApiServer : IDisposable
                     }
                     else
                     {
-                        _pendingBrowserTasks.TryRemove(taskId, out _);
+                        ClearPendingBrowserTask(taskId);
                         await WriteJsonAsync(response, 504, new
                         {
                             error = "browser_execution_timeout",
@@ -2287,7 +2248,7 @@ public sealed partial class LocalAgentApiServer : IDisposable
         }
 
         var bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload));
-        await webSocket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, _cts.Token);
+        await SendBrowserFrameAsync(webSocket, bytes, _cts.Token);
     }
 
     private async Task HandleBrowserWebAppStorageMessageAsync(
@@ -2443,7 +2404,7 @@ public sealed partial class LocalAgentApiServer : IDisposable
                             if (msgType == "ping")
                             {
                                 var pongBytes = Encoding.UTF8.GetBytes("{\"type\":\"pong\"}");
-                                await webSocket.SendAsync(new ArraySegment<byte>(pongBytes), WebSocketMessageType.Text, true, _cts.Token);
+                                await SendBrowserFrameAsync(webSocket, pongBytes, _cts.Token);
                             }
                             else if (msgType == "register")
                             {
@@ -2480,10 +2441,8 @@ public sealed partial class LocalAgentApiServer : IDisposable
                                 {
                                     var taskId = taskIdProp.GetString();
                                     HostAssets.AppendLog($"[BrowserWS #{socketId}] Received task response: taskId={taskId}");
-                                    if (!string.IsNullOrEmpty(taskId) && _pendingBrowserTasks.TryRemove(taskId, out var tcs))
-                                    {
-                                        tcs.SetResult(json.Clone());
-                                    }
+                                    if (!string.IsNullOrEmpty(taskId) && !CompleteBrowserTask(webSocket, taskId, json))
+                                        HostAssets.AppendLog($"[BrowserWS #{socketId}] Ignored non-owner/stale response: {taskId}");
                                 }
                             }
                         }
@@ -2501,8 +2460,7 @@ public sealed partial class LocalAgentApiServer : IDisposable
         }
         finally
         {
-            _browserConnections.TryRemove(webSocket, out _);
-            RefreshPrimaryBrowser();
+            DisconnectBrowser(webSocket);
             try
             {
                 if (webSocket.State == WebSocketState.Open || webSocket.State == WebSocketState.CloseReceived)
