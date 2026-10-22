@@ -144,6 +144,24 @@
         if (step.urlIncludes) await waitForUrl(tabId, String(step.urlIncludes), "", timeout);
         if (step.selector) await waitForSelector(tabId, step.selector, timeout);
         else if (!step.urlIncludes) await sleep(Math.min(timeout, 30000));
+        // Backwards-compatible strict assertion via wait.contains. The installed
+        // older host accepts wait but may not know the new 'assert' step yet.
+        if (step.contains !== undefined) {
+          if (!step.selector) throw new Error("wait.contains requires selector.");
+          const until = Date.now() + timeout;
+          let matched = false;
+          while (Date.now() < until) {
+            try {
+              const result = await evaluate(tabId, { type: "assert", selector: step.selector });
+              if (result?.exists && result.text.includes(String(step.contains))) {
+                matched = true;
+                break;
+              }
+            } catch (_) { /* Page may be navigating; retry. */ }
+            await sleep(POLL_MS);
+          }
+          if (!matched) throw new Error("Text wait timed out: " + step.contains);
+        }
         return {};
       }
       if (type === "click") {
