@@ -1891,12 +1891,25 @@ public partial class MainWindow
         if (_extensionContentWatcher == null || Dispatcher.HasShutdownStarted)
             return;
 
-        var relativePath = Path.GetRelativePath(HostAssets.ExtensionsPath, e.FullPath);
-        var segments = relativePath.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
-        if (segments.Length < 2 ||
-            !ExtensionPackageService.ShouldIncludeInPackage(
-                Path.Combine(HostAssets.ExtensionsPath, segments[0]), e.FullPath))
-            return;
+        string[] segments;
+        try
+        {
+            var relativePath = Path.GetRelativePath(HostAssets.ExtensionsPath, e.FullPath);
+            segments = relativePath.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
+            // Install staging directories are intentionally short-lived.
+            // Ignoring their events avoids syncing partial packages and the
+            // TOCTOU crash seen during 1.0.39 startup on Windows.
+            if (segments.Length < 2 ||
+                segments[0].StartsWith(".yanzi-install-", StringComparison.OrdinalIgnoreCase) ||
+                segments[0].StartsWith(".yanzi-backup-", StringComparison.OrdinalIgnoreCase) ||
+                segments[0].StartsWith(".yanzi-staging-", StringComparison.OrdinalIgnoreCase) ||
+                !ExtensionPackageService.ShouldIncludeInPackage(
+                    Path.Combine(HostAssets.ExtensionsPath, segments[0]), e.FullPath))
+                return;
+        }
+        catch (IOException) { return; }
+        catch (UnauthorizedAccessException) { return; }
+        catch (ArgumentException) { return; }
 
         Dispatcher.BeginInvoke(new Action(() =>
         {

@@ -18,6 +18,20 @@ internal static class ExtensionSyncIgnorePolicy
 
     internal static bool ShouldInclude(string root, string filePath, bool isDirectory = false)
     {
+        // The file watcher runs on ThreadPool threads while extension installers
+        // atomically swap and delete .yanzi-install-* directories. Windows can
+        // remove the entry between Exists and GetAttributes/ReadLines.
+        try { return ShouldIncludeCore(root, filePath, isDirectory); }
+        catch (IOException) { return false; }
+        catch (UnauthorizedAccessException) { return false; }
+    }
+
+    private static bool ShouldIncludeCore(string root, string filePath, bool isDirectory)
+    {
+        // Watcher deletion/rename events and stale enumerator entries are never
+        // eligible for packaging. This is also a fail-closed policy on races.
+        if (!Directory.Exists(root) || !(File.Exists(filePath) || Directory.Exists(filePath)))
+            return false;
         var relative = Path.GetRelativePath(root, filePath).Replace('\\', '/');
         if (relative == "." || relative == ".." || relative.StartsWith("../", StringComparison.Ordinal)
             || Path.IsPathRooted(relative))
@@ -58,12 +72,23 @@ internal static class ExtensionSyncIgnorePolicy
         while (pending.Count > 0)
         {
             var current = pending.Pop();
-            foreach (var file in Directory.EnumerateFiles(current))
+            // Snapshot each folder first; lazy Directory.Enumerate* can throw
+            // during Move/Delete by the installer after enumeration began.
+            string[] files;
+            string[] directories;
+            try
+            {
+                files = Directory.GetFiles(current);
+                directories = Directory.GetDirectories(current);
+            }
+            catch (IOException) { continue; }
+            catch (UnauthorizedAccessException) { continue; }
+            foreach (var file in files)
             {
                 if (ShouldInclude(root, file))
                     yield return file;
             }
-            foreach (var directory in Directory.EnumerateDirectories(current))
+            foreach (var directory in directories)
             {
                 if (ShouldInclude(root, directory, isDirectory: true))
                     pending.Push(directory);
@@ -89,6 +114,9 @@ internal static class ExtensionSyncIgnorePolicy
             part.Equals("synccredentials.dat", StringComparison.OrdinalIgnoreCase) ||
             part.Equals("appsettings.local.json", StringComparison.OrdinalIgnoreCase) ||
             part.Equals("debug.log", StringComparison.OrdinalIgnoreCase) ||
+            part.StartsWith(".yanzi-install-", StringComparison.OrdinalIgnoreCase) ||
+            part.StartsWith(".yanzi-backup-", StringComparison.OrdinalIgnoreCase) ||
+            part.StartsWith(".yanzi-staging-", StringComparison.OrdinalIgnoreCase) ||
             part.StartsWith(".yanzi-inline-", StringComparison.OrdinalIgnoreCase) ||
             part.StartsWith(".yanzi-device", StringComparison.OrdinalIgnoreCase) ||
             part.Equals(".env", StringComparison.OrdinalIgnoreCase) ||

@@ -140,6 +140,7 @@ if (args.Contains("--fresh-account-sync"))
     return;
 }
 
+if (args.Contains("--watcher-race")) { ExtensionWatcherRaceVerification.Run(); return; }
 if (args.Contains("--git-update-policy")) { await GitExtensionUpdateVerification.RunAsync(); return; }
 if (args.Contains("--git-native-sync")) { GitNativeExtensionVerification.Run(); return; }
 ReleaseReadinessVerification.VerifyUninstallDataRetention();
