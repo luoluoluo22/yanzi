@@ -244,16 +244,24 @@
       sh.innerHTML = [
         '<style>',
         ':host{display:inline-flex;align-items:center;flex:none;vertical-align:middle;margin-left:6px;z-index:20}',
-        'button{font-family:inherit;font-size:12px;font-weight:650;white-space:nowrap;cursor:pointer;border:1px solid #8894a3;background:#374151;color:white;border-radius:999px;min-height:34px;padding:0 11px;box-shadow:0 1px 2px #0002}',
-        'button[data-mode=ready]{background:#16a34a;border-color:#15803d;color:white;box-shadow:0 0 0 2px #22c55e30}',
-        'button[data-mode=waiting]{background:#b7791f;border-color:#9a661a;color:white}',
-        'button:hover{filter:brightness(1.08)}',
+        '.controls{display:inline-flex;align-items:stretch;overflow:hidden;flex:none;border:1px solid #8894a3;border-radius:999px;min-height:36px;background:#374151;color:#fff;box-shadow:0 1px 2px #0002}',
+        'button{font-family:inherit;font-size:12px;font-weight:650;white-space:nowrap;cursor:pointer;border:0;background:#374151;color:#fff;min-height:36px;box-sizing:border-box;line-height:1.2}',
+        '.settings{width:38px;min-width:38px;display:inline-flex;align-items:center;justify-content:center;border-right:1px solid #ffffff40;padding:0}',
+        '.settings svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}',
+        '.toggle{min-width:116px;padding:0 14px;text-align:center}',
+        '.toggle[data-mode=ready]{background:#16a34a;color:white}',
+        '.toggle[data-mode=waiting]{background:#b7791f;color:white}',
+        '.controls:has(.toggle[data-mode=ready]){border-color:#15803d;box-shadow:0 0 0 2px #22c55e30}',
+        'button:hover{filter:brightness(1.12)}button:focus-visible{outline:2px solid #93c5fd;outline-offset:-3px}',
         '.notice{display:none;position:fixed;right:16px;bottom:100px;padding:9px 12px;border-radius:10px;background:#1f2937;color:white;font:12px/1.5 sans-serif;max-width:310px;z-index:2147483647;box-shadow:0 4px 18px #0005}.notice.show{display:block}',
-        '</style><button type="button" data-mode="idle" aria-pressed="false">不要停</button><span class="notice" role="status"></span>'
+        '</style><span class="controls"><button type="button" class="settings" title="打开不要停设置" aria-label="打开不要停设置">',
+        '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"/><path d="M19.4 15a1.6 1.6 0 0 0 .32 1.77l.06.06-2 2-.06-.06a1.6 1.6 0 0 0-1.77-.32l-.27.12a1.6 1.6 0 0 0-.95 1.46V20h-2.83v-.07a1.6 1.6 0 0 0-.95-1.46l-.27-.12a1.6 1.6 0 0 0-1.77.32l-.06.06-2-2 .06-.06A1.6 1.6 0 0 0 7.23 15l-.12-.27a1.6 1.6 0 0 0-1.46-.95H5.6v-2.83h.05a1.6 1.6 0 0 0 1.46-.95l.12-.27a1.6 1.6 0 0 0-.32-1.77l-.06-.06 2-2 .06.06a1.6 1.6 0 0 0 1.77.32l.27-.12a1.6 1.6 0 0 0 .95-1.46V4.6h2.83v.05a1.6 1.6 0 0 0 .95 1.46l.27.12a1.6 1.6 0 0 0 1.77-.32l.06-.06 2 2-.06.06A1.6 1.6 0 0 0 19.4 9.7l.12.27a1.6 1.6 0 0 0 1.46.95H21v2.83h-.02a1.6 1.6 0 0 0-1.46.95z"/></svg></button>',
+        '<button type="button" class="toggle" data-mode="idle" aria-pressed="false">不要停</button></span><span class="notice" role="status"></span>'
       ].join('');
-      button=sh.querySelector('button');
+      button=sh.querySelector('.toggle');
       button.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();if(enabled)halt('手动关闭');else enable();});
-      button.addEventListener('contextmenu',e=>{e.preventDefault();e.stopPropagation();openSettings();});
+      sh.querySelector('.settings').addEventListener('click',e=>{e.preventDefault();e.stopPropagation();openSettings();});
+      sh.querySelector('.controls').addEventListener('contextmenu',e=>{e.preventDefault();e.stopPropagation();openSettings();});
     }
     const input=editor();
     if (!input || !input.isConnected) return;
