@@ -48,3 +48,6 @@ try {
 finally {
     if (Test-Path $fixture) { Remove-Item -LiteralPath $fixture -Recurse -Force }
 }
+# The negative tests intentionally exit nonzero. Do not propagate their last exit
+# code to PowerShell 7 / GitHub Actions after all assertions have passed.
+exit 0
