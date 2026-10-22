@@ -45,6 +45,14 @@ try
     BrowserHelperBootstrap.EnsureStableBundle(source, target);
     Assert(File.ReadAllText(Path.Combine(target, "background.js")) == "const a=2;" &&
            File.ReadAllText(Path.Combine(target + ".previous", "background.js")) == "const a=1;", "update keeps one rollback copy");
+    // Latest browser helper (0.5.71) must not be overwritten by an older (0.5.69) package.
+    File.WriteAllText(Path.Combine(target, "manifest.json"), "{\"name\":\"燕子浏览器助手\",\"version\":\"0.5.71\"}");
+    File.WriteAllText(Path.Combine(source, "manifest.json"), "{\"name\":\"燕子浏览器助手\",\"version\":\"0.5.69\"}");
+    File.WriteAllText(Path.Combine(source, "background.js"), "const older=true;");
+    BrowserHelperBootstrap.EnsureStableBundle(source, target);
+    Assert(File.ReadAllText(Path.Combine(target, "background.js")) == "const a=2;" &&
+           File.ReadAllText(Path.Combine(target, "manifest.json")).Contains("0.5.71"),
+           "never downgrade browser helper during host upgrade");
     File.WriteAllText(Path.Combine(source, "manifest.json"), "{\"name\":\"Unknown Extension\",\"version\":\"0.2\"}");
     try
     {
