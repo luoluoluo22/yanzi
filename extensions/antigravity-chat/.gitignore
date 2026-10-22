@@ -1,4 +1,0 @@
-# Local hotfix and pre-migration backups are not release sources.
-*.bak
-*.tmp
-*.log
