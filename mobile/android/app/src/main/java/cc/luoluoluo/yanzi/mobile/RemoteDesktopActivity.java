@@ -32,7 +32,7 @@ public final class RemoteDesktopActivity extends Activity {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(0xff101827);
         setContentView(root);
-        String remembered = getSharedPreferences(PREFS,MODE_PRIVATE).getString("gateway","https://remote.43-156-149-208.sslip.io/");
+        String remembered = getSharedPreferences(PREFS,MODE_PRIVATE).getString("gateway","");
         if (remembered.isEmpty()) configure();
         else open(remembered);
     }
