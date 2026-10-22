@@ -9,6 +9,8 @@
 
 **Windows 小程序唯一开发位置：`%LOCALAPPDATA%\OpenQuickHost\Extensions\<extensionId>\`。** 直接修改用户已安装的小程序，由原有账号同步机制处理，不要为业务小程序新建宿主仓库副本、PR 或安装包；该规范的完整操作和验收门禁见上述七步工作流。
 
+**开发任务的强制结束条件：已验证的代码必须进入 GitHub main。** 每个 AI（含并行子 Agent）在任务完成后先提交自己的隔离分支，再运行 `scripts/finish-agent-task.ps1 -VerificationScript <仓库内验收脚本> -Apply` 创建 PR、等待 CI、无冲突时合并，并回读 main 的合并提交。不得把“本地已修改、已 Commit、已 Push、安装包已发布”说成“开发集成完成”。若存在 CI 失败、PR 冲突、生产部署风险或超时，必须明确标记 `awaiting-integration`，保留独立 worktree 并继续协调修复；不得静默遗留在其他分支。详见 [自动集成门禁](docs/development-integration-release-policy.md#多-ai-开发任务强制收尾门禁2026-10-22)。
+
 **Commit ≠ Merge ≠ Release。** 开发允许隔离分支 WIP 提交，合并 main 前必须完成必要验证；验证通过后及时集成，不要攒到发布前。默认只推送代码，不自动打 Tag、发布安装包、更新正式宿主或重启用户程序。已有 Cloudflare main 自动部署属于例外，涉及其触发路径时须先批准生产部署并确认迁移安全。旧规则冲突时，以新开发规范为准。
 
 **工作树数量控制**：创建任何新 Git worktree 之前，先阅读 [工作树生命周期规范](docs/worktree-retention-policy.md)，运行 scripts/check-worktree-cap.ps1。长期最多保留 5 个活动工作树；合并后立即清理，旧代码不优先于 origin/main。有未提交修改先做完整离线备份和哈希验证，不得强制删除用户数据。
