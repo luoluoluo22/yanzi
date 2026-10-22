@@ -7,5 +7,6 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\..\src\OpenQuickHost\LocalAgentApiServer.BrowserSessions.cs" Link="BrowserSessions.cs" />
+    <Compile Include="..\..\src\OpenQuickHost\YanziCapabilitySchema.cs" Link="YanziCapabilitySchema.cs" />
   </ItemGroup>
 </Project>

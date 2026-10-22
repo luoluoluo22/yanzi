@@ -51,6 +51,10 @@ public static class YanziCapabilitySchema
                     if (value.ValueKind != JsonValueKind.Number || !value.TryGetInt32(out var min) || min < 0)
                         throw new ArgumentException("Schema minLength 必须是非负整数");
                     break;
+                case "maxLength":
+                    if (value.ValueKind != JsonValueKind.Number || !value.TryGetInt32(out var max) || max < 0)
+                        throw new ArgumentException("Schema maxLength 必须是非负整数");
+                    break;
                 case "title": case "description": case "default": case "examples": case "$schema":
                     break; // Metadata annotations do not affect validation.
                 default: throw new ArgumentException($"MVP 暂不支持 Schema 关键字：{keyword.Name}");
@@ -110,5 +114,8 @@ public static class YanziCapabilitySchema
         if (value.ValueKind == JsonValueKind.String && schema.TryGetProperty("minLength", out var minLength)
             && value.GetString()!.Length < minLength.GetInt32())
             throw new ArgumentException($"{path} 字符数不足");
+        if (value.ValueKind == JsonValueKind.String && schema.TryGetProperty("maxLength", out var maxLength)
+            && value.GetString()!.Length > maxLength.GetInt32())
+            throw new ArgumentException($"{path} 超过允许字符数");
     }
 }

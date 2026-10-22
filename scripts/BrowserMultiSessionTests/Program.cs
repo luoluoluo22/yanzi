@@ -69,6 +69,36 @@ public sealed partial class LocalAgentApiServer
         using (var doc = JsonDocument.Parse("{\"type\":\"task_response\",\"status\":\"success\"}"))
             Check(app.CompleteBrowserTask(edge, "edge-job", doc.RootElement), "Edge task completes after Ego lost");
         Check(eventCount>=3, "Connection changes emitted");
+        // Catch unsupported capability schema keywords before a packaged GUI build
+        // can crash during App.OnStartup registration.
+        const string schemaOpen = "YanziCapabilitySchema.Parse(\"\"\"";
+        var providerFile = Path.Combine(Directory.GetCurrentDirectory(), "src", "OpenQuickHost",
+            "YanziBrowserCapabilityProvider.cs");
+        var providerSource = File.ReadAllText(providerFile);
+        var offset = 0;
+        var schemaCount = 0;
+        while (true)
+        {
+            var begin = providerSource.IndexOf(schemaOpen, offset, StringComparison.Ordinal);
+            if (begin < 0) break;
+            begin += schemaOpen.Length;
+            var end = providerSource.IndexOf("\"\"\"", begin, StringComparison.Ordinal);
+            Check(end > begin, "Capability raw schema must terminate");
+            var definition = YanziCapabilitySchema.Parse(providerSource.Substring(begin, end - begin));
+            YanziCapabilitySchema.ValidateDefinition(definition);
+            schemaCount++;
+            offset = end + 3;
+        }
+        Check(schemaCount >= 6, "All browser capability schemas must be covered");
+
+        var bounded = YanziCapabilitySchema.Parse("{\"type\":\"string\",\"minLength\":1,\"maxLength\":8}");
+        YanziCapabilitySchema.ValidateDefinition(bounded);
+        YanziCapabilitySchema.Validate(bounded, JsonDocument.Parse("\"hello\"").RootElement);
+        var rejected = false;
+        try { YanziCapabilitySchema.Validate(bounded, JsonDocument.Parse("\"excessivelylong\"").RootElement); }
+        catch (ArgumentException) { rejected = true; }
+        Check(rejected, "maxLength must reject oversized input");
+        Console.WriteLine($"PASS: startup capability schemas ({schemaCount}) and maxLength validation");
         Console.WriteLine("PASS: two browsers coexist, targeted routing, response isolation, per-socket send locks, disconnect and fallback");
     }
 }
