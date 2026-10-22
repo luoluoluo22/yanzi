@@ -79,7 +79,7 @@ public static class YanziBrowserCapabilityProvider
         yield return new()
         {
             Name = "browser.workflow",
-            Description = "执行声明式网页工作流；仅允许 wait/fill/click/scroll/scrape/fetch 原子步骤，不执行任意 JavaScript",
+            Description = "执行声明式网页工作流；支持跨页面续接与 wait/waitForUrl/assert/navigate/fill/click/scroll/scrape/fetch；禁止任意脚本，不执行任意 JavaScript",
             Permissions = ["browser.read", "browser.write", "network.read"],
             Category = "browser",
             RiskLevel = "medium",
@@ -112,7 +112,7 @@ public static class YanziBrowserCapabilityProvider
             browser = server?.ConnectedBrowserName ?? "",
             localApiListening = server?.IsListening == true,
             provider = "yanzi-browser-extension",
-            supportedWorkflowSteps = new[] { "wait", "fill", "click", "scroll", "scrape", "fetch" }
+            supportedWorkflowSteps = new[] { "wait", "waitForUrl", "assert", "navigate", "fill", "click", "scroll", "scrape", "fetch" }
         });
     }
 
@@ -199,7 +199,9 @@ public static class YanziBrowserCapabilityProvider
             ["action"] = "workflow",
             ["url"] = url,
             ["steps"] = steps.Clone(),
-            ["closeOnComplete"] = GetCloseOnComplete(input)
+            ["closeOnComplete"] = GetCloseOnComplete(input),
+            ["timeoutSeconds"] = input.TryGetProperty("timeoutSeconds", out var workflowTimeout) && workflowTimeout.TryGetInt32(out var configuredTimeout)
+                ? configuredTimeout : 30
         });
     }
 
@@ -258,7 +260,7 @@ public static class YanziBrowserCapabilityProvider
             throw new ArgumentException($"步骤 {index} 缺少 type。");
 
         var type = typeElement.GetString()?.Trim().ToLowerInvariant();
-        if (type is not ("wait" or "fill" or "click" or "scroll" or "scrape" or "fetch"))
+        if (type is not ("wait" or "waitforurl" or "assert" or "navigate" or "fill" or "click" or "scroll" or "scrape" or "fetch"))
             throw new ArgumentException($"步骤 {index} 不支持类型：{type}");
 
         switch (type)
@@ -270,6 +272,34 @@ public static class YanziBrowserCapabilityProvider
                 if (step.TryGetProperty("timeout", out var timeout) &&
                     (!timeout.TryGetInt32(out var timeoutValue) || timeoutValue < 0 || timeoutValue > 30000))
                     throw new ArgumentException($"步骤 {index}.timeout 必须在 0-30000ms。");
+                if (step.TryGetProperty("urlIncludes", out var waitUrl) &&
+                    (waitUrl.ValueKind != JsonValueKind.String ||
+                     (waitUrl.GetString() ?? "").Length > 2000))
+                    throw new ArgumentException($"步骤 {index}.urlIncludes 无效。");
+                break;
+
+            case "waitforurl":
+                if (!step.TryGetProperty("urlIncludes", out var urlMatch) ||
+                    urlMatch.ValueKind != JsonValueKind.String ||
+                    string.IsNullOrWhiteSpace(urlMatch.GetString()) ||
+                    urlMatch.GetString()!.Length > 2000)
+                    throw new ArgumentException($"步骤 {index} waitForUrl 需要有效 urlIncludes。");
+                break;
+
+            case "navigate":
+                if (!step.TryGetProperty("url", out var navigateUrl) ||
+                    navigateUrl.ValueKind != JsonValueKind.String)
+                    throw new ArgumentException($"步骤 {index} navigate 缺少 url。");
+                RequireHttpUrl(navigateUrl.GetString() ?? "");
+                break;
+
+            case "assert":
+                if (step.TryGetProperty("selector", out var assertSelector) &&
+                    assertSelector.ValueKind == JsonValueKind.String)
+                    ValidateSelector(assertSelector.GetString(), $"步骤 {index}.selector");
+                if (!step.TryGetProperty("selector", out _) &&
+                    !step.TryGetProperty("urlIncludes", out _))
+                    throw new ArgumentException($"步骤 {index} assert 至少需要 selector 或 urlIncludes。");
                 break;
 
             case "fill":
@@ -282,6 +312,10 @@ public static class YanziBrowserCapabilityProvider
 
             case "click":
                 ValidateRequiredSelector(step, index);
+                if (step.TryGetProperty("waitForUrl", out var targetUrl) &&
+                    (targetUrl.ValueKind != JsonValueKind.String ||
+                     (targetUrl.GetString() ?? "").Length > 2000))
+                    throw new ArgumentException($"步骤 {index}.waitForUrl 无效。");
                 break;
 
             case "scroll":

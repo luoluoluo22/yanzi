@@ -1,4 +1,4 @@
-importScripts("lanzou-network-observer.js");
+importScripts("lanzou-network-observer.js", "workflow-orchestrator.js");
 
 let ws = null;
 let currentWsSeq = 0;
@@ -234,6 +234,17 @@ function sendToLocalClient(message) {
 
 // 核心任务处理逻辑
 function handleTask(task) {
+  // Cross-document workflows must be orchestrated outside the page being replaced.
+  // Preserve the existing site-restricted Lanzou fetch implementation.
+  if (task.action === "workflow" && task.site !== "lanzou" &&
+      Array.isArray(task.steps) && !task.steps.some(step => step.type === "fetch")) {
+    void globalThis.yanziWorkflowV2.run(task)
+      .then(result => sendBrowserTaskResponse(task, result.status, result.data, result.message))
+      .catch(error => sendBrowserTaskResponse(task, "error", null,
+        "Workflow V2 failed: " + (error?.message || String(error))));
+    return;
+  }
+
   const targetUrl = task.url || (task.action === "ai_prompt_transfer" ? "https://chat.deepseek.com/" : "");
   logEvent(`开始执行任务 [${task.taskId}]，动作: ${task.action}, 目标网址: ${targetUrl}`);
   
