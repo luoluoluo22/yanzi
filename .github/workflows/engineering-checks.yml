@@ -48,6 +48,7 @@ jobs:
           dotnet run --project src/Yanzi.SyncVerification -c Debug
           dotnet run --project src/Yanzi.SyncVerification -c Debug -- --chat-conversation-metadata
           dotnet run --project src/Yanzi.SyncVerification -c Debug -- --mobile-extension-catalog
+          dotnet run --project src/Yanzi.SyncVerification -c Debug -- --account-extension-pull-policy
       - name: AI chat parallelism, SSE and clipboard regression
         shell: pwsh
         run: |

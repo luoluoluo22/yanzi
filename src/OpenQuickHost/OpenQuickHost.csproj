@@ -1,9 +1,9 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net9.0-windows</TargetFramework>
-    <Version>1.0.41</Version>
+    <Version>1.0.42</Version>
     <FileVersion>1.0.41.0</FileVersion>
     <AssemblyVersion>1.0.41.0</AssemblyVersion>
     <InformationalVersion>1.0.41</InformationalVersion>
