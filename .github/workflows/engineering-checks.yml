@@ -3,7 +3,7 @@ on:
   pull_request:
   push:
     branches: [main]
-    paths: ["src/**", "mobile/**", "cloudflare/**", "protocol/**", "sdk/**", "scripts/**", ".github/workflows/engineering-checks.yml"]
+    paths: ["src/**", "mobile/**", "cloudflare/**", "protocol/**", "sdk/**", "scripts/**", "browser-extension/**", ".github/workflows/engineering-checks.yml"]
 jobs:
   portable-contracts:
     runs-on: ubuntu-latest
@@ -47,6 +47,8 @@ jobs:
         run: |
           dotnet run --project tests/BrowserHelperBootstrapVerification/BrowserHelperBootstrapVerification.csproj -c Debug
           node --check browser-extension/background.js
+          node --check browser-extension/workflow-orchestrator.js
+          node --check browser-extension/workflow-checkpoints.js
           node --check browser-extension/popup/popup.js
       - name: Agent task integration policy regression
         shell: pwsh
