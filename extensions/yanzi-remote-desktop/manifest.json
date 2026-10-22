@@ -1,0 +1,14 @@
+{
+  "id": "yanzi-remote-desktop",
+  "name": "燕子远控",
+  "version": "0.1.0",
+  "category": "远程协作",
+  "description": "MeshCentral 实时监看、远程控制与跨端访问",
+  "icon": "mdi:monitor-share",
+  "accentHex": "#3B82F6",
+  "runtime": "csharp",
+  "entryMode": "entry",
+  "entry": "RemoteDesktop.cs",
+  "permissions": [],
+  "waitForExit": false
+}
