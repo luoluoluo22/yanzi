@@ -307,7 +307,9 @@
             throw new Error("URL assertion failed: expected " + step.urlIncludes + ", got " + current);
         }
         if (step.selector) {
+          if (step.exists !== false) await waitForSelector(tabId, step.selector, timeout);
           const r = await evaluate(tabId, { type: "assert", selector: step.selector });
+          if (!r) throw new Error("Page was not ready for assertion: " + step.selector);
           if (step.exists === false ? r.exists : !r.exists)
             throw new Error("Element assertion failed: " + step.selector);
           if (step.contains != null && !r.text.includes(String(step.contains)))
@@ -315,8 +317,14 @@
         }
         return {};
       }
-      if (type === "snapshot") return await evaluate(tabId, { ...step, type });
-      if (type === "scrape") return await evaluate(tabId, { ...step, type });
+      if (type === "snapshot") {
+        await waitForSelector(tabId, "body", timeout);
+        return await evaluate(tabId, { ...step, type });
+      }
+      if (type === "scrape") {
+        await waitForSelector(tabId, "body", timeout);
+        return await evaluate(tabId, { ...step, type });
+      }
       if (type === "fill" || type === "scroll") return await evaluate(tabId, { ...step, type });
       throw new Error("Unsupported workflow step: " + step.type);
     }
