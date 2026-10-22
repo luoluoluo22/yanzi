@@ -3,6 +3,7 @@ using OpenQuickHost;
 using OpenQuickHost.Sync;
 using Yanzi.Core;
 if (args.Contains("--keyboard-remap-doubletap")) { KeyboardRemapDoubleTapVerification.Run(); return; }
+if (args.Contains("--account-extension-pull-policy")) { AccountExtensionPullPolicyVerification.Run(); return; }
 if (args.Contains("--chat-conversation-metadata")) { ChatConversationMetadataVerification.Run(); return; }
 if (args.Contains("--mobile-extension-catalog")) { await MobileExtensionCatalogVerification.RunAsync(); return; }
 
