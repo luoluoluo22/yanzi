@@ -15,7 +15,7 @@ public static class YanziAction {
    return Task.FromResult("远控网关已配置。再次点击小程序即可连接。");
   }
   if(input=="/清除"){if(File.Exists(settings))File.Delete(settings);return Task.FromResult("已清除本机网关配置。");}
-  string gateway="https://remote.43-156-149-208.sslip.io/";
+  string gateway="";
   if(File.Exists(settings)){using var d=JsonDocument.Parse(File.ReadAllText(settings));gateway=Validate(d.RootElement.GetProperty("gateway").GetString()??"");}
   if(input=="/状态")return Task.FromResult(gateway.Length>0?"远控网关："+gateway:"尚未配置网关。");
   if(gateway.Length==0)return Task.FromResult("远控网关尚未设置，请输入 /配置 https://你的远控域名");

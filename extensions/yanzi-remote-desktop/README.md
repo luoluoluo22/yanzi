@@ -6,7 +6,7 @@
 
 - Windows：独立燕子 C# 小程序，入口 `RemoteDesktop.cs`。打开系统默认浏览器远控界面。
 - Android：`RemoteDesktopActivity` 通过同源 HTTPS WebView 使用同一远控界面，位于燕子手机「电脑」页面的「远控」入口；WebView 限制非同源跳转，阻断混合内容和证书错误。
-- 默认网关：`https://remote.43-156-149-208.sslip.io/`。PC 小程序可使用 `/配置 https://example.com` 覆盖，`/状态` 查询，`/清除` 恢复本机默认值。Android 通过「连接设置」更改。
+- 首次连接需配置网关地址，配置保存在设备本机私有目录。PC 小程序使用 `/配置 https://remote.example.com`，`/状态` 查询，`/清除` 删除本机配置。Android 通过「连接设置」更改。源码不记录私人部署域名。
 - 不将远控账号密码、设备令牌或 Session Cookie 同步到云端。远控凭据由 MeshCentral 自己维护。
 
 ## 网关
@@ -14,7 +14,7 @@
 服务端目录：`/opt/yanzi-remote-desktop-staging/`。
 systemd 服务：`yanzi-remote-desktop.service`（非 root 用户 `yanzi-remote`，Node 22，监听 127.0.0.1:8444）。
 Nginx 站点：`/etc/nginx/sites-available/yanzi-remote-desktop`，使用独立 HTTPS 域名和 Let's Encrypt 证书。
-**当前外部网关返回 HTTP 503（管理员安全初始化维护锁）。** 不能将这一状态描述成已经具备可用远控。
+**初始部署应在管理员账号与 MFA 完成前保持 HTTP 503 维护锁。** 用户私有服务器的真实域名与部署状态不应直接写入公共仓库。
 服务可以仅经本机访问，严禁直接开放 8444 到公网。
 
 ## 解除维护锁前必须完成
