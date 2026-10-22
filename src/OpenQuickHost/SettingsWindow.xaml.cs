@@ -5712,6 +5712,18 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         RefreshExtensionCacheFromMainWindow();
     }
 
+    private void ConfigureExtensionGitButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: SettingsExtensionItem item })
+            return;
+        var dialog = new GitExtensionUpdateSettingsWindow(item.ExtensionId, item.Title, item.DirectoryPath)
+        {
+            Owner = this
+        };
+        if (dialog.ShowDialog() == true)
+            SyncStatusText = $"已保存 {item.Title} 的 Git 更新策略（当前设备）。";
+    }
+
     private async void ConfigureExtensionScheduleButton_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: SettingsExtensionItem item })

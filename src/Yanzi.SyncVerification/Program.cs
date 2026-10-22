@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using OpenQuickHost;
 using OpenQuickHost.Sync;
 using Yanzi.Core;
@@ -140,6 +140,7 @@ if (args.Contains("--fresh-account-sync"))
     return;
 }
 
+if (args.Contains("--git-update-policy")) { await GitExtensionUpdateVerification.RunAsync(); return; }
 if (args.Contains("--git-native-sync")) { GitNativeExtensionVerification.Run(); return; }
 ReleaseReadinessVerification.VerifyUninstallDataRetention();
 VerifyExtensionPackageStability();

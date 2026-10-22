@@ -5278,6 +5278,27 @@
                                                 </Grid>
                                             </Border>
 
+                                            <!-- Git miniapp update policy: opt-in and per-device -->
+                                            <Border Background="{DynamicResource BrushBG}" CornerRadius="10"
+                                                    BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Margin="0,0,0,10">
+                                                <Grid Margin="14,12">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel>
+                                                        <TextBlock Text="Git 更新策略" Foreground="{DynamicResource BrushTextMain}" FontWeight="SemiBold"/>
+                                                        <TextBlock Text="关闭 / 提醒 / 安全快进，可独立设置远端和检查频率"
+                                                                   Foreground="{DynamicResource BrushTextMuted}" FontSize="{DynamicResource FontSizeSmall}"
+                                                                   TextWrapping="Wrap" Margin="0,3,8,0"/>
+                                                    </StackPanel>
+                                                    <Button Grid.Column="1" Content="配置"
+                                                            Style="{DynamicResource Yanzi.Button.Outline}"
+                                                            Height="28" Padding="12,0" VerticalAlignment="Center"
+                                                            Click="ConfigureExtensionGitButton_Click"/>
+                                                </Grid>
+                                            </Border>
+
                                             <!-- 快捷键 段卡 -->
                                             <Border Background="{DynamicResource BrushBG}" CornerRadius="10" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Margin="0,0,0,16">
                                                 <Grid Margin="14,12">

@@ -406,6 +406,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             RunLocalExtensionsAccountSync();
         };
         StartExtensionContentWatcher();
+        StartGitExtensionUpdateScheduler();
 
         _cloudReconnectTimer = new DispatcherTimer();
         _cloudReconnectTimer.Tick += CloudReconnectTimer_Tick;
