@@ -174,6 +174,26 @@ internal static class BrowserHelperBootstrap
         }
         var fingerprint = Convert.ToHexString(hash.GetHashAndReset());
         var target = destinationOverride ?? StableDirectory;
+        // A Yanzi upgrade must never replace a newer unpacked browser helper
+        // with an older copy bundled into this application release.
+        var currentManifestPath = Path.Combine(target, "manifest.json");
+        if (File.Exists(currentManifestPath))
+        {
+            try
+            {
+                using var currentManifest = JsonDocument.Parse(File.ReadAllText(currentManifestPath));
+                using var bundledManifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(source, "manifest.json")));
+                if (IsYanziManifest(currentManifest.RootElement) &&
+                    Version.TryParse(currentManifest.RootElement.GetProperty("version").GetString(), out var currentVersion) &&
+                    Version.TryParse(bundledManifest.RootElement.GetProperty("version").GetString(), out var bundledVersion) &&
+                    currentVersion > bundledVersion)
+                    return target;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or KeyNotFoundException)
+            {
+                // Invalid or transient manifest data follows normal validated package staging.
+            }
+        }
         var marker = Path.Combine(target, ".yanzi-bundle-sha256");
         if (File.Exists(marker) && File.ReadAllText(marker).Trim() == fingerprint)
             return target;

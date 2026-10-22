@@ -75,15 +75,9 @@ public sealed partial class LocalAgentApiServer
         var bytes = JsonSerializer.SerializeToUtf8Bytes(payload);
         try
         {
-            await _browserSendGate.WaitAsync(_cts.Token);
-            try
-            {
-                if (browserSocket.State == WebSocketState.Open)
-                    await browserSocket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, _cts.Token);
-            }
-            finally { _browserSendGate.Release(); }
+            await SendBrowserFrameAsync(browserSocket, bytes, _cts.Token);
         }
-        catch (Exception ex) when (ex is WebSocketException or OperationCanceledException or ObjectDisposedException)
+        catch (Exception ex) when (ex is WebSocketException or OperationCanceledException or ObjectDisposedException or InvalidOperationException)
         {
             // Browser may disconnect while a read is in flight.
         }
