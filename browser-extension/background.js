@@ -1,4 +1,4 @@
-importScripts("lanzou-network-observer.js", "workflow-orchestrator.js");
+importScripts("lanzou-network-observer.js", "workflow-checkpoints.js", "workflow-orchestrator.js");
 
 let ws = null;
 let currentWsSeq = 0;
@@ -234,6 +234,12 @@ function sendToLocalClient(message) {
 
 // 核心任务处理逻辑
 function handleTask(task) {
+  if (task.action === "workflow_state") {
+    void globalThis.yanziWorkflowV2.inspect(task.targetTaskId)
+      .then(result => sendBrowserTaskResponse(task, "success", result))
+      .catch(error => sendBrowserTaskResponse(task, "error", null, error?.message || String(error)));
+    return;
+  }
   // Cross-document workflows must be orchestrated outside the page being replaced.
   // Preserve the existing site-restricted Lanzou fetch implementation.
   if (task.action === "workflow" && task.site !== "lanzou" &&

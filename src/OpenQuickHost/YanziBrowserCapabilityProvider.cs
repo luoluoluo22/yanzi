@@ -22,6 +22,43 @@ public static class YanziBrowserCapabilityProvider
 
         yield return new()
         {
+            Name = "browser.workflow.status",
+            Description = "查询当前扩展保存的工作流步骤检查点和中断状态；不包含输入值或网页内容",
+            Permissions = ["browser.read"],
+            Category = "browser",
+            InputSchema = YanziCapabilitySchema.Parse("""
+            {"type":"object","properties":{"taskId":{"type":"string","maxLength":128}},"additionalProperties":false}
+            """),
+            OutputSchema = YanziCapabilitySchema.Parse("""{"type":"object"}"""),
+            Handler = WorkflowStatusAsync
+        };
+
+        yield return new()
+        {
+            Name = "browser.snapshot",
+            Description = "读取当前主浏览器会话中指定网页的结构化语义快照（标题、控件、开放 Shadow DOM），不读取输入值和密码",
+            Permissions = ["browser.read", "network.read"],
+            Category = "browser",
+            InputSchema = YanziCapabilitySchema.Parse("""
+            {
+              "type":"object",
+              "properties":{
+                "url":{"type":"string","minLength":1},
+                "limit":{"type":"integer","minimum":1,"maximum":120},
+                "maxTextLength":{"type":"integer","minimum":30,"maximum":250},
+                "closeOnComplete":{"type":"boolean"},
+                "timeoutSeconds":{"type":"integer","minimum":5,"maximum":120}
+              },
+              "required":["url"],
+              "additionalProperties":false
+            }
+            """),
+            OutputSchema = YanziCapabilitySchema.Parse("""{"type":"object"}"""),
+            Handler = SnapshotAsync
+        };
+
+        yield return new()
+        {
             Name = "browser.scrape",
             Description = "在浏览器中打开指定网页并按 CSS Selector 提取结构化内容",
             Permissions = ["browser.read", "network.read"],
@@ -79,7 +116,7 @@ public static class YanziBrowserCapabilityProvider
         yield return new()
         {
             Name = "browser.workflow",
-            Description = "执行声明式网页工作流；支持跨页面续接与 wait/waitForUrl/assert/navigate/fill/click/scroll/scrape/fetch；禁止任意脚本，不执行任意 JavaScript",
+            Description = "执行声明式网页工作流；支持跨页面续接与 wait/waitForUrl/assert/navigate/fill/click/scroll/scrape/snapshot/fetch；禁止任意脚本，不执行任意 JavaScript",
             Permissions = ["browser.read", "browser.write", "network.read"],
             Category = "browser",
             RiskLevel = "medium",
@@ -177,6 +214,37 @@ public static class YanziBrowserCapabilityProvider
         return await ExecuteBrowserTaskAsync(input, task);
     }
 
+    private static async Task<object?> SnapshotAsync(object? payload)
+    {
+        var input = (JsonElement)payload!;
+        var url = RequireHttpUrl(input.GetProperty("url").GetString()!);
+        var step = new Dictionary<string, object?> { ["type"] = "snapshot", ["key"] = "semantic" };
+        if (input.TryGetProperty("limit", out var limit) && limit.TryGetInt32(out var limitValue))
+            step["limit"] = limitValue;
+        if (input.TryGetProperty("maxTextLength", out var textLength) && textLength.TryGetInt32(out var textLengthValue))
+            step["maxTextLength"] = textLengthValue;
+        return await ExecuteBrowserTaskAsync(input, new Dictionary<string, object?>
+        {
+            ["action"] = "workflow",
+            ["url"] = url,
+            ["steps"] = new object[] { step },
+            ["closeOnComplete"] = GetCloseOnComplete(input),
+            ["timeoutSeconds"] = input.TryGetProperty("timeoutSeconds", out var duration) && duration.TryGetInt32(out var timeoutValue)
+                ? timeoutValue : 30
+        });
+    }
+
+    private static async Task<object?> WorkflowStatusAsync(object? payload)
+    {
+        var input = (JsonElement)payload!;
+        var request = new Dictionary<string, object?> { ["action"] = "workflow_state" };
+        if (input.ValueKind == JsonValueKind.Object &&
+            input.TryGetProperty("taskId", out var id) &&
+            id.ValueKind == JsonValueKind.String)
+            request["targetTaskId"] = id.GetString();
+        return await ExecuteBrowserTaskAsync(input, request);
+    }
+
     private static async Task<object?> WorkflowAsync(object? payload)
     {
         var input = (JsonElement)payload!;
@@ -260,7 +328,7 @@ public static class YanziBrowserCapabilityProvider
             throw new ArgumentException($"步骤 {index} 缺少 type。");
 
         var type = typeElement.GetString()?.Trim().ToLowerInvariant();
-        if (type is not ("wait" or "waitforurl" or "assert" or "navigate" or "fill" or "click" or "scroll" or "scrape" or "fetch"))
+        if (type is not ("wait" or "waitforurl" or "assert" or "navigate" or "fill" or "click" or "scroll" or "scrape" or "snapshot" or "fetch"))
             throw new ArgumentException($"步骤 {index} 不支持类型：{type}");
 
         switch (type)
@@ -322,6 +390,20 @@ public static class YanziBrowserCapabilityProvider
                 if (step.TryGetProperty("distance", out var distance) &&
                     (!distance.TryGetInt32(out var distanceValue) || Math.Abs((long)distanceValue) > 100000))
                     throw new ArgumentException($"步骤 {index}.distance 超出允许范围。");
+                break;
+
+            case "snapshot":
+                if (step.TryGetProperty("limit", out var limit) &&
+                    (!limit.TryGetInt32(out var maxNodes) || maxNodes < 1 || maxNodes > 120))
+                    throw new ArgumentException($"步骤 {index}.limit 必须在 1-120。");
+                if (step.TryGetProperty("maxTextLength", out var maxText) &&
+                    (!maxText.TryGetInt32(out var maxLen) || maxLen < 30 || maxLen > 250))
+                    throw new ArgumentException($"步骤 {index}.maxTextLength 必须在 30-250。");
+                if (step.TryGetProperty("key", out var snapshotKey) &&
+                    (snapshotKey.ValueKind != JsonValueKind.String ||
+                     string.IsNullOrWhiteSpace(snapshotKey.GetString()) ||
+                     snapshotKey.GetString()!.Length > 60))
+                    throw new ArgumentException($"步骤 {index}.key 无效。");
                 break;
 
             case "scrape":

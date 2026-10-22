@@ -18,7 +18,121 @@
   // This function is serialized into the target frame by chrome.scripting.
   // It must be self-contained and must not close over extension state.
   function performDomStep(step) {
-    const element = selector => document.querySelector(selector);
+    const element = selector => {
+      const parts = String(selector || "").split(/\s*>>>\s*/);
+      let root = document, found = null;
+      for (let i = 0; i < parts.length; i++) {
+        if (!parts[i]) throw new Error("Empty shadow selector.");
+        found = root.querySelector(parts[i]);
+        if (!found) return null;
+        if (i !== parts.length - 1) {
+          if (!found.shadowRoot) return null;
+          root = found.shadowRoot;
+        }
+      }
+      return found;
+    };
+    if (step.type === "snapshot") {
+      const limit = Math.max(1, Math.min(120, Number(step.limit) || 60));
+      const maxLength = Math.max(30, Math.min(250, Number(step.maxTextLength) || 120));
+      const safeText = raw => String(raw ?? "").replace(/\s+/g, " ").trim().slice(0, maxLength);
+      const roleOf = el => {
+        const attr = el.getAttribute("role");
+        if (attr) return attr;
+        const tag = el.localName;
+        if (tag === "a" && el.hasAttribute("href")) return "link";
+        if (tag === "button") return "button";
+        if (tag === "input") {
+          const type = (el.getAttribute("type") || "text").toLowerCase();
+          return ["button", "submit", "reset"].includes(type) ? "button" :
+            ["checkbox", "radio", "range"].includes(type) ? type :
+            type === "password" ? "textbox" : "textbox";
+        }
+        if (tag === "textarea") return "textbox";
+        if (tag === "select") return "combobox";
+        if (tag === "img") return "img";
+        if (/^h[1-6]$/.test(tag)) return "heading";
+        if (tag === "nav") return "navigation";
+        if (tag === "main") return "main";
+        return "";
+      };
+      const nameOf = el => {
+        const labelledBy = el.getAttribute("aria-labelledby");
+        if (labelledBy) {
+          const refNames = labelledBy.split(/\s+/).map(id =>
+            (el.getRootNode()?.getElementById?.(id) || document.getElementById(id))?.textContent || "");
+          if (refNames.some(Boolean)) return safeText(refNames.join(" "));
+        }
+        const explicit = el.getAttribute("aria-label") || el.getAttribute("alt") ||
+          el.getAttribute("title");
+        if (explicit) return safeText(explicit);
+        if (el.labels?.length) return safeText([...el.labels].map(label => label.textContent).join(" "));
+        // Never return input values, editable content, password contents or form secrets.
+        if (el.matches("input, textarea, select, [contenteditable]")) {
+          return safeText(el.getAttribute("placeholder") || el.getAttribute("name") || "");
+        }
+        return safeText(el.innerText ?? el.textContent);
+      };
+      const selectorOf = el => {
+        const segments = [];
+        let node = el;
+        while (node && node.nodeType === 1 && segments.length < 6) {
+          const root = node.getRootNode();
+          const steps = [];
+          let cur = node;
+          while (cur && cur.nodeType === 1 && steps.length < 10) {
+            let piece = cur.localName;
+            if (cur.id) {
+              steps.unshift(piece + "#" + CSS.escape(cur.id));
+              break;
+            }
+            const testId = cur.getAttribute("data-testid");
+            if (testId) {
+              steps.unshift(piece + '[data-testid="' + CSS.escape(testId) + '"]');
+              break;
+            }
+            let prior = cur.previousElementSibling, n = 1;
+            while (prior) { if (prior.localName === cur.localName) n++; prior = prior.previousElementSibling; }
+            steps.unshift(piece + ":nth-of-type(" + n + ")");
+            cur = cur.parentElement;
+          }
+          segments.unshift(steps.join(" > "));
+          node = root.host || null;
+        }
+        return segments.join(" >>> ");
+      };
+      const headings = [], controls = [], frames = [];
+      let inspected = 0, shadowRootCount = 0, truncated = false;
+      const walk = root => {
+        const nodes = root.querySelectorAll("*");
+        for (const el of nodes) {
+          if (inspected++ >= 6000) { truncated = true; return; }
+          if (el.closest("[hidden], [aria-hidden='true']")) continue;
+          const role = roleOf(el);
+          if (role === "heading" && headings.length < 30) {
+            headings.push({ level: Number(el.localName?.slice(1)) || undefined, name: nameOf(el) });
+          } else if (role && ["button", "link", "textbox", "checkbox", "radio", "combobox", "range"].includes(role)) {
+            if (controls.length < limit) {
+              controls.push({ role, name: nameOf(el), selector: selectorOf(el),
+                disabled: !!el.disabled || el.getAttribute("aria-disabled") === "true" });
+            } else truncated = true;
+          }
+          if (el.localName === "iframe" && frames.length < 15) {
+            frames.push({ title: safeText(el.title), srcOrigin: (() => {
+              try { return new URL(el.src).origin; } catch { return ""; }
+            })() });
+          }
+          if (el.shadowRoot) {
+            shadowRootCount++;
+            walk(el.shadowRoot);
+          }
+        }
+      };
+      walk(document);
+      return { url: location.href, title: safeText(document.title), readyState: document.readyState,
+        headings, controls, frames, openShadowRoots: shadowRootCount, inspected,
+        truncated, note: "Values, passwords and editable content omitted; cross-origin frame contents not included." };
+    }
     if (step.type === "inspect") {
       const el = step.selector ? element(step.selector) : null;
       return { found: !!el, href: el?.closest("a[href]")?.href || "",
@@ -79,6 +193,8 @@
 
   function createController(chromeApi) {
     const active = new Map();
+    const journal = globalThis.yanziWorkflowCheckpointsFactory?.(chromeApi);
+    const initialized = journal?.interruptUnfinished().catch(() => 0) ?? Promise.resolve(0);
 
     async function evaluate(tabId, step) {
       const response = await chromeApi.scripting.executeScript({
@@ -199,6 +315,7 @@
         }
         return {};
       }
+      if (type === "snapshot") return await evaluate(tabId, { ...step, type });
       if (type === "scrape") return await evaluate(tabId, { ...step, type });
       if (type === "fill" || type === "scroll") return await evaluate(tabId, { ...step, type });
       throw new Error("Unsupported workflow step: " + step.type);
@@ -211,23 +328,36 @@
       let tabId, completedSteps = 0, currentStep = null;
       let status = "error", data = null, message = "";
       const taskId = String(task.taskId || "");
+      await initialized;
       if (taskId && active.has(taskId)) {
         return { status: "error", data: null, message: "Workflow already running: " + taskId };
       }
+      // Reserve identity before awaiting tab creation to prevent duplicate concurrent jobs.
+      if (taskId) active.set(taskId, "starting");
       try {
         const url = httpUrl(task.url);
         const created = await chromeApi.tabs.create({ url, active: false });
         tabId = created.id;
         if (taskId) active.set(taskId, tabId);
-        const results = {};
+        await journal?.begin(taskId, { tabId, origin: new URL(url).origin, totalSteps: steps.length }).catch(() => {});
+        const results = Object.create(null);
         for (let i = 0; i < steps.length; i++) {
           currentStep = { index: i + 1, type: String(steps[i].type || "") };
+          await journal?.progress(taskId, completedSteps, currentStep).catch(() => {});
           const remaining = deadline - Date.now() - 800;
           if (remaining <= 0) throw new Error("Workflow exceeded its execution deadline.");
           const partial = await stepAction(tabId, { ...steps[i],
             timeout: Math.min(timeoutFor(steps[i]), remaining) });
           if (currentStep.type.toLowerCase() === "scrape") Object.assign(results, partial);
+          if (currentStep.type.toLowerCase() === "snapshot") {
+            const key = String(steps[i].key || "snapshot");
+            if (["__proto__", "constructor", "prototype"].includes(key))
+              throw new Error("Reserved snapshot key is not allowed.");
+            results[key] = partial;
+          }
           completedSteps = i + 1;
+          await journal?.progress(taskId, completedSteps, null).catch(() => {});
+          await journal?.progress(taskId, completedSteps, null).catch(() => {});
         }
         status = "success";
         data = { ...results, _workflow: { tabId, finalUrl: (await tab(tabId)).url,
@@ -238,6 +368,7 @@
         data = { _workflow: { tabId, completedSteps, failedStep: currentStep,
           elapsedMs: Date.now() - start } };
       } finally {
+        await journal?.finish(taskId, status, completedSteps).catch(() => {});
         if (taskId) active.delete(taskId);
         if (tabId != null && task.closeOnComplete) {
           try { await chromeApi.tabs.remove(tabId); } catch (_) { /* Already closed. */ }
@@ -245,7 +376,11 @@
       }
       return { status, data, message };
     }
-    return { run, active };
+    async function inspect(taskId) {
+      await initialized;
+      return { supported: !!journal?.supported, tasks: await journal?.status(taskId) || [] };
+    }
+    return { run, active, inspect };
   }
 
   globalThis.yanziWorkflowV2 = createController(chrome);
