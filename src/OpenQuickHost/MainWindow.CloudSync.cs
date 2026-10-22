@@ -1551,8 +1551,6 @@ public partial class MainWindow
                     !ExtensionDevicePolicy.CanSyncInstall(item.ManifestJson) ||
                     !item.HasArchive ||
                     string.IsNullOrWhiteSpace(item.ExtensionId) ||
-                    (localIds.Contains(item.ExtensionId) &&
-                     !IsAccountExtensionNewer(localCommands[item.ExtensionId], item)) ||
                     recycledIds.Contains(item.ExtensionId) ||
                     IsConfigExtensionId(item.ExtensionId))
                 {
@@ -1561,6 +1559,41 @@ public partial class MainWindow
 
                 try
                 {
+                    // Same manifest version and different source are a conflict, not
+                    // a reason to install over unsubmitted local development code.
+                    string? localHashBeforeDownload = null;
+                    if (localCommands.TryGetValue(item.ExtensionId, out var candidate))
+                    {
+                        if (!string.IsNullOrWhiteSpace(candidate.ExtensionDirectoryPath) &&
+                            ExtensionGitSafety.HasGitWorktree(candidate.ExtensionDirectoryPath))
+                        {
+                            HostAssets.AppendLog($"Account extension Git worktree protected: cloud package cannot overwrite source id={item.ExtensionId}");
+                            continue;
+                        }
+                        var sameVersion = string.Equals(
+                            (candidate.DeclaredVersion ?? "").Trim().TrimStart('v', 'V'),
+                            (item.LatestVersion ?? "").Trim().TrimStart('v', 'V'),
+                            StringComparison.OrdinalIgnoreCase);
+                        if (sameVersion || IsAccountExtensionNewer(candidate, item))
+                        {
+                            try { localHashBeforeDownload = CalculateLocalAccountArchiveSha256(candidate, item); }
+                            catch (Exception ex)
+                            {
+                                HostAssets.AppendLog($"Account extension local content unreadable; overwrite blocked id={item.ExtensionId}: {ex.Message}");
+                                continue;
+                            }
+                        }
+                        var decision = AccountExtensionPullPolicy.Decide(
+                            true, candidate.DeclaredVersion, item.LatestVersion,
+                            localHashBeforeDownload, item.ArchiveSha256);
+                        if (decision != AccountExtensionPullDecision.InstallNewerVersion)
+                        {
+                            if (decision is AccountExtensionPullDecision.SameVersionConflict or
+                                AccountExtensionPullDecision.UnorderedVersionConflict)
+                                HostAssets.AppendLog($"Account extension code conflict: local source preserved id={item.ExtensionId}, local={candidate.DeclaredVersion}, remote={item.LatestVersion}, remoteRevision={item.ArchiveRevision}. Update manifest version and publish deliberately.");
+                            continue;
+                        }
+                    }
                     var packageBytes = await _cloudSyncClient.DownloadMyExtensionArchiveAsync(item.ExtensionId);
                     if (!ExtensionDevicePolicy.CanSyncInstallArchive(packageBytes))
                     {
@@ -1572,7 +1605,38 @@ public partial class MainWindow
                             item.ArchiveSha256, StringComparison.OrdinalIgnoreCase))
                         throw new InvalidDataException($"Account extension hash mismatch: {item.ExtensionId}");
                     if (localCommands.TryGetValue(item.ExtensionId, out var existingCommand))
-                        BackupExtensionBeforeCloudUpgrade(existingCommand);
+                    {
+                        // Re-read after network I/O: another agent can change the
+                        // source while the archive is downloading.
+                        var live = LocalExtensionCatalog.LoadCommands().FirstOrDefault(command =>
+                            command.Source == CommandSource.LocalExtension &&
+                            string.Equals(command.ExtensionId, item.ExtensionId, StringComparison.OrdinalIgnoreCase));
+                        if (live == null || !IsAccountExtensionNewer(live, item))
+                        {
+                            HostAssets.AppendLog($"Account extension changed while downloading; overwrite blocked id={item.ExtensionId}");
+                            continue;
+                        }
+                        string currentHash;
+                        try { currentHash = CalculateLocalAccountArchiveSha256(live, item); }
+                        catch (Exception ex)
+                        {
+                            HostAssets.AppendLog($"Account extension content changed while downloading; overwrite blocked id={item.ExtensionId}: {ex.Message}");
+                            continue;
+                        }
+                        if (!string.Equals(currentHash, localHashBeforeDownload, StringComparison.OrdinalIgnoreCase))
+                        {
+                            HostAssets.AppendLog($"Account extension source edited during cloud download; local source preserved id={item.ExtensionId}");
+                            continue;
+                        }
+                        BackupExtensionBeforeCloudUpgrade(live);
+                    }
+                    else if (LocalExtensionCatalog.LoadCommands().Any(command =>
+                                 command.Source == CommandSource.LocalExtension &&
+                                 string.Equals(command.ExtensionId, item.ExtensionId, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        HostAssets.AppendLog($"Account extension installed locally during download; cloud overwrite blocked id={item.ExtensionId}");
+                        continue;
+                    }
                     var result = await ExtensionInstallService.InstallPackageAsync(
                         packageBytes, item.ExtensionId, fallbackName: item.DisplayName,
                         privateIconDownload: (id, token) => _cloudSyncClient.DownloadMyExtensionIconAsync(id, token));
@@ -1701,29 +1765,19 @@ public partial class MainWindow
 
     private static bool IsAccountExtensionNewer(CommandItem command, UserExtensionRecord record)
     {
-        var localVersion = (command.DeclaredVersion ?? "").Trim().TrimStart('v', 'V');
-        var remoteVersion = (record.LatestVersion ?? "").Trim().TrimStart('v', 'V');
-        if (!Version.TryParse(localVersion, out var local) ||
-            !Version.TryParse(remoteVersion, out var remote))
-            return false;
-        if (remote != local) return remote > local;
-        // 同版本跨设备修改也属于新快照，不能仅按 manifest 版本跳过。
-        if (!record.HasArchive || string.IsNullOrWhiteSpace(record.ArchiveSha256)) return false;
-        try
-        {
-            var version = string.IsNullOrWhiteSpace(command.DeclaredVersion) ? "0.1.0" : command.DeclaredVersion;
-            var package = ExtensionPackageService.BuildPackage(command, version,
-                GetArchivedManifestIcon(record.ManifestJson), includeUserShortcut: false);
-            return !Convert.ToHexString(SHA256.HashData(package)).Equals(
-                record.ArchiveSha256, StringComparison.OrdinalIgnoreCase);
-        }
-        catch (Exception ex)
-        {
-            HostAssets.AppendLog($"Account extension hash comparison skipped: id={command.ExtensionId}, error={ex.Message}");
-            return false;
-        }
+        // A different SHA256 means different content, not a higher cloud version.
+        return AccountExtensionPullPolicy.IsRemoteVersionNewer(
+            command.DeclaredVersion, record.LatestVersion);
     }
 
+    private static string CalculateLocalAccountArchiveSha256(CommandItem command, UserExtensionRecord remote)
+    {
+        var version = string.IsNullOrWhiteSpace(command.DeclaredVersion)
+            ? "0.1.0" : command.DeclaredVersion;
+        var package = ExtensionPackageService.BuildPackage(command, version,
+            GetArchivedManifestIcon(remote.ManifestJson), includeUserShortcut: false);
+        return Convert.ToHexString(SHA256.HashData(package));
+    }
     private static void BackupExtensionBeforeCloudUpgrade(CommandItem command)
     {
         var source = command.ExtensionDirectoryPath;
