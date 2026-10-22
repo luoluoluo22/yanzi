@@ -4,7 +4,7 @@
   if (globalThis.__yanziKeepGoingV1) return;
   globalThis.__yanziKeepGoingV1 = true;
   const KEY = 'yanzi.chatgpt.keepGoing.settings.v1';
-  const DEFAULTS = {message:'继续', delaySeconds:60, stopText:'', stopMode:'contains', maxSends:0};
+  const DEFAULTS = {message:'继续', delaySeconds:60, stopText:'', stopMode:'contains', maxSends:0, stopAt:0};
   const SEL = {
     editor:'#prompt-textarea, main [contenteditable="true"][role="textbox"]',
     send:'button[data-testid="send-button"], button[data-testid="composer-submit-button"], button[aria-label="Send prompt"], button[aria-label="发送提示"], main button[aria-label="发送"], main button[aria-label="Send"]',
@@ -14,6 +14,7 @@
   let settings = {...DEFAULTS}, enabled = false, sending = false, awaitingReply = false, sentCount = 0;
   let chatPath = '', beforeReply = '', waitingSince = 0, deadline = 0, seenReply = '', replyChangedAt = 0, knownUserTurn = '';
   let host, button, dialogHost, toastTimeout, popupOpen = false;
+  let lastVerifiedReply = '', lastStopCheck = '尚未检查', lastStopReason = '';
   const editor = () => document.querySelector(SEL.editor);
   const sendButton = () => document.querySelector(SEL.send);
   const generating = () => !!document.querySelector(SEL.stop);
@@ -25,7 +26,7 @@
     const units = legacy.length ? [] : Array.from(document.querySelectorAll('[data-chatgpt-search-unit-key]'))
       .filter(el => /:assistant$/.test(el.getAttribute('data-chatgpt-search-unit-key') || ''));
     const modern = legacy.length || units.length ? [] : Array.from(document.querySelectorAll('[class*="MarkdownRoot-"]'))
-      .filter(el => !el.closest('[data-user-message-bubble="true"]'));
+      .filter(el => !el.closest('[data-user-message-bubble="true"]') && !el.parentElement?.closest('[class*="MarkdownRoot-"]'));
     const list = legacy.length ? legacy : units.length ? units : modern;
     const node = list.at(-1);
     if (!node) return null;
@@ -41,7 +42,8 @@
       const newestUser = users[users.length-1];
       if (newestUser && (node.compareDocumentPosition(newestUser) & Node.DOCUMENT_POSITION_FOLLOWING)) return null;
     }
-    const content = node.querySelector('.markdown, [data-content-search-unit-key]') || node;
+    const content = node.querySelector('.markdown, [data-content-search-unit-key], [class*="MarkdownRoot-"]') || node;
+    // Select message body only, never reaction buttons or the whole surrounding turn.
     const text = (content.innerText || content.textContent || '').trim();
     const id = node.getAttribute('data-message-id') || node.getAttribute('data-chatgpt-search-message-ids') || '';
     return {text, fingerprint:[list.length,id,text.length,text.slice(0,120),text.slice(-120)].join('|')};
@@ -55,14 +57,41 @@
     const el = editor();
     return el ? (el.tagName === 'TEXTAREA' ? el.value : el.innerText || el.textContent || '').trim() : '';
   }
+  function normalizeReply(value) {
+    return String(value || '').normalize('NFKC').replace(/[\u200B-\u200D\u2060\uFEFF]/g, '').replace(/\u00a0/g,' ').replace(/\r\n?/g,'\n').trim();
+  }
   function stopMatches(text) {
-    const target = settings.stopText.trim();
+    const target = normalizeReply(settings.stopText);
     if (!target) return false;
-    if (settings.stopMode === 'equals') return text.trim() === target;
+    const actual = normalizeReply(text);
+    if (settings.stopMode === 'equals') return actual === target;
     if (settings.stopMode === 'regex') {
-      try { return new RegExp(target, 'i').test(text); } catch { return false; }
+      try { return new RegExp(target, 'i').test(actual); } catch { return false; }
     }
-    return text.includes(target);
+    return actual.includes(target);
+  }
+  function timeReached() { return settings.stopAt > 0 && Date.now() >= settings.stopAt; }
+  function verifyStop(reply) {
+    if (timeReached()) {
+      lastStopCheck = '已到达指定停止时间';
+      lastStopReason = lastStopCheck;
+      return lastStopReason;
+    }
+    if (!reply || !normalizeReply(reply.text)) {
+      lastStopCheck = '尚未检测到 AI 完整回复';
+      return '';
+    }
+    lastVerifiedReply = normalizeReply(reply.text);
+    const matched = stopMatches(lastVerifiedReply);
+    lastStopCheck = matched ? '最新回复命中停止关键词' : '最新回复未命中停止关键词';
+    if (matched) lastStopReason = lastStopCheck;
+    return matched ? lastStopReason : '';
+  }
+  function localDatetime(value) {
+    if (!value || !Number.isFinite(value)) return '';
+    const d = new Date(value);
+    const two = x => String(x).padStart(2,'0');
+    return [d.getFullYear(),two(d.getMonth()+1),two(d.getDate())].join('-')+'T'+two(d.getHours())+':'+two(d.getMinutes());
   }
   function paint(mode, label, hint) {
     if (!button) return;
@@ -86,11 +115,14 @@
     awaitingReply = false;
     deadline = 0;
     paint('idle','不要停','已停止：'+reason+'（右键设置）');
+    lastStopReason = reason;
     if (reason && reason !== '手动关闭') notice(reason);
   }
   function enable() {
     enabled = true; sending = false; awaitingReply = false; sentCount = 0;
     chatPath = pathKey(); seenReply = ''; replyChangedAt = Date.now(); deadline = 0; knownUserTurn = latestUserTurn();
+    lastVerifiedReply = '';lastStopCheck = '等待 AI 最新回复';lastStopReason = '';
+    if (timeReached()) {halt('已到达指定停止时间，请重新设置');return;}
     paint('waiting','不要停 · 待回复');
     tick();
   }
@@ -121,10 +153,12 @@
     paint('waiting','不要停 · 发送中');
     try {
       if (pathKey() !== chatPath) throw new Error('聊天已切换');
+      if (timeReached()) {halt('已到达指定停止时间');return;}
       if (generating() || draft()) throw new Error('正在回复或有手动草稿');
       const reply = lastReply();
       if (!reply) throw new Error('尚无 AI 回复');
-      if (stopMatches(reply.text)) {halt('已命中停止条件');return;}
+      const stopReason = verifyStop(reply);
+      if (stopReason) {halt(stopReason);return;}
       if (settings.maxSends > 0 && sentCount >= settings.maxSends) {halt('已达到最多续发次数');return;}
       beforeReply = reply.fingerprint;
       await fill(settings.message);
@@ -137,6 +171,8 @@
       if (!enabled) return;
       if (!submit || submit.disabled || generating() || pathKey() !== chatPath)
         throw new Error('发送按钮未就绪，草稿已保留供检查');
+      if (timeReached()) {halt('已到达指定停止时间；草稿已保留');return;}
+      if (popupOpen) {halt('设置界面已打开，暂停本次发送；草稿已保留');return;}
       submit.click();
       sentCount++;
       awaitingReply = true;
@@ -157,7 +193,11 @@
   }
   function tick() {
     mount();
-    if (!enabled || sending) return;
+    if (!enabled) return;
+    // Check the wall clock even while waiting for a response or preparing a send.
+    if (timeReached()) {halt('已到达指定停止时间');return;}
+    if (sending) return;
+    if (popupOpen) { deadline = 0; paint('waiting','不要停 · 设置中','保存设置后再重新倒计时'); return; }
     const currentPath = pathKey();
     if (currentPath !== chatPath) {
       if (awaitingReply && chatPath === '/' && currentPath.startsWith('/c/')) chatPath = currentPath;
@@ -184,10 +224,14 @@
       }
       awaitingReply=false;deadline=0;
     }
+    // Verify the final reply and the configured stop rule before any new countdown.
+    const reason = verifyStop(reply);
+    if (reason) {halt(reason);return;}
     if (draft()) {halt('检测到手动草稿，已停止');return;}
-    if (stopMatches(reply.text)) {halt('AI 回复命中停止条件');return;}
     if (settings.maxSends > 0 && sentCount >= settings.maxSends) {halt('已达到最多续发次数');return;}
     if (!deadline) deadline=Date.now()+settings.delaySeconds*1000;
+    if (settings.stopAt) deadline = Math.min(deadline,settings.stopAt);
+    if (timeReached()) {halt('已到达指定停止时间');return;}
     const remaining=Math.max(0,Math.ceil((deadline-Date.now())/1000));
     paint('ready','不要停 '+remaining+'s','已就绪；'+remaining+' 秒后自动发送；左键停止，右键设置');
     if (remaining===0) void sendNext();
@@ -223,6 +267,7 @@
   function openSettings() {
     if (popupOpen) return;
     popupOpen=true;
+    if (enabled && !sending) {deadline=0;paint('waiting','不要停 · 设置中');}
     dialogHost=document.createElement('div');
     dialogHost.id='yanzi-keep-going-dialog-host';
     const sh=dialogHost.attachShadow({mode:'open'});
@@ -238,21 +283,27 @@
       'button{cursor:pointer;border:1px solid #cbd5e1;border-radius:9px;background:#fff;padding:9px 15px;color:#111827;font:inherit}',
       'button.primary{background:#15803d;border-color:#15803d;color:#fff}.error{color:#b91c1c;font-size:12px;min-height:17px}</style>',
       '<div class="veil"><form class="panel" aria-label="不要停设置"><h3>不要停 · 自动续聊</h3>',
-      '<div class="hint">只在当前标签页手动开启。切换聊天、出现草稿或发送异常会自动停止。</div>',
+      '<div class="hint">只在当前标签页手动开启。修改设置需点击“保存设置”才生效；设置窗口打开期间暂停自动发送。切换聊天或出现异常会停止。</div>',
       '<label>自动发送内容</label><textarea name="message" required></textarea>',
       '<div class="row"><div><label>回复完成后等待（秒）</label><input name="delaySeconds" type="number" min="1" max="86400" required></div>',
       '<div><label>最多续发次数（0 = 不限）</label><input name="maxSends" type="number" min="0" max="10000" required></div></div>',
+      '<label>到指定时间停止（本机时间，留空 = 不限）</label>',
+      '<input name="stopAtLocal" type="datetime-local" step="60">',
       '<label>停止条件：AI 最新回复的文本</label><select name="stopMode">',
       '<option value="contains">包含指定内容</option><option value="equals">全文完全相同</option>',
       '<option value="regex">正则表达式（忽略大小写）</option></select>',
-      '<textarea name="stopText" placeholder="如：任务全部完成。留空则不按回复内容停止"></textarea>',
+      '<textarea name="stopText" placeholder="如：可以停了。留空则不按回复内容停止"></textarea>',
+      '<label>最近一次识别与复核</label><div class="hint" data-check="true" style="white-space:pre-wrap;word-break:break-word"></div>',
       '<div class="error" role="alert"></div><div class="actions">',
       '<button type="button" class="cancel">取消</button><button type="submit" class="primary">保存设置</button>',
       '</div></form></div>'
     ].join('');
     const form=sh.querySelector('form');
     for (const [key,val] of Object.entries(settings)) if(form.elements.namedItem(key))form.elements.namedItem(key).value=String(val);
-    const close=()=>{dialogHost?.remove();dialogHost=null;popupOpen=false;};
+    form.elements.namedItem('stopAtLocal').value = localDatetime(settings.stopAt);
+    const reply = lastReply();
+    sh.querySelector('[data-check]').textContent = 'AI 最新回复：'+JSON.stringify(normalizeReply(reply?.text || lastVerifiedReply || '（暂无）').slice(0,250))+'\n复核状态：'+lastStopCheck+'\n上次停止原因：'+(lastStopReason || '无');
+    const close=()=>{dialogHost?.remove();dialogHost=null;popupOpen=false;if (enabled) {deadline=0;tick();}};
     sh.querySelector('.cancel').addEventListener('click',close);
     sh.querySelector('.veil').addEventListener('click',e=>{if(e.target.classList.contains('veil'))close();});
     sh.addEventListener('keydown',e=>{if(e.key==='Escape')close();});
@@ -263,15 +314,19 @@
       const stopMode=form.elements.namedItem('stopMode').value;
       const delaySeconds=Number(form.elements.namedItem('delaySeconds').value);
       const maxSends=Number(form.elements.namedItem('maxSends').value);
+      const stopAtLocal=form.elements.namedItem('stopAtLocal').value;
+      const stopAt=stopAtLocal ? new Date(stopAtLocal).getTime() : 0;
       const err=sh.querySelector('.error');
       if(!message || message.length>5000){err.textContent='发送内容需为 1–5000 字';return;}
       if(!Number.isInteger(delaySeconds)||delaySeconds<1||delaySeconds>86400){err.textContent='等待需为 1–86400 秒';return;}
       if(!Number.isInteger(maxSends)||maxSends<0||maxSends>10000){err.textContent='续发次数需为 0–10000';return;}
       if(stopMode==='regex'&&stopText){try{new RegExp(stopText,'i');}catch{err.textContent='正则表达式无效';return;}}
-      settings={message,delaySeconds,maxSends,stopText,stopMode};
+      if(stopAtLocal && (!Number.isFinite(stopAt) || stopAt <= Date.now())){err.textContent='停止时间必须晚于当前时间';return;}
+      settings={message,delaySeconds,maxSends,stopText,stopMode,stopAt};
       try {await chrome.storage.local.set({[KEY]:settings});}
       catch {err.textContent='扩展设置保存失败';return;}
       deadline=0;close();notice('设置已保存');
+      if (enabled && !generating()) tick();
     });
     document.body.appendChild(dialogHost);
     form.elements.namedItem('message').focus();
@@ -283,7 +338,8 @@
       delaySeconds:Number.isInteger(s.delaySeconds)&&s.delaySeconds>=1&&s.delaySeconds<=86400?s.delaySeconds:60,
       stopText:typeof s.stopText==='string'?s.stopText:'',
       stopMode:['contains','equals','regex'].includes(s.stopMode)?s.stopMode:'contains',
-      maxSends:Number.isInteger(s.maxSends)&&s.maxSends>=0?s.maxSends:0
+      maxSends:Number.isInteger(s.maxSends)&&s.maxSends>=0?s.maxSends:0,
+      stopAt:Number.isFinite(s.stopAt)&&s.stopAt>0?s.stopAt:0
     };
   }).catch(()=>{});
   let scheduled=false;
