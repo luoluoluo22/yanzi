@@ -285,6 +285,74 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
     for(const notify of [...parentWaiters]) notify(event);
   }
 
+  // A verified-late reply must unblock sibling deliveries that were NEVER
+  // dispatched. It must not retry a possibly sent/unknown return.
+  // No resend: ambiguous post-send failures are resolved by reading the
+  // exact parent conversation and matching the child Job marker.
+  function mayHaveSentManagedReturn(job) {
+    return job?.task?.action==='chatgpt_subagent_continue' &&
+      (job.deliveryPhase==='after_send' ||
+       job.data?.deliveryUncertain===true ||
+       /^等待回复超时；消息可能已发送/.test(job.message||'') ||
+       /^ChatGPT 页面异步消息通道中断，原消息可能已发送/.test(job.message||''));
+  }
+
+  // Safe replay only when the content script proved Send was never clicked.
+  // Keep the original error Job in history and enqueue a new linked Job once.
+  function restoreProvenUnsentReturn(parent,delivery) {
+    if(!parent?.url || !parent.conversationId ||
+       delivery?.status!=='error' || (delivery.preSendRetryCount||0)>=1)
+      return false;
+    const old=state.jobs.find(j=>j.id===delivery.returnJobId);
+    if(!old || old.status!=='error' ||
+       old.task?.action!=='chatgpt_subagent_continue' ||
+       old.task.expectedUrl!==parent.url ||
+       old.task.expectedConversationId!==parent.conversationId)
+      return false;
+    const explicit=old.deliveryPhase==='before_send' &&
+      old.errorCode==='send_button_unavailable';
+    // Legacy bridge records lost the deliveryPhase field; this exact error
+    // is thrown only while waiting for Send, before messageSubmitted=true.
+    const legacy=old.deliveryPhase == null && old.errorCode == null &&
+      old.message==='等待发送按钮超时' &&
+      old.data?.diagnostics?.editor?.lastInsertion?.sendDisabledImmediately===true;
+    if(!explicit && !legacy)return false;
+    const next=enqueue(old.task,old.source,{deferPump:true});
+    delivery.preSendRetryCount=(delivery.preSendRetryCount||0)+1;
+    (delivery.preSendPreviousJobIds ||= []).push(old.id);
+    delivery.returnJobId=next.id;
+    delivery.status='queued';
+    delivery.error=null;
+    delivery.completedAt=null;
+    return true;
+  }
+
+  function restoreVerifiedParentQueue(parent) {
+    if(parent?.status!=='needs_review' || !parent.url || !parent.conversationId ||
+       (parent.bootstrap?.enabled && parent.bootstrap.status!=='confirmed'))
+      return false;
+    const blockers=parent.deliveries.filter(d=>{
+      if(d.status==='needs_review' && d.error==='parent_needs_review_delivery_not_sent') {
+        const job=state.jobs.find(j=>j.id===d.returnJobId);
+        if(job?.status==='needs_review' && !job.startedAt) {
+          job.status='queued';
+          job.completedAt=null;
+          job.message=null;
+          d.status='queued';
+          d.completedAt=null;
+          d.error=null;
+        }
+      }
+      return !['success','verified_late','queued','awaiting_parent'].includes(d.status);
+    });
+    if(blockers.length)return false;
+    // Restore only if there is at least one actual verified late delivery.
+    if(!parent.deliveries.some(d=>d.status==='verified_late' || d.preSendRetryCount>0))return false;
+    parent.status='ready';
+    flushManagedParentPending(parent);
+    return true;
+  }
+
   function finish(jobId, status, data, message) {
     const entry = activeJobs.get(jobId);
     if (!entry) return;
@@ -317,14 +385,10 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
           delivery.nextVerificationAt=null;
           delivery.verifiedAt=now();
           delivery.error=null;
-          const unresolved=parent.deliveries.some(d=>
-            !['success','verified_late'].includes(d.status));
-          if(!unresolved) {
-            parent.status='ready';
-            parent.lastResponse={jobId,text:evidence.replyText.slice(0,16000),
-              receivedAt:now(),verifiedLate:true};
-            flushManagedParentPending(parent);
-          }
+          // Mark the verified supervisor reply without erasing the timeout.
+          parent.lastResponse={jobId,text:evidence.replyText.slice(0,16000),
+            receivedAt:now(),verifiedLate:true};
+          restoreVerifiedParentQueue(parent);
         } else {
           delivery.status='needs_review';
           parent.status='needs_review';
@@ -385,6 +449,11 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
             delivery.error=entry.job.message||null;
             if(entry.job.status==='timeout' && parent.url && parent.conversationId)
               queueManagedParentVerification(parent,delivery);
+            if(entry.job.status==='error' && mayHaveSentManagedReturn(entry.job) &&
+               parent.url && parent.conversationId)
+              queueManagedParentVerification(parent,delivery);
+            if(entry.job.status==='error' && restoreProvenUnsentReturn(parent,delivery))
+              restoreVerifiedParentQueue(parent);
           }
         }
       }
@@ -430,6 +499,12 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
     return version.length===3 && version.every(Number.isInteger) &&
       (version[0]>0 || version[1]>5 || (version[1]===5 && version[2]>=76));
   }
+  function supportsFocusedAgentWrite() {
+    const parts=String(extensionVersion||'').split('.').slice(0,3)
+      .map(x=>Number.parseInt(x,10));
+    return parts.length===3 && parts.every(Number.isInteger) &&
+      (parts[0]>0 || parts[1]>5 || (parts[1]===5 && parts[2]>=79));
+  }
   function pump() {
     if (socket?.readyState !== WebSocket.OPEN) return;
 
@@ -438,6 +513,11 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
       // initializing or its last result is uncertain, leave delivery queued.
       const job = state.jobs.find(item => {
         if(item.status!=='queued')return false;
+        // Old Edge and new Ego can use the same extension ID. Only a browser
+        // with verified focus-handshake and unique-agent-tab support may
+        // execute Agent writes. Leave the existing Job queued otherwise.
+        if(!allowTestSocket && item.task.focusForSend===true && !supportsFocusedAgentWrite())
+          return false;
         // Old Edge extensions cannot perform strict read-only reconciliation;
         // keep the evidence job queued until a compatible browser reconnects.
         if(item.task.action==='chatgpt_verify_delivery' &&
@@ -621,8 +701,11 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
   function queueManagedParentVerification(parent,delivery,{manual=false}={}) {
     if(!parent?.url || !parent.conversationId || !delivery?.childJobId)
       throw new Error('reconcile_parent_identity_required');
-    if(!['timeout','needs_review','interrupted'].includes(delivery.status))
-      throw new Error('reconcile_delivery_not_uncertain');
+    if(!['timeout','needs_review','interrupted'].includes(delivery.status)) {
+      const linkedJob=state.jobs.find(j=>j.id===delivery.returnJobId);
+      if(delivery.status!=='error' || !mayHaveSentManagedReturn(linkedJob))
+        throw new Error('reconcile_delivery_not_uncertain');
+    }
     const existing=delivery.verificationJobId &&
       state.jobs.find(j=>j.id===delivery.verificationJobId);
     if(existing && ['queued','running'].includes(existing.status))
@@ -723,6 +806,25 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
   }
 
   function tick() {
+    let recovered=false;
+    for(const parent of state.managedParents) {
+      if(parent.status==='needs_review') {
+        for(const delivery of parent.deliveries) {
+          if(delivery.status==='error' && !delivery.verificationJobId &&
+             parent.url && parent.conversationId) {
+            const old=state.jobs.find(j=>j.id===delivery.returnJobId);
+            if(mayHaveSentManagedReturn(old)) {
+              queueManagedParentVerification(parent,delivery);
+              recovered=true;
+            }
+          }
+          if(restoreProvenUnsentReturn(parent,delivery))recovered=true;
+        }
+      }
+      if(restoreVerifiedParentQueue(parent))recovered=true;
+    }
+    if(recovered){persist();pump();}
+
     for(const parent of state.managedParents) {
       for(const delivery of parent.deliveries) {
         if(delivery.status!=='needs_review' || !delivery.nextVerificationAt ||
@@ -1220,6 +1322,13 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
           message.type === 'task_response' &&
           activeJobs.has(message.taskId)
         ) {
+          const observed=activeJobs.get(message.taskId)?.job;
+          if(observed) {
+            if(['before_send','after_send'].includes(message.deliveryPhase))
+              observed.deliveryPhase=message.deliveryPhase;
+            if(typeof message.errorCode==='string' && message.errorCode.length<=90)
+              observed.errorCode=message.errorCode;
+          }
           finish(
             message.taskId,
             message.status === 'success' ? 'success' : 'error',
