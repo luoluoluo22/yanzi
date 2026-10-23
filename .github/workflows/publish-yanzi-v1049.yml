@@ -1,0 +1,100 @@
+name: Publish verified Yanzi Windows v1.0.49
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: yanzi-windows-release-v1.0.49
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 75
+    steps:
+      - name: Check out merged main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Test ChatGPT Agent integration
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          npm ci --prefix tools/chatgpt-bridge --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'Dependencies failed' }
+          Push-Location tools/chatgpt-bridge
+          try {
+            node --test test/agent-console.test.mjs test/agent-console-popup.test.mjs test/background.test.mjs test/browser-delivery-verify.test.mjs test/longrun-reconciliation.test.mjs test/browser-version-election.test.mjs
+            if ($LASTEXITCODE -ne 0) { throw 'Agent tests failed' }
+          } finally { Pop-Location }
+
+      - name: Build Windows installer assets
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $script = './scripts/publish-installer.ps1'
+          $source = (Get-Content $script -Raw).Replace('https://repo.huaweicloud.com/repository/nuget/v3/index.json', 'https://api.nuget.org/v3/index.json')
+          Set-Content -Path $script -Value $source
+          & ./scripts/publish-installer.ps1 -Version 1.0.49 -ArtifactRoot "$env:RUNNER_TEMP\yanzi-release" -SkipBaselineDownload
+          if ($LASTEXITCODE -ne 0) { throw 'Windows installer packaging failed' }
+
+      - name: Verify extension and release assets
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TEMP 'yanzi-release'
+          $manifest = Get-Content (Join-Path $root 'publish\win-x64\browser-extension\manifest.json') -Raw | ConvertFrom-Json
+          if ($manifest.version -ne '0.5.81') { throw "Packaged wrong extension: $($manifest.version)" }
+          $browser = Get-Content (Join-Path $root 'publish\win-x64\browser-extension\chatgpt-background.js') -Raw
+          if ($browser -notmatch 'freshRead' -or $browser -notmatch 'createVerifiedChatGptTab') { throw 'Agent browser repair missing' }
+          if (!(Test-Path (Join-Path $root 'publish\win-x64\browser-extension\popup\agent-console-popup.js'))) { throw 'Agent console missing' }
+          $dir = Join-Path $root 'installer'
+          $names = @('Yanzi-win-Setup-1.0.49.exe','Yanzi-win-Portable-1.0.49.zip','Yanzi-1.0.49-full.nupkg','RELEASES','assets.win.json','releases.win.json')
+          foreach ($name in $names) {
+            $file = Join-Path $dir $name
+            if (!(Test-Path -LiteralPath $file)) { throw "Missing release file: $name" }
+            $bytes = (Get-Item -LiteralPath $file).Length
+            if ($bytes -lt 10 -or ($name -match '\.(exe|zip|nupkg)$' -and $bytes -lt 1000000)) { throw "Truncated release file: $name" }
+            Write-Host "$name bytes=$bytes sha256=$((Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash)"
+          }
+
+      - name: Upload draft release then publish only after complete
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $repo = 'luoluoluo22/yanzi'
+          $tag = 'v1.0.49'
+          gh release view $tag --repo $repo *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --repo $repo --target $env:GITHUB_SHA --draft --title 'Yanzi 1.0.49 - sync repair and reliable startup' --notes 'Fix cross-device mini-program synchronization, Ego automatic pull, stale configuration conflicts and maxLength startup crash. Includes browser helper 0.5.81.'
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot create release draft' }
+          }
+          $root = Join-Path $env:RUNNER_TEMP 'yanzi-release\installer'
+          $names = @('Yanzi-win-Setup-1.0.49.exe','Yanzi-win-Portable-1.0.49.zip','Yanzi-1.0.49-full.nupkg','RELEASES','assets.win.json','releases.win.json')
+          $paths = @($names | ForEach-Object { Join-Path $root $_ })
+          gh release upload $tag @paths --repo $repo --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'Upload failed: keep draft' }
+          $assets = (gh release view $tag --repo $repo --json assets | ConvertFrom-Json).assets
+          foreach ($name in $names) {
+            $asset = $assets | Where-Object { $_.name -eq $name } | Select-Object -First 1
+            $expected = (Get-Item -LiteralPath (Join-Path $root $name)).Length
+            if (!$asset -or $asset.size -ne $expected) { throw "Release asset incomplete: $name" }
+          }
+          gh release edit $tag --repo $repo --title 'Yanzi 1.0.49 - sync repair and reliable startup' --draft=false --prerelease=false
+          if ($LASTEXITCODE -ne 0) { throw 'Could not publish verified release' }
+          Write-Host "PUBLIC_RELEASE_VERIFIED=https://github.com/$repo/releases/tag/$tag"
