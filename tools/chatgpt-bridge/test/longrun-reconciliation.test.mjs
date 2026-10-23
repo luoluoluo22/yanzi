@@ -11,10 +11,10 @@ const parentId='01234567-1234-4678-8abc-123456789001';
 const childId='01234567-1234-4678-8abc-123456789002';
 const parentUrl='https://chatgpt.com/c/'+parentId;
 const childUrl='https://chatgpt.com/c/'+childId;
-async function setup(t) {
+async function setup(t,{slowReturns=false}={}) {
  let now=Date.now();
  const bridge=await createBridge({port:0,directory:mkdtempSync(join(tmpdir(),'longrun-reconcile-')),
-   allowTestSocket:true,now:()=>now,jobTimeoutMs:task=>task.action==='chatgpt_subagent_continue'?140:5000});
+   allowTestSocket:true,now:()=>now,jobTimeoutMs:task=>task.action==='chatgpt_subagent_continue'?(slowReturns?30000:140):5000});
  t.after(()=>bridge.close());
  const headers={'Authorization':'Bearer '+bridge.token,'Content-Type':'application/json','X-Bridge-Request':'1'};
  async function api(path,method='GET',body) {
@@ -227,5 +227,107 @@ test('after-send response timeout error is verified read-only without duplicate 
  assert.equal(p.deliveries[0].status,'verified_late');
  const original=(await h.api('/api/jobs/'+returnJob.taskId)).data;
  assert.equal(original.status,'error');
+ assert.equal(h.messages.filter(x=>x.action==='chatgpt_subagent_continue').length,1);
+});
+
+test('live running parent return is completed early by strict read-only matching without replay',async t=>{
+ const h=await setup(t,{slowReturns:true});
+ const {parent,child,returnJob}=await createParentAndChild(h);
+ const before=(await h.api('/api/jobs/'+returnJob.taskId)).data;
+ assert.equal(before.status,'running');
+ h.setNow(h.getNow()+60000);
+ h.bridge.tick();
+ const verifier=await h.waitFor(x=>x.type==='task_request'&&x.action==='chatgpt_verify_delivery');
+ assert.equal(verifier.marker,child.initialJobId);
+ h.socket.send(JSON.stringify({type:'task_response',taskId:verifier.taskId,status:'success',data:{
+  url:parentUrl,conversationId:parentId,marker:child.initialJobId,verified:true,
+  observed:'completed',replyText:'YES CHILD RESULT RECEIVED',readOnly:true
+ }}));
+ let p;for(let i=0;i<100;i++){
+  p=(await h.api('/api/managed-parents/'+parent.id)).data;
+  if(p.status==='ready')break;await delay(10);
+ }
+ assert.equal(p.status,'ready');
+ assert.equal(p.deliveries[0].status,'success');
+ const updated=(await h.api('/api/jobs/'+returnJob.taskId)).data;
+ assert.equal(updated.status,'success');
+ assert.equal(updated.data.readOnlyVerified,true);
+ assert.equal(h.messages.filter(x=>x.action==='chatgpt_subagent_continue').length,1);
+ h.ack(returnJob,parentUrl,parentId,'ignored duplicate late callback');
+ await delay(20);
+ assert.equal((await h.api('/api/jobs/'+returnJob.taskId)).data.status,'success');
+});
+test('live read-only probe stays inconclusive while parent response is still generating',async t=>{
+ const h=await setup(t,{slowReturns:true});
+ const {parent,child,returnJob}=await createParentAndChild(h);
+ h.setNow(h.getNow()+60000);
+ h.bridge.tick();
+ const verifier=await h.waitFor(x=>x.type==='task_request'&&x.action==='chatgpt_verify_delivery');
+ h.socket.send(JSON.stringify({type:'task_response',taskId:verifier.taskId,status:'success',data:{
+  url:parentUrl,conversationId:parentId,marker:child.initialJobId,verified:false,
+  observed:'sent_waiting_reply',replyText:'partial',readOnly:true
+ }}));
+ let p;
+ for(let i=0;i<100;i++){
+  p=(await h.api('/api/managed-parents/'+parent.id)).data;
+  if(p.deliveries[0]?.verificationStatus==='inconclusive')break;await delay(10);
+ }
+ assert.equal(p.status,'processing');
+ assert.equal(p.deliveries[0].status,'queued');
+ assert.ok(p.deliveries[0].nextVerificationAt);
+ assert.equal((await h.api('/api/jobs/'+returnJob.taskId)).data.status,'running');
+ h.setNow(p.deliveries[0].nextVerificationAt+1);
+ h.bridge.tick();
+ const next=await h.waitFor(x=>x.type==='task_request'&&x.action==='chatgpt_verify_delivery'&&
+  x.taskId!==verifier.taskId);
+ assert.equal(next.marker,verifier.marker);
+ h.socket.send(JSON.stringify({type:'task_response',taskId:next.taskId,status:'success',data:{
+  url:parentUrl,conversationId:parentId,marker:child.initialJobId,verified:true,
+  observed:'completed',replyText:'settled after delay',readOnly:true
+ }}));
+ for(let i=0;i<100;i++){
+  p=(await h.api('/api/managed-parents/'+parent.id)).data;
+  if(p.status==='ready')break;await delay(10);
+ }
+ assert.equal(p.status,'ready');
+ assert.equal(p.deliveries[0].status,'success');
+ assert.equal(h.messages.filter(x=>x.action==='chatgpt_subagent_continue').length,1);
+});
+
+test('a completed but inconclusive live probe does not block read-only verification after timeout',async t=>{
+ const h=await setup(t,{slowReturns:true});
+ const {parent,child,returnJob}=await createParentAndChild(h);
+ h.setNow(h.getNow()+60000);
+ h.bridge.tick();
+ const first=await h.waitFor(x=>x.type==='task_request'&&x.action==='chatgpt_verify_delivery');
+ h.socket.send(JSON.stringify({type:'task_response',taskId:first.taskId,status:'success',
+  data:{url:parentUrl,conversationId:parentId,marker:child.initialJobId,
+    verified:false,observed:'sent_waiting_reply',readOnly:true}}));
+ let p;
+ for(let i=0;i<100;i++) {
+  p=(await h.api('/api/managed-parents/'+parent.id)).data;
+  if(p.deliveries[0].verificationStatus==='inconclusive')break;
+  await delay(10);
+ }
+ assert.equal(p.status,'processing');
+ assert.equal(p.deliveries[0].verificationAttempts,1);
+ h.socket.send(JSON.stringify({type:'task_response',taskId:returnJob.taskId,status:'error',
+  message:'等待回复超时；消息可能已发送，请查询聊天后再决定是否重试',
+  deliveryPhase:'after_send'}));
+ const second=await h.waitFor(x=>x.type==='task_request'&&x.action==='chatgpt_verify_delivery'&&
+   x.taskId!==first.taskId);
+ assert.equal(second.marker,child.initialJobId);
+ h.socket.send(JSON.stringify({type:'task_response',taskId:second.taskId,status:'success',
+  data:{url:parentUrl,conversationId:parentId,marker:child.initialJobId,
+    verified:true,observed:'completed',replyText:'found after original timeout',readOnly:true}}));
+ for(let i=0;i<100;i++) {
+  p=(await h.api('/api/managed-parents/'+parent.id)).data;
+  if(p.status==='ready')break;
+  await delay(10);
+ }
+ assert.equal(p.status,'ready');
+ assert.equal(p.deliveries[0].status,'verified_late');
+ assert.equal(p.deliveries[0].verificationAttempts,2);
+ assert.equal((await h.api('/api/jobs/'+returnJob.taskId)).data.status,'error');
  assert.equal(h.messages.filter(x=>x.action==='chatgpt_subagent_continue').length,1);
 });

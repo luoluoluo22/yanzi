@@ -287,6 +287,11 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
 
   // A verified-late reply must unblock sibling deliveries that were NEVER
   // dispatched. It must not retry a possibly sent/unknown return.
+  function runningManagedReturn(delivery) {
+    const job=state.jobs.find(j=>j.id===delivery?.returnJobId);
+    return job?.status==='running' && activeJobs.has(job.id) ? job : null;
+  }
+
   // No resend: ambiguous post-send failures are resolved by reading the
   // exact parent conversation and matching the child Job marker.
   function mayHaveSentManagedReturn(job) {
@@ -381,20 +386,40 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
           replyText:typeof evidence.replyText==='string'?evidence.replyText.slice(0,1000):'',
           checkedAt:now(),verificationJobId:jobId};
         if(matched) {
-          delivery.status='verified_late';
+          const original=runningManagedReturn(delivery);
           delivery.nextVerificationAt=null;
           delivery.verifiedAt=now();
           delivery.error=null;
-          // Mark the verified supervisor reply without erasing the timeout.
-          parent.lastResponse={jobId,text:evidence.replyText.slice(0,16000),
-            receivedAt:now(),verifiedLate:true};
-          restoreVerifiedParentQueue(parent);
+          if(original) {
+            // Strong read-only evidence completes a stuck *running* write.
+            // The eventual late WebSocket ack is ignored once activeJobs drops it.
+            finish(original.id,'success',{
+              url:parent.url,conversationId:parent.conversationId,
+              tabId:parent.tabId,temporary:false,text:evidence.replyText.slice(0,16000),
+              readOnlyVerified:true,verifiedByJob:jobId
+            },null);
+          } else {
+            delivery.status='verified_late';
+            parent.lastResponse={jobId,text:evidence.replyText.slice(0,16000),
+              receivedAt:now(),verifiedLate:true};
+            restoreVerifiedParentQueue(parent);
+          }
         } else {
-          delivery.status='needs_review';
-          parent.status='needs_review';
-          if((delivery.verificationAttempts||0)<8)
-            delivery.nextVerificationAt=now()+30000;
-          else delivery.nextVerificationAt=null;
+          const original=runningManagedReturn(delivery);
+          if(original) {
+            // A pending/partial reply is NOT a failed parent: keep original
+            // write running, and continue bounded read-only probes.
+            delivery.verificationStatus='inconclusive';
+            if((delivery.verificationAttempts||0)<4)
+              delivery.nextVerificationAt=now()+30000;
+            else delivery.nextVerificationAt=null;
+          } else {
+            delivery.status='needs_review';
+            parent.status='needs_review';
+            if((delivery.verificationAttempts||0)<8)
+              delivery.nextVerificationAt=now()+30000;
+            else delivery.nextVerificationAt=null;
+          }
         }
       }
     }
@@ -703,7 +728,8 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
       throw new Error('reconcile_parent_identity_required');
     if(!['timeout','needs_review','interrupted'].includes(delivery.status)) {
       const linkedJob=state.jobs.find(j=>j.id===delivery.returnJobId);
-      if(delivery.status!=='error' || !mayHaveSentManagedReturn(linkedJob))
+      const live=delivery.status==='queued' && runningManagedReturn(delivery);
+      if(!live && (delivery.status!=='error' || !mayHaveSentManagedReturn(linkedJob)))
         throw new Error('reconcile_delivery_not_uncertain');
     }
     const existing=delivery.verificationJobId &&
@@ -712,7 +738,11 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
       return {duplicate:true,jobId:existing.id};
     if(existing && delivery.verificationStatus==='verified')
       return {duplicate:true,jobId:existing.id};
-    if(existing && !manual)
+    if(existing && !manual &&
+       !(delivery.verificationStatus==='inconclusive' &&
+         (delivery.verificationAttempts||0)<8 &&
+         !['queued','running'].includes(existing.status) &&
+         delivery.status!=='queued'))
       return {duplicate:true,jobId:existing.id};
     const task={action:'chatgpt_verify_delivery',
       expectedUrl:parent.url,expectedConversationId:parent.conversationId,
@@ -810,11 +840,18 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
     for(const parent of state.managedParents) {
       if(parent.status==='needs_review') {
         for(const delivery of parent.deliveries) {
-          if(delivery.status==='error' && !delivery.verificationJobId &&
+          if(['error','timeout'].includes(delivery.status) &&
              parent.url && parent.conversationId) {
-            const old=state.jobs.find(j=>j.id===delivery.returnJobId);
-            if(mayHaveSentManagedReturn(old)) {
-              queueManagedParentVerification(parent,delivery);
+            const original=state.jobs.find(j=>j.id===delivery.returnJobId);
+            const prior=state.jobs.find(j=>j.id===delivery.verificationJobId);
+            const canCheck=(!prior ||
+              (delivery.verificationStatus==='inconclusive' &&
+               !['queued','running'].includes(prior.status) &&
+               (!delivery.nextVerificationAt || delivery.nextVerificationAt<=now()))) &&
+              (delivery.verificationAttempts||0)<8;
+            if(canCheck && (mayHaveSentManagedReturn(original) ||
+               original?.status==='timeout')) {
+              queueManagedParentVerification(parent,delivery,{manual:true});
               recovered=true;
             }
           }
@@ -824,11 +861,30 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
       if(restoreVerifiedParentQueue(parent))recovered=true;
     }
     if(recovered){persist();pump();}
-
+    // An idle reply page may have completed even if its original async
+    // extension message channel is still pending. Verify without sending.
+    if(supportsReadOnlyDeliveryVerification()) {
+      for(const parent of state.managedParents) {
+        if(parent.status!=='processing')continue;
+        for(const delivery of parent.deliveries) {
+          const original=runningManagedReturn(delivery);
+          if(!original || !original.startedAt ||
+             delivery.status!=='queued' ||
+             (delivery.verificationAttempts||0)>=4 ||
+             (delivery.verificationJobId &&
+               state.jobs.some(j=>j.id===delivery.verificationJobId &&
+                 ['queued','running'].includes(j.status))) ||
+             (delivery.nextVerificationAt && delivery.nextVerificationAt>now()) ||
+             now()-original.startedAt<45000)continue;
+          try {queueManagedParentVerification(parent,delivery,{manual:true});}
+          catch(error) {delivery.verificationStatus='check_failed';delivery.error=error.message;}
+        }
+      }
+    }
     for(const parent of state.managedParents) {
       for(const delivery of parent.deliveries) {
-        if(delivery.status!=='needs_review' || !delivery.nextVerificationAt ||
-           delivery.nextVerificationAt>now())continue;
+        if(!['needs_review','queued'].includes(delivery.status) ||
+           !delivery.nextVerificationAt || delivery.nextVerificationAt>now())continue;
         // Re-check the existing saved conversation, never replay its prompt.
         delivery.nextVerificationAt=null;
         try {queueManagedParentVerification(parent,delivery,{manual:true});}
