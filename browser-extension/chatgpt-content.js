@@ -659,7 +659,7 @@
           hasExpectedPayload &&
           !generating &&
           replyHasCompletionControls() &&
-          Date.now() - changedAt >= 3000
+          Date.now() - changedAt >= 1500
         ) {
           if (task.temporary === true && !temporaryEvidence()) throw new Error('回复完成后无法确认临时状态，已保留页面供检查');
           return {
@@ -702,7 +702,7 @@
             changedAt = Date.now();
           }
         }
-        await pause(500);
+        await pause(200);
       }
       throw new Error("等待回复超时；消息可能已发送，请查询聊天后再决定是否重试");
     } catch (error) {
