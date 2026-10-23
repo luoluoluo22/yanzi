@@ -69,7 +69,7 @@ export function makeContinuationTask(subagent, prompt) {
   return {
     action:'chatgpt_subagent_continue', prompt,
     expectedUrl:identity.url, expectedConversationId:identity.conversationId,
-    newChat:false, temporary:false, closeAfter:false,
+    newChat:false, temporary:false, closeAfter:false, focusForSend:true,
     timeoutSeconds:180
   };
 }
@@ -124,5 +124,5 @@ export function makeManagedParentReturnTask(parent, text) {
     throw new Error('managed_parent_identity_invalid');
   return {action:'chatgpt_subagent_continue',prompt:text,
     expectedUrl:identity.url,expectedConversationId:identity.conversationId,
-    newChat:false,temporary:false,closeAfter:false,timeoutSeconds:180};
+    newChat:false,temporary:false,closeAfter:false,focusForSend:true,timeoutSeconds:180};
 }

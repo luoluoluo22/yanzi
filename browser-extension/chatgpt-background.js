@@ -389,12 +389,28 @@ async function verifyChatGptDelivery(task) {
 // Only before ANY page send, confirm its existence; a missing new tab may be
 // recreated once as active, then restore the user's previous active page.
 // Never use this fallback to resend an uncertain existing conversation.
+// Bounded, ID-only trace for diagnosing tab eviction in Ego. No page text.
+const yanziAgentTabTrace=[];
+function traceAgentTab(event,tabId,detail={}) {
+  yanziAgentTabTrace.push({at:Date.now(),event,tabId,
+    ...detail});
+  if(yanziAgentTabTrace.length>48)yanziAgentTabTrace.splice(0,yanziAgentTabTrace.length-48);
+}
+chrome.tabs?.onRemoved?.addListener?.((tabId,info)=>{
+  traceAgentTab('removed',tabId,{windowClosing:!!info?.isWindowClosing});
+});
+chrome.tabs?.onReplaced?.addListener?.((addedTabId,removedTabId)=>{
+  traceAgentTab('replaced',removedTabId,{newId:addedTabId});
+});
 async function createVerifiedChatGptTab(url) {
   const first=await chrome.tabs.create({url,active:false});
+  traceAgentTab('created-background',first.id,{windowId:first.windowId});
   try {
     await waitChatGptTab(first.id,15000);
+    traceAgentTab('background-ready',first.id);
     return first;
   } catch(error) {
+    traceAgentTab('background-error',first.id,{message:String(error?.message||error).slice(0,160)});
     if(!/No tab with id|tab (?:not found|does not exist)|Invalid tab ID/i
       .test(String(error?.message||error))) throw error;
     await new Promise(resolve=>setTimeout(resolve,300));
@@ -406,9 +422,30 @@ async function createVerifiedChatGptTab(url) {
     }
     const [previous]=await chrome.tabs.query({active:true,currentWindow:true});
     const fallback=await chrome.tabs.create({url,active:true});
+    traceAgentTab('created-foreground-fallback',fallback.id,{windowId:fallback.windowId});
     try {
-      await waitChatGptTab(fallback.id,20000);
-      return fallback;
+      try {
+        await waitChatGptTab(fallback.id,20000);
+        traceAgentTab('foreground-fallback-ready',fallback.id);
+        return fallback;
+      } catch(fallbackError) {
+        if(!/No tab with id|tab (?:not found|does not exist)|Invalid tab ID/i
+          .test(String(fallbackError?.message||fallbackError)) ||
+          typeof chrome.windows?.create!=='function')throw fallbackError;
+        traceAgentTab('foreground-fallback-removed',fallback.id);
+        // Last pre-send recovery: a separate minimized window does not join
+        // Ego's current tab group and must never reuse or navigate user tabs.
+        const isolated=await chrome.windows.create({
+          url,focused:false,state:'minimized',type:'normal'
+        });
+        const isolatedTab=isolated?.tabs?.[0];
+        if(!Number.isInteger(isolatedTab?.id))
+          throw new Error('isolated_agent_window_has_no_tab');
+        traceAgentTab('created-isolated-window',isolatedTab.id,{windowId:isolated.id});
+        await waitChatGptTab(isolatedTab.id,20000);
+        traceAgentTab('isolated-window-ready',isolatedTab.id);
+        return isolatedTab;
+      }
     } finally {
       if(previous?.id && previous.id!==fallback.id) {
         try { await chrome.tabs.update(previous.id,{active:true}); }catch{}
@@ -688,9 +725,16 @@ async function runChatGptTask(task) {
     }
 
     if (freshChat) {
-      const newChatUrl = task.temporary
+      const newChatBase = task.temporary
         ? "https://chatgpt.com/?temporary-chat=true"
         : "https://chatgpt.com/";
+      // Independent Agent conversations must have a distinct navigation URL:
+      // Ego's Clutter Free extension closes duplicate chatgpt.com root tabs.
+      // A fragment changes only tab identity, not ChatGPT server requests.
+      const newChatUrl = task.tabPolicy === "new"
+        ? newChatBase + "#yanzi-agent-" +
+          encodeURIComponent(task.taskId || crypto.randomUUID())
+        : newChatBase;
 
       if (!tab && task.tabPolicy !== "new") {
         for (const candidate of tabs.filter(owns)) {
@@ -948,9 +992,18 @@ async function runChatGptTask(task) {
     };
   } catch (error) {
     const networkTrace=networkWatch?.stop()||null;
+    let tabSnapshot=[];
+    if(/No tab with id|Invalid tab ID|tab does not exist/i.test(String(error?.message||error))){
+      try {
+        tabSnapshot=(await chrome.tabs.query({url:'https://chatgpt.com/*'})).map(t=>({
+          id:t.id,active:!!t.active,discarded:!!t.discarded,status:t.status
+        })).slice(-15);
+      }catch{}
+    }
     return {
       ...result,
-      data:networkTrace ? {network:networkTrace}:null,
+      data:{...(networkTrace ? {network:networkTrace}:{}),
+        tabTrace:yanziAgentTabTrace.slice(-24),tabSnapshot},
       message: error?.message || String(error)
     };
   } finally {

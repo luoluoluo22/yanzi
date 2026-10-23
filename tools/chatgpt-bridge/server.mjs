@@ -101,6 +101,7 @@ export function validateTask(input) {
     !Number.isInteger(input.timeoutSeconds)
     || (input.timeoutSeconds !== 0 && (input.timeoutSeconds < 10 || input.timeoutSeconds > 1200))
   )) throw new Error('timeoutSeconds 应为 0（长期后台任务）或 10–1200');
+  if (input.focusForSend != null && typeof input.focusForSend !== 'boolean') throw new Error('focusForSend_invalid');
   if (input.newChat != null && typeof input.newChat !== 'boolean') throw new Error('newChat 必须是布尔值');
   if (input.includePageSnapshot != null && typeof input.includePageSnapshot !== 'boolean') throw new Error('includePageSnapshot 必须是布尔值');
   if (input.tabPolicy != null && !['reuse', 'new'].includes(input.tabPolicy)) throw new Error('tabPolicy 应为 reuse 或 new');
@@ -130,7 +131,7 @@ export function validateTask(input) {
     expectedUrl: ['chatgpt_feedback_send','chatgpt_subagent_continue','chatgpt_verify_delivery'].includes(input.action) ? input.expectedUrl : undefined,
     expectedConversationId: ['chatgpt_feedback_send','chatgpt_subagent_continue','chatgpt_verify_delivery'].includes(input.action) ? input.expectedConversationId : undefined,
     marker: input.action==='chatgpt_verify_delivery'?input.marker:undefined,
-    newChat: input.newChat, temporary, tabPolicy: input.tabPolicy || 'reuse', closeAfter: input.closeAfter === true, includePageSnapshot: input.includePageSnapshot === true, durationMs: input.action === 'chatgpt_network_probe' ? (input.durationMs ?? 4000) : undefined, publicProbe:input.action === 'chatgpt_network_probe' && input.publicProbe === true, timeoutSeconds: input.timeoutSeconds ?? (input.action === 'chatgpt_image' ? 900 : 180) };
+    newChat: input.newChat, temporary, focusForSend: input.focusForSend === true, tabPolicy: input.tabPolicy || 'reuse', closeAfter: input.closeAfter === true, includePageSnapshot: input.includePageSnapshot === true, durationMs: input.action === 'chatgpt_network_probe' ? (input.durationMs ?? 4000) : undefined, publicProbe:input.action === 'chatgpt_network_probe' && input.publicProbe === true, timeoutSeconds: input.timeoutSeconds ?? (input.action === 'chatgpt_image' ? 900 : 180) };
 }
 
 export async function createBridge({ port = 53921, directory, now = Date.now, allowTestSocket = false, enableDeliveryLedger = false, integrationVerifier = null, browserWake, jobTimeoutMs = null } = {}) {
@@ -757,7 +758,7 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
        state.subagents.length+input.children.length>100) throw new Error('agent_run_capacity_reached');
     const prompt=parentPrompt(input.goal,input.children);
     const parentJob=enqueue({action:'chatgpt_send',prompt,temporary:false,
-      tabPolicy:'new',newChat:true,closeAfter:false,timeoutSeconds:180},
+      tabPolicy:'new',newChat:true,closeAfter:false,focusForSend:true,timeoutSeconds:180},
       'managed-parent:pending',{deferPump:true});
     const parent=createManagedParentRecord({
       requestKey:'agent-run-parent:'+randomUUID(),prompt,title:'燕子协作主管'
@@ -772,7 +773,7 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
         parentManagedId:parent.id,parentTaskId:parent.taskId,timeoutSeconds:180
       });
       const childJob=enqueue({action:'chatgpt_send',prompt:childInput.prompt,
-        temporary:false,tabPolicy:'new',newChat:true,closeAfter:true,
+        temporary:false,tabPolicy:'new',newChat:true,closeAfter:true,focusForSend:true,
         timeoutSeconds:childInput.timeoutSeconds},'subagent:pending',{deferPump:true});
       const child=createSubagentRecord(childInput,childJob.id,now());
       childJob.source='subagent:'+child.id;
@@ -936,7 +937,7 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
         }
         if(state.managedParents.length>=100)throw new Error('managed_parent_capacity_reached');
         const job=enqueue({action:'chatgpt_send',prompt:input.prompt,temporary:false,
-          tabPolicy:'new',newChat:true,closeAfter:false,timeoutSeconds:180},
+          tabPolicy:'new',newChat:true,closeAfter:false,focusForSend:true,timeoutSeconds:180},
           'managed-parent:pending',{deferPump:true});
         const parent=createManagedParentRecord(input,job.id,now());
         job.source='managed-parent:'+parent.id;
@@ -999,7 +1000,7 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
           throw new Error('managed_parent_not_ready');
         const job=enqueue({
           action:'chatgpt_send',prompt:payload.prompt,temporary:false,
-          tabPolicy:'new',newChat:true,closeAfter:true,
+          tabPolicy:'new',newChat:true,closeAfter:true,focusForSend:true,
           timeoutSeconds:payload.timeoutSeconds
         },'subagent:pending',{deferPump:true});
         const agent=createSubagentRecord(payload,job.id,now());
@@ -1119,18 +1120,35 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
       ? readFileSync(preferredPath,'utf8').trim() : '';
     ws.yanziExtensionId=id;
     if (socket) {
-      if(preferred && id===preferred &&
-         socket.yanziExtensionId!==preferred && activeJobs.size===0) {
-        const old=socket;
+      // Unpacked extensions may share the same Chrome ID across Edge/Ego.
+      // Admit candidates only after reading their first versioned registration.
+      const incumbent=socket;
+      ws.once('message', raw=>{
+        let registration;
+        try { registration=JSON.parse(raw.toString()); } catch {}
+        const components=version=>{
+          const match=/^(\d+)\.(\d+)\.(\d+)$/.exec(String(version||''));
+          return match ? match.slice(1).map(Number) : null;
+        };
+        const oldParts=components(extensionVersion);
+        const newParts=components(registration?.version);
+        const higher=oldParts && newParts &&
+          newParts.some((part,i)=>part!==oldParts[i] &&
+            newParts.slice(0,i).every((prior,index)=>prior===oldParts[index]) &&
+            part>oldParts[i]);
+        const preferredNew=preferred && id===preferred &&
+          incumbent.yanziExtensionId!==preferred;
+        if(registration?.type!=='register' || socket!==incumbent ||
+           activeJobs.size!==0 || (!higher && !preferredNew)) {
+          ws.close(1013,'another extension connected');return;
+        }
         socket=ws;
         extensionVersion=null;
-        old.close(1013,'preferred browser selected');
-      } else {
-        ws.close(1013,'another extension connected');
-        return;
-      }
+        incumbent.close(1013,'newer extension selected');
+      });
     } else socket=ws;
     ws.on('message', raw => {
+      if(socket!==ws)return;
       try {
         const message = JSON.parse(raw.toString());
         if (message.type === 'ping') ws.send(JSON.stringify({ type: 'pong' }));
