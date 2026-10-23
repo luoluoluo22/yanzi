@@ -1,0 +1,122 @@
+name: Publish verified Yanzi Windows 1.0.46
+on:
+  push:
+    branches: [release/v1.0.46-capture]
+    paths: [.github/workflows/publish-desktop-v1046.yml]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: yanzi-windows-release-v1046
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 80
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify ChatGPT browser helper
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          [xml]$project=Get-Content src/OpenQuickHost/OpenQuickHost.csproj
+          if($project.Project.PropertyGroup.Version -ne '1.0.46'){throw 'Host version mismatch'}
+          $m=Get-Content browser-extension/manifest.json -Raw -Encoding utf8 | ConvertFrom-Json
+          if($m.version -ne '0.5.74'){throw 'Browser extension version mismatch'}
+          if(@($m.content_scripts|Where-Object{'chatgpt-keep-going.js' -in @($_.js)}).Count -ne 1){throw 'Missing keep-going content script'}
+          node --check browser-extension/chatgpt-keep-going.js
+          if($LASTEXITCODE -ne 0){throw 'Syntax validation failed'}
+          node tests/browser-chatgpt-keep-going.test.cjs
+          if($LASTEXITCODE -ne 0){throw 'Browser regression failed'}
+          node tests/browser-chatgpt-keep-going-stop.test.cjs
+          if($LASTEXITCODE -ne 0){throw 'Stop regression failed'}
+      - name: Build self-contained installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $p='scripts/publish-installer.ps1'
+          $s=[IO.File]::ReadAllText($p).Replace('https://repo.huaweicloud.com/repository/nuget/v3/index.json','https://api.nuget.org/v3/index.json')
+          [IO.File]::WriteAllText($p,$s,[Text.UTF8Encoding]::new($false))
+          & ./scripts/publish-installer.ps1 -Version 1.0.46 -SkipBaselineDownload
+          if($LASTEXITCODE -ne 0){throw 'Windows packaging failed'}
+      - name: Build screenshot miniapp 0.5.12 and run shortcut regression
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/test-capture-clipboard-shortcut.ps1
+          if($LASTEXITCODE -ne 0){throw 'Shortcut regression failed'}
+          dotnet build src/Yanzi.Capture/Yanzi.Capture.csproj -c Release --nologo
+          if($LASTEXITCODE -ne 0){throw 'Capture DLL build failed'}
+          $stage='.artifacts/capture-v0.5.12'
+          New-Item -ItemType Directory -Force $stage|Out-Null
+          $manifest=[ordered]@{
+            id='yanzi-capture';name='燕子截图';version='0.5.12';category='系统工具'
+            description='区域截图、OCR、标注与图片复制'
+            keywords=@('截图','OCR','录屏')
+            icon='mdi:crop-free';accentHex='#3A8DFF';globalShortcut='F1'
+            runtime='csharp';uiMode='native-window';entryMode='entry';entry='Yanzi.Capture.dll'
+            permissions=@();startup=@{mode='on_app_launch'}
+            runAsAdmin=$false;waitForExit=$false;isPublished=$true
+          }
+          $manifest|ConvertTo-Json -Depth 10|Set-Content "$stage/manifest.json" -Encoding utf8
+          $capture='src/Yanzi.Capture/bin/Release/net9.0-windows10.0.19041.0/Yanzi.Capture.dll'
+          Copy-Item $capture "$stage/Yanzi.Capture.dll"
+          $sdk=Get-ChildItem "$env:USERPROFILE/.nuget/packages/microsoft.windows.sdk.net.ref" -Directory|Sort-Object Name -Descending|Select-Object -First 1
+          if(!$sdk){throw 'WinSDK reference package missing'}
+          foreach($name in @('Microsoft.Windows.SDK.NET.dll','WinRT.Runtime.dll')){
+            Copy-Item (Join-Path $sdk.FullName "lib/net8.0/$name") "$stage/$name"
+          }
+          $dest='.artifacts/installer/Yanzi-Capture-0.5.12.zip'
+          Compress-Archive -Path "$stage/*" -DestinationPath $dest -CompressionLevel Optimal -Force
+          if((Get-Item $dest).Length -lt 1000000){throw 'Miniapp package too small'}
+          Write-Host "SCREENSHOT_MINIAPP_PACKAGED sha256=$((Get-FileHash $dest).Hash)"
+      - name: Verify packaged script and full updater metadata
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $pack='.artifacts/publish/win-x64/browser-extension'
+          $m=Get-Content "$pack/manifest.json" -Raw -Encoding utf8|ConvertFrom-Json
+          if($m.version -ne '0.5.74'){throw 'Packaged extension manifest mismatch'}
+          if((Get-FileHash "$pack/chatgpt-keep-going.js" -Algorithm SHA256).Hash -ne (Get-FileHash 'browser-extension/chatgpt-keep-going.js' -Algorithm SHA256).Hash){throw 'Packaged script hash mismatch'}
+          $files=@('Yanzi-win-Setup-1.0.46.exe','Yanzi-win-Portable-1.0.46.zip','Yanzi-1.0.46-full.nupkg','Yanzi-Capture-0.5.12.zip','RELEASES','assets.win.json','releases.win.json')
+          foreach($name in $files){
+            $f=Join-Path '.artifacts/installer' $name
+            if(!(Test-Path $f)){throw "Missing $name"}
+            $info=Get-Item $f
+            if($name -match '\.(exe|zip|nupkg)$' -and $info.Length -lt 1000000){throw "Truncated $name"}
+            Write-Host "VERIFIED $name bytes=$($info.Length) SHA256=$((Get-FileHash $f -Algorithm SHA256).Hash)"
+          }
+          $update=Get-Content '.artifacts/installer/releases.win.json' -Raw -Encoding utf8|ConvertFrom-Json
+          if($update.Assets[0].Version -ne '1.0.46' -or $update.Assets[0].FileName -ne 'Yanzi-1.0.46-full.nupkg'){throw 'Updater index mismatch'}
+      - name: Upload verified assets then publish draft
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $repo='luoluoluo22/yanzi';$tag='v1.0.46'
+          $view=gh release view $tag --repo $repo --json isDraft,targetCommitish|ConvertFrom-Json
+          if($LASTEXITCODE -ne 0){throw 'Expected existing release'}
+          if($view.targetCommitish -ne 'release/v1.0.46-capture'){throw 'Unexpected release source'}
+          $names=@('Yanzi-win-Setup-1.0.46.exe','Yanzi-win-Portable-1.0.46.zip','Yanzi-1.0.46-full.nupkg','Yanzi-Capture-0.5.12.zip','RELEASES','assets.win.json','releases.win.json')
+          foreach($name in $names){
+            gh release upload $tag (Join-Path '.artifacts/installer' $name) --repo $repo --clobber
+            if($LASTEXITCODE -ne 0){throw "Upload failed $name (draft preserved)"}
+          }
+          $assets=(gh release view $tag --repo $repo --json assets|ConvertFrom-Json).assets
+          if($LASTEXITCODE -ne 0){throw 'Cannot verify remote assets'}
+          foreach($name in $names){
+            $a=@($assets|Where-Object{$_.name -eq $name})
+            if($a.Count -ne 1 -or $a[0].size -ne (Get-Item (Join-Path '.artifacts/installer' $name)).Length){throw "Remote asset mismatch $name"}
+          }
+          gh release edit $tag --repo $repo --draft=false --prerelease=false
+          if($LASTEXITCODE -ne 0){throw 'Publishing draft failed'}
+          $public=gh release view $tag --repo $repo --json url,isDraft,assets|ConvertFrom-Json
+          if($LASTEXITCODE -ne 0 -or $public.isDraft -or @($public.assets).Count -lt 7){throw 'Public release verification failed'}
+          Write-Host "PUBLIC_RELEASE=$($public.url)"
