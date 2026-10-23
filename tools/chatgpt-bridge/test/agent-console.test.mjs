@@ -67,15 +67,18 @@ test('extension WebSocket launches durable managed parent and 2 children; result
   const parentTask=await waitFor(x=>x.type==='task_request'&&x.taskId===
     (messages.find(m=>m.type==='task_request')?.taskId));
   assert.match(parentTask.prompt,/验证子任务回流/);
+  assert.equal(parentTask.focusForSend,true);
   assert.match(parentTask.prompt,/2 个子 Agent/);
   assert.equal(messages.filter(m=>m.type==='task_request'&&m.action==='chatgpt_send').length,1);
   ack(socket,parentTask,'主管已就绪',1);
   const childOne=await waitFor(m=>m.type==='task_request'&&m.prompt===payload.children[0]);
   assert.equal(childOne.action,'chatgpt_send');
+  assert.equal(childOne.focusForSend,true);
   assert.equal(messages.filter(m=>m.type==='task_request'&&m.action==='chatgpt_send').length,2);
   ack(socket,childOne,'CHILD_SUM_12',2);
   const firstReturn=await waitFor(x=>x.type==='task_request'&&x.action==='chatgpt_subagent_continue');
   assert.match(firstReturn.prompt,/燕子子 Agent 结果回传/);
+  assert.equal(firstReturn.focusForSend,true);
   assert.equal(firstReturn.expectedConversationId,'abcdef01-0000-4000-8000-000000000001');
   ack(socket,firstReturn,'收到第一条回流',1);
   const childTwo=await waitFor(m=>m.type==='task_request'&&m.prompt===payload.children[1]);

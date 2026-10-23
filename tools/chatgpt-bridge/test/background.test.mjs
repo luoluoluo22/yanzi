@@ -6,8 +6,9 @@ const source = readFileSync(new URL('../../../browser-extension/chatgpt-backgrou
 function worker(tabs = [], options = {}) {
   tabs.forEach(tab => { tab.status ||= 'complete'; });
   const created = [], injected = [], commands = [], removed = [], updated = [];
+  let generatedUuid=0;
   const storage = { chatgptManagedTabs: options.managed || {} };
-  const context = vm.createContext({ console, URL, setTimeout: options.scriptHang || options.networkProbe || options.disappearingTab ? fn => setTimeout(fn,0) : () => 0,
+  const context = vm.createContext({ console, URL, crypto:{randomUUID:()=> 'nonce-'+(++generatedUuid)}, setTimeout: options.scriptHang || options.networkProbe || options.disappearingTab ? fn => setTimeout(fn,0) : () => 0,
     clearTimeout: () => {}, clearInterval:()=>{}, setInterval: () => 0,
     WebSocket: class { static OPEN = 1; readyState = 0; },
     chrome: {
@@ -111,6 +112,20 @@ test('explicit new policy bypasses pool, drafts are never reset', async () => {
   assert.equal(draft.updated.length, 0);
 });
 
+test('dedupe-resistant new Agent URLs are distinct, while saved conversations remain canonical',async()=>{
+  const w=worker();
+  const a=await w.run({taskId:'agent-test-1',action:'chatgpt_send',
+    prompt:'one',newChat:true,tabPolicy:'new',temporary:false});
+  const b=await w.run({taskId:'agent-test-2',action:'chatgpt_send',
+    prompt:'two',newChat:true,tabPolicy:'new',temporary:false});
+  assert.equal(a.status,'success');
+  assert.equal(b.status,'success');
+  assert.equal(w.created.length,2);
+  assert.match(w.created[0].url,/^https:\/\/chatgpt\.com\/#yanzi-agent-agent-test-1$/);
+  assert.match(w.created[1].url,/^https:\/\/chatgpt\.com\/#yanzi-agent-agent-test-2$/);
+  assert.notEqual(w.created[0].url,w.created[1].url);
+  assert.ok(!a.data.url.includes('#'),'conversation URL must not retain the tab identity fragment');
+});
 test('feedback must resolve the original conversation URL exactly; no tab fallbacks',async()=>{
   const url='https://chatgpt.com/c/af123456-bb22-cc33-dd44-eeeeeeeeeeee';
   const w=worker([
