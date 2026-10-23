@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows;
@@ -855,7 +855,12 @@ public partial class App : WpfApplication
                  },
                 () =>
                 {
-                    window.Dispatcher.Invoke(() => window.QueueBackgroundWebDavSync("api-trigger", forceImmediate: true));
+                    window.Dispatcher.Invoke(() =>
+                    {
+                        window.QueueBackgroundWebDavSync("api-trigger", forceImmediate: true);
+                        window.SyncLocalExtensionsToCloud(forceImmediate: true);
+                        window.RefreshMissingPrivateExtensionsFromCloud();
+                    });
                 },
                 (id) =>
                 {

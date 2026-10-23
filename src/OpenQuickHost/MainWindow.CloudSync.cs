@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.IO.Compression;
 using System.Collections.Specialized;
 using System.Diagnostics;
@@ -1524,9 +1524,12 @@ public partial class MainWindow
         }
     }
 
+    private int _privateExtensionPullRunning;
+    internal void RefreshMissingPrivateExtensionsFromCloud() => _ = PullMissingPrivateExtensionsFromCloudAsync();
     private async Task PullMissingPrivateExtensionsFromCloudAsync()
     {
-        if (_cloudSyncClient == null || !_cloudSyncClient.HasCredential)
+        if (_cloudSyncClient == null || !_cloudSyncClient.HasCredential ||
+            Interlocked.Exchange(ref _privateExtensionPullRunning, 1) != 0)
         {
             return;
         }
@@ -1667,6 +1670,10 @@ public partial class MainWindow
         catch (Exception ex)
         {
             HostAssets.AppendLog($"Failed to pull missing private extensions: {ex.Message}");
+        }
+        finally
+        {
+            Volatile.Write(ref _privateExtensionPullRunning, 0);
         }
     }
 
@@ -2939,6 +2946,7 @@ public partial class MainWindow
                         }))
                 {
                     UpdateKnownDynamicObjectAfterWrite(state, write);
+                    state.Conflicts.Remove(write.ObjectId); // local already matches remote; stale conflict is resolved
                     RemovePendingCloudObject(state, write.ObjectId);
                     continue;
                 }

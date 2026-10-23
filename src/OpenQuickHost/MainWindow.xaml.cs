@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -277,6 +277,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly DispatcherTimer _backgroundWebDavSyncTimer;
     private readonly DispatcherTimer _backgroundWebDavSyncDelayTimer;
     private readonly DispatcherTimer _accountExtensionSyncTimer;
+    private readonly DispatcherTimer _privateExtensionReconcileTimer;
     private FileSystemWatcher? _extensionContentWatcher;
     private DateTimeOffset _firstPendingAccountExtensionSyncAt = DateTimeOffset.MinValue;
     private DateTimeOffset _firstPendingPersonalExtensionSyncAt = DateTimeOffset.MinValue;
@@ -406,6 +407,24 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             RunLocalExtensionsAccountSync();
         };
         StartExtensionContentWatcher();
+        // A periodic metadata check covers missed filesystem watcher events.
+        // Download checks use the private account API, not the costly Gitee backup.
+        _privateExtensionReconcileTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(3) };
+        _privateExtensionReconcileTimer.Tick += (_, _) =>
+        {
+            if (!IsLoaded || Dispatcher.HasShutdownStarted || _cloudSyncClient?.HasCredential != true)
+                return;
+            var signature = GetCatalogContentSignature();
+            if (!string.IsNullOrWhiteSpace(signature) &&
+                !string.Equals(signature, _lastCatalogContentSignature, StringComparison.Ordinal))
+            {
+                _lastCatalogContentSignature = signature;
+                ReloadLocalExtensionsFromExternal();
+                SyncLocalExtensionsToCloud();
+            }
+            RefreshMissingPrivateExtensionsFromCloud();
+        };
+        _privateExtensionReconcileTimer.Start();
 
         _cloudReconnectTimer = new DispatcherTimer();
         _cloudReconnectTimer.Tick += CloudReconnectTimer_Tick;
@@ -528,6 +547,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _extensionContentWatcher = null;
             _extensionCatalogRefreshTimer.Stop();
             _accountExtensionSyncTimer.Stop();
+            _privateExtensionReconcileTimer.Stop();
         };
     }
 
