@@ -86,7 +86,8 @@ export function validateTask(input) {
       !/^https:\/\/chatgpt\.com\/c\/[a-zA-Z0-9_-]{8,120}$/.test(input.expectedUrl) ||
       input.expectedConversationId!==input.expectedUrl.slice('https://chatgpt.com/c/'.length) ||
       typeof input.marker!=='string' || !/^[0-9a-f-]{36}$/i.test(input.marker) ||
-      input.newChat!==false || input.closeAfter!==false)
+      input.newChat!==false || input.closeAfter!==false ||
+      (input.freshRead != null && typeof input.freshRead!=='boolean'))
       throw new Error('delivery_verification_identity_invalid');
   }
   if (['chatgpt_feedback_send', 'chatgpt_subagent_continue'].includes(input.action)) {
@@ -131,6 +132,7 @@ export function validateTask(input) {
     expectedUrl: ['chatgpt_feedback_send','chatgpt_subagent_continue','chatgpt_verify_delivery'].includes(input.action) ? input.expectedUrl : undefined,
     expectedConversationId: ['chatgpt_feedback_send','chatgpt_subagent_continue','chatgpt_verify_delivery'].includes(input.action) ? input.expectedConversationId : undefined,
     marker: input.action==='chatgpt_verify_delivery'?input.marker:undefined,
+    freshRead: input.action==='chatgpt_verify_delivery'?input.freshRead===true:undefined,
     newChat: input.newChat, temporary, focusForSend: input.focusForSend === true, tabPolicy: input.tabPolicy || 'reuse', closeAfter: input.closeAfter === true, includePageSnapshot: input.includePageSnapshot === true, durationMs: input.action === 'chatgpt_network_probe' ? (input.durationMs ?? 4000) : undefined, publicProbe:input.action === 'chatgpt_network_probe' && input.publicProbe === true, timeoutSeconds: input.timeoutSeconds ?? (input.action === 'chatgpt_image' ? 900 : 180) };
 }
 
@@ -747,7 +749,11 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
     const task={action:'chatgpt_verify_delivery',
       expectedUrl:parent.url,expectedConversationId:parent.conversationId,
       marker:delivery.childJobId,timeoutSeconds:50,temporary:false,
-      closeAfter:false,newChat:false,tabPolicy:'new'};
+      closeAfter:false,newChat:false,tabPolicy:'new',
+      // A fresh tab bypasses stale hidden-page DOM without touching or
+      // refreshing the original supervisor tab. It uses a unique hash.
+      freshRead:(delivery.verificationAttempts||0)>=1 &&
+        /^0\.5\.(?:8[0-9]|9[0-9]|[1-9]\d{2,})$/.test(String(extensionVersion||''))};
     const verification=enqueue(task,'managed-parent-verify:'+delivery.id,{deferPump:true});
     delivery.verificationAttempts=(delivery.verificationAttempts||0)+1;
     delivery.nextVerificationAt=null;

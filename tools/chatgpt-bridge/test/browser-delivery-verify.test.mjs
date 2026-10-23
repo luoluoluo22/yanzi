@@ -29,10 +29,10 @@ function makeWorker({transcript='',originalTab=true}={}) {
    setTimeout,clearTimeout,setInterval:()=>0,clearInterval:()=>{},crypto:globalThis.crypto,
    WebSocket:class {static OPEN=1;readyState=0;}});
  vm.runInContext(script,context);
- return {run:async marker=>context.runChatGptTask({
+ return {run:async (marker,{freshRead=false}={})=>context.runChatGptTask({
   taskId:'verification-1',action:'chatgpt_verify_delivery',expectedUrl:url,
   expectedConversationId:url.split('/').at(-1),marker,
-  newChat:false,closeAfter:false,temporary:false
+  newChat:false,closeAfter:false,temporary:false,freshRead
  }),removed,opened,sent,close:()=>dom.window.close()};
 }
 test('read-only verifier locates exact Job message and settled parent response',async t=>{
@@ -56,4 +56,16 @@ test('read-only verifier does not trust reply from unrelated Job, and closes tem
  assert.equal(a.opened.length,1);
  assert.deepEqual(a.removed,[25]);
  assert.deepEqual(a.sent,[]);
+});
+
+test('fresh read-only verification opens a separate unique hashed tab and does not disturb original parent',async t=>{
+ const parent=makeWorker({transcript:'<div data-message-author-role="user">任务 Job：'+id+'</div><div data-message-author-role="assistant">已确认</div>'});
+ t.after(parent.close);
+ const a=await parent.run(id,{freshRead:true});
+ assert.equal(a.status,'success');
+ assert.equal(a.data.verified,true);
+ assert.equal(parent.opened.length,1);
+ assert.equal(parent.opened[0].url,url+'#yanzi-readonly-verification-1');
+ assert.deepEqual(parent.removed,[25]);
+ assert.deepEqual(parent.sent,[]);
 });

@@ -323,20 +323,24 @@ async function verifyChatGptDelivery(task) {
      !/^[0-9a-f-]{36}$/i.test(task.marker||''))
     return {...result,message:'delivery_verification_identity_invalid'};
   let created=null;
+  const freshRead=task.freshRead===true;
+  const inspectionUrl=freshRead
+    ? expected+'#yanzi-readonly-'+encodeURIComponent(task.taskId||crypto.randomUUID())
+    : expected;
   try {
     const tabs=await chrome.tabs.query({url:'https://chatgpt.com/*'});
     const matches=tabs.filter(tab=>tab.url===expected);
     if(matches.length>1)throw new Error('delivery_verification_ambiguous_tabs');
-    let tab=matches[0];
+    let tab=freshRead?null:matches[0];
     if(!tab) {
-      tab=await chrome.tabs.create({url:expected,active:false});
+      tab=await chrome.tabs.create({url:inspectionUrl,active:false});
       created=tab.id;
     }
     await waitChatGptTab(tab.id,30000);
     let observation={observed:'not_found',verified:false,replyText:''};
     for(let attempt=0;attempt<4;attempt++) {
       const current=await chrome.tabs.get(tab.id);
-      if(current.url!==expected || current.discarded)
+      if(current.url!==inspectionUrl || current.discarded)
         throw new Error('delivery_verification_conversation_changed');
       const probe=await withChatGptPageScriptTimeout(()=>
         chrome.scripting.executeScript({target:{tabId:tab.id},func:marker=>{
@@ -378,7 +382,7 @@ async function verifyChatGptDelivery(task) {
     if(created) {
       try {
         const tab=await chrome.tabs.get(created);
-        if(tab.url===expected && !tab.active && !tab.pinned)
+        if(tab.url===inspectionUrl && !tab.active && !tab.pinned)
           await chrome.tabs.remove(created);
       }catch{}
     }
