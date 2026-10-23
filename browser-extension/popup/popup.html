@@ -27,7 +27,11 @@
       <aside class="app-sidebar">
         <div class="sidebar-section-label">工作区</div>
         <nav class="panel-tabs" aria-label="控制台页面">
-          <button type="button" data-panel="market" aria-pressed="true">
+          <button type="button" data-panel="agents" aria-pressed="true">
+            <span class="sidebar-icon" aria-hidden="true">✦</span>
+            <span class="sidebar-item-copy"><strong>AI 协作</strong><small>主管 · 子 Agent · 回流</small></span>
+          </button>
+          <button type="button" data-panel="market" aria-pressed="false">
             <span class="sidebar-icon" aria-hidden="true">▦</span>
             <span class="sidebar-item-copy"><strong>网页小程序</strong><small>发现与使用</small></span>
           </button>
@@ -55,6 +59,32 @@
         </section>
       </aside>
       <main class="app-main">
+    <div class="panel-content" id="panel-agents">
+      <section class="glass-card agent-console">
+        <div class="agent-console-heading">
+          <div><h2>多 Agent 协作</h2><p>一次提交，由燕子创建主管和独立子对话；结果自动返回主管。</p></div>
+          <span class="agent-console-led" id="agent-connection">检查连接…</span>
+        </div>
+        <form id="agent-launch-form">
+          <label for="agent-goal">总任务</label>
+          <textarea id="agent-goal" rows="3" maxlength="8000" required placeholder="例如：研究如何提升《家庭幸福的秘诀》短视频转化效果"></textarea>
+          <label for="agent-children">子任务（每行一个，最多 3 个）</label>
+          <textarea id="agent-children" rows="4" maxlength="20000" required placeholder="分析适合的视频选题
+给出前 3 秒吸引观众的开场
+设计购书后线下培训引导方案"></textarea>
+          <div class="agent-console-actions">
+            <button type="submit" id="agent-launch" class="agent-launch-primary">启动多 Agent</button>
+            <button type="button" id="agent-demo">填入测试样例</button>
+            <button type="button" id="agent-refresh">刷新状态</button>
+          </div>
+        </form>
+        <p id="agent-feedback" role="status" aria-live="polite">无需复制提示词或手动创建子对话。</p>
+      </section>
+      <section class="glass-card agent-console-results">
+        <div class="section-title-row"><h2>任务与回流</h2><span id="agent-run-state" class="agent-console-led">暂无任务</span></div>
+        <div id="agent-results" aria-live="polite">提交任务后在这里查看主管、子 Agent 与回传状态。</div>
+      </section>
+    </div>
     <div class="panel-content" id="panel-overview" hidden>
     <section class="status-section glass-card">
       <div class="status-row">
@@ -172,6 +202,7 @@
   </div>
   <script src="api-guide.js"></script>
   <script src="popup.js"></script>
+  <script src="agent-console-popup.js"></script>
   <script src="opencli-panel.js"></script>
 </body>
 </html>

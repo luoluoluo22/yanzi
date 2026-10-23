@@ -537,3 +537,31 @@ body {
 .opencli-pagination button { padding:7px 11px; color:var(--text-main); background:rgba(6,182,212,.1); border:1px solid rgba(6,182,212,.3); border-radius:8px; }
 .opencli-pagination button:disabled { opacity:.45; }
 .opencli-pagination span { font-size:12px; color:var(--text-muted); }
+
+/* AI collaboration console: one-shot dispatch with durable Bridge-side execution. */
+.agent-console,.agent-console-results { display:flex;flex-direction:column;gap:11px; }
+.agent-console-heading { display:flex;align-items:flex-start;justify-content:space-between;gap:12px; }
+.agent-console-heading h2,.agent-console-results h2 { font-size:16px;font-weight:650; }
+.agent-console-heading p { margin-top:6px;color:var(--text-muted);font-size:11px;line-height:1.65; }
+.agent-console-led { flex-shrink:0;border:1px solid rgba(100,116,139,.4);border-radius:99px;padding:4px 8px;color:#b7c5d8;font-size:10px; }
+.agent-console-led.ready { border-color:rgba(16,185,129,.4);color:#6ee7b7; }
+.agent-console-led.error { border-color:rgba(239,68,68,.4);color:#fca5a5; }
+#agent-launch-form { display:flex;flex-direction:column;gap:8px; }
+#agent-launch-form label {color:#cbd5e1;font-size:11px;font-weight:650; }
+#agent-launch-form textarea {width:100%;resize:vertical;min-height:60px;background:#0b1425;border:1px solid #334155;border-radius:9px;color:#e6eefc;padding:10px 11px;font:12px/1.6 'Segoe UI',sans-serif; }
+#agent-launch-form textarea:focus { outline:2px solid rgba(59,130,246,.7);outline-offset:1px; }
+.agent-console-actions { display:flex;gap:8px;flex-wrap:wrap; }
+.agent-console-actions button {padding:9px 12px;border:1px solid #42526b;border-radius:8px;background:#1a2941;color:#dbeafe;font-size:11px; }
+.agent-console-actions .agent-launch-primary {background:#2563eb;border-color:#3b82f6;color:white;font-weight:650; }
+.agent-console-actions button:disabled {opacity:.45;cursor:wait; }
+#agent-feedback {font-size:11px;color:#a7b7c9;line-height:1.6;overflow-wrap:anywhere; }
+#agent-results { display:flex;flex-direction:column;gap:10px;min-height:90px;font-size:11px;color:#94a3b8;line-height:1.55; }
+.agent-run-entry {padding:10px;border:1px solid rgba(148,163,184,.2);border-radius:9px;background:#0b1425; }
+.agent-run-entry header {display:flex;align-items:center;justify-content:space-between;gap:8px; }
+.agent-run-entry strong {color:#e2e8f0; }
+.agent-run-entry p {margin:7px 0;color:#aabbd0;white-space:pre-wrap;overflow-wrap:anywhere; }
+.agent-run-entry button {border:1px solid rgba(59,130,246,.4);background:rgba(59,130,246,.13);color:#93c5fd;padding:5px 8px;border-radius:7px;font-size:10px; }
+.agent-run-entry button:disabled {opacity:.4;cursor:default; }
+.agent-run-status { color:#93c5fd;font-size:10px; }
+.agent-run-status.completed { color:#6ee7b7; }
+.agent-run-status.needs_review {color:#fca5a5;}
