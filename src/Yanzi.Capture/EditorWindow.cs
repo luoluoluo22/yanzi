@@ -115,8 +115,14 @@ public sealed class EditorWindow : Window
                 }
                 if (key == Key.C)
                 {
-                    CopyImage();
                     e.Handled = true;
+                    if (!e.IsRepeat)
+                    {
+                        CaptureDiagnostics.Mark("clipboard.image.editor.shortcut.deferred");
+                        Dispatcher.BeginInvoke(
+                            System.Windows.Threading.DispatcherPriority.Background,
+                            new Action(CopyImage));
+                    }
                     return;
                 }
                 if (key == Key.Z)

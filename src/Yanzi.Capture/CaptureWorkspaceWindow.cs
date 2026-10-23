@@ -2334,8 +2334,16 @@ public sealed class CaptureWorkspaceWindow : Window
             {
                 if (_session is not null)
                 {
-                    CopyImage();
+                    // Leave the keyboard preview event before opening the clipboard.
+                    // Its owner can still be the Yanzi host during Ctrl+C.
                     e.Handled = true;
+                    if (!e.IsRepeat)
+                    {
+                        CaptureDiagnostics.Mark("clipboard.image.shortcut.deferred");
+                        Dispatcher.BeginInvoke(
+                            System.Windows.Threading.DispatcherPriority.Background,
+                            new Action(CopyImage));
+                    }
                     return;
                 }
             }
