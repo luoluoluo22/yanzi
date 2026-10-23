@@ -10,6 +10,7 @@ import { DeliveryLedger } from './delivery-ledger.mjs';
 import { createBrowserWake } from './browser-wake.mjs';
 import { listBrowserCapabilities, resolveBrowserCapability } from './capability-registry.mjs';
 import { handleDeliveryApi } from './delivery-api.mjs';
+import { validateAgentRun, parentPrompt, newRunRecord, agentRunSnapshot } from './agent-console.mjs';
 import { validateSubagentCreate, validateSubagentMessage, childIdentityFromReply, createSubagentRecord, makeContinuationTask, makeParentSummary, validateManagedParentCreate, createManagedParentRecord, makeManagedParentReturnTask } from './subagent-routing.mjs';
 
 const FILE_MIME_TYPES = {
@@ -76,10 +77,19 @@ function materializeTaskFiles(files) {
 }
 
 export function validateTask(input) {
-  const actions = ['chatgpt_status', 'chatgpt_new_chat', 'chatgpt_send', 'chatgpt_feedback_send', 'chatgpt_subagent_continue', 'chatgpt_image', 'chatgpt_capture_images', 'chatgpt_messages', 'chatgpt_diagnostics', 'chatgpt_network_probe', 'chatgpt_close', 'chatgpt_cleanup'];
+  const actions = ['chatgpt_verify_delivery', 'chatgpt_status', 'chatgpt_new_chat', 'chatgpt_send', 'chatgpt_feedback_send', 'chatgpt_subagent_continue', 'chatgpt_image', 'chatgpt_capture_images', 'chatgpt_messages', 'chatgpt_diagnostics', 'chatgpt_network_probe', 'chatgpt_close', 'chatgpt_cleanup'];
   if (!input || !actions.includes(input.action)) throw new Error('不支持的 action');
   if (['chatgpt_send', 'chatgpt_feedback_send', 'chatgpt_subagent_continue', 'chatgpt_image'].includes(input.action) && (typeof input.prompt !== 'string' || !input.prompt.trim() || input.prompt.length > 100000)) throw new Error('prompt 必须是 1–100000 字符');
   if (input.tabId != null && (!Number.isInteger(input.tabId) || input.tabId < 0)) throw new Error('tabId 无效');
+  if(input.action==='chatgpt_verify_delivery') {
+    if(typeof input.expectedUrl!=='string' ||
+      !/^https:\/\/chatgpt\.com\/c\/[a-zA-Z0-9_-]{8,120}$/.test(input.expectedUrl) ||
+      input.expectedConversationId!==input.expectedUrl.slice('https://chatgpt.com/c/'.length) ||
+      typeof input.marker!=='string' || !/^[0-9a-f-]{36}$/i.test(input.marker) ||
+      input.newChat!==false || input.closeAfter!==false ||
+      (input.freshRead != null && typeof input.freshRead!=='boolean'))
+      throw new Error('delivery_verification_identity_invalid');
+  }
   if (['chatgpt_feedback_send', 'chatgpt_subagent_continue'].includes(input.action)) {
     if (typeof input.expectedUrl !== 'string' || !/^https:\/\/chatgpt\.com\/c\/[a-zA-Z0-9_-]{8,120}$/.test(input.expectedUrl))
       throw new Error('feedback_expected_url_required');
@@ -92,6 +102,7 @@ export function validateTask(input) {
     !Number.isInteger(input.timeoutSeconds)
     || (input.timeoutSeconds !== 0 && (input.timeoutSeconds < 10 || input.timeoutSeconds > 1200))
   )) throw new Error('timeoutSeconds 应为 0（长期后台任务）或 10–1200');
+  if (input.focusForSend != null && typeof input.focusForSend !== 'boolean') throw new Error('focusForSend_invalid');
   if (input.newChat != null && typeof input.newChat !== 'boolean') throw new Error('newChat 必须是布尔值');
   if (input.includePageSnapshot != null && typeof input.includePageSnapshot !== 'boolean') throw new Error('includePageSnapshot 必须是布尔值');
   if (input.tabPolicy != null && !['reuse', 'new'].includes(input.tabPolicy)) throw new Error('tabPolicy 应为 reuse 或 new');
@@ -118,12 +129,14 @@ export function validateTask(input) {
       ? false
       : true;
   return { action: input.action, prompt: input.prompt, files, tabId: input.tabId,
-    expectedUrl: ['chatgpt_feedback_send','chatgpt_subagent_continue'].includes(input.action) ? input.expectedUrl : undefined,
-    expectedConversationId: ['chatgpt_feedback_send','chatgpt_subagent_continue'].includes(input.action) ? input.expectedConversationId : undefined,
-    newChat: input.newChat, temporary, tabPolicy: input.tabPolicy || 'reuse', closeAfter: input.closeAfter === true, includePageSnapshot: input.includePageSnapshot === true, durationMs: input.action === 'chatgpt_network_probe' ? (input.durationMs ?? 4000) : undefined, publicProbe:input.action === 'chatgpt_network_probe' && input.publicProbe === true, timeoutSeconds: input.timeoutSeconds ?? (input.action === 'chatgpt_image' ? 900 : 180) };
+    expectedUrl: ['chatgpt_feedback_send','chatgpt_subagent_continue','chatgpt_verify_delivery'].includes(input.action) ? input.expectedUrl : undefined,
+    expectedConversationId: ['chatgpt_feedback_send','chatgpt_subagent_continue','chatgpt_verify_delivery'].includes(input.action) ? input.expectedConversationId : undefined,
+    marker: input.action==='chatgpt_verify_delivery'?input.marker:undefined,
+    freshRead: input.action==='chatgpt_verify_delivery'?input.freshRead===true:undefined,
+    newChat: input.newChat, temporary, focusForSend: input.focusForSend === true, tabPolicy: input.tabPolicy || 'reuse', closeAfter: input.closeAfter === true, includePageSnapshot: input.includePageSnapshot === true, durationMs: input.action === 'chatgpt_network_probe' ? (input.durationMs ?? 4000) : undefined, publicProbe:input.action === 'chatgpt_network_probe' && input.publicProbe === true, timeoutSeconds: input.timeoutSeconds ?? (input.action === 'chatgpt_image' ? 900 : 180) };
 }
 
-export async function createBridge({ port = 53921, directory, now = Date.now, allowTestSocket = false, enableDeliveryLedger = false, integrationVerifier = null, browserWake } = {}) {
+export async function createBridge({ port = 53921, directory, now = Date.now, allowTestSocket = false, enableDeliveryLedger = false, integrationVerifier = null, browserWake, jobTimeoutMs = null } = {}) {
   // Production-only default. Inject a fake in tests; never launch from port-zero tests.
   const wake = browserWake === undefined
     ? (port === 53921 && !allowTestSocket ? createBrowserWake() : null)
@@ -148,6 +161,7 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
   state.subagentRequests ||= [];
   state.managedParents ||= [];
   state.managedParentRequests ||= [];
+  state.agentRuns ||= [];
   state.parentEvents ||= [];
   state.parentEventSequence ||= 0;
   const parentFeedbackDirectory=join(directory,'parent-feedback');
@@ -222,6 +236,7 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
     state.subagentRequests = state.subagentRequests.slice(-500);
     state.managedParents = state.managedParents.slice(-100);
     state.managedParentRequests = state.managedParentRequests.slice(-500);
+    state.agentRuns = state.agentRuns.slice(-80);
     state.parentEvents = state.parentEvents.slice(-2000);
     writeFileSync(statePath + '.tmp', JSON.stringify(state, null, 2), { mode: 0o600 });
     renameSync(statePath + '.tmp', statePath);
@@ -272,6 +287,79 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
     for(const notify of [...parentWaiters]) notify(event);
   }
 
+  // A verified-late reply must unblock sibling deliveries that were NEVER
+  // dispatched. It must not retry a possibly sent/unknown return.
+  function runningManagedReturn(delivery) {
+    const job=state.jobs.find(j=>j.id===delivery?.returnJobId);
+    return job?.status==='running' && activeJobs.has(job.id) ? job : null;
+  }
+
+  // No resend: ambiguous post-send failures are resolved by reading the
+  // exact parent conversation and matching the child Job marker.
+  function mayHaveSentManagedReturn(job) {
+    return job?.task?.action==='chatgpt_subagent_continue' &&
+      (job.deliveryPhase==='after_send' ||
+       job.data?.deliveryUncertain===true ||
+       /^等待回复超时；消息可能已发送/.test(job.message||'') ||
+       /^ChatGPT 页面异步消息通道中断，原消息可能已发送/.test(job.message||''));
+  }
+
+  // Safe replay only when the content script proved Send was never clicked.
+  // Keep the original error Job in history and enqueue a new linked Job once.
+  function restoreProvenUnsentReturn(parent,delivery) {
+    if(!parent?.url || !parent.conversationId ||
+       delivery?.status!=='error' || (delivery.preSendRetryCount||0)>=1)
+      return false;
+    const old=state.jobs.find(j=>j.id===delivery.returnJobId);
+    if(!old || old.status!=='error' ||
+       old.task?.action!=='chatgpt_subagent_continue' ||
+       old.task.expectedUrl!==parent.url ||
+       old.task.expectedConversationId!==parent.conversationId)
+      return false;
+    const explicit=old.deliveryPhase==='before_send' &&
+      old.errorCode==='send_button_unavailable';
+    // Legacy bridge records lost the deliveryPhase field; this exact error
+    // is thrown only while waiting for Send, before messageSubmitted=true.
+    const legacy=old.deliveryPhase == null && old.errorCode == null &&
+      old.message==='等待发送按钮超时' &&
+      old.data?.diagnostics?.editor?.lastInsertion?.sendDisabledImmediately===true;
+    if(!explicit && !legacy)return false;
+    const next=enqueue(old.task,old.source,{deferPump:true});
+    delivery.preSendRetryCount=(delivery.preSendRetryCount||0)+1;
+    (delivery.preSendPreviousJobIds ||= []).push(old.id);
+    delivery.returnJobId=next.id;
+    delivery.status='queued';
+    delivery.error=null;
+    delivery.completedAt=null;
+    return true;
+  }
+
+  function restoreVerifiedParentQueue(parent) {
+    if(parent?.status!=='needs_review' || !parent.url || !parent.conversationId ||
+       (parent.bootstrap?.enabled && parent.bootstrap.status!=='confirmed'))
+      return false;
+    const blockers=parent.deliveries.filter(d=>{
+      if(d.status==='needs_review' && d.error==='parent_needs_review_delivery_not_sent') {
+        const job=state.jobs.find(j=>j.id===d.returnJobId);
+        if(job?.status==='needs_review' && !job.startedAt) {
+          job.status='queued';
+          job.completedAt=null;
+          job.message=null;
+          d.status='queued';
+          d.completedAt=null;
+          d.error=null;
+        }
+      }
+      return !['success','verified_late','queued','awaiting_parent'].includes(d.status);
+    });
+    if(blockers.length)return false;
+    // Restore only if there is at least one actual verified late delivery.
+    if(!parent.deliveries.some(d=>d.status==='verified_late' || d.preSendRetryCount>0))return false;
+    parent.status='ready';
+    flushManagedParentPending(parent);
+    return true;
+  }
+
   function finish(jobId, status, data, message) {
     const entry = activeJobs.get(jobId);
     if (!entry) return;
@@ -283,6 +371,60 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
       message,
       completedAt: now()
     });
+    if (entry.job.source.startsWith('managed-parent-verify:')) {
+      const deliveryId=entry.job.source.slice('managed-parent-verify:'.length);
+      const parent=state.managedParents.find(p=>p.deliveries.some(d=>d.id===deliveryId));
+      const delivery=parent?.deliveries.find(d=>d.id===deliveryId);
+      if(delivery) {
+        const evidence=data && typeof data==='object' ? data : {};
+        const matched=status==='success' && evidence.verified===true &&
+          evidence.observed==='completed' &&
+          evidence.url===parent.url &&
+          evidence.conversationId===parent.conversationId &&
+          evidence.marker===delivery.childJobId &&
+          typeof evidence.replyText==='string' && evidence.replyText.trim().length>0;
+        delivery.verificationStatus=matched?'verified':'inconclusive';
+        delivery.verificationEvidence={observed:evidence.observed||'unavailable',
+          replyText:typeof evidence.replyText==='string'?evidence.replyText.slice(0,1000):'',
+          checkedAt:now(),verificationJobId:jobId};
+        if(matched) {
+          const original=runningManagedReturn(delivery);
+          delivery.nextVerificationAt=null;
+          delivery.verifiedAt=now();
+          delivery.error=null;
+          if(original) {
+            // Strong read-only evidence completes a stuck *running* write.
+            // The eventual late WebSocket ack is ignored once activeJobs drops it.
+            finish(original.id,'success',{
+              url:parent.url,conversationId:parent.conversationId,
+              tabId:parent.tabId,temporary:false,text:evidence.replyText.slice(0,16000),
+              readOnlyVerified:true,verifiedByJob:jobId
+            },null);
+          } else {
+            delivery.status='verified_late';
+            parent.lastResponse={jobId,text:evidence.replyText.slice(0,16000),
+              receivedAt:now(),verifiedLate:true};
+            restoreVerifiedParentQueue(parent);
+          }
+        } else {
+          const original=runningManagedReturn(delivery);
+          if(original) {
+            // A pending/partial reply is NOT a failed parent: keep original
+            // write running, and continue bounded read-only probes.
+            delivery.verificationStatus='inconclusive';
+            if((delivery.verificationAttempts||0)<4)
+              delivery.nextVerificationAt=now()+30000;
+            else delivery.nextVerificationAt=null;
+          } else {
+            delivery.status='needs_review';
+            parent.status='needs_review';
+            if((delivery.verificationAttempts||0)<8)
+              delivery.nextVerificationAt=now()+30000;
+            else delivery.nextVerificationAt=null;
+          }
+        }
+      }
+    }
     if (entry.job.source.startsWith('managed-parent:') ||
         entry.job.source.startsWith('managed-parent-return:')) {
       const isDelivery=entry.job.source.startsWith('managed-parent-return:');
@@ -305,6 +447,26 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
             entry.job.message='managed_parent_identity_unverified';
           }
         } else parent.status='needs_review';
+        if(!isDelivery && parent.status==='needs_review') {
+          // A failed parent has not authorized child dispatch. Mark unsent
+          // child jobs for review rather than leaving them queued forever.
+          for(const run of state.agentRuns.filter(r=>r.parentId===parent.id)) {
+            for(const childId of run.childIds) {
+              const child=state.subagents.find(a=>a.id===childId);
+              const pending=state.jobs.find(j=>j.id===child?.initialJobId);
+              if(child && pending?.status==='queued') {
+                pending.status='needs_review';
+                pending.completedAt=now();
+                pending.message='parent_not_ready_child_was_not_sent';
+                child.status='needs_review';
+                if(child.rounds?.[0]) {
+                  child.rounds[0].status='needs_review';
+                  child.rounds[0].completedAt=now();
+                }
+              }
+            }
+          }
+        }
         if(!isDelivery && parent.status==='ready')flushManagedParentPending(parent);
         if(isDelivery) {
           const delivery=parent.deliveries.find(d=>d.returnJobId===jobId);
@@ -312,6 +474,13 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
             delivery.status=entry.job.status;
             delivery.completedAt=now();
             delivery.error=entry.job.message||null;
+            if(entry.job.status==='timeout' && parent.url && parent.conversationId)
+              queueManagedParentVerification(parent,delivery);
+            if(entry.job.status==='error' && mayHaveSentManagedReturn(entry.job) &&
+               parent.url && parent.conversationId)
+              queueManagedParentVerification(parent,delivery);
+            if(entry.job.status==='error' && restoreProvenUnsentReturn(parent,delivery))
+              restoreVerifiedParentQueue(parent);
           }
         }
       }
@@ -352,6 +521,17 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
     pump();
   }
 
+  function supportsReadOnlyDeliveryVerification() {
+    const version=String(extensionVersion||'').split('.').slice(0,3).map(part=>Number.parseInt(part,10));
+    return version.length===3 && version.every(Number.isInteger) &&
+      (version[0]>0 || version[1]>5 || (version[1]===5 && version[2]>=76));
+  }
+  function supportsFocusedAgentWrite() {
+    const parts=String(extensionVersion||'').split('.').slice(0,3)
+      .map(x=>Number.parseInt(x,10));
+    return parts.length===3 && parts.every(Number.isInteger) &&
+      (parts[0]>0 || parts[1]>5 || (parts[1]===5 && parts[2]>=79));
+  }
   function pump() {
     if (socket?.readyState !== WebSocket.OPEN) return;
 
@@ -360,6 +540,37 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
       // initializing or its last result is uncertain, leave delivery queued.
       const job = state.jobs.find(item => {
         if(item.status!=='queued')return false;
+        // Old Edge and new Ego can use the same extension ID. Only a browser
+        // with verified focus-handshake and unique-agent-tab support may
+        // execute Agent writes. Leave the existing Job queued otherwise.
+        if(!allowTestSocket && item.task.focusForSend===true && !supportsFocusedAgentWrite())
+          return false;
+        // Old Edge extensions cannot perform strict read-only reconciliation;
+        // keep the evidence job queued until a compatible browser reconnects.
+        if(item.task.action==='chatgpt_verify_delivery' &&
+           !supportsReadOnlyDeliveryVerification())return false;
+        // A managed Agent run uses verified sequential new-tab creation.
+        // Ego may invalidate background tabs when multiple are created together.
+        if(item.source.startsWith('subagent:')) {
+          const agentId=item.source.slice('subagent:'.length);
+          const run=state.agentRuns.find(r=>r.childIds.includes(agentId));
+          const child=run && state.subagents.find(a=>a.id===agentId);
+          if(run && child?.initialJobId===item.id) {
+            const parent=state.managedParents.find(p=>p.id===run.parentId);
+            if(parent?.status!=='ready')return false;
+            const index=run.childIds.indexOf(agentId);
+            for(const previousId of run.childIds.slice(0,index)) {
+              const previous=state.subagents.find(a=>a.id===previousId);
+              const previousJob=state.jobs.find(j=>j.id===previous?.initialJobId);
+              if(!previousJob || ['queued','running'].includes(previousJob.status))
+                return false;
+              // Wait for the previous return to settle, not just the child reply.
+              const delivery=parent.deliveries.find(d=>d.subagentId===previousId);
+              if(delivery && !['success','verified_late','error','interrupted','needs_review'].includes(delivery.status))
+                return false;
+            }
+          }
+        }
         if(!item.source.startsWith('managed-parent-return:'))return true;
         const parentId=item.source.slice('managed-parent-return:'.length).split(':')[0];
         const parent=state.managedParents.find(p=>p.id===parentId);
@@ -400,7 +611,9 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
             null,
             '请求超时，可能已发送；请查看对应聊天后再重试'
           );
-        }, (job.task.timeoutSeconds + 45) * 1000);
+        }, typeof jobTimeoutMs==='function'
+          ? jobTimeoutMs(job.task)
+          : (job.task.timeoutSeconds + 45) * 1000);
       }
 
       socket.send(JSON.stringify({
@@ -511,6 +724,46 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
     }
   }
 
+  // Read-only verification after timeout. Never re-send the original prompt.
+  function queueManagedParentVerification(parent,delivery,{manual=false}={}) {
+    if(!parent?.url || !parent.conversationId || !delivery?.childJobId)
+      throw new Error('reconcile_parent_identity_required');
+    if(!['timeout','needs_review','interrupted'].includes(delivery.status)) {
+      const linkedJob=state.jobs.find(j=>j.id===delivery.returnJobId);
+      const live=delivery.status==='queued' && runningManagedReturn(delivery);
+      if(!live && (delivery.status!=='error' || !mayHaveSentManagedReturn(linkedJob)))
+        throw new Error('reconcile_delivery_not_uncertain');
+    }
+    const existing=delivery.verificationJobId &&
+      state.jobs.find(j=>j.id===delivery.verificationJobId);
+    if(existing && ['queued','running'].includes(existing.status))
+      return {duplicate:true,jobId:existing.id};
+    if(existing && delivery.verificationStatus==='verified')
+      return {duplicate:true,jobId:existing.id};
+    if(existing && !manual &&
+       !(delivery.verificationStatus==='inconclusive' &&
+         (delivery.verificationAttempts||0)<8 &&
+         !['queued','running'].includes(existing.status) &&
+         delivery.status!=='queued'))
+      return {duplicate:true,jobId:existing.id};
+    const task={action:'chatgpt_verify_delivery',
+      expectedUrl:parent.url,expectedConversationId:parent.conversationId,
+      marker:delivery.childJobId,timeoutSeconds:50,temporary:false,
+      closeAfter:false,newChat:false,tabPolicy:'new',
+      // A fresh tab bypasses stale hidden-page DOM without touching or
+      // refreshing the original supervisor tab. It uses a unique hash.
+      freshRead:(delivery.verificationAttempts||0)>=1 &&
+        /^0\.5\.(?:8[0-9]|9[0-9]|[1-9]\d{2,})$/.test(String(extensionVersion||''))};
+    const verification=enqueue(task,'managed-parent-verify:'+delivery.id,{deferPump:true});
+    delivery.verificationAttempts=(delivery.verificationAttempts||0)+1;
+    delivery.nextVerificationAt=null;
+    delivery.verificationJobId=verification.id;
+    delivery.verificationStatus='checking';
+    persist();
+    pump();
+    return {duplicate:false,jobId:verification.id};
+  }
+
   function enqueueManagedParentReturn(agent, childJob) {
     const parent=state.managedParents.find(p=>p.id===agent.parentManagedId);
     if(!parent)return null; // durable parentTaskId event remains available
@@ -589,6 +842,62 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
   }
 
   function tick() {
+    let recovered=false;
+    for(const parent of state.managedParents) {
+      if(parent.status==='needs_review') {
+        for(const delivery of parent.deliveries) {
+          if(['error','timeout'].includes(delivery.status) &&
+             parent.url && parent.conversationId) {
+            const original=state.jobs.find(j=>j.id===delivery.returnJobId);
+            const prior=state.jobs.find(j=>j.id===delivery.verificationJobId);
+            const canCheck=(!prior ||
+              (delivery.verificationStatus==='inconclusive' &&
+               !['queued','running'].includes(prior.status) &&
+               (!delivery.nextVerificationAt || delivery.nextVerificationAt<=now()))) &&
+              (delivery.verificationAttempts||0)<8;
+            if(canCheck && (mayHaveSentManagedReturn(original) ||
+               original?.status==='timeout')) {
+              queueManagedParentVerification(parent,delivery,{manual:true});
+              recovered=true;
+            }
+          }
+          if(restoreProvenUnsentReturn(parent,delivery))recovered=true;
+        }
+      }
+      if(restoreVerifiedParentQueue(parent))recovered=true;
+    }
+    if(recovered){persist();pump();}
+    // An idle reply page may have completed even if its original async
+    // extension message channel is still pending. Verify without sending.
+    if(supportsReadOnlyDeliveryVerification()) {
+      for(const parent of state.managedParents) {
+        if(parent.status!=='processing')continue;
+        for(const delivery of parent.deliveries) {
+          const original=runningManagedReturn(delivery);
+          if(!original || !original.startedAt ||
+             delivery.status!=='queued' ||
+             (delivery.verificationAttempts||0)>=4 ||
+             (delivery.verificationJobId &&
+               state.jobs.some(j=>j.id===delivery.verificationJobId &&
+                 ['queued','running'].includes(j.status))) ||
+             (delivery.nextVerificationAt && delivery.nextVerificationAt>now()) ||
+             now()-original.startedAt<45000)continue;
+          try {queueManagedParentVerification(parent,delivery,{manual:true});}
+          catch(error) {delivery.verificationStatus='check_failed';delivery.error=error.message;}
+        }
+      }
+    }
+    for(const parent of state.managedParents) {
+      for(const delivery of parent.deliveries) {
+        if(!['needs_review','queued'].includes(delivery.status) ||
+           !delivery.nextVerificationAt || delivery.nextVerificationAt>now())continue;
+        // Re-check the existing saved conversation, never replay its prompt.
+        delivery.nextVerificationAt=null;
+        try {queueManagedParentVerification(parent,delivery,{manual:true});}
+        catch(error) {delivery.verificationStatus='check_failed';delivery.error=error.message;}
+        persist();
+      }
+    }
     for (const schedule of state.schedules) {
       if (!schedule.enabled || schedule.event || schedule.nextAt > now()) continue;
       // Coalesce missed intervals; never burst all missed occurrences after sleep.
@@ -600,6 +909,56 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
       persist();
     }
   }
+  // A run is saved before any browser work. Closing the popup does not stop it.
+  function createAgentRun(body) {
+    const input=validateAgentRun(body);
+    const previous=state.agentRuns.find(r=>r.requestKey===input.requestKey);
+    if(previous) {
+      if(previous.goal!==input.goal || JSON.stringify(previous.children)!==JSON.stringify(input.children))
+        throw new Error('agent_run_request_key_conflict');
+      return agentRunSnapshot(previous,state);
+    }
+    if(state.agentRuns.length>=80 || state.managedParents.length>=100 ||
+       state.subagents.length+input.children.length>100) throw new Error('agent_run_capacity_reached');
+    const prompt=parentPrompt(input.goal,input.children);
+    const parentJob=enqueue({action:'chatgpt_send',prompt,temporary:false,
+      tabPolicy:'new',newChat:true,closeAfter:false,focusForSend:true,timeoutSeconds:180},
+      'managed-parent:pending',{deferPump:true});
+    const parent=createManagedParentRecord({
+      requestKey:'agent-run-parent:'+randomUUID(),prompt,title:'燕子协作主管'
+    },parentJob.id,now());
+    parentJob.source='managed-parent:'+parent.id;
+    state.managedParents.push(parent);
+    const childIds=[];
+    for(let i=0;i<input.children.length;i++) {
+      const childInput=validateSubagentCreate({
+        requestKey:'agent-run-child:'+randomUUID(),
+        prompt:input.children[i],title:'子 Agent '+(i+1),
+        parentManagedId:parent.id,parentTaskId:parent.taskId,timeoutSeconds:180
+      });
+      const childJob=enqueue({action:'chatgpt_send',prompt:childInput.prompt,
+        temporary:false,tabPolicy:'new',newChat:true,closeAfter:true,focusForSend:true,
+        timeoutSeconds:childInput.timeoutSeconds},'subagent:pending',{deferPump:true});
+      const child=createSubagentRecord(childInput,childJob.id,now());
+      childJob.source='subagent:'+child.id;
+      state.subagents.push(child);
+      childIds.push(child.id);
+      state.subagentRequests.push({requestKey:childInput.requestKey,
+        subagentId:child.id,prompt:childInput.prompt,
+        parentManagedId:parent.id,parentTaskId:parent.taskId});
+      emitParentEvent(child,childJob,'subagent_dispatched');
+    }
+    const run=newRunRecord(input,parent.id,childIds,now());
+    state.agentRuns.push(run);
+    persist();pump();
+    return agentRunSnapshot(run,state);
+  }
+  function readAgentRun(id) {
+    const run=state.agentRuns.find(r=>r.id===id);
+    if(!run)throw new Error('agent_run_not_found');
+    return agentRunSnapshot(run,state);
+  }
+
   function authorize(req) {
     const supplied = req.headers.authorization?.replace(/^Bearer /, '') || req.headers.cookie?.split('; ').find(s => s.startsWith('bridge_session='))?.slice(15) || '';
     const suppliedBytes = Buffer.from(supplied), tokenBytes = Buffer.from(token);
@@ -723,6 +1082,13 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
           hasMore:events.length===100
         });
       }
+      if(req.method==='GET' && path==='/api/agent-runs')
+        return reply(200,state.agentRuns.slice().reverse().slice(0,20).map(read=>agentRunSnapshot(read,state)));
+      if(req.method==='POST' && path==='/api/agent-runs')
+        return reply(202,createAgentRun(await body(req)));
+      const agentRunPath=/^\/api\/agent-runs\/([0-9a-f-]{36})$/.exec(path);
+      if(agentRunPath && req.method==='GET')
+        return reply(200,readAgentRun(agentRunPath[1]));
       if(req.method==='GET' && path==='/api/managed-parents')
         return reply(200,state.managedParents.slice().reverse());
       if(req.method==='POST' && path==='/api/managed-parents') {
@@ -735,7 +1101,7 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
         }
         if(state.managedParents.length>=100)throw new Error('managed_parent_capacity_reached');
         const job=enqueue({action:'chatgpt_send',prompt:input.prompt,temporary:false,
-          tabPolicy:'new',newChat:true,closeAfter:false,timeoutSeconds:180},
+          tabPolicy:'new',newChat:true,closeAfter:false,focusForSend:true,timeoutSeconds:180},
           'managed-parent:pending',{deferPump:true});
         const parent=createManagedParentRecord(input,job.id,now());
         job.source='managed-parent:'+parent.id;
@@ -751,6 +1117,16 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
         if(!parent)return reply(404,{error:'managed_parent_not_found'});
         const result=enqueueVerifiedParentFeedback(parent,await body(req));
         return reply(result.duplicate?200:202,result);
+      }
+      const reconcileRoute=/^\/api\/managed-parents\/([0-9a-f-]{36})\/reconcile$/.exec(path);
+      if(reconcileRoute && req.method==='POST') {
+        const parent=state.managedParents.find(p=>p.id===reconcileRoute[1]);
+        if(!parent)return reply(404,{error:'managed_parent_not_found'});
+        const input=await body(req);
+        const delivery=parent.deliveries.find(d=>d.returnJobId===input?.returnJobId);
+        if(!delivery)return reply(404,{error:'managed_parent_delivery_not_found'});
+        const status=queueManagedParentVerification(parent,delivery,{manual:true});
+        return reply(status.duplicate?200:202,status);
       }
       const parentRoute=/^\/api\/managed-parents\/([0-9a-f-]{36})$/.exec(path);
       if(parentRoute && req.method==='GET') {
@@ -788,7 +1164,7 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
           throw new Error('managed_parent_not_ready');
         const job=enqueue({
           action:'chatgpt_send',prompt:payload.prompt,temporary:false,
-          tabPolicy:'new',newChat:true,closeAfter:false,
+          tabPolicy:'new',newChat:true,closeAfter:true,focusForSend:true,
           timeoutSeconds:payload.timeoutSeconds
         },'subagent:pending',{deferPump:true});
         const agent=createSubagentRecord(payload,job.id,now());
@@ -899,12 +1275,44 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
   const wss = new WebSocketServer({ noServer: true, maxPayload: 20 * 1024 * 1024 });
   server.on('upgrade', (req, peer, head) => {
     if (req.url !== '/v1/browser/ws' || req.headers.host !== new URL(origin).host || (!allowTestSocket && !/^chrome-extension:\/\/[a-p]{32}$/.test(req.headers.origin || ''))) { peer.destroy(); return; }
-    wss.handleUpgrade(req, peer, head, ws => wss.emit('connection', ws));
+    wss.handleUpgrade(req, peer, head, ws => wss.emit('connection', ws, req));
   });
-  wss.on('connection', ws => {
-    if (socket) { ws.close(1013, 'another extension connected'); return; }
-    socket = ws;
+  wss.on('connection', (ws, req) => {
+    const id=(req.headers.origin||'').replace(/^chrome-extension:\/\//,'');
+    const preferredPath=join(directory,'preferred-extension-id.txt');
+    const preferred=existsSync(preferredPath)
+      ? readFileSync(preferredPath,'utf8').trim() : '';
+    ws.yanziExtensionId=id;
+    if (socket) {
+      // Unpacked extensions may share the same Chrome ID across Edge/Ego.
+      // Admit candidates only after reading their first versioned registration.
+      const incumbent=socket;
+      ws.once('message', raw=>{
+        let registration;
+        try { registration=JSON.parse(raw.toString()); } catch {}
+        const components=version=>{
+          const match=/^(\d+)\.(\d+)\.(\d+)$/.exec(String(version||''));
+          return match ? match.slice(1).map(Number) : null;
+        };
+        const oldParts=components(extensionVersion);
+        const newParts=components(registration?.version);
+        const higher=oldParts && newParts &&
+          newParts.some((part,i)=>part!==oldParts[i] &&
+            newParts.slice(0,i).every((prior,index)=>prior===oldParts[index]) &&
+            part>oldParts[i]);
+        const preferredNew=preferred && id===preferred &&
+          incumbent.yanziExtensionId!==preferred;
+        if(registration?.type!=='register' || socket!==incumbent ||
+           activeJobs.size!==0 || (!higher && !preferredNew)) {
+          ws.close(1013,'another extension connected');return;
+        }
+        socket=ws;
+        extensionVersion=null;
+        incumbent.close(1013,'newer extension selected');
+      });
+    } else socket=ws;
     ws.on('message', raw => {
+      if(socket!==ws)return;
       try {
         const message = JSON.parse(raw.toString());
         if (message.type === 'ping') ws.send(JSON.stringify({ type: 'pong' }));
@@ -920,6 +1328,23 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
           } catch(error) {
             ws.send(JSON.stringify({type:'origin_bind_ack',requestId:message.requestId,
               ok:false,error:error.message}));
+          }
+        }
+        if (message.type === 'agent_console_request') {
+          const requestId=message.requestId;
+          try {
+            if (typeof requestId!=='string' || !/^[A-Za-z0-9_-]{8,100}$/.test(requestId))
+              throw new Error('agent_console_request_id_invalid');
+            let result;
+            if(message.action==='launch')result=createAgentRun(message.payload);
+            else if(message.action==='detail')result=readAgentRun(message.payload?.id);
+            else if(message.action==='list')
+              result=state.agentRuns.slice().reverse().slice(0,20).map(r=>agentRunSnapshot(r,state));
+            else throw new Error('agent_console_action_invalid');
+            ws.send(JSON.stringify({type:'agent_console_response',requestId,ok:true,result}));
+          } catch(error) {
+            if(typeof requestId==='string' && requestId.length<=100)
+              ws.send(JSON.stringify({type:'agent_console_response',requestId,ok:false,error:error.message}));
           }
         }
         if (message.type === 'register') { extensionVersion = message.version || null; pump(); }
@@ -959,6 +1384,13 @@ export async function createBridge({ port = 53921, directory, now = Date.now, al
           message.type === 'task_response' &&
           activeJobs.has(message.taskId)
         ) {
+          const observed=activeJobs.get(message.taskId)?.job;
+          if(observed) {
+            if(['before_send','after_send'].includes(message.deliveryPhase))
+              observed.deliveryPhase=message.deliveryPhase;
+            if(typeof message.errorCode==='string' && message.errorCode.length<=90)
+              observed.errorCode=message.errorCode;
+          }
           finish(
             message.taskId,
             message.status === 'success' ? 'success' : 'error',

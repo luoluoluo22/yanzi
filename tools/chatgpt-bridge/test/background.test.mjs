@@ -7,8 +7,9 @@ function worker(tabs = [], options = {}) {
   tabs.forEach(tab => { tab.status ||= 'complete'; });
   const created = [], injected = [], commands = [], removed = [], updated = [], reloaded = [];
   let remainingAccountFailures = options.accountFailures || 0;
+  let generatedUuid = 0;
   const storage = { chatgptManagedTabs: options.managed || {} };
-  const context = vm.createContext({ console, URL, setTimeout: options.scriptHang || options.networkProbe || options.accountFailures || options.alwaysAccountError ? fn => setTimeout(fn,0) : () => 0,
+  const context = vm.createContext({ console, URL, crypto:{randomUUID:()=> 'nonce-'+(++generatedUuid)}, setTimeout: options.scriptHang || options.networkProbe || options.accountFailures || options.alwaysAccountError || options.disappearingTab ? fn => setTimeout(fn,0) : () => 0,
     clearTimeout: () => {}, clearInterval:()=>{}, setInterval: () => 0,
     WebSocket: class { static OPEN = 1; readyState = 0; },
     chrome: {
@@ -18,9 +19,9 @@ function worker(tabs = [], options = {}) {
       storage: { local: { set() {} }, session: { get: async () => storage, set: async value => Object.assign(storage, value) } }, alarms: { create() {}, onAlarm: { addListener() {} } },
       tabs: {
         query: async () => tabs,
-        create: async options => { created.push(options); const tab = { id: 99 + created.length, status: 'complete', ...options }; tabs.push(tab); return tab; },
-        get: async id => tabs.find(tab => tab.id === id),
-        update: async (id, changes) => { updated.push({ id, changes }); return Object.assign(tabs.find(tab => tab.id === id), changes); },
+        create: async input => { created.push(input); const tab = { id: 99 + created.length, status: 'complete', ...input }; if (!(options.disappearingTab && created.length===1 && input.active===false)) tabs.push(tab); return tab; },
+        get: async id => { const tab=tabs.find(tab=>tab.id===id); if(!tab && options.disappearingTab)throw new Error('No tab with id: '+id);return tab; },
+        update: async (id, changes) => { updated.push({ id, changes }); if(changes.active===true)tabs.forEach(tab=>{tab.active=tab.id===id});return Object.assign(tabs.find(tab => tab.id === id), changes); },
         remove: async id => { removed.push(id); tabs.splice(tabs.findIndex(tab => tab.id === id), 1); },
         reload: async id => { reloaded.push(id); const tab = tabs.find(tab => tab.id === id); tab.status = 'complete'; return tab; },
         sendMessage: async (id, task) => { commands.push({ id, task }); const tab = tabs.find(tab => tab.id === id);
@@ -156,6 +157,20 @@ test('explicit new policy bypasses pool, drafts are never reset', async () => {
   assert.equal(draft.updated.length, 0);
 });
 
+test('dedupe-resistant new Agent URLs are distinct, while saved conversations remain canonical',async()=>{
+  const w=worker();
+  const a=await w.run({taskId:'agent-test-1',action:'chatgpt_send',
+    prompt:'one',newChat:true,tabPolicy:'new',temporary:false});
+  const b=await w.run({taskId:'agent-test-2',action:'chatgpt_send',
+    prompt:'two',newChat:true,tabPolicy:'new',temporary:false});
+  assert.equal(a.status,'success');
+  assert.equal(b.status,'success');
+  assert.equal(w.created.length,2);
+  assert.match(w.created[0].url,/^https:\/\/chatgpt\.com\/#yanzi-agent-agent-test-1$/);
+  assert.match(w.created[1].url,/^https:\/\/chatgpt\.com\/#yanzi-agent-agent-test-2$/);
+  assert.notEqual(w.created[0].url,w.created[1].url);
+  assert.ok(!a.data.url.includes('#'),'conversation URL must not retain the tab identity fragment');
+});
 test('feedback must resolve the original conversation URL exactly; no tab fallbacks',async()=>{
   const url='https://chatgpt.com/c/af123456-bb22-cc33-dd44-eeeeeeeeeeee';
   const w=worker([
@@ -266,4 +281,19 @@ test('network metadata is correlated with the correct send task without response
   assert.equal(res.data.network.tabId,72);
   assert.equal(res.data.network.started,1);
   assert.equal(w.commands.length,1);
+});
+
+test('Ego missing inactive NEW tab retries creation before send without replay or takeover',async()=>{
+  const w=worker([{id:7,url:'https://chatgpt.com/c/user',active:true}],{disappearingTab:true});
+  const result=await w.run({taskId:'ego-tab-probe',action:'chatgpt_send',
+    prompt:'one-only-send',temporary:false,newChat:true,tabPolicy:'new',
+    closeAfter:true});
+  assert.equal(result.status,'success',result.message);
+  assert.equal(w.created.length,2);
+  assert.equal(w.created[0].active,false);
+  assert.equal(w.created[1].active,true);
+  assert.equal(w.commands.length,1,'must send the prompt only once');
+  assert.equal(w.commands[0].id,101);
+  assert.ok(w.updated.some(u=>u.id===7&&u.changes.active===true),'restores user tab focus');
+  assert.deepEqual(w.removed,[101],'successful owned child tab is safely reclaimed');
 });
