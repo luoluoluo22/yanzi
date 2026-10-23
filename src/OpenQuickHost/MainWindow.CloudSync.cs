@@ -1655,6 +1655,11 @@ public partial class MainWindow
                     pulledCount++;
                     HostAssets.AppendLog($"Pulled extension from account library: {result.ExtensionId} v{result.Version}");
                 }
+                catch (IOException ex) when (ex.HResult == unchecked((int)0x80070020) ||
+                                             ex.HResult == unchecked((int)0x80070021))
+                {
+                    HostAssets.AppendLog($"Account extension update deferred until files are released: id={item.ExtensionId}, reason=sharing-violation");
+                }
                 catch (Exception ex)
                 {
                     HostAssets.AppendLog($"Failed to pull private extension {item.ExtensionId}: {ex.Message}");

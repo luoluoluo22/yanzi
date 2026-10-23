@@ -774,6 +774,10 @@ static void VerifyExtensionDataObjects()
     Assert(ExtensionDataObjectStore.BuildHistoryPath(first) != ExtensionDataObjectStore.BuildHistoryPath(second),
         "Distinct extension-data versions mapped to the same immutable history path.");
     var staleState = new ExtensionDataSyncState { LastRemoteRevision = first.Revision };
+    Assert(GiteeContentPayload.IsDirectoryResponse(@"  [{""name"":""article.md""}]"),
+        "Gitee directory listing must not be decoded as a file payload.");
+    Assert(!GiteeContentPayload.IsDirectoryResponse(@"{""content"":""SGVsbG8=""}"),
+        "Gitee file payload must not be mistaken for a directory listing.");
     Assert(ExtensionDataObjectStore.HasConcurrentChange(second, staleState, first.ContentHash),
         "A remote extension-data revision above the local baseline was not classified as concurrent.");
     staleState.LastRemoteRevision = second.Revision;
