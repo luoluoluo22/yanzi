@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 
 namespace OpenQuickHost;
 
@@ -47,7 +47,7 @@ public static class YanziCapabilitySchema
                     if (value.ValueKind != JsonValueKind.Number || !value.TryGetDecimal(out _))
                         throw new ArgumentException("Schema 数值边界必须为有限数值");
                     break;
-                case "minLength":
+                case "minLength": case "maxLength":
                     if (value.ValueKind != JsonValueKind.Number || !value.TryGetInt32(out var min) || min < 0)
                         throw new ArgumentException("Schema minLength 必须是非负整数");
                     break;
@@ -107,6 +107,9 @@ public static class YanziCapabilitySchema
             var index = 0;
             foreach (var item in value.EnumerateArray()) Validate(items, item, $"{path}[{index++}]");
         }
+        if (value.ValueKind == JsonValueKind.String && schema.TryGetProperty("maxLength", out var maxLength)
+            && value.GetString()!.Length > maxLength.GetInt32())
+            throw new ArgumentException($"{path} exceeds maxLength");
         if (value.ValueKind == JsonValueKind.String && schema.TryGetProperty("minLength", out var minLength)
             && value.GetString()!.Length < minLength.GetInt32())
             throw new ArgumentException($"{path} 字符数不足");
