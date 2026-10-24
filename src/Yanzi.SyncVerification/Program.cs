@@ -774,6 +774,19 @@ static void VerifyExtensionAuthoritySelection()
     local.Deleted = false;
     Assert(!PersonalSyncService.HasConcurrentExtensionChanges(local, remote),
         "A remote-only extension update was incorrectly classified as a two-sided conflict.");
+    using (var proxied = CloudSyncClient.CreateSyncHandler(true, TimeSpan.FromSeconds(30)))
+    using (var direct = CloudSyncClient.CreateSyncHandler(false, TimeSpan.FromSeconds(30)))
+    using (var large = CloudSyncClient.CreateSyncHandler(true, TimeSpan.FromMinutes(10)))
+    {
+        Assert(proxied.UseProxy && !direct.UseProxy,
+            "Cloud transport must preserve separate proxied and direct channels.");
+        Assert(proxied.ConnectTimeout == TimeSpan.FromSeconds(8) &&
+               large.ConnectTimeout == TimeSpan.FromSeconds(15),
+            "TLS connect deadlines must be shorter than the full request timeout.");
+        Assert(proxied.MaxConnectionsPerServer == 8 &&
+               proxied.PooledConnectionLifetime == TimeSpan.FromMinutes(5),
+            "Cloud requests must use bounded, rotating connection pools.");
+    }
     var pooledOptions = new SyncOptions { BaseUrl = "https://sync-reuse.example.test" };
     var pooledClient = AccountExtensionDataStore.GetOrCreateClient(pooledOptions);
     Assert(ReferenceEquals(pooledClient, AccountExtensionDataStore.GetOrCreateClient(new SyncOptions { BaseUrl = pooledOptions.BaseUrl })),

@@ -138,15 +138,25 @@ public sealed partial class CloudSyncClient
         throw lastError ?? new HttpRequestException("Cloud request failed before receiving a response.");
     }
 
+    internal static SocketsHttpHandler CreateSyncHandler(bool useProxy, TimeSpan requestTimeout) => new()
+    {
+        UseProxy = useProxy,
+        ConnectTimeout = requestTimeout >= TimeSpan.FromMinutes(1)
+            ? TimeSpan.FromSeconds(15)
+            : TimeSpan.FromSeconds(8),
+        MaxConnectionsPerServer = 8,
+        PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+        PooledConnectionIdleTimeout = TimeSpan.FromMinutes(1)
+    };
+
     private static HttpClient CreateHttpClient(
         string baseUrl,
         bool useProxy,
         TimeSpan timeout)
     {
-        var handler = new HttpClientHandler
-        {
-            UseProxy = useProxy
-        };
+        // Time out stalled TUN/proxy TLS handshakes before the full request
+        // deadline and bound burst connection pressure during account sync.
+        var handler = CreateSyncHandler(useProxy, timeout);
 
         var client = new HttpClient(handler)
         {
