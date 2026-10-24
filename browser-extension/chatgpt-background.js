@@ -743,10 +743,10 @@ async function runChatGptTask(task) {
     if(owns(targetForNetwork) && !targetForNetwork.active)
       networkWatch=globalThis.yanziChatGptNetworkObserver?.start(tab.id)||null;
     if(networkWatch) {
-      reportChatGptNetworkProgress(task.taskId,"watch_started",networkWatch.snapshot());
-      reportChatGptNetworkProgress(task.taskId,"page_dispatch_started",networkWatch.snapshot());
+      globalThis.reportChatGptNetworkProgress?.(task.taskId,"watch_started",networkWatch.snapshot());
+      globalThis.reportChatGptNetworkProgress?.(task.taskId,"page_dispatch_started",networkWatch.snapshot());
       networkTimer=setInterval(()=>{
-        reportChatGptNetworkProgress(task.taskId,"page_dispatch_started",
+        globalThis.reportChatGptNetworkProgress?.(task.taskId,"page_dispatch_started",
           networkWatch?.snapshot()||null);
       },1500);
     }
@@ -820,7 +820,7 @@ async function runChatGptTask(task) {
     }
 
     if(networkTimer!==null){clearInterval(networkTimer);networkTimer=null;}
-    if(networkWatch)reportChatGptNetworkProgress(task.taskId,"page_reply_received",
+    if(networkWatch)globalThis.reportChatGptNetworkProgress?.(task.taskId,"page_reply_received",
       networkWatch.snapshot());
     const networkTrace=networkWatch?.stop()||null;
     if (!response) {

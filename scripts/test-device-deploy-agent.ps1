@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 $ErrorActionPreference = 'Stop'
 $files = @(
     (Join-Path $PSScriptRoot 'device-deploy-agent.ps1'),
@@ -18,6 +18,13 @@ foreach ($file in $files) {
 $isolated = Join-Path ([IO.Path]::GetTempPath()) ('yanzi-device-deploy-test-' + [guid]::NewGuid().ToString('N'))
 New-Item $isolated -ItemType Directory -Force | Out-Null
 $runner = Join-Path $isolated 'mock-ci-receiver.ps1'
+$agentFixture = Join-Path $isolated 'device-deploy-agent.test.ps1'
+$agentSource = [IO.File]::ReadAllText($files[0])
+$mutexOriginal = "'Local\YanziCrossDeviceDeploy'"
+if (-not $agentSource.Contains($mutexOriginal)) { throw 'Production mutex marker changed; update isolated test fixture' }
+$mutexFixture = "'Local\YanziCrossDeviceDeployTest" + [guid]::NewGuid().ToString('N') + "'"
+[IO.File]::WriteAllText($agentFixture, $agentSource.Replace($mutexOriginal, $mutexFixture),
+    (New-Object Text.UTF8Encoding($false)))
 $template = @'
 $ErrorActionPreference = 'Stop'
 $env:LOCALAPPDATA = '__ISOLATED_ROOT__'
@@ -61,7 +68,7 @@ if (@(Get-ChildItem -LiteralPath $packages -File -ErrorAction SilentlyContinue).
 Write-Output "DEVICE_DEPLOY_TEST=PASSED; parse=3; repeatCheck=2; machine=$($status.machine); state=$($status.state); fixture=offline"
 '@
 try {
-    $content = $template.Replace('__AGENT_SCRIPT__', $files[0].Replace("'", "''")).
+    $content = $template.Replace('__AGENT_SCRIPT__', $agentFixture.Replace("'", "''")).
         Replace('__ISOLATED_ROOT__', $isolated.Replace("'", "''"))
     [IO.File]::WriteAllText($runner, $content, (New-Object Text.UTF8Encoding($false)))
     & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $runner

@@ -277,7 +277,7 @@ test('network metadata is correlated with the correct send task without response
       statusBands:{'2xx':1},methods:{POST:1}})
   })});
   const res=await w.run({action:'chatgpt_send',tabId:72,newChat:false,prompt:'safely submitted'});
-  assert.equal(res.status,'success');
+  assert.equal(res.status,'success',res.message);
   assert.equal(res.data.network.tabId,72);
   assert.equal(res.data.network.started,1);
   assert.equal(w.commands.length,1);
