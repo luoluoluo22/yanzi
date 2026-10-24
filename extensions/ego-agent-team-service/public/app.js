@@ -6,7 +6,7 @@ function render(r){
   const children=(r.children||[]).map(c=>'<div class="child"><b>'+escaped(c.title)+'</b><div class="pill '+(c.status==='needs_review'?'bad':'')+'">'+escaped(c.status)+'</div><p>'+escaped(c.prompt)+'</p><pre>'+escaped(c.result||c.error||'等待中')+'</pre>'+(c.url?'<a target="_blank" rel="noopener" href="'+escaped(c.url)+'">打开子对话</a>':'')+'</div>').join('');
   const mailbox=(r.mailbox||[]).map(m=>'<div class="row">'+escaped(m.title)+' · '+escaped(m.id.slice(0,8))+' · '+escaped(m.status)+'</div>').join('');
   const events=(r.events||[]).slice(-8).map(e=>'<div class="muted">'+escaped(e.at.slice(11,19))+' · '+escaped(e.text)+'</div>').join('');
-  return '<article class="run"><div class="run-top"><b>'+escaped(r.goal)+'</b><span class="pill '+(r.status==='needs_review'?'bad':'')+'">'+state(r.status)+'</span></div><p class="muted">'+escaped(r.id)+'</p><div class="row"><b>主管 Agent</b> · '+escaped(r.sessions.supervisor?'已创建':'未创建')+(parent.url?' · <a href="'+escaped(parent.url)+'" target="_blank" rel="noopener">打开主管对话</a>':'')+'</div><pre>'+escaped(r.plan||'等待主管生成子任务调用…')+'</pre><h3>子 Agent</h3><div class="children">'+children+'</div><h3>燕子消息中心</h3>'+mailbox+'<h3>主管最终汇总</h3><pre>'+escaped(r.parentSummary||r.error||'等待结果回流及主管汇总…')+'</pre><h3>事件日志</h3>'+events+'</article>';
+  return '<article class="run"><div class="run-top"><b>'+escaped(r.goal)+'</b><span class="pill '+(r.status==='needs_review'?'bad':'')+'">'+state(r.status)+'</span></div><p class="muted">'+escaped(r.id)+'</p><div class="row"><b>主管 Agent</b> · '+escaped(r.sessions.supervisor?'已创建':'未创建')+(parent.url?' · <a href="'+escaped(parent.url)+'" target="_blank" rel="noopener">打开主管对话</a>':'')+'</div><pre>'+escaped(r.plan||'等待主管生成子任务调用…')+'</pre><h3>子 Agent</h3><div class="children">'+children+'</div><h3>燕子消息中心</h3>'+mailbox+'<h3>主管最终汇总</h3><pre>'+escaped(r.parentSummary||r.error||'等待结果回流及主管汇总…')+'</pre>'+(r.mailbox?.length?'<button class="secondary" data-verify-run="'+escaped(r.id)+'">核验主管完整回复</button>':'')+'<h3>事件日志</h3>'+events+'</article>';
 }
 async function api(path,init){const response=await fetch(path,{cache:'no-store',...init});const data=await response.json();if(!response.ok)throw Error(data.error||'HTTP '+response.status);return data;}
 async function refresh(){
@@ -27,4 +27,16 @@ $('launch').onsubmit=async event=>{
  }catch(error){$('message').textContent=error.message+'；可刷新检查记录，避免重复提交';}
  finally{$('start').disabled=false;}
 };
+$('runs').addEventListener('click',async event=>{
+ const button=event.target.closest('button[data-verify-run]');
+ if(!button)return;
+ button.disabled=true;
+ try{
+   await api('/api/runs/'+encodeURIComponent(button.dataset.verifyRun)+'/verify-summary',
+     {method:'POST',headers:{'X-Yanzi-Request':'1'}});
+   $('message').textContent='主管完整回复已重新核验并保存';
+   await refresh();
+ }catch(error){$('message').textContent='完整回复核验失败：'+error.message;}
+ finally{button.disabled=false;}
+});
 $('refresh').onclick=refresh;refresh();setInterval(refresh,5000);

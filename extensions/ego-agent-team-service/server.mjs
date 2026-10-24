@@ -49,15 +49,22 @@ function extractReply(text){
   if(!reply||reply.includes('正在回应')||reply.includes('思考中'))return null;
   return reply;
 }
+function responseGenerating(data){
+  return /button "(?:停止|停止生成|Stop|Stop generating)"/i.test(String(data?.snapshot||''))
+    || /ChatGPT 正在回应/.test(String(data?.text||''));
+}
 async function waitReply(r,sessionId,before='',timeoutMs=220000){
-  const until=Date.now()+timeoutMs;
+  const until=Date.now()+timeoutMs; let candidate='',stableAt=0;
   while(Date.now()<until){
     const reading=await action(r,'read_page',sessionId);
     const found=extractReply(reading.data?.text);
-    if(found && found!==before)return {text:found,url:reading.data.url};
+    if(found && found!==before && !responseGenerating(reading.data)){
+      if(found===candidate && Date.now()-stableAt>=2500)return {text:found,url:reading.data.url};
+      if(found!==candidate){candidate=found;stableAt=Date.now();}
+    }else{candidate='';stableAt=0;}
     await sleep(4500);
   }
-  throw Error('等待 ChatGPT 新回复超时；未自动重发，保留会话供核验');
+  throw Error('等待 ChatGPT 完整回复超时；未自动重发，保留会话供核验');
 }
 async function open(r,who){
   let opened;
@@ -146,6 +153,29 @@ http.createServer(async(req,res)=>{
  if(req.method==='GET'&&path==='/api/runs')return response(res,200,runs.slice(-20).reverse());
  const match=path.match(/^\/api\/runs\/([0-9a-f-]{36})$/i);
  if(req.method==='GET'&&match){const found=runs.find(r=>r.id===match[1]);return response(res,found?200:404,found||{error:'not_found'});}
+ const verify=path.match(/^\/api\/runs\/([0-9a-f-]{36})\/verify-summary$/i);
+ if(req.method==='POST'&&verify){
+   if(req.headers['x-yanzi-request']!=='1')return response(res,403,{error:'missing_request_header'});
+   if(busy)return response(res,409,{error:'team_busy'});
+   const r=runs.find(item=>item.id===verify[1]);
+   if(!r)return response(res,404,{error:'not_found'});
+   if(!r.sessions?.supervisor?.id||!r.mailbox?.length||r.mailbox.some(m=>m.status!=='delivered'))
+     return response(res,409,{error:'parent_delivery_not_confirmed'});
+   const first=await action(r,'read_page',r.sessions.supervisor.id);
+   if(responseGenerating(first.data))return response(res,409,{error:'parent_reply_still_streaming'});
+   await sleep(1400);
+   const second=await action(r,'read_page',r.sessions.supervisor.id);
+   if(responseGenerating(second.data))return response(res,409,{error:'parent_reply_still_streaming'});
+   const text=extractReply(second.data?.text);
+   if(!text||text!==extractReply(first.data?.text))
+     return response(res,409,{error:'parent_reply_not_stable'});
+   const missed=r.mailbox.filter(m=>m.result&&!text.includes(m.result));
+   if(missed.length)return response(res,409,{error:'parent_summary_missing_child_results',messages:missed.map(m=>m.id)});
+   r.parentSummary=text;r.sessions.supervisor.url=second.data.url;
+   r.status=r.children.every(c=>c.status==='success')?'completed':'needs_review';
+   log(r,'已验证主管最终回复停止生成，包含各子Agent真实结果');
+   return response(res,200,r);
+ }
  if(req.method==='POST'&&path==='/api/runs'){
    if(req.headers['x-yanzi-request']!=='1')return response(res,403,{error:'missing_request_header'});
    const b=await readBody(req);
