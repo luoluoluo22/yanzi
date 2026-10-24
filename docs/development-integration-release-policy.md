@@ -74,3 +74,8 @@ Git Commit（保存开发过程）、Merge（集成已验证代码）和 Release
 发布轮次再报告：版本号、源 Commit/tag、GitHub Release/资产链接、SHA-256、安装/线上健康、回滚位置与真实验收结果。明确标记 pending/blocked，不能以构建成功冒充已部署或已验证。
 
 详细的正式部署安全操作仍需遵守 [生产部署与回滚门禁](continuous-improvement/PRODUCTION_DEPLOYMENT_POLICY.md)，但其旧版默认自动公开发布条款被本文件的“按需发布”取代。
+## 全量改动审计与防遗漏合并（2026-10-24）
+
+主管 AI 在任何合并操作前，应执行 git worktree list、git branch -vv、各工作区 git status --porcelain、git log main..branch、git diff main...branch，并查看远端 PR/CI 状态。建立逐项台账（worktree、branch、文件/提交、任务、验证结果、集成决策），不能只处理眼前分支。
+
+对已完成且测试通过的所有改动逐项提交、审查和合并到最新 main；遇到冲突则人工分析后验证，不能覆盖另一分支。对未完成或测试失败的工作保留 worktree/分支和变更，不得混入主线；对无关、敏感或明确废弃变更说明不集成理由。最后重新盘点全部工作区，对每个剩余差异标记 awaiting-integration / blocked / WIP，核对 origin/main 与本地 main 一致，再报告已合并项和未合并项。未完成全量审计不能宣称“全部改动均已合并”。
