@@ -3,9 +3,9 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net9.0-windows</TargetFramework>
-    <Version>1.0.54</Version>
-    <FileVersion>1.0.54.0</FileVersion>
-    <AssemblyVersion>1.0.54.0</AssemblyVersion>
+    <Version>1.0.55</Version>
+    <FileVersion>1.0.55.0</FileVersion>
+    <AssemblyVersion>1.0.55.0</AssemblyVersion>
     <InformationalVersion>1.0.53</InformationalVersion>
     <Nullable>enable</Nullable>
     <NoWarn>$(NoWarn);1701;1603</NoWarn>
