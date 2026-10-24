@@ -18,7 +18,7 @@ if ($Version -ne $currentVersion -or $Version -notmatch '^\d+\.\d+\.\d+$') {
 if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { throw 'GitHub CLI (gh) required' }
 $branch = (& git -C $root branch --show-current).Trim()
 if ($branch -ne 'main') { throw "Publish requires main branch, not $branch" }
-if ((& git -C $root status --porcelain).Trim()) { throw 'Uncommitted files: publish requires clean main' }
+if (-not [string]::IsNullOrWhiteSpace([string](& git -C $root status --porcelain))) { throw 'Uncommitted files: publish requires clean main' }
 $local = (& git -C $root rev-parse HEAD).Trim()
 $remote = (& git -C $root ls-remote origin refs/heads/main)
 if ($LASTEXITCODE -ne 0 -or -not $remote) { throw 'Cannot verify remote main' }
