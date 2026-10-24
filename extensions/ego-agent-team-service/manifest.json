@@ -1,0 +1,21 @@
+{
+  "id": "ego-agent-team-service",
+  "name": "燕子 Agent 团队服务",
+  "version": "0.1.0",
+  "category": "系统服务",
+  "description": "Ego 浏览器驱动的主管-子Agent消息中枢",
+  "runtime": "powershell",
+  "entryMode": "entry",
+  "entry": "start.ps1",
+  "permissions": [
+    "network",
+    "storage"
+  ],
+  "requires": [
+    "node>=22"
+  ],
+  "startup": {
+    "mode": "on_app_launch"
+  },
+  "waitForExit": false
+}
