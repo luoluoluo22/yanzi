@@ -60,6 +60,10 @@ function Parse-ReleaseVersion([string] $tag) {
 function Read-Release([string] $version) {
     $url = if ($version) { "$apiUrl/tags/v$version" } else { "$apiUrl/latest" }
     $headers = @{ 'User-Agent' = 'Yanzi-Deployment-Agent/1'; 'Accept' = 'application/vnd.github+json' }
+    # An ephemeral Actions token avoids GitHub shared-runner anonymous rate limits.
+    # Production receivers work without a token; never log or persist it.
+    $apiToken = if ($env:GH_TOKEN) { $env:GH_TOKEN } else { $env:GITHUB_TOKEN }
+    if (-not [string]::IsNullOrWhiteSpace($apiToken)) { $headers['Authorization'] = 'Bearer ' + $apiToken }
     $rel = Invoke-RestMethod -Uri $url -Headers $headers -TimeoutSec 20
     if ($rel.draft -or $rel.prerelease) { throw 'Refusing draft/prerelease' }
     $releaseVersion = Parse-ReleaseVersion $rel.tag_name

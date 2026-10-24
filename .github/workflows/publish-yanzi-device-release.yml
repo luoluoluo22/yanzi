@@ -46,6 +46,8 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'Agent tests failed' }
           } finally { Pop-Location }
       - name: Verify deployment receiver safety
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
