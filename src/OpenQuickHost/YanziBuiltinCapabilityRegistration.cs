@@ -1,4 +1,4 @@
-namespace OpenQuickHost;
+﻿namespace OpenQuickHost;
 
 /// <summary>
 /// 宿主内置能力注册入口。
@@ -67,6 +67,7 @@ public static class YanziBuiltinCapabilityRegistration
         YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziExtensionCapabilityProvider.Create());
         YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziNotesCapabilityProvider.Create());
         YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziFilesCapabilityProvider.Create());
+        YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziTemporaryTransferCapabilityProvider.Create());
         YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziBoardCapabilityProvider.Create());
         YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziCalendarCapabilityProvider.Create());
         YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziShutdownCapabilityProvider.Create());
