@@ -116,7 +116,8 @@ public sealed partial class CloudSyncClient
                     ("uri", request.RequestUri?.ToString()),
                     ("attempt", index + 1),
                     ("channel", attempts[index].label),
-                    ("error", ex.Message));
+                    ("error", ex.Message),
+                    ("rootCause", ex.GetBaseException().GetType().Name + ": " + ex.GetBaseException().Message));
                 await Task.Delay(TimeSpan.FromMilliseconds(250 * (index + 1)), cancellationToken);
             }
             catch (Exception ex) when (AccountCoordinator.Generation == generation && IsRetryableTransportException(ex, cancellationToken))
@@ -132,7 +133,8 @@ public sealed partial class CloudSyncClient
             "Request failed after fallback",
             ("method", request.Method.Method),
             ("uri", request.RequestUri?.ToString()),
-            ("error", lastError?.Message));
+            ("error", lastError?.Message),
+            ("rootCause", lastError?.GetBaseException().GetType().Name + ": " + lastError?.GetBaseException().Message));
         throw lastError ?? new HttpRequestException("Cloud request failed before receiving a response.");
     }
 

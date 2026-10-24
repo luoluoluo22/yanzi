@@ -774,6 +774,12 @@ static void VerifyExtensionAuthoritySelection()
     local.Deleted = false;
     Assert(!PersonalSyncService.HasConcurrentExtensionChanges(local, remote),
         "A remote-only extension update was incorrectly classified as a two-sided conflict.");
+    var pooledOptions = new SyncOptions { BaseUrl = "https://sync-reuse.example.test" };
+    var pooledClient = AccountExtensionDataStore.GetOrCreateClient(pooledOptions);
+    Assert(ReferenceEquals(pooledClient, AccountExtensionDataStore.GetOrCreateClient(new SyncOptions { BaseUrl = pooledOptions.BaseUrl })),
+        "Extension-data reads must reuse their HTTP connection pool and cooldown.");
+    Assert(!ReferenceEquals(pooledClient, AccountExtensionDataStore.GetOrCreateClient(new SyncOptions { BaseUrl = "https://sync-reconfigure.example.test" })),
+        "Changing the sync endpoint must not keep using an old HTTP transport.");
     Console.WriteLine("Extension authority verification passed: account mode is backup-only, standalone mode remains bidirectional.");
 }
 
