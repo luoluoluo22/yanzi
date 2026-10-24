@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.IO.Compression;
 using System.Collections.Specialized;
 using System.Diagnostics;
@@ -1957,13 +1957,23 @@ public partial class MainWindow
         if (_extensionContentWatcher == null || Dispatcher.HasShutdownStarted)
             return;
 
-        var relativePath = Path.GetRelativePath(HostAssets.ExtensionsPath, e.FullPath);
-        var segments = relativePath.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
-        if (segments.Length < 2 ||
-            !ExtensionPackageService.ShouldIncludeInPackage(
-                Path.Combine(HostAssets.ExtensionsPath, segments[0]), e.FullPath))
-            return;
-
+        string[] segments;
+        try
+        {
+            var relativePath = Path.GetRelativePath(HostAssets.ExtensionsPath, e.FullPath);
+            segments = relativePath.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
+            // Ignore transient install events and filesystem races on watcher threads.
+            if (segments.Length < 2 ||
+                segments[0].StartsWith(".yanzi-install-", StringComparison.OrdinalIgnoreCase) ||
+                segments[0].StartsWith(".yanzi-backup-", StringComparison.OrdinalIgnoreCase) ||
+                segments[0].StartsWith(".yanzi-staging-", StringComparison.OrdinalIgnoreCase) ||
+                !ExtensionPackageService.ShouldIncludeInPackage(
+                    Path.Combine(HostAssets.ExtensionsPath, segments[0]), e.FullPath))
+                return;
+        }
+        catch (IOException) { return; }
+        catch (UnauthorizedAccessException) { return; }
+        catch (ArgumentException) { return; }
         Dispatcher.BeginInvoke(new Action(() =>
         {
             if (!IsLoaded)

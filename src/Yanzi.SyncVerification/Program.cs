@@ -2,6 +2,7 @@ using System.Text.Json;
 using OpenQuickHost;
 using OpenQuickHost.Sync;
 using Yanzi.Core;
+if (args.Contains("--extension-watcher-race")) { ExtensionWatcherRaceVerification.Run(); return; }
 if (args.Contains("--keyboard-remap-doubletap")) { KeyboardRemapDoubleTapVerification.Run(); return; }
 if (args.Contains("--account-extension-pull-policy")) { AccountExtensionPullPolicyVerification.Run(); return; }
 if (args.Contains("--chat-conversation-metadata")) { ChatConversationMetadataVerification.Run(); return; }
