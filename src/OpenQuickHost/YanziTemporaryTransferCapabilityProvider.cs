@@ -29,13 +29,15 @@ public static class YanziTemporaryTransferCapabilityProvider
           "allowPublicUpload":{"type":"boolean"},
           "domesticOnly":{"type":"boolean"},
           "preferredChannel":{"type":"string"},
+          "backupCount":{"type":"integer","minimum":0,"maximum":2},
           "notifyTarget":{"type":"string"}
         },"required":["path","source","destination"],"additionalProperties":false}
         """;
 
     private const string ReceiveSchema = """
         {"type":"object","properties":{
-          "receipt":{"type":"object"}
+          "receipt":{"type":"object"},
+          "receipts":{"type":"array","items":{"type":"object"}}
         },"required":["receipt"],"additionalProperties":false}
         """;
 
@@ -150,7 +152,8 @@ public static class YanziTemporaryTransferCapabilityProvider
                 new JsonSerializerOptions(JsonSerializerDefaults.Web))
                 ?? throw new InvalidDataException("invalid_receipt");
             receipts = [one];
-        }        var root = HostAssets.ResolveDataDirectoryPath("temporary-transfer/inbox");
+        }
+        var root = HostAssets.ResolveDataDirectoryPath("temporary-transfer/inbox");
         var output = await Engine().ReceiveFromCandidatesAsync(receipts, root, CancellationToken.None);
         return new { verified = true, output.FilePath, output.Bytes, output.Sha256, output.ChannelId };
     }
