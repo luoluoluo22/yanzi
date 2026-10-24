@@ -1,9 +1,0 @@
-{
-  "name": "yanzi-ego-agent-team",
-  "private": true,
-  "type": "module",
-  "version": "0.1.1",
-  "scripts": {
-    "check": "node --check server.mjs && node --check public/app.js"
-  }
-}
