@@ -210,6 +210,15 @@ internal static class InstalledApplicationCatalog
             }
         }
 
+        // Prefer a physical executable when AppsFolder publishes the same app name.
+        var physicalNames = finalResults
+            .Where(static entry => entry.DisplayPath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            .Select(static entry => entry.NormalizedTitle)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        finalResults = finalResults
+            .Where(entry => !entry.LaunchTarget.StartsWith("shell:AppsFolder", StringComparison.OrdinalIgnoreCase)
+                || !physicalNames.Contains(entry.NormalizedTitle))
+            .ToList();
         return finalResults
             .OrderBy(static entry => entry.Title, StringComparer.OrdinalIgnoreCase)
             .ToList();
