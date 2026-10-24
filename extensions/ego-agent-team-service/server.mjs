@@ -60,7 +60,17 @@ async function waitReply(r,sessionId,before='',timeoutMs=220000){
   throw Error('等待 ChatGPT 新回复超时；未自动重发，保留会话供核验');
 }
 async function open(r,who){
-  const opened=await action(r,'open');
+  let opened;
+  // Opening a fresh page has no send-side effect, so navigation timeout
+  // can be retried. Never retry send_prompt: delivery may already have occurred.
+  for(let attempt=1;attempt<=3;attempt++){
+    try{opened=await action(r,'open');break;}
+    catch(error){
+      if(attempt===3||!/page.goto timed out|navigation|net::|导航|超时/.test(error.message))throw error;
+      log(r,who+' 页面导航失败；消息未发送，安全重试 '+attempt+'/2');
+      await sleep(attempt*1600);
+    }
+  }
   r.sessions[who]={id:opened.sessionId,url:opened.data?.url||null};
   log(r,who+' 已创建独立 Ego 浏览器会话');
   return opened.sessionId;

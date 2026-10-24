@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Ego 浏览器工作台</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark"><span></span><span></span><span></span></div>
+        <div><strong>Ego Browser</strong><small>LOCAL AUTOMATION</small></div>
+      </div>
+      <div class="nav-label">工作区</div>
+      <a class="nav-item active" href="/"><span class="nav-icon">◈</span>总览</a>
+      <a class="nav-item" href="#tasks"><span class="nav-icon">≋</span>异步任务</a>
+      <a class="nav-item" href="#site-api"><span class="nav-icon">⌘</span>网站 API</a>
+      <a class="nav-item" href="/docs" target="_blank" rel="noreferrer"><span class="nav-icon">⌘</span>API 文档</a>
+      <div class="sidebar-spacer"></div>
+      <div class="sidebar-status"><span class="status-dot" id="sidebar-dot"></span><div><strong id="sidebar-status-text">正在连接服务</strong><small>仅本机回环访问</small></div></div>
+      <div class="sidebar-foot">EGO BROWSER API <span>v0.3.0</span></div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="breadcrumbs"><span>工作区</span><b>/</b><strong>浏览器自动化</strong></div>
+        <div class="topbar-right"><span class="local-pill"><span></span>本机服务</span><button class="icon-button" id="refresh-button" aria-label="刷新状态" title="刷新状态">↻</button></div>
+      </header>
+
+      <section class="hero">
+        <div class="hero-copy">
+          <div class="eyebrow"><span class="eyebrow-line"></span>LOCAL AUTOMATION PLATFORM</div>
+          <h1>浏览器自动化工作台 v0.3</h1>
+          <p>统一查看运行环境、提交 Ego 浏览器任务，并追踪真实执行结果。服务与界面分离，可供其他本机 Agent 复用。</p>
+          <div class="hero-meta"><span class="meta-chip">Node.js API</span><span class="meta-chip">Ego Browser</span><span class="meta-chip">异步任务</span></div>
+        </div>
+        <div class="hero-action">
+          <div class="hero-orbit"><div class="orbit-core">E</div><span class="orbit-node node-a"></span><span class="orbit-node node-b"></span><span class="orbit-node node-c"></span></div>
+          <button class="primary-button" id="run-test-button"><span class="play-icon">▶</span><span id="run-test-label">运行 Ego 实测</span><span class="button-arrow">↗</span></button>
+          <small>只读访问 ChatGPT 临时聊天，不发送消息</small>
+        </div>
+      </section>
+
+      <section class="stats-grid" aria-label="服务状态">
+        <article class="stat-card">
+          <div class="stat-top"><span class="stat-icon icon-blue">⌁</span><span class="stat-label">API 服务</span><span class="mini-status" id="api-state-pill">检测中</span></div>
+          <div class="stat-value" id="api-state">连接中</div><div class="stat-foot" id="api-foot">127.0.0.1:43820</div>
+          <div class="stat-track"><span id="api-track"></span></div>
+        </article>
+        <article class="stat-card">
+          <div class="stat-top"><span class="stat-icon icon-violet">⌘</span><span class="stat-label">Node.js 运行时</span><span class="mini-status" id="node-state-pill">检测中</span></div>
+          <div class="stat-value" id="node-state">--</div><div class="stat-foot" id="node-foot">检查运行时版本</div>
+          <div class="stat-track violet-track"><span id="node-track"></span></div>
+        </article>
+        <article class="stat-card">
+          <div class="stat-top"><span class="stat-icon icon-teal">◎</span><span class="stat-label">Ego Browser</span><span class="mini-status" id="ego-state-pill">检测中</span></div>
+          <div class="stat-value" id="ego-state">--</div><div class="stat-foot" id="ego-foot">检查本机命令</div>
+          <div class="stat-track teal-track"><span id="ego-track"></span></div>
+        </article>
+        <article class="stat-card">
+          <div class="stat-top"><span class="stat-icon icon-amber">≋</span><span class="stat-label">任务队列</span><span class="mini-status" id="queue-state-pill">实时</span></div>
+          <div class="stat-value" id="queue-state">0 <small>进行中</small></div><div class="stat-foot" id="queue-foot">等待 0 · 已完成 0</div>
+          <div class="stat-track amber-track"><span id="queue-track"></span></div>
+        </article>
+      </section>
+
+      <section class="panel browser-session-panel" id="browser-sessions">
+        <div class="panel-heading">
+          <div><div class="panel-kicker">BROWSER SESSION CONTROL</div><h2>浏览器会话</h2><p>创建独立会话，导航、读取页面，并执行受限的真实浏览器操作。</p></div>
+          <span class="live-label"><span></span><span id="session-count">0 个会话</span></span>
+        </div>
+        <div class="browser-tools">
+          <input id="session-create-url" type="url" autocomplete="off" placeholder="创建后可选访问的网址，例如 https://example.com">
+          <button class="primary-button" id="create-session-button">＋ 新建会话</button>
+        </div>
+        <div class="browser-tools">
+          <select id="session-picker" aria-label="选择浏览器会话"><option value="">请选择会话</option></select>
+          <input id="session-navigation-url" type="url" autocomplete="off" placeholder="要访问的网址 https://example.com">
+          <button class="subtle-button" id="session-navigate-button" disabled>访问页面 ↗</button>
+          <button class="subtle-button" id="session-snapshot-button" disabled>读取页面 ⌕</button>
+          <button class="outline-button" id="session-close-button" disabled>关闭</button>
+        </div>
+        <div class="browser-tools action-tools">
+          <select id="session-action-kind" aria-label="操作类型">
+            <option value="click">点击元素</option><option value="fill">填写文本</option><option value="press">按键</option>
+            <option value="select">选择选项</option><option value="wait_for_selector">等待元素</option><option value="reload">刷新页面</option>
+          </select>
+          <input id="session-action-selector" autocomplete="off" placeholder="选择器：@21 或 CSS selector">
+          <input id="session-action-value" autocomplete="off" placeholder="文本 / 按键 / 选项值">
+          <button class="subtle-button" id="session-action-run" disabled>执行操作</button>
+        </div>
+        <div class="session-summary" id="session-selected-meta">先创建会话，再选择会话操作。</div><div class="session-summary" id="session-result-meta">尚无操作结果。</div>
+        <pre class="session-snapshot" id="session-snapshot-content">页面快照和执行结果将在这里显示。</pre>
+      </section>
+      <section class="panel site-api-panel" id="site-api">
+        <div class="panel-heading">
+          <div><div class="panel-kicker">WEBSITE ADAPTERS</div><h2>网站 API 适配器</h2><p>按网站分类封装常用操作。每个网站独立会话，操作结果回传到本工作台。</p></div>
+          <span class="live-label"><span></span><span id="site-adapter-count">加载适配器…</span></span>
+        </div>
+        <div class="site-tabs" id="site-tabs" role="tablist" aria-label="网站分类">
+          <button class="site-tab active" type="button" data-site="chatgpt" role="tab" aria-selected="true">✳ ChatGPT</button>
+          <button class="site-tab" type="button" data-site="xiaohongshu" role="tab" aria-selected="false">红 小红书</button>
+          <button class="site-tab" type="button" data-site="douyin" role="tab" aria-selected="false">音 抖音</button>
+          <button class="site-tab" type="button" data-site="bilibili" role="tab" aria-selected="false">B 哔哩哔哩</button>
+        </div>
+        <div class="site-info-row">
+          <div class="site-avatar" id="site-icon">✳</div>
+          <div class="site-info-copy"><div class="site-title-line"><h3 id="site-name">ChatGPT</h3><span id="site-category">AI 对话</span></div><p id="site-description">临时对话、提示词填入、发送确认与最新回答读取。</p></div>
+        </div>
+        <div class="site-controls">
+          <div class="site-control-block site-session-control"><label for="site-session-picker">网站会话</label><select id="site-session-picker"><option value="">操作时自动创建会话</option></select><small id="site-session-note">打开网站或搜索时会自动创建独立会话。</small></div>
+          <div class="site-control-block" id="site-query-wrap"><label for="site-query-input">搜索关键词</label><input id="site-query-input" type="text" maxlength="300" autocomplete="off" placeholder="输入搜索关键词"><small>搜索只会打开网站搜索结果页，不会自动发布内容。</small></div>
+          <div class="site-control-block site-text-control hidden" id="site-text-wrap"><label for="site-text-input">提示词</label><textarea id="site-text-input" rows="3" maxlength="20000" placeholder="输入要填入 ChatGPT 的提示词"></textarea><small>“填入提示词”不会发送；发送操作需要再次确认。</small></div>
+          <div class="site-control-block site-index-control hidden" id="site-index-wrap"><label for="site-index-input">结果序号</label><input id="site-index-input" type="number" min="0" max="29" step="1" value="0"><small>从 0 开始；先提取结果再打开指定序号。</small></div>
+        </div>
+        <div class="site-actions-heading"><strong>常用操作</strong><span>由本地 API 统一调度</span></div>
+        <div class="site-action-row" id="site-actions"><span class="site-empty">正在加载网站操作…</span></div>
+        <div class="site-result-heading"><strong>执行结果</strong><span id="site-result-meta">尚无操作</span></div>
+        <pre class="site-result-content" id="site-result-content">选择网站分类，然后执行“打开网站”或“搜索”。操作完成后，结构化结果会显示在这里。</pre>
+        <p class="site-safety-note">安全边界：只开放明确列出的操作；搜索和读取不等于登录成功。发消息等有副作用的操作需显式确认；目前不自动发布笔记、视频、评论或弹幕。</p>
+      </section>
+      <section class="content-grid">
+        <article class="panel environment-panel">
+          <div class="panel-heading"><div><div class="panel-kicker">RUNTIME INSPECTION</div><h2>运行环境</h2><p>服务启动后自动采集，不需要手动配置 PATH。</p></div><button class="subtle-button" id="refresh-env-button">重新检测 <span>↻</span></button></div>
+          <div class="environment-list">
+            <div class="env-row"><div class="env-symbol">N</div><div class="env-copy"><strong>Node.js</strong><span id="env-node-path">等待检测</span></div><span class="env-value" id="env-node-version">--</span></div>
+            <div class="env-row"><div class="env-symbol ego-symbol">E</div><div class="env-copy"><strong>Ego Browser CLI</strong><span id="env-ego-path">等待检测</span></div><span class="env-value" id="env-ego-exists">--</span></div>
+            <div class="env-row"><div class="env-symbol api-symbol">API</div><div class="env-copy"><strong>本机 API 地址</strong><span>只绑定回环网卡，不向局域网开放</span></div><span class="env-value">43820</span></div>
+            <div class="env-row"><div class="env-symbol data-symbol">DB</div><div class="env-copy"><strong>任务持久化</strong><span id="env-data-path">等待检测</span></div><span class="env-value">JSON</span></div>
+          </div>
+          <div class="panel-actions"><button class="outline-button" id="logs-button">查看服务日志 <span>↗</span></button><span class="muted-note" id="last-checked">尚未检测</span></div>
+          <div class="logs-box hidden" id="logs-box"><div class="logs-title"><strong>最近服务日志</strong><button id="close-logs-button" aria-label="关闭日志">×</button></div><pre id="logs-content">暂无日志</pre></div>
+        </article>
+
+        <article class="panel tasks-panel" id="tasks">
+          <div class="panel-heading"><div><div class="panel-kicker">ASYNC EXECUTION</div><h2>异步任务</h2><p>任务提交、执行状态与结果回传统一管理。</p></div><span class="live-label"><span></span>实时更新</span></div>
+          <div class="test-explainer"><div class="test-explainer-icon">✓</div><div><strong>首轮产品验证</strong><p>通过 Ego 命令打开独立的 ChatGPT 临时聊天，读取页面标题、登录状态和输入框状态，然后关闭本次测试任务。不会发送消息或操作你现有的浏览器标签页。</p></div></div>
+          <div class="job-toolbar"><strong>最近任务</strong><span id="jobs-count">0 条记录</span></div>
+          <div class="jobs-list" id="jobs-list"><div class="empty-state"><div class="empty-icon">≋</div><strong>还没有执行记录</strong><span>点击“运行 Ego 实测”创建第一条真实任务。</span></div></div>
+        </article>
+      </section>
+
+      <footer class="main-footer"><span><span class="footer-dot"></span>本机运行 · 不上传任务数据</span><span>独立 API · 可由其他本机 Agent 调用</span></footer>
+    </main>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

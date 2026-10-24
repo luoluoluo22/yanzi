@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><title>Ego Browser API 文档 v0.3</title><link rel="stylesheet" href="/style.css"></head>
+<body><main style="max-width:980px;margin:0 auto;padding:34px 24px 70px">
+  <a href="/" style="color:#83b6ff;text-decoration:none;font-size:12px">← 返回工作台</a>
+  <div class="eyebrow" style="margin-top:30px">LOCAL API REFERENCE</div>
+  <h1 style="font-size:30px;margin:12px 0">Ego Browser API</h1>
+  <p style="color:#8c9ab2;line-height:1.8">本机异步浏览器自动化 API。基础地址：http://127.0.0.1:43820。服务只监听回环地址。</p>
+  <section class="panel" style="margin-top:22px"><h2>认证</h2><p style="color:#8c9ab2;line-height:1.8">除 GET /health 外，接口使用 Authorization: Bearer &lt;token&gt;。工作台从同源初始化接口读取本机令牌；令牌文件位于 OpenQuickHost\ExtensionStorage\ego-browser-api\api-token.txt。不要将令牌提交到 Git 或发送到远程服务。</p></section>
+  <section class="panel" style="margin-top:14px"><h2>接口</h2>
+    <div class="env-row"><div class="env-symbol">GET</div><div class="env-copy"><strong>/health</strong><span>无需认证；返回服务名、版本、Node 版本、端口与运行时长。</span></div></div>
+    <div class="env-row"><div class="env-symbol api-symbol">GET</div><div class="env-copy"><strong>/api/environment</strong><span>读取 Node 可执行路径、Ego CLI 存在状态和本地数据目录。</span></div></div>
+    <div class="env-row"><div class="env-symbol">POST</div><div class="env-copy"><strong>/api/jobs</strong><span>提交异步任务。请求 JSON：{"operation":"ego_smoke_test"}；成功返回 HTTP 202 与任务 ID。</span></div></div>
+    <div class="env-row"><div class="env-symbol api-symbol">GET</div><div class="env-copy"><strong>/api/jobs?limit=30</strong><span>返回最近任务及队列摘要。</span></div></div>
+    <div class="env-row"><div class="env-symbol api-symbol">GET</div><div class="env-copy"><strong>/api/jobs/{id}</strong><span>查询 queued、running、success、error、timeout 或 interrupted 状态。</span></div></div>
+    <div class="env-row"><div class="env-symbol api-symbol">GET</div><div class="env-copy"><strong>/api/logs</strong><span>读取最近服务标准输出与错误日志。</span></div></div>
+    <div class="env-row"><div class="env-symbol api-symbol">GET</div><div class="env-copy"><strong>/api/openapi.json</strong><span>机器可读的 OpenAPI 3.1 定义。</span></div></div>
+  </section>
+  <section class="panel" style="margin-top:14px"><h2>网站分类 API（v0.3）</h2>
+    <div class="env-row"><div class="env-symbol api-symbol">GET</div><div class="env-copy"><strong>/api/sites</strong><span>返回 ChatGPT、小红书、抖音、哔哩哔哩的适配器目录、支持操作及参数要求。</span></div></div>
+    <div class="env-row"><div class="env-symbol">POST</div><div class="env-copy"><strong>/api/sites/{site}/actions</strong><span>统一执行网站操作。site 可选 chatgpt、xiaohongshu、douyin、bilibili；action 从对应目录读取。</span></div></div>
+    <div class="env-row"><div class="env-symbol api-symbol">GET</div><div class="env-copy"><strong>小红书 / 抖音 / B 站</strong><span>open、search、read_page、extract_results、extract_details、open_result、reload、close_session。搜索需要 query；打开结果可传 index（从 0 开始）。</span></div></div>
+    <div class="env-row"><div class="env-symbol api-symbol">GET</div><div class="env-copy"><strong>ChatGPT</strong><span>open、new_chat、fill_prompt、send_prompt、read_response、read_page、reload。填入提示词需要 text；发送必须额外传 confirm=true。read_response 会返回 hasResponse 与 pageState，未检测到回答时工作台会提示检查生成状态。</span></div></div>
+    <div class="env-row"><div class="env-symbol">POST</div><div class="env-copy"><strong>请求示例</strong><span>{"action":"search","query":"AI 视频剪辑"}；首次调用可不传 sessionId，系统会创建该网站的独立浏览器会话。后续调用传回的 session.id。</span></div></div>
+    <p style="color:#8c9ab2;line-height:1.8">示例：POST /api/sites/bilibili/actions，JSON 为 {"action":"search","query":"AI 视频剪辑"}。返回 HTTP 202 和 job.id；通过 GET /api/jobs/{id} 读取真实执行结果。当前版本不自动发布笔记、视频、评论或弹幕。</p>
+  </section>  <section class="panel" style="margin-top:14px"><h2>浏览器会话 API（v0.2）</h2>
+    <div class="env-row"><div class="env-symbol">GET</div><div class="env-copy"><strong>/api/sessions</strong><span>列出本地持久化的会话及最近页面信息。</span></div></div>
+    <div class="env-row"><div class="env-symbol">POST</div><div class="env-copy"><strong>/api/sessions</strong><span>创建独立会话。请求示例：{"url":"https://example.com"}；url 可省略，创建后返回 HTTP 202 与 job/session ID。</span></div></div>
+    <div class="env-row"><div class="env-symbol api-symbol">GET</div><div class="env-copy"><strong>/api/sessions/{id}</strong><span>查询会话状态及最近任务。</span></div></div>
+    <div class="env-row"><div class="env-symbol">POST</div><div class="env-copy"><strong>/api/sessions/{id}/navigate</strong><span>请求 JSON：{"url":"https://example.com"}；仅允许 HTTP(S)，URL 凭据不允许写在地址中。</span></div></div>
+    <div class="env-row"><div class="env-symbol">POST</div><div class="env-copy"><strong>/api/sessions/{id}/snapshot</strong><span>读取当前页面语义快照。scope 可选 only_within_viewport 或 full_page。</span></div></div>
+    <div class="env-row"><div class="env-symbol">POST</div><div class="env-copy"><strong>/api/sessions/{id}/actions</strong><span>白名单 action：click、fill、press、select、wait_for_selector、reload。请求需提供 action，除 reload 外需提供 selector；fill/press/select 另需 value 或 key。</span></div></div>
+    <div class="env-row"><div class="env-symbol">POST</div><div class="env-copy"><strong>/api/sessions/{id}/close</strong><span>结束本 API 创建的 TaskSpace。不会尝试关闭用户未托管的标签页。</span></div></div>
+  </section>  <section class="panel" style="margin-top:14px"><h2>当前测试操作</h2><p style="color:#8c9ab2;line-height:1.8">ego_smoke_test 使用 Ego CLI 创建独立任务空间，访问 https://chatgpt.com/?temporary-chat=true，读取标题、临时聊天标记、登录状态和输入框状态。该测试不接触当前用户标签页，不发送聊天消息，不执行表单提交。MVP 不接受任意 URL、脚本或 shell 命令。</p></section>
+  <section class="panel" style="margin-top:14px"><h2>安全与恢复</h2><p style="color:#8c9ab2;line-height:1.8">服务绑定 127.0.0.1，校验 Host、来源与 Bearer 令牌。任务状态写入本地 JSON；服务重启时，未完成任务会标记为 interrupted，不会自动重发，以避免重复执行。最多保留 200 条任务记录。页面快照会保存在本地 jobs.json，请只对有权查看的页面使用快照接口；输入文本不会写入任务历史。</p></section>
+</main><section><h2>结构化详情提取</h2><p>小红书、抖音和哔哩哔哩支持 extract_details。它会读取当前页面的标题、描述、作者、发布时间、可见互动指标、标签、图片/视频地址、JSON-LD 结构化数据，并列出未能识别的字段。此操作应在打开某条内容详情后执行。提取内容取决于当前页面已加载的 DOM，不代表平台官方 API 数据。</p><p>结果还会返回 pageState、contentAccessible 和 warnings：content_loaded 表示识别到内容页且未检测到拦截；verification_required 表示需要人工验证；rate_limited 表示网站限流；upstream_error 表示网关或服务错误；content_unavailable 表示目标内容暂时无法浏览。页面操作完成不等于真实内容已成功采集。</p></section></body></html>
