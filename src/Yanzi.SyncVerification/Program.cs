@@ -739,6 +739,21 @@ static void VerifyExtensionAuthoritySelection()
     };
     Assert(!PersonalSyncService.ShouldPublishAccountBackup(backupLocal, backupRemote, "desktop"),
         "A same-version extension on one PC must not repeatedly replace another device's backup.");
+    Assert(!PersonalSyncService.ShouldRecoverNewerAccountBackup(backupLocal, backupRemote),
+        "A same-version backup must not silently overwrite local changes.");
+    backupRemote.Version = "0.2.7";
+    backupRemote.PackagePath = "packages/demo/newer.zip";
+    Assert(PersonalSyncService.ShouldRecoverNewerAccountBackup(backupLocal, backupRemote),
+        "A strictly newer backup must be eligible to recover an installed older extension.");
+    backupLocal.LocalDeletionPending = true;
+    Assert(!PersonalSyncService.ShouldRecoverNewerAccountBackup(backupLocal, backupRemote),
+        "A pending deletion must not be reversed by backup recovery.");
+    backupLocal.LocalDeletionPending = false;
+    backupRemote.Deleted = true;
+    Assert(!PersonalSyncService.ShouldRecoverNewerAccountBackup(backupLocal, backupRemote),
+        "A deleted remote entry must not be treated as an installable backup.");
+    backupRemote.Deleted = false;
+    backupRemote.Version = "0.2.5";
     backupLocal.Version = "0.2.6";
     Assert(PersonalSyncService.ShouldPublishAccountBackup(backupLocal, backupRemote, "desktop"),
         "A genuinely newer extension version must be backed up.");

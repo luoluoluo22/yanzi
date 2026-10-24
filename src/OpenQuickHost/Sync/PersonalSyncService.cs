@@ -429,9 +429,25 @@ public sealed partial class PersonalSyncService
 
             if (packagesUploadOnly)
             {
-                // An account session uses the private extension library as the installer authority.
-                // The Gitee repository is a backup. Different PCs may package the same version
-                // differently; never ping-pong those binaries at each login.
+                // Account library remains authoritative for same-version edits and deletions.
+                // Restore only an already-installed extension with a strictly newer backup,
+                // never resurrect missing/deleted extensions or same-version local hot edits.
+                if (ShouldRecoverNewerAccountBackup(localEntry, remoteEntry))
+                {
+                    BackupExtensionBeforePersonalRecovery(extensionId);
+                    if (await ApplyRemoteEntryAsync(remoteEntry, cancellationToken))
+                    {
+                        pulled++;
+                        CloudSyncDiagnostics.Log("PersonalSyncService",
+                            "Recovered newer extension from verified personal backup",
+                            ("extensionId", extensionId),
+                            ("fromVersion", localEntry.Version),
+                            ("toVersion", remoteEntry.Version));
+                    }
+                    mergedMap[extensionId] = remoteEntry;
+                    continue;
+                }
+
                 if (ShouldPublishAccountBackup(localEntry, remoteEntry,
                         DeviceIdentityStore.GetOrCreateDesktopDeviceId()) &&
                     snapshot.PackageBytesByExtensionId.ContainsKey(extensionId))
@@ -1769,6 +1785,33 @@ public sealed partial class PersonalSyncService
     private static int CompareEntries(WebDavSyncEntry left, WebDavSyncEntry right)
     {
         return ExtensionSyncRevision.Compare(left, right);
+    }
+
+    internal static bool ShouldRecoverNewerAccountBackup(WebDavSyncEntry local, WebDavSyncEntry remote)
+    {
+        if (local.Deleted || local.Purged || local.LocalDeletionPending ||
+            remote.Deleted || remote.Purged || string.IsNullOrWhiteSpace(remote.PackagePath) ||
+            string.Equals(local.PackageHash, remote.PackageHash, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        return Version.TryParse((local.Version ?? "").Trim().TrimStart('v', 'V'), out var localVersion) &&
+               Version.TryParse((remote.Version ?? "").Trim().TrimStart('v', 'V'), out var remoteVersion) &&
+               remoteVersion > localVersion;
+    }
+
+    private static void BackupExtensionBeforePersonalRecovery(string extensionId)
+    {
+        var source = SyncPackageSafety.ResolveExtensionDirectory(HostAssets.ExtensionsPath, extensionId);
+        if (!Directory.Exists(source)) return;
+        var root = Path.Combine(HostAssets.DataRootPath, "Backups", "personal-extension-recovery",
+            extensionId + "-" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fff") + "-" + Guid.NewGuid().ToString("N")[..8]);
+        foreach (var path in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+        {
+            var destination = Path.Combine(root, Path.GetRelativePath(source, path));
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            File.Copy(path, destination);
+        }
+        HostAssets.AppendLog($"Personal extension recovery backup preserved: id={extensionId}, path={root}");
     }
 
     internal static bool ShouldPublishAccountBackup(
