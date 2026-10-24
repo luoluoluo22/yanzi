@@ -225,6 +225,9 @@ public partial class App : WpfApplication
 
         SyncConfigLoader.EnsureExampleFile();
         var settings = AppSettingsStore.Load();
+        // Sync registry user environment before launching companion services or mini-apps.
+        try { WindowsEnvironmentVariablePublisher.Synchronize(); }
+        catch (Exception ex) { HostAssets.AppendLog($"[WindowsEnv] Startup synchronization failed: {ex.GetType().Name}"); }
         HostAssets.AppendLog($"[App.OnStartup] Loaded settings: EnableEverything={settings.EnableEverything}, UpdatedAt={settings.LauncherConfigUpdatedAtUtc}");
         ApplyTheme(settings.ThemeMode);
         EventManager.RegisterClassHandler(typeof(Window), Window.LoadedEvent, new RoutedEventHandler(Window_GlobalLoaded));

@@ -3442,8 +3442,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     {
         var count = EnvironmentVariables.Count(item => !string.IsNullOrWhiteSpace(item.Name));
         return count == 0
-            ? "尚未配置环境变量。应用小程序和脚本将只能读取系统环境变量。"
-            : $"已配置 {count} 个用户环境变量，脚本运行和应用小程序桥接均可读取。";
+            ? "尚未配置环境变量。小程序和其他电脑软件只能读取已有的 Windows 环境变量。"
+            : $"已配置 {count} 个环境变量：同步至 Windows 当前用户环境，新启动的独立程序也可读取；特殊凭证及系统核心变量除外。";
     }
 
     private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
