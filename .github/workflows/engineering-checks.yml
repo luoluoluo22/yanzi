@@ -3,7 +3,7 @@ on:
   pull_request:
   push:
     branches: [main]
-    paths: ["src/**", "mobile/**", "cloudflare/**", "protocol/**", "sdk/**", "scripts/**", "browser-extension/**", ".github/workflows/engineering-checks.yml"]
+    paths: ["src/**", "mobile/**", "cloudflare/**", "protocol/**", "sdk/**", "scripts/**", "browser-extension/**", ".gitignore", "extensions/**", "website/store-packages/**", "tools/idle-chatgpt-tasks/**", ".github/workflows/engineering-checks.yml"]
 jobs:
   portable-contracts:
     runs-on: ubuntu-latest
