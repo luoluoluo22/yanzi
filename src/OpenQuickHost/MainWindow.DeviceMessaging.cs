@@ -156,142 +156,46 @@ public partial class MainWindow
 
     private async Task MobileMessageBridgeLoopAsync(CancellationToken cancellationToken)
     {
-        HostAssets.AppendLog("Mobile bridge background loop started with SSE streaming.");
+        HostAssets.AppendLog("Mobile bridge background loop started with WebSocket realtime.");
         _desktopDeviceId ??= DeviceIdentityStore.GetOrCreateDesktopDeviceId();
 
         try
         {
-            await PollMobileMessagesSafeAsync("sse-sync");
+            await PollMobileMessagesSafeAsync("startup-recovery");
         }
         catch (Exception ex)
         {
-            HostAssets.AppendLog($"Mobile bridge SSE sync error during startup: {ex.Message}");
+            HostAssets.AppendLog($"Mobile bridge initial cursor recovery error: {ex.Message}");
         }
 
+        // WebSocket is the only realtime transport. The compatibility SSE endpoint is
+        // keepalive-only and cannot deliver new messages; treating it as realtime would
+        // silently defer delivery until the 60s HTTP cursor compensation poll.
         var consecutiveFailures = 0;
         while (!cancellationToken.IsCancellationRequested)
         {
-            DateTimeOffset? connectedAtUtc = null;
+            var attemptStartedAt = DateTimeOffset.UtcNow;
             try
             {
-                try { await RunMobileWebSocketAsync(cancellationToken); consecutiveFailures = 0; continue; }
-                catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
-                { HostAssets.AppendDebug($"Mobile realtime unavailable; SSE fallback: {ex.GetType().Name}"); }
-                HostAssets.AppendDebug("Mobile bridge establishing SSE connection to cloud...");
-                using var fallbackLifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                fallbackLifetime.CancelAfter(TimeSpan.FromMinutes(2));
-                using var response = await _cloudSyncClient!.GetMobileMessagesEventsStreamAsync(_desktopDeviceId, fallbackLifetime.Token);
-                using var stream = await response.Content.ReadAsStreamAsync(fallbackLifetime.Token);
-                using var reader = new System.IO.StreamReader(stream, System.Text.Encoding.UTF8);
-
-                connectedAtUtc = DateTimeOffset.UtcNow;
-                HostAssets.AppendDebug("Mobile bridge SSE connection established successfully.");
-
-                while (!cancellationToken.IsCancellationRequested && !reader.EndOfStream)
-                {
-                    var line = await reader.ReadLineAsync(fallbackLifetime.Token);
-                    if (string.IsNullOrWhiteSpace(line))
-                    {
-                        continue;
-                    }
-
-                    if (line.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
-                    {
-                        var dataJson = line["data:".Length..].Trim();
-                        try
-                        {
-                            using var doc = System.Text.Json.JsonDocument.Parse(dataJson);
-                            var root = doc.RootElement;
-                            if (root.TryGetProperty("type", out var typeProp) && typeProp.GetString() == "messages")
-                            {
-                                if (root.TryGetProperty("items", out var itemsProp) && itemsProp.ValueKind == System.Text.Json.JsonValueKind.Array)
-                                {
-                                    var itemsText = itemsProp.GetRawText();
-                                    var messages = System.Text.Json.JsonSerializer.Deserialize<List<DeviceMessageRecord>>(itemsText, new System.Text.Json.JsonSerializerOptions
-                                    {
-                                        PropertyNameCaseInsensitive = true
-                                    });
-
-                                    if (messages != null && messages.Count > 0)
-                                    {
-                                        HostAssets.AppendLog($"Mobile bridge SSE pushed messages: count={messages.Count}.");
-
-                                        foreach (var message in messages)
-                                        {
-                                            var res = await HandleMobileDeviceMessageAsync(message);
-                                            if (res.hasResult)
-                                            {
-                                                await _cloudSyncClient.AckDeviceMessageAsync(message.MessageId, _desktopDeviceId, res.success, res.output, cancellationToken);
-                                            }
-                                            else
-                                            {
-                                                await _cloudSyncClient.AckDeviceMessageAsync(message.MessageId, _desktopDeviceId, cancellationToken: cancellationToken);
-                                            }
-                                            HostAssets.AppendLog($"Mobile bridge SSE acked message: id={message.MessageId}, deviceId={_desktopDeviceId}.");
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        catch (Exception parseEx)
-                        {
-                            HostAssets.AppendLog($"Mobile bridge SSE message parse failed: {parseEx.Message}");
-                        }
-                    }
-                }
+                await RunMobileWebSocketAsync(cancellationToken);
+                consecutiveFailures = 0;
             }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { break; }
+            catch (Exception error) when (!cancellationToken.IsCancellationRequested)
             {
-                HostAssets.AppendDebug("Mobile SSE compatibility interval ended; retrying realtime connection.");
-                continue;
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                var stableConnection = connectedAtUtc.HasValue &&
-                    DateTimeOffset.UtcNow - connectedAtUtc.Value >= TimeSpan.FromMinutes(1);
-                var message = $"Mobile bridge SSE connection error: {FormatExceptionMessage(ex)}";
-                if (stableConnection && message.Contains("ResponseEnded", StringComparison.OrdinalIgnoreCase))
-                {
-                    HostAssets.AppendDebug(message);
-                }
-                else
-                {
-                    HostAssets.AppendLog(message);
-                }
-            }
-
-            if (!cancellationToken.IsCancellationRequested)
-            {
-                var stableConnection = connectedAtUtc.HasValue &&
-                    DateTimeOffset.UtcNow - connectedAtUtc.Value >= TimeSpan.FromMinutes(1);
-                if (stableConnection)
-                {
+                // A previously healthy long-lived socket should reconnect promptly, rather
+                // than inherit the backoff of unrelated outages hours earlier.
+                if (DateTimeOffset.UtcNow - attemptStartedAt >= TimeSpan.FromMinutes(1))
                     consecutiveFailures = 0;
-                }
-
-                consecutiveFailures++;
-                if (consecutiveFailures >= 5)
-                {
-                    consecutiveFailures = 5;
-                }
-
-                var retrySeconds = Math.Min(5 * (1 << (consecutiveFailures - 1)), 60);
-                var retryMessage = $"Mobile bridge SSE disconnected. Retrying in {retrySeconds} seconds ({consecutiveFailures}/5)...";
-                if (stableConnection) HostAssets.AppendDebug(retryMessage);
-                else HostAssets.AppendLog(retryMessage);
-                try
-                {
-                    await Task.Delay(TimeSpan.FromSeconds(retrySeconds), cancellationToken);
-                }
-                catch (OperationCanceledException)
-                {
-                    break;
-                }
+                HostAssets.AppendLog("Mobile bridge websocket unavailable; HTTP cursor recovery active: "
+                    + error.GetType().Name);
+                consecutiveFailures = Math.Min(consecutiveFailures + 1, 5);
             }
+
+            if (cancellationToken.IsCancellationRequested) break;
+            var retrySeconds = Math.Min(5 * (1 << Math.Max(0, consecutiveFailures - 1)), 60);
+            try { await Task.Delay(TimeSpan.FromSeconds(retrySeconds), cancellationToken); }
+            catch (OperationCanceledException) { break; }
         }
         HostAssets.AppendLog("Mobile bridge background loop stopped.");
     }
@@ -409,6 +313,26 @@ public partial class MainWindow
                 stableId = GetPayloadString(message, "clientTransferId");
             var key = $"{SyncSessionStore.Load()?.UserId}:{message.SourceDeviceId}:{(Guid.TryParse(stableId, out _) ? stableId : message.MessageId)}";
             if (_mobileMessageResults.TryGetValue(key, out var cached)) return cached;
+            var observedAt = DateTimeOffset.UtcNow;
+            if (DeviceMessageNotificationPolicy.TryReadCreatedAt(message.CreatedAt, out var cloudCreated))
+            {
+                var cloudDelayMs = (observedAt - cloudCreated).TotalMilliseconds;
+                if (cloudDelayMs >= 0 && cloudDelayMs <= TimeSpan.FromDays(1).TotalMilliseconds)
+                {
+                    var clientDelay = "";
+                    if (long.TryParse(GetPayloadString(message, "clientSubmittedAt"), out var clientSentMs))
+                    {
+                        try
+                        {
+                            var e2eMs = (observedAt - DateTimeOffset.FromUnixTimeMilliseconds(clientSentMs)).TotalMilliseconds;
+                            if (e2eMs >= 0 && e2eMs <= TimeSpan.FromDays(1).TotalMilliseconds)
+                                clientDelay = $", clientToDesktopMs={e2eMs:0}";
+                        }
+                        catch (ArgumentOutOfRangeException) { }
+                    }
+                    HostAssets.AppendLog($"[MobileMessageTiming] id={message.MessageId}, cloudToDesktopMs={cloudDelayMs:0}{clientDelay}, kind={message.Kind}");
+                }
+            }
             var command = YanziDeviceMessageProtocol.IsExecution(message.Kind);
             var receiptPath = command || Guid.TryParse(stableId, out _) ? GetMobileExecutionReceiptPath(key) : null;
             if (receiptPath != null && File.Exists(receiptPath)) {
@@ -1363,8 +1287,7 @@ public partial class MainWindow
                 payload = message.Payload,
                 screenshotDataUrl = string.IsNullOrWhiteSpace(screenshotFilePath) ? screenshotDataUrl : null,
                 localFilePath = screenshotFilePath,
-                receivedAtUtc = (DeviceMessageNotificationPolicy.TryReadCreatedAt(message.CreatedAt, out var sentAt)
-                    ? sentAt : DateTimeOffset.UtcNow).ToString("O"),
+                receivedAtUtc = DateTimeOffset.UtcNow.ToString("O"),
                 createdAt = message.CreatedAt
             };
             File.AppendAllText(

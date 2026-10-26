@@ -5,6 +5,27 @@ let chatGptActiveTaskCount = 0;
 const chatGptExecutionWaiters = [];
 const chatGptReservedTabs = new Set();
 const chatGptTabWaiters = new Map();
+const chatGptFocusRestores = new Map();
+
+async function restoreChatGptFocus(taskId, senderTabId) {
+  const entry=chatGptFocusRestores.get(taskId);
+  if(!entry || (senderTabId && entry.targetTabId !== senderTabId))return false;
+  chatGptFocusRestores.delete(taskId);
+  try {
+    const [current]=await chrome.tabs.query({active:true,windowId:entry.windowId});
+    if(current?.id !== entry.targetTabId)return false; // user already moved away
+    if(entry.previousTabId && entry.previousTabId !== entry.targetTabId) {
+      await chrome.tabs.update(entry.previousTabId,{active:true});
+    }
+    return true;
+  } catch{return false;}
+}
+chrome.runtime.onMessage?.addListener?.((msg,sender)=>{
+  if(msg?.type!=='yanzi_chatgpt_sent_focus_restore' ||
+     typeof msg.taskId!=='string')return false;
+  void restoreChatGptFocus(msg.taskId,sender.tab?.id);
+  return false;
+});
 let xhsLocalFeedGenerationPromise = null;
 let xhsLocalFeedGenerationTabId = null;
 let xhsLocalFeedGenerationCancelled = false;
@@ -411,6 +432,7 @@ async function runChatGptTask(task) {
     : null;
 
   let reservedTabId = null;
+  let activeFocusTaskId = null;
   let networkWatch = null;
   let networkTimer = null;
 
@@ -750,6 +772,25 @@ async function runChatGptTask(task) {
           networkWatch?.snapshot()||null);
       },1500);
     }
+    // Optional active-composer handshake only on tabs owned by Yanzi.
+    // A hidden tab may accept execCommand while keeping React's Send disabled.
+    if(task.focusForSend === true &&
+       ['chatgpt_send','chatgpt_subagent_continue','chatgpt_feedback_send'].includes(task.action)) {
+      const current=await chrome.tabs.get(tab.id);
+      if(owns(current) && !current.active && !current.pinned &&
+         current.status==='complete') {
+        const [previous]=await chrome.tabs.query({active:true,windowId:current.windowId});
+        if(previous?.id && previous.id!==tab.id) {
+          chatGptFocusRestores.set(task.taskId,{
+            previousTabId:previous.id,targetTabId:tab.id,windowId:current.windowId
+          });
+          activeFocusTaskId=task.taskId;
+          await chrome.tabs.update(tab.id,{active:true});
+          await chrome.windows.update(current.windowId,{focused:true});
+          await new Promise(resolve=>setTimeout(resolve,500));
+        }
+      }
+    }
     let response;
     try {
       response = await chrome.tabs.sendMessage(tab.id, {
@@ -936,6 +977,9 @@ async function runChatGptTask(task) {
   } finally {
     if(networkTimer!==null)clearInterval(networkTimer);
     networkWatch?.stop();
+    if(activeFocusTaskId) {
+      await restoreChatGptFocus(activeFocusTaskId,null);
+    }
     if (reservedTabId) {
       releaseChatGptTab(reservedTabId);
     }

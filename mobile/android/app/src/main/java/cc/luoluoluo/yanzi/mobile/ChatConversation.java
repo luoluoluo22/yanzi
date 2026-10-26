@@ -43,9 +43,36 @@ final class ChatConversation {
                 || (source.startsWith("server-") && "YanziChat".equals(message.optString("title")))))
             return GROUP;
         // Compatibility with the first local adapter, which used plain chat.send.
-        if(message.optString("text").startsWith("【反重力】") && source.startsWith("desktop-")
-                && !message.optString("targetDeviceId").isEmpty() && !(payload!=null && payload.optBoolean("accountChat")))
+        if((message.optString("text").startsWith("【反重力】") || message.optString("requestId").startsWith("agy-"))
+                && source.startsWith("desktop-")
+                && !message.optString("targetDeviceId").isEmpty() && !(payload!=null && payload.optBoolean("accountChat"))) {
+            String reqId = message.optString("requestId");
+            if (reqId.contains("--conv--")) {
+                try {
+                    String[] parts = reqId.split("--conv--");
+                    if (parts.length > 1) {
+                        String rawId = parts[1].split("--")[0].trim();
+                        if (!rawId.isEmpty() && !rawId.equals("def")) {
+                            return "agent:antigravity:" + source + ":" + rawId;
+                        }
+                    }
+                } catch (Exception ignored) {}
+            }
+            try {
+                android.content.Context ctx = MobileApplicationContext.get();
+                if (ctx != null) {
+                    String key = "chatObjects." + ChatHistoryStore.accountKey(ctx) + ".last_selected_conversation_id";
+                    android.content.SharedPreferences sp = ctx.getSharedPreferences("yanzi-mobile", android.content.Context.MODE_PRIVATE);
+                    String last = sp.getString(key, "");
+                    if (last.isEmpty()) {
+                        sp = ctx.getSharedPreferences("YanziMobilePrefs", android.content.Context.MODE_PRIVATE);
+                        last = sp.getString(key, "");
+                    }
+                    if (last.startsWith("agent:antigravity:" + source)) return last;
+                }
+            } catch (Exception ignored) {}
             return "agent:antigravity:"+source;
+        }
         if(id.startsWith("device:") || (!message.optString("targetDeviceId").isEmpty()
                 && !(payload!=null && payload.optBoolean("accountChat"))))
             return source.isEmpty()?GROUP:"device:"+source;

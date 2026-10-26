@@ -1,5 +1,4 @@
 importScripts("lanzou-network-observer.js", "workflow-checkpoints.js", "workflow-orchestrator.js");
-
 let ws = null;
 let currentWsSeq = 0;
 let reconnectDelay = 1000;
@@ -14,7 +13,6 @@ let pendingLogs = [];
 let logFlushTimer = null;
 const DEFAULT_LOCAL_WS_URL = "ws://127.0.0.1:53919/v1/browser/ws";
 let localWsUrl = DEFAULT_LOCAL_WS_URL;
-
 async function discoverDesktopWebSocket() {
   try {
     const url = chrome.runtime.getURL("yanzi-connection.json");
@@ -28,7 +26,6 @@ async function discoverDesktopWebSocket() {
     return null;
   }
 }
-
 async function refreshDesktopWebSocketConfiguration() {
   const stored = await chrome.storage.local.get({
     localWsUrl: DEFAULT_LOCAL_WS_URL, manualLocalWsUrl: false
@@ -41,7 +38,6 @@ async function refreshDesktopWebSocketConfiguration() {
   }
 }
 
-
 // 辅助函数：更新连接状态到本地存储，供 popup 读取
 function updateStatus(status) {
   isConnected = (status === "connected");
@@ -49,43 +45,36 @@ function updateStatus(status) {
   logEvent(`连接状态更新为: ${status}`);
   globalThis.yanziWebAppsOnConnectionChanged?.(isConnected);
 }
-
 // 辅助函数：记录任务日志到本地存储
 function logEvent(message) {
   const timestamp = new Date().toLocaleTimeString();
   const logMessage = `[${timestamp}] ${message}`;
   console.log(logMessage);
-
   pendingLogs.push(logMessage);
   if (!logFlushTimer) {
     logFlushTimer = setTimeout(flushLogs, LOG_BATCH_INTERVAL_MS);
   }
 }
-
 function flushLogs() {
   logFlushTimer = null;
   if (!pendingLogs.length) {
     return;
   }
-
   const batch = pendingLogs.splice(0, pendingLogs.length);
   chrome.storage.local.get({ logs: [] }, (result) => {
     const logs = result.logs.concat(batch).slice(-50);
     chrome.storage.local.set({ logs });
   });
 }
-
 // 连接本地 WebSocket 服务 (带严格的单实例自增序号锁，杜绝重连级联死循环)
 function connectWebSocket(reason = "auto") {
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
     return;
   }
-
   if (reconnectTimer) {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
   }
-
   const thisSeq = ++currentWsSeq;
   logEvent(`尝试连接到燕子桌面端本地服务 (Seq #${thisSeq}, 原因: ${reason})...`);
   
@@ -119,6 +108,10 @@ function connectWebSocket(reason = "auto") {
         const message = JSON.parse(event.data);
         if (message.type === "pong") {
           lastPongAt = Date.now();
+          return;
+        }
+        if (message.type === "opencli_response") {
+          globalThis.handleYanziOpenCliResponse?.(message);
           return;
         }
         if (message.type === "webapp_storage_response") {
@@ -174,7 +167,6 @@ function connectWebSocket(reason = "auto") {
     scheduleReconnect("create_exception");
   }
 }
-
 function forceReconnect(reason = "forced") {
   const oldWs = ws;
   ws = null;
@@ -188,7 +180,6 @@ function forceReconnect(reason = "forced") {
   updateStatus("disconnected");
   connectWebSocket(reason);
 }
-
 function heartbeat(reason = "heartbeat") {
   if (ws && ws.readyState === WebSocket.OPEN) {
     const age = Date.now() - lastPongAt;
@@ -205,16 +196,13 @@ function heartbeat(reason = "heartbeat") {
     }
     return;
   }
-
   if (!reconnectTimer) connectWebSocket(reason);
 }
-
 // 自动重连逻辑 (指数退避)
 function scheduleReconnect(reason = "unknown") {
   if (reconnectTimer) {
     return;
   }
-
   logEvent(`连接已断开 (${reason})，将在 ${reconnectDelay / 1000} 秒后尝试重新连接...`);
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
@@ -222,7 +210,6 @@ function scheduleReconnect(reason = "unknown") {
     reconnectDelay = Math.min(reconnectDelay * 2, maxReconnectDelay);
   }, reconnectDelay);
 }
-
 // 向本地燕子服务发送消息
 function sendToLocalClient(message) {
   if (ws && ws.readyState === WebSocket.OPEN) {
@@ -231,7 +218,6 @@ function sendToLocalClient(message) {
     logEvent("发送失败：WebSocket 未连接");
   }
 }
-
 // 核心任务处理逻辑
 function handleTask(task) {
   if (task.action === "workflow_state") {
@@ -250,7 +236,6 @@ function handleTask(task) {
         "Workflow V2 failed: " + (error?.message || String(error))));
     return;
   }
-
   const targetUrl = task.url || (task.action === "ai_prompt_transfer" ? "https://chat.deepseek.com/" : "");
   logEvent(`开始执行任务 [${task.taskId}]，动作: ${task.action}, 目标网址: ${targetUrl}`);
   
@@ -258,14 +243,18 @@ function handleTask(task) {
     handleAiPromptTransferTask(task, targetUrl);
     return;
   }
-
+  if (task.action === "opencli_read") {
+    void globalThis.yanziOpenCliPerformRead(task.site, task.operation, task.page ?? 1)
+      .then(result => sendBrowserTaskResponse(task, result?.ok ? "success" : "error", result?.data || null, result?.error || ""))
+      .catch(err => sendBrowserTaskResponse(task, "error", null, err.message));
+    return;
+  }
   if (task.action === "lanzou_network_control") {
     void globalThis.handleLanzouNetworkControl(task)
       .then(data => sendBrowserTaskResponse(task, "success", data))
       .catch(error => sendBrowserTaskResponse(task, "error", null, error?.message || "network observer failed"));
     return;
   }
-
   if (typeof task.action === "string" && task.action.startsWith("gemini_")) {
     const runner = globalThis.yanziGeminiBackground?.runGeminiTask;
     if (typeof runner !== "function") {
@@ -277,27 +266,22 @@ function handleTask(task) {
       .catch(error => sendBrowserTaskResponse(task, "error", null, error?.message || "gemini task failed"));
     return;
   }
-
   if (task.action === "probe_webapps") {
     void handleWebAppProbeTask(task);
     return;
   }
-
   if (task.action === "probe_xhs_evaluation_reply") {
     void handleXhsEvaluationReplyProbeTask(task);
     return;
   }
-
   if (task.action === "probe_xhs_evaluation_tab_status") {
     void handleXhsEvaluationTabStatusProbeTask(task);
     return;
   }
-
   if (task.action === "probe_xhs_open_evaluation_chat") {
     void handleXhsOpenEvaluationChatProbeTask(task);
     return;
   }
-
   if (task.action === "webapp_data_get" ||
       task.action === "webapp_data_set" ||
       task.action === "xiaohongshu_custom_card_list" ||
@@ -307,7 +291,6 @@ function handleTask(task) {
     void handleWebAppDataTask(task);
     return;
   }
-
   // 普通自动化任务：静默创建后台 Tab 页 (active: false)
   chrome.tabs.create({ url: targetUrl, active: false }, (tab) => {
     const tabId = tab.id;
@@ -322,21 +305,18 @@ function handleTask(task) {
     });
   });
 }
-
 function withProbeTimeout(promise, timeoutMs, fallback) {
   return Promise.race([
     Promise.resolve(promise),
     new Promise(resolve => setTimeout(() => resolve(fallback), timeoutMs))
   ]);
 }
-
 async function handleWebAppProbeTask(task) {
   try {
     const appId = task.appId || "xiaohongshu.filter";
     const catalog = await loadYanziWebAppCatalog?.();
     const app = (catalog?.apps || []).find(item => item.id === appId);
     if (!app) throw new Error(`unknown webapp: ${appId}`);
-
     const allTabs = await chrome.tabs.query({});
     const tabs = allTabs.filter(tab =>
       tab.id &&
@@ -344,7 +324,6 @@ async function handleWebAppProbeTask(task) {
       (app.matches || []).some(pattern => matchPattern(tab.url, pattern))
     );
     const results = [];
-
     for (const tab of tabs) {
       const injection = await withProbeTimeout(
         (async () => {
@@ -358,7 +337,6 @@ async function handleWebAppProbeTask(task) {
         10000,
         { injected: false, injectError: "inject_timeout" }
       );
-
       const response = await withProbeTimeout(
         new Promise(resolve => {
           chrome.tabs.sendMessage(tab.id, {
@@ -385,7 +363,6 @@ async function handleWebAppProbeTask(task) {
         10000,
         { ok: false, error: "probe_timeout" }
       );
-
       results.push({
         tabId: tab.id,
         title: tab.title || "",
@@ -397,7 +374,6 @@ async function handleWebAppProbeTask(task) {
         ...response
       });
     }
-
     let registeredContentScript = null;
     try {
       const registered = await chrome.scripting.getRegisteredContentScripts();
@@ -413,7 +389,6 @@ async function handleWebAppProbeTask(task) {
         persistAcrossSessions: matched.persistAcrossSessions !== false
       } : null;
     } catch {}
-
     sendToLocalClient({
       type: "task_response",
       taskId: task.taskId,
@@ -438,7 +413,6 @@ async function handleWebAppProbeTask(task) {
     });
   }
 }
-
 function sendBrowserTaskResponse(task, status, data, message) {
   sendToLocalClient({
     type: "task_response",
@@ -448,7 +422,6 @@ function sendBrowserTaskResponse(task, status, data, message) {
     message: message || ""
   });
 }
-
 async function handleXhsEvaluationReplyProbeTask(task) {
   try {
     const data = await queueXhsEvaluation({
@@ -473,14 +446,12 @@ async function handleXhsEvaluationReplyProbeTask(task) {
     );
   }
 }
-
 async function handleXhsEvaluationTabStatusProbeTask(task) {
   const tabId = Number(task.tabId || 0);
   if (!tabId) {
     sendBrowserTaskResponse(task, "error", null, "tabId is required");
     return;
   }
-
   try {
     const tab = await chrome.tabs.get(tabId);
     const alarm = await chrome.alarms.get(
@@ -506,7 +477,6 @@ async function handleXhsEvaluationTabStatusProbeTask(task) {
     });
   }
 }
-
 async function handleXhsOpenEvaluationChatProbeTask(task) {
   try {
     const data = await openXhsEvaluationChat(task.tabId);
@@ -520,16 +490,13 @@ async function handleXhsOpenEvaluationChatProbeTask(task) {
     );
   }
 }
-
 function normalizeXiaohongshuCustomCard(input) {
   if (!input || typeof input !== "object") {
     throw new Error("card is required");
   }
-
   const text = value => String(value ?? "").trim();
   const title = text(input.title);
   if (!title) throw new Error("card.title is required");
-
   const safeHttpUrl = value => {
     const candidate = text(value);
     if (!candidate) return "";
@@ -542,7 +509,6 @@ function normalizeXiaohongshuCustomCard(input) {
       return "";
     }
   };
-
   return {
     id: text(input.id) || crypto.randomUUID(),
     title: title.slice(0, 160),
@@ -557,7 +523,6 @@ function normalizeXiaohongshuCustomCard(input) {
     updatedAt: Date.now()
   };
 }
-
 async function handleWebAppDataTask(task) {
   try {
     if (task.action === "webapp_data_get") {
@@ -568,7 +533,6 @@ async function handleWebAppDataTask(task) {
       sendBrowserTaskResponse(task, "success", { appId, key, value }, "webapp data read");
       return;
     }
-
     if (task.action === "webapp_data_set") {
       const appId = String(task.appId || "").trim();
       const key = String(task.key || "").trim();
@@ -583,12 +547,10 @@ async function handleWebAppDataTask(task) {
       );
       return;
     }
-
     const appId = "xiaohongshu.filter";
     const key = "customCards";
     const current = await getWebAppData(appId, key, { version: 1, items: [] });
     let items = Array.isArray(current?.items) ? current.items : [];
-
     if (task.action === "xiaohongshu_custom_card_list") {
       sendBrowserTaskResponse(
         task,
@@ -598,7 +560,6 @@ async function handleWebAppDataTask(task) {
       );
       return;
     }
-
     if (task.action === "xiaohongshu_custom_card_upsert") {
       const card = normalizeXiaohongshuCustomCard(task.card);
       const index = items.findIndex(item => String(item?.id || "") === card.id);
@@ -612,13 +573,11 @@ async function handleWebAppDataTask(task) {
       } else {
         items.push(card);
       }
-
       items = items
         .filter(item => item && item.id)
         .sort((a, b) => Number(b.priority || 0) - Number(a.priority || 0) ||
           Number(b.updatedAt || b.createdAt || 0) - Number(a.updatedAt || a.createdAt || 0))
         .slice(0, 100);
-
       const value = { version: 1, updatedAt: Date.now(), items };
       const record = await setWebAppData(appId, key, value);
       await broadcastWebAppDataChanged(appId, key, value);
@@ -630,7 +589,6 @@ async function handleWebAppDataTask(task) {
       );
       return;
     }
-
     if (task.action === "xiaohongshu_custom_card_remove") {
       const id = String(task.id || "").trim();
       if (!id) throw new Error("id is required");
@@ -647,7 +605,6 @@ async function handleWebAppDataTask(task) {
       );
       return;
     }
-
     if (task.action === "xiaohongshu_custom_card_clear") {
       const value = { version: 1, updatedAt: Date.now(), items: [] };
       await setWebAppData(appId, key, value);
@@ -655,13 +612,11 @@ async function handleWebAppDataTask(task) {
       sendBrowserTaskResponse(task, "success", { count: 0 }, "xiaohongshu custom cards cleared");
       return;
     }
-
     throw new Error(`unsupported webapp data action: ${task.action}`);
   } catch (error) {
     sendBrowserTaskResponse(task, "error", null, error?.message || String(error));
   }
 }
-
 // 专门处理 AI 任务：优先复用已打开的 AI 标签页
 function handleAiPromptTransferTask(task, targetUrl) {
   const urlPattern = "*://chat.deepseek.com/*";
@@ -688,7 +643,6 @@ function handleAiPromptTransferTask(task, targetUrl) {
         });
         return;
       }
-
       // 激活该标签页并直接注入执行
       chrome.tabs.update(tabId, { active: true }, () => {
         injectAndStart(tabId, task);
@@ -711,7 +665,6 @@ function handleAiPromptTransferTask(task, targetUrl) {
     }
   });
 }
-
 // 注入脚本并启动任务
 function injectAndStart(tabId, task) {
   chrome.scripting.executeScript({
@@ -734,7 +687,6 @@ function injectAndStart(tabId, task) {
     });
   });
 }
-
 // 监听来自 content.js 或 popup 的消息
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // 1. 获取实时活跃状态
@@ -749,7 +701,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     return true;
   }
-
   // 2. 处理来自控制面板的重连请求
   if (message.action === "reconnect") {
     logEvent("收到来自控制面板的重新连接请求...");
@@ -768,7 +719,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ status: "connecting" });
     return true;
   }
-
   // 3. 监听来自 content.js 的返回结果
   if (message.type === "task_result" && sender.tab) {
     const tabId = sender.tab.id;
@@ -790,13 +740,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
   }
 });
-
 // 使用 chrome.alarms 实现可靠的后台保活与心跳
 chrome.alarms.create("yanziKeepAlive", { periodInMinutes: 0.5 });
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === "yanziKeepAlive") heartbeat("alarm");
 });
-
 // 初始化连接
 refreshDesktopWebSocketConfiguration().finally(() => connectWebSocket("startup"));
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -816,4 +764,4 @@ globalThis.yanziBrowserHost = {
   isConnected: () => Boolean(ws && ws.readyState === WebSocket.OPEN),
   log: logEvent
 };
-importScripts("chatgpt-network-observer.js", "chatgpt-background.js", "gemini-network-observer.js", "gemini-background.js", "webapps/runtime-background.js");
+importScripts("chatgpt-network-observer.js", "chatgpt-background.js", "gemini-network-observer.js", "gemini-background.js", "webapps/runtime-background.js", "opencli-background.js");

@@ -38,7 +38,33 @@ export async function sendProviderPush(env, provider, token, messageId) {
   }
   return 'not_configured';
 }
+// Personal-only fallback: a server-owned secret authorizes one explicitly scoped Android device.
+// Never accept the SPT or destination from a message payload and never forward private message bodies.
+export async function sendScopedWxPusherFallback(env, userId, message) {
+  const spt = String(env.YANZI_WXPUSHER_SPT || '');
+  const allowedUser = String(env.YANZI_WXPUSHER_USER_ID || '');
+  const allowedDevice = String(env.YANZI_WXPUSHER_DEVICE_ID || '');
+  if (!/^SPT_[A-Za-z0-9]{16,}$/.test(spt) || !allowedUser || !allowedDevice || userId !== allowedUser) return 'not_configured';
+  if (!messageMatchesDevice(message, { deviceId: allowedDevice, platform: 'android', capabilities: { receiveAccountChat: true } })) return 'not_targeted';
+  const response = await fetch('https://wxpusher.zjiecode.com/api/send/message/simple-push', {
+    method: 'POST', signal: AbortSignal.timeout(10000), headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    body: JSON.stringify({
+      spt, contentType: 1, summary: '燕子有新消息',
+      content: '你有一条新的燕子消息，请打开燕子查看。'
+    })
+  });
+  if (!response.ok) throw new Error('wxpusher_http_' + response.status);
+  const result = await response.json();
+  if (result?.code !== 1000 || result?.success !== true) throw new Error('wxpusher_queue_rejected');
+  return 'queued';
+}
 export async function sendOfflinePush(env, userId, message) {
+  try {
+    const fallback = await sendScopedWxPusherFallback(env, userId, message);
+    if (fallback === 'queued') console.log(JSON.stringify({ event: 'mobile_push_fallback', messageId: message.messageId, status: fallback }));
+  } catch (error) {
+    console.warn(JSON.stringify({ event: 'mobile_push_fallback_failed', messageId: message.messageId, error: error.name }));
+  }
   const rows = (await env.DB.prepare('SELECT device_id, push_token, capabilities_json FROM user_devices WHERE user_id = ? AND platform = ? AND push_token IS NOT NULL')
     .bind(userId, 'android').all()).results || [];
   for (const row of rows) {
