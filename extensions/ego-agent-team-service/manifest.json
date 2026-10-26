@@ -1,7 +1,7 @@
 {
   "id": "ego-agent-team-service",
   "name": "燕子 Agent 团队服务",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "category": "系统服务",
   "description": "Ego 浏览器驱动的主管-子Agent消息中枢",
   "runtime": "powershell",

@@ -1,4 +1,4 @@
-importScripts("lanzou-network-observer.js");
+importScripts("lanzou-network-observer.js", "workflow-checkpoints.js", "workflow-orchestrator.js");
 
 let ws = null;
 let currentWsSeq = 0;
@@ -91,6 +91,10 @@ function connectWebSocket(reason = "auto") {
         const message = JSON.parse(event.data);
         if (message.type === "pong") {
           lastPongAt = Date.now();
+          return;
+        }
+        if (message.type === "opencli_response") {
+          globalThis.handleYanziOpenCliResponse?.(message);
           return;
         }
         if (message.type === "webapp_storage_response") {
@@ -206,6 +210,22 @@ function sendToLocalClient(message) {
 
 // 核心任务处理逻辑
 function handleTask(task) {
+  if (task.action === "workflow_state") {
+    void globalThis.yanziWorkflowV2.inspect(task.targetTaskId)
+      .then(result => sendBrowserTaskResponse(task, "success", result))
+      .catch(error => sendBrowserTaskResponse(task, "error", null, error?.message || String(error)));
+    return;
+  }
+  // Run page-changing workflows in the extension worker, not the dying content frame.
+  if (task.action === "workflow" && task.site !== "lanzou" &&
+      Array.isArray(task.steps) && !task.steps.some(step => step.type === "fetch")) {
+    void globalThis.yanziWorkflowV2.run(task)
+      .then(result => sendBrowserTaskResponse(task, result.status, result.data, result.message))
+      .catch(error => sendBrowserTaskResponse(task, "error", null,
+        "Workflow V2 failed: " + (error?.message || String(error))));
+    return;
+  }
+
   const targetUrl = task.url || (task.action === "ai_prompt_transfer" ? "https://chat.deepseek.com/" : "");
   logEvent(`开始执行任务 [${task.taskId}]，动作: ${task.action}, 目标网址: ${targetUrl}`);
   
@@ -214,10 +234,28 @@ function handleTask(task) {
     return;
   }
 
+  if (task.action === "opencli_read") {
+    void globalThis.yanziOpenCliPerformRead(task.site, task.operation, task.page ?? 1)
+      .then(result => sendBrowserTaskResponse(task, result?.ok ? "success" : "error", result?.data || null, result?.error || ""))
+      .catch(err => sendBrowserTaskResponse(task, "error", null, err.message));
+    return;
+  }
   if (task.action === "lanzou_network_control") {
     void globalThis.handleLanzouNetworkControl(task)
       .then(data => sendBrowserTaskResponse(task, "success", data))
       .catch(error => sendBrowserTaskResponse(task, "error", null, error?.message || "network observer failed"));
+    return;
+  }
+
+  if (typeof task.action === "string" && task.action.startsWith("gemini_")) {
+    const runner = globalThis.yanziGeminiBackground?.runGeminiTask;
+    if (typeof runner !== "function") {
+      sendBrowserTaskResponse(task, "error", null, "Gemini background handler unavailable");
+      return;
+    }
+    void runner(task)
+      .then(res => sendBrowserTaskResponse(task, res?.status || "error", res?.data, res?.message || ""))
+      .catch(error => sendBrowserTaskResponse(task, "error", null, error?.message || "gemini task failed"));
     return;
   }
 
@@ -761,4 +799,4 @@ globalThis.yanziBrowserHost = {
   isConnected: () => Boolean(ws && ws.readyState === WebSocket.OPEN),
   log: logEvent
 };
-importScripts("chatgpt-network-observer.js", "chatgpt-background.js", "webapps/runtime-background.js");
+importScripts("chatgpt-network-observer.js", "chatgpt-background.js", "gemini-network-observer.js", "gemini-background.js", "webapps/runtime-background.js", "opencli-background.js");

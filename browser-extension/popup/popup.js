@@ -1,16 +1,38 @@
 document.addEventListener("DOMContentLoaded", () => {
   function showPanel(name) {
     document.querySelectorAll('[data-panel]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.panel === name)));
-    for (const panel of ['overview', 'market', 'api', 'logs']) document.getElementById('panel-' + panel).hidden = panel !== name;
+    for (const panel of ['overview', 'market', 'opencli', 'logs']) document.getElementById('panel-' + panel).hidden = panel !== name;
     if (name === 'market') loadWebAppMarket();
   }
   document.querySelectorAll('[data-panel]').forEach(button => button.onclick = () => showPanel(button.dataset.panel));
-  document.getElementById('show-api').onclick = () => showPanel('api');
-  document.getElementById('open-workbench').onclick = () => chrome.tabs.create({ url: 'http://127.0.0.1:53921/' });
+  document.addEventListener('keydown', event => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+      event.preventDefault();
+      showPanel('market');
+      document.getElementById('market-search')?.focus();
+    }
+  });
+
+  document.getElementById('open-workbench').onclick = () => chrome.tabs.create({ url: 'http://127.0.0.1:43830/' });
 
   const marketList = document.getElementById('market-list');
   const marketCount = document.getElementById('market-count');
   const marketSyncStatus = document.getElementById('market-sync-status');
+  const marketSearch = document.getElementById('market-search');
+  const marketCategories = document.getElementById('market-categories');
+  const expandedCapabilityApps = new Set();
+  let webAppMarketApps = [];
+  let selectedMarketCategory = '全部';
+  let marketSearchQuery = '';
+
+  const extensionVersion = document.getElementById('extension-version');
+  if (extensionVersion) {
+    extensionVersion.textContent = 'v' + chrome.runtime.getManifest().version;
+  }
+  const marketSearchShortcut = document.getElementById('market-search-shortcut');
+  if (marketSearchShortcut && /Mac|iPhone|iPad/.test(navigator.platform || '')) {
+    marketSearchShortcut.textContent = '⌘ K';
+  }
 
   async function loadWebAppMarket() {
     try {
@@ -24,28 +46,175 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function renderWebAppMarket(apps) {
-    marketCount.textContent = `${apps.length} 个`;
-    if (!apps.length) {
-      marketList.innerHTML = '<div class="market-empty">暂无网页小程序</div>';
-      return;
+    webAppMarketApps = Array.isArray(apps) ? apps : [];
+    const categories = new Set(webAppMarketApps.map(app => String(app.category || '网页能力').trim()).filter(Boolean));
+    if (selectedMarketCategory !== '全部' && !categories.has(selectedMarketCategory)) {
+      selectedMarketCategory = '全部';
     }
+    renderMarketCategories();
+    applyWebAppMarketFilters();
+  }
 
-    marketList.innerHTML = apps.map(app => {
-      const capabilities = (app.capabilities || []).map(item => `<span>${escapeHtml(item)}</span>`).join('');
-      return `<article class="webapp-card">
-        <div class="webapp-card-head">
-          <div>
-            <div class="webapp-title-row"><strong>${escapeHtml(app.name)}</strong><span class="webapp-version">v${escapeHtml(app.version || '')}</span></div>
-            <div class="webapp-meta">${escapeHtml(app.category || '网页能力')} · ${escapeHtml(app.id)}</div>
-          </div>
-          <button type="button" class="webapp-toggle ${app.installed ? 'installed' : ''}" data-webapp-toggle="${escapeHtml(app.id)}" data-installed="${app.installed ? '1' : '0'}">${app.installed ? '已安装' : '安装'}</button>
-        </div>
-        <p>${escapeHtml(app.description || '')}</p>
-        <div class="webapp-capabilities">${capabilities}</div>
-      </article>`;
+  function renderMarketCategories() {
+    const categories = ['全部', ...new Set(
+      webAppMarketApps.map(app => String(app.category || '网页能力').trim()).filter(Boolean)
+    )];
+    marketCategories.innerHTML = categories.map(category => {
+      const count = category === '全部'
+        ? webAppMarketApps.length
+        : webAppMarketApps.filter(app => String(app.category || '网页能力').trim() === category).length;
+      return '<button type="button" class="market-category-chip" data-market-category="' +
+        escapeHtml(category) + '" aria-pressed="' + String(selectedMarketCategory === category) + '">' +
+        '<span>' + escapeHtml(category) + '</span><small>' + count + '</small></button>';
     }).join('');
   }
 
+  function applyWebAppMarketFilters() {
+    const query = marketSearchQuery.trim().toLocaleLowerCase();
+    const filteredApps = webAppMarketApps.filter(app => {
+      const category = String(app.category || '网页能力').trim();
+      if (selectedMarketCategory !== '全部' && category !== selectedMarketCategory) return false;
+      if (!query) return true;
+      const searchable = [
+        app.name, app.id, app.description, category,
+        ...(Array.isArray(app.capabilities) ? app.capabilities : []),
+        ...(Array.isArray(app.summaryCapabilities) ? app.summaryCapabilities : [])
+      ].join(' ').toLocaleLowerCase();
+      return searchable.includes(query);
+    });
+
+    marketCount.textContent = filteredApps.length === webAppMarketApps.length
+      ? webAppMarketApps.length + ' 个'
+      : filteredApps.length + '/' + webAppMarketApps.length + ' 个';
+
+    if (!filteredApps.length) {
+      marketList.innerHTML = '<div class="market-empty">没有匹配的小程序。试试其他关键词或切换分类。</div>';
+      return;
+    }
+
+    marketList.innerHTML = filteredApps.map(app => {
+      const allCapabilities = Array.isArray(app.capabilities) ? app.capabilities : [];
+      const summaryCapabilities = Array.isArray(app.summaryCapabilities) && app.summaryCapabilities.length
+        ? app.summaryCapabilities.slice(0, 4)
+        : allCapabilities.slice(0, 4);
+      const expanded = expandedCapabilityApps.has(app.id);
+      const visibleCapabilities = expanded ? allCapabilities : summaryCapabilities;
+      const capabilities = visibleCapabilities.map(item =>
+        '<span class="webapp-capability-tag">' + escapeHtml(String(item)) + '</span>'
+      ).join('');
+      const more = allCapabilities.length > summaryCapabilities.length
+        ? '<button type="button" class="webapp-capability-more" data-capabilities-toggle="' +
+          escapeHtml(app.id) + '" aria-expanded="' + String(expanded) + '">' +
+          (expanded ? '收起能力' : '还有 ' + (allCapabilities.length - summaryCapabilities.length) + ' 项 · 查看全部') +
+          '</button>'
+        : '';
+      const iconLabel = app.id === 'xiaohongshu.filter'
+        ? '小红书'
+        : app.id === 'douyin.filter'
+          ? '抖音'
+          : String(app.name || '网页').slice(0, 2);
+      return '<article class="webapp-card" data-app-id="' + escapeHtml(app.id) + '">' +
+        '<div class="webapp-card-main">' +
+          '<div class="webapp-card-head">' +
+            '<div class="webapp-card-title">' +
+              '<span class="webapp-app-icon" data-app-id="' + escapeHtml(app.id) + '" aria-hidden="true">' + escapeHtml(iconLabel) + '</span>' +
+              '<div class="webapp-card-title-info">' +
+                '<div class="webapp-title-row"><strong>' + escapeHtml(app.name) + '</strong><span class="webapp-version">v' + escapeHtml(app.version || '') + '</span></div>' +
+                '<div class="webapp-meta"><span class="webapp-category-label">' + escapeHtml(app.category || '网页能力') + '</span><span class="webapp-app-id">' + escapeHtml(app.id) + '</span></div>' +
+              '</div>' +
+            '</div>' +
+            '<button type="button" class="webapp-toggle ' + (app.installed ? 'installed' : '') + '" data-webapp-toggle="' + escapeHtml(app.id) + '" data-installed="' + (app.installed ? '1' : '0') + '">' + (app.installed ? '已安装' : '安装') + '</button>' +
+          '</div>' +
+          '<p class="webapp-description">' + escapeHtml(app.description || '') + '</p>' +
+          '<div class="webapp-card-actions">' +
+            '<button type="button" class="webapp-context-copy" data-copy-context="' + escapeHtml(app.id) + '" title="复制此小程序的开发背景给 AI"><span aria-hidden="true">✦</span>帮帮忙</button>' +
+            '<span class="webapp-action-hint">复制开发上下文</span>' +
+          '</div>' +
+        '</div>' +
+        '<aside class="webapp-card-side">' +
+          '<div class="webapp-capabilities-header"><span>主要能力</span><small>' + allCapabilities.length + ' 项</small></div>' +
+          '<div class="webapp-capabilities" data-expanded="' + String(expanded) + '">' + capabilities + '</div>' +
+          more +
+        '</aside>' +
+      '</article>';
+    }).join('');
+  }
+
+  async function readExtensionDocument(path) {
+    if (!path) return '';
+    const response = await fetch(chrome.runtime.getURL(path));
+    if (!response.ok) throw new Error('无法读取开发背景文档：' + path);
+    return response.text();
+  }
+
+  async function copyWebAppContext(app, button) {
+    if (!app || !button) return;
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = '准备中…';
+    try {
+      const manifest = chrome.runtime.getManifest();
+      const docs = await Promise.all([
+        readExtensionDocument('DEVELOPMENT_CONTEXT.md'),
+        readExtensionDocument(app.contextDoc)
+      ]);
+      const generatedAt = new Intl.DateTimeFormat('zh-CN', {
+        dateStyle: 'medium',
+        timeStyle: 'short'
+      }).format(new Date());
+      const context = [
+        '# 帮帮忙｜燕子浏览器助手开发交接上下文',
+        '',
+        '## 本次目标项目',
+        '- 小程序：' + app.name,
+        '- 唯一 ID：' + app.id,
+        '- 分类：' + (app.category || '网页能力'),
+        '- 小程序版本：' + (app.version || '未声明'),
+        '- 扩展版本：' + manifest.version,
+        '- 安装状态：' + (app.installed ? '已安装' : '未安装'),
+        '- 生成时间：' + generatedAt,
+        '- Git 状态：浏览器扩展无法直接读取本机工作树。开始修改前，请先运行 git status --short --branch 和 git diff --stat，确认未提交改动。',
+        '',
+        '## 扩展通用背景',
+        docs[0].trim(),
+        '',
+        '## ' + app.name + ' 专项背景',
+        docs[1].trim(),
+        '',
+        '## 接手时必须遵守',
+        '1. 先核对实际文件、分支和未提交修改；本文档是导航，不替代源码。',
+        '2. 以仓库中当前代码为准；路径不存在或实现不一致时先重新定位，不要猜测。',
+        '3. 只修改完成任务所必需的文件，不覆盖其他工作树或无关改动。',
+        '4. 修改后运行相关 node --check、JSON 解析和 git diff --check；UI 改动应实际重载验证。',
+        '5. 不复制、输出或写入 API Token、Cookie、密码等凭证。'
+      ].join('\n');
+
+      try {
+        await navigator.clipboard.writeText(context);
+      } catch {
+        const textarea = document.createElement('textarea');
+        textarea.value = context;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        const copied = document.execCommand('copy');
+        textarea.remove();
+        if (!copied) throw new Error('浏览器未允许访问剪贴板');
+      }
+      button.textContent = '已复制';
+      marketSyncStatus.textContent = '已复制「' + app.name + '」的开发上下文，可直接发送给其他 AI。';
+    } catch (error) {
+      button.textContent = '重试帮帮忙';
+      marketSyncStatus.textContent = error?.message || '复制失败，请重试。';
+    } finally {
+      button.disabled = false;
+      setTimeout(() => {
+        if (button.isConnected) button.textContent = originalLabel;
+      }, 1800);
+    }
+  }
   const xhsRuleList = document.getElementById('xhs-rule-list');
   const xhsRuleCount = document.getElementById('xhs-rule-count');
 
@@ -196,7 +365,38 @@ document.addEventListener("DOMContentLoaded", () => {
     await saveDouyinRules(nextItems);
   });
 
+  marketSearch.addEventListener('input', () => {
+    marketSearchQuery = marketSearch.value;
+    applyWebAppMarketFilters();
+  });
+
+  marketCategories.addEventListener('click', event => {
+    const button = event.target.closest('[data-market-category]');
+    if (!button) return;
+    selectedMarketCategory = button.dataset.marketCategory || '全部';
+    renderMarketCategories();
+    applyWebAppMarketFilters();
+  });
+
   marketList.addEventListener('click', async event => {
+    const contextButton = event.target.closest('[data-copy-context]');
+    if (contextButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      const app = webAppMarketApps.find(item => item.id === contextButton.dataset.copyContext);
+      await copyWebAppContext(app, contextButton);
+      return;
+    }
+
+    const capabilityButton = event.target.closest('[data-capabilities-toggle]');
+    if (capabilityButton) {
+      const appId = capabilityButton.dataset.capabilitiesToggle;
+      if (expandedCapabilityApps.has(appId)) expandedCapabilityApps.delete(appId);
+      else expandedCapabilityApps.add(appId);
+      applyWebAppMarketFilters();
+      return;
+    }
+
     const button = event.target.closest('[data-webapp-toggle]');
     if (!button) return;
     button.disabled = true;
@@ -230,17 +430,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   showPanel('market');
   const portInput = document.getElementById("server-port");
-  chrome.storage.local.get({ localWsUrl: "ws://127.0.0.1:53919/v1/browser/ws", chatgptBridgeStatus: "disconnected" }, config => {
+  chrome.storage.local.get({ localWsUrl: "ws://127.0.0.1:53919/v1/browser/ws" }, config => {
     portInput.value = new URL(config.localWsUrl).port;
-    document.getElementById("chatgpt-status").textContent = config.chatgptBridgeStatus === "connected" ? "已连接" : "未连接";
   });
   document.getElementById("save-port").addEventListener("click", () => {
     const port = Number(portInput.value);
     if (!Number.isInteger(port) || port < 1 || port > 65535) return;
     chrome.storage.local.set({ localWsUrl: `ws://127.0.0.1:${port}/v1/browser/ws` });
-  });
-  chrome.storage.onChanged.addListener(changes => {
-    if (changes.chatgptBridgeStatus) document.getElementById("chatgpt-status").textContent = changes.chatgptBridgeStatus.newValue === "connected" ? "已连接" : "未连接";
   });
   const statusDot = document.getElementById("connection-status-dot");
   const statusText = document.getElementById("connection-status-text");

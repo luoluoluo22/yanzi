@@ -950,9 +950,7 @@ public partial class MainWindow
             var conversationMode = DetermineAiConversationMode(userInput);
             HostAssets.AppendLog($"AI conversation route: mode={conversationMode}, input={TrimForLog(userInput, 180)}");
 
-            var useStreamingChat =
-                conversationMode == AiConversationMode.Chat &&
-                string.Equals(_appSettings.ActiveServiceProviderId, ChatGptPlanProviderId, StringComparison.OrdinalIgnoreCase);
+            var useStreamingChat = conversationMode == AiConversationMode.Chat;
 
             if (useStreamingChat)
             {
@@ -1575,18 +1573,33 @@ public partial class MainWindow
         Action<string> onDelta)
     {
         var endpoint = BuildAiChatEndpoint(_appSettings.AiBaseUrl.Trim());
-        var payload = JsonSerializer.Serialize(new
-        {
-            model = _appSettings.AiModel.Trim(),
-            messages,
-            stream = true,
-            yanzi_mode = "chat",
-            verbosity = "high",
-            reasoning_effort = "high"
-        });
+        var isChatGptPlan = string.Equals(
+            _appSettings.ActiveServiceProviderId,
+            ChatGptPlanProviderId,
+            StringComparison.OrdinalIgnoreCase);
+
+        object payloadObject = isChatGptPlan
+            ? new
+            {
+                model = _appSettings.AiModel.Trim(),
+                messages,
+                stream = true,
+                yanzi_mode = "chat",
+                verbosity = "high",
+                reasoning_effort = "high"
+            }
+            : new
+            {
+                model = _appSettings.AiModel.Trim(),
+                messages,
+                stream = true,
+                temperature = 0.7
+            };
+
+        var payload = JsonSerializer.Serialize(payloadObject);
 
         HostAssets.AppendLog(
-            $"AI streaming request start: model={_appSettings.AiModel.Trim()}, messages={messages.Count}");
+            $"AI streaming request start: model={_appSettings.AiModel.Trim()}, isChatGptPlan={isChatGptPlan}, messages={messages.Count}");
 
         using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _appSettings.AiApiKey.Trim());
@@ -1655,6 +1668,14 @@ public partial class MainWindow
             }
 
             var choice = choices[0];
+            if (choice.TryGetProperty("finish_reason", out var finishReason) &&
+                finishReason.ValueKind == JsonValueKind.String &&
+                !string.IsNullOrEmpty(finishReason.GetString()) &&
+                !string.Equals(finishReason.GetString(), "null", StringComparison.OrdinalIgnoreCase))
+            {
+                sawDone = true;
+            }
+
             if (!choice.TryGetProperty("delta", out var delta) ||
                 !delta.TryGetProperty("content", out var contentElement) ||
                 contentElement.ValueKind != JsonValueKind.String)
@@ -1672,9 +1693,9 @@ public partial class MainWindow
             onDelta(deltaText);
         }
 
-        if (!sawDone)
+        if (!sawDone && output.Length == 0)
         {
-            throw new IOException("AI 流式响应提前结束");
+            throw new IOException("AI 流式响应提前结束且无内容输出");
         }
 
         var result = output.ToString().Trim();
