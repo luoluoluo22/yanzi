@@ -8,6 +8,7 @@ public static class HostRuntimeProfile
     public static bool IsRuntime { get; } =
         string.Equals(System.IO.Path.GetFileNameWithoutExtension(Environment.ProcessPath), "Yanzi.Runtime", StringComparison.OrdinalIgnoreCase);
     public static bool IsShell => !IsRuntime;
+    public static bool IsUnified => !IsRuntime && !IsDevelopment;
     public static string? RuntimeDataRoot { get; } = ResolveRuntimeDataRoot();
     // The installed Yanzi.exe owns both the UI and all background services.
     // Developer UI remains isolated from the stable account, hooks and scheduled jobs.
