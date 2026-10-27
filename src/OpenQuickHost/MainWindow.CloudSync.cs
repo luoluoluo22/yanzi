@@ -1631,7 +1631,7 @@ public partial class MainWindow
                             HostAssets.AppendLog($"Account extension source edited during cloud download; local source preserved id={item.ExtensionId}");
                             continue;
                         }
-                        BackupExtensionBeforeCloudUpgrade(live);
+                        BackupExtensionBeforeCloudUpgrade(live, item.ArchiveSha256, currentHash);
                     }
                     else if (LocalExtensionCatalog.LoadCommands().Any(command =>
                                  command.Source == CommandSource.LocalExtension &&
@@ -1790,7 +1790,7 @@ public partial class MainWindow
             GetArchivedManifestIcon(remote.ManifestJson), includeUserShortcut: false);
         return Convert.ToHexString(SHA256.HashData(package));
     }
-    private static void BackupExtensionBeforeCloudUpgrade(CommandItem command)
+    private static void BackupExtensionBeforeCloudUpgrade(CommandItem command, string? remoteArchiveSha256, string localArchiveSha256)
     {
         var source = command.ExtensionDirectoryPath;
         if (string.IsNullOrWhiteSpace(source) || !Directory.Exists(source)) return;
@@ -1801,12 +1801,37 @@ public partial class MainWindow
         if (id != Path.GetFileName(id))
             throw new InvalidOperationException("Invalid extension ID for backup path");
         var root = Path.Combine(HostAssets.DataRootPath, "Backups", "account-extension-upgrades",
-            id + "-" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fff") + "-" + Guid.NewGuid().ToString("N")[..8]);
+            id + "-upgrade-" + new string((command.DeclaredVersion ?? "unknown").Where(char.IsLetterOrDigit).ToArray()) + "-" +
+            new string((remoteArchiveSha256 ?? "unknown").Where(char.IsLetterOrDigit).Take(16).ToArray()) + "-" +
+            new string(localArchiveSha256.Where(char.IsLetterOrDigit).Take(16).ToArray()));
+        var completedMarker = Path.Combine(root, ".backup-complete");
+        if (File.Exists(completedMarker)) return;
         foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
         {
-            var copy = Path.Combine(root, Path.GetRelativePath(source, file));
+            var relative = Path.GetRelativePath(source, file);
+            var segments = relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (segments.Any(segment => segment.Equals("node_modules", StringComparison.OrdinalIgnoreCase) ||
+                segment.Equals(".git", StringComparison.OrdinalIgnoreCase) ||
+                segment.Equals(".yanzi-csharp-cache", StringComparison.OrdinalIgnoreCase) ||
+                segment.Equals("backups", StringComparison.OrdinalIgnoreCase) ||
+                segment.Equals("bin", StringComparison.OrdinalIgnoreCase) ||
+                segment.Equals("obj", StringComparison.OrdinalIgnoreCase))) continue;
+            var copy = Path.Combine(root, relative);
             Directory.CreateDirectory(Path.GetDirectoryName(copy)!);
-            File.Copy(file, copy);
+            File.Copy(file, copy, overwrite: true);
+        }
+        File.WriteAllText(completedMarker, DateTime.UtcNow.ToString("O"));
+        // Only prune snapshots created by this content-addressed backup scheme.
+        // Historical/manual backups and incomplete snapshots are never deleted here.
+        var backupParent = Path.GetDirectoryName(root)!;
+        foreach (var stale in Directory.EnumerateDirectories(backupParent, id + "-upgrade-*")
+                     .Where(path => File.Exists(Path.Combine(path, ".backup-complete")))
+                     .OrderByDescending(Directory.GetCreationTimeUtc)
+                     .Skip(3))
+        {
+            try { Directory.Delete(stale, recursive: true); }
+            catch (IOException ex) { HostAssets.AppendLog($"Could not prune old account extension snapshot: {stale}: {ex.Message}"); }
+            catch (UnauthorizedAccessException ex) { HostAssets.AppendLog($"Could not prune protected account extension snapshot: {stale}: {ex.Message}"); }
         }
         HostAssets.AppendLog($"Account extension backup preserved before upgrade: id={id}, path={root}");
     }
@@ -2463,6 +2488,7 @@ public partial class MainWindow
             !string.Equals(settings.ThemeMode, incoming.ThemeMode, StringComparison.Ordinal) ||
             snapshot.AutoCloseToastEnabled != null && settings.AutoCloseToastEnabled != incoming.AutoCloseToastEnabled ||
             snapshot.EnableAutoUpdate != null && settings.EnableAutoUpdate != incoming.EnableAutoUpdate ||
+            snapshot.AutoBackupFrequency != null && !string.Equals(settings.AutoBackupFrequency, incoming.AutoBackupFrequency, StringComparison.OrdinalIgnoreCase) ||
             snapshot.EnableBrowserHelper != null && settings.EnableBrowserHelper != incoming.EnableBrowserHelper ||
             snapshot.PreferManualExtensionEditor != null && settings.PreferManualExtensionEditor != incoming.PreferManualExtensionEditor ||
             snapshot.EnableEverything != null && settings.EnableEverything != incoming.EnableEverything ||
@@ -2617,6 +2643,7 @@ public partial class MainWindow
         settings.ThemeMode = incoming.ThemeMode;
         if (snapshot.AutoCloseToastEnabled != null) settings.AutoCloseToastEnabled = incoming.AutoCloseToastEnabled;
         if (snapshot.EnableAutoUpdate != null) settings.EnableAutoUpdate = incoming.EnableAutoUpdate;
+        if (snapshot.AutoBackupFrequency != null) settings.AutoBackupFrequency = incoming.AutoBackupFrequency;
         if (snapshot.EnableBrowserHelper != null) settings.EnableBrowserHelper = incoming.EnableBrowserHelper;
         if (snapshot.PreferManualExtensionEditor != null) settings.PreferManualExtensionEditor = incoming.PreferManualExtensionEditor;
         if (snapshot.EnableEverything != null)
@@ -3862,6 +3889,7 @@ public partial class MainWindow
     {
         return snapshot.AutoCloseToastEnabled == null ||
                snapshot.EnableAutoUpdate == null ||
+               snapshot.AutoBackupFrequency == null ||
                snapshot.EnableBrowserHelper == null ||
                snapshot.PreferManualExtensionEditor == null ||
                snapshot.EnableEverything == null ||

@@ -4805,6 +4805,10 @@ public sealed class CloudQuickPanelConfigSnapshot
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? EnableAutoUpdate { get; set; }
 
+    [JsonPropertyName("autoBackupFrequency")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? AutoBackupFrequency { get; set; }
+
     [JsonPropertyName("enableBrowserHelper")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? EnableBrowserHelper { get; set; }
@@ -4942,6 +4946,7 @@ public sealed class CloudQuickPanelConfigSnapshot
             ThemeMode = settings.ThemeMode,
             AutoCloseToastEnabled = settings.AutoCloseToastEnabled,
             EnableAutoUpdate = settings.EnableAutoUpdate,
+            AutoBackupFrequency = settings.AutoBackupFrequency,
             EnableBrowserHelper = settings.EnableBrowserHelper,
             PreferManualExtensionEditor = settings.PreferManualExtensionEditor,
             EnableEverything = settings.EnableEverything,
@@ -5004,6 +5009,7 @@ public sealed class CloudQuickPanelConfigSnapshot
             ThemeMode = ThemeMode,
             AutoCloseToastEnabled = AutoCloseToastEnabled ?? false,
             EnableAutoUpdate = EnableAutoUpdate ?? true,
+            AutoBackupFrequency = AutoBackupFrequency ?? "None",
             EnableBrowserHelper = EnableBrowserHelper ?? true,
             PreferManualExtensionEditor = PreferManualExtensionEditor ?? false,
             EnableEverything = EnableEverything ?? true,

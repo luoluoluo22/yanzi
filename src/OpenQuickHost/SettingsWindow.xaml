@@ -1892,7 +1892,7 @@
                                                     </Grid.ColumnDefinitions>
                                                     <StackPanel Grid.Column="0">
                                                         <TextBlock Text="自动备份存储目录" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="0,0,0,6"/>
-                                                        <TextBox Text="{Binding AutoBackupDirectory, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
+                                                        <TextBox Text="{Binding AutoBackupDirectory, Mode=OneWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
                                                     </StackPanel>
                                                     <Button Grid.Column="1"
                                                             Content="选择目录..."

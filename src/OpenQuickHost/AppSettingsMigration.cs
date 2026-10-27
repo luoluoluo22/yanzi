@@ -380,7 +380,7 @@ internal static class AppSettingsMigration
         settings.LauncherResultViewMode = string.Equals(settings.LauncherResultViewMode, "Grid", StringComparison.OrdinalIgnoreCase) ? "Grid" : "List";
 
         settings.AutoBackupFrequency = string.IsNullOrWhiteSpace(settings.AutoBackupFrequency)
-            ? "Weekly"
+            ? "None"
             : settings.AutoBackupFrequency.Trim();
         settings.LastAutoBackupTime = (settings.LastAutoBackupTime ?? string.Empty).Trim();
         settings.CustomBackupDirectory = (settings.CustomBackupDirectory ?? string.Empty).Trim();

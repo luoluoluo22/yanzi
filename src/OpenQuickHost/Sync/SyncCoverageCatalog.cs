@@ -115,7 +115,7 @@ internal static class SyncCoverageCatalog
         yield return Entry(nameof(AppSettings.PersonalSyncAutoSyncDelaySeconds), SyncDestination.AccountPrivateConfig);
 
         // 明确的本机设置：路径、端口入口、窗口位置和运行状态不跨设备复制。
-        yield return Device(nameof(AppSettings.AutoBackupFrequency), "本机备份计划。");
+        yield return Account(nameof(AppSettings.AutoBackupFrequency));
         yield return Device(nameof(AppSettings.LastAutoBackupTime), "本机运行时间戳。");
         yield return Device(nameof(AppSettings.CustomBackupDirectory), "本机文件系统路径。");
         yield return Device(nameof(AppSettings.EnableLanSync), "本机局域网服务开关。");

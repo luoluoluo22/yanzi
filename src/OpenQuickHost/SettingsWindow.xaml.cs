@@ -1295,6 +1295,10 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private string _backupStatusText = string.Empty;
 
+    public string AutoBackupDirectory => string.IsNullOrWhiteSpace(_settings.CustomBackupDirectory)
+        ? Path.Combine(HostAssets.DataRootPath, "Backups")
+        : _settings.CustomBackupDirectory;
+
     public string AutoBackupFrequency
     {
         get => _settings.AutoBackupFrequency;
@@ -1316,6 +1320,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             if (value == _settings.CustomBackupDirectory) return;
             _settings = _settings with { CustomBackupDirectory = value };
             OnPropertyChanged();
+            OnPropertyChanged(nameof(AutoBackupDirectory));
             UpdateBackupStatusText();
         }
     }
