@@ -11,7 +11,8 @@ void Check(bool condition, string message)
 Check(HostRuntimeProfile.IsDevelopment == expectDev, "Incorrect runtime channel");
 Check(HostRuntimeProfile.IsUnified == !expectDev, "Production must run unified; explicit Dev must remain isolated");
 Check(HostRuntimeProfile.OwnsBackgroundServices == !expectDev, "Only unified production may own background services");
-Check(HostRuntimeProfile.IsShell == expectDev, "Thin-shell mode must be development-only");
+Check(!HostRuntimeProfile.IsRuntime, "Legacy dual-process Runtime must not start during profile verification");
+Check(HostRuntimeProfile.IsShell, "Both unified Stable and isolated Dev run as UI shell processes");
 Check(HostRuntimeProfile.AppId == (expectDev ? "Yanzi.OpenQuickHost.Dev.Shell" : "Yanzi.OpenQuickHost.Shell"), "Incorrect singleton namespace");
 Check(HostRuntimeProfile.OwnsBackgroundServices == !expectDev, "Single-process background owner regression");
 Check(Path.GetFileName(HostAssets.DataRootPath) == (expectDev ? "OpenQuickHost.Dev" : "OpenQuickHost"), "Incorrect data directory");
