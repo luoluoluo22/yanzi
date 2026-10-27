@@ -434,9 +434,10 @@ public sealed partial class PersonalSyncService
                 // never resurrect missing/deleted extensions or same-version local hot edits.
                 if (ShouldRecoverNewerAccountBackup(localEntry, remoteEntry))
                 {
-                    BackupExtensionBeforePersonalRecovery(extensionId);
+                    BackupExtensionBeforePersonalRecovery(extensionId, localEntry.PackageHash);
                     if (await ApplyRemoteEntryAsync(remoteEntry, cancellationToken))
                     {
+                        CleanupPersonalRecoveryBackupsAfterSuccess(extensionId);
                         pulled++;
                         CloudSyncDiagnostics.Log("PersonalSyncService",
                             "Recovered newer extension from verified personal backup",
@@ -1799,19 +1800,59 @@ public sealed partial class PersonalSyncService
                remoteVersion > localVersion;
     }
 
-    private static void BackupExtensionBeforePersonalRecovery(string extensionId)
+    private static void BackupExtensionBeforePersonalRecovery(string extensionId, string? sourcePackageHash)
     {
         var source = SyncPackageSafety.ResolveExtensionDirectory(HostAssets.ExtensionsPath, extensionId);
         if (!Directory.Exists(source)) return;
-        var root = Path.Combine(HostAssets.DataRootPath, "Backups", "personal-extension-recovery",
-            extensionId + "-" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fff") + "-" + Guid.NewGuid().ToString("N")[..8]);
-        foreach (var path in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+        var parent = Path.Combine(HostAssets.DataRootPath, "Backups", "personal-extension-recovery");
+        Directory.CreateDirectory(parent);
+        var prefix = extensionId + "-";
+        var existing = Directory.EnumerateDirectories(parent, prefix + "*")
+            .OrderByDescending(Directory.GetLastWriteTimeUtc).ToArray();
+        if (!string.IsNullOrWhiteSpace(sourcePackageHash) && existing.Any(dir =>
+                File.Exists(Path.Combine(dir, ".backup-complete")) &&
+                string.Equals(File.ReadAllText(Path.Combine(dir, ".backup-complete")),
+                    sourcePackageHash, StringComparison.OrdinalIgnoreCase)))
+            return;
+
+        var root = Path.Combine(parent,
+            prefix + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fff") + "-" + Guid.NewGuid().ToString("N")[..8]);
+        try
         {
-            var destination = Path.Combine(root, Path.GetRelativePath(source, path));
-            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-            File.Copy(path, destination);
+            Directory.CreateDirectory(root);
+            foreach (var path in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+            {
+                var destination = Path.Combine(root, Path.GetRelativePath(source, path));
+                Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                File.Copy(path, destination);
+            }
+            File.WriteAllText(Path.Combine(root, ".backup-complete"), sourcePackageHash ?? "");
+        }
+        catch
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+            throw;
         }
         HostAssets.AppendLog($"Personal extension recovery backup preserved: id={extensionId}, path={root}");
+        foreach (var stale in Directory.EnumerateDirectories(parent, prefix + "*")
+                     .OrderByDescending(Directory.GetLastWriteTimeUtc).Skip(3))
+        {
+            try { Directory.Delete(stale, recursive: true); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+    }
+
+    private static void CleanupPersonalRecoveryBackupsAfterSuccess(string extensionId)
+    {
+        var parent = Path.Combine(HostAssets.DataRootPath, "Backups", "personal-extension-recovery");
+        if (!Directory.Exists(parent)) return;
+        foreach (var path in Directory.EnumerateDirectories(parent, extensionId + "-*"))
+        {
+            try { Directory.Delete(path, recursive: true); }
+            catch (IOException ex) { HostAssets.AppendLog($"Recovery backup cleanup deferred: {ex.Message}"); }
+            catch (UnauthorizedAccessException ex) { HostAssets.AppendLog($"Recovery backup cleanup denied: {ex.Message}"); }
+        }
     }
 
     internal static bool ShouldPublishAccountBackup(
