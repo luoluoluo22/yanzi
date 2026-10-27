@@ -1607,6 +1607,7 @@ public partial class MainWindow
                         !Convert.ToHexString(SHA256.HashData(packageBytes)).Equals(
                             item.ArchiveSha256, StringComparison.OrdinalIgnoreCase))
                         throw new InvalidDataException($"Account extension hash mismatch: {item.ExtensionId}");
+                    string? upgradeBackupPath = null;
                     if (localCommands.TryGetValue(item.ExtensionId, out var existingCommand))
                     {
                         // Re-read after network I/O: another agent can change the
@@ -1631,7 +1632,7 @@ public partial class MainWindow
                             HostAssets.AppendLog($"Account extension source edited during cloud download; local source preserved id={item.ExtensionId}");
                             continue;
                         }
-                        BackupExtensionBeforeCloudUpgrade(live, item.ArchiveSha256, currentHash);
+                        upgradeBackupPath = BackupExtensionBeforeCloudUpgrade(live, item.ArchiveSha256, currentHash);
                     }
                     else if (LocalExtensionCatalog.LoadCommands().Any(command =>
                                  command.Source == CommandSource.LocalExtension &&
@@ -1643,6 +1644,8 @@ public partial class MainWindow
                     var result = await ExtensionInstallService.InstallPackageAsync(
                         packageBytes, item.ExtensionId, fallbackName: item.DisplayName,
                         privateIconDownload: (id, token) => _cloudSyncClient.DownloadMyExtensionIconAsync(id, token));
+                    if (upgradeBackupPath != null)
+                        CleanupExtensionUpgradeBackupsAfterSuccess(item.ExtensionId);
 
                     if (TryGetArchivedManifestShortcut(item.ManifestJson, out var restoredShortcut))
                     {
@@ -1790,13 +1793,13 @@ public partial class MainWindow
             GetArchivedManifestIcon(remote.ManifestJson), includeUserShortcut: false);
         return Convert.ToHexString(SHA256.HashData(package));
     }
-    private static void BackupExtensionBeforeCloudUpgrade(CommandItem command, string? remoteArchiveSha256, string localArchiveSha256)
+    private static string? BackupExtensionBeforeCloudUpgrade(CommandItem command, string? remoteArchiveSha256, string localArchiveSha256)
     {
         var source = command.ExtensionDirectoryPath;
-        if (string.IsNullOrWhiteSpace(source) || !Directory.Exists(source)) return;
+        if (string.IsNullOrWhiteSpace(source) || !Directory.Exists(source)) return null;
         // Git worktrees will never be replaced by account packages. Avoid
         // recursively copying the entire .git object store on every cloud pull.
-        if (ExtensionGitSafety.HasGitWorktree(source)) return;
+        if (ExtensionGitSafety.HasGitWorktree(source)) return null;
         var id = command.ExtensionId;
         if (id != Path.GetFileName(id))
             throw new InvalidOperationException("Invalid extension ID for backup path");
@@ -1805,7 +1808,7 @@ public partial class MainWindow
             new string((remoteArchiveSha256 ?? "unknown").Where(char.IsLetterOrDigit).Take(16).ToArray()) + "-" +
             new string(localArchiveSha256.Where(char.IsLetterOrDigit).Take(16).ToArray()));
         var completedMarker = Path.Combine(root, ".backup-complete");
-        if (File.Exists(completedMarker)) return;
+        if (File.Exists(completedMarker)) return root;
         foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
         {
             var relative = Path.GetRelativePath(source, file);
@@ -1834,6 +1837,30 @@ public partial class MainWindow
             catch (UnauthorizedAccessException ex) { HostAssets.AppendLog($"Could not prune protected account extension snapshot: {stale}: {ex.Message}"); }
         }
         HostAssets.AppendLog($"Account extension backup preserved before upgrade: id={id}, path={root}");
+        return root;
+    }
+
+    private static void CleanupExtensionUpgradeBackupsAfterSuccess(string id)
+    {
+        if (string.IsNullOrWhiteSpace(id) || id != Path.GetFileName(id)) return;
+        var parent = Path.Combine(HostAssets.DataRootPath, "Backups", "account-extension-upgrades");
+        if (!Directory.Exists(parent)) return;
+        foreach (var path in Directory.EnumerateDirectories(parent, id + "-upgrade-*"))
+        {
+            try
+            {
+                Directory.Delete(path, recursive: true);
+                HostAssets.AppendLog($"Account extension upgrade succeeded; temporary snapshot removed: {path}");
+            }
+            catch (IOException ex)
+            {
+                HostAssets.AppendLog($"Account extension upgraded but snapshot cleanup failed: {path}: {ex.Message}");
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                HostAssets.AppendLog($"Account extension upgraded but protected snapshot was retained: {path}: {ex.Message}");
+            }
+        }
     }
 
     private static bool IsAccountExtensionCurrent(CommandItem command, UserExtensionRecord? record)
