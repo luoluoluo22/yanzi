@@ -11,6 +11,14 @@ document.addEventListener("DOMContentLoaded", () => {
   const prev = document.getElementById("opencli-prev");
   const next = document.getElementById("opencli-next");
   const pageLabel = document.getElementById("opencli-page-label");
+  const profileInput = document.createElement("input");
+  profileInput.type = "text";
+  profileInput.placeholder = "浏览器配置：留空自动选择唯一在线配置";
+  profileInput.setAttribute("aria-label", "OpenCLI 浏览器配置名称或 ID");
+  profileInput.maxLength = 64;
+  profileInput.style.cssText = "width:100%;box-sizing:border-box;margin-top:8px;padding:6px";
+  (siteSelect.closest(".opencli-controls-row") || siteSelect.parentElement).after(profileInput);
+
   const PAGE_SIZE = 20;
   const MAX_PAGE = 20;
   const operations = Object.freeze({
@@ -41,13 +49,14 @@ document.addEventListener("DOMContentLoaded", () => {
     latest = null;
     currentPage = 1;
     loadedPages.clear();
-    status.textContent = "需要已登录的浏览器，以及运行中的燕子和 OpenCLI";
+    status.textContent = "需要运行中的燕子、OpenCLI Browser Bridge 和已登录的网站";
     summary.textContent = "";
     raw.textContent = "";
     copyButton.disabled = true;
     refreshPagination();
   };
   const onSiteChange = () => {
+    profileInput.hidden = siteSelect.value !== "xiaohongshu";
     operationSelect.replaceChildren();
     for (const [value, label] of operations[siteSelect.value] || []) {
       operationSelect.add(new Option(label, value));
@@ -62,6 +71,10 @@ document.addEventListener("DOMContentLoaded", () => {
     if (busy || page < 1 || page > MAX_PAGE) return;
     busy = true;
     readButton.disabled = true;
+    siteSelect.disabled = operationSelect.disabled = profileInput.disabled = true;
+    latest = null;
+    raw.textContent = "";
+    copyButton.disabled = true;
     prev.disabled = true;
     next.disabled = true;
     status.textContent = "正在读取，请保持浏览器登录……";
@@ -71,7 +84,8 @@ document.addEventListener("DOMContentLoaded", () => {
         action: "yanzi_opencli_read",
         site: siteSelect.value,
         operation: operationSelect.value,
-        page: isPaged() ? page : 1
+        page: isPaged() ? page : 1,
+        profile: siteSelect.value === "xiaohongshu" ? profileInput.value.trim() : ""
       });
       if (!reply?.ok) throw new Error(reply?.error || "读取未成功");
       latest = reply.data;
@@ -102,6 +116,7 @@ document.addEventListener("DOMContentLoaded", () => {
         (issues.length ? "；提示：" + issues.join("、") : "");
       const first = records[0];
       const previewFields = ["nickname", "name", "title", "date",
+        "field", "value", "metric", "total",
         "views", "likes", "collects", "comments",
         "play_count", "digg_count", "create_time", "follower_count", "aweme_count"];
       summary.textContent = first && typeof first === "object"
@@ -109,6 +124,11 @@ document.addEventListener("DOMContentLoaded", () => {
           .map(key => key + "：" + String(first[key]).slice(0, 65)).join(" · ")
         : "";
       raw.textContent = JSON.stringify(latest, null, 2);
+      if (reply.source === "opencli") {
+        summary.textContent = "来源：OpenCLI · 浏览器配置：" + reply.profile +
+          " · 采集：" + new Date(reply.collectedAt).toLocaleString() +
+          (reply.period === "seven" ? " · 网站近7天口径（具体日期以创作者中心为准）" : "");
+      }
       copyButton.disabled = false;
       refreshPagination(records.length);
     } catch (error) {
@@ -117,6 +137,7 @@ document.addEventListener("DOMContentLoaded", () => {
     } finally {
       busy = false;
       readButton.disabled = false;
+      siteSelect.disabled = operationSelect.disabled = profileInput.disabled = false;
       refreshPagination(getRecords(latest).length);
     }
   }
