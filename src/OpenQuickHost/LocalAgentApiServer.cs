@@ -442,7 +442,8 @@ public sealed partial class LocalAgentApiServer : IDisposable
                         RegisterBrowser(webSocket, socketId, browserName);
                         HostAssets.AppendLog($"[BrowserWS #{socketId}] Connected from {browserName}.");
 
-                        await HandleBrowserWebSocketLoopAsync(webSocket, socketId, browserName);
+                        await HandleBrowserWebSocketLoopAsync(webSocket, socketId, browserName,
+                            IsOpenCliExtensionOrigin(context.Request.Headers["Origin"]));
                     }
                     catch (Exception ex)
                     {
@@ -2364,7 +2365,8 @@ public sealed partial class LocalAgentApiServer : IDisposable
         }
     }
 
-    private async Task HandleBrowserWebSocketLoopAsync(WebSocket webSocket, int socketId, string browserName)
+    private async Task HandleBrowserWebSocketLoopAsync(WebSocket webSocket, int socketId, string browserName,
+        bool extensionOrigin)
     {
         var buffer = new byte[1024 * 64];
         try
@@ -2409,6 +2411,11 @@ public sealed partial class LocalAgentApiServer : IDisposable
                             else if (msgType == "register")
                             {
                                 HostAssets.AppendLog($"[BrowserWS #{socketId}] Registered successfully from {browserName}.");
+                            }
+                            else if (msgType == "opencli_request")
+                            {
+                                // Keep heartbeats and other requests flowing during the CLI process.
+                                _ = HandleOpenCliBrowserRequestAsync(webSocket, json.Clone(), extensionOrigin);
                             }
                             else if (msgType is "webapp_storage_get" or "webapp_storage_put" or "webapp_storage_delete")
                             {

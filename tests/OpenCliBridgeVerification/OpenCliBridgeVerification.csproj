@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../src/OpenQuickHost/BrowserOpenCliReader.cs" Link="BrowserOpenCliReader.cs" />
+    <Compile Include="../../src/OpenQuickHost/LocalAgentApiServer.OpenCli.cs" Link="LocalAgentApiServer.OpenCli.cs" />
+  </ItemGroup>
+</Project>

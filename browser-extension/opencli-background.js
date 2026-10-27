@@ -17,32 +17,36 @@ function validateOpenCliRead(site, operation, page = 1) {
   }
 }
 
-function requestYanziOpenCliRead(site, operation, page = 1) {
-  try {
-    validateOpenCliRead(site, operation, page);
-  } catch (error) {
-    return Promise.resolve({ ok: false, error: error.message });
-  }
-  if (!globalThis.yanziBrowserHost?.isConnected()) {
-    return Promise.resolve({ ok: false, error: "燕子主程序未连接，请先启动燕子" });
-  }
+function sendOpenCliHostRequest(site, operation, page, profile, timeoutMs) {
   return new Promise(resolve => {
     const requestId = crypto.randomUUID();
     const timer = setTimeout(() => {
       yanziOpenCliPending.delete(requestId);
-      resolve({ ok: false, error: "OpenCLI 读取超时，请检查浏览器登录状态" });
-    }, 110000);
+      resolve({ ok: false, error: operation === "capabilities"
+        ? "当前燕子宿主尚不支持 OpenCLI 数据读取，请更新宿主后重试。"
+        : "OpenCLI 读取超时，请检查网站登录与浏览器连接。" });
+    }, timeoutMs);
     yanziOpenCliPending.set(requestId, { resolve, timer });
     try {
-      globalThis.yanziBrowserHost.send({
-        type: "opencli_request", requestId, site, operation, page
-      });
+      globalThis.yanziBrowserHost.send({ type: "opencli_request", requestId, site, operation, page, profile });
     } catch (error) {
       clearTimeout(timer);
       yanziOpenCliPending.delete(requestId);
       resolve({ ok: false, error: error?.message || "无法发送到燕子主程序" });
     }
   });
+}
+
+async function requestYanziOpenCliRead(site, operation, page = 1, profile = "") {
+  try { validateOpenCliRead(site, operation, page); }
+  catch (error) { return { ok: false, error: error.message }; }
+  if (!globalThis.yanziBrowserHost?.isConnected())
+    return { ok: false, error: "燕子主程序未连接，请先启动燕子。" };
+  if (site === "xiaohongshu") {
+    const capabilities = await sendOpenCliHostRequest(site, "capabilities", 1, "", 5000);
+    if (!capabilities.ok) return capabilities;
+  }
+  return sendOpenCliHostRequest(site, operation, page, profile, 100000);
 }
 
 globalThis.yanziOpenCliPerformRead = requestYanziOpenCliRead;
@@ -54,7 +58,12 @@ globalThis.handleYanziOpenCliResponse = message => {
   pending.resolve({
     ok: message.ok === true,
     page: Number.isInteger(message.page) ? message.page : undefined,
-    data: message.ok === true ? message.data : undefined,
+    data: message.ok === true ? (message.result?.data ?? message.data) : undefined,
+    source: message.result?.source,
+    profile: message.result?.profile,
+    command: message.result?.command,
+    collectedAt: message.result?.collectedAt,
+    period: message.result?.period,
     error: message.ok === true ? undefined : String(message.error || "读取失败")
   });
 };
@@ -65,7 +74,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ ok: false, error: "仅允许燕子扩展自身读取" });
     return;
   }
-  void requestYanziOpenCliRead(message.site, message.operation, message.page ?? 1)
+  void requestYanziOpenCliRead(message.site, message.operation, message.page ?? 1, message.profile ?? "")
     .then(sendResponse)
     .catch(error => sendResponse({ ok: false, error: error?.message || "读取失败" }));
   return true;
