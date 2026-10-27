@@ -5,6 +5,20 @@ const YANZI_WEBAPP_MARKET_APP_ID = "yanzi.browser.market";
 const YANZI_WEBAPP_MARKET_KEY = "installed-apps";
 const YANZI_WEBAPP_HOST_TIMEOUT_MS = 8000;
 const YANZI_WEBAPP_SCRIPT_PREFIX = "yanzi-webapp-";
+const YANZI_WEBAPP_BRIDGE_SCRIPT = "webapps/common/webapp-bridge.js";
+
+function resolveWebAppScriptFiles(app) {
+  const files = [];
+  if (app?.useBridge !== false) {
+    files.push(YANZI_WEBAPP_BRIDGE_SCRIPT);
+  }
+  if (Array.isArray(app?.contentScripts)) {
+    files.push(...app.contentScripts);
+  } else if (app?.contentScript) {
+    files.push(app.contentScript);
+  }
+  return files;
+}
 
 let yanziWebAppCatalog = null;
 const yanziWebAppHostRequests = new Map();
@@ -99,7 +113,7 @@ async function syncRegisteredWebAppContentScripts(installed = null) {
     .map(app => ({
       id: webAppContentScriptId(app.id),
       matches: app.matches,
-      js: [app.contentScript],
+      js: resolveWebAppScriptFiles(app),
       runAt: "document_idle",
       persistAcrossSessions: true
     }));
@@ -162,6 +176,11 @@ async function applyInstalledWebAppState(installed) {
       if (!tab.id || !tab.url || !(app.matches || []).some(pattern => matchPattern(tab.url, pattern))) continue;
       if (installed[app.id]) {
         await injectWebAppIntoTab(tab.id, app);
+        chrome.tabs.sendMessage(tab.id, {
+          type: "yanzi_webapp_command",
+          appId: app.id,
+          action: "enable"
+        }).catch(() => {});
       } else {
         chrome.tabs.sendMessage(tab.id, {
           type: "yanzi_webapp_command",
@@ -189,6 +208,11 @@ async function setWebAppInstalled(appId, enabled) {
     if (!tab.id || !tab.url || !(app.matches || []).some(pattern => matchPattern(tab.url, pattern))) continue;
     if (enabled) {
       await injectWebAppIntoTab(tab.id, app);
+      chrome.tabs.sendMessage(tab.id, {
+        type: "yanzi_webapp_command",
+        appId,
+        action: "enable"
+      }).catch(() => {});
     } else {
       chrome.tabs.sendMessage(tab.id, {
         type: "yanzi_webapp_command",
@@ -200,11 +224,12 @@ async function setWebAppInstalled(appId, enabled) {
 }
 
 async function injectWebAppIntoTab(tabId, app) {
-  if (!app?.contentScript) return;
+  const files = resolveWebAppScriptFiles(app);
+  if (!files.length) return;
   try {
     await chrome.scripting.executeScript({
       target: { tabId },
-      files: [app.contentScript]
+      files
     });
   } catch (error) {
     const message = error?.message || String(error);
@@ -703,42 +728,46 @@ async function refreshWebAppTabsAfterExtensionReload() {
   const stored = await chrome.storage.local.get("yanziPendingExtensionReloadRefresh");
   if (!stored.yanziPendingExtensionReloadRefresh) return 0;
 
-  // Clear first so tab reloads cannot form a loop if the service worker restarts again.
+  const refreshMode = stored.yanziPendingExtensionReloadRefresh;
+  // 立即清除标记，防止重复触发
   await chrome.storage.local.remove("yanziPendingExtensionReloadRefresh");
 
+  const forceFullPageReload = refreshMode === "force";
   const apps = await listMarketApps();
   const installedApps = apps.filter(app => app.installed);
   const tabs = await chrome.tabs.query({});
-  const tabIds = new Set();
+  const matchedTabs = [];
 
   for (const tab of tabs) {
     if (!tab.id || !tab.url) continue;
     if (installedApps.some(app =>
       (app.matches || []).some(pattern => matchPattern(tab.url, pattern))
     )) {
-      tabIds.add(tab.id);
+      matchedTabs.push(tab);
     }
   }
 
-  let requested = 0;
-  for (const tabId of tabIds) {
+  let processedCount = 0;
+  for (const tab of matchedTabs) {
     try {
-      await chrome.tabs.reload(tabId);
-      requested += 1;
+      // 扩展重启后，网页中旧 content script 的扩展上下文已失效 (Extension context invalidated)
+      // 必须刷新匹配标签页以重新建立全新的 Service Worker 通信句柄，杜绝注入无响应
+      await chrome.tabs.reload(tab.id);
+      processedCount += 1;
     } catch (error) {
       globalThis.yanziBrowserHost?.log?.(
-        "[网页小程序] 开发重载后刷新 Tab " + tabId +
+        "[网页小程序] 重载后刷新 Tab " + tab.id +
         " 失败：" + (error?.message || error)
       );
     }
   }
 
   globalThis.yanziBrowserHost?.log?.(
-    "[网页小程序] 扩展自重载完成，已请求刷新 " +
-    requested + " / " + tabIds.size +
-    " 个网页小程序标签页；页面加载后由动态 content script 自动注入。"
+    "[网页小程序] 扩展自重载完成，已自动刷新 " +
+    processedCount + " / " + matchedTabs.length +
+    " 个网页小程序标签页以重建运行时连接。"
   );
-  return requested;
+  return processedCount;
 }
 
 async function initializeYanziWebApps() {

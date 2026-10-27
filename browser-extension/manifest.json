@@ -6,6 +6,7 @@
   "description": "打通浏览器登录态，配合燕子效率工具完成后台无感网页数据抓取与交互自动化。",
   "permissions": [
     "tabs",
+    "activeTab",
     "scripting",
     "webRequest",
     "storage",
@@ -14,23 +15,18 @@
     "clipboardWrite"
   ],
   "host_permissions": [
-    "<all_urls>"
+    "<all_urls>",
+    "*://*.xiaohongshu.com/*",
+    "*://*.douyin.com/*",
+    "*://*.bilibili.com/*",
+    "*://*.chatgpt.com/*",
+    "*://*.openai.com/*",
+    "https://*/*",
+    "http://*/*"
   ],
   "background": {
     "service_worker": "background.js"
   },
-  "content_scripts": [
-    {
-      "matches": [
-        "https://chatgpt.com/*",
-        "https://chat.openai.com/*"
-      ],
-      "js": [
-        "chatgpt-keep-going.js"
-      ],
-      "run_at": "document_idle"
-    }
-  ],
   "action": {
     "default_popup": "popup/popup.html",
     "default_icon": {
@@ -43,17 +39,5 @@
     "16": "assets/icon16.png",
     "48": "assets/icon48.png",
     "128": "assets/icon128.png"
-  },
-  "content_scripts": [
-    {
-      "run_at": "document_idle",
-      "matches": [
-        "https://chatgpt.com/*",
-        "https://chat.openai.com/*"
-      ],
-      "js": [
-        "chatgpt-keep-going.js"
-      ]
-    }
-  ]
+  }
 }
