@@ -1351,10 +1351,42 @@
                                                     <StackPanel Margin="0,8,0,12">
                                                         <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextMain}"/>
                                                         <TextBlock Text="{Binding ConflictSummary}" TextWrapping="Wrap" Margin="0,5,0,0" Foreground="{DynamicResource BrushTextMain}"/>
+                                                        <ItemsControl ItemsSource="{Binding Differences}" Margin="0,7,0,7">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <Border Background="#09FFFFFF" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="6" Padding="8" Margin="0,0,0,5">
+                                                                        <StackPanel>
+                                                                            <TextBlock Text="{Binding Path}" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" TextWrapping="Wrap"/>
+                                                                            <Grid Margin="0,6,0,0">
+                                                                                <Grid.ColumnDefinitions>
+                                                                                    <ColumnDefinition Width="*"/>
+                                                                                    <ColumnDefinition Width="8"/>
+                                                                                    <ColumnDefinition Width="*"/>
+                                                                                </Grid.ColumnDefinitions>
+                                                                                <Border Background="#16F59E0B" CornerRadius="5" Padding="8">
+                                                                                    <StackPanel>
+                                                                                        <TextBlock Text="本机" Foreground="#FFF59E0B" FontWeight="SemiBold" FontSize="{DynamicResource FontSizeTiny}"/>
+                                                                                        <TextBlock Text="{Binding LocalValue}" Foreground="{DynamicResource BrushTextMain}" TextWrapping="Wrap" FontSize="{DynamicResource FontSizeSmall}" Margin="0,3,0,0"/>
+                                                                                        <Button Content="采用本机此项" HorizontalAlignment="Left" Margin="0,7,0,0" Height="27" Padding="9,0" Style="{DynamicResource Yanzi.Button.Outline}" Visibility="{Binding CanChooseField, Converter={StaticResource BooleanToVisibilityConverter}}" Click="UseLocalAccountSyncFieldButton_Click"/>
+                                                                                    </StackPanel>
+                                                                                </Border>
+                                                                                <Border Grid.Column="2" Background="#1660A5FA" CornerRadius="5" Padding="8">
+                                                                                    <StackPanel>
+                                                                                        <TextBlock Text="云端" Foreground="#FF60A5FA" FontWeight="SemiBold" FontSize="{DynamicResource FontSizeTiny}"/>
+                                                                                        <TextBlock Text="{Binding RemoteValue}" Foreground="{DynamicResource BrushTextMain}" TextWrapping="Wrap" FontSize="{DynamicResource FontSizeSmall}" Margin="0,3,0,0"/>
+                                                                                        <Button Content="采用云端此项" HorizontalAlignment="Left" Margin="0,7,0,0" Height="27" Padding="9,0" Style="{DynamicResource Yanzi.Button.Outline}" Visibility="{Binding CanChooseField, Converter={StaticResource BooleanToVisibilityConverter}}" Click="AcceptRemoteAccountSyncFieldButton_Click"/>
+                                                                                    </StackPanel>
+                                                                                </Border>
+                                                                            </Grid>
+                                                                        </StackPanel>
+                                                                    </Border>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
                                                         <TextBlock Text="{Binding DetailText}" TextWrapping="Wrap" Margin="0,4,0,8" Foreground="{DynamicResource BrushTextSec}"/>
                                                         <WrapPanel>
-                                                            <Button Content="保留本机修改" Style="{DynamicResource Yanzi.Button.Outline}" Margin="0,0,8,0" Click="UseLocalAccountSyncConflictButton_Click"/>
-                                                            <Button Content="使用云端内容" Style="{DynamicResource Yanzi.Button.Outline}" Click="AcceptRemoteAccountSyncConflictButton_Click"/>
+                                                            <Button Content="采用左侧本机设置" Style="{DynamicResource Yanzi.Button.Outline}" Margin="0,0,8,0" Click="UseLocalAccountSyncConflictButton_Click"/>
+                                                            <Button Content="采用右侧云端设置" Style="{DynamicResource Yanzi.Button.Outline}" Click="AcceptRemoteAccountSyncConflictButton_Click"/>
                                                         </WrapPanel>
                                                     </StackPanel>
                                                 </DataTemplate>
@@ -1379,9 +1411,51 @@
                                                                 <ColumnDefinition Width="Auto"/>
                                                             </Grid.ColumnDefinitions>
                                                             <StackPanel>
-                                                                <TextBlock Text="{Binding ExtensionId}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold"/>
+                                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                                    <Grid Width="26" Height="26" Margin="0,0,8,0" Background="#168B5CF6">
+                                                                        <TextBlock Text="◈" Foreground="#FFC4B5FD" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="16"/>
+                                                                        <Image Source="{Binding IconSource}" Width="20" Height="20" Stretch="Uniform" Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                                        <Path Data="{Binding VectorIcon}" Fill="#FFC4B5FD" Width="18" Height="18" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                                    </Grid>
+                                                                    <StackPanel>
+                                                                        <TextBlock Text="{Binding DisplayName}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold"/>
+                                                                        <TextBlock Text="{Binding ExtensionId}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}"/>
+                                                                    </StackPanel>
+                                                                </StackPanel>
                                                                 <TextBlock Text="{Binding LocalText}" Foreground="#FFF59E0B" FontSize="{DynamicResource FontSizeTiny}" Margin="0,4,0,0"/>
                                                                 <TextBlock Text="{Binding RemoteText}" Foreground="#FF60A5FA" FontSize="{DynamicResource FontSizeTiny}" Margin="0,2,0,0"/>
+                                                                <ItemsControl ItemsSource="{Binding Differences}" Margin="0,7,0,7">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <Border Background="#09FFFFFF" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="6" Padding="8" Margin="0,0,0,5">
+                                                                        <StackPanel>
+                                                                            <TextBlock Text="{Binding Path}" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" TextWrapping="Wrap"/>
+                                                                            <Grid Margin="0,6,0,0">
+                                                                                <Grid.ColumnDefinitions>
+                                                                                    <ColumnDefinition Width="*"/>
+                                                                                    <ColumnDefinition Width="8"/>
+                                                                                    <ColumnDefinition Width="*"/>
+                                                                                </Grid.ColumnDefinitions>
+                                                                                <Border Background="#16F59E0B" CornerRadius="5" Padding="8">
+                                                                                    <StackPanel>
+                                                                                        <TextBlock Text="本机" Foreground="#FFF59E0B" FontWeight="SemiBold" FontSize="{DynamicResource FontSizeTiny}"/>
+                                                                                        <TextBlock Text="{Binding LocalValue}" Foreground="{DynamicResource BrushTextMain}" TextWrapping="Wrap" FontSize="{DynamicResource FontSizeSmall}" Margin="0,3,0,0"/>
+                                                                                        <Button Content="采用本机此项" HorizontalAlignment="Left" Margin="0,7,0,0" Height="27" Padding="9,0" Style="{DynamicResource Yanzi.Button.Outline}" Visibility="{Binding CanChooseField, Converter={StaticResource BooleanToVisibilityConverter}}" Click="UseLocalAccountSyncFieldButton_Click"/>
+                                                                                    </StackPanel>
+                                                                                </Border>
+                                                                                <Border Grid.Column="2" Background="#1660A5FA" CornerRadius="5" Padding="8">
+                                                                                    <StackPanel>
+                                                                                        <TextBlock Text="云端" Foreground="#FF60A5FA" FontWeight="SemiBold" FontSize="{DynamicResource FontSizeTiny}"/>
+                                                                                        <TextBlock Text="{Binding RemoteValue}" Foreground="{DynamicResource BrushTextMain}" TextWrapping="Wrap" FontSize="{DynamicResource FontSizeSmall}" Margin="0,3,0,0"/>
+                                                                                        <Button Content="采用云端此项" HorizontalAlignment="Left" Margin="0,7,0,0" Height="27" Padding="9,0" Style="{DynamicResource Yanzi.Button.Outline}" Visibility="{Binding CanChooseField, Converter={StaticResource BooleanToVisibilityConverter}}" Click="AcceptRemoteAccountSyncFieldButton_Click"/>
+                                                                                    </StackPanel>
+                                                                                </Border>
+                                                                            </Grid>
+                                                                        </StackPanel>
+                                                                    </Border>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
                                                                 <TextBlock Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" Margin="0,2,0,0">
                                                                     <Run Text="云端来源："/><Run Text="{Binding RemoteDeviceText, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding DetectedAtText, Mode=OneWay}"/>
                                                                 </TextBlock>
@@ -1418,9 +1492,51 @@
                                                                 <ColumnDefinition Width="Auto"/>
                                                             </Grid.ColumnDefinitions>
                                                             <StackPanel>
-                                                                <TextBlock Text="{Binding DisplayId}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                                                <StackPanel Orientation="Horizontal">
+                                                                    <Grid Width="26" Height="26" Margin="0,0,8,0" Background="#168B5CF6">
+                                                                        <TextBlock Text="◈" Foreground="#FFC4B5FD" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="16"/>
+                                                                        <Image Source="{Binding IconSource}" Width="20" Height="20" Stretch="Uniform" Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                                        <Path Data="{Binding VectorIcon}" Fill="#FFC4B5FD" Width="18" Height="18" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                                    </Grid>
+                                                                    <StackPanel>
+                                                                        <TextBlock Text="{Binding DisplayId}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                                                        <TextBlock Text="{Binding Key}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" TextWrapping="Wrap"/>
+                                                                    </StackPanel>
+                                                                </StackPanel>
                                                                 <TextBlock Text="{Binding LocalText}" Foreground="#FFF59E0B" FontSize="{DynamicResource FontSizeTiny}" Margin="0,4,0,0"/>
                                                                 <TextBlock Text="{Binding RemoteText}" Foreground="#FF60A5FA" FontSize="{DynamicResource FontSizeTiny}" Margin="0,2,0,0"/>
+                                                                <ItemsControl ItemsSource="{Binding Differences}" Margin="0,7,0,7">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <Border Background="#09FFFFFF" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="6" Padding="8" Margin="0,0,0,5">
+                                                                        <StackPanel>
+                                                                            <TextBlock Text="{Binding Path}" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" TextWrapping="Wrap"/>
+                                                                            <Grid Margin="0,6,0,0">
+                                                                                <Grid.ColumnDefinitions>
+                                                                                    <ColumnDefinition Width="*"/>
+                                                                                    <ColumnDefinition Width="8"/>
+                                                                                    <ColumnDefinition Width="*"/>
+                                                                                </Grid.ColumnDefinitions>
+                                                                                <Border Background="#16F59E0B" CornerRadius="5" Padding="8">
+                                                                                    <StackPanel>
+                                                                                        <TextBlock Text="本机" Foreground="#FFF59E0B" FontWeight="SemiBold" FontSize="{DynamicResource FontSizeTiny}"/>
+                                                                                        <TextBlock Text="{Binding LocalValue}" Foreground="{DynamicResource BrushTextMain}" TextWrapping="Wrap" FontSize="{DynamicResource FontSizeSmall}" Margin="0,3,0,0"/>
+                                                                                        <Button Content="采用本机此项" HorizontalAlignment="Left" Margin="0,7,0,0" Height="27" Padding="9,0" Style="{DynamicResource Yanzi.Button.Outline}" Visibility="{Binding CanChooseField, Converter={StaticResource BooleanToVisibilityConverter}}" Click="UseLocalAccountSyncFieldButton_Click"/>
+                                                                                    </StackPanel>
+                                                                                </Border>
+                                                                                <Border Grid.Column="2" Background="#1660A5FA" CornerRadius="5" Padding="8">
+                                                                                    <StackPanel>
+                                                                                        <TextBlock Text="云端" Foreground="#FF60A5FA" FontWeight="SemiBold" FontSize="{DynamicResource FontSizeTiny}"/>
+                                                                                        <TextBlock Text="{Binding RemoteValue}" Foreground="{DynamicResource BrushTextMain}" TextWrapping="Wrap" FontSize="{DynamicResource FontSizeSmall}" Margin="0,3,0,0"/>
+                                                                                        <Button Content="采用云端此项" HorizontalAlignment="Left" Margin="0,7,0,0" Height="27" Padding="9,0" Style="{DynamicResource Yanzi.Button.Outline}" Visibility="{Binding CanChooseField, Converter={StaticResource BooleanToVisibilityConverter}}" Click="AcceptRemoteAccountSyncFieldButton_Click"/>
+                                                                                    </StackPanel>
+                                                                                </Border>
+                                                                            </Grid>
+                                                                        </StackPanel>
+                                                                    </Border>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
                                                                 <TextBlock Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" Margin="0,2,0,0">
                                                                     <Run Text="云端来源："/><Run Text="{Binding RemoteDeviceText, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding DetectedAtText, Mode=OneWay}"/>
                                                                 </TextBlock>

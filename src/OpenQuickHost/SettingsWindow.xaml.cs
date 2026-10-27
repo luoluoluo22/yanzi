@@ -5093,6 +5093,35 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         if (SyncPersonalSyncButton != null) SyncPersonalSyncButton.IsEnabled = enabled;
     }
 
+    private static (string name, ImageSource? image, Geometry? vector) ResolveConflictExtensionVisual(string extensionId)
+    {
+        var name = extensionId;
+        ImageSource? image = null;
+        Geometry? vector = null;
+        try
+        {
+            var directory = Path.Combine(LocalExtensionCatalog.CatalogRootPath, extensionId);
+            var manifestPath = Path.Combine(directory, "manifest.json");
+            if (!File.Exists(manifestPath)) return (name, image, vector);
+            using var document = JsonDocument.Parse(File.ReadAllText(manifestPath));
+            var root = document.RootElement;
+            if (root.TryGetProperty("name", out var title) && title.ValueKind == JsonValueKind.String &&
+                !string.IsNullOrWhiteSpace(title.GetString()))
+                name = title.GetString()!;
+            if (root.TryGetProperty("icon", out var icon) && icon.ValueKind == JsonValueKind.String)
+            {
+                var reference = icon.GetString() ?? "";
+                image = ExtensionIconLibrary.ResolveImageSource(reference, directory);
+                vector = ExtensionIconLibrary.ResolveVectorIcon(reference);
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"Sync conflict visual fallback: id={extensionId}, error={ex.GetType().Name}");
+        }
+        return (name, image, vector);
+    }
+
     private void RefreshPersonalExtensionSyncStatus()
     {
         try
@@ -5100,14 +5129,16 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             ExtensionSyncConflictItems.Clear();
             foreach (var conflict in _mainWindow.GetExtensionSyncConflicts())
             {
-                ExtensionSyncConflictItems.Add(new ExtensionSyncConflictItem(conflict));
+                var visual = ResolveConflictExtensionVisual(conflict.ExtensionId);
+                ExtensionSyncConflictItems.Add(new ExtensionSyncConflictItem(conflict, visual.name, visual.image, visual.vector));
             }
             OnPropertyChanged(nameof(HasExtensionSyncConflicts));
             ExtensionDataConflictItems.Clear();
             var dataStates = _mainWindow.GetExtensionDataSyncStates();
             foreach (var state in dataStates.Where(static item => item.Conflict != null))
             {
-                ExtensionDataConflictItems.Add(new ExtensionDataConflictItem(state));
+                var visual = ResolveConflictExtensionVisual(state.ExtensionId);
+                ExtensionDataConflictItems.Add(new ExtensionDataConflictItem(state, visual.name, visual.image, visual.vector));
             }
             OnPropertyChanged(nameof(HasExtensionDataConflicts));
             var dataPending = dataStates.Count(static item => item.Pending);
@@ -6955,6 +6986,33 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private async void UseLocalAccountSyncFieldButton_Click(object sender, RoutedEventArgs e)
+    {
+        await ResolveAccountSyncFieldFromButtonAsync(sender, useLocalVersion: true);
+    }
+
+    private async void AcceptRemoteAccountSyncFieldButton_Click(object sender, RoutedEventArgs e)
+    {
+        await ResolveAccountSyncFieldFromButtonAsync(sender, useLocalVersion: false);
+    }
+
+    private async Task ResolveAccountSyncFieldFromButtonAsync(object sender, bool useLocalVersion)
+    {
+        if (sender is not System.Windows.Controls.Button { DataContext: SyncFieldDifference item } button ||
+            !item.CanChooseField)
+            return;
+        button.IsEnabled = false;
+        try
+        {
+            var result = await _mainWindow.ResolveCloudObjectConflictFieldAsync(
+                item.ObjectId, item.JsonPointer, useLocalVersion, item.Revision);
+            SyncStatusText = result.message;
+            RefreshAccountObjectSyncStatus();
+            RefreshSyncActivityLog();
+        }
+        finally { button.IsEnabled = true; }
+    }
+
     private async Task ResolveAccountSyncConflictFromButtonAsync(object sender, bool useLocalVersion)
     {
         if (sender is not System.Windows.Controls.Button { DataContext: AccountSyncObjectStatusItem item } button)
@@ -7031,7 +7089,10 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 conflict != null,
                 state.ObjectHistoryAvailable)
             {
-                ConflictSummary = conflict == null ? "" : SyncUserText.Differences(conflict, cached)
+                ConflictSummary = conflict == null ? "" : SyncUserText.Differences(conflict, cached),
+                Differences = conflict == null || cached == null ? [] : SyncUserText.DetailDifferences(
+                    conflict.LocalPayload, cached.Payload, conflict.LocalDeleted, cached.Deleted)
+                    .Select(row => row with { ObjectId = objectId, Revision = conflict.RemoteRevision }).ToArray()
             };
         }).ToArray();
 

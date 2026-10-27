@@ -4539,6 +4539,108 @@ public partial class MainWindow
         await RefreshCloudStateAsync();
     }
 
+    private static void CopyJsonPointerField(
+        System.Text.Json.Nodes.JsonNode target,
+        System.Text.Json.Nodes.JsonNode source,
+        string pointer)
+    {
+        if (string.IsNullOrWhiteSpace(pointer) || pointer[0] != '/')
+            throw new InvalidOperationException("此处不是可以单独选择的设置字段。");
+        var segments = pointer[1..].Split('/')
+            .Select(static segment => segment.Replace("~1", "/").Replace("~0", "~")).ToArray();
+        System.Text.Json.Nodes.JsonNode? targetNode = target;
+        System.Text.Json.Nodes.JsonNode? sourceNode = source;
+        foreach (var segment in segments[..^1])
+        {
+            if (targetNode is not System.Text.Json.Nodes.JsonObject targetObject ||
+                sourceNode is not System.Text.Json.Nodes.JsonObject sourceObject ||
+                !targetObject.TryGetPropertyValue(segment, out targetNode) ||
+                !sourceObject.TryGetPropertyValue(segment, out sourceNode))
+                throw new InvalidOperationException("设置结构已经变化，请重新查看差异。");
+        }
+        if (targetNode is not System.Text.Json.Nodes.JsonObject targetParent ||
+            sourceNode is not System.Text.Json.Nodes.JsonObject sourceParent)
+            throw new InvalidOperationException("此类设置需要按整组处理。");
+        var leaf = segments[^1];
+        if (sourceParent.TryGetPropertyValue(leaf, out var sourceValue))
+            targetParent[leaf] = sourceValue?.DeepClone();
+        else
+            targetParent.Remove(leaf);
+    }
+
+    public async Task<(bool ok, string message)> ResolveCloudObjectConflictFieldAsync(
+        string objectId, string pointer, bool useLocalVersion, long reviewedRevision)
+    {
+        if (_cloudSyncClient == null || string.IsNullOrWhiteSpace(objectId))
+            return (false, "账号云同步尚未可用。");
+
+        await _accountObjectSyncLock.WaitAsync();
+        try
+        {
+            var state = CloudObjectSyncStateStore.Load(_cloudSyncClient.CurrentUserId);
+            if (!string.IsNullOrWhiteSpace(state.PersistenceError)) return (false, state.PersistenceError);
+            if (!state.Conflicts.TryGetValue(objectId, out var conflict))
+                return (true, "该冲突已经处理。");
+            if (!state.Objects.TryGetValue(objectId, out var remote) ||
+                conflict.RemoteRevision != reviewedRevision || remote.Revision != reviewedRevision)
+                return (false, "云端版本已变化，请刷新差异后重新选择。");
+            if (conflict.LocalDeleted || remote.Deleted)
+                return (false, "删除与保留的冲突需要整组选择。");
+
+            var localNode = System.Text.Json.Nodes.JsonNode.Parse(conflict.LocalPayload.GetRawText())
+                ?? throw new InvalidDataException("本机设置结构无效。");
+            var remoteNode = System.Text.Json.Nodes.JsonNode.Parse(remote.Payload.GetRawText())
+                ?? throw new InvalidDataException("云端设置结构无效。");
+            if (useLocalVersion)
+            {
+                CopyJsonPointerField(remoteNode, localNode, pointer);
+                await _cloudSyncClient.EnsureAuthenticatedAsync();
+                var envelope = new LauncherConfigObjectEnvelope
+                {
+                    SchemaVersion = conflict.LocalSchemaVersion,
+                    ObjectId = objectId,
+                    UpdatedAtUtc = DateTime.UtcNow.ToString("O"),
+                    UpdatedByDeviceId = DeviceIdentityStore.GetOrCreateDesktopDeviceId(),
+                    UpdatedByDeviceName = DeviceIdentityStore.GetDesktopDisplayName(),
+                    Deleted = false,
+                    Payload = JsonSerializer.SerializeToElement(remoteNode)
+                };
+                var write = new AccountConfigObjectWrite(objectId, envelope);
+                var saved = await PutCloudObjectWriteAsync(write, reviewedRevision);
+                state.Objects[objectId] = CloudObjectSyncCacheEntry.FromRecord(saved);
+                UpdateKnownDynamicObjectAfterWrite(state, write);
+                conflict.RemoteRevision = saved.Revision;
+            }
+            else
+            {
+                CopyJsonPointerField(localNode, remoteNode, pointer);
+                conflict.LocalPayload = JsonSerializer.SerializeToElement(localNode);
+            }
+
+            var currentRemote = state.Objects[objectId];
+            var remaining = SyncUserText.DetailDifferences(
+                conflict.LocalPayload, currentRemote.Payload, conflict.LocalDeleted, currentRemote.Deleted);
+            if (remaining.Count == 0)
+            {
+                state.Conflicts.Remove(objectId);
+                CloudObjectSyncStateStore.Save(state);
+                await ApplyCloudObjectStateToLocalAsync(objectId);
+                return (true, "所有差异已处理，本机与云端已采用最终设置。");
+            }
+            CloudObjectSyncStateStore.Save(state);
+            return (true, $"已采用所选字段，尚有 {remaining.Count} 项差异待处理。全部选择完成后会应用到本机。");
+        }
+        catch (CloudSyncRevisionConflictException)
+        {
+            return (false, "选择期间云端版本变化，请刷新差异后重试。");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"字段冲突处理失败：{FormatExceptionMessage(ex)}");
+        }
+        finally { _accountObjectSyncLock.Release(); }
+    }
+
     public async Task<(bool ok, string message)> ResolveCloudObjectConflictAsync(
         string objectId,
         bool useLocalVersion,
