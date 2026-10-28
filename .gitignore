@@ -100,3 +100,6 @@ src/OpenQuickHost/Sync/*.cs.bak-*
 
 # User-installed Windows miniapps are managed outside the host Git repository.
 /extensions/
+
+.dev.vars*
+!.dev.vars.example
