@@ -2,7 +2,9 @@ using System.Text.Json;
 using OpenQuickHost;
 using OpenQuickHost.Sync;
 using Yanzi.Core;
+if (args.Contains("--extension-watcher-race")) { ExtensionWatcherRaceVerification.Run(); return; }
 if (args.Contains("--keyboard-remap-doubletap")) { KeyboardRemapDoubleTapVerification.Run(); return; }
+if (args.Contains("--account-extension-pull-policy")) { AccountExtensionPullPolicyVerification.Run(); return; }
 if (args.Contains("--chat-conversation-metadata")) { ChatConversationMetadataVerification.Run(); return; }
 if (args.Contains("--mobile-extension-catalog")) { await MobileExtensionCatalogVerification.RunAsync(); return; }
 
@@ -551,6 +553,32 @@ static void VerifySyncConflictExperience()
     Assert(SyncUserText.Device("a", "PC", "a") == "本机", "Own device needs a friendly label.");
     Assert(SyncUserText.Device("b", "PC", "a") == "PC", "Same display name must not imply same device.");
     Assert(SyncUserText.Device(null, null, "a") != "本机", "Unknown identity must not imply this device.");
+    var localSettings = Payload("{\"nested\":{\"name\":\"home\"},\"slots\":[1,2],\"apiKey\":\"LOCAL_SECRET\"}");
+    var remoteSettings = Payload("{\"nested\":{\"name\":\"office\"},\"slots\":[2,1],\"apiKey\":\"REMOTE_SECRET\"}");
+    var differences = SyncUserText.DetailDifferences(localSettings, remoteSettings);
+    Assert(differences.Count == 3, "Nested, array and secret differences should each get a row.");
+    var nameRow = differences.Single(row => row.JsonPointer == "/nested/name");
+    Assert(nameRow.LocalValue == "home" && nameRow.RemoteValue == "office",
+        "Field differences must display the actual two values.");
+    Assert(differences.Any(row => row.JsonPointer == "/slots"),
+        "Ordered arrays should be selectable atomically rather than by unstable position.");
+    Assert(differences.Where(row => row.JsonPointer == "/apiKey")
+        .All(row => !row.LocalValue.Contains("SECRET") && !row.RemoteValue.Contains("SECRET")),
+        "Sensitive cloud settings must be masked in side-by-side previews.");
+    var target = System.Text.Json.Nodes.JsonNode.Parse(remoteSettings.GetRawText())!;
+    var source = System.Text.Json.Nodes.JsonNode.Parse(localSettings.GetRawText())!;
+    var apply = typeof(MainWindow).GetMethod("CopyJsonPointerField",
+        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+    Assert(apply != null, "Field resolution helper must exist.");
+    apply!.Invoke(null, [target, source, nameRow.JsonPointer]);
+    Assert(target["nested"]!["name"]!.GetValue<string>() == "home",
+        "Selected local field must be applied.");
+    Assert(target["slots"]!.ToJsonString() == "[2,1]",
+        "Unselected remote fields must remain intact.");
+    Assert(SyncUserText.ContentDifferences("local text", "remote text").Single().Path == "文本内容",
+        "Plain-text extension conflicts need readable previews.");
+    Assert(SyncUserText.DetailDifferences(localSettings, remoteSettings, localDeleted: true)
+        .Single().Path == "数据状态", "Deletion conflicts must remain explicit.");
     Console.WriteLine("Sync UX verification passed: semantic equality, preserved conflicts, revision refresh, pending edits, friendly labels.");
 }
 
@@ -737,6 +765,21 @@ static void VerifyExtensionAuthoritySelection()
     };
     Assert(!PersonalSyncService.ShouldPublishAccountBackup(backupLocal, backupRemote, "desktop"),
         "A same-version extension on one PC must not repeatedly replace another device's backup.");
+    Assert(!PersonalSyncService.ShouldRecoverNewerAccountBackup(backupLocal, backupRemote),
+        "A same-version backup must not silently overwrite local changes.");
+    backupRemote.Version = "0.2.7";
+    backupRemote.PackagePath = "packages/demo/newer.zip";
+    Assert(PersonalSyncService.ShouldRecoverNewerAccountBackup(backupLocal, backupRemote),
+        "A strictly newer backup must be eligible to recover an installed older extension.");
+    backupLocal.LocalDeletionPending = true;
+    Assert(!PersonalSyncService.ShouldRecoverNewerAccountBackup(backupLocal, backupRemote),
+        "A pending deletion must not be reversed by backup recovery.");
+    backupLocal.LocalDeletionPending = false;
+    backupRemote.Deleted = true;
+    Assert(!PersonalSyncService.ShouldRecoverNewerAccountBackup(backupLocal, backupRemote),
+        "A deleted remote entry must not be treated as an installable backup.");
+    backupRemote.Deleted = false;
+    backupRemote.Version = "0.2.5";
     backupLocal.Version = "0.2.6";
     Assert(PersonalSyncService.ShouldPublishAccountBackup(backupLocal, backupRemote, "desktop"),
         "A genuinely newer extension version must be backed up.");
@@ -757,6 +800,25 @@ static void VerifyExtensionAuthoritySelection()
     local.Deleted = false;
     Assert(!PersonalSyncService.HasConcurrentExtensionChanges(local, remote),
         "A remote-only extension update was incorrectly classified as a two-sided conflict.");
+    using (var proxied = CloudSyncClient.CreateSyncHandler(true, TimeSpan.FromSeconds(30)))
+    using (var direct = CloudSyncClient.CreateSyncHandler(false, TimeSpan.FromSeconds(30)))
+    using (var large = CloudSyncClient.CreateSyncHandler(true, TimeSpan.FromMinutes(10)))
+    {
+        Assert(proxied.UseProxy && !direct.UseProxy,
+            "Cloud transport must preserve separate proxied and direct channels.");
+        Assert(proxied.ConnectTimeout == TimeSpan.FromSeconds(8) &&
+               large.ConnectTimeout == TimeSpan.FromSeconds(15),
+            "TLS connect deadlines must be shorter than the full request timeout.");
+        Assert(proxied.MaxConnectionsPerServer == 8 &&
+               proxied.PooledConnectionLifetime == TimeSpan.FromMinutes(5),
+            "Cloud requests must use bounded, rotating connection pools.");
+    }
+    var pooledOptions = new SyncOptions { BaseUrl = "https://sync-reuse.example.test" };
+    var pooledClient = AccountExtensionDataStore.GetOrCreateClient(pooledOptions);
+    Assert(ReferenceEquals(pooledClient, AccountExtensionDataStore.GetOrCreateClient(new SyncOptions { BaseUrl = pooledOptions.BaseUrl })),
+        "Extension-data reads must reuse their HTTP connection pool and cooldown.");
+    Assert(!ReferenceEquals(pooledClient, AccountExtensionDataStore.GetOrCreateClient(new SyncOptions { BaseUrl = "https://sync-reconfigure.example.test" })),
+        "Changing the sync endpoint must not keep using an old HTTP transport.");
     Console.WriteLine("Extension authority verification passed: account mode is backup-only, standalone mode remains bidirectional.");
 }
 
@@ -773,6 +835,10 @@ static void VerifyExtensionDataObjects()
     Assert(ExtensionDataObjectStore.BuildHistoryPath(first) != ExtensionDataObjectStore.BuildHistoryPath(second),
         "Distinct extension-data versions mapped to the same immutable history path.");
     var staleState = new ExtensionDataSyncState { LastRemoteRevision = first.Revision };
+    Assert(GiteeContentPayload.IsDirectoryResponse(@"  [{""name"":""article.md""}]"),
+        "Gitee directory listing must not be decoded as a file payload.");
+    Assert(!GiteeContentPayload.IsDirectoryResponse(@"{""content"":""SGVsbG8=""}"),
+        "Gitee file payload must not be mistaken for a directory listing.");
     Assert(ExtensionDataObjectStore.HasConcurrentChange(second, staleState, first.ContentHash),
         "A remote extension-data revision above the local baseline was not classified as concurrent.");
     staleState.LastRemoteRevision = second.Revision;

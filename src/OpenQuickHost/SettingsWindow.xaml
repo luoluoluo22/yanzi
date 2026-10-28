@@ -1351,10 +1351,42 @@
                                                     <StackPanel Margin="0,8,0,12">
                                                         <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextMain}"/>
                                                         <TextBlock Text="{Binding ConflictSummary}" TextWrapping="Wrap" Margin="0,5,0,0" Foreground="{DynamicResource BrushTextMain}"/>
+                                                        <ItemsControl ItemsSource="{Binding Differences}" Margin="0,7,0,7">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <Border Background="#09FFFFFF" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="6" Padding="8" Margin="0,0,0,5">
+                                                                        <StackPanel>
+                                                                            <TextBlock Text="{Binding Path}" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" TextWrapping="Wrap"/>
+                                                                            <Grid Margin="0,6,0,0">
+                                                                                <Grid.ColumnDefinitions>
+                                                                                    <ColumnDefinition Width="*"/>
+                                                                                    <ColumnDefinition Width="8"/>
+                                                                                    <ColumnDefinition Width="*"/>
+                                                                                </Grid.ColumnDefinitions>
+                                                                                <Border Background="#16F59E0B" CornerRadius="5" Padding="8">
+                                                                                    <StackPanel>
+                                                                                        <TextBlock Text="本机" Foreground="#FFF59E0B" FontWeight="SemiBold" FontSize="{DynamicResource FontSizeTiny}"/>
+                                                                                        <TextBlock Text="{Binding LocalValue}" Foreground="{DynamicResource BrushTextMain}" TextWrapping="Wrap" FontSize="{DynamicResource FontSizeSmall}" Margin="0,3,0,0"/>
+                                                                                        <Button Content="采用本机此项" HorizontalAlignment="Left" Margin="0,7,0,0" Height="27" Padding="9,0" Style="{DynamicResource Yanzi.Button.Outline}" Visibility="{Binding CanChooseField, Converter={StaticResource BooleanToVisibilityConverter}}" Click="UseLocalAccountSyncFieldButton_Click"/>
+                                                                                    </StackPanel>
+                                                                                </Border>
+                                                                                <Border Grid.Column="2" Background="#1660A5FA" CornerRadius="5" Padding="8">
+                                                                                    <StackPanel>
+                                                                                        <TextBlock Text="云端" Foreground="#FF60A5FA" FontWeight="SemiBold" FontSize="{DynamicResource FontSizeTiny}"/>
+                                                                                        <TextBlock Text="{Binding RemoteValue}" Foreground="{DynamicResource BrushTextMain}" TextWrapping="Wrap" FontSize="{DynamicResource FontSizeSmall}" Margin="0,3,0,0"/>
+                                                                                        <Button Content="采用云端此项" HorizontalAlignment="Left" Margin="0,7,0,0" Height="27" Padding="9,0" Style="{DynamicResource Yanzi.Button.Outline}" Visibility="{Binding CanChooseField, Converter={StaticResource BooleanToVisibilityConverter}}" Click="AcceptRemoteAccountSyncFieldButton_Click"/>
+                                                                                    </StackPanel>
+                                                                                </Border>
+                                                                            </Grid>
+                                                                        </StackPanel>
+                                                                    </Border>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
                                                         <TextBlock Text="{Binding DetailText}" TextWrapping="Wrap" Margin="0,4,0,8" Foreground="{DynamicResource BrushTextSec}"/>
                                                         <WrapPanel>
-                                                            <Button Content="保留本机修改" Style="{DynamicResource Yanzi.Button.Outline}" Margin="0,0,8,0" Click="UseLocalAccountSyncConflictButton_Click"/>
-                                                            <Button Content="使用云端内容" Style="{DynamicResource Yanzi.Button.Outline}" Click="AcceptRemoteAccountSyncConflictButton_Click"/>
+                                                            <Button Content="采用左侧本机设置" Style="{DynamicResource Yanzi.Button.Outline}" Margin="0,0,8,0" Click="UseLocalAccountSyncConflictButton_Click"/>
+                                                            <Button Content="采用右侧云端设置" Style="{DynamicResource Yanzi.Button.Outline}" Click="AcceptRemoteAccountSyncConflictButton_Click"/>
                                                         </WrapPanel>
                                                     </StackPanel>
                                                 </DataTemplate>
@@ -1379,9 +1411,51 @@
                                                                 <ColumnDefinition Width="Auto"/>
                                                             </Grid.ColumnDefinitions>
                                                             <StackPanel>
-                                                                <TextBlock Text="{Binding ExtensionId}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold"/>
+                                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                                    <Grid Width="26" Height="26" Margin="0,0,8,0" Background="#168B5CF6">
+                                                                        <TextBlock Text="◈" Foreground="#FFC4B5FD" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="16"/>
+                                                                        <Image Source="{Binding IconSource}" Width="20" Height="20" Stretch="Uniform" Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                                        <Path Data="{Binding VectorIcon}" Fill="#FFC4B5FD" Width="18" Height="18" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                                    </Grid>
+                                                                    <StackPanel>
+                                                                        <TextBlock Text="{Binding DisplayName}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold"/>
+                                                                        <TextBlock Text="{Binding ExtensionId}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}"/>
+                                                                    </StackPanel>
+                                                                </StackPanel>
                                                                 <TextBlock Text="{Binding LocalText}" Foreground="#FFF59E0B" FontSize="{DynamicResource FontSizeTiny}" Margin="0,4,0,0"/>
                                                                 <TextBlock Text="{Binding RemoteText}" Foreground="#FF60A5FA" FontSize="{DynamicResource FontSizeTiny}" Margin="0,2,0,0"/>
+                                                                <ItemsControl ItemsSource="{Binding Differences}" Margin="0,7,0,7">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <Border Background="#09FFFFFF" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="6" Padding="8" Margin="0,0,0,5">
+                                                                        <StackPanel>
+                                                                            <TextBlock Text="{Binding Path}" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" TextWrapping="Wrap"/>
+                                                                            <Grid Margin="0,6,0,0">
+                                                                                <Grid.ColumnDefinitions>
+                                                                                    <ColumnDefinition Width="*"/>
+                                                                                    <ColumnDefinition Width="8"/>
+                                                                                    <ColumnDefinition Width="*"/>
+                                                                                </Grid.ColumnDefinitions>
+                                                                                <Border Background="#16F59E0B" CornerRadius="5" Padding="8">
+                                                                                    <StackPanel>
+                                                                                        <TextBlock Text="本机" Foreground="#FFF59E0B" FontWeight="SemiBold" FontSize="{DynamicResource FontSizeTiny}"/>
+                                                                                        <TextBlock Text="{Binding LocalValue}" Foreground="{DynamicResource BrushTextMain}" TextWrapping="Wrap" FontSize="{DynamicResource FontSizeSmall}" Margin="0,3,0,0"/>
+                                                                                        <Button Content="采用本机此项" HorizontalAlignment="Left" Margin="0,7,0,0" Height="27" Padding="9,0" Style="{DynamicResource Yanzi.Button.Outline}" Visibility="{Binding CanChooseField, Converter={StaticResource BooleanToVisibilityConverter}}" Click="UseLocalAccountSyncFieldButton_Click"/>
+                                                                                    </StackPanel>
+                                                                                </Border>
+                                                                                <Border Grid.Column="2" Background="#1660A5FA" CornerRadius="5" Padding="8">
+                                                                                    <StackPanel>
+                                                                                        <TextBlock Text="云端" Foreground="#FF60A5FA" FontWeight="SemiBold" FontSize="{DynamicResource FontSizeTiny}"/>
+                                                                                        <TextBlock Text="{Binding RemoteValue}" Foreground="{DynamicResource BrushTextMain}" TextWrapping="Wrap" FontSize="{DynamicResource FontSizeSmall}" Margin="0,3,0,0"/>
+                                                                                        <Button Content="采用云端此项" HorizontalAlignment="Left" Margin="0,7,0,0" Height="27" Padding="9,0" Style="{DynamicResource Yanzi.Button.Outline}" Visibility="{Binding CanChooseField, Converter={StaticResource BooleanToVisibilityConverter}}" Click="AcceptRemoteAccountSyncFieldButton_Click"/>
+                                                                                    </StackPanel>
+                                                                                </Border>
+                                                                            </Grid>
+                                                                        </StackPanel>
+                                                                    </Border>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
                                                                 <TextBlock Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" Margin="0,2,0,0">
                                                                     <Run Text="云端来源："/><Run Text="{Binding RemoteDeviceText, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding DetectedAtText, Mode=OneWay}"/>
                                                                 </TextBlock>
@@ -1418,9 +1492,51 @@
                                                                 <ColumnDefinition Width="Auto"/>
                                                             </Grid.ColumnDefinitions>
                                                             <StackPanel>
-                                                                <TextBlock Text="{Binding DisplayId}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                                                <StackPanel Orientation="Horizontal">
+                                                                    <Grid Width="26" Height="26" Margin="0,0,8,0" Background="#168B5CF6">
+                                                                        <TextBlock Text="◈" Foreground="#FFC4B5FD" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="16"/>
+                                                                        <Image Source="{Binding IconSource}" Width="20" Height="20" Stretch="Uniform" Visibility="{Binding HasImageIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                                        <Path Data="{Binding VectorIcon}" Fill="#FFC4B5FD" Width="18" Height="18" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding HasVectorIcon, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                                    </Grid>
+                                                                    <StackPanel>
+                                                                        <TextBlock Text="{Binding DisplayId}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                                                        <TextBlock Text="{Binding Key}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" TextWrapping="Wrap"/>
+                                                                    </StackPanel>
+                                                                </StackPanel>
                                                                 <TextBlock Text="{Binding LocalText}" Foreground="#FFF59E0B" FontSize="{DynamicResource FontSizeTiny}" Margin="0,4,0,0"/>
                                                                 <TextBlock Text="{Binding RemoteText}" Foreground="#FF60A5FA" FontSize="{DynamicResource FontSizeTiny}" Margin="0,2,0,0"/>
+                                                                <ItemsControl ItemsSource="{Binding Differences}" Margin="0,7,0,7">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <Border Background="#09FFFFFF" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="6" Padding="8" Margin="0,0,0,5">
+                                                                        <StackPanel>
+                                                                            <TextBlock Text="{Binding Path}" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" TextWrapping="Wrap"/>
+                                                                            <Grid Margin="0,6,0,0">
+                                                                                <Grid.ColumnDefinitions>
+                                                                                    <ColumnDefinition Width="*"/>
+                                                                                    <ColumnDefinition Width="8"/>
+                                                                                    <ColumnDefinition Width="*"/>
+                                                                                </Grid.ColumnDefinitions>
+                                                                                <Border Background="#16F59E0B" CornerRadius="5" Padding="8">
+                                                                                    <StackPanel>
+                                                                                        <TextBlock Text="本机" Foreground="#FFF59E0B" FontWeight="SemiBold" FontSize="{DynamicResource FontSizeTiny}"/>
+                                                                                        <TextBlock Text="{Binding LocalValue}" Foreground="{DynamicResource BrushTextMain}" TextWrapping="Wrap" FontSize="{DynamicResource FontSizeSmall}" Margin="0,3,0,0"/>
+                                                                                        <Button Content="采用本机此项" HorizontalAlignment="Left" Margin="0,7,0,0" Height="27" Padding="9,0" Style="{DynamicResource Yanzi.Button.Outline}" Visibility="{Binding CanChooseField, Converter={StaticResource BooleanToVisibilityConverter}}" Click="UseLocalAccountSyncFieldButton_Click"/>
+                                                                                    </StackPanel>
+                                                                                </Border>
+                                                                                <Border Grid.Column="2" Background="#1660A5FA" CornerRadius="5" Padding="8">
+                                                                                    <StackPanel>
+                                                                                        <TextBlock Text="云端" Foreground="#FF60A5FA" FontWeight="SemiBold" FontSize="{DynamicResource FontSizeTiny}"/>
+                                                                                        <TextBlock Text="{Binding RemoteValue}" Foreground="{DynamicResource BrushTextMain}" TextWrapping="Wrap" FontSize="{DynamicResource FontSizeSmall}" Margin="0,3,0,0"/>
+                                                                                        <Button Content="采用云端此项" HorizontalAlignment="Left" Margin="0,7,0,0" Height="27" Padding="9,0" Style="{DynamicResource Yanzi.Button.Outline}" Visibility="{Binding CanChooseField, Converter={StaticResource BooleanToVisibilityConverter}}" Click="AcceptRemoteAccountSyncFieldButton_Click"/>
+                                                                                    </StackPanel>
+                                                                                </Border>
+                                                                            </Grid>
+                                                                        </StackPanel>
+                                                                    </Border>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
                                                                 <TextBlock Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" Margin="0,2,0,0">
                                                                     <Run Text="云端来源："/><Run Text="{Binding RemoteDeviceText, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding DetectedAtText, Mode=OneWay}"/>
                                                                 </TextBlock>
@@ -1499,7 +1615,7 @@
                                                             <ColumnDefinition Width="12"/>
                                                             <ColumnDefinition Width="Auto"/>
                                                         </Grid.ColumnDefinitions>
-                                                        <TextBox Grid.Column="0" Text="{Binding GitHubSyncRepo, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
+                                                        <TextBox Grid.Column="0" Text="{Binding GitHubSyncRepo, Mode=TwoWay}" Height="36" Padding="12,5" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
                                                         <Button Grid.Column="2"
                                                                 Content="{Binding PersonalSyncAdvancedOptionsButtonText}"
                                                                 Style="{DynamicResource Yanzi.Button.Outline}"
@@ -1524,7 +1640,7 @@
                                                                 Visibility="{Binding HasSelectedPersonalSyncProviderQuickLink, Converter={StaticResource BooleanToVisibilityConverter}}"
                                                                 Click="OpenSyncProviderLinkButton_Click"/>
                                                     </Grid>
-                                                    <PasswordBox x:Name="GitHubTokenBox" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                                    <PasswordBox x:Name="GitHubTokenBox" Height="36" Padding="12,5" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Password}"/>
                                                 </StackPanel>
                                                 <StackPanel Margin="0,14,0,0"
                                                             Visibility="{Binding ShowPersonalSyncAdvancedOptions, Converter={StaticResource BooleanToVisibilityConverter}}">
@@ -1536,16 +1652,16 @@
                                                         </Grid.ColumnDefinitions>
                                                         <StackPanel Grid.Column="0">
                                                             <TextBlock Text="仓库所有者 / 组织" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="0,0,0,6"/>
-                                                            <TextBox Text="{Binding GitHubSyncOwner, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
+                                                            <TextBox Text="{Binding GitHubSyncOwner, Mode=TwoWay}" Height="36" Padding="12,5" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
                                                         </StackPanel>
                                                         <StackPanel Grid.Column="2">
                                                             <TextBlock Text="分支" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="0,0,0,6"/>
-                                                            <TextBox Text="{Binding GitHubSyncBranch, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
+                                                            <TextBox Text="{Binding GitHubSyncBranch, Mode=TwoWay}" Height="36" Padding="12,5" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
                                                         </StackPanel>
                                                     </Grid>
                                                     <StackPanel Margin="0,14,0,0">
                                                         <TextBlock Text="目录前缀" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="0,0,0,6"/>
-                                                        <TextBox Text="{Binding GitHubSyncPathPrefix, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
+                                                        <TextBox Text="{Binding GitHubSyncPathPrefix, Mode=TwoWay}" Height="36" Padding="12,5" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
                                                     </StackPanel>
                                                 </StackPanel>
                                             </StackPanel>
@@ -1561,7 +1677,7 @@
                                                             <ColumnDefinition Width="12"/>
                                                             <ColumnDefinition Width="Auto"/>
                                                         </Grid.ColumnDefinitions>
-                                                        <TextBox Grid.Column="0" Text="{Binding GiteeSyncRepo, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
+                                                        <TextBox Grid.Column="0" Text="{Binding GiteeSyncRepo, Mode=TwoWay}" Height="36" Padding="12,5" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
                                                         <Button Grid.Column="2"
                                                                 Content="{Binding PersonalSyncAdvancedOptionsButtonText}"
                                                                 Style="{DynamicResource Yanzi.Button.Outline}"
@@ -1581,7 +1697,7 @@
                                                                 Visibility="{Binding HasSelectedPersonalSyncProviderQuickLink, Converter={StaticResource BooleanToVisibilityConverter}}"
                                                                 Click="OpenSyncProviderLinkButton_Click"/>
                                                     </Grid>
-                                                    <PasswordBox x:Name="GiteeTokenBox" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                                    <PasswordBox x:Name="GiteeTokenBox" Height="36" Padding="12,5" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Password}"/>
                                                 </StackPanel>
                                                 <StackPanel Margin="0,14,0,0"
                                                             Visibility="{Binding ShowPersonalSyncAdvancedOptions, Converter={StaticResource BooleanToVisibilityConverter}}">
@@ -1593,16 +1709,16 @@
                                                         </Grid.ColumnDefinitions>
                                                         <StackPanel Grid.Column="0">
                                                             <TextBlock Text="仓库所有者" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="0,0,0,6"/>
-                                                            <TextBox Text="{Binding GiteeSyncUsername, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
+                                                            <TextBox Text="{Binding GiteeSyncUsername, Mode=TwoWay}" Height="36" Padding="12,5" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
                                                         </StackPanel>
                                                         <StackPanel Grid.Column="2">
                                                             <TextBlock Text="分支" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="0,0,0,6"/>
-                                                            <TextBox Text="{Binding GiteeSyncBranch, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
+                                                            <TextBox Text="{Binding GiteeSyncBranch, Mode=TwoWay}" Height="36" Padding="12,5" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
                                                         </StackPanel>
                                                     </Grid>
                                                     <StackPanel Margin="0,14,0,0">
                                                         <TextBlock Text="目录前缀" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="0,0,0,6"/>
-                                                        <TextBox Text="{Binding GiteeSyncPathPrefix, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
+                                                        <TextBox Text="{Binding GiteeSyncPathPrefix, Mode=TwoWay}" Height="36" Padding="12,5" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
                                                     </StackPanel>
                                                 </StackPanel>
                                             </StackPanel>
@@ -1618,7 +1734,7 @@
                                                             <ColumnDefinition Width="12"/>
                                                             <ColumnDefinition Width="Auto"/>
                                                         </Grid.ColumnDefinitions>
-                                                        <TextBox Grid.Column="0" Text="{Binding GitLabSyncProjectPath, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
+                                                        <TextBox Grid.Column="0" Text="{Binding GitLabSyncProjectPath, Mode=TwoWay}" Height="36" Padding="12,5" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
                                                         <Button Grid.Column="2"
                                                                 Content="{Binding PersonalSyncAdvancedOptionsButtonText}"
                                                                 Style="{DynamicResource Yanzi.Button.Outline}"
@@ -1638,7 +1754,7 @@
                                                                 Visibility="{Binding HasSelectedPersonalSyncProviderQuickLink, Converter={StaticResource BooleanToVisibilityConverter}}"
                                                                 Click="OpenSyncProviderLinkButton_Click"/>
                                                     </Grid>
-                                                    <PasswordBox x:Name="GitLabTokenBox" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                                    <PasswordBox x:Name="GitLabTokenBox" Height="36" Padding="12,5" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Password}"/>
                                                 </StackPanel>
                                                 <StackPanel Margin="0,14,0,0"
                                                             Visibility="{Binding ShowPersonalSyncAdvancedOptions, Converter={StaticResource BooleanToVisibilityConverter}}">
@@ -1650,16 +1766,16 @@
                                                         </Grid.ColumnDefinitions>
                                                         <StackPanel Grid.Column="0">
                                                             <TextBlock Text="实例地址" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="0,0,0,6"/>
-                                                            <TextBox Text="{Binding GitLabSyncBaseUrl, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
+                                                            <TextBox Text="{Binding GitLabSyncBaseUrl, Mode=TwoWay}" Height="36" Padding="12,5" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
                                                         </StackPanel>
                                                         <StackPanel Grid.Column="2">
                                                             <TextBlock Text="分支" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="0,0,0,6"/>
-                                                            <TextBox Text="{Binding GitLabSyncBranch, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
+                                                            <TextBox Text="{Binding GitLabSyncBranch, Mode=TwoWay}" Height="36" Padding="12,5" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
                                                         </StackPanel>
                                                     </Grid>
                                                     <StackPanel Margin="0,14,0,0">
                                                         <TextBlock Text="目录前缀" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="0,0,0,6"/>
-                                                        <TextBox Text="{Binding GitLabSyncPathPrefix, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
+                                                        <TextBox Text="{Binding GitLabSyncPathPrefix, Mode=TwoWay}" Height="36" Padding="12,5" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
                                                     </StackPanel>
                                                 </StackPanel>
                                             </StackPanel>
@@ -1675,7 +1791,7 @@
                                                             <ColumnDefinition Width="12"/>
                                                             <ColumnDefinition Width="Auto"/>
                                                         </Grid.ColumnDefinitions>
-                                                        <TextBox Grid.Column="0" Text="{Binding GiteaSyncRepo, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
+                                                        <TextBox Grid.Column="0" Text="{Binding GiteaSyncRepo, Mode=TwoWay}" Height="36" Padding="12,5" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
                                                         <Button Grid.Column="2"
                                                                 Content="{Binding PersonalSyncAdvancedOptionsButtonText}"
                                                                 Style="{DynamicResource Yanzi.Button.Outline}"
@@ -1695,7 +1811,7 @@
                                                                 Visibility="{Binding HasSelectedPersonalSyncProviderQuickLink, Converter={StaticResource BooleanToVisibilityConverter}}"
                                                                 Click="OpenSyncProviderLinkButton_Click"/>
                                                     </Grid>
-                                                    <PasswordBox x:Name="GiteaTokenBox" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                                    <PasswordBox x:Name="GiteaTokenBox" Height="36" Padding="12,5" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Password}"/>
                                                 </StackPanel>
                                                 <StackPanel Margin="0,14,0,0"
                                                             Visibility="{Binding ShowPersonalSyncAdvancedOptions, Converter={StaticResource BooleanToVisibilityConverter}}">
@@ -1707,11 +1823,11 @@
                                                         </Grid.ColumnDefinitions>
                                                         <StackPanel Grid.Column="0">
                                                             <TextBlock Text="实例地址" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="0,0,0,6"/>
-                                                            <TextBox Text="{Binding GiteaSyncBaseUrl, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
+                                                            <TextBox Text="{Binding GiteaSyncBaseUrl, Mode=TwoWay}" Height="36" Padding="12,5" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
                                                         </StackPanel>
                                                         <StackPanel Grid.Column="2">
                                                             <TextBlock Text="仓库所有者" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="0,0,0,6"/>
-                                                            <TextBox Text="{Binding GiteaSyncUsername, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
+                                                            <TextBox Text="{Binding GiteaSyncUsername, Mode=TwoWay}" Height="36" Padding="12,5" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
                                                         </StackPanel>
                                                     </Grid>
                                                     <Grid Margin="0,14,0,0">
@@ -1722,11 +1838,11 @@
                                                         </Grid.ColumnDefinitions>
                                                         <StackPanel Grid.Column="0">
                                                             <TextBlock Text="分支" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="0,0,0,6"/>
-                                                            <TextBox Text="{Binding GiteaSyncBranch, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
+                                                            <TextBox Text="{Binding GiteaSyncBranch, Mode=TwoWay}" Height="36" Padding="12,5" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
                                                         </StackPanel>
                                                         <StackPanel Grid.Column="2">
                                                             <TextBlock Text="目录前缀" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="0,0,0,6"/>
-                                                            <TextBox Text="{Binding GiteaSyncPathPrefix, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
+                                                            <TextBox Text="{Binding GiteaSyncPathPrefix, Mode=TwoWay}" Height="36" Padding="12,5" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
                                                         </StackPanel>
                                                     </Grid>
                                                 </StackPanel>
@@ -1743,11 +1859,11 @@
                                                     </Grid.ColumnDefinitions>
                                                     <StackPanel Grid.Column="0">
                                                         <TextBlock Text="Access Key ID" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="0,0,0,6"/>
-                                                        <TextBox Text="{Binding S3SyncAccessKeyId, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
+                                                        <TextBox Text="{Binding S3SyncAccessKeyId, Mode=TwoWay}" Height="36" Padding="12,5" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
                                                     </StackPanel>
                                                     <StackPanel Grid.Column="2">
                                                         <TextBlock Text="Region" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="0,0,0,6"/>
-                                                        <TextBox Text="{Binding S3SyncRegion, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
+                                                        <TextBox Text="{Binding S3SyncRegion, Mode=TwoWay}" Height="36" Padding="12,5" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
                                                     </StackPanel>
                                                 </Grid>
                                                 <Grid Margin="0,14,0,0">
@@ -1758,12 +1874,12 @@
                                                     </Grid.ColumnDefinitions>
                                                     <StackPanel Grid.Column="0">
                                                         <TextBlock Text="Bucket" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="0,0,0,6"/>
-                                                        <TextBox Text="{Binding S3SyncBucket, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
+                                                        <TextBox Text="{Binding S3SyncBucket, Mode=TwoWay}" Height="36" Padding="12,5" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
                                                     </StackPanel>
                                                 </Grid>
                                                 <StackPanel Margin="0,14,0,0">
                                                     <TextBlock Text="Secret Access Key" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="0,0,0,6"/>
-                                                    <PasswordBox x:Name="S3SecretAccessKeyBox" Height="36" Padding="12,8" VerticalContentAlignment="Center"/>
+                                                    <PasswordBox x:Name="S3SecretAccessKeyBox" Height="36" Padding="12,5" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Password}"/>
                                                 </StackPanel>
                                                 <StackPanel Margin="0,14,0,0"
                                                             Visibility="{Binding ShowPersonalSyncAdvancedOptions, Converter={StaticResource BooleanToVisibilityConverter}}">
@@ -1775,11 +1891,11 @@
                                                         </Grid.ColumnDefinitions>
                                                         <StackPanel Grid.Column="0">
                                                             <TextBlock Text="Endpoint" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="0,0,0,6"/>
-                                                            <TextBox Text="{Binding S3SyncEndpoint, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
+                                                            <TextBox Text="{Binding S3SyncEndpoint, Mode=TwoWay}" Height="36" Padding="12,5" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
                                                         </StackPanel>
                                                         <StackPanel Grid.Column="2">
                                                             <TextBlock Text="目录前缀" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="0,0,0,6"/>
-                                                            <TextBox Text="{Binding S3SyncPathPrefix, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
+                                                            <TextBox Text="{Binding S3SyncPathPrefix, Mode=TwoWay}" Height="36" Padding="12,5" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
                                                         </StackPanel>
                                                     </Grid>
                                                 </StackPanel>
@@ -1790,15 +1906,15 @@
                                                         Visibility="{Binding IsSyncProviderWebDav, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                 <StackPanel>
                                                     <TextBlock Text="服务地址" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="0,0,0,6"/>
-                                                    <TextBox Text="{Binding WebDavServerUrl, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
+                                                    <TextBox Text="{Binding WebDavServerUrl, Mode=TwoWay}" Height="36" Padding="12,5" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
                                                 </StackPanel>
                                                 <StackPanel Margin="0,14,0,0">
                                                     <TextBlock Text="用户名" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="0,0,0,6"/>
-                                                    <TextBox Text="{Binding WebDavUsername, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
+                                                    <TextBox Text="{Binding WebDavUsername, Mode=TwoWay}" Height="36" Padding="12,5" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
                                                 </StackPanel>
                                                 <StackPanel Margin="0,14,0,0">
                                                     <TextBlock Text="密码" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="0,0,0,6"/>
-                                                    <PasswordBox x:Name="WebDavPasswordBox" Height="36" Padding="12,8" VerticalContentAlignment="Center" PasswordChanged="WebDavPasswordBox_PasswordChanged"/>
+                                                    <PasswordBox x:Name="WebDavPasswordBox" Height="36" Padding="12,5" VerticalContentAlignment="Center" PasswordChanged="WebDavPasswordBox_PasswordChanged" Style="{DynamicResource Yanzi.Password}"/>
                                                     <TextBlock Text="敏感信息会使用 Windows DPAPI 本机加密保存。"
                                                                Foreground="{DynamicResource BrushTextSec}"
                                                                FontSize="{DynamicResource FontSizeTiny}"
@@ -1808,7 +1924,7 @@
                                                 <StackPanel Margin="0,14,0,0"
                                                             Visibility="{Binding ShowPersonalSyncAdvancedOptions, Converter={StaticResource BooleanToVisibilityConverter}}">
                                                     <TextBlock Text="同步根目录" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="0,0,0,6"/>
-                                                    <TextBox Text="{Binding WebDavRootPath, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
+                                                    <TextBox Text="{Binding WebDavRootPath, Mode=TwoWay}" Height="36" Padding="12,5" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
                                                 </StackPanel>
                                             </StackPanel>
                                         </StackPanel>
@@ -1892,7 +2008,7 @@
                                                     </Grid.ColumnDefinitions>
                                                     <StackPanel Grid.Column="0">
                                                         <TextBlock Text="自动备份存储目录" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="0,0,0,6"/>
-                                                        <TextBox Text="{Binding AutoBackupDirectory, Mode=TwoWay}" Height="36" Padding="12,8" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
+                                                        <TextBox Text="{Binding AutoBackupDirectory, Mode=OneWay}" Height="36" Padding="12,5" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
                                                     </StackPanel>
                                                     <Button Grid.Column="1"
                                                             Content="选择目录..."

@@ -225,6 +225,9 @@ public partial class App : WpfApplication
 
         SyncConfigLoader.EnsureExampleFile();
         var settings = AppSettingsStore.Load();
+        // Sync registry user environment before launching companion services or mini-apps.
+        try { WindowsEnvironmentVariablePublisher.Synchronize(); }
+        catch (Exception ex) { HostAssets.AppendLog($"[WindowsEnv] Startup synchronization failed: {ex.GetType().Name}"); }
         HostAssets.AppendLog($"[App.OnStartup] Loaded settings: EnableEverything={settings.EnableEverything}, UpdatedAt={settings.LauncherConfigUpdatedAtUtc}");
         ApplyTheme(settings.ThemeMode);
         EventManager.RegisterClassHandler(typeof(Window), Window.LoadedEvent, new RoutedEventHandler(Window_GlobalLoaded));
@@ -372,7 +375,7 @@ public partial class App : WpfApplication
 
             // Run once per Windows user: stage the packaged extension outside the versioned app
             // directory and notify on fresh devices. Browser consent is never bypassed.
-            _ = Task.Run(() =>
+            _ = Task.Run(async () =>
             {
                 try
                 {
@@ -380,6 +383,7 @@ public partial class App : WpfApplication
                     if (bundled == null) return;
                     BrowserHelperBootstrap.EnsureStableBundle(bundled);
                     BrowserHelperBootstrap.WriteRuntimeConfiguration(settings.AgentApiPort);
+                    await BrowserHelperDistribution.UpdateManagedEgoIfRunningAsync();
                     var profiles = BrowserHelperBootstrap.Inspect();
                     if (profiles.Count == 0 || profiles.Any(p => p.Installed)) return;
                     var notice = System.IO.Path.Combine(
@@ -855,7 +859,12 @@ public partial class App : WpfApplication
                  },
                 () =>
                 {
-                    window.Dispatcher.Invoke(() => window.QueueBackgroundWebDavSync("api-trigger", forceImmediate: true));
+                    window.Dispatcher.Invoke(() =>
+                    {
+                        window.QueueBackgroundWebDavSync("api-trigger", forceImmediate: true);
+                        window.SyncLocalExtensionsToCloud(forceImmediate: true);
+                        window.RefreshMissingPrivateExtensionsFromCloud();
+                    });
                 },
                 (id) =>
                 {

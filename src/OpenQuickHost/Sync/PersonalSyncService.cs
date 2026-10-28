@@ -429,9 +429,26 @@ public sealed partial class PersonalSyncService
 
             if (packagesUploadOnly)
             {
-                // An account session uses the private extension library as the installer authority.
-                // The Gitee repository is a backup. Different PCs may package the same version
-                // differently; never ping-pong those binaries at each login.
+                // Account library remains authoritative for same-version edits and deletions.
+                // Restore only an already-installed extension with a strictly newer backup,
+                // never resurrect missing/deleted extensions or same-version local hot edits.
+                if (ShouldRecoverNewerAccountBackup(localEntry, remoteEntry))
+                {
+                    BackupExtensionBeforePersonalRecovery(extensionId, localEntry.PackageHash);
+                    if (await ApplyRemoteEntryAsync(remoteEntry, cancellationToken))
+                    {
+                        CleanupPersonalRecoveryBackupsAfterSuccess(extensionId);
+                        pulled++;
+                        CloudSyncDiagnostics.Log("PersonalSyncService",
+                            "Recovered newer extension from verified personal backup",
+                            ("extensionId", extensionId),
+                            ("fromVersion", localEntry.Version),
+                            ("toVersion", remoteEntry.Version));
+                    }
+                    mergedMap[extensionId] = remoteEntry;
+                    continue;
+                }
+
                 if (ShouldPublishAccountBackup(localEntry, remoteEntry,
                         DeviceIdentityStore.GetOrCreateDesktopDeviceId()) &&
                     snapshot.PackageBytesByExtensionId.ContainsKey(extensionId))
@@ -1769,6 +1786,73 @@ public sealed partial class PersonalSyncService
     private static int CompareEntries(WebDavSyncEntry left, WebDavSyncEntry right)
     {
         return ExtensionSyncRevision.Compare(left, right);
+    }
+
+    internal static bool ShouldRecoverNewerAccountBackup(WebDavSyncEntry local, WebDavSyncEntry remote)
+    {
+        if (local.Deleted || local.Purged || local.LocalDeletionPending ||
+            remote.Deleted || remote.Purged || string.IsNullOrWhiteSpace(remote.PackagePath) ||
+            string.Equals(local.PackageHash, remote.PackageHash, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        return Version.TryParse((local.Version ?? "").Trim().TrimStart('v', 'V'), out var localVersion) &&
+               Version.TryParse((remote.Version ?? "").Trim().TrimStart('v', 'V'), out var remoteVersion) &&
+               remoteVersion > localVersion;
+    }
+
+    private static void BackupExtensionBeforePersonalRecovery(string extensionId, string? sourcePackageHash)
+    {
+        var source = SyncPackageSafety.ResolveExtensionDirectory(HostAssets.ExtensionsPath, extensionId);
+        if (!Directory.Exists(source)) return;
+        var parent = Path.Combine(HostAssets.DataRootPath, "Backups", "personal-extension-recovery");
+        Directory.CreateDirectory(parent);
+        var prefix = extensionId + "-";
+        var existing = Directory.EnumerateDirectories(parent, prefix + "*")
+            .OrderByDescending(Directory.GetLastWriteTimeUtc).ToArray();
+        if (!string.IsNullOrWhiteSpace(sourcePackageHash) && existing.Any(dir =>
+                File.Exists(Path.Combine(dir, ".backup-complete")) &&
+                string.Equals(File.ReadAllText(Path.Combine(dir, ".backup-complete")),
+                    sourcePackageHash, StringComparison.OrdinalIgnoreCase)))
+            return;
+
+        var root = Path.Combine(parent,
+            prefix + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fff") + "-" + Guid.NewGuid().ToString("N")[..8]);
+        try
+        {
+            Directory.CreateDirectory(root);
+            foreach (var path in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+            {
+                var destination = Path.Combine(root, Path.GetRelativePath(source, path));
+                Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                File.Copy(path, destination);
+            }
+            File.WriteAllText(Path.Combine(root, ".backup-complete"), sourcePackageHash ?? "");
+        }
+        catch
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+            throw;
+        }
+        HostAssets.AppendLog($"Personal extension recovery backup preserved: id={extensionId}, path={root}");
+        foreach (var stale in Directory.EnumerateDirectories(parent, prefix + "*")
+                     .OrderByDescending(Directory.GetLastWriteTimeUtc).Skip(3))
+        {
+            try { Directory.Delete(stale, recursive: true); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+    }
+
+    private static void CleanupPersonalRecoveryBackupsAfterSuccess(string extensionId)
+    {
+        var parent = Path.Combine(HostAssets.DataRootPath, "Backups", "personal-extension-recovery");
+        if (!Directory.Exists(parent)) return;
+        foreach (var path in Directory.EnumerateDirectories(parent, extensionId + "-*"))
+        {
+            try { Directory.Delete(path, recursive: true); }
+            catch (IOException ex) { HostAssets.AppendLog($"Recovery backup cleanup deferred: {ex.Message}"); }
+            catch (UnauthorizedAccessException ex) { HostAssets.AppendLog($"Recovery backup cleanup denied: {ex.Message}"); }
+        }
     }
 
     internal static bool ShouldPublishAccountBackup(

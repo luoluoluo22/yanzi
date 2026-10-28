@@ -143,13 +143,11 @@ public final class RemoteDesktopActivity extends Activity {
         root.addView(viewer,new LinearLayout.LayoutParams(-1,0,1f));
         viewer.loadUrl(url);
     }
-    /** Keep the live WebView and its desktop WebSocket across phone rotation. */
     @Override public void onConfigurationChanged(Configuration config) {
         super.onConfigurationChanged(config);
         if (viewer != null) {
             viewer.requestLayout();
             viewer.invalidate();
-            // Do not reloadUrl / restoreState here: rotation must retain the live remote session.
         }
     }
 

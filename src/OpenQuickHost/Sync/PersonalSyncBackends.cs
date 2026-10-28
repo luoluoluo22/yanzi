@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Net.Http.Headers;
@@ -825,6 +825,13 @@ internal sealed class GiteePersonalSyncBackend : PersonalSyncBackendBase
         }
         var rawJson = await response.Content.ReadAsStringAsync(cancellationToken);
         if (string.IsNullOrWhiteSpace(rawJson) || rawJson.Trim() == "[]") return null;
+        if (GiteeContentPayload.IsDirectoryResponse(rawJson))
+        {
+            // Gitee returns a JSON array for a directory, even for a file-style read.
+            // The requested key has no file content; its child files remain untouched.
+            CloudSyncDiagnostics.Log("GiteeBackend", "Read returned directory listing", ("path", path));
+            return null;
+        }
         var payload = JsonSerializer.Deserialize<GiteeContentPayload>(rawJson, JsonOptions);
         var bytes = DecodeBase64Content(payload?.Content);
         CloudSyncDiagnostics.Log("GiteeBackend", "Read completed", ("path", path), ("bytes", bytes.Length), ("sha", payload?.Sha));
@@ -984,6 +991,8 @@ internal sealed class GiteePersonalSyncBackend : PersonalSyncBackendBase
             return null;
         }
 
+        if (GiteeContentPayload.IsDirectoryResponse(rawJson))
+            throw new System.IO.InvalidDataException($"Gitee path is a directory, not a writable file: {path}");
         var payload = JsonSerializer.Deserialize<GiteeContentPayload>(rawJson, JsonOptions);
         return payload?.Sha;
     }
@@ -1787,6 +1796,17 @@ internal sealed class GitProviderViewerPayload
 
 internal sealed class GiteeContentPayload
 {
+    // A directory response is an array of entries, not a file envelope.
+    internal static bool IsDirectoryResponse(string rawJson)
+    {
+        foreach (var ch in rawJson)
+        {
+            if (char.IsWhiteSpace(ch)) continue;
+            return ch == '[';
+        }
+        return false;
+    }
+
     public string? Content { get; set; }
 
     public string? Sha { get; set; }

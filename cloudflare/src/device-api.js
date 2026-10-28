@@ -343,6 +343,37 @@ async function handleDeviceApi(request, env, ctx) {
     });
   }
 
+  // Ephemeral agent stream: authenticated relay publication ONLY. No D1 message insert,
+  // sequence increment, offline push, or durable history entry.
+  if (url.pathname === "/v1/me/mobile/messages/stream" && request.method === "POST") {
+    const auth = await requireAuth(request, env);
+    const payload = await readJson(request);
+    const sourceDeviceId = normalizeDeviceId(payload.sourceDeviceId);
+    const targetDeviceId = normalizeDeviceId(payload.targetDeviceId);
+    await ensureOwnedDevice(env, auth.userId, sourceDeviceId);
+    const targetDevice = await ensureOwnedDevice(env, auth.userId, targetDeviceId);
+    if (targetDevice.platform !== 'android')
+      throw new HttpError(400, 'stream_target_not_android', 'Stream target must be Android');
+    const content = payload.content;
+    if (typeof content !== 'string' || !content.startsWith('\u001eYANZI_STREAM:') || content.length > 48000)
+      throw new HttpError(400, 'invalid_stream_payload', 'Invalid transient stream content');
+    let control;
+    try { control = JSON.parse(content.slice('\u001eYANZI_STREAM:'.length)); }
+    catch { throw new HttpError(400, 'invalid_stream_json', 'Stream control must be JSON'); }
+    if (control.v !== 1 || !/^[a-zA-Z0-9_-]{8,128}$/.test(control.id || '') ||
+        typeof control.conversationId !== 'string' || control.conversationId.length > 200 ||
+        !['start', 'update', 'cancelled', 'error', 'complete'].includes(control.state) ||
+        !Number.isSafeInteger(control.seq) || control.seq < 0 || typeof control.text !== 'string')
+      throw new HttpError(400, 'invalid_stream_fields', 'Invalid stream control fields');
+    if (!env.DEVICE_RELAY)
+      throw new HttpError(503, 'relay_unavailable', 'Realtime relay not available');
+    const delivered = await env.DEVICE_RELAY.get(env.DEVICE_RELAY.idFromName(auth.userId)).publish({
+      type: 'agent-stream', userId: auth.userId, targetDeviceId, sourceDeviceId,
+      sourceDeviceName: 'Antigravity', content
+    });
+    return json({ ok: true, delivered: delivered.delivered ?? 0, durable: false });
+  }
+
   if (url.pathname === "/v1/me/mobile/messages/ws" && request.method === "GET") {
     const auth = await requireAuth(request, env);
     const deviceId = normalizeDeviceId(url.searchParams.get("deviceId"));

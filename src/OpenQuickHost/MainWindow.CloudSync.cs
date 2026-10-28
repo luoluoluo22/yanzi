@@ -1524,9 +1524,12 @@ public partial class MainWindow
         }
     }
 
+    private int _privateExtensionPullRunning;
+    internal void RefreshMissingPrivateExtensionsFromCloud() => _ = PullMissingPrivateExtensionsFromCloudAsync();
     private async Task PullMissingPrivateExtensionsFromCloudAsync()
     {
-        if (_cloudSyncClient == null || !_cloudSyncClient.HasCredential)
+        if (_cloudSyncClient == null || !_cloudSyncClient.HasCredential ||
+            Interlocked.Exchange(ref _privateExtensionPullRunning, 1) != 0)
         {
             return;
         }
@@ -1551,8 +1554,6 @@ public partial class MainWindow
                     !ExtensionDevicePolicy.CanSyncInstall(item.ManifestJson) ||
                     !item.HasArchive ||
                     string.IsNullOrWhiteSpace(item.ExtensionId) ||
-                    (localIds.Contains(item.ExtensionId) &&
-                     !IsAccountExtensionNewer(localCommands[item.ExtensionId], item)) ||
                     recycledIds.Contains(item.ExtensionId) ||
                     IsConfigExtensionId(item.ExtensionId))
                 {
@@ -1561,6 +1562,41 @@ public partial class MainWindow
 
                 try
                 {
+                    // Same manifest version and different source are a conflict, not
+                    // a reason to install over unsubmitted local development code.
+                    string? localHashBeforeDownload = null;
+                    if (localCommands.TryGetValue(item.ExtensionId, out var candidate))
+                    {
+                        if (!string.IsNullOrWhiteSpace(candidate.ExtensionDirectoryPath) &&
+                            ExtensionGitSafety.HasGitWorktree(candidate.ExtensionDirectoryPath))
+                        {
+                            HostAssets.AppendLog($"Account extension Git worktree protected: cloud package cannot overwrite source id={item.ExtensionId}");
+                            continue;
+                        }
+                        var sameVersion = string.Equals(
+                            (candidate.DeclaredVersion ?? "").Trim().TrimStart('v', 'V'),
+                            (item.LatestVersion ?? "").Trim().TrimStart('v', 'V'),
+                            StringComparison.OrdinalIgnoreCase);
+                        if (sameVersion || IsAccountExtensionNewer(candidate, item))
+                        {
+                            try { localHashBeforeDownload = CalculateLocalAccountArchiveSha256(candidate, item); }
+                            catch (Exception ex)
+                            {
+                                HostAssets.AppendLog($"Account extension local content unreadable; overwrite blocked id={item.ExtensionId}: {ex.Message}");
+                                continue;
+                            }
+                        }
+                        var decision = AccountExtensionPullPolicy.Decide(
+                            true, candidate.DeclaredVersion, item.LatestVersion,
+                            localHashBeforeDownload, item.ArchiveSha256);
+                        if (decision != AccountExtensionPullDecision.InstallNewerVersion)
+                        {
+                            if (decision is AccountExtensionPullDecision.SameVersionConflict or
+                                AccountExtensionPullDecision.UnorderedVersionConflict)
+                                HostAssets.AppendLog($"Account extension code conflict: local source preserved id={item.ExtensionId}, local={candidate.DeclaredVersion}, remote={item.LatestVersion}, remoteRevision={item.ArchiveRevision}. Update manifest version and publish deliberately.");
+                            continue;
+                        }
+                    }
                     var packageBytes = await _cloudSyncClient.DownloadMyExtensionArchiveAsync(item.ExtensionId);
                     if (!ExtensionDevicePolicy.CanSyncInstallArchive(packageBytes))
                     {
@@ -1571,11 +1607,45 @@ public partial class MainWindow
                         !Convert.ToHexString(SHA256.HashData(packageBytes)).Equals(
                             item.ArchiveSha256, StringComparison.OrdinalIgnoreCase))
                         throw new InvalidDataException($"Account extension hash mismatch: {item.ExtensionId}");
+                    string? upgradeBackupPath = null;
                     if (localCommands.TryGetValue(item.ExtensionId, out var existingCommand))
-                        BackupExtensionBeforeCloudUpgrade(existingCommand);
+                    {
+                        // Re-read after network I/O: another agent can change the
+                        // source while the archive is downloading.
+                        var live = LocalExtensionCatalog.LoadCommands().FirstOrDefault(command =>
+                            command.Source == CommandSource.LocalExtension &&
+                            string.Equals(command.ExtensionId, item.ExtensionId, StringComparison.OrdinalIgnoreCase));
+                        if (live == null || !IsAccountExtensionNewer(live, item))
+                        {
+                            HostAssets.AppendLog($"Account extension changed while downloading; overwrite blocked id={item.ExtensionId}");
+                            continue;
+                        }
+                        string currentHash;
+                        try { currentHash = CalculateLocalAccountArchiveSha256(live, item); }
+                        catch (Exception ex)
+                        {
+                            HostAssets.AppendLog($"Account extension content changed while downloading; overwrite blocked id={item.ExtensionId}: {ex.Message}");
+                            continue;
+                        }
+                        if (!string.Equals(currentHash, localHashBeforeDownload, StringComparison.OrdinalIgnoreCase))
+                        {
+                            HostAssets.AppendLog($"Account extension source edited during cloud download; local source preserved id={item.ExtensionId}");
+                            continue;
+                        }
+                        upgradeBackupPath = BackupExtensionBeforeCloudUpgrade(live, item.ArchiveSha256, currentHash);
+                    }
+                    else if (LocalExtensionCatalog.LoadCommands().Any(command =>
+                                 command.Source == CommandSource.LocalExtension &&
+                                 string.Equals(command.ExtensionId, item.ExtensionId, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        HostAssets.AppendLog($"Account extension installed locally during download; cloud overwrite blocked id={item.ExtensionId}");
+                        continue;
+                    }
                     var result = await ExtensionInstallService.InstallPackageAsync(
                         packageBytes, item.ExtensionId, fallbackName: item.DisplayName,
                         privateIconDownload: (id, token) => _cloudSyncClient.DownloadMyExtensionIconAsync(id, token));
+                    if (upgradeBackupPath != null)
+                        CleanupExtensionUpgradeBackupsAfterSuccess(item.ExtensionId);
 
                     if (TryGetArchivedManifestShortcut(item.ManifestJson, out var restoredShortcut))
                     {
@@ -1587,6 +1657,11 @@ public partial class MainWindow
                     localIds.Add(result.ExtensionId);
                     pulledCount++;
                     HostAssets.AppendLog($"Pulled extension from account library: {result.ExtensionId} v{result.Version}");
+                }
+                catch (IOException ex) when (ex.HResult == unchecked((int)0x80070020) ||
+                                             ex.HResult == unchecked((int)0x80070021))
+                {
+                    HostAssets.AppendLog($"Account extension update deferred until files are released: id={item.ExtensionId}, reason=sharing-violation");
                 }
                 catch (Exception ex)
                 {
@@ -1603,6 +1678,10 @@ public partial class MainWindow
         catch (Exception ex)
         {
             HostAssets.AppendLog($"Failed to pull missing private extensions: {ex.Message}");
+        }
+        finally
+        {
+            Volatile.Write(ref _privateExtensionPullRunning, 0);
         }
     }
 
@@ -1701,48 +1780,87 @@ public partial class MainWindow
 
     private static bool IsAccountExtensionNewer(CommandItem command, UserExtensionRecord record)
     {
-        var localVersion = (command.DeclaredVersion ?? "").Trim().TrimStart('v', 'V');
-        var remoteVersion = (record.LatestVersion ?? "").Trim().TrimStart('v', 'V');
-        if (!Version.TryParse(localVersion, out var local) ||
-            !Version.TryParse(remoteVersion, out var remote))
-            return false;
-        if (remote != local) return remote > local;
-        // 同版本跨设备修改也属于新快照，不能仅按 manifest 版本跳过。
-        if (!record.HasArchive || string.IsNullOrWhiteSpace(record.ArchiveSha256)) return false;
-        try
-        {
-            var version = string.IsNullOrWhiteSpace(command.DeclaredVersion) ? "0.1.0" : command.DeclaredVersion;
-            var package = ExtensionPackageService.BuildPackage(command, version,
-                GetArchivedManifestIcon(record.ManifestJson), includeUserShortcut: false);
-            return !Convert.ToHexString(SHA256.HashData(package)).Equals(
-                record.ArchiveSha256, StringComparison.OrdinalIgnoreCase);
-        }
-        catch (Exception ex)
-        {
-            HostAssets.AppendLog($"Account extension hash comparison skipped: id={command.ExtensionId}, error={ex.Message}");
-            return false;
-        }
+        // A different SHA256 means different content, not a higher cloud version.
+        return AccountExtensionPullPolicy.IsRemoteVersionNewer(
+            command.DeclaredVersion, record.LatestVersion);
     }
 
-    private static void BackupExtensionBeforeCloudUpgrade(CommandItem command)
+    private static string CalculateLocalAccountArchiveSha256(CommandItem command, UserExtensionRecord remote)
+    {
+        var version = string.IsNullOrWhiteSpace(command.DeclaredVersion)
+            ? "0.1.0" : command.DeclaredVersion;
+        var package = ExtensionPackageService.BuildPackage(command, version,
+            GetArchivedManifestIcon(remote.ManifestJson), includeUserShortcut: false);
+        return Convert.ToHexString(SHA256.HashData(package));
+    }
+    private static string? BackupExtensionBeforeCloudUpgrade(CommandItem command, string? remoteArchiveSha256, string localArchiveSha256)
     {
         var source = command.ExtensionDirectoryPath;
-        if (string.IsNullOrWhiteSpace(source) || !Directory.Exists(source)) return;
+        if (string.IsNullOrWhiteSpace(source) || !Directory.Exists(source)) return null;
         // Git worktrees will never be replaced by account packages. Avoid
         // recursively copying the entire .git object store on every cloud pull.
-        if (ExtensionGitSafety.HasGitWorktree(source)) return;
+        if (ExtensionGitSafety.HasGitWorktree(source)) return null;
         var id = command.ExtensionId;
         if (id != Path.GetFileName(id))
             throw new InvalidOperationException("Invalid extension ID for backup path");
         var root = Path.Combine(HostAssets.DataRootPath, "Backups", "account-extension-upgrades",
-            id + "-" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fff") + "-" + Guid.NewGuid().ToString("N")[..8]);
+            id + "-upgrade-" + new string((command.DeclaredVersion ?? "unknown").Where(char.IsLetterOrDigit).ToArray()) + "-" +
+            new string((remoteArchiveSha256 ?? "unknown").Where(char.IsLetterOrDigit).Take(16).ToArray()) + "-" +
+            new string(localArchiveSha256.Where(char.IsLetterOrDigit).Take(16).ToArray()));
+        var completedMarker = Path.Combine(root, ".backup-complete");
+        if (File.Exists(completedMarker)) return root;
         foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
         {
-            var copy = Path.Combine(root, Path.GetRelativePath(source, file));
+            var relative = Path.GetRelativePath(source, file);
+            var segments = relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (segments.Any(segment => segment.Equals("node_modules", StringComparison.OrdinalIgnoreCase) ||
+                segment.Equals(".git", StringComparison.OrdinalIgnoreCase) ||
+                segment.Equals(".yanzi-csharp-cache", StringComparison.OrdinalIgnoreCase) ||
+                segment.Equals("backups", StringComparison.OrdinalIgnoreCase) ||
+                segment.Equals("bin", StringComparison.OrdinalIgnoreCase) ||
+                segment.Equals("obj", StringComparison.OrdinalIgnoreCase))) continue;
+            var copy = Path.Combine(root, relative);
             Directory.CreateDirectory(Path.GetDirectoryName(copy)!);
-            File.Copy(file, copy);
+            File.Copy(file, copy, overwrite: true);
+        }
+        File.WriteAllText(completedMarker, DateTime.UtcNow.ToString("O"));
+        // Only prune snapshots created by this content-addressed backup scheme.
+        // Historical/manual backups and incomplete snapshots are never deleted here.
+        var backupParent = Path.GetDirectoryName(root)!;
+        foreach (var stale in Directory.EnumerateDirectories(backupParent, id + "-upgrade-*")
+                     .Where(path => File.Exists(Path.Combine(path, ".backup-complete")))
+                     .OrderByDescending(Directory.GetCreationTimeUtc)
+                     .Skip(3))
+        {
+            try { Directory.Delete(stale, recursive: true); }
+            catch (IOException ex) { HostAssets.AppendLog($"Could not prune old account extension snapshot: {stale}: {ex.Message}"); }
+            catch (UnauthorizedAccessException ex) { HostAssets.AppendLog($"Could not prune protected account extension snapshot: {stale}: {ex.Message}"); }
         }
         HostAssets.AppendLog($"Account extension backup preserved before upgrade: id={id}, path={root}");
+        return root;
+    }
+
+    private static void CleanupExtensionUpgradeBackupsAfterSuccess(string id)
+    {
+        if (string.IsNullOrWhiteSpace(id) || id != Path.GetFileName(id)) return;
+        var parent = Path.Combine(HostAssets.DataRootPath, "Backups", "account-extension-upgrades");
+        if (!Directory.Exists(parent)) return;
+        foreach (var path in Directory.EnumerateDirectories(parent, id + "-upgrade-*"))
+        {
+            try
+            {
+                Directory.Delete(path, recursive: true);
+                HostAssets.AppendLog($"Account extension upgrade succeeded; temporary snapshot removed: {path}");
+            }
+            catch (IOException ex)
+            {
+                HostAssets.AppendLog($"Account extension upgraded but snapshot cleanup failed: {path}: {ex.Message}");
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                HostAssets.AppendLog($"Account extension upgraded but protected snapshot was retained: {path}: {ex.Message}");
+            }
+        }
     }
 
     private static bool IsAccountExtensionCurrent(CommandItem command, UserExtensionRecord? record)
@@ -1891,13 +2009,23 @@ public partial class MainWindow
         if (_extensionContentWatcher == null || Dispatcher.HasShutdownStarted)
             return;
 
-        var relativePath = Path.GetRelativePath(HostAssets.ExtensionsPath, e.FullPath);
-        var segments = relativePath.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
-        if (segments.Length < 2 ||
-            !ExtensionPackageService.ShouldIncludeInPackage(
-                Path.Combine(HostAssets.ExtensionsPath, segments[0]), e.FullPath))
-            return;
-
+        string[] segments;
+        try
+        {
+            var relativePath = Path.GetRelativePath(HostAssets.ExtensionsPath, e.FullPath);
+            segments = relativePath.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
+            // Ignore transient install events and filesystem races on watcher threads.
+            if (segments.Length < 2 ||
+                segments[0].StartsWith(".yanzi-install-", StringComparison.OrdinalIgnoreCase) ||
+                segments[0].StartsWith(".yanzi-backup-", StringComparison.OrdinalIgnoreCase) ||
+                segments[0].StartsWith(".yanzi-staging-", StringComparison.OrdinalIgnoreCase) ||
+                !ExtensionPackageService.ShouldIncludeInPackage(
+                    Path.Combine(HostAssets.ExtensionsPath, segments[0]), e.FullPath))
+                return;
+        }
+        catch (IOException) { return; }
+        catch (UnauthorizedAccessException) { return; }
+        catch (ArgumentException) { return; }
         Dispatcher.BeginInvoke(new Action(() =>
         {
             if (!IsLoaded)
@@ -2387,6 +2515,7 @@ public partial class MainWindow
             !string.Equals(settings.ThemeMode, incoming.ThemeMode, StringComparison.Ordinal) ||
             snapshot.AutoCloseToastEnabled != null && settings.AutoCloseToastEnabled != incoming.AutoCloseToastEnabled ||
             snapshot.EnableAutoUpdate != null && settings.EnableAutoUpdate != incoming.EnableAutoUpdate ||
+            snapshot.AutoBackupFrequency != null && !string.Equals(settings.AutoBackupFrequency, incoming.AutoBackupFrequency, StringComparison.OrdinalIgnoreCase) ||
             snapshot.EnableBrowserHelper != null && settings.EnableBrowserHelper != incoming.EnableBrowserHelper ||
             snapshot.PreferManualExtensionEditor != null && settings.PreferManualExtensionEditor != incoming.PreferManualExtensionEditor ||
             snapshot.EnableEverything != null && settings.EnableEverything != incoming.EnableEverything ||
@@ -2541,6 +2670,7 @@ public partial class MainWindow
         settings.ThemeMode = incoming.ThemeMode;
         if (snapshot.AutoCloseToastEnabled != null) settings.AutoCloseToastEnabled = incoming.AutoCloseToastEnabled;
         if (snapshot.EnableAutoUpdate != null) settings.EnableAutoUpdate = incoming.EnableAutoUpdate;
+        if (snapshot.AutoBackupFrequency != null) settings.AutoBackupFrequency = incoming.AutoBackupFrequency;
         if (snapshot.EnableBrowserHelper != null) settings.EnableBrowserHelper = incoming.EnableBrowserHelper;
         if (snapshot.PreferManualExtensionEditor != null) settings.PreferManualExtensionEditor = incoming.PreferManualExtensionEditor;
         if (snapshot.EnableEverything != null)
@@ -2885,6 +3015,7 @@ public partial class MainWindow
                         }))
                 {
                     UpdateKnownDynamicObjectAfterWrite(state, write);
+                    state.Conflicts.Remove(write.ObjectId); // local already matches remote; stale conflict is resolved
                     RemovePendingCloudObject(state, write.ObjectId);
                     continue;
                 }
@@ -3785,6 +3916,7 @@ public partial class MainWindow
     {
         return snapshot.AutoCloseToastEnabled == null ||
                snapshot.EnableAutoUpdate == null ||
+               snapshot.AutoBackupFrequency == null ||
                snapshot.EnableBrowserHelper == null ||
                snapshot.PreferManualExtensionEditor == null ||
                snapshot.EnableEverything == null ||
@@ -4405,6 +4537,108 @@ public partial class MainWindow
     public async Task RefreshCloudFromSettingsAsync()
     {
         await RefreshCloudStateAsync();
+    }
+
+    private static void CopyJsonPointerField(
+        System.Text.Json.Nodes.JsonNode target,
+        System.Text.Json.Nodes.JsonNode source,
+        string pointer)
+    {
+        if (string.IsNullOrWhiteSpace(pointer) || pointer[0] != '/')
+            throw new InvalidOperationException("此处不是可以单独选择的设置字段。");
+        var segments = pointer[1..].Split('/')
+            .Select(static segment => segment.Replace("~1", "/").Replace("~0", "~")).ToArray();
+        System.Text.Json.Nodes.JsonNode? targetNode = target;
+        System.Text.Json.Nodes.JsonNode? sourceNode = source;
+        foreach (var segment in segments[..^1])
+        {
+            if (targetNode is not System.Text.Json.Nodes.JsonObject targetObject ||
+                sourceNode is not System.Text.Json.Nodes.JsonObject sourceObject ||
+                !targetObject.TryGetPropertyValue(segment, out targetNode) ||
+                !sourceObject.TryGetPropertyValue(segment, out sourceNode))
+                throw new InvalidOperationException("设置结构已经变化，请重新查看差异。");
+        }
+        if (targetNode is not System.Text.Json.Nodes.JsonObject targetParent ||
+            sourceNode is not System.Text.Json.Nodes.JsonObject sourceParent)
+            throw new InvalidOperationException("此类设置需要按整组处理。");
+        var leaf = segments[^1];
+        if (sourceParent.TryGetPropertyValue(leaf, out var sourceValue))
+            targetParent[leaf] = sourceValue?.DeepClone();
+        else
+            targetParent.Remove(leaf);
+    }
+
+    public async Task<(bool ok, string message)> ResolveCloudObjectConflictFieldAsync(
+        string objectId, string pointer, bool useLocalVersion, long reviewedRevision)
+    {
+        if (_cloudSyncClient == null || string.IsNullOrWhiteSpace(objectId))
+            return (false, "账号云同步尚未可用。");
+
+        await _accountObjectSyncLock.WaitAsync();
+        try
+        {
+            var state = CloudObjectSyncStateStore.Load(_cloudSyncClient.CurrentUserId);
+            if (!string.IsNullOrWhiteSpace(state.PersistenceError)) return (false, state.PersistenceError);
+            if (!state.Conflicts.TryGetValue(objectId, out var conflict))
+                return (true, "该冲突已经处理。");
+            if (!state.Objects.TryGetValue(objectId, out var remote) ||
+                conflict.RemoteRevision != reviewedRevision || remote.Revision != reviewedRevision)
+                return (false, "云端版本已变化，请刷新差异后重新选择。");
+            if (conflict.LocalDeleted || remote.Deleted)
+                return (false, "删除与保留的冲突需要整组选择。");
+
+            var localNode = System.Text.Json.Nodes.JsonNode.Parse(conflict.LocalPayload.GetRawText())
+                ?? throw new InvalidDataException("本机设置结构无效。");
+            var remoteNode = System.Text.Json.Nodes.JsonNode.Parse(remote.Payload.GetRawText())
+                ?? throw new InvalidDataException("云端设置结构无效。");
+            if (useLocalVersion)
+            {
+                CopyJsonPointerField(remoteNode, localNode, pointer);
+                await _cloudSyncClient.EnsureAuthenticatedAsync();
+                var envelope = new LauncherConfigObjectEnvelope
+                {
+                    SchemaVersion = conflict.LocalSchemaVersion,
+                    ObjectId = objectId,
+                    UpdatedAtUtc = DateTime.UtcNow.ToString("O"),
+                    UpdatedByDeviceId = DeviceIdentityStore.GetOrCreateDesktopDeviceId(),
+                    UpdatedByDeviceName = DeviceIdentityStore.GetDesktopDisplayName(),
+                    Deleted = false,
+                    Payload = JsonSerializer.SerializeToElement(remoteNode)
+                };
+                var write = new AccountConfigObjectWrite(objectId, envelope);
+                var saved = await PutCloudObjectWriteAsync(write, reviewedRevision);
+                state.Objects[objectId] = CloudObjectSyncCacheEntry.FromRecord(saved);
+                UpdateKnownDynamicObjectAfterWrite(state, write);
+                conflict.RemoteRevision = saved.Revision;
+            }
+            else
+            {
+                CopyJsonPointerField(localNode, remoteNode, pointer);
+                conflict.LocalPayload = JsonSerializer.SerializeToElement(localNode);
+            }
+
+            var currentRemote = state.Objects[objectId];
+            var remaining = SyncUserText.DetailDifferences(
+                conflict.LocalPayload, currentRemote.Payload, conflict.LocalDeleted, currentRemote.Deleted);
+            if (remaining.Count == 0)
+            {
+                state.Conflicts.Remove(objectId);
+                CloudObjectSyncStateStore.Save(state);
+                await ApplyCloudObjectStateToLocalAsync(objectId);
+                return (true, "所有差异已处理，本机与云端已采用最终设置。");
+            }
+            CloudObjectSyncStateStore.Save(state);
+            return (true, $"已采用所选字段，尚有 {remaining.Count} 项差异待处理。全部选择完成后会应用到本机。");
+        }
+        catch (CloudSyncRevisionConflictException)
+        {
+            return (false, "选择期间云端版本变化，请刷新差异后重试。");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"字段冲突处理失败：{FormatExceptionMessage(ex)}");
+        }
+        finally { _accountObjectSyncLock.Release(); }
     }
 
     public async Task<(bool ok, string message)> ResolveCloudObjectConflictAsync(

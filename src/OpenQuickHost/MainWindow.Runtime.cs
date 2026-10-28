@@ -6,7 +6,7 @@ public partial class MainWindow
 {
     public object GetRuntimeServiceStatus() => new
     {
-        owner = HostRuntimeProfile.IsRuntime ? "runtime" : "shell",
+        owner = HostRuntimeProfile.IsUnified ? "unified" : HostRuntimeProfile.IsRuntime ? "runtime" : "shell",
         initialized = _isBackgroundServicesInitialized,
         inputHook = InputHookService.IsRunning,
         keyboardHook = KeyboardDoubleTapService.IsRunning,

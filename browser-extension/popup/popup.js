@@ -1,7 +1,7 @@
 document.addEventListener("DOMContentLoaded", () => {
   function showPanel(name) {
     document.querySelectorAll('[data-panel]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.panel === name)));
-    for (const panel of ['overview', 'market', 'api', 'logs']) document.getElementById('panel-' + panel).hidden = panel !== name;
+    for (const panel of ['overview', 'market', 'opencli', 'logs']) document.getElementById('panel-' + panel).hidden = panel !== name;
     if (name === 'market') loadWebAppMarket();
   }
   document.querySelectorAll('[data-panel]').forEach(button => button.onclick = () => showPanel(button.dataset.panel));
@@ -12,8 +12,8 @@ document.addEventListener("DOMContentLoaded", () => {
       document.getElementById('market-search')?.focus();
     }
   });
-  document.getElementById('show-api').onclick = () => showPanel('api');
-  document.getElementById('open-workbench').onclick = () => chrome.tabs.create({ url: 'http://127.0.0.1:53921/' });
+
+  document.getElementById('open-workbench').onclick = () => chrome.tabs.create({ url: 'http://127.0.0.1:43830/' });
 
   const marketList = document.getElementById('market-list');
   const marketCount = document.getElementById('market-count');
@@ -430,17 +430,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   showPanel('market');
   const portInput = document.getElementById("server-port");
-  chrome.storage.local.get({ localWsUrl: "ws://127.0.0.1:53919/v1/browser/ws", chatgptBridgeStatus: "disconnected" }, config => {
+  chrome.storage.local.get({ localWsUrl: "ws://127.0.0.1:53919/v1/browser/ws" }, config => {
     portInput.value = new URL(config.localWsUrl).port;
-    document.getElementById("chatgpt-status").textContent = config.chatgptBridgeStatus === "connected" ? "已连接" : "未连接";
   });
   document.getElementById("save-port").addEventListener("click", () => {
     const port = Number(portInput.value);
     if (!Number.isInteger(port) || port < 1 || port > 65535) return;
     chrome.storage.local.set({ localWsUrl: `ws://127.0.0.1:${port}/v1/browser/ws`, manualLocalWsUrl: true });
-  });
-  chrome.storage.onChanged.addListener(changes => {
-    if (changes.chatgptBridgeStatus) document.getElementById("chatgpt-status").textContent = changes.chatgptBridgeStatus.newValue === "connected" ? "已连接" : "未连接";
   });
   const statusDot = document.getElementById("connection-status-dot");
   const statusText = document.getElementById("connection-status-text");

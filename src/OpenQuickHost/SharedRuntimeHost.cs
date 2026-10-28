@@ -45,7 +45,7 @@ public sealed class SharedRuntimeHost : IDisposable
 
     public void Start()
     {
-        if (!HostRuntimeProfile.IsRuntime) throw new InvalidOperationException("Only Runtime may host background IPC.");
+        if (!HostRuntimeProfile.OwnsBackgroundServices) throw new InvalidOperationException("Only the background service owner may host IPC.");
         Current = this;
         _server.Start();
         _settingsTimer.Start();

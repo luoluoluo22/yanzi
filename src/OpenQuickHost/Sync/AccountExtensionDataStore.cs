@@ -29,7 +29,7 @@ internal static class AccountExtensionDataStore
         var objectId = BuildObjectId(normalizedExtensionId, normalizedKey);
         if (!ExtensionDevicePolicy.ShouldSyncData(normalizedExtensionId))
             return AccountExtensionDataReadResult.Unavailable(objectId);
-        var client = CreateClient();
+        var client = await CreateClientAsync(cancellationToken);
 
         if (!CanAttemptAccountCloud(client))
         {
@@ -71,7 +71,7 @@ internal static class AccountExtensionDataStore
         var objectId = BuildObjectId(normalizedExtensionId, normalizedKey);
         if (!ExtensionDevicePolicy.ShouldSyncData(normalizedExtensionId))
             return AccountExtensionDataWriteResult.Unavailable(objectId);
-        var client = CreateClient();
+        var client = await CreateClientAsync(cancellationToken);
 
         if (expectedAccountId != null && client.CurrentUserId != expectedAccountId)
             throw new InvalidOperationException("Account changed before storage write.");
@@ -121,7 +121,7 @@ internal static class AccountExtensionDataStore
         var objectId = BuildObjectId(normalizedExtensionId, normalizedKey);
         if (!ExtensionDevicePolicy.ShouldSyncData(normalizedExtensionId))
             return AccountExtensionDataWriteResult.Unavailable(objectId);
-        var client = CreateClient();
+        var client = await CreateClientAsync(cancellationToken);
 
         if (!CanAttemptAccountCloud(client))
         {
@@ -150,7 +150,37 @@ internal static class AccountExtensionDataStore
         return new AccountExtensionDataWriteResult(true, objectId, saved.Revision, saved);
     }
 
-    private static CloudSyncClient CreateClient() => new(SyncConfigLoader.Load());
+    // Keep the four HttpClient connection pools and transport backoff state alive
+    // across extension-data operations. One new CloudSyncClient per read used to
+    // force repeated TLS handshakes and reset cooldown after every failure.
+    private static readonly object ClientGate = new();
+    private static CloudSyncClient? _sharedClient;
+    private static string? _sharedBaseUrl;
+
+    internal static CloudSyncClient GetOrCreateClient(SyncOptions options)
+    {
+        lock (ClientGate)
+        {
+            if (_sharedClient == null ||
+                !string.Equals(_sharedBaseUrl, options.BaseUrl, StringComparison.OrdinalIgnoreCase))
+            {
+                _sharedClient = new CloudSyncClient(options);
+                _sharedBaseUrl = options.BaseUrl;
+            }
+
+            return _sharedClient;
+        }
+    }
+
+    private static async Task<CloudSyncClient> CreateClientAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var client = GetOrCreateClient(SyncConfigLoader.Load());
+        // A cached transport must never retain the previous account's session.
+        await client.ReloadPersistedSessionAsync();
+        cancellationToken.ThrowIfCancellationRequested();
+        return client;
+    }
 
     private static bool CanAttemptAccountCloud(CloudSyncClient client) =>
         !string.IsNullOrWhiteSpace(client.CurrentUserId) || client.HasCredential;

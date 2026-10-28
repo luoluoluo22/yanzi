@@ -252,6 +252,7 @@ extends Activity {
     private ApplicationCatalogView applicationStore;
     private DesktopDashboardView.Result desktopDashboard;
     private View bottomTabs;
+    private boolean isKeyboardVisible = false;
     private String selectedTab = "";
     private int pendingMessageSends;
     private android.widget.ImageView profileAvatarView;
@@ -406,9 +407,279 @@ extends Activity {
     private ChatConversation chatConversation = ChatConversation.group();
     private ChatConversation attachmentConversation;
     private String chatHistoryAccount="";
+    private LinearLayout agentSessionHeaderLayout;
+    private TextView tvCurrentSessionTitle;
+    private volatile String pendingAgentConversationId = "";
+    private volatile long pendingAgentStartedAt = 0L;
+    private volatile String pendingAgentRequestMessageId = "";
+    private volatile int pendingAgentPeerBaseline = 0;
+    private volatile boolean agentStopInFlight = false;
+    private final java.util.Map<String, android.widget.TextView> agentStreamTextViews = new java.util.HashMap<>();
+    private final java.util.Map<String, android.view.View> agentStreamContainers = new java.util.HashMap<>();
+    private final java.util.Map<String, Integer> agentStreamSequences = new java.util.HashMap<>();
 
     private String chatPreferenceKey(String suffix) {
         return "chatObjects."+ChatHistoryStore.accountKey(this)+"."+suffix;
+    }
+
+    private void restoreAgentWaitState() {
+        if (this.prefs == null || !this.pendingAgentConversationId.isEmpty()) return;
+        String conversationId = this.prefs.getString(chatPreferenceKey("agent_wait.conversation"), "");
+        long startedAt = this.prefs.getLong(chatPreferenceKey("agent_wait.started_at"), 0L);
+        if (conversationId.isEmpty() || startedAt <= 0L) return;
+        if (System.currentTimeMillis() - startedAt > 12L * 60L * 1000L) {
+            this.prefs.edit()
+                    .remove(chatPreferenceKey("agent_wait.conversation"))
+                    .remove(chatPreferenceKey("agent_wait.started_at"))
+                    .remove(chatPreferenceKey("agent_wait.request_id"))
+                    .remove(chatPreferenceKey("agent_wait.peer_baseline"))
+                    .apply();
+            return;
+        }
+        this.pendingAgentConversationId = conversationId;
+        this.pendingAgentStartedAt = startedAt;
+        this.pendingAgentRequestMessageId = this.prefs.getString(chatPreferenceKey("agent_wait.request_id"), "");
+        this.pendingAgentPeerBaseline = this.prefs.getInt(chatPreferenceKey("agent_wait.peer_baseline"), 0);
+    }
+
+    private int countPeerMessages(String conversationId) {
+        if (conversationId == null || conversationId.isEmpty()) return 0;
+        JSONArray history = ChatHistoryStore.load(this, conversationId);
+        int count = 0;
+        for (int i = 0; i < history.length(); i++) {
+            JSONObject item = history.optJSONObject(i);
+            if (item != null && "peer".equals(item.optString("role"))) count++;
+        }
+        return count;
+    }
+
+    private void beginAgentWait(ChatConversation recipient, long startedAt) {
+        if (recipient == null || !recipient.agent) return;
+        this.pendingAgentConversationId = recipient.id;
+        this.pendingAgentStartedAt = startedAt;
+        this.pendingAgentRequestMessageId = "";
+        this.pendingAgentPeerBaseline = this.countPeerMessages(recipient.id);
+        this.agentStopInFlight = false;
+        if (this.prefs != null) {
+            this.prefs.edit()
+                    .putString(chatPreferenceKey("agent_wait.conversation"), recipient.id)
+                    .putLong(chatPreferenceKey("agent_wait.started_at"), startedAt)
+                    .putInt(chatPreferenceKey("agent_wait.peer_baseline"), this.pendingAgentPeerBaseline)
+                    .remove(chatPreferenceKey("agent_wait.request_id"))
+                    .apply();
+        }
+        this.updateChatSendButtonState();
+    }
+
+    private void rememberAgentRequestMessageId(String conversationId, String messageId) {
+        if (conversationId == null || messageId == null || messageId.isEmpty()) return;
+        if (!conversationId.equals(this.pendingAgentConversationId)) return;
+        this.pendingAgentRequestMessageId = messageId;
+        if (this.prefs != null) {
+            this.prefs.edit().putString(chatPreferenceKey("agent_wait.request_id"), messageId).apply();
+        }
+    }
+
+    private void clearAgentWait(String conversationId) {
+        if (conversationId != null && !conversationId.isEmpty()
+                && !conversationId.equals(this.pendingAgentConversationId)) return;
+        this.pendingAgentConversationId = "";
+        this.pendingAgentStartedAt = 0L;
+        this.pendingAgentRequestMessageId = "";
+        this.pendingAgentPeerBaseline = 0;
+        this.agentStopInFlight = false;
+        if (this.prefs != null) {
+            this.prefs.edit()
+                    .remove(chatPreferenceKey("agent_wait.conversation"))
+                    .remove(chatPreferenceKey("agent_wait.started_at"))
+                    .remove(chatPreferenceKey("agent_wait.request_id"))
+                    .remove(chatPreferenceKey("agent_wait.peer_baseline"))
+                    .apply();
+        }
+        this.updateChatSendButtonState();
+    }
+
+    private boolean isCurrentAgentWaiting() {
+        this.restoreAgentWaitState();
+        return this.chatConversation != null
+                && this.chatConversation.agent
+                && this.chatConversation.id.equals(this.pendingAgentConversationId);
+    }
+
+    private void updateChatSendButtonState() {
+        if (this.chatSendButton == null) return;
+        this.restoreAgentWaitState();
+        boolean waiting = this.isCurrentAgentWaiting();
+        boolean anotherAgentIsWaiting = this.chatConversation != null
+                && this.chatConversation.agent
+                && !this.pendingAgentConversationId.isEmpty()
+                && !this.chatConversation.id.equals(this.pendingAgentConversationId);
+
+        if (waiting) {
+            this.chatSendButton.setText(this.agentStopInFlight ? "停止中" : "停止");
+            this.chatSendButton.setEnabled(!this.agentStopInFlight);
+        } else if (anotherAgentIsWaiting) {
+            this.chatSendButton.setText("等待中");
+            this.chatSendButton.setEnabled(false);
+        } else {
+            this.chatSendButton.setText("发送");
+            this.chatSendButton.setEnabled(true);
+        }
+
+        this.chatSendButton.setTextColor(Color.WHITE);
+        GradientDrawable background = new GradientDrawable();
+        background.setCornerRadius((float)this.dp(9));
+        if (waiting) background.setColor(Color.rgb(196, 55, 55));
+        else if (anotherAgentIsWaiting) background.setColor(Color.rgb(65, 75, 90));
+        else background.setColor(Color.rgb(30, 58, 95));
+        this.chatSendButton.setBackground((Drawable)background);
+    }
+
+    private String waitForExecutionMessage(String baseUrl, String token, String messageId,
+                                           int attempts, int sleepMs) throws Exception {
+        for (int i = 0; i < attempts; i++) {
+            JSONObject detail = YanziApiClient.fetchMessageDetail(baseUrl, token, messageId);
+            JSONObject actual = detail.optJSONObject("message");
+            if (actual != null) detail = actual;
+            String state = detail.optString("status");
+            if ("completed".equals(state) || "acked".equals(state)) {
+                JSONObject payload = detail.optJSONObject("payload");
+                JSONObject execution = payload == null ? null : payload.optJSONObject("executionResult");
+                return execution == null ? detail.optString("result", "") : execution.optString("output", "");
+            }
+            if ("failed".equals(state) || "expired".equals(state)
+                    || "cancelled".equals(state) || "unknown".equals(state)) {
+                JSONObject payload = detail.optJSONObject("payload");
+                JSONObject execution = payload == null ? null : payload.optJSONObject("executionResult");
+                String output = execution == null ? detail.optString("result", "") : execution.optString("output", "");
+                throw new IllegalStateException(output.isEmpty() ? "控制请求：" + state : output);
+            }
+            Thread.sleep(sleepMs);
+        }
+        throw new java.io.IOException("等待电脑确认超时");
+    }
+
+    private void stopCurrentAgentGeneration() {
+        android.util.Log.i("YanziAgentStop", "tap waiting=" + this.isCurrentAgentWaiting()
+                + " inFlight=" + this.agentStopInFlight);
+        if (!this.isCurrentAgentWaiting() || this.agentStopInFlight) return;
+        final ChatConversation recipient = this.chatConversation;
+        final String conversationId = recipient.id;
+        this.agentStopInFlight = true;
+        this.updateChatSendButtonState();
+        this.setStatus("正在停止反重力生成…");
+
+        this.executor.execute(() -> {
+            try {
+                // If Stop is tapped immediately after Send, first wait until the original request
+                // has actually been accepted. Otherwise the cancel command can race ahead of it.
+                String originalMessageId = "";
+                for (int i = 0; i < 60; i++) {
+                    if (!conversationId.equals(this.pendingAgentConversationId)) return;
+                    originalMessageId = this.pendingAgentRequestMessageId;
+                    if (originalMessageId != null && !originalMessageId.isEmpty()) break;
+                    Thread.sleep(100);
+                }
+                android.util.Log.i("YanziAgentStop", "requestReady=" + (originalMessageId != null && !originalMessageId.isEmpty()));
+                if (originalMessageId == null || originalMessageId.isEmpty()) {
+                    throw new java.io.IOException("原请求尚未提交到电脑");
+                }
+
+                String baseUrl = this.normalizedBaseUrl();
+                String token = this.requireToken();
+                try {
+                    YanziApiClient.registerDevice(baseUrl, token, this.deviceId, this.buildDeviceName());
+                } catch (Exception ex) {
+                    if (!MainActivity.isUnauthorized(ex)) throw ex;
+                    token = this.refreshToken();
+                    YanziApiClient.registerDevice(baseUrl, token, this.deviceId, this.buildDeviceName());
+                }
+
+                // Fast path: if the desktop has not claimed the run-extension request yet,
+                // cancel it in the cloud queue so Antigravity never starts.
+                boolean cancelledBeforeExecution = false;
+                try {
+                    cancelledBeforeExecution = YanziApiClient.cancelPendingExecution(
+                            baseUrl, token, originalMessageId, this.deviceId);
+                } catch (Exception earlyCancelError) {
+                    // Cloud pre-cancellation is best-effort; an exception must not prevent
+                    // the real CLI stop command from reaching a LAN-executed job.
+                    android.util.Log.w("YanziAgentStop", "early cloud cancellation unavailable: "
+                            + earlyCancelError.getClass().getSimpleName());
+                }
+
+                android.util.Log.i("YanziAgentStop", "cloudCancelledPending=" + cancelledBeforeExecution);
+                if (!cancelledBeforeExecution) {
+                    // A failed cloud cancellation means the request was already claimed, or it used
+                    // LAN transport. In both cases send /取消 through the same conversation. The
+                    // desktop processes the original run-extension before this control message, and
+                    // main.cs creates the worker/active lock before returning, so there is no need
+                    // to compete with the normal send thread for the original message receipt.
+                    if (!conversationId.equals(this.pendingAgentConversationId)) return;
+                    String cancelMessageId = YanziApiClient.sendConversation(
+                            baseUrl, token, this.deviceId, recipient, "/取消");
+                    android.util.Log.i("YanziAgentStop", "sentCancelControl");
+                    this.waitForExecutionMessage(baseUrl, token, cancelMessageId, 80, 250);
+                    android.util.Log.i("YanziAgentStop", "cancelControlAcknowledged");
+
+                    // worker.cjs polls every 250 ms and kills the whole agy process tree.
+                    Thread.sleep(500);
+                }
+
+                final boolean didCancelPending = cancelledBeforeExecution;
+                this.runOnUiThread(() -> {
+                    if (!conversationId.equals(this.pendingAgentConversationId)) return;
+                    this.clearAgentWait(conversationId);
+                    this.loadChatHistory();
+                    this.setStatus(didCancelPending
+                            ? "已取消等待中的反重力任务"
+                            : "已停止反重力生成");
+                    Toast.makeText(
+                            this,
+                            didCancelPending ? "已取消任务" : "已停止生成",
+                            Toast.LENGTH_SHORT).show();
+                });
+            } catch (Exception ex) {
+                android.util.Log.w("YanziAgentStop", "stop failed " + ex.getClass().getSimpleName());
+                this.runOnUiThread(() -> {
+                    if (!conversationId.equals(this.pendingAgentConversationId)) return;
+                    this.agentStopInFlight = false;
+                    this.updateChatSendButtonState();
+                    this.setStatus("停止失败：" + ex.getMessage());
+                });
+            }
+        });
+    }
+
+    private void maybeCompleteAgentWaitFromHistory(JSONArray history) {
+        this.restoreAgentWaitState();
+        if (history == null || this.pendingAgentConversationId.isEmpty()
+                || this.chatConversation == null
+                || !this.chatConversation.agent
+                || !this.chatConversation.id.equals(this.pendingAgentConversationId)) return;
+        int peerCount = 0;
+        for (int i = 0; i < history.length(); i++) {
+            JSONObject item = history.optJSONObject(i);
+            if (item != null && "peer".equals(item.optString("role"))) peerCount++;
+        }
+        if (peerCount > this.pendingAgentPeerBaseline) {
+            this.clearAgentWait(this.pendingAgentConversationId);
+            return;
+        }
+
+        // Compatibility fallback for a wait state created by an older Dev build that did not
+        // persist the peer baseline.
+        if (this.pendingAgentPeerBaseline == 0) {
+            for (int i = history.length() - 1; i >= 0; i--) {
+                JSONObject item = history.optJSONObject(i);
+                if (item == null || !"peer".equals(item.optString("role"))) continue;
+                long time = item.optLong("time", 0L);
+                if (time >= this.pendingAgentStartedAt) {
+                    this.clearAgentWait(this.pendingAgentConversationId);
+                    return;
+                }
+            }
+        }
     }
 
     private void selectChatConversation(ChatConversation target) {
@@ -419,10 +690,283 @@ extends Activity {
             chatInputEditText.setText(prefs.getString(chatPreferenceKey("draft."+target.id),""));
             chatInputEditText.setHint(target.agent ? "给反重力发送消息…" : "发送消息…");
         }
-        prefs.edit().putLong(chatPreferenceKey("seen."+target.id),System.currentTimeMillis()).apply();
+        prefs.edit().putLong(chatPreferenceKey("seen."+target.id),System.currentTimeMillis())
+            .putString(chatPreferenceKey("last_selected_conversation_id"), target.id)
+            .putString(chatPreferenceKey("last_selected_target_device"), target.targetDeviceId)
+            .putLong(chatPreferenceKey("last_used_time." + target.id), System.currentTimeMillis())
+            .apply();
         if (desktopDashboard != null) desktopDashboard.conversation(target.agent?"反重力":target.name,this::showChatConversations);
         if (chatAttachBtn != null) chatAttachBtn.setVisibility(target.agent?View.GONE:View.VISIBLE);
+        this.updateAntigravitySessionHeader();
+        this.updateChatSendButtonState();
         selectSubTab(0); loadChatHistory();
+        if (target.agent) {
+            String baseUrl = null;
+            String token = null;
+            try {
+                baseUrl = this.normalizedBaseUrl();
+                token = this.requireToken();
+            } catch (Exception ignored) {}
+            AntigravitySessionManager.fetchConversationHistory(this, baseUrl, token, target.targetDeviceId, target.id, this::loadChatHistory);
+        }
+    }
+
+    private List<ChatConversation> sortChatConversations(List<ChatConversation> rawList) {
+        if (rawList == null || rawList.isEmpty()) return new ArrayList<>();
+        List<ChatConversation> result = new ArrayList<>();
+        ChatConversation group = null;
+        for (ChatConversation c : rawList) {
+            if (ChatConversation.GROUP.equals(c.id)) {
+                group = c;
+            } else {
+                result.add(c);
+            }
+        }
+
+        final String activeId = (this.chatConversation != null && !ChatConversation.GROUP.equals(this.chatConversation.id))
+                ? this.chatConversation.id
+                : this.prefs.getString(chatPreferenceKey("last_selected_conversation_id"), "");
+
+        java.util.Collections.sort(result, (a, b) -> {
+            boolean aActive = a.id.equals(activeId);
+            boolean bActive = b.id.equals(activeId);
+            if (aActive != bActive) return aActive ? -1 : 1;
+
+            long timeA = Math.max(this.prefs.getLong(chatPreferenceKey("last_used_time." + a.id), 0L),
+                    ChatHistoryStore.lastMessageTime(this, a.id));
+            long timeB = Math.max(this.prefs.getLong(chatPreferenceKey("last_used_time." + b.id), 0L),
+                    ChatHistoryStore.lastMessageTime(this, b.id));
+            if (timeA != timeB) return Long.compare(timeB, timeA);
+
+            if (a.agent != b.agent) return a.agent ? -1 : 1;
+            return a.name.compareToIgnoreCase(b.name);
+        });
+
+        if (group != null) {
+            result.add(group);
+        } else {
+            result.add(ChatConversation.group());
+        }
+        return result;
+    }
+
+    private void restoreLastSelectedConversation() {
+        try {
+            String lastId = this.prefs.getString(chatPreferenceKey("last_selected_conversation_id"), "");
+            if (lastId.isEmpty() || ChatConversation.GROUP.equals(lastId)) return;
+            final String cacheKey = chatPreferenceKey("contacts");
+            JSONArray cached = new JSONArray();
+            try { cached = new JSONArray(this.prefs.getString(cacheKey, "[]")); } catch (Exception ignored) {}
+            List<ChatConversation> list = ChatConversation.contacts(cached, this.deviceId);
+            for (ChatConversation c : list) {
+                if (c.id.equals(lastId)) {
+                    this.selectChatConversation(c);
+                    return;
+                }
+            }
+            String targetDev = this.prefs.getString(chatPreferenceKey("last_selected_target_device"), "");
+            if (targetDev.isEmpty() && lastId.startsWith("agent:antigravity:")) {
+                String[] parts = lastId.split(":");
+                if (parts.length >= 3 && !parts[2].isEmpty()) targetDev = parts[2];
+            }
+            if (!targetDev.isEmpty()) {
+                String title = AntigravitySessionManager.getSessionTitle(this, targetDev, lastId);
+                ChatConversation sessionConv = new ChatConversation(lastId, "反重力 · " + title, targetDev, "desktop", true);
+                this.selectChatConversation(sessionConv);
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private void updateAntigravitySessionHeader() {
+        if (this.agentSessionHeaderLayout == null || this.tvCurrentSessionTitle == null) return;
+        if (this.chatConversation == null || !this.chatConversation.agent) {
+            this.agentSessionHeaderLayout.setVisibility(View.GONE);
+            return;
+        }
+        this.agentSessionHeaderLayout.setVisibility(View.VISIBLE);
+        String title = AntigravitySessionManager.getSessionTitle(this, this.chatConversation.targetDeviceId, this.chatConversation.id);
+        this.tvCurrentSessionTitle.setText("会话: " + title + " ▾");
+    }
+
+    private void showAntigravitySessionMenu(View anchor) {
+        if (this.chatConversation == null || !this.chatConversation.agent) return;
+        final String targetDevice = this.chatConversation.targetDeviceId;
+        final String currentSessionId = this.chatConversation.id;
+
+        LinearLayout cardView = new LinearLayout((Context)this);
+        cardView.setOrientation(LinearLayout.VERTICAL);
+        cardView.setPadding(this.dp(14), this.dp(12), this.dp(14), this.dp(12));
+
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.rgb(15, 23, 42));
+        bg.setStroke(this.dp(1), Color.rgb(51, 65, 85));
+        bg.setCornerRadius((float)this.dp(12));
+        cardView.setBackground((Drawable)bg);
+
+        final android.widget.PopupWindow popup = new android.widget.PopupWindow(
+                cardView,
+                this.dp(270),
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                true);
+        popup.setOutsideTouchable(true);
+        popup.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+        popup.setElevation((float)this.dp(8));
+
+        // 1. 新建会话按钮
+        LinearLayout newBtn = new LinearLayout((Context)this);
+        newBtn.setOrientation(LinearLayout.HORIZONTAL);
+        newBtn.setGravity(Gravity.CENTER_VERTICAL);
+        newBtn.setPadding(this.dp(12), this.dp(10), this.dp(12), this.dp(10));
+        newBtn.setClickable(true);
+        newBtn.setFocusable(true);
+
+        GradientDrawable newBg = new GradientDrawable();
+        newBg.setColor(Color.argb(35, 37, 99, 235));
+        newBg.setCornerRadius((float)this.dp(8));
+        newBtn.setBackground((Drawable)newBg);
+
+        ImageView newBtnLogo = new ImageView((Context)this);
+        newBtnLogo.setImageDrawable(YanziUiKit.getAntigravityLogo(this));
+        newBtnLogo.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        LinearLayout.LayoutParams nLogoLp = new LinearLayout.LayoutParams(this.dp(16), this.dp(16));
+        nLogoLp.rightMargin = this.dp(8);
+        newBtn.addView((View)newBtnLogo, (ViewGroup.LayoutParams)nLogoLp);
+
+        TextView newTv = new TextView((Context)this);
+        newTv.setText("➕ 新建会话");
+        newTv.setTextColor(Color.rgb(125, 211, 252));
+        newTv.setTextSize(13.5f);
+        newTv.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        newBtn.addView((View)newTv);
+
+        newBtn.setOnClickListener(v -> {
+            popup.dismiss();
+            AntigravitySessionManager.SessionItem created = AntigravitySessionManager.createNewSession(this, targetDevice);
+            ChatConversation newConv = new ChatConversation(created.id, "反重力", targetDevice, this.chatConversation.platform, true);
+            this.selectChatConversation(newConv);
+            Toast.makeText((Context)this, "已开启新会话", Toast.LENGTH_SHORT).show();
+        });
+        cardView.addView((View)newBtn, new LinearLayout.LayoutParams(-1, -2));
+
+        // 分割线
+        View divider = new View((Context)this);
+        divider.setBackgroundColor(Color.rgb(30, 41, 59));
+        LinearLayout.LayoutParams divLp = new LinearLayout.LayoutParams(-1, this.dp(1));
+        divLp.topMargin = this.dp(10);
+        divLp.bottomMargin = this.dp(8);
+        cardView.addView(divider, divLp);
+
+        // 标题行：近期会话 + 刷新状态
+        LinearLayout headerRow = new LinearLayout((Context)this);
+        headerRow.setOrientation(LinearLayout.HORIZONTAL);
+        headerRow.setGravity(Gravity.CENTER_VERTICAL);
+        headerRow.setPadding(this.dp(4), 0, this.dp(4), this.dp(6));
+
+        TextView sectionTitle = new TextView((Context)this);
+        sectionTitle.setText("电脑会话列表");
+        sectionTitle.setTextColor(Color.rgb(100, 116, 139));
+        sectionTitle.setTextSize(11.5f);
+        headerRow.addView((View)sectionTitle, new LinearLayout.LayoutParams(0, -2, 1.0f));
+
+        final TextView refreshStatus = new TextView((Context)this);
+        refreshStatus.setText("正在拉取…");
+        refreshStatus.setTextColor(Color.rgb(56, 189, 248));
+        refreshStatus.setTextSize(11f);
+        headerRow.addView((View)refreshStatus);
+        cardView.addView((View)headerRow);
+
+        ScrollView listScroll = new ScrollView((Context)this);
+        LinearLayout.LayoutParams scrollLp = new LinearLayout.LayoutParams(-1, this.dp(240));
+        final LinearLayout listLayout = new LinearLayout((Context)this);
+        listLayout.setOrientation(LinearLayout.VERTICAL);
+
+        java.util.function.Consumer<List<AntigravitySessionManager.SessionItem>> renderItems = list -> {
+            listLayout.removeAllViews();
+            for (final AntigravitySessionManager.SessionItem item : list) {
+                final boolean isCurrent = item.id.equals(currentSessionId) || (currentSessionId.endsWith(":" + item.rawId) && !item.rawId.isEmpty());
+
+                LinearLayout itemRow = new LinearLayout((Context)this);
+                itemRow.setOrientation(LinearLayout.VERTICAL);
+                itemRow.setPadding(this.dp(8), this.dp(8), this.dp(8), this.dp(8));
+                itemRow.setClickable(true);
+                itemRow.setFocusable(true);
+
+                GradientDrawable itemBg = new GradientDrawable();
+                if (isCurrent) {
+                    itemBg.setColor(Color.argb(25, 34, 197, 94));
+                    itemBg.setStroke(this.dp(1), Color.rgb(34, 197, 94));
+                } else {
+                    itemBg.setColor(Color.TRANSPARENT);
+                }
+                itemBg.setCornerRadius((float)this.dp(6));
+                itemRow.setBackground((Drawable)itemBg);
+
+                LinearLayout topRow = new LinearLayout((Context)this);
+                topRow.setOrientation(LinearLayout.HORIZONTAL);
+                topRow.setGravity(Gravity.CENTER_VERTICAL);
+
+                TextView statusDot = new TextView((Context)this);
+                statusDot.setText(isCurrent ? "● " : "○ ");
+                statusDot.setTextColor(isCurrent ? Color.rgb(34, 197, 94) : Color.rgb(71, 85, 105));
+                statusDot.setTextSize(12f);
+                topRow.addView((View)statusDot);
+
+                TextView titleTv = new TextView((Context)this);
+                titleTv.setText((CharSequence)item.title);
+                titleTv.setTextColor(isCurrent ? Color.WHITE : Color.rgb(203, 213, 225));
+                titleTv.setTextSize(13f);
+                titleTv.setTypeface(android.graphics.Typeface.DEFAULT, isCurrent ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
+                titleTv.setSingleLine(true);
+                titleTv.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                topRow.addView((View)titleTv, new LinearLayout.LayoutParams(0, -2, 1.0f));
+
+                itemRow.addView(topRow);
+
+                if (item.preview != null && !item.preview.isEmpty() && !item.preview.equals(item.title)) {
+                    TextView prevTv = new TextView((Context)this);
+                    prevTv.setText(item.preview);
+                    prevTv.setTextColor(Color.rgb(100, 116, 139));
+                    prevTv.setTextSize(11f);
+                    prevTv.setSingleLine(true);
+                    prevTv.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                    prevTv.setPadding(this.dp(14), this.dp(2), 0, 0);
+                    itemRow.addView((View)prevTv);
+                }
+
+                itemRow.setOnClickListener(v -> {
+                    popup.dismiss();
+                    if (!isCurrent) {
+                        ChatConversation chosen = new ChatConversation(item.id, "反重力", targetDevice, this.chatConversation.platform, true);
+                        this.selectChatConversation(chosen);
+                    }
+                });
+
+                listLayout.addView((View)itemRow);
+            }
+        };
+
+        // 先渲染本地已有缓存
+        List<AntigravitySessionManager.SessionItem> cached = AntigravitySessionManager.getSessions(this, targetDevice);
+        renderItems.accept(cached);
+
+        listScroll.addView((View)listLayout, new LinearLayout.LayoutParams(-1, -2));
+        cardView.addView((View)listScroll, (ViewGroup.LayoutParams)scrollLp);
+
+        // 异步拉取电脑端最新会话
+        String reqBaseUrl = null;
+        String reqToken = null;
+        try {
+            reqBaseUrl = this.normalizedBaseUrl();
+            reqToken = this.requireToken();
+        } catch (Exception ignored) {}
+        AntigravitySessionManager.fetchRemoteSessions(this, reqBaseUrl, reqToken, targetDevice, fresh -> {
+            if (isFinishing() || !popup.isShowing()) return;
+            refreshStatus.setText("已同步 (" + fresh.size() + ")");
+            refreshStatus.setTextColor(Color.rgb(34, 197, 94));
+            renderItems.accept(fresh);
+        });
+
+        popup.showAsDropDown(anchor, 0, this.dp(4));
     }
 
     private void showChatConversations() {
@@ -430,8 +974,9 @@ extends Activity {
         final String cacheKey=chatPreferenceKey("contacts");
         JSONArray cached=new JSONArray();
         try {cached=new JSONArray(prefs.getString(cacheKey,"[]"));} catch(Exception ignored) {}
-        final List<ChatConversation> contacts=ChatConversation.contacts(cached,deviceId);
-        if(contacts.stream().noneMatch(c->c.id.equals(chatConversation.id))) contacts.add(chatConversation);
+        final List<ChatConversation> rawContacts=ChatConversation.contacts(cached,deviceId);
+        if(rawContacts.stream().noneMatch(c->c.id.equals(chatConversation.id))) rawContacts.add(chatConversation);
+        final List<ChatConversation> contacts=sortChatConversations(rawContacts);
         final ChatConversationAdapter adapter=new ChatConversationAdapter(this,contacts,chatConversation.id);
         final AlertDialog dialog=new AlertDialog.Builder(this).setTitle("聊天对象")
             .setSingleChoiceItems(adapter,-1,(d,which)->{
@@ -450,8 +995,10 @@ extends Activity {
             this.runOnUiThread(() -> {
                 if(isFinishing() || !dialog.isShowing() || !account.equals(ChatHistoryStore.accountKey(this))) return;
                 if(devices!=null) prefs.edit().putString(cacheKey,devices.toString()).apply();
-                contacts.clear();contacts.addAll(ChatConversation.contacts(devices,deviceId));
-                if(contacts.stream().noneMatch(c->c.id.equals(chatConversation.id))) contacts.add(chatConversation);
+                List<ChatConversation> fresh = ChatConversation.contacts(devices, deviceId);
+                if (fresh.stream().noneMatch(c -> c.id.equals(chatConversation.id))) fresh.add(chatConversation);
+                contacts.clear();
+                contacts.addAll(sortChatConversations(fresh));
                 adapter.notifyDataSetChanged();
                 for(int i=0;i<contacts.size();i++) if(contacts.get(i).id.equals(chatConversation.id)) dialog.getListView().setItemChecked(i,true);
             });
@@ -2108,6 +2655,7 @@ extends Activity {
                 () -> this.selectSubTab(2),
                 () -> this.selectSubTab(3));
         this.desktopDashboard.conversation(chatConversation.name,this::showChatConversations);
+        this.restoreLastSelectedConversation();
 
         // 子 Tab 条
         LinearLayout subTabBar = new LinearLayout((Context)this);
@@ -2859,6 +3407,7 @@ extends Activity {
         this.bottomTabs = this.buildBottomTabs();
         shell.addView(this.bottomTabs, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, this.dp(64)));
         this.setContentView((View)shell);
+        this.setupKeyboardVisibilityListener();
         this.selectTab("desktop");
         this.setStatus(this.prefs.getString("token", "").trim().isEmpty() ? "\u8bf7\u5148\u767b\u5f55\u71d5\u5b50\u8d26\u53f7\u3002" : "\u5df2\u52a0\u8f7d\u672c\u5730\u767b\u5f55\u6001\u3002");
         this.renderCachedYanm();
@@ -5394,16 +5943,49 @@ extends Activity {
         }
     }
 
+    private void setupKeyboardVisibilityListener() {
+        final View decorView = this.getWindow().getDecorView();
+        decorView.getViewTreeObserver().addOnGlobalLayoutListener(new android.view.ViewTreeObserver.OnGlobalLayoutListener() {
+            private boolean lastVisible = false;
+            private final android.graphics.Rect rect = new android.graphics.Rect();
+
+            @Override
+            public void onGlobalLayout() {
+                decorView.getWindowVisibleDisplayFrame(rect);
+                int screenHeight = decorView.getRootView().getHeight();
+                int keypadHeight = screenHeight - rect.bottom;
+                boolean visible = keypadHeight > screenHeight * 0.15;
+                if (visible != lastVisible) {
+                    lastVisible = visible;
+                    MainActivity.this.isKeyboardVisible = visible;
+                    MainActivity.this.runOnUiThread(MainActivity.this::updateBottomTabsVisibility);
+                }
+            }
+        });
+    }
+
     private void beginMessageSend() {
-        runOnUiThread(() -> { pendingMessageSends++; updateBottomTabsVisibility(); });
+        runOnUiThread(() -> { pendingMessageSends++; });
     }
 
     private void finishMessageSend() {
-        runOnUiThread(() -> { pendingMessageSends = Math.max(0, pendingMessageSends - 1); updateBottomTabsVisibility(); });
+        runOnUiThread(() -> {
+            pendingMessageSends = Math.max(0, pendingMessageSends - 1);
+            if (this.currentSubTabIndex == 0 && this.chatInputEditText != null && this.chatInputEditText.getVisibility() == View.VISIBLE) {
+                this.chatInputEditText.post(() -> {
+                    if (this.chatInputEditText != null && !this.chatInputEditText.isFocused() && this.isKeyboardVisible) {
+                        this.chatInputEditText.requestFocus();
+                    }
+                });
+            }
+        });
     }
 
     private void updateBottomTabsVisibility() {
-        if (bottomTabs != null) bottomTabs.setVisibility(pendingMessageSends > 0 || isAiLoading ? View.GONE : View.VISIBLE);
+        if (bottomTabs != null) {
+            boolean shouldHide = this.isKeyboardVisible || isAiLoading;
+            bottomTabs.setVisibility(shouldHide ? View.GONE : View.VISIBLE);
+        }
     }
 
     private void updateConnectionUi() {
@@ -5785,6 +6367,61 @@ extends Activity {
         });
         builder.setNegativeButton((CharSequence)"关闭", null);
         builder.show();
+    }
+
+    void showChatPhotoFullscreen(Uri imageUri, String pathOrUri) {
+        if (imageUri == null && (pathOrUri == null || pathOrUri.isEmpty())) return;
+        try {
+            final android.app.Dialog dialog = new android.app.Dialog((Context)this, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
+            FrameLayout root = new FrameLayout((Context)this);
+            root.setBackgroundColor(Color.argb(245, 10, 15, 25));
+
+            final ImageView fullIv = new ImageView((Context)this);
+            fullIv.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            fullIv.setAdjustViewBounds(true);
+
+            if (imageUri != null) {
+                fullIv.setImageURI(imageUri);
+            } else if (pathOrUri.startsWith("/")) {
+                fullIv.setImageURI(Uri.fromFile(new java.io.File(pathOrUri)));
+            } else {
+                fullIv.setImageURI(Uri.parse(pathOrUri));
+            }
+
+            FrameLayout.LayoutParams ivParams = new FrameLayout.LayoutParams(-1, -1, Gravity.CENTER);
+            root.addView((View)fullIv, (ViewGroup.LayoutParams)ivParams);
+
+            LinearLayout topBar = new LinearLayout((Context)this);
+            topBar.setOrientation(LinearLayout.HORIZONTAL);
+            topBar.setGravity(Gravity.CENTER_VERTICAL);
+            topBar.setPadding(this.dp(16), this.dp(28), this.dp(16), this.dp(12));
+            topBar.setBackgroundColor(Color.argb(140, 0, 0, 0));
+
+            TextView titleView = new TextView((Context)this);
+            titleView.setText("查看照片 (点击任意处返回)");
+            titleView.setTextColor(Color.WHITE);
+            titleView.setTextSize(14f);
+            LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(0, -2, 1.0f);
+            topBar.addView((View)titleView, (ViewGroup.LayoutParams)titleLp);
+
+            TextView closeBtn = new TextView((Context)this);
+            closeBtn.setText("✕ 关闭");
+            closeBtn.setTextColor(Color.rgb(203, 213, 225));
+            closeBtn.setTextSize(14f);
+            closeBtn.setPadding(this.dp(8), this.dp(4), this.dp(8), this.dp(4));
+            closeBtn.setOnClickListener(v -> dialog.dismiss());
+            topBar.addView((View)closeBtn, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-2, -2));
+
+            root.addView((View)topBar, (ViewGroup.LayoutParams)new FrameLayout.LayoutParams(-1, -2, Gravity.TOP));
+
+            root.setOnClickListener(v -> dialog.dismiss());
+            fullIv.setOnClickListener(v -> dialog.dismiss());
+
+            dialog.setContentView((View)root);
+            dialog.show();
+        } catch (Exception ex) {
+            Toast.makeText(this.getApplicationContext(), "打开大图失败: " + ex.getMessage(), Toast.LENGTH_SHORT).show();
+        }
     }
 
     private boolean isTextFile(String fileName) {
@@ -11843,10 +12480,20 @@ extends Activity {
         String text = this.chatInputEditText.getText().toString().trim();
         if (text.isEmpty()) return;
         final ChatConversation recipient=this.chatConversation;
+        this.restoreAgentWaitState();
+        if (recipient.agent
+                && !this.pendingAgentConversationId.isEmpty()
+                && !recipient.id.equals(this.pendingAgentConversationId)) {
+            Toast.makeText(this, "另一个反重力会话正在生成，请先等待或切回后停止。", Toast.LENGTH_SHORT).show();
+            return;
+        }
 
         this.chatInputEditText.setText("");
+        this.chatInputEditText.requestFocus();
+        this.chatInputEditText.setSelection(0);
         this.setStatus("正在发送...");
         long sentAt = System.currentTimeMillis();
+        final boolean waitsForAgentReply = recipient.agent && !text.startsWith("/");
         this.renderChatMessage("self", "text", text, sentAt, this.deviceId, MainActivity.buildDeviceDisplayName(), true);
         MobileChatController.append(this,this.deviceId,"self","text",text,sentAt,recipient.id);
 
@@ -11861,15 +12508,18 @@ extends Activity {
                 String token = this.requireToken();
                 String messageId = "";
                 try {
+
                     messageId = YanziApiClient.sendConversation(baseUrl,token,this.deviceId,recipient,text);
                 } catch (Exception ex) {
                     if (!MainActivity.isUnauthorized(ex)) {
                         throw ex;
                     }
                     token = this.refreshToken();
+
                     messageId = YanziApiClient.sendConversation(baseUrl,token,this.deviceId,recipient,text);
                 }
                 final String finalMsgId = messageId;
+                if (waitsForAgentReply) this.rememberAgentRequestMessageId(recipient.id, messageId);
                 this.runOnUiThread(() -> this.setStatus("\u6d88\u606f\u5df2\u53d1\u9001\uff0cid=" + finalMsgId));
                 if(recipient.agent) {
                     for(int attempts=0;attempts<20;attempts++) {
@@ -11903,7 +12553,7 @@ extends Activity {
             } catch (Exception ex) {
                 this.runOnUiThread(() -> {
                     try {sendSession.requireCurrent();} catch(Exception changed) {return;}
-                    this.setStatus("\u53d1\u9001\u5931\u8d25\uff1a" + ex.getMessage());
+                    this.setStatus("发送失败：" + ex.getMessage());
                     MobileChatController.append(this,this.deviceId,"system","text","发送失败："+ex.getMessage(),System.currentTimeMillis(),recipient.id);
                     this.loadChatHistory();
                 });
@@ -11915,12 +12565,57 @@ extends Activity {
         this.chatContainerLayout = new LinearLayout((Context)this);
         this.chatContainerLayout.setOrientation(LinearLayout.VERTICAL);
 
+        this.agentSessionHeaderLayout = new LinearLayout((Context)this);
+        this.agentSessionHeaderLayout.setOrientation(LinearLayout.HORIZONTAL);
+        this.agentSessionHeaderLayout.setGravity(Gravity.CENTER_VERTICAL);
+        this.agentSessionHeaderLayout.setPadding(this.dp(12), this.dp(4), this.dp(12), this.dp(4));
+        this.agentSessionHeaderLayout.setVisibility(View.GONE);
+
+        LinearLayout sessionPill = new LinearLayout((Context)this);
+        sessionPill.setOrientation(LinearLayout.HORIZONTAL);
+        sessionPill.setGravity(Gravity.CENTER_VERTICAL);
+        sessionPill.setPadding(this.dp(8), this.dp(4), this.dp(10), this.dp(4));
+        sessionPill.setClickable(true);
+        sessionPill.setFocusable(true);
+
+        GradientDrawable pillBg = new GradientDrawable();
+        pillBg.setColor(Color.argb(220, 24, 34, 48));
+        pillBg.setStroke(this.dp(1), Color.rgb(51, 65, 85));
+        pillBg.setCornerRadius((float)this.dp(14));
+        sessionPill.setBackground((Drawable)pillBg);
+
+        ImageView pillLogo = new ImageView((Context)this);
+        pillLogo.setImageDrawable(YanziUiKit.getAntigravityLogo(this));
+        pillLogo.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        LinearLayout.LayoutParams logoLp = new LinearLayout.LayoutParams(this.dp(16), this.dp(16));
+        logoLp.rightMargin = this.dp(6);
+        sessionPill.addView((View)pillLogo, (ViewGroup.LayoutParams)logoLp);
+
+        this.tvCurrentSessionTitle = new TextView((Context)this);
+        this.tvCurrentSessionTitle.setText("会话: 默认会话 ▾");
+        this.tvCurrentSessionTitle.setTextColor(Color.rgb(125, 211, 252));
+        this.tvCurrentSessionTitle.setTextSize(12.5f);
+        this.tvCurrentSessionTitle.setSingleLine(true);
+        this.tvCurrentSessionTitle.setMaxWidth(this.dp(220));
+        this.tvCurrentSessionTitle.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        sessionPill.addView((View)this.tvCurrentSessionTitle);
+
+        sessionPill.setOnClickListener(v -> this.showAntigravitySessionMenu(sessionPill));
+
+        this.agentSessionHeaderLayout.addView((View)sessionPill);
+        this.chatContainerLayout.addView((View)this.agentSessionHeaderLayout);
+
         ScrollView scroll = new ScrollView((Context)this);
         this.chatMessageScrollView = scroll;
         scroll.setFillViewport(true);
         scroll.setNestedScrollingEnabled(true);
         scroll.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
         scroll.setOnTouchListener((v, event) -> {
+            if (event.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) {
+                if (this.isKeyboardVisible && this.chatInputEditText != null) {
+                    this.hideKeyboard((View)this.chatInputEditText);
+                }
+            }
             if (this.swipeRefresh != null && this.currentSubTabIndex == 0) {
                 switch (event.getActionMasked()) {
                     case android.view.MotionEvent.ACTION_DOWN:
@@ -12063,7 +12758,13 @@ extends Activity {
         inputRow.addView((View)this.chatAttachBtn, (ViewGroup.LayoutParams)attachParams);
 
         this.chatSendButton = this.button("发送");
-        this.chatSendButton.setOnClickListener(v -> this.handleSendChatMessageClick());
+        this.chatSendButton.setFocusable(false);
+        this.chatSendButton.setFocusableInTouchMode(false);
+        this.chatSendButton.setOnClickListener(v -> {
+            if (this.isCurrentAgentWaiting()) this.stopCurrentAgentGeneration();
+            else this.handleSendChatMessageClick();
+        });
+        this.updateChatSendButtonState();
         LinearLayout.LayoutParams sendParams = new LinearLayout.LayoutParams(this.dp(60), this.dp(40));
         inputRow.addView((View)this.chatSendButton, (ViewGroup.LayoutParams)sendParams);
 
@@ -12139,16 +12840,37 @@ extends Activity {
         }
         chatHistoryAccount=account;
         this.chatMessageListLayout.removeAllViews();
+        this.agentStreamTextViews.clear();
+        this.agentStreamContainers.clear();
+        this.agentStreamSequences.clear();
         this.lastRenderedChatTimeMs = Long.MIN_VALUE;
         if(this.prefs!=null && sForeground && "desktop".equals(selectedTab) && currentSubTabIndex==0)
             this.prefs.edit().putLong(chatPreferenceKey("seen."+chatConversation.id),System.currentTimeMillis()).apply();
+        this.updateAntigravitySessionHeader();
         JSONArray arr = ChatHistoryStore.load(this,chatConversation.id);
+        java.util.Set<String> embeddedImages = new java.util.HashSet<>();
+        for (int i = 0; i < arr.length(); ++i) {
+            JSONObject obj = arr.optJSONObject(i);
+            if (obj == null) continue;
+            if ("text".equals(obj.optString("kind", "text"))) {
+                embeddedImages.addAll(ChatRichText.extractImageNames(obj.optString("content", "")));
+            }
+        }
         for (int i = 0; i < arr.length(); ++i) {
             JSONObject obj = arr.optJSONObject(i);
             if (obj == null) continue;
             String kind = obj.optString("kind", "text");
             String content = obj.optString("content", "");
             if (MobileChatController.isDevelopmentChatArtifact(kind, content)) continue;
+            if ("photo".equals(kind)) {
+                String rawName = ChatRichText.parseFileName(content);
+                if (rawName != null) {
+                    String cleanName = rawName.replaceFirst("^att_[a-f0-9]{32}-", "").toLowerCase(java.util.Locale.ROOT);
+                    if (embeddedImages.contains(cleanName) || embeddedImages.contains(rawName.toLowerCase(java.util.Locale.ROOT))) {
+                        continue;
+                    }
+                }
+            }
             this.renderChatMessage(
                     obj.optString("role", "peer"),
                     kind,
@@ -12158,9 +12880,24 @@ extends Activity {
                     obj.optString("sourceDeviceName", ""),
                     false);
         }
+        this.maybeCompleteAgentWaitFromHistory(arr);
+        this.scrollChatToBottom(false);
+    }
+
+    private void scrollChatToBottom(boolean smooth) {
+        if (this.chatMessageListLayout == null) return;
         if (this.chatMessageListLayout.getParent() instanceof ScrollView) {
-            ScrollView sv = (ScrollView)this.chatMessageListLayout.getParent();
-            sv.post(() -> sv.fullScroll(View.FOCUS_DOWN));
+            ScrollView sv = (ScrollView) this.chatMessageListLayout.getParent();
+            sv.post(() -> {
+                View child = sv.getChildAt(0);
+                if (child != null) {
+                    if (smooth) {
+                        sv.smoothScrollTo(0, child.getBottom());
+                    } else {
+                        sv.scrollTo(0, child.getBottom());
+                    }
+                }
+            });
         }
     }
 
@@ -12179,6 +12916,98 @@ extends Activity {
 
     public static void onReceivedChatMessage(String kind, String msg) {
         onReceivedChatMessage(kind, msg, "", "电脑", System.currentTimeMillis());
+    }
+
+    public static void onReceivedAgentStream(AgentStreamProtocol.Event event, String sourceDeviceId,
+                                             String sourceDeviceName) {
+        if (event == null) return;
+        android.util.Log.i("YanziAgentStream", "received state=" + event.state + " seq=" + event.seq + " chars=" + event.text.length());
+        MainActivity activity = sInstance;
+        if (activity != null) {
+            activity.runOnUiThread(() -> {
+                if (sInstance != activity || activity.isFinishing()) return;
+                activity.renderAgentStream(event, sourceDeviceId, sourceDeviceName);
+            });
+        }
+    }
+
+    private void renderAgentStream(AgentStreamProtocol.Event event, String sourceDeviceId, String sourceDeviceName) {
+        if (this.chatMessageListLayout == null || this.chatConversation == null
+                || !event.conversationId.equals(this.chatConversation.id)) {
+            android.util.Log.i("YanziAgentStream", "ignored mismatch current=" + (this.chatConversation == null ? "null" : this.chatConversation.id)
+                    + " incoming=" + event.conversationId);
+            return;
+        }
+        android.util.Log.i("YanziAgentStream", "render state=" + event.state + " seq=" + event.seq);
+        Integer previous = this.agentStreamSequences.get(event.id);
+        if (previous != null && event.seq <= previous) return;
+        this.agentStreamSequences.put(event.id, event.seq);
+
+        if ("cancelled".equals(event.state)) {
+            View old = this.agentStreamContainers.remove(event.id);
+            if (old != null) this.chatMessageListLayout.removeView(old);
+            this.agentStreamTextViews.remove(event.id);
+            this.agentStreamSequences.remove(event.id);
+            if (event.conversationId.equals(this.pendingAgentConversationId)) this.clearAgentWait(event.conversationId);
+            return;
+        }
+
+        TextView streamText = this.agentStreamTextViews.get(event.id);
+        if (streamText == null) {
+            LinearLayout row = new LinearLayout((Context)this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.START);
+            row.setPadding(0, this.dp(5), 0, this.dp(5));
+
+            LinearLayout column = new LinearLayout((Context)this);
+            column.setOrientation(LinearLayout.VERTICAL);
+            column.setGravity(Gravity.START);
+
+            TextView sender = new TextView((Context)this);
+            String resolved = ChatHistoryStore.resolveDeviceName(this, sourceDeviceId, sourceDeviceName);
+            sender.setText(resolved == null || resolved.isEmpty() ? "反重力" : "反重力 · " + resolved);
+            sender.setTextSize(12f);
+            sender.setTextColor(Color.rgb(125, 138, 154));
+            LinearLayout.LayoutParams senderLp = new LinearLayout.LayoutParams(-2, -2);
+            senderLp.bottomMargin = this.dp(4);
+            column.addView(sender, senderLp);
+
+            LinearLayout bubble = new LinearLayout((Context)this);
+            bubble.setOrientation(LinearLayout.VERTICAL);
+            bubble.setPadding(this.dp(13), this.dp(9), this.dp(13), this.dp(9));
+            GradientDrawable bg = new GradientDrawable();
+            bg.setColor(Color.rgb(24, 34, 48));
+            bg.setCornerRadius((float)this.dp(11));
+            bubble.setBackground((Drawable)bg);
+
+            streamText = new TextView((Context)this);
+            streamText.setTextColor(Color.WHITE);
+            streamText.setTextSize(15f);
+            streamText.setTextIsSelectable(true);
+            streamText.setLineSpacing(0f, 1.16f);
+            int maxBubbleWidth = Math.max(this.dp(180),
+                    getResources().getDisplayMetrics().widthPixels - this.dp(118));
+            streamText.setMaxWidth(maxBubbleWidth);
+            bubble.addView(streamText, new LinearLayout.LayoutParams(-2, -2));
+
+            column.addView(bubble, new LinearLayout.LayoutParams(-2, -2));
+            LinearLayout.LayoutParams columnLp = new LinearLayout.LayoutParams(-2, -2);
+            columnLp.rightMargin = this.dp(54);
+            row.addView(column, columnLp);
+            this.chatMessageListLayout.addView(row, new LinearLayout.LayoutParams(-1, -2));
+            this.agentStreamTextViews.put(event.id, streamText);
+            this.agentStreamContainers.put(event.id, row);
+        }
+
+        String value = event.text == null || event.text.isEmpty() ? "正在生成…" : event.text;
+        if ("error".equals(event.state) && !value.contains("执行异常"))
+            value = value + "\n\n生成或消息投递失败，请检查任务结果。";
+        streamText.setText(value);
+        if ("complete".equals(event.state) || "error".equals(event.state)) {
+            if (event.conversationId.equals(this.pendingAgentConversationId)) this.clearAgentWait(event.conversationId);
+            this.setStatus("complete".equals(event.state) ? "反重力已生成，正在同步聊天历史…" : "反重力任务结束，但出现错误");
+        } else this.setStatus("反重力正在生成…");
+        this.scrollChatToBottom(true);
     }
 
     public static void onReceivedChatMessage(String kind, String msg, String sourceDeviceId,
@@ -12241,9 +13070,8 @@ extends Activity {
                 bubbleContainer.addView((View)systemText, (ViewGroup.LayoutParams)systemLp);
                 this.chatMessageListLayout.addView((View)bubbleContainer,
                         (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -2));
-                if (scrollToBottom && this.chatMessageListLayout.getParent() instanceof ScrollView) {
-                    ScrollView sv = (ScrollView)this.chatMessageListLayout.getParent();
-                    sv.post(() -> sv.fullScroll(View.FOCUS_DOWN));
+                if (scrollToBottom) {
+                    this.scrollChatToBottom(true);
                 }
                 return;
             }
@@ -12292,6 +13120,11 @@ extends Activity {
                         Uri imageUri = content.startsWith("/") ? Uri.fromFile(new java.io.File(content)) : Uri.parse(content);
                         iv.setImageURI(imageUri);
                         if (iv.getDrawable() != null) {
+                            final Uri finalImageUri = imageUri;
+                            final String finalContent = content;
+                            iv.setClickable(true);
+                            iv.setFocusable(true);
+                            iv.setOnClickListener(v -> this.showChatPhotoFullscreen(finalImageUri, finalContent));
                             bubble.addView((View)iv);
                             shown = true;
                         }
@@ -12378,9 +13211,8 @@ extends Activity {
             this.chatMessageListLayout.addView((View)bubbleContainer,
                     (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -2));
 
-            if (scrollToBottom && this.chatMessageListLayout.getParent() instanceof ScrollView) {
-                ScrollView sv = (ScrollView)this.chatMessageListLayout.getParent();
-                sv.post(() -> sv.fullScroll(View.FOCUS_DOWN));
+            if (scrollToBottom) {
+                this.scrollChatToBottom(true);
             }
         });
     }

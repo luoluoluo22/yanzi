@@ -201,6 +201,17 @@ final class ChatHistoryStore extends SQLiteOpenHelper {
         }
     }
 
+    static long lastMessageTime(Context context, String conversationId) {
+        synchronized(LOCK) {
+            try(Cursor cursor=get(context).getReadableDatabase().rawQuery(
+                "SELECT time_ms FROM chat_messages WHERE account_id=? AND conversation_id=? ORDER BY time_ms DESC,id DESC LIMIT 1",
+                new String[]{currentAccount(context),conversationId})) {
+                return cursor.moveToFirst()?cursor.getLong(0):0L;
+            } catch(Exception ignored) {
+                return 0L;
+            }
+        }
+    }
     static File persistPhoto(Context context, byte[] jpegBytes) throws Exception {
         if (jpegBytes == null || jpegBytes.length == 0) throw new java.io.IOException("EMPTY_PHOTO");
         if (jpegBytes.length > MobileAttachmentClient.LIMIT) throw new java.io.IOException("PHOTO_TOO_LARGE");

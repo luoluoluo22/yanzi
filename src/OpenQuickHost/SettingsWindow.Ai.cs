@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
 using System.Diagnostics;
@@ -307,6 +307,7 @@ public partial class SettingsWindow
     {
         return providerType switch
         {
+            "Ego ChatGPT" => "http://127.0.0.1:8765/v1",
             "Gemini" => "https://generativelanguage.googleapis.com/v1beta",
             "Anthropic" => "https://api.anthropic.com/v1",
             "Ollama" => "http://localhost:11434/v1",

@@ -223,6 +223,36 @@ class MobileApiClient {
             return detail;
         }
 
+        /**
+         * Best-effort early cancellation for an execution message that has not yet been claimed by
+         * the desktop. Returns true only when the cloud lifecycle confirms cancellation. Once a
+         * desktop has already claimed the command the caller must use extension-level cancellation.
+         */
+        public static boolean cancelPendingExecution(String baseUrl, String token, String messageId,
+                                                     String sourceDeviceId) throws Exception {
+            if (messageId == null || messageId.trim().isEmpty()) return false;
+            JSONObject payload = new JSONObject().put("deviceId", sourceDeviceId);
+            try {
+                JSONObject result = MobileApiClient.postJson(
+                        baseUrl,
+                        "/v1/me/mobile/messages/" + MobileApiClient.encodePath(messageId) + "/cancel",
+                        payload,
+                        token,
+                        "取消待执行消息");
+                return "cancelled".equals(result.optString("status"));
+            } catch (Exception ex) {
+                String message = ex.getMessage() == null ? "" : ex.getMessage();
+                // 409 = desktop already claimed it; 404 commonly means LAN transport and no cloud
+                // queue entry. Both must fall through to the real Antigravity /取消 path.
+                if (message.contains("HTTP 409") || message.contains("HTTP 404")
+                        || message.contains("message_not_cancellable")
+                        || message.contains("message_not_found")) {
+                    return false;
+                }
+                throw ex;
+            }
+        }
+
         static List<RemoteExtension> fetchRunnableExtensions(String baseUrl, String token) throws Exception {
             JSONObject payload = MobileApiClient.getJson(baseUrl, "/v1/me/extensions", token, "读取小程序列表");
             JSONArray items = payload.optJSONArray("items");

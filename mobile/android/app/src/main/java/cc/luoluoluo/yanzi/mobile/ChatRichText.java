@@ -1,6 +1,8 @@
 package cc.luoluoluo.yanzi.mobile;
 
 import android.content.ActivityNotFoundException;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
@@ -24,14 +26,21 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
+import android.webkit.MimeTypeMap;
 import android.widget.HorizontalScrollView;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TableLayout;
 import android.widget.TableRow;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.core.content.FileProvider;
+
+import java.io.File;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -43,9 +52,12 @@ final class ChatRichText {
     private static final int BODY = Color.rgb(241, 245, 249);
     private static final int MUTED = Color.rgb(203, 213, 225);
     private static final int LINK = Color.rgb(125, 211, 252);
+    private static final Pattern IMAGE_MD = Pattern.compile("!\\[([^\\]\\r\\n]*)\\]\\(([^)\\r\\n]+)\\)");
     private static final Pattern INLINE = Pattern.compile(
-            "\\[([^\\]\\n]+)\\]\\((https?://[^\\s)]+)\\)|`([^`\\n]+)`|\\*\\*([^*\\n]+)\\*\\*|__([^_\\n]+)__|~~([^~\\n]+)~~|(?<!\\*)\\*([^*\\n]+)\\*(?!\\*)|(?<!_)_([^_\\n]+)_(?!_)",
+            "(?<!\\!)\\[([^\\]\\n]+)\\]\\(([^)\\n]+)\\)|`([^`\\n]+)`|\\*\\*([^*\\n]+)\\*\\*|__([^_\\n]+)__|~~([^~\\n]+)~~|(?<!\\*)\\*([^*\\n]+)\\*(?!\\*)|(?<!_)_([^_\\n]+)_(?!_)",
             Pattern.CASE_INSENSITIVE);
+    private static final Pattern BARE_FILE_PATH = Pattern.compile(
+            "(?i)(?:file:///[^\\s\\r\\n\\)\\]\\\"\\'\\<\\>]+|[a-zA-Z]:[\\\\/][^\\s\\r\\n\\)\\]\\\"\\'\\<\\>]+)");
     private static final Pattern HEADING = Pattern.compile("^\\s{0,3}(#{1,6})\\s+(.+)$");
     private static final Pattern LIST = Pattern.compile("^(\\s*)([-*+]\\s+|\\d+[.)]\\s+)(.*)$");
     private static final Pattern RULE = Pattern.compile("^\\s*(?:-{3,}|\\*{3,}|_{3,})\\s*$");
@@ -62,6 +74,32 @@ final class ChatRichText {
             String stripped = line.trim();
             if (stripped.isEmpty()) {
                 flush(parent, paragraph, maxWidth);
+                i++;
+                continue;
+            }
+            Matcher imgMatcher = IMAGE_MD.matcher(line);
+            if (imgMatcher.find()) {
+                flush(parent, paragraph, maxWidth);
+                int lastIdx = 0;
+                imgMatcher.reset();
+                while (imgMatcher.find()) {
+                    if (imgMatcher.start() > lastIdx) {
+                        String before = line.substring(lastIdx, imgMatcher.start()).trim();
+                        if (!before.isEmpty()) {
+                            text(parent, before, maxWidth, 15, false, 3, 3, BODY);
+                        }
+                    }
+                    String alt = imgMatcher.group(1);
+                    String source = imgMatcher.group(2).trim();
+                    image(parent, alt, source, maxWidth);
+                    lastIdx = imgMatcher.end();
+                }
+                if (lastIdx < line.length()) {
+                    String after = line.substring(lastIdx).trim();
+                    if (!after.isEmpty()) {
+                        text(parent, after, maxWidth, 15, false, 3, 3, BODY);
+                    }
+                }
                 i++;
                 continue;
             }
@@ -261,10 +299,13 @@ final class ChatRichText {
                 piece = matcher.group(i); break;
             }
             if (piece == null) piece = matcher.group();
+            if (matcher.group(1) != null && piece.startsWith("`") && piece.endsWith("`") && piece.length() >= 2) {
+                piece = piece.substring(1, piece.length() - 1);
+            }
             out.append(piece);
             int end = out.length();
             if (matcher.group(1) != null) {
-                String url = matcher.group(2);
+                String url = matcher.group(2).trim();
                 out.setSpan(new URLSpan(url), begin, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                 out.setSpan(new ForegroundColorSpan(LINK), begin, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                 out.setSpan(new UnderlineSpan(), begin, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
@@ -296,11 +337,274 @@ final class ChatRichText {
             out.setSpan(new ForegroundColorSpan(LINK), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
             out.setSpan(new UnderlineSpan(), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
+        Matcher files = BARE_FILE_PATH.matcher(out);
+        while (files.find()) {
+            int start = files.start(), end = files.end();
+            while (end > start && ".,;:!?)]}".indexOf(out.charAt(end - 1)) >= 0) end--;
+            if (end <= start || out.getSpans(start, end, URLSpan.class).length > 0
+                    || out.getSpans(start, end, BackgroundColorSpan.class).length > 0) continue;
+            String filePath = out.subSequence(start, end).toString();
+            out.setSpan(new URLSpan(filePath), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+            out.setSpan(new ForegroundColorSpan(LINK), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+            out.setSpan(new UnderlineSpan(), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
         return out;
+    }
+
+    static Set<String> extractImageNames(String raw) {
+        Set<String> names = new HashSet<>();
+        if (raw == null || raw.isEmpty()) return names;
+        Matcher m = IMAGE_MD.matcher(raw);
+        while (m.find()) {
+            String source = m.group(2);
+            String name = parseFileName(source);
+            if (name != null && !name.isEmpty()) {
+                names.add(name.toLowerCase(java.util.Locale.ROOT));
+            }
+        }
+        return names;
+    }
+
+    static String parseFileName(String source) {
+        if (source == null || source.trim().isEmpty()) return null;
+        String s = source.trim();
+        try {
+            s = java.net.URLDecoder.decode(s, "UTF-8");
+        } catch (Exception ignored) {}
+        if (s.contains("?")) s = s.substring(0, s.indexOf('?'));
+        if (s.contains("#")) s = s.substring(0, s.indexOf('#'));
+        int lastSlash = Math.max(s.lastIndexOf('/'), s.lastIndexOf('\\'));
+        if (lastSlash >= 0 && lastSlash < s.length() - 1) {
+            s = s.substring(lastSlash + 1);
+        }
+        s = s.replaceAll("[\\\\/\\x00-\\x1f]", "_").trim();
+        return s.isEmpty() ? null : s;
+    }
+
+    static File findLocalFile(Context context, String source) {
+        if (source == null || source.trim().isEmpty()) return null;
+        String clean = source.trim();
+        try {
+            clean = java.net.URLDecoder.decode(clean, "UTF-8");
+        } catch (Exception ignored) {}
+
+        if (clean.startsWith("file:///") && !clean.matches("(?i)^file:///[a-zA-Z]:.*")) {
+            try {
+                File directFile = new File(Uri.parse(clean).getPath());
+                if (directFile.isFile() && directFile.length() > 0) return directFile;
+            } catch (Exception ignored) {}
+        } else if (clean.startsWith("/") && new File(clean).isFile()) {
+            File directFile = new File(clean);
+            if (directFile.isFile() && directFile.length() > 0) return directFile;
+        }
+
+        String fileName = parseFileName(clean);
+        if (fileName == null || fileName.isEmpty()) return null;
+
+        File attachDir = new File(context.getFilesDir(), "mobile-attachments");
+        if (attachDir.isDirectory()) {
+            File[] files = attachDir.listFiles();
+            if (files != null) {
+                for (File f : files) {
+                    if (f.isFile() && f.length() > 0) {
+                        String name = f.getName();
+                        if (name.equalsIgnoreCase(fileName) || name.endsWith("-" + fileName)) {
+                            return f;
+                        }
+                    }
+                }
+                for (File f : files) {
+                    if (f.isFile() && f.length() > 0 && f.getName().toLowerCase(java.util.Locale.ROOT).contains(fileName.toLowerCase(java.util.Locale.ROOT))) {
+                        return f;
+                    }
+                }
+            }
+        }
+
+        File cacheDir = context.getCacheDir();
+        if (cacheDir != null && cacheDir.isDirectory()) {
+            File directCache = new File(cacheDir, fileName);
+            if (directCache.isFile() && directCache.length() > 0) return directCache;
+            File[] cacheFiles = cacheDir.listFiles();
+            if (cacheFiles != null) {
+                for (File f : cacheFiles) {
+                    if (f.isFile() && f.length() > 0 && (f.getName().equalsIgnoreCase(fileName) || f.getName().endsWith("-" + fileName))) {
+                        return f;
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    static File findLocalImageFile(Context context, String source) {
+        return findLocalFile(context, source);
+    }
+
+    private static void image(LinearLayout parent, String alt, String source, int maxWidth) {
+        Context context = parent.getContext();
+        File localFile = findLocalImageFile(context, source);
+        if (localFile != null && localFile.isFile() && localFile.length() > 0) {
+            try {
+                ImageView iv = new ImageView(context);
+                iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                iv.setAdjustViewBounds(true);
+                int maxImgWidth = Math.min(maxWidth, dp(context, 260));
+                int maxImgHeight = dp(context, 320);
+                iv.setMaxWidth(maxImgWidth);
+                iv.setMaxHeight(maxImgHeight);
+
+                Uri imageUri = Uri.fromFile(localFile);
+                iv.setImageURI(imageUri);
+
+                if (iv.getDrawable() != null) {
+                    GradientDrawable bg = new GradientDrawable();
+                    bg.setColor(Color.rgb(15, 23, 42));
+                    bg.setCornerRadius(dp(context, 8));
+                    iv.setBackground(bg);
+                    iv.setClipToOutline(true);
+
+                    final String finalPath = localFile.getAbsolutePath();
+                    iv.setClickable(true);
+                    iv.setFocusable(true);
+                    iv.setOnClickListener(v -> {
+                        if (context instanceof MainActivity) {
+                            ((MainActivity) context).showChatPhotoFullscreen(imageUri, finalPath);
+                        }
+                    });
+
+                    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+                    lp.topMargin = dp(context, 6);
+                    lp.bottomMargin = dp(context, 6);
+                    parent.addView(iv, lp);
+                    return;
+                }
+            } catch (Exception e) {
+                android.util.Log.e("ChatRichText", "Failed to render embedded image", e);
+            }
+        }
+
+        renderImagePlaceholder(parent, alt, source, maxWidth);
+    }
+
+    private static void renderImagePlaceholder(LinearLayout parent, String alt, String source, int maxWidth) {
+        Context context = parent.getContext();
+        String displayName = alt;
+        if (displayName == null || displayName.trim().isEmpty()) {
+            displayName = parseFileName(source);
+            if (displayName == null) displayName = source;
+        }
+        TextView placeholder = new TextView(context);
+        placeholder.setText("📷 [照片: " + displayName + " (传输中...)]");
+        placeholder.setTextColor(Color.rgb(148, 163, 184));
+        placeholder.setTextSize(13);
+        placeholder.setPadding(dp(context, 10), dp(context, 6), dp(context, 10), dp(context, 6));
+
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.rgb(30, 41, 59));
+        bg.setStroke(dp(context, 1), Color.rgb(71, 85, 105));
+        bg.setCornerRadius(dp(context, 6));
+        placeholder.setBackground(bg);
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+        lp.topMargin = dp(context, 4);
+        lp.bottomMargin = dp(context, 4);
+        parent.addView(placeholder, lp);
     }
 
     private static int dp(Context context, int amount) {
         return Math.round(amount * context.getResources().getDisplayMetrics().density);
+    }
+
+    static boolean handleLinkClick(Context context, String rawUrl) {
+        if (rawUrl == null || rawUrl.trim().isEmpty()) return false;
+        String url = rawUrl.trim();
+
+        // 1. 网页链接 (http:// 或 https://)
+        if (url.startsWith("https://") || url.startsWith("http://")) {
+            try {
+                Uri uri = Uri.parse(url);
+                Intent intent = new Intent(Intent.ACTION_VIEW, uri);
+                intent.addCategory(Intent.CATEGORY_BROWSABLE);
+                context.startActivity(intent);
+            } catch (ActivityNotFoundException error) {
+                Toast.makeText(context, "没有可打开链接的应用", Toast.LENGTH_SHORT).show();
+            }
+            return true;
+        }
+
+        // 2. 检查本地是否有对应文件（如已下载的附件、缓存图片或本地文件）
+        File localFile = findLocalFile(context, url);
+        if (localFile != null && localFile.isFile() && localFile.length() > 0) {
+            String lowerName = localFile.getName().toLowerCase(java.util.Locale.ROOT);
+            if ((lowerName.endsWith(".png") || lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")
+                    || lowerName.endsWith(".webp") || lowerName.endsWith(".gif"))
+                    && context instanceof MainActivity) {
+                ((MainActivity) context).showChatPhotoFullscreen(Uri.fromFile(localFile), localFile.getAbsolutePath());
+                return true;
+            }
+
+            try {
+                Uri fileUri = FileProvider.getUriForFile(
+                        context, BuildConfig.APPLICATION_ID + ".fileprovider", localFile);
+                String mimeType = getMimeType(localFile);
+                Intent intent = new Intent(Intent.ACTION_VIEW);
+                intent.setDataAndType(fileUri, mimeType);
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                context.startActivity(intent);
+                return true;
+            } catch (ActivityNotFoundException e) {
+                Toast.makeText(context, "没有可打开此文件的应用: " + localFile.getName(), Toast.LENGTH_SHORT).show();
+                copyToClipboard(context, url);
+                return true;
+            } catch (Exception e) {
+                android.util.Log.e("ChatRichText", "Failed to open local file: " + localFile, e);
+            }
+        }
+
+        // 3. 其它常规网络协议 (例如 mailto:, tel:)
+        Uri parsedUri = null;
+        try {
+            parsedUri = Uri.parse(url);
+        } catch (Exception ignored) {}
+        if (parsedUri != null && parsedUri.getScheme() != null
+                && !parsedUri.getScheme().equalsIgnoreCase("file")
+                && !url.matches("(?i)^[a-zA-Z]:.*")) {
+            try {
+                Intent intent = new Intent(Intent.ACTION_VIEW, parsedUri);
+                context.startActivity(intent);
+                return true;
+            } catch (Exception ignored) {}
+        }
+
+        // 4. 未下载或远程文件路径：复制到剪贴板并给出提示
+        copyToClipboard(context, url);
+        String displayName = parseFileName(url);
+        if (displayName == null || displayName.isEmpty()) displayName = url;
+        Toast.makeText(context, "已复制文件路径: " + displayName, Toast.LENGTH_SHORT).show();
+        return true;
+    }
+
+    private static void copyToClipboard(Context context, String text) {
+        try {
+            ClipboardManager cm = (ClipboardManager) context.getSystemService(Context.CLIPBOARD_SERVICE);
+            if (cm != null) {
+                cm.setPrimaryClip(ClipData.newPlainText("File Path", text));
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private static String getMimeType(File file) {
+        if (file == null) return "application/octet-stream";
+        String name = file.getName();
+        int dot = name.lastIndexOf('.');
+        if (dot >= 0 && dot < name.length() - 1) {
+            String ext = name.substring(dot + 1).toLowerCase(java.util.Locale.ROOT);
+            String mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext);
+            if (mime != null && !mime.isEmpty()) return mime;
+        }
+        return "application/octet-stream";
     }
 
     /**
@@ -328,16 +632,7 @@ final class ChatRichText {
                     && SystemClock.uptimeMillis() - downAt < ViewConfiguration.getLongPressTimeout()) {
                 URLSpan link = getLinkAt(event.getX(), event.getY());
                 if (link != null) {
-                    Uri uri = Uri.parse(link.getURL());
-                    String scheme = uri.getScheme();
-                    if ("https".equalsIgnoreCase(scheme) || "http".equalsIgnoreCase(scheme)) {
-                        try {
-                            Intent intent = new Intent(Intent.ACTION_VIEW, uri);
-                            intent.addCategory(Intent.CATEGORY_BROWSABLE);
-                            getContext().startActivity(intent);
-                        } catch (ActivityNotFoundException error) {
-                            Toast.makeText(getContext(), "没有可打开链接的应用", Toast.LENGTH_SHORT).show();
-                        }
+                    if (handleLinkClick(getContext(), link.getURL())) {
                         return true;
                     }
                 }

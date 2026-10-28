@@ -1,0 +1,108 @@
+name: Yanzi Windows device lifecycle release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Source project version (must match main)
+        type: string
+        required: true
+permissions:
+  contents: write
+concurrency:
+  group: yanzi-windows-device-release
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify requested release source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          [xml]$proj = Get-Content src/OpenQuickHost/OpenQuickHost.csproj -Raw
+          $version = $proj.Project.PropertyGroup.Version.Trim()
+          $requested = (Get-Content $env:GITHUB_EVENT_PATH -Raw | ConvertFrom-Json).inputs.version
+          if ($version -ne $requested -or $version -notmatch '^\d+\.\d+\.\d+$') { throw "Invalid version: source=$version requested=$requested" }
+          "VERSION=$version" >> $env:GITHUB_ENV
+      - name: Test ChatGPT Agent integration
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          npm ci --prefix tools/chatgpt-bridge --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'Dependencies failed' }
+          Push-Location tools/chatgpt-bridge
+          try {
+            node --test test/agent-console.test.mjs test/agent-console-popup.test.mjs test/background.test.mjs test/browser-delivery-verify.test.mjs test/longrun-reconciliation.test.mjs test/browser-version-election.test.mjs
+            if ($LASTEXITCODE -ne 0) { throw 'Agent tests failed' }
+          } finally { Pop-Location }
+      - name: Verify deployment receiver safety
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./scripts/test-device-deploy-agent.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Deployment agent test failed' }
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $file = './scripts/publish-installer.ps1'
+          $source = (Get-Content $file -Raw).Replace('https://repo.huaweicloud.com/repository/nuget/v3/index.json', 'https://api.nuget.org/v3/index.json')
+          Set-Content -Path $file -Value $source
+          & ./scripts/publish-installer.ps1 -Version $env:VERSION -ArtifactRoot "$env:RUNNER_TEMP\yanzi-device-release" -SkipBaselineDownload
+          if ($LASTEXITCODE -ne 0) { throw 'Packaging failed' }
+      - name: Verify package is complete and built from current source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TEMP 'yanzi-device-release'
+          $sourceVersion = (Get-Content browser-extension/manifest.json -Raw -Encoding UTF8 | ConvertFrom-Json).version
+          $publishedVersion = (Get-Content (Join-Path $root 'publish\win-x64\browser-extension\manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json).version
+          if ($sourceVersion -ne $publishedVersion) { throw "Extension stale: $sourceVersion != $publishedVersion" }
+          $base = Join-Path $root 'installer'
+          $v = $env:VERSION
+          $names = @("Yanzi-win-Setup-$v.exe","Yanzi-win-Portable-$v.zip","Yanzi-$v-full.nupkg",'RELEASES','assets.win.json','releases.win.json')
+          foreach ($name in $names) {
+            $file = Join-Path $base $name
+            if (!(Test-Path $file)) { throw "Missing artifact: $name" }
+            $size = (Get-Item $file).Length
+            if ($size -le 10 -or ($name -match '\.(exe|zip|nupkg)$' -and $size -lt 1000000)) { throw "Truncated: $name" }
+            Write-Output "$name bytes=$size sha256=$((Get-FileHash $file -Algorithm SHA256).Hash)"
+          }
+      - name: Publish immutable release and verify asset digests
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $repo = 'luoluoluo22/yanzi'
+          $v = $env:VERSION
+          $tag = "v$v"
+          gh release view $tag --repo $repo *> $null
+          if ($LASTEXITCODE -eq 0) { throw "Release tag already exists: $tag (immutable)" }
+          gh release create $tag --repo $repo --target $env:GITHUB_SHA --draft --title "Yanzi $v - managed device deployment" --notes "Verified Windows release for the Yanzi managed device deployment lifecycle. Installers are verified by SHA-256 on receiving computers before any unattended installation."
+          if ($LASTEXITCODE -ne 0) { throw 'Draft creation failed' }
+          $dir = Join-Path $env:RUNNER_TEMP 'yanzi-device-release\installer'
+          $names = @("Yanzi-win-Setup-$v.exe","Yanzi-win-Portable-$v.zip","Yanzi-$v-full.nupkg",'RELEASES','assets.win.json','releases.win.json')
+          $paths = @($names | ForEach-Object { Join-Path $dir $_ })
+          gh release upload $tag @paths --repo $repo
+          if ($LASTEXITCODE -ne 0) { throw 'Upload failed; keep draft' }
+          $assets = (gh release view $tag --repo $repo --json assets | ConvertFrom-Json).assets
+          foreach ($name in $names) {
+            $asset = $assets | Where-Object { $_.name -eq $name } | Select-Object -First 1
+            if (!$asset -or $asset.size -ne (Get-Item (Join-Path $dir $name)).Length) { throw "Asset incomplete: $name" }
+          }
+          gh release edit $tag --repo $repo --draft=false --prerelease=false
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to publish verified release' }
+          Write-Output "PUBLISHED=https://github.com/$repo/releases/tag/$tag"
