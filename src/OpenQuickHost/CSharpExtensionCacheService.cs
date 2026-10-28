@@ -37,6 +37,7 @@ public static class CSharpExtensionCacheService
 
     public static void QueueCleanup(string? activeBuildRoot)
     {
+        if (!HostRuntimeProfile.OwnsBackgroundServices) return;
         if (Interlocked.CompareExchange(ref _cleanupRunning, 1, 0) != 0)
         {
             return;

@@ -1,0 +1,47 @@
+name: Diagnose D1 query hotspots
+
+on:
+  workflow_dispatch:
+    inputs:
+      period:
+        description: Analytics lookback period
+        required: true
+        default: 2d
+        type: choice
+        options:
+          - 1d
+          - 2d
+          - 7d
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_D1_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify D1 report sanitizer
+        run: node --test scripts/cloudflare/d1-insights-summary.test.mjs
+      - name: Fetch D1 query insights (read-only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${CLOUDFLARE_API_TOKEN:-}" ]]; then
+            echo "CLOUDFLARE_D1_API_TOKEN is missing" >&2
+            exit 1
+          fi
+          output="$RUNNER_TEMP/d1-insights.json"
+          trap 'rm -f "$output"' EXIT
+          npx --yes wrangler@4 d1 insights openquickhost-sync-db \
+            --config cloudflare/wrangler.toml \
+            --timePeriod "${{ inputs.period }}" \
+            --sort-type sum --sort-by reads --sort-direction DESC \
+            --limit 30 --json > "$output"
+          node scripts/cloudflare/d1-insights-summary.mjs "$output"

@@ -22,6 +22,17 @@ public static class KeyboardDoubleTapService
     private const int VkRWin = 0x5C;
     private const int VkCapsLock = 0x14;
     private const uint LlkhfInjected = 0x00000010;
+    // Only synthetic Ctrl/Alt events from the installed key mapper may be used for
+    // double-tap recognition. Unmarked SendInput/keybd_event traffic remains excluded.
+    public const uint MappedModifierInputTag = 0x594B4D50; // 'YKMP'
+
+    internal static bool ShouldProcessDoubleTapKey(uint flags, nint extraInfo, int vkCode)
+    {
+        if ((flags & LlkhfInjected) == 0) return true;
+        return extraInfo == (nint)MappedModifierInputTag &&
+               vkCode is VkLControl or VkRControl or VkLMenu or VkRMenu;
+    }
+
 
     private static readonly LowLevelKeyboardProc Proc = HookCallback;
     private static IntPtr _hookId = IntPtr.Zero;
@@ -45,12 +56,54 @@ public static class KeyboardDoubleTapService
     private static bool _doubleCtrlEnabled = true;
     private static bool _doubleAltEnabled = true;
     private static bool _suppressCurrentAltTap;
+    private static bool _suppressCurrentCtrlTap;
     private static bool _winOverlayActive;
     private static bool _winOverlayEnabled = true;
     private static bool _winHoldEnabled = true;
     private static bool _winDoubleTapEnabled = true;
     private static bool _hasReleasedWinForYanmHold;
     private static string _yanmActivationKey = YanmActivationKeys.Win;
+    private static bool _capsLockDown;
+    private static bool _capsLockUsedForLauncher;
+    private static long _capsLockDownTimestamp;
+
+    private static void SendSyntheticCapsLockToggle()
+    {
+        const uint keyEventKeyUp = 0x0002;
+        keybd_event((byte)VkCapsLock, 0x45, 0, UIntPtr.Zero);
+        keybd_event((byte)VkCapsLock, 0x45, keyEventKeyUp, UIntPtr.Zero);
+    }
+
+    private static bool IsLauncherWindowActive()
+    {
+        var mainWindow = MainWindow.Instance;
+        if (mainWindow == null) return false;
+        try
+        {
+            return mainWindow.Dispatcher.Invoke(() => mainWindow.IsVisible && mainWindow.IsActive && mainWindow.WindowState != WindowState.Minimized);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static void DispatchLauncherCapsAction(MainWindow.LauncherCapsAction action, string key)
+    {
+        System.Windows.Application.Current?.Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
+        {
+            MainWindow.Instance?.HandleCapsNavigation(action);
+            MainWindow.Instance?.FlashGuideKey(key);
+        });
+    }
+
+    private static void DispatchCapsGuideState(bool isCapsDown, string? activeKey)
+    {
+        System.Windows.Application.Current?.Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
+        {
+            MainWindow.Instance?.SetCapsGuideState(isCapsDown, activeKey);
+        });
+    }
 
     public static bool IsRunning => _hookId != IntPtr.Zero;
     public static bool IsYanmTriggerHeld => _winOverlayActive;
@@ -76,6 +129,7 @@ public static class KeyboardDoubleTapService
         Action? onWinRelease = null,
         Action? onWinDoubleTap = null)
     {
+        if (!HostRuntimeProfile.GlobalListenersEnabled) return;
         if (IsRunning)
         {
             HostAssets.AppendLog("Keyboard double tap: start skipped because hook is already running.");
@@ -107,6 +161,7 @@ public static class KeyboardDoubleTapService
         _doubleCtrlEnabled = string.Equals(shortcut, "DoubleCtrl", StringComparison.OrdinalIgnoreCase);
         _doubleAltEnabled = string.Equals(shortcut, "DoubleAlt", StringComparison.OrdinalIgnoreCase);
         _suppressCurrentAltTap = false;
+        _suppressCurrentCtrlTap = false;
     }
 
     public static void Stop()
@@ -179,18 +234,31 @@ public static class KeyboardDoubleTapService
         return SetWindowsHookEx(WhKeyboardLl, proc, IntPtr.Zero, 0);
     }
 
+    // 钩子回调由 user32 反向调用：异常逃出回调边界会直接进程 fail-fast，外层兜底后放行事件。
     private static IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
+    {
+        try
+        {
+            return HookCallbackCore(nCode, wParam, lParam);
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"[KeyboardDoubleTap] HookCallback exception: {ex.Message}");
+            return CallNextHookEx(_hookId, nCode, wParam, lParam);
+        }
+    }
+
+    private static IntPtr HookCallbackCore(int nCode, IntPtr wParam, IntPtr lParam)
     {
         if (nCode >= 0)
         {
             var message = wParam.ToInt32();
             var info = Marshal.PtrToStructure<KbdLlHookStruct>(lParam);
-            if ((info.flags & LlkhfInjected) != 0)
+            var vkCode = (int)info.vkCode;
+            if (!ShouldProcessDoubleTapKey(info.flags, info.dwExtraInfo, vkCode))
             {
                 return CallNextHookEx(_hookId, nCode, wParam, lParam);
             }
-
-            var vkCode = (int)info.vkCode;
             var suppress = false;
 
             if (message is WmKeyDown or WmSysKeyDown)
@@ -213,12 +281,82 @@ public static class KeyboardDoubleTapService
 
     private static bool HandleKeyDown(int vkCode)
     {
+        if (vkCode == VkCapsLock)
+        {
+            _capsLockDown = true;
+            _capsLockUsedForLauncher = false;
+            _capsLockDownTimestamp = Environment.TickCount64;
+            if (IsLauncherWindowActive())
+            {
+                DispatchCapsGuideState(isCapsDown: true, activeKey: null);
+                return true; // 拦截 CapsLock 按下，避免在搜索框内直接触发系统大写锁定
+            }
+            return IsYanmTriggerKey(YanmActivationKeys.CapsLock) ? HandleYanmTriggerDown(YanmActivationKeys.CapsLock) : false;
+        }
+
+        // 当按住 CapsLock 且启动器窗口处于前台激活时，拦截 WSAD / 空格 / Enter 等
+        if (_capsLockDown && IsLauncherWindowActive())
+        {
+            switch (vkCode)
+            {
+                case 0x57: // 'W' - 向上
+                case 0x45: // 'E'
+                case 0x4B: // 'K'
+                    _capsLockUsedForLauncher = true;
+                    DispatchLauncherCapsAction(MainWindow.LauncherCapsAction.MoveUp, "W");
+                    return true;
+
+                case 0x53: // 'S' - 向下
+                case 0x4A: // 'J'
+                    _capsLockUsedForLauncher = true;
+                    DispatchLauncherCapsAction(MainWindow.LauncherCapsAction.MoveDown, "S");
+                    return true;
+
+                case 0x41: // 'A' - 左 (返回输入框)
+                case 0x48: // 'H'
+                    _capsLockUsedForLauncher = true;
+                    DispatchLauncherCapsAction(MainWindow.LauncherCapsAction.ReturnToSearch, "A");
+                    return true;
+
+                case 0x44: // 'D' - 右 (操作菜单)
+                case 0x4C: // 'L'
+                case 0x46: // 'F'
+                    _capsLockUsedForLauncher = true;
+                    DispatchLauncherCapsAction(MainWindow.LauncherCapsAction.OpenMenu, "D");
+                    return true;
+
+                case 0x20: // Space - 空格直接运行！
+                    _capsLockUsedForLauncher = true;
+                    DispatchLauncherCapsAction(MainWindow.LauncherCapsAction.Execute, "Space");
+                    return true;
+
+                case 0x0D: // Enter
+                    _capsLockUsedForLauncher = true;
+                    DispatchLauncherCapsAction(MainWindow.LauncherCapsAction.Execute, "Space");
+                    return true;
+            }
+        }
+
         switch (vkCode)
         {
             case VkLControl:
+                if (ShouldSuppressCurrentCtrlTap())
+                {
+                    _leftCtrlDown = true;
+                    _suppressCurrentCtrlTap = true;
+                    return true;
+                }
+
                 _leftCtrlDown = true;
                 return false;
             case VkRControl:
+                if (ShouldSuppressCurrentCtrlTap())
+                {
+                    _rightCtrlDown = true;
+                    _suppressCurrentCtrlTap = true;
+                    return true;
+                }
+
                 _rightCtrlDown = true;
                 return false;
             case VkLMenu:
@@ -253,8 +391,6 @@ public static class KeyboardDoubleTapService
             case VkRWin:
                 _rightWinDown = true;
                 return IsYanmTriggerKey(YanmActivationKeys.Win) ? HandleYanmTriggerDown(YanmActivationKeys.Win) : false;
-            case VkCapsLock:
-                return IsYanmTriggerKey(YanmActivationKeys.CapsLock) ? HandleYanmTriggerDown(YanmActivationKeys.CapsLock) : false;
         }
 
         if (ShouldReleaseWinForYanmPassthrough())
@@ -268,6 +404,25 @@ public static class KeyboardDoubleTapService
 
     private static bool HandleKeyUp(int vkCode)
     {
+        if (vkCode == VkCapsLock)
+        {
+            _capsLockDown = false;
+            var isLauncherActive = IsLauncherWindowActive();
+            var duration = Environment.TickCount64 - _capsLockDownTimestamp;
+
+            if (isLauncherActive)
+            {
+                DispatchCapsGuideState(isCapsDown: false, activeKey: null);
+                // 如果是短按（< 350ms）且未在按住期间使用任何 WSAD 组合键，则判定为切换大小写
+                if (!_capsLockUsedForLauncher && duration < 350)
+                {
+                    SendSyntheticCapsLockToggle();
+                }
+                return true;
+            }
+            return IsYanmTriggerKey(YanmActivationKeys.CapsLock) ? HandleYanmTriggerUp(YanmActivationKeys.CapsLock) : false;
+        }
+
         ModifierTapKind releasedKind;
         switch (vkCode)
         {
@@ -299,8 +454,6 @@ public static class KeyboardDoubleTapService
             case VkRWin:
                 _rightWinDown = false;
                 return IsYanmTriggerKey(YanmActivationKeys.Win) ? HandleYanmTriggerUp(YanmActivationKeys.Win) : false;
-            case VkCapsLock:
-                return IsYanmTriggerKey(YanmActivationKeys.CapsLock) ? HandleYanmTriggerUp(YanmActivationKeys.CapsLock) : false;
             default:
                 _sequenceDirty = true;
                 return false;
@@ -310,6 +463,7 @@ public static class KeyboardDoubleTapService
         {
             _sequenceDirty = true;
             _suppressCurrentAltTap = false;
+            _suppressCurrentCtrlTap = false;
             return false;
         }
 
@@ -318,17 +472,20 @@ public static class KeyboardDoubleTapService
             _lastTapKind == releasedKind &&
             now - _lastTapTimestamp <= 350)
         {
-            var shouldSuppress = releasedKind == ModifierTapKind.Alt && _doubleAltEnabled && _suppressCurrentAltTap;
+            var shouldSuppress = (releasedKind == ModifierTapKind.Alt && _doubleAltEnabled && _suppressCurrentAltTap) ||
+                                 (releasedKind == ModifierTapKind.Control && _doubleCtrlEnabled && _suppressCurrentCtrlTap);
             _lastTapKind = ModifierTapKind.None;
             _lastTapTimestamp = 0;
             _suppressCurrentAltTap = false;
+            _suppressCurrentCtrlTap = false;
             HostAssets.AppendLog($"Keyboard double tap: triggered {releasedKind}.");
-            if (shouldSuppress)
+            if (releasedKind == ModifierTapKind.Alt && shouldSuppress)
             {
                 CancelForegroundAltMenuMode();
             }
 
-            System.Windows.Application.Current.Dispatcher.Invoke(() => _onDoubleTap?.Invoke(releasedKind.ToString()));
+            // 面板切换经统一派发，避免完整 UI 布局内联在 WH_KEYBOARD_LL 回调里执行
+            UiDispatcher.Post(() => _onDoubleTap?.Invoke(releasedKind.ToString()));
             return shouldSuppress;
         }
 
@@ -339,8 +496,13 @@ public static class KeyboardDoubleTapService
         {
             _suppressCurrentAltTap = false;
         }
+        if (releasedKind != ModifierTapKind.Control)
+        {
+            _suppressCurrentCtrlTap = false;
+        }
 
-        return releasedKind == ModifierTapKind.Alt && _doubleAltEnabled && _suppressCurrentAltTap;
+        return (releasedKind == ModifierTapKind.Alt && _doubleAltEnabled && _suppressCurrentAltTap) ||
+               (releasedKind == ModifierTapKind.Control && _doubleCtrlEnabled && _suppressCurrentCtrlTap);
     }
 
     private static bool IsYanmTriggerKey(string key)
@@ -431,76 +593,15 @@ public static class KeyboardDoubleTapService
 
     private static bool IsYanmAllowedForForegroundProcess()
     {
-        var settings = AppSettingsStore.Load().Yanm ?? new YanmSettings();
-        var whitelist = settings.WhitelistedProcesses ?? [];
-        var blacklist = settings.BlacklistedProcesses ?? [];
-        if (whitelist.Count == 0 && blacklist.Count == 0)
-        {
-            return true;
-        }
-
+        var settings = AppSettingsStore.LoadCached().Yanm ?? new YanmSettings();
         var processName = GetForegroundProcessName();
-        if (string.IsNullOrWhiteSpace(processName))
+        var allowed = ProcessHelper.IsProcessAllowed(processName, settings.WhitelistedProcesses, settings.BlacklistedProcesses);
+        if (!allowed)
         {
-            return whitelist.Count == 0;
+            HostAssets.AppendLog($"Keyboard Yanm trigger blocked by process filter, process={processName}.");
         }
 
-        if (whitelist.Count > 0)
-        {
-            var allowed = whitelist.Any(item => ProcessNameMatches(processName, item));
-            if (!allowed)
-            {
-                HostAssets.AppendLog($"Keyboard Yanm trigger blocked by whitelist, process={processName}.");
-            }
-
-            return allowed;
-        }
-
-        var blocked = blacklist.Any(item => ProcessNameMatches(processName, item));
-        if (blocked)
-        {
-            HostAssets.AppendLog($"Keyboard Yanm trigger blocked by blacklist, process={processName}.");
-        }
-
-        return !blocked;
-    }
-
-    private static bool ProcessNameMatches(string processName, string pattern)
-    {
-        var normalizedProcess = NormalizeProcessName(processName);
-        var normalizedPattern = NormalizeProcessName(pattern);
-        if (string.IsNullOrWhiteSpace(normalizedPattern))
-        {
-            return false;
-        }
-
-        if (normalizedPattern.Contains('*', StringComparison.Ordinal))
-        {
-            var parts = normalizedPattern.Split('*', StringSplitOptions.RemoveEmptyEntries);
-            var index = 0;
-            foreach (var part in parts)
-            {
-                var found = normalizedProcess.IndexOf(part, index, StringComparison.OrdinalIgnoreCase);
-                if (found < 0)
-                {
-                    return false;
-                }
-
-                index = found + part.Length;
-            }
-
-            return true;
-        }
-
-        return normalizedProcess.Equals(normalizedPattern, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static string NormalizeProcessName(string value)
-    {
-        value = (value ?? string.Empty).Trim();
-        return value.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
-            ? value[..^4]
-            : value;
+        return allowed;
     }
 
     private static string GetForegroundProcessName()
@@ -513,8 +614,21 @@ public static class KeyboardDoubleTapService
                 return string.Empty;
             }
 
+            var className = new System.Text.StringBuilder(256);
+            if (GetClassName(hwnd, className, className.Capacity) > 0)
+            {
+                var classStr = className.ToString();
+                if (string.Equals(classStr, "Progman", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(classStr, "WorkerW", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(classStr, "Shell_TrayWnd", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(classStr, "Shell_SecondaryTrayWnd", StringComparison.OrdinalIgnoreCase))
+                {
+                    return "desktop";
+                }
+            }
+
             _ = GetWindowThreadProcessId(hwnd, out var processId);
-            return processId == 0 ? string.Empty : Process.GetProcessById((int)processId).ProcessName;
+            return ProcessHelper.GetProcessNameByPid(processId);
         }
         catch
         {
@@ -548,6 +662,7 @@ public static class KeyboardDoubleTapService
         _leftWinDown = false;
         _rightWinDown = false;
         _suppressCurrentAltTap = false;
+        _suppressCurrentCtrlTap = false;
         _winOverlayActive = false;
         _yanmTriggerDownTimestamp = 0;
         _hasReleasedWinForYanmHold = false;
@@ -616,11 +731,32 @@ public static class KeyboardDoubleTapService
                !_rightWinDown;
     }
 
+    private static bool ShouldSuppressCurrentCtrlTap()
+    {
+        if (!_doubleCtrlEnabled || _sequenceDirty)
+        {
+            return false;
+        }
+
+        var now = Environment.TickCount64;
+        return _lastTapKind == ModifierTapKind.Control &&
+               now - _lastTapTimestamp <= 350 &&
+               !_leftAltDown &&
+               !_rightAltDown &&
+               !_leftShiftDown &&
+               !_rightShiftDown &&
+               !_leftWinDown &&
+               !_rightWinDown;
+    }
+
     private static void CancelForegroundAltMenuMode()
     {
         const uint keyEventKeyUp = 0x0002;
-        keybd_event((byte)VkEscape, 0, 0, UIntPtr.Zero);
-        keybd_event((byte)VkEscape, 0, keyEventKeyUp, UIntPtr.Zero);
+        // 标记为合成输入：OS 正常收到 Esc 以关闭 Alt 菜单模式，但 InputHookService 的钩子
+        // 不再把它误判为用户 Esc 去触发 OnGlobalEscapePressed（那会取消进行中的长按/手势/轮盘）。
+        var marker = (UIntPtr)InputHookService.SyntheticInputMarker;
+        keybd_event((byte)VkEscape, 0, 0, marker);
+        keybd_event((byte)VkEscape, 0, keyEventKeyUp, marker);
     }
 
     private static void ReleaseVirtualKey(int vkCode)
@@ -674,4 +810,7 @@ public static class KeyboardDoubleTapService
 
     [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    private static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
 }

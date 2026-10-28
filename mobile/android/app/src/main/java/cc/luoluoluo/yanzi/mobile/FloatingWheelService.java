@@ -77,12 +77,14 @@ import android.app.NotificationManager;
 
 public class FloatingWheelService extends Service {
     private static Context sContext;
+    private static FloatingWheelService sInstance;
+    private boolean appForegroundHidden;
 
     private static final String TAG = "YanziFloatingWheel";
     private static final String YANZI_SITE_URL = "https://yanzi.luoluoluo.cc.cd";
     private static final String DEFAULT_BASE_URL = "https://sync.luoluoluo.cc.cd";
     private static final String CLOUD_USER_AGENT = "YanziClient-Mobile/0.1.0";
-    public static final String ACTION_OPEN_WHEEL_FROM_GESTURE = "cc.luoluoluo.yanzi.mobile.OPEN_WHEEL_FROM_GESTURE";
+    public static final String ACTION_OPEN_WHEEL_FROM_GESTURE = BuildConfig.APPLICATION_ID + ".OPEN_WHEEL_FROM_GESTURE";
     private static final int BUBBLE_SIZE_DP = 58;
     private static final int BUBBLE_PADDING_DP = 12;
     private static final int EDGE_MARGIN_DP = 10;
@@ -111,6 +113,9 @@ public class FloatingWheelService extends Service {
     private boolean wheelTracking;
     private ServerSocket notificationServerSocket;
     private Thread notificationThread;
+    private final java.util.concurrent.ThreadPoolExecutor lanWorkers = new java.util.concurrent.ThreadPoolExecutor(
+        8, 8, 30, java.util.concurrent.TimeUnit.SECONDS, new java.util.concurrent.ArrayBlockingQueue<Runnable>(16));
+    private final java.util.concurrent.Semaphore encryptedLanCapacity = new java.util.concurrent.Semaphore(3);
     private boolean ignoreBubbleGestureUntilUp;
     private Runnable pendingLongPress;
     private Runnable pendingSlotMenu;
@@ -165,23 +170,54 @@ public class FloatingWheelService extends Service {
     public void onCreate() {
         super.onCreate();
         sContext = this;
+        sInstance = this;
         isRunning = true;
 
         prefs = getSharedPreferences("yanzi-mobile", Context.MODE_PRIVATE);
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
         startNotificationServer();
-        showBubble();
+        boolean enabled = prefs.getBoolean("floatingWheelEnabled", true);
+        if (enabled) {
+            showBubble();
+        }
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (bubbleView == null) {
-            showBubble();
+        boolean enabled = prefs.getBoolean("floatingWheelEnabled", true);
+        if (enabled && !appForegroundHidden) {
+            if (bubbleView == null) {
+                showBubble();
+            }
+        } else {
+            if (bubbleView != null) {
+                removeView(bubbleView);
+                bubbleView = null;
+            }
         }
         if (intent != null && ACTION_OPEN_WHEEL_FROM_GESTURE.equals(intent.getAction())) {
             openWheelFromGesture();
         }
         return START_STICKY;
+    }
+
+    public static void setAppForeground(boolean foreground) {
+        FloatingWheelService service = sInstance;
+        if (service == null) return;
+        service.mainHandler.post(() -> {
+            service.appForegroundHidden = foreground;
+            if (foreground) {
+                service.closeOverlayUi();
+                if (service.bubbleView != null) {
+                    service.removeView(service.bubbleView);
+                    service.bubbleView = null;
+                }
+            } else if (service.prefs != null
+                    && service.prefs.getBoolean("floatingWheelEnabled", true)
+                    && service.bubbleView == null) {
+                service.showBubble();
+            }
+        });
     }
 
     @Override
@@ -192,6 +228,7 @@ public class FloatingWheelService extends Service {
     @Override
     public void onDestroy() {
         isRunning = false;
+        if (sInstance == this) sInstance = null;
         try {
             if (notificationServerSocket != null) notificationServerSocket.close();
             if (notificationThread != null) notificationThread.interrupt();
@@ -201,6 +238,7 @@ public class FloatingWheelService extends Service {
         removeView(progressView);
         removeView(bubbleView);
         executor.shutdownNow();
+        lanWorkers.shutdownNow();
         super.onDestroy();
     }
 
@@ -374,7 +412,7 @@ public class FloatingWheelService extends Service {
         items.add(new WheelItem("screenshot", "mdi:camera", "发截图", () -> sendScreenshotToDesktop()));
         items.add(new WheelItem("pick-photo", "mdi:image", "发照片", () -> openMain("pick-photo")));
         items.add(new WheelItem("open-yanzi-site", "mdi:web", "官网", () -> openUrl(YANZI_SITE_URL)));
-        items.add(new WheelItem("extensions", "mdi:monitor-dashboard", "远程扩展", () -> openMain("extensions")));
+        items.add(new WheelItem("extensions", "mdi:monitor-dashboard", "电脑小程序", () -> openMain("extensions")));
         items.add(new WheelItem("yanm", "mdi:monitor-dashboard", "燕幕", () -> openMain("yanm")));
 
         WheelItem[] outerSlots = new WheelItem[6];
@@ -385,7 +423,7 @@ public class FloatingWheelService extends Service {
                 continue;
             }
             String id = firstNonEmpty(extension.optString("id"), "mobile-extension-" + i);
-            String name = firstNonEmpty(extension.optString("name"), extension.optString("displayName"), "本机扩展");
+            String name = firstNonEmpty(extension.optString("name"), extension.optString("displayName"), "手机小程序");
             String icon = firstNonEmpty(extension.optString("icon"), firstGlyph(name));
             String json = extension.toString();
             int slot = extension.optInt("_wheelSlot", -1);
@@ -429,7 +467,7 @@ public class FloatingWheelService extends Service {
         edit.setOnClickListener(v -> {
             WheelItem item = currentSectorWheel == null ? null : currentSectorWheel.selectedItem();
             if (item == null || item.json == null || !item.id.startsWith("local:")) {
-                toast("先选中一个本机扩展");
+                toast("先选中一个手机小程序");
                 return;
             }
             pauseBubbleGestureForPanel();
@@ -438,7 +476,7 @@ public class FloatingWheelService extends Service {
         delete.setOnClickListener(v -> {
             WheelItem item = currentSectorWheel == null ? null : currentSectorWheel.selectedItem();
             if (item == null || item.json == null || !item.id.startsWith("local:")) {
-                toast("先选中一个本机扩展");
+                toast("先选中一个手机小程序");
                 return;
             }
             deleteMobileExtension(item.id.substring("local:".length()));
@@ -474,7 +512,7 @@ public class FloatingWheelService extends Service {
             }
             return array;
         } catch (Exception ex) {
-            log("读取手机扩展列表失败：" + ex.getMessage());
+            log("读取手机小程序列表失败：" + ex.getMessage());
             return new JSONArray();
         }
     }
@@ -511,9 +549,9 @@ public class FloatingWheelService extends Service {
             .putString("mobileExtensions", next.toString())
             .putString("mobileExtensionDraft", json.toString(2))
             .putString("mobileExtensionDraftId", id)
-            .putString("mobileExtensionDraftName", firstNonEmpty(json.optString("name"), json.optString("displayName"), "手机扩展"))
+            .putString("mobileExtensionDraftName", firstNonEmpty(json.optString("name"), json.optString("displayName"), "手机小程序"))
             .apply();
-        log("手机扩展已保存到槽位：id=" + id + " count=" + next.length());
+        log("手机小程序已保存到槽位：id=" + id + " count=" + next.length());
     }
 
     private void deleteMobileExtension(String id) {
@@ -526,8 +564,8 @@ public class FloatingWheelService extends Service {
             }
         }
         prefs.edit().putString("mobileExtensions", next.toString()).apply();
-        log("手机扩展已删除：id=" + id + " count=" + next.length());
-        toast("已删除扩展");
+        log("手机小程序已删除：id=" + id + " count=" + next.length());
+        toast("已删除小程序");
     }
 
     private void runMobileExtensionJson(String jsonText) {
@@ -555,15 +593,15 @@ public class FloatingWheelService extends Service {
                 "httpGet:function(url){return Promise.resolve(JSON.parse(yanziMobileJsHost.unsupported('httpGet')));}," +
                 "httpPostJson:function(url,jsonText){return Promise.resolve(JSON.parse(yanziMobileJsHost.unsupported('httpPostJson')));}" +
                 "}};" +
-                "async function __run(){try{" + source + "\n;if(typeof run==='function'){await run(window.context);}yanziMobileJsHost.done('扩展执行完成');}" +
+                "async function __run(){try{" + source + "\n;if(typeof run==='function'){await run(window.context);}yanziMobileJsHost.done('小程序执行完成');}" +
                 "catch(e){yanziMobileJsHost.fail(String(e&&e.message?e.message:e));}}" +
                 "__run();" +
                 "</script></body></html>";
-            runner.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null);
-            log("手机扩展开始执行。");
+            runner.loadDataWithBaseURL("http://localhost/", html, "text/html", "UTF-8", null);
+            log("手机小程序开始执行。");
         } catch (Exception ex) {
-            log("手机扩展执行失败：" + ex.getMessage());
-            toast("扩展执行失败：" + ex.getMessage());
+            log("手机小程序执行失败：" + ex.getMessage());
+            toast("小程序执行失败：" + ex.getMessage());
         }
     }
 
@@ -587,14 +625,14 @@ public class FloatingWheelService extends Service {
 
         @JavascriptInterface
         public void done(String message) {
-            log("手机扩展执行完成：" + message);
+            log("手机小程序执行完成：" + message);
             FloatingWheelService.this.toast(message);
         }
 
         @JavascriptInterface
         public void fail(String message) {
-            log("手机扩展执行失败：" + message);
-            FloatingWheelService.this.toast("扩展执行失败：" + message);
+            log("手机小程序执行失败：" + message);
+            FloatingWheelService.this.toast("小程序执行失败：" + message);
         }
 
         @JavascriptInterface
@@ -648,7 +686,7 @@ public class FloatingWheelService extends Service {
 
     private static String shortLabel(String value) {
         if (value == null || value.trim().isEmpty()) {
-            return "扩展";
+            return "小程序";
         }
         String trimmed = value.trim();
         return trimmed.length() > 3 ? trimmed.substring(0, 3) : trimmed;
@@ -1037,8 +1075,8 @@ public class FloatingWheelService extends Service {
 
     private void showMobileExtensionPanel(String initialJson, int preferredSlot) {
         LinearLayout panel = overlayPanel();
-        panel.addView(panelTitle("添加手机扩展"));
-        EditText input = panelInput("粘贴手机扩展 JSON", firstNonEmpty(initialJson, prefs.getString("mobileExtensionDraft", ""), defaultMobileExtensionJson()), 8);
+        panel.addView(panelTitle("添加手机小程序"));
+        EditText input = panelInput("粘贴手机小程序 JSON", firstNonEmpty(initialJson, prefs.getString("mobileExtensionDraft", ""), defaultMobileExtensionJson()), 8);
         panel.addView(input, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
         TextView result = new TextView(this);
         result.setText("粘贴后会自动检测 JSON 格式。");
@@ -1050,8 +1088,8 @@ public class FloatingWheelService extends Service {
 
         LinearLayout buttons = row();
         Button paste = panelButton("粘贴JSON");
-        Button test = panelButton("测试扩展");
-        Button save = panelButton("保存扩展");
+        Button test = panelButton("测试小程序");
+        Button save = panelButton("保存小程序");
         Button close = panelButton("关闭");
         buttons.addView(paste, new LinearLayout.LayoutParams(0, dp(42), 1));
         buttons.addView(test, new LinearLayout.LayoutParams(0, dp(42), 1));
@@ -1070,7 +1108,7 @@ public class FloatingWheelService extends Service {
                 String pretty = json.toString(2);
                 input.setText(pretty);
                 input.setSelection(pretty.length());
-                result.setText("JSON 格式正确：" + firstNonEmpty(json.optString("name"), json.optString("id"), "未命名扩展"));
+                result.setText("JSON 格式正确：" + firstNonEmpty(json.optString("name"), json.optString("id"), "未命名小程序"));
                 result.setTextColor(Color.rgb(125, 211, 252));
             } catch (Exception ex) {
                 input.setText("");
@@ -1081,7 +1119,7 @@ public class FloatingWheelService extends Service {
         test.setOnClickListener(v -> {
             try {
                 JSONObject json = new JSONObject(input.getText().toString().trim());
-                result.setText("测试通过：" + firstNonEmpty(json.optString("name"), json.optString("id"), "未命名扩展"));
+                result.setText("测试通过：" + firstNonEmpty(json.optString("name"), json.optString("id"), "未命名小程序"));
                 result.setTextColor(Color.rgb(125, 211, 252));
             } catch (Exception ex) {
                 result.setText("测试失败：" + ex.getMessage());
@@ -1091,9 +1129,9 @@ public class FloatingWheelService extends Service {
         save.setOnClickListener(v -> {
             try {
                 JSONObject json = new JSONObject(input.getText().toString().trim());
-                String name = firstNonEmpty(json.optString("name"), json.optString("displayName"), "手机扩展");
+                String name = firstNonEmpty(json.optString("name"), json.optString("displayName"), "手机小程序");
                 upsertMobileExtension(json, preferredSlot);
-                toast("已保存扩展：" + name);
+                toast("已保存小程序：" + name);
                 closePanel();
             } catch (Exception ex) {
                 result.setText("保存失败：" + ex.getMessage());
@@ -1107,8 +1145,8 @@ public class FloatingWheelService extends Service {
 
     private void showMobileExtensionManagePanel(WheelItem item) {
         LinearLayout panel = overlayPanel();
-        panel.addView(panelTitle("扩展操作"));
-        panel.addView(textView("扩展：" + item.label, 14, Color.WHITE, true));
+        panel.addView(panelTitle("小程序操作"));
+        panel.addView(textView("小程序：" + item.label, 14, Color.WHITE, true));
         LinearLayout buttons = row();
         Button edit = panelButton("编辑");
         Button delete = panelButton("删除");
@@ -1295,7 +1333,7 @@ public class FloatingWheelService extends Service {
             return;
         }
 
-        // 1. 关闭燕环圆环菜单和扩展面板
+        // 1. 关闭燕环圆环菜单和小程序面板
         closeOverlayUi();
         // 2. 彻底隐藏悬浮球气泡，确保背景无干扰
         if (bubbleView != null) {
@@ -1370,7 +1408,6 @@ public class FloatingWheelService extends Service {
                 log("截图：准备发送，bytes=" + imageBytes.length + "。");
                 String messageId;
                 try {
-                    registerDevice(baseUrl, token, deviceId, buildDeviceName());
                     messageId = sendScreenshotMessage(baseUrl, token, deviceId, screenshotDataUrl, imageBytes, width, height);
                 } catch (Exception ex) {
                     if (!isUnauthorized(ex)) {
@@ -1378,10 +1415,9 @@ public class FloatingWheelService extends Service {
                     }
                     log("截图：Token 过期，刷新后重试。");
                     token = refreshToken();
-                    registerDevice(baseUrl, token, deviceId, buildDeviceName());
                     messageId = sendScreenshotMessage(baseUrl, token, deviceId, screenshotDataUrl, imageBytes, width, height);
                 }
-                log("截图：消息已发送到云端，messageId=" + messageId + "。");
+                log("截图：消息已发送，messageId=" + messageId + "。");
                 toast("截图已发送到电脑：" + messageId);
                 hideProgress();
             } catch (Exception ex) {
@@ -1393,13 +1429,14 @@ public class FloatingWheelService extends Service {
     }
 
     private String sendScreenshotMessage(String baseUrl, String token, String deviceId, String screenshotDataUrl, byte[] imageBytes, int width, int height) throws Exception {
-        return postScreenshotDirectMessage(baseUrl, token, deviceId, screenshotDataUrl, imageBytes.length, width, height);
+        return MobileDesktopTransfer.sendBytes(this, baseUrl, token, deviceId, "photo",
+                "screenshot-" + System.currentTimeMillis() + ".jpg", "image/jpeg", imageBytes, "手机截图 " + width + "x" + height);
     }
 
     private void openMain(String action) {
         Intent intent = new Intent(this, MainActivity.class);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        intent.setAction("cc.luoluoluo.yanzi.mobile." + action);
+        intent.setAction(BuildConfig.APPLICATION_ID + "." + action);
         startActivity(intent);
     }
 
@@ -1617,7 +1654,7 @@ public class FloatingWheelService extends Service {
     }
 
     private static String mobileExtensionPrompt() {
-        return "你正在为燕子移动端编写手机扩展。只允许输出 JSON，不要解释。\n" +
+        return "你正在为燕子移动端编写手机小程序。只允许输出 JSON，不要解释。\n" +
             "运行时使用 runtime=\"mobile-js\"，不要使用 C#、PowerShell、Windows 路径、WPF 或桌面 API。\n" +
             "优先设计本机可执行能力，再按需补充发到电脑。可用 permissions：clipboard.read、clipboard.write、browser.open、file.read、file.write、http.request、desktop.message、share.text。\n" +
             "脚本入口使用 async function run(context)。可调用 context.mobile.toast(text)、getSharedText()、getClipboardText()、setClipboardText(text)、openUrl(url)、readTextFile(name)、saveTextFile(name,text)、appendTextFile(name,text)、httpGet(url)、httpPostJson(url,jsonText)、sendToDesktop(text)。";
@@ -1785,6 +1822,7 @@ public class FloatingWheelService extends Service {
     }
 
     private static JSONObject postJson(String baseUrl, String path, JSONObject payload, String token) throws Exception {
+        if ("/v1/me/mobile/messages".equals(path)) return MobileDeviceMessageSender.send(baseUrl, token, payload);
         if (shouldUseLan(path)) {
             String lanBaseUrl = sContext != null ? LanDiscoveryManager.getLanBaseUrl(sContext) : LanDiscoveryManager.cachedLanBaseUrl;
             if (lanBaseUrl != null) {
@@ -1823,6 +1861,7 @@ public class FloatingWheelService extends Service {
     }
 
     private static void handleLanSuccess(String action) {
+        LanDiscoveryManager.noteSuccess();
         if (sContext != null) {
             MobileDiagnostics.append(sContext, "局域网直连成功(" + action + ")");
         }
@@ -1833,10 +1872,9 @@ public class FloatingWheelService extends Service {
         android.util.Log.w("FloatingWheelService", "LAN fallback failed: " + message);
         if (sContext != null) {
             MobileDiagnostics.append(sContext, "局域网直连失败(" + action + ")，已回退公网：" + message);
-            LanDiscoveryManager.clearLanBaseUrl(sContext);
+            LanDiscoveryManager.noteTransportFailure(e);
         } else {
-            LanDiscoveryManager.cachedLanBaseUrl = null;
-            LanDiscoveryManager.cachedLanApiToken = null;
+            LanDiscoveryManager.noteTransportFailure(e);
         }
     }
 
@@ -1997,10 +2035,11 @@ public class FloatingWheelService extends Service {
     private void startNotificationServer() {
         notificationThread = new Thread(() -> {
             try {
-                notificationServerSocket = new ServerSocket(42981);
+                notificationServerSocket = new ServerSocket(BuildConfig.APPLICATION_ID.endsWith(".dev") ? 42982 : 42981);
                 while (!Thread.currentThread().isInterrupted()) {
                     Socket client = notificationServerSocket.accept();
-                    handleNotificationClient(client);
+                    try { lanWorkers.execute(() -> handleNotificationClient(client)); }
+                    catch (java.util.concurrent.RejectedExecutionException busy) { client.close(); }
                 }
             } catch (Exception e) {
                 Log.e(TAG, "Notification server error", e);
@@ -2011,59 +2050,398 @@ public class FloatingWheelService extends Service {
 
     private void handleNotificationClient(Socket client) {
         try {
-            BufferedReader in = new BufferedReader(new InputStreamReader(client.getInputStream(), StandardCharsets.UTF_8));
-            String line = in.readLine();
-            if (line == null) return;
-            
+            client.setSoTimeout(5000);
+            java.io.InputStream input = client.getInputStream();
+            java.io.ByteArrayOutputStream headers = new java.io.ByteArrayOutputStream();
+            int value;
+            while ((value = input.read()) != -1) {
+                headers.write(value);
+                if (headers.size() > 16384) throw new java.io.IOException("Headers too large");
+                byte[] h = headers.toByteArray();
+                int n = h.length;
+                if (n >= 4 && h[n-4] == 13 && h[n-3] == 10 && h[n-2] == 13 && h[n-1] == 10) break;
+            }
+            String[] headerLines = headers.toString("US-ASCII").split("\r\n");
+            String[] parts = headerLines[0].split(" ");
+            String method = parts.length > 0 ? parts[0] : "";
+            String path = parts.length > 1 ? parts[1] : "";
             int contentLength = 0;
-            while ((line = in.readLine()) != null && !line.isEmpty()) {
-                if (line.toLowerCase().startsWith("content-length:")) {
-                    contentLength = Integer.parseInt(line.substring(15).trim());
-                }
+            String authorization = "";
+            String contentHash = "";
+            String peerDevice = "";
+            for (String line : headerLines) {
+                if (line.toLowerCase(java.util.Locale.ROOT).startsWith("content-length:")) contentLength = Integer.parseInt(line.substring(15).trim());
+                if (line.toLowerCase(java.util.Locale.ROOT).startsWith("authorization:")) authorization = line.substring(14).trim();
+                if (line.toLowerCase(java.util.Locale.ROOT).startsWith("x-content-sha256:")) contentHash = line.substring(17).trim();
+                if (line.toLowerCase(java.util.Locale.ROOT).startsWith("x-yanzi-peer-device:")) peerDevice = line.substring(20).trim();
             }
-            
+            final String chatPeerDevice = peerDevice;
+            String expectedToken = LanDiscoveryManager.getLanApiToken(this);
+            if (expectedToken == null || expectedToken.isEmpty()) {
+                android.content.SharedPreferences local = getSharedPreferences("YanziPrefs", MODE_PRIVATE);
+                expectedToken = local.getString("nativeLocalToken", "");
+                if (expectedToken.isEmpty()) { expectedToken = java.util.UUID.randomUUID().toString(); local.edit().putString("nativeLocalToken", expectedToken).commit(); }
+            }
+            if ("POST".equals(method) && path.equals("/v1/lan/secure")) {
+                client.setSoTimeout(90000);
+                if (!encryptedLanCapacity.tryAcquire()) {
+                    client.getOutputStream().write("HTTP/1.1 429 Too Many Requests\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".getBytes(StandardCharsets.US_ASCII)); return;
+                }
+                try { if (SecureLanReceiver.handle(this, client, path, headerLines, input, contentLength, expectedToken)) return; }
+                finally { encryptedLanCapacity.release(); }
+            }
+            if (!client.getInetAddress().isLoopbackAddress()) {
+                client.getOutputStream().write("HTTP/1.1 426 Upgrade Required\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".getBytes(StandardCharsets.US_ASCII));
+                return;
+            }
+            if (expectedToken == null || expectedToken.isEmpty() || !java.security.MessageDigest.isEqual(
+                    ("Bearer " + expectedToken).getBytes(StandardCharsets.UTF_8), authorization.getBytes(StandardCharsets.UTF_8))) {
+                client.getOutputStream().write("HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".getBytes(StandardCharsets.US_ASCII));
+                return;
+            }
+            if ("POST".equals(method) && path.equals("/v1/mobile/capabilities/invoke")) {
+                if (contentLength < 2 || contentLength > 65536) throw new java.io.IOException("invalid_capability_request");
+                byte[] body = new byte[contentLength]; int read = 0;
+                while (read < contentLength) { int count = input.read(body,read,contentLength-read); if (count < 0) throw new java.io.EOFException(); read+=count; }
+                JSONObject requestBody = new JSONObject(new String(body,StandardCharsets.UTF_8));
+                JSONObject reply; int status;
+                try { reply = new JSONObject().put("ok",true).put("result",MobileDeviceCapabilities.invoke(this,requestBody.getString("name"),requestBody.optJSONObject("arguments"))); status=200; }
+                catch (Exception error) { reply=new JSONObject().put("ok",false).put("error",error.getMessage()); status=400; }
+                byte[] data = reply.toString().getBytes(StandardCharsets.UTF_8);
+                client.getOutputStream().write(("HTTP/1.1 "+status+" Result\r\nContent-Type: application/json\r\nContent-Length: "+data.length+"\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
+                client.getOutputStream().write(data); client.getOutputStream().flush(); return;
+            }
+            if (path.startsWith("/v1/lan/transfer-sessions/")) {
+                client.setSoTimeout(90000);
+                MobileLanTransferSessions.Reply reply = MobileLanTransferSessions.handle(this, method, path, peerDevice, input, contentLength, (kind, filePath) -> {
+                    long receivedAt = System.currentTimeMillis();
+                    String sourceName = peerDisplayName(chatPeerDevice);
+                    saveChatMessageToPrefs(kind, filePath, chatPeerDevice, sourceName, receivedAt);
+                    Intent chat = new Intent(BuildConfig.APPLICATION_ID + ".CHAT_MESSAGE");
+                    chat.putExtra("message", filePath).putExtra("kind", kind)
+                            .putExtra("sourceDeviceId", chatPeerDevice).putExtra("sourceDeviceName", sourceName)
+                            .putExtra("time", receivedAt);
+                    sendBroadcast(chat);
+                });
+                byte[] data = reply.body.toString().getBytes(StandardCharsets.UTF_8);
+                client.getOutputStream().write(("HTTP/1.1 " + reply.status + " Result\r\nContent-Type: application/json\r\nContent-Length: " + data.length + "\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
+                client.getOutputStream().write(data); client.getOutputStream().flush(); return;
+            }
+            if ("POST".equals(method) && path.startsWith("/v1/lan/transfers/")) {
+                client.setSoTimeout(90000);
+                JSONObject received = MobileDesktopTransfer.receiveFromDesktop(this, input, path, contentLength, contentHash, (kind, filePath) -> {
+                    long receivedAt = System.currentTimeMillis();
+                    String sourceName = peerDisplayName(chatPeerDevice);
+                    saveChatMessageToPrefs(kind, filePath, chatPeerDevice, sourceName, receivedAt);
+                    Intent chat = new Intent(BuildConfig.APPLICATION_ID + ".CHAT_MESSAGE");
+                    chat.putExtra("message", filePath).putExtra("kind", kind)
+                            .putExtra("sourceDeviceId", chatPeerDevice).putExtra("sourceDeviceName", sourceName)
+                            .putExtra("time", receivedAt);
+                    sendBroadcast(chat);
+                });
+                byte[] data = received.toString().getBytes(StandardCharsets.UTF_8);
+                client.getOutputStream().write(("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " + data.length + "\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
+                client.getOutputStream().write(data);
+                client.getOutputStream().flush();
+                return;
+            }
+            if (contentLength < 0 || contentLength > 16 * 1024 * 1024) throw new java.io.IOException("Body too large");
+            byte[] bodyBytes = new byte[contentLength];
+            int bodyCount = 0;
+            while (bodyCount < contentLength) {
+                int count = input.read(bodyBytes, bodyCount, contentLength - bodyCount);
+                if (count == -1) throw new java.io.EOFException("Incomplete body");
+                bodyCount += count;
+            }
+            String requestBody = new String(bodyBytes, StandardCharsets.UTF_8);
+
+            if ("/v1/shell/run".equals(path) && "POST".equalsIgnoreCase(method)) {
+                JSONObject responseJson = new JSONObject();
+                if (contentLength > 0) {
+                    int totalRead = contentLength;
+                    if (totalRead > 0) {
+                        String body = requestBody;
+                        JSONObject json = new JSONObject(body);
+                        String command = json.optString("command", "");
+                        if (!command.isEmpty()) {
+                            int[] exitCodeOut = new int[1];
+                            String output = executeShellCommand(command, exitCodeOut);
+                            responseJson.put("ok", exitCodeOut[0] == 0);
+                            responseJson.put("output", output);
+                            responseJson.put("exitCode", exitCodeOut[0]);
+                        } else {
+                            responseJson.put("ok", false);
+                            responseJson.put("output", "Command is empty");
+                            responseJson.put("exitCode", -1);
+                        }
+                    } else {
+                        responseJson.put("ok", false);
+                        responseJson.put("output", "Body is empty");
+                        responseJson.put("exitCode", -1);
+                    }
+                } else {
+                    responseJson.put("ok", false);
+                    responseJson.put("output", "Content-Length is required");
+                    responseJson.put("exitCode", -1);
+                }
+
+                String respBody = responseJson.toString();
+                byte[] respBytes = respBody.getBytes(StandardCharsets.UTF_8);
+                client.getOutputStream().write(("HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: " + respBytes.length + "\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+                client.getOutputStream().write(respBytes);
+                client.getOutputStream().flush();
+                client.close();
+                return;
+            }
+
             if (contentLength > 0) {
-                char[] bodyChars = new char[contentLength];
-                int read = in.read(bodyChars, 0, contentLength);
-                if (read > 0) {
-                    String body = new String(bodyChars, 0, read);
+                    int totalRead = contentLength;
+                    if (totalRead > 0) {
+                        String body = requestBody;
                     JSONObject json = new JSONObject(body);
-                    String title = json.optString("title", "Yanzi 通知");
-                    String text = json.optString("body", "");
-                    
-                    showNotification(title, text);
+                    String title = json.optString("title", "");
+                    String text = json.optString("message", "");
+                    if (text.isEmpty()) {
+                        text = json.optString("body", "");
+                    }
+
+                    if ("YanziSync".equals(title) && "yanm_updated".equals(text)) {
+                        Intent syncIntent = new Intent(BuildConfig.APPLICATION_ID + ".SYNC_YANM");
+                        this.sendBroadcast(syncIntent);
+                    } else if ("YanziChat".equals(title)) {
+                        AgentStreamProtocol.Event streamEvent = AgentStreamProtocol.parse(text);
+                        if (streamEvent != null) {
+                            android.util.Log.i("YanziAgentStream", "LAN event state=" + streamEvent.state + " seq=" + streamEvent.seq);
+                            String streamSourceId = json.optString("sourceDeviceId", peerDevice == null ? "" : peerDevice);
+                            JSONObject streamPayload = json.optJSONObject("payload");
+                            String streamSourceName = json.optString("sourceDeviceName", "");
+                            if (streamSourceName.isEmpty() && streamPayload != null)
+                                streamSourceName = streamPayload.optString("sourceDeviceName", "");
+                            if (streamSourceName.isEmpty()) streamSourceName = peerDisplayName(streamSourceId);
+                            MainActivity.onReceivedAgentStream(streamEvent, streamSourceId, streamSourceName);
+                        } else {
+                        synchronized (MobileDesktopTransfer.deliveryLock) {
+                        int receiptCount = MobileDesktopTransfer.cleanupReceipts(this);
+                        String logicalId = json.optString("clientMessageId");
+                        android.content.SharedPreferences inboxPrefs = getSharedPreferences("yanzi-mobile", MODE_PRIVATE);
+                        boolean duplicate = logicalId.matches("[a-f0-9]{32}") && inboxPrefs.contains("lanTransfer." + logicalId);
+                        if (duplicate && new JSONObject(inboxPrefs.getString("lanTransfer." + logicalId, "{}")).optString("state").equals("executing")) {
+                            client.getOutputStream().write("HTTP/1.1 409 Conflict\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".getBytes(StandardCharsets.US_ASCII)); return;
+                        }
+                        if (!duplicate) {
+                        if (receiptCount >= 10000) throw new java.io.IOException("inbox_quota_exceeded");
+                        if (logicalId.matches("[a-f0-9]{32}") && !inboxPrefs.edit().putString("lanTransfer." + logicalId,
+                            new JSONObject().put("state", "executing").put("savedAt", System.currentTimeMillis()).toString()).commit()) throw new java.io.IOException("inbox_commit_failed");
+                        String kind = json.optString("kind", "text");
+                        String content = text;
+                        if ("photo".equals(kind) && json.has("screenshotDataUrl")) {
+                            String dataUrl = json.optString("screenshotDataUrl", "");
+                            String ext = ".jpg";
+                            if (dataUrl.contains("image/png")) ext = ".png";
+                            else if (dataUrl.contains("image/gif")) ext = ".gif";
+                            content = this.saveBase64ToFile(dataUrl, "chat_received_" + System.currentTimeMillis() + ext);
+                        } else if ("file".equals(kind) && json.has("fileDataUrl")) {
+                            String dataUrl = json.optString("fileDataUrl", "");
+                            String fileName = json.optString("fileName", "file_" + System.currentTimeMillis());
+                            content = this.saveBase64ToFile(dataUrl, fileName);
+                        }
+
+                        Log.d(TAG, "Received YanziChat message from PC: " + content + " (kind: " + kind + ")");
+                        String sourceId = json.optString("sourceDeviceId", peerDevice == null ? "" : peerDevice);
+                        JSONObject messagePayload = json.optJSONObject("payload");
+                        String sourceName = json.optString("sourceDeviceName", "");
+                        if (sourceName.isEmpty() && messagePayload != null) sourceName = messagePayload.optString("sourceDeviceName", "");
+                        if (sourceName.isEmpty()) sourceName = peerDisplayName(sourceId);
+                        long receivedAt = ChatHistoryStore.messageTime(json);
+                        ChatHistoryStore.append(this,ChatHistoryStore.message("peer",kind,content,receivedAt,
+                            json.optString("messageId"),sourceId,sourceName).put("conversationId",ChatConversation.incoming(json)));
+                        Intent chatIntent = new Intent(BuildConfig.APPLICATION_ID + ".CHAT_MESSAGE");
+                        chatIntent.putExtra("message", content);
+                        chatIntent.putExtra("kind", kind);
+                        chatIntent.putExtra("sourceDeviceId", sourceId);
+                        chatIntent.putExtra("sourceDeviceName", sourceName);
+                        chatIntent.putExtra("time", receivedAt);
+                        this.sendBroadcast(chatIntent);
+                        Log.d(TAG, "Saved and broadcast chat message from " + sourceName);
+                        if (logicalId.matches("[a-f0-9]{32}"))
+                            if (!inboxPrefs.edit().putString("lanTransfer." + logicalId, new JSONObject().put("state", "completed").put("savedAt", System.currentTimeMillis()).toString()).commit()) throw new java.io.IOException("inbox_result_commit_failed");
+                        }
+                        }
+                        }
+                    } else {
+                        if (title.isEmpty()) {
+                            title = "Yanzi \u901a\u77e5"; // "Yanzi 通知"
+                        }
+                        if (!showNotification(title, text)) {
+                            client.getOutputStream().write("HTTP/1.1 409 Conflict\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".getBytes(StandardCharsets.US_ASCII));
+                            return;
+                        }
+                    }
                 }
             }
-            
+
             OutputStreamWriter out = new OutputStreamWriter(client.getOutputStream(), StandardCharsets.UTF_8);
             out.write("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok");
             out.flush();
             client.close();
         } catch (Exception e) {
             Log.e(TAG, "Handle client error", e);
+        } finally {
+            try { client.close(); } catch (Exception ignored) {}
         }
     }
 
-    private void showNotification(String title, String text) {
-        mainHandler.post(() -> {
-            NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-            if (nm != null) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    NotificationChannel channel = new NotificationChannel("yanzi_push", "燕子电脑推送", NotificationManager.IMPORTANCE_HIGH);
-                    nm.createNotificationChannel(channel);
-                }
-                Notification.Builder builder;
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    builder = new Notification.Builder(this, "yanzi_push");
-                } else {
-                    builder = new Notification.Builder(this);
-                }
-                builder.setSmallIcon(android.R.drawable.stat_notify_chat)
-                       .setContentTitle(title)
-                       .setContentText(text)
-                       .setAutoCancel(true);
-                nm.notify((int) System.currentTimeMillis(), builder.build());
+    private boolean showNotification(String title, String text) {
+        return MobileEventNotifier.notifyMessage(this, java.util.UUID.randomUUID().toString(), title, text);
+    }
+
+    private String saveBase64ToFile(String dataUrl, String defaultName) {
+        try {
+            if (dataUrl == null || !dataUrl.contains(",")) {
+                return defaultName;
             }
-        });
+            String base64Data = dataUrl.substring(dataUrl.indexOf(",") + 1);
+            byte[] bytes = android.util.Base64.decode(base64Data, android.util.Base64.DEFAULT);
+
+            java.io.File downloadDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS);
+            if (!downloadDir.exists()) {
+                downloadDir.mkdirs();
+            }
+            java.io.File outFile = new java.io.File(downloadDir, defaultName);
+            int count = 1;
+            while (outFile.exists()) {
+                String nameWithoutExt = defaultName;
+                String ext = "";
+                int dotIndex = defaultName.lastIndexOf(".");
+                if (dotIndex != -1) {
+                    nameWithoutExt = defaultName.substring(0, dotIndex);
+                    ext = defaultName.substring(dotIndex);
+                }
+                outFile = new java.io.File(downloadDir, nameWithoutExt + "_" + count + ext);
+                count++;
+            }
+
+            java.io.FileOutputStream fos = new java.io.FileOutputStream(outFile);
+            fos.write(bytes);
+            fos.close();
+            return "file://" + outFile.getAbsolutePath();
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to save base64 to file", e);
+            return defaultName;
+        }
+    }
+
+    private void saveChatMessageToPrefs(String kind, String content, String sourceDeviceId,
+                                        String sourceDeviceName, long time) {
+        ChatHistoryStore.append(this, ChatHistoryStore.message(
+                "peer", kind, content, time, "", sourceDeviceId, sourceDeviceName));
+        try {
+            String preview = "photo".equals(kind) ? "[图片]" : "file".equals(kind) ? "[文件]" : content;
+            MobileEventNotifier.notifyChatMessage(this, java.util.UUID.randomUUID().toString(), sourceDeviceName, preview);
+        } catch (Exception error) {
+            Log.w(TAG, "Chat notification deferred", error);
+        }
+    }
+
+    private String peerDisplayName(String deviceId) {
+        if (deviceId == null || deviceId.isEmpty()) return "电脑";
+        try {
+            JSONObject pair = SecureLanConnection.load(this, deviceId);
+            String name = pair.optString("desktopName", "");
+            if (name.isEmpty()) name = pair.optString("displayName", "");
+            if (name.isEmpty()) name = pair.optString("peerName", "");
+            if (!name.isEmpty()) return name;
+        } catch (Exception ignored) {}
+        return deviceId.startsWith("desktop-") ? "电脑" : deviceId;
+    }
+
+    public static String executeShellCommand(String command, int[] exitCodeOut) {
+        StringBuilder output = new StringBuilder();
+        int exitCode = -1;
+        Process process = null;
+        try {
+            process = Runtime.getRuntime().exec(new String[]{"/system/bin/sh", "-c", command});
+
+            final StringBuilder stdout = new StringBuilder();
+            final StringBuilder stderr = new StringBuilder();
+
+            final java.io.InputStream is = process.getInputStream();
+            final java.io.InputStream es = process.getErrorStream();
+
+            Thread outThread = new Thread(() -> {
+                try (BufferedReader reader = new BufferedReader(new java.io.InputStreamReader(is, java.nio.charset.StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        synchronized (stdout) {
+                            if (stdout.length() < 65536) {
+                                stdout.append(line).append("\n");
+                            } else if (!stdout.toString().endsWith("[输出过长，已截断]\n")) {
+                                stdout.append("[输出过长，已截断]\n");
+                            }
+                        }
+                    }
+                } catch (Exception ignored) {}
+            });
+
+            Thread errThread = new Thread(() -> {
+                try (BufferedReader reader = new BufferedReader(new java.io.InputStreamReader(es, java.nio.charset.StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        synchronized (stderr) {
+                            if (stderr.length() < 65536) {
+                                stderr.append(line).append("\n");
+                            } else if (!stderr.toString().endsWith("[错误输出过长，已截断]\n")) {
+                                stderr.append("[错误输出过长，已截断]\n");
+                            }
+                        }
+                    }
+                } catch (Exception ignored) {}
+            });
+
+            outThread.start();
+            errThread.start();
+
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                boolean finished = process.waitFor(15, java.util.concurrent.TimeUnit.SECONDS);
+                if (finished) {
+                    exitCode = process.exitValue();
+                } else {
+                    process.destroyForcibly();
+                    exitCode = -1;
+                    synchronized (stderr) {
+                        stderr.append("\n[错误] 命令执行超时 (15秒)\n");
+                    }
+                }
+            } else {
+                exitCode = process.waitFor();
+            }
+
+            outThread.join(1000);
+            errThread.join(1000);
+
+            synchronized (stdout) {
+                output.append(stdout);
+            }
+            synchronized (stderr) {
+                if (stderr.length() > 0) {
+                    if (output.length() > 0) {
+                        output.append("\n");
+                    }
+                    output.append("标准错误输出:\n").append(stderr);
+                }
+            }
+
+        } catch (Exception e) {
+            output.append("\n[错误] 执行异常: ").append(e.getMessage()).append("\n");
+            exitCode = -1;
+        } finally {
+            if (process != null) {
+                process.destroy();
+            }
+        }
+        if (exitCodeOut != null && exitCodeOut.length > 0) {
+            exitCodeOut[0] = exitCode;
+        }
+        return output.toString().trim();
     }
 }

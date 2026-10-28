@@ -1,0 +1,1 @@
+{"$schema":"https://agent-plugins.org/schemas/1.0.0/mcp.schema.json","mcpServers":{"yanzi":{"type":"stdio","command":"node","args":["${PLUGIN_ROOT}/src/index.js"],"cwd":"${PLUGIN_ROOT}"}}}

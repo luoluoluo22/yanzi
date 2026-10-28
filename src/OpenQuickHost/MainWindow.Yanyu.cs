@@ -1,4 +1,4 @@
-﻿using System.Windows;
+using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Text.Json;
@@ -64,11 +64,8 @@ public partial class MainWindow
             .Select(static item => item.Rule)
             .ToList();
 
-        if (matches.Count == 0)
-        {
-            yield return CreateYanyuCreateCommand(trimmedQuery);
-            yield break;
-        }
+        // 新建入口始终置顶，即使已有规则匹配当前搜索词。
+        yield return CreateYanyuCreateCommand(trimmedQuery);
 
         foreach (var rule in matches)
         {
@@ -81,17 +78,15 @@ public partial class MainWindow
         var boundExtension = string.Equals(rule.ActionType, YanyuActionTypes.RunExtension, StringComparison.OrdinalIgnoreCase)
             ? ResolveYanyuBindableCommand(rule.ExtensionId)
             : null;
-        var triggerPreview = $"{(rule.UseRegex ? "正则 " : string.Empty)}{rule.TriggerText} + {YanyuTriggerSuffix.ToDisplayText(rule.TriggerSuffix)}";
         var actionSummary = BuildYanyuActionSummary(rule);
-        var statusLabel = rule.Enabled ? "已启用" : "已停用";
-        var processLabel = string.IsNullOrWhiteSpace(rule.BoundProcessName) ? "所有应用" : $"仅 {rule.BoundProcessName}";
-        var subtitle = string.IsNullOrWhiteSpace(rule.Description)
-            ? $"{actionSummary}   ·   {processLabel}   ·   {statusLabel}"
-            : $"{rule.Description}   ·   {actionSummary}   ·   {processLabel}   ·   {statusLabel}";
+        var summary = string.IsNullOrWhiteSpace(rule.Description)
+            ? actionSummary
+            : $"{actionSummary} · {rule.Description}";
+        var subtitle = $"{(rule.UseRegex ? "正则匹配 · " : string.Empty)}{summary}";
 
         return new CommandItem(
             glyph: boundExtension?.DisplayGlyph ?? string.Empty,
-            title: triggerPreview,
+            title: rule.TriggerText,
             subtitle: subtitle,
             category: "燕语",
             accentHex: rule.Enabled ? "#FF22C55E" : "#FF64748B",
@@ -100,7 +95,14 @@ public partial class MainWindow
             source: CommandSource.Local,
             extensionId: $"yanyu-rule-{rule.Id}",
             iconReference: boundExtension?.IconReference ?? "mdi:window",
-            iconSourceOverride: boundExtension?.IconSource ?? GetYanyuRuleLogoIcon());
+            iconSourceOverride: boundExtension?.IconSource ?? GetYanyuRuleLogoIcon())
+        {
+            IsYanyuRule = true,
+            YanyuEnabled = rule.Enabled,
+            YanyuTriggerKeyLabel = YanyuTriggerSuffix.ToKbdText(rule.TriggerSuffix),
+            YanyuSummary = subtitle,
+            YanyuBoundProcesses = ProcessCatalog.ForBoundProcesses(rule.BoundProcessName)
+        };
     }
 
     private CommandItem CreateYanyuCreateCommand(string triggerText)
@@ -108,7 +110,7 @@ public partial class MainWindow
         var normalizedTrigger = triggerText.Trim();
         var subtitle = normalizedTrigger.Length == 0
             ? "新建一条燕语，统一编辑缩写词、后缀和动作。"
-            : $"没有找到匹配项。按回车新建“{normalizedTrigger}”的燕语。";
+            : $"使用“{normalizedTrigger}”新建燕语，即使已有相似规则也可以创建。";
         var title = normalizedTrigger.Length == 0
             ? "新建燕语"
             : $"新建燕语：{normalizedTrigger}";
@@ -185,6 +187,7 @@ public partial class MainWindow
         try
         {
             var geometry = Geometry.Parse("M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z");
+            geometry.Transform = new ScaleTransform(0.666, 0.666, 12, 12);
             if (geometry.CanFreeze)
             {
                 geometry.Freeze();
@@ -195,12 +198,17 @@ public partial class MainWindow
                 brush,
                 null,
                 geometry);
-            if (drawing.CanFreeze)
+
+            var drawingGroup = new DrawingGroup();
+            drawingGroup.Children.Add(new GeometryDrawing(System.Windows.Media.Brushes.Transparent, null, new RectangleGeometry(new System.Windows.Rect(0, 0, 24, 24))));
+            drawingGroup.Children.Add(drawing);
+
+            if (drawingGroup.CanFreeze)
             {
-                drawing.Freeze();
+                drawingGroup.Freeze();
             }
 
-            var image = new DrawingImage(drawing);
+            var image = new DrawingImage(drawingGroup);
             if (image.CanFreeze)
             {
                 image.Freeze();
@@ -219,7 +227,7 @@ public partial class MainWindow
     private string BuildYanyuActionSummary(YanyuRuleSettings rule)
     {
         return string.Equals(rule.ActionType, YanyuActionTypes.RunExtension, StringComparison.OrdinalIgnoreCase)
-            ? $"运行扩展：{ResolveYanyuRuleExtensionTitle(rule)}"
+            ? $"运行小程序：{ResolveYanyuRuleExtensionTitle(rule)}"
             : $"粘贴文本：{BuildYanyuPreviewText(rule.TextContent)}";
     }
 
@@ -319,7 +327,7 @@ public partial class MainWindow
             Enabled = true,
             ActionType = YanyuActionTypes.PasteText,
             ExtensionId = defaultExtension?.ExtensionId ?? string.Empty,
-            Description = defaultExtension == null ? string.Empty : $"运行扩展：{defaultExtension.Title}"
+            Description = defaultExtension == null ? string.Empty : $"运行小程序：{defaultExtension.Title}"
         };
 
         var edited = ShowYanyuEditor(
@@ -370,6 +378,15 @@ public partial class MainWindow
         updatedRule.Id = existing.Id;
         settings.YanyuRules[index] = updatedRule;
         SaveYanyuSettings(settings, $"已更新燕语：{updatedRule.TriggerText}");
+    }
+
+    private void YanyuEnabledSwitch_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is System.Windows.Controls.CheckBox { DataContext: CommandItem command } && IsYanyuRuleCommand(command))
+        {
+            ToggleYanyuRuleForCommand(command);
+            e.Handled = true; // Do not execute/edit the row when toggling its state.
+        }
     }
 
     private void ToggleYanyuRuleForCommand(CommandItem? command = null)

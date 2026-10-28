@@ -1,6 +1,17 @@
-<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    
+    <Style x:Key="SurfaceCard" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource BrushBG}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BrushBorder}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="8" />
+    </Style>
+
+    <Style x:Key="InsetCard" TargetType="Border" BasedOn="{StaticResource SurfaceCard}">
+        <Setter Property="Background" Value="{DynamicResource BrushInputBG}" />
+    </Style>
+
+
     <!-- Ghost Button (Transparent with hover effect) -->
     <Style x:Key="GhostButtonStyle" TargetType="Button">
         <Setter Property="Background" Value="Transparent" />
@@ -177,7 +188,10 @@
 
     <!-- 全局 ComboBox 默认隐式样式，使全局未显式声明 Style 的下拉框自动应用此高保真自适应设计 -->
     <Style TargetType="ComboBox" BasedOn="{StaticResource GlobalComboBoxStyle}" />
-    
+
+    <!-- 兼容别名：防止局部窗口或遗留代码查找 DarkComboBoxStyle 导致 XamlParseException -->
+    <Style x:Key="DarkComboBoxStyle" TargetType="ComboBox" BasedOn="{StaticResource GlobalComboBoxStyle}" />
+
     <!-- Global ListBoxItem Style (for sidebars and generic lists) -->
     <Style x:Key="GlobalListBoxItemStyle" TargetType="ListBoxItem">
         <Setter Property="Margin" Value="0,2" />

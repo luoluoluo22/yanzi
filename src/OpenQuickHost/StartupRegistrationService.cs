@@ -1,44 +1,54 @@
 using Microsoft.Win32;
+using System.IO;
 
 namespace OpenQuickHost;
 
+/// <summary>
+/// Only the installed, stable Shell may own startup registration.
+/// Development snapshots and historical Runtime processes must never replace the
+/// stable launch path. The installed Yanzi.exe owns UI and background services.
+/// </summary>
 public static class StartupRegistrationService
 {
     private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    private const string ValueName = "Yanzi";
+
+    private static string InstalledShell => Path.GetFullPath(Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "Yanzi", "current", "Yanzi.exe"));
+
+    private static bool CanRegister()
+    {
+        var processPath = Environment.ProcessPath;
+        return !HostRuntimeProfile.IsDevelopment && !HostRuntimeProfile.IsRuntime
+            && HostRuntimeProfile.RuntimeDataRoot == null
+            && !string.IsNullOrWhiteSpace(processPath)
+            && Path.GetFullPath(processPath).Equals(InstalledShell, StringComparison.OrdinalIgnoreCase);
+    }
 
     public static bool IsEnabled()
     {
+        if (!CanRegister()) return false;
         using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, writable: false);
-        var value = key?.GetValue(ValueName) as string;
-        return !string.IsNullOrWhiteSpace(value);
+        var value = key?.GetValue("Yanzi") as string;
+        return string.Equals(value, BuildCommandLine(), StringComparison.OrdinalIgnoreCase);
     }
 
     public static void Apply(bool enabled)
     {
+        if (!CanRegister()) return;
         using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, writable: true)
             ?? Registry.CurrentUser.CreateSubKey(RunKeyPath);
-
         if (enabled)
-        {
-            key.SetValue(ValueName, BuildCommandLine());
-            return;
-        }
+            key.SetValue("Yanzi", BuildCommandLine());
+        else if (key.GetValue("Yanzi") != null)
+            key.DeleteValue("Yanzi", throwOnMissingValue: false);
 
-        if (key.GetValue(ValueName) != null)
-        {
-            key.DeleteValue(ValueName, throwOnMissingValue: false);
-        }
+        // Legacy installers created a second startup entry that can pin an old
+        // version of Runtime indefinitely. On the official migration, use just
+        // the stable Yanzi.exe entry; no separate Runtime will be started.
+        if (key.GetValue("Yanzi.Runtime") != null)
+            key.DeleteValue("Yanzi.Runtime", throwOnMissingValue: false);
     }
 
-    private static string BuildCommandLine()
-    {
-        var processPath = Environment.ProcessPath;
-        if (string.IsNullOrWhiteSpace(processPath))
-        {
-            throw new InvalidOperationException("无法确定当前程序路径，不能设置开机自启。");
-        }
-
-        return $"\"{processPath}\" --tray";
-    }
+    private static string BuildCommandLine() => $"\"{InstalledShell}\" --tray";
 }

@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Diagnostics;
 using System.IO;
+using System.Net.Http;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text.Json;
@@ -10,11 +11,14 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Data;
+using System.Windows.Documents;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using WpfColor = System.Windows.Media.Color;
 using OpenQuickHost.Sync;
 using WpfComboBox = System.Windows.Controls.ComboBox;
 using WpfPoint = System.Windows.Point;
@@ -24,7 +28,11 @@ namespace OpenQuickHost;
 
 public partial class SettingsWindow : Window, INotifyPropertyChanged
 {
-    private const string RadialSimulatedKeyPrefix = "keysim::";
+    private const string RadialSimulatedKeyPrefix = ExtensionIdPrefixes.SimulatedKey;
+    private const int WmKeyDown = 0x0100;
+    private const int WmKeyUp = 0x0101;
+    private const int WmSysKeyDown = 0x0104;
+    private const int WmSysKeyUp = 0x0105;
     private readonly MainWindow _mainWindow;
     private AppSettings _settings;
     private SettingsNavigationItem? _selectedNavigation;
@@ -32,19 +40,32 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private string _accountSubtitle = "点击左上角账户卡片登录或切换账号。";
     private string _accountInitial = "燕";
     private bool _isAccountLoggedIn;
+    private bool _isVipActive;
+    private string _vipBadgeText = "激活VIP";
+    private string _vipDaysText = string.Empty;
     private string _localExtensionSummary = "正在统计...";
     private string _settingsSearchText = string.Empty;
     private string _extensionSearchText = string.Empty;
     private string _radialMenuSearchText = string.Empty;
     private string _launcherHotkey = "Alt+Space";
     private string _syncStatusText = "同步服务状态未知。";
-    private string _webDavStatusText = "未启用个人扩展同步。";
+    private string _webDavStatusText = "未启用个人小程序同步。";
     private string _syncActivityLogText = "暂无同步记录。";
-    private string _personalSyncCommitStatusText = "GitHub 同步启用后可查看最近提交。";
+    private string _personalSyncCommitStatusText = "启用个人云同步后，可查看最近的备份记录。";
+    private string _personalConfigRestoreStatusText = "完成一次个人仓库配置备份后会生成恢复点。";
+    private string _personalExtensionSyncStatusText = "尚未生成小程序同步索引。";
+    private string _extensionDataSyncStatusText = "尚无小程序私有数据同步记录。";
+    private string _extensionDataConflictActionStatusText = string.Empty;
+    private AccountSyncStatusView _accountSyncStatus = AccountSyncStatusView.Empty;
     private string _aiBaseUrl = string.Empty;
     private string _aiApiKey = string.Empty;
     private string _aiModel = string.Empty;
+    private string _aiSystemPrompt = string.Empty;
     private string _aiSettingsStatusText = "尚未配置 AI。";
+    private ObservableCollection<SettingsAiProviderVM> _aiServiceProvidersList = new();
+    private string _providerSearchText = string.Empty;
+    private SettingsAiProviderVM? _selectedServiceProvider;
+    private string _checkApiKeyButtonText = "检测";
     private string _environmentStatusText = "尚未配置环境变量。";
     private string _radialPreviewDebugLog = "预览日志：等待交互。";
     private string _recycleBinSummary = "回收站为空。";
@@ -64,30 +85,47 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private RadialMenuSlotEditorItem? _selectedRadialMenuSlot;
     private readonly Dictionary<string, WpfComboBox> _mouseTriggerTargetCombos = new(StringComparer.Ordinal);
     private bool _isUpdatingMouseTriggerTargetCombos;
+    private bool _isLoadingSettings = true;
+    private bool _isRefreshingSettingsFromDisk;
     private bool _showPersonalSyncAdvancedOptions;
-    
+    private readonly List<SettingsSearchItem> _dynamicSettingsSearchItems = [];
+    private readonly Dictionary<TextBlock, string> _searchHighlightSnapshots = new();
+    private bool _isRecordingSnapAssistHotkey;
+    private bool _isRecordingLauncherHotkey;
+    private string? _lastLauncherDoubleTapCandidate;
+    private DateTime _lastLauncherDoubleTapAtUtc;
+    private HwndSource? _source;
+
     // 扩展名称缓存，避免重复读取文件
     private static readonly Dictionary<string, string> _extensionNameCache = new();
-    
+
     // 窗口边界保存防抖定时器
     private DispatcherTimer? _windowBoundsPersistTimer;
-    
+
     // AI设置变更追踪
     private string _originalAiBaseUrl = string.Empty;
     private string _originalAiApiKey = string.Empty;
     private string _originalAiModel = string.Empty;
+    private string _originalAiSystemPrompt = string.Empty;
     private bool _hasAiSettingsChanged;
     private PersonalSyncSettings _personalSyncSettings = new();
     private PersonalSyncSecretBag _personalSyncSecrets = new();
-    
+
     // 扩展筛选状态
     private string _extensionFilterMode = "all"; // all, published, disabled, shortcut, recycle
 
+    private readonly SettingsPersistenceController _settingsPersistence;
+
     public SettingsWindow(MainWindow mainWindow)
     {
+        HostAssets.AppendLog($"SettingsWindow ctor start. thread={Environment.CurrentManagedThreadId}, will InitializeComponent().");
         InitializeComponent();
+        HostAssets.AppendLog($"SettingsWindow InitializeComponent completed. Content={Content?.GetType().Name ?? "null"}, width={Width}, height={Height}.");
+        Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(17, 17, 17));
+        Opacity = 1;
         _mainWindow = mainWindow;
         _settings = AppSettingsStore.Load();
+        _settingsPersistence = new SettingsPersistenceController(_settings);
         _personalSyncSettings = ClonePersonalSyncSettings(_settings.PersonalSync);
         _personalSyncSecrets = ClonePersonalSyncSecrets(_mainWindow.GetPersonalSyncSecrets());
         _settings.QuickPanelMouseTriggers ??= new QuickPanelMouseTriggerSettings();
@@ -97,30 +135,41 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         NavigationItems =
         [
             new SettingsNavigationItem("general", "mdi:settings", "常规", "#FF3B82F6"),
-            new SettingsNavigationItem("ai", "mdi:ai", "AI", "#FF8B5CF6"),
+            new SettingsNavigationItem("ai", "mdi:ai", "模型服务", "#FF3B82F6"),
             new SettingsNavigationItem("environment", "mdi:key", "环境变量", "#FF14B8A6"),
             new SettingsNavigationItem("sync", "mdi:sync", "同步与备份", "#FF22C55E"),
-            new SettingsNavigationItem("extensions", "mdi:dashboard", "扩展", "#FFF97316"),
+            new SettingsNavigationItem("extensions", "mdi:dashboard", BrandTerms.TermMiniApp, "#FFF97316"),
             new SettingsNavigationItem("quickpanel", "mdi:mouse-panel", "鼠标触发", "#FFEC4899"),
-            new SettingsNavigationItem("mousegestures", "mdi:gesture-tap", "鼠标手势", "#FFFB923C"),
-            new SettingsNavigationItem("radial", "mdi:circle-outline", "燕环", "#FFA855F7"),
-            new SettingsNavigationItem("yarnselect", "mdi:shortcut", "燕选", "#FF14B8A6"),
-            new SettingsNavigationItem("yanm", "mdi:monitor-dashboard", "燕幕", "#FF60A5FA"),
-            new SettingsNavigationItem("about", "mdi:about", "关于", "#FF8B5CF6")
+            new SettingsNavigationItem("mousegestures", "mdi:gesture-tap", BrandTerms.TermMouseGesture, "#FFFB923C"),
+            new SettingsNavigationItem("radial", "mdi:circle-outline", BrandTerms.TermYanRing, "#FF3B82F6"),
+            new SettingsNavigationItem("yarnselect", "mdi:shortcut", BrandTerms.TermYanSelect, "#FF14B8A6"),
+            new SettingsNavigationItem("yanm", "mdi:monitor-dashboard", BrandTerms.TermYanScreen, "#FF60A5FA"),
+            new SettingsNavigationItem("yanwo", "mdi:home-group", BrandTerms.TermYanNest, "#FFA855F7"),
+            new SettingsNavigationItem("about", "mdi:about", "关于", "#FF3B82F6")
         ];
         _selectedNavigation = NavigationItems.First();
         LaunchAtStartup = _settings.LaunchAtStartup;
         RefreshCloudOnStartup = _settings.RefreshCloudOnStartup;
         CloseToTray = _settings.CloseToTray;
         EnableAutoUpdate = _settings.EnableAutoUpdate;
+        EnableEverything = _settings.EnableEverything;
         EnableWindowSnapAssist = _settings.EnableWindowSnapAssist;
         LauncherHotkey = _settings.LauncherHotkey;
         LoadPersonalSyncStateFromSettings();
         AiBaseUrl = _settings.AiBaseUrl;
         AiApiKey = _settings.AiApiKey;
         AiModel = _settings.AiModel;
+        AiSystemPrompt = _settings.AiSystemPrompt;
+
+        ReloadAiProvidersFromSettings();
+
 
         SubscribeUpdateEvents();
+        RunningExtensionRegistry.Changed += SettingsRunningExtensionRegistry_Changed;
+        Closed += (s, e) =>
+        {
+            RunningExtensionRegistry.Changed -= SettingsRunningExtensionRegistry_Changed;
+        };
         AiSettingsStatusText = BuildAiSettingsSummary(_settings);
         EnvironmentVariables = new ObservableCollection<EnvironmentVariableEditorItem>(
             AppEnvironmentVariableStore.Load().Select(static item => new EnvironmentVariableEditorItem(item.Name, item.Value, item.Description)));
@@ -128,10 +177,14 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         BaseUrl = _mainWindow.SyncBaseUrl;
         ExtensionsRootPath = LocalExtensionCatalog.CatalogRootPath;
         AppVersionText = AppVersionInfo.DisplayText;
+        ReleaseNotes = ReleaseHistoryProvider.GetHistory(AppVersionInfo.Version);
         ShortcutItems = new ObservableCollection<SettingsShortcutItem>();
         ExtensionItems = new ObservableCollection<SettingsExtensionItem>();
         RecycleBinItems = new ObservableCollection<SettingsRecycleBinItem>();
         PersonalSyncCommitItems = new ObservableCollection<PersonalSyncCommitItem>();
+        PersonalConfigRestorePoints = new ObservableCollection<PersonalConfigRestorePointItem>();
+        ExtensionSyncConflictItems = new ObservableCollection<ExtensionSyncConflictItem>();
+        ExtensionDataConflictItems = new ObservableCollection<ExtensionDataConflictItem>();
         YarnSelectRules = new ObservableCollection<YarnSelectRuleItem>();
         YarnSelectExtensionOptions = new ObservableCollection<YarnSelectExtensionOption>();
         RadialMenuExtensionOptions = new ObservableCollection<YarnSelectExtensionOption>();
@@ -143,35 +196,135 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         MouseGestureItems = new ObservableCollection<SettingsMouseGestureItem>();
         MouseGestureQuickBindItems = new ObservableCollection<MouseGestureQuickBindItem>();
         MouseGestureExtensionOptions = new ObservableCollection<MouseGestureExtensionOption>();
+        MatchedSearchItems = new ObservableCollection<SearchDisplayItem>();
         UpdateBackupStatusText();
         DataContext = this;
+        RefreshAgentApiTokenDisplay();
+        RefreshAccountObjectSyncStatus();
         // 延迟到Loaded事件中执行，避免构造函数卡顿
         // RefreshRadialMenuSlots();
         ApplySavedWindowBounds();
         Loaded += SettingsWindow_Loaded;
         Activated += SettingsWindow_Activated;
+        Deactivated += (_, _) => HideAgentApiToken();
         LocationChanged += SettingsWindow_BoundsChanged;
         SizeChanged += SettingsWindow_BoundsChanged;
         Closing += SettingsWindow_Closing;
         LoadLogoImage();
+        InitializeSettingsUiPilot();
     }
 
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
-        HostAssets.AppendLog("SettingsWindow: OnSourceInitialized called. Updating DWM Theme.");
+        _source = (HwndSource?)PresentationSource.FromVisual(this);
+        _source?.AddHook(SettingsWindowWndProc);
+        HostAssets.AppendLog($"SettingsWindow: OnSourceInitialized called. handle={_source?.Handle}, opacity={Opacity}, visibility={Visibility}, showActivated={ShowActivated}.");
         App.UpdateWindowDwmTheme(this);
     }
 
+    protected override void OnClosed(EventArgs e)
+    {
+        _source?.RemoveHook(SettingsWindowWndProc);
+        _source = null;
+
+        var app = System.Windows.Application.Current as App;
+        if (app != null && app.AgentApiServer != null)
+        {
+            app.AgentApiServer.BrowserConnectionChanged -= AgentApiServer_BrowserConnectionChanged;
+            LocalAgentApiServer.MobileDeviceConnected -= LocalAgentApiServer_MobileDeviceConnected;
+        }
+
+        base.OnClosed(e);
+    }
+
     public ObservableCollection<SettingsNavigationItem> NavigationItems { get; }
+    public ObservableCollection<SearchDisplayItem> MatchedSearchItems { get; }
 
     public ObservableCollection<SettingsShortcutItem> ShortcutItems { get; }
 
     public ObservableCollection<SettingsExtensionItem> ExtensionItems { get; }
 
+    private bool _isExtensionBatchMode;
+    public bool IsExtensionBatchMode
+    {
+        get => _isExtensionBatchMode;
+        set
+        {
+            if (_isExtensionBatchMode == value) return;
+            _isExtensionBatchMode = value;
+            OnPropertyChanged();
+            NotifyBatchSelectionChanged();
+        }
+    }
+
+    public bool HasExtensionBatchSelected => ExtensionItems.Any(x => x.IsBatchChecked);
+
+    public string ExtensionBatchDeleteButtonText => $"批量删除 ({ExtensionItems.Count(x => x.IsBatchChecked)})";
+
+    public bool? IsAllExtensionBatchSelected
+    {
+        get
+        {
+            if (ExtensionItems.Count == 0) return false;
+            var checkedCount = ExtensionItems.Count(x => x.IsBatchChecked);
+            if (checkedCount == 0) return false;
+            if (checkedCount == ExtensionItems.Count) return true;
+            return null;
+        }
+        set
+        {
+            var selectAll = value == true;
+            foreach (var item in ExtensionItems)
+            {
+                item.IsBatchChecked = selectAll;
+            }
+            NotifyBatchSelectionChanged();
+        }
+    }
+
+    public void NotifyBatchSelectionChanged()
+    {
+        OnPropertyChanged(nameof(IsAllExtensionBatchSelected));
+        OnPropertyChanged(nameof(HasExtensionBatchSelected));
+        OnPropertyChanged(nameof(ExtensionBatchDeleteButtonText));
+    }
+
     public ObservableCollection<SettingsRecycleBinItem> RecycleBinItems { get; }
 
     public ObservableCollection<PersonalSyncCommitItem> PersonalSyncCommitItems { get; }
+
+    public ObservableCollection<PersonalConfigRestorePointItem> PersonalConfigRestorePoints { get; }
+
+    public ObservableCollection<ExtensionSyncConflictItem> ExtensionSyncConflictItems { get; }
+
+    public bool HasExtensionSyncConflicts => ExtensionSyncConflictItems.Count > 0;
+
+    public ObservableCollection<ExtensionDataConflictItem> ExtensionDataConflictItems { get; }
+
+    public bool HasExtensionDataConflicts => ExtensionDataConflictItems.Count > 0;
+
+    public bool HasAccountSyncConflicts => AccountSyncStatus.Objects.Any(item => item.HasConflict);
+    public IEnumerable<AccountSyncObjectStatusItem> AccountSyncConflictItems => AccountSyncStatus.Objects.Where(item => item.HasConflict);
+
+    private void ShowAccountConflictsButton_Click(object sender, RoutedEventArgs e)
+    {
+        SyncActiveSubTab = "cloud";
+        AccountConflictPanel.BringIntoView();
+        AccountConflictPanel.Focus();
+    }
+
+    public AccountSyncStatusView AccountSyncStatus
+    {
+        get => _accountSyncStatus;
+        private set
+        {
+            _accountSyncStatus = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasAccountSyncConflicts));
+            OnPropertyChanged(nameof(AccountSyncConflictItems));
+        }
+    }
 
     public ObservableCollection<YarnSelectRuleItem> YarnSelectRules { get; }
 
@@ -193,6 +346,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     public ObservableCollection<MouseGestureQuickBindItem> MouseGestureQuickBindItems { get; }
 
+    public ObservableCollection<MouseGestureAppOption> MouseGestureAppOptions { get; } = new();
     public ObservableCollection<MouseGestureExtensionOption> MouseGestureExtensionOptions { get; }
 
     public IReadOnlyList<YarnSelectActionTypeOption> YarnSelectActionOptions { get; } =
@@ -203,7 +357,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         new(YarnSelectActionTypes.Search, "搜索"),
         new(YarnSelectActionTypes.Run, "运行文本"),
         new(YarnSelectActionTypes.SmartCopyPaste, "智能复制/粘贴"),
-        new(YarnSelectActionTypes.RunExtension, "运行扩展")
+        new(YarnSelectActionTypes.RunExtension, "运行小程序")
     ];
 
     public IReadOnlyList<YanmActivationKeyOption> YanmActivationKeyOptions { get; } =
@@ -228,6 +382,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         new(MouseTriggerModes.X1Down, "按下 X1 键"),
         new(MouseTriggerModes.X2Down, "按下 X2 键"),
         new(MouseTriggerModes.CtrlLeftClick, "Ctrl+左键单击"),
+        new(MouseTriggerModes.CtrlLeftDrag, "Ctrl+左键移动"),
         new(MouseTriggerModes.CtrlRightClick, "Ctrl+右键单击"),
         new(MouseTriggerModes.MiddleLongPress, "长按中键"),
         new(MouseTriggerModes.RightLongPress, "长按右键"),
@@ -239,7 +394,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     [
         new(MouseGestureTriggerModes.None, "不启用鼠标手势"),
         new(MouseGestureTriggerModes.RightDrag, "按住右键移动"),
-        new(MouseGestureTriggerModes.MiddleDrag, "按住中键移动")
+        new(MouseGestureTriggerModes.MiddleDrag, "按住中键移动"),
+        new(MouseGestureTriggerModes.CtrlLeftDrag, "Ctrl+左键移动")
     ];
 
     public IReadOnlyList<SyncProviderOption> PersonalSyncProviderOptions { get; } =
@@ -268,7 +424,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private static readonly IReadOnlyList<MouseTriggerOption> StandardMouseTriggerTargetOptions =
     [
         new("None", "禁用"),
-        new("Panel", "鼠标面板"),
+        new("Panel", "背包"),
         new("Radial", "燕环"),
         new("Yanm", "燕幕")
     ];
@@ -276,7 +432,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private static readonly IReadOnlyList<MouseTriggerOption> GestureMouseTriggerTargetOptions =
     [
         new("None", "禁用"),
-        new("Panel", "鼠标面板"),
+        new("Panel", "背包"),
         new("Radial", "燕环"),
         new("Yanm", "燕幕"),
         new("WindowSnap", "窗口排列"),
@@ -285,14 +441,25 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private static readonly IReadOnlyList<MouseGestureTemplateDefinition> CommonMouseGestureTemplates =
     [
-        new("↑", "上划", "适合返回顶部、打开常用入口"),
-        new("↓", "下划", "适合关闭、隐藏或最小化"),
-        new("←", "左划", "适合后退、上一项"),
-        new("→", "右划", "适合前进、下一项"),
-        new("↓→", "L", "适合打开目录、窗口操作"),
-        new("→↓←", "C", "适合复制、剪贴板动作"),
-        new("↑→↓←", "P", "适合打开面板或固定扩展"),
-        new("→↓←↑", "S", "适合搜索、选择类动作")
+        new("↑", "上划", "适合返回顶部、上一页或向上滚动"),
+        new("↓", "下划", "适合关闭、隐藏或向下滚动"),
+        new("←", "左划", "适合后退、切换上一标签"),
+        new("→", "右划", "适合前进、切换下一标签"),
+        new("CHECKMARK", "✔ 打勾", "打勾手势：短线右下+长线右上，适合确认/保存/执行"),
+        new("CIRCLE", "⭕ 画圆", "闭合圆圈：适合刷新、旋转、重新加载或清空"),
+        new("HEART", "♥ 心形", "心形手势：双弧圆顶+尖底，适合收藏或关注"),
+        new("ALPHA", "α 鱼形", "Alpha 鱼形：适合特定工具或扩展脚本"),
+        new("↓→", "L 型", "适合打开目录、窗口最大化/还原"),
+        new("→↓", "倒 L", "适合关闭当前标签页 (Ctrl+W)"),
+        new("↑→", "右上折角", "适合新建标签页 (Ctrl+T)"),
+        new("↓↑", "下上往返", "适合刷新页面 (F5)"),
+        new("↑↓", "上下往返", "适合回到顶部/底部"),
+        new("U", "U 型", "适合恢复已关闭标签 (Ctrl+Shift+T)"),
+        new("C", "C 型", "适合复制、剪贴板动作"),
+        new("P", "P 型", "适合打开快捷面板或固定小程序"),
+        new("S", "S 型", "适合全局搜索、选择类动作"),
+        new("Z", "Z 型", "适合窗口置顶/取消置顶"),
+        new("W", "W 型", "适合关闭当前窗口 (Alt+F4)")
     ];
 
 
@@ -318,31 +485,68 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     public bool HasNewVersion
     {
         get => _hasNewVersion;
-        set { _hasNewVersion = value; OnPropertyChanged(); }
+        set
+        {
+            _hasNewVersion = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(UpdateMainButtonText));
+        }
     }
 
     public bool IsCheckingUpdate
     {
         get => _isCheckingUpdate;
-        set { _isCheckingUpdate = value; OnPropertyChanged(); }
+        set
+        {
+            _isCheckingUpdate = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(UpdateMainButtonText));
+        }
     }
 
     public bool IsDownloadingUpdate
     {
         get => _isDownloadingUpdate;
-        set { _isDownloadingUpdate = value; OnPropertyChanged(); }
+        set
+        {
+            _isDownloadingUpdate = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(UpdateMainButtonText));
+        }
     }
 
     public int UpdateProgressValue
     {
         get => _updateProgressValue;
-        set { _updateProgressValue = value; OnPropertyChanged(); }
+        set
+        {
+            _updateProgressValue = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(UpdateMainButtonText));
+        }
     }
 
     public bool UpdateDownloaded
     {
         get => _updateDownloaded;
-        set { _updateDownloaded = value; OnPropertyChanged(); }
+        set
+        {
+            _updateDownloaded = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(UpdateMainButtonText));
+            OnPropertyChanged(nameof(IsUpdateReadyToRestart));
+        }
+    }
+
+    public string UpdateMainButtonText
+    {
+        get
+        {
+            if (IsCheckingUpdate) return "检测中...";
+            if (IsDownloadingUpdate) return $"下载中 {UpdateProgressValue}%";
+            if (HasNewVersion) return "下载增量更新";
+            return "更新";
+        }
     }
 
     public string NewVersionInfo
@@ -351,10 +555,47 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         set { _newVersionInfo = value; OnPropertyChanged(); }
     }
 
+    private ObservableCollection<ReleaseNoteEntry> _releaseNotes = new();
+    public ObservableCollection<ReleaseNoteEntry> ReleaseNotes
+    {
+        get => _releaseNotes;
+        set { _releaseNotes = value; OnPropertyChanged(); }
+    }
+
+    private void SettingsRunningExtensionRegistry_Changed(object? sender, EventArgs e)
+    {
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (_cachedExtensionItems != null)
+            {
+                foreach (var item in _cachedExtensionItems)
+                {
+                    item.RefreshRunningState();
+                }
+            }
+        }));
+    }
+
     private void SubscribeUpdateEvents()
     {
         if (_updateEventsSubscribed) return;
         _updateEventsSubscribed = true;
+
+        if (VelopackUpdateService.Instance.IsDownloading)
+        {
+            IsDownloadingUpdate = true;
+            UpdateProgressValue = VelopackUpdateService.Instance.CurrentProgress;
+        }
+
+        if (VelopackUpdateService.Instance.IsUpdateReady)
+        {
+            UpdateDownloaded = true;
+            _newVersionUpdateInfo = VelopackUpdateService.Instance.ReadyUpdateInfo;
+            if (_newVersionUpdateInfo != null)
+            {
+                NewVersionInfo = _newVersionUpdateInfo.TargetFullRelease.Version.ToString();
+            }
+        }
 
         VelopackUpdateService.Instance.UpdateStatusChanged += status =>
         {
@@ -368,6 +609,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         {
             Dispatcher.Invoke(() =>
             {
+                IsDownloadingUpdate = progress < 100;
                 UpdateProgressValue = progress;
                 if (progress >= 100)
                 {
@@ -389,19 +631,42 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private async Task AutoCheckUpdateOnAboutOpenAsync()
     {
         SubscribeUpdateEvents();
-        
+
+        // 1. 异步拉取线上最新 Release 历史更新说明
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var onlineNotes = await ReleaseHistoryProvider.FetchOnlineHistoryAsync(AppVersionInfo.Version);
+                if (onlineNotes != null && onlineNotes.Count > 0)
+                {
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        ReleaseNotes = onlineNotes;
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"SettingsWindow: FetchOnlineHistoryAsync error: {ex.Message}");
+            }
+        });
+
         if (UpdateDownloaded) return;
         if (IsCheckingUpdate || IsDownloadingUpdate) return;
 
         IsCheckingUpdate = true;
         try
         {
-            var updateInfo = await VelopackUpdateService.Instance.CheckForUpdatesAsync();
+            var updateInfo = await VelopackUpdateService.Instance.CheckForUpdatesAsync(OpenQuickHost.Sync.UpdateChannelMode.Mirror);
             if (updateInfo != null)
             {
                 _newVersionUpdateInfo = updateInfo;
                 NewVersionInfo = updateInfo.TargetFullRelease.Version.ToString();
                 HasNewVersion = true;
+
+                // 2. 发现新版本时，自动激活后台增量下载与组装！
+                _ = DownloadUpdatesCoreAsync(updateInfo);
             }
             else
             {
@@ -418,24 +683,81 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private async void CheckForUpdatesManualButton_Click(object sender, System.Windows.RoutedEventArgs e)
+    private async void UpdateMainButton_Click(object sender, System.Windows.RoutedEventArgs e)
+    {
+        // 默认使用镜像更新并自动下载
+        await PerformCheckForUpdatesAsync(OpenQuickHost.Sync.UpdateChannelMode.Mirror, autoDownload: true);
+    }
+
+    private void UpdateDropDownButton_Click(object sender, System.Windows.RoutedEventArgs e)
+    {
+        if (UpdateDropDownButton.ContextMenu != null)
+        {
+            UpdateDropDownButton.ContextMenu.PlacementTarget = UpdateDropDownButton;
+            UpdateDropDownButton.ContextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+            UpdateDropDownButton.ContextMenu.IsOpen = true;
+        }
+    }
+
+    private async void UpdateMirrorMenuItem_Click(object sender, System.Windows.RoutedEventArgs e)
+    {
+        await PerformCheckForUpdatesAsync(OpenQuickHost.Sync.UpdateChannelMode.Mirror, autoDownload: true);
+    }
+
+    private async void UpdateOfficialMenuItem_Click(object sender, System.Windows.RoutedEventArgs e)
+    {
+        await PerformCheckForUpdatesAsync(OpenQuickHost.Sync.UpdateChannelMode.Official, autoDownload: true);
+    }
+
+    private async Task PerformCheckForUpdatesAsync(OpenQuickHost.Sync.UpdateChannelMode mode, bool autoDownload = true)
     {
         SubscribeUpdateEvents();
 
         if (IsCheckingUpdate || IsDownloadingUpdate) return;
-        
+
         UpdateDownloaded = false;
         HasNewVersion = false;
         IsCheckingUpdate = true;
-        
+        var channelName = mode == OpenQuickHost.Sync.UpdateChannelMode.Mirror ? "镜像加速源 (ghfast.top)" : "官方直连源 (GitHub)";
+
         try
         {
-            var updateInfo = await VelopackUpdateService.Instance.CheckForUpdatesAsync();
+            var updateInfo = await VelopackUpdateService.Instance.CheckForUpdatesAsync(mode);
             if (updateInfo != null)
             {
                 _newVersionUpdateInfo = updateInfo;
                 NewVersionInfo = updateInfo.TargetFullRelease.Version.ToString();
                 HasNewVersion = true;
+
+                // 用户可能已在其他设备续费，检查更新前刷新服务端权益。
+                if (_mainWindow.CloudSyncClient?.HasCredential == true)
+                {
+                    try { await _mainWindow.CloudSyncClient.GetVipStatusAsync(); }
+                    catch (Exception ex) { HostAssets.AppendLog($"[VIP] 更新前刷新权益失败，沿用已缓存授权: {ex.Message}"); }
+                }
+                // 维护期校验：检查当前用户是否有权升级到该版本
+                var session = SyncSessionStore.Load();
+                var newVerReleaseDate = await ReleaseHistoryProvider.GetReleaseDateAsync(NewVersionInfo);
+                bool isEntitled = AppVersionInfo.IsUpdateEntitled(
+                    NewVersionInfo,
+                    session?.VipType,
+                    session?.VipExpireAt,
+                    newVerReleaseDate
+                );
+
+                if (!isEntitled)
+                {
+                    HostAssets.AppendLog($"SettingsWindow: New version {NewVersionInfo} requires VIP renewal (expireAt={session?.VipExpireAt}, releaseDate={newVerReleaseDate}).");
+                    UpdateDownloaded = false;
+                    IsDownloadingUpdate = false;
+                    UpdateCheckStatusText = $"发现新版本 v{NewVersionInfo}，发布于您的 VIP 维护期之后。续费 VIP 即可立即一键升级！";
+                    return;
+                }
+
+                if (autoDownload)
+                {
+                    await DownloadUpdatesCoreAsync(updateInfo);
+                }
             }
             else
             {
@@ -444,9 +766,9 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
         catch (Exception ex)
         {
-            HostAssets.AppendLog($"SettingsWindow: ManualCheckForUpdates failed: {ex}");
+            HostAssets.AppendLog($"SettingsWindow: PerformCheckForUpdates failed ({channelName}): {ex}");
             System.Windows.MessageBox.Show(
-                $"检测更新发生异常: {ex.Message}\n\n详细诊断日志已记录至:\n{HostAssets.HostLogPath}\n\n如需反馈，请将该日志文件一并发送给开发者。",
+                $"通过 [{channelName}] 检测更新发生异常: {ex.Message}\n\n详细诊断日志已记录至:\n{HostAssets.HostLogPath}\n\n如需反馈，请将该日志文件一并发送给开发者。",
                 "更新提示",
                 System.Windows.MessageBoxButton.OK,
                 System.Windows.MessageBoxImage.Warning);
@@ -460,25 +782,48 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private async void DownloadUpdatesButton_Click(object sender, System.Windows.RoutedEventArgs e)
     {
         if (_newVersionUpdateInfo == null) return;
-        
+        if (_mainWindow.CloudSyncClient?.HasCredential == true)
+        {
+            try { await _mainWindow.CloudSyncClient.GetVipStatusAsync(); }
+            catch (Exception ex) { HostAssets.AppendLog($"[VIP] 下载前刷新权益失败，沿用已缓存授权: {ex.Message}"); }
+        }
+        var session = SyncSessionStore.Load();
+        var newVerReleaseDate = await ReleaseHistoryProvider.GetReleaseDateAsync(NewVersionInfo);
+        bool isEntitled = AppVersionInfo.IsUpdateEntitled(
+            NewVersionInfo,
+            session?.VipType,
+            session?.VipExpireAt,
+            newVerReleaseDate
+        );
+        if (!isEntitled)
+        {
+            ActivateVipButton_Click(sender, e);
+            return;
+        }
+        await DownloadUpdatesCoreAsync(_newVersionUpdateInfo);
+    }
+
+    private async Task DownloadUpdatesCoreAsync(Velopack.UpdateInfo updateInfo)
+    {
         IsDownloadingUpdate = true;
         UpdateProgressValue = 0;
         UpdateDownloaded = false;
 
         try
         {
-            var success = await VelopackUpdateService.Instance.DownloadUpdatesAsync(_newVersionUpdateInfo);
+            var success = await VelopackUpdateService.Instance.DownloadUpdatesAsync(updateInfo);
             if (success)
             {
                 UpdateDownloaded = true;
+                IsDownloadingUpdate = false;
             }
             else
             {
                 UpdateDownloaded = false;
                 var result = System.Windows.MessageBox.Show(
-                    "增量文件下载合并失败，可能是由于网络连接异常。\n\n是否需要手动前往浏览器发布页面下载最新完整安装包？", 
-                    "更新提示", 
-                    System.Windows.MessageBoxButton.YesNo, 
+                    "增量文件下载合并失败，可能是由于网络连接异常。\n\n是否需要手动前往浏览器发布页面下载最新完整安装包？",
+                    "更新提示",
+                    System.Windows.MessageBoxButton.YesNo,
                     System.Windows.MessageBoxImage.Warning);
                 if (result == System.Windows.MessageBoxResult.Yes)
                 {
@@ -574,7 +919,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         if (dialog.ShowDialog() == true)
         {
             CustomBackupDirectory = dialog.FolderName;
-            AppSettingsStore.Save(_settings);
+            _settings = _settingsPersistence.Save(_settings);
             _mainWindow.RefreshAppSettings();
         }
     }
@@ -623,7 +968,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         if (openFileDialog.ShowDialog() == true)
         {
             var result = System.Windows.MessageBox.Show(
-                "导入备份会覆盖您当前所有的配置和扩展插件！此操作无法撤销。\n\n在导入前，我们会自动关闭 Everything 引擎。导入成功后应用将自动重启。\n\n是否确定要导入该备份？",
+                "导入备份会覆盖您当前所有的配置和小程序！此操作无法撤销。\n\n在导入前，我们会自动关闭 Everything 引擎。导入成功后应用将自动重启。\n\n是否确定要导入该备份？",
                 "导入提示",
                 System.Windows.MessageBoxButton.YesNo,
                 System.Windows.MessageBoxImage.Warning);
@@ -661,7 +1006,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private void AutoBackupFrequencyComboBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
     {
         if (_settings == null) return;
-        AppSettingsStore.Save(_settings);
+        _settings = _settingsPersistence.Save(_settings);
         _mainWindow.RefreshAppSettings();
     }
 
@@ -680,6 +1025,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             OnPropertyChanged();
             OnPropertyChanged(nameof(SelectedSectionTitle));
             OnPropertyChanged(nameof(SelectedSectionDescription));
+            OnPropertyChanged(nameof(IsNormalSettingsVisible));
             OnPropertyChanged(nameof(IsGeneralSelected));
             OnPropertyChanged(nameof(IsAiSelected));
             OnPropertyChanged(nameof(IsEnvironmentSelected));
@@ -691,7 +1037,9 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             OnPropertyChanged(nameof(IsRadialSelected));
             OnPropertyChanged(nameof(IsYarnSelectSelected));
             OnPropertyChanged(nameof(IsYanmSelected));
+            OnPropertyChanged(nameof(IsYanwoSelected));
             OnPropertyChanged(nameof(IsAboutSelected));
+            RefreshSelectedSectionHighlights();
             if (IsExtensionsSelected && !_hasLoadedExtensions)
             {
                 _ = RefreshExtensionsFromDiskAsync();
@@ -703,7 +1051,10 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             else if (IsSyncSelected)
             {
                 RefreshSyncActivityLog();
+                RefreshAccountObjectSyncStatus();
+                RefreshPersonalExtensionSyncStatus();
                 _ = RefreshPersonalSyncCommitsAsync();
+                _ = RefreshPersonalConfigRestorePointsAsync();
             }
             else if (IsRadialSelected)
             {
@@ -722,6 +1073,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             {
                 ClearSelectedExtensionItem();
             }
+
+            Dispatcher.BeginInvoke(RefreshSelectedSectionHighlights, DispatcherPriority.Background);
         }
     }
 
@@ -846,6 +1199,73 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
+    public bool EnableEverything
+    {
+        get => _settings.EnableEverything;
+        set
+        {
+            if (value == _settings.EnableEverything)
+            {
+                return;
+            }
+
+            _settings = _settings with { EnableEverything = value };
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(EverythingRunningStatusText));
+            OnPropertyChanged(nameof(EverythingRunningStatusBrush));
+            if (value)
+            {
+                _ = Task.Run(async () =>
+                {
+                    EverythingRuntimeService.EnsureRunning();
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        OnPropertyChanged(nameof(EverythingRunningStatusText));
+                        OnPropertyChanged(nameof(EverythingRunningStatusBrush));
+                        _mainWindow.RefreshAppSettings();
+                    });
+                });
+            }
+            else
+            {
+                EverythingRuntimeService.StopOwnedRuntime();
+                EverythingRuntimeService.KillAllYanziEverythingProcesses();
+                _mainWindow.RefreshAppSettings();
+            }
+        }
+    }
+
+    public string EverythingRunningStatusText => _settings.EnableEverything
+        ? "服务已启用（Everything 后台运行中）"
+        : "服务已停用（Everything 已退出）";
+
+    public System.Windows.Media.Brush EverythingRunningStatusBrush => _settings.EnableEverything
+        ? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(34, 197, 94))
+        : new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(156, 163, 175));
+
+    private void RebuildEverythingIndexButton_Click(object sender, RoutedEventArgs e)
+    {
+        EverythingRuntimeService.RebuildDatabaseAndRestart();
+        System.Windows.MessageBox.Show("已触发 Everything 索引数据库重建，正在后台重新扫描全盘...", "重建索引", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+    }
+
+    private void OpenEverythingDataFolderButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Directory.CreateDirectory(HostAssets.EverythingRuntimeDataPath);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = HostAssets.EverythingRuntimeDataPath,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show($"打开目录失败: {ex.Message}");
+        }
+    }
+
     private void LoadLogoImage()
     {
         try
@@ -875,6 +1295,10 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private string _backupStatusText = string.Empty;
 
+    public string AutoBackupDirectory => string.IsNullOrWhiteSpace(_settings.CustomBackupDirectory)
+        ? Path.Combine(HostAssets.DataRootPath, "Backups")
+        : _settings.CustomBackupDirectory;
+
     public string AutoBackupFrequency
     {
         get => _settings.AutoBackupFrequency;
@@ -888,14 +1312,15 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     public string CustomBackupDirectory
     {
-        get => string.IsNullOrWhiteSpace(_settings.CustomBackupDirectory) 
-            ? "默认 (数据根目录\\Backups)" 
+        get => string.IsNullOrWhiteSpace(_settings.CustomBackupDirectory)
+            ? "默认 (数据根目录\\Backups)"
             : _settings.CustomBackupDirectory;
         set
         {
             if (value == _settings.CustomBackupDirectory) return;
             _settings = _settings with { CustomBackupDirectory = value };
             OnPropertyChanged();
+            OnPropertyChanged(nameof(AutoBackupDirectory));
             UpdateBackupStatusText();
         }
     }
@@ -958,13 +1383,21 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     public string WindowSnapAssistHotkey
     {
-        get => string.IsNullOrWhiteSpace(_settings.WindowSnapAssistHotkey) ? "未设置" : _settings.WindowSnapAssistHotkey;
+        get => string.IsNullOrWhiteSpace(_settings.WindowSnapAssistHotkey) ? "设置快捷键" : _settings.WindowSnapAssistHotkey;
         private set
         {
             _settings = _settings with { WindowSnapAssistHotkey = value };
-            OnPropertyChanged();
+            NotifySnapAssistHotkeyDisplayChanged();
         }
     }
+
+    public string SnapAssistRecorderText => _isRecordingSnapAssistHotkey ? "请按下快捷键" : WindowSnapAssistHotkey;
+
+    public System.Windows.Media.Brush SnapAssistRecorderForeground => _isRecordingSnapAssistHotkey
+        ? new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF7DD3FC"))
+        : string.IsNullOrWhiteSpace(_settings.WindowSnapAssistHotkey)
+            ? new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF9CA3AF"))
+            : (System.Windows.Media.Brush)FindResource("BrushTextMain");
 
     public string AccountTitle
     {
@@ -1028,6 +1461,51 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
+    public bool IsVipActive
+    {
+        get => _isVipActive;
+        private set
+        {
+            if (value == _isVipActive)
+            {
+                return;
+            }
+
+            _isVipActive = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public string VipBadgeText
+    {
+        get => _vipBadgeText;
+        private set
+        {
+            if (value == _vipBadgeText)
+            {
+                return;
+            }
+
+            _vipBadgeText = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public string VipDaysText
+    {
+        get => _vipDaysText;
+        private set
+        {
+            if (value == _vipDaysText)
+            {
+                return;
+            }
+
+            _vipDaysText = value;
+            OnPropertyChanged();
+        }
+    }
+
     public string SignInButtonText => IsAccountLoggedIn ? "切换账号" : "登录账号";
 
     public string SignInMenuText => IsAccountLoggedIn ? "切换账号" : "登录账号";
@@ -1050,8 +1528,17 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
             _launcherHotkey = value;
             OnPropertyChanged();
+            NotifyLauncherHotkeyDisplayChanged();
         }
     }
+
+    public string LauncherRecorderText => _isRecordingLauncherHotkey ? "请按下快捷键" : GetLauncherHotkeyDisplayText();
+
+    public System.Windows.Media.Brush LauncherRecorderForeground => _isRecordingLauncherHotkey
+        ? new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF7DD3FC"))
+        : string.IsNullOrWhiteSpace(_launcherHotkey)
+            ? new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF9CA3AF"))
+            : (System.Windows.Media.Brush)FindResource("BrushTextMain");
 
     public string SyncStatusText
     {
@@ -1086,7 +1573,122 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             if (value == _settings.EnableLanSync) return;
             _settings = _settings with { EnableLanSync = value };
             OnPropertyChanged();
-            AppSettingsStore.Save(_settings);
+            _settings = _settingsPersistence.Save(_settings);
+            UpdateMobileStatusUI(value);
+        }
+    }
+
+    private void UpdateMobileStatusUI(bool isEnabled)
+    {
+        if (MobileStatusDot == null || MobileStatusText == null) return;
+
+        if (isEnabled)
+        {
+            MobileStatusDot.Fill = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(34, 197, 94));
+            string mobileText = "直连监听中";
+            if (!string.IsNullOrEmpty(LocalAgentApiServer.LastKnownMobileDeviceModel))
+            {
+                mobileText = $"已连接: {LocalAgentApiServer.LastKnownMobileDeviceModel}";
+            }
+            MobileStatusText.Text = mobileText;
+            MobileStatusText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(34, 197, 94));
+            MobileStatusText.Tag = "Connected";
+
+            if (MobileToolTipStatusText != null)
+            {
+                MobileToolTipStatusText.Text = mobileText;
+                MobileToolTipStatusText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(34, 197, 94));
+            }
+        }
+        else
+        {
+            MobileStatusDot.Fill = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(156, 163, 175));
+            MobileStatusText.Text = "已禁用";
+            MobileStatusText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(156, 163, 175));
+            MobileStatusText.Tag = "Disconnected";
+
+            if (MobileToolTipStatusText != null)
+            {
+                MobileToolTipStatusText.Text = "已禁用";
+                MobileToolTipStatusText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(156, 163, 175));
+            }
+        }
+    }
+
+    public bool EnableBrowserHelper
+    {
+        get => _settings.EnableBrowserHelper;
+        set
+        {
+            if (value == _settings.EnableBrowserHelper) return;
+            _settings = _settings with { EnableBrowserHelper = value };
+            OnPropertyChanged();
+            _settings = _settingsPersistence.Save(_settings);
+        }
+    }
+
+    public bool EnableWanPush
+    {
+        get => _settings.EnableWanPush;
+        set
+        {
+            if (value == _settings.EnableWanPush) return;
+            _settings = _settings with { EnableWanPush = value };
+            OnPropertyChanged();
+            _settings = _settingsPersistence.Save(_settings);
+        }
+    }
+
+    private DispatcherTimer ShowSaveStatusTemporarily(DispatcherTimer? existingTimer, Action<bool> setVisibleAction)
+    {
+        setVisibleAction(true);
+        existingTimer?.Stop();
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+        timer.Tick += (s, e) =>
+        {
+            timer.Stop();
+            setVisibleAction(false);
+        };
+        timer.Start();
+        return timer;
+    }
+
+    private DispatcherTimer? _wanPushSaveTimer;
+    private DispatcherTimer? _wanPushStatusHideTimer;
+    private bool _isWanPushSaveStatusVisible;
+
+    public bool IsWanPushSaveStatusVisible
+    {
+        get => _isWanPushSaveStatusVisible;
+        private set
+        {
+            if (_isWanPushSaveStatusVisible == value) return;
+            _isWanPushSaveStatusVisible = value;
+            OnPropertyChanged();
+        }
+    }
+
+    private void QueueWanPushSave(int delayMs = 500)
+    {
+        if (_wanPushSaveTimer == null)
+        {
+            _wanPushSaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(delayMs) };
+            _wanPushSaveTimer.Tick += (s, e) => { _wanPushSaveTimer.Stop(); SaveWanPushUuid(); };
+        }
+        else
+        {
+            _wanPushSaveTimer.Stop();
+            _wanPushSaveTimer.Interval = TimeSpan.FromMilliseconds(delayMs);
+        }
+        _wanPushSaveTimer.Start();
+    }
+
+    private void FlushWanPushSave()
+    {
+        if (_wanPushSaveTimer != null && _wanPushSaveTimer.IsEnabled)
+        {
+            _wanPushSaveTimer.Stop();
+            SaveWanPushUuid();
         }
     }
 
@@ -1098,13 +1700,19 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             if (value == _settings.WanPushUuid) return;
             _settings = _settings with { WanPushUuid = value };
             OnPropertyChanged();
+            QueueWanPushSave(500);
         }
     }
 
     private void SaveWanPushUuidButton_Click(object sender, RoutedEventArgs e)
     {
-        AppSettingsStore.Save(_settings);
-        ShowToast("广域网推送配置已保存");
+        SaveWanPushUuid();
+    }
+
+    private void SaveWanPushUuid()
+    {
+        _settings = _settingsPersistence.Save(_settings);
+        _wanPushStatusHideTimer = ShowSaveStatusTemporarily(_wanPushStatusHideTimer, visible => IsWanPushSaveStatusVisible = visible);
     }
 
     private void EnableLanSync_Click(object sender, RoutedEventArgs e)
@@ -1134,7 +1742,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                     WindowStyle = ProcessWindowStyle.Hidden
                 };
                 Process.Start(psi)?.WaitForExit();
-                
+
                 System.Windows.MessageBox.Show("配置完成！请重启应用使设置生效。", "提示", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
             }
             catch (Exception ex)
@@ -1254,6 +1862,39 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
+    public string PersonalConfigRestoreStatusText
+    {
+        get => _personalConfigRestoreStatusText;
+        private set
+        {
+            if (value == _personalConfigRestoreStatusText) return;
+            _personalConfigRestoreStatusText = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public string PersonalExtensionSyncStatusText
+    {
+        get => _personalExtensionSyncStatusText;
+        private set
+        {
+            if (value == _personalExtensionSyncStatusText) return;
+            _personalExtensionSyncStatusText = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public string ExtensionDataSyncStatusText
+    {
+        get => _extensionDataSyncStatusText;
+        private set
+        {
+            if (value == _extensionDataSyncStatusText) return;
+            _extensionDataSyncStatusText = value;
+            OnPropertyChanged();
+        }
+    }
+
     public string AiBaseUrl
     {
         get => _aiBaseUrl;
@@ -1302,6 +1943,22 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
+    public string AiSystemPrompt
+    {
+        get => _aiSystemPrompt;
+        set
+        {
+            if (value == _aiSystemPrompt)
+            {
+                return;
+            }
+
+            _aiSystemPrompt = value;
+            OnPropertyChanged();
+            CheckAiSettingsChanged();
+        }
+    }
+
     public bool HasAiSettingsChanged
     {
         get => _hasAiSettingsChanged;
@@ -1331,6 +1988,73 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             OnPropertyChanged();
         }
     }
+
+    public ObservableCollection<SettingsAiProviderVM> AiServiceProvidersList => _aiServiceProvidersList;
+
+    public string ProviderSearchText
+    {
+        get => _providerSearchText;
+        set
+        {
+            if (_providerSearchText != value)
+            {
+                _providerSearchText = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(FilteredProviders));
+            }
+        }
+    }
+
+    public IEnumerable<SettingsAiProviderVM> FilteredProviders
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(ProviderSearchText))
+                return AiServiceProvidersList;
+            return AiServiceProvidersList.Where(p => p.Name.Contains(ProviderSearchText, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    public SettingsAiProviderVM? SelectedServiceProvider
+    {
+        get => _selectedServiceProvider;
+        set
+        {
+            if (_selectedServiceProvider != value)
+            {
+                if (_selectedServiceProvider != null)
+                {
+                    _selectedServiceProvider.PropertyChanged -= SelectedServiceProvider_PropertyChanged;
+                }
+
+                _selectedServiceProvider = value;
+
+                if (_selectedServiceProvider != null)
+                {
+                    _selectedServiceProvider.PropertyChanged += SelectedServiceProvider_PropertyChanged;
+                }
+
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(DetailsVisibility));
+                OnPropertyChanged(nameof(SelectPromptVisibility));
+            }
+        }
+    }
+
+    public Visibility DetailsVisibility => SelectedServiceProvider == null ? Visibility.Collapsed : Visibility.Visible;
+    public Visibility SelectPromptVisibility => SelectedServiceProvider == null ? Visibility.Visible : Visibility.Collapsed;
+
+    public string CheckApiKeyButtonText
+    {
+        get => _checkApiKeyButtonText;
+        set { _checkApiKeyButtonText = value; OnPropertyChanged(); }
+    }
+
+    private void SelectedServiceProvider_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        HasAiSettingsChanged = true;
+    }
+
 
     public int PersonalSyncAutoSyncDelaySeconds
     {
@@ -1391,6 +2115,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             _personalSyncSettings.Provider = normalized;
             OnPropertyChanged();
             OnPropertyChanged(nameof(SelectedPersonalSyncProviderDisplayName));
+            OnPropertyChanged(nameof(PersonalSyncActionButtonText));
             OnPropertyChanged(nameof(SelectedPersonalSyncProviderQuickLinkText));
             OnPropertyChanged(nameof(SelectedPersonalSyncProviderQuickLinkUrl));
             OnPropertyChanged(nameof(HasSelectedPersonalSyncProviderQuickLink));
@@ -1400,7 +2125,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             OnPropertyChanged(nameof(IsSyncProviderGitea));
             OnPropertyChanged(nameof(IsSyncProviderS3));
             OnPropertyChanged(nameof(IsSyncProviderWebDav));
+
+            OnPropertyChanged(nameof(IsGitSyncProvider));
             RefreshWebDavSummary();
+
+            _ = RefreshPersonalSyncCommitsAsync();
         }
     }
 
@@ -1415,6 +2144,50 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     public bool IsSyncProviderS3 => SelectedPersonalSyncProvider == PersonalSyncProviders.S3;
 
     public bool IsSyncProviderWebDav => SelectedPersonalSyncProvider == PersonalSyncProviders.WebDav;
+
+    public bool IsGitSyncProvider => IsSyncProviderGitHub || IsSyncProviderGitee || IsSyncProviderGitLab || IsSyncProviderGitea;
+
+    private string _syncActiveSubTab = "cloud";
+    public string SyncActiveSubTab
+    {
+        get => _syncActiveSubTab;
+        set
+        {
+            if (_syncActiveSubTab == value)
+            {
+                return;
+            }
+
+            _syncActiveSubTab = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsSyncCloudTabActive));
+            OnPropertyChanged(nameof(IsSyncBackupTabActive));
+            OnPropertyChanged(nameof(IsSyncHistoryTabActive));
+        }
+    }
+
+    public bool IsSyncCloudTabActive => SyncActiveSubTab == "cloud";
+    public bool IsSyncBackupTabActive => SyncActiveSubTab == "backup";
+    public bool IsSyncHistoryTabActive => SyncActiveSubTab == "history";
+
+    private bool _isAccountSyncObjectsExpanded;
+    public bool IsAccountSyncObjectsExpanded
+    {
+        get => _isAccountSyncObjectsExpanded;
+        set
+        {
+            if (_isAccountSyncObjectsExpanded == value)
+            {
+                return;
+            }
+
+            _isAccountSyncObjectsExpanded = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(AccountSyncObjectsToggleText));
+        }
+    }
+
+    public string AccountSyncObjectsToggleText => IsAccountSyncObjectsExpanded ? "收起明细 ▴" : "查看明细 ▾";
 
     public bool ShowPersonalSyncAdvancedOptions
     {
@@ -1435,6 +2208,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     public string PersonalSyncAdvancedOptionsButtonText => ShowPersonalSyncAdvancedOptions ? "隐藏高级配置" : "显示高级配置";
 
     public string SelectedPersonalSyncProviderDisplayName => PersonalSyncProviders.GetDisplayName(SelectedPersonalSyncProvider);
+
+    public string PersonalSyncActionButtonText => $"立即同步至 {SelectedPersonalSyncProviderDisplayName}";
 
     public string SelectedPersonalSyncProviderQuickLinkText => SelectedPersonalSyncProvider switch
     {
@@ -1639,6 +2414,31 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private bool _isSearchPopupOpen;
+    public bool IsSearchPopupOpen
+    {
+        get => _isSearchPopupOpen;
+        set
+        {
+            if (_isSearchPopupOpen == value) return;
+            _isSearchPopupOpen = value;
+            OnPropertyChanged(nameof(IsSearchPopupOpen));
+        }
+    }
+
+    private string _highlightKeyword = string.Empty;
+    public string HighlightKeyword
+    {
+        get => _highlightKeyword;
+        set
+        {
+            if (_highlightKeyword == value) return;
+            _highlightKeyword = value;
+            OnPropertyChanged(nameof(HighlightKeyword));
+            RefreshSelectedSectionHighlights();
+        }
+    }
+
     public string SettingsSearchText
     {
         get => _settingsSearchText;
@@ -1690,7 +2490,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     public string RadialMenuSelectedSlotSummary => _selectedRadialMenuSlot == null
         ? "先点击左侧轮盘槽位，再搜索并添加；也可以右键槽位打开菜单。"
-        : $"当前槽位：{_selectedRadialMenuSlot.Label} · 可添加扩展、程序、系统设置项，或右键添加子环。";
+        : $"当前槽位：{_selectedRadialMenuSlot.Label} · 可添加小程序、程序、系统设置项，或右键添加子环。";
 
     public string RecycleBinSearchText
     {
@@ -1777,6 +2577,12 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         set => UpdateQuickPanelMouseTrigger(value, trigger => trigger.CtrlLeftClick = value);
     }
 
+    public bool TriggerCtrlLeftDrag
+    {
+        get => _settings.QuickPanelMouseTriggers.CtrlLeftDrag;
+        set => UpdateQuickPanelMouseTrigger(value, trigger => trigger.CtrlLeftDrag = value);
+    }
+
     public bool TriggerCtrlRightClick
     {
         get => _settings.QuickPanelMouseTriggers.CtrlRightClick;
@@ -1841,13 +2647,44 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         set => UpdateRadialMenu(value, settings => settings.CustomShortcut = value);
     }
 
+    private DispatcherTimer? _quickPanelSaveTimer;
+    private DispatcherTimer? _quickPanelStatusHideTimer;
+    private bool _isQuickPanelSaveStatusVisible;
+
+    public bool IsQuickPanelSaveStatusVisible
+    {
+        get => _isQuickPanelSaveStatusVisible;
+        private set
+        {
+            if (_isQuickPanelSaveStatusVisible == value) return;
+            _isQuickPanelSaveStatusVisible = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public string GlobalServiceBlacklistedProcessesText
+    {
+        get => string.Join(", ", _settings.GlobalServiceBlacklistedProcesses ?? []);
+        set
+        {
+            var processes = ParseProcessList(value);
+            if (ProcessListsEqual(_settings.GlobalServiceBlacklistedProcesses, processes)) return;
+            _settings.GlobalServiceBlacklistedProcesses = processes;
+            OnPropertyChanged();
+            QueueQuickPanelTriggerSave(500);
+        }
+    }
+
     public string RadialBlacklistedProcessesText
     {
         get => string.Join(", ", _settings.RadialMenu.BlacklistedProcesses ?? []);
         set
         {
-            _settings.RadialMenu.BlacklistedProcesses = ParseProcessList(value);
+            var processes = ParseProcessList(value);
+            if (ProcessListsEqual(_settings.RadialMenu.BlacklistedProcesses, processes)) return;
+            _settings.RadialMenu.BlacklistedProcesses = processes;
             OnPropertyChanged();
+            QueueQuickPanelTriggerSave(500);
         }
     }
 
@@ -1856,8 +2693,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         get => string.Join(", ", _settings.RadialMenu.WhitelistedProcesses ?? []);
         set
         {
-            _settings.RadialMenu.WhitelistedProcesses = ParseProcessList(value);
+            var processes = ParseProcessList(value);
+            if (ProcessListsEqual(_settings.RadialMenu.WhitelistedProcesses, processes)) return;
+            _settings.RadialMenu.WhitelistedProcesses = processes;
             OnPropertyChanged();
+            QueueQuickPanelTriggerSave(500);
         }
     }
 
@@ -1950,6 +2790,21 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         set => UpdateYarnSelect(value, settings => settings.LeftSideButtonPaste = value);
     }
 
+    private DispatcherTimer? _yarnSelectSaveTimer;
+    private DispatcherTimer? _yarnSelectStatusHideTimer;
+    private bool _isYarnSelectSaveStatusVisible;
+
+    public bool IsYarnSelectSaveStatusVisible
+    {
+        get => _isYarnSelectSaveStatusVisible;
+        private set
+        {
+            if (_isYarnSelectSaveStatusVisible == value) return;
+            _isYarnSelectSaveStatusVisible = value;
+            OnPropertyChanged();
+        }
+    }
+
     public string YarnSelectBlacklistedProcessesText
     {
         get => string.Join(", ", _settings.YarnSelect.BlacklistedProcesses ?? []);
@@ -1960,6 +2815,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
             OnPropertyChanged();
+            QueueYarnSelectSave(500);
         }
     }
 
@@ -1973,6 +2829,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
             OnPropertyChanged();
+            QueueYarnSelectSave(500);
         }
     }
 
@@ -2002,13 +2859,17 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     public bool EnableYanm
     {
         get => _settings.Yanm.Enabled;
-        set => UpdateYanm(value, settings => settings.Enabled = value);
+        set { if (value != _settings.Yanm.Enabled) UpdateYanm(value, settings => settings.Enabled = value); }
     }
 
     public string YanmActivationKey
     {
         get => YanmActivationKeys.Normalize(_settings.Yanm.ActivationKey);
-        set => UpdateYanm(YanmActivationKeys.Normalize(value), settings => settings.ActivationKey = YanmActivationKeys.Normalize(value));
+        set
+        {
+            var normalized = YanmActivationKeys.Normalize(value);
+            if (normalized != YanmActivationKey) UpdateYanm(normalized, settings => settings.ActivationKey = normalized);
+        }
     }
 
     public bool YanmUsesCustomShortcut => string.Equals(YanmActivationKey, YanmActivationKeys.Custom, StringComparison.OrdinalIgnoreCase);
@@ -2016,7 +2877,22 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     public string YanmCustomShortcut
     {
         get => _settings.Yanm.CustomShortcut;
-        set => UpdateYanm(value, settings => settings.CustomShortcut = value);
+        set { if (value != _settings.Yanm.CustomShortcut) UpdateYanm(value, settings => settings.CustomShortcut = value); }
+    }
+
+    private DispatcherTimer? _yanmSaveTimer;
+    private DispatcherTimer? _yanmStatusHideTimer;
+    private bool _isYanmSaveStatusVisible;
+
+    public bool IsYanmSaveStatusVisible
+    {
+        get => _isYanmSaveStatusVisible;
+        private set
+        {
+            if (_isYanmSaveStatusVisible == value) return;
+            _isYanmSaveStatusVisible = value;
+            OnPropertyChanged();
+        }
     }
 
     public string YanmBlacklistedProcessesText
@@ -2024,8 +2900,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         get => string.Join(", ", _settings.Yanm.BlacklistedProcesses ?? []);
         set
         {
-            _settings.Yanm.BlacklistedProcesses = ParseProcessList(value);
+            var processes = ParseProcessList(value);
+            if (ProcessListsEqual(_settings.Yanm.BlacklistedProcesses, processes)) return;
+            _settings.Yanm.BlacklistedProcesses = processes;
             OnPropertyChanged();
+            QueueYanmSave(500);
         }
     }
 
@@ -2035,44 +2914,58 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         .Distinct(StringComparer.OrdinalIgnoreCase)
         .ToList();
 
+    private static bool ProcessListsEqual(List<string>? current, List<string> updated) =>
+        (current ?? []).SequenceEqual(updated, StringComparer.OrdinalIgnoreCase);
+
     public string YanmWhitelistedProcessesText
     {
         get => string.Join(", ", _settings.Yanm.WhitelistedProcesses ?? []);
         set
         {
-            _settings.Yanm.WhitelistedProcesses = ParseProcessList(value);
+            var processes = ParseProcessList(value);
+            if (ProcessListsEqual(_settings.Yanm.WhitelistedProcesses, processes)) return;
+            _settings.Yanm.WhitelistedProcesses = processes;
             OnPropertyChanged();
+            QueueYanmSave(500);
         }
     }
 
     public bool YanmTriggerHold
     {
         get => _settings.Yanm.TriggerWinHold;
-        set => UpdateYanm(value, settings => settings.TriggerWinHold = value);
+        set { if (value != _settings.Yanm.TriggerWinHold) UpdateYanm(value, settings => settings.TriggerWinHold = value); }
     }
 
     public bool YanmTriggerDoubleTap
     {
         get => _settings.Yanm.TriggerWinDoubleTap;
-        set => UpdateYanm(value, settings => settings.TriggerWinDoubleTap = value);
+        set { if (value != _settings.Yanm.TriggerWinDoubleTap) UpdateYanm(value, settings => settings.TriggerWinDoubleTap = value); }
     }
 
     public bool YanmMouseTriggerRightDrag
     {
         get => _settings.Yanm.TriggerRightButtonDrag;
-        set => UpdateYanm(value, settings => settings.TriggerRightButtonDrag = value);
+        set { if (value != _settings.Yanm.TriggerRightButtonDrag) UpdateYanm(value, settings => settings.TriggerRightButtonDrag = value); }
     }
 
     public string YanmMouseTriggerMode
     {
         get => MouseTriggerModes.Normalize(_settings.Yanm.MouseTriggerMode);
-        set => UpdateYanm(MouseTriggerModes.Normalize(value), settings => settings.MouseTriggerMode = MouseTriggerModes.Normalize(value));
+        set
+        {
+            var normalized = MouseTriggerModes.Normalize(value);
+            if (normalized != YanmMouseTriggerMode) UpdateYanm(normalized, settings => settings.MouseTriggerMode = normalized);
+        }
     }
 
     public string RadialMouseTriggerMode
     {
         get => MouseTriggerModes.Normalize(_settings.RadialMenu.MouseTriggerMode);
-        set => UpdateRadialMenu(value, settings => settings.MouseTriggerMode = MouseTriggerModes.Normalize(value));
+        set
+        {
+            var normalized = MouseTriggerModes.Normalize(value);
+            if (normalized != RadialMouseTriggerMode) UpdateRadialMenu(normalized, settings => settings.MouseTriggerMode = normalized);
+        }
     }
 
     public string YanmSummary
@@ -2115,6 +3008,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             if (trigger.X1ButtonDown) labels.Add("按下 X1 键");
             if (trigger.X2ButtonDown) labels.Add("按下 X2 键");
             if (trigger.CtrlLeftClick) labels.Add("Ctrl+左键单击");
+            if (trigger.CtrlLeftDrag) labels.Add("Ctrl+左键移动");
             if (trigger.CtrlRightClick) labels.Add("Ctrl+右键单击");
             if (trigger.MiddleButtonLongPress) labels.Add("长按中键");
             if (trigger.RightButtonLongPress) labels.Add("长按右键");
@@ -2130,6 +3024,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     {
         MouseGestureTriggerModes.RightDrag => "按住右键移动",
         MouseGestureTriggerModes.MiddleDrag => "按住中键移动",
+        MouseGestureTriggerModes.CtrlLeftDrag => "Ctrl+左键移动",
         _ => "未启用"
     };
 
@@ -2140,8 +3035,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             var count = MouseGestureItems?.Count ?? 0;
             var trigger = MouseGestureTriggerSummary;
             return count == 0
-                ? $"当前没有扩展绑定鼠标手势。全局触发方式：{trigger}。"
-                : $"当前有 {count} 个扩展绑定鼠标手势。全局触发方式：{trigger}。";
+                ? $"当前没有小程序绑定鼠标手势。全局触发方式：{trigger}。"
+                : $"当前有 {count} 个小程序绑定鼠标手势。全局触发方式：{trigger}。";
         }
     }
 
@@ -2154,12 +3049,52 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         set => UpdateMouseGestureTriggerMode(value);
     }
 
+    public bool MouseGestureEnableWheelActions
+    {
+        get => _settings.MouseGestureEnableWheelActions;
+        set
+        {
+            if (_settings.MouseGestureEnableWheelActions == value) return;
+            _settings.MouseGestureEnableWheelActions = value;
+            _settings = _settingsPersistence.Save(_settings);
+            OnPropertyChanged(nameof(MouseGestureEnableWheelActions));
+        }
+    }
+
+    public bool MouseGestureEnableRockerActions
+    {
+        get => _settings.MouseGestureEnableRockerActions;
+        set
+        {
+            if (_settings.MouseGestureEnableRockerActions == value) return;
+            _settings.MouseGestureEnableRockerActions = value;
+            _settings = _settingsPersistence.Save(_settings);
+            OnPropertyChanged(nameof(MouseGestureEnableRockerActions));
+        }
+    }
+
+    public string MouseGestureBlacklistText
+    {
+        get => string.Join(", ", _settings.MouseGestureBlacklistedProcesses ?? []);
+        set
+        {
+            var list = (value ?? string.Empty)
+                .Split(new[] { ',', '，', ';', '；', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            _settings.MouseGestureBlacklistedProcesses = list;
+            _settings = _settingsPersistence.Save(_settings);
+            OnPropertyChanged(nameof(MouseGestureBlacklistText));
+        }
+    }
+
     public string RadialAssignedMouseTriggerSummary => BuildAssignedMouseTriggerSummary(
     [
         (_settings.RadialMenu.TriggerMiddleButtonDown, "按下中键"),
         (_settings.RadialMenu.TriggerX1ButtonDown, "按下 X1 键"),
         (_settings.RadialMenu.TriggerX2ButtonDown, "按下 X2 键"),
         (_settings.RadialMenu.TriggerCtrlLeftClick, "Ctrl+左键单击"),
+        (_settings.RadialMenu.TriggerCtrlLeftDrag, "Ctrl+左键移动"),
         (_settings.RadialMenu.TriggerCtrlRightClick, "Ctrl+右键单击"),
         (_settings.RadialMenu.TriggerCtrlMiddleClick, "Ctrl+中键单击"),
         (_settings.RadialMenu.TriggerMiddleButtonLongPress, "长按中键"),
@@ -2175,6 +3110,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         (_settings.Yanm.TriggerX1ButtonDown, "按下 X1 键"),
         (_settings.Yanm.TriggerX2ButtonDown, "按下 X2 键"),
         (_settings.Yanm.TriggerCtrlLeftClick, "Ctrl+左键单击"),
+        (_settings.Yanm.TriggerCtrlLeftDrag, "Ctrl+左键移动"),
         (_settings.Yanm.TriggerCtrlRightClick, "Ctrl+右键单击"),
         (_settings.Yanm.TriggerCtrlMiddleClick, "Ctrl+中键单击"),
         (_settings.Yanm.TriggerMiddleButtonLongPress, "长按中键"),
@@ -2220,12 +3156,12 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     {
         "general" => "控制燕子(Swallow)的基础行为，包括启动同步和托盘停驻策略。",
         "ai" => "配置 AI 对话使用的本地或远程兼容接口，包括地址、Key 和模型名。",
-        "environment" => "配置 Notion、第三方 API 和应用型扩展可读取的用户环境变量。",
+        "environment" => "配置 Notion、第三方 API 和应用型小程序可读取的用户环境变量。",
         "sync" => "管理云账号状态、同步入口和当前服务端连接信息。",
-        "extensions" => "查看本地扩展目录和当前机器已发现的扩展数量。",
-        "recycle" => "查看已删除扩展，支持恢复和彻底删除。",
+        "extensions" => "查看本地小程序目录和当前机器已发现的小程序数量。",
+        "recycle" => "查看已删除小程序，支持恢复和彻底删除。",
         "quickpanel" => "统一分配鼠标动作给面板、燕环、燕幕、窗口排列和鼠标手势，避免触发方式重叠。",
-        "mousegestures" => "管理扩展使用的鼠标轨迹，快速查看冲突并把常用手势绑定到扩展。",
+        "mousegestures" => "管理小程序使用的鼠标轨迹，快速查看冲突并把常用手势绑定到小程序。",
         "radial" => "配置燕环的启用状态、键盘触发和轮盘内容；鼠标触发只在“鼠标触发”页统一分配。",
         "yarnselect" => "按住左键选中文本时，用字母或鼠标键快速复制、搜索、运行或粘贴。",
         "yanm" => "配置全局信息层燕幕，包括启用状态、按住显示和双击固定的触发键；鼠标触发只做只读展示。",
@@ -2234,6 +3170,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     };
 
     public bool IsGeneralSelected => SelectedNavigation?.Key == "general";
+
+    public bool IsNormalSettingsVisible => !IsAiSelected && !IsExtensionsSelected;
 
     public bool IsAiSelected => SelectedNavigation?.Key == "ai";
 
@@ -2254,6 +3192,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     public bool IsYarnSelectSelected => SelectedNavigation?.Key == "yarnselect";
 
     public bool IsYanmSelected => SelectedNavigation?.Key == "yanm";
+
+    public bool IsYanwoSelected => SelectedNavigation?.Key == "yanwo";
 
     public bool IsAboutSelected => SelectedNavigation?.Key == "about";
 
@@ -2276,11 +3216,13 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private void SettingsWindow_Loaded(object sender, RoutedEventArgs e)
     {
+        HostAssets.AppendLog($"SettingsWindow Loaded. opacity={Opacity}, visibility={Visibility}, actualWidth={ActualWidth}, actualHeight={ActualHeight}.");
         // 初始化原始AI设置值
         _originalAiBaseUrl = _settings.AiBaseUrl;
         _originalAiApiKey = _settings.AiApiKey;
         _originalAiModel = _settings.AiModel;
-        
+        _originalAiSystemPrompt = _settings.AiSystemPrompt;
+
         RefreshAccountSummary();
         RefreshQuickPanelTriggerBindings();
         RefreshYarnSelectBindings();
@@ -2291,32 +3233,108 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(RadialMouseTriggerMode));
         SyncStatusText = _mainWindow.SyncStatus;
         RefreshVisibleSectionData();
-        
+
         // Initialize gesture card colors
         InitializeMouseTriggerTargetDropdowns();
         UpdateAllGestureCardColors();
         ScheduleExtensionCardWidthUpdate();
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            HostAssets.AppendLog($"SettingsWindow deferred UI refresh. opacity={Opacity}, isLoaded={IsLoaded}, isVisible={IsVisible}.");
+            RebuildDynamicSettingsSearchItems();
+            RefreshSelectedSectionHighlights();
+        }), DispatcherPriority.Loaded);
+
+        UpdateMobileStatusUI(_settings.EnableLanSync);
+
+        var app = System.Windows.Application.Current as App;
+        if (app != null && app.AgentApiServer != null)
+        {
+            UpdateBrowserStatusUI(app.AgentApiServer.IsBrowserConnected);
+            app.AgentApiServer.BrowserConnectionChanged += AgentApiServer_BrowserConnectionChanged;
+            LocalAgentApiServer.MobileDeviceConnected += LocalAgentApiServer_MobileDeviceConnected;
+        }
+
+        _isLoadingSettings = false;
     }
 
-    private void SettingsWindow_Activated(object? sender, EventArgs e)
+    private void LocalAgentApiServer_MobileDeviceConnected(string deviceName)
     {
-        if (_isRenamingRadialMenuPage)
+        Dispatcher.Invoke(() =>
         {
-            HostAssets.AppendLog("Settings activated skipped during radial page rename.");
-            return;
-        }
+            UpdateMobileStatusUI(_settings.EnableLanSync);
+        });
+    }
 
-        if (_suspendActivationRefresh)
+    private void AgentApiServer_BrowserConnectionChanged(bool isConnected)
+    {
+        Dispatcher.Invoke(() =>
         {
-            HostAssets.AppendLog("Settings activated skipped during modal slot edit.");
-            return;
-        }
+            UpdateBrowserStatusUI(isConnected);
+        });
+    }
 
+    private void UpdateBrowserStatusUI(bool isConnected)
+    {
+        if (BrowserStatusDot == null || BrowserStatusText == null) return;
+
+        if (isConnected)
+        {
+            var app = System.Windows.Application.Current as App;
+            var browserName = (app?.AgentApiServer != null) ? app.AgentApiServer.ConnectedBrowserName : "浏览器";
+            if (string.IsNullOrEmpty(browserName)) browserName = "浏览器";
+
+            BrowserStatusDot.Fill = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(34, 197, 94));
+            BrowserStatusText.Text = $"已连接: {browserName}";
+            BrowserStatusText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(34, 197, 94));
+            BrowserStatusText.Tag = "Connected";
+
+            if (BrowserToolTipStatusText != null)
+            {
+                BrowserToolTipStatusText.Text = $"已连接: {browserName}";
+                BrowserToolTipStatusText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(34, 197, 94));
+            }
+        }
+        else
+        {
+            BrowserStatusDot.Fill = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(156, 163, 175));
+            BrowserStatusText.Text = "未连接";
+            BrowserStatusText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(156, 163, 175));
+            BrowserStatusText.Tag = "Disconnected";
+
+            if (BrowserToolTipStatusText != null)
+            {
+                BrowserToolTipStatusText.Text = "未连接";
+                BrowserToolTipStatusText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(156, 163, 175));
+            }
+        }
+    }
+
+    public void ReloadSettingsFromDisk()
+    {
+        if (Dispatcher.CheckAccess())
+        {
+            DoReloadSettingsFromDisk();
+        }
+        else
+        {
+            Dispatcher.BeginInvoke(new Action(DoReloadSettingsFromDisk));
+        }
+    }
+
+    private void DoReloadSettingsFromDisk()
+    {
+        _isRefreshingSettingsFromDisk = true;
+        try
+        {
         _settings = AppSettingsStore.Load();
+        _settingsPersistence.Reset(_settings);
+        RefreshAgentApiTokenDisplay();
         _settings.YarnSelect ??= new YarnSelectSettings();
         _settings.Yanm ??= new YanmSettings();
         OnPropertyChanged(nameof(LaunchAtStartup));
         OnPropertyChanged(nameof(RefreshCloudOnStartup));
+        OnPropertyChanged(nameof(EnableEverything));
         OnPropertyChanged(nameof(CloseToTray));
         OnPropertyChanged(nameof(EnableYanm));
         OnPropertyChanged(nameof(YanmActivationKey));
@@ -2339,8 +3357,14 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         AiBaseUrl = _settings.AiBaseUrl;
         AiApiKey = _settings.AiApiKey;
         AiModel = _settings.AiModel;
+        AiSystemPrompt = _settings.AiSystemPrompt;
+        _originalAiBaseUrl = _settings.AiBaseUrl;
+        _originalAiApiKey = _settings.AiApiKey;
+        _originalAiModel = _settings.AiModel;
+        _originalAiSystemPrompt = _settings.AiSystemPrompt;
+        HasAiSettingsChanged = false;
         AiSettingsStatusText = BuildAiSettingsSummary(_settings);
-        
+
         // 加载已保存的密码
         var credential = WebDavCredentialStore.Load();
         if (credential != null && !string.IsNullOrWhiteSpace(credential.Password))
@@ -2351,15 +3375,37 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         {
             WebDavPasswordBox.Password = string.Empty;
         }
-        
+
         RefreshAccountSummary();
         RefreshWebDavSummary();
         SyncStatusText = _mainWindow.SyncStatus;
         RefreshVisibleSectionData();
-        
+
         // Refresh gesture card colors after settings reload
         InitializeMouseTriggerTargetDropdowns();
         UpdateAllGestureCardColors();
+        }
+        finally
+        {
+            _isRefreshingSettingsFromDisk = false;
+        }
+    }
+
+    private void SettingsWindow_Activated(object? sender, EventArgs e)
+    {
+        if (_isRenamingRadialMenuPage)
+        {
+            HostAssets.AppendLog("Settings activated skipped during radial page rename.");
+            return;
+        }
+
+        if (_suspendActivationRefresh)
+        {
+            HostAssets.AppendLog("Settings activated skipped during modal slot edit.");
+            return;
+        }
+
+        DoReloadSettingsFromDisk();
     }
 
     private void EnsureRadialEditorLoaded(bool forceRefresh = false)
@@ -2377,10 +3423,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     {
         // 不再自动刷新扩展列表，避免频繁刷新
         // 只在用户明确操作（点击刷新按钮、删除/恢复扩展等）时才刷新
-        
+
         if (IsSyncSelected)
         {
             RefreshSyncActivityLog();
+            RefreshAccountObjectSyncStatus();
         }
     }
 
@@ -2400,8 +3447,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     {
         var count = EnvironmentVariables.Count(item => !string.IsNullOrWhiteSpace(item.Name));
         return count == 0
-            ? "尚未配置环境变量。应用扩展和脚本将只能读取系统环境变量。"
-            : $"已配置 {count} 个用户环境变量，脚本运行和应用扩展桥接均可读取。";
+            ? "尚未配置环境变量。小程序和其他电脑软件只能读取已有的 Windows 环境变量。"
+            : $"已配置 {count} 个环境变量：同步至 Windows 当前用户环境，新启动的独立程序也可读取；特殊凭证及系统核心变量除外。";
     }
 
     private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -2416,12 +3463,19 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private void WindowFrame_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        if (e.ButtonState != MouseButtonState.Pressed || IsInteractiveSource(e.OriginalSource as DependencyObject))
+        var pos = e.GetPosition(this);
+        var isInteractive = IsInteractiveSource(e.OriginalSource as DependencyObject);
+        if (pos.Y <= 64)
+        {
+            HostAssets.AppendLog($"[SettingsWindow.Input] TopArea PreviewMouseDown: pos=({pos.X:F0},{pos.Y:F0}), isInteractive={isInteractive}, source={e.OriginalSource?.GetType().Name}");
+        }
+
+        if (e.ButtonState != MouseButtonState.Pressed || isInteractive)
         {
             return;
         }
 
-        if (e.GetPosition(this).Y > 64)
+        if (pos.Y > 64)
         {
             return;
         }
@@ -2556,13 +3610,117 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private void SettingsWindow_BoundsChanged(object? sender, EventArgs e)
     {
+        // 隐形预渲染期间窗口位置虽不变，但保守起见跳过持久化
+        if (_isHiddenPreRender)
+        {
+            return;
+        }
+
         PersistWindowBoundsDebounced();
+    }
+
+    private bool _isHiddenPreRender;
+
+    /// <summary>
+    /// 以“隐形预渲染”方式显示：窗口停在真实位置，但用 1x1 的窗口区域把自己裁剪到不可见，
+    /// 等 WPF 呈现首帧后移除区域立即完整显示。
+    /// 两种会闪白的做法都要避开：
+    /// 1. 直接 Show —— DWM 会在 WPF 呈现首帧前合成未初始化的白色表面（内容区闪白）；
+    /// 2. 停靠 -32000 等屏幕外坐标 —— 那是系统停放最小化窗口的位置，DWM 对完全离屏的
+    ///    窗口暂停合成，移回屏幕时同样会闪一帧白。
+    /// 窗口区域只是合成裁剪，表面内容始终在正常合成路径上，移除区域展示的就是已呈现的帧。
+    /// </summary>
+    public void ShowOffscreen(Action onScreenReady)
+    {
+        if (IsVisible)
+        {
+            onScreenReady();
+            return;
+        }
+
+        var previousShowActivated = ShowActivated;
+        ShowActivated = false; // 预渲染阶段不抢焦点，显示时再激活
+        _isHiddenPreRender = true;
+
+        var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero)
+        {
+            new System.Windows.Interop.WindowInteropHelper(this).EnsureHandle();
+            hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+        }
+
+        // 1x1 区域位于窗口左上角（系统拥有区域对象的生命周期，无需删除）
+        var region = Win32Native.CreateRectRgn(0, 0, 1, 1);
+        if (region != IntPtr.Zero)
+        {
+            Win32Native.SetWindowRgn(hwnd, region, false);
+        }
+
+        HostAssets.AppendLog("SettingsWindow: hidden pre-render show (1x1 window region).");
+        Show();
+
+        EventHandler? onRendering = null;
+        var settled = false;
+        void SettleOnScreen()
+        {
+            // 渲染回调与兜底定时器可能都会触发，只结算一次
+            if (settled)
+            {
+                return;
+            }
+
+            settled = true;
+            CompositionTarget.Rendering -= onRendering;
+            _isHiddenPreRender = false;
+
+            if (IsVisible)
+            {
+                // 移除裁剪区域，窗口立即以已呈现的完整帧出现
+                Win32Native.SetWindowRgn(hwnd, IntPtr.Zero, true);
+                ShowActivated = previousShowActivated;
+                HostAssets.AppendLog("SettingsWindow: hidden pre-render done, region cleared.");
+                onScreenReady();
+            }
+        }
+
+        var renderingTicks = 0;
+        onRendering = (_, _) =>
+        {
+            // 第一个 Rendering 回调发生在首帧渲染之前，跳过它，
+            // 在第二个合成回调里显示（此时表面已呈现过至少一帧）
+            renderingTicks++;
+            if (renderingTicks < 2)
+            {
+                return;
+            }
+
+            CompositionTarget.Rendering -= onRendering;
+            Dispatcher.BeginInvoke(SettleOnScreen, DispatcherPriority.Render);
+        };
+        CompositionTarget.Rendering += onRendering;
+
+        // 兜底：渲染回调异常/被阻塞时最迟 300ms 显示
+        _ = Task.Delay(300).ContinueWith(
+            _ => Dispatcher.BeginInvoke(SettleOnScreen),
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
     }
 
     private void SettingsWindow_Closing(object? sender, CancelEventArgs e)
     {
-        // 关闭时立即保存，不使用防抖
+        e.Cancel = true;
+        Hide();
+
+        // 先写入尚未到期的编辑，再保存窗口位置；位置保存会读取最新设置。
         _windowBoundsPersistTimer?.Stop();
+        FlushYarnSelectSave();
+        FlushYanmSave();
+        FlushQuickPanelTriggerSave();
+        FlushAiSettingsSave();
+        FlushWebDavSettingsSave();
+        FlushEnvironmentVariablesSave();
+        FlushWanPushSave();
         PersistWindowBounds();
     }
 
@@ -2593,14 +3751,21 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        _settings = _settings with
+        var latest = AppSettingsStore.Load();
+        if (latest.SettingsWindowLeft == Left && latest.SettingsWindowTop == Top &&
+            latest.SettingsWindowWidth == Width && latest.SettingsWindowHeight == Height)
+        {
+            return;
+        }
+
+        latest = latest with
         {
             SettingsWindowLeft = Left,
             SettingsWindowTop = Top,
             SettingsWindowWidth = Width,
             SettingsWindowHeight = Height
         };
-        AppSettingsStore.Save(_settings);
+        AppSettingsStore.Save(latest);
     }
 
     private void SettingsSearchBox_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
@@ -2613,15 +3778,103 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private void ThemeModeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        AppSettingsStore.Save(_settings);
+        UpdateSettingsUiPilotTheme();
+        if (_isLoadingSettings || _isRefreshingSettingsFromDisk || !IsLoaded ||
+            string.Equals(AppSettingsStore.Load().ThemeMode, _settings.ThemeMode, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _settings = _settingsPersistence.Save(_settings);
         _mainWindow.RefreshAppSettings();
+        if (IsLoaded)
+        {
+            _mainWindow.NotifyQuickPanelSettingsChanged("theme-mode-changed", refreshYanmOverlay: false);
+        }
     }
 
     private void SaveSettingsToggle_Click(object sender, RoutedEventArgs e)
     {
-        AppSettingsStore.Save(_settings);
+        _settings = _settingsPersistence.Save(_settings);
         _mainWindow.RefreshAppSettings();
         StartupRegistrationService.Apply(_settings.LaunchAtStartup);
+        if (sender is FrameworkElement { DataContext: SettingsWindow })
+        {
+            _mainWindow.NotifyQuickPanelSettingsChanged("general-setting-changed", refreshYanmOverlay: false);
+        }
+    }
+
+    // The console deliberately no longer embeds credentials in public HTML.
+    // Display the *running server's* token here, falling back to the locally saved setting.
+    private string GetAgentApiTokenForDisplay()
+    {
+        var activeToken = (System.Windows.Application.Current as App)?.AgentApiServer?.TokenForSettings;
+        return !string.IsNullOrWhiteSpace(activeToken)
+            ? activeToken
+            : (AppSettingsStore.Load().AgentApiToken ?? string.Empty);
+    }
+
+    private void HideAgentApiToken()
+    {
+        if (AgentApiTokenVisibleTextBox == null) return;
+        AgentApiTokenVisibleTextBox.Text = string.Empty;
+        AgentApiTokenVisibleTextBox.Visibility = Visibility.Collapsed;
+        AgentApiTokenMaskedText.Visibility = Visibility.Visible;
+        AgentApiTokenVisibilityButton.Content = "显示";
+    }
+
+    private void RefreshAgentApiTokenDisplay()
+    {
+        if (AgentApiTokenMaskedText == null) return;
+        HideAgentApiToken();
+        AgentApiTokenMaskedText.Text = string.IsNullOrWhiteSpace(GetAgentApiTokenForDisplay())
+            ? "未配置"
+            : "••••••••••••••••";
+        AgentApiTokenHintText.Text =
+            "默认隐藏。点击复制并粘贴到 API 控制台的 X-Yanzi-Token；请勿公开分享。";
+    }
+
+    private void ToggleAgentApiTokenVisibility_Click(object sender, RoutedEventArgs e)
+    {
+        if (AgentApiTokenVisibleTextBox.Visibility == Visibility.Visible)
+        {
+            HideAgentApiToken();
+            AgentApiTokenHintText.Text = "Token 已隐藏。";
+            return;
+        }
+
+        var token = GetAgentApiTokenForDisplay();
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            AgentApiTokenHintText.Text = "尚未配置 API Token。";
+            return;
+        }
+
+        AgentApiTokenVisibleTextBox.Text = token;
+        AgentApiTokenVisibleTextBox.Visibility = Visibility.Visible;
+        AgentApiTokenMaskedText.Visibility = Visibility.Collapsed;
+        AgentApiTokenVisibilityButton.Content = "隐藏";
+        AgentApiTokenHintText.Text = "Token 仅在本地设置窗口显示，离开窗口后自动隐藏。";
+    }
+
+    private void CopyAgentApiToken_Click(object sender, RoutedEventArgs e)
+    {
+        var token = GetAgentApiTokenForDisplay();
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            AgentApiTokenHintText.Text = "尚未配置 API Token。";
+            return;
+        }
+
+        try
+        {
+            System.Windows.Clipboard.SetText(token);
+            AgentApiTokenHintText.Text = "已复制当前 API Token，请粘贴到控制台；剪贴板中包含敏感信息。";
+        }
+        catch (System.Exception ex)
+        {
+            AgentApiTokenHintText.Text = "复制失败：" + ex.Message;
+        }
     }
 
     private void OpenApiDocsUrlButton_Click(object sender, RoutedEventArgs e)
@@ -2641,15 +3894,233 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private void OpenAiCapabilitiesButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var port = _settings.AgentApiPort;
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = $"http://127.0.0.1:{port}/docs#capability-console",
+                UseShellExecute = true
+            });
+        }
+        catch (System.Exception ex)
+        {
+            System.Windows.MessageBox.Show($"无法打开能力管理: {ex.Message}");
+        }
+    }
+
+    private void HotkeyRecorderBorder_MouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (sender is Border border)
+        {
+            border.Focus();
+            SetSnapAssistRecordingState(true);
+            e.Handled = true;
+        }
+    }
+
+    private void HotkeyRecorderBorder_LostFocus(object sender, RoutedEventArgs e)
+    {
+        SetSnapAssistRecordingState(false);
+    }
+
+    private void HotkeyRecorderBorder_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        var key = e.Key == System.Windows.Input.Key.System ? e.SystemKey : e.Key;
+
+        if (key == System.Windows.Input.Key.Escape)
+        {
+            SetSnapAssistRecordingState(false);
+            System.Windows.Input.Keyboard.ClearFocus();
+            e.Handled = true;
+            return;
+        }
+
+        if (key == System.Windows.Input.Key.LeftCtrl || key == System.Windows.Input.Key.RightCtrl ||
+            key == System.Windows.Input.Key.LeftShift || key == System.Windows.Input.Key.RightShift ||
+            key == System.Windows.Input.Key.LeftAlt || key == System.Windows.Input.Key.RightAlt ||
+            key == System.Windows.Input.Key.LWin || key == System.Windows.Input.Key.RWin)
+        {
+            e.Handled = true;
+            return;
+        }
+
+        var modifiers = new List<string>();
+        if (System.Windows.Input.Keyboard.Modifiers.HasFlag(System.Windows.Input.ModifierKeys.Control)) modifiers.Add("Ctrl");
+        if (System.Windows.Input.Keyboard.Modifiers.HasFlag(System.Windows.Input.ModifierKeys.Shift)) modifiers.Add("Shift");
+        if (System.Windows.Input.Keyboard.Modifiers.HasFlag(System.Windows.Input.ModifierKeys.Alt)) modifiers.Add("Alt");
+        if (System.Windows.Input.Keyboard.Modifiers.HasFlag(System.Windows.Input.ModifierKeys.Windows)) modifiers.Add("Win");
+
+        string keyStr = key.ToString();
+        if (key >= System.Windows.Input.Key.D0 && key <= System.Windows.Input.Key.D9)
+            keyStr = (key - System.Windows.Input.Key.D0).ToString();
+        else if (key >= System.Windows.Input.Key.NumPad0 && key <= System.Windows.Input.Key.NumPad9)
+            keyStr = "Num" + (key - System.Windows.Input.Key.NumPad0).ToString();
+
+        modifiers.Add(keyStr);
+        string hotkey = string.Join("+", modifiers);
+
+        if (_mainWindow.TryUpdateWindowSnapAssistHotkey(hotkey, out var message))
+        {
+            _settings = _mainWindow.GetCurrentAppSettings();
+        _settingsPersistence.Reset(_settings);
+            NotifySnapAssistHotkeyDisplayChanged();
+        }
+
+        SetSnapAssistRecordingState(false);
+        System.Windows.Input.Keyboard.ClearFocus();
+        e.Handled = true;
+    }
+
+    private void ClearSnapAssistHotkey_Click(object sender, RoutedEventArgs e)
+    {
+        if (_mainWindow.TryUpdateWindowSnapAssistHotkey(string.Empty, out var message))
+        {
+            _settings = _mainWindow.GetCurrentAppSettings();
+        _settingsPersistence.Reset(_settings);
+            NotifySnapAssistHotkeyDisplayChanged();
+        }
+        SetSnapAssistRecordingState(false);
+        e.Handled = true;
+    }
+
+    private void LauncherHotkeyRecorderBorder_MouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (sender is Border border)
+        {
+            border.Focus();
+            SetLauncherRecordingState(true);
+            e.Handled = true;
+        }
+    }
+
+    private void LauncherHotkeyRecorderBorder_LostFocus(object sender, RoutedEventArgs e)
+    {
+        SetLauncherRecordingState(false);
+    }
+
+    private void LauncherHotkeyRecorderBorder_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        var key = e.Key == System.Windows.Input.Key.System ? e.SystemKey : e.Key;
+        e.Handled = HandleLauncherRecorderKeyDown(key, GetCurrentModifiers());
+    }
+
+    private void LauncherHotkeyRecorderBorder_PreviewKeyUp(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        var key = e.Key == System.Windows.Input.Key.System ? e.SystemKey : e.Key;
+        e.Handled = HandleLauncherRecorderKeyUp(key);
+    }
+
+    private void ClearLauncherHotkey_Click(object sender, RoutedEventArgs e)
+    {
+        _lastLauncherDoubleTapCandidate = null;
+        _lastLauncherDoubleTapAtUtc = default;
+        if (_mainWindow.TryUpdateLauncherHotkey(string.Empty, out var message))
+        {
+            LauncherHotkey = _mainWindow.GetLauncherHotkey();
+            SyncStatusText = message;
+            RefreshSyncActivityLog();
+        }
+        else
+        {
+            System.Windows.MessageBox.Show(this, message, "快捷键设置失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+
+        SetLauncherRecordingState(false);
+        e.Handled = true;
+    }
+
+    private void CommitLauncherHotkeyShortcut(string shortcut)
+    {
+        if (_mainWindow.TryUpdateLauncherHotkey(shortcut, out var message))
+        {
+            LauncherHotkey = _mainWindow.GetLauncherHotkey();
+            SyncStatusText = message;
+            RefreshSyncActivityLog();
+        }
+        else
+        {
+            System.Windows.MessageBox.Show(this, message, "快捷键设置失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+
+        SetLauncherRecordingState(false);
+        System.Windows.Input.Keyboard.ClearFocus();
+    }
+
+    private bool HandleLauncherRecorderKeyDown(Key key, ModifierKeys modifiers)
+    {
+        if (key == System.Windows.Input.Key.Escape)
+        {
+            SetLauncherRecordingState(false);
+            System.Windows.Input.Keyboard.ClearFocus();
+            return true;
+        }
+
+        if (key == System.Windows.Input.Key.LeftCtrl || key == System.Windows.Input.Key.RightCtrl ||
+            key == System.Windows.Input.Key.LeftAlt || key == System.Windows.Input.Key.RightAlt ||
+            key == System.Windows.Input.Key.LeftShift || key == System.Windows.Input.Key.RightShift ||
+            key == System.Windows.Input.Key.LWin || key == System.Windows.Input.Key.RWin)
+        {
+            return true;
+        }
+
+        var shortcut = BuildStandardHotkeyString(key, modifiers);
+        if (string.IsNullOrWhiteSpace(shortcut))
+        {
+            return true;
+        }
+
+        _lastLauncherDoubleTapCandidate = null;
+        _lastLauncherDoubleTapAtUtc = default;
+        CommitLauncherHotkeyShortcut(shortcut);
+        return true;
+    }
+
+    private bool HandleLauncherRecorderKeyUp(Key key)
+    {
+        var candidateShortcut = key switch
+        {
+            System.Windows.Input.Key.LeftCtrl or System.Windows.Input.Key.RightCtrl => "DoubleCtrl",
+            System.Windows.Input.Key.LeftAlt or System.Windows.Input.Key.RightAlt => "DoubleAlt",
+            _ => null
+        };
+
+        if (candidateShortcut == null)
+        {
+            return false;
+        }
+
+        var now = DateTime.UtcNow;
+        if (string.Equals(_lastLauncherDoubleTapCandidate, candidateShortcut, StringComparison.Ordinal) &&
+            now - _lastLauncherDoubleTapAtUtc <= TimeSpan.FromMilliseconds(450))
+        {
+            _lastLauncherDoubleTapCandidate = null;
+            _lastLauncherDoubleTapAtUtc = default;
+            CommitLauncherHotkeyShortcut(candidateShortcut);
+            return true;
+        }
+
+        _lastLauncherDoubleTapCandidate = candidateShortcut;
+        _lastLauncherDoubleTapAtUtc = now;
+        return true;
+    }
+
     private void SaveQuickPanelTrigger_Click(object sender, RoutedEventArgs e)
     {
+        if (_isLoadingSettings || _isRefreshingSettingsFromDisk)
+        {
+            return;
+        }
+
         SaveQuickPanelTriggerSettings();
     }
 
     private void TriggerCard_Click(object sender, MouseButtonEventArgs e)
     {
         HostAssets.AppendLog($"TriggerCard_Click fired, sender type: {sender?.GetType().Name}");
-        
+
         if (sender is not FrameworkElement { Tag: string triggerName })
         {
             HostAssets.AppendLog($"TriggerCard_Click: sender is not FrameworkElement with Tag, sender={sender}");
@@ -2747,44 +4218,55 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
         // Save settings
         SaveQuickPanelTriggerSettings();
-        
+
         HostAssets.AppendLog($"Gesture {gestureName} assigned to {target}");
     }
 
     private void InitializeMouseTriggerTargetDropdowns()
     {
-        var gestures = GetMouseTriggerGestureNames();
-        foreach (var gesture in gestures)
+        _isUpdatingMouseTriggerTargetCombos = true;
+        try
         {
-            if (_mouseTriggerTargetCombos.ContainsKey(gesture))
+            var gestures = GetMouseTriggerGestureNames();
+            foreach (var gesture in gestures)
             {
-                continue;
+                if (_mouseTriggerTargetCombos.ContainsKey(gesture))
+                {
+                    continue;
+                }
+
+                if (FindName($"{gesture}_None") is not System.Windows.Controls.Button noneButton ||
+                    noneButton.Parent is not Grid grid)
+                {
+                    continue;
+                }
+
+                grid.Children.Clear();
+                grid.ColumnDefinitions.Clear();
+                grid.RowDefinitions.Clear();
+
+                var currentTarget = GetGestureTarget(gesture);
+
+                var combo = new WpfComboBox
+                {
+                    Tag = gesture,
+                    Height = 28,
+                    MinWidth = 120,
+                    HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
+                    ItemsSource = GetMouseTriggerTargetOptions(gesture),
+                    DisplayMemberPath = nameof(MouseTriggerOption.Label),
+                    SelectedValuePath = nameof(MouseTriggerOption.Value),
+                    SelectedValue = currentTarget,
+                    Style = TryFindResource("GlobalComboBoxStyle") as Style
+                };
+                combo.SelectionChanged += MouseTriggerTargetCombo_SelectionChanged;
+                grid.Children.Add(combo);
+                _mouseTriggerTargetCombos[gesture] = combo;
             }
-
-            if (FindName($"{gesture}_None") is not System.Windows.Controls.Button noneButton ||
-                noneButton.Parent is not Grid grid)
-            {
-                continue;
-            }
-
-            grid.Children.Clear();
-            grid.ColumnDefinitions.Clear();
-            grid.RowDefinitions.Clear();
-
-            var combo = new WpfComboBox
-            {
-                Tag = gesture,
-                Height = 28,
-                MinWidth = 120,
-                HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
-                ItemsSource = GetMouseTriggerTargetOptions(gesture),
-                DisplayMemberPath = nameof(MouseTriggerOption.Label),
-                SelectedValuePath = nameof(MouseTriggerOption.Value),
-                Style = TryFindResource("GlobalComboBoxStyle") as Style
-            };
-            combo.SelectionChanged += MouseTriggerTargetCombo_SelectionChanged;
-            grid.Children.Add(combo);
-            _mouseTriggerTargetCombos[gesture] = combo;
+        }
+        finally
+        {
+            _isUpdatingMouseTriggerTargetCombos = false;
         }
     }
 
@@ -2792,12 +4274,13 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     {
         "RightButtonDrag" => GestureMouseTriggerTargetOptions,
         "MiddleButtonDrag" => GestureMouseTriggerTargetOptions,
+        "CtrlLeftDrag" => GestureMouseTriggerTargetOptions,
         _ => StandardMouseTriggerTargetOptions
     };
 
     private void MouseTriggerTargetCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_isUpdatingMouseTriggerTargetCombos)
+        if (_isUpdatingMouseTriggerTargetCombos || _isLoadingSettings || _isRefreshingSettingsFromDisk)
         {
             return;
         }
@@ -2809,6 +4292,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
         var target = combo.SelectedValue as string;
         if (string.IsNullOrWhiteSpace(target))
+        {
+            return;
+        }
+
+        if (string.Equals(target, GetGestureTarget(gestureName), StringComparison.Ordinal))
         {
             return;
         }
@@ -2836,6 +4324,10 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         else if (normalized == MouseGestureTriggerModes.MiddleDrag)
         {
             ClearGestureFromAllTargets("MiddleButtonDrag");
+        }
+        else if (normalized == MouseGestureTriggerModes.CtrlLeftDrag)
+        {
+            ClearGestureFromAllTargets("CtrlLeftDrag");
         }
 
         _settings.MouseGestureTriggerMode = normalized;
@@ -2881,6 +4373,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         MouseTriggerModes.X2Down => "X2ButtonDown",
         MouseTriggerModes.HorizontalWheel => "HorizontalWheel",
         MouseTriggerModes.CtrlLeftClick => "CtrlLeftClick",
+        MouseTriggerModes.CtrlLeftDrag => "CtrlLeftDrag",
         MouseTriggerModes.CtrlRightClick => "CtrlRightClick",
         MouseTriggerModes.CtrlMiddleClick => "CtrlMiddleClick",
         _ => string.Empty
@@ -2897,6 +4390,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         MouseTriggerModes.X2Down => "按下 X2 键",
         MouseTriggerModes.HorizontalWheel => "滚轮左右",
         MouseTriggerModes.CtrlLeftClick => "Ctrl+左键单击",
+        MouseTriggerModes.CtrlLeftDrag => "Ctrl+左键移动",
         MouseTriggerModes.CtrlRightClick => "Ctrl+右键单击",
         MouseTriggerModes.CtrlMiddleClick => "Ctrl+中键单击",
         _ => "未知触发"
@@ -2967,6 +4461,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 radial.TriggerCtrlLeftClick = false;
                 yanm.TriggerCtrlLeftClick = false;
                 break;
+            case "CtrlLeftDrag":
+                trigger.CtrlLeftDrag = false;
+                radial.TriggerCtrlLeftDrag = false;
+                yanm.TriggerCtrlLeftDrag = false;
+                break;
             case "CtrlRightClick":
                 trigger.CtrlRightClick = false;
                 radial.TriggerCtrlRightClick = false;
@@ -2982,7 +4481,9 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         if ((gestureName == "RightButtonDrag" &&
              string.Equals(MouseGestureTriggerModes.Normalize(_settings.MouseGestureTriggerMode), MouseGestureTriggerModes.RightDrag, StringComparison.Ordinal)) ||
             (gestureName == "MiddleButtonDrag" &&
-             string.Equals(MouseGestureTriggerModes.Normalize(_settings.MouseGestureTriggerMode), MouseGestureTriggerModes.MiddleDrag, StringComparison.Ordinal)))
+             string.Equals(MouseGestureTriggerModes.Normalize(_settings.MouseGestureTriggerMode), MouseGestureTriggerModes.MiddleDrag, StringComparison.Ordinal)) ||
+            (gestureName == "CtrlLeftDrag" &&
+             string.Equals(MouseGestureTriggerModes.Normalize(_settings.MouseGestureTriggerMode), MouseGestureTriggerModes.CtrlLeftDrag, StringComparison.Ordinal)))
         {
             _settings.MouseGestureTriggerMode = MouseGestureTriggerModes.None;
         }
@@ -3017,6 +4518,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         "X2ButtonDown" => MouseTriggerModes.X2Down,
         "HorizontalWheel" => MouseTriggerModes.HorizontalWheel,
         "CtrlLeftClick" => MouseTriggerModes.CtrlLeftClick,
+        "CtrlLeftDrag" => MouseTriggerModes.CtrlLeftDrag,
         "CtrlRightClick" => MouseTriggerModes.CtrlRightClick,
         "CtrlMiddleClick" => MouseTriggerModes.CtrlMiddleClick,
         _ => MouseTriggerModes.None
@@ -3033,9 +4535,13 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 SetGestureForPanel(gestureName, true);
                 break;
             case "Radial":
+                _settings.RadialMenu ??= new RadialMenuSettings();
+                _settings.RadialMenu.Enabled = true;
                 SetGestureForRadial(gestureName, true);
                 break;
             case "Yanm":
+                _settings.Yanm ??= new YanmSettings();
+                _settings.Yanm.Enabled = true;
                 SetGestureForYanm(gestureName, true);
                 break;
             case "WindowSnap":
@@ -3052,6 +4558,10 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 else if (gestureName == "MiddleButtonDrag")
                 {
                     _settings.MouseGestureTriggerMode = MouseGestureTriggerModes.MiddleDrag;
+                }
+                else if (gestureName == "CtrlLeftDrag")
+                {
+                    _settings.MouseGestureTriggerMode = MouseGestureTriggerModes.CtrlLeftDrag;
                 }
                 break;
         }
@@ -3071,6 +4581,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             case "X2ButtonDown": trigger.X2ButtonDown = value; break;
             case "HorizontalWheel": trigger.HorizontalWheel = value; break;
             case "CtrlLeftClick": trigger.CtrlLeftClick = value; break;
+            case "CtrlLeftDrag": trigger.CtrlLeftDrag = value; break;
             case "CtrlRightClick": trigger.CtrlRightClick = value; break;
             case "CtrlMiddleClick": trigger.CtrlMiddleClick = value; break;
         }
@@ -3090,8 +4601,14 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             case "X2ButtonDown": radial.TriggerX2ButtonDown = value; break;
             case "HorizontalWheel": radial.TriggerHorizontalWheel = value; break;
             case "CtrlLeftClick": radial.TriggerCtrlLeftClick = value; break;
+            case "CtrlLeftDrag": radial.TriggerCtrlLeftDrag = value; break;
             case "CtrlRightClick": radial.TriggerCtrlRightClick = value; break;
             case "CtrlMiddleClick": radial.TriggerCtrlMiddleClick = value; break;
+        }
+
+        if (value)
+        {
+            radial.MouseTriggerMode = GestureNameToMouseTriggerMode(gestureName);
         }
     }
 
@@ -3109,8 +4626,14 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             case "X2ButtonDown": yanm.TriggerX2ButtonDown = value; break;
             case "HorizontalWheel": yanm.TriggerHorizontalWheel = value; break;
             case "CtrlLeftClick": yanm.TriggerCtrlLeftClick = value; break;
+            case "CtrlLeftDrag": yanm.TriggerCtrlLeftDrag = value; break;
             case "CtrlRightClick": yanm.TriggerCtrlRightClick = value; break;
             case "CtrlMiddleClick": yanm.TriggerCtrlMiddleClick = value; break;
+        }
+
+        if (value)
+        {
+            yanm.MouseTriggerMode = GestureNameToMouseTriggerMode(gestureName);
         }
     }
 
@@ -3170,6 +4693,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 radialValue = radial.TriggerCtrlLeftClick;
                 yanmValue = yanm.TriggerCtrlLeftClick;
                 break;
+            case "CtrlLeftDrag":
+                panelValue = trigger.CtrlLeftDrag;
+                radialValue = radial.TriggerCtrlLeftDrag;
+                yanmValue = yanm.TriggerCtrlLeftDrag;
+                break;
             case "CtrlRightClick":
                 panelValue = trigger.CtrlRightClick;
                 radialValue = radial.TriggerCtrlRightClick;
@@ -3180,6 +4708,18 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 radialValue = radial.TriggerCtrlMiddleClick;
                 yanmValue = yanm.TriggerCtrlMiddleClick;
                 break;
+        }
+
+        // 优先判断各个功能显式启用的触发开关，避免被全局默认的 MouseGestureTriggerMode 掩盖而发生误判或被重置
+        if (radialValue) return "Radial";
+        if (panelValue) return "Panel";
+        if (yanmValue) return "Yanm";
+
+        var legacyMode = GestureNameToMouseTriggerMode(gestureName);
+        if (legacyMode != MouseTriggerModes.None &&
+            string.Equals(MouseTriggerModes.Normalize(_settings.WindowSnapAssistMouseTriggerMode), legacyMode, StringComparison.OrdinalIgnoreCase))
+        {
+            return "WindowSnap";
         }
 
         if (gestureName == "RightButtonDrag" &&
@@ -3194,16 +4734,12 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             return "Gesture";
         }
 
-        var legacyMode = GestureNameToMouseTriggerMode(gestureName);
-        if (legacyMode != MouseTriggerModes.None &&
-            string.Equals(MouseTriggerModes.Normalize(_settings.WindowSnapAssistMouseTriggerMode), legacyMode, StringComparison.OrdinalIgnoreCase))
+        if (gestureName == "CtrlLeftDrag" &&
+            string.Equals(MouseGestureTriggerModes.Normalize(_settings.MouseGestureTriggerMode), MouseGestureTriggerModes.CtrlLeftDrag, StringComparison.Ordinal))
         {
-            return "WindowSnap";
+            return "Gesture";
         }
 
-        if (panelValue) return "Panel";
-        if (radialValue) return "Radial";
-        if (yanmValue) return "Yanm";
         return "None";
     }
 
@@ -3221,7 +4757,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     [
         "RightButtonLongPress", "MiddleButtonLongPress", "RightButtonDrag", "MiddleButtonDrag",
         "MiddleButtonDown", "X1ButtonDown", "X2ButtonDown", "HorizontalWheel",
-        "CtrlLeftClick", "CtrlRightClick", "CtrlMiddleClick"
+        "CtrlLeftClick", "CtrlLeftDrag", "CtrlRightClick", "CtrlMiddleClick"
     ];
 
     private void UpdateGestureCardColors(string gestureName, string target)
@@ -3229,9 +4765,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         // Find the card and highlight elements
         var cardName = $"{gestureName}Card";
         var highlightName = $"{gestureName}Highlight";
+        var arrowsName = $"{gestureName}Arrows";
 
         var card = FindName(cardName) as System.Windows.Controls.Border;
         var highlight = FindName(highlightName) as System.Windows.Shapes.Shape;
+        var arrows = FindName(arrowsName) as System.Windows.Shapes.Shape;
 
         if (card == null)
         {
@@ -3240,23 +4778,26 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
 
         // Update card border and background based on target
+        // For highlight and arrows, we use consistent Blue color to denote "Active area" if not None
+        var blueHighlight = new SolidColorBrush(System.Windows.Media.Color.FromArgb(0xFF, 0x3B, 0x82, 0xF6));
+
         var (borderBrush, background, highlightFill) = target switch
         {
             "Panel" => (new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x80, 0x3B, 0x82, 0xF6)), // Blue border
                         new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x0D, 0x3B, 0x82, 0xF6)), // Blue background
-                        new SolidColorBrush(System.Windows.Media.Color.FromArgb(0xFF, 0x3B, 0x82, 0xF6))), // Blue highlight
+                        blueHighlight),
             "Radial" => (new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x80, 0xA8, 0x55, 0xF7)), // Purple border
                          new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x0D, 0xA8, 0x55, 0xF7)), // Purple background
-                         new SolidColorBrush(System.Windows.Media.Color.FromArgb(0xFF, 0xA8, 0x55, 0xF7))), // Purple highlight
+                         blueHighlight), // Unified to Blue
             "Yanm" => (new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x80, 0x10, 0xB9, 0x81)), // Green border
                        new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x0D, 0x10, 0xB9, 0x81)), // Green background
-                       new SolidColorBrush(System.Windows.Media.Color.FromArgb(0xFF, 0x10, 0xB9, 0x81))), // Green highlight
+                       blueHighlight), // Unified to Blue
             "Gesture" => (new SolidColorBrush(System.Windows.Media.Color.FromArgb(0xA0, 0xFB, 0x92, 0x3C)),
                           new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x14, 0xFB, 0x92, 0x3C)),
-                          new SolidColorBrush(System.Windows.Media.Color.FromArgb(0xFF, 0xFB, 0x92, 0x3C))),
+                          blueHighlight), // Unified to Blue
             "WindowSnap" => (new SolidColorBrush(System.Windows.Media.Color.FromArgb(0xA0, 0x38, 0xBD, 0xF8)),
                              new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x14, 0x38, 0xBD, 0xF8)),
-                             new SolidColorBrush(System.Windows.Media.Color.FromArgb(0xFF, 0x38, 0xBD, 0xF8))),
+                             blueHighlight), // Unified to Blue
             _ => (null, null, null)
         };
 
@@ -3266,6 +4807,12 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         if (highlight != null)
         {
             highlight.Fill = highlightFill;
+        }
+
+        if (arrows != null)
+        {
+            // If active, arrows are blue; if None, fallback to system text secondary brush (gray)
+            arrows.Fill = highlightFill ?? (System.Windows.Media.Brush)System.Windows.Application.Current.FindResource("BrushTextSec");
         }
 
         // Update button styles - find all 4 buttons for this gesture
@@ -3288,12 +4835,12 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
 
         var targets = new[] { "None", "Panel", "Radial", "Yanm", "WindowSnap", "Gesture" };
-        
+
         foreach (var target in targets)
         {
             var buttonName = $"{gestureName}_{target}";
             var button = FindName(buttonName) as System.Windows.Controls.Button;
-            
+
             if (button == null) continue;
 
             if (target == activeTarget)
@@ -3321,96 +4868,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private void AccountButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is FrameworkElement element && element.ContextMenu != null)
-        {
-            element.ContextMenu.PlacementTarget = element;
-            element.ContextMenu.IsOpen = true;
-        }
-    }
-
-    private async void SignInMenuItem_Click(object sender, RoutedEventArgs e)
-    {
-        await SignInAsync();
-    }
-
-    private async void SignOutMenuItem_Click(object sender, RoutedEventArgs e)
-    {
-        await SignOutAsync();
-    }
-
-    private async void RefreshAccountMenuItem_Click(object sender, RoutedEventArgs e)
-    {
-        await RefreshCloudAsync();
-    }
-
-    private async void SignInButton_Click(object sender, RoutedEventArgs e)
-    {
-        await SignInAsync();
-    }
-
-    private async void SignOutButton_Click(object sender, RoutedEventArgs e)
-    {
-        await SignOutAsync();
-    }
-
-    private async void RefreshSyncStatusButton_Click(object sender, RoutedEventArgs e)
-    {
-        await RefreshCloudAsync();
-    }
-
-    private void RefreshSyncLogButton_Click(object sender, RoutedEventArgs e)
-    {
-        RefreshSyncActivityLog();
-    }
-
-    private void SaveWebDavSettingsButton_Click(object sender, RoutedEventArgs e)
-    {
-        _personalSyncSecrets.GitHubToken = GitHubTokenBox?.Password ?? string.Empty;
-        _personalSyncSecrets.GiteeToken = GiteeTokenBox?.Password ?? string.Empty;
-        _personalSyncSecrets.GitLabToken = GitLabTokenBox?.Password ?? string.Empty;
-        _personalSyncSecrets.GiteaToken = GiteaTokenBox?.Password ?? string.Empty;
-        _personalSyncSecrets.S3SecretAccessKey = S3SecretAccessKeyBox?.Password ?? string.Empty;
-        _personalSyncSecrets.WebDavPassword = WebDavPasswordBox?.Password ?? string.Empty;
-        _mainWindow.SavePersonalSyncSettings(ClonePersonalSyncSettings(_personalSyncSettings), ClonePersonalSyncSecrets(_personalSyncSecrets));
-        _settings = AppSettingsStore.Load();
-        RefreshWebDavSummary();
-        SyncStatusText = "个人同步配置已保存。";
-        RefreshSyncActivityLog();
-    }
-
-    private void SaveAiSettingsButton_Click(object sender, RoutedEventArgs e)
-    {
-        _mainWindow.SaveAiSettings(AiBaseUrl, AiApiKey, AiModel);
-        _settings = AppSettingsStore.Load();
-        
-        // 更新原始值
-        _originalAiBaseUrl = _settings.AiBaseUrl;
-        _originalAiApiKey = _settings.AiApiKey;
-        _originalAiModel = _settings.AiModel;
-        
-        AiBaseUrl = _settings.AiBaseUrl;
-        AiApiKey = _settings.AiApiKey;
-        AiModel = _settings.AiModel;
-        AiSettingsStatusText = BuildAiSettingsSummary(_settings);
-        
-        // 重置变更状态
-        HasAiSettingsChanged = false;
-        
-        // 显示Toast消息
-        ShowToast("AI 配置已保存");
-    }
-
-    private void AiSettings_TextChanged(object sender, TextChangedEventArgs e)
-    {
-        CheckAiSettingsChanged();
-    }
-
     private void AddEnvironmentVariableButton_Click(object sender, RoutedEventArgs e)
     {
         EnvironmentVariables.Add(new EnvironmentVariableEditorItem("NOTION_TOKEN", string.Empty, "Notion Integration Token"));
-        EnvironmentStatusText = "已添加一行环境变量，填写后点击保存。";
+        EnvironmentStatusText = "已添加一行环境变量。";
+        QueueEnvironmentVariablesSave(200);
     }
 
     private void RemoveEnvironmentVariableButton_Click(object sender, RoutedEventArgs e)
@@ -3418,11 +4880,56 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         if (sender is FrameworkElement { DataContext: EnvironmentVariableEditorItem item })
         {
             EnvironmentVariables.Remove(item);
-            EnvironmentStatusText = "已移除一行环境变量，点击保存后生效。";
+            EnvironmentStatusText = "已移除一行环境变量。";
+            QueueEnvironmentVariablesSave(200);
+        }
+    }
+
+    private DispatcherTimer? _envVarsSaveTimer;
+    private DispatcherTimer? _envVarsStatusHideTimer;
+    private bool _isEnvVarsSaveStatusVisible;
+
+    public bool IsEnvVarsSaveStatusVisible
+    {
+        get => _isEnvVarsSaveStatusVisible;
+        private set
+        {
+            if (_isEnvVarsSaveStatusVisible == value) return;
+            _isEnvVarsSaveStatusVisible = value;
+            OnPropertyChanged();
+        }
+    }
+
+    private void QueueEnvironmentVariablesSave(int delayMs = 500)
+    {
+        if (_envVarsSaveTimer == null)
+        {
+            _envVarsSaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(delayMs) };
+            _envVarsSaveTimer.Tick += (s, e) => { _envVarsSaveTimer.Stop(); SaveEnvironmentVariables(); };
+        }
+        else
+        {
+            _envVarsSaveTimer.Stop();
+            _envVarsSaveTimer.Interval = TimeSpan.FromMilliseconds(delayMs);
+        }
+        _envVarsSaveTimer.Start();
+    }
+
+    private void FlushEnvironmentVariablesSave()
+    {
+        if (_envVarsSaveTimer != null && _envVarsSaveTimer.IsEnabled)
+        {
+            _envVarsSaveTimer.Stop();
+            SaveEnvironmentVariables();
         }
     }
 
     private void SaveEnvironmentVariablesButton_Click(object sender, RoutedEventArgs e)
+    {
+        SaveEnvironmentVariables();
+    }
+
+    private void SaveEnvironmentVariables()
     {
         var variables = EnvironmentVariables
             .Where(static item => !string.IsNullOrWhiteSpace(item.Name))
@@ -3436,23 +4943,20 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             .ToArray();
 
         AppEnvironmentVariableStore.Save(variables);
-        EnvironmentVariables.Clear();
-        foreach (var variable in AppEnvironmentVariableStore.Load())
-        {
-            EnvironmentVariables.Add(new EnvironmentVariableEditorItem(variable.Name, variable.Value, variable.Description));
-        }
-
+        _mainWindow.NotifyQuickPanelSettingsChanged("environment-variables-saved", refreshYanmOverlay: false);
         _settings = AppSettingsStore.Load();
+        _settingsPersistence.Reset(_settings);
         EnvironmentStatusText = BuildEnvironmentSummary();
-        ShowToast("环境变量已保存");
+        _envVarsStatusHideTimer = ShowSaveStatusTemporarily(_envVarsStatusHideTimer, visible => IsEnvVarsSaveStatusVisible = visible);
     }
 
     private void CheckAiSettingsChanged()
     {
-        HasAiSettingsChanged = 
+        HasAiSettingsChanged =
             AiBaseUrl != _originalAiBaseUrl ||
             AiApiKey != _originalAiApiKey ||
-            AiModel != _originalAiModel;
+            AiModel != _originalAiModel ||
+            AiSystemPrompt != _originalAiSystemPrompt;
     }
 
     private void ShowToast(string message)
@@ -3462,7 +4966,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             // 停止任何正在进行的动画
             ToastTransform.BeginAnimation(TranslateTransform.XProperty, null);
             ToastNotification.BeginAnimation(OpacityProperty, null);
-            
+
             // 重置状态
             ToastNotification.Opacity = 1;
             ToastTransform.X = 400;
@@ -3541,6 +5045,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         {
             await Dispatcher.Yield(DispatcherPriority.Background);
             var result = await _mainWindow.ProbeWebDavAsync();
+            LoadPersonalSyncStateFromSettings();
             WebDavStatusText = result.message;
             RefreshSyncActivityLog();
             if (!result.ok)
@@ -3563,10 +5068,13 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         {
             await Dispatcher.Yield(DispatcherPriority.Background);
             var result = await _mainWindow.SyncWebDavNowAsync();
+            LoadPersonalSyncStateFromSettings();
             WebDavStatusText = result.message;
             await RefreshExtensionsFromDiskAsync();
             RefreshSyncActivityLog();
+            RefreshPersonalExtensionSyncStatus();
             await RefreshPersonalSyncCommitsAsync();
+            await RefreshPersonalConfigRestorePointsAsync();
             if (!result.ok)
             {
                 System.Windows.MessageBox.Show(this, result.message, $"{SelectedPersonalSyncProviderDisplayName} 同步失败", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -3580,10 +5088,234 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private void SetPersonalSyncButtonsEnabled(bool enabled)
     {
-        if (SavePersonalSyncButton != null) SavePersonalSyncButton.IsEnabled = enabled;
         if (TestPersonalSyncButton != null) TestPersonalSyncButton.IsEnabled = enabled;
         if (ClearPersonalSyncButton != null) ClearPersonalSyncButton.IsEnabled = enabled;
         if (SyncPersonalSyncButton != null) SyncPersonalSyncButton.IsEnabled = enabled;
+    }
+
+    private static (string name, ImageSource? image, Geometry? vector) ResolveConflictExtensionVisual(string extensionId)
+    {
+        var name = extensionId;
+        ImageSource? image = null;
+        Geometry? vector = null;
+        try
+        {
+            var directory = Path.Combine(LocalExtensionCatalog.CatalogRootPath, extensionId);
+            var manifestPath = Path.Combine(directory, "manifest.json");
+            if (!File.Exists(manifestPath)) return (name, image, vector);
+            using var document = JsonDocument.Parse(File.ReadAllText(manifestPath));
+            var root = document.RootElement;
+            if (root.TryGetProperty("name", out var title) && title.ValueKind == JsonValueKind.String &&
+                !string.IsNullOrWhiteSpace(title.GetString()))
+                name = title.GetString()!;
+            if (root.TryGetProperty("icon", out var icon) && icon.ValueKind == JsonValueKind.String)
+            {
+                var reference = icon.GetString() ?? "";
+                image = ExtensionIconLibrary.ResolveImageSource(reference, directory);
+                vector = ExtensionIconLibrary.ResolveVectorIcon(reference);
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"Sync conflict visual fallback: id={extensionId}, error={ex.GetType().Name}");
+        }
+        return (name, image, vector);
+    }
+
+    private void RefreshPersonalExtensionSyncStatus()
+    {
+        try
+        {
+            ExtensionSyncConflictItems.Clear();
+            foreach (var conflict in _mainWindow.GetExtensionSyncConflicts())
+            {
+                var visual = ResolveConflictExtensionVisual(conflict.ExtensionId);
+                ExtensionSyncConflictItems.Add(new ExtensionSyncConflictItem(conflict, visual.name, visual.image, visual.vector));
+            }
+            OnPropertyChanged(nameof(HasExtensionSyncConflicts));
+            ExtensionDataConflictItems.Clear();
+            var dataStates = _mainWindow.GetExtensionDataSyncStates();
+            foreach (var state in dataStates.Where(static item => item.Conflict != null))
+            {
+                var visual = ResolveConflictExtensionVisual(state.ExtensionId);
+                ExtensionDataConflictItems.Add(new ExtensionDataConflictItem(state, visual.name, visual.image, visual.vector));
+            }
+            OnPropertyChanged(nameof(HasExtensionDataConflicts));
+            var dataPending = dataStates.Count(static item => item.Pending);
+            var dataErrors = dataStates.Count(static item => !string.IsNullOrWhiteSpace(item.LastError));
+            var dataTracked = dataStates.Count;
+            var latestDataRevision = dataStates.Count == 0 ? 0 : dataStates.Max(static item => item.LastRemoteRevision);
+            ExtensionDataSyncStatusText =
+                $"数据项统计 · 已跟踪 {dataTracked} 项 · 待同步 {dataPending} · 冲突 {ExtensionDataConflictItems.Count} · 错误 {dataErrors} · 最高版本 {latestDataRevision}";
+            var session = SyncSessionStore.Load();
+            var accountMode = session != null && session.ExpiresAt > DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var authority = accountMode
+                ? "云端私有库为主配置 · 个人仓库用作备份"
+                : "个人仓库双向同步模式";
+            if (!File.Exists(HostAssets.WebDavSyncStatePath))
+            {
+                PersonalExtensionSyncStatusText = $"{authority} · 尚未生成本地小程序索引";
+                return;
+            }
+
+            var index = JsonSerializer.Deserialize<WebDavSyncIndex>(
+                File.ReadAllText(HostAssets.WebDavSyncStatePath),
+                JsonDefaults.CaseInsensitive) ?? new WebDavSyncIndex();
+            var active = index.Items.Count(static item => !item.Deleted && !item.Purged);
+            var deleted = index.Items.Count(static item => item.Deleted && !item.Purged);
+            var purged = index.Items.Count(static item => item.Purged);
+            var pending = index.Items.Count(static item => item.LocalDeletionPending);
+            var source = !string.IsNullOrWhiteSpace(index.UpdatedByDeviceName)
+                ? index.UpdatedByDeviceName
+                : !string.IsNullOrWhiteSpace(index.UpdatedByDeviceId) ? index.UpdatedByDeviceId : "未知设备";
+            var updated = DateTimeOffset.TryParse(index.UpdatedAtUtc, out var updatedAt)
+                ? updatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture)
+                : "尚未同步";
+            PersonalExtensionSyncStatusText =
+                $"{authority} · 云端版本 {index.Revision} · 有效小程序 {active} 个 · 已删除 {deleted} 个 · 已彻底删除 {purged} 个 · 待同步 {pending} 个 · 来源设备: {source} · 更新时间: {updated}";
+        }
+        catch (Exception ex)
+        {
+            PersonalExtensionSyncStatusText = $"小程序同步索引无法读取：{ex.Message}";
+        }
+    }
+
+    private async void UseLocalExtensionSyncConflictButton_Click(object sender, RoutedEventArgs e)
+    {
+        await ResolveExtensionSyncConflictFromButtonAsync(sender, useLocalVersion: true);
+    }
+
+    private async void AcceptRemoteExtensionSyncConflictButton_Click(object sender, RoutedEventArgs e)
+    {
+        await ResolveExtensionSyncConflictFromButtonAsync(sender, useLocalVersion: false);
+    }
+
+    private async Task ResolveExtensionSyncConflictFromButtonAsync(object sender, bool useLocalVersion)
+    {
+        if (sender is not System.Windows.Controls.Button { DataContext: ExtensionSyncConflictItem item } button)
+        {
+            return;
+        }
+        button.IsEnabled = false;
+        try
+        {
+            var result = await _mainWindow.ResolveExtensionSyncConflictAsync(item.ExtensionId, useLocalVersion);
+            SyncStatusText = result.message;
+            RefreshPersonalExtensionSyncStatus();
+            RefreshSyncActivityLog();
+            if (result.ok)
+            {
+                await RefreshExtensionsFromDiskAsync();
+            }
+        }
+        finally
+        {
+            button.IsEnabled = true;
+        }
+    }
+
+    private async void UseLocalExtensionDataConflictButton_Click(object sender, RoutedEventArgs e)
+    {
+        await ResolveExtensionDataConflictFromButtonAsync(sender, useLocalVersion: true);
+    }
+
+    private async void AcceptRemoteExtensionDataConflictButton_Click(object sender, RoutedEventArgs e)
+    {
+        await ResolveExtensionDataConflictFromButtonAsync(sender, useLocalVersion: false);
+    }
+
+    private async Task ResolveExtensionDataConflictFromButtonAsync(object sender, bool useLocalVersion)
+    {
+        if (sender is not System.Windows.Controls.Button { DataContext: ExtensionDataConflictItem item } button)
+        {
+            return;
+        }
+        button.IsEnabled = false;
+        var originalContent = button.Content;
+        button.Content = "处理中…";
+        ExtensionDataConflictActionStatusText = $"正在核对 {item.DisplayId} 的本机和云端版本…";
+        try
+        {
+            var result = await _mainWindow.ResolveExtensionDataSyncConflictAsync(
+                item.ExtensionId,
+                item.Key,
+                useLocalVersion);
+            SyncStatusText = result.message;
+            ExtensionDataConflictActionStatusText = result.message;
+            RefreshPersonalExtensionSyncStatus();
+            RefreshSyncActivityLog();
+        }
+        catch (Exception ex)
+        {
+            SyncStatusText = $"处理小程序数据冲突失败：{ex.Message}";
+            ExtensionDataConflictActionStatusText = SyncStatusText;
+        }
+        finally
+        {
+            button.Content = originalContent;
+            button.IsEnabled = true;
+        }
+    }
+
+    private async void RefreshPersonalConfigRestorePointsButton_Click(object sender, RoutedEventArgs e)
+    {
+        await RefreshPersonalConfigRestorePointsAsync();
+    }
+
+    private async Task RefreshPersonalConfigRestorePointsAsync()
+    {
+        try
+        {
+            PersonalConfigRestoreStatusText = "正在读取历史备份...";
+            var points = await _mainWindow.GetPersonalConfigRestorePointsAsync();
+            PersonalConfigRestorePoints.Clear();
+            foreach (var point in points)
+            {
+                PersonalConfigRestorePoints.Add(new PersonalConfigRestorePointItem(point));
+            }
+            PersonalConfigRestoreStatusText = points.Count == 0
+                ? "尚无历史备份；完成一次有配置变化的个人同步后会自动创建。"
+                : $"共发现 {points.Count} 个历史备份，可用于恢复当前配置。";
+        }
+        catch (Exception ex)
+        {
+            PersonalConfigRestorePoints.Clear();
+            PersonalConfigRestoreStatusText = $"读取恢复点失败：{ex.Message}";
+        }
+    }
+
+    private async void RestorePersonalConfigPointButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.Button { DataContext: PersonalConfigRestorePointItem item } button)
+        {
+            return;
+        }
+
+        var confirmation = System.Windows.MessageBox.Show(
+            this,
+            $"将主配置恢复到 {item.CreatedAtText} 的状态？\n\n这会恢复设置、快捷面板、燕环和规则，但不会替换本机密钥、小程序包或燕幕。恢复结果会作为一个新版本继续同步，原恢复点不会删除。",
+            "确认恢复个人仓库配置",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+        if (confirmation != MessageBoxResult.Yes) return;
+
+        button.IsEnabled = false;
+        try
+        {
+            PersonalConfigRestoreStatusText = $"正在校验并恢复 {item.CreatedAtText} 的配置...";
+            var restoreResult = await _mainWindow.RestorePersonalConfigRestorePointAsync(item.RestorePointId);
+            SyncStatusText = restoreResult.message;
+            PersonalConfigRestoreStatusText = restoreResult.message;
+            if (restoreResult.ok)
+            {
+                RefreshAccountObjectSyncStatus();
+                RefreshSyncActivityLog();
+            }
+        }
+        finally
+        {
+            button.IsEnabled = true;
+        }
     }
 
     private async void RefreshPersonalSyncCommitsButton_Click(object sender, RoutedEventArgs e)
@@ -3593,26 +5325,33 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private async Task RefreshPersonalSyncCommitsAsync(bool forceMessage = false)
     {
-        if (!string.Equals(SelectedPersonalSyncProvider, PersonalSyncProviders.GitHub, StringComparison.OrdinalIgnoreCase))
+        bool isGitProvider =
+            string.Equals(SelectedPersonalSyncProvider, PersonalSyncProviders.GitHub, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(SelectedPersonalSyncProvider, PersonalSyncProviders.Gitee, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(SelectedPersonalSyncProvider, PersonalSyncProviders.GitLab, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(SelectedPersonalSyncProvider, PersonalSyncProviders.Gitea, StringComparison.OrdinalIgnoreCase);
+
+        if (!isGitProvider)
         {
             PersonalSyncCommitItems.Clear();
-            PersonalSyncCommitStatusText = "提交记录当前仅支持 GitHub 同步仓库。";
-            if (LastSyncStatusTextBlock != null)
-            {
-                LastSyncStatusTextBlock.Text = "上次同步: 成功";
-                LastSyncStatusTextBlock.ToolTip = "同步已成功完成 (WebDav/其他模式)";
-            }
+            PersonalSyncCommitStatusText = "此处可查看 GitHub、Gitee、GitLab 或 Gitea 中的备份记录。";
             return;
         }
 
         try
         {
+            CloudSyncDiagnostics.Log(
+                "SettingsWindow.PersonalSync",
+                "Refresh personal sync commits started",
+                ("provider", SelectedPersonalSyncProvider),
+                ("forceMessage", forceMessage),
+                ("summary", CloudSyncDiagnostics.DescribePersonalSync(_personalSyncSettings, _personalSyncSecrets)));
             if (forceMessage)
             {
-                PersonalSyncCommitStatusText = "正在读取 GitHub 提交记录...";
+                PersonalSyncCommitStatusText = $"正在读取 {SelectedPersonalSyncProvider} 备份记录...";
             }
 
-            var commits = await _mainWindow.GetPersonalSyncGitHubCommitsAsync();
+            var commits = await _mainWindow.GetPersonalSyncCommitsAsync(_personalSyncSettings, _personalSyncSecrets);
             PersonalSyncCommitItems.Clear();
             foreach (var commit in commits)
             {
@@ -3625,33 +5364,24 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             }
 
             PersonalSyncCommitStatusText = PersonalSyncCommitItems.Count == 0
-                ? "仓库暂无提交记录。"
-                : $"最近 {PersonalSyncCommitItems.Count} 条提交，可点击打开 GitHub 详情。";
+                ? "还没有云端备份记录。"
+                : $"最近 {PersonalSyncCommitItems.Count} 条备份记录，可查看详情。";
 
-            if (LastSyncStatusTextBlock != null)
-            {
-                if (PersonalSyncCommitItems.Count > 0)
-                {
-                    var latest = PersonalSyncCommitItems[0];
-                    LastSyncStatusTextBlock.Text = $"上次同步: {latest.Message}";
-                    LastSyncStatusTextBlock.ToolTip = $"最新提交: {latest.Message}\n作者: {latest.Author}\n时间: {latest.LocalTimeLabel}\nSHA: {latest.ShortSha}";
-                }
-                else
-                {
-                    LastSyncStatusTextBlock.Text = "上次同步: 成功";
-                    LastSyncStatusTextBlock.ToolTip = "暂无提交记录";
-                }
-            }
+            CloudSyncDiagnostics.Log(
+                "SettingsWindow.PersonalSync",
+                "Refresh personal sync commits completed",
+                ("provider", SelectedPersonalSyncProvider),
+                ("count", PersonalSyncCommitItems.Count));
         }
         catch (Exception ex)
         {
             PersonalSyncCommitItems.Clear();
-            PersonalSyncCommitStatusText = $"读取提交记录失败：{ex.Message}";
-            if (LastSyncStatusTextBlock != null)
-            {
-                LastSyncStatusTextBlock.Text = "上次同步: 失败";
-                LastSyncStatusTextBlock.ToolTip = $"读取记录失败：{ex.Message}";
-            }
+            PersonalSyncCommitStatusText = $"暂时无法读取备份记录：{ex.Message}";
+            CloudSyncDiagnostics.Log(
+                "SettingsWindow.PersonalSync",
+                "Refresh personal sync commits failed",
+                ("provider", SelectedPersonalSyncProvider),
+                ("error", ex.Message));
         }
     }
 
@@ -3659,7 +5389,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     {
         var confirmResult = System.Windows.MessageBox.Show(
             this,
-            "此操作将删除云端的所有扩展和配置数据，且无法恢复！\n\n" +
+            "此操作将删除云端的所有小程序和配置数据，且无法恢复！\n\n" +
             "清空后，下次点击“立即同步”会重新以上传本地内容为准。",
             "清空云端 - 危险操作",
             MessageBoxButton.OKCancel,
@@ -3670,52 +5400,51 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        if (IsSyncProviderWebDav && string.IsNullOrWhiteSpace(_personalSyncSecrets.WebDavPassword))
+        var savedCloudPassword = _mainWindow.CloudSyncClient?.GetSavedPassword();
+        if (string.IsNullOrWhiteSpace(savedCloudPassword))
         {
             System.Windows.MessageBox.Show(
                 this,
-                "当前 WebDAV 未设置密码，无法执行清空。",
+                "未检测到燕子云账号登录密码，请先登录您的当前账户。",
                 "清空云端失败",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
             return;
         }
 
-        if (IsSyncProviderWebDav)
+        var currentAccountLabel = _mainWindow.CloudSyncClient?.CurrentUserLabel ?? "当前账户";
+        var passwordDialog = new WebDavCredentialWindow(currentAccountLabel, requireUsername: false)
         {
-            var passwordDialog = new WebDavCredentialWindow(WebDavUsername, requireUsername: false)
-            {
-                Owner = this,
-                Title = "验证密码 - 清空云端"
-            };
+            Owner = this,
+            Title = "验证当前账户密码 - 清空云端"
+        };
 
-            if (passwordDialog.ShowDialog() != true)
-            {
-                return;
-            }
+        if (passwordDialog.ShowDialog() != true)
+        {
+            return;
+        }
 
-            if (passwordDialog.Password != _personalSyncSecrets.WebDavPassword)
-            {
-                System.Windows.MessageBox.Show(
-                    this,
-                    "密码错误，无法执行清空操作。",
-                    "清空云端失败",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
-                return;
-            }
+        if (passwordDialog.Password != savedCloudPassword)
+        {
+            System.Windows.MessageBox.Show(
+                this,
+                "当前账户登录密码验证失败，无法执行清空操作。",
+                "清空云端失败",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            return;
         }
 
         try
         {
             WebDavStatusText = "正在清空云端，请稍候...（可能需要几分钟）";
-            var service = new PersonalSyncService(AppSettingsStore.Load());
+            var service = new PersonalSyncService(AppSettingsStore.Load(), requireEnabled: false);
             await service.ClearCloudAsync();
             WebDavStatusText = "云端已清空。";
             RefreshSyncActivityLog();
             System.Windows.MessageBox.Show(
                 this,
-                "云端数据已成功清空。\n\n下次点击\"立即同步\"时将重新上传本地扩展。",
+                "云端数据已成功清空。\n\n下次点击\"立即同步\"时将重新上传本地小程序。",
                 "清空云端成功",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
@@ -3732,7 +5461,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             {
                 message = "服务暂时不可用，请稍后再试。";
             }
-            
+
             WebDavStatusText = $"清空云端失败：{message}";
             RefreshSyncActivityLog();
             System.Windows.MessageBox.Show(
@@ -3772,7 +5501,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
         if (!Directory.Exists(item.DirectoryPath))
         {
-            System.Windows.MessageBox.Show(this, "扩展目录不存在。", "打开目录失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+            System.Windows.MessageBox.Show(this, "小程序目录不存在。", "打开目录失败", MessageBoxButton.OK, MessageBoxImage.Warning);
             _ = RefreshExtensionsFromDiskAsync();
             return;
         }
@@ -3811,6 +5540,150 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private void OpenHostLogFile_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var logPath = HostAssets.HostLogPath;
+            var dir = Path.GetDirectoryName(logPath);
+            if (!string.IsNullOrWhiteSpace(dir) && !Directory.Exists(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+
+            if (!File.Exists(logPath))
+            {
+                File.WriteAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [System] Yanzi host log created.{Environment.NewLine}", System.Text.Encoding.UTF8);
+            }
+
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = logPath,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(this, $"打开运行日志文件失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void OpenHostLogDirectory_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var logPath = HostAssets.HostLogPath;
+            var dir = Path.GetDirectoryName(logPath);
+            if (!string.IsNullOrWhiteSpace(dir) && !Directory.Exists(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+
+            if (!File.Exists(logPath))
+            {
+                File.WriteAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [System] Yanzi host log created.{Environment.NewLine}", System.Text.Encoding.UTF8);
+            }
+
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "explorer.exe",
+                Arguments = $"/select,\"{logPath}\"",
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(this, $"打开日志目录失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void ToggleExtensionBatchModeButton_Click(object sender, RoutedEventArgs e)
+    {
+        IsExtensionBatchMode = true;
+        foreach (var item in ExtensionItems)
+        {
+            item.IsBatchChecked = false;
+        }
+        NotifyBatchSelectionChanged();
+    }
+
+    private void ExitExtensionBatchModeButton_Click(object sender, RoutedEventArgs e)
+    {
+        IsExtensionBatchMode = false;
+        foreach (var item in ExtensionItems)
+        {
+            item.IsBatchChecked = false;
+        }
+        NotifyBatchSelectionChanged();
+    }
+
+    private void ExtensionBatchSelectAll_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is System.Windows.Controls.CheckBox cb)
+        {
+            var selectAll = cb.IsChecked == true;
+            foreach (var item in ExtensionItems)
+            {
+                item.IsBatchChecked = selectAll;
+            }
+            NotifyBatchSelectionChanged();
+        }
+    }
+
+    private void ExtensionBatchItemCheck_Click(object sender, RoutedEventArgs e)
+    {
+        NotifyBatchSelectionChanged();
+    }
+
+    private async void BatchDeleteExtensionsButton_Click(object sender, RoutedEventArgs e)
+    {
+        var selectedItems = ExtensionItems.Where(x => x.IsBatchChecked).ToList();
+        if (selectedItems.Count == 0) return;
+
+        var confirm = System.Windows.MessageBox.Show(
+            this,
+            $"确认将选中的 {selectedItems.Count} 个小程序移入回收站吗？",
+            "批量删除小程序",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+        if (confirm != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        int successCount = 0;
+        foreach (var item in selectedItems)
+        {
+            var result = await _mainWindow.DeleteExtensionFromSettingsSilentlyAsync(item.ExtensionId);
+            if (result.ok)
+            {
+                successCount++;
+                ExtensionItems.Remove(item);
+            }
+        }
+
+        _mainWindow.NotifyExtensionsBatchDeleted();
+        _settings = _mainWindow.GetCurrentAppSettings();
+        _settingsPersistence.Reset(_settings);
+        RefreshExtensionCacheFromMainWindow();
+        RefreshExtensionSummary();
+        OnPropertyChanged(nameof(ExtensionSearchSummary));
+        RefreshShortcutItems();
+        await RefreshExtensionsFromDiskAsync();
+
+        NotifyBatchSelectionChanged();
+        if (ExtensionItems.Count(x => x.IsBatchChecked) == 0)
+        {
+            IsExtensionBatchMode = false;
+        }
+
+        SyncStatusText = $"已批量移入回收站 {successCount} 个小程序。";
+        if (System.Windows.Application.Current is App app)
+        {
+            app.ShowDesktopNotification("批量删除完成", $"已成功将 {successCount} 个小程序移入回收站。");
+        }
+    }
+
     private void ExtensionCard_Click(object sender, MouseButtonEventArgs e)
     {
         if (e.OriginalSource is DependencyObject source &&
@@ -3824,6 +5697,13 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             return;
         }
 
+        if (IsExtensionBatchMode)
+        {
+            item.IsBatchChecked = !item.IsBatchChecked;
+            NotifyBatchSelectionChanged();
+            return;
+        }
+
         SelectedExtensionItem = item;
     }
 
@@ -3832,7 +5712,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         ClearSelectedExtensionItem();
     }
 
-    private void ExtensionCardsScrollViewer_SizeChanged(object sender, SizeChangedEventArgs e)
+    private void ExtensionCardsContainer_SizeChanged(object sender, SizeChangedEventArgs e)
     {
         ScheduleExtensionCardWidthUpdate();
     }
@@ -3909,13 +5789,14 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         {
             if (!string.IsNullOrWhiteSpace(result.message))
             {
-                System.Windows.MessageBox.Show(this, result.message, "编辑扩展失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                System.Windows.MessageBox.Show(this, result.message, "编辑小程序失败", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
 
             return;
         }
 
         _settings = _mainWindow.GetCurrentAppSettings();
+        _settingsPersistence.Reset(_settings);
         RefreshExtensionCacheFromMainWindow();
         RefreshExtensionSummary();
         RefreshExtensionItems();
@@ -3939,7 +5820,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         {
             if (!string.IsNullOrWhiteSpace(result.message))
             {
-                System.Windows.MessageBox.Show(this, result.message, "删除扩展失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                System.Windows.MessageBox.Show(this, result.message, "删除小程序失败", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
 
             return;
@@ -3947,6 +5828,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
         ExtensionItems.Remove(item);
         _settings = _mainWindow.GetCurrentAppSettings();
+        _settingsPersistence.Reset(_settings);
         RefreshExtensionCacheFromMainWindow();
         RefreshExtensionSummary();
         OnPropertyChanged(nameof(ExtensionSearchSummary));
@@ -3972,14 +5854,14 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
             if (!result.ok)
             {
-                System.Windows.MessageBox.Show(this, result.message, "恢复扩展失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                System.Windows.MessageBox.Show(this, result.message, "恢复小程序失败", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
             await RefreshExtensionsFromDiskAsync();
             if (System.Windows.Application.Current is App app)
             {
-                app.ShowDesktopNotification("扩展已恢复", $"{item.Title} 已从回收站恢复。");
+                app.ShowDesktopNotification("小程序已恢复", $"{item.Title} 已从回收站恢复。");
             }
         }
         finally
@@ -3998,7 +5880,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         var confirm = System.Windows.MessageBox.Show(
             this,
             $"确认彻底删除“{item.Title}”吗？这会清空回收站中的本地副本，无法恢复。",
-            "彻底删除扩展",
+            "彻底删除小程序",
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning);
         if (confirm != MessageBoxResult.Yes)
@@ -4024,7 +5906,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             await RefreshExtensionsFromDiskAsync();
             if (System.Windows.Application.Current is App app)
             {
-                app.ShowDesktopNotification("回收站扩展已清理", $"{item.Title} 已从回收站彻底删除。");
+                app.ShowDesktopNotification("回收站小程序已清理", $"{item.Title} 已从回收站彻底删除。");
             }
         }
         finally
@@ -4051,14 +5933,14 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
             if (!result.ok)
             {
-                System.Windows.MessageBox.Show(this, result.message, "发布扩展失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                System.Windows.MessageBox.Show(this, result.message, "发布小程序失败", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
             await RefreshExtensionsFromDiskAsync();
             if (System.Windows.Application.Current is App app)
             {
-                app.ShowDesktopNotification("扩展已发布到商店", $"{item.Title} 已完成发布，可在扩展商店查看。");
+                app.ShowDesktopNotification("小程序已发布到商店", $"{item.Title} 已完成发布，可在小程序商店查看。");
             }
         }
         finally
@@ -4114,8 +5996,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
         var confirm = System.Windows.MessageBox.Show(
             this,
-            $"确认下线扩展“{item.Title}”吗？下线后扩展商店将不再展示它。",
-            "确认下线扩展",
+            $"确认下线小程序“{item.Title}”吗？下线后小程序商店将不再展示它。",
+            "确认下线小程序",
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning);
         if (confirm != MessageBoxResult.Yes)
@@ -4134,14 +6016,14 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
             if (!result.ok)
             {
-                System.Windows.MessageBox.Show(this, result.message, "下线扩展失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                System.Windows.MessageBox.Show(this, result.message, "下线小程序失败", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
             await RefreshExtensionsFromDiskAsync();
             if (System.Windows.Application.Current is App app)
             {
-                app.ShowDesktopNotification("扩展已从商店下线", $"{item.Title} 已从扩展商店移除。");
+                app.ShowDesktopNotification("小程序已从商店下线", $"{item.Title} 已从小程序商店移除。");
             }
         }
         finally
@@ -4165,19 +6047,18 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         var refreshVersion = ++_extensionsRefreshVersion;
         var startedAt = Stopwatch.StartNew();
         IsExtensionsLoading = true;
-        LocalExtensionSummary = "正在后台刷新扩展数据...";
+        LocalExtensionSummary = "正在后台刷新小程序数据...";
         HostAssets.AppendLog($"Settings extensions refresh started: version={refreshVersion}");
 
         try
         {
-            var publishedMap = await _mainWindow.GetOwnedPublishedExtensionsForSettingsAsync();
-            HostAssets.AppendLog($"Settings extensions refresh cloud publish map count={publishedMap.Count}");
+            // 1. 首先加载并显示本地磁盘扩展，忽略网络以保障秒开体验
+            var publishedMap = new Dictionary<string, CloudExtensionRecord>(StringComparer.OrdinalIgnoreCase);
             var data = await Task.Run(() =>
             {
                 var backgroundStartedAt = Stopwatch.StartNew();
                 LocalExtensionCatalog.EnsureSampleExtension();
-                var entries = LocalExtensionCatalog.LoadEntries()
-                    .ToList();
+                var entries = LocalExtensionCatalog.LoadEntries().ToList();
                 var recycleBinItems = _mainWindow.GetRecycleBinEntriesForSettings()
                     .Select(item => new SettingsRecycleBinItem(
                         item.ItemId,
@@ -4192,7 +6073,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                     {
                         entry.Manifest.Id,
                         entry.Manifest.Name,
-                        Category = entry.Manifest.Category ?? "扩展",
+                        Category = entry.Manifest.Category ?? "小程序",
                         entry.Manifest.GlobalShortcut
                     })
                     .OrderBy(static item => item.Name, StringComparer.OrdinalIgnoreCase)
@@ -4218,17 +6099,17 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             var uiApplyStartedAt = Stopwatch.StartNew();
             await Dispatcher.InvokeAsync(() =>
             {
-            _mainWindow.ReloadLocalExtensionsFromEntries(data.entries, "已刷新本地扩展。");
-            _cachedExtensionItems = BuildSettingsExtensionItems(_mainWindow.GetExtensionsForSettings(), publishedMap);
-            _cachedRecycleBinItems = data.recycleBinItems;
-            if (IsExtensionsSelected)
-            {
-                RefreshExtensionSummary();
-                RefreshRecycleBinSummary();
-                RefreshExtensionItems();
-            }
+                _mainWindow.ReloadLocalExtensionsFromEntries(data.entries, "已刷新本地小程序。");
+                _cachedExtensionItems = BuildSettingsExtensionItems(_mainWindow.GetExtensionsForSettings(), publishedMap);
+                _cachedRecycleBinItems = data.recycleBinItems;
+                if (IsExtensionsSelected)
+                {
+                    RefreshExtensionSummary();
+                    RefreshRecycleBinSummary();
+                    RefreshExtensionItems();
+                }
 
-            if (IsRecycleBinSelected)
+                if (IsRecycleBinSelected)
                 {
                     RefreshRecycleBinSummary();
                     RefreshRecycleBinItems();
@@ -4236,11 +6117,38 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             }, DispatcherPriority.Background);
             HostAssets.AppendLog(
                 $"Settings extensions refresh UI applied: version={refreshVersion}, elapsedMs={uiApplyStartedAt.ElapsedMilliseconds}");
+
+            // 2. 本地数据刷新完毕后，后台默默向云端同步发布状态，随后平滑渲染
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var cloudMap = await _mainWindow.GetOwnedPublishedExtensionsForSettingsAsync();
+                    if (cloudMap != null && cloudMap.Count > 0)
+                    {
+                        if (refreshVersion != _extensionsRefreshVersion) return;
+
+                        await Dispatcher.InvokeAsync(() =>
+                        {
+                            if (refreshVersion != _extensionsRefreshVersion) return;
+                            _cachedExtensionItems = BuildSettingsExtensionItems(_mainWindow.GetExtensionsForSettings(), cloudMap);
+                            if (IsExtensionsSelected)
+                            {
+                                RefreshExtensionItems();
+                            }
+                        }, DispatcherPriority.Background);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    HostAssets.AppendLog($"Settings extensions cloud status refresh failed: {ex.Message}");
+                }
+            });
         }
         catch (Exception ex)
         {
             HostAssets.AppendLog($"Settings extensions refresh failed: version={refreshVersion}, error={ex.Message}");
-            LocalExtensionSummary = $"刷新扩展失败：{ex.Message}";
+            LocalExtensionSummary = $"刷新小程序失败：{ex.Message}";
         }
         finally
         {
@@ -4258,12 +6166,14 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private void LoadPersonalSyncStateFromSettings()
     {
         _settings = AppSettingsStore.Load();
+        _settingsPersistence.Reset(_settings);
         _personalSyncSettings = ClonePersonalSyncSettings(_settings.PersonalSync);
         _personalSyncSecrets = ClonePersonalSyncSecrets(_mainWindow.GetPersonalSyncSecrets());
         OnPropertyChanged(nameof(EnablePersonalSync));
         OnPropertyChanged(nameof(SelectedPersonalSyncProvider));
         OnPropertyChanged(nameof(PersonalSyncAutoSyncDelaySeconds));
         OnPropertyChanged(nameof(SelectedPersonalSyncProviderDisplayName));
+        OnPropertyChanged(nameof(PersonalSyncActionButtonText));
         OnPropertyChanged(nameof(SelectedPersonalSyncProviderQuickLinkText));
         OnPropertyChanged(nameof(SelectedPersonalSyncProviderQuickLinkUrl));
         OnPropertyChanged(nameof(HasSelectedPersonalSyncProviderQuickLink));
@@ -4376,17 +6286,71 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     public void RefreshAiConfigFromExternal()
     {
         _settings = AppSettingsStore.Load();
+        _settingsPersistence.Reset(_settings);
         AiBaseUrl = _settings.AiBaseUrl;
         AiApiKey = _settings.AiApiKey;
         AiModel = _settings.AiModel;
+        AiSystemPrompt = _settings.AiSystemPrompt;
+        ReloadAiProvidersFromSettings();
+        _originalAiBaseUrl = _settings.AiBaseUrl;
+        _originalAiApiKey = _settings.AiApiKey;
+        _originalAiModel = _settings.AiModel;
+        _originalAiSystemPrompt = _settings.AiSystemPrompt;
         AiSettingsStatusText = BuildAiSettingsSummary(_settings);
+        HasAiSettingsChanged = false;
+        CloudSyncDiagnostics.Log(
+            "SettingsWindow.Ai",
+            "AI config refreshed from external",
+            ("providerCount", _settings.AiServiceProviders.Count),
+            ("activeProviderId", _settings.ActiveServiceProviderId ?? string.Empty),
+            ("providerNames", string.Join(", ", _settings.AiServiceProviders.Select(static provider => provider.Name ?? string.Empty))));
+    }
+
+    public void ShowCloudSyncProgressToast(string message)
+    {
+        Dispatcher.Invoke(() =>
+        {
+            CloudSyncToastMessage.Text = string.IsNullOrWhiteSpace(message) ? "正在同步云端配置..." : message;
+            CloudSyncToastNotification.Visibility = Visibility.Visible;
+        });
+    }
+
+    public void HideCloudSyncProgressToast()
+    {
+        Dispatcher.Invoke(() =>
+        {
+            CloudSyncToastNotification.Visibility = Visibility.Collapsed;
+        });
+    }
+
+    private void ReloadAiProvidersFromSettings()
+    {
+        _settings.AiServiceProviders ??= [];
+        _aiServiceProvidersList.Clear();
+        foreach (var provider in _settings.AiServiceProviders)
+        {
+            var vm = new SettingsAiProviderVM(provider);
+            if (provider.Models != null)
+            {
+                foreach (var model in provider.Models)
+                {
+                    vm.Models.Add(model);
+                }
+            }
+
+            _aiServiceProvidersList.Add(vm);
+        }
+
+        SelectedServiceProvider = _aiServiceProvidersList.FirstOrDefault(p => p.Id == _settings.ActiveServiceProviderId)
+                                 ?? _aiServiceProvidersList.FirstOrDefault();
+        OnPropertyChanged(nameof(FilteredProviders));
     }
 
     private void EditLauncherHotkeyButton_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new HotkeyCaptureWindow(
-            "设置主程序快捷键",
-            "窗口激活后，直接按一次新的组合键即可完成录制。也支持全局双击 Ctrl 或双击 Alt 呼出主界面。",
+            BrandTerms.Format("设置{Warehouse}快捷键"),
+            BrandTerms.Format("窗口激活后，直接按一次新的组合键即可完成录制。也支持全局双击 Ctrl 或双击 Alt 呼出{Warehouse}。"),
             LauncherHotkey,
             allowDoubleTap: true)
         {
@@ -4440,6 +6404,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         if (_mainWindow.TryUpdateWindowSnapAssistHotkey(dialog.ShortcutText, out var message))
         {
             _settings = AppSettingsStore.Load();
+        _settingsPersistence.Reset(_settings);
             OnPropertyChanged(nameof(WindowSnapAssistHotkey));
             SyncStatusText = message;
             RefreshSyncActivityLog();
@@ -4512,7 +6477,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
 
         var dialog = new HotkeyCaptureWindow(
-            "设置扩展快捷键",
+            "设置小程序快捷键",
             $"窗口激活后，直接按一次新的组合键即可为 {item.Title} 完成录制。",
             item.ShortcutValue,
             allowEmpty: true)
@@ -4544,7 +6509,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
 
         var dialog = new HotkeyCaptureWindow(
-            "设置扩展快捷键",
+            "设置小程序快捷键",
             $"窗口激活后，直接按一次新的组合键即可为 {item.Title} 完成录制。",
             item.Shortcut,
             allowEmpty: true)
@@ -4623,56 +6588,56 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         // 重置所有标签样式
         if (FilterAllTab != null)
         {
-            FilterAllTab.Style = _extensionFilterMode == "all" 
-                ? (Style)FindResource("FilterTabActiveStyle") 
+            FilterAllTab.Style = _extensionFilterMode == "all"
+                ? (Style)FindResource("FilterTabActiveStyle")
                 : (Style)FindResource("FilterTabStyle");
             var textBlock = FilterAllTab.Child as TextBlock;
-            if (textBlock != null) textBlock.Foreground = _extensionFilterMode == "all" 
-                ? new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 255, 255)) 
+            if (textBlock != null) textBlock.Foreground = _extensionFilterMode == "all"
+                ? new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 255, 255))
                 : new SolidColorBrush(System.Windows.Media.Color.FromRgb(142, 142, 142));
         }
 
         if (FilterPublishedTab != null)
         {
-            FilterPublishedTab.Style = _extensionFilterMode == "published" 
-                ? (Style)FindResource("FilterTabActiveStyle") 
+            FilterPublishedTab.Style = _extensionFilterMode == "published"
+                ? (Style)FindResource("FilterTabActiveStyle")
                 : (Style)FindResource("FilterTabStyle");
             var textBlock = FilterPublishedTab.Child as TextBlock;
-            if (textBlock != null) textBlock.Foreground = _extensionFilterMode == "published" 
-                ? new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 255, 255)) 
+            if (textBlock != null) textBlock.Foreground = _extensionFilterMode == "published"
+                ? new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 255, 255))
                 : new SolidColorBrush(System.Windows.Media.Color.FromRgb(142, 142, 142));
         }
 
         if (FilterDisabledTab != null)
         {
-            FilterDisabledTab.Style = _extensionFilterMode == "disabled" 
-                ? (Style)FindResource("FilterTabActiveStyle") 
+            FilterDisabledTab.Style = _extensionFilterMode == "disabled"
+                ? (Style)FindResource("FilterTabActiveStyle")
                 : (Style)FindResource("FilterTabStyle");
             var textBlock = FilterDisabledTab.Child as TextBlock;
-            if (textBlock != null) textBlock.Foreground = _extensionFilterMode == "disabled" 
-                ? new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 255, 255)) 
+            if (textBlock != null) textBlock.Foreground = _extensionFilterMode == "disabled"
+                ? new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 255, 255))
                 : new SolidColorBrush(System.Windows.Media.Color.FromRgb(142, 142, 142));
         }
 
         if (FilterShortcutTab != null)
         {
-            FilterShortcutTab.Style = _extensionFilterMode == "shortcut" 
-                ? (Style)FindResource("FilterTabActiveStyle") 
+            FilterShortcutTab.Style = _extensionFilterMode == "shortcut"
+                ? (Style)FindResource("FilterTabActiveStyle")
                 : (Style)FindResource("FilterTabStyle");
             var textBlock = FilterShortcutTab.Child as TextBlock;
-            if (textBlock != null) textBlock.Foreground = _extensionFilterMode == "shortcut" 
-                ? new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 255, 255)) 
+            if (textBlock != null) textBlock.Foreground = _extensionFilterMode == "shortcut"
+                ? new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 255, 255))
                 : new SolidColorBrush(System.Windows.Media.Color.FromRgb(142, 142, 142));
         }
 
         if (FilterRecycleTab != null)
         {
-            FilterRecycleTab.Style = _extensionFilterMode == "recycle" 
-                ? (Style)FindResource("FilterTabActiveStyle") 
+            FilterRecycleTab.Style = _extensionFilterMode == "recycle"
+                ? (Style)FindResource("FilterTabActiveStyle")
                 : (Style)FindResource("FilterTabStyle");
             var textBlock = FilterRecycleTab.Child as TextBlock;
-            if (textBlock != null) textBlock.Foreground = _extensionFilterMode == "recycle" 
-                ? new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 255, 255)) 
+            if (textBlock != null) textBlock.Foreground = _extensionFilterMode == "recycle"
+                ? new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 255, 255))
                 : new SolidColorBrush(System.Windows.Media.Color.FromRgb(142, 142, 142));
         }
     }
@@ -4699,6 +6664,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
         _mainWindow.SetExtensionEnabled(item.ExtensionId, checkbox.IsChecked == true);
         _settings = _mainWindow.GetCurrentAppSettings();
+        _settingsPersistence.Reset(_settings);
         RefreshExtensionCacheFromMainWindow();
         RefreshExtensionSummary();
         RefreshExtensionItems();
@@ -4904,13 +6870,13 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         WebDavRootPath = string.Empty;
         WebDavUsername = string.Empty;
         WebDavPasswordBox.Password = string.Empty;
-        
+
         // Save cleared settings to persistent storage
         _mainWindow.SaveWebDavSettings(false, string.Empty, string.Empty, string.Empty);
-        
+
         // Clear stored credential
         WebDavCredentialStore.Clear();
-        
+
         // Update UI status
         RefreshWebDavSummary();
         SyncStatusText = "已退出登录，WebDAV 配置已清除。";
@@ -4922,6 +6888,318 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         RefreshAccountSummary();
         RefreshWebDavConfigFromExternal();
         SyncStatusText = _mainWindow.SyncStatus;
+        RefreshAccountObjectSyncStatus();
+    }
+
+    private bool _accountSyncBusy;
+    public bool IsAccountSyncIdle => !_accountSyncBusy;
+
+    private async void UploadAccountSettingsButton_Click(object sender, RoutedEventArgs e) => await TransferAccountSettingsFromButtonAsync(true);
+    private async void DownloadAccountSettingsButton_Click(object sender, RoutedEventArgs e) => await TransferAccountSettingsFromButtonAsync(false);
+
+    private async Task TransferAccountSettingsFromButtonAsync(bool upload)
+    {
+        if (_accountSyncBusy) return;
+        _accountSyncBusy = true;
+        OnPropertyChanged(nameof(IsAccountSyncIdle));
+        try
+        {
+            SyncStatusText = upload ? "正在上传账号设置…" : "正在下载账号设置，本机未上传的修改会保留…";
+            var result = await _mainWindow.TransferAccountSettingsAsync(upload);
+            SyncStatusText = result.message;
+            RefreshAccountObjectSyncStatus();
+            RefreshSyncActivityLog();
+        }
+        catch (Exception ex) { SyncStatusText = $"本次同步未完成：{ex.Message}"; }
+        finally
+        {
+            _accountSyncBusy = false;
+            OnPropertyChanged(nameof(IsAccountSyncIdle));
+        }
+    }
+
+    private async void RefreshAccountObjectSyncButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_accountSyncBusy) return;
+        _accountSyncBusy = true;
+        OnPropertyChanged(nameof(IsAccountSyncIdle));
+
+        try
+        {
+            SyncStatusText = "正在刷新账号配置同步状态...";
+            var upload = await _mainWindow.TransferAccountSettingsAsync(upload: true);
+            await RefreshCloudAsync();
+            if (!upload.ok) SyncStatusText = upload.message;
+            RefreshSyncActivityLog();
+        }
+        catch (Exception ex)
+        {
+            SyncStatusText = $"账号配置同步刷新失败：{ex.Message}";
+            RefreshAccountObjectSyncStatus();
+        }
+        finally
+        {
+            _accountSyncBusy = false;
+            OnPropertyChanged(nameof(IsAccountSyncIdle));
+        }
+    }
+
+    private async void UseLocalAccountSyncConflictButton_Click(object sender, RoutedEventArgs e)
+    {
+        await ResolveAccountSyncConflictFromButtonAsync(sender, useLocalVersion: true);
+    }
+
+    private async void AcceptRemoteAccountSyncConflictButton_Click(object sender, RoutedEventArgs e)
+    {
+        await ResolveAccountSyncConflictFromButtonAsync(sender, useLocalVersion: false);
+    }
+
+    private void ShowTaskRecoveryButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_mainWindow.CloudSyncClient is not { CurrentUserId: not null } client) { SyncStatusText = "请先登录燕子账号。"; return; }
+        new TaskRecoveryWindow(_mainWindow, client) { Owner = this }.Show();
+    }
+
+    private void ShowAccountSyncHistoryButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.Button { DataContext: AccountSyncObjectStatusItem item } ||
+            _mainWindow.CloudSyncClient is not { } client)
+        {
+            return;
+        }
+
+        var historyWindow = new CloudSyncHistoryWindow(
+            _mainWindow,
+            client,
+            item.ObjectId,
+            item.DisplayName,
+            item.Revision)
+        {
+            Owner = this
+        };
+        historyWindow.ShowDialog();
+        if (historyWindow.Restored)
+        {
+            SyncStatusText = "已恢复账号同步历史版本，本机配置已按云端新版本刷新。";
+            RefreshAccountObjectSyncStatus();
+            RefreshSyncActivityLog();
+        }
+    }
+
+    private async void UseLocalAccountSyncFieldButton_Click(object sender, RoutedEventArgs e)
+    {
+        await ResolveAccountSyncFieldFromButtonAsync(sender, useLocalVersion: true);
+    }
+
+    private async void AcceptRemoteAccountSyncFieldButton_Click(object sender, RoutedEventArgs e)
+    {
+        await ResolveAccountSyncFieldFromButtonAsync(sender, useLocalVersion: false);
+    }
+
+    private async Task ResolveAccountSyncFieldFromButtonAsync(object sender, bool useLocalVersion)
+    {
+        if (sender is not System.Windows.Controls.Button { DataContext: SyncFieldDifference item } button ||
+            !item.CanChooseField)
+            return;
+        button.IsEnabled = false;
+        try
+        {
+            var result = await _mainWindow.ResolveCloudObjectConflictFieldAsync(
+                item.ObjectId, item.JsonPointer, useLocalVersion, item.Revision);
+            SyncStatusText = result.message;
+            RefreshAccountObjectSyncStatus();
+            RefreshSyncActivityLog();
+        }
+        finally { button.IsEnabled = true; }
+    }
+
+    private async Task ResolveAccountSyncConflictFromButtonAsync(object sender, bool useLocalVersion)
+    {
+        if (sender is not System.Windows.Controls.Button { DataContext: AccountSyncObjectStatusItem item } button)
+        {
+            return;
+        }
+
+        button.IsEnabled = false;
+        try
+        {
+            var result = await _mainWindow.ResolveCloudObjectConflictAsync(item.ObjectId, useLocalVersion, item.Revision);
+            await RefreshCloudAsync();
+            SyncStatusText = result.message;
+            RefreshAccountObjectSyncStatus();
+            RefreshSyncActivityLog();
+        }
+        finally
+        {
+            button.IsEnabled = true;
+        }
+    }
+
+    private void RefreshAccountObjectSyncStatus()
+    {
+        var userId = _mainWindow.CloudSyncClient?.CurrentUserId ?? SyncSessionStore.Load()?.UserId;
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            AccountSyncStatus = AccountSyncStatusView.Empty;
+            return;
+        }
+
+        var state = CloudObjectSyncStateStore.Load(userId);
+        if (!string.IsNullOrWhiteSpace(state.PersistenceError))
+        {
+            AccountSyncStatus = new AccountSyncStatusView("同步已暂停", "本机同步记录需要修复", "", "", "",
+                state.PersistenceError, true, false, []);
+            return;
+        }
+        var currentDeviceId = DeviceIdentityStore.GetOrCreateDesktopDeviceId();
+        var pendingIds = state.PendingObjectIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var objectIds = state.Objects.Keys
+            .Union(pendingIds, StringComparer.OrdinalIgnoreCase)
+            .Union(state.Conflicts.Keys, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(GetAccountSyncObjectOrder)
+            .ThenBy(static id => id, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var objectItems = objectIds.Select(objectId =>
+        {
+            state.Objects.TryGetValue(objectId, out var cached);
+            state.PendingOperations.TryGetValue(objectId, out var pending);
+            state.Conflicts.TryGetValue(objectId, out var conflict);
+            var hasError = !string.IsNullOrWhiteSpace(pending?.LastError);
+            var status = conflict != null
+                ? "需要处理冲突"
+                : pending != null
+                ? hasError ? "等待重试" : "待上传"
+                : cached?.Deleted == true ? "已删除" : "已同步";
+            var source = SyncUserText.Device(cached?.UpdatedByDeviceId, cached?.UpdatedByDeviceName, currentDeviceId);
+            var detail = conflict != null
+                ? "本机修改已单独保留 · 云端来源：" + source
+                : hasError ? "暂时未能同步，将自动重试"
+                : pending != null
+                    ? state.ObjectSyncAvailable ? "等待上传，可在云端同步页点击 ↑ 重试" : "服务端暂不支持此项上传"
+                    : $"来源：{source}";
+            return new AccountSyncObjectStatusItem(
+                objectId,
+                GetAccountSyncObjectDisplayName(objectId, cached),
+                status,
+                conflict?.RemoteRevision ?? cached?.Revision ?? pending?.LastObservedRemoteRevision ?? 0,
+                FormatAccountSyncTime(cached?.UpdatedAtUtc),
+                detail,
+                pending != null,
+                hasError,
+                conflict != null,
+                state.ObjectHistoryAvailable)
+            {
+                ConflictSummary = conflict == null ? "" : SyncUserText.Differences(conflict, cached),
+                Differences = conflict == null || cached == null ? [] : SyncUserText.DetailDifferences(
+                    conflict.LocalPayload, cached.Payload, conflict.LocalDeleted, cached.Deleted)
+                    .Select(row => row with { ObjectId = objectId, Revision = conflict.RemoteRevision }).ToArray()
+            };
+        }).ToArray();
+
+        var pendingCount = state.PendingOperations.Count;
+        var errorCount = state.PendingOperations.Values.Count(static item => !string.IsNullOrWhiteSpace(item.LastError));
+        var conflictCount = state.Conflicts.Count;
+        var modeText = !state.ObjectSyncAvailable
+            ? state.ServerProtocolVersion == 0 ? "正在建立连接" : "兼容备份模式"
+            : state.ObjectsAuthoritative ? "自动同步" : "正在升级同步";
+        var healthText = conflictCount > 0
+            ? $"{conflictCount} 项设置需要你选择 · 点击查看"
+            : errorCount > 0
+            ? $"{errorCount} 项数据同步失败，等待重试"
+            : pendingCount > 0
+                ? $"{pendingCount} 项数据等待同步"
+                : state.Objects.Count > 0 ? "所有账号配置均已同步" : "等待首次同步";
+        var explanation = conflictCount > 0
+            ? "这台电脑保留的修改与云端不同，请查看后选择要保留的一份。"
+            : errorCount > 0 ? "暂时未能完成同步，联网后会自动重试。"
+            : "设置会通过账号同步；个人存储空间中的备份单独管理。";
+
+        AccountSyncStatus = new AccountSyncStatusView(
+            modeText,
+            healthText,
+            $"云端版本 {state.LastSyncedRevision}",
+            $"已同步 {state.Objects.Count} 项数据 · 等待中 {pendingCount}",
+            FormatAccountSyncTime(state.CapabilitiesCheckedAtUtc, "未建立连接"),
+            explanation,
+            errorCount > 0 || conflictCount > 0,
+            pendingCount > 0,
+            objectItems);
+    }
+
+    private static int GetAccountSyncObjectOrder(string objectId)
+    {
+        for (var index = 0; index < LauncherConfigObjectStore.Definitions.Length; index++)
+        {
+            if (LauncherConfigObjectStore.Definitions[index].ObjectId.Equals(objectId, StringComparison.OrdinalIgnoreCase))
+            {
+                return index;
+            }
+        }
+        if (objectId.Equals(YanmObjectStore.LayoutObjectId, StringComparison.OrdinalIgnoreCase)) return 100;
+        if (objectId.Equals(YanmObjectStore.ComponentStateIndexObjectId, StringComparison.OrdinalIgnoreCase)) return 101;
+        if (YanmObjectStore.IsDynamicObjectId(objectId)) return 102;
+        return int.MaxValue;
+    }
+
+    private static string GetAccountSyncObjectDisplayName(string objectId, CloudObjectSyncCacheEntry? cached)
+    {
+        var fixedName = objectId switch
+        {
+            "settings.general" => "通用设置",
+            "settings.runtime" => "运行与小程序环境",
+            "settings.ai" => "AI 服务设置",
+            "settings.hotkeys" => "全局快捷键",
+            "settings.mouseTriggers" => "鼠标与手势触发",
+            "quickPanel.groups" => "快捷面板分组（旧版）",
+            "quickPanel.groupIndex" => "快捷面板分组与顺序",
+            "quickPanel.favorites" => "收藏、禁用与搜索范围",
+            "radialMenu.pages" => "燕环页面（旧版）",
+            "radialMenu.pageIndex" => "燕环页面与呼出方式",
+            "yanyu.rules" => "燕语规则",
+            "window.controls" => "窗口控制与燕选",
+            "yanm.layout" => "燕幕布局与组件定义",
+            "yanm.componentStateIndex" => "燕幕组件数据",
+            _ => string.Empty
+        };
+        if (!string.IsNullOrWhiteSpace(fixedName)) return fixedName;
+
+        if (cached != null && TryReadNestedPayloadName(cached.Payload, "group", out var groupName))
+        {
+            return objectId.StartsWith(AccountConfigObjectStore.QuickPanelContextPrefix, StringComparison.OrdinalIgnoreCase)
+                ? $"上下文面板 · {groupName}"
+                : $"全局面板 · {groupName}";
+        }
+        if (cached != null && TryReadNestedPayloadName(cached.Payload, "page", out var pageName))
+        {
+            return $"燕环页面 · {pageName}";
+        }
+        if (cached != null &&
+            cached.Payload.ValueKind == JsonValueKind.Object &&
+            cached.Payload.TryGetProperty("stateKey", out var stateKey) &&
+            stateKey.ValueKind == JsonValueKind.String &&
+            !string.IsNullOrWhiteSpace(stateKey.GetString()))
+        {
+            return $"燕幕状态 · {stateKey.GetString()}";
+        }
+        return objectId;
+    }
+
+    private static bool TryReadNestedPayloadName(JsonElement payload, string propertyName, out string name)
+    {
+        name = string.Empty;
+        return payload.ValueKind == JsonValueKind.Object &&
+               payload.TryGetProperty(propertyName, out var item) &&
+               item.ValueKind == JsonValueKind.Object &&
+               item.TryGetProperty("name", out var nameProperty) &&
+               nameProperty.ValueKind == JsonValueKind.String &&
+               !string.IsNullOrWhiteSpace(name = nameProperty.GetString() ?? string.Empty);
+    }
+
+    private static string FormatAccountSyncTime(string? value, string fallback = "尚未同步")
+    {
+        return DateTimeOffset.TryParse(value, out var timestamp)
+            ? timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture)
+            : fallback;
     }
 
     private void RefreshAccountSummary()
@@ -4932,14 +7210,57 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         {
             IsAccountLoggedIn = true;
             AccountTitle = session.Username;
-            AccountSubtitle = $"已登录 Cloud · 用户 ID {session.UserId}";
+            AccountSubtitle = $"用户 ID {session.UserId}";
             AccountInitial = session.Username[..1].ToUpperInvariant();
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    if (_mainWindow.CloudSyncClient != null)
+                    {
+                        var status = await _mainWindow.CloudSyncClient.GetVipStatusAsync();
+                        Dispatcher.Invoke(() =>
+                        {
+                            if (status != null && status.IsVip)
+                            {
+                                IsVipActive = true;
+                                if (status.VipType == "lifetime")
+                                {
+                                    VipBadgeText = "终身VIP";
+                                    VipDaysText = "永久";
+                                }
+                                else
+                                {
+                                    VipBadgeText = $"VIP {status.DaysRemaining}天";
+                                    VipDaysText = $"{status.DaysRemaining}天";
+                                }
+                                AccountSubtitle = $"{VipBadgeText} · ID {session.UserId}";
+                            }
+                            else
+                            {
+                                IsVipActive = false;
+                                VipBadgeText = "激活VIP";
+                                VipDaysText = string.Empty;
+                                AccountSubtitle = $"普通用户 · ID {session.UserId}";
+                            }
+                        });
+                    }
+                }
+                catch
+                {
+                    // 忽略后台静默拉取失败
+                }
+            });
             return;
         }
 
         IsAccountLoggedIn = false;
+        IsVipActive = false;
+        VipBadgeText = "激活VIP";
+        VipDaysText = string.Empty;
         AccountTitle = "未登录";
-        AccountSubtitle = "点击左上角账户卡片登录或切换账号。";
+        AccountSubtitle = "点击登录或切换账号。";
         AccountInitial = "燕";
     }
 
@@ -4954,7 +7275,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         var count = _cachedExtensionItems.Count > 0
             ? _cachedExtensionItems.Count
             : _mainWindow.GetExtensionsForSettings().Count;
-        LocalExtensionSummary = $"当前机器已发现 {count} 个扩展。";
+        LocalExtensionSummary = $"当前机器已发现 {count} 个小程序。";
         OnPropertyChanged(nameof(ExtensionSearchSummary));
     }
 
@@ -4963,7 +7284,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         var count = _cachedRecycleBinItems.Count;
         RecycleBinSummary = count == 0
             ? "回收站为空。"
-            : $"当前回收站中有 {count} 个扩展。";
+            : $"当前回收站中有 {count} 个小程序。";
         OnPropertyChanged(nameof(RecycleBinSearchSummary));
     }
 
@@ -4979,7 +7300,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         RecycleBinItems.Clear();
 
         var keyword = ExtensionSearchText.Trim();
-        
+
         // 根据筛选模式选择数据源
         IEnumerable<SettingsExtensionItem> sourceItems = _extensionFilterMode switch
         {
@@ -4989,7 +7310,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             "recycle" => Enumerable.Empty<SettingsExtensionItem>(), // 回收站使用单独的数据源
             _ => _cachedExtensionItems // "all"
         };
-        
+
         // 应用搜索关键词筛选
         var items = sourceItems
             .Where(item =>
@@ -5011,7 +7332,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                     item.ExtensionId.Contains(recycleBinKeyword, StringComparison.OrdinalIgnoreCase) ||
                     item.Category.Contains(recycleBinKeyword, StringComparison.OrdinalIgnoreCase))
                 .ToList();
-            
+
             foreach (var item in recycleBinItems)
             {
                 RecycleBinItems.Add(item);
@@ -5036,12 +7357,18 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
 
         OnPropertyChanged(nameof(ExtensionSearchSummary));
+        NotifyBatchSelectionChanged();
     }
 
     private void RefreshMouseGestureManagement()
     {
         MouseGestureItems.Clear();
         MouseGestureExtensionOptions.Clear();
+        MouseGestureAppOptions.Clear();
+        foreach (var app in ScanAppOptions())
+        {
+            MouseGestureAppOptions.Add(app);
+        }
         MouseGestureQuickBindItems.Clear();
 
         var commands = _mainWindow.GetExtensionsForSettings();
@@ -5054,12 +7381,23 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             MouseGestureExtensionOptions.Add(new MouseGestureExtensionOption(command));
         }
 
+        var whitelistAppsBySeq = _settings.MouseGestureAppBindings
+            .Where(b => !b.IsBlacklist && !string.IsNullOrWhiteSpace(b.Sequence) && !string.IsNullOrWhiteSpace(b.AppPath))
+            .GroupBy(b => MouseGestureNaming.NormalizeSequence(b.Sequence), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+
+        var blacklistAppsBySeq = _settings.MouseGestureAppBindings
+            .Where(b => b.IsBlacklist && !string.IsNullOrWhiteSpace(b.Sequence) && !string.IsNullOrWhiteSpace(b.AppPath))
+            .GroupBy(b => MouseGestureNaming.NormalizeSequence(b.Sequence), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+
         var assignedBySequence = new Dictionary<string, string>(StringComparer.Ordinal);
+        var handledAppSequences = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         foreach (var entry in LocalExtensionCatalog.LoadEntries())
         {
             var gesture = entry.Manifest.MouseGesture;
-            if (gesture == null ||
-                string.IsNullOrWhiteSpace(gesture.Sequence) && !MouseGestureTemplateRecognizer.HasTemplateData(gesture.Data))
+            if (gesture == null || (string.IsNullOrWhiteSpace(gesture.Sequence) && !MouseGestureTemplateRecognizer.HasTemplateData(gesture.Data)))
             {
                 continue;
             }
@@ -5075,10 +7413,14 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 assignedBySequence[sequence] = entry.Manifest.Name;
             }
 
+            var boundW = whitelistAppsBySeq.TryGetValue(sequence, out var wl) ? wl.Select(x => x.AppPath).ToList() : null;
+            var boundB = blacklistAppsBySeq.TryGetValue(sequence, out var bl) ? bl.Select(x => x.AppPath).ToList() : null;
+            handledAppSequences.Add(sequence);
+
             MouseGestureItems.Add(new SettingsMouseGestureItem(
                 entry.Manifest.Id,
                 entry.Manifest.Name,
-                entry.Manifest.Category ?? command?.Category ?? "扩展",
+                entry.Manifest.Category ?? command?.Category ?? "小程序",
                 BuildGestureTriggerLabel(),
                 sequence,
                 sign,
@@ -5088,17 +7430,106 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 command?.IconSource ?? ExtensionIconLibrary.ResolveImageSource(entry.Manifest.Icon, directory),
                 command?.VectorIcon ?? ExtensionIconLibrary.ResolveVectorIcon(entry.Manifest.Icon),
                 command?.AccentBrush ?? CreateAccentBrush(entry.Manifest.AccentHex),
-                command?.DisplayGlyph ?? BuildFallbackGlyph(entry.Manifest.Name)));
+                command?.DisplayGlyph ?? BuildFallbackGlyph(entry.Manifest.Name),
+                boundW,
+                boundB));
+        }
+
+        foreach (var appGroup in whitelistAppsBySeq)
+        {
+            if (handledAppSequences.Contains(appGroup.Key)) continue;
+
+            var first = appGroup.Value[0];
+            var seq = appGroup.Key;
+            var appName = string.IsNullOrWhiteSpace(first.AppName) ? "应用程序" : first.AppName;
+            if (!assignedBySequence.ContainsKey(seq))
+            {
+                assignedBySequence[seq] = appName;
+            }
+
+            var boundW = appGroup.Value.Select(x => x.AppPath).ToList();
+            var boundB = blacklistAppsBySeq.TryGetValue(seq, out var bl) ? bl.Select(x => x.AppPath).ToList() : null;
+
+            MouseGestureItems.Add(new SettingsMouseGestureItem(
+                "app:" + first.AppPath,
+                appName,
+                "应用程序",
+                BuildGestureTriggerLabel(),
+                seq,
+                MouseGestureNaming.GetDisplayName(seq),
+                null,
+                30,
+                null,
+                ExtensionIconLibrary.TryExtractAssociatedIcon(first.AppPath),
+                null,
+                CreateAccentBrush("#3B82F6"),
+                BuildFallbackGlyph(appName),
+                boundW,
+                boundB));
+        }
+
+        var extBySeq = new Dictionary<string, (string ExtId, string Name)>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in LocalExtensionCatalog.LoadEntries())
+        {
+            var g = entry.Manifest.MouseGesture;
+            if (g == null || (string.IsNullOrWhiteSpace(g.Sequence) && !MouseGestureTemplateRecognizer.HasTemplateData(g.Data))) continue;
+            var norm = MouseGestureNaming.NormalizeSequence(g.Sequence);
+            if (!string.IsNullOrWhiteSpace(norm))
+            {
+                extBySeq[norm] = (entry.Manifest.Id, entry.Manifest.Name);
+            }
         }
 
         foreach (var template in CommonMouseGestureTemplates)
         {
-            assignedBySequence.TryGetValue(template.Sequence, out var assignedTitle);
+            var normSeq = MouseGestureNaming.NormalizeSequence(template.Sequence);
+            string? extId = null;
+            string? assignedTitle = null;
+            var boundWhitelist = new List<string>();
+            var boundBlacklist = new List<string>();
+
+            if (extBySeq.TryGetValue(normSeq, out var extInfo))
+            {
+                extId = extInfo.ExtId;
+                assignedTitle = extInfo.Name;
+            }
+
+            if (whitelistAppsBySeq.TryGetValue(normSeq, out var wApps) && wApps.Count > 0)
+            {
+                boundWhitelist = wApps.Select(a => a.AppPath).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            }
+
+            if (blacklistAppsBySeq.TryGetValue(normSeq, out var bApps) && bApps.Count > 0)
+            {
+                boundBlacklist = bApps.Select(a => a.AppPath).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            }
+
+            if (boundWhitelist.Count > 0 || boundBlacklist.Count > 0)
+            {
+                var tagList = new List<string>();
+                if (boundWhitelist.Count > 0) tagList.Add($"限定 {boundWhitelist.Count} 个应用");
+                if (boundBlacklist.Count > 0) tagList.Add($"禁用 {boundBlacklist.Count} 个应用");
+                var appTag = string.Join(", ", tagList);
+
+                if (string.IsNullOrWhiteSpace(assignedTitle))
+                {
+                    assignedTitle = appTag;
+                }
+                else
+                {
+                    assignedTitle = $"{assignedTitle} ({appTag})";
+                }
+            }
+
             MouseGestureQuickBindItems.Add(new MouseGestureQuickBindItem(
                 template.Sequence,
                 template.Name,
                 template.Description,
-                assignedTitle));
+                assignedTitle,
+                null,
+                extId,
+                boundWhitelist,
+                boundBlacklist));
         }
 
         OnPropertyChanged(nameof(MouseGestureManagementSummary));
@@ -5112,39 +7543,331 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             return;
         }
 
+        if (item.ExtensionId != null && item.ExtensionId.StartsWith("app:", StringComparison.OrdinalIgnoreCase))
+        {
+            var appPath = item.ExtensionId.Substring(4);
+            _settings.MouseGestureAppBindings.RemoveAll(x => string.Equals(x.AppPath, appPath, StringComparison.OrdinalIgnoreCase) || string.Equals(x.Sequence, item.Sequence, StringComparison.OrdinalIgnoreCase));
+            _settings = _settingsPersistence.Save(_settings);
+            _mainWindow.NotifyQuickPanelSettingsChanged("mouse-gesture-app-unbound", refreshYanmOverlay: false);
+            _mainWindow.ReloadMouseGestureRegistrations();
+            RefreshMouseGestureManagement();
+            SyncStatusText = $"已解绑应用手势 [{item.Title}]。";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(item.ExtensionId))
+        {
+            SyncStatusText = "当前手势没有可解绑的小程序。";
+            return;
+        }
+
         var result = await _mainWindow.UpdateExtensionMouseGestureFromSettingsAsync(item.ExtensionId, null);
         await HandleMouseGestureUpdateResultAsync(result);
     }
 
-    private async void EditMouseGestureExtensionButton_Click(object sender, RoutedEventArgs e)
+    private async void ChangeBoundGestureButton_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: SettingsMouseGestureItem item })
         {
             return;
         }
 
-        var extensionItem = _cachedExtensionItems.FirstOrDefault(x =>
-            x.ExtensionId.Equals(item.ExtensionId, StringComparison.OrdinalIgnoreCase));
-        if (extensionItem == null)
+        var triggerLabel = BuildGestureTriggerLabel();
+        var dlg = new MouseGestureBindingDialog(
+            item.Sequence,
+            item.DisplayName,
+            item.DetailText,
+            triggerLabel,
+            item.Data,
+            item.ExtensionId,
+            item.BoundWhitelistAppPaths,
+            item.BoundBlacklistAppPaths,
+            MouseGestureExtensionOptions,
+            MouseGestureAppOptions)
         {
-            RefreshExtensionCacheFromMainWindow();
-            extensionItem = _cachedExtensionItems.FirstOrDefault(x =>
-                x.ExtensionId.Equals(item.ExtensionId, StringComparison.OrdinalIgnoreCase));
+            Owner = this
+        };
+
+        if (dlg.ShowDialog() == true)
+        {
+            if (dlg.WasUnbound)
+            {
+                await UnbindGestureAsync(item.Sequence);
+                RefreshMouseGestureManagement();
+                SyncStatusText = $"已解绑手势 [{item.DisplayName}]。";
+            }
+            else if (dlg.WasSaved)
+            {
+                // 1. 如果选择了新小程序，绑定小程序手势
+                if (dlg.SelectedExtension != null)
+                {
+                    // 若原先绑定的是不同的小程序，先解绑旧的小程序
+                    if (!string.IsNullOrWhiteSpace(item.ExtensionId) &&
+                        !item.ExtensionId.StartsWith("app:", StringComparison.OrdinalIgnoreCase) &&
+                        !string.Equals(item.ExtensionId, dlg.SelectedExtension.ExtensionId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        await _mainWindow.UpdateExtensionMouseGestureFromSettingsAsync(item.ExtensionId, null);
+                    }
+
+                    var runtimeTrigger = MouseGestureTriggerModes.ToRuntimeTrigger(_settings.MouseGestureTriggerMode);
+                    var gesture = new LocalExtensionMouseGestureManifest
+                    {
+                        Trigger = string.IsNullOrWhiteSpace(runtimeTrigger) ? "right-drag" : runtimeTrigger,
+                        Sequence = item.Sequence,
+                        Sign = item.DisplayName,
+                        Data = item.Data,
+                        MinDistance = item.MinDistance > 0 ? item.MinDistance : 30
+                    };
+                    var result = await _mainWindow.UpdateExtensionMouseGestureFromSettingsAsync(dlg.SelectedExtension.ExtensionId, gesture);
+                    await HandleMouseGestureUpdateResultAsync(result);
+                }
+
+                // 2. 更新应用白名单与黑名单绑定列表
+                _settings.MouseGestureAppBindings.RemoveAll(x =>
+                    string.Equals(MouseGestureNaming.NormalizeSequence(x.Sequence), MouseGestureNaming.NormalizeSequence(item.Sequence), StringComparison.OrdinalIgnoreCase));
+
+                foreach (var app in dlg.SelectedWhitelistApps)
+                {
+                    _settings.MouseGestureAppBindings.Add(new MouseGestureAppBinding
+                    {
+                        AppPath = app.AppPath,
+                        AppName = app.AppName,
+                        Sequence = item.Sequence,
+                        ExtensionId = dlg.SelectedExtension?.ExtensionId ?? item.ExtensionId,
+                        IsBlacklist = false
+                    });
+                }
+
+                foreach (var app in dlg.SelectedBlacklistApps)
+                {
+                    _settings.MouseGestureAppBindings.Add(new MouseGestureAppBinding
+                    {
+                        AppPath = app.AppPath,
+                        AppName = app.AppName,
+                        Sequence = item.Sequence,
+                        ExtensionId = dlg.SelectedExtension?.ExtensionId ?? item.ExtensionId,
+                        IsBlacklist = true
+                    });
+                }
+
+                _settings = _settingsPersistence.Save(_settings);
+                _mainWindow.ReloadMouseGestureRegistrations();
+                RefreshMouseGestureManagement();
+
+                var tagList = new List<string>();
+                if (dlg.SelectedWhitelistApps.Count > 0) tagList.Add($"限定 {dlg.SelectedWhitelistApps.Count} 个应用生效");
+                else tagList.Add("全局所有应用生效");
+                if (dlg.SelectedBlacklistApps.Count > 0) tagList.Add($"禁用 {dlg.SelectedBlacklistApps.Count} 个应用");
+
+                var appSummary = "（" + string.Join("，", tagList) + "）";
+                var actionName = dlg.SelectedExtension?.Label ?? (dlg.SelectedWhitelistApps.Count > 0 ? dlg.SelectedWhitelistApps[0].AppName : item.DisplayName);
+                SyncStatusText = $"手势 [{item.DisplayName}] 已更新至 [{actionName}] {appSummary}";
+            }
+        }
+    }
+
+    private void BoundGestureCard_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        ChangeBoundGestureButton_Click(sender, e);
+    }
+
+    private List<MouseGestureAppOption> ScanAppOptions()
+    {
+        var list = new List<MouseGestureAppOption>();
+        var addedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        try
+        {
+            var procs = System.Diagnostics.Process.GetProcesses();
+            foreach (var p in procs)
+            {
+                try
+                {
+                    if (p.MainWindowHandle == IntPtr.Zero) continue;
+                    var fileName = p.MainModule?.FileName;
+                    if (string.IsNullOrWhiteSpace(fileName) || !System.IO.File.Exists(fileName)) continue;
+                    if (addedPaths.Contains(fileName)) continue;
+
+                    var title = p.MainWindowTitle;
+                    var name = string.IsNullOrWhiteSpace(title) ? p.ProcessName : title;
+                    if (name.Length > 25) name = name.Substring(0, 25) + "...";
+
+                    addedPaths.Add(fileName);
+                    list.Add(new MouseGestureAppOption(name, fileName, "运行中的应用", true));
+                }
+                catch { }
+            }
+        }
+        catch { }
+
+        var commonApps = new (string Name, string Path)[]
+        {
+            ("记事本", System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "notepad.exe")),
+            ("计算器", System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "calc.exe")),
+            ("任务管理器", System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "taskmgr.exe")),
+            ("命令提示符", System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe")),
+            ("资源管理器", System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe"))
+        };
+
+        foreach (var app in commonApps)
+        {
+            if (System.IO.File.Exists(app.Path) && !addedPaths.Contains(app.Path))
+            {
+                addedPaths.Add(app.Path);
+                list.Add(new MouseGestureAppOption(app.Name, app.Path, "全部应用程序", false));
+            }
         }
 
-        if (extensionItem != null)
+        return list;
+    }
+
+    private void BindCommonMouseGestureAppButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: MouseGestureQuickBindItem item } || item.SelectedApp == null)
         {
-            await EditExtensionItemAsync(extensionItem);
-            RefreshMouseGestureManagement();
+            SyncStatusText = "请选择一个应用程序后再绑定常用手势。";
+            return;
         }
+
+        var appBindings = _settings.MouseGestureAppBindings;
+        appBindings.RemoveAll(x => string.Equals(x.Sequence, item.Sequence, StringComparison.OrdinalIgnoreCase));
+        appBindings.Add(new MouseGestureAppBinding
+        {
+            Sequence = item.Sequence,
+            AppPath = item.SelectedApp.AppPath,
+            AppName = item.SelectedApp.AppName
+        });
+
+        _settings = _settingsPersistence.Save(_settings);
+        _mainWindow.NotifyQuickPanelSettingsChanged("mouse-gesture-app-bound", refreshYanmOverlay: false);
+        _mainWindow.ReloadMouseGestureRegistrations();
+        RefreshMouseGestureManagement();
+        SyncStatusText = $"已将手势 [{item.DisplayName}] 成功绑定到应用 [{item.SelectedApp.AppName}]！";
+    }
+
+    private async void QuickBindOpenDialogButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: MouseGestureQuickBindItem item }) return;
+
+        var triggerLabel = BuildGestureTriggerLabel();
+        var dlg = new MouseGestureBindingDialog(
+            item.Sequence,
+            item.DisplayName,
+            item.Description,
+            triggerLabel,
+            item.Data,
+            item.AssignedExtensionId,
+            item.BoundWhitelistAppPaths,
+            item.BoundBlacklistAppPaths,
+            MouseGestureExtensionOptions,
+            MouseGestureAppOptions)
+        {
+            Owner = this
+        };
+
+        if (dlg.ShowDialog() == true)
+        {
+            if (dlg.WasUnbound)
+            {
+                await UnbindGestureAsync(item.Sequence);
+                RefreshMouseGestureManagement();
+                SyncStatusText = $"已解绑手势 [{item.DisplayName}]。";
+            }
+            else if (dlg.WasSaved)
+            {
+                // 1. 如果选择了小程序，绑定小程序手势
+                if (dlg.SelectedExtension != null)
+                {
+                    var runtimeTrigger = MouseGestureTriggerModes.ToRuntimeTrigger(_settings.MouseGestureTriggerMode);
+                    var gesture = new LocalExtensionMouseGestureManifest
+                    {
+                        Trigger = string.IsNullOrWhiteSpace(runtimeTrigger) ? "right-drag" : runtimeTrigger,
+                        Sequence = item.Sequence,
+                        Sign = item.DisplayName,
+                        Data = item.Data,
+                        MinDistance = 30
+                    };
+                    var result = await _mainWindow.UpdateExtensionMouseGestureFromSettingsAsync(dlg.SelectedExtension.ExtensionId, gesture);
+                    await HandleMouseGestureUpdateResultAsync(result);
+                }
+
+                // 2. 更新应用白名单与黑名单绑定列表
+                _settings.MouseGestureAppBindings.RemoveAll(x =>
+                    string.Equals(MouseGestureNaming.NormalizeSequence(x.Sequence), MouseGestureNaming.NormalizeSequence(item.Sequence), StringComparison.OrdinalIgnoreCase));
+
+                foreach (var app in dlg.SelectedWhitelistApps)
+                {
+                    _settings.MouseGestureAppBindings.Add(new MouseGestureAppBinding
+                    {
+                        AppPath = app.AppPath,
+                        AppName = app.AppName,
+                        Sequence = item.Sequence,
+                        ExtensionId = dlg.SelectedExtension?.ExtensionId,
+                        IsBlacklist = false
+                    });
+                }
+
+                foreach (var app in dlg.SelectedBlacklistApps)
+                {
+                    _settings.MouseGestureAppBindings.Add(new MouseGestureAppBinding
+                    {
+                        AppPath = app.AppPath,
+                        AppName = app.AppName,
+                        Sequence = item.Sequence,
+                        ExtensionId = dlg.SelectedExtension?.ExtensionId,
+                        IsBlacklist = true
+                    });
+                }
+
+                _settings = _settingsPersistence.Save(_settings);
+                _mainWindow.ReloadMouseGestureRegistrations();
+                RefreshMouseGestureManagement();
+
+                var tagList = new List<string>();
+                if (dlg.SelectedWhitelistApps.Count > 0) tagList.Add($"限定 {dlg.SelectedWhitelistApps.Count} 个应用生效");
+                else tagList.Add("全局所有应用生效");
+                if (dlg.SelectedBlacklistApps.Count > 0) tagList.Add($"禁用 {dlg.SelectedBlacklistApps.Count} 个应用");
+
+                var appSummary = "（" + string.Join("，", tagList) + "）";
+                var actionName = dlg.SelectedExtension?.Label ?? (dlg.SelectedWhitelistApps.Count > 0 ? dlg.SelectedWhitelistApps[0].AppName : item.DisplayName);
+                SyncStatusText = $"手势 [{item.DisplayName}] 已配置至 [{actionName}] {appSummary}";
+            }
+        }
+    }
+
+    private async void QuickBindUnbindButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: MouseGestureQuickBindItem item }) return;
+        await UnbindGestureAsync(item.Sequence);
+        RefreshMouseGestureManagement();
+        SyncStatusText = $"已解绑手势 [{item.DisplayName}]。";
+    }
+
+    private async Task UnbindGestureAsync(string sequence)
+    {
+        // 1. 解除小程序手势绑定
+        foreach (var entry in LocalExtensionCatalog.LoadEntries())
+        {
+            if (entry.Manifest.MouseGesture != null &&
+                string.Equals(entry.Manifest.MouseGesture.Sequence, sequence, StringComparison.OrdinalIgnoreCase))
+            {
+                await _mainWindow.UpdateExtensionMouseGestureFromSettingsAsync(entry.Manifest.Id, null);
+            }
+        }
+
+        // 2. 解除应用手势绑定
+        _settings.MouseGestureAppBindings.RemoveAll(x =>
+            string.Equals(x.Sequence, sequence, StringComparison.OrdinalIgnoreCase));
+        _settings = _settingsPersistence.Save(_settings);
     }
 
     private async void BindCommonMouseGestureButton_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: MouseGestureQuickBindItem item } ||
-            item.SelectedExtension == null)
+            item.SelectedExtension == null ||
+            string.IsNullOrWhiteSpace(item.SelectedExtension.ExtensionId))
         {
-            SyncStatusText = "请选择一个扩展后再绑定常用手势。";
+            SyncStatusText = "请选择一个想要绑定的小程序。";
             return;
         }
 
@@ -5154,11 +7877,308 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             Trigger = string.IsNullOrWhiteSpace(runtimeTrigger) ? "right-drag" : runtimeTrigger,
             Sequence = item.Sequence,
             Sign = item.DisplayName,
+            Data = item.Data,
             MinDistance = 30
         };
 
         var result = await _mainWindow.UpdateExtensionMouseGestureFromSettingsAsync(item.SelectedExtension.ExtensionId, gesture);
         await HandleMouseGestureUpdateResultAsync(result);
+    }
+
+    private void RefreshMouseGestureExtensionCandidates(MouseGestureQuickBindItem item, string? keyword)
+    {
+        keyword = (keyword ?? string.Empty).Trim();
+        var query = MouseGestureExtensionOptions.Where(option =>
+            string.IsNullOrWhiteSpace(keyword) ||
+            option.Label.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+            option.ExtensionId.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+            option.Category.Contains(keyword, StringComparison.OrdinalIgnoreCase));
+
+        item.FilteredExtensionOptions = new ObservableCollection<MouseGestureExtensionOption>(query.Take(24));
+        item.IsExtensionPopupOpen = item.FilteredExtensionOptions.Count > 0;
+    }
+
+    private void RefreshMouseGestureAppCandidates(MouseGestureQuickBindItem item, string? keyword)
+    {
+        keyword = (keyword ?? string.Empty).Trim();
+        var query = MouseGestureAppOptions.Where(option =>
+            string.IsNullOrWhiteSpace(keyword) ||
+            option.AppName.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+            option.AppPath.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+            option.Category.Contains(keyword, StringComparison.OrdinalIgnoreCase));
+
+        item.FilteredAppOptions = new ObservableCollection<MouseGestureAppOption>(query.Take(24));
+        item.IsAppPopupOpen = item.FilteredAppOptions.Count > 0;
+    }
+
+    private void MouseGestureExtensionSearchBox_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: MouseGestureQuickBindItem item })
+        {
+            if (sender is System.Windows.Controls.TextBox textBox)
+            {
+                textBox.SelectAll();
+            }
+
+            RefreshMouseGestureExtensionCandidates(item, item.ExtensionSearchText);
+            item.IsExtensionPopupOpen = true;
+        }
+    }
+
+    private void MouseGestureExtensionDropdownToggle_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement fe && fe.DataContext is MouseGestureQuickBindItem item)
+        {
+            e.Handled = true;
+            RefreshMouseGestureExtensionCandidates(item, string.Empty);
+            item.IsExtensionPopupOpen = true;
+            if (fe.Parent is Grid grid && grid.Children.OfType<System.Windows.Controls.TextBox>().FirstOrDefault() is { } textBox)
+            {
+                textBox.Focus();
+                textBox.SelectAll();
+            }
+        }
+    }
+
+    private void MouseGestureExtensionSearchBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: MouseGestureQuickBindItem item })
+        {
+            return;
+        }
+
+        var selected = item.SelectedExtension;
+        if (selected == null ||
+            !string.Equals(selected.Label, item.ExtensionSearchText ?? string.Empty, StringComparison.OrdinalIgnoreCase))
+        {
+            item.SelectedExtension = null;
+        }
+
+        RefreshMouseGestureExtensionCandidates(item, item.ExtensionSearchText);
+        item.IsExtensionPopupOpen = true;
+    }
+
+    private void MouseGestureExtensionSearchBox_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (sender is not DependencyObject source ||
+            source is not FrameworkElement { DataContext: MouseGestureQuickBindItem item } ||
+            e.Key != Key.Down ||
+            item.FilteredExtensionOptions.Count == 0)
+        {
+            return;
+        }
+
+        var listBox = FindYarnSelectExtensionListBox(source);
+        if (listBox != null)
+        {
+            listBox.SelectedIndex = 0;
+            var itemContainer = listBox.ItemContainerGenerator.ContainerFromIndex(0) as FrameworkElement;
+            itemContainer?.Focus();
+            listBox.Focus();
+            e.Handled = true;
+        }
+    }
+
+    private void MouseGestureExtensionListBox_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.ListBox listBox)
+        {
+            return;
+        }
+
+        if (e.Key == Key.Enter)
+        {
+            CommitMouseGestureExtensionCandidate(listBox);
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape && listBox.DataContext is MouseGestureQuickBindItem item)
+        {
+            item.FilteredExtensionOptions = [];
+            item.IsExtensionPopupOpen = false;
+            e.Handled = true;
+        }
+    }
+
+    private void MouseGestureExtensionListBox_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is System.Windows.Controls.ListBox listBox)
+        {
+            CommitMouseGestureExtensionCandidate(listBox);
+        }
+    }
+
+    private void MouseGestureExtensionListBox_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is System.Windows.Controls.ListBox listBox)
+        {
+            CommitMouseGestureExtensionCandidate(listBox);
+        }
+    }
+
+    private static void CommitMouseGestureExtensionCandidate(System.Windows.Controls.ListBox listBox)
+    {
+        if (listBox.DataContext is not MouseGestureQuickBindItem item ||
+            listBox.SelectedItem is not MouseGestureExtensionOption option)
+        {
+            return;
+        }
+
+        item.SelectedExtension = option;
+        item.ExtensionSearchText = option.Label;
+        item.FilteredExtensionOptions = [];
+        item.IsExtensionPopupOpen = false;
+    }
+
+    private void MouseGestureAppSearchBox_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: MouseGestureQuickBindItem item })
+        {
+            if (sender is System.Windows.Controls.TextBox textBox)
+            {
+                textBox.SelectAll();
+            }
+
+            RefreshMouseGestureAppCandidates(item, item.AppSearchText);
+            item.IsAppPopupOpen = true;
+        }
+    }
+
+    private void MouseGestureAppDropdownToggle_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement fe && fe.DataContext is MouseGestureQuickBindItem item)
+        {
+            e.Handled = true;
+            RefreshMouseGestureAppCandidates(item, string.Empty);
+            item.IsAppPopupOpen = true;
+            if (fe.Parent is Grid grid && grid.Children.OfType<System.Windows.Controls.TextBox>().FirstOrDefault() is { } textBox)
+            {
+                textBox.Focus();
+                textBox.SelectAll();
+            }
+        }
+    }
+
+    private void MouseGestureAppSearchBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: MouseGestureQuickBindItem item })
+        {
+            return;
+        }
+
+        var selected = item.SelectedApp;
+        if (selected == null ||
+            !string.Equals(selected.AppName, item.AppSearchText ?? string.Empty, StringComparison.OrdinalIgnoreCase))
+        {
+            item.SelectedApp = null;
+        }
+
+        RefreshMouseGestureAppCandidates(item, item.AppSearchText);
+        item.IsAppPopupOpen = true;
+    }
+
+    private void MouseGestureAppSearchBox_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (sender is not DependencyObject source ||
+            source is not FrameworkElement { DataContext: MouseGestureQuickBindItem item } ||
+            e.Key != Key.Down ||
+            item.FilteredAppOptions.Count == 0)
+        {
+            return;
+        }
+
+        var listBox = FindYarnSelectExtensionListBox(source);
+        if (listBox != null)
+        {
+            listBox.SelectedIndex = 0;
+            var itemContainer = listBox.ItemContainerGenerator.ContainerFromIndex(0) as FrameworkElement;
+            itemContainer?.Focus();
+            listBox.Focus();
+            e.Handled = true;
+        }
+    }
+
+    private void MouseGestureAppListBox_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.ListBox listBox)
+        {
+            return;
+        }
+
+        if (e.Key == Key.Enter)
+        {
+            CommitMouseGestureAppCandidate(listBox);
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape && listBox.DataContext is MouseGestureQuickBindItem item)
+        {
+            item.FilteredAppOptions = [];
+            item.IsAppPopupOpen = false;
+            e.Handled = true;
+        }
+    }
+
+    private void MouseGestureAppListBox_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is System.Windows.Controls.ListBox listBox)
+        {
+            CommitMouseGestureAppCandidate(listBox);
+        }
+    }
+
+    private void MouseGestureAppListBox_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is System.Windows.Controls.ListBox listBox)
+        {
+            CommitMouseGestureAppCandidate(listBox);
+        }
+    }
+
+    private static void CommitMouseGestureAppCandidate(System.Windows.Controls.ListBox listBox)
+    {
+        if (listBox.DataContext is not MouseGestureQuickBindItem item ||
+            listBox.SelectedItem is not MouseGestureAppOption option)
+        {
+            return;
+        }
+
+        item.SelectedApp = option;
+        item.AppSearchText = option.AppName;
+        item.FilteredAppOptions = [];
+        item.IsAppPopupOpen = false;
+    }
+
+    private void AddNewMouseGestureButton_Click(object sender, RoutedEventArgs e)
+    {
+        var runtimeTrigger = MouseGestureTriggerModes.ToRuntimeTrigger(MouseGestureTriggerMode);
+        var trigger = string.IsNullOrWhiteSpace(runtimeTrigger) ? "right-drag" : runtimeTrigger;
+
+        var recorder = new MouseGestureRecorderWindow(trigger, initialSequence: null)
+        {
+            Owner = this
+        };
+
+        if (recorder.ShowDialog() == true && recorder.WasAccepted && (!string.IsNullOrWhiteSpace(recorder.ResultSequence) || recorder.ResultTemplateData != null))
+        {
+            var seq = recorder.ResultSequence;
+            var sign = recorder.ResultSign;
+            var data = recorder.ResultTemplateData;
+
+            // 检查常用手势列表中是否已有该手势
+            var existing = MouseGestureQuickBindItems.FirstOrDefault(x => string.Equals(x.Sequence, seq, StringComparison.OrdinalIgnoreCase));
+            if (existing != null)
+            {
+                existing.IsExtensionPopupOpen = true;
+                SyncStatusText = $"已录制手势 [{existing.DisplayName}]，请在列表中选择小程序完成绑定。";
+            }
+            else
+            {
+                var displayName = string.IsNullOrWhiteSpace(sign) ? MouseGestureNaming.GetDisplayName(seq) : sign;
+                var newItem = new MouseGestureQuickBindItem(seq, displayName, "自定义手势", assignedTitle: null, data: data);
+                MouseGestureQuickBindItems.Insert(0, newItem);
+                newItem.IsExtensionPopupOpen = true;
+                SyncStatusText = $"已录制新手势 [{displayName}]，请选择小程序完成绑定。";
+            }
+        }
     }
 
     private void RefreshMouseGestureManagementButton_Click(object sender, RoutedEventArgs e)
@@ -5185,6 +8205,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
 
         _settings = _mainWindow.GetCurrentAppSettings();
+        _settingsPersistence.Reset(_settings);
         RefreshExtensionCacheFromMainWindow();
         RefreshExtensionItems();
         RefreshMouseGestureManagement();
@@ -5235,7 +8256,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
 
         // Preserve scroll position to prevent unwanted scroll jump
-        var scrollOffset = MainContentScrollViewer?.VerticalOffset ?? 0;
+        var scrollOffset = ExtensionCardsScrollViewer?.VerticalOffset ?? 0;
 
         var isOpen = SelectedExtensionItem != null;
         ExtensionDetailColumn.Width = isOpen ? new GridLength(380) : new GridLength(0);
@@ -5243,10 +8264,15 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         ScheduleExtensionCardWidthUpdate();
 
         // Restore scroll position after layout update
-        if (MainContentScrollViewer != null)
+        if (ExtensionCardsScrollViewer != null)
         {
-            Dispatcher.BeginInvoke(new Action(() => MainContentScrollViewer.ScrollToVerticalOffset(scrollOffset)), DispatcherPriority.Loaded);
+            Dispatcher.BeginInvoke(new Action(() => ExtensionCardsScrollViewer.ScrollToVerticalOffset(scrollOffset)), DispatcherPriority.Loaded);
         }
+    }
+
+    private void ExtensionCardsScrollViewer_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        ScheduleExtensionCardWidthUpdate();
     }
 
     private void ScheduleExtensionCardWidthUpdate()
@@ -5270,11 +8296,9 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         const double cardGap = 14;
         const double viewportPaddingAllowance = 24;
 
-        var viewportWidth = ExtensionCardsScrollViewer.ViewportWidth;
-        if (double.IsNaN(viewportWidth) || viewportWidth <= 0 || double.IsInfinity(viewportWidth))
-        {
-            viewportWidth = ExtensionCardsScrollViewer.ActualWidth;
-        }
+        var viewportWidth = ExtensionCardsScrollViewer.ViewportWidth > 0
+            ? ExtensionCardsScrollViewer.ViewportWidth
+            : ExtensionCardsScrollViewer.ActualWidth;
 
         var availableWidth = Math.Max(0, viewportWidth - viewportPaddingAllowance);
         if (availableWidth <= 0)
@@ -5333,7 +8357,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                     command.Category,
                     command.DeclaredVersion,
                     command.ExtensionDirectoryPath ?? string.Empty,
-                    command.Category.Contains("网页搜索", StringComparison.OrdinalIgnoreCase) ? "网页搜索扩展" : "本地扩展",
+                    command.Category.Contains("网页搜索", StringComparison.OrdinalIgnoreCase) ? "网页搜索小程序" : "本地小程序",
                     command.Source == CommandSource.LocalExtension,
                     _mainWindow.IsExtensionEnabled(command.ExtensionId),
                     cloudRecord?.IsPublished != 0,
@@ -5361,1639 +8385,6 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 command.GlobalShortcut));
         }
     }
-
-    private void ApplySettingsSearch(string query)
-    {
-        query = query.Trim();
-        if (string.IsNullOrWhiteSpace(query))
-        {
-            return;
-        }
-
-        var target = NavigationItems.FirstOrDefault(item => SettingsSearchMatches(item.Key, query));
-        if (target != null)
-        {
-            SelectedNavigation = target;
-        }
-    }
-
-    private static bool SettingsSearchMatches(string sectionKey, string query)
-    {
-        return GetSettingsSearchTerms(sectionKey)
-            .Any(term => term.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                         query.Contains(term, StringComparison.OrdinalIgnoreCase));
-    }
-
-    private static string[] GetSettingsSearchTerms(string sectionKey) => sectionKey switch
-    {
-        "general" =>
-        [
-            "常规", "开机", "启动", "托盘", "关闭", "主程序", "快捷键", "general", "startup", "launch", "tray", "hotkey"
-        ],
-        "sync" =>
-        [
-            "同步", "云", "云同步", "账号", "登录", "注册", "坚果云", "webdav", "cloud", "cloudflare", "服务器", "密码", "配置"
-        ],
-        "environment" =>
-        [
-            "环境变量", "密钥", "key", "token", "notion", "api", "secret", "env", "environment"
-        ],
-        "extensions" =>
-        [
-            "扩展", "插件", "目录", "本地", "删除", "编辑", "搜索", "打开目录", "extension", "plugin", "folder", "delete", "edit"
-        ],
-        "recycle" =>
-        [
-            "回收站", "恢复", "彻底删除", "已删除", "扩展回收站", "recycle", "trash", "restore", "deleted"
-        ],
-        "shortcuts" =>
-        [
-            "快捷键", "热键", "组合键", "录制", "全局快捷键", "shortcut", "hotkey", "keyboard"
-        ],
-        "quickpanel" =>
-        [
-            "鼠标触发", "鼠标面板", "快捷面板", "面板", "鼠标", "右键", "中键", "x1", "x2", "长按", "滚轮", "松开", "quick panel", "mouse", "middle", "right click"
-        ],
-        "mousegestures" =>
-        [
-            "鼠标手势", "手势", "轨迹", "录制", "绑定", "常用手势", "gesture", "mouse gesture", "stroke", "draw"
-        ],
-        "radial" =>
-        [
-            "燕环", "轮盘", "游戏轮盘", "capslock", "caps", "radial", "ring", "wheel", "gesture"
-        ],
-        "yarnselect" =>
-        [
-            "燕选", "左键辅助", "鼠标选中", "选中操作", "复制", "剪切", "粘贴", "搜索选中", "left button", "selection", "copy", "paste"
-        ],
-        "yanm" =>
-        [
-            "燕幕", "全局信息层", "信息展示", "组件", "webview", "html", "win", "capslock", "按住", "双击", "overlay", "dashboard"
-        ],
-        "about" =>
-        [
-            "关于", "版本", "协议", "logo", "about", "version", "license"
-        ],
-        _ => [sectionKey]
-    };
-
-    private static bool IsInteractiveSource(DependencyObject? source)
-    {
-        while (source != null)
-        {
-            if (source is System.Windows.Controls.TextBox or
-                System.Windows.Controls.Primitives.ButtonBase or
-                Selector or
-                System.Windows.Controls.Primitives.ScrollBar or
-                ResizeGrip)
-            {
-                return true;
-            }
-
-            source = VisualTreeHelper.GetParent(source);
-        }
-
-        return false;
-    }
-
-    private void UpdateQuickPanelMouseTrigger(bool value, Action<QuickPanelMouseTriggerSettings> update)
-    {
-        _settings.QuickPanelMouseTriggers ??= new QuickPanelMouseTriggerSettings();
-        update(_settings.QuickPanelMouseTriggers);
-        OnPropertyChanged();
-        OnPropertyChanged(nameof(QuickPanelTriggerSummary));
-        OnPropertyChanged(nameof(MouseGestureTriggerSummary));
-    }
-
-    private void UpdateRadialMenu<T>(T value, Action<RadialMenuSettings> update)
-    {
-        _settings.RadialMenu ??= new RadialMenuSettings();
-        update(_settings.RadialMenu);
-        OnPropertyChanged();
-        OnPropertyChanged(nameof(RadialMouseTriggerMode));
-        OnPropertyChanged(nameof(RadialUsesCustomShortcut));
-        OnPropertyChanged(nameof(RadialCustomShortcut));
-        OnPropertyChanged(nameof(RadialMenuSummary));
-    }
-
-    private static bool IsRightMouseTriggerMode(string mode)
-    {
-        return string.Equals(mode, MouseTriggerModes.RightDrag, StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(mode, MouseTriggerModes.RightLongPress, StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(mode, MouseTriggerModes.CtrlRightClick, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static void ApplyMouseTriggerModeToRadialFlags(RadialMenuSettings radial)
-    {
-        var mode = MouseTriggerModes.Normalize(radial.MouseTriggerMode);
-        switch (mode)
-        {
-            case MouseTriggerModes.MiddleDown:
-                radial.TriggerMiddleButtonDown = true;
-                break;
-            case MouseTriggerModes.X1Down:
-                radial.TriggerX1ButtonDown = true;
-                break;
-            case MouseTriggerModes.X2Down:
-                radial.TriggerX2ButtonDown = true;
-                break;
-            case MouseTriggerModes.CtrlLeftClick:
-                radial.TriggerCtrlLeftClick = true;
-                break;
-            case MouseTriggerModes.CtrlRightClick:
-                radial.TriggerCtrlRightClick = true;
-                break;
-            case MouseTriggerModes.CtrlMiddleClick:
-                radial.TriggerCtrlMiddleClick = true;
-                break;
-            case MouseTriggerModes.MiddleLongPress:
-                radial.TriggerMiddleButtonLongPress = true;
-                break;
-            case MouseTriggerModes.RightLongPress:
-                radial.TriggerRightButtonLongPress = true;
-                break;
-            case MouseTriggerModes.RightDrag:
-                radial.TriggerRightButtonDrag = true;
-                break;
-            case MouseTriggerModes.MiddleDrag:
-                radial.TriggerMiddleButtonDrag = true;
-                break;
-            case MouseTriggerModes.HorizontalWheel:
-                radial.TriggerHorizontalWheel = true;
-                break;
-        }
-    }
-
-    public string RadialPreviewDebugLog
-    {
-        get => _radialPreviewDebugLog;
-        private set
-        {
-            if (value == _radialPreviewDebugLog)
-            {
-                return;
-            }
-
-            _radialPreviewDebugLog = value;
-            OnPropertyChanged();
-        }
-    }
-
-    private static void SyncRadialMouseTriggerModeFromFlags(RadialMenuSettings radial)
-    {
-        radial.MouseTriggerMode =
-            radial.TriggerRightButtonDrag ? MouseTriggerModes.RightDrag :
-            radial.TriggerMiddleButtonDrag ? MouseTriggerModes.MiddleDrag :
-            radial.TriggerRightButtonLongPress ? MouseTriggerModes.RightLongPress :
-            radial.TriggerMiddleButtonLongPress ? MouseTriggerModes.MiddleLongPress :
-            radial.TriggerMiddleButtonDown ? MouseTriggerModes.MiddleDown :
-            radial.TriggerX1ButtonDown ? MouseTriggerModes.X1Down :
-            radial.TriggerX2ButtonDown ? MouseTriggerModes.X2Down :
-            radial.TriggerHorizontalWheel ? MouseTriggerModes.HorizontalWheel :
-            radial.TriggerCtrlLeftClick ? MouseTriggerModes.CtrlLeftClick :
-            radial.TriggerCtrlRightClick ? MouseTriggerModes.CtrlRightClick :
-            radial.TriggerCtrlMiddleClick ? MouseTriggerModes.CtrlMiddleClick :
-            MouseTriggerModes.None;
-    }
-
-    private static void ApplyMouseTriggerModeToYanmFlags(YanmSettings yanm)
-    {
-        var mode = MouseTriggerModes.Normalize(yanm.MouseTriggerMode);
-        switch (mode)
-        {
-            case MouseTriggerModes.MiddleDown:
-                yanm.TriggerMiddleButtonDown = true;
-                break;
-            case MouseTriggerModes.X1Down:
-                yanm.TriggerX1ButtonDown = true;
-                break;
-            case MouseTriggerModes.X2Down:
-                yanm.TriggerX2ButtonDown = true;
-                break;
-            case MouseTriggerModes.CtrlLeftClick:
-                yanm.TriggerCtrlLeftClick = true;
-                break;
-            case MouseTriggerModes.CtrlRightClick:
-                yanm.TriggerCtrlRightClick = true;
-                break;
-            case MouseTriggerModes.CtrlMiddleClick:
-                yanm.TriggerCtrlMiddleClick = true;
-                break;
-            case MouseTriggerModes.MiddleLongPress:
-                yanm.TriggerMiddleButtonLongPress = true;
-                break;
-            case MouseTriggerModes.RightLongPress:
-                yanm.TriggerRightButtonLongPress = true;
-                break;
-            case MouseTriggerModes.RightDrag:
-                yanm.TriggerRightButtonDrag = true;
-                break;
-            case MouseTriggerModes.MiddleDrag:
-                yanm.TriggerMiddleButtonDrag = true;
-                break;
-            case MouseTriggerModes.HorizontalWheel:
-                yanm.TriggerHorizontalWheel = true;
-                break;
-        }
-    }
-
-    private static void SyncYanmMouseTriggerModeFromFlags(YanmSettings yanm)
-    {
-        yanm.MouseTriggerMode =
-            yanm.TriggerRightButtonDrag ? MouseTriggerModes.RightDrag :
-            yanm.TriggerMiddleButtonDrag ? MouseTriggerModes.MiddleDrag :
-            yanm.TriggerRightButtonLongPress ? MouseTriggerModes.RightLongPress :
-            yanm.TriggerMiddleButtonLongPress ? MouseTriggerModes.MiddleLongPress :
-            yanm.TriggerMiddleButtonDown ? MouseTriggerModes.MiddleDown :
-            yanm.TriggerX1ButtonDown ? MouseTriggerModes.X1Down :
-            yanm.TriggerX2ButtonDown ? MouseTriggerModes.X2Down :
-            yanm.TriggerHorizontalWheel ? MouseTriggerModes.HorizontalWheel :
-            yanm.TriggerCtrlLeftClick ? MouseTriggerModes.CtrlLeftClick :
-            yanm.TriggerCtrlRightClick ? MouseTriggerModes.CtrlRightClick :
-            yanm.TriggerCtrlMiddleClick ? MouseTriggerModes.CtrlMiddleClick :
-            MouseTriggerModes.None;
-    }
-
-    private void SaveQuickPanelTriggerSettings()
-    {
-        SaveRadialMenuSlots();
-        _settings.RadialMenu ??= new RadialMenuSettings();
-        _settings.Yanm ??= new YanmSettings();
-        _settings.QuickPanelMouseTriggers ??= new QuickPanelMouseTriggerSettings();
-        _settings.RadialMenu.ActivationKey = RadialActivationKeys.Normalize(_settings.RadialMenu.ActivationKey);
-        _settings.RadialMenu.CustomShortcut = (_settings.RadialMenu.CustomShortcut ?? string.Empty).Trim();
-        _settings.RadialMenu.WhitelistedProcesses = ParseProcessList(string.Join(", ", _settings.RadialMenu.WhitelistedProcesses ?? []));
-        _settings.RadialMenu.BlacklistedProcesses = ParseProcessList(string.Join(", ", _settings.RadialMenu.BlacklistedProcesses ?? []));
-        SyncRadialMouseTriggerModeFromFlags(_settings.RadialMenu);
-        SyncYanmMouseTriggerModeFromFlags(_settings.Yanm);
-        ApplyMouseTriggerModeToRadialFlags(_settings.RadialMenu);
-        ApplyMouseTriggerModeToYanmFlags(_settings.Yanm);
-        AppSettingsStore.Save(_settings);
-        _mainWindow.RefreshAppSettings();
-        _mainWindow.NotifyQuickPanelSettingsChanged("quickpanel-trigger-settings-saved");
-        SyncStatusText = $"鼠标面板触发已保存：{QuickPanelTriggerSummary}";
-        OnPropertyChanged(nameof(MouseGestureTriggerSummary));
-        OnPropertyChanged(nameof(MouseGestureTriggerMode));
-        OnPropertyChanged(nameof(MouseGestureManagementSummary));
-        OnPropertyChanged(nameof(YanmSummary));
-        OnPropertyChanged(nameof(RadialAssignedMouseTriggerSummary));
-        OnPropertyChanged(nameof(YanmAssignedMouseTriggerSummary));
-        OnPropertyChanged(nameof(RadialMenuSummary));
-        if (IsMouseGesturesSelected)
-        {
-            RefreshMouseGestureManagement();
-        }
-    }
-
-    private void SaveYarnSelectSettings_Click(object sender, RoutedEventArgs e)
-    {
-        SaveYarnSelectSettings();
-    }
-
-    private async void PickYanmWhitelistProcessButton_Click(object sender, RoutedEventArgs e)
-    {
-        await PickProcessAndAddAsync("燕幕白名单", process =>
-        {
-            _settings.Yanm.WhitelistedProcesses = AddProcessToList(_settings.Yanm.WhitelistedProcesses, process);
-            OnPropertyChanged(nameof(YanmWhitelistedProcessesText));
-            SaveYanmSettings(requireCustomShortcut: false);
-        });
-    }
-
-    private async void PickYanmBlacklistProcessButton_Click(object sender, RoutedEventArgs e)
-    {
-        await PickProcessAndAddAsync("燕幕黑名单", process =>
-        {
-            _settings.Yanm.BlacklistedProcesses = AddProcessToList(_settings.Yanm.BlacklistedProcesses, process);
-            OnPropertyChanged(nameof(YanmBlacklistedProcessesText));
-            SaveYanmSettings(requireCustomShortcut: false);
-        });
-    }
-
-    private async void PickRadialWhitelistProcessButton_Click(object sender, RoutedEventArgs e)
-    {
-        await PickProcessAndAddAsync("燕环白名单", process =>
-        {
-            _settings.RadialMenu.WhitelistedProcesses = AddProcessToList(_settings.RadialMenu.WhitelistedProcesses, process);
-            OnPropertyChanged(nameof(RadialWhitelistedProcessesText));
-            SaveQuickPanelTriggerSettings();
-        });
-    }
-
-    private async void PickRadialBlacklistProcessButton_Click(object sender, RoutedEventArgs e)
-    {
-        await PickProcessAndAddAsync("燕环黑名单", process =>
-        {
-            _settings.RadialMenu.BlacklistedProcesses = AddProcessToList(_settings.RadialMenu.BlacklistedProcesses, process);
-            OnPropertyChanged(nameof(RadialBlacklistedProcessesText));
-            SaveQuickPanelTriggerSettings();
-        });
-    }
-
-    private async void PickYarnSelectWhitelistProcessButton_Click(object sender, RoutedEventArgs e)
-    {
-        await PickProcessAndAddAsync("燕选白名单", process =>
-        {
-            _settings.YarnSelect.WhitelistedProcesses = AddProcessToList(_settings.YarnSelect.WhitelistedProcesses, process);
-            OnPropertyChanged(nameof(YarnSelectWhitelistedProcessesText));
-            SaveYarnSelectSettings();
-        });
-    }
-
-    private async void PickYarnSelectBlacklistProcessButton_Click(object sender, RoutedEventArgs e)
-    {
-        await PickProcessAndAddAsync("燕选黑名单", process =>
-        {
-            _settings.YarnSelect.BlacklistedProcesses = AddProcessToList(_settings.YarnSelect.BlacklistedProcesses, process);
-            OnPropertyChanged(nameof(YarnSelectBlacklistedProcessesText));
-            SaveYarnSelectSettings();
-        });
-    }
-
-    private async Task PickProcessAndAddAsync(string targetName, Action<string> addProcess)
-    {
-        SyncStatusText = $"{targetName}：设置窗口将隐藏，请在 2.5 秒内切到目标窗口。";
-        HostAssets.AppendLog($"Settings: process picker started for {targetName}.");
-        Hide();
-        await Task.Delay(2500);
-        var processName = GetForegroundProcessName();
-        Show();
-        Activate();
-
-        if (string.IsNullOrWhiteSpace(processName))
-        {
-            SyncStatusText = $"{targetName}：没有获取到目标进程。";
-            return;
-        }
-
-        addProcess(processName);
-        SyncStatusText = $"{targetName} 已添加进程：{processName}";
-        HostAssets.AppendLog($"Settings: process picker added process={processName}, target={targetName}.");
-    }
-
-    private static List<string> AddProcessToList(IEnumerable<string>? source, string processName) =>
-        (source ?? [])
-        .Append(processName)
-        .Where(static item => !string.IsNullOrWhiteSpace(item))
-        .Select(static item => item.Trim())
-        .Distinct(StringComparer.OrdinalIgnoreCase)
-        .ToList();
-
-    private static string GetForegroundProcessName()
-    {
-        try
-        {
-            var hwnd = GetForegroundWindow();
-            if (hwnd == IntPtr.Zero)
-            {
-                return string.Empty;
-            }
-
-            _ = GetWindowThreadProcessId(hwnd, out var processId);
-            return processId == 0 ? string.Empty : Process.GetProcessById((int)processId).ProcessName;
-        }
-        catch (Exception ex)
-        {
-            HostAssets.AppendLog($"Settings: failed to get foreground process, error={ex.Message}");
-            return string.Empty;
-        }
-    }
-
-    private void UpdateYarnSelect(bool value, Action<YarnSelectSettings> update)
-    {
-        _settings.YarnSelect ??= new YarnSelectSettings();
-        update(_settings.YarnSelect);
-        OnPropertyChanged();
-        OnPropertyChanged(nameof(YarnSelectSummary));
-    }
-
-    private void UpdateYanm<T>(T value, Action<YanmSettings> update)
-    {
-        _settings.Yanm ??= new YanmSettings();
-        update(_settings.Yanm);
-        OnPropertyChanged();
-        OnPropertyChanged(nameof(YanmUsesCustomShortcut));
-        OnPropertyChanged(nameof(YanmCustomShortcut));
-        OnPropertyChanged(nameof(YanmWhitelistedProcessesText));
-        OnPropertyChanged(nameof(YanmBlacklistedProcessesText));
-        OnPropertyChanged(nameof(YanmMouseTriggerMode));
-        OnPropertyChanged(nameof(YanmMouseTriggerRightDrag));
-        OnPropertyChanged(nameof(YanmSummary));
-        OnPropertyChanged(nameof(YanmAssignedMouseTriggerSummary));
-        OnPropertyChanged(nameof(QuickPanelTriggerSummary));
-    }
-
-    private void SaveYanmSettings_Click(object sender, RoutedEventArgs e)
-    {
-        SaveYanmSettings();
-    }
-
-    private void YanmActivationKey_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        SaveYanmSettings(requireCustomShortcut: false);
-        if (string.Equals(_settings.Yanm?.ActivationKey, YanmActivationKeys.Custom, StringComparison.OrdinalIgnoreCase) &&
-            string.IsNullOrWhiteSpace(_settings.Yanm?.CustomShortcut))
-        {
-            SyncStatusText = "已切换为自定义快捷键，请点击“录制快捷键”完成设置。";
-            OnPropertyChanged(nameof(YanmSummary));
-        }
-    }
-
-    private void SaveYanmSettings(bool requireCustomShortcut = true)
-    {
-        _settings.Yanm ??= new YanmSettings();
-        _settings.Yanm.ActivationKey = YanmActivationKeys.Normalize(_settings.Yanm.ActivationKey);
-        _settings.Yanm.MouseTriggerMode = MouseTriggerModes.Normalize(_settings.Yanm.MouseTriggerMode);
-        _settings.Yanm.WhitelistedProcesses = ParseProcessList(string.Join(", ", _settings.Yanm.WhitelistedProcesses ?? []));
-        _settings.Yanm.BlacklistedProcesses = ParseProcessList(string.Join(", ", _settings.Yanm.BlacklistedProcesses ?? []));
-        ApplyMouseTriggerModeToYanmFlags(_settings.Yanm);
-        SyncYanmMouseTriggerModeFromFlags(_settings.Yanm);
-        if (requireCustomShortcut &&
-            string.Equals(_settings.Yanm.ActivationKey, YanmActivationKeys.Custom, StringComparison.OrdinalIgnoreCase) &&
-            string.IsNullOrWhiteSpace(_settings.Yanm.CustomShortcut))
-        {
-            System.Windows.MessageBox.Show(this, "已选择自定义快捷键，请先录制一个快捷键再保存。", "缺少快捷键", MessageBoxButton.OK, MessageBoxImage.Information);
-            return;
-        }
-
-        AppSettingsStore.Save(_settings);
-        _mainWindow.NotifyQuickPanelSettingsChanged("yanm-settings-saved");
-        SyncStatusText = $"燕幕设置已保存：{YanmSummary}";
-        OnPropertyChanged(nameof(EnableYanm));
-        OnPropertyChanged(nameof(YanmActivationKey));
-        OnPropertyChanged(nameof(YanmTriggerHold));
-        OnPropertyChanged(nameof(YanmTriggerDoubleTap));
-        OnPropertyChanged(nameof(YanmUsesCustomShortcut));
-        OnPropertyChanged(nameof(YanmCustomShortcut));
-        OnPropertyChanged(nameof(YanmWhitelistedProcessesText));
-        OnPropertyChanged(nameof(YanmBlacklistedProcessesText));
-        OnPropertyChanged(nameof(YanmMouseTriggerMode));
-        OnPropertyChanged(nameof(YanmMouseTriggerRightDrag));
-        OnPropertyChanged(nameof(YanmSummary));
-        OnPropertyChanged(nameof(YanmAssignedMouseTriggerSummary));
-    }
-
-    private void SaveYarnSelectSettings()
-    {
-        _settings.YarnSelect ??= new YarnSelectSettings();
-        _settings.YarnSelect.WhitelistedProcesses ??= [];
-        _settings.YarnSelect.BlacklistedProcesses ??= [];
-        _settings.YarnSelect.Rules = YarnSelectRules
-            .Select(item => YarnSelectSettings.NormalizeRule(new YarnSelectRuleSettings
-            {
-                Enabled = item.Enabled,
-                TriggerKey = item.TriggerKey,
-                ActionType = item.ActionType,
-                ExtensionId = ResolveYarnSelectExtensionId(item),
-                Description = item.Description
-            }))
-            .Where(static rule => !string.IsNullOrWhiteSpace(rule.TriggerKey))
-            .DistinctBy(static rule => rule.TriggerKey, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-        AppSettingsStore.Save(_settings);
-        _mainWindow.NotifyQuickPanelSettingsChanged("yarnselect-settings-saved");
-        SyncStatusText = $"燕选设置已保存：{YarnSelectSummary}";
-        RefreshYarnSelectBindings();
-    }
-
-    private string ResolveYarnSelectExtensionId(YarnSelectRuleItem item)
-    {
-        if (!string.IsNullOrWhiteSpace(item.ExtensionId) &&
-            YarnSelectExtensionOptions.Any(option => option.ExtensionId.Equals(item.ExtensionId, StringComparison.OrdinalIgnoreCase)))
-        {
-            return item.ExtensionId;
-        }
-
-        var searchText = (item.ExtensionSearchText ?? string.Empty).Trim();
-        return YarnSelectExtensionOptions.FirstOrDefault(option =>
-            option.Title.Equals(searchText, StringComparison.OrdinalIgnoreCase) ||
-            option.ExtensionId.Equals(searchText, StringComparison.OrdinalIgnoreCase))
-            ?.ExtensionId ?? string.Empty;
-    }
-
-    private void RefreshYarnSelectBindings()
-    {
-        _settings.YarnSelect ??= new YarnSelectSettings();
-        _settings.YarnSelect.Rules ??= [];
-        if (_settings.YarnSelect.Rules.Count == 0)
-        {
-            _settings.YarnSelect.Rules = YarnSelectSettings.CreateDefaultRulesFromLegacy(_settings.YarnSelect);
-        }
-
-        RefreshYarnSelectExtensionOptions();
-        YarnSelectRules.Clear();
-        foreach (var rule in _settings.YarnSelect.Rules.Select(YarnSelectSettings.NormalizeRule))
-        {
-            var item = new YarnSelectRuleItem(rule);
-            ApplyYarnSelectExtensionSelection(item);
-            YarnSelectRules.Add(item);
-        }
-
-        OnPropertyChanged(nameof(EnableYarnSelect));
-        OnPropertyChanged(nameof(YarnSelectCopy));
-        OnPropertyChanged(nameof(YarnSelectCut));
-        OnPropertyChanged(nameof(YarnSelectPaste));
-        OnPropertyChanged(nameof(YarnSelectSearch));
-        OnPropertyChanged(nameof(YarnSelectRun));
-        OnPropertyChanged(nameof(YarnSelectSmartCopyPaste));
-        OnPropertyChanged(nameof(YarnSelectSidePaste));
-        OnPropertyChanged(nameof(YarnSelectWhitelistedProcessesText));
-        OnPropertyChanged(nameof(YarnSelectBlacklistedProcessesText));
-        OnPropertyChanged(nameof(YarnSelectSummary));
-    }
-
-    private void RefreshYarnSelectExtensionOptions()
-    {
-        YarnSelectExtensionOptions.Clear();
-        RadialMenuExtensionOptions.Clear();
-        YarnSelectExtensionOptions.Add(new YarnSelectExtensionOption(string.Empty, "不绑定扩展"));
-        foreach (var command in _mainWindow.GetLocalExtensionsForSettings())
-        {
-            var option = new YarnSelectExtensionOption(command);
-            YarnSelectExtensionOptions.Add(option);
-        }
-
-        foreach (var command in _mainWindow.GetAllCommands()
-                     .Where(IsRadialMenuCommandCandidate)
-                     .DistinctBy(static command => command.ExtensionId, StringComparer.OrdinalIgnoreCase)
-                     .OrderBy(static command => command.ItemKindLabel, StringComparer.OrdinalIgnoreCase)
-                     .ThenBy(static command => command.Title, StringComparer.OrdinalIgnoreCase))
-        {
-            RadialMenuExtensionOptions.Add(new YarnSelectExtensionOption(command));
-        }
-
-        RefreshRadialMenuCommandCandidates(RadialMenuSearchText);
-    }
-
-    private void RefreshRadialMenuSlots()
-    {
-        if (_isRefreshingRadialMenu)
-        {
-            return;
-        }
-
-        try
-        {
-            _isRefreshingRadialMenu = true;
-            RefreshYarnSelectExtensionOptions();
-            _settings.RadialMenu ??= new RadialMenuSettings();
-            _settings.RadialMenu.Pages ??= [];
-            if (_settings.RadialMenu.Pages.Count == 0)
-            {
-                _settings.RadialMenu.Pages.Add(new RadialMenuPageSettings { Id = "default", Name = "默认" });
-            }
-
-            if (_settings.RadialMenu.Pages.All(page => !page.Id.Equals(_settings.RadialMenu.SelectedPageId, StringComparison.OrdinalIgnoreCase)))
-            {
-                _settings.RadialMenu.SelectedPageId = _settings.RadialMenu.Pages[0].Id;
-            }
-
-            RadialMenuPages.Clear();
-            foreach (var page in _settings.RadialMenu.Pages)
-            {
-                RadialMenuPages.Add(new RadialMenuPageEditorItem(page.Id, page.Name));
-            }
-
-            RadialMenuChildPageOptions.Clear();
-            RadialMenuChildPageOptions.Add(new RadialMenuPageEditorItem(string.Empty, "不进入子环"));
-            foreach (var page in _settings.RadialMenu.Pages)
-            {
-                RadialMenuChildPageOptions.Add(new RadialMenuPageEditorItem(page.Id, page.Name));
-            }
-
-            var selectedPage = _settings.RadialMenu.Pages.First(page => page.Id.Equals(_settings.RadialMenu.SelectedPageId, StringComparison.OrdinalIgnoreCase));
-            selectedPage.Slots ??= [];
-            selectedPage.SlotTitles ??= [];
-            selectedPage.ChildPageIds ??= [];
-            while (selectedPage.Slots.Count < RadialMenuSettings.TotalSlotCount) selectedPage.Slots.Add(null);
-            while (selectedPage.SlotTitles.Count < RadialMenuSettings.TotalSlotCount) selectedPage.SlotTitles.Add(null);
-            while (selectedPage.ChildPageIds.Count < RadialMenuSettings.TotalSlotCount) selectedPage.ChildPageIds.Add(null);
-
-            RadialMenuSlots.Clear();
-            BuildRadialPreviewSeparators();
-            var center = 180.0;
-            var innerRadius = 78.0;
-            var outerRadius = 142.0;
-            var runtimeItems = _mainWindow.GetRadialMenuItems(selectedPage.Id);
-            for (var index = 0; index < RadialMenuSettings.TotalSlotCount; index++)
-            {
-                var isOuter = index >= RadialMenuSettings.InnerSlotCount;
-                var offset = isOuter ? index - RadialMenuSettings.InnerSlotCount : index;
-                var step = isOuter ? 22.5 : 45.0;
-                var angle = (-90 + offset * step) * Math.PI / 180.0;
-                var radius = isOuter ? outerRadius : innerRadius;
-                var startAngleDegrees = isOuter ? -101.25 + offset * step : -112.5 + offset * step;
-                var runtimeItem = runtimeItems.ElementAtOrDefault(index);
-                var runtimeCommand = runtimeItem?.Command;
-                var childPageId = selectedPage.ChildPageIds.ElementAtOrDefault(index) ?? string.Empty;
-                RadialMenuSlots.Add(new RadialMenuSlotEditorItem(
-                    index,
-                    selectedPage.Slots.ElementAtOrDefault(index) ?? string.Empty,
-                    selectedPage.SlotTitles.ElementAtOrDefault(index) ?? string.Empty,
-                    childPageId,
-                    ResolveRadialExtensionTitle(
-                        selectedPage.Slots.ElementAtOrDefault(index),
-                        selectedPage.SlotTitles.ElementAtOrDefault(index)),
-                    ResolveRadialChildPageTitle(childPageId),
-                    center + Math.Cos(angle) * radius - (isOuter ? 31 : 38),
-                    center + Math.Sin(angle) * radius - (isOuter ? 25 : 30),
-                    isOuter,
-                    BuildRadialSectorGeometry(center, center, isOuter ? 113.0 : 28.0, isOuter ? 176.0 : 113.0, startAngleDegrees, step),
-                    runtimeCommand?.IconSource,
-                    runtimeCommand?.VectorIcon,
-                    runtimeCommand?.AccentBrush ?? System.Windows.Media.Brushes.Transparent,
-                    runtimeCommand?.DisplayGlyph ?? (string.IsNullOrWhiteSpace(childPageId) ? string.Empty : "环")));
-            }
-
-            OnPropertyChanged(nameof(SelectedRadialMenuPageId));
-            OnPropertyChanged(nameof(SelectedRadialMenuPageName));
-        }
-        finally
-        {
-            _isRefreshingRadialMenu = false;
-        }
-    }
-
-    private void BuildRadialPreviewSeparators()
-    {
-        RadialMenuPreviewSeparators.Clear();
-        const double center = 180.0;
-        for (var index = 0; index < RadialMenuSettings.InnerSlotCount; index++)
-        {
-            var angle = (-112.5 + index * 45) * Math.PI / 180.0;
-            RadialMenuPreviewSeparators.Add(new RadialSeparatorViewModel(
-                center + Math.Cos(angle) * 28,
-                center + Math.Sin(angle) * 28,
-                center + Math.Cos(angle) * 113,
-                center + Math.Sin(angle) * 113));
-        }
-
-        for (var index = 0; index < RadialMenuSettings.OuterSlotCount; index++)
-        {
-            var angle = (-101.25 + index * 22.5) * Math.PI / 180.0;
-            RadialMenuPreviewSeparators.Add(new RadialSeparatorViewModel(
-                center + Math.Cos(angle) * 113,
-                center + Math.Sin(angle) * 113,
-                center + Math.Cos(angle) * 176,
-                center + Math.Sin(angle) * 176));
-        }
-    }
-
-    private static Geometry BuildRadialSectorGeometry(double centerX, double centerY, double innerRadius, double outerRadius, double startAngleDegrees, double sweepDegrees)
-    {
-        static System.Windows.Point PointOnCircle(double cx, double cy, double radius, double angleDegrees)
-        {
-            var radians = angleDegrees * Math.PI / 180.0;
-            return new System.Windows.Point(
-                cx + Math.Cos(radians) * radius,
-                cy + Math.Sin(radians) * radius);
-        }
-
-        var endAngleDegrees = startAngleDegrees + sweepDegrees;
-        var outerStart = PointOnCircle(centerX, centerY, outerRadius, startAngleDegrees);
-        var outerEnd = PointOnCircle(centerX, centerY, outerRadius, endAngleDegrees);
-        var innerEnd = PointOnCircle(centerX, centerY, innerRadius, endAngleDegrees);
-        var innerStart = PointOnCircle(centerX, centerY, innerRadius, startAngleDegrees);
-        var isLargeArc = sweepDegrees >= 180.0;
-
-        var figure = new PathFigure
-        {
-            StartPoint = outerStart,
-            IsClosed = true,
-            IsFilled = true
-        };
-        figure.Segments.Add(new ArcSegment(outerEnd, new System.Windows.Size(outerRadius, outerRadius), 0, isLargeArc, SweepDirection.Clockwise, true));
-        figure.Segments.Add(new LineSegment(innerEnd, true));
-        figure.Segments.Add(new ArcSegment(innerStart, new System.Windows.Size(innerRadius, innerRadius), 0, isLargeArc, SweepDirection.Counterclockwise, true));
-
-        var geometry = new PathGeometry();
-        geometry.Figures.Add(figure);
-        geometry.Freeze();
-        return geometry;
-    }
-
-    private void SaveRadialMenuSlots()
-    {
-        _settings.RadialMenu ??= new RadialMenuSettings();
-        _settings.RadialMenu.Pages ??= [];
-        if (RadialMenuSlots.Count == 0)
-        {
-            HostAssets.AppendLog("Settings: skipped saving radial slots because the radial editor has not loaded any slot items.");
-            return;
-        }
-
-        var selectedPage = _settings.RadialMenu.Pages.FirstOrDefault(page => page.Id.Equals(_settings.RadialMenu.SelectedPageId, StringComparison.OrdinalIgnoreCase));
-        if (selectedPage == null)
-        {
-            return;
-        }
-
-        selectedPage.Slots = RadialMenuSlots
-            .OrderBy(static item => item.Index)
-            .Select(static item => string.IsNullOrWhiteSpace(item.ExtensionId) ? null : item.ExtensionId.Trim())
-            .Cast<string?>()
-            .Take(RadialMenuSettings.TotalSlotCount)
-            .ToList();
-        selectedPage.SlotTitles = RadialMenuSlots
-            .OrderBy(static item => item.Index)
-            .Select(static item => string.IsNullOrWhiteSpace(item.DisplayTitle) ? null : item.DisplayTitle.Trim())
-            .Cast<string?>()
-            .Take(RadialMenuSettings.TotalSlotCount)
-            .ToList();
-        selectedPage.ChildPageIds = RadialMenuSlots
-            .OrderBy(static item => item.Index)
-            .Select(static item => string.IsNullOrWhiteSpace(item.ChildPageId) ? null : item.ChildPageId.Trim())
-            .Cast<string?>()
-            .Take(RadialMenuSettings.TotalSlotCount)
-            .ToList();
-        while (selectedPage.Slots.Count < RadialMenuSettings.TotalSlotCount)
-        {
-            selectedPage.Slots.Add(null);
-        }
-
-        while (selectedPage.SlotTitles.Count < RadialMenuSettings.TotalSlotCount)
-        {
-            selectedPage.SlotTitles.Add(null);
-        }
-
-        while (selectedPage.ChildPageIds.Count < RadialMenuSettings.TotalSlotCount)
-        {
-            selectedPage.ChildPageIds.Add(null);
-        }
-        var firstPageSlots = _settings.RadialMenu.Pages[0].Slots ?? [];
-        _settings.RadialMenu.Slots = firstPageSlots
-            .Concat(Enumerable.Repeat<string?>(null, RadialMenuSettings.TotalSlotCount))
-            .Take(RadialMenuSettings.TotalSlotCount)
-            .ToList();
-    }
-
-    private static bool IsRadialMenuCommandCandidate(CommandItem command)
-    {
-        return command.Source is CommandSource.LocalExtension or CommandSource.WebSearch or CommandSource.Application or CommandSource.Local;
-    }
-
-    private void RefreshRadialMenuCommandCandidates(string? keyword)
-    {
-        FilteredRadialMenuCommandOptions.Clear();
-        keyword = (keyword ?? string.Empty).Trim();
-        var candidates = RadialMenuExtensionOptions.AsEnumerable();
-        if (!string.IsNullOrWhiteSpace(keyword))
-        {
-            candidates = candidates.Where(option =>
-                option.Title.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
-                option.ExtensionId.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
-                option.Detail.Contains(keyword, StringComparison.OrdinalIgnoreCase));
-        }
-
-        foreach (var option in candidates.Take(40))
-        {
-            FilteredRadialMenuCommandOptions.Add(option);
-        }
-
-        if (!string.IsNullOrWhiteSpace(keyword))
-        {
-            var fileResults = EverythingSearchService.Search(keyword, 20);
-            if (fileResults.Success)
-            {
-                foreach (var result in fileResults.Results)
-                {
-                    var command = BuildRadialFileCommand(result);
-                    if (FilteredRadialMenuCommandOptions.Any(option =>
-                            option.ExtensionId.Equals(command.ExtensionId, StringComparison.OrdinalIgnoreCase)))
-                    {
-                        continue;
-                    }
-
-                    FilteredRadialMenuCommandOptions.Add(new YarnSelectExtensionOption(command));
-                }
-            }
-        }
-    }
-
-    private void SelectRadialMenuSlot(RadialMenuSlotEditorItem slot)
-    {
-        _selectedRadialMenuSlot = slot;
-        OnPropertyChanged(nameof(RadialMenuSelectedSlotSummary));
-    }
-
-    private RadialMenuSlotEditorItem? ResolveRadialSlotFromMenuSender(object sender)
-    {
-        DependencyObject? current = sender as DependencyObject;
-        while (current != null)
-        {
-            if (current is ContextMenu { PlacementTarget: FrameworkElement { DataContext: RadialMenuSlotEditorItem slot } })
-            {
-                return slot;
-            }
-
-            current = LogicalTreeHelper.GetParent(current);
-        }
-
-        if (sender is FrameworkElement { Parent: ContextMenu { PlacementTarget: FrameworkElement { DataContext: RadialMenuSlotEditorItem fallbackSlot } } })
-        {
-            return fallbackSlot;
-        }
-
-        return _selectedRadialMenuSlot;
-    }
-
-    private void ApplyRadialMenuCommandToSlot(RadialMenuSlotEditorItem slot, YarnSelectExtensionOption option)
-    {
-        if (string.IsNullOrWhiteSpace(option.ExtensionId))
-        {
-            return;
-        }
-
-        SelectRadialMenuSlot(slot);
-        slot.ExtensionId = option.ExtensionId;
-        slot.DisplayTitle = string.Empty;
-        slot.ExtensionTitle = option.Title;
-        UpdateRadialSlotPresentation(slot);
-        SaveQuickPanelTriggerSettings();
-        RefreshRadialMenuSlots();
-    }
-
-    private static CommandItem BuildRadialFileCommand(EverythingSearchResult result)
-    {
-        var subtitle = string.IsNullOrWhiteSpace(result.SizeText)
-            ? result.DirectoryPath
-            : $"{result.DirectoryPath}   ·   {result.SizeText}";
-        return new CommandItem(
-            glyph: result.IsFolder ? "夹" : "文",
-            title: result.Name,
-            subtitle: subtitle,
-            category: result.IsFolder ? "文件夹" : "文件",
-            accentHex: result.IsFolder ? "#FF3B82F6" : "#FF4B5563",
-            openTarget: result.FullPath,
-            keywords: [result.FullPath, result.DirectoryPath, result.Name],
-            source: CommandSource.File,
-            extensionId: $"result::{result.FullPath}",
-            resultKind: result.IsFolder ? ResultItemKind.Folder : ResultItemKind.File,
-            resultProviderTitle: "Everything 文件",
-            iconSourceOverride: NativeFileIconService.GetIcon(result.FullPath, result.IsFolder));
-    }
-
-    private void AddRadialMenuPageButton_Click(object sender, RoutedEventArgs e)
-    {
-        SaveRadialMenuSlots();
-        _settings.RadialMenu ??= new RadialMenuSettings();
-        var page = new RadialMenuPageSettings
-        {
-            Id = Guid.NewGuid().ToString("N"),
-            Name = $"页面 {_settings.RadialMenu.Pages.Count + 1}"
-        };
-        _settings.RadialMenu.Pages.Add(page);
-        _settings.RadialMenu.SelectedPageId = page.Id;
-        RefreshRadialMenuSlots();
-        SaveQuickPanelTriggerSettings();
-    }
-
-    private void DeleteRadialMenuPageButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (_settings.RadialMenu.Pages.Count <= 1)
-        {
-            return;
-        }
-
-        var removedId = _settings.RadialMenu.SelectedPageId;
-        _settings.RadialMenu.Pages.RemoveAll(page => page.Id.Equals(removedId, StringComparison.OrdinalIgnoreCase));
-        foreach (var page in _settings.RadialMenu.Pages)
-        {
-            page.ChildPageIds = (page.ChildPageIds ?? [])
-                .Select(id => string.Equals(id, removedId, StringComparison.OrdinalIgnoreCase) ? null : id)
-                .ToList();
-        }
-        _settings.RadialMenu.SelectedPageId = _settings.RadialMenu.Pages[0].Id;
-        RefreshRadialMenuSlots();
-        SaveQuickPanelTriggerSettings();
-    }
-
-    private void RadialMenuCenter_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        if (e.ClickCount < 2)
-        {
-            return;
-        }
-
-        RenameCurrentRadialMenuPage();
-        e.Handled = true;
-    }
-
-    private void RadialMenuCenter_MouseRightButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        if (sender is FrameworkElement element && element.ContextMenu != null)
-        {
-            element.ContextMenu.PlacementTarget = element;
-            element.ContextMenu.IsOpen = true;
-            e.Handled = true;
-        }
-    }
-
-    private void RenameRadialMenuPageMenuItem_Click(object sender, RoutedEventArgs e)
-    {
-        RenameCurrentRadialMenuPage();
-    }
-
-    private void RenameCurrentRadialMenuPage()
-    {
-        _settings.RadialMenu ??= new RadialMenuSettings();
-        _settings.RadialMenu.Pages ??= [];
-        var pageId = SelectedRadialMenuPageId;
-        var page = _settings.RadialMenu.Pages.FirstOrDefault(item =>
-            item.Id.Equals(pageId, StringComparison.OrdinalIgnoreCase));
-        if (page == null)
-        {
-            HostAssets.AppendLog($"Radial rename skipped: selected page not found, pageId={pageId}.");
-            return;
-        }
-
-        var oldName = page.Name;
-        var dialog = new SimpleTextInputWindow("重命名轮盘", "输入新的轮盘名称。", page.Name)
-        {
-            Owner = this
-        };
-        bool accepted;
-        try
-        {
-            _isRenamingRadialMenuPage = true;
-            accepted = dialog.ShowDialog() == true;
-        }
-        finally
-        {
-            _isRenamingRadialMenuPage = false;
-        }
-
-        if (!accepted)
-        {
-            HostAssets.AppendLog($"Radial rename cancelled: pageId={pageId}, oldName={oldName}.");
-            return;
-        }
-
-        var trimmedName = dialog.ValueText.Trim();
-        if (string.IsNullOrWhiteSpace(trimmedName))
-        {
-            HostAssets.AppendLog($"Radial rename ignored empty name: pageId={pageId}, oldName={oldName}.");
-            return;
-        }
-
-        _settings.RadialMenu ??= new RadialMenuSettings();
-        _settings.RadialMenu.Pages ??= [];
-        page = _settings.RadialMenu.Pages.FirstOrDefault(item =>
-            item.Id.Equals(pageId, StringComparison.OrdinalIgnoreCase));
-        if (page == null)
-        {
-            HostAssets.AppendLog($"Radial rename failed after dialog: page missing, pageId={pageId}, newName={trimmedName}.");
-            return;
-        }
-
-        page.Name = trimmedName;
-        HostAssets.AppendLog($"Radial rename saving: pageId={pageId}, oldName={oldName}, newName={trimmedName}.");
-        SaveQuickPanelTriggerSettings();
-        RefreshRadialMenuSlots();
-        OnPropertyChanged(nameof(SelectedRadialMenuPageName));
-        var saved = AppSettingsStore.Load().RadialMenu.Pages.FirstOrDefault(item =>
-            item.Id.Equals(pageId, StringComparison.OrdinalIgnoreCase))?.Name ?? string.Empty;
-        HostAssets.AppendLog($"Radial rename saved: pageId={pageId}, savedName={saved}, currentName={SelectedRadialMenuPageName}.");
-    }
-
-    private void RadialExtensionDragStart_MouseMove(object sender, System.Windows.Input.MouseEventArgs e)
-    {
-        if (e.LeftButton != MouseButtonState.Pressed ||
-            sender is not FrameworkElement { DataContext: YarnSelectExtensionOption option } ||
-            string.IsNullOrWhiteSpace(option.ExtensionId))
-        {
-            return;
-        }
-
-        System.Windows.DragDrop.DoDragDrop((DependencyObject)sender, option.ExtensionId, System.Windows.DragDropEffects.Copy);
-    }
-
-    private void RadialSlot_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        if (sender is FrameworkElement { DataContext: RadialMenuSlotEditorItem slot })
-        {
-            SelectRadialMenuSlot(slot);
-            if (slot.IsEmpty)
-            {
-                OpenRadialSlotPicker(slot);
-                e.Handled = true;
-                return;
-            }
-
-            var command = ResolveRadialSlotCommand(slot);
-            if (command != null)
-            {
-                _mainWindow.ExecuteCommandExternally(command, launchSource: "settings-radial-preview");
-                e.Handled = true;
-            }
-        }
-    }
-
-    private void RadialSlot_MouseRightButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        if (sender is FrameworkElement { DataContext: RadialMenuSlotEditorItem slot })
-        {
-            SelectRadialMenuSlot(slot);
-        }
-    }
-
-    private void RadialSlot_DragOver(object sender, System.Windows.DragEventArgs e)
-    {
-        e.Effects = e.Data.GetDataPresent(System.Windows.DataFormats.StringFormat) ? System.Windows.DragDropEffects.Copy : System.Windows.DragDropEffects.None;
-        e.Handled = true;
-    }
-
-    private void RadialSlot_Drop(object sender, System.Windows.DragEventArgs e)
-    {
-        if (sender is not FrameworkElement { DataContext: RadialMenuSlotEditorItem slot } ||
-            !e.Data.GetDataPresent(System.Windows.DataFormats.StringFormat))
-        {
-            return;
-        }
-
-        slot.ExtensionId = e.Data.GetData(System.Windows.DataFormats.StringFormat) as string ?? string.Empty;
-        slot.DisplayTitle = string.Empty;
-        slot.ExtensionTitle = ResolveRadialExtensionTitle(slot.ExtensionId);
-        UpdateRadialSlotPresentation(slot);
-        e.Handled = true;
-        SaveQuickPanelTriggerSettings();
-        RefreshRadialMenuSlots();
-    }
-
-    private void RadialSlot_MouseEnter(object sender, System.Windows.Input.MouseEventArgs e)
-    {
-        if (sender is FrameworkElement { DataContext: RadialMenuSlotEditorItem slot })
-        {
-            slot.IsHovered = true;
-            SelectRadialMenuSlot(slot);
-        }
-    }
-
-    private void RadialSlot_MouseLeave(object sender, System.Windows.Input.MouseEventArgs e)
-    {
-        if (sender is FrameworkElement { DataContext: RadialMenuSlotEditorItem slot })
-        {
-            slot.IsHovered = false;
-        }
-    }
-
-    private void RadialSlotAddCommandMenuItem_Click(object sender, RoutedEventArgs e)
-    {
-        var slot = ResolveRadialSlotFromMenuSender(sender);
-        if (slot == null)
-        {
-            return;
-        }
-
-        SelectRadialMenuSlot(slot);
-        OpenRadialSlotPicker(slot);
-    }
-
-    private void RadialSlotSetSimulatedKeyMenuItem_Click(object sender, RoutedEventArgs e)
-    {
-        var slot = ResolveRadialSlotFromMenuSender(sender);
-        if (slot == null)
-        {
-            return;
-        }
-
-        SelectRadialMenuSlot(slot);
-        var initialShortcut = slot.ExtensionId.StartsWith(RadialSimulatedKeyPrefix, StringComparison.OrdinalIgnoreCase)
-            ? slot.ExtensionId[RadialSimulatedKeyPrefix.Length..]
-            : string.Empty;
-        var dialog = new HotkeyCaptureWindow(
-            "模拟按键",
-            "录制要在此槽位执行的组合键，并设置轮盘里显示的名称。",
-            initialShortcut,
-            slot.DisplayTitle,
-            allowEmpty: false,
-            allowDoubleTap: false,
-            allowModifierless: true)
-        {
-            Owner = this
-        };
-        bool? dialogResult;
-        _suspendActivationRefresh = true;
-        try
-        {
-            dialogResult = dialog.ShowDialog();
-        }
-        finally
-        {
-            _suspendActivationRefresh = false;
-        }
-
-        if (dialogResult != true)
-        {
-            return;
-        }
-
-        var shortcut = dialog.ShortcutText.Trim();
-        if (string.IsNullOrWhiteSpace(shortcut))
-        {
-            return;
-        }
-
-        var currentSlot = RadialMenuSlots.FirstOrDefault(item => item.Index == slot.Index) ?? slot;
-        SelectRadialMenuSlot(currentSlot);
-        currentSlot.ExtensionId = $"{RadialSimulatedKeyPrefix}{shortcut}";
-        currentSlot.DisplayTitle = string.IsNullOrWhiteSpace(dialog.DisplayNameText)
-            ? shortcut
-            : dialog.DisplayNameText.Trim();
-        currentSlot.ExtensionTitle = ResolveRadialExtensionTitle(currentSlot.ExtensionId, currentSlot.DisplayTitle);
-        HostAssets.AppendLog($"Radial simulated key assigned: slot={slot.Index + 1}, shortcut={shortcut}, displayTitle={currentSlot.DisplayTitle}, page={SelectedRadialMenuPageId}.");
-        SaveQuickPanelTriggerSettings();
-        RefreshRadialMenuSlots();
-    }
-
-    private void RadialSlotClearCommandMenuItem_Click(object sender, RoutedEventArgs e)
-    {
-        var slot = ResolveRadialSlotFromMenuSender(sender);
-        if (slot == null)
-        {
-            return;
-        }
-
-        SelectRadialMenuSlot(slot);
-        slot.ExtensionId = string.Empty;
-        slot.DisplayTitle = string.Empty;
-        slot.ExtensionTitle = ResolveRadialExtensionTitle(string.Empty);
-        UpdateRadialSlotPresentation(slot);
-        SaveQuickPanelTriggerSettings();
-    }
-
-    private void RadialSlotAddChildPageMenuItem_Click(object sender, RoutedEventArgs e)
-    {
-        var slot = ResolveRadialSlotFromMenuSender(sender);
-        if (slot == null)
-        {
-            return;
-        }
-
-        SelectRadialMenuSlot(slot);
-        CreateRadialChildPageForSlot(slot, GetNextRadialChildPageName());
-    }
-
-    private void CreateRadialChildPageForSlot(RadialMenuSlotEditorItem slot, string pageName)
-    {
-        SaveRadialMenuSlots();
-        _settings.RadialMenu ??= new RadialMenuSettings();
-        _settings.RadialMenu.Pages ??= [];
-        var page = new RadialMenuPageSettings
-        {
-            Id = Guid.NewGuid().ToString("N"),
-            Name = pageName.Trim()
-        };
-        _settings.RadialMenu.Pages.Add(page);
-        slot.ChildPageId = page.Id;
-        slot.ChildPageTitle = ResolveRadialChildPageTitle(page.Id);
-        UpdateRadialSlotPresentation(slot);
-        SaveQuickPanelTriggerSettings();
-        RefreshRadialMenuSlots();
-    }
-
-    private void OpenRadialSlotPicker(RadialMenuSlotEditorItem slot)
-    {
-        var picker = new RadialSlotPickerWindow(
-            keyword => _mainWindow.GetRadialMenuCommandCandidates(keyword),
-            allowAddChildPage: !slot.HasChildPageTitle,
-            createExtension: owner => _mainWindow.OpenAddExtensionForSlot(owner))
-        {
-            Owner = this
-        };
-        if (picker.ShowDialog() != true)
-        {
-            return;
-        }
-
-        if (picker.SelectedAction == RadialSlotPickerWindow.PickerAction.AddChildPage)
-        {
-            CreateRadialChildPageForSlot(slot, GetNextRadialChildPageName());
-            return;
-        }
-
-        if (picker.SelectedCommand == null)
-        {
-            return;
-        }
-
-        ApplyRadialMenuCommandToSlot(slot, new YarnSelectExtensionOption(picker.SelectedCommand));
-    }
-
-    private CommandItem? ResolveRadialSlotCommand(RadialMenuSlotEditorItem slot)
-    {
-        return _mainWindow
-            .GetRadialMenuItems(SelectedRadialMenuPageId)
-            .ElementAtOrDefault(slot.Index)?
-            .Command;
-    }
-
-    private string GetNextRadialChildPageName()
-    {
-        _settings.RadialMenu ??= new RadialMenuSettings();
-        _settings.RadialMenu.Pages ??= [];
-        var usedNumbers = _settings.RadialMenu.Pages
-            .Select(page => page.Name ?? string.Empty)
-            .Select(name =>
-            {
-                var match = System.Text.RegularExpressions.Regex.Match(name, @"^子环\s*(\d+)$");
-                return match.Success && int.TryParse(match.Groups[1].Value, out var number) ? number : (int?)null;
-            })
-            .Where(number => number.HasValue)
-            .Select(number => number!.Value)
-            .ToHashSet();
-        var next = 1;
-        while (usedNumbers.Contains(next))
-        {
-            next++;
-        }
-
-        return $"子环 {next}";
-    }
-
-    private void UpdateRadialSlotPresentation(RadialMenuSlotEditorItem slot)
-    {
-        var command = ResolveRadialSlotCommand(slot);
-        if (command != null)
-        {
-            slot.IconSource = command.IconSource;
-            slot.VectorIcon = command.VectorIcon;
-            slot.AccentBrush = command.AccentBrush;
-            slot.DisplayGlyph = command.DisplayGlyph;
-            slot.ExtensionTitle = command.Title;
-            return;
-        }
-
-        if (slot.HasChildPageTitle)
-        {
-            slot.IconSource = null;
-            slot.VectorIcon = null;
-            slot.AccentBrush = System.Windows.Media.Brushes.Transparent;
-            slot.DisplayGlyph = "环";
-            return;
-        }
-
-        slot.IconSource = null;
-        slot.VectorIcon = null;
-        slot.AccentBrush = System.Windows.Media.Brushes.Transparent;
-        slot.DisplayGlyph = string.Empty;
-    }
-
-    private void RadialSlotClearChildPageMenuItem_Click(object sender, RoutedEventArgs e)
-    {
-        var slot = ResolveRadialSlotFromMenuSender(sender);
-        if (slot == null)
-        {
-            return;
-        }
-
-        SelectRadialMenuSlot(slot);
-        var removedId = slot.ChildPageId;
-        slot.ChildPageId = string.Empty;
-        slot.ChildPageTitle = ResolveRadialChildPageTitle(string.Empty);
-        if (!string.IsNullOrWhiteSpace(removedId) &&
-            _settings.RadialMenu?.Pages?.Count > 1)
-        {
-            _settings.RadialMenu.Pages.RemoveAll(page => page.Id.Equals(removedId, StringComparison.OrdinalIgnoreCase));
-            foreach (var page in _settings.RadialMenu.Pages)
-            {
-                page.ChildPageIds = (page.ChildPageIds ?? [])
-                    .Select(id => string.Equals(id, removedId, StringComparison.OrdinalIgnoreCase) ? null : id)
-                    .ToList();
-            }
-        }
-
-        SaveQuickPanelTriggerSettings();
-        RefreshRadialMenuSlots();
-    }
-
-    private void RadialMenuSearchBox_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
-    {
-        if (e.Key != Key.Down || FilteredRadialMenuCommandOptions.Count == 0)
-        {
-            return;
-        }
-
-        if (FindSiblingListBox(sender as DependencyObject) is { } listBox)
-        {
-            listBox.SelectedIndex = 0;
-            listBox.Focus();
-            e.Handled = true;
-        }
-    }
-
-    private void RadialMenuCommandListBox_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
-    {
-        if (sender is not System.Windows.Controls.ListBox listBox)
-        {
-            return;
-        }
-
-        if (e.Key == Key.Enter)
-        {
-            CommitRadialMenuCommandCandidate(listBox);
-            e.Handled = true;
-        }
-        else if (e.Key == Key.Escape)
-        {
-            RadialMenuSearchText = string.Empty;
-            e.Handled = true;
-        }
-    }
-
-    private void RadialMenuCommandListBox_MouseDoubleClick(object sender, MouseButtonEventArgs e)
-    {
-        if (sender is System.Windows.Controls.ListBox listBox)
-        {
-            CommitRadialMenuCommandCandidate(listBox);
-        }
-    }
-
-    private void CommitRadialMenuCommandCandidate(System.Windows.Controls.ListBox listBox)
-    {
-        if (_selectedRadialMenuSlot == null ||
-            listBox.SelectedItem is not YarnSelectExtensionOption option)
-        {
-            return;
-        }
-
-        ApplyRadialMenuCommandToSlot(_selectedRadialMenuSlot, option);
-    }
-
-    private string ResolveRadialExtensionTitle(string? extensionId, string? displayTitleOverride = null)
-    {
-        if (string.IsNullOrWhiteSpace(extensionId))
-        {
-            return "拖入扩展";
-        }
-
-        if (extensionId.StartsWith(RadialSimulatedKeyPrefix, StringComparison.OrdinalIgnoreCase))
-        {
-            return string.IsNullOrWhiteSpace(displayTitleOverride)
-                ? extensionId[RadialSimulatedKeyPrefix.Length..]
-                : displayTitleOverride.Trim();
-        }
-
-        if (extensionId.StartsWith("result::", StringComparison.OrdinalIgnoreCase))
-        {
-            var path = extensionId["result::".Length..];
-            var title = Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-            return string.IsNullOrWhiteSpace(title) ? path : title;
-        }
-
-        return RadialMenuExtensionOptions.FirstOrDefault(option =>
-            option.ExtensionId.Equals(extensionId, StringComparison.OrdinalIgnoreCase))?.Title ?? "未知扩展";
-    }
-
-
-    private string ResolveRadialChildPageTitle(string? pageId)
-    {
-        if (string.IsNullOrWhiteSpace(pageId))
-        {
-            return string.Empty;
-        }
-
-        var name = _settings.RadialMenu?.Pages?.FirstOrDefault(page =>
-            page.Id.Equals(pageId, StringComparison.OrdinalIgnoreCase))?.Name;
-        return string.IsNullOrWhiteSpace(name) ? string.Empty : name;
-    }
-
-    private void AddYarnSelectRuleButton_Click(object sender, RoutedEventArgs e)
-    {
-        var item = new YarnSelectRuleItem(new YarnSelectRuleSettings
-        {
-            TriggerKey = "A",
-            ActionType = YarnSelectActionTypes.RunExtension,
-            Description = "新燕选规则"
-        });
-        ApplyYarnSelectExtensionSelection(item);
-        YarnSelectRules.Add(item);
-        OnPropertyChanged(nameof(YarnSelectSummary));
-    }
-
-    private void DeleteYarnSelectRuleButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is not FrameworkElement { DataContext: YarnSelectRuleItem item })
-        {
-            return;
-        }
-
-        YarnSelectRules.Remove(item);
-        SaveYarnSelectSettings();
-    }
-
-    private void ResetYarnSelectRulesButton_Click(object sender, RoutedEventArgs e)
-    {
-        YarnSelectRules.Clear();
-        foreach (var rule in YarnSelectSettings.CreateDefaultRulesFromLegacy(new YarnSelectSettings()))
-        {
-            var item = new YarnSelectRuleItem(rule);
-            ApplyYarnSelectExtensionSelection(item);
-            YarnSelectRules.Add(item);
-        }
-
-        SaveYarnSelectSettings();
-    }
-
-    private static string GetYarnSelectActionLabel(string actionType)
-    {
-        return YarnSelectActionTypes.Normalize(actionType) switch
-        {
-            YarnSelectActionTypes.Cut => "剪切",
-            YarnSelectActionTypes.Paste => "粘贴",
-            YarnSelectActionTypes.Search => "搜索",
-            YarnSelectActionTypes.Run => "运行",
-            YarnSelectActionTypes.SmartCopyPaste => "智能复制/粘贴",
-            YarnSelectActionTypes.RunExtension => "运行扩展",
-            _ => "复制"
-        };
-    }
-
-    private void ApplyYarnSelectExtensionSelection(YarnSelectRuleItem item)
-    {
-        var selected = YarnSelectExtensionOptions.FirstOrDefault(option =>
-            option.ExtensionId.Equals(item.ExtensionId ?? string.Empty, StringComparison.OrdinalIgnoreCase));
-        item.ExtensionSearchText = selected?.Title ?? string.Empty;
-        item.FilteredExtensionOptions = [];
-    }
-
-    private void RefreshYarnSelectExtensionCandidates(YarnSelectRuleItem item, string keyword)
-    {
-        keyword = (keyword ?? string.Empty).Trim();
-        if (keyword.Length == 0)
-        {
-            item.FilteredExtensionOptions = [];
-            return;
-        }
-
-        item.FilteredExtensionOptions = new ObservableCollection<YarnSelectExtensionOption>(
-            YarnSelectExtensionOptions
-                .Where(option =>
-                    option.Title.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
-                    option.ExtensionId.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
-                    option.Detail.Contains(keyword, StringComparison.OrdinalIgnoreCase))
-                .Take(8));
-    }
-
-    private void YarnSelectExtensionSearchBox_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
-    {
-        if (sender is FrameworkElement { DataContext: YarnSelectRuleItem item })
-        {
-            RefreshYarnSelectExtensionCandidates(item, item.ExtensionSearchText ?? string.Empty);
-        }
-    }
-
-    private void YarnSelectExtensionSearchBox_TextChanged(object sender, TextChangedEventArgs e)
-    {
-        if (sender is FrameworkElement { DataContext: YarnSelectRuleItem item })
-        {
-            var selected = YarnSelectExtensionOptions.FirstOrDefault(option =>
-                option.ExtensionId.Equals(item.ExtensionId ?? string.Empty, StringComparison.OrdinalIgnoreCase));
-            if (selected == null ||
-                !selected.Title.Equals(item.ExtensionSearchText ?? string.Empty, StringComparison.OrdinalIgnoreCase))
-            {
-                item.ExtensionId = string.Empty;
-            }
-
-            RefreshYarnSelectExtensionCandidates(item, item.ExtensionSearchText ?? string.Empty);
-        }
-    }
-
-    private void YarnSelectExtensionSearchBox_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
-    {
-        if (sender is not FrameworkElement { DataContext: YarnSelectRuleItem item } ||
-            e.Key != Key.Down ||
-            item.FilteredExtensionOptions.Count == 0)
-        {
-            return;
-        }
-
-        if (FindDescendantListBox(this, FilteredRadialMenuCommandOptions) is { } listBox)
-        {
-            listBox.SelectedIndex = 0;
-            listBox.Focus();
-            e.Handled = true;
-        }
-    }
-
-    private void YarnSelectExtensionListBox_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
-    {
-        if (sender is not System.Windows.Controls.ListBox listBox)
-        {
-            return;
-        }
-
-        if (e.Key == Key.Enter)
-        {
-            CommitYarnSelectExtensionCandidate(listBox);
-            e.Handled = true;
-        }
-        else if (e.Key == Key.Escape && listBox.DataContext is YarnSelectRuleItem item)
-        {
-            item.FilteredExtensionOptions = [];
-            e.Handled = true;
-        }
-    }
-
-    private void YarnSelectExtensionListBox_MouseDoubleClick(object sender, MouseButtonEventArgs e)
-    {
-        if (sender is System.Windows.Controls.ListBox listBox)
-        {
-            CommitYarnSelectExtensionCandidate(listBox);
-        }
-    }
-
-    private void CommitYarnSelectExtensionCandidate(System.Windows.Controls.ListBox listBox)
-    {
-        if (listBox.DataContext is not YarnSelectRuleItem item ||
-            listBox.SelectedItem is not YarnSelectExtensionOption option)
-        {
-            return;
-        }
-
-        item.ExtensionId = option.ExtensionId;
-        item.ExtensionSearchText = option.Title;
-        item.FilteredExtensionOptions = [];
-    }
-
-    private static System.Windows.Controls.ListBox? FindSiblingListBox(DependencyObject? source)
-    {
-        var parent = source == null ? null : VisualTreeHelper.GetParent(source);
-        while (parent != null)
-        {
-            if (parent is StackPanel panel)
-            {
-                return panel.Children.OfType<System.Windows.Controls.ListBox>().FirstOrDefault();
-            }
-
-            parent = VisualTreeHelper.GetParent(parent);
-        }
-
-        return null;
-    }
-
-    private static System.Windows.Controls.ListBox? FindDescendantListBox(DependencyObject source, object itemsSource)
-    {
-        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(source); i++)
-        {
-            var child = VisualTreeHelper.GetChild(source, i);
-            if (child is System.Windows.Controls.ListBox listBox &&
-                ReferenceEquals(listBox.ItemsSource, itemsSource))
-            {
-                return listBox;
-            }
-
-            var nested = FindDescendantListBox(child, itemsSource);
-            if (nested != null)
-            {
-                return nested;
-            }
-        }
-
-        return null;
-    }
-
-    private void RefreshQuickPanelTriggerBindings()
-    {
-        _settings.QuickPanelMouseTriggers ??= new QuickPanelMouseTriggerSettings();
-        OnPropertyChanged(nameof(TriggerMiddleButtonDown));
-        OnPropertyChanged(nameof(TriggerX1ButtonDown));
-        OnPropertyChanged(nameof(TriggerX2ButtonDown));
-        OnPropertyChanged(nameof(TriggerCtrlLeftClick));
-        OnPropertyChanged(nameof(TriggerCtrlRightClick));
-        OnPropertyChanged(nameof(TriggerMiddleButtonLongPress));
-        OnPropertyChanged(nameof(TriggerRightButtonLongPress));
-        OnPropertyChanged(nameof(TriggerRightButtonDrag));
-        OnPropertyChanged(nameof(TriggerHorizontalWheel));
-
-        OnPropertyChanged(nameof(ExecuteOnButtonRelease));
-        OnPropertyChanged(nameof(QuickPanelTriggerSummary));
-        OnPropertyChanged(nameof(MouseGestureTriggerSummary));
-        OnPropertyChanged(nameof(MouseGestureTriggerMode));
-        OnPropertyChanged(nameof(MouseGestureManagementSummary));
-        OnPropertyChanged(nameof(EnableRadialMenu));
-        OnPropertyChanged(nameof(EnableRadialCapsLockHold));
-        OnPropertyChanged(nameof(RadialActivationKey));
-        OnPropertyChanged(nameof(RadialUsesCustomShortcut));
-        OnPropertyChanged(nameof(RadialCustomShortcut));
-        OnPropertyChanged(nameof(RadialWhitelistedProcessesText));
-        OnPropertyChanged(nameof(RadialBlacklistedProcessesText));
-        OnPropertyChanged(nameof(RadialAssignedMouseTriggerSummary));
-        OnPropertyChanged(nameof(YanmAssignedMouseTriggerSummary));
-        OnPropertyChanged(nameof(RadialMenuSummary));
-        RefreshRadialMenuSlots();
-    }
-
-    private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
-    {
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-    }
-
-    [DllImport("user32.dll")]
-    private static extern IntPtr GetForegroundWindow();
-
-    [DllImport("user32.dll")]
-    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
 
     private void ExternalLink_Click(object sender, MouseButtonEventArgs e)
     {
@@ -7047,8 +8438,60 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             }
             catch (Exception ex)
             {
-                System.Windows.MessageBox.Show(this, $"无法打开提交链接: {ex.Message}", "出错啦", MessageBoxButton.OK, MessageBoxImage.Error);
+                System.Windows.MessageBox.Show(this, $"无法打开备份详情： {ex.Message}", "出错啦", MessageBoxButton.OK, MessageBoxImage.Error);
             }
+        }
+    }
+
+    private async void TogglePersonalSyncCommitDiff_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is System.Windows.Controls.Button btn && btn.Tag is PersonalSyncCommitItem item)
+        {
+            if (item.IsExpanded)
+            {
+                item.IsExpanded = false;
+                return;
+            }
+
+            item.IsExpanded = true;
+            if (string.IsNullOrWhiteSpace(item.DiffText))
+            {
+                item.DiffText = "正在从云端拉取具体变更差异 (Diff)...";
+                try
+                {
+                    var diff = await _mainWindow.GetPersonalSyncCommitDiffAsync(item.Sha);
+                    item.DiffText = string.IsNullOrWhiteSpace(diff) ? "未检测到文件变动或无法读取具体变更差异。" : diff;
+                }
+                catch (Exception ex)
+                {
+                    item.DiffText = $"拉取差异失败：{ex.Message}";
+                }
+            }
+        }
+    }
+
+    private async void VisitPersonalSyncRepositoryButton_Click(object sender, RoutedEventArgs e)
+    {
+        // 弹出等待提示或者直接拉取，由于是通过 API 获取用户名拼 URL，我们传递 _personalSyncSettings 和 _personalSyncSecrets
+        var url = await _mainWindow.GetPersonalSyncRepositoryWebUrlAsync(_personalSyncSettings, _personalSyncSecrets);
+        if (!string.IsNullOrWhiteSpace(url))
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = url,
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show(this, $"无法打开链接: {ex.Message}", "出错啦", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+        else
+        {
+            System.Windows.MessageBox.Show(this, "当前同步方式无法获取有效的云端链接。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
         }
     }
 
@@ -7056,1270 +8499,44 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     {
         ShowPersonalSyncAdvancedOptions = !ShowPersonalSyncAdvancedOptions;
     }
-}
 
-public sealed class BoolToColorConverter : IValueConverter
-{
-    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    private void SyncSubTab_Checked(object sender, RoutedEventArgs e)
     {
-        return value is true 
-            ? new SolidColorBrush(System.Windows.Media.Color.FromRgb(59, 130, 246)) 
-            : new SolidColorBrush(System.Windows.Media.Color.FromRgb(42, 42, 42));
-    }
-
-    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
-    {
-        throw new NotSupportedException();
-    }
-}
-
-public sealed class EmptyStringToVisibilityConverter : IValueConverter
-{
-    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
-    {
-        return string.IsNullOrEmpty(value as string) ? Visibility.Visible : Visibility.Collapsed;
-    }
-
-    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
-    {
-        throw new NotSupportedException();
-    }
-}
-
-public sealed record SettingsNavigationItem(string Key, string IconReference, string Title, string Accent)
-{
-    public Geometry? IconGeometry => ExtensionIconLibrary.ResolveVectorIcon(IconReference);
-}
-
-public sealed record SyncProviderOption(string Value, string Label)
-{
-    public override string ToString() => Label;
-}
-
-public sealed record AutoSyncDelayOption(int Value, string Label)
-{
-    public override string ToString() => Label;
-}
-
-public sealed record MouseGestureTemplateDefinition(string Sequence, string Name, string Description);
-
-public sealed class SettingsMouseGestureItem
-{
-    public SettingsMouseGestureItem(
-        string extensionId,
-        string title,
-        string category,
-        string triggerLabel,
-        string sequence,
-        string displayName,
-        int[]? data,
-        int minDistance,
-        int? tolerance,
-        ImageSource? iconSource,
-        Geometry? vectorIcon,
-        System.Windows.Media.Brush accentBrush,
-        string displayGlyph)
-    {
-        ExtensionId = extensionId;
-        Title = title;
-        Category = category;
-        TriggerLabel = triggerLabel;
-        Sequence = sequence;
-        DisplayName = string.IsNullOrWhiteSpace(displayName) ? MouseGestureNaming.GetDisplayName(sequence) : displayName;
-        MinDistance = minDistance;
-        Tolerance = tolerance;
-        IconSource = iconSource;
-        VectorIcon = vectorIcon;
-        AccentBrush = accentBrush;
-        DisplayGlyph = displayGlyph;
-        PreviewGeometry = MouseGesturePreviewGeometryFactory.Create(sequence, data);
-    }
-
-    public string ExtensionId { get; }
-
-    public string Title { get; }
-
-    public string Category { get; }
-
-    public string TriggerLabel { get; }
-
-    public string Sequence { get; }
-
-    public string DisplayName { get; }
-
-    public int MinDistance { get; }
-
-    public int? Tolerance { get; }
-
-    public string DetailText
-    {
-        get
+        if (sender is System.Windows.Controls.RadioButton { Tag: string tabKey } && !string.IsNullOrWhiteSpace(tabKey))
         {
-            var sequenceText = string.IsNullOrWhiteSpace(Sequence) ? "已录制图形" : $"序列 {Sequence}";
-            return $"{sequenceText} · 最小距离 {MinDistance}px" + (Tolerance is > 0 ? $" · 容差 {Tolerance}" : string.Empty);
-        }
-    }
-
-    public ImageSource? IconSource { get; }
-
-    public Geometry? VectorIcon { get; }
-
-    public System.Windows.Media.Brush AccentBrush { get; }
-
-    public string DisplayGlyph { get; }
-
-    public Geometry PreviewGeometry { get; }
-
-    public bool HasImageIcon => IconSource != null;
-
-    public bool HasVectorIcon => VectorIcon != null;
-
-    public bool UseGlyphIcon => !HasImageIcon && !HasVectorIcon && !string.IsNullOrWhiteSpace(DisplayGlyph);
-}
-
-public sealed class MouseGestureQuickBindItem : INotifyPropertyChanged
-{
-    private MouseGestureExtensionOption? _selectedExtension;
-
-    public MouseGestureQuickBindItem(string sequence, string displayName, string description, string? assignedTitle)
-    {
-        Sequence = sequence;
-        DisplayName = displayName;
-        Description = description;
-        AssignedTitle = assignedTitle ?? string.Empty;
-        PreviewGeometry = MouseGesturePreviewGeometryFactory.Create(sequence, data: null);
-    }
-
-    public string Sequence { get; }
-
-    public string DisplayName { get; }
-
-    public string Description { get; }
-
-    public string AssignedTitle { get; }
-
-    public Geometry PreviewGeometry { get; }
-
-    public bool IsAssigned => !string.IsNullOrWhiteSpace(AssignedTitle);
-
-    public string StatusText => IsAssigned ? $"已被 {AssignedTitle} 使用" : "未绑定";
-
-    public MouseGestureExtensionOption? SelectedExtension
-    {
-        get => _selectedExtension;
-        set
-        {
-            if (Equals(value, _selectedExtension))
+            SyncActiveSubTab = tabKey;
+            if (tabKey == "history")
             {
-                return;
+                RefreshSyncActivityLog();
+                _ = RefreshPersonalSyncCommitsAsync();
+                _ = RefreshPersonalConfigRestorePointsAsync();
             }
-
-            _selectedExtension = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedExtension)));
         }
     }
 
-    public event PropertyChangedEventHandler? PropertyChanged;
-}
-
-public sealed class MouseGestureExtensionOption
-{
-    public MouseGestureExtensionOption(CommandItem command)
+    private void ToggleAccountSyncObjectsButton_Click(object sender, RoutedEventArgs e)
     {
-        ExtensionId = command.ExtensionId;
-        Label = command.Title;
-        Category = command.Category;
-        IconSource = command.IconSource;
-        VectorIcon = command.VectorIcon;
-        AccentBrush = command.AccentBrush;
-        DisplayGlyph = command.DisplayGlyph;
+        IsAccountSyncObjectsExpanded = !IsAccountSyncObjectsExpanded;
     }
 
-    public string ExtensionId { get; }
-
-    public string Label { get; }
-
-    public string Category { get; }
-
-    public ImageSource? IconSource { get; }
-
-    public Geometry? VectorIcon { get; }
-
-    public System.Windows.Media.Brush AccentBrush { get; }
-
-    public string DisplayGlyph { get; }
-
-    public bool HasImageIcon => IconSource != null;
-
-    public bool HasVectorIcon => VectorIcon != null;
-
-    public bool UseGlyphIcon => !HasImageIcon && !HasVectorIcon && !string.IsNullOrWhiteSpace(DisplayGlyph);
-
-    public override string ToString() => Label;
-}
-
-internal static class MouseGesturePreviewGeometryFactory
-{
-    public static Geometry Create(string? sequence, int[]? data)
+    private void CopySyncLogButton_Click(object sender, RoutedEventArgs e)
     {
-        var points = MouseGestureTemplateRecognizer.HasTemplateData(data)
-            ? DecodeTemplateData(data!)
-            : BuildSequencePoints(MouseGestureNaming.NormalizeSequence(sequence));
-        return BuildGeometry(ScalePoints(points, 52, 8));
-    }
-
-    private static List<WpfPoint> DecodeTemplateData(int[] data)
-    {
-        var points = new List<WpfPoint>(data.Length / 2);
-        for (var index = 0; index + 1 < data.Length; index += 2)
+        try
         {
-            points.Add(new WpfPoint(data[index], data[index + 1]));
-        }
-
-        return points;
-    }
-
-    private static List<WpfPoint> BuildSequencePoints(string sequence)
-    {
-        var points = new List<WpfPoint> { new(0, 0) };
-        var current = new WpfPoint(0, 0);
-        foreach (var ch in sequence)
-        {
-            var delta = ch switch
+            if (!string.IsNullOrWhiteSpace(SyncActivityLogText))
             {
-                '↑' => new WpfVector(0, -1),
-                '↗' => new WpfVector(1, -1),
-                '→' => new WpfVector(1, 0),
-                '↘' => new WpfVector(1, 1),
-                '↓' => new WpfVector(0, 1),
-                '↙' => new WpfVector(-1, 1),
-                '←' => new WpfVector(-1, 0),
-                '↖' => new WpfVector(-1, -1),
-                _ => new WpfVector(0, 0)
-            };
-            current += delta;
-            points.Add(current);
-        }
-
-        return points.Count > 1 ? points : [new WpfPoint(0, 0), new WpfPoint(1, 0)];
-    }
-
-    private static List<WpfPoint> ScalePoints(IReadOnlyList<WpfPoint> points, double size, double padding)
-    {
-        var minX = points.Min(static point => point.X);
-        var maxX = points.Max(static point => point.X);
-        var minY = points.Min(static point => point.Y);
-        var maxY = points.Max(static point => point.Y);
-        var width = Math.Max(1, maxX - minX);
-        var height = Math.Max(1, maxY - minY);
-        var scale = Math.Min((size - (padding * 2)) / width, (size - (padding * 2)) / height);
-        var actualWidth = width * scale;
-        var actualHeight = height * scale;
-        var offsetX = padding + ((size - (padding * 2) - actualWidth) / 2);
-        var offsetY = padding + ((size - (padding * 2) - actualHeight) / 2);
-        return points
-            .Select(point => new WpfPoint(
-                offsetX + ((point.X - minX) * scale),
-                offsetY + ((point.Y - minY) * scale)))
-            .ToList();
-    }
-
-    private static Geometry BuildGeometry(IReadOnlyList<WpfPoint> points)
-    {
-        var geometry = new StreamGeometry();
-        using (var context = geometry.Open())
-        {
-            context.BeginFigure(points[0], isFilled: false, isClosed: false);
-            context.PolyLineTo(points.Skip(1).ToList(), isStroked: true, isSmoothJoin: true);
-        }
-
-        geometry.Freeze();
-        return geometry;
-    }
-}
-
-public sealed record SettingsShortcutItem(string ExtensionId, string Title, string Category, string? Shortcut)
-{
-    public string ShortcutValue => Shortcut ?? string.Empty;
-
-    public string ShortcutLabel => string.IsNullOrWhiteSpace(Shortcut) ? "未设置" : Shortcut;
-
-    public bool HasShortcut => !string.IsNullOrWhiteSpace(Shortcut);
-}
-
-public sealed record YarnSelectActionTypeOption(string Value, string Label)
-{
-    public override string ToString() => Label;
-}
-
-public sealed record YanmActivationKeyOption(string Value, string Label);
-
-public sealed record MouseTriggerOption(string Value, string Label)
-{
-    public override string ToString() => Label;
-}
-
-public sealed record YarnSelectExtensionOption(
-    string ExtensionId,
-    string Title,
-    string Detail,
-    ImageSource? IconSource,
-    Geometry? VectorIcon,
-    System.Windows.Media.Brush AccentBrush,
-    string DisplayGlyph)
-{
-    public YarnSelectExtensionOption(CommandItem command)
-        : this(
-            command.ExtensionId,
-            command.Title,
-            string.IsNullOrWhiteSpace(command.OpenTarget)
-                ? command.ItemKindLabel
-                : $"{command.ItemKindLabel} · {command.OpenTarget}",
-            command.IconSource,
-            command.VectorIcon,
-            command.AccentBrush,
-            command.DisplayGlyph)
-    {
-    }
-
-    public YarnSelectExtensionOption(string extensionId, string title)
-        : this(extensionId, title, string.Empty, null, null, System.Windows.Media.Brushes.Transparent, string.Empty)
-    {
-    }
-
-    public bool HasImageIcon => IconSource != null;
-
-    public bool HasVectorIcon => VectorIcon != null;
-
-    public bool UseGlyphIcon => !HasImageIcon && !HasVectorIcon && !string.IsNullOrWhiteSpace(DisplayGlyph);
-
-    public override string ToString() => Title;
-}
-
-public sealed class RadialMenuSlotEditorItem : INotifyPropertyChanged
-{
-    private string _extensionId;
-    private string _displayTitle;
-    private string _childPageId;
-    private string _extensionTitle;
-    private string _childPageTitle;
-    private bool _isHovered;
-    private ImageSource? _iconSource;
-    private Geometry? _vectorIcon;
-    private System.Windows.Media.Brush _accentBrush;
-    private string _displayGlyph;
-
-    public RadialMenuSlotEditorItem(int index, string extensionId, string displayTitle, string childPageId, string extensionTitle, string childPageTitle, double x, double y, bool isOuter, Geometry sectorGeometry, ImageSource? iconSource, Geometry? vectorIcon, System.Windows.Media.Brush accentBrush, string displayGlyph)
-    {
-        Index = index;
-        _extensionId = extensionId;
-        _displayTitle = displayTitle;
-        _childPageId = childPageId;
-        _extensionTitle = extensionTitle;
-        _childPageTitle = childPageTitle;
-        X = x;
-        Y = y;
-        IsOuter = isOuter;
-        SectorGeometry = sectorGeometry;
-        _iconSource = iconSource;
-        _vectorIcon = vectorIcon;
-        _accentBrush = accentBrush;
-        _displayGlyph = displayGlyph;
-    }
-
-    public int Index { get; }
-
-    public string Label => (Index + 1).ToString(CultureInfo.InvariantCulture);
-
-    public double X { get; }
-
-    public double Y { get; }
-
-    public bool IsOuter { get; }
-
-    public Geometry SectorGeometry { get; }
-
-    public double SlotWidth => IsOuter ? 62 : 76;
-
-    public double SlotHeight => IsOuter ? 50 : 60;
-
-    public double TitleWidth => IsOuter ? 50 : 60;
-
-    public double IconSize => IsOuter ? 23 : 32;
-
-    public double VectorIconSize => IsOuter ? 14 : 19;
-
-    public double GlyphFontSize => IsOuter ? 11 : 13;
-
-    public double PlusFontSize => IsOuter ? 20 : 24;
-
-    public Thickness SlotPadding => IsOuter ? new Thickness(4, 2, 4, 0) : new Thickness(6, 4, 6, 0);
-
-    public ImageSource? IconSource
-    {
-        get => _iconSource;
-        set
-        {
-            if (Equals(value, _iconSource))
-            {
-                return;
+                System.Windows.Clipboard.SetText(SyncActivityLogText);
+                HostAssets.AppendLog("SettingsWindow: SyncActivityLog copied to clipboard.");
+                System.Windows.MessageBox.Show(this, "同步日志已成功复制到剪贴板。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
             }
-
-            _iconSource = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(HasImageIcon));
-            OnPropertyChanged(nameof(HasPresentationIcon));
-        }
-    }
-
-    public Geometry? VectorIcon
-    {
-        get => _vectorIcon;
-        set
-        {
-            if (Equals(value, _vectorIcon))
+            else
             {
-                return;
+                System.Windows.MessageBox.Show(this, "暂无日志可复制。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
             }
-
-            _vectorIcon = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(HasVectorIcon));
-            OnPropertyChanged(nameof(HasPresentationIcon));
         }
-    }
-
-    public System.Windows.Media.Brush AccentBrush
-    {
-        get => _accentBrush;
-        set
+        catch (Exception ex)
         {
-            if (Equals(value, _accentBrush))
-            {
-                return;
-            }
-
-            _accentBrush = value;
-            OnPropertyChanged();
+            HostAssets.AppendLog($"SettingsWindow: CopySyncLog failed: {ex.Message}");
         }
-    }
-
-    public string DisplayGlyph
-    {
-        get => _displayGlyph;
-        set
-        {
-            value ??= string.Empty;
-            if (value == _displayGlyph)
-            {
-                return;
-            }
-
-            _displayGlyph = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(UseGlyphIcon));
-            OnPropertyChanged(nameof(HasPresentationIcon));
-        }
-    }
-
-    public bool HasImageIcon => IconSource != null;
-
-    public bool HasVectorIcon => VectorIcon != null;
-
-    public bool UseGlyphIcon => !HasImageIcon && !HasVectorIcon && !string.IsNullOrWhiteSpace(DisplayGlyph);
-
-    public bool HasPresentationIcon => HasImageIcon || HasVectorIcon || UseGlyphIcon;
-
-    public bool IsEmpty => string.IsNullOrWhiteSpace(_extensionId) && string.IsNullOrWhiteSpace(_childPageId);
-
-    public bool IsNotEmpty => !IsEmpty;
-
-    public bool IsHovered
-    {
-        get => _isHovered;
-        set
-        {
-            if (value == _isHovered)
-            {
-                return;
-            }
-
-            _isHovered = value;
-            OnPropertyChanged();
-        }
-    }
-
-    public string ExtensionId
-    {
-        get => _extensionId;
-        set
-        {
-            value ??= string.Empty;
-            if (value == _extensionId)
-            {
-                return;
-            }
-
-            _extensionId = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(IsEmpty));
-            OnPropertyChanged(nameof(IsNotEmpty));
-        }
-    }
-
-    public string DisplayTitle
-    {
-        get => _displayTitle;
-        set
-        {
-            value ??= string.Empty;
-            if (value == _displayTitle)
-            {
-                return;
-            }
-
-            _displayTitle = value;
-            OnPropertyChanged();
-        }
-    }
-
-    public string ExtensionTitle
-    {
-        get => _extensionTitle;
-        set
-        {
-            value ??= string.Empty;
-            if (value == _extensionTitle)
-            {
-                return;
-            }
-
-            _extensionTitle = value;
-            OnPropertyChanged();
-        }
-    }
-
-    public string ChildPageId
-    {
-        get => _childPageId;
-        set
-        {
-            value ??= string.Empty;
-            if (value == _childPageId)
-            {
-                return;
-            }
-
-            _childPageId = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(IsEmpty));
-            OnPropertyChanged(nameof(IsNotEmpty));
-        }
-    }
-
-    public string ChildPageTitle
-    {
-        get => _childPageTitle;
-        set
-        {
-            value ??= string.Empty;
-            if (value == _childPageTitle)
-            {
-                return;
-            }
-
-            _childPageTitle = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(HasChildPageTitle));
-        }
-    }
-
-    public bool HasChildPageTitle => !string.IsNullOrWhiteSpace(_childPageTitle);
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
-    {
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-    }
-
-}
-
-public sealed record RadialMenuPageEditorItem(string Id, string Name);
-
-public sealed class YarnSelectRuleItem : INotifyPropertyChanged
-{
-    private bool _enabled;
-    private string _triggerKey;
-    private string _actionType;
-    private string _extensionId;
-    private string _extensionSearchText;
-    private string _description;
-    private ObservableCollection<YarnSelectExtensionOption> _filteredExtensionOptions = [];
-
-    public YarnSelectRuleItem(YarnSelectRuleSettings rule)
-    {
-        _enabled = rule.Enabled;
-        _triggerKey = rule.TriggerKey;
-        _actionType = rule.ActionType;
-        _extensionId = rule.ExtensionId;
-        _extensionSearchText = string.Empty;
-        _description = rule.Description;
-    }
-
-    public bool Enabled
-    {
-        get => _enabled;
-        set
-        {
-            if (value == _enabled)
-            {
-                return;
-            }
-
-            _enabled = value;
-            OnPropertyChanged();
-        }
-    }
-
-    public string TriggerKey
-    {
-        get => _triggerKey;
-        set
-        {
-            value = YarnSelectSettings.NormalizeTriggerKey(value);
-            if (value == _triggerKey)
-            {
-                return;
-            }
-
-            _triggerKey = value;
-            OnPropertyChanged();
-        }
-    }
-
-    public string ActionType
-    {
-        get => _actionType;
-        set
-        {
-            value = YarnSelectActionTypes.Normalize(value);
-            if (value == _actionType)
-            {
-                return;
-            }
-
-            _actionType = value;
-            OnPropertyChanged();
-        }
-    }
-
-    public string ExtensionId
-    {
-        get => _extensionId;
-        set
-        {
-            value ??= string.Empty;
-            if (value == _extensionId)
-            {
-                return;
-            }
-
-            _extensionId = value;
-            OnPropertyChanged();
-        }
-    }
-
-    public string ExtensionSearchText
-    {
-        get => _extensionSearchText;
-        set
-        {
-            value ??= string.Empty;
-            if (value == _extensionSearchText)
-            {
-                return;
-            }
-
-            _extensionSearchText = value;
-            OnPropertyChanged();
-        }
-    }
-
-    public ObservableCollection<YarnSelectExtensionOption> FilteredExtensionOptions
-    {
-        get => _filteredExtensionOptions;
-        set
-        {
-            if (ReferenceEquals(value, _filteredExtensionOptions))
-            {
-                return;
-            }
-
-            _filteredExtensionOptions = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(FilteredExtensionListVisibility));
-        }
-    }
-
-    public Visibility FilteredExtensionListVisibility => FilteredExtensionOptions.Count == 0
-        ? Visibility.Collapsed
-        : Visibility.Visible;
-
-    public string Description
-    {
-        get => _description;
-        set
-        {
-            value ??= string.Empty;
-            if (value == _description)
-            {
-                return;
-            }
-
-            _description = value;
-            OnPropertyChanged();
-        }
-    }
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
-    {
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-    }
-}
-
-public sealed class SettingsExtensionItem : INotifyPropertyChanged
-{
-    private bool _isPublished;
-    private string _publisherName;
-    private bool _isPublishing;
-    private bool _isUnpublishing;
-    private string _shortcut;
-    private string _startupMode;
-    private string _startupSchedule;
-    private bool _isSelected;
-
-    public SettingsExtensionItem(
-        string extensionId,
-        string title,
-        string description,
-        string category,
-        string version,
-        string directoryPath,
-        string sourceLabel,
-        bool canOpenDirectory,
-        bool isEnabled,
-        bool isPublished,
-        string publisherName,
-        string shortcut,
-        ImageSource? iconSource,
-        Geometry? vectorIcon,
-        System.Windows.Media.Brush accentBrush,
-        string displayGlyph,
-        string startupMode,
-        string startupSchedule)
-    {
-        ExtensionId = extensionId;
-        Title = title;
-        Description = description;
-        Category = category;
-        Version = version;
-        DirectoryPath = directoryPath;
-        SourceLabel = sourceLabel;
-        CanOpenDirectory = canOpenDirectory;
-        IsEnabled = isEnabled;
-        _isPublished = isPublished;
-        _publisherName = publisherName;
-        _shortcut = shortcut ?? string.Empty;
-        IconSource = iconSource;
-        VectorIcon = vectorIcon;
-        AccentBrush = accentBrush;
-        DisplayGlyph = displayGlyph;
-        _startupMode = startupMode ?? string.Empty;
-        _startupSchedule = startupSchedule ?? string.Empty;
-    }
-
-    public string ExtensionId { get; }
-
-    public string Title { get; }
-
-    public string Description { get; }
-
-    public string Category { get; }
-
-    public string Version { get; }
-
-    public string DirectoryPath { get; }
-
-    public string SourceLabel { get; }
-
-    public bool CanOpenDirectory { get; }
-
-    public bool IsEnabled { get; }
-
-    public ImageSource? IconSource { get; }
-
-    public Geometry? VectorIcon { get; }
-
-    public System.Windows.Media.Brush AccentBrush { get; }
-
-    public string DisplayGlyph { get; }
-
-    public bool HasImageIcon => IconSource != null;
-
-    public bool HasVectorIcon => VectorIcon != null;
-
-    public bool UseGlyphIcon => !HasImageIcon && !HasVectorIcon && !string.IsNullOrWhiteSpace(DisplayGlyph);
-
-    public string Shortcut
-    {
-        get => _shortcut;
-        set
-        {
-            if (_shortcut == value)
-            {
-                return;
-            }
-
-            _shortcut = value ?? string.Empty;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(ShortcutLabel));
-            OnPropertyChanged(nameof(HasShortcut));
-            OnPropertyChanged(nameof(ShortcutBadgeVisibility));
-            OnPropertyChanged(nameof(ShortcutDetailLabel));
-        }
-    }
-
-    public string ShortcutLabel => string.IsNullOrWhiteSpace(Shortcut) ? string.Empty : Shortcut;
-
-    public bool HasShortcut => !string.IsNullOrWhiteSpace(Shortcut);
-
-    public Visibility ShortcutBadgeVisibility => HasShortcut ? Visibility.Visible : Visibility.Collapsed;
-
-    public string ShortcutDetailLabel => HasShortcut ? Shortcut : "未设置";
-
-    public string StartupMode
-    {
-        get => _startupMode;
-        set
-        {
-            value ??= string.Empty;
-            if (_startupMode == value)
-            {
-                return;
-            }
-
-            _startupMode = value;
-            NotifyStartupStateChanged();
-        }
-    }
-
-    public string StartupSchedule
-    {
-        get => _startupSchedule;
-        set
-        {
-            value ??= string.Empty;
-            if (_startupSchedule == value)
-            {
-                return;
-            }
-
-            _startupSchedule = value;
-            NotifyStartupStateChanged();
-        }
-    }
-
-    public bool HasAppLaunchStartup => StartupMode.Equals("on_app_launch", StringComparison.OrdinalIgnoreCase);
-
-    public bool HasScheduleStartup => !string.IsNullOrWhiteSpace(StartupSchedule);
-
-    public string StartupActionLabel => HasAppLaunchStartup ? "关闭自启" : "开机自启";
-
-    public string StartupDetailLabel => HasAppLaunchStartup ? "已启用" : "未启用";
-
-    public string ScheduleDetailLabel => HasScheduleStartup ? ScheduleConfigWindow.CronToFriendly(StartupSchedule) : "未设置";
-
-    public Visibility AutoStartBadgeVisibility => HasAppLaunchStartup ? Visibility.Visible : Visibility.Collapsed;
-
-    public Visibility ScheduleBadgeVisibility => HasScheduleStartup ? Visibility.Visible : Visibility.Collapsed;
-
-    public string EnabledStateLabel => IsEnabled ? "已启用" : "已禁用";
-
-    public string PublishedStateLabel => IsPublishedInStore ? "已发布到商店" : "仅本地";
-
-    public string DescriptionOrFallback => string.IsNullOrWhiteSpace(Description) ? "这个扩展没有提供额外说明。" : Description;
-
-    public bool IsSelected
-    {
-        get => _isSelected;
-        set
-        {
-            if (_isSelected == value)
-            {
-                return;
-            }
-
-            _isSelected = value;
-            OnPropertyChanged();
-        }
-    }
-
-    public bool IsPublished
-    {
-        get => _isPublished;
-        set
-        {
-            if (_isPublished == value)
-            {
-                return;
-            }
-
-            _isPublished = value;
-            NotifyPublishStateChanged();
-        }
-    }
-
-    public string PublisherName
-    {
-        get => _publisherName;
-        set
-        {
-            if (string.Equals(_publisherName, value, StringComparison.Ordinal))
-            {
-                return;
-            }
-
-            _publisherName = value;
-            NotifyPublishStateChanged();
-        }
-    }
-
-    public bool IsPublishing
-    {
-        get => _isPublishing;
-        set
-        {
-            if (_isPublishing == value)
-            {
-                return;
-            }
-
-            _isPublishing = value;
-            NotifyBusyStateChanged();
-        }
-    }
-
-    public bool IsUnpublishing
-    {
-        get => _isUnpublishing;
-        set
-        {
-            if (_isUnpublishing == value)
-            {
-                return;
-            }
-
-            _isUnpublishing = value;
-            NotifyBusyStateChanged();
-        }
-    }
-
-    public bool IsPublishedInStore => IsPublished && !string.IsNullOrWhiteSpace(PublisherName);
-
-    public bool IsOperationBusy => IsPublishing || IsUnpublishing;
-
-    public string PublishActionLabel => IsPublishedInStore ? "更新商店版本" : "发布到商店";
-
-    public string PublishButtonText => IsPublishing
-        ? (IsPublishedInStore ? "更新中..." : "发布中...")
-        : PublishActionLabel;
-
-    public string UnpublishButtonText => IsUnpublishing ? "下线中..." : "下线";
-
-    public Visibility PublishSpinnerVisibility => IsPublishing ? Visibility.Visible : Visibility.Collapsed;
-
-    public Visibility PublishIconVisibility => IsPublishing ? Visibility.Collapsed : Visibility.Visible;
-
-    public Visibility UnpublishSpinnerVisibility => IsUnpublishing ? Visibility.Visible : Visibility.Collapsed;
-
-    public Visibility UnpublishIconVisibility => IsUnpublishing ? Visibility.Collapsed : Visibility.Visible;
-
-    public Visibility PublishNewButtonVisibility => IsPublishedInStore ? Visibility.Collapsed : Visibility.Visible;
-
-    public Visibility PublishUpdateButtonVisibility => IsPublishedInStore ? Visibility.Visible : Visibility.Collapsed;
-
-    public Visibility StoreLinkButtonVisibility => IsPublishedInStore ? Visibility.Visible : Visibility.Collapsed;
-
-    public Visibility UnpublishButtonVisibility => CanUnpublish ? Visibility.Visible : Visibility.Collapsed;
-
-    public string PublisherLabel => string.IsNullOrWhiteSpace(PublisherName) ? "未发布" : $"发布者：{PublisherName}";
-
-    public bool CanUnpublish => IsPublishedInStore;
-
-    public bool PublishButtonEnabled => !IsOperationBusy;
-
-    public bool UnpublishButtonEnabled => CanUnpublish && !IsOperationBusy;
-
-    public bool EditButtonEnabled => !IsOperationBusy;
-
-    public bool DeleteButtonEnabled => !IsOperationBusy;
-
-    public bool OpenDirectoryButtonEnabled => CanOpenDirectory && !IsOperationBusy;
-
-    public Visibility PublishedBadgeVisibility => IsPublishedInStore ? Visibility.Visible : Visibility.Collapsed;
-
-    public Visibility DisabledBadgeVisibility => !IsEnabled ? Visibility.Visible : Visibility.Collapsed;
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    private void NotifyPublishStateChanged()
-    {
-        OnPropertyChanged(nameof(IsPublished));
-        OnPropertyChanged(nameof(PublisherName));
-        OnPropertyChanged(nameof(IsPublishedInStore));
-        OnPropertyChanged(nameof(PublishActionLabel));
-        OnPropertyChanged(nameof(PublishButtonText));
-        OnPropertyChanged(nameof(PublisherLabel));
-        OnPropertyChanged(nameof(CanUnpublish));
-        OnPropertyChanged(nameof(PublishNewButtonVisibility));
-        OnPropertyChanged(nameof(PublishUpdateButtonVisibility));
-        OnPropertyChanged(nameof(StoreLinkButtonVisibility));
-        OnPropertyChanged(nameof(UnpublishButtonVisibility));
-        OnPropertyChanged(nameof(UnpublishButtonEnabled));
-        OnPropertyChanged(nameof(PublishedBadgeVisibility));
-        OnPropertyChanged(nameof(PublishedStateLabel));
-    }
-
-    private void NotifyBusyStateChanged()
-    {
-        OnPropertyChanged(nameof(IsPublishing));
-        OnPropertyChanged(nameof(IsUnpublishing));
-        OnPropertyChanged(nameof(IsOperationBusy));
-        OnPropertyChanged(nameof(PublishButtonText));
-        OnPropertyChanged(nameof(UnpublishButtonText));
-        OnPropertyChanged(nameof(PublishSpinnerVisibility));
-        OnPropertyChanged(nameof(PublishIconVisibility));
-        OnPropertyChanged(nameof(UnpublishSpinnerVisibility));
-        OnPropertyChanged(nameof(UnpublishIconVisibility));
-        OnPropertyChanged(nameof(PublishButtonEnabled));
-        OnPropertyChanged(nameof(UnpublishButtonEnabled));
-        OnPropertyChanged(nameof(EditButtonEnabled));
-        OnPropertyChanged(nameof(DeleteButtonEnabled));
-        OnPropertyChanged(nameof(OpenDirectoryButtonEnabled));
-    }
-
-    private void NotifyStartupStateChanged()
-    {
-        OnPropertyChanged(nameof(StartupMode));
-        OnPropertyChanged(nameof(StartupSchedule));
-        OnPropertyChanged(nameof(HasAppLaunchStartup));
-        OnPropertyChanged(nameof(HasScheduleStartup));
-        OnPropertyChanged(nameof(StartupActionLabel));
-        OnPropertyChanged(nameof(StartupDetailLabel));
-        OnPropertyChanged(nameof(ScheduleDetailLabel));
-        OnPropertyChanged(nameof(AutoStartBadgeVisibility));
-        OnPropertyChanged(nameof(ScheduleBadgeVisibility));
-    }
-
-    private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
-    {
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-    }
-}
-
-public sealed class SettingsRecycleBinItem : INotifyPropertyChanged
-{
-    private bool _isRestoring;
-    private bool _isDeletingPermanently;
-
-    public SettingsRecycleBinItem(
-        string itemId,
-        string extensionId,
-        string title,
-        string category,
-        string version,
-        string deletedAtUtc)
-    {
-        ItemId = itemId;
-        ExtensionId = extensionId;
-        Title = title;
-        Category = category;
-        Version = version;
-        DeletedAtUtc = deletedAtUtc;
-    }
-
-    public string ItemId { get; }
-
-    public string ExtensionId { get; }
-
-    public string Title { get; }
-
-    public string Category { get; }
-
-    public string Version { get; }
-
-    public string DeletedAtUtc { get; }
-
-    public string DeletedAtLabel => DateTimeOffset.TryParse(DeletedAtUtc, out var timestamp)
-        ? $"删除时间：{timestamp.LocalDateTime:yyyy-MM-dd HH:mm:ss}"
-        : "删除时间：未知";
-
-    public bool IsRestoring
-    {
-        get => _isRestoring;
-        set
-        {
-            if (_isRestoring == value)
-            {
-                return;
-            }
-
-            _isRestoring = value;
-            NotifyBusyStateChanged();
-        }
-    }
-
-    public bool IsDeletingPermanently
-    {
-        get => _isDeletingPermanently;
-        set
-        {
-            if (_isDeletingPermanently == value)
-            {
-                return;
-            }
-
-            _isDeletingPermanently = value;
-            NotifyBusyStateChanged();
-        }
-    }
-
-    public bool IsOperationBusy => IsRestoring || IsDeletingPermanently;
-
-    public string RestoreButtonText => IsRestoring ? "恢复中..." : "恢复";
-
-    public string DeleteButtonText => IsDeletingPermanently ? "删除中..." : "彻底删除";
-
-    public Visibility RestoreSpinnerVisibility => IsRestoring ? Visibility.Visible : Visibility.Collapsed;
-
-    public Visibility DeleteSpinnerVisibility => IsDeletingPermanently ? Visibility.Visible : Visibility.Collapsed;
-
-    public bool RestoreButtonEnabled => !IsOperationBusy;
-
-    public bool DeleteButtonEnabled => !IsOperationBusy;
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    private void NotifyBusyStateChanged()
-    {
-        OnPropertyChanged(nameof(IsRestoring));
-        OnPropertyChanged(nameof(IsDeletingPermanently));
-        OnPropertyChanged(nameof(IsOperationBusy));
-        OnPropertyChanged(nameof(RestoreButtonText));
-        OnPropertyChanged(nameof(DeleteButtonText));
-        OnPropertyChanged(nameof(RestoreSpinnerVisibility));
-        OnPropertyChanged(nameof(DeleteSpinnerVisibility));
-        OnPropertyChanged(nameof(RestoreButtonEnabled));
-        OnPropertyChanged(nameof(DeleteButtonEnabled));
-    }
-
-    private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
-    {
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-    }
-}
-
-public sealed class PersonalSyncCommitItem
-{
-    public PersonalSyncCommitItem(string sha, string message, string author, DateTimeOffset committedAtUtc, string url)
-    {
-        Sha = sha;
-        Message = string.IsNullOrWhiteSpace(message) ? "(无提交说明)" : message;
-        Author = string.IsNullOrWhiteSpace(author) ? "未知作者" : author;
-        CommittedAtUtc = committedAtUtc;
-        Url = url;
-    }
-
-    public string Sha { get; }
-
-    public string ShortSha => Sha.Length <= 8 ? Sha : Sha[..8];
-
-    public string Message { get; }
-
-    public string Author { get; }
-
-    public DateTimeOffset CommittedAtUtc { get; }
-
-    public string LocalTimeLabel => CommittedAtUtc.ToLocalTime().ToString("yyyy/M/d HH:mm", CultureInfo.CurrentCulture);
-
-    public string Url { get; }
-}
-
-public sealed class EnvironmentVariableEditorItem : INotifyPropertyChanged
-{
-    private string _name;
-    private string _value;
-    private string _description;
-
-    public EnvironmentVariableEditorItem(string name, string value, string description)
-    {
-        _name = name;
-        _value = value;
-        _description = description;
-    }
-
-    public string Name
-    {
-        get => _name;
-        set
-        {
-            if (value == _name)
-            {
-                return;
-            }
-
-            _name = value;
-            OnPropertyChanged();
-        }
-    }
-
-    public string Value
-    {
-        get => _value;
-        set
-        {
-            if (value == _value)
-            {
-                return;
-            }
-
-            _value = value;
-            OnPropertyChanged();
-        }
-    }
-
-    public string Description
-    {
-        get => _description;
-        set
-        {
-            if (value == _description)
-            {
-                return;
-            }
-
-            _description = value;
-            OnPropertyChanged();
-        }
-    }
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
-    {
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 }

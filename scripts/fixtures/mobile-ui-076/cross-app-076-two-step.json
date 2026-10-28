@@ -1,0 +1,14 @@
+[
+  {
+    "action": "openApp",
+    "packageName": "com.android.settings"
+  },
+  {
+    "action": "verify",
+    "selector": {
+      "className": "android.widget.FrameLayout"
+    },
+    "maxAttempts": 3,
+    "retryDelayMs": 250
+  }
+]

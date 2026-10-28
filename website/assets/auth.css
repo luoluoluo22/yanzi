@@ -1,0 +1,73 @@
+/* 登录/个人中心弹窗 */
+.auth-modal-overlay { position: fixed; inset: 0; z-index: 10000; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; background: rgba(10,10,12,.6); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); transition: opacity .25s ease; }
+.auth-modal-overlay.is-visible { opacity: 1; pointer-events: auto; }
+.auth-modal-card { width: 90%; max-width: 400px; padding: 2.5rem 2rem; box-sizing: border-box; position: relative; color: #f3f4f6; background: rgba(22,22,26,.88); border: 1px solid rgba(255,255,255,.08); border-radius: 16px; box-shadow: 0 20px 50px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.02); transform: translateY(20px) scale(.95); transition: transform .3s cubic-bezier(.16,1,.3,1); }
+.auth-modal-overlay.is-visible .auth-modal-card { transform: translateY(0) scale(1); }
+.auth-modal-close { position: absolute; top: 1rem; right: 1.2rem; background: none; border: 0; color: #9ca3af; font-size: 1.5rem; cursor: pointer; padding: 4px; line-height: 1; }
+.auth-modal-close:hover { color: #f3f4f6; }
+.auth-modal-field { margin-bottom: 1.25rem; text-align: left; }
+.auth-modal-field label { display: block; font-size: .85rem; color: #9ca3af; margin-bottom: .5rem; font-weight: 500; }
+.auth-modal-input { width: 100%; padding: 10px 14px; box-sizing: border-box; border-radius: 8px; border: 1px solid rgba(255,255,255,.12); background: rgba(10,10,12,.5); color: #f3f4f6; font-size: .95rem; }
+.auth-modal-input:focus { outline: 0; border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,.2); }
+.auth-modal-remember { display: flex; align-items: center; gap: 8px; margin-bottom: 1.5rem; cursor: pointer; user-select: none; font-size: .85rem; color: #9ca3af; text-align: left; }
+.auth-modal-remember input { accent-color: #3b82f6; width: 14px; height: 14px; margin: 0; }
+.auth-modal-status { min-height: 1.2rem; font-size: .85rem; margin-bottom: 1rem; color: #3b82f6; text-align: left; }
+.auth-modal-status.error { color: #ef4444; }
+.auth-modal-btn { width: 100%; padding: 12px; border: 0; border-radius: 8px; background: #3b82f6; color: #fff; font-size: .95rem; font-weight: 600; cursor: pointer; }
+.auth-modal-btn:hover { background: #2563eb; }
+.auth-modal-btn:disabled { background: #4b5563; color: #9ca3af; cursor: not-allowed; }
+.profile-modal-info { margin: 1.5rem 0; padding-top: 1.25rem; border-top: 1px solid rgba(255,255,255,.08); text-align: left; }
+.profile-info-row { display: flex; justify-content: space-between; margin-bottom: .85rem; font-size: .9rem; }
+.profile-info-row span:first-child { color: #9ca3af; }
+.profile-info-row span:last-child { color: #f3f4f6; font-weight: 500; word-break: break-all; }
+.auth-modal-btn.logout { margin-top: .5rem; color: #ef4444; background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.25); }
+.auth-modal-btn.logout:hover { background: rgba(239,68,68,.2); }
+.user-avatar-circle { width: 32px; height: 32px; border-radius: 50%; background: #3b82f6; color: #fff; display: flex; align-items: center; justify-content: center; font-size: .9rem; font-weight: bold; text-transform: uppercase; user-select: none; transition: transform .2s; }
+.user-avatar-circle:hover { transform: scale(1.05); }
+
+/* 首页下载区 */
+#download.download-section-minimal .download-panel > strong { display: none !important; }
+#download.download-section-minimal .download-platform-icon { background-repeat: no-repeat !important; background-position: center !important; background-size: 42px 42px !important; display: grid !important; place-items: center !important; }
+#download.download-section-minimal .download-platform-icon img { display: none !important; }
+#download.download-section-minimal .minimal-download-grid .download-panel:not(.download-panel-mobile) .download-platform-icon { background-image: url("https://api.iconify.design/logos:microsoft-windows-icon.svg") !important; }
+#download.download-section-minimal .minimal-download-grid .download-panel.download-panel-mobile .download-platform-icon { background-image: url("https://api.iconify.design/logos:android-icon.svg") !important; }
+#download.download-section-minimal .button.primary, #download.download-section-minimal .button.primary:hover, #download.download-section-minimal .button.primary:focus, #download.download-section-minimal .button.primary:visited { text-decoration: none !important; }
+.hero-actions .js-update-download-link { display: inline-flex !important; align-items: center; justify-content: center; gap: .55rem; font-size: 0 !important; line-height: 1; color: transparent !important; text-decoration: none !important; }
+.hero-actions .js-update-download-link::before { content: ""; width: 1.25rem; height: 1.25rem; flex: 0 0 auto; background: url("https://api.iconify.design/logos:microsoft-windows-icon.svg") center/contain no-repeat; }
+.hero-actions .js-update-download-link::after { content: "Windows下载"; color: #111827; font-size: 1rem; line-height: 1; }
+.release-link { display: inline-flex !important; align-items: center; justify-content: center; gap: .45rem; text-decoration: none; }
+.release-link::before { content: ""; width: 1rem; height: 1rem; flex: 0 0 auto; background: url("https://api.iconify.design/logos:github-icon.svg") center/contain no-repeat; filter: invert(1); }
+
+/* 文档页正常响应式布局 */
+.doc-content-header h1 { font-size: 2.2rem; font-weight: 850; letter-spacing: -.03em; margin: 0 0 .5rem; background: linear-gradient(135deg,#fff 0%,#a5b4fc 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.doc-content-header p { color: var(--text-muted); font-size: 1.05rem; line-height: 1.6; margin: 0; }
+.doc-content-header { margin-bottom: 2rem; }
+.doc-outline strong { display: block; margin-bottom: .75rem; color: var(--text); }
+
+@media (min-width: 769px) and (max-width: 1180px) {
+  .doc-layout { grid-template-columns: 260px minmax(0,1fr) !important; gap: 1.5rem !important; max-width: 100% !important; padding: 1.5rem 1.5rem 6rem !important; }
+  .doc-outline { display: none !important; }
+  .doc-sidebar { width: 100% !important; }
+  .guide-stack { max-width: none !important; margin: 0 !important; }
+}
+
+@media (max-width: 760px) {
+  .site-header { padding: 1rem 1.25rem !important; gap: 1rem !important; flex-wrap: wrap !important; justify-content: center !important; }
+  .site-header .brand { width: 100%; justify-content: center; display: flex; }
+  .site-header nav { width: 100%; display: flex; justify-content: center; gap: 1.2rem; flex-wrap: wrap; margin: 0; }
+  .site-header nav a { font-size: .92rem; line-height: 1.25; white-space: normal; text-align: center; }
+  .doc-page { padding-top: 1.25rem !important; width: min(100% - 1.5rem, 1100px); }
+  .doc-layout { grid-template-columns: 1fr !important; gap: 1.25rem !important; padding: 1rem 0 5rem !important; }
+  .doc-sidebar { position: relative !important; top: auto !important; width: 100% !important; max-height: none !important; }
+  .guide-card { padding: 1.5rem !important; }
+  .store-grid-container { width: min(100% - 1.5rem, 900px); margin: 0 auto; }
+  .store-grid { grid-template-columns: 1fr !important; gap: 1rem !important; padding: 1rem 0 2rem !important; }
+  .store-card { flex-direction: row !important; align-items: center !important; justify-content: flex-start !important; gap: 1rem; padding: 1rem; border: 1px solid var(--border); border-radius: 18px; background: var(--panel); text-align: left; min-height: 88px; }
+  .store-card:hover { transform: none !important; }
+  .store-card-icon-wrapper { width: 56px !important; height: 56px !important; border-radius: 16px !important; margin: 0 !important; flex: 0 0 auto; }
+  .store-card-icon { width: 30px !important; height: 30px !important; font-size: 1.4rem !important; }
+  .store-card-name { text-align: left !important; font-size: 1rem !important; margin: 0 0 .25rem !important; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: calc(100vw - 150px); }
+  .store-card-version { text-align: left !important; font-size: .82rem !important; }
+  .store-search-container { width: min(100% - 1.5rem, 560px); margin-top: 1rem !important; }
+  .store-search-input { height: 52px !important; font-size: 1rem !important; border-radius: 16px !important; }
+}

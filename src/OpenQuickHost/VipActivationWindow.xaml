@@ -1,0 +1,132 @@
+<Window x:Class="OpenQuickHost.VipActivationWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="VIP"
+        Width="460"
+        SizeToContent="Height"
+        MinHeight="360"
+        WindowStartupLocation="CenterScreen"
+        Background="{x:Null}"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        Style="{StaticResource DialogWindow}">
+    <Border Margin="0"
+            Background="{DynamicResource BrushDialogBG}"
+            BorderBrush="{DynamicResource BrushBorder}"
+            BorderThickness="0">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <Grid Margin="28,24">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <StackPanel Grid.Row="0">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="VIP"
+                                   Style="{StaticResource TitleText}"
+                                   FontSize="{DynamicResource FontSizeTitle}"
+                                   FontWeight="Bold" />
+                        <Border x:Name="CurrentVipBadge"
+                                Margin="10,0,0,0"
+                                Padding="8,2"
+                                CornerRadius="10"
+                                Background="#26F59E0B"
+                                BorderBrush="#80F59E0B"
+                                BorderThickness="1"
+                                VerticalAlignment="Center"
+                                Visibility="Collapsed">
+                            <TextBlock x:Name="CurrentVipBadgeText"
+                                       Text="终身VIP"
+                                       Foreground="#FFF59E0B"
+                                       FontSize="{DynamicResource FontSizeSmall}"
+                                       FontWeight="SemiBold" />
+                        </Border>
+                    </StackPanel>
+                    <TextBlock Margin="0,8,0,0"
+                               Text="VIP 可使用云同步、跨设备消息及其他云服务，并获得维护期内的新版本升级资格。基础本地功能继续免费；会员到期后可保留已获得的版本。"
+                               TextWrapping="Wrap"
+                               LineHeight="20"
+                               Foreground="{DynamicResource BrushTextSec}"
+                               Style="{StaticResource DescriptionText}" />
+                </StackPanel>
+
+                <Border x:Name="ClipboardBanner"
+                        Grid.Row="1"
+                        Margin="0,14,0,0"
+                        Padding="12,10"
+                        Background="#1A2196F3"
+                        BorderBrush="#402196F3"
+                        BorderThickness="1"
+                        CornerRadius="6"
+                        Visibility="Collapsed">
+                    <TextBlock x:Name="ClipboardBannerText"
+                               Text="检测到剪贴板中存在燕子激活码，已自动填入下方输入框。"
+                               Foreground="#FF64B5F6"
+                               FontSize="{DynamicResource FontSizeSmallPlus}"
+                               TextWrapping="Wrap" />
+                </Border>
+
+                <StackPanel Grid.Row="2" Margin="0,16,0,0">
+                    <TextBlock Text="卡密激活码："
+                               Foreground="{DynamicResource BrushTextMain}"
+                               FontSize="{DynamicResource FontSizeNormal}"
+                               FontWeight="Medium"
+                               Margin="0,0,0,8" />
+                    <TextBox x:Name="LicenseCodeTextBox"
+                             Height="38"
+                             VerticalContentAlignment="Center"
+                             Padding="10,0"
+                             FontSize="{DynamicResource FontSizeNormalPlus}"
+                             FontFamily="Consolas, monospace"
+                             TextChanged="LicenseCodeTextBox_TextChanged"
+                             TextWrapping="NoWrap" />
+                    <TextBlock Margin="0,6,0,0"
+                               Text="格式示例：YZ-1Y-XXXX-XXXX-XXXX（不区分大小写）"
+                               Foreground="{DynamicResource BrushTextSec}"
+                               FontSize="{DynamicResource FontSizeSmall}" />
+                </StackPanel>
+
+                <Grid Grid.Row="3" Margin="0,20,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Button x:Name="BuyButton"
+                            Grid.Column="0"
+                            Content="购买VIP"
+                            Margin="0,0,6,0"
+                            Height="36"
+                            Style="{StaticResource SecondaryBtn}"
+                            Click="BuyButton_Click" />
+                    <Button x:Name="ActivateButton"
+                            Grid.Column="1"
+                            Content="激活"
+                            Margin="6,0,0,0"
+                            Height="36"
+                            IsEnabled="False"
+                            Style="{StaticResource PrimaryBtn}"
+                            Click="ActivateButton_Click" />
+                </Grid>
+
+                <Button x:Name="ExportHistoricalCloudButton" Grid.Row="4" Margin="0,14,0,0"
+                        Height="34" Content="导出历史云同步数据（无需有效 VIP）"
+                        ToolTip="只读导出云同步对象 JSON；不包括附件和第三方网盘"
+                        Style="{StaticResource SecondaryBtn}"
+                        Click="ExportHistoricalCloudButton_Click" />
+
+                <TextBlock x:Name="StatusMessageText"
+                           Grid.Row="5"
+                           Margin="0,12,0,0"
+                           Text=""
+                           FontSize="{DynamicResource FontSizeSmallPlus}"
+                           TextWrapping="Wrap"
+                           HorizontalAlignment="Center" />
+            </Grid>
+        </ScrollViewer>
+    </Border>
+</Window>

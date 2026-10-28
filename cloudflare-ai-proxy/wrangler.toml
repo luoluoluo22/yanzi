@@ -1,0 +1,8 @@
+name = "yanzi-ai-proxy"
+main = "src/index.js"
+compatibility_date = "2026-04-23"
+account_id = "cc88cc0084b504db93ccd9462af37212"
+
+routes = [
+  { pattern = "ai.luoluoluo.cc.cd", custom_domain = true }
+]

@@ -3,9 +3,62 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
+using Avalonia.Media.Imaging;
 using Yanzi.Shared;
 
 namespace Yanzi.Avalonia;
+
+public class SlotActionItemViewModel
+{
+    public CommandItem Command { get; }
+    public string Title { get; }
+    public string Description { get; }
+    public string Category { get; }
+    public string CategoryTag { get; }
+    public string Glyph { get; }
+    public Bitmap? Icon { get; }
+    public bool HasIcon => Icon != null;
+    public string TagBackground { get; }
+
+    public SlotActionItemViewModel(CommandItem command)
+    {
+        Command = command;
+        Title = command.Title;
+        Description = string.IsNullOrWhiteSpace(command.Description) 
+            ? (command.ActionKind == CommandActionKind.LaunchApplication ? $"应用路径：{command.ApplicationName}" : "快捷操作")
+            : command.Description;
+        Glyph = string.IsNullOrWhiteSpace(command.Glyph) ? "⚡" : command.Glyph;
+
+        if (command.ActionKind == CommandActionKind.LaunchApplication)
+        {
+            Category = "Apps";
+            CategoryTag = "应用程序";
+            TagBackground = "#1E3A8A";
+            if (!string.IsNullOrEmpty(command.ApplicationName))
+            {
+                Icon = MacIconExtractor.GetCachedBitmap(command.ApplicationName);
+            }
+        }
+        else if (command.ActionKind == CommandActionKind.KeyboardShortcut)
+        {
+            Category = "Shortcuts";
+            CategoryTag = "系统动作";
+            TagBackground = "#065F46";
+        }
+        else if (command.ActionKind == CommandActionKind.Snippet)
+        {
+            Category = "Custom";
+            CategoryTag = "快捷短语";
+            TagBackground = "#78350F";
+        }
+        else
+        {
+            Category = "Custom";
+            CategoryTag = "自定义小程序";
+            TagBackground = "#581C87";
+        }
+    }
+}
 
 public partial class RadialSlotActionWindow : Window
 {
@@ -17,14 +70,16 @@ public partial class RadialSlotActionWindow : Window
     private readonly bool _allowDeleteCommand;
     private readonly bool _allowDeleteChildPage;
 
-    public ObservableCollection<CommandItem> Results { get; } = [];
+    public ObservableCollection<SlotActionItemViewModel> FilteredResults { get; } = [];
+    private readonly List<SlotActionItemViewModel> _allCandidates = [];
 
     public string TitleText { get; }
     private TextBox? SearchBoxControl { get; set; }
     private ListBox? ResultListControl { get; set; }
+    private string _currentCategory = "All";
 
     public RadialSlotActionWindow()
-        : this("搜寻/设置", _ => Array.Empty<CommandItem>(), _ => {}, () => {}, () => {}, () => {}, false, false)
+        : this("插槽小程序与应用配置", _ => Array.Empty<CommandItem>(), _ => {}, () => {}, () => {}, () => {}, false, false)
     {
     }
 
@@ -48,12 +103,14 @@ public partial class RadialSlotActionWindow : Window
         _deleteChildPage = deleteChildPage;
         _allowDeleteCommand = allowDeleteCommand;
         _allowDeleteChildPage = allowDeleteChildPage;
+
         SearchBoxControl = this.FindControl<TextBox>("SearchBox");
         ResultListControl = this.FindControl<ListBox>("ResultList");
 
         Loaded += (_, _) =>
         {
-            RefreshResults();
+            LoadAllCandidates();
+            ApplyFilter();
             SearchBoxControl?.Focus();
             SearchBoxControl?.SelectAll();
         };
@@ -61,16 +118,81 @@ public partial class RadialSlotActionWindow : Window
         UpdateButtonState();
     }
 
-
-
     private void InitializeComponent()
     {
         AvaloniaXamlLoader.Load(this);
     }
 
+    private void Window_PointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        {
+            BeginMoveDrag(e);
+        }
+    }
+
+    private void LoadAllCandidates()
+    {
+        _allCandidates.Clear();
+        var rawCandidates = _commandProvider(string.Empty);
+        foreach (var cmd in rawCandidates)
+        {
+            // Skip invalid or empty commands
+            if (string.IsNullOrWhiteSpace(cmd.Title)) continue;
+            _allCandidates.Add(new SlotActionItemViewModel(cmd));
+        }
+    }
+
+    private void Tab_Checked(object? sender, RoutedEventArgs e)
+    {
+        if (sender is RadioButton rb)
+        {
+            _currentCategory = rb.Name switch
+            {
+                "TabApps" => "Apps",
+                "TabShortcuts" => "Shortcuts",
+                "TabCustom" => "Custom",
+                _ => "All"
+            };
+            ApplyFilter();
+        }
+    }
+
     private void SearchBox_TextChanged(object? sender, TextChangedEventArgs e)
     {
-        RefreshResults();
+        ApplyFilter();
+    }
+
+    private void ApplyFilter()
+    {
+        FilteredResults.Clear();
+        var query = SearchBoxControl?.Text?.Trim() ?? string.Empty;
+
+        var matching = _allCandidates.Where(item =>
+        {
+            // Category filter
+            if (_currentCategory != "All" && !string.Equals(item.Category, _currentCategory, StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            // Search query filter
+            if (string.IsNullOrWhiteSpace(query))
+                return true;
+
+            return PinyinHelper.Matches(item.Title, query)
+                || PinyinHelper.Matches(item.Description, query)
+                || PinyinHelper.Matches(item.CategoryTag, query)
+                || PinyinHelper.Matches(item.Command.ApplicationName, query);
+        });
+
+        foreach (var item in matching)
+        {
+            FilteredResults.Add(item);
+        }
+
+        if (FilteredResults.Count > 0 && ResultListControl != null)
+        {
+            ResultListControl.SelectedIndex = 0;
+        }
     }
 
     private void SearchBox_KeyDown(object? sender, KeyEventArgs e)
@@ -80,7 +202,7 @@ public partial class RadialSlotActionWindow : Window
             CommitSelection();
             e.Handled = true;
         }
-        else if (e.Key == Key.Down && Results.Count > 0)
+        else if (e.Key == Key.Down && FilteredResults.Count > 0)
         {
             if (ResultListControl != null)
             {
@@ -117,10 +239,40 @@ public partial class RadialSlotActionWindow : Window
         CommitSelection();
     }
 
-    private void AddChildPage_Click(object? sender, RoutedEventArgs e)
+    private void Confirm_Click(object? sender, RoutedEventArgs e)
     {
-        _addChildPage();
-        Close();
+        CommitSelection();
+    }
+
+    private async void AddLocalFile_Click(object? sender, RoutedEventArgs e)
+    {
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel?.StorageProvider != null)
+        {
+            var files = await topLevel.StorageProvider.OpenFilePickerAsync(new global::Avalonia.Platform.Storage.FilePickerOpenOptions
+            {
+                Title = "选择要添加的应用程序或文件",
+                AllowMultiple = false
+            });
+
+            if (files.Count > 0)
+            {
+                var filePath = files[0].Path.LocalPath;
+                var fileName = System.IO.Path.GetFileNameWithoutExtension(filePath);
+                var isApp = filePath.EndsWith(".app", StringComparison.OrdinalIgnoreCase);
+                var cmd = new CommandItem
+                {
+                    ExtensionId = $"custom-file-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}",
+                    Title = fileName,
+                    Description = $"打开：{filePath}",
+                    ActionKind = CommandActionKind.LaunchApplication,
+                    ApplicationName = isApp ? fileName : filePath,
+                    Glyph = isApp ? "💻" : "📄"
+                };
+                _assignCommand(cmd);
+                Close();
+            }
+        }
     }
 
     private void DeleteCommand_Click(object? sender, RoutedEventArgs e)
@@ -132,15 +284,6 @@ public partial class RadialSlotActionWindow : Window
         Close();
     }
 
-    private void DeleteChildPage_Click(object? sender, RoutedEventArgs e)
-    {
-        if (!_allowDeleteChildPage)
-            return;
-
-        _deleteChildPage();
-        Close();
-    }
-
     private void Close_Click(object? sender, RoutedEventArgs e)
     {
         Close();
@@ -148,12 +291,12 @@ public partial class RadialSlotActionWindow : Window
 
     private async void CopyPrompt_Click(object? sender, RoutedEventArgs e)
     {
-        var prompt = @"请帮我写一个燕子启动器 (Yanzi) 的单文件 JSON 扩展。
+        var prompt = @"请帮我写一个燕子 (Yanzi) 的单文件 JSON 小程序。
 要求格式如下：
 {
   ""id"": ""唯一的英文id"",
-  ""title"": ""扩展名称"",
-  ""description"": ""扩展描述"",
+  ""title"": ""小程序名称"",
+  ""description"": ""小程序描述"",
   ""glyph"": ""图标(可以使用emoji)"",
   ""actionKind"": ""操作类型(LaunchApplication 或 KeyboardShortcut 或 AppleScript)"",
   ""applicationName"": ""当actionKind为LaunchApplication时提供，可以填应用名(如WeChat)或URL"",
@@ -181,28 +324,12 @@ public partial class RadialSlotActionWindow : Window
         }
     }
 
-    private void RefreshResults()
-    {
-        Results.Clear();
-        var keyword = SearchBoxControl?.Text?.Trim() ?? string.Empty;
-        var candidates = _commandProvider(keyword);
-        foreach (var command in candidates)
-        {
-            Results.Add(command);
-        }
-
-        if (Results.Count > 0 && ResultListControl != null && ResultListControl.SelectedIndex < 0)
-        {
-            ResultListControl.SelectedIndex = 0;
-        }
-    }
-
     private void CommitSelection()
     {
-        if (ResultListControl?.SelectedItem is not CommandItem command)
+        if (ResultListControl?.SelectedItem is not SlotActionItemViewModel selected)
             return;
 
-        _assignCommand(command);
+        _assignCommand(selected.Command);
         Close();
     }
 
@@ -212,10 +339,6 @@ public partial class RadialSlotActionWindow : Window
         {
             deleteCommandButton.IsEnabled = _allowDeleteCommand;
         }
-
-        if (this.FindControl<Button>("DeleteChildPageButton") is { } deleteChildPageButton)
-        {
-            deleteChildPageButton.IsEnabled = _allowDeleteChildPage;
-        }
     }
 }
+

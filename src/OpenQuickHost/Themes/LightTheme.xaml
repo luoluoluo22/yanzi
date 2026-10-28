@@ -26,6 +26,7 @@
     
     <!-- Other Helper Theme Colors -->
     <SolidColorBrush x:Key="BrushListViewItemMouseOver" Color="#0D000000"/>
+    <SolidColorBrush x:Key="BrushTagHoverBG" Color="#FFE2ECFC"/>
     <SolidColorBrush x:Key="BrushListViewItemHeaderBG" Color="#FFF3F4F6"/>
     <SolidColorBrush x:Key="BrushListViewItemSelectedBG" Color="#202563EB"/>
     <SolidColorBrush x:Key="BrushListViewItemSelectedBorder" Color="#402563EB"/>
@@ -38,4 +39,24 @@
     <SolidColorBrush x:Key="BrushMenuItemHighlightBG" Color="#10000000"/>
     <SolidColorBrush x:Key="BrushMenuItemGestureText" Color="#80000000"/>
     <SolidColorBrush x:Key="BrushMenuItemDisabledText" Color="#40000000"/>
+
+    <!-- Radial Menu (燕环) Colors - 纯色不透明统一底色 -->
+    <SolidColorBrush x:Key="BrushRadialOuterBG" Color="#FFF3F4F6"/>
+    <SolidColorBrush x:Key="BrushRadialInnerBG" Color="#FFF3F4F6"/>
+    <SolidColorBrush x:Key="BrushRadialCenterBG" Color="#FFF3F4F6"/>
+    <SolidColorBrush x:Key="BrushRadialBorder" Color="#FFB9B9B9"/>
+    <SolidColorBrush x:Key="BrushRadialBorderActive" Color="#FF8E8E8E"/>
+    <SolidColorBrush x:Key="BrushRadialBorderSec" Color="#FFD6D6D6"/>
+    <SolidColorBrush x:Key="BrushRadialText" Color="#FF111827"/>
+    <SolidColorBrush x:Key="BrushRadialTextMuted" Color="#FF6B7280"/>
+    <SolidColorBrush x:Key="BrushRadialIcon" Color="#FF374151"/>
+    <SolidColorBrush x:Key="BrushRadialButtonBG" Color="#FFE5E7EB"/>
+    <SolidColorBrush x:Key="BrushRadialSlotHover" Color="#28000000"/>
+    <SolidColorBrush x:Key="BrushRadialSlotHoverBorder" Color="#4F000000"/>
+    <SolidColorBrush x:Key="BrushRadialEmptySector" Color="#FFE2E8F0"/>
+    <SolidColorBrush x:Key="BrushRadialEmptyHoverSector" Color="#FF2563EB"/>
+    <SolidColorBrush x:Key="BrushRadialFallbackSector" Color="#FFE2E8F0"/>
+    <SolidColorBrush x:Key="BrushRadialChildAccentSector" Color="#FF2563EB"/>
+    <SolidColorBrush x:Key="BrushRadialSlotBorder" Color="#28000000"/>
+    <SolidColorBrush x:Key="BrushRadialTextActive" Color="#FF0F172A"/>
 </ResourceDictionary>

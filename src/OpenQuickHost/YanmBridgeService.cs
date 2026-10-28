@@ -24,7 +24,7 @@ public sealed class YanmBridgeService
     private readonly Func<string, string, string> _getComponentState;
     private readonly Action<string, string> _sendComponentState;
     private readonly Action<string> _sendSystemInfo;
-    private readonly Action<string, string> _queueComponentStateSave;
+    private readonly Action<string, string, string> _queueComponentStateSave;
     private readonly Action<string, string, bool, object?, string?> _sendReply;
     private readonly Action<CommandItem, string?, string> _executeCommandExternally;
     private readonly Action<string> _log;
@@ -35,7 +35,7 @@ public sealed class YanmBridgeService
         Func<string, string, string> getComponentState,
         Action<string, string> sendComponentState,
         Action<string> sendSystemInfo,
-        Action<string, string> queueComponentStateSave,
+        Action<string, string, string> queueComponentStateSave,
         Action<string, string, bool, object?, string?> sendReply,
         Action<CommandItem, string?, string> executeCommandExternally,
         Action<string> log)
@@ -62,7 +62,30 @@ public sealed class YanmBridgeService
 
         var invokeId = GetString(root, "id");
         var method = GetString(root, "method");
-        var args = root.TryGetProperty("args", out var argsProperty) ? argsProperty : default;
+        var args = root.TryGetProperty("args", out var argsProperty) ? argsProperty.Clone() : default;
+
+        // web.fetch 是同步 HTTP（超时可达 8 秒），必须离开 UI 线程执行，否则组件一发起
+        // 网络请求整个应用就冻结；其余能力都是本地快速操作，保持原同步路径。
+        // 注意 args 必须 Clone：调用方的 JsonDocument 离开 using 后即销毁。
+        if (string.Equals(method, "web.fetch", StringComparison.Ordinal))
+        {
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            var componentTitle = component.Title;
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    var result = Dispatch(method, componentId, component, args);
+                    SendReplyOnUi(dispatcher, componentId, invokeId, true, result, null);
+                }
+                catch (Exception ex)
+                {
+                    _log($"Yanm: invoke failed, component={componentTitle}, method={method}, error={ex.Message}");
+                    SendReplyOnUi(dispatcher, componentId, invokeId, false, null, ex.Message);
+                }
+            });
+            return;
+        }
 
         try
         {
@@ -76,13 +99,25 @@ public sealed class YanmBridgeService
         }
     }
 
+    private void SendReplyOnUi(System.Windows.Threading.Dispatcher? dispatcher, string componentId, string invokeId, bool ok, object? result, string? error)
+    {
+        if (dispatcher == null)
+        {
+            return;
+        }
+
+        UiDispatcher.Post(
+            () => _sendReply(componentId, invokeId, ok, result, error),
+            onError: ex => _log($"Yanm: send reply failed, component={componentId}, invoke={invokeId}, error={ex.Message}"));
+    }
+
     private object? Dispatch(string method, string componentId, YanmComponentSettings component, JsonElement args)
     {
         return method switch
         {
             "system.info" => BuildSystemInfoResult(),
             "state.get" => BuildStateGetResult(componentId, args),
-            "state.set" => BuildStateSetResult(args),
+            "state.set" => BuildStateSetResult(componentId, args),
             "clipboard.read" => ClipboardService.GetText() ?? string.Empty,
             "clipboard.write" => BuildClipboardWriteResult(args),
             "desktop.list" => BuildDesktopListResult(),
@@ -132,7 +167,7 @@ public sealed class YanmBridgeService
         return new { key, value };
     }
 
-    private object BuildStateSetResult(JsonElement args)
+    private object BuildStateSetResult(string componentId, JsonElement args)
     {
         var key = GetArgString(args, "key");
         var value = GetArgString(args, "value");
@@ -141,7 +176,7 @@ public sealed class YanmBridgeService
             throw new InvalidOperationException("state.set 缺少 key。");
         }
 
-        _queueComponentStateSave(key, value);
+        _queueComponentStateSave(componentId, key, value);
         return new { key, value };
     }
 

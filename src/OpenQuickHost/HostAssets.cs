@@ -1,4 +1,7 @@
+using System.Collections.Concurrent;
 using System.IO;
+using System.Text;
+using System.Threading;
 
 namespace OpenQuickHost;
 
@@ -6,15 +9,56 @@ public static class HostAssets
 {
     private const string DevWorkspacePath = @"F:\Desktop\kaifa\OpenQuickHost";
     private const long MaxLogFileBytes = 8L * 1024 * 1024;
+    private const int MaxQueuedLogLines = 4096;
+    private const int MaxLogFlushLines = 256;
+
+    private static readonly ConcurrentQueue<string> PendingLogLines = new();
+    private static readonly ConcurrentQueue<string> PendingCloudDiagnosticLines = new();
+    private static readonly AutoResetEvent LogFlushSignal = new(false);
+    private static int _logWorkerStarted;
+    private static int _queuedLogLineCount;
+    private static int _droppedLogLineCount;
+    private static int _queuedCloudDiagnosticLineCount;
+    private static int _droppedCloudDiagnosticLineCount;
+    private static string? _isolatedVerificationDataRootPath;
 
     public static string InstallRootPath => AppDomain.CurrentDomain.BaseDirectory;
 
     public static string RootPath => DataRootPath;
 
     public static string DataRootPath =>
-        Path.Combine(
+        _isolatedVerificationDataRootPath ?? HostRuntimeProfile.RuntimeDataRoot ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "OpenQuickHost");
+            HostRuntimeProfile.DataDirectoryName);
+
+    internal static IDisposable UseIsolatedDataRootForVerification(string path)
+    {
+        if (!Path.IsPathFullyQualified(path) || Directory.Exists(path) && Directory.EnumerateFileSystemEntries(path).Any())
+        {
+            throw new ArgumentException("验证数据目录必须是绝对路径且为空。", nameof(path));
+        }
+
+        var previous = _isolatedVerificationDataRootPath;
+        _isolatedVerificationDataRootPath = Path.GetFullPath(path);
+        return new VerificationDataRootScope(() => _isolatedVerificationDataRootPath = previous);
+    }
+
+    internal static IDisposable UseExistingDataRootForVerification(string path)
+    {
+        if (!Path.IsPathFullyQualified(path) || !Directory.Exists(path))
+        {
+            throw new ArgumentException("现有验证数据目录必须是已存在的绝对路径。", nameof(path));
+        }
+
+        var previous = _isolatedVerificationDataRootPath;
+        _isolatedVerificationDataRootPath = Path.GetFullPath(path);
+        return new VerificationDataRootScope(() => _isolatedVerificationDataRootPath = previous);
+    }
+
+    private sealed class VerificationDataRootScope(Action restore) : IDisposable
+    {
+        public void Dispose() => restore();
+    }
 
     public static string ExtensionsPath => ResolveDataDirectoryPath("Extensions");
 
@@ -24,15 +68,21 @@ public static class HostAssets
 
     public static string DocsPath => ResolveDataDirectoryPath("docs");
 
+    public static string PastedImagesPath => ResolveDataDirectoryPath("PastedImages");
+
+    public static string PastedNotesPath => ResolveDataDirectoryPath("PastedNotes");
+
     public static string SkillsPath => ResolveDataDirectoryPath("skills");
 
     public static string DocsReadmePath => Path.Combine(DocsPath, "README.txt");
 
     public static string LogsPath => ResolveDataDirectoryPath("logs");
 
-    public static string HostLogPath => Path.Combine(LogsPath, "host.log");
+    public static string HostLogPath => Path.Combine(LogsPath, HostRuntimeProfile.IsRuntime ? "runtime.log" : "shell.log");
 
     public static string DevDebugLogPath => Path.Combine(LogsPath, "dev-debug.log");
+
+    public static string CloudSyncDiagnosticsLogPath => Path.Combine(LogsPath, "cloud-sync-diagnostics.log");
 
     public static string RecentCommandsPath => ResolveDataFilePath("recent-commands.txt");
 
@@ -58,6 +108,8 @@ public static class HostAssets
         Directory.CreateDirectory(ExtensionsPath);
         Directory.CreateDirectory(ExtensionRecycleBinPath);
         Directory.CreateDirectory(DocsPath);
+        Directory.CreateDirectory(PastedImagesPath);
+        Directory.CreateDirectory(PastedNotesPath);
         Directory.CreateDirectory(LogsPath);
         Directory.CreateDirectory(SkillsPath);
 
@@ -109,32 +161,87 @@ public static class HostAssets
     public static void AppendRecent(string title)
     {
         EnsureCreated();
-        File.AppendAllText(
+        SafeFile.TryAppendAllText(
             RecentCommandsPath,
             $"{Environment.NewLine}[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {title}");
     }
 
-    public static void AppendLog(string message)
-    {
-        EnsureCreated();
-        RotateFileIfTooLarge(HostLogPath, MaxLogFileBytes);
-        File.AppendAllText(
-            HostLogPath,
-            $"{Environment.NewLine}[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}");
-    }
+    /// <summary>
+    /// 热路径调试日志开关：设置环境变量 YANZI_VERBOSE_LOG=1 后才输出。
+    /// 轮盘每 tick 的命中/可见性日志等会以约 60 行/秒撑爆 host.log，默认必须静默。
+    /// </summary>
+    public static bool VerboseLogEnabled { get; } =
+        string.Equals(Environment.GetEnvironmentVariable("YANZI_VERBOSE_LOG"), "1", StringComparison.OrdinalIgnoreCase);
 
-    public static void AppendDevLog(string message)
+    /// <summary>调试级日志：仅在 VerboseLogEnabled 时入队，热路径调用无 IO/队列开销（除一次属性读）。</summary>
+    public static void AppendDebug(string message)
     {
-        if (!Directory.Exists(DevWorkspacePath))
+        if (!VerboseLogEnabled)
         {
             return;
         }
 
-        EnsureCreated();
-        RotateFileIfTooLarge(DevDebugLogPath, MaxLogFileBytes);
-        File.AppendAllText(
-            DevDebugLogPath,
-            $"{Environment.NewLine}[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}");
+        AppendLog(message);
+    }
+
+    public static void AppendLog(string message)
+    {
+        var line = $"{Environment.NewLine}[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}";
+        if (Interlocked.Increment(ref _queuedLogLineCount) > MaxQueuedLogLines)
+        {
+            Interlocked.Decrement(ref _queuedLogLineCount);
+            Interlocked.Increment(ref _droppedLogLineCount);
+            return;
+        }
+
+        PendingLogLines.Enqueue(line);
+        EnsureLogWorkerStarted();
+        LogFlushSignal.Set();
+    }
+
+    public static void AppendDevLog(string message)
+    {
+        try
+        {
+            if (!Directory.Exists(DevWorkspacePath))
+            {
+                return;
+            }
+
+            EnsureCreated();
+            RotateFileIfTooLarge(DevDebugLogPath, MaxLogFileBytes);
+            SafeFile.TryAppendAllText(
+                DevDebugLogPath,
+                $"{Environment.NewLine}[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}");
+        }
+        catch
+        {
+            // 轮转竞争等异常静默放弃：这里抛出的异常会顶替调用方的业务异常
+        }
+    }
+
+    public static void AppendCloudSyncDiagnosticLog(string message)
+    {
+        var line = $"{Environment.NewLine}[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}";
+        // Keep failure signals in the main log even if the detailed queue is full.
+        if (message.Contains(" failed", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains(" blocked", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains(" conflict", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains(" cooldown", StringComparison.OrdinalIgnoreCase))
+        {
+            AppendLog($"[CloudSyncDiag] {message}");
+        }
+
+        if (Interlocked.Increment(ref _queuedCloudDiagnosticLineCount) > MaxQueuedLogLines)
+        {
+            Interlocked.Decrement(ref _queuedCloudDiagnosticLineCount);
+            Interlocked.Increment(ref _droppedCloudDiagnosticLineCount);
+            return;
+        }
+
+        PendingCloudDiagnosticLines.Enqueue(line);
+        EnsureLogWorkerStarted();
+        LogFlushSignal.Set();
     }
 
     public static IReadOnlyList<string> ReadHostLogTailLines(int maxBytes, int maxLines)
@@ -194,6 +301,132 @@ public static class HostAssets
         }
     }
 
+    private static void EnsureLogWorkerStarted()
+    {
+        if (Interlocked.Exchange(ref _logWorkerStarted, 1) == 1)
+        {
+            return;
+        }
+
+        _ = Task.Factory.StartNew(
+            LogWorkerLoop,
+            CancellationToken.None,
+            TaskCreationOptions.LongRunning,
+            TaskScheduler.Default);
+    }
+
+    private static void LogWorkerLoop()
+    {
+        while (true)
+        {
+            LogFlushSignal.WaitOne(TimeSpan.FromSeconds(1));
+            FlushPendingLogLines();
+            FlushPendingCloudDiagnosticLines();
+        }
+    }
+
+    private static void FlushPendingLogLines()
+    {
+        if (PendingLogLines.IsEmpty && Volatile.Read(ref _droppedLogLineCount) == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(LogsPath);
+            EnsureFile(
+                HostLogPath,
+                $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Swallow Launcher initialized.{Environment.NewLine}");
+            RotateFileIfTooLarge(HostLogPath, MaxLogFileBytes);
+
+            var builder = new StringBuilder(capacity: 8192);
+            var batch = PendingLogLines.Take(MaxLogFlushLines).ToArray();
+            foreach (var line in batch)
+            {
+                builder.Append(line);
+            }
+
+            var dropped = Volatile.Read(ref _droppedLogLineCount);
+            if (dropped > 0)
+            {
+                builder.Append($"{Environment.NewLine}[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] Host log queue overflow: dropped={dropped} lines.");
+            }
+
+            if (builder.Length > 0)
+            {
+                File.AppendAllText(HostLogPath, builder.ToString());
+            }
+
+            for (var index = 0; index < batch.Length; index++)
+            {
+                if (PendingLogLines.TryDequeue(out _))
+                {
+                    Interlocked.Decrement(ref _queuedLogLineCount);
+                }
+            }
+            if (dropped > 0) Interlocked.Add(ref _droppedLogLineCount, -dropped);
+
+            if (!PendingLogLines.IsEmpty)
+            {
+                LogFlushSignal.Set();
+            }
+        }
+        catch
+        {
+            // Logging must never block normal app execution.
+        }
+    }
+
+    private static void FlushPendingCloudDiagnosticLines()
+    {
+        if (PendingCloudDiagnosticLines.IsEmpty && Volatile.Read(ref _droppedCloudDiagnosticLineCount) == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(LogsPath);
+            RotateFileIfTooLarge(CloudSyncDiagnosticsLogPath, MaxLogFileBytes);
+            var builder = new StringBuilder(capacity: 8192);
+            var batch = PendingCloudDiagnosticLines.Take(MaxLogFlushLines).ToArray();
+            foreach (var line in batch)
+            {
+                builder.Append(line);
+            }
+
+            var dropped = Volatile.Read(ref _droppedCloudDiagnosticLineCount);
+            if (dropped > 0)
+            {
+                builder.Append($"{Environment.NewLine}[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] Cloud diagnostic queue overflow: dropped={dropped} lines.");
+            }
+
+            if (builder.Length > 0)
+            {
+                File.AppendAllText(CloudSyncDiagnosticsLogPath, builder.ToString());
+            }
+
+            for (var index = 0; index < batch.Length; index++)
+            {
+                if (PendingCloudDiagnosticLines.TryDequeue(out _))
+                {
+                    Interlocked.Decrement(ref _queuedCloudDiagnosticLineCount);
+                }
+            }
+            if (dropped > 0) Interlocked.Add(ref _droppedCloudDiagnosticLineCount, -dropped);
+
+            if (!PendingCloudDiagnosticLines.IsEmpty)
+            {
+                LogFlushSignal.Set();
+            }
+        }
+        catch
+        {
+            // Logging must never block cloud sync; unwritten records remain queued.
+        }
+    }
+
     private static void EnsureFile(string path, string content)
     {
         if (!File.Exists(path))
@@ -204,6 +437,7 @@ public static class HostAssets
 
     private static void MigrateLegacyFile(string fileName)
     {
+        if (HostRuntimeProfile.IsDevelopment || HostRuntimeProfile.RuntimeDataRoot != null) return;
         var legacyPath = Path.Combine(InstallRootPath, fileName);
         var targetPath = Path.Combine(DataRootPath, fileName);
         if (!File.Exists(legacyPath) || File.Exists(targetPath))
@@ -224,6 +458,7 @@ public static class HostAssets
 
     private static void MigrateLegacyDirectory(string directoryName)
     {
+        if (HostRuntimeProfile.IsDevelopment || HostRuntimeProfile.RuntimeDataRoot != null) return;
         var legacyPath = Path.Combine(InstallRootPath, directoryName);
         var targetPath = Path.Combine(DataRootPath, directoryName);
         if (!Directory.Exists(legacyPath) || Directory.Exists(targetPath))

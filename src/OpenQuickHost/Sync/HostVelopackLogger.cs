@@ -1,18 +1,13 @@
 using System;
-using Microsoft.Extensions.Logging;
+using Velopack.Logging;
 
 namespace OpenQuickHost.Sync;
 
-public class HostVelopackLogger : ILogger
+public class HostVelopackLogger : IVelopackLogger
 {
-    public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-
-    public bool IsEnabled(LogLevel logLevel) => true;
-
-    public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+    public void Log(VelopackLogLevel level, string? message, Exception? exception)
     {
-        var message = formatter(state, exception);
-        var logLine = $"[Velopack {logLevel}] {message}";
+        var logLine = $"[Velopack {level}] {message ?? string.Empty}";
         if (exception != null)
         {
             logLine += Environment.NewLine + exception.ToString();

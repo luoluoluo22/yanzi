@@ -15,12 +15,13 @@ import android.widget.Toast;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import cc.luoluoluo.yanzi.mobile.BuildConfig;
 import cc.luoluoluo.yanzi.mobile.MainActivity;
 import cc.luoluoluo.yanzi.mobile.R;
 
 public final class YanmWidgetProvider extends AppWidgetProvider {
 
-    public static final String ACTION_REFRESH_YANM = "cc.luoluoluo.yanzi.mobile.widget.ACTION_REFRESH_YANM";
+    public static final String ACTION_REFRESH_YANM = BuildConfig.APPLICATION_ID + ".widget.ACTION_REFRESH_YANM";
 
     @Override
     public void onUpdate(Context context, AppWidgetManager appWidgetManager, int[] appWidgetIds) {
@@ -55,7 +56,7 @@ public final class YanmWidgetProvider extends AppWidgetProvider {
             views.setRemoteAdapter(R.id.widget_yanm_grid, serviceIntent);
 
             Intent clickIntent = new Intent(context, MainActivity.class);
-            clickIntent.setAction("cc.luoluoluo.yanzi.mobile.yanm");
+            clickIntent.setAction(BuildConfig.APPLICATION_ID + ".yanm");
             PendingIntent clickPI = PendingIntent.getActivity(
                     context, 0, clickIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_MUTABLE);
             views.setPendingIntentTemplate(R.id.widget_yanm_grid, clickPI);

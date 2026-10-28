@@ -19,6 +19,7 @@ public class CommandItem
     public string? SnippetText { get; set; }
     public string? Abbreviation { get; set; }
     public string? GlobalHotkey { get; set; }
+    public string? AccentColor { get; set; }
 }
 
 public enum CommandActionKind

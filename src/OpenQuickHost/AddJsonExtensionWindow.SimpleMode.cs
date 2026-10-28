@@ -1,5 +1,7 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
@@ -56,9 +58,9 @@ public partial class AddJsonExtensionWindow
             IdPrefix: "open-target",
             Name: "打开记事本",
             Description: "点击后启动 Windows 记事本。",
-            Category: "扩展",
+            Category: "小程序",
             Keywords: "记事本, notepad, 打开",
-            Icon: "mdi:globe",
+            Icon: @"C:\Windows\System32\notepad.exe",
             AccentHex: "#FF3B82F6",
             OpenTarget: "notepad.exe"),
 
@@ -68,15 +70,15 @@ public partial class AddJsonExtensionWindow
             Description: "在百度上搜索关键字。",
             Category: "网页搜索",
             Keywords: "搜索, baidu, 百度",
-            Icon: "mdi:search",
+            Icon: "https://www.baidu.com/favicon.ico",
             AccentHex: "#FF6366F1",
             QueryTemplate: "https://www.baidu.com/s?wd={query}",
             QueryPrefixes: "b, baidu"),
 
         ["paste-text"] = new TypeTemplate(
             IdPrefix: "paste-snippet",
-            Name: "粘贴致敬模板",
-            Description: "把一段固定文本粘贴到当前光标处。",
+            Name: "粘贴文本 ",
+            Description: "把一段文本粘贴到当前位置",
             Category: "脚本",
             Keywords: "粘贴, paste, 模板",
             Icon: "mdi:clipboard",
@@ -114,7 +116,7 @@ public partial class AddJsonExtensionWindow
             Category: "脚本",
             Keywords: "csharp, 脚本, dotnet",
             Icon: "mdi:code",
-            AccentHex: "#FF8B5CF6",
+            AccentHex: "#FF3B82F6",
             Runtime: "csharp",
             EntryMode: "inline"),
 
@@ -227,18 +229,24 @@ public partial class AddJsonExtensionWindow
 
     private void CloseTestResultPanel_Click(object sender, RoutedEventArgs e)
     {
+        if (_isTestRunning)
+        {
+            CancelRunningTest();
+        }
+
         if (ManualTestResultPanel != null)
         {
             ManualTestResultPanel.Visibility = Visibility.Collapsed;
         }
     }
 
-    // ===================== 触发方式（右侧三段卡） =====================
+    // ===================== 触发方式 =====================
     private void TriggerStartupSwitch_Click(object sender, RoutedEventArgs e)
     {
         if (_isInitializing) return;
         var enabled = TriggerStartupSwitch.IsChecked == true;
         StartupModeBox.Text = enabled ? "on_app_launch" : string.Empty;
+        UpdateTriggerLabels();
         TryRefreshJsonFromHiddenForm();
     }
 
@@ -255,13 +263,55 @@ public partial class AddJsonExtensionWindow
         TryRefreshJsonFromHiddenForm();
     }
 
+    private void TriggerIdleSwitch_Click(object sender, RoutedEventArgs e)
+    {
+        if (_isInitializing || _suppressSimpleSync) return;
+        if (TriggerIdleSwitch.IsChecked == true)
+        {
+            _manualIdleTrigger = new LocalExtensionIdleTriggerManifest
+            {
+                Enabled = true,
+                AfterMinutes = ParseOptionalPositiveInt(IdleAfterMinutesBox?.Text) ?? 5,
+                RepeatMinutes = ParseOptionalNonNegativeInt(IdleRepeatMinutesBox?.Text) ?? 10,
+                PauseWhenFullscreen = true
+            };
+        }
+        else
+        {
+            _manualIdleTrigger = null;
+        }
+
+        UpdateTriggerLabels();
+        TryRefreshJsonFromHiddenForm();
+    }
+
+    private void IdleTriggerConfig_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_isInitializing || _suppressSimpleSync || TriggerIdleSwitch?.IsChecked != true)
+        {
+            return;
+        }
+
+        _manualIdleTrigger = new LocalExtensionIdleTriggerManifest
+        {
+            Enabled = true,
+            AfterMinutes = ParseOptionalPositiveInt(IdleAfterMinutesBox?.Text) ?? 5,
+            RepeatMinutes = ParseOptionalNonNegativeInt(IdleRepeatMinutesBox?.Text) ?? 10,
+            PauseWhenFullscreen = true
+        };
+        UpdateTriggerLabels();
+        TryRefreshJsonFromHiddenForm();
+    }
+
     private void TriggerShortcutEdit_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new HotkeyCaptureWindow(
-            "设置扩展快捷键",
-            "窗口激活后，按一次组合键即可完成录制。留空可清除快捷键。",
+            "设置小程序快捷键",
+            "窗口激活后，按下按键组合或单个按键（支持 Win 键、Ctrl/Alt/Shift 组合键、F1-F12 及单键）即可完成录制。留空可清除快捷键。",
             GlobalShortcutBox.Text ?? string.Empty,
-            allowEmpty: true)
+            allowEmpty: true,
+            allowDoubleTap: false,
+            allowModifierless: true)
         {
             Owner = this
         };
@@ -419,6 +469,27 @@ public partial class AddJsonExtensionWindow
         {
             TriggerStartupSwitch.IsChecked = (StartupModeBox.Text ?? string.Empty).Trim() == "on_app_launch";
         }
+        if (TriggerIdleSwitch != null)
+        {
+            var idle = _manualIdleTrigger;
+            _suppressSimpleSync = true;
+            try
+            {
+                TriggerIdleSwitch.IsChecked = idle?.Enabled == true;
+                if (IdleAfterMinutesBox != null) IdleAfterMinutesBox.Text = (idle?.AfterMinutes ?? 5).ToString();
+                if (IdleRepeatMinutesBox != null) IdleRepeatMinutesBox.Text = (idle?.RepeatMinutes ?? 10).ToString();
+            }
+            finally
+            {
+                _suppressSimpleSync = false;
+            }
+            if (TriggerIdleLabel != null)
+            {
+                TriggerIdleLabel.Text = idle?.Enabled == true
+                    ? $"闲置 {Math.Max(1, idle.AfterMinutes)} 分钟后触发 · 全屏前台时暂停"
+                    : "未启用 · 无键鼠输入且无全屏窗口";
+            }
+        }
         if (TriggerGestureLabel != null && TriggerGestureSequenceText != null && TriggerGestureExtraRow != null)
         {
             if (_manualMouseGesture != null && !string.IsNullOrEmpty(_manualMouseGesture.Sequence))
@@ -470,6 +541,17 @@ public partial class AddJsonExtensionWindow
                 UpdateGesturePresetStyles();
             }
         }
+
+        if (TriggerSummaryLabel != null)
+        {
+            var count = 0;
+            if ((StartupModeBox.Text ?? string.Empty).Trim() == "on_app_launch") count++;
+            if (!string.IsNullOrWhiteSpace(StartupScheduleBox.Text)) count++;
+            if (_manualIdleTrigger?.Enabled == true) count++;
+            if (!string.IsNullOrWhiteSpace(GlobalShortcutBox.Text)) count++;
+            if (_manualMouseGesture != null && !string.IsNullOrWhiteSpace(_manualMouseGesture.Sequence)) count++;
+            TriggerSummaryLabel.Text = count == 0 ? "未设置" : $"{count} 项已启用";
+        }
     }
 
     private void UpdateGesturePresetStyles()
@@ -512,13 +594,19 @@ public partial class AddJsonExtensionWindow
         var known = CollectKnownGestures();
         if (known.TryGetValue(key, out var owners) && owners.Count > 0)
         {
-            GestureConflictHintText.Text = $"可能冲突：{string.Join("、", owners)} 已使用同一手势。运行时会进入扩展选择。";
+            GestureConflictHintText.Text = $"可能冲突：{string.Join("、", owners)} 已使用同一手势。运行时会进入小程序选择。";
             GestureConflictHintText.Foreground = new WpfSolidColorBrush(WpfColor.FromRgb(0xFB, 0x92, 0x3C));
             return;
         }
 
-        GestureConflictHintText.Text = "当前序列未与现有扩展冲突。";
+        GestureConflictHintText.Text = "当前序列未与现有小程序冲突。";
         GestureConflictHintText.Foreground = new WpfSolidColorBrush(WpfColor.FromRgb(0x34, 0xD3, 0x99));
+    }
+
+    private static int? ParseOptionalNonNegativeInt(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        return int.TryParse(raw.Trim(), out var value) && value >= 0 ? value : null;
     }
 
     private static int? ParseOptionalPositiveInt(string? raw)
@@ -548,15 +636,9 @@ public partial class AddJsonExtensionWindow
     {
         if (!TypeTemplates.TryGetValue(typeKey, out var tpl)) return;
 
-        var newId = $"{tpl.IdPrefix}-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}";
-
-        if (_isEditMode && !string.IsNullOrWhiteSpace(IdBox.Text))
+        if (!_isEditMode && string.IsNullOrWhiteSpace(IdBox.Text))
         {
-            _lastTemplateSnapshot["Id"] = IdBox.Text;
-        }
-        else
-        {
-            SetIfDefaultOrEmpty(IdBox, newId, "Id", forceOverride, prefixMatch: tpl.IdPrefix);
+            IdBox.Text = LocalExtensionCatalog.CreateSystemExtensionId();
         }
 
         SetIfDefaultOrEmpty(NameBox, tpl.Name, "Name", forceOverride);
@@ -586,12 +668,6 @@ public partial class AddJsonExtensionWindow
         if (!TypeTemplates.TryGetValue(typeKey, out var tpl))
         {
             return;
-        }
-
-        if (!string.IsNullOrWhiteSpace(IdBox.Text) &&
-            IdBox.Text.StartsWith(tpl.IdPrefix + "-", StringComparison.Ordinal))
-        {
-            _lastTemplateSnapshot["Id"] = IdBox.Text;
         }
 
         _lastTemplateSnapshot["Name"] = tpl.Name;
@@ -649,9 +725,13 @@ public partial class AddJsonExtensionWindow
     // ===================== 模式切换 =====================
     private void SimpleModeTab_Checked(object sender, RoutedEventArgs e)
     {
+        HostAssets.AppendLog($"[EditorTabMemory] SimpleModeTab_Checked triggered: _isInitializing={_isInitializing}.");
         if (SimpleModePanel == null || AdvancedModePanel == null) return;
         SimpleModePanel.Visibility = Visibility.Visible;
         AdvancedModePanel.Visibility = Visibility.Collapsed;
+        _manualMode = false;
+        _settings.LastExtensionEditorTab = "simple";
+        UpdateAiRightViewMode();
         if (_isInitializing) return;
         // 从 JSON 同步回简单表单
         if (!string.IsNullOrWhiteSpace(ManualJsonInputBox.Text))
@@ -664,9 +744,14 @@ public partial class AddJsonExtensionWindow
 
     private void AdvancedModeTab_Checked(object sender, RoutedEventArgs e)
     {
+        HostAssets.AppendLog($"[EditorTabMemory] AdvancedModeTab_Checked triggered: _isInitializing={_isInitializing}.");
         if (SimpleModePanel == null || AdvancedModePanel == null) return;
         SimpleModePanel.Visibility = Visibility.Collapsed;
         AdvancedModePanel.Visibility = Visibility.Visible;
+        _manualMode = true;
+        _settings.LastExtensionEditorTab = "ai";
+        UpdateBrowserExtensionBannerVisibility();
+        UpdateAiRightViewMode();
         if (_isInitializing) return;
 
         if (!ShouldKeepCurrentAdvancedJson())
@@ -685,6 +770,13 @@ public partial class AddJsonExtensionWindow
 
     private async void HeaderTestButton_Click(object sender, RoutedEventArgs e)
     {
+        HostAssets.AppendLog($"HeaderTestButton_Click: _isTestRunning={_isTestRunning}");
+        if (_isTestRunning)
+        {
+            CancelRunningTest();
+            return;
+        }
+
         // 顶部「试运行」直接跑一次测试。简单模式下也能看到结果。
         if (TestDelayCheck != null && TestDelayCheck.IsChecked == true)
         {
@@ -758,7 +850,7 @@ public partial class AddJsonExtensionWindow
                     _manualUiMode = null;
                     if (string.IsNullOrWhiteSpace(PasteTextSimpleBox.Text))
                     {
-                        PasteTextSimpleBox.Text = "你好，这里是粘贴模板内容。";
+                        PasteTextSimpleBox.Text = "燕子，没有你我怎么活啊！";
                     }
                     RebuildPasteScript();
                     break;
@@ -782,7 +874,7 @@ public partial class AddJsonExtensionWindow
                     _manualSearchProvider = null;
                     _manualUiMode = null;
                     if (string.IsNullOrWhiteSpace(PowerShellScriptBox.Text) ||
-                        LooksLikeGeneratedSendKeysScript(PowerShellScriptBox.Text) ||
+                        LooksLikeGeneratedHotkeyScript(PowerShellScriptBox.Text) ||
                         LooksLikeOldPowerShellEchoTemplate(PowerShellScriptBox.Text))
                     {
                         PowerShellScriptBox.Text = CreatePowerShellPopupScript();
@@ -799,12 +891,27 @@ public partial class AddJsonExtensionWindow
                     {
                         CSharpUseNativeWindowCheck.IsChecked = true;
                     }
-                    if (string.IsNullOrWhiteSpace(CSharpScriptBox.Text) ||
-                        LooksLikeOldCSharpEchoTemplate(CSharpScriptBox.Text))
+                    var isCsEntry = CSharpModeEntryRadio?.IsChecked == true ||
+                                    string.Equals(EntryModeBox.Text, "entry", StringComparison.OrdinalIgnoreCase) ||
+                                    !string.IsNullOrWhiteSpace(EntryBox.Text);
+                    if (isCsEntry)
                     {
-                        CSharpScriptBox.Text = CreateCSharpWindowScript();
+                        EntryModeBox.Text = "entry";
+                        EntryBox.Text = string.IsNullOrWhiteSpace(CSharpEntryBox?.Text) ? (string.IsNullOrWhiteSpace(EntryBox.Text) ? "main.cs" : EntryBox.Text.Trim()) : CSharpEntryBox.Text.Trim();
+                        ScriptSourceBox.Text = string.Empty;
+                        UpdateCSharpUiForCurrentMode();
                     }
-                    ScriptSourceBox.Text = CSharpScriptBox.Text;
+                    else
+                    {
+                        EntryModeBox.Text = "inline";
+                        EntryBox.Text = string.Empty;
+                        if (string.IsNullOrWhiteSpace(CSharpScriptBox.Text) ||
+                            LooksLikeOldCSharpEchoTemplate(CSharpScriptBox.Text))
+                        {
+                            CSharpScriptBox.Text = CreateCSharpWindowScript();
+                        }
+                        ScriptSourceBox.Text = CSharpScriptBox.Text;
+                    }
                     break;
                 case "workbench":
                     OpenTargetBox.Text = string.Empty;
@@ -858,7 +965,54 @@ public partial class AddJsonExtensionWindow
     {
         if (_isInitializing || _suppressSimpleSync) return;
         OpenTargetBox.Text = OpenTargetSimpleBox.Text;
+
+        var text = OpenTargetSimpleBox.Text?.Trim() ?? string.Empty;
+        if (!string.IsNullOrEmpty(text))
+        {
+            ApplyOpenTargetInSimpleMode(text, isExplicitBrowse: false);
+        }
+
         TryRefreshJsonFromHiddenForm();
+        UpdatePreview();
+        SafeRefreshIconPreview();
+    }
+
+    private void OpenTargetChooseApp_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new InstalledAppPickerDialog(this);
+        if (dialog.ShowDialog() == true && dialog.SelectedApp is { } selected)
+        {
+            var target = selected.LaunchTarget;
+            OpenTargetSimpleBox.Text = target;
+            OpenTargetBox.Text = target;
+
+            // 提取优雅的名称与动作描述
+            var friendlyName = CleanNoiseSuffix(selected.Title);
+            if (string.IsNullOrWhiteSpace(friendlyName))
+            {
+                friendlyName = selected.Title;
+            }
+
+            var newName = $"打开{friendlyName}";
+            var newDesc = $"点击后启动 {friendlyName}。";
+            var icon = selected.IconPath ?? selected.LaunchTarget;
+
+            NameSimpleBox.Text = newName;
+            NameBox.Text = newName;
+            DescriptionSimpleBox.Text = newDesc;
+            DescriptionBox.Text = newDesc;
+            IconSimpleBox.Text = icon;
+            IconBox.Text = icon;
+
+            _lastTemplateSnapshot["Name"] = newName;
+            _lastTemplateSnapshot["Description"] = newDesc;
+            _lastTemplateSnapshot["Icon"] = icon;
+            _lastTemplateSnapshot["OpenTarget"] = target;
+
+            TryRefreshJsonFromHiddenForm();
+            UpdatePreview();
+            SafeRefreshIconPreview();
+        }
     }
 
     private void OpenTargetBrowse_Click(object sender, RoutedEventArgs e)
@@ -866,28 +1020,429 @@ public partial class AddJsonExtensionWindow
         var dialog = new Microsoft.Win32.OpenFileDialog
         {
             Title = "选择程序或文件",
-            CheckFileExists = false,
+            Filter = "常用程序与快捷方式 (*.exe;*.lnk;*.bat;*.cmd)|*.exe;*.lnk;*.bat;*.cmd|所有文件 (*.*)|*.*",
+            CheckFileExists = true,
             Multiselect = false
         };
         if (dialog.ShowDialog(this) == true)
         {
-            OpenTargetSimpleBox.Text = dialog.FileName;
+            var chosen = dialog.FileName;
+            OpenTargetSimpleBox.Text = chosen;
+            OpenTargetBox.Text = chosen;
+            ApplyOpenTargetInSimpleMode(chosen, isExplicitBrowse: true);
+            TryRefreshJsonFromHiddenForm();
+            UpdatePreview();
+            SafeRefreshIconPreview();
         }
+    }
+
+    private void ApplyOpenTargetInSimpleMode(string target, bool isExplicitBrowse)
+    {
+        if (string.IsNullOrWhiteSpace(target)) return;
+        var trimmed = target.Trim();
+
+        string friendlyName = string.Empty;
+        string icon = string.Empty;
+        bool isApp = false;
+
+        if (NativeFileIconService.IsDesktopTarget(trimmed))
+        {
+            friendlyName = "桌面";
+            icon = "stock:desktop";
+        }
+        else if (NativeFileIconService.IsDownloadsTarget(trimmed))
+        {
+            friendlyName = "下载";
+            icon = "stock:downloads";
+        }
+        else if (trimmed.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || trimmed.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                var uri = new Uri(trimmed);
+                friendlyName = uri.Host;
+                if (!string.IsNullOrEmpty(friendlyName) && friendlyName.StartsWith("www.", StringComparison.OrdinalIgnoreCase))
+                {
+                    friendlyName = friendlyName[4..];
+                }
+                if (!string.IsNullOrEmpty(uri.Host) && uri.Host.Contains('.'))
+                {
+                    icon = $"{uri.Scheme}://{uri.Host}/favicon.ico";
+                }
+                else
+                {
+                    icon = "mdi:earth";
+                }
+            }
+            catch
+            {
+                friendlyName = "网页";
+                icon = "mdi:earth";
+            }
+        }
+        else if (trimmed.StartsWith("ms-settings", StringComparison.OrdinalIgnoreCase))
+        {
+            friendlyName = "系统设置";
+            icon = "mdi:cog";
+        }
+        else if (File.Exists(trimmed))
+        {
+            var ext = Path.GetExtension(trimmed);
+            isApp = ext.Equals(".exe", StringComparison.OrdinalIgnoreCase) ||
+                    ext.Equals(".bat", StringComparison.OrdinalIgnoreCase) ||
+                    ext.Equals(".cmd", StringComparison.OrdinalIgnoreCase) ||
+                    ext.Equals(".lnk", StringComparison.OrdinalIgnoreCase);
+
+            friendlyName = FormatFriendlyProgramName(trimmed);
+            icon = trimmed;
+        }
+        else if (Directory.Exists(trimmed))
+        {
+            var dirName = Path.GetFileName(trimmed.TrimEnd('\\', '/'));
+            friendlyName = string.IsNullOrWhiteSpace(dirName) ? trimmed : dirName;
+            icon = "mdi:folder";
+        }
+
+        // 如果解析出友好名称，联动更新“名称”和“描述”
+        if (!string.IsNullOrWhiteSpace(friendlyName))
+        {
+            var newName = $"打开{friendlyName}";
+            var newDesc = isApp ? $"点击后启动 {friendlyName}。" : $"点击后打开{friendlyName}。";
+
+            var currentName = NameSimpleBox.Text?.Trim() ?? string.Empty;
+            var snapName = _lastTemplateSnapshot.TryGetValue("Name", out var sn) ? sn : string.Empty;
+
+            bool shouldUpdateName = isExplicitBrowse ||
+                                    string.IsNullOrEmpty(currentName) ||
+                                    currentName == "未命名小程序" ||
+                                    currentName == snapName ||
+                                    currentName.StartsWith("打开", StringComparison.Ordinal);
+
+            if (shouldUpdateName)
+            {
+                NameSimpleBox.Text = newName;
+                NameBox.Text = newName;
+                _lastTemplateSnapshot["Name"] = newName;
+            }
+
+            var currentDesc = DescriptionSimpleBox.Text?.Trim() ?? string.Empty;
+            var snapDesc = _lastTemplateSnapshot.TryGetValue("Description", out var sd) ? sd : string.Empty;
+
+            bool shouldUpdateDesc = isExplicitBrowse ||
+                                    string.IsNullOrEmpty(currentDesc) ||
+                                    currentDesc == "选择类型并填写信息以预览" ||
+                                    currentDesc == snapDesc ||
+                                    currentDesc.StartsWith("点击后打开", StringComparison.Ordinal) ||
+                                    currentDesc.StartsWith("点击后启动", StringComparison.Ordinal);
+
+            if (shouldUpdateDesc)
+            {
+                DescriptionSimpleBox.Text = newDesc;
+                DescriptionBox.Text = newDesc;
+                _lastTemplateSnapshot["Description"] = newDesc;
+            }
+        }
+
+        // 联动更新图标
+        if (!string.IsNullOrWhiteSpace(icon))
+        {
+            var currentIcon = IconSimpleBox.Text?.Trim() ?? string.Empty;
+            var snapIcon = _lastTemplateSnapshot.TryGetValue("Icon", out var si) ? si : string.Empty;
+
+            bool shouldUpdateIcon = isExplicitBrowse ||
+                                    string.IsNullOrEmpty(currentIcon) ||
+                                    currentIcon.StartsWith("mdi:", StringComparison.OrdinalIgnoreCase) ||
+                                    currentIcon.StartsWith("stock:", StringComparison.OrdinalIgnoreCase) ||
+                                    currentIcon.Contains("/favicon.ico", StringComparison.OrdinalIgnoreCase) ||
+                                    currentIcon == snapIcon;
+
+            if (shouldUpdateIcon)
+            {
+                IconSimpleBox.Text = icon;
+                IconBox.Text = icon;
+                _lastTemplateSnapshot["Icon"] = icon;
+            }
+        }
+
+        _lastTemplateSnapshot["OpenTarget"] = trimmed;
+    }
+
+    private static readonly string[] ProgramNoiseSuffixes =
+    [
+        "_x64", "-x64", "_x86", "-x86", "_64", "_32", "_win32", "-win32",
+        "_amd64", "-amd64", "_arm64", "-arm64", "_setup", "-setup", "_installer", "-installer"
+    ];
+
+    private static readonly string[] GenericEndWords =
+    [
+        " Object", " Application", " Executable", " Program", " Client"
+    ];
+
+    private static string FormatFriendlyProgramName(string filePath)
+    {
+        if (string.IsNullOrWhiteSpace(filePath)) return string.Empty;
+        var rawFileName = Path.GetFileNameWithoutExtension(filePath);
+        var cleanFileName = CleanNoiseSuffix(rawFileName);
+
+        try
+        {
+            if (File.Exists(filePath) && filePath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            {
+                var vi = FileVersionInfo.GetVersionInfo(filePath);
+                var desc = CleanDescription(vi.FileDescription, cleanFileName);
+                var prod = CleanDescription(vi.ProductName, cleanFileName);
+                var internalName = CleanDescription(vi.InternalName, cleanFileName);
+
+                // 1. 中文名称优先 (例如: 记事本, 计算器, 微信)
+                if (!string.IsNullOrWhiteSpace(desc) && ContainsChinese(desc)) return desc;
+                if (!string.IsNullOrWhiteSpace(prod) && ContainsChinese(prod)) return prod;
+
+                // 2. 如果 desc 清洗后是干净精炼的产品名 (<= 16 字符)
+                if (!string.IsNullOrWhiteSpace(desc) && desc.Length <= 16 && !desc.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                {
+                    return desc;
+                }
+
+                // 3. 如果 InternalName 干净简短
+                if (!string.IsNullOrWhiteSpace(internalName) && internalName.Length <= 15)
+                {
+                    return CapitalizeTitle(internalName);
+                }
+
+                // 4. 如果 prod 清洗后干净精炼
+                if (!string.IsNullOrWhiteSpace(prod) && prod.Length <= 16 && !prod.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                {
+                    return prod;
+                }
+            }
+        }
+        catch { }
+
+        return CapitalizeTitle(cleanFileName);
+    }
+
+    private static string CleanNoiseSuffix(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return string.Empty;
+        var s = name.Trim();
+        bool trimmedAny = true;
+        while (trimmedAny)
+        {
+            trimmedAny = false;
+            foreach (var suffix in ProgramNoiseSuffixes)
+            {
+                if (s.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                {
+                    s = s[..^suffix.Length].Trim();
+                    trimmedAny = true;
+                    break;
+                }
+            }
+        }
+        return string.IsNullOrEmpty(s) ? name : s;
+    }
+
+    private static string CleanDescription(string? rawDesc, string cleanFileName)
+    {
+        if (string.IsNullOrWhiteSpace(rawDesc)) return string.Empty;
+        var s = rawDesc.Trim();
+
+        // 截断第一个括号及其后面的内容 (如 "(64-bit UNICODE Release)")
+        int bracketIdx = s.IndexOfAny(['(', '[', '{', '（', '【']);
+        if (bracketIdx >= 0)
+        {
+            s = s[..bracketIdx].Trim();
+        }
+
+        // 去除通用噪点后缀词 (如 "Inspect Object" -> "Inspect")
+        foreach (var endWord in GenericEndWords)
+        {
+            if (s.EndsWith(endWord, StringComparison.OrdinalIgnoreCase))
+            {
+                var candidate = s[..^endWord.Length].Trim();
+                if (!string.IsNullOrEmpty(candidate))
+                {
+                    s = candidate;
+                }
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(cleanFileName) && s.Equals(cleanFileName, StringComparison.OrdinalIgnoreCase))
+        {
+            return CapitalizeTitle(cleanFileName);
+        }
+
+        return s;
+    }
+
+    private static bool ContainsChinese(string text)
+    {
+        return text.Any(c => c >= 0x4E00 && c <= 0x9FA5);
+    }
+
+    private static string CapitalizeTitle(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+        var t = text.Trim();
+        if (t.Length <= 3) return t.ToUpperInvariant();
+        if (t.All(char.IsUpper))
+        {
+            return char.ToUpper(t[0]) + t[1..].ToLower();
+        }
+        if (char.IsLower(t[0]))
+        {
+            return char.ToUpper(t[0]) + t[1..];
+        }
+        return t;
     }
 
     private void OpenTargetPreset_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement { Tag: string preset })
+        if (sender is System.Windows.Controls.Button btn && btn.Tag is string preset)
         {
             OpenTargetSimpleBox.Text = preset;
+            OpenTargetBox.Text = preset;
+            
+            var label = btn.Content?.ToString() ?? string.Empty;
+            if (!string.IsNullOrEmpty(label))
+            {
+                var name = $"打开{label}";
+                var desc = label == "记事本" ? "点击后启动 Windows 记事本。" : $"点击后打开{label}。";
+                
+                // 智能判定图标
+                var icon = "mdi:application"; // 默认图标
+                
+                var lowerPreset = preset.ToLowerInvariant();
+                if (lowerPreset.Contains("notepad.exe"))
+                {
+                    icon = @"C:\Windows\System32\notepad.exe";
+                }
+                else if (NativeFileIconService.IsDesktopTarget(preset) || lowerPreset.Contains("desktop"))
+                {
+                    icon = "stock:desktop";
+                }
+                else if (NativeFileIconService.IsDownloadsTarget(preset) || lowerPreset.Contains("download"))
+                {
+                    icon = "stock:downloads";
+                }
+                else if (lowerPreset.StartsWith("http://") || lowerPreset.StartsWith("https://"))
+                {
+                    try
+                    {
+                        var uri = new Uri(preset);
+                        icon = $"{uri.Scheme}://{uri.Host}/favicon.ico";
+                    }
+                    catch
+                    {
+                        icon = "mdi:earth";
+                    }
+                }
+                else if (lowerPreset.StartsWith("ms-settings"))
+                {
+                    icon = "mdi:cog";
+                }
+                else if (preset.Contains(@"\") || lowerPreset.Contains("c:") || lowerPreset.Contains("d:"))
+                {
+                    icon = "mdi:folder";
+                }
+
+                NameSimpleBox.Text = name;
+                NameBox.Text = name;
+                DescriptionSimpleBox.Text = desc;
+                DescriptionBox.Text = desc;
+                IconSimpleBox.Text = icon;
+                IconBox.Text = icon;
+                
+                _lastTemplateSnapshot["Name"] = name;
+                _lastTemplateSnapshot["Description"] = desc;
+                _lastTemplateSnapshot["Icon"] = icon;
+                _lastTemplateSnapshot["OpenTarget"] = preset;
+            }
+
+            TryRefreshJsonFromHiddenForm();
+            UpdatePreview();
+            SafeRefreshIconPreview();
         }
     }
 
     private void SearchPreset_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement { Tag: string preset })
+        if (sender is System.Windows.Controls.Button btn && btn.Tag is string preset)
         {
             SearchTemplateSimpleBox.Text = preset;
+            
+            var label = btn.Content?.ToString() ?? string.Empty;
+            if (!string.IsNullOrEmpty(label))
+            {
+                var name = $"{label}搜索";
+                var desc = $"在{label}上搜索关键字。";
+                
+                var icon = "mdi:search";
+                try
+                {
+                    var uri = new Uri(preset);
+                    icon = uri.Host.Contains("bilibili") ? "https://www.bilibili.com/favicon.ico" : $"{uri.Scheme}://{uri.Host}/favicon.ico";
+                }
+                catch
+                {
+                    // Ignore
+                }
+                
+                NameSimpleBox.Text = name;
+                DescriptionSimpleBox.Text = desc;
+                IconSimpleBox.Text = icon;
+                
+                _lastTemplateSnapshot["Name"] = name;
+                _lastTemplateSnapshot["Description"] = desc;
+                _lastTemplateSnapshot["Icon"] = icon;
+                _lastTemplateSnapshot["QueryTemplate"] = preset;
+
+                var prefixes = string.Empty;
+                var lowerLabel = label.ToLowerInvariant();
+                if (lowerLabel.Contains("baidu") || lowerLabel.Contains("百度"))
+                {
+                    prefixes = "b, baidu";
+                }
+                else if (lowerLabel.Contains("google") || lowerLabel.Contains("谷歌"))
+                {
+                    prefixes = "g, google";
+                }
+                else if (lowerLabel.Contains("bing"))
+                {
+                    prefixes = "bi, bing";
+                }
+                else if (lowerLabel.Contains("github"))
+                {
+                    prefixes = "gh, github";
+                }
+                else if (lowerLabel.Contains("juejin") || lowerLabel.Contains("掘金"))
+                {
+                    prefixes = "j, juejin";
+                }
+                else if (lowerLabel.Contains("mdn"))
+                {
+                    prefixes = "mdn";
+                }
+                else if (lowerLabel.Contains("bilibili") || lowerLabel.Contains("哔哩"))
+                {
+                    prefixes = "bili, bilibili";
+                }
+                else if (lowerLabel.Contains("zhihu") || lowerLabel.Contains("知乎"))
+                {
+                    prefixes = "zh, zhihu";
+                }
+                else if (lowerLabel.Contains("xiaohongshu") || lowerLabel.Contains("红书"))
+                {
+                    prefixes = "xhs, xiaohongshu";
+                }
+                else
+                {
+                    prefixes = lowerLabel;
+                }
+
+                SearchPrefixesSimpleBox.Text = prefixes;
+                _lastTemplateSnapshot["QueryPrefixes"] = prefixes;
+            }
         }
     }
 
@@ -908,6 +1463,15 @@ public partial class AddJsonExtensionWindow
     private void PasteTextSimpleBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         if (_isInitializing || _suppressSimpleSync) return;
+        _lastEditedSource = EditSource.Form;
+        RebuildPasteScript();
+        TryRefreshJsonFromHiddenForm();
+    }
+
+    private void PasteTextPressEnterCheck_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_isInitializing || _suppressSimpleSync) return;
+        _lastEditedSource = EditSource.Form;
         RebuildPasteScript();
         TryRefreshJsonFromHiddenForm();
     }
@@ -915,14 +1479,31 @@ public partial class AddJsonExtensionWindow
     private void RebuildPasteScript()
     {
         var text = PasteTextSimpleBox.Text ?? string.Empty;
-        ScriptSourceBox.Text = CreateCSharpPasteScript(text);
+        var pressEnter = PasteTextPressEnterCheck?.IsChecked == true;
+        ScriptSourceBox.Text = CreateCSharpPasteScript(text, pressEnter);
         RuntimeBox.Text = "csharp";
         EntryModeBox.Text = "inline";
     }
 
-    private static string CreateCSharpPasteScript(string text)
+    private static string CreateCSharpPasteScript(string text, bool pressEnter = false)
     {
         var b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(text));
+        var enterCall = pressEnter ? "\r\n        Thread.Sleep(80);\r\n        SendEnter();" : "";
+        var enterMethod = pressEnter ? """
+
+
+    private const ushort VkReturn = 0x0D;
+
+    private static void SendEnter()
+    {
+        var down = new[] { KeyInput(VkReturn, 0) };
+        var up = new[] { KeyInput(VkReturn, KeyeventfKeyup) };
+        _ = SendInput(1, down, Marshal.SizeOf<INPUT>());
+        Thread.Sleep(15);
+        _ = SendInput(1, up, Marshal.SizeOf<INPUT>());
+    }
+""" : "";
+
         return $$"""
         using System;
         using System.Runtime.InteropServices;
@@ -935,14 +1516,14 @@ public partial class AddJsonExtensionWindow
             private const uint InputKeyboard = 1;
             private const ushort VkControl = 0x11;
             private const ushort VkV = 0x56;
-            private const uint KeyeventfKeyup = 0x0002;
+            private const uint KeyeventfKeyup = 0x0002;{{enterMethod}}
 
             public static Task<string> RunAsync(YanziActionContext context)
             {
                 var payload = Encoding.UTF8.GetString(Convert.FromBase64String("{{b64}}"));
-                System.Windows.Forms.Clipboard.SetText(payload);
+                System.Windows.Forms.Clipboard.SetDataObject(payload, true, 10, 50);
                 Thread.Sleep(35);
-                SendCtrlV();
+                SendCtrlV();{{enterCall}}
                 return Task.FromResult("已粘贴。");
             }
 
@@ -1035,9 +1616,27 @@ public partial class AddJsonExtensionWindow
 
     private void HotkeyPreset_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement { Tag: string keys })
+        if (sender is System.Windows.Controls.Button btn && btn.Tag is string keys)
         {
             HotkeySequenceBox.Text = keys;
+            
+            var label = btn.Content?.ToString() ?? string.Empty;
+            if (!string.IsNullOrEmpty(label))
+            {
+                var action = label.Split(' ')[0];
+                var name = $"发送{action}快捷键";
+                var desc = $"发送 {keys} 快捷键。";
+                var icon = "mdi:keyboard-outline";
+                
+                NameSimpleBox.Text = name;
+                DescriptionSimpleBox.Text = desc;
+                IconSimpleBox.Text = icon;
+                
+                _lastTemplateSnapshot["Name"] = name;
+                _lastTemplateSnapshot["Description"] = desc;
+                _lastTemplateSnapshot["Icon"] = icon;
+                _lastTemplateSnapshot["Runtime"] = "csharp";
+            }
         }
     }
 
@@ -1045,7 +1644,7 @@ public partial class AddJsonExtensionWindow
     {
         var dialog = new HotkeyCaptureWindow(
             "录制模拟按键",
-            "请直接按下要发送给前台窗口的按键组合。Win 键组合暂不支持模拟发送。",
+            "请直接按下要发送给前台窗口的按键组合或单个按键（支持 Win 键、Ctrl/Alt/Shift 组合键、F1-F12 及单个按键）。",
             HotkeySequenceBox.Text,
             allowEmpty: false,
             allowModifierless: true)
@@ -1058,7 +1657,7 @@ public partial class AddJsonExtensionWindow
             return;
         }
 
-        if (!TryConvertShortcutToSendKeys(dialog.ShortcutText, out _, out var error))
+        if (!TryConvertShortcutToSimulationScript(dialog.ShortcutText, out _, out var error))
         {
             ShowError(error);
             return;
@@ -1069,39 +1668,42 @@ public partial class AddJsonExtensionWindow
 
     private void RebuildHotkeyScript()
     {
-        if (!TryConvertShortcutToSendKeys(HotkeySequenceBox.Text, out var sendKeys, out _))
+        if (!TryConvertShortcutToSimulationScript(HotkeySequenceBox.Text, out var script, out _))
         {
-            sendKeys = "^c";
+            script =
+                "param([string]$InputText = \"\", [string]$ContextPath = \"\")\r\n" +
+                "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8\r\n" +
+                "Add-Type -AssemblyName System.Windows.Forms\r\n" +
+                "[System.Windows.Forms.SendKeys]::SendWait(\"^c\")\r\n" +
+                "Write-Output \"已发送按键。\"";
         }
 
-        var seq = sendKeys.Replace("\"", "`\"");
-        ScriptSourceBox.Text =
-            "param([string]$InputText = \"\", [string]$ContextPath = \"\")\r\n" +
-            "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8\r\n" +
-            "Add-Type -AssemblyName System.Windows.Forms\r\n" +
-            $"[System.Windows.Forms.SendKeys]::SendWait(\"{seq}\")\r\n" +
-            "Write-Output \"已发送按键。\"";
+        ScriptSourceBox.Text = script;
         RuntimeBox.Text = "powershell";
         EntryModeBox.Text = "inline";
     }
 
-    private static bool TryConvertShortcutToSendKeys(string? shortcutText, out string sendKeys, out string error)
+    private static bool TryConvertShortcutToSimulationScript(string? shortcutText, out string generatedScript, out string error)
     {
-        sendKeys = string.Empty;
+        generatedScript = string.Empty;
         error = string.Empty;
 
         var text = (shortcutText ?? string.Empty).Trim();
         if (string.IsNullOrWhiteSpace(text))
         {
-            error = "请先录制一个按键组合。";
+            error = "请先录制一个按键或按键组合。";
             return false;
         }
 
-        if (text.Contains('^') ||
-            text.Contains('%') ||
-            text.StartsWith("+", StringComparison.Ordinal))
+        if (text.Contains('^') || text.Contains('%') || text.StartsWith("+", StringComparison.Ordinal))
         {
-            sendKeys = text;
+            var rawSeq = text.Replace("\"", "`\"");
+            generatedScript =
+                "param([string]$InputText = \"\", [string]$ContextPath = \"\")\r\n" +
+                "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8\r\n" +
+                "Add-Type -AssemblyName System.Windows.Forms\r\n" +
+                $"[System.Windows.Forms.SendKeys]::SendWait(\"{rawSeq}\")\r\n" +
+                "Write-Output \"已发送按键。\"";
             return true;
         }
 
@@ -1112,124 +1714,369 @@ public partial class AddJsonExtensionWindow
             return false;
         }
 
-        var key = parts[^1];
-        var modifiers = parts.Take(parts.Length - 1).ToArray();
-        var builder = new StringBuilder();
-        foreach (var modifier in modifiers)
+        var modVks = new List<byte>();
+        byte mainVk = 0;
+
+        if (parts.Length == 1)
         {
-            if (modifier.Equals("Ctrl", StringComparison.OrdinalIgnoreCase) ||
-                modifier.Equals("Control", StringComparison.OrdinalIgnoreCase))
+            var singleKey = parts[0];
+            if (!TryResolveVirtualKey(singleKey, out mainVk))
             {
-                builder.Append('^');
-            }
-            else if (modifier.Equals("Alt", StringComparison.OrdinalIgnoreCase))
-            {
-                builder.Append('%');
-            }
-            else if (modifier.Equals("Shift", StringComparison.OrdinalIgnoreCase))
-            {
-                builder.Append('+');
-            }
-            else if (modifier.Equals("Win", StringComparison.OrdinalIgnoreCase) ||
-                     modifier.Equals("Windows", StringComparison.OrdinalIgnoreCase))
-            {
-                error = "SendKeys 不支持可靠模拟 Win 键组合，请改用 Ctrl / Alt / Shift 组合。";
+                error = $"暂不支持的按键：{singleKey}";
                 return false;
             }
-            else
+        }
+        else
+        {
+            var mainKeyStr = parts[^1];
+            var modifierStrs = parts.Take(parts.Length - 1).ToArray();
+
+            foreach (var mod in modifierStrs)
             {
-                error = $"暂不支持的修饰键：{modifier}";
+                if (mod.Equals("Win", StringComparison.OrdinalIgnoreCase) ||
+                    mod.Equals("Windows", StringComparison.OrdinalIgnoreCase) ||
+                    mod.Equals("LWin", StringComparison.OrdinalIgnoreCase))
+                {
+                    modVks.Add(0x5B); // VK_LWIN
+                }
+                else if (mod.Equals("RWin", StringComparison.OrdinalIgnoreCase))
+                {
+                    modVks.Add(0x5C); // VK_RWIN
+                }
+                else if (mod.Equals("Ctrl", StringComparison.OrdinalIgnoreCase) ||
+                         mod.Equals("Control", StringComparison.OrdinalIgnoreCase) ||
+                         mod.Equals("LCtrl", StringComparison.OrdinalIgnoreCase))
+                {
+                    modVks.Add(0x11); // VK_CONTROL
+                }
+                else if (mod.Equals("RCtrl", StringComparison.OrdinalIgnoreCase))
+                {
+                    modVks.Add(0xA3); // VK_RCONTROL
+                }
+                else if (mod.Equals("Alt", StringComparison.OrdinalIgnoreCase) ||
+                         mod.Equals("LAlt", StringComparison.OrdinalIgnoreCase))
+                {
+                    modVks.Add(0x12); // VK_MENU
+                }
+                else if (mod.Equals("RAlt", StringComparison.OrdinalIgnoreCase))
+                {
+                    modVks.Add(0xA5); // VK_RMENU
+                }
+                else if (mod.Equals("Shift", StringComparison.OrdinalIgnoreCase) ||
+                         mod.Equals("LShift", StringComparison.OrdinalIgnoreCase))
+                {
+                    modVks.Add(0x10); // VK_SHIFT
+                }
+                else if (mod.Equals("RShift", StringComparison.OrdinalIgnoreCase))
+                {
+                    modVks.Add(0xA1); // VK_RSHIFT
+                }
+                else
+                {
+                    error = $"暂不支持的修饰键：{mod}";
+                    return false;
+                }
+            }
+
+            if (!TryResolveVirtualKey(mainKeyStr, out mainVk))
+            {
+                error = $"暂不支持的按键：{mainKeyStr}";
                 return false;
             }
         }
 
-        var sendKey = ConvertKeyNameToSendKeys(key);
-        if (string.IsNullOrWhiteSpace(sendKey))
+        var keybdLines = new List<string>();
+        foreach (var mod in modVks)
         {
-            error = $"暂不支持的按键：{key}";
-            return false;
+            keybdLines.Add($"[YanziWin32.Win32Keybd]::keybd_event(0x{mod:X2}, 0, 0, [UIntPtr]::Zero)");
+        }
+        if (mainVk != 0)
+        {
+            keybdLines.Add($"[YanziWin32.Win32Keybd]::keybd_event(0x{mainVk:X2}, 0, 0, [UIntPtr]::Zero)");
+            keybdLines.Add($"[YanziWin32.Win32Keybd]::keybd_event(0x{mainVk:X2}, 0, 2, [UIntPtr]::Zero)");
+        }
+        for (var i = modVks.Count - 1; i >= 0; i--)
+        {
+            keybdLines.Add($"[YanziWin32.Win32Keybd]::keybd_event(0x{modVks[i]:X2}, 0, 2, [UIntPtr]::Zero)");
         }
 
-        builder.Append(sendKey);
-        sendKeys = builder.ToString();
+        var executionBody = string.Join("\r\n", keybdLines);
+
+        generatedScript =
+            "param([string]$InputText = \"\", [string]$ContextPath = \"\")\r\n" +
+            "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8\r\n" +
+            "if (-not ([System.Management.Automation.PSTypeName]'YanziWin32.Win32Keybd').Type) {\r\n" +
+            "    $sig = '[DllImport(\"user32.dll\")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);'\r\n" +
+            "    Add-Type -MemberDefinition $sig -Name 'Win32Keybd' -Namespace 'YanziWin32'\r\n" +
+            "}\r\n" +
+            executionBody + "\r\n" +
+            "Write-Output \"已发送按键。\"";
+
         return true;
     }
 
-    private static string ConvertKeyNameToSendKeys(string key)
+    private static bool TryResolveVirtualKey(string key, out byte vk)
     {
-        if (key.Length == 1)
+        vk = 0;
+        var k = (key ?? string.Empty).Trim();
+        if (string.IsNullOrEmpty(k)) return false;
+
+        if (k.Length == 1)
         {
-            var ch = key[0];
-            return ch switch
-            {
-                '+' or '^' or '%' or '~' or '(' or ')' or '{' or '}' or '[' or ']' => "{" + ch + "}",
-                _ => key.ToLowerInvariant()
-            };
+            var ch = char.ToUpperInvariant(k[0]);
+            if (ch is >= 'A' and <= 'Z') { vk = (byte)ch; return true; }
+            if (ch is >= '0' and <= '9') { vk = (byte)ch; return true; }
         }
 
-        if (key.Length == 2 &&
-            (key[0] == 'D' || key[0] == 'd') &&
-            char.IsDigit(key[1]))
+        if (k.Length == 2 && (k[0] == 'D' || k[0] == 'd') && char.IsDigit(k[1]))
         {
-            return key[1].ToString();
+            vk = (byte)('0' + (k[1] - '0'));
+            return true;
         }
 
-        if (key.StartsWith("NumPad", StringComparison.OrdinalIgnoreCase) &&
-            key.Length == "NumPad0".Length &&
-            char.IsDigit(key[^1]))
+        if (k.StartsWith("NumPad", StringComparison.OrdinalIgnoreCase) &&
+            k.Length == "NumPad0".Length && char.IsDigit(k[^1]))
         {
-            return "{NUMPAD" + key[^1] + "}";
+            vk = (byte)(0x60 + (k[^1] - '0'));
+            return true;
         }
 
-        if (key.Length is >= 2 and <= 3 &&
-            (key[0] == 'F' || key[0] == 'f') &&
-            int.TryParse(key[1..], out var functionKey) &&
-            functionKey is >= 1 and <= 24)
+        if (k.Length is >= 2 and <= 3 &&
+            (k[0] == 'F' || k[0] == 'f') &&
+            int.TryParse(k[1..], out var fn) && fn is >= 1 and <= 24)
         {
-            return "{" + key.ToUpperInvariant() + "}";
+            vk = (byte)(0x70 + (fn - 1));
+            return true;
         }
 
-        return key.ToLowerInvariant() switch
+        vk = k.ToLowerInvariant() switch
         {
-            "enter" or "return" => "{ENTER}",
-            "esc" or "escape" => "{ESC}",
-            "backspace" or "back" => "{BACKSPACE}",
-            "delete" or "del" => "{DELETE}",
-            "insert" or "ins" => "{INSERT}",
-            "tab" => "{TAB}",
-            "space" => " ",
-            "home" => "{HOME}",
-            "end" => "{END}",
-            "pageup" or "prior" => "{PGUP}",
-            "pagedown" or "next" => "{PGDN}",
-            "up" => "{UP}",
-            "down" => "{DOWN}",
-            "left" => "{LEFT}",
-            "right" => "{RIGHT}",
-            "capslock" or "capital" => "{CAPSLOCK}",
-            "apps" => "{APPS}",
-            _ => string.Empty
+            "enter" or "return" => 0x0D,
+            "esc" or "escape" => 0x1B,
+            "backspace" or "back" => 0x08,
+            "delete" or "del" => 0x2E,
+            "insert" or "ins" => 0x2D,
+            "tab" => 0x09,
+            "space" => 0x20,
+            "home" => 0x24,
+            "end" => 0x23,
+            "pageup" or "prior" => 0x21,
+            "pagedown" or "next" => 0x22,
+            "up" => 0x26,
+            "down" => 0x28,
+            "left" => 0x25,
+            "right" => 0x27,
+            "capslock" or "capital" => 0x14,
+            "apps" or "menu" => 0x5D,
+            "printscreen" or "snapshot" => 0x2C,
+            "win" or "windows" or "lwin" => 0x5B,
+            "rwin" => 0x5C,
+            "ctrl" or "control" or "lctrl" => 0x11,
+            "rctrl" => 0xA3,
+            "alt" or "lalt" => 0x12,
+            "ralt" => 0xA5,
+            "shift" or "lshift" => 0x10,
+            "rshift" => 0xA1,
+            _ => 0
         };
+
+        return vk != 0;
+    }
+
+    private static bool LooksLikeGeneratedHotkeyScript(string? script)
+    {
+        if (string.IsNullOrWhiteSpace(script))
+        {
+            return false;
+        }
+
+        // 1. keybd_event 模拟按键
+        if (script.Contains("YanziWin32.Win32Keybd", StringComparison.OrdinalIgnoreCase) ||
+            (script.Contains("keybd_event", StringComparison.OrdinalIgnoreCase) &&
+             (script.Contains("UIntPtr", StringComparison.OrdinalIgnoreCase) || script.Contains("bVk", StringComparison.OrdinalIgnoreCase))))
+        {
+            return true;
+        }
+
+        // 2. SendKeys / KeystrokeSender 模拟按键
+        if (script.Contains("System.Windows.Forms.SendKeys", StringComparison.OrdinalIgnoreCase) ||
+            script.Contains("KeystrokeSender", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return false;
     }
 
     private static bool LooksLikeGeneratedSendKeysScript(string? script)
     {
-        return !string.IsNullOrWhiteSpace(script) &&
-               script.Contains("System.Windows.Forms.SendKeys", StringComparison.OrdinalIgnoreCase);
+        return LooksLikeGeneratedHotkeyScript(script);
+    }
+
+    private static bool TryExtractShortcutFromSimulationScript(string? script, out string shortcutText)
+    {
+        shortcutText = string.Empty;
+        if (string.IsNullOrWhiteSpace(script))
+        {
+            return false;
+        }
+
+        // 1. 尝试从 keybd_event 匹配按下序列 (第三个参数 dwFlags 为 0)
+        var matches = Regex.Matches(
+            script,
+            @"keybd_event\s*\(\s*0x([0-9A-Fa-f]{1,2})\s*,\s*\d+\s*,\s*0\s*,",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+        if (matches.Count > 0)
+        {
+            var keys = new List<string>();
+            foreach (Match m in matches)
+            {
+                if (byte.TryParse(m.Groups[1].Value, System.Globalization.NumberStyles.HexNumber, null, out var vk))
+                {
+                    if (TryReverseVirtualKey(vk, out var name) && !keys.Contains(name, StringComparer.OrdinalIgnoreCase))
+                    {
+                        keys.Add(name);
+                    }
+                }
+            }
+
+            if (keys.Count > 0)
+            {
+                shortcutText = string.Join("+", keys);
+                return true;
+            }
+        }
+
+        // 2. 尝试从 SendKeys.SendWait 提取
+        var sendWaitMatch = Regex.Match(
+            script,
+            @"SendWait\s*\(\s*""(?<seq>[^""]+)""\s*\)",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+        if (sendWaitMatch.Success)
+        {
+            var seq = sendWaitMatch.Groups["seq"].Value;
+            shortcutText = ConvertSendWaitSequenceToShortcut(seq);
+            return true;
+        }
+
+        // 3. 若符合模拟按键脚本特征但无法解析具体按键，提供合理默认值
+        if (LooksLikeGeneratedHotkeyScript(script))
+        {
+            shortcutText = "Ctrl+C";
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryReverseVirtualKey(byte vk, out string keyName)
+    {
+        keyName = string.Empty;
+        if (vk is >= (byte)'A' and <= (byte)'Z')
+        {
+            keyName = ((char)vk).ToString();
+            return true;
+        }
+        if (vk is >= (byte)'0' and <= (byte)'9')
+        {
+            keyName = ((char)vk).ToString();
+            return true;
+        }
+        if (vk is >= 0x60 and <= 0x69)
+        {
+            keyName = $"NumPad{vk - 0x60}";
+            return true;
+        }
+        if (vk is >= 0x70 and <= 0x87)
+        {
+            keyName = $"F{vk - 0x70 + 1}";
+            return true;
+        }
+
+        keyName = vk switch
+        {
+            0x11 => "Ctrl",
+            0xA3 => "RCtrl",
+            0x12 => "Alt",
+            0xA5 => "RAlt",
+            0x10 => "Shift",
+            0xA1 => "RShift",
+            0x5B => "Win",
+            0x5C => "RWin",
+            0x0D => "Enter",
+            0x1B => "Esc",
+            0x08 => "Backspace",
+            0x2E => "Delete",
+            0x2D => "Insert",
+            0x09 => "Tab",
+            0x20 => "Space",
+            0x24 => "Home",
+            0x23 => "End",
+            0x21 => "PageUp",
+            0x22 => "PageDown",
+            0x26 => "Up",
+            0x28 => "Down",
+            0x25 => "Left",
+            0x27 => "Right",
+            0x14 => "CapsLock",
+            0x5D => "Apps",
+            0x2C => "PrintScreen",
+            _ => string.Empty
+        };
+
+        return !string.IsNullOrEmpty(keyName);
+    }
+
+    private static string ConvertSendWaitSequenceToShortcut(string seq)
+    {
+        if (string.IsNullOrWhiteSpace(seq)) return "Ctrl+C";
+
+        var trimmed = seq.Trim();
+        if (trimmed.StartsWith("^", StringComparison.Ordinal) && trimmed.Length == 2)
+        {
+            return $"Ctrl+{char.ToUpperInvariant(trimmed[1])}";
+        }
+        if (trimmed.StartsWith("%", StringComparison.Ordinal) && trimmed.Length == 2)
+        {
+            return $"Alt+{char.ToUpperInvariant(trimmed[1])}";
+        }
+        if (trimmed.StartsWith("+", StringComparison.Ordinal) && trimmed.Length == 2)
+        {
+            return $"Shift+{char.ToUpperInvariant(trimmed[1])}";
+        }
+
+        return trimmed switch
+        {
+            "{ENTER}" => "Enter",
+            "{ESC}" => "Esc",
+            "{TAB}" => "Tab",
+            "{BACKSPACE}" or "{BS}" or "{BKSP}" => "Backspace",
+            "{DELETE}" or "{DEL}" => "Delete",
+            _ => trimmed
+        };
     }
 
     private static bool LooksLikeGeneratedPasteScript(string? script)
     {
-        return TryExtractGeneratedPasteText(script, out _);
+        return TryExtractGeneratedPasteText(script, out _, out _);
     }
 
     private static bool TryExtractGeneratedPasteText(string? script, out string text)
     {
+        return TryExtractGeneratedPasteText(script, out text, out _);
+    }
+
+    private static bool TryExtractGeneratedPasteText(string? script, out string text, out bool pressEnter)
+    {
         text = string.Empty;
+        pressEnter = false;
         if (string.IsNullOrWhiteSpace(script) ||
             !script.Contains("FromBase64String", StringComparison.OrdinalIgnoreCase) ||
             !(script.Contains("Set-Clipboard", StringComparison.OrdinalIgnoreCase) ||
-              script.Contains("Clipboard.SetText", StringComparison.OrdinalIgnoreCase)))
+              script.Contains("Clipboard.SetText", StringComparison.OrdinalIgnoreCase) ||
+              script.Contains("Clipboard.SetDataObject", StringComparison.OrdinalIgnoreCase)))
         {
             return false;
         }
@@ -1246,6 +2093,9 @@ public partial class AddJsonExtensionWindow
         try
         {
             text = Encoding.UTF8.GetString(Convert.FromBase64String(match.Groups["payload"].Value));
+            pressEnter = script.Contains("SendEnter()", StringComparison.OrdinalIgnoreCase) ||
+                         script.Contains("VkReturn", StringComparison.OrdinalIgnoreCase) ||
+                         script.Contains("SendWait(\"{ENTER}\")", StringComparison.OrdinalIgnoreCase);
             return true;
         }
         catch
@@ -1395,17 +2245,34 @@ public partial class AddJsonExtensionWindow
     {
         if (_isInitializing || _suppressSimpleSync) return;
         if (sender is not WpfTextBox tb) return;
-        ScriptSourceBox.Text = tb.Text ?? string.Empty;
         var tag = tb.Tag as string;
         if (tag == "ps")
         {
             RuntimeBox.Text = "powershell";
+            ScriptSourceBox.Text = tb.Text ?? string.Empty;
+            EntryModeBox.Text = "inline";
         }
         else if (tag == "cs")
         {
             RuntimeBox.Text = "csharp";
+            if (CSharpModeEntryRadio?.IsChecked == true)
+            {
+                EntryModeBox.Text = "entry";
+                EntryBox.Text = string.IsNullOrWhiteSpace(CSharpEntryBox?.Text) ? "main.cs" : CSharpEntryBox.Text.Trim();
+                ScriptSourceBox.Text = string.Empty;
+            }
+            else
+            {
+                EntryModeBox.Text = "inline";
+                EntryBox.Text = string.Empty;
+                ScriptSourceBox.Text = tb.Text ?? string.Empty;
+            }
         }
-        EntryModeBox.Text = "inline";
+        else
+        {
+            ScriptSourceBox.Text = tb.Text ?? string.Empty;
+            EntryModeBox.Text = "inline";
+        }
 
         if (_currentSimpleType == "workbench")
         {
@@ -1418,6 +2285,314 @@ public partial class AddJsonExtensionWindow
     {
         if (_isInitializing || _suppressSimpleSync) return;
         _manualUiMode = CSharpUseNativeWindowCheck.IsChecked == true ? "native-window" : null;
+        TryRefreshJsonFromHiddenForm();
+    }
+
+    private string GetCurrentExtensionDirectory()
+    {
+        var id = (IdBox?.Text ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            return string.Empty;
+        }
+        return Path.Combine(LocalExtensionCatalog.CatalogRootPath, id);
+    }
+
+    private void UpdateCSharpUiForCurrentMode(string? inlineSource = null)
+    {
+        var isEntry = CSharpModeEntryRadio?.IsChecked == true;
+        if (CSharpEntryPanel != null)
+        {
+            CSharpEntryPanel.Visibility = isEntry ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        var entryFileName = string.IsNullOrWhiteSpace(CSharpEntryBox?.Text) ? "main.cs" : CSharpEntryBox.Text.Trim();
+        var extDir = GetCurrentExtensionDirectory();
+
+        if (isEntry)
+        {
+            if (CSharpScriptContentHeader != null)
+            {
+                CSharpScriptContentHeader.Text = $"脚本源码 ({entryFileName})";
+            }
+            if (CSharpHintTextBlock != null)
+            {
+                CSharpHintTextBlock.Text = $"独立源文件模式：源码保存在小程序专属目录下的 {entryFileName} 中，保存时将自动同步写回磁盘。";
+            }
+
+            var fullPath = !string.IsNullOrWhiteSpace(extDir) ? Path.Combine(extDir, entryFileName) : string.Empty;
+            if (CSharpFilePathTextBlock != null)
+            {
+                CSharpFilePathTextBlock.Text = string.IsNullOrWhiteSpace(fullPath) ? "文件路径：未指定" : $"文件路径：{fullPath}";
+            }
+
+            if (!string.IsNullOrWhiteSpace(fullPath) && File.Exists(fullPath))
+            {
+                try
+                {
+                    var fileInfo = new FileInfo(fullPath);
+                    var text = File.ReadAllText(fullPath, Encoding.UTF8);
+                    _suppressSimpleSync = true;
+                    try
+                    {
+                        if (CSharpScriptBox != null)
+                        {
+                            CSharpScriptBox.Text = text;
+                        }
+                    }
+                    finally
+                    {
+                        _suppressSimpleSync = false;
+                    }
+                    var lines = text.Split('\n').Length;
+                    var sizeKb = fileInfo.Length / 1024.0;
+                    if (CSharpFileInfoTextBlock != null)
+                    {
+                        CSharpFileInfoTextBlock.Text = $"文件大小：{sizeKb:F1} KB，{lines} 行";
+                    }
+                }
+                catch (Exception ex)
+                {
+                    if (CSharpFileInfoTextBlock != null)
+                    {
+                        CSharpFileInfoTextBlock.Text = $"读取失败：{ex.Message}";
+                    }
+                }
+            }
+            else
+            {
+                if (CSharpFileInfoTextBlock != null)
+                {
+                    CSharpFileInfoTextBlock.Text = "新建独立文件（保存时创建）";
+                }
+                if (CSharpScriptBox != null && (string.IsNullOrWhiteSpace(CSharpScriptBox.Text) || LooksLikeOldCSharpEchoTemplate(CSharpScriptBox.Text)))
+                {
+                    _suppressSimpleSync = true;
+                    try
+                    {
+                        CSharpScriptBox.Text = CreateCSharpWindowScript();
+                    }
+                    finally
+                    {
+                        _suppressSimpleSync = false;
+                    }
+                }
+            }
+        }
+        else
+        {
+            if (CSharpScriptContentHeader != null)
+            {
+                CSharpScriptContentHeader.Text = "脚本内容 (内联)";
+            }
+            if (CSharpHintTextBlock != null)
+            {
+                CSharpHintTextBlock.Text = "内联脚本模式：实现静态类 YanziAction.RunAsync(YanziActionContext context)，源码保存在 manifest.json 中。";
+            }
+            if (CSharpFileInfoTextBlock != null)
+            {
+                CSharpFileInfoTextBlock.Text = string.Empty;
+            }
+            if (CSharpScriptBox != null && inlineSource != null)
+            {
+                _suppressSimpleSync = true;
+                try
+                {
+                    CSharpScriptBox.Text = inlineSource;
+                }
+                finally
+                {
+                    _suppressSimpleSync = false;
+                }
+            }
+        }
+    }
+
+    private void CSharpScriptMode_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_isInitializing || _suppressSimpleSync) return;
+        var isEntry = CSharpModeEntryRadio?.IsChecked == true;
+        if (isEntry)
+        {
+            EntryModeBox.Text = "entry";
+            EntryBox.Text = string.IsNullOrWhiteSpace(CSharpEntryBox?.Text) ? "main.cs" : CSharpEntryBox.Text.Trim();
+            ScriptSourceBox.Text = string.Empty;
+        }
+        else
+        {
+            EntryModeBox.Text = "inline";
+            EntryBox.Text = string.Empty;
+            ScriptSourceBox.Text = CSharpScriptBox?.Text ?? string.Empty;
+        }
+        UpdateCSharpUiForCurrentMode();
+        TryRefreshJsonFromHiddenForm();
+    }
+
+    private void CSharpEntryBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_isInitializing || _suppressSimpleSync) return;
+        var entryName = (CSharpEntryBox?.Text ?? string.Empty).Trim();
+        if (CSharpModeEntryRadio?.IsChecked == true)
+        {
+            EntryBox.Text = entryName;
+            var extDir = GetCurrentExtensionDirectory();
+            var fullPath = !string.IsNullOrWhiteSpace(extDir) ? Path.Combine(extDir, string.IsNullOrWhiteSpace(entryName) ? "main.cs" : entryName) : string.Empty;
+            if (CSharpFilePathTextBlock != null)
+            {
+                CSharpFilePathTextBlock.Text = string.IsNullOrWhiteSpace(fullPath) ? "文件路径：未指定" : $"文件路径：{fullPath}";
+            }
+            if (CSharpScriptContentHeader != null)
+            {
+                CSharpScriptContentHeader.Text = $"脚本源码 ({entryName})";
+            }
+            TryRefreshJsonFromHiddenForm();
+        }
+    }
+
+    private void CSharpOpenExternalEditor_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var extDir = GetCurrentExtensionDirectory();
+            var entryFileName = string.IsNullOrWhiteSpace(CSharpEntryBox?.Text) ? "main.cs" : CSharpEntryBox.Text.Trim();
+            var fullPath = !string.IsNullOrWhiteSpace(extDir) ? Path.Combine(extDir, entryFileName) : string.Empty;
+            if (!string.IsNullOrWhiteSpace(fullPath) && File.Exists(fullPath))
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = fullPath,
+                    UseShellExecute = true
+                });
+            }
+            else
+            {
+                ShowError($"文件尚未保存在本地磁盘：{fullPath}");
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowError($"打开外部编辑器失败：{ex.Message}");
+        }
+    }
+
+    private void CSharpOpenFolder_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var extDir = GetCurrentExtensionDirectory();
+            var entryFileName = string.IsNullOrWhiteSpace(CSharpEntryBox?.Text) ? "main.cs" : CSharpEntryBox.Text.Trim();
+            var fullPath = !string.IsNullOrWhiteSpace(extDir) ? Path.Combine(extDir, entryFileName) : string.Empty;
+            if (!string.IsNullOrWhiteSpace(fullPath) && File.Exists(fullPath))
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "explorer.exe",
+                    Arguments = $"/select,\"{fullPath}\"",
+                    UseShellExecute = true
+                });
+            }
+            else if (!string.IsNullOrWhiteSpace(extDir) && Directory.Exists(extDir))
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "explorer.exe",
+                    Arguments = $"\"{extDir}\"",
+                    UseShellExecute = true
+                });
+            }
+            else
+            {
+                ShowError("小程序目录尚未创建，请先保存小程序。");
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowError($"打开文件夹失败：{ex.Message}");
+        }
+    }
+
+    private void CSharpReloadSource_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var extDir = GetCurrentExtensionDirectory();
+            var entryFileName = string.IsNullOrWhiteSpace(CSharpEntryBox?.Text) ? "main.cs" : CSharpEntryBox.Text.Trim();
+            var fullPath = !string.IsNullOrWhiteSpace(extDir) ? Path.Combine(extDir, entryFileName) : string.Empty;
+            if (!string.IsNullOrWhiteSpace(fullPath) && File.Exists(fullPath))
+            {
+                var text = File.ReadAllText(fullPath, Encoding.UTF8);
+                _suppressSimpleSync = true;
+                try
+                {
+                    if (CSharpScriptBox != null)
+                    {
+                        CSharpScriptBox.Text = text;
+                    }
+                }
+                finally
+                {
+                    _suppressSimpleSync = false;
+                }
+                var fileInfo = new FileInfo(fullPath);
+                var lines = text.Split('\n').Length;
+                var sizeKb = fileInfo.Length / 1024.0;
+                if (CSharpFileInfoTextBlock != null)
+                {
+                    CSharpFileInfoTextBlock.Text = $"文件大小：{sizeKb:F1} KB，{lines} 行 (已重新载入)";
+                }
+            }
+            else
+            {
+                ShowError($"未找到本地文件：{fullPath}");
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowError($"重新载入失败：{ex.Message}");
+        }
+    }
+
+    private void BrowsePowerShellWorkingDirButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Forms.FolderBrowserDialog
+        {
+            Description = "选择脚本运行目录（工作目录）",
+            UseDescriptionForTitle = true,
+            ShowNewFolderButton = true
+        };
+        if (!string.IsNullOrWhiteSpace(PowerShellWorkingDirBox.Text) && Directory.Exists(PowerShellWorkingDirBox.Text))
+        {
+            dialog.SelectedPath = PowerShellWorkingDirBox.Text;
+        }
+        if (dialog.ShowDialog() == Forms.DialogResult.OK)
+        {
+            PowerShellWorkingDirBox.Text = dialog.SelectedPath;
+        }
+    }
+
+    private void PowerShellWorkingDirBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_isInitializing || _suppressSimpleSync) return;
+        _manualWorkingDirectory = string.IsNullOrWhiteSpace(PowerShellWorkingDirBox.Text) ? null : PowerShellWorkingDirBox.Text.Trim();
+        TryRefreshJsonFromHiddenForm();
+    }
+
+    private void PowerShellUiModeCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_isInitializing || _suppressSimpleSync) return;
+        if (PowerShellUiModeCombo.SelectedItem is ComboBoxItem item)
+        {
+            var tag = item.Tag?.ToString();
+            _manualUiMode = string.IsNullOrWhiteSpace(tag) ? null : tag;
+            TryRefreshJsonFromHiddenForm();
+        }
+    }
+
+    private void PowerShellOption_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_isInitializing || _suppressSimpleSync) return;
+        _manualWaitForExit = PowerShellWaitForExitCheck?.IsChecked ?? true;
+        _manualRunAsAdmin = PowerShellRunAsAdminCheck?.IsChecked ?? false;
         TryRefreshJsonFromHiddenForm();
     }
 
@@ -1448,6 +2623,12 @@ public partial class AddJsonExtensionWindow
     {
         if (_isInitializing || _suppressSimpleSync) return;
         UpdateFolderSearchProvider();
+        TryRefreshJsonFromHiddenForm();
+    }
+
+    private void ToggleWindowMode_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_isInitializing || _suppressSimpleSync) return;
         TryRefreshJsonFromHiddenForm();
     }
 
@@ -1582,8 +2763,25 @@ public partial class AddJsonExtensionWindow
     {
         if (_isInitializing || _suppressSimpleSync) return;
         AccentHexBox.Text = AccentHexSimpleBox.Text;
+        UpdateAccentColorLivePreview();
         UpdatePreview();
         TryRefreshJsonFromHiddenForm();
+    }
+
+    private void UpdateAccentColorLivePreview()
+    {
+        try
+        {
+            var hex = AccentHexSimpleBox.Text?.Trim();
+            if (!string.IsNullOrEmpty(hex))
+            {
+                AccentColorLivePreview.Background = CreateBrush(NormalizeAccentHexOrDefault(hex));
+            }
+        }
+        catch
+        {
+            // Ignore
+        }
     }
 
     // ===================== 同步：隐藏数据 → 简单控件 =====================
@@ -1597,7 +2795,6 @@ public partial class AddJsonExtensionWindow
             DescriptionSimpleBox.Text = DescriptionBox.Text;
             IconSimpleBox.Text = IconBox.Text;
             AccentHexSimpleBox.Text = AccentHexBox.Text;
-            IdSimpleBox.Text = IdBox.Text;
             VersionSimpleBox.Text = VersionBox.Text;
             CategorySimpleBox.Text = CategoryBox.Text;
             KeywordsSimpleBox.Text = KeywordsBox.Text;
@@ -1621,24 +2818,71 @@ public partial class AddJsonExtensionWindow
 
             var runtime = (RuntimeBox.Text ?? string.Empty).Trim().ToLowerInvariant();
             var scriptSource = ScriptSourceBox.Text ?? string.Empty;
+
+            if (TryExtractGeneratedPasteText(scriptSource, out var pasteText, out var pressEnter))
+            {
+                PasteTextSimpleBox.Text = pasteText;
+                if (PasteTextPressEnterCheck != null)
+                {
+                    PasteTextPressEnterCheck.IsChecked = pressEnter;
+                }
+            }
+            if (TryExtractShortcutFromSimulationScript(scriptSource, out var hotkeyText))
+            {
+                HotkeySequenceBox.Text = hotkeyText;
+            }
+
             if (runtime == "powershell")
             {
                 PowerShellScriptBox.Text = scriptSource;
                 WorkbenchScriptBox.Text = scriptSource;
-                if (TryExtractGeneratedPasteText(scriptSource, out var pasteText))
-                {
-                    PasteTextSimpleBox.Text = pasteText;
-                }
             }
             else if (runtime == "csharp")
             {
-                CSharpScriptBox.Text = scriptSource;
+                var isEntry = string.Equals(EntryModeBox.Text, "entry", StringComparison.OrdinalIgnoreCase) ||
+                              !string.IsNullOrWhiteSpace(EntryBox.Text);
+                if (CSharpModeEntryRadio != null && CSharpModeInlineRadio != null)
+                {
+                    CSharpModeEntryRadio.IsChecked = isEntry;
+                    CSharpModeInlineRadio.IsChecked = !isEntry;
+                }
+                if (CSharpEntryBox != null)
+                {
+                    CSharpEntryBox.Text = string.IsNullOrWhiteSpace(EntryBox.Text) ? "main.cs" : EntryBox.Text.Trim();
+                }
+                UpdateCSharpUiForCurrentMode(scriptSource);
             }
 
             if (CSharpUseNativeWindowCheck != null)
             {
                 CSharpUseNativeWindowCheck.IsChecked =
                     string.Equals(_manualUiMode, "native-window", StringComparison.OrdinalIgnoreCase);
+            }
+
+            // PowerShell 选项同步
+            if (PowerShellWorkingDirBox != null)
+            {
+                PowerShellWorkingDirBox.Text = _manualWorkingDirectory ?? string.Empty;
+            }
+            if (PowerShellWaitForExitCheck != null)
+            {
+                PowerShellWaitForExitCheck.IsChecked = _manualWaitForExit ?? true;
+            }
+            if (PowerShellRunAsAdminCheck != null)
+            {
+                PowerShellRunAsAdminCheck.IsChecked = _manualRunAsAdmin ?? false;
+            }
+            if (PowerShellUiModeCombo != null)
+            {
+                var targetUiMode = _manualUiMode ?? string.Empty;
+                foreach (ComboBoxItem item in PowerShellUiModeCombo.Items)
+                {
+                    if ((item.Tag?.ToString() ?? string.Empty) == targetUiMode)
+                    {
+                        PowerShellUiModeCombo.SelectedItem = item;
+                        break;
+                    }
+                }
             }
 
             // Startup
@@ -1656,6 +2900,7 @@ public partial class AddJsonExtensionWindow
             }
 
             // 类型推断只在初始化时做，简单模式日常切换不再反推
+            UpdateAccentColorLivePreview();
         }
         finally
         {
@@ -1667,25 +2912,53 @@ public partial class AddJsonExtensionWindow
     {
         var hasScript = !string.IsNullOrWhiteSpace(ScriptSourceBox.Text);
         var hasOpenTarget = !string.IsNullOrWhiteSpace(OpenTargetBox.Text);
+        // 1. 如果 Manifest 明确记录了入口类型，优先使用（精确区分用户创建时的卡片入口）
+        if (!string.IsNullOrWhiteSpace(_manualEntryType) && TypeTemplates.ContainsKey(_manualEntryType))
+        {
+            return _manualEntryType;
+        }
+
         var hasQueryTemplate = !string.IsNullOrWhiteSpace(QueryTargetTemplateBox.Text);
         var hasHostedView = _manualHostedView != null;
         var runtime = (RuntimeBox.Text ?? string.Empty).Trim().ToLowerInvariant();
+        var entry = (EntryBox.Text ?? string.Empty).Trim().ToLowerInvariant();
+        var hasEntry = !string.IsNullOrWhiteSpace(entry);
 
         if (hasHostedView) return "workbench";
         if (_manualSearchProvider != null) return "folder-search";
         if (hasQueryTemplate) return "search";
+
+        // 2. 特殊生成脚本（粘贴文本、模拟按键），无论底层是 csharp 还是 powershell，都优先识别为对应的卡片！
         if (hasScript)
         {
             if (LooksLikeGeneratedPasteScript(ScriptSourceBox.Text)) return "paste-text";
-            if (runtime == "csharp") return "script-cs";
+            if (LooksLikeGeneratedHotkeyScript(ScriptSourceBox.Text)) return "hotkey";
+        }
+
+        // 3. 通用 C# 扩展（不论 inline 还是独立源文件 main.cs）
+        if (runtime is "csharp" or "cs" or "c#" || (hasEntry && entry.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)))
+        {
+            return "script-cs";
+        }
+
+        // 4. 通用 PowerShell 扩展
+        if (runtime is "powershell" or "ps" or "ps1" || (hasEntry && entry.EndsWith(".ps1", StringComparison.OrdinalIgnoreCase)))
+        {
             return "script-ps";
         }
+
+        if (hasScript)
+        {
+            return "script-ps";
+        }
+
         if (hasOpenTarget && string.IsNullOrEmpty(QueryTargetTemplateBox.Text))
         {
             // 无 script 但有 openTarget；如果还有 prefix 当文件夹搜索
             if (!string.IsNullOrWhiteSpace(QueryPrefixesBox.Text)) return "folder-search";
             return "open-target";
         }
+
         return "open-target";
     }
 
@@ -1726,7 +2999,7 @@ public partial class AddJsonExtensionWindow
         _suppressPreviewSync = true;
         try
         {
-            var name = string.IsNullOrWhiteSpace(NameBox.Text) ? "未命名扩展" : NameBox.Text;
+            var name = string.IsNullOrWhiteSpace(NameBox.Text) ? "未命名小程序" : NameBox.Text;
             var desc = string.IsNullOrWhiteSpace(DescriptionBox.Text) ? "选择类型并填写信息以预览" : DescriptionBox.Text;
             if (PreviewNameText.Text != name) PreviewNameText.Text = name;
             if (PreviewDescText.Text != desc) PreviewDescText.Text = desc;
@@ -1749,7 +3022,7 @@ public partial class AddJsonExtensionWindow
         if (_isInitializing || _suppressPreviewSync) return;
         var v = PreviewNameText.Text;
         // 用户清空时不要把占位符当成真值
-        if (v == "未命名扩展") return;
+        if (v == "未命名小程序") return;
         NameBox.Text = v;
         // 同步右侧名称输入框
         if (NameSimpleBox.Text != v) NameSimpleBox.Text = v;
