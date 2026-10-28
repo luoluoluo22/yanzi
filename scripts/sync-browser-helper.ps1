@@ -7,7 +7,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $Remote = 'https://github.com/luoluoluo22/yanzi.git'
-$Branch = 'codex/opencli-xhs-extension-20261027'
+$Branch = 'browser-helper-channel'
 $BranchRef = "refs/heads/$Branch"
 $base = Join-Path $env:LOCALAPPDATA 'OpenQuickHost'
 $root = Join-Path $base 'BrowserHelperUpdater'
