@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -19,6 +19,8 @@ internal static class ExtensionIconLibrary
 
     private static readonly IReadOnlyDictionary<string, string> MdiIcons = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
     {
+        ["arrow-left"] = "M20,11V13H8L13.5,18.5L12.08,19.92L4.16,12L12.08,4.08L13.5,5.5L8,11H20Z",
+        ["arrow-right"] = "M4,11V13H16L10.5,18.5L11.92,19.92L19.84,12L11.92,4.08L10.5,5.5L16,11H4Z",
         ["search"] = "M15.5,14H14.71L14.43,13.73C15.41,12.59 16,11.11 16,9.5A6.5,6.5 0 1,0 9.5,16C11.11,16 12.59,15.41 13.73,14.43L14,14.71V15.5L19,20.5L20.5,19L15.5,14M9.5,14C7.01,14 5,11.99 5,9.5C5,7.01 7.01,5 9.5,5C11.99,5 14,7.01 14,9.5C14,11.99 11.99,14 9.5,14Z",
         ["translate"] = "M12.87,15.07L11,13.2L11.05,13.15C12.32,11.74 13.22,10.13 13.75,8.43H15.82V6.43H10.43V5H8.43V6.43H3V8.43H11.84C11.35,9.85 10.57,11.19 9.5,12.39C8.81,11.62 8.24,10.76 7.75,9.85H5.75C6.33,11.19 7.13,12.44 8.15,13.56L4.4,17.32L5.81,18.73L9.5,15.04L11.8,17.34L12.87,15.07M17.5,10H15.5L11,22H13L14,19H19L20,22H22L17.5,10M14.75,17L16.5,12.33L18.25,17H14.75Z",
         ["folder"] = "M10,4H2C0.89,4 0,4.89 0,6V18A2,2 0 0,0 2,20H22A2,2 0 0,0 24,18V8C24,6.89 23.1,6 22,6H12L10,4Z",
@@ -41,17 +43,34 @@ internal static class ExtensionIconLibrary
         ["circle-outline"] = "M12,2A10,10 0 1,0 22,12A10,10 0 0,0 12,2M12,4A8,8 0 1,1 4,12A8,8 0 0,1 12,4Z",
         ["refresh"] = "M21,12C21,16.97 16.97,21 12,21C7.03,21 3,16.97 3,12C3,7.03 7.03,3 12,3C14.76,3 17.22,4.25 18.86,6.21 M21,3V8H16",
         ["sync"] = "M12,6V9L16,5L12,1V4A8,8 0 0,0 4,12C4,13.43 4.37,14.77 5.03,15.94L6.47,14.5C6.17,13.73 6,12.89 6,12A6,6 0 0,1 12,6M18.97,8.06L17.53,9.5C17.83,10.27 18,11.11 18,12A6,6 0 0,1 12,18V15L8,19L12,23V20A8,8 0 0,0 20,12C20,10.57 19.63,9.23 18.97,8.06Z",
+        ["startup"] = "M13.13,22.19L11.5,18.36C13.07,17.78 14.54,17 15.9,16.09L13.13,22.19M5.64,12.5L1.81,10.87L7.91,8.1C7,9.46 6.22,10.93 5.64,12.5M21.61,2.39C21.61,2.39 16.66,0.27 11,5.93C8.81,8.12 7.5,10.53 6.65,12.64C6.37,13.34 6.56,14.16 7.14,14.74L9.26,16.86C9.84,17.44 10.66,17.63 11.36,17.35C13.47,16.5 15.88,15.19 18.07,13C23.73,7.34 21.61,2.39 21.61,2.39M14.54,9.46C13.76,8.68 13.76,7.41 14.54,6.63C15.32,5.85 16.59,5.85 17.37,6.63C18.14,7.41 18.14,8.68 17.37,9.46C16.59,10.24 15.32,10.24 14.54,9.46M6.24,22L9.88,18.36C9.54,18.27 9.21,18.12 8.91,17.91L4.83,19.83L6.24,22M2,17.76L4.17,19.17L6.09,15.09C5.88,14.79 5.73,14.46 5.64,14.12L2,17.76Z",
+        ["rocket"] = "M13.13,22.19L11.5,18.36C13.07,17.78 14.54,17 15.9,16.09L13.13,22.19M5.64,12.5L1.81,10.87L7.91,8.1C7,9.46 6.22,10.93 5.64,12.5M21.61,2.39C21.61,2.39 16.66,0.27 11,5.93C8.81,8.12 7.5,10.53 6.65,12.64C6.37,13.34 6.56,14.16 7.14,14.74L9.26,16.86C9.84,17.44 10.66,17.63 11.36,17.35C13.47,16.5 15.88,15.19 18.07,13C23.73,7.34 21.61,2.39 21.61,2.39M14.54,9.46C13.76,8.68 13.76,7.41 14.54,6.63C15.32,5.85 16.59,5.85 17.37,6.63C18.14,7.41 18.14,8.68 17.37,9.46C16.59,10.24 15.32,10.24 14.54,9.46M6.24,22L9.88,18.36C9.54,18.27 9.21,18.12 8.91,17.91L4.83,19.83L6.24,22M2,17.76L4.17,19.17L6.09,15.09C5.88,14.79 5.73,14.46 5.64,14.12L2,17.76Z",
         ["pause"] = "M14,19H18V5H14M6,19H10V5H6V19Z",
         ["logout"] = "M19,3H5C3.89,3 3,3.89 3,5V9H5V5H19V19H5V15H3V19C3,20.11 3.89,21 5,21H19C20.11,21 21,20.11 21,19V5C21,3.89 20.11,3 19,3M10.08,15.58L11.5,17L16.5,12L11.5,7L10.08,8.41L12.67,11H3V13H12.67L10.08,15.58Z",
         ["shortcut"] = "M19,10H17V8H19M19,13H17V11H19M16,10H14V8H16M16,13H14V11H16M16,17H8V15H16M7,10H5V8H7M7,13H5V11H7M8,11H10V13H8M8,8H10V10H8M11,11H13V13H11M11,8H13V10H11M20,5H4C2.89,5 2,5.89 2,7V17A2,2 0 0,0 4,19H20A2,2 0 0,0 22,17V7C22,5.89 21.1,5 20,5Z",
+        ["keyboard"] = "M19 10H17V8H19M19 13H17V11H19M16 10H14V8H16M16 13H14V11H16M16 17H8V15H16M7 10H5V8H7M7 13H5V11H7M8 11H10V13H8M8 8H10V10H8M11 11H13V13H11M11 8H13V10H11M20 5H4C2.89 5 2 5.89 2 7V17C2 18.11 2.89 19 4 19H20C21.11 19 22 18.11 22 17V7C22 5.89 21.11 5 20 5Z",
+        ["keyboard-outline"] = "M19 10H17V8H19M19 13H17V11H19M16 10H14V8H16M16 13H14V11H16M16 17H8V15H16M7 10H5V8H7M7 13H5V11H7M8 11H10V13H8M8 8H10V10H8M11 11H13V13H11M11 8H13V10H11M20 5H4C2.89 5 2 5.89 2 7V17C2 18.11 2.89 19 4 19H20C21.11 19 22 18.11 22 17V7C22 5.89 21.11 5 20 5Z",
+        ["mouse"] = "M13 1.07C16.39 1.56 19 4.47 19 8V16C19 19.87 15.87 23 12 23C8.13 23 5 19.87 5 16V8C5 4.47 7.61 1.56 11 1.07V9H13V1.07M11 3.09C8.76 3.5 7 5.54 7 8H11V3.09M13 8H17C17 5.54 15.24 3.5 13 3.09V8Z",
         ["desktop-shortcut"] = "M4,2H20A2,2 0 0,1 22,4V16A2,2 0 0,1 20,18H16L12,22L8,18H4A2,2 0 0,1 2,16V4A2,2 0 0,1 4,2M4,4V16H8.83L12,19.17L15.17,16H20V4H4M13,14V10H15V14H18L14,18L10,14H13Z",
         ["cut"] = "M9.64,7.64C11.19,6.09 13.7,6.09 15.24,7.64L16.66,9.05L18.07,7.64L16.66,6.22C14.34,3.91 10.55,3.91 8.22,6.22C6.23,8.21 5.95,11.32 7.38,13.62L4,17V15H2V21H8V19H6L8.79,16.21L12.38,19.79C10.08,21.23 6.96,20.95 4.97,18.96L3.56,17.54L2.14,18.96L3.56,20.37C6.67,23.49 11.72,23.49 14.83,20.37L16.24,18.96L20.5,23.22L21.91,21.81L17.66,17.56L19.07,16.15C22.18,13.03 22.18,7.98 19.07,4.86L17.66,3.45L16.24,4.86L17.66,6.27C19.98,8.59 19.98,12.38 17.66,14.7L16.24,16.12L9.64,9.52C8.48,8.36 8.48,6.48 9.64,5.31",
         ["paste"] = "M19,20H5V4H7V2H17V6H19M19,8H5C3.89,8 3,8.89 3,10V20A2,2 0 0,0 5,22H19A2,2 0 0,0 21,20V10C21,8.89 20.11,8 19,8Z",
         ["skill-export"] = "M12,3 L20,7 V17 L12,21 L4,17 V7 Z M12,3 V21 M4,7 L12,11 L20,7",
         ["trash"] = "M9,3V4H4V6H5V19A2,2 0 0,0 7,21H17A2,2 0 0,0 19,19V6H20V4H15V3H9M7,6H17V19H7V6M9,8V17H11V8H9M13,8V17H15V8H13Z",
+        ["desktop"] = "M21,16H3V4H21V16M21,2H3C1.89,2 1,2.89 1,4V16A2,2 0 0,0 3,18H10V20H8V22H16V20H14V18H21A2,2 0 0,0 23,16V4C23,2.89 22.1,2 21,2Z",
+        ["monitor-dashboard"] = "M21,16H3V4H21V16M21,2H3C1.89,2 1,2.89 1,4V16A2,2 0 0,0 3,18H10V20H8V22H16V20H14V18H21A2,2 0 0,0 23,16V4C23,2.89 22.1,2 21,2Z",
         ["edit"] = "M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z",
         ["store"] = "M12,18H6V14H12M21,14V12L20,7H4L3,12V14H4V20H14V14H18V20H20V14M20,4H4V6H20V4Z",
-        ["stop"] = "M6,6H18V18H6V6Z"
+        ["warehouse"] = "M6 19H8V21H6V19M12 3L2 8V21H4V13H20V21H22V8L12 3M8 11H4V9H8V11M14 11H10V9H14V11M20 11H16V9H20V11M6 15H8V17H6V15M10 15H12V17H10V15M10 19H12V21H10V19M14 19H16V21H14V19Z",
+        ["stop"] = "M6,6H18V18H6V6Z",
+        ["backpack"] = "M19 18V10C19 6.13 15.87 3 12 3C8.13 3 5 6.13 5 10V18C5 19.1 5.9 20 7 20H17C18.1 20 19 19.1 19 18M12 5C14.76 5 17 7.24 17 10V11H7V10C7 7.24 9.24 5 12 5M7 13H17V18H7V13M9 8H15V9.5H9V8Z",
+        ["trophy"] = "M18 2H6V4H4C2.9 4 2 4.9 2 6V8C2 10.2 3.8 12 6 12H7.1C7.8 13.8 9.3 15.1 11 15.7V18H8V20H16V18H13V15.7C14.7 15.1 16.2 13.8 16.9 12H18C20.2 12 22 10.2 22 8V6C22 4.9 21.1 4 20 4H18V2M4 6H6V10C4.9 10 4 9.1 4 8V6M20 8C20 9.1 19.1 10 18 10V6H20V8Z",
+        ["broom"] = "M19.36,2.72L20.78,4.14L15.06,9.85C16.13,11.39 16.28,13.47 15.38,15.17L12.06,11.85L10.65,13.26L13.97,16.58C12.27,17.48 10.19,17.33 8.65,16.26L2.94,21.97L1.5,20.55L7.24,14.83C6.17,13.29 6.02,11.21 6.92,9.51L10.24,12.83L11.65,11.42L8.33,8.1C10.03,7.2 12.11,7.35 13.65,8.42L19.36,2.72Z",
+        ["view-grid"] = "M3,3H10V10H3V3M14,3H21V10H14V3M3,14H10V21H3V14M14,14H21V21H14V14Z",
+        ["view-list"] = "M4,4.5A1.5,1.5 0 0,1 5.5,6A1.5,1.5 0 0,1 4,7.5A1.5,1.5 0 0,1 2.5,6A1.5,1.5 0 0,1 4,4.5M8,5H21V7H8V5M4,10.5A1.5,1.5 0 0,1 5.5,12A1.5,1.5 0 0,1 4,13.5A1.5,1.5 0 0,1 2.5,12A1.5,1.5 0 0,1 4,10.5M8,11H21V13H8V11M4,16.5A1.5,1.5 0 0,1 5.5,18A1.5,1.5 0 0,1 4,19.5A1.5,1.5 0 0,1 2.5,18A1.5,1.5 0 0,1 4,16.5M8,17H21V19H8V17Z",
+        ["volume-high"] = "M14,3.23V5.29C16.89,6.15 19,8.83 19,12C19,15.17 16.89,17.84 14,18.7V20.77C18,19.86 21,16.28 21,12C21,7.72 18,4.14 14,3.23M16.5,12C16.5,10.23 15.5,8.71 14,7.97V16C15.5,15.29 16.5,13.76 16.5,12M3,9V15H7L12,20V4L7,9H3Z",
+        ["volume-medium"] = "M5,9V15H9L14,20V4L9,9H5M18.5,12C18.5,10.23 17.5,8.71 16,7.97V16C17.5,15.29 18.5,13.76 18.5,12Z",
+        ["volume-low"] = "M7,9V15H11L16,20V4L11,9H7Z",
+        ["volume-off"] = "M12,4L9.91,6.09L12,8.18M4.27,3L3,4.27L7.73,9H3V15H7L12,20V13.27L16.25,17.53C15.58,18.04 14.83,18.46 14,18.7V20.77C15.38,20.45 16.63,19.82 17.68,18.96L19.73,21L21,19.73L4.27,3M19,12C19,12.82 18.83,13.61 18.53,14.32L20,15.79C20.64,14.63 21,13.35 21,12C21,7.72 18,4.14 14,3.23V5.29C16.89,6.15 19,8.83 19,12M16.5,12C16.5,10.23 15.5,8.71 14,7.97V10.18L16.45,12.63C16.5,12.43 16.5,12.21 16.5,12Z"
     };
 
     private static readonly IReadOnlyDictionary<string, string> SvgAssetIcons = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -75,7 +94,7 @@ internal static class ExtensionIconLibrary
         ["delete"] = "circle-delete.svg",
         ["check"] = "circle-check.svg",
         ["close"] = "close.svg",
-        ["arrow-left"] = "arrow-left-solid.svg",
+        ["arrow-left-solid"] = "arrow-left-solid.svg",
         ["warning"] = "circle-warning.svg",
         ["user"] = "user.svg",
         ["users"] = "users.svg",
@@ -117,33 +136,16 @@ internal static class ExtensionIconLibrary
 
     private static readonly IReadOnlyDictionary<string, string> IconAliases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
     {
-        ["notebook-outline"] = "note",
-        ["notebook-edit-outline"] = "pen",
-        ["note-text-outline"] = "note",
-        ["clipboard-outline"] = "clipboard",
-        ["clipboard-text"] = "clipboard",
-        ["clipboard-text-outline"] = "clipboard",
-        ["clipboard-check"] = "clipboard",
-        ["clipboard-check-outline"] = "clipboard",
-        ["clipboard-edit"] = "clipboard",
-        ["clipboard-edit-outline"] = "clipboard",
-        ["content-copy"] = "clipboard",
-        ["text-box-edit-outline"] = "pen",
-        ["text-box-search-outline"] = "note",
-        ["monitor-dashboard"] = "dashboard",
-        ["view-dashboard-outline"] = "dashboard",
-        ["application-outline"] = "dashboard",
-        ["cog-outline"] = "settings",
-        ["folder-search-outline"] = "folder",
-        ["folder-cog-outline"] = "folder",
-        ["file-search-outline"] = "file",
-        ["code-json"] = "form",
-        ["code-tags"] = "code",
-        ["console"] = "terminal",
-        ["counter"] = "timer",
-        ["compass-outline"] = "location",
-        ["notebook"] = "note",
-        ["magnify"] = "search"
+        // UI actions share one semantic icon vocabulary across menus, cards and dialogs.
+        ["clipboard"] = "clipboard-outline",
+        ["copy"] = "content-copy",
+        ["note"] = "file-document-outline",
+        ["file"] = "file-outline",
+        ["window"] = "window-maximize",
+        ["running"] = "play-circle-outline",
+        ["help-docs"] = "book-open-page-variant",
+        ["open-folder"] = "folder-open-outline",
+        ["trash"] = "delete-outline"
     };
 
     private static readonly IReadOnlyDictionary<string, string> AppIcons = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -175,6 +177,7 @@ internal static class ExtensionIconLibrary
     private static readonly Dictionary<string, ImageSource?> ImageCache = new(StringComparer.OrdinalIgnoreCase);
     public static event Action<string, ImageSource?>? RemoteIconDownloaded;
     private static readonly HashSet<string> DownloadingUrls = [];
+    private static readonly Dictionary<string, DateTimeOffset> RejectedRemoteIcons = new(StringComparer.OrdinalIgnoreCase);
     private static readonly Lazy<IReadOnlyDictionary<string, string>> FullMdiIcons = new(LoadFullMdiIcons);
 
     public static IReadOnlyList<ExtensionIconOption> GetBuiltInOptions()
@@ -286,17 +289,46 @@ internal static class ExtensionIconLibrary
 
     public static ImageSource? ResolveImageSource(string? iconReference, string? extensionDirectoryPath)
     {
-        if (iconReference != null && iconReference.StartsWith("shell:AppsFolder\\", StringComparison.OrdinalIgnoreCase))
+        if (!string.IsNullOrWhiteSpace(iconReference))
         {
-            if (ImageCache.TryGetValue(iconReference, out var cachedUwpImage))
+            var trimmedRef = iconReference.Trim();
+            if (NativeFileIconService.IsDesktopTarget(trimmedRef))
             {
-                return cachedUwpImage;
+                return NativeFileIconService.GetDesktopIcon();
             }
-            var uwpIcon = NativeFileIconService.GetIcon(iconReference, isFolder: false);
-            if (uwpIcon != null)
+
+            if (NativeFileIconService.IsDownloadsTarget(trimmedRef))
             {
-                ImageCache[iconReference] = uwpIcon;
-                return uwpIcon;
+                return NativeFileIconService.GetDownloadsIcon();
+            }
+
+            if (trimmedRef.StartsWith("shell:AppsFolder\\", StringComparison.OrdinalIgnoreCase))
+            {
+                if (ImageCache.TryGetValue(trimmedRef, out var cachedUwpImage))
+                {
+                    return cachedUwpImage;
+                }
+                var uwpIcon = NativeFileIconService.GetIcon(trimmedRef, isFolder: false);
+                if (uwpIcon != null)
+                {
+                    ImageCache[trimmedRef] = uwpIcon;
+                    return uwpIcon;
+                }
+            }
+
+            if (trimmedRef.StartsWith("shell:", StringComparison.OrdinalIgnoreCase) ||
+                trimmedRef.StartsWith("stock:", StringComparison.OrdinalIgnoreCase))
+            {
+                if (ImageCache.TryGetValue(trimmedRef, out var cachedShell))
+                {
+                    return cachedShell;
+                }
+                var shellIcon = NativeFileIconService.GetIcon(trimmedRef, isFolder: true);
+                if (shellIcon != null)
+                {
+                    ImageCache[trimmedRef] = shellIcon;
+                    return shellIcon;
+                }
             }
         }
 
@@ -315,7 +347,10 @@ internal static class ExtensionIconLibrary
         {
             var localPath = resolvedPath.StartsWith("file://", StringComparison.OrdinalIgnoreCase)
                 ? new Uri(resolvedPath, UriKind.Absolute).LocalPath
-                : null;
+                : (File.Exists(resolvedPath) || Directory.Exists(resolvedPath) ? resolvedPath : null);
+
+            HostAssets.AppendDebug($"[IconLog] ResolveImageSource: iconReference='{iconReference}', resolvedPath='{resolvedPath}', localPath='{localPath}', exists={(!string.IsNullOrWhiteSpace(localPath) && (File.Exists(localPath) || Directory.Exists(localPath)))}.");
+
             if (!string.IsNullOrWhiteSpace(localPath) && (File.Exists(localPath) || Directory.Exists(localPath)))
             {
                 if (ShouldPreferBitmapContent(localPath))
@@ -326,6 +361,10 @@ internal static class ExtensionIconLibrary
                 }
 
                 var systemIcon = NativeFileIconService.GetIcon(localPath, Directory.Exists(localPath));
+                if (systemIcon == null)
+                {
+                    HostAssets.AppendDebug($"[IconLog] NativeFileIconService.GetIcon returned NULL for '{localPath}'.");
+                }
                 if (systemIcon != null)
                 {
                     ImageCache[resolvedPath] = systemIcon;
@@ -335,6 +374,7 @@ internal static class ExtensionIconLibrary
                 if (CanExtractAssociatedIcon(localPath))
                 {
                     var extracted = TryExtractAssociatedIcon(localPath);
+                    HostAssets.AppendDebug($"[IconLog] TryExtractAssociatedIcon for '{localPath}' returned {(extracted != null ? "SUCCESS" : "NULL")}.");
                     if (extracted != null)
                     {
                         ImageCache[resolvedPath] = extracted;
@@ -347,8 +387,9 @@ internal static class ExtensionIconLibrary
             ImageCache[resolvedPath] = bitmap;
             return bitmap;
         }
-        catch
+        catch (Exception ex)
         {
+            HostAssets.AppendLog($"[IconLog] ResolveImageSource EXCEPTION for '{iconReference}': {ex}");
             ImageCache[resolvedPath] = null;
             return null;
         }
@@ -413,19 +454,182 @@ internal static class ExtensionIconLibrary
                extension.Equals(".img", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static BitmapImage LoadBitmapImage(string resolvedPath)
+    private static ImageSource? LoadBitmapImage(string resolvedPath)
     {
-        var bitmap = new BitmapImage();
-        bitmap.BeginInit();
-        bitmap.CacheOption = BitmapCacheOption.OnLoad;
-        bitmap.UriSource = new Uri(resolvedPath, UriKind.Absolute);
-        bitmap.EndInit();
-        if (bitmap.CanFreeze)
+        try
         {
-            bitmap.Freeze();
+            var localPath = resolvedPath.StartsWith("file://", StringComparison.OrdinalIgnoreCase)
+                ? new Uri(resolvedPath, UriKind.Absolute).LocalPath
+                : (File.Exists(resolvedPath) ? resolvedPath : null);
+
+            if (!string.IsNullOrEmpty(localPath) && File.Exists(localPath))
+            {
+                var bytes = File.ReadAllBytes(localPath);
+                if (bytes.Length == 0) return null;
+
+                // 1. 如果是 ICO 格式（魔数 00-00-01-00）
+                if (bytes.Length >= 4 && bytes[0] == 0 && bytes[1] == 0 && bytes[2] == 1 && bytes[3] == 0)
+                {
+                    // 尝试在 ICO 容器中寻找内嵌的高清 PNG 帧（现代 Favicon / Vista+ ICO）
+                    var pngFrame = TryExtractBestPngFrameFromIco(bytes);
+                    if (pngFrame != null)
+                    {
+                        return pngFrame;
+                    }
+
+                    // 否则使用 System.Drawing.Icon 解码标准 ICO
+                    try
+                    {
+                        using var ms = new MemoryStream(bytes);
+                        using var icon = new System.Drawing.Icon(ms);
+                        using var bmp = icon.ToBitmap();
+                        var hBmp = bmp.GetHbitmap();
+                        try
+                        {
+                            var source = Imaging.CreateBitmapSourceFromHBitmap(
+                                hBmp,
+                                IntPtr.Zero,
+                                Int32Rect.Empty,
+                                BitmapSizeOptions.FromEmptyOptions());
+                            if (source.CanFreeze) source.Freeze();
+                            return source;
+                        }
+                        finally
+                        {
+                            DeleteObject(hBmp);
+                        }
+                    }
+                    catch
+                    {
+                        // 降级走后续通用解码
+                    }
+                }
+
+                // 2. 通用图片解码 (PNG, JPG, BMP, GIF, WebP, etc.)
+                try
+                {
+                    using var ms = new MemoryStream(bytes);
+                    var decoder = BitmapDecoder.Create(
+                        ms,
+                        BitmapCreateOptions.PreservePixelFormat,
+                        BitmapCacheOption.OnLoad);
+                    if (decoder.Frames.Count > 0)
+                    {
+                        var frame = decoder.Frames.OrderByDescending(f => f.PixelWidth).First();
+                        if (frame.CanFreeze) frame.Freeze();
+                        return frame;
+                    }
+                }
+                catch
+                {
+                    // 降级使用 System.Drawing.Image (支持古老/特殊编码图片)
+                    try
+                    {
+                        using var ms = new MemoryStream(bytes);
+                        using var drawingImg = System.Drawing.Image.FromStream(ms);
+                        using var bmp = new System.Drawing.Bitmap(drawingImg);
+                        var hBmp = bmp.GetHbitmap();
+                        try
+                        {
+                            var source = Imaging.CreateBitmapSourceFromHBitmap(
+                                hBmp,
+                                IntPtr.Zero,
+                                Int32Rect.Empty,
+                                BitmapSizeOptions.FromEmptyOptions());
+                            if (source.CanFreeze) source.Freeze();
+                            return source;
+                        }
+                        finally
+                        {
+                            DeleteObject(hBmp);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        HostAssets.AppendLog($"[IconLog] GDI+ fallback failed for '{localPath}': {ex.Message}");
+                    }
+                }
+            }
+
+            // 3. 网络或内置 pack:// URI 直接尝试原生加载
+            var bitmap = new BitmapImage();
+            bitmap.BeginInit();
+            bitmap.CacheOption = BitmapCacheOption.OnLoad;
+            bitmap.UriSource = new Uri(resolvedPath, UriKind.Absolute);
+            bitmap.EndInit();
+            if (bitmap.CanFreeze)
+            {
+                bitmap.Freeze();
+            }
+
+            return bitmap;
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"[IconLog] LoadBitmapImage failed for '{resolvedPath}': {ex.Message}");
+            return null;
+        }
+    }
+
+    [System.Runtime.InteropServices.DllImport("gdi32.dll")]
+    private static extern bool DeleteObject(IntPtr hObject);
+
+    private static BitmapSource? TryExtractBestPngFrameFromIco(byte[] icoBytes)
+    {
+        try
+        {
+            if (icoBytes.Length < 6) return null;
+            int count = BitConverter.ToUInt16(icoBytes, 4);
+            if (count <= 0) return null;
+
+            int bestWidth = 0;
+            byte[]? bestPngBytes = null;
+
+            for (int i = 0; i < count; i++)
+            {
+                int entryOffset = 6 + i * 16;
+                if (entryOffset + 16 > icoBytes.Length) break;
+
+                int width = icoBytes[entryOffset] == 0 ? 256 : icoBytes[entryOffset];
+                int size = BitConverter.ToInt32(icoBytes, entryOffset + 8);
+                int imageOffset = BitConverter.ToInt32(icoBytes, entryOffset + 12);
+
+                if (imageOffset >= 0 && size > 8 && imageOffset + size <= icoBytes.Length)
+                {
+                    // PNG 魔数: 89 50 4E 47 0D 0A 1A 0A
+                    if (icoBytes[imageOffset] == 0x89 &&
+                        icoBytes[imageOffset + 1] == 0x50 &&
+                        icoBytes[imageOffset + 2] == 0x4E &&
+                        icoBytes[imageOffset + 3] == 0x47)
+                    {
+                        if (width >= bestWidth)
+                        {
+                            bestWidth = width;
+                            bestPngBytes = new byte[size];
+                            Array.Copy(icoBytes, imageOffset, bestPngBytes, 0, size);
+                        }
+                    }
+                }
+            }
+
+            if (bestPngBytes != null)
+            {
+                using var ms = new MemoryStream(bestPngBytes);
+                var decoder = new PngBitmapDecoder(ms, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+                if (decoder.Frames.Count > 0)
+                {
+                    var frame = decoder.Frames[0];
+                    if (frame.CanFreeze) frame.Freeze();
+                    return frame;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"[IconLog] TryExtractBestPngFrameFromIco error: {ex.Message}");
         }
 
-        return bitmap;
+        return null;
     }
 
     public static bool IsBuiltInReference(string? iconReference) => TryResolveVectorKey(iconReference, out _);
@@ -526,7 +730,7 @@ internal static class ExtensionIconLibrary
     {
         try
         {
-            var resource = System.Windows.Application.GetResourceStream(new Uri("pack://application:,,,/Assets/mdi-icons.json", UriKind.Absolute));
+            var resource = System.Windows.Application.GetResourceStream(new Uri("/Yanzi;component/Assets/mdi-icons.json", UriKind.Relative));
             if (resource == null)
             {
                 HostAssets.AppendLog("Full MDI icon resource not found: Assets/mdi-icons.json");
@@ -546,23 +750,37 @@ internal static class ExtensionIconLibrary
 
     private static Geometry LoadSvgAssetGeometry(string fileName)
     {
-        var resource = System.Windows.Application.GetResourceStream(new Uri($"pack://application:,,,/Assets/Icons/{fileName}", UriKind.Absolute))
+        var resource = System.Windows.Application.GetResourceStream(new Uri($"/Yanzi;component/Assets/Icons/{fileName}", UriKind.Relative))
             ?? throw new InvalidOperationException($"Icon resource not found: {fileName}");
 
         using var stream = resource.Stream;
         var document = XDocument.Load(stream);
-        var pathData = document
+        var paths = document
             .Descendants()
-            .FirstOrDefault(static element => string.Equals(element.Name.LocalName, "path", StringComparison.OrdinalIgnoreCase))
-            ?.Attribute("d")
-            ?.Value;
+            .Where(static element => string.Equals(element.Name.LocalName, "path", StringComparison.OrdinalIgnoreCase))
+            .Select(static element => element.Attribute("d")?.Value)
+            .Where(static data => !string.IsNullOrWhiteSpace(data))
+            .ToArray();
 
-        if (string.IsNullOrWhiteSpace(pathData))
+        if (paths.Length == 0)
         {
             throw new InvalidOperationException($"Icon resource has no path data: {fileName}");
         }
 
-        var geometry = Geometry.Parse(pathData);
+        Geometry geometry;
+        if (paths.Length == 1)
+        {
+            geometry = Geometry.Parse(paths[0]!);
+        }
+        else
+        {
+            var group = new GeometryGroup { FillRule = FillRule.Nonzero };
+            foreach (var path in paths)
+            {
+                group.Children.Add(Geometry.Parse(path!));
+            }
+            geometry = group;
+        }
         var bounds = geometry.Bounds;
         if (!bounds.IsEmpty && (Math.Abs(bounds.X) > double.Epsilon || Math.Abs(bounds.Y) > double.Epsilon))
         {
@@ -632,8 +850,33 @@ internal static class ExtensionIconLibrary
                string.Equals(extension, ".appref-ms", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static ImageSource? TryExtractAssociatedIcon(string localPath)
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, ImageSource?> AssociatedIconCache =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    public static void InvalidateAssociatedIconCache(string? localPath = null)
     {
+        if (string.IsNullOrWhiteSpace(localPath))
+        {
+            AssociatedIconCache.Clear();
+        }
+        else
+        {
+            AssociatedIconCache.TryRemove(localPath, out _);
+        }
+    }
+
+    public static ImageSource? TryExtractAssociatedIcon(string localPath)
+    {
+        if (string.IsNullOrWhiteSpace(localPath))
+        {
+            return null;
+        }
+
+        if (AssociatedIconCache.TryGetValue(localPath, out var cached))
+        {
+            return cached;
+        }
+
         System.Drawing.Icon? icon = null;
 
         try
@@ -642,6 +885,7 @@ internal static class ExtensionIconLibrary
 
             if (icon == null)
             {
+                AssociatedIconCache[localPath] = null;
                 return null;
             }
 
@@ -654,10 +898,12 @@ internal static class ExtensionIconLibrary
                 bitmap.Freeze();
             }
 
+            AssociatedIconCache[localPath] = bitmap;
             return bitmap;
         }
         catch
         {
+            AssociatedIconCache[localPath] = null;
             return null;
         }
         finally
@@ -673,12 +919,34 @@ internal static class ExtensionIconLibrary
         var cachePath = Path.Combine(cacheDirectory, ComputeCacheName(uri.AbsoluteUri));
         if (File.Exists(cachePath))
         {
-            return new Uri(cachePath).AbsoluteUri;
+            try
+            {
+                using var cached = File.OpenRead(cachePath);
+                var prefix = new byte[Math.Min(256, (int)Math.Min(cached.Length, 256))];
+                _ = cached.Read(prefix);
+                if (!LooksLikeErrorPage(prefix))
+                {
+                    return new Uri(cachePath).AbsoluteUri;
+                }
+
+                cached.Close();
+                File.Delete(cachePath);
+                ImageCache.Remove(new Uri(cachePath).AbsoluteUri);
+                HostAssets.AppendLog($"Rejected invalid cached icon response: host={uri.Host}, key={Path.GetFileName(cachePath)}.");
+            }
+            catch (IOException)
+            {
+                return null;
+            }
         }
 
         var url = uri.AbsoluteUri;
         lock (DownloadingUrls)
         {
+            if (RejectedRemoteIcons.TryGetValue(url, out var retryAfter) && retryAfter > DateTimeOffset.UtcNow)
+            {
+                return null;
+            }
             if (DownloadingUrls.Contains(url))
             {
                 return null;
@@ -693,6 +961,16 @@ internal static class ExtensionIconLibrary
                 var bytes = await IconHttpClient.GetByteArrayAsync(uri);
                 if (bytes.Length > 0)
                 {
+                    if (LooksLikeErrorPage(bytes))
+                    {
+                        lock (DownloadingUrls)
+                        {
+                            RejectedRemoteIcons[url] = DateTimeOffset.UtcNow.AddHours(1);
+                        }
+                        HostAssets.AppendLog($"Remote icon returned an error page: host={uri.Host}, key={Path.GetFileName(cachePath)}.");
+                        return;
+                    }
+
                     File.WriteAllBytes(cachePath, bytes);
 
                     var dispatcher = System.Windows.Application.Current?.Dispatcher;
@@ -717,7 +995,7 @@ internal static class ExtensionIconLibrary
             }
             catch (Exception ex)
             {
-                HostAssets.AppendLog($"Failed to download remote icon {url}: {ex.Message}");
+                HostAssets.AppendLog($"Failed to download remote icon: host={uri.Host}, key={Path.GetFileName(cachePath)}, error={ex.Message}");
             }
             finally
             {
@@ -735,6 +1013,14 @@ internal static class ExtensionIconLibrary
     {
         var hash = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
         return hash + ".img";
+    }
+
+    private static bool LooksLikeErrorPage(ReadOnlySpan<byte> bytes)
+    {
+        var text = System.Text.Encoding.UTF8.GetString(bytes[..Math.Min(bytes.Length, 256)]).TrimStart('\uFEFF', ' ', '\r', '\n', '\t');
+        return text.StartsWith("<!doctype html", StringComparison.OrdinalIgnoreCase) ||
+               text.StartsWith("<html", StringComparison.OrdinalIgnoreCase) ||
+               text.StartsWith("{\"error", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool TryParseBuiltinReference(string? iconReference, out string library, out string name)
@@ -760,7 +1046,9 @@ internal static class ExtensionIconLibrary
         var separatorIndex = trimmed.IndexOf(':');
         if (separatorIndex <= 0 || separatorIndex >= trimmed.Length - 1)
         {
-            return false;
+            library = "mdi";
+            name = trimmed.ToLowerInvariant();
+            return true;
         }
 
         library = trimmed[..separatorIndex].Trim();

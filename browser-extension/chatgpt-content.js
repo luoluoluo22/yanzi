@@ -1,0 +1,789 @@
+(() => {
+  let busy = false;
+  let lastEditorInputStatus = null;
+  const inputSelector = '#prompt-textarea, main [contenteditable="true"][role="textbox"]';
+  const sendSelector = 'button[data-testid="send-button"], button[aria-label="Send prompt"], button[aria-label="发送提示"], main button[aria-label="发送"], main button[aria-label="Send"]';
+  const stopSelector = 'button[data-testid="stop-button"], button[aria-label="Stop generating"], button[aria-label="停止生成"], main button[aria-label="停止"], main button[aria-label="Stop"]';
+  const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+  function extractContent(element) {
+    const root = element.querySelector('[data-markdown-text-style], .markdown') || element;
+    const blocks = [];
+    const blockSelector = '[data-markdown-copy="code-block"], pre';
+    const blockElements = Array.from(root.querySelectorAll(blockSelector)).filter(el => !el.parentElement?.closest(blockSelector));
+    for (const block of blockElements) {
+      const code = block.querySelector('code');
+      const header = block.querySelector('[data-markdown-copy="exclude"]')?.cloneNode(true);
+      header?.querySelectorAll('button, svg, [hidden], .sr-only').forEach(node => node.remove());
+      const label = header?.textContent.trim();
+      const language = code?.className.match(/language-([\w+-]+)/)?.[1] || label?.match(/^[\w+#.-]+$/)?.[0]?.toLowerCase() || '';
+      blocks.push({ language, text: (code || block).textContent });
+    }
+    const blockMap = new Map(blockElements.map((el, i) => [el, blocks[i]]));
+    const ignored = el => el.matches('[data-markdown-copy="exclude"], .sr-only, .turn-action-controls, button, svg, [hidden]');
+    const fenceFor = text => '`'.repeat(Math.max(3, ...Array.from(text.matchAll(/`+/g), m => m[0].length + 1)));
+    function walk(node, markdown) {
+      if (node.nodeType === 3) return node.textContent;
+      if (node.nodeType !== 1 || ignored(node)) return '';
+      const block = blockMap.get(node);
+      if (block) {
+        if (!markdown) return block.text + '\n\n';
+        const fence = fenceFor(block.text);
+        return fence + block.language + '\n' + block.text + (block.text.endsWith('\n') ? '' : '\n') + fence + '\n\n';
+      }
+      const children = () => Array.from(node.childNodes, child => walk(child, markdown)).join('');
+      const tag = node.tagName;
+      if (tag === 'BR') return '\n';
+      if (/^H[1-6]$/.test(tag)) return (markdown ? '#'.repeat(Number(tag[1])) + ' ' : '') + children() + '\n\n';
+      if (tag === 'P') return children() + '\n\n';
+      if (tag === 'BLOCKQUOTE') return children().trim().split('\n').map(line => '> ' + line).join('\n') + '\n\n';
+      if (tag === 'UL' || tag === 'OL') {
+        const start = Number(node.getAttribute('start') || 1);
+        return Array.from(node.children).filter(el => el.tagName === 'LI').map((el, i) => {
+          const marker = tag === 'OL' ? (start + i) + '. ' : '- ';
+          return marker + walk(el, markdown).trim().split('\n').join('\n' + ' '.repeat(marker.length));
+        }).join('\n') + '\n\n';
+      }
+      if (tag === 'TABLE') {
+        const rows = Array.from(node.querySelectorAll('tr'), tr => Array.from(tr.children, cell => walk(cell, markdown).trim()));
+        if (!markdown) return rows.map(row => row.join('\t')).join('\n') + '\n\n';
+        const lines = rows.map(row => '| ' + row.map(cell => cell.replace(/\|/g, '\\|').replace(/\n/g, '<br>')).join(' | ') + ' |');
+        if (lines.length) lines.splice(1, 0, '| ' + rows[0].map(() => '---').join(' | ') + ' |');
+        return lines.join('\n') + '\n\n';
+      }
+      if (markdown && tag === 'A') return '[' + children() + '](' + (node.getAttribute('href') || '').replace(/\)/g, '\\)') + ')';
+      if (markdown && tag === 'CODE') {
+        const value = node.textContent, fence = '`'.repeat(Math.max(1, ...Array.from(value.matchAll(/`+/g), m => m[0].length + 1)));
+        return fence + value + fence;
+      }
+      if (markdown && ['STRONG', 'B', 'EM', 'I', 'DEL', 'S'].includes(tag)) {
+        const marker = ['STRONG', 'B'].includes(tag) ? '**' : ['EM', 'I'].includes(tag) ? '*' : '~~';
+        return marker + children() + marker;
+      }
+      if (tag === 'HR') return markdown ? '\n---\n\n' : '\n';
+      return children();
+    }
+    const text = walk(root, false).trim();
+    const markdown = walk(root, true).trim();
+    let json = null, jsonError = null;
+    const jsonBlocks = blocks.filter(block => block.language === 'json');
+    const candidate = jsonBlocks.length === 1 ? jsonBlocks[0].text : blocks.length === 0 && /^[\[{]/.test(text) ? text : null;
+    if (candidate != null) { try { json = JSON.parse(candidate); } catch (error) { jsonError = error.message; } }
+    return { text, markdown, codeBlocks: blocks, json, jsonError, markdownSource: 'reconstructed-from-dom' };
+  }
+
+  function extractImages(element) {
+    if (!(element instanceof Element)) return [];
+
+    const seen = new Set();
+    const images = [];
+
+    for (const img of element.querySelectorAll('img')) {
+      const raw = img.currentSrc || img.getAttribute('src') || '';
+      if (!raw || raw.startsWith('data:image/svg+xml')) continue;
+
+      let src = raw;
+      try {
+        if (!raw.startsWith('blob:') && !raw.startsWith('data:')) {
+          src = new URL(raw, location.href).href;
+        }
+      } catch {}
+
+      if (seen.has(src)) continue;
+      seen.add(src);
+
+      const width = Number(img.naturalWidth || img.width || 0);
+      const height = Number(img.naturalHeight || img.height || 0);
+      const rect = img.getBoundingClientRect();
+
+      images.push({
+        src,
+        alt: (img.getAttribute('alt') || '').trim(),
+        width,
+        height,
+        renderedWidth: Math.round(rect.width || 0),
+        renderedHeight: Math.round(rect.height || 0),
+        complete: img.complete === true && width > 0 && height > 0
+      });
+    }
+
+    return images;
+  }
+
+  function usableGeneratedImages(message) {
+    return (message?.images || []).filter(image =>
+      image.complete === true &&
+      (
+        image.width >= 256 ||
+        image.height >= 256 ||
+        image.renderedWidth >= 256 ||
+        image.renderedHeight >= 256 ||
+        /oaiusercontent|backend-api\/files|imagegen|generated/i.test(image.src)
+      )
+    );
+  }
+
+  const messages = () => {
+    const legacy = Array.from(document.querySelectorAll('[data-message-author-role]'));
+    const searchUnits = legacy.length
+      ? []
+      : Array.from(document.querySelectorAll('[data-chatgpt-search-unit-key]'))
+          .filter(el => /:(user|assistant)$/.test(el.getAttribute('data-chatgpt-search-unit-key')));
+
+    if (legacy.length || searchUnits.length) {
+      const nodes = legacy.length ? legacy : searchUnits;
+      return nodes.map(el => {
+        const content = el.querySelector('.markdown, [data-content-search-unit-key]') || el;
+        return {
+          id: (el.getAttribute('data-message-id') || el.getAttribute('data-chatgpt-search-message-ids') || '').trim().split(/\s+/)[0] || null,
+          role: el.getAttribute('data-message-author-role') ||
+            el.getAttribute('data-chatgpt-search-unit-key').split(':').at(-1),
+          ...extractContent(content),
+          images: extractImages(el)
+        };
+      });
+    }
+
+    // ChatGPT 2026-10 DOM:
+    // - user turns are rendered as [data-user-message-bubble="true"]
+    // - assistant text/code lives in a MarkdownRoot-* container.
+    // Keep this fallback structural instead of relying on transient hashed suffixes.
+    const modern = [
+      ...Array.from(document.querySelectorAll('[data-user-message-bubble="true"]'))
+        .map(el => ({ el, role: 'user' })),
+      ...Array.from(document.querySelectorAll('[class*="MarkdownRoot-"]'))
+        .filter(el => !el.closest('[data-user-message-bubble="true"]'))
+        .map(el => ({ el, role: 'assistant' }))
+    ];
+
+    modern.sort((a, b) => {
+      if (a.el === b.el) return 0;
+      const pos = a.el.compareDocumentPosition(b.el);
+      if (pos & Node.DOCUMENT_POSITION_FOLLOWING) return -1;
+      if (pos & Node.DOCUMENT_POSITION_PRECEDING) return 1;
+      return 0;
+    });
+
+    return modern.map(({ el, role }, index) => ({
+      id: el.getAttribute('data-message-id') ||
+        el.getAttribute('data-chatgpt-search-message-ids') ||
+        'modern-' + role + '-' + index,
+      role,
+      ...extractContent(el),
+      images: extractImages(el)
+    }));
+  };
+  function replyHasCompletionControls() {
+    const legacy = document.querySelector('[data-message-author-role="assistant"]');
+    if (legacy) return true;
+
+    const units = Array.from(document.querySelectorAll('[data-chatgpt-search-unit-key]'))
+      .filter(el => /:assistant$/.test(el.getAttribute('data-chatgpt-search-unit-key')));
+    let node = units.at(-1);
+    for (let depth = 0; depth < 8 && node; depth++, node = node.parentElement) {
+      if (node.querySelector('.turn-action-controls button[aria-label="复制"], .turn-action-controls button[aria-label="Copy"], .turn-action-controls button[aria-label="评价回复"]')) return true;
+    }
+
+    // Current ChatGPT DOM no longer exposes the old role/unit attributes reliably.
+    // Do not treat a bare MarkdownRoot as completion: a stalled partial reply has one too.
+    // Require an explicit action control that ChatGPT exposes only after a turn is settled.
+    const actionLabels = /^(复制|Copy|重新生成|Regenerate|重试|Retry|赞|踩|Good response|Bad response|Share|分享|评价回复)$/i;
+    return Array.from((document.querySelector('main') || document).querySelectorAll('button')).some(button =>
+      (actionLabels.test((button.getAttribute('aria-label') || button.textContent || '').trim()) ||
+        /^(?:复制消息|重新生成回复|朗读|Copy message|Regenerate response|Read aloud)$/i.test(
+          (button.getAttribute('aria-label') || button.textContent || '').trim()))
+    );
+  }
+  function temporaryEvidence() {
+    const labels = /^(临时聊天|Temporary(?: chat)?)$/i;
+    const heading = Array.from(document.querySelectorAll('h1, h2, header [role="heading"]')).find(el => !el.closest('[data-message-author-role], [data-chatgpt-search-unit-key], [inert], [aria-hidden="true"], [hidden]') && !el.classList.contains('invisible') && labels.test(el.textContent.trim()));
+    if (heading) return 'heading';
+    const control = Array.from(document.querySelectorAll('button, [role="switch"]')).find(el => {
+      if (el.closest('[data-message-author-role], [data-chatgpt-search-unit-key]')) return false;
+      const label = el.getAttribute('aria-label') || el.textContent.trim();
+      return /^(关闭|退出)临时聊天$|^(Turn off|Exit|Close) temporary chat$/i.test(label) || (labels.test(label) && (el.getAttribute('aria-pressed') === 'true' || el.getAttribute('aria-checked') === 'true'));
+    });
+    if (control) return 'active-control';
+    // In the current UI an unsaved temporary conversation shows "Save chat"
+    // instead of the initial heading. Require both this control and the mode flag.
+    const saveControl = Array.from(document.querySelectorAll('button')).find(el => !el.closest('[data-message-author-role], [data-chatgpt-search-unit-key]') && /^(Save chat|保存聊天|保存对话)$/.test(el.getAttribute('aria-label') || el.textContent.trim()));
+    if (saveControl && new URL(location.href).searchParams.get('temporary-chat') === 'true') return 'save-chat-control';
+    return null;
+  }
+  // A verified temporary chat can lose its heading/button after a reply.
+  // Only relax post-send DOM checks; before sending we still require DOM proof.
+  function verifiedTemporaryReplyContext(confirmedAtSend, sentConversationId) {
+    if (!confirmedAtSend) return false;
+    try {
+      const url = new URL(location.href);
+      const currentConversationId = url.pathname.match(/^\/c\/([^/]+)/)?.[1] || null;
+      return url.origin === "https://chatgpt.com"
+        && url.searchParams.get("temporary-chat") === "true"
+        && (!sentConversationId || currentConversationId === sentConversationId);
+    } catch { return false; }
+  }
+  const meta = () => ({ url: location.href, conversationId: location.pathname.match(/^\/c\/([^/]+)/)?.[1] || null, visibility: document.visibilityState, temporary: Boolean(temporaryEvidence()), temporaryEvidence: temporaryEvidence(), automationRevision: '2026-10-06-send-ack-watchdog-v2' });
+  const pageSnapshots = () => {
+    const legacy = Array.from(document.querySelectorAll(
+      '[data-message-author-role="assistant"], [data-chatgpt-search-unit-key$=":assistant"]'
+    ));
+    const nodes = legacy.length
+      ? legacy
+      : Array.from(document.querySelectorAll('[class*="MarkdownRoot-"]'))
+          .filter(el => !el.closest('[data-user-message-bubble="true"]'));
+
+    return nodes.map((el, index) => ({
+      id: (el.getAttribute('data-message-id') || el.getAttribute('data-chatgpt-search-message-ids') || '').trim().split(/\s+/)[0] || 'modern-assistant-' + index,
+      renderedText: el.innerText,
+      html: el.outerHTML,
+      codeBlocks: Array.from(el.querySelectorAll('[data-markdown-copy="code-block"] code, pre code')).map(code => ({ text: code.textContent }))
+    }));
+  };
+
+  const pageImages = () => Array.from(document.querySelectorAll('main img')).map((img, index) => {
+    const rect = img.getBoundingClientRect();
+    const ancestors = [];
+    let node = img.parentElement;
+    for (let depth = 0; depth < 6 && node && node.tagName !== 'MAIN'; depth++, node = node.parentElement) {
+      ancestors.push({
+        tag: node.tagName,
+        className: String(node.className || '').slice(0, 240),
+        testId: node.getAttribute('data-testid'),
+        role: node.getAttribute('role'),
+        ariaLabel: node.getAttribute('aria-label')
+      });
+    }
+    const messageNode = img.closest(
+      '[data-message-author-role], [data-chatgpt-search-unit-key]'
+    );
+    const messageRole =
+      messageNode?.getAttribute('data-message-author-role') ||
+      (messageNode?.getAttribute('data-chatgpt-search-unit-key') || '')
+        .split(':')
+        .at(-1) ||
+      '';
+
+    return {
+      index,
+      src: img.currentSrc || img.getAttribute('src') || '',
+      alt: img.getAttribute('alt') || '',
+      messageRole,
+      width: Number(img.naturalWidth || img.width || 0),
+      height: Number(img.naturalHeight || img.height || 0),
+      renderedWidth: Math.round(rect.width || 0),
+      renderedHeight: Math.round(rect.height || 0),
+      complete: img.complete === true,
+      className: String(img.className || '').slice(0, 240),
+      testId: img.getAttribute('data-testid'),
+      ancestors,
+      html: img.outerHTML.slice(0, 1800)
+    };
+  });
+
+  const generatedPageImages = () => pageImages().filter(image => {
+    if (image.complete !== true) return false;
+    if (image.messageRole === 'user') return false;
+
+    const explicitGenerated =
+      image.ancestors.some(node =>
+        node.testId === 'generated-image-preview' ||
+        node.testId === 'generated-image-gallery' ||
+        /generated[-_ ]?image|image[-_ ]?generation/i.test(
+          [node.testId, node.className, node.ariaLabel]
+            .filter(Boolean)
+            .join(' ')
+        )
+      ) ||
+      /已生成图像|generated image|image generated/i.test(image.alt || '');
+
+    const assistantLarge =
+      image.messageRole === 'assistant' &&
+      Math.max(image.width, image.height) >= 512 &&
+      Math.max(image.renderedWidth, image.renderedHeight) >= 220;
+
+    const pageLargeFallback =
+      !image.messageRole &&
+      image.width >= 768 &&
+      image.height >= 768 &&
+      image.renderedWidth >= 220 &&
+      image.renderedHeight >= 220;
+
+    return explicitGenerated || assistantLarge || pageLargeFallback;
+  });
+
+  async function imageToDataUrl(image) {
+    let fetchError = null;
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 6000);
+      try {
+        const response = await fetch(image.src, { signal: controller.signal });
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+
+        const blob = await response.blob();
+        if (!blob.type.startsWith('image/')) {
+          throw new Error('生成结果不是图片：' + (blob.type || 'unknown'));
+        }
+        if (blob.size > 12 * 1024 * 1024) {
+          throw new Error('生成图片超过 12MB，暂不缓存');
+        }
+
+        const dataUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ''));
+          reader.onerror = () => reject(reader.error || new Error('读取图片失败'));
+          reader.readAsDataURL(blob);
+        });
+
+        return {
+          ...image,
+          mimeType: blob.type,
+          byteLength: blob.size,
+          dataUrl,
+          captureMethod: 'fetch'
+        };
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch (error) {
+      fetchError = error;
+    }
+
+    // blob: URLs created by the page can be inaccessible from an extension
+    // isolated world. The already-rendered <img> is still drawable, so fall
+    // back to canvas without depending on the blob URL being fetchable.
+    const element = Array.from(document.querySelectorAll('main img')).find(img =>
+      (img.currentSrc || img.getAttribute('src') || '') === image.src
+    );
+    if (!element || !element.complete || !element.naturalWidth || !element.naturalHeight) {
+      throw new Error('读取生成图片失败：' + (fetchError?.message || '图片节点未就绪'));
+    }
+
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = element.naturalWidth;
+      canvas.height = element.naturalHeight;
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('无法创建 canvas');
+      context.drawImage(element, 0, 0);
+      const dataUrl = canvas.toDataURL('image/png');
+      const base64Length = Math.max(0, dataUrl.length - dataUrl.indexOf(',') - 1);
+      const byteLength = Math.floor(base64Length * 3 / 4);
+      if (byteLength > 12 * 1024 * 1024) {
+        throw new Error('生成图片超过 12MB，暂不缓存');
+      }
+      return {
+        ...image,
+        mimeType: 'image/png',
+        byteLength,
+        dataUrl,
+        captureMethod: 'canvas'
+      };
+    } catch (canvasError) {
+      throw new Error(
+        '读取生成图片失败：' +
+        (fetchError?.message || 'blob 不可读') +
+        '；canvas：' +
+        (canvasError?.message || String(canvasError))
+      );
+    }
+  }
+
+  const diagnostics = () => ({
+    ...meta(), title: document.title, readyState: document.readyState,
+    editor: (() => {
+      const box=document.querySelector(inputSelector);
+      const button=document.querySelector(sendSelector);
+      return {
+        visibility:document.visibilityState,documentHasFocus:document.hasFocus(),
+        focusedEditor:Boolean(box && document.activeElement===box),
+        editorChars:(box?.value || box?.innerText || box?.textContent || '').length,
+        sendPresent:Boolean(button),sendDisabled:button?.disabled ?? null,
+        lastInsertion:lastEditorInputStatus
+      };
+    })(),
+    inputs: Array.from(document.querySelectorAll('textarea, [contenteditable="true"]')).map(el => ({ tag: el.tagName, id: el.id, role: el.getAttribute('role'), placeholder: el.getAttribute('placeholder') })),
+    buttons: Array.from((document.querySelector('main') || document).querySelectorAll('button')).map(el => ({ label: el.getAttribute('aria-label'), testId: el.getAttribute('data-testid'), disabled: el.disabled })).slice(-20),
+    notice: document.querySelector(inputSelector) ? '' : (document.querySelector('main')?.innerText || document.body.innerText || '').slice(0, 600)
+  });
+  // A separate synchronous read handler also upgrades diagnostics on already-injected pages.
+  // It never sends a prompt, so the legacy handler cannot cause duplicate submissions.
+  if (!globalThis.__yanziChatGptDiagnosticsInstalled) {
+    globalThis.__yanziChatGptDiagnosticsInstalled = true;
+    chrome.runtime.onMessage.addListener((message, sender, respond) => {
+      if (message.type !== 'yanzi_chatgpt_task' || message.task.action !== 'chatgpt_messages') return;
+      try { checkPage(); respond({ status: 'success', data: { ...meta(), messages: messages(), ...(message.task.includePageSnapshot ? { pageSnapshots: pageSnapshots(), pageImages: pageImages() } : {}), diagnostics: diagnostics() } }); }
+      catch (error) { respond({ status: 'error', data: { diagnostics: diagnostics() }, message: error.message }); }
+    });
+  }
+  if (globalThis.__yanziChatGptInstalled) return;
+  globalThis.__yanziChatGptInstalled = true;
+  function checkPage() {
+    // Identify the account failure screen before waiting for a missing composer.
+    const main = document.querySelector('main') || document.body;
+    const accountNotice = (main?.innerText || main?.textContent || '').slice(0, 1200);
+    if (!document.querySelector(inputSelector) &&
+        /无法加载你的账户|无法加载您的账户|Unable to load your account|Couldn't load your account|We couldn't load your account/i.test(accountNotice)) {
+      const error = new Error('ChatGPT 无法加载账户页面，请刷新后重试；如持续失败，请检查登录状态');
+      error.code = 'account_load_failed';
+      throw error;
+    }
+    if (document.querySelector('a[href*="/auth/login"], button[data-testid="login-button"]')) throw new Error("ChatGPT 未登录，请在浏览器中登录");
+    if (document.querySelector('iframe[src*="challenges.cloudflare.com"], #challenge-running')) throw new Error("ChatGPT 需要人工完成验证");
+  }
+  async function waitFor(find, deadline, description) {
+    while (Date.now() < deadline) {
+      checkPage();
+      const value = find();
+      if (value) return value;
+      await pause(250);
+    }
+    throw new Error(description + "超时");
+  }
+  function attachmentButton() {
+    return Array.from(document.querySelectorAll('button')).find(button => {
+      if (button.closest('[data-message-author-role], [data-chatgpt-search-unit-key]')) return false;
+      const label = [
+        button.getAttribute('aria-label'),
+        button.getAttribute('title'),
+        button.textContent
+      ].filter(Boolean).join(' ').trim();
+      return /添加文件等内容|添加文件|附件|上传文件|attach files|add files|upload files|add photos/i.test(label);
+    }) || null;
+  }
+
+  function decodeAttachmentBase64(value) {
+    const clean = String(value || '').replace(/\s+/g, '');
+    const binary = atob(clean);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index++) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return bytes;
+  }
+
+  async function uploadAttachments(attachments, deadline) {
+    const items = Array.isArray(attachments) ? attachments : [];
+    if (!items.length) return [];
+
+    let fileInput = document.querySelector('input[type="file"]');
+    if (!fileInput) {
+      const button = attachmentButton();
+      if (button) {
+        button.click();
+        await pause(250);
+      }
+
+      fileInput = await waitFor(
+        () => document.querySelector('input[type="file"]'),
+        Math.min(deadline, Date.now() + 5000),
+        '等待 ChatGPT 文件上传控件'
+      );
+    }
+
+    const transfer = new DataTransfer();
+    const uploaded = [];
+
+    for (const item of items) {
+      const name = String(item?.name || '').trim();
+      const mimeType = String(item?.mimeType || 'application/octet-stream').trim();
+      const bytes = decodeAttachmentBase64(item?.base64);
+
+      if (!name || !bytes.length) throw new Error('附件数据无效');
+
+      transfer.items.add(new File([bytes], name, {
+        type: mimeType,
+        lastModified: Date.now()
+      }));
+
+      uploaded.push({
+        name,
+        mimeType,
+        byteLength: Number(item?.byteLength || bytes.length)
+      });
+    }
+
+    const filesDescriptor =
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'files');
+    if (filesDescriptor?.set) {
+      filesDescriptor.set.call(fileInput, transfer.files);
+    } else {
+      fileInput.files = transfer.files;
+    }
+
+    fileInput.dispatchEvent(new Event('input', {
+      bubbles: true,
+      composed: true
+    }));
+    fileInput.dispatchEvent(new Event('change', {
+      bubbles: true,
+      composed: true
+    }));
+
+    // React may replace the hidden <input> after consuming FileList. Do not
+    // require the same node to retain files; wait for upload indicators to
+    // settle and for the composer to become sendable instead.
+    await pause(700);
+    await waitFor(() => {
+      const scope =
+        document.querySelector('form') ||
+        document.querySelector('[data-type="unified-composer"]') ||
+        document.querySelector('main') ||
+        document.body;
+      const text = scope.innerText || '';
+      if (/上传失败|文件上传失败|upload failed|unsupported file|不支持.*文件/i.test(text)) {
+        throw new Error('ChatGPT 文件上传失败');
+      }
+
+      const uploading =
+        /上传中|正在上传|正在处理文件|uploading|processing file/i.test(text);
+      const send = document.querySelector(sendSelector);
+      return !uploading && send && !send.disabled ? true : null;
+    }, Math.min(deadline, Date.now() + 45000), '等待附件上传完成');
+
+    return uploaded;
+  }
+
+  async function execute(task) {
+    if (busy) throw new Error("页面正在执行其他请求");
+    busy = true;
+    // Only a strictly pre-send account error can be safely retried.
+    let messageSubmitted = false;
+    try {
+      const defaultTimeoutSeconds = task.action === "chatgpt_image" ? 900 : 180;
+      const requestedTimeoutSeconds = Number(task.timeoutSeconds);
+      // timeoutSeconds === 0 is reserved for durable background jobs: wait for a real
+      // ChatGPT completion/error signal instead of converting elapsed time into failure.
+      const deadline = requestedTimeoutSeconds === 0
+        ? Number.POSITIVE_INFINITY
+        : Date.now() + Math.min(
+            1200,
+            Math.max(10, requestedTimeoutSeconds || defaultTimeoutSeconds)
+          ) * 1000;
+      if (task.action === "chatgpt_messages") {
+        checkPage();
+        return { ...meta(), messages: messages() };
+      }
+      if (task.action === "chatgpt_capture_images") {
+        checkPage();
+        const generated = generatedPageImages();
+        if (!generated.length) throw new Error("当前聊天没有可抓取的生成图片");
+        const images = [];
+        for (const image of generated.slice(0, 4)) {
+          images.push(await imageToDataUrl(image));
+        }
+        return { ...meta(), images };
+      }
+      if (["chatgpt_feedback_send", "chatgpt_subagent_continue"].includes(task.action)) {
+        const expected = "https://chatgpt.com/c/" + task.expectedConversationId;
+        if (location.origin !== "https://chatgpt.com" ||
+            location.pathname.replace(/\/$/, "") !== new URL(expected).pathname ||
+            location.href.split(/[?#]/)[0].replace(/\/$/, "") !== expected ||
+            task.expectedUrl !== expected || temporaryEvidence()) {
+          throw new Error("原 ChatGPT 对话身份不符；反馈未发送");
+        }
+      }
+      const input = await waitFor(() => document.querySelector(inputSelector), deadline, "等待 ChatGPT 输入框");
+      if (task.temporary === true) await waitFor(() => temporaryEvidence(), Math.min(deadline, Date.now() + 15000), '确认临时聊天模式（未确认时不会发送）');
+      if (task.action === "chatgpt_new_chat") return meta();
+      if (typeof task.prompt !== "string" || !task.prompt.trim()) throw new Error("消息内容不能为空");
+      const draft = (input.value || input.innerText || "").trim();
+      if (draft && draft !== task.prompt.trim()) throw new Error("输入框已有其他草稿，请先处理草稿");
+      if (document.querySelector(stopSelector)) throw new Error("ChatGPT 正在生成回复");
+      const previous = messages();
+      const userCount = previous.filter(m => m.role === "user").length;
+      const assistantCount = previous.filter(m => m.role === "assistant").length;
+      const previousGeneratedImages = new Set(
+        generatedPageImages().map(image => image.src)
+      );
+      if (draft) {
+        // ChatGPT restores the same draft across new tabs. Submit only the exact requested text.
+      } else if (input.tagName === "TEXTAREA") {
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(input, task.prompt);
+        input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: task.prompt }));
+      } else {
+        // ChatGPT uses a stateful contenteditable editor (Lexical/ProseMirror).
+        // Direct replaceChildren + untrusted InputEvent can leave Send disabled
+        // even though text is visibly present. Browser-native insertText emits
+        // the editor's real input event and updates its application state.
+        input.focus();
+        let nativeInserted = false;
+        try {
+          if (typeof document.execCommand === "function")
+            nativeInserted = document.execCommand("insertText", false, task.prompt) === true;
+        } catch { /* older WebViews may not support native contenteditable input */ }
+        if (!nativeInserted) {
+          input.replaceChildren(...task.prompt.split("\n").map(line => {
+            const p = document.createElement("p");
+            p.textContent = line || "\u200b";
+            return p;
+          }));
+          input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: task.prompt }));
+        }
+        lastEditorInputStatus={
+          nativeAttempted:typeof document.execCommand==='function',
+          nativeSucceeded:nativeInserted,
+          focusedEditor:document.activeElement===input,
+          insertedChars:(input.innerText||input.textContent||'').length,
+          sendDisabledImmediately:document.querySelector(sendSelector)?.disabled??null
+        };
+      }
+
+      const uploadedFiles = await uploadAttachments(task.attachments, deadline);
+
+      const send = await waitFor(() => {
+        const button = document.querySelector(sendSelector);
+        return button && !button.disabled ? button : null;
+      }, Math.min(deadline, Date.now() + 10000), "等待发送按钮");
+      if (task.temporary === true && !temporaryEvidence()) throw new Error('临时聊天状态已改变，未发送消息');
+      const confirmedTemporaryAtSend = task.temporary === true && Boolean(temporaryEvidence());
+      if (["chatgpt_feedback_send", "chatgpt_subagent_continue"].includes(task.action)) {
+        const currentId = location.pathname.match(/^\/c\/([^/]+)/)?.[1];
+        if (currentId !== task.expectedConversationId || temporaryEvidence())
+          throw new Error("发送前对话已切换，反馈未发送");
+      }
+      messageSubmitted = true;
+      send.click();
+      if (task.focusForSend === true && task.taskId) {
+        // Inform the privileged extension to restore the previous active tab.
+        // This event happens only after the click: never trigger a resend.
+        void chrome.runtime.sendMessage({ type:'yanzi_chatgpt_sent_focus_restore', taskId:task.taskId }).catch(()=>{});
+      }
+      await waitFor(() => {
+        const currentMessages = messages();
+        if (currentMessages.filter(m => m.role === "user").length > userCount) return true;
+        if (currentMessages.filter(m => m.role === "assistant").length > assistantCount) return true;
+        if (document.querySelector(stopSelector)) return true;
+        const currentInput = document.querySelector(inputSelector);
+        const currentDraft = (currentInput?.value || currentInput?.innerText || "").trim();
+        return currentDraft ? null : true;
+      }, Math.min(deadline, Date.now() + 15000), "确认消息已发送");
+      const sentConversationId = location.pathname.match(/^\/c\/([^/]+)/)?.[1] || null;
+      let last = "", lastImages = "", changedAt = Date.now();
+      const durableTask = Number(task.timeoutSeconds) === 0;
+      const stalledForMs = 5 * 60 * 1000;
+      const continuationCooldownMs = 15 * 60 * 1000;
+      let lastContinuationAt = 0;
+      while (Date.now() < deadline) {
+        checkPage();
+        const current = messages().filter(m => m.role === "assistant");
+        const latest = current.length > assistantCount ? current.at(-1) : null;
+        const generating = document.querySelector(stopSelector) || document.querySelector('main button[aria-label*="停止"], main button[aria-label^="Stop"], [data-is-streaming="true"]');
+        const newPageImages = task.action === "chatgpt_image"
+          ? generatedPageImages().filter(image => !previousGeneratedImages.has(image.src))
+          : [];
+        const responseImages = task.action === "chatgpt_image"
+          ? newPageImages
+          : usableGeneratedImages(latest);
+        const imageSignature = JSON.stringify(responseImages.map(image => [
+          image.src,
+          image.width,
+          image.height,
+          image.complete
+        ]));
+        if (latest?.text !== last || imageSignature !== lastImages) {
+          last = latest?.text || "";
+          lastImages = imageSignature;
+          changedAt = Date.now();
+        }
+
+        if (
+          task.action === "chatgpt_image" &&
+          responseImages.length > 0 &&
+          !generating &&
+          Date.now() - changedAt >= 1500
+        ) {
+          const images = [];
+          for (const image of responseImages.slice(0, 4)) {
+            images.push(await imageToDataUrl(image));
+          }
+          return {
+            ...meta(),
+            ...(latest || {}),
+            images,
+            uploadedFiles,
+            messageId: latest?.id || null
+          };
+        }
+
+        const hasExpectedPayload = Boolean(last || responseImages.length);
+        // Never return an old reply, nor stable partial text/image while a stop control exists.
+        if (
+          task.action !== "chatgpt_image" &&
+          hasExpectedPayload &&
+          !generating &&
+          replyHasCompletionControls() &&
+          Date.now() - changedAt >= 1500
+        ) {
+          const replyModeEvidence = temporaryEvidence();
+          const verifiedSession = task.temporary === true
+            && verifiedTemporaryReplyContext(confirmedTemporaryAtSend, sentConversationId);
+          if (task.temporary === true && !replyModeEvidence
+              && !verifiedSession)
+            throw new Error('回复完成后临时聊天会话身份不符，已保留页面供检查');
+          return {
+            ...meta(),
+            temporary: Boolean(replyModeEvidence || verifiedSession),
+            temporaryEvidence: replyModeEvidence || (verifiedSession ? 'verified-send-url-and-conversation' : null),
+            ...latest,
+            images: latest?.images || [],
+            uploadedFiles,
+            messageId: latest.id
+          };
+        }
+        const error = document.querySelector('[data-testid="conversation-turn-error"]');
+        if (error) throw new Error(error.innerText || "ChatGPT 返回错误");
+
+        // Durable jobs sometimes stall after a partial reply. Resume this same conversation;
+        // never resubmit the original task, and rate-limit recovery prompts.
+        if (
+          durableTask &&
+          hasExpectedPayload &&
+          !generating &&
+          !replyHasCompletionControls() &&
+          Date.now() - changedAt >= stalledForMs &&
+          Date.now() - lastContinuationAt >= continuationCooldownMs
+        ) {
+          const resumeInput = inputBox();
+          if (resumeInput) {
+            if (resumeInput.tagName === "TEXTAREA") {
+              Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(resumeInput, "继续");
+            } else {
+              const paragraph = document.createElement("p");
+              paragraph.textContent = "继续";
+              resumeInput.replaceChildren(paragraph);
+            }
+            resumeInput.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: "继续" }));
+            const resumeSend = await waitFor(() => {
+              const button = document.querySelector(sendSelector);
+              return button && !button.disabled ? button : null;
+            }, Date.now() + 10000, "等待继续按钮");
+            resumeSend.click();
+            lastContinuationAt = Date.now();
+            changedAt = Date.now();
+          }
+        }
+        await pause(200);
+      }
+      throw new Error("等待回复超时；消息可能已发送，请查询聊天后再决定是否重试");
+    } catch (error) {
+      if (error?.message?.includes('等待发送按钮超时')) {
+        error.code = 'send_button_unavailable';
+        error.deliveryPhase = messageSubmitted ? 'after_send' : 'before_send';
+      }
+      if (error?.code === 'account_load_failed') {
+        error.deliveryPhase = messageSubmitted ? 'after_send' : 'before_send';
+        if (messageSubmitted) error.message += '；消息可能已发送，禁止自动刷新或重发';
+      }
+      throw error;
+    } finally { busy = false; }
+  }
+  chrome.runtime.onMessage.addListener((message, sender, respond) => {
+    if (message.type !== "yanzi_chatgpt_task" || message.task.action === 'chatgpt_messages') return;
+    execute(message.task).then(data => respond({ status: "success", data }))
+      .catch(error => respond({ status: "error", data: { diagnostics: diagnostics() },
+        ...(error?.code ? { errorCode: error.code } : {}),
+        ...(error?.deliveryPhase ? { deliveryPhase: error.deliveryPhase } : {}),
+        message: error.message }));
+    return true;
+  });
+})();

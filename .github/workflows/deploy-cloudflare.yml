@@ -1,0 +1,102 @@
+name: Deploy Cloudflare backend
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "cloudflare/**"
+      - "wrangler.jsonc"
+      - ".github/workflows/deploy-cloudflare.yml"
+  push:
+    branches: [main]
+    paths:
+      - "cloudflare/**"
+      - "wrangler.jsonc"
+      - ".github/workflows/deploy-cloudflare.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-production
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check Worker source
+        run: |
+          node --check cloudflare/src/index.js
+          node --check cloudflare/src/device-api.js
+          node --check cloudflare/src/device-repository.js
+          node --check cloudflare/src/sync-api.js
+          node --check cloudflare/src/sync-object-repository.js
+      - name: Guard Worker binding parity across deployment configs
+        run: node --test cloudflare/tests/wrangler-config-parity.test.mjs
+      - name: Validate Wrangler bundle
+        run: npx --yes wrangler@4 deploy --dry-run --outdir .artifacts/cloudflare-dry-run --config cloudflare/wrangler.toml
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply remote D1 migrations
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_D1_API_TOKEN }}
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN"
+          npx --yes wrangler@4 d1 migrations apply openquickhost-sync-db --remote --config cloudflare/wrangler.toml
+          npx --yes wrangler@4 d1 migrations list openquickhost-sync-db --remote --config cloudflare/wrangler.toml
+      - name: Deploy Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN"
+          deployment_output="$(npx --yes wrangler@4 deploy --config cloudflare/wrangler.toml)"
+          printf '%s\n' "$deployment_output"
+          version_id="$(printf '%s\n' "$deployment_output" | sed -nE 's/.*Current Version ID: ([0-9a-f-]{36}).*/\1/p' | tail -n1)"
+          test -n "$version_id"
+          echo "YANZI_WORKER_VERSION=$version_id" >> "$GITHUB_ENV"
+      - name: Verify deployed Worker security bindings
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN"
+          npx --yes wrangler@4 versions view "$YANZI_WORKER_VERSION" --name yanzi-sync --json --config cloudflare/wrangler.toml | python3 -c '
+          import json, sys
+          version = json.load(sys.stdin)
+          bindings = {item.get("name"): item for item in version.get("resources", {}).get("bindings", [])}
+          required = {
+              "DB": "d1",
+              "PACKAGES": "r2_bucket",
+              "DEVICE_RELAY": "durable_object_namespace",
+              "LOGIN_RATE_LIMITER": "ratelimit",
+              "EXPORT_RATE_LIMITER": "ratelimit",
+              "CLOUD_VIP_ONLY": "plain_text",
+          }
+          for name, expected in required.items():
+              assert bindings.get(name, {}).get("type") == expected, f"Missing or changed binding: {name}"
+          assert bindings["CLOUD_VIP_ONLY"].get("text") == "true", "VIP gate disabled"
+          print("Verified production Worker bindings and VIP enforcement")
+          '
+      - name: Verify production health
+        run: |
+          for attempt in 1 2 3 4 5 6; do
+            body="$(curl --fail --silent --show-error --max-time 15 https://sync.luoluoluo.cc.cd/health || true)"
+            if printf '%s' "$body" | python3 -c 'import json,sys; data=json.load(sys.stdin); sys.exit(0 if data.get("ok") is True else 1)' 2>/dev/null; then
+              echo "$body"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Production health check failed." >&2
+          exit 1

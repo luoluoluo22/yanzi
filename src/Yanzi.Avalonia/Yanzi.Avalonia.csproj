@@ -3,6 +3,10 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net9.0</TargetFramework>
+    <Version>0.1.0</Version>
+    <FileVersion>0.1.0.0</FileVersion>
+    <AssemblyVersion>0.1.0.0</AssemblyVersion>
+    <InformationalVersion>0.1.0</InformationalVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <CodePage>65001</CodePage>
@@ -24,6 +28,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Yanzi.Platform.Mac\Yanzi.Platform.Mac.csproj" />
     <ProjectReference Include="..\Yanzi.Shared\Yanzi.Shared.csproj" />
+    <ProjectReference Include="..\Yanzi.Core\Yanzi.Core.csproj" />
   </ItemGroup>
 
   <!-- macOS app icon and Info.plist -->

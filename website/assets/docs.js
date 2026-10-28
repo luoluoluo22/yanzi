@@ -1,5 +1,9 @@
+let cachedSidebarLinks = [];
+let cachedSidebarGroups = [];
+
 document.addEventListener('DOMContentLoaded', () => {
   renderDocsPage();
+  cacheSidebarItems();
   initSidebarSearch();
   initSidebarCollapse();
   initTOCAndScrollspy();
@@ -71,14 +75,20 @@ function renderDocsSidebar(nav, activePath) {
     const groupEl = make('div', 'doc-toc-group');
     groupEl.appendChild(make('span', 'doc-toc-title', group.group));
     const links = make('div', 'doc-toc-links');
-    group.items.forEach((item, index) => {
+    group.items.forEach((item) => {
       const a = make('a', item.path === activePath ? 'active' : '', item.title);
       a.href = getLinkHref(item.path);
+      a.dataset.searchText = item.title.toLowerCase();
       links.appendChild(a);
     });
     groupEl.appendChild(links);
     sidebar.appendChild(groupEl);
   });
+}
+
+function cacheSidebarItems() {
+  cachedSidebarLinks = Array.from(document.querySelectorAll('.doc-toc-links a'));
+  cachedSidebarGroups = Array.from(document.querySelectorAll('.doc-toc-group'));
 }
 
 function renderDocsContent(page) {
@@ -123,13 +133,21 @@ function initSidebarSearch() {
   if (!searchInput) return;
   searchInput.addEventListener('input', (e) => {
     const query = e.target.value.toLowerCase().trim();
-    document.querySelectorAll('.doc-toc-links a').forEach(link => {
-      const visible = link.textContent.toLowerCase().includes(query);
-      link.style.display = visible ? '' : 'none';
+    const matches = new Set();
+
+    cachedSidebarLinks.forEach((link) => {
+      const visible = !query || (link.dataset.searchText || link.textContent.toLowerCase()).includes(query);
+      link.hidden = !visible;
+      if (visible) {
+        const group = link.closest('.doc-toc-group');
+        if (group) {
+          matches.add(group);
+        }
+      }
     });
-    document.querySelectorAll('.doc-toc-group').forEach(group => {
-      const visibleLinks = group.querySelectorAll('.doc-toc-links a:not([style*="display: none"])');
-      group.style.display = visibleLinks.length ? '' : 'none';
+
+    cachedSidebarGroups.forEach((group) => {
+      group.hidden = query ? !matches.has(group) : false;
     });
   });
   document.addEventListener('keydown', (e) => {

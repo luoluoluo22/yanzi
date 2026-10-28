@@ -7,9 +7,9 @@
   <meta name="google-site-verification" content="ToJidnuJSSI2tVhJN3kAvL_vDPbBlEdscZynlYZMJj0" />
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>燕子启动器 - 免费开源的 Quicker 替代神器，AI 一键生成你的专属工具</title>
+  <title>燕子启动器 - 长按右键弹轮盘，一句话就能做工具</title>
   <link rel="canonical" href="https://yanzi.luoluoluo.cc.cd/">
-  <meta name="description" content="燕子是一款完全免费、开源的 Windows 效率启动器，可替代 Quicker，支持鼠标右键呼出面板、AI 一键生成扩展工具，源码公开，随心自定义。">
+  <meta name="description" content="燕子是一款完全免费、开源的 Windows 效率工具。长按右键弹轮盘，AI 一句话做工具，所有数据存本地，告别重复操作。">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link
@@ -17,7 +17,9 @@
     rel="stylesheet">
   <link rel="stylesheet" href="/styles.css?v=20260701-5">
   <link rel="stylesheet" href="/assets/auth.css">
+  <link rel="stylesheet" href="/assets/wish-wall.css">
   <script src="/assets/interactive-demo-v2.js" defer></script>
+  <script src="/assets/wish-wall.js" defer></script>
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -26,20 +28,20 @@
     "alternateName": "Yanzi Launcher",
     "applicationCategory": "UtilitiesApplication",
     "operatingSystem": "Windows 10, Windows 11",
-    "description": "燕子是一款完全免费、开源的 Windows 效率启动器，可替代 Quicker，支持鼠标右键呼出面板、AI 一键生成扩展工具，源码公开，随心自定义。",
-    "softwareVersion": "0.1.0",
+    "description": "燕子是一款完全免费、开源的 Windows 效率工具。长按右键弹轮盘，AI 一句话做工具，所有数据存本地，告别重复操作。",
+    "softwareVersion": "1.0.26",
     "offers": {
       "@type": "Offer",
       "price": "0.00",
       "priceCurrency": "CNY"
     },
     "featureList": [
-      "鼠标面板长按右键弹出",
-      "全局搜索Alt+空格秒弹",
-      "AI一键生成专属工具",
-      "本地优先数据不上传"
+      "长按右键弹出轮盘菜单",
+      "鼠标秒板一划直达",
+      "AI 一句话生成工具",
+      "数据全部保存在本地"
     ],
-    "downloadUrl": "https://wwbnh.lanzout.com/b0pnkaj6j"
+    "downloadUrl": "https://github.com/luoluoluo22/yanzi/releases/download/v1.0.26/Yanzi-win-Setup-1.0.26.exe"
   }
   </script>
 </head>
@@ -56,8 +58,9 @@
     </div>
     <nav>
       <a href="/" class="active">首页</a>
-      <a href="/store.html">扩展商店</a>
+      <a href="/store.html">小程序商店</a>
       <a href="/yanm.html">燕幕</a>
+      <a href="/wish-wall.html">心愿墙</a>
       <a href="/docs/product-overview.html">文档</a>
       <a href="#download">免费下载</a>
       <span id="global-auth-container" style="margin-left: 16px; display: inline-flex; align-items: center; vertical-align: middle;">
@@ -71,22 +74,30 @@
   <main>
     <section class="hero">
       <div class="hero-copy">
-        <p class="eyebrow">AI 生成工具 · 免费开源 · Quicker 替代</p>
-        <h1>一句话，<br>AI 帮你造工具。</h1>
+        <p class="eyebrow">长按右键弹轮盘 · 鼠标秒板 · AI 做工具</p>
+        <h1>长按右键，<br>鼠标秒板立刻出来。</h1>
         <p class="hero-text">
-          客服要一键发话术？设计师要批量改文件名？剪辑师要快速打开项目文件夹？<br><br>
-          告诉豆包、DeepSeek 或 ChatGPT 你想要什么，粘贴到燕子，工具立刻能用。不用编程，不用找插件，不用花钱。
+          平时要找文件、开软件、切工具，来回点半天很烦。<br><br>
+          燕子把常用东西放进轮盘菜单和鼠标面板里，长按右键就能直接用；需要新工具时，还能让 AI 帮你一句话做出来。
         </p>
-        <div class="hero-actions" style="flex-wrap: wrap; justify-content: flex-start;">
-          <div class="split-button-container"><a class="button primary js-update-download-link" href="https://wwbnh.lanzout.com/b0pnkaj6j" data-default-label="免费下载 (蓝奏云)">免费下载 (蓝奏云)</a><button class="button primary split-button-arrow js-download-dropdown-toggle" type="button" aria-haspopup="true" aria-expanded="false" title="更多下载方式"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg></button><div class="download-dropdown-menu js-download-dropdown-menu"><a href="https://pan.quark.cn/s/1ef15a1cafe1?pwd=dWvh" target="_blank">夸克网盘下载</a><a class="js-github-mirror-link" href="https://kkgithub.com/luoluoluo22/yanzi/releases/download/v0.2.15/Yanzi-win-Setup-0.2.15.exe" target="_blank" title="国内推荐使用镜像加速">镜像下载 (极速)</a><a class="js-github-direct-link" href="https://github.com/luoluoluo22/yanzi/releases/download/v0.2.15/Yanzi-win-Setup-0.2.15.exe" target="_blank">GitHub 下载</a></div></div>
-          <a class="button secondary" href="https://github.com/luoluoluo22/yanzi">GitHub 源码</a>
+        <div class="hero-actions js-platform-hero-actions" style="flex-wrap: wrap; justify-content: flex-start;">
+          <div class="split-button-container js-split-download-container" data-container-role="hero">
+            <a class="button primary js-primary-download-btn" href="https://ghfast.top/https://github.com/luoluoluo22/yanzi/releases/download/v1.0.26/Yanzi-win-Setup-1.0.26.exe"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="margin-right: 6px; vertical-align: -2px; display: inline-block; flex-shrink: 0;"><path d="M6.555 1.375 0 2.291v4.872h6.555zM0 8.837l6.555.916v5.025L0 13.856zm7.555-7.591L16 0v7.163H7.555zM16 8.837 7.555 9.753v5.001L16 16z"/></svg>window 下载</a>
+            <button class="button primary split-button-arrow js-download-dropdown-toggle" type="button" aria-haspopup="true" aria-expanded="false" title="更多下载与平台切换">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>
+            </button>
+            <div class="download-dropdown-menu js-download-dropdown-menu">
+              <!-- 由 JS 动态根据当前操作系统生成推荐链接与多平台切换项 -->
+            </div>
+          </div>
+          <a class="button secondary" href="https://github.com/luoluoluo22/yanzi" target="_blank">GitHub 源码</a>
         </div>
 
         <div class="hero-meta">
           <span>AI 一键生成</span>
           <span>完全免费</span>
           <span>开源不跑路</span>
-          <span>Windows 10/11</span>
+          <span id="hero-os-meta">Windows 10/11</span>
         </div>
       </div>
       <div class="hero-panel">
@@ -436,104 +447,522 @@
       </div>
     </section>
 
+    <!-- 首页心愿共建引导入口 (Wish Wall CTA) -->
+    <section class="section home-wish-cta-section">
+      <div class="home-wish-cta-card">
+        <div class="home-wish-cta-left">
+          <p class="eyebrow" style="margin-bottom: 0.5rem;">🎋 社区共建 · 心愿星海</p>
+          <h2>你提小程序需求，<br>社区做工具，双方得积分。</h2>
+          <p>
+            想要什么专属功能？把心愿投递至心愿星海！社区开发者提供 C# / PowerShell 方案，发布者测试满意点击验收，双方立享丰厚积分激励与社区榜单展示。
+          </p>
+          <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+            <a href="/wish-wall.html" class="wish-primary-btn" style="height: 44px; padding: 0 24px; font-size: 0.95rem; text-decoration: none;">
+              进入心愿星海 / 提需求 →
+            </a>
+            <span style="color: #64748b; font-size: 0.85rem;">✨ 提需求立奖 +5 积分 · 采纳得 +50 积分</span>
+          </div>
+        </div>
+
+        <div class="home-wish-preview-stars">
+          <a href="/wish-wall.html" class="home-star-pill">
+            <span style="display: flex; align-items: center; gap: 8px;">
+              <span style="width: 8px; height: 8px; border-radius: 999px; background: #38bdf8; box-shadow: 0 0 8px #38bdf8;"></span>
+              <span>① 提出需求：一句话说出你想要的工具</span>
+            </span>
+            <span style="font-size: 0.75rem; color: #38bdf8; font-weight: 600;">发帖得 +5 积分</span>
+          </a>
+
+          <a href="/wish-wall.html" class="home-star-pill">
+            <span style="display: flex; align-items: center; gap: 8px;">
+              <span style="width: 8px; height: 8px; border-radius: 999px; background: #c084fc; box-shadow: 0 0 8px #c084fc;"></span>
+              <span>② 社区接单：开发者提供轻量代码方案</span>
+            </span>
+            <span style="font-size: 0.75rem; color: #c084fc; font-weight: 600;">开源共享</span>
+          </a>
+
+          <a href="/wish-wall.html" class="home-star-pill">
+            <span style="display: flex; align-items: center; gap: 8px;">
+              <span style="width: 8px; height: 8px; border-radius: 999px; background: #facc15; box-shadow: 0 0 8px #facc15;"></span>
+              <span>③ 一键验收：测试满意采纳方案</span>
+            </span>
+            <span style="font-size: 0.75rem; color: #facc15; font-weight: 600;">双方各得 +50 积分</span>
+          </a>
+        </div>
+      </div>
+    </section>
+
     <!-- 下载 -->
     <section id="download" class="section download-section">
       <div class="section-head">
         <p class="eyebrow">免费获取</p>
         <h2>下载即用，<br>5 分钟让电脑效率翻倍。</h2>
       </div>
-      <div class="download-panel">
+      <div class="download-panel js-main-download-panel">
         <strong id="download-title">燕子启动器 for Windows（完全免费）</strong>
         <span id="download-meta">一键安装，开箱即用 | Windows 10 / 11 </span>
         <div style="display: flex; gap: 10px; margin: 15px 0; justify-content: center; flex-wrap: wrap;">
-          <div class="split-button-container"><a class="button primary js-update-download-link" id="download-button" href="https://wwbnh.lanzout.com/b0pnkaj6j" data-default-label="免费下载 (蓝奏云)">免费下载 (蓝奏云)</a><button class="button primary split-button-arrow js-download-dropdown-toggle" type="button" aria-haspopup="true" aria-expanded="false" title="更多下载方式"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg></button><div class="download-dropdown-menu js-download-dropdown-menu"><a href="https://pan.quark.cn/s/1ef15a1cafe1?pwd=dWvh" target="_blank">夸克网盘下载</a><a class="js-github-mirror-link" href="https://kkgithub.com/luoluoluo22/yanzi/releases/download/v0.2.15/Yanzi-win-Setup-0.2.15.exe" target="_blank" title="国内推荐使用镜像加速">镜像下载 (极速)</a><a class="js-github-direct-link" href="https://github.com/luoluoluo22/yanzi/releases/download/v0.2.15/Yanzi-win-Setup-0.2.15.exe" target="_blank">GitHub 下载</a></div></div>
+          <div class="split-button-container js-split-download-container" data-container-role="panel">
+            <a class="button primary js-primary-download-btn" id="download-button" href="https://ghfast.top/https://github.com/luoluoluo22/yanzi/releases/download/v1.0.26/Yanzi-win-Setup-1.0.26.exe">window 下载</a>
+            <button class="button primary split-button-arrow js-download-dropdown-toggle" type="button" aria-haspopup="true" aria-expanded="false" title="更多下载与平台切换">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>
+            </button>
+            <div class="download-dropdown-menu js-download-dropdown-menu">
+              <!-- 由 JS 动态生成 -->
+            </div>
+          </div>
         </div>
 
-        <a class="release-link" href="https://github.com/luoluoluo22/yanzi">查看 GitHub 源码 &amp; 更新记录（完全公开）</a>
+        <a class="release-link" href="https://github.com/luoluoluo22/yanzi" target="_blank">查看 GitHub 源码 &amp; 更新记录（完全公开）</a>
       </div>
-      <div class="download-panel download-panel-mobile">
+      <div class="download-panel download-panel-mobile js-mobile-download-panel">
         <strong>燕子手机版（测试中）</strong>
-        <span>Android 测试版，功能持续更新中</span>
-        <a class="button primary" href="https://wwbnh.lanzout.com/b0pnm6z2j">下载手机版（蓝奏云）</a>
-
+        <span>Android 测试版，支持随身背包与跨端联动</span>
+        <a class="button primary js-mobile-primary-btn" href="https://github.com/luoluoluo22/yanzi/releases/download/android-v0.2.76/yanzi-mobile-0.2.76.apk" target="_blank" rel="noopener noreferrer">下载手机版（GitHub 最新版）</a>
       </div>
     </section>
   </main>
+
+  <style>
+    .download-dropdown-divider {
+      height: 1px;
+      margin: 6px 0;
+      background: rgba(255, 255, 255, 0.08);
+    }
+    .download-dropdown-header {
+      padding: 6px 12px 2px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.4);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      user-select: none;
+    }
+    .download-dropdown-menu a.dropdown-switch-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: rgba(255, 255, 255, 0.75);
+      background: rgba(255, 255, 255, 0.02);
+      border-radius: 4px;
+      margin: 2px 4px;
+      padding: 6px 10px;
+    }
+    .download-dropdown-menu a.dropdown-switch-item:hover {
+      background: rgba(59, 130, 246, 0.18);
+      color: #93c5fd;
+    }
+    .platform-tag {
+      font-size: 0.7rem;
+      padding: 1px 6px;
+      border-radius: 3px;
+      background: rgba(255, 255, 255, 0.08);
+      color: rgba(255, 255, 255, 0.6);
+    }
+    /* 提取码复制成功的 Toast 浮层提示 */
+    .yanzi-toast {
+      position: fixed;
+      top: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-20px);
+      background: rgba(15, 23, 42, 0.95);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(59, 130, 246, 0.5);
+      color: #fff;
+      padding: 10px 18px;
+      border-radius: 8px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6), 0 0 20px rgba(59, 130, 246, 0.25);
+      z-index: 999999;
+      font-size: 0.88rem;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .yanzi-toast.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .yanzi-toast-code {
+      background: rgba(59, 130, 246, 0.25);
+      color: #93c5fd;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-weight: 700;
+      border: 1px solid rgba(59, 130, 246, 0.4);
+    }
+  </style>
+
   <script>
     (function () {
       const UPDATE_API = "https://sync.luoluoluo.cc.cd/v1/app/update/latest";
 
-      function formatVersionMeta(data) {
-        return [
-          `版本 ${data.version || "未知版本"}`,
-          "一键安装，开箱即用",
-          "Windows 10 / 11"
-        ].join(" | ");
+      // 权威官方矢量图标 (Simple Icons / Bootstrap Icons 官方标准 Path，带完整叶片与比例)
+      const APPLE_SVG = `<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style="margin-right: 6px; vertical-align: -2px; display: inline-block; flex-shrink: 0;"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 4.54c.67-.81 1.13-1.94.99-3.07-.99.04-2.16.66-2.84 1.46-.59.69-1.12 1.83-.98 2.94 1.1.08 2.19-.57 2.83-1.33z"/></svg>`;
+      const WINDOWS_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="margin-right: 6px; vertical-align: -2px; display: inline-block; flex-shrink: 0;"><path d="M6.555 1.375 0 2.291v4.872h6.555zM0 8.837l6.555.916v5.025L0 13.856zm7.555-7.591L16 0v7.163H7.555zM16 8.837 7.555 9.753v5.001L16 16z"/></svg>`;
+      const ANDROID_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="margin-right: 6px; vertical-align: -2px; display: inline-block; flex-shrink: 0;"><path d="m10.213 1.471.691-1.26a.438.438 0 0 1 .77.423l-.715 1.307a4.27 4.27 0 0 1 2.187 1.954l.035.064.064.035a4.27 4.27 0 0 1 1.954 2.187l1.307-.715a.438.438 0 1 1 .423.77l-1.26.691A4.34 4.34 0 0 1 16 8.5c0 2.408-1.952 4.36-4.36 4.36-.615 0-1.2-.128-1.73-.357l-.691 1.26a.438.438 0 0 1-.77-.423l.715-1.307a4.27 4.27 0 0 1-2.187-1.954l-.035-.064-.064-.035a4.27 4.27 0 0 1-1.954-2.187l-1.307.715a.438.438 0 1 1-.423-.77l1.26-.691A4.34 4.34 0 0 1 0 8.5C0 6.092 1.952 4.14 4.36 4.14c.615 0 1.2.128 1.73.357l.691-1.26a.438.438 0 0 1 .77.423l-.715 1.307a4.27 4.27 0 0 1 2.187 1.954l.035.064.064.035a4.27 4.27 0 0 1 1.954 2.187zM8 4.88a3.62 3.62 0 1 0 0 7.24 3.62 3.62 0 0 0 0-7.24zM6.5 7.5a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0zm4.5 0a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0z"/></svg>`;
+
+      // Toast 复制提示函数
+      function showToast(title, code) {
+        let toast = document.getElementById("yanzi-toast");
+        if (!toast) {
+          toast = document.createElement("div");
+          toast.id = "yanzi-toast";
+          toast.className = "yanzi-toast";
+          document.body.appendChild(toast);
+        }
+        toast.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> <span>${title} <strong class="yanzi-toast-code">${code}</strong> 已复制到剪贴板</span>`;
+        toast.classList.add("show");
+        clearTimeout(window.__yanziToastTimer);
+        window.__yanziToastTimer = setTimeout(() => {
+          toast.classList.remove("show");
+        }, 3200);
       }
 
-      function applyUpdateInfo(data) {
-        if (!data || !data.download_url) {
-          return;
+      async function copyCodeToClipboard(code, title) {
+        if (!code) return;
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(code);
+          } else {
+            const input = document.createElement("input");
+            input.value = code;
+            document.body.appendChild(input);
+            input.select();
+            document.execCommand("copy");
+            document.body.removeChild(input);
+          }
+        } catch (e) {}
+        showToast(title || "提取码", code);
+      }
+
+      // 1. 系统智能识别引擎
+      function detectOS() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const forced = urlParams.get("os");
+        if (forced) {
+          const f = forced.toLowerCase();
+          if (f.startsWith("mac") || f === "darwin") return "mac";
+          if (f.startsWith("win")) return "windows";
+          if (f.startsWith("and")) return "android";
+          if (f.startsWith("ios") || f === "iphone" || f === "ipad") return "ios";
+          if (f.startsWith("lin")) return "linux";
         }
 
-        document.querySelectorAll(".js-update-download-link").forEach((link) => {
-          const label = link.dataset.defaultLabel || link.textContent || "立即下载";
-          link.href = data.download_url;
-          if (link.id === "download-button" && data.file_name) {
-            link.textContent = `蓝奏云: ${data.file_name}`;
-          } else {
-            link.textContent = label;
+        const saved = sessionStorage.getItem("yanzi_selected_os");
+        if (saved) return saved;
+
+        const ua = navigator.userAgent || "";
+        const platform = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "";
+
+        if (/Android/i.test(ua)) return "android";
+        if (/iPhone|iPad|iPod/i.test(ua) || (platform === "MacIntel" && navigator.maxTouchPoints > 1)) return "ios";
+        if (/Mac|Macintosh|MacIntel/i.test(platform) || /Mac OS X/i.test(ua)) return "mac";
+        if (/Win|Windows/i.test(platform) || /Windows/i.test(ua)) return "windows";
+        if (/Linux/i.test(platform) || /Linux/i.test(ua)) return "linux";
+
+        return "windows";
+      }
+
+      let currentOS = detectOS();
+      let remoteUpdateData = null;
+
+      // 2. 默认平台静态配置字典
+      const defaultPlatforms = {
+        windows: {
+          key: "windows",
+          name: "Windows",
+          iconSvg: WINDOWS_SVG,
+          version: "1.0.26",
+          heroMeta: "Windows 10/11",
+          title: "燕子启动器 for Windows（完全免费）",
+          metaText: "一键安装，开箱即用 | Windows 10 / 11",
+          primaryLabel: "window 下载",
+          primaryUrl: "https://ghfast.top/https://github.com/luoluoluo22/yanzi/releases/download/v1.0.26/Yanzi-win-Setup-1.0.26.exe",
+          links: [
+            { label: "镜像下载 (极速 .exe)", url: "https://ghfast.top/https://github.com/luoluoluo22/yanzi/releases/download/v1.0.26/Yanzi-win-Setup-1.0.26.exe", badge: "免翻墙" },
+            { label: "GitHub 下载 (.exe)", url: "https://github.com/luoluoluo22/yanzi/releases/download/v1.0.26/Yanzi-win-Setup-1.0.26.exe" },
+            { label: "蓝奏云网盘（可能非最新版，提取码 62yn）", url: "https://wwbnh.lanzout.com/b0pnkaj6j", code: "62yn", codeTitle: "蓝奏云提取码" },
+            { label: "夸克网盘（可能非最新版，提取码 dWvh）", url: "https://pan.quark.cn/s/1ef15a1cafe1?pwd=dWvh", code: "dWvh", codeTitle: "夸克网盘提取码" },
+            { label: "便携免安装版 (.zip)", url: "https://github.com/luoluoluo22/yanzi/releases/download/v1.0.26/Yanzi-win-Portable-1.0.26.zip" }
+          ]
+        },
+        mac: {
+          key: "mac",
+          name: "macOS",
+          iconSvg: APPLE_SVG,
+          version: "0.1.0",
+          heroMeta: "macOS 12+",
+          title: "燕子启动器 for macOS（完全免费）",
+          metaText: "开箱即用 | macOS 12+ (Apple Silicon / Intel)",
+          primaryLabel: "mac 下载",
+          primaryUrl: "https://ghfast.top/https://github.com/luoluoluo22/yanzi/releases/download/macos-v0.1.0/Yanzi-macos-v0.1.0.dmg",
+          links: [
+            { label: "镜像下载 (极速 .dmg)", url: "https://ghfast.top/https://github.com/luoluoluo22/yanzi/releases/download/macos-v0.1.0/Yanzi-macos-v0.1.0.dmg", badge: "极速" },
+            { label: "GitHub 下载 (.dmg)", url: "https://github.com/luoluoluo22/yanzi/releases/download/macos-v0.1.0/Yanzi-macos-v0.1.0.dmg" },
+            { label: "免安装便携版 (.zip)", url: "https://github.com/luoluoluo22/yanzi/releases/download/macos-v0.1.0/Yanzi-macos-v0.1.0.zip" },
+            { label: "夸克网盘（可能非最新版，提取码 dWvh）", url: "https://pan.quark.cn/s/1ef15a1cafe1?pwd=dWvh", code: "dWvh", codeTitle: "夸克网盘提取码" }
+          ]
+        },
+        android: {
+          key: "android",
+          name: "Android",
+          iconSvg: ANDROID_SVG,
+          version: "0.2.76",
+          heroMeta: "Android 8.0+",
+          title: "燕子手机版（测试中）",
+          metaText: "Android 测试版，功能持续更新中",
+          primaryLabel: "Android 下载",
+          primaryUrl: "https://github.com/luoluoluo22/yanzi/releases/download/android-v0.2.76/yanzi-mobile-0.2.76.apk",
+          links: [
+            { label: "GitHub 下载 (.apk)", url: "https://github.com/luoluoluo22/yanzi/releases/download/android-v0.2.76/yanzi-mobile-0.2.76.apk" },
+            { label: "蓝奏云网盘 (可能非最新版，提取码 92ty)", url: "https://wwbnh.lanzout.com/b0pnm6z2j", code: "92ty", codeTitle: "蓝奏云提取码" },
+            { label: "夸克网盘（可能非最新版，提取码 dWvh）", url: "https://pan.quark.cn/s/1ef15a1cafe1?pwd=dWvh", code: "dWvh", codeTitle: "夸克网盘提取码" }
+          ]
+        }
+      };
+
+      // 3. 构建指定系统的渲染数据
+      function getPlatformConfig(osKey) {
+        const key = (osKey === "ios" || osKey === "linux") ? "windows" : osKey;
+        const config = JSON.parse(JSON.stringify(defaultPlatforms[key] || defaultPlatforms.windows));
+        config.iconSvg = (defaultPlatforms[key] || defaultPlatforms.windows).iconSvg;
+
+        if (remoteUpdateData) {
+          const ver = (remoteUpdateData.platforms && remoteUpdateData.platforms[key] && remoteUpdateData.platforms[key].version) || (key === "windows" ? remoteUpdateData.version : config.version);
+          config.version = ver;
+
+          if (remoteUpdateData.platforms && remoteUpdateData.platforms[key]) {
+            const p = remoteUpdateData.platforms[key];
+            if (key === "mac") {
+              config.primaryUrl = p.mirror_url || p.download_url;
+              config.links = [
+                { label: `镜像下载 (极速 .dmg)`, url: p.mirror_url, badge: "极速" },
+                { label: `GitHub 下载 (.dmg)`, url: p.download_url },
+                { label: "免安装便携版 (.zip)", url: `https://github.com/luoluoluo22/yanzi/releases/download/macos-v${p.version || ver}/Yanzi-macos-v${p.version || ver}.zip` },
+                { label: "夸克网盘（可能非最新版，提取码 dWvh）", url: "https://pan.quark.cn/s/1ef15a1cafe1?pwd=dWvh", code: "dWvh", codeTitle: "夸克网盘提取码" }
+              ];
+            } else if (key === "windows") {
+              config.primaryUrl = p.mirror_url || p.download_url || config.primaryUrl;
+              config.links = [
+                { label: `镜像下载 (极速 .exe)`, url: p.mirror_url, badge: "免翻墙" },
+                { label: `GitHub 下载 (.exe)`, url: p.download_url },
+                { label: "蓝奏云网盘（可能非最新版，提取码 62yn）", url: p.lanzou_url || "https://wwbnh.lanzout.com/b0pnkaj6j", code: "62yn", codeTitle: "蓝奏云提取码" },
+                { label: `夸克网盘（可能非最新版，提取码 dWvh）`, url: p.quark_url || "https://pan.quark.cn/s/1ef15a1cafe1?pwd=dWvh", code: "dWvh", codeTitle: "夸克网盘提取码" },
+                { label: `便携免安装版 (.zip)`, url: p.portable_url || `https://github.com/luoluoluo22/yanzi/releases/download/v${ver}/Yanzi-win-Portable-${ver}.zip` }
+              ];
+            } else if (key === "android" && p.has_asset && p.download_url) {
+              config.primaryUrl = p.download_url;
+              config.links = [
+                { label: "GitHub 下载 (.apk)", url: p.download_url },
+                { label: "蓝奏云网盘 (可能非最新版，提取码 92ty)", url: "https://wwbnh.lanzout.com/b0pnm6z2j", code: "92ty", codeTitle: "蓝奏云提取码" },
+                { label: "夸克网盘 (版本可能滞后)", url: "https://pan.quark.cn/s/1ef15a1cafe1?pwd=dWvh", code: "dWvh", codeTitle: "夸克网盘提取码" }
+              ];
+            }
           }
+        }
+        return config;
+      }
+
+      // 4. 渲染页面上所有下载组件
+      function renderUI(osKey) {
+        const config = getPlatformConfig(osKey);
+
+        // 更新 Hero 区域元标签
+        const heroMetaEl = document.getElementById("hero-os-meta");
+        if (heroMetaEl) heroMetaEl.textContent = config.heroMeta;
+
+        // 更新 Download 区域标题与副标
+        const titleEl = document.getElementById("download-title");
+        if (titleEl) titleEl.textContent = config.title;
+
+        const metaEl = document.getElementById("download-meta");
+        if (metaEl) {
+          if (config.key === "windows") {
+            metaEl.textContent = remoteUpdateData ? `版本 ${config.version} | 一键安装，开箱即用 | Windows 10 / 11` : "一键安装，开箱即用 | Windows 10 / 11";
+          } else {
+            metaEl.textContent = `版本 ${config.version} | ${config.metaText}`;
+          }
+        }
+
+        // 更新主下载按钮（Hero 区域 + Download 面板）
+        document.querySelectorAll(".js-primary-download-btn").forEach((btn) => {
+          btn.href = config.primaryUrl;
+          btn.innerHTML = `${config.iconSvg}${config.primaryLabel}`;
         });
 
-        if (data.version && data.file_name) {
-          if (data.file_name.endsWith(".exe")) {
-            const githubBaseUrl = `https://github.com/luoluoluo22/yanzi/releases/download/v${data.version}/${data.file_name}`;
-            const mirrorUrl = githubBaseUrl.replace("github.com", "kkgithub.com");
-            
-            document.querySelectorAll(".js-github-direct-link").forEach((link) => {
-              link.href = githubBaseUrl;
-            });
-            document.querySelectorAll(".js-github-mirror-link").forEach((link) => {
-              link.href = mirrorUrl;
-            });
+        // 针对 Android 手机版下载按钮绑定提取码自动复制
+        const mobileBtn = document.querySelector(".js-mobile-primary-btn");
+        if (mobileBtn) {
+          const android = remoteUpdateData && remoteUpdateData.platforms && remoteUpdateData.platforms.android;
+          mobileBtn.href = android && android.download_url ? android.download_url : defaultPlatforms.android.primaryUrl;
+        }
+
+        // 针对 Android / iOS 移动端的高亮微调
+        const mobilePanel = document.querySelector(".js-mobile-download-panel");
+        if (mobilePanel) {
+          if (osKey === "android" || osKey === "ios") {
+            mobilePanel.style.border = "1px solid rgba(59, 130, 246, 0.6)";
+          } else {
+            mobilePanel.style.border = "";
           }
         }
 
+        // 构建下拉菜单
+        const allOsKeys = [
+          { key: "windows", name: "Windows 版", iconSvg: WINDOWS_SVG },
+          { key: "mac", name: "macOS 版", iconSvg: APPLE_SVG },
+          { key: "android", name: "Android 手机版", iconSvg: ANDROID_SVG }
+        ];
+        const otherPlatforms = allOsKeys.filter(item => item.key !== config.key);
 
+        let dropdownHtml = "";
+        
+        // 推荐线路
+        config.links.forEach((item) => {
+          const badgeHtml = item.badge ? `<span class="platform-tag">${item.badge}</span>` : "";
+          const codeAttr = item.code ? `data-copy-code="${item.code}" data-code-title="${item.codeTitle || '提取码'}"` : "";
+          dropdownHtml += `<a href="${item.url}" target="_blank" ${codeAttr} class="js-download-link-item" style="display:flex; justify-content:space-between; align-items:center;">
+            <span>${item.label}</span>
+            ${badgeHtml}
+          </a>`;
+        });
 
-        const title = document.getElementById("download-title");
-        if (title && data.title) {
-          title.textContent = `${data.title}（完全免费）`;
+        // 切换平台选项
+        dropdownHtml += `<div class="download-dropdown-divider"></div>`;
+        dropdownHtml += `<div class="download-dropdown-header">其他系统版本</div>`;
+        otherPlatforms.forEach((p) => {
+          dropdownHtml += `<a href="javascript:void(0)" class="dropdown-switch-item js-switch-platform" data-target-os="${p.key}">
+            <span style="display:inline-flex; align-items:center;">${p.iconSvg} 切换为 ${p.name}</span>
+            <span class="platform-tag">切换</span>
+          </a>`;
+        });
+
+        document.querySelectorAll(".js-download-dropdown-menu").forEach((menu) => {
+          menu.innerHTML = dropdownHtml;
+        });
+
+        bindLinkEvents();
+      }
+
+      function bindLinkEvents() {
+        // 平台切换事件
+        document.querySelectorAll(".js-switch-platform").forEach((btn) => {
+          btn.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const targetOS = btn.dataset.targetOs;
+            if (targetOS) {
+              currentOS = targetOS;
+              sessionStorage.setItem("yanzi_selected_os", targetOS);
+              renderUI(targetOS);
+              document.querySelectorAll(".js-download-dropdown-menu").forEach(m => m.classList.remove("show"));
+              document.querySelectorAll(".js-download-dropdown-toggle").forEach(t => t.setAttribute("aria-expanded", "false"));
+            }
+          });
+        });
+
+        // 带提取码的链接点击时自动复制
+        document.querySelectorAll(".js-download-link-item[data-copy-code]").forEach((link) => {
+          link.addEventListener("click", () => {
+            const code = link.dataset.copyCode;
+            const title = link.dataset.codeTitle;
+            if (code) {
+              copyCodeToClipboard(code, title);
+            }
+          });
+        });
+      }
+
+      // 5. 初始化渲染与 API 拉取
+      renderUI(currentOS);
+
+      // The backend's emergency fallback may be older than a verified public release.
+      // Never let a stale update API replace a newer installer shown by this page.
+      function compareReleaseVersions(left, right) {
+        const parts = (version) => String(version || "").replace(/^[^0-9]*/, "").split(".").map(v => parseInt(v, 10) || 0);
+        const a = parts(left), b = parts(right);
+        for (let i = 0; i < Math.max(a.length, b.length); i++) {
+          if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) - (b[i] || 0);
         }
-
-        const meta = document.getElementById("download-meta");
-        if (meta) {
-          meta.textContent = formatVersionMeta(data);
-        }
+        return 0;
       }
 
       fetch(UPDATE_API)
-        .then((response) => {
-          if (!response.ok) {
-            throw new Error(`update api error: ${response.status}`);
-          }
-          return response.json();
+        .then((res) => {
+          if (!res.ok) throw new Error("API error: " + res.status);
+          return res.json();
         })
-        .then(applyUpdateInfo)
-        .catch(() => { });
-    })();
-  </script>
-  <script src="/assets/auth.js?v=20260701-4"></script>
-  <script>
-      // 下载下拉菜单交互
+        .then((data) => {
+          const windows = data && data.platforms && data.platforms.windows;
+          const version = windows && windows.version;
+          const current = remoteUpdateData && remoteUpdateData.platforms && remoteUpdateData.platforms.windows;
+          if (!windows || !windows.has_asset || !windows.download_url ||
+              compareReleaseVersions(version, defaultPlatforms.windows.version) < 0 ||
+              compareReleaseVersions(version, current ? current.version : defaultPlatforms.windows.version) < 0) return;
+          remoteUpdateData = data;
+          renderUI(currentOS);
+        })
+        .catch(() => {});
+
+      // GitHub is the release source of truth. Android releases are separate from Windows.
+      fetch("https://api.github.com/repos/luoluoluo22/yanzi/releases?per_page=40", {
+        headers: { "Accept": "application/vnd.github+json" }
+      })
+        .then(res => {
+          if (!res.ok) throw new Error("GitHub release lookup: " + res.status);
+          return res.json();
+        })
+        .then(releases => {
+          if (!Array.isArray(releases)) return;
+          const published = releases.filter(r => !r.draft && !r.prerelease && Array.isArray(r.assets));
+          const choose = (pattern, assetName) => published
+            .filter(r => pattern.test(r.tag_name))
+            .sort((a, b) => compareReleaseVersions(b.tag_name, a.tag_name))
+            .map(r => ({ release: r, version: r.tag_name.replace(/^.*?-v|^v/, "") }))
+            .find(x => x.release.assets.some(a => a.name === assetName(x.version) && a.size > 1000000));
+          const win = choose(/^v\d+\.\d+\.\d+$/, v => `Yanzi-win-Setup-${v}.exe`);
+          const android = choose(/^android-v\d+\.\d+\.\d+$/, v => `yanzi-mobile-${v}.apk`);
+          const updated = { ...(remoteUpdateData || {}), platforms: { ...((remoteUpdateData && remoteUpdateData.platforms) || {}) } };
+          let changed = false;
+          if (win && compareReleaseVersions(win.version, updated.platforms.windows?.version || defaultPlatforms.windows.version) >= 0) {
+            const installer = win.release.assets.find(a => a.name === `Yanzi-win-Setup-${win.version}.exe`);
+            const portable = win.release.assets.find(a => a.name === `Yanzi-win-Portable-${win.version}.zip`);
+            updated.version = win.version;
+            updated.platforms.windows = {
+              version: win.version,
+              download_url: installer.browser_download_url,
+              mirror_url: "https://ghfast.top/" + installer.browser_download_url,
+              portable_url: portable ? portable.browser_download_url : "",
+              has_asset: true
+            };
+            changed = true;
+          }
+          if (android && compareReleaseVersions(android.version, updated.platforms.android?.version || defaultPlatforms.android.version) >= 0) {
+            const apk = android.release.assets.find(a => a.name === `yanzi-mobile-${android.version}.apk`);
+            updated.platforms.android = { version: android.version, download_url: apk.browser_download_url, has_asset: true };
+            changed = true;
+          }
+          if (changed) {
+            remoteUpdateData = updated;
+            renderUI(currentOS);
+          }
+        })
+        .catch(() => {});
+
+      // 6. 下拉菜单打开/关闭交互
       document.querySelectorAll(".js-download-dropdown-toggle").forEach(toggle => {
         toggle.addEventListener("click", (e) => {
           e.stopPropagation();
           const menu = toggle.nextElementSibling;
           const expanded = toggle.getAttribute("aria-expanded") === "true";
           
-          // 关闭所有已打开的菜单
           document.querySelectorAll(".js-download-dropdown-menu").forEach(m => m.classList.remove("show"));
           document.querySelectorAll(".js-download-dropdown-toggle").forEach(t => t.setAttribute("aria-expanded", "false"));
           
@@ -544,12 +973,13 @@
         });
       });
 
-      // 点击空白处关闭菜单
       document.addEventListener("click", () => {
         document.querySelectorAll(".js-download-dropdown-menu").forEach(m => m.classList.remove("show"));
         document.querySelectorAll(".js-download-dropdown-toggle").forEach(t => t.setAttribute("aria-expanded", "false"));
       });
+    })();
   </script>
+  <script src="/assets/auth.js?v=20260701-4"></script>
 </body>
 
 </html>

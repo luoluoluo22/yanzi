@@ -88,7 +88,7 @@ rm -rf dmg_temp && mkdir -p dmg_temp && ditto Yanzi.app dmg_temp/Yanzi.app && ln
 官网是纯静态文件，源码在 `website/`。
 
 > [!NOTE]
-> **自动部署**：本项目已在 Cloudflare Pages 绑定了 GitHub 仓库。因此，**只需将最新修改推送到 GitHub 仓库的 `main` 分支，Cloudflare 就会自动触发构建与部署更新，无需任何手动部署操作**。
+> **自动部署与环境变量自动绑定**：本项目已在 Cloudflare Pages/Workers 绑定了 GitHub 仓库。在本地配置了 Git `pre-push` 钩子，每次执行 `git push` 时会运行 `.\scripts\sync-cloudflare-secrets.ps1` 自动解析 `.env` 并在 Cloudflare 云端同步绑定 Secrets（如 `RESEND_API_KEY`、`AUTH_TOKEN_SECRET` 等）并激活最新 Worker 版本。
 
 ### 本地手动发布（备份方案）
 
@@ -96,6 +96,7 @@ rm -rf dmg_temp && mkdir -p dmg_temp && ditto Yanzi.app dmg_temp/Yanzi.app && ln
 
 ```powershell
 .\scripts\publish-website.ps1
+.\scripts\sync-cloudflare-secrets.ps1
 ```
 
 发布脚本会自动读取根目录 `.env` 里的环境变量，再调用 Cloudflare Pages 发布。建议在 `.env` 中至少写入：

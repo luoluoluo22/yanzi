@@ -4,8 +4,8 @@
         xmlns:shared="clr-namespace:Yanzi.Shared"
         x:Class="Yanzi.Avalonia.QuickPanelWindow"
         Title="鼠标面板"
-        Width="1400"
-        Height="1400"
+        Width="364"
+        Height="640"
         Opacity="0"
         SystemDecorations="None"
         Background="Transparent"
@@ -26,85 +26,181 @@
             Height="{Binding OverlayHeight}"
             Background="Transparent"
             IsVisible="{Binding IsContentVisible}">
-        
-        <!-- Floating Card Panel (Matching reference screenshot exactly!) -->
-        <Border x:Name="PanelBorder" Width="366" Height="580"
+
+        <!-- Floating Backpack Panel (Exact Windows Dimensions: 284x560) -->
+        <Border x:Name="PanelBorder" Width="284" Height="560"
                 Canvas.Left="{Binding PanelLeft}"
                 Canvas.Top="{Binding PanelTop}"
-                Background="#FF161616"
-                CornerRadius="18"
-                BorderBrush="#2CFFFFFF"
-                BorderThickness="1.5"
+                Background="#EE141416"
+                CornerRadius="14"
+                BorderBrush="#25FFFFFF"
+                BorderThickness="1"
                 ClipToBounds="True">
-            
+
             <Border.BoxShadow>
                 <BoxShadows>0 12 40 0 #D0000000</BoxShadows>
             </Border.BoxShadow>
 
-            <Grid ColumnDefinitions="46,*">
-                <!-- Left Sidebar (Background #FF111111) -->
-                <Border Grid.Column="0" Background="#FF111111" BorderBrush="#1CFFFFFF" BorderThickness="0,0,1,0">
-                    <Grid RowDefinitions="*,Auto" Margin="0,14,0,12">
-                        <!-- Upper Navigation Icons -->
-                        <StackPanel Grid.Row="0" Spacing="16" HorizontalAlignment="Center">
-                            <!-- Star 1 Category -->
-                            <StackPanel Spacing="4" HorizontalAlignment="Center">
-                                <TextBlock Text="⭐" Foreground="#FFFBBF24" FontSize="15" HorizontalAlignment="Center"/>
-                                <TextBlock Text="默认" Foreground="#FF3B82F6" FontSize="10.5" FontWeight="SemiBold" HorizontalAlignment="Center"/>
-                                <Button Width="20" Height="20" Background="Transparent" BorderThickness="0" HorizontalAlignment="Center">
-                                    <TextBlock Text="＋" Foreground="#44FFFFFF" FontSize="11" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                </Button>
-                            </StackPanel>
+            <Grid ColumnDefinitions="42,*">
+                <!-- Left Sidebar (42px) -->
+                <Border Grid.Column="0" Background="#F8101012" BorderBrush="#1CFFFFFF" BorderThickness="0,0,1,0" Padding="0,8">
+                    <Grid RowDefinitions="Auto,1,Auto,*,Auto">
+                        <!-- Upper: Global Groups -->
+                        <StackPanel Grid.Row="0" HorizontalAlignment="Center" Spacing="4" Margin="0,0,0,6">
+                            <!-- Star Icon -->
+                            <Button Width="32" Height="32" Background="Transparent" BorderThickness="0" CornerRadius="8"
+                                    ToolTip.Tip="通用收藏" HorizontalAlignment="Center">
+                                <Button.Styles>
+                                    <Style Selector="Button:pointerover /template/ ContentPresenter">
+                                        <Setter Property="Background" Value="#1AFFFFFF"/>
+                                    </Style>
+                                </Button.Styles>
+                                <Path Data="M12,17.27L18.18,21L16.54,13.97L22,9.24L14.81,8.62L12,2L9.19,8.62L2,9.24L7.45,13.97L5.82,21L12,17.27Z"
+                                      Fill="#FFFBBF24" Width="15" Height="15" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Button>
 
-                            <Separator Height="1" Background="#18FFFFFF" Width="26" HorizontalAlignment="Center"/>
+                            <!-- Default Global Group Pill -->
+                            <Border Width="32" Height="28" CornerRadius="8" Background="#263B82F6" HorizontalAlignment="Center">
+                                <TextBlock Text="默认" FontSize="11" FontWeight="SemiBold" Foreground="#FF6EA8FF"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
 
-                            <!-- Star 2 Category -->
-                            <StackPanel Spacing="4" HorizontalAlignment="Center">
-                                <TextBlock Text="⭐" Foreground="#FFFBBF24" FontSize="15" HorizontalAlignment="Center"/>
-                                <TextBlock Text="默认" Foreground="#FF10B981" FontSize="10.5" FontWeight="SemiBold" HorizontalAlignment="Center"/>
-                                <Button Width="20" Height="20" Background="Transparent" BorderThickness="0" HorizontalAlignment="Center">
-                                    <TextBlock Text="＋" Foreground="#44FFFFFF" FontSize="11" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                </Button>
-                            </StackPanel>
+                            <!-- Add Group Button -->
+                            <Button Width="28" Height="24" Background="Transparent" BorderThickness="0" CornerRadius="6"
+                                    ToolTip.Tip="新建通用分组" HorizontalAlignment="Center">
+                                <Button.Styles>
+                                    <Style Selector="Button:pointerover /template/ ContentPresenter">
+                                        <Setter Property="Background" Value="#1AFFFFFF"/>
+                                    </Style>
+                                </Button.Styles>
+                                <Path Data="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z"
+                                      Fill="#66FFFFFF" Width="13" Height="13" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Button>
                         </StackPanel>
 
-                        <!-- Bottom Settings Gear -->
-                        <Button Grid.Row="1" Width="28" Height="28" Background="Transparent" BorderThickness="0" CornerRadius="6" HorizontalAlignment="Center">
-                            <Button.Styles>
-                                <Style Selector="Button:pointerover /template/ ContentPresenter">
-                                    <Setter Property="Background" Value="#1AFFFFFF"/>
-                                </Style>
-                            </Button.Styles>
-                            <Path Data="M19.43,12.98C19.47,12.66 19.5,12.34 19.5,12C19.5,11.66 19.47,11.34 19.43,11.02L21.54,9.37C21.73,9.22 21.78,8.95 21.66,8.73L19.66,5.27C19.54,5.05 19.27,4.97 19.05,5.05L16.56,6.05C16.04,5.65 15.48,5.32 14.87,5.07L14.49,2.42C14.46,2.18 14.25,2 14,2H10C9.75,2 9.54,2.18 9.51,2.42L9.13,5.07C8.52,5.32 7.96,5.65 7.44,6.05L4.95,5.05C4.73,4.97 4.46,5.05 4.34,5.27L2.34,8.73C2.21,8.95 2.27,9.22 2.46,9.37L4.57,11.02C4.53,11.34 4.5,11.66 4.5,12C4.5,12.34 4.53,12.66 4.57,12.98L2.46,14.63C2.27,14.78 2.21,15.05 2.34,15.27L4.34,18.73C4.46,18.95 4.73,19.03 4.95,18.95L7.44,17.95C7.96,18.35 8.52,18.68 9.13,18.93L9.51,21.58C9.54,21.82 9.75,22 10,22H14C14.25,22 14.46,21.82 14.49,21.58L14.87,18.93C15.48,18.68 16.04,18.35 16.56,17.95L19.05,18.95C19.27,19.03 19.54,18.95 19.66,18.73L21.66,15.27C21.78,15.05 21.72,14.78 21.54,14.63L19.43,12.98Z M12,15.5A3.5,3.5 0 0,1 8.5,12A3.5,3.5 0 0,1 12,8.5A3.5,3.5 0 0,1 15.5,12A3.5,3.5 0 0,1 12,15.5Z"
-                                  Fill="#A0FFFFFF" Width="14" Height="14" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Button>
+                        <!-- Middle Divider -->
+                        <Rectangle Grid.Row="1" Height="1" Fill="#18FFFFFF" Margin="6,2"/>
+
+                        <!-- Middle: Context Groups -->
+                        <StackPanel Grid.Row="2" HorizontalAlignment="Center" Spacing="4" Margin="0,6,0,0">
+                            <!-- Star Icon -->
+                            <Button Width="32" Height="32" Background="Transparent" BorderThickness="0" CornerRadius="8"
+                                    ToolTip.Tip="专属收藏" HorizontalAlignment="Center">
+                                <Button.Styles>
+                                    <Style Selector="Button:pointerover /template/ ContentPresenter">
+                                        <Setter Property="Background" Value="#1AFFFFFF"/>
+                                    </Style>
+                                </Button.Styles>
+                                <Path Data="M12,17.27L18.18,21L16.54,13.97L22,9.24L14.81,8.62L12,2L9.19,8.62L2,9.24L7.45,13.97L5.82,21L12,17.27Z"
+                                      Fill="#FFFBBF24" Width="15" Height="15" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Button>
+
+                            <!-- Default Context Group Pill -->
+                            <Border Width="32" Height="28" CornerRadius="8" Background="#2622C55E" HorizontalAlignment="Center">
+                                <TextBlock Text="默认" FontSize="11" FontWeight="SemiBold" Foreground="#FF4ADE80"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+
+                            <!-- Add Context Group Button -->
+                            <Button Width="28" Height="24" Background="Transparent" BorderThickness="0" CornerRadius="6"
+                                    ToolTip.Tip="新建专属分组" HorizontalAlignment="Center">
+                                <Button.Styles>
+                                    <Style Selector="Button:pointerover /template/ ContentPresenter">
+                                        <Setter Property="Background" Value="#1AFFFFFF"/>
+                                    </Style>
+                                </Button.Styles>
+                                <Path Data="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z"
+                                      Fill="#66FFFFFF" Width="13" Height="13" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Button>
+                        </StackPanel>
+
+                        <!-- Bottom Utility Tools -->
+                        <StackPanel Grid.Row="4" VerticalAlignment="Bottom" HorizontalAlignment="Center" Spacing="4">
+                            <!-- Mobile Messages Button -->
+                            <Button Width="32" Height="32" Background="Transparent" BorderThickness="0" CornerRadius="8"
+                                    ToolTip.Tip="手机消息" HorizontalAlignment="Center" Click="MobileMessages_Click">
+                                <Button.Styles>
+                                    <Style Selector="Button:pointerover /template/ ContentPresenter">
+                                        <Setter Property="Background" Value="#1AFFFFFF"/>
+                                    </Style>
+                                </Button.Styles>
+                                <Path Data="M17,19H7V5H17M17,1H7C5.89,1 5,1.89 5,3V21A2,2 0 0,0 7,23H17A2,2 0 0,0 19,21V3C19,1.89 18.1,1 17,1Z"
+                                      Fill="#FF67E8F9" Width="14" Height="14" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Button>
+
+                            <!-- Settings Gear Button -->
+                            <Button Width="32" Height="32" Background="Transparent" BorderThickness="0" CornerRadius="8"
+                                    ToolTip.Tip="设置" HorizontalAlignment="Center" Click="SettingsButton_Click">
+                                <Button.Styles>
+                                    <Style Selector="Button:pointerover /template/ ContentPresenter">
+                                        <Setter Property="Background" Value="#1AFFFFFF"/>
+                                    </Style>
+                                </Button.Styles>
+                                <Path Data="M12,15.5A3.5,3.5 0 0,1 8.5,12A3.5,3.5 0 0,1 12,8.5A3.5,3.5 0 0,1 15.5,12A3.5,3.5 0 0,1 12,15.5M19.43,12.97C19.47,12.65 19.5,12.33 19.5,12C19.5,11.67 19.47,11.34 19.43,11L21.54,9.37C21.73,9.22 21.79,8.95 21.66,8.73L19.66,5.27C19.54,5.05 19.27,4.96 19.05,5.05L16.56,6.05C16.04,5.66 15.5,5.32 14.87,5.07L14.5,2.42C14.46,2.18 14.25,2 14,2H10C9.75,2 9.54,2.18 9.5,2.42L9.13,5.07C8.5,5.32 7.96,5.66 7.44,6.05L4.95,5.05C4.73,4.96 4.46,5.05 4.34,5.27L2.34,8.73C2.21,8.95 2.27,9.22 2.46,9.37L4.57,11C4.53,11.34 4.5,11.67 4.5,12C4.5,12.33 4.53,12.65 4.57,12.97L2.46,14.63C2.27,14.78 2.21,15.05 2.34,15.27L4.34,18.73C4.46,18.95 4.73,19.03 4.95,18.95L7.44,17.95C7.96,18.34 8.5,18.68 9.13,18.93L9.5,21.58C9.54,21.82 9.75,22 10,22H14C14.25,22 14.46,21.82 14.5,21.58L14.87,18.93C15.5,18.67 16.04,18.34 16.56,17.95L19.05,18.95C19.27,19.03 19.54,18.95 19.66,18.73L21.66,15.27C21.78,15.05 21.73,14.78 21.54,14.63L19.43,12.97Z"
+                                      Fill="#888888" Width="15" Height="15" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Button>
+                        </StackPanel>
                     </Grid>
                 </Border>
 
-                <!-- Right Main Area -->
-                <Grid Grid.Column="1" RowDefinitions="Auto,*,Auto,*,Auto">
-                    <!-- Top Header Bar -->
-                    <Grid Grid.Row="0" Height="46" ColumnDefinitions="*,Auto" Margin="14,4,14,0">
-                        <!-- Category Name & Pin Icon -->
-                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                            <TextBlock Text="默认" Foreground="White" FontSize="15" FontWeight="Bold" VerticalAlignment="Center"/>
-                            <ToggleButton x:Name="PinButton" Width="20" Height="20" Background="Transparent" BorderThickness="0" VerticalAlignment="Center" IsChecked="{Binding IsPinned, Mode=TwoWay}">
-                                <Path Data="M16,12V4H17V2H7V4H8V12L6,14V16H11.2V22H12.8V16H18V14L16,12Z" Fill="#A0FFFFFF" Width="12" Height="12" Stretch="Uniform"/>
-                            </ToggleButton>
-                        </StackPanel>
+                <!-- Right Main Area (242px) -->
+                <Grid Grid.Column="1" RowDefinitions="Auto,*,Auto,*,Auto" Margin="6,6,6,6">
+                    <!-- Top Bar -->
+                    <Grid Grid.Row="0" Height="36" ColumnDefinitions="Auto,*,Auto" Margin="4,0,4,4">
+                        <!-- Edit Mode Pen Button (34x34) -->
+                        <ToggleButton x:Name="EditModeButton" Grid.Column="0" Width="34" Height="34" Background="Transparent"
+                                      BorderThickness="0" CornerRadius="8" ToolTip.Tip="编辑模式" VerticalAlignment="Center">
+                            <Path Data="M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z"
+                                  Fill="{Binding #EditModeButton.IsChecked, Converter={x:Static local:Converters.EditModeBrushConverter}}"
+                                  Width="14" Height="14" Stretch="Uniform"/>
+                        </ToggleButton>
 
-                        <!-- Search pill shape box -->
-                        <Border Grid.Column="1" Width="130" Height="24" CornerRadius="12" Background="#1DFFFFFF" Padding="10,0" VerticalAlignment="Center">
+                        <!-- Centered Extensible Search Box with perfect vertical centering -->
+                        <Border Grid.Column="1" Height="34" Background="#18FFFFFF" BorderBrush="#20FFFFFF" BorderThickness="1"
+                                CornerRadius="8" Padding="10,0" Margin="6,0,6,0" VerticalAlignment="Center">
                             <Grid ColumnDefinitions="Auto,*">
-                                <Path Grid.Column="0" Data="M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L19.71,19L18.3,20.41L13.03,15.14C11.9,16.1 10.42,16.7 8.5,16.7C3.8,16.7 0,12.9 0,8.2C0,3.5 3.8,0.2 8.5,0.2Z"
-                                      Fill="#60FFFFFF" Width="10" Height="10" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                <TextBlock Grid.Column="1" Text="搜索..." Foreground="#60FFFFFF" FontSize="11" VerticalAlignment="Center"/>
+                                <Path Grid.Column="0" Data="M15.5,14H14.71L14.43,13.73C15.41,12.59 16,11.11 16,9.5A6.5,6.5 0 1,0 9.5,16C11.11,16 12.59,15.41 13.73,14.43L14,14.71V15.5L19,20.5L20.5,19L15.5,14M9.5,14C7.01,14 5,11.99 5,9.5C5,7.01 7.01,5 9.5,5C11.99,5 14,7.01 14,9.5C14,11.99 11.99,14 9.5,14Z"
+                                      Fill="#888888" Width="13" Height="13" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <TextBox x:Name="HubSearchBox" Grid.Column="1" Watermark="搜索..." Background="Transparent"
+                                         BorderThickness="0" Foreground="White" FontSize="12"
+                                         VerticalAlignment="Center" VerticalContentAlignment="Center"
+                                         MinHeight="0" Padding="0,2,0,0" Margin="0" TextChanged="HubSearchBox_TextChanged">
+                                    <TextBox.Styles>
+                                        <Style Selector="TextBox:focus /template/ Border#PART_BorderElement">
+                                            <Setter Property="Background" Value="Transparent"/>
+                                            <Setter Property="BorderThickness" Value="0"/>
+                                        </Style>
+                                        <Style Selector="TextBox:pointerover /template/ Border#PART_BorderElement">
+                                            <Setter Property="Background" Value="Transparent"/>
+                                            <Setter Property="BorderThickness" Value="0"/>
+                                        </Style>
+                                        <Style Selector="TextBox /template/ Border#PART_BorderElement">
+                                            <Setter Property="Background" Value="Transparent"/>
+                                            <Setter Property="BorderThickness" Value="0"/>
+                                        </Style>
+                                        <Style Selector="TextBox /template/ TextPresenter#PART_TextPresenter">
+                                            <Setter Property="VerticalAlignment" Value="Center"/>
+                                        </Style>
+                                        <Style Selector="TextBox /template/ TextBlock#PART_Watermark">
+                                            <Setter Property="VerticalAlignment" Value="Center"/>
+                                        </Style>
+                                    </TextBox.Styles>
+                                </TextBox>
                             </Grid>
                         </Border>
+
+                        <!-- Pin AutoHide Button (Exact Windows pin.svg thumbtack) -->
+                        <ToggleButton x:Name="PinButton" Grid.Column="2" Width="34" Height="34" Background="Transparent"
+                                      BorderThickness="0" CornerRadius="8" ToolTip.Tip="固定面板 / 自动隐藏"
+                                      IsChecked="{Binding IsPinned, Mode=TwoWay}" VerticalAlignment="Center">
+                            <Path Data="M656.64 96l271.36 271.402667a36.48 36.48 0 0 1 0 51.584l-177.450667 177.450666a363.818667 363.818667 0 0 1-77.312 268.074667 36.437333 36.437333 0 0 1-28.544 13.653333 36.437333 36.437333 0 0 1-25.856-10.666666l-185.173333-185.130667-215.893333 215.893333a65.066667 65.066667 0 1 1-92.032-92.032l215.765333-215.808-185.088-185.002666a36.608 36.608 0 0 1 2.986667-54.4 363.008 363.008 0 0 1 227.413333-79.658667c13.568 0 27.136 0.682667 40.576 2.218667l177.450667-177.578667a36.437333 36.437333 0 0 1 25.898666-10.666667c9.344 0 18.688 3.541333 25.856 10.666667z"
+                                  Fill="{Binding #PinButton.IsChecked, Converter={x:Static local:Converters.PinBrushConverter}}"
+                                  Width="14" Height="14" Stretch="Uniform"/>
+                        </ToggleButton>
                     </Grid>
 
-                    <!-- Global Slots Grid (3 rows x 4 cols = 12 slots) -->
-                    <ItemsControl Grid.Row="1" ItemsSource="{Binding GlobalSlots}" Margin="10,0,10,2">
+                    <!-- Upper: Global Slots (4 columns x 3 rows = 12 slots) -->
+                    <ItemsControl Grid.Row="1" ItemsSource="{Binding GlobalSlots}" Margin="2,0,2,0">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <UniformGrid Columns="4" Rows="3"/>
@@ -112,74 +208,78 @@
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Border Name="SlotCard" Width="72" Height="72" Margin="3"
-                                        Background="#0AFFFFFF" CornerRadius="12"
-                                        BorderBrush="#10FFFFFF" BorderThickness="1.2"
+                                <Border Name="SlotCard" Margin="1"
+                                        Background="Transparent"
                                         PointerPressed="Slot_PointerPressed"
                                         PointerEntered="Slot_PointerEntered"
                                         PointerExited="Slot_PointerExited"
                                         Classes.selected="{Binding IsSelected}"
                                         Classes.hovered="{Binding IsHovered}">
-                                    <Border.Styles>
-                                        <Style Selector="Border.selected">
-                                            <Setter Property="Background" Value="#303B82F6"/>
-                                            <Setter Property="BorderBrush" Value="#FF60A5FA"/>
-                                            <Setter Property="BorderThickness" Value="1.5"/>
-                                        </Style>
-                                        <Style Selector="Border.hovered">
-                                            <Setter Property="Background" Value="#18FFFFFF"/>
-                                            <Setter Property="BorderBrush" Value="#40FFFFFF"/>
-                                            <Setter Property="BorderThickness" Value="1.2"/>
-                                        </Style>
-                                    </Border.Styles>
-                                    <Border.RenderTransform>
-                                        <ScaleTransform ScaleX="{Binding Scale}" ScaleY="{Binding Scale}"/>
-                                    </Border.RenderTransform>
+                                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,2">
+                                        <!-- Slot Icon Card (40x40 CornerRadius=9 matching Windows) -->
+                                        <Border Width="40" Height="40" CornerRadius="9"
+                                                Background="{Binding AccentBrush, FallbackValue='#1AFFFFFF'}"
+                                                BorderBrush="Transparent" BorderThickness="1.2"
+                                                ClipToBounds="True" HorizontalAlignment="Center"
+                                                Margin="0,0,0,5">
+                                            <Border.Styles>
+                                                <Style Selector="Border.hovered">
+                                                    <Setter Property="Background" Value="#2AFFFFFF"/>
+                                                </Style>
+                                            </Border.Styles>
+                                            <Grid>
+                                                <!-- Empty + Icon -->
+                                                <Path Data="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z"
+                                                      Fill="#44FFFFFF" Width="14" Height="14" Stretch="Uniform"
+                                                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                      IsVisible="{Binding IsEmpty}"/>
 
-                                    <Grid>
-                                        <!-- Empty Slot Icon -->
-                                        <TextBlock Text="＋" Foreground="#28FFFFFF" FontSize="18"
-                                                   HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                   IsVisible="{Binding IsEmpty}"/>
-
-                                        <!-- Occupied Slot Content -->
-                                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" IsVisible="{Binding IsNotEmpty}">
-                                            <Border Width="38" Height="38" CornerRadius="9"
-                                                    Background="#FF10B981" Margin="0,0,0,2"
-                                                    HorizontalAlignment="Center" VerticalAlignment="Center">
-                                                <Grid>
+                                                <!-- Occupied Content -->
+                                                <Grid IsVisible="{Binding IsNotEmpty}">
+                                                    <!-- Vector Icon -->
                                                     <Path Data="{Binding VectorIcon}" Fill="White" Width="18" Height="18"
                                                           Stretch="Uniform" IsVisible="{Binding HasVectorIcon}"
                                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                    <Image Source="{Binding RealIcon}" Width="24" Height="24"
+                                                    <!-- Real Mac App Icon (Full 40x40 size matching slot bounds) -->
+                                                    <Image Source="{Binding RealIcon}" Width="40" Height="40"
                                                            Stretch="Uniform" IsVisible="{Binding HasRealIcon}"
                                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                    <Image Source="{Binding IconSource}" Width="20" Height="20"
+                                                    <!-- Generic Image Icon -->
+                                                    <Image Source="{Binding IconSource}" Width="38" Height="38"
                                                            Stretch="Uniform" IsVisible="{Binding HasImageIcon}"
                                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    <!-- Glyph Text -->
                                                     <TextBlock Text="{Binding DisplayGlyph}" Foreground="White"
-                                                               FontSize="12" FontWeight="SemiBold" IsVisible="{Binding UseGlyphIcon}"
+                                                               FontSize="13" FontWeight="SemiBold" IsVisible="{Binding UseGlyphIcon}"
                                                                HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                                 </Grid>
-                                            </Border>
-                                            <TextBlock Text="{Binding Title}" Foreground="White" FontSize="9.5"
-                                                       TextAlignment="Center" Width="68" TextTrimming="CharacterEllipsis"
-                                                       HorizontalAlignment="Center"/>
-                                        </StackPanel>
-                                    </Grid>
+                                            </Grid>
+                                        </Border>
+
+                                        <!-- Slot Title (Adjusted spacing to move text downward) -->
+                                        <TextBlock Text="{Binding DisplayTitle, FallbackValue='添加'}"
+                                                   Foreground="{Binding IsEmpty, Converter={x:Static local:Converters.EmptyTextBrushConverter}}"
+                                                   FontSize="9.5" TextAlignment="Center" Width="52"
+                                                   TextTrimming="CharacterEllipsis" HorizontalAlignment="Center"
+                                                   Margin="0,1,0,0"/>
+                                    </StackPanel>
                                 </Border>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
 
-                    <!-- Section Separator Title -->
-                    <TextBlock Grid.Row="2" Text="应用专属 • Yanzi"
-                               Foreground="#88FFFFFF" FontSize="11" FontWeight="Medium"
-                               HorizontalAlignment="Center" VerticalAlignment="Center"
-                               Margin="0,8,0,8"/>
+                    <!-- Middle Separator & Context Title -->
+                    <Grid Grid.Row="2" Margin="4,3,4,3">
+                        <StackPanel Spacing="2">
+                            <Rectangle Height="1" Fill="#18FFFFFF" HorizontalAlignment="Stretch"/>
+                            <TextBlock Text="{Binding ContextSectionTitle, FallbackValue='应用专属 • Yanzi'}"
+                                       Foreground="#88FFFFFF" FontSize="10.5" FontWeight="SemiBold"
+                                       HorizontalAlignment="Center" Margin="0,3,0,0"/>
+                        </StackPanel>
+                    </Grid>
 
-                    <!-- Context Slots Grid (3 rows x 4 cols = 12 slots) -->
-                    <ItemsControl Grid.Row="3" ItemsSource="{Binding ContextSlots}" Margin="10,0,10,2">
+                    <!-- Lower: Context Slots (4 columns x 3 rows = 12 slots) -->
+                    <ItemsControl Grid.Row="3" ItemsSource="{Binding ContextSlots}" Margin="2,0,2,0">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <UniformGrid Columns="4" Rows="3"/>
@@ -187,71 +287,66 @@
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Border Name="SlotCard" Width="72" Height="72" Margin="3"
-                                        Background="#0AFFFFFF" CornerRadius="12"
-                                        BorderBrush="#10FFFFFF" BorderThickness="1.2"
+                                <Border Name="SlotCard" Margin="1"
+                                        Background="Transparent"
                                         PointerPressed="Slot_PointerPressed"
                                         PointerEntered="Slot_PointerEntered"
                                         PointerExited="Slot_PointerExited"
                                         Classes.selected="{Binding IsSelected}"
                                         Classes.hovered="{Binding IsHovered}">
-                                    <Border.Styles>
-                                        <Style Selector="Border.selected">
-                                            <Setter Property="Background" Value="#303B82F6"/>
-                                            <Setter Property="BorderBrush" Value="#FF60A5FA"/>
-                                            <Setter Property="BorderThickness" Value="1.5"/>
-                                        </Style>
-                                        <Style Selector="Border.hovered">
-                                            <Setter Property="Background" Value="#18FFFFFF"/>
-                                            <Setter Property="BorderBrush" Value="#40FFFFFF"/>
-                                            <Setter Property="BorderThickness" Value="1.2"/>
-                                        </Style>
-                                    </Border.Styles>
-                                    <Border.RenderTransform>
-                                        <ScaleTransform ScaleX="{Binding Scale}" ScaleY="{Binding Scale}"/>
-                                    </Border.RenderTransform>
+                                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,2">
+                                        <!-- Slot Icon Card (40x40 CornerRadius=9 matching Windows) -->
+                                        <Border Width="40" Height="40" CornerRadius="9"
+                                                Background="{Binding AccentBrush, FallbackValue='#1AFFFFFF'}"
+                                                BorderBrush="Transparent" BorderThickness="1.2"
+                                                ClipToBounds="True" HorizontalAlignment="Center"
+                                                Margin="0,0,0,5">
+                                            <Grid>
+                                                <!-- Empty + Icon -->
+                                                <Path Data="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z"
+                                                      Fill="#44FFFFFF" Width="14" Height="14" Stretch="Uniform"
+                                                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                      IsVisible="{Binding IsEmpty}"/>
 
-                                    <Grid>
-                                        <!-- Empty Slot Icon -->
-                                        <TextBlock Text="＋" Foreground="#28FFFFFF" FontSize="18"
-                                                   HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                   IsVisible="{Binding IsEmpty}"/>
-
-                                        <!-- Occupied Slot Content -->
-                                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" IsVisible="{Binding IsNotEmpty}">
-                                            <Border Width="38" Height="38" CornerRadius="9"
-                                                    Background="#FF10B981" Margin="0,0,0,2"
-                                                    HorizontalAlignment="Center" VerticalAlignment="Center">
-                                                <Grid>
+                                                <!-- Occupied Content -->
+                                                <Grid IsVisible="{Binding IsNotEmpty}">
+                                                    <!-- Vector Icon -->
                                                     <Path Data="{Binding VectorIcon}" Fill="White" Width="18" Height="18"
                                                           Stretch="Uniform" IsVisible="{Binding HasVectorIcon}"
                                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                    <Image Source="{Binding RealIcon}" Width="24" Height="24"
+                                                    <!-- Real Mac App Icon (Full 40x40 size matching slot bounds) -->
+                                                    <Image Source="{Binding RealIcon}" Width="40" Height="40"
                                                            Stretch="Uniform" IsVisible="{Binding HasRealIcon}"
                                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                    <Image Source="{Binding IconSource}" Width="20" Height="20"
+                                                    <!-- Generic Image Icon -->
+                                                    <Image Source="{Binding IconSource}" Width="38" Height="38"
                                                            Stretch="Uniform" IsVisible="{Binding HasImageIcon}"
                                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    <!-- Glyph Text -->
                                                     <TextBlock Text="{Binding DisplayGlyph}" Foreground="White"
-                                                               FontSize="12" FontWeight="SemiBold" IsVisible="{Binding UseGlyphIcon}"
+                                                               FontSize="13" FontWeight="SemiBold" IsVisible="{Binding UseGlyphIcon}"
                                                                HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                                 </Grid>
-                                            </Border>
-                                            <TextBlock Text="{Binding Title}" Foreground="White" FontSize="9.5"
-                                                       TextAlignment="Center" Width="68" TextTrimming="CharacterEllipsis"
-                                                       HorizontalAlignment="Center"/>
-                                        </StackPanel>
-                                    </Grid>
+                                            </Grid>
+                                        </Border>
+
+                                        <!-- Slot Title (Adjusted spacing to move text downward) -->
+                                        <TextBlock Text="{Binding DisplayTitle, FallbackValue='添加'}"
+                                                   Foreground="{Binding IsEmpty, Converter={x:Static local:Converters.EmptyTextBrushConverter}}"
+                                                   FontSize="9.5" TextAlignment="Center" Width="52"
+                                                   TextTrimming="CharacterEllipsis" HorizontalAlignment="Center"
+                                                   Margin="0,1,0,0"/>
+                                    </StackPanel>
                                 </Border>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
 
-                    <!-- Footer prompt bar -->
+                    <!-- Bottom Status Prompt Bar -->
                     <TextBlock Grid.Row="4" Text="{Binding ActiveTitle}"
-                               Foreground="#FFAAAAAA" FontSize="11"
+                               Foreground="#FFAAAAAA" FontSize="10.5"
                                HorizontalAlignment="Center" VerticalAlignment="Center"
-                               TextAlignment="Center" Margin="14,4,14,8"/>
+                               TextAlignment="Center" Margin="0,2,0,2"/>
                 </Grid>
             </Grid>
         </Border>

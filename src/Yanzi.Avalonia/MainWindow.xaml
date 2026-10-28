@@ -169,12 +169,12 @@
                         </Border.RenderTransform>
                         <Grid>
                             <!-- Empty Slot Hover Background -->
-                            <Ellipse Width="32" Height="32" Fill="#20FFFFFF"
+                            <Ellipse Width="32" Height="32" Fill="{DynamicResource OverlayHover}"
                                      IsVisible="{Binding ShouldShowEmptyPlaceholder}"/>
                             
                             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                                 <!-- Add Icon for Empty Slots -->
-                                <TextBlock Text="➕" Foreground="#80FFFFFF" FontSize="16"
+                                <TextBlock Text="➕" Foreground="{DynamicResource OverlayTextMuted}" FontSize="16"
                                            HorizontalAlignment="Center"
                                            IsVisible="{Binding ShouldShowEmptyPlaceholder}"/>
                                 
@@ -223,11 +223,11 @@
                             <ScaleTransform ScaleX="{Binding Scale}" ScaleY="{Binding Scale}"/>
                         </Border.RenderTransform>
                         <Grid>
-                            <Ellipse Width="40" Height="40" Fill="#20FFFFFF"
+                            <Ellipse Width="40" Height="40" Fill="{DynamicResource OverlayHover}"
                                      IsVisible="{Binding ShouldShowEmptyPlaceholder}"/>
                             
                             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                                <TextBlock Text="➕" Foreground="#80FFFFFF" FontSize="20"
+                                <TextBlock Text="➕" Foreground="{DynamicResource OverlayTextMuted}" FontSize="20"
                                            HorizontalAlignment="Center"
                                            IsVisible="{Binding ShouldShowEmptyPlaceholder}"/>
                                 
@@ -314,10 +314,10 @@
                                 <ScaleTransform ScaleX="{Binding Scale}" ScaleY="{Binding Scale}"/>
                             </Border.RenderTransform>
                             <Grid>
-                                <Ellipse Width="36" Height="36" Fill="#20FFFFFF"
+                                <Ellipse Width="36" Height="36" Fill="{DynamicResource OverlayHover}"
                                          IsVisible="{Binding ShouldShowEmptyPlaceholder}"/>
                                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                                    <TextBlock Text="➕" Foreground="#80FFFFFF" FontSize="18"
+                                    <TextBlock Text="➕" Foreground="{DynamicResource OverlayTextMuted}" FontSize="18"
                                                HorizontalAlignment="Center"
                                                IsVisible="{Binding ShouldShowEmptyPlaceholder}"/>
                                     <Grid Width="22" Height="22" HorizontalAlignment="Center"
@@ -403,10 +403,10 @@
                                 <ScaleTransform ScaleX="{Binding Scale}" ScaleY="{Binding Scale}"/>
                             </Border.RenderTransform>
                             <Grid>
-                                <Ellipse Width="32" Height="32" Fill="#20FFFFFF"
+                                <Ellipse Width="32" Height="32" Fill="{DynamicResource OverlayHover}"
                                          IsVisible="{Binding ShouldShowEmptyPlaceholder}"/>
                                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                                    <TextBlock Text="➕" Foreground="#80FFFFFF" FontSize="16"
+                                    <TextBlock Text="➕" Foreground="{DynamicResource OverlayTextMuted}" FontSize="16"
                                                HorizontalAlignment="Center"
                                                IsVisible="{Binding ShouldShowEmptyPlaceholder}"/>
                                     <Grid Width="18" Height="18" HorizontalAlignment="Center"

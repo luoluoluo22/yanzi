@@ -54,6 +54,8 @@ public static class PersonalSyncProviders
 
 public sealed class PersonalSyncSettings
 {
+    public bool GitHubBackupEnabled { get; set; }
+
     public bool Enabled { get; set; }
 
     public string Provider { get; set; } = PersonalSyncProviders.WebDav;
@@ -167,6 +169,9 @@ public sealed class CloudPersonalSyncConfigSnapshot
 
     [JsonPropertyName("secrets")]
     public PersonalSyncSecretBag Secrets { get; set; } = new();
+
+    [JsonPropertyName("e2eePayload")]
+    public string? E2eePayload { get; set; }
 
     [JsonPropertyName("autoSyncDelaySeconds")]
     public int AutoSyncDelaySeconds { get; set; } = 10;

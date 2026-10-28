@@ -1,4 +1,4 @@
-(function() {
+﻿(function() {
   const API_BASE = "https://sync.luoluoluo.cc.cd";
   const TOKEN_KEY = "yanzi.auth.token";
   const USER_KEY = "yanzi.auth.user";
@@ -186,7 +186,7 @@
       nav.dataset.repairedDocsNav = "1";
       nav.innerHTML = `
         <a href="/">首页</a>
-        <a href="/store.html">扩展商店</a>
+        <a href="/store.html">小程序商店</a>
         <a href="/yanm.html">燕幕</a>
         <a href="/docs/product-overview.html" class="active">文档</a>
         <a href="https://wwbnh.lanzout.com/b0pnkaj6j" target="_blank" rel="noopener noreferrer">免费下载</a>
@@ -394,8 +394,55 @@
   function hideLoginModal() { if (loginModal) loginModal.classList.remove("is-visible"); }
   function hideProfileModal() { if (profileModal) profileModal.classList.remove("is-visible"); }
 
+  async function deriveLoginHash(password, email) {
+    const enc = new TextEncoder();
+    const passwordBytes = enc.encode(password);
+    const saltBytes = enc.encode(email.trim().toLowerCase());
+
+    const keyMaterial = await window.crypto.subtle.importKey(
+      "raw",
+      passwordBytes,
+      "PBKDF2",
+      false,
+      ["deriveBits"]
+    );
+
+    const masterKeyBits = await window.crypto.subtle.deriveBits(
+      {
+        name: "PBKDF2",
+        salt: saltBytes,
+        iterations: 50000,
+        hash: "SHA-256"
+      },
+      keyMaterial,
+      256
+    );
+
+    const hmacKey = await window.crypto.subtle.importKey(
+      "raw",
+      masterKeyBits,
+      {
+        name: "HMAC",
+        hash: "SHA-256"
+      },
+      false,
+      ["sign"]
+    );
+
+    const messageBytes = enc.encode("login-verification");
+    const signature = await window.crypto.subtle.sign(
+      "HMAC",
+      hmacKey,
+      messageBytes
+    );
+
+    const hashArray = Array.from(new Uint8Array(signature));
+    const hexString = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    return hexString;
+  }
+
   async function performLogin() {
-    const email = document.getElementById("modal-email").value.trim();
+    const email = document.getElementById("modal-email").value;
     const password = document.getElementById("modal-password").value;
     const remember = document.getElementById("modal-remember").checked;
     const loginBtn = document.getElementById("modal-login-action-btn");
@@ -406,7 +453,8 @@
     statusMsg.className = "auth-modal-status";
     statusMsg.textContent = "";
     try {
-      const auth = await apiFetch("/v1/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
+      const loginHash = await deriveLoginHash(password, email);
+      const auth = await apiFetch("/v1/auth/login", { method: "POST", body: JSON.stringify({ email, password: loginHash }) });
       setToken(auth.accessToken || "", remember);
       const me = await apiFetch("/v1/auth/me");
       setUser(me, remember);

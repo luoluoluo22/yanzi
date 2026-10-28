@@ -8,14 +8,19 @@ namespace OpenQuickHost;
 
 public partial class HotkeyCaptureWindow : Window
 {
-    private const int WmKeyDown = 0x0100;
-    private const int WmSysKeyDown = 0x0104;
+    private const int WH_KEYBOARD_LL = 13;
+    private const int WM_KEYDOWN = 0x0100;
+    private const int WM_KEYUP = 0x0101;
+    private const int WM_SYSKEYDOWN = 0x0104;
+    private const int WM_SYSKEYUP = 0x0105;
+    private const uint LLKHF_ALTDOWN = 0x00000020;
 
     private readonly bool _allowEmpty;
     private readonly bool _allowDoubleTap;
     private readonly bool _allowModifierless;
+    private readonly LowLevelKeyboardProc _keyboardHookProc;
+    private IntPtr _keyboardHookHandle = IntPtr.Zero;
     private HwndSource? _source;
-    private bool _allowWindowClose;
     private Key? _pendingModifierKey;
     private long _lastModifierTapTimestamp;
     private string? _lastModifierShortcut;
@@ -23,9 +28,35 @@ public partial class HotkeyCaptureWindow : Window
     private bool _suppressDisplayNameSync;
     private bool _displayNameManuallyEdited;
 
+    private delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct KBDLLHOOKSTRUCT
+    {
+        public uint vkCode;
+        public uint scanCode;
+        public uint flags;
+        public uint time;
+        public IntPtr dwExtraInfo;
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto, SetLastError = true)]
+    private static extern IntPtr SetWindowsHookEx(int idHook, LowLevelKeyboardProc lpfn, IntPtr hMod, uint dwThreadId);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto, SetLastError = true)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool UnhookWindowsHookEx(IntPtr hhk);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto, SetLastError = true)]
+    private static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto, SetLastError = true)]
+    private static extern IntPtr GetModuleHandle(string? lpModuleName);
+
     public HotkeyCaptureWindow(string title, string description, string? initialValue = null, string? initialDisplayName = null, bool allowEmpty = false, bool allowDoubleTap = false, bool allowModifierless = false)
     {
         InitializeComponent();
+        _keyboardHookProc = LowLevelKeyboardCallback;
         _allowEmpty = allowEmpty;
         _allowDoubleTap = allowDoubleTap;
         _allowModifierless = allowModifierless;
@@ -49,8 +80,71 @@ public partial class HotkeyCaptureWindow : Window
         _displayNameManuallyEdited = !string.IsNullOrWhiteSpace(initialDisplayName) &&
             !string.Equals(initialDisplayName?.Trim(), ShortcutText, StringComparison.OrdinalIgnoreCase);
 
-        Loaded += (_, _) => Focus();
-        Closing += HotkeyCaptureWindow_Closing;
+        Loaded += (_, _) =>
+        {
+            var hwnd = new WindowInteropHelper(this).Handle;
+            EnsureDirectActivateStyle(hwnd);
+            ForceSetForeground(hwnd);
+            Activate();
+            Focus();
+            Keyboard.Focus(this);
+            InstallKeyboardHook();
+            Dispatcher.InvokeAsync(async () =>
+            {
+                await Task.Delay(30);
+                var h = new WindowInteropHelper(this).Handle;
+                ForceSetForeground(h);
+                Activate();
+                Focus();
+                Keyboard.Focus(this);
+            }, System.Windows.Threading.DispatcherPriority.Input);
+            HostAssets.AppendLog($"[HotkeyCaptureLog] Loaded: hwnd=0x{hwnd:X}, foreHwnd=0x{Win32Native.GetForegroundWindow():X}, IsActive={IsActive}, IsFocused={IsFocused}");
+        };
+        Unloaded += (_, _) =>
+        {
+            UninstallKeyboardHook();
+        };
+        ContentRendered += (_, _) =>
+        {
+            var hwnd = new WindowInteropHelper(this).Handle;
+            EnsureDirectActivateStyle(hwnd);
+            ForceSetForeground(hwnd);
+            Activate();
+            Focus();
+            Keyboard.Focus(this);
+            Dispatcher.InvokeAsync(async () =>
+            {
+                await Task.Delay(50);
+                var h = new WindowInteropHelper(this).Handle;
+                ForceSetForeground(h);
+                Activate();
+                Focus();
+                Keyboard.Focus(this);
+            }, System.Windows.Threading.DispatcherPriority.Input);
+            HostAssets.AppendLog($"[HotkeyCaptureLog] ContentRendered: hwnd=0x{hwnd:X}, foreHwnd=0x{Win32Native.GetForegroundWindow():X}, IsActive={IsActive}, IsFocused={IsFocused}");
+        };
+        Activated += (_, _) =>
+        {
+            HostAssets.AppendLog($"[HotkeyCaptureLog] Activated: IsFocused={IsFocused}, KeyboardFocus={Keyboard.FocusedElement?.GetType().Name ?? "null"}");
+        };
+        Deactivated += (_, _) =>
+        {
+            HostAssets.AppendLog($"[HotkeyCaptureLog] Deactivated: foreHwnd=0x{Win32Native.GetForegroundWindow():X}");
+            ResetModifierTracking();
+        };
+        GotKeyboardFocus += (_, e) =>
+        {
+            HostAssets.AppendLog($"[HotkeyCaptureLog] GotKeyboardFocus: source={e.OriginalSource?.GetType().Name ?? "null"}");
+        };
+        LostKeyboardFocus += (_, e) =>
+        {
+            HostAssets.AppendLog($"[HotkeyCaptureLog] LostKeyboardFocus: newFocus={e.NewFocus?.GetType().Name ?? "null"}");
+        };
+        PreviewMouseDown += (_, _) =>
+        {
+            HostAssets.AppendLog($"[HotkeyCaptureLog] PreviewMouseDown: foreHwnd=0x{Win32Native.GetForegroundWindow():X}, IsActive={IsActive}");
+        };
+
         HostAssets.AppendLog($"Hotkey capture dialog opened: title={title}, initialValue={initialValue ?? string.Empty}, initialDisplayName={initialDisplayName ?? string.Empty}, allowEmpty={allowEmpty}, allowDoubleTap={allowDoubleTap}, allowModifierless={allowModifierless}.");
     }
 
@@ -61,21 +155,145 @@ public partial class HotkeyCaptureWindow : Window
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
+        var hwnd = new WindowInteropHelper(this).Handle;
+        EnsureDirectActivateStyle(hwnd);
+        ForceSetForeground(hwnd);
         _source = (HwndSource?)PresentationSource.FromVisual(this);
         _source?.AddHook(WndProc);
+        HostAssets.AppendLog($"[HotkeyCaptureLog] OnSourceInitialized: hwnd=0x{hwnd:X}, foreHwnd=0x{Win32Native.GetForegroundWindow():X}");
     }
 
     protected override void OnClosed(EventArgs e)
     {
+        UninstallKeyboardHook();
         _source?.RemoveHook(WndProc);
         _source = null;
         HostAssets.AppendLog($"Hotkey capture dialog closed: title={Title}, shortcut={ShortcutText}.");
         base.OnClosed(e);
     }
 
+    private void InstallKeyboardHook()
+    {
+        if (_keyboardHookHandle != IntPtr.Zero)
+        {
+            return;
+        }
+
+        try
+        {
+            using var curProcess = System.Diagnostics.Process.GetCurrentProcess();
+            using var curModule = curProcess.MainModule;
+            var moduleHandle = GetModuleHandle(curModule?.ModuleName);
+            _keyboardHookHandle = SetWindowsHookEx(WH_KEYBOARD_LL, _keyboardHookProc, moduleHandle, 0);
+            HostAssets.AppendLog($"[HotkeyCaptureLog] Low-level keyboard hook installed: handle=0x{_keyboardHookHandle:X}");
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"[HotkeyCaptureLog] Failed to install low-level keyboard hook: {ex.Message}");
+        }
+    }
+
+    private void UninstallKeyboardHook()
+    {
+        if (_keyboardHookHandle != IntPtr.Zero)
+        {
+            UnhookWindowsHookEx(_keyboardHookHandle);
+            HostAssets.AppendLog($"[HotkeyCaptureLog] Low-level keyboard hook uninstalled: handle=0x{_keyboardHookHandle:X}");
+            _keyboardHookHandle = IntPtr.Zero;
+        }
+    }
+
+    private bool _isLWinDown;
+    private bool _isRWinDown;
+    private bool _isAltDown;
+    private bool _isCtrlDown;
+    private bool _isShiftDown;
+
+    private IntPtr LowLevelKeyboardCallback(int nCode, IntPtr wParam, IntPtr lParam)
+    {
+        if (nCode >= 0)
+        {
+            var msg = (int)wParam;
+            var isKeyDown = msg is WM_KEYDOWN or WM_SYSKEYDOWN;
+            var isKeyUp = msg is WM_KEYUP or WM_SYSKEYUP;
+
+            if (isKeyDown || isKeyUp)
+            {
+                var hookStruct = System.Runtime.InteropServices.Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(lParam);
+                var vkCode = (int)hookStruct.vkCode;
+                var key = KeyInterop.KeyFromVirtualKey(vkCode);
+
+                // 显式维护物理修饰键状态（特别是 Win 键，由于被钩子吃掉后系统消息队列不会记录，必须在钩子中实时追踪）
+                if (vkCode is 0x5B) _isLWinDown = isKeyDown;
+                else if (vkCode is 0x5C) _isRWinDown = isKeyDown;
+                else if (vkCode is 0x12 or 0xA4 or 0xA5) _isAltDown = isKeyDown;
+                else if (vkCode is 0x11 or 0xA2 or 0xA3) _isCtrlDown = isKeyDown;
+                else if (vkCode is 0x10 or 0xA0 or 0xA1) _isShiftDown = isKeyDown;
+
+                // 如果用户正在编辑显示名称文本框，放行所有输入
+                if (IsEditingDisplayName())
+                {
+                    return CallNextHookEx(_keyboardHookHandle, nCode, wParam, lParam);
+                }
+
+                if (key != Key.None)
+                {
+                    if (isKeyDown)
+                    {
+                        var modifiers = GetCurrentModifiers();
+                        if (_isLWinDown || _isRWinDown)
+                        {
+                            modifiers |= ModifierKeys.Windows;
+                        }
+                        if (_isAltDown || (hookStruct.flags & LLKHF_ALTDOWN) != 0)
+                        {
+                            modifiers |= ModifierKeys.Alt;
+                        }
+                        if (_isCtrlDown)
+                        {
+                            modifiers |= ModifierKeys.Control;
+                        }
+                        if (_isShiftDown)
+                        {
+                            modifiers |= ModifierKeys.Shift;
+                        }
+
+                        HostAssets.AppendLog($"[HotkeyCaptureLog] LLHook KeyDown: vk=0x{vkCode:X}, key={key}, modifiers={modifiers}, flags=0x{hookStruct.flags:X}");
+
+                        var handled = HandleCapturedKey(key, modifiers);
+                        if (handled)
+                        {
+                            // 拦截按键，彻底防止系统处理 Alt+Tab 切屏、Win+R 运行、Win+E 资源管理器、Win+D 桌面等系统热键
+                            return (IntPtr)1;
+                        }
+                    }
+                    else if (isKeyUp)
+                    {
+                        HostAssets.AppendLog($"[HotkeyCaptureLog] LLHook KeyUp: vk=0x{vkCode:X}, key={key}");
+                        var handled = HandleCapturedKeyUp(key);
+                        if (_allowDoubleTap && handled)
+                        {
+                            return (IntPtr)1;
+                        }
+                    }
+                }
+            }
+        }
+
+        return CallNextHookEx(_keyboardHookHandle, nCode, wParam, lParam);
+    }
+
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
-        if (msg != WmKeyDown && msg != WmSysKeyDown)
+        // 关键：拦截 WM_MOUSEACTIVATE，通知 Windows 在激活窗口的同时，直接无损派发鼠标点击给按钮控件！
+        // 彻底解决“必须先点标题栏激活，点按钮才生效”的问题！
+        if (msg == Win32Native.WM_MOUSEACTIVATE)
+        {
+            handled = true;
+            return (IntPtr)Win32Native.MA_ACTIVATE;
+        }
+
+        if (msg != WM_KEYDOWN && msg != WM_SYSKEYDOWN)
         {
             return IntPtr.Zero;
         }
@@ -85,32 +303,94 @@ public partial class HotkeyCaptureWindow : Window
             return IntPtr.Zero;
         }
 
+        // 如果低级钩子已处于工作状态，避免重复处理
+        if (_keyboardHookHandle != IntPtr.Zero)
+        {
+            handled = true;
+            return IntPtr.Zero;
+        }
+
         var key = KeyInterop.KeyFromVirtualKey(wParam.ToInt32());
         if (key == Key.None)
         {
             return IntPtr.Zero;
         }
 
-        // Use GetKeyState for reliable modifier detection in WndProc
         var modifiers = GetCurrentModifiers();
-        HostAssets.AppendLog($"Hotkey capture WndProc: msg=0x{msg:X}, key={key}, modifiers={modifiers}.");
+        HostAssets.AppendLog($"Hotkey capture WndProc fallback: msg=0x{msg:X}, key={key}, modifiers={modifiers}.");
         handled = HandleCapturedKey(key, modifiers);
         return IntPtr.Zero;
     }
 
     private static ModifierKeys GetCurrentModifiers()
     {
-        var mods = ModifierKeys.None;
-        if ((GetKeyState(0x11) & 0x8000) != 0) mods |= ModifierKeys.Control; // VK_CONTROL
-        if ((GetKeyState(0x12) & 0x8000) != 0) mods |= ModifierKeys.Alt;     // VK_MENU
-        if ((GetKeyState(0x10) & 0x8000) != 0) mods |= ModifierKeys.Shift;   // VK_SHIFT
-        if ((GetKeyState(0x5B) & 0x8000) != 0 || (GetKeyState(0x5C) & 0x8000) != 0)
-            mods |= ModifierKeys.Windows; // VK_LWIN / VK_RWIN
-        return mods;
+        return HotkeyHelper.GetCurrentPhysicalModifiers();
     }
 
-    [System.Runtime.InteropServices.DllImport("user32.dll")]
-    private static extern short GetKeyState(int nVirtKey);
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
+
+    private static void EnsureDirectActivateStyle(IntPtr hWnd)
+    {
+        if (hWnd == IntPtr.Zero) return;
+        try
+        {
+            // 统一走 Win32Native 的 64 位安全包装，避免 32 位 SetWindowLong 在 x64 下静默失败
+            var exStyle = Win32Native.GetWindowLongPtr(hWnd, Win32Native.GWL_EXSTYLE).ToInt64();
+            if ((exStyle & Win32Native.WS_EX_NOACTIVATE) != 0)
+            {
+                Win32Native.SetWindowLongPtr(hWnd, Win32Native.GWL_EXSTYLE, new IntPtr(exStyle & ~Win32Native.WS_EX_NOACTIVATE));
+            }
+        }
+        catch { }
+    }
+
+    public static void ForceSetForeground(IntPtr hWnd)
+    {
+        if (hWnd == IntPtr.Zero) return;
+        try
+        {
+            Win32Native.keybd_event(0, 0, 0, UIntPtr.Zero);
+            Win32Native.SetWindowPos(hWnd, Win32Native.HWND_TOPMOST, 0, 0, 0, 0,
+                Win32Native.SWP_NOMOVE | Win32Native.SWP_NOSIZE | Win32Native.SWP_SHOWWINDOW);
+            var foreHwnd = Win32Native.GetForegroundWindow();
+            var foreThread = Win32Native.GetWindowThreadProcessId(foreHwnd, out _);
+            var curThread = GetCurrentThreadId();
+            if (foreThread != 0 && foreThread != curThread)
+            {
+                Win32Native.AttachThreadInput(curThread, foreThread, true);
+                Win32Native.BringWindowToTop(hWnd);
+                Win32Native.SetForegroundWindow(hWnd);
+                Win32Native.SetActiveWindow(hWnd);
+                Win32Native.SetFocus(hWnd);
+                Win32Native.AttachThreadInput(curThread, foreThread, false);
+            }
+            else
+            {
+                Win32Native.BringWindowToTop(hWnd);
+                Win32Native.SetForegroundWindow(hWnd);
+                Win32Native.SetActiveWindow(hWnd);
+                Win32Native.SetFocus(hWnd);
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"[HotkeyCaptureLog] ForceSetForeground error: {ex.Message}");
+        }
+    }
+
+    private void Button_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is System.Windows.Controls.Button btn && btn.IsEnabled)
+        {
+            HostAssets.AppendLog($"[HotkeyCaptureLog] Button_PreviewMouseLeftButtonDown: {btn.Name}");
+            if (ReferenceEquals(btn, ConfirmButton)) ConfirmButton_Click(btn, e);
+            else if (ReferenceEquals(btn, RetryButton)) RetryButton_Click(btn, e);
+            else if (ReferenceEquals(btn, ClearButton)) ClearButton_Click(btn, e);
+            else if (ReferenceEquals(btn, CancelButton)) CancelButton_Click(btn, e);
+            e.Handled = true;
+        }
+    }
 
     private void Window_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
@@ -126,10 +406,16 @@ public partial class HotkeyCaptureWindow : Window
     {
         ErrorText.Visibility = Visibility.Collapsed;
 
-        if (key is Key.Escape)
+        if (key is Key.Return or Key.Enter && modifiers == ModifierKeys.None && !string.IsNullOrWhiteSpace(ShortcutText))
+        {
+            HostAssets.AppendLog("Hotkey capture confirmed by Enter key.");
+            ConfirmButton_Click(this, new RoutedEventArgs());
+            return true;
+        }
+
+        if (key is Key.Escape && modifiers == ModifierKeys.None)
         {
             HostAssets.AppendLog("Hotkey capture cancelled by Escape.");
-            _allowWindowClose = true;
             DialogResult = false;
             return true;
         }
@@ -138,23 +424,36 @@ public partial class HotkeyCaptureWindow : Window
         {
             _pendingModifierKey = key;
             _capturedChordDuringModifierPress = false;
+            if (_allowModifierless)
+            {
+                var shortcut = BuildShortcutText(modifiers, key);
+                if (!string.IsNullOrWhiteSpace(shortcut))
+                {
+                    ShortcutText = shortcut;
+                    CapturedHotkeyText.Text = ShortcutText;
+                    SyncDisplayNameFromShortcut();
+                    ConfirmButton.IsEnabled = true;
+                    HostAssets.AppendLog($"Hotkey capture recorded modifier shortcut: {ShortcutText}.");
+                }
+            }
             return true;
         }
 
         if (modifiers == ModifierKeys.None)
         {
-            if (_allowModifierless)
+            if (_allowModifierless || HotkeyHelper.IsFunctionOrSpecialKey(key))
             {
                 ShortcutText = BuildShortcutText(modifiers, key);
                 CapturedHotkeyText.Text = ShortcutText;
                 SyncDisplayNameFromShortcut();
                 ConfirmButton.IsEnabled = true;
                 _capturedChordDuringModifierPress = true;
-                HostAssets.AppendLog($"Hotkey capture recorded modifierless shortcut: {ShortcutText}.");
+                ErrorText.Visibility = Visibility.Collapsed;
+                HostAssets.AppendLog($"Hotkey capture recorded function/modifierless shortcut: {ShortcutText}.");
             }
             else
             {
-                ErrorText.Text = "请至少包含 Ctrl、Alt、Shift 或 Win 中的一个修饰键。";
+                ErrorText.Text = "除 F1-F12 外，普通按键请至少包含 Ctrl、Alt、Shift 或 Win 修饰键。";
                 ErrorText.Visibility = Visibility.Visible;
                 ConfirmButton.IsEnabled = false;
                 HostAssets.AppendLog($"Hotkey capture rejected modifierless key: {key}.");
@@ -169,6 +468,15 @@ public partial class HotkeyCaptureWindow : Window
         ConfirmButton.IsEnabled = true;
         _capturedChordDuringModifierPress = true;
         HostAssets.AppendLog($"Hotkey capture recorded shortcut: {ShortcutText}.");
+
+        Dispatcher.InvokeAsync(() =>
+        {
+            var hwnd = new WindowInteropHelper(this).Handle;
+            ForceSetForeground(hwnd);
+            ConfirmButton.Focus();
+            Keyboard.Focus(ConfirmButton);
+        }, System.Windows.Threading.DispatcherPriority.Input);
+
         return true;
     }
 
@@ -179,32 +487,38 @@ public partial class HotkeyCaptureWindow : Window
             return;
         }
 
-        var key = ResolveActualKey(e);
+        e.Handled = HandleCapturedKeyUp(ResolveActualKey(e));
+    }
+
+    private bool HandleCapturedKeyUp(Key key)
+    {
+        if (IsEditingDisplayName())
+        {
+            return false;
+        }
+
         if (!IsModifierKey(key))
         {
-            return;
+            return false;
         }
 
         if (!_allowDoubleTap)
         {
             _pendingModifierKey = null;
             _capturedChordDuringModifierPress = false;
-            e.Handled = true;
-            return;
+            return true;
         }
 
         if (_capturedChordDuringModifierPress)
         {
             _pendingModifierKey = null;
             _capturedChordDuringModifierPress = false;
-            e.Handled = true;
-            return;
+            return true;
         }
 
         if (_pendingModifierKey != key)
         {
-            e.Handled = true;
-            return;
+            return true;
         }
 
         var shortcut = key switch
@@ -217,8 +531,7 @@ public partial class HotkeyCaptureWindow : Window
         _pendingModifierKey = null;
         if (string.IsNullOrWhiteSpace(shortcut))
         {
-            e.Handled = true;
-            return;
+            return true;
         }
 
         var now = Environment.TickCount64;
@@ -242,7 +555,20 @@ public partial class HotkeyCaptureWindow : Window
         }
 
         ErrorText.Visibility = Visibility.Collapsed;
-        e.Handled = true;
+        return true;
+    }
+
+    private void ResetModifierTracking()
+    {
+        _isLWinDown = false;
+        _isRWinDown = false;
+        _isAltDown = false;
+        _isCtrlDown = false;
+        _isShiftDown = false;
+        _pendingModifierKey = null;
+        _lastModifierShortcut = null;
+        _lastModifierTapTimestamp = 0;
+        _capturedChordDuringModifierPress = false;
     }
 
     private void RetryButton_Click(object sender, RoutedEventArgs e)
@@ -256,17 +582,13 @@ public partial class HotkeyCaptureWindow : Window
         _suppressDisplayNameSync = false;
         DisplayNameText = string.Empty;
         _displayNameManuallyEdited = false;
-        _pendingModifierKey = null;
-        _lastModifierShortcut = null;
-        _lastModifierTapTimestamp = 0;
-        _capturedChordDuringModifierPress = false;
+        ResetModifierTracking();
         Focus();
     }
 
     private void CancelButton_Click(object sender, RoutedEventArgs e)
     {
         HostAssets.AppendLog("Hotkey capture cancelled by button.");
-        _allowWindowClose = true;
         DialogResult = false;
     }
 
@@ -286,10 +608,7 @@ public partial class HotkeyCaptureWindow : Window
         _displayNameManuallyEdited = false;
         ConfirmButton.IsEnabled = true;
         ErrorText.Visibility = Visibility.Collapsed;
-        _pendingModifierKey = null;
-        _lastModifierShortcut = null;
-        _lastModifierTapTimestamp = 0;
-        _capturedChordDuringModifierPress = false;
+        ResetModifierTracking();
         Focus();
     }
 
@@ -307,7 +626,6 @@ public partial class HotkeyCaptureWindow : Window
             : DisplayNameTextBox.Text.Trim();
 
         HostAssets.AppendLog($"Hotkey capture confirmed: {ShortcutText}, displayName={DisplayNameText}.");
-        _allowWindowClose = true;
         DialogResult = true;
     }
 
@@ -322,25 +640,9 @@ public partial class HotkeyCaptureWindow : Window
         _displayNameManuallyEdited = true;
     }
 
-    private void HotkeyCaptureWindow_Closing(object? sender, CancelEventArgs e)
-    {
-        if (_allowWindowClose)
-        {
-            return;
-        }
-
-        HostAssets.AppendLog($"Hotkey capture blocked unexpected close: title={Title}, shortcut={ShortcutText}, modifiers={Keyboard.Modifiers}.");
-        e.Cancel = true;
-        Activate();
-        Focus();
-    }
-
     private static bool IsModifierKey(Key key)
     {
-        return key is Key.LeftCtrl or Key.RightCtrl
-            or Key.LeftAlt or Key.RightAlt
-            or Key.LeftShift or Key.RightShift
-            or Key.LWin or Key.RWin;
+        return HotkeyHelper.IsModifierKey(key);
     }
 
     private static Key ResolveActualKey(System.Windows.Input.KeyEventArgs e)
@@ -365,29 +667,7 @@ public partial class HotkeyCaptureWindow : Window
 
     private static string BuildShortcutText(ModifierKeys modifiers, Key key)
     {
-        var parts = new List<string>(4);
-        if (modifiers.HasFlag(ModifierKeys.Control))
-        {
-            parts.Add("Ctrl");
-        }
-
-        if (modifiers.HasFlag(ModifierKeys.Alt))
-        {
-            parts.Add("Alt");
-        }
-
-        if (modifiers.HasFlag(ModifierKeys.Shift))
-        {
-            parts.Add("Shift");
-        }
-
-        if (modifiers.HasFlag(ModifierKeys.Windows))
-        {
-            parts.Add("Win");
-        }
-
-        parts.Add(FormatKey(key));
-        return parts.Count == 1 ? parts[0] : string.Join("+", parts);
+        return HotkeyHelper.FormatHotkey(modifiers, key) ?? string.Empty;
     }
 
     private void SyncDisplayNameFromShortcut()
@@ -414,16 +694,6 @@ public partial class HotkeyCaptureWindow : Window
 
     private static string FormatKey(Key key)
     {
-        return key switch
-        {
-            Key.Space => "Space",
-            Key.Return => "Enter",
-            Key.Escape => "Esc",
-            Key.Back => "Backspace",
-            Key.Next => "PageDown",
-            Key.Prior => "PageUp",
-            Key.Capital => "CapsLock",
-            _ => key.ToString()
-        };
+        return HotkeyHelper.FormatKey(key);
     }
 }

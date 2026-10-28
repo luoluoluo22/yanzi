@@ -24,7 +24,7 @@
             <TextBlock Text="添加提供商" Style="{StaticResource TitleText}" />
             
             <StackPanel Grid.Row="1" Margin="0,15,0,0">
-                <TextBlock Text="提供商名称" Foreground="#FFB8B8B8" FontSize="{DynamicResource FontSizeSmallPlus}" />
+                <TextBlock Text="提供商名称" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" />
                 <TextBox x:Name="ProviderNameBox"
                          Height="38"
                          Margin="0,6,0,0"
@@ -34,11 +34,11 @@
             </StackPanel>
 
             <StackPanel Grid.Row="2" Margin="0,12,0,0">
-                <TextBlock Text="提供商类型" Foreground="#FFB8B8B8" FontSize="{DynamicResource FontSizeSmallPlus}" />
+                <TextBlock Text="提供商类型" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" />
                 <ComboBox x:Name="ProviderTypeBox"
                           Height="38"
                           Margin="0,6,0,0"
-                          Style="{StaticResource DarkComboBoxStyle}"
+                          Style="{StaticResource GlobalComboBoxStyle}"
                           VerticalContentAlignment="Center" />
             </StackPanel>
 
@@ -62,12 +62,14 @@
                         Width="90"
                         Height="32"
                         Margin="0,0,10,0"
+                        IsCancel="True"
                         Click="CancelButton_Click" />
                 <Button Grid.Column="2"
                         Content="确定"
                         Style="{StaticResource PrimaryBtn}"
                         Width="90"
                         Height="32"
+                        IsDefault="True"
                         Click="OkButton_Click" />
             </Grid>
         </Grid>

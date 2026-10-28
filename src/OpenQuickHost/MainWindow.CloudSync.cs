@@ -17,10 +17,14 @@ namespace OpenQuickHost;
 
 public partial class MainWindow
 {
+    private static readonly SemaphoreSlim _extensionSyncLock = new(1, 1);
+    private static readonly SemaphoreSlim _accountDeletionReconcileLock = new(1, 1);
+    private static readonly SemaphoreSlim _extensionUploadLock = new(1, 1);
     private DateTimeOffset _lastNetworkAddressChangedHandledAt = DateTimeOffset.MinValue;
-    private static readonly object MobileMessageBridgeLock = new();
-    private bool _deviceRegistered;
-    private DateTimeOffset _lastDesktopPresenceHeartbeatErrorLogAt = DateTimeOffset.MinValue;
+    // All account object domains share one persisted state: serialize whole read/modify/write transactions.
+    private readonly Yanzi.Core.AccountSyncCoordinator _accountObjectSyncLock = new();
+    private int _backgroundPersonalSyncFailureCount;
+    private DateTimeOffset _backgroundPersonalSyncRetryAfterUtc = DateTimeOffset.MinValue;
     private const string PublicStoreOrigin = "https://yanzi.luoluoluo.cc.cd";
 
     public static string BuildExtensionStoreUrl(string extensionId)
@@ -54,28 +58,48 @@ public partial class MainWindow
     {
         if (string.IsNullOrWhiteSpace(extensionId))
         {
-            return (false, "没有可复制的扩展链接。");
+            return (false, "没有可复制的小程序链接。");
         }
 
         var url = BuildExtensionStoreUrl(extensionId);
         ClipboardService.SetText(url);
-        return (true, $"已复制扩展商店链接：{url}");
+        return (true, $"已复制小程序商店链接：{url}");
     }
 
     public (bool ok, string message) OpenExtensionStoreLink(string extensionId)
     {
         if (string.IsNullOrWhiteSpace(extensionId))
         {
-            return (false, "没有可打开的扩展链接。");
+            return (false, "没有可打开的小程序链接。");
         }
 
         var url = BuildExtensionStoreUrl(extensionId);
         Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
-        return (true, $"已打开扩展商店链接：{url}");
+        return (true, $"已打开小程序商店链接：{url}");
     }
 
-    private async Task RefreshCloudStateAsync(bool allowLoginPrompt = true)
+    public async Task RefreshCloudStateAsync(bool allowLoginPrompt = true)
     {
+        if (HostRuntimeProfile.IsShell && RuntimeConnection.IsConnected)
+        {
+            await RuntimeRpc.CallAsync("cloud.refresh");
+            await RuntimeConnection.RefreshCatalogAsync();
+            return;
+        }
+        if (!Dispatcher.CheckAccess())
+        {
+            await await Dispatcher.InvokeAsync(() => RefreshCloudStateAsync(allowLoginPrompt));
+            return;
+        }
+
+        if (allowLoginPrompt)
+        {
+            _cloudSyncClient?.ResumeTransportAfterNetworkChange();
+            _cloudReconnectAttemptCount = 0;
+            _backgroundPersonalSyncFailureCount = 0;
+            _backgroundPersonalSyncRetryAfterUtc = DateTimeOffset.MinValue;
+        }
+
         if (_cloudSyncClient == null)
         {
             await SyncPersonalWebDavAsync(showDisabledMessage: true);
@@ -84,6 +108,7 @@ public partial class MainWindow
 
         var shouldShowSyncToast = false;
         var deferHideSyncToastToPersonalSync = false;
+        var launchedPersonalSync = false;
         try
         {
             CloudSyncDiagnostics.Log(
@@ -101,14 +126,17 @@ public partial class MainWindow
             shouldShowSyncToast = await HasAnyRemoteCloudDataAsync();
             if (shouldShowSyncToast)
             {
-                ShowSettingsCloudSyncProgressToast("正在同步云端配置与扩展...");
+                ShowSettingsCloudSyncProgressToast("正在同步云端配置与小程序...");
                 deferHideSyncToastToPersonalSync = PersonalSyncBackendFactory.IsConfigured(AppSettingsStore.Load());
             }
 
             var me = await _cloudSyncClient.GetMeAsync();
             var pulledConfig = await PullWebDavConfigFromCloudAsync();
             var pulledQuickPanelConfig = await PullQuickPanelConfigFromCloudAsync();
+            var yanmCloudResult = await PullYanmStateFromCloudNowAsync();
+            await RetryPendingYanmUploadsAsync();
             QueueBackgroundWebDavSyncAfterCloudRefresh("cloud-refresh");
+            launchedPersonalSync = true;
             if (!IsStoreMode)
             {
                 _allCommands.RemoveAll(x => x.Source == CommandSource.Cloud);
@@ -125,6 +153,7 @@ public partial class MainWindow
             ResetSilentCloudReconnect();
             StartMobileMessageBridge("cloud-refresh");
             SyncLocalExtensionsToCloud();
+            _ = PullMissingPrivateExtensionsFromCloudAsync();
             LastRunMessage = pulledConfig || pulledQuickPanelConfig
                 ? "已同步账号状态，并更新了云端配置。"
                 : "已同步账号状态。";
@@ -135,7 +164,9 @@ public partial class MainWindow
                 ("userId", me?.UserId),
                 ("username", me?.Username),
                 ("pulledPersonalSync", pulledConfig),
-                ("pulledQuickPanel", pulledQuickPanelConfig));
+                ("pulledQuickPanel", pulledQuickPanelConfig),
+                ("yanmCloudOk", yanmCloudResult.ok),
+                ("yanmCloudPulled", yanmCloudResult.pulled));
         }
         catch (Exception ex)
         {
@@ -155,7 +186,7 @@ public partial class MainWindow
         }
         finally
         {
-            if (shouldShowSyncToast && !deferHideSyncToastToPersonalSync)
+            if (shouldShowSyncToast && (!deferHideSyncToastToPersonalSync || !launchedPersonalSync))
             {
                 HideSettingsCloudSyncProgressToast();
             }
@@ -184,7 +215,7 @@ public partial class MainWindow
 
         if (!SelectedCommand.HasArchive)
         {
-            SyncStatus = "当前命令在云端没有扩展包。";
+            SyncStatus = "当前命令在云端没有小程序包。";
             return;
         }
 
@@ -195,12 +226,12 @@ public partial class MainWindow
                 return;
             }
 
-            SyncStatus = $"正在下载 {SelectedCommand.Title} 的扩展包 ...";
+            SyncStatus = $"正在下载 {SelectedCommand.Title} 的小程序包 ...";
             var packageBytes = await _cloudSyncClient.DownloadExtensionArchiveAsync(SelectedCommand.ExtensionId);
             var version = SelectedCommand.CloudVersion ?? "0.1.0";
             var path = await ExtensionPackageService.SavePackageAsync(SelectedCommand.ExtensionId, version, packageBytes);
             SelectedCommand.SetLocalPackagePath(path);
-            LastRunMessage = $"扩展包已下载到本地：{path}";
+            LastRunMessage = $"小程序包已下载到本地：{path}";
             SyncStatus = $"下载完成：{SelectedCommand.Title}";
         }
         catch (Exception ex)
@@ -228,14 +259,14 @@ public partial class MainWindow
             : _lastActionableCommand;
         if (sourceCommand == null)
         {
-            SyncStatus = "没有可发布的扩展。";
+            SyncStatus = "没有可发布的小程序。";
             return false;
         }
 
         var command = ResolveRunnableCommand(sourceCommand);
         if (command.Source != CommandSource.LocalExtension)
         {
-            SyncStatus = "只有本地扩展才能发布到商店。";
+            SyncStatus = "只有本地小程序才能发布到商店。";
             return false;
         }
 
@@ -247,16 +278,22 @@ public partial class MainWindow
                 return false;
             }
 
-            SyncStatus = $"正在发布扩展：{command.Title} ...";
+            SyncStatus = $"正在发布小程序：{command.Title} ...";
             var version = string.IsNullOrWhiteSpace(command.DeclaredVersion) ? "0.1.0" : command.DeclaredVersion;
             var publishedIcon = await _cloudSyncClient.PublishIconAsync(command, version);
-            var packageBytes = ExtensionPackageService.BuildPackage(command, version, publishedIcon);
+            var packageBytes = ExtensionPackageService.BuildPackage(
+                command,
+                version,
+                publishedIcon,
+                includeUserShortcut: false);
             await _cloudSyncClient.UpsertExtensionAsync(command, publishedIcon);
             await _cloudSyncClient.UploadExtensionArchiveAsync(command, packageBytes, version);
-            await _cloudSyncClient.UpsertUserExtensionAsync(command);
+            await _cloudSyncClient.UpsertUserExtensionAsync(command, publishedIcon, hasArchive: true);
             command.MarkAsSynced(version);
+            command.SetPublishedInStore(true);
+            LocalExtensionCatalog.SetExtensionPublishedState(command.ExtensionId, true);
             var storeUrl = BuildExtensionStoreUrl(command.ExtensionId);
-            LastRunMessage = $"已发布到扩展商店：{command.Title} (v{version})";
+            LastRunMessage = $"已发布到小程序商店：{command.Title} (v{version})";
             SyncStatus = $"发布成功：{command.Title}，商店链接：{storeUrl}";
             return true;
         }
@@ -278,7 +315,7 @@ public partial class MainWindow
         {
             if (!_localExtensionIndex.TryGetValue(extensionId, out var command))
             {
-                return (false, "没有找到对应扩展。");
+                return (false, "没有找到对应小程序。");
             }
 
             SelectedCommand = command;
@@ -298,12 +335,12 @@ public partial class MainWindow
         {
             if (_cloudSyncClient == null)
             {
-                return (false, "云同步未配置，无法下线扩展。");
+                return (false, "云同步未配置，无法下线小程序。");
             }
 
             if (!_localExtensionIndex.TryGetValue(extensionId, out var command))
             {
-                return (false, "没有找到对应扩展。");
+                return (false, "没有找到对应小程序。");
             }
 
             if (!await EnsureAuthenticatedAsync())
@@ -312,8 +349,10 @@ public partial class MainWindow
             }
 
             await _cloudSyncClient.DeleteExtensionAsync(command.ExtensionId);
-            SyncStatus = $"已下线扩展：{command.Title}";
-            LastRunMessage = $"扩展已从商店下线：{command.Title}";
+            command.SetPublishedInStore(false);
+            LocalExtensionCatalog.SetExtensionPublishedState(command.ExtensionId, false);
+            SyncStatus = $"已下线小程序：{command.Title}";
+            LastRunMessage = $"小程序已从商店下线：{command.Title}";
             return (true, SyncStatus);
         }
         catch (Exception ex)
@@ -354,6 +393,14 @@ public partial class MainWindow
                     item.PublisherUserId.Equals(me.UserId, StringComparison.OrdinalIgnoreCase))
                 .ToDictionary(item => item.ExtensionId, item => item, StringComparer.OrdinalIgnoreCase);
             HostAssets.AppendLog($"Owned published extensions fetched for settings: userId={me.UserId}, count={owned.Count}");
+
+            // 同步更新主窗口与本地小程序的发布状态
+            foreach (var localCmd in _localExtensionIndex.Values)
+            {
+                var isPub = owned.ContainsKey(localCmd.ExtensionId);
+                localCmd.SetPublishedInStore(isPub);
+            }
+
             return owned;
         }
         catch
@@ -388,7 +435,7 @@ public partial class MainWindow
 
         try
         {
-            SyncStatus = "正在通过本地协议下载安装扩展 ...";
+            SyncStatus = "正在通过本地协议下载安装小程序 ...";
             using var httpClient = new HttpClient
             {
                 Timeout = TimeSpan.FromSeconds(30)
@@ -397,11 +444,11 @@ public partial class MainWindow
             var result = await ExtensionInstallService.InstallPackageAsync(packageBytes, extensionId);
             ReloadLocalExtensionsFromExternal();
             RevealInstalledExtension(result.ExtensionId, result.Name);
-            LastRunMessage = $"已安装扩展：{result.Name} ({result.ExtensionId})";
+            LastRunMessage = $"已安装小程序：{result.Name} ({result.ExtensionId})";
             SyncStatus = $"安装成功：{result.Name}";
             if (System.Windows.Application.Current is App app)
             {
-                app.ShowDesktopNotification("燕子扩展已安装", $"{result.Name} 已安装到本地扩展目录。");
+                app.ShowDesktopNotification("燕子小程序已安装", $"{result.Name} 已安装到本地小程序目录。");
             }
             ShowPanel();
         }
@@ -411,12 +458,12 @@ public partial class MainWindow
             HostAssets.AppendLog($"Protocol install failed: source={source}, extensionId={extensionId}, error={ex}");
             if (System.Windows.Application.Current is App app)
             {
-                app.ShowDesktopNotification("燕子扩展安装失败", FormatExceptionMessage(ex), Forms.ToolTipIcon.Error);
+                app.ShowDesktopNotification("燕子小程序安装失败", FormatExceptionMessage(ex), Forms.ToolTipIcon.Error);
             }
             System.Windows.MessageBox.Show(
                 this,
-                $"扩展安装失败：{FormatExceptionMessage(ex)}",
-                "燕子扩展安装失败",
+                $"小程序安装失败：{FormatExceptionMessage(ex)}",
+                "燕子小程序安装失败",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
             ShowPanel();
@@ -432,7 +479,7 @@ public partial class MainWindow
 
         ShowPanel();
         var displayQuery = string.IsNullOrWhiteSpace(extensionName) ? extensionId : extensionName.Trim();
-        SearchBox.Text = $"@扩展 {displayQuery}";
+        SearchBox.Text = $"@小程序 {displayQuery}";
         SearchBox.CaretIndex = SearchBox.Text.Length;
         ApplyFilter(SearchBox.Text);
 
@@ -466,13 +513,13 @@ public partial class MainWindow
                 return Task.CompletedTask;
             }
 
-            LastRunMessage = $"已添加本地 JSON 扩展：{command.Title}";
+            LastRunMessage = $"已添加本地 JSON 小程序：{command.Title}";
             QueueBackgroundWebDavSync("extension-add");
         }
         catch (Exception ex)
         {
             HostAssets.AppendDevLog($"AddJsonExtensionAsync failed: {ex}");
-            SyncStatus = $"添加扩展失败：{FormatExceptionMessage(ex)}";
+            SyncStatus = $"添加小程序失败：{FormatExceptionMessage(ex)}";
         }
 
         return Task.CompletedTask;
@@ -485,7 +532,7 @@ public partial class MainWindow
             : _lastActionableCommand;
         if (sourceCommand == null)
         {
-            SyncStatus = "没有可编辑的扩展。";
+            SyncStatus = "没有可编辑的小程序。";
             return Task.CompletedTask;
         }
 
@@ -523,7 +570,7 @@ public partial class MainWindow
             : _lastActionableCommand;
         if (sourceCommand == null)
         {
-            SyncStatus = "没有可删除的扩展。";
+            SyncStatus = "没有可删除的小程序。";
             return;
         }
 
@@ -535,7 +582,7 @@ public partial class MainWindow
         }
 
         var confirm = System.Windows.MessageBox.Show(
-            $"确认删除扩展“{deletable.Title}”吗？",
+            $"确认删除小程序“{deletable.Title}”吗？",
             "确认删除",
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning);
@@ -556,6 +603,7 @@ public partial class MainWindow
 
             LastRunMessage = $"已将扩展移入回收站：{deletable.Title}";
             SyncStatus = $"已将扩展移入回收站：{deletable.Title}";
+            QueuePrivateExtensionRemovalFromAccount(deletable.ExtensionId);
             QueueBackgroundWebDavSync("extension-delete");
         }
         catch (Exception ex)
@@ -687,6 +735,12 @@ public partial class MainWindow
             {
                 _cloudSyncClient.SetCredential(email, password, dialog.RememberCredential);
                 await _cloudSyncClient.EnsureAuthenticatedAsync();
+                // Only explicit sign-in may reconnect a removed device; heartbeats must not.
+                using var reconnectTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+                await _cloudSyncClient.RegisterDeviceAsync(
+                    DeviceIdentityStore.GetOrCreateDesktopDeviceId(), "desktop",
+                    DeviceIdentityStore.GetDesktopDisplayName(), BuildDesktopDeviceCapabilities(),
+                    cancellationToken: reconnectTimeout.Token, reactivateRemovedDevice: true);
             };
             Window? activeWindow = null;
             foreach (Window win in System.Windows.Application.Current.Windows)
@@ -787,7 +841,12 @@ public partial class MainWindow
             }
 
             HostAssets.AppendLog("Network availability restored, scheduling silent cloud reconnect.");
+            _cloudSyncClient?.ResumeTransportAfterNetworkChange();
+            _cloudReconnectAttemptCount = 0;
+            _backgroundPersonalSyncFailureCount = 0;
+            _backgroundPersonalSyncRetryAfterUtc = DateTimeOffset.MinValue;
             ScheduleSilentCloudReconnect("network-available", immediate: true);
+            StartMobileMessageBridge("network-available");
         });
     }
 
@@ -809,14 +868,21 @@ public partial class MainWindow
             }
 
             HostAssets.AppendLog("Network address changed, scheduling silent cloud reconnect.");
-            ScheduleSilentCloudReconnect("network-address-changed", immediate: true);
+            // ScheduleSilentCloudReconnect("network-address-changed", immediate: true);
         });
     }
 
     private void ScheduleSilentCloudReconnect(string reason, bool immediate = false)
     {
+        if (!HostRuntimeProfile.OwnsBackgroundServices) return;
         if (_cloudSyncClient == null || !_cloudSyncClient.HasCredential || !_appSettings.RefreshCloudOnStartup)
         {
+            return;
+        }
+
+        if (!immediate && _cloudReconnectAttemptCount >= 5)
+        {
+            HostAssets.AppendLog("Silent cloud reconnect stopped after 5 failed attempts; waiting for network change or manual sync.");
             return;
         }
 
@@ -889,6 +955,12 @@ public partial class MainWindow
 
     private static bool IsTransientNetworkException(Exception ex)
     {
+        if (ex is HttpRequestException || ex is TimeoutException || ex is System.Net.Sockets.SocketException ||
+            ex.InnerException is HttpRequestException or TimeoutException or System.Net.Sockets.SocketException)
+        {
+            return true;
+        }
+
         var message = FormatExceptionMessage(ex);
         return message.Contains("SSL connection could not be established", StringComparison.OrdinalIgnoreCase) ||
                message.Contains("unexpected EOF", StringComparison.OrdinalIgnoreCase) ||
@@ -899,1035 +971,10 @@ public partial class MainWindow
                message.Contains("Name or service not known", StringComparison.OrdinalIgnoreCase) ||
                message.Contains("connection attempt failed", StringComparison.OrdinalIgnoreCase) ||
                message.Contains("actively refused", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("积极拒绝", StringComparison.OrdinalIgnoreCase) ||
+               message.Contains("无法连接", StringComparison.OrdinalIgnoreCase) ||
                message.Contains("temporarily unavailable", StringComparison.OrdinalIgnoreCase) ||
                message.Contains("timed out", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private void StartMobileMessageBridge(string reason)
-    {
-        if (_cloudSyncClient == null || !_cloudSyncClient.HasCredential)
-        {
-            HostAssets.AppendLog($"Mobile bridge skipped: reason={reason}, hasClient={_cloudSyncClient != null}, hasCredential={_cloudSyncClient?.HasCredential == true}.");
-            return;
-        }
-
-        _desktopDeviceId ??= DeviceIdentityStore.GetOrCreateDesktopDeviceId();
-        lock (MobileMessageBridgeLock)
-        {
-            _deviceRegistered = false;
-            if (_mobileMessageBridgeTask is not { IsCompleted: false })
-            {
-                try
-                {
-                    _mobileMessageBridgeCts?.Cancel();
-                }
-                catch
-                {
-                    // Ignore cancel exceptions
-                }
-                _mobileMessageBridgeCts = new CancellationTokenSource();
-                _mobileMessageBridgeTask = Task.Run(() => MobileMessageBridgeLoopAsync(_mobileMessageBridgeCts.Token));
-            }
-        }
-
-        HostAssets.AppendLog($"Mobile bridge started: reason={reason}, deviceId={_desktopDeviceId}.");
-        StartDesktopPresenceHeartbeat(reason);
-        _ = PollMobileMessagesSafeAsync($"start-{reason}");
-    }
-
-    private void StartDesktopPresenceHeartbeat(string reason)
-    {
-        if (_cloudSyncClient == null || !_cloudSyncClient.HasCredential)
-        {
-            return;
-        }
-
-        if (!_desktopPresenceHeartbeatTimer.IsEnabled)
-        {
-            _desktopPresenceHeartbeatTimer.Start();
-            HostAssets.AppendLog($"Desktop presence heartbeat started: reason={reason}.");
-        }
-
-        _ = SendDesktopPresenceHeartbeatSafeAsync($"start-{reason}");
-    }
-
-    private async Task SendDesktopPresenceHeartbeatSafeAsync(string reason)
-    {
-        if (_desktopPresenceHeartbeatRunning || _cloudSyncClient == null || !_cloudSyncClient.HasCredential)
-        {
-            return;
-        }
-
-        _desktopPresenceHeartbeatRunning = true;
-        try
-        {
-            using var heartbeatTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(12));
-            _desktopDeviceId ??= DeviceIdentityStore.GetOrCreateDesktopDeviceId();
-            await _cloudSyncClient.RegisterDeviceAsync(
-                _desktopDeviceId,
-                "desktop",
-                DeviceIdentityStore.GetDesktopDisplayName(),
-                BuildDesktopDeviceCapabilities(),
-                cancellationToken: heartbeatTimeout.Token);
-            _deviceRegistered = true;
-
-            if (reason.StartsWith("start-", StringComparison.OrdinalIgnoreCase))
-            {
-                HostAssets.AppendLog($"Desktop presence heartbeat ok: reason={reason}, deviceId={_desktopDeviceId}.");
-            }
-        }
-        catch (Exception ex)
-        {
-            if (DateTimeOffset.UtcNow - _lastDesktopPresenceHeartbeatErrorLogAt > TimeSpan.FromMinutes(1))
-            {
-                _lastDesktopPresenceHeartbeatErrorLogAt = DateTimeOffset.UtcNow;
-                HostAssets.AppendLog($"Desktop presence heartbeat failed: reason={reason}, {FormatExceptionMessage(ex)}");
-            }
-        }
-        finally
-        {
-            _desktopPresenceHeartbeatRunning = false;
-        }
-    }
-
-    private static object BuildDesktopDeviceCapabilities()
-    {
-        return new
-        {
-            app = "yanzi-desktop",
-            os = Environment.OSVersion.VersionString,
-            receiveMobileMessages = true,
-            pushToMobile = true
-        };
-    }
-
-    private async Task MobileMessageBridgeLoopAsync(CancellationToken cancellationToken)
-    {
-        HostAssets.AppendLog("Mobile bridge background loop started with SSE streaming.");
-        _desktopDeviceId ??= DeviceIdentityStore.GetOrCreateDesktopDeviceId();
-
-        try
-        {
-            await PollMobileMessagesSafeAsync("sse-sync");
-        }
-        catch (Exception ex)
-        {
-            HostAssets.AppendLog($"Mobile bridge SSE sync error during startup: {ex.Message}");
-        }
-
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            try
-            {
-                HostAssets.AppendLog("Mobile bridge establishing SSE connection to cloud...");
-                using var response = await _cloudSyncClient!.GetMobileMessagesEventsStreamAsync(_desktopDeviceId, cancellationToken);
-                using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-                using var reader = new System.IO.StreamReader(stream, System.Text.Encoding.UTF8);
-
-                HostAssets.AppendLog("Mobile bridge SSE connection established successfully.");
-
-                while (!cancellationToken.IsCancellationRequested && !reader.EndOfStream)
-                {
-                    var line = await reader.ReadLineAsync(cancellationToken);
-                    if (string.IsNullOrWhiteSpace(line))
-                    {
-                        continue;
-                    }
-
-                    if (line.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
-                    {
-                        var dataJson = line["data:".Length..].Trim();
-                        try
-                        {
-                            using var doc = System.Text.Json.JsonDocument.Parse(dataJson);
-                            var root = doc.RootElement;
-                            if (root.TryGetProperty("type", out var typeProp) && typeProp.GetString() == "messages")
-                            {
-                                if (root.TryGetProperty("items", out var itemsProp) && itemsProp.ValueKind == System.Text.Json.JsonValueKind.Array)
-                                {
-                                    var itemsText = itemsProp.GetRawText();
-                                    var messages = System.Text.Json.JsonSerializer.Deserialize<List<DeviceMessageRecord>>(itemsText, new System.Text.Json.JsonSerializerOptions
-                                    {
-                                        PropertyNameCaseInsensitive = true
-                                    });
-
-                                    if (messages != null && messages.Count > 0)
-                                    {
-                                        HostAssets.AppendLog($"Mobile bridge SSE pushed messages: count={messages.Count}.");
-                                        
-                                        foreach (var message in messages)
-                                        {
-                                            var res = await HandleMobileDeviceMessageAsync(message);
-                                            if (res.hasResult)
-                                            {
-                                                await _cloudSyncClient.AckDeviceMessageAsync(message.MessageId, _desktopDeviceId, res.success, res.output, cancellationToken);
-                                            }
-                                            else
-                                            {
-                                                await _cloudSyncClient.AckDeviceMessageAsync(message.MessageId, _desktopDeviceId, cancellationToken: cancellationToken);
-                                            }
-                                            HostAssets.AppendLog($"Mobile bridge SSE acked message: id={message.MessageId}, deviceId={_desktopDeviceId}.");
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        catch (Exception parseEx)
-                        {
-                            HostAssets.AppendLog($"Mobile bridge SSE message parse failed: {parseEx.Message}");
-                        }
-                    }
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                HostAssets.AppendLog($"Mobile bridge SSE connection error: {FormatExceptionMessage(ex)}");
-            }
-
-            if (!cancellationToken.IsCancellationRequested)
-            {
-                HostAssets.AppendLog("Mobile bridge SSE disconnected. Retrying in 5 seconds...");
-                try
-                {
-                    await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
-                }
-                catch (OperationCanceledException)
-                {
-                    break;
-                }
-            }
-        }
-        HostAssets.AppendLog("Mobile bridge background loop stopped.");
-    }
-
-    private async void MobileMessagePollTimer_Tick(object? sender, EventArgs e)
-    {
-        await PollMobileMessagesSafeAsync("timer");
-    }
-
-    private async Task<int> PollMobileMessagesSafeAsync(string reason)
-    {
-        if (_mobileMessagePollRunning || _cloudSyncClient == null || !_cloudSyncClient.HasCredential)
-        {
-            if (_mobileMessagePollRunning)
-            {
-                HostAssets.AppendLog($"Mobile bridge poll skipped: reason={reason}, previous poll still running.");
-            }
-            return 0;
-        }
-
-        _mobileMessagePollRunning = true;
-        try
-        {
-            using var pollTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
-            _desktopDeviceId ??= DeviceIdentityStore.GetOrCreateDesktopDeviceId();
-            
-            if (!_deviceRegistered)
-            {
-                await _cloudSyncClient.RegisterDeviceAsync(
-                    _desktopDeviceId,
-                    "desktop",
-                    DeviceIdentityStore.GetDesktopDisplayName(),
-                    BuildDesktopDeviceCapabilities(),
-                    cancellationToken: pollTimeout.Token);
-                _deviceRegistered = true;
-            }
-
-            var messages = await _cloudSyncClient.GetPendingDeviceMessagesAsync(_desktopDeviceId, limit: 20, cancellationToken: pollTimeout.Token);
-            if (messages.Count > 0)
-            {
-                HostAssets.AppendLog($"Mobile bridge received messages: reason={reason}, count={messages.Count}.");
-            }
-            else if (DateTimeOffset.UtcNow - _lastMobileMessageEmptyLogAt > TimeSpan.FromMinutes(1))
-            {
-                _lastMobileMessageEmptyLogAt = DateTimeOffset.UtcNow;
-                HostAssets.AppendLog($"Mobile bridge poll ok: reason={reason}, count=0, deviceId={_desktopDeviceId}.");
-            }
-
-            foreach (var message in messages)
-            {
-                var res = await HandleMobileDeviceMessageAsync(message);
-                if (res.hasResult)
-                {
-                    await _cloudSyncClient.AckDeviceMessageAsync(message.MessageId, _desktopDeviceId, res.success, res.output, cancellationToken: pollTimeout.Token);
-                }
-                else
-                {
-                    await _cloudSyncClient.AckDeviceMessageAsync(message.MessageId, _desktopDeviceId, cancellationToken: pollTimeout.Token);
-                }
-                HostAssets.AppendLog($"Mobile bridge acked message: id={message.MessageId}, deviceId={_desktopDeviceId}.");
-            }
-            return messages.Count;
-        }
-        catch (OperationCanceledException ex)
-        {
-            HostAssets.AppendLog($"Mobile bridge poll timed out: reason={reason}, {FormatExceptionMessage(ex)}");
-        }
-        catch (Exception ex)
-        {
-            HostAssets.AppendLog($"Mobile bridge poll failed: reason={reason}, {FormatExceptionMessage(ex)}");
-        }
-        finally
-        {
-            _mobileMessagePollRunning = false;
-        }
-        return 0;
-    }
-
-    internal async Task<(bool hasResult, bool success, string output)> HandleMobileDeviceMessageAsync(DeviceMessageRecord message)
-    {
-        var title = string.IsNullOrWhiteSpace(message.Title) ? "手机发来消息" : message.Title.Trim();
-        var text = string.IsNullOrWhiteSpace(message.Text) ? $"消息类型：{message.Kind}" : message.Text.Trim();
-        var sourceLabel = GetMobileSourceLabel(message);
-        var screenshotDataUrl = GetPayloadString(message, "screenshotDataUrl");
-        var mobileAttachmentFilePath = await TryDownloadMobileScreenshotFromWebDavAsync(message);
-
-        var screenshotFilePath = IsMobileScreenshotMessage(message)
-
-            ? mobileAttachmentFilePath
-
-            : null;
-        if (string.Equals(message.Kind, "screenshot", StringComparison.OrdinalIgnoreCase))
-        {
-            var payloadKeys = message.Payload.Count == 0
-                ? "(empty)"
-                : string.Join(",", message.Payload.Keys.OrderBy(static key => key, StringComparer.OrdinalIgnoreCase));
-            HostAssets.AppendLog(
-                $"Mobile screenshot payload: id={message.MessageId}, keys={payloadKeys}, hasDataUrl={!string.IsNullOrWhiteSpace(screenshotDataUrl)}, webDavPath={GetPayloadString(message, "webDavPath") ?? "(none)"}, localFile={mobileAttachmentFilePath ?? "(none)"}.");
-        }
-        HostAssets.AppendLog(
-            $"Mobile bridge message: id={message.MessageId}, source={sourceLabel}, kind={message.Kind}, text={trimForLog(text)}");
-
-        if (string.Equals(message.Kind, "run-extension", StringComparison.OrdinalIgnoreCase))
-        {
-            if (message.Payload.TryGetValue("extensionId", out var extensionElement))
-            {
-                var extensionId = extensionElement.ValueKind == JsonValueKind.String
-                    ? extensionElement.GetString()
-                    : extensionElement.ToString();
-                if (!string.IsNullOrWhiteSpace(extensionId) && _localExtensionIndex.TryGetValue(extensionId, out var command))
-                {
-                    var execResult = await RunMobileExtensionAsync(command, text);
-                    await Dispatcher.InvokeAsync(() =>
-                    {
-                        LastRunMessage = execResult.success ? $"已执行手机端请求：{command.Title}" : $"执行手机端请求失败：{command.Title}";
-                        SyncStatus = execResult.success ? "手机端请求执行成功。" : $"手机端请求执行失败：{execResult.output}";
-                    });
-                    return (true, execResult.success, execResult.output);
-                }
-                else
-                {
-                    return (true, false, $"手机请求的扩展不存在：{extensionId}");
-                }
-            }
-            return (true, false, "缺少 extensionId 参数");
-        }
-
-        await Dispatcher.InvokeAsync(() =>
-        {
-            LastRunMessage = $"{title}：{text}";
-            var clipboardMessage = CopyMobileMessageToClipboard(message, text, screenshotDataUrl, mobileAttachmentFilePath);
-
-            SyncStatus = string.IsNullOrWhiteSpace(clipboardMessage)
-
-                ? "已收到手机端消息。"
-
-                : $"已收到手机端消息，{clipboardMessage}。";
-            SaveMobileInboxMessage(message, title, text, sourceLabel, screenshotDataUrl, screenshotFilePath);
-            ShowMobileMessageToast(title, text, sourceLabel, screenshotDataUrl, screenshotFilePath);
-        });
-
-        return (false, true, string.Empty);
-    }
-
-    private static string CopyMobileMessageToClipboard(DeviceMessageRecord message, string text, string? screenshotDataUrl, string? localFilePath)
-
-    {
-
-        try
-
-        {
-
-            if (IsMobileScreenshotMessage(message))
-
-            {
-
-                var bitmap = TryCreateClipboardBitmap(screenshotDataUrl, localFilePath);
-
-                if (bitmap != null)
-
-                {
-
-                    var dataObject = new System.Windows.DataObject();
-
-                    dataObject.SetImage(bitmap);
-
-                    ClipboardService.SetDataObject(dataObject, true);
-
-                    HostAssets.AppendLog($"Mobile bridge clipboard copied image: id={message.MessageId}.");
-
-                    return "已复制图片到剪贴板";
-
-                }
-
-            }
-
-
-
-            var filePaths = ResolveMobileClipboardFilePaths(message, localFilePath);
-
-            if (filePaths.Count > 0)
-
-            {
-
-                CopyFileDropListToClipboard(filePaths);
-
-                HostAssets.AppendLog($"Mobile bridge clipboard copied files: id={message.MessageId}, count={filePaths.Count}.");
-
-                return filePaths.Count == 1 ? "已复制文件到剪贴板" : $"已复制 {filePaths.Count} 个文件到剪贴板";
-
-            }
-
-
-
-            if (!string.IsNullOrWhiteSpace(text))
-
-            {
-
-                ClipboardService.SetText(text);
-
-                HostAssets.AppendLog($"Mobile bridge clipboard copied text: id={message.MessageId}, length={text.Length}.");
-
-                return "已复制文本到剪贴板";
-
-            }
-
-        }
-
-        catch (Exception ex)
-
-        {
-
-            HostAssets.AppendLog($"Mobile bridge clipboard copy failed: id={message.MessageId}, {FormatExceptionMessage(ex)}");
-
-            return "剪贴板写入失败";
-
-        }
-
-
-
-        return string.Empty;
-
-    }
-
-
-
-    private static BitmapSource? TryCreateClipboardBitmap(string? dataUrl, string? localFilePath)
-
-    {
-
-        byte[] bytes;
-
-        if (!string.IsNullOrWhiteSpace(localFilePath) && File.Exists(localFilePath))
-
-        {
-
-            bytes = File.ReadAllBytes(localFilePath);
-
-        }
-
-        else if (!TryDecodeDataUrl(dataUrl, out bytes))
-
-        {
-
-            return null;
-
-        }
-
-
-
-        var bitmap = new BitmapImage();
-
-        bitmap.BeginInit();
-
-        bitmap.CacheOption = BitmapCacheOption.OnLoad;
-
-        bitmap.StreamSource = new MemoryStream(bytes);
-
-        bitmap.EndInit();
-
-        bitmap.Freeze();
-
-        return bitmap;
-
-    }
-
-
-
-    private static bool TryDecodeDataUrl(string? dataUrl, out byte[] bytes)
-
-    {
-
-        bytes = [];
-
-        if (string.IsNullOrWhiteSpace(dataUrl))
-
-        {
-
-            return false;
-
-        }
-
-
-
-        const string marker = "base64,";
-
-        var index = dataUrl.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
-
-        if (index < 0)
-
-        {
-
-            return false;
-
-        }
-
-
-
-        bytes = Convert.FromBase64String(dataUrl[(index + marker.Length)..]);
-
-        return bytes.Length > 0;
-
-    }
-
-
-
-    private static IReadOnlyList<string> ResolveMobileClipboardFilePaths(DeviceMessageRecord message, string? localFilePath)
-
-    {
-
-        var paths = new List<string>();
-
-        AddClipboardFilePath(paths, localFilePath);
-
-
-
-        foreach (var key in new[] { "localFilePath", "filePath", "path", "downloadedFilePath", "attachmentPath" })
-
-        {
-
-            AddClipboardFilePath(paths, GetPayloadString(message, key));
-
-        }
-
-
-
-        foreach (var key in new[] { "localFilePaths", "filePaths", "paths", "attachments", "files" })
-
-        {
-
-            AddPayloadFilePaths(paths, message, key);
-
-        }
-
-
-
-        return paths
-
-            .Where(static path => File.Exists(path) || Directory.Exists(path))
-
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-
-            .ToArray();
-
-    }
-
-
-
-    private static void AddPayloadFilePaths(List<string> paths, DeviceMessageRecord message, string key)
-
-    {
-
-        if (!message.Payload.TryGetValue(key, out var element))
-
-        {
-
-            return;
-
-        }
-
-
-
-        if (element.ValueKind == JsonValueKind.String)
-
-        {
-
-            AddClipboardFilePath(paths, element.GetString());
-
-            return;
-
-        }
-
-
-
-        if (element.ValueKind == JsonValueKind.Array)
-
-        {
-
-            foreach (var item in element.EnumerateArray())
-
-            {
-
-                if (item.ValueKind == JsonValueKind.String)
-
-                {
-
-                    AddClipboardFilePath(paths, item.GetString());
-
-                }
-
-                else if (item.ValueKind == JsonValueKind.Object)
-
-                {
-
-                    AddClipboardFilePath(paths, ReadPayloadObjectString(item, "localFilePath"));
-
-                    AddClipboardFilePath(paths, ReadPayloadObjectString(item, "filePath"));
-
-                    AddClipboardFilePath(paths, ReadPayloadObjectString(item, "path"));
-
-                }
-
-            }
-
-            return;
-
-        }
-
-
-
-        if (element.ValueKind == JsonValueKind.Object)
-
-        {
-
-            AddClipboardFilePath(paths, ReadPayloadObjectString(element, "localFilePath"));
-
-            AddClipboardFilePath(paths, ReadPayloadObjectString(element, "filePath"));
-
-            AddClipboardFilePath(paths, ReadPayloadObjectString(element, "path"));
-
-        }
-
-    }
-
-
-
-    private static string? ReadPayloadObjectString(JsonElement element, string key)
-
-    {
-
-        if (element.ValueKind != JsonValueKind.Object || !element.TryGetProperty(key, out var value))
-
-        {
-
-            return null;
-
-        }
-
-
-
-        return value.ValueKind == JsonValueKind.String ? value.GetString() : value.ToString();
-
-    }
-
-
-
-    private static void AddClipboardFilePath(List<string> paths, string? path)
-
-    {
-
-        if (string.IsNullOrWhiteSpace(path))
-
-        {
-
-            return;
-
-        }
-
-
-
-        var normalized = path.Trim().Trim('"');
-
-        if (!string.IsNullOrWhiteSpace(normalized))
-
-        {
-
-            paths.Add(normalized);
-
-        }
-
-    }
-
-
-
-    private static void CopyFileDropListToClipboard(IReadOnlyList<string> filePaths)
-
-    {
-
-        var files = new StringCollection();
-
-        foreach (var filePath in filePaths)
-
-        {
-
-            files.Add(filePath);
-
-        }
-
-
-
-        var dataObject = new System.Windows.DataObject();
-
-        dataObject.SetFileDropList(files);
-
-        using var stream = new MemoryStream(new byte[] { 5, 0, 0, 0 });
-
-        dataObject.SetData("Preferred DropEffect", stream);
-
-        ClipboardService.SetDataObject(dataObject, true);
-
-    }
-
-
-
-    private static bool IsMobileScreenshotMessage(DeviceMessageRecord message)
-
-    {
-
-        return string.Equals(message.Kind, "screenshot", StringComparison.OrdinalIgnoreCase);
-
-    }
-
-
-
-    private async Task<(bool success, string output)> RunMobileExtensionAsync(CommandItem runnable, string inputText)
-    {
-        var hasExternalInput = !string.IsNullOrWhiteSpace(inputText);
-        var command = ResolveRunnableCommand(runnable);
-        
-        if (command.App != null)
-        {
-            await Dispatcher.InvokeAsync(() =>
-            {
-                if (AppExtensionWindow.TryActivateExisting(command))
-                {
-                    return;
-                }
-                var window = new AppExtensionWindow(command, inputText, "mobile")
-                {
-                    ShowInTaskbar = true
-                };
-                window.Show();
-            });
-            return (true, "已成功在电脑端打开应用扩展。");
-        }
-        
-        if (command.HostedView != null)
-        {
-            await Dispatcher.InvokeAsync(() =>
-            {
-                ShowPanel();
-                OpenHostedView(command, inputText);
-            });
-            return (true, "已成功在电脑端打开视图界面。");
-        }
-        
-        if (command.SupportsQueryArgument == false && IsInternalCommand(command))
-        {
-            var internalSuccess = false;
-            await Dispatcher.InvokeAsync(() =>
-            {
-                internalSuccess = HandleInternalCommand(command);
-            });
-            return (internalSuccess, internalSuccess ? "已成功执行内置指令。" : "执行内置指令失败。");
-        }
-        
-        if (ScriptExtensionRunner.CanExecute(command))
-        {
-            var result = await ScriptExtensionRunner.ExecuteAsync(command, inputText, "mobile");
-            if (result.Success)
-            {
-                return (true, string.IsNullOrWhiteSpace(result.Output) ? "执行成功，无输出。" : result.Output);
-            }
-            else
-            {
-                return (false, string.IsNullOrWhiteSpace(result.Error) ? $"执行失败，退出代码: {result.ExitCode}" : result.Error);
-            }
-        }
-        
-        var executionTarget = BuildExecutionTarget(command, inputText, allowRawQuery: hasExternalInput);
-        if (executionTarget is { Length: > 0 })
-        {
-            try
-            {
-                var psi = new ProcessStartInfo
-                {
-                    FileName = executionTarget,
-                    Arguments = command.LaunchArguments ?? string.Empty,
-                    WorkingDirectory = string.IsNullOrWhiteSpace(command.WorkingDirectory) ? string.Empty : command.WorkingDirectory,
-                    UseShellExecute = true
-                };
-                Process.Start(psi);
-                return (true, $"已运行命令：{command.Title}");
-            }
-            catch (Exception ex)
-            {
-                return (false, $"无法启动程序：{ex.Message}");
-            }
-        }
-        
-        return (false, "不支持的扩展执行方式。");
-    }
-
-    private async Task<string?> TryDownloadMobileScreenshotFromWebDavAsync(DeviceMessageRecord message)
-    {
-        var remotePath = GetPayloadString(message, "webDavPath");
-        if (string.IsNullOrWhiteSpace(remotePath))
-        {
-            if (string.Equals(message.Kind, "screenshot", StringComparison.OrdinalIgnoreCase))
-            {
-                HostAssets.AppendLog(
-                    $"Mobile screenshot WebDAV skipped: payload has no webDavPath, hasDataUrl={!string.IsNullOrWhiteSpace(GetPayloadString(message, "screenshotDataUrl"))}.");
-            }
-            return null;
-        }
-
-        try
-        {
-            var settings = AppSettingsStore.Load();
-            var service = new WebDavSyncService(settings);
-            var credential = WebDavCredentialStore.Load();
-            bool hasCredentials = Uri.TryCreate(settings.WebDavServerUrl, UriKind.Absolute, out _) &&
-                                 !string.IsNullOrWhiteSpace(settings.WebDavUsername) &&
-                                 !string.IsNullOrWhiteSpace(credential?.Password);
-            if (!hasCredentials)
-            {
-                HostAssets.AppendLog($"Mobile screenshot WebDAV skipped: not configured, path={remotePath}.");
-                return null;
-            }
-
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(25));
-            var bytes = await service.TryReadTemporaryFileAsync(remotePath, timeout.Token);
-            if (bytes is not { Length: > 0 })
-            {
-                HostAssets.AppendLog($"Mobile screenshot WebDAV missing: path={remotePath}.");
-                return null;
-            }
-
-            var filePath = BuildMobileAttachmentDownloadPath(message, remotePath);
-            Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
-            await File.WriteAllBytesAsync(filePath, bytes, timeout.Token);
-            HostAssets.AppendLog($"Mobile attachment WebDAV downloaded: kind={message.Kind}, path={remotePath}, local={filePath}, bytes={bytes.Length}.");
-            return filePath;
-        }
-        catch (Exception ex)
-        {
-            HostAssets.AppendLog($"Mobile screenshot WebDAV download failed: path={remotePath}, {FormatExceptionMessage(ex)}");
-            return null;
-        }
-    }
-
-    private static string BuildMobileAttachmentDownloadPath(DeviceMessageRecord message, string remotePath)
-
-    {
-
-        var downloads = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
-
-        var fileName = FirstNonEmpty(
-
-            GetPayloadString(message, "fileName"),
-
-            GetPayloadString(message, "name"),
-
-            Path.GetFileName(remotePath.Replace('/', Path.DirectorySeparatorChar)));
-
-
-
-        if (string.IsNullOrWhiteSpace(fileName))
-
-        {
-
-            fileName = IsMobileScreenshotMessage(message)
-
-                ? $"yanzi-mobile-screenshot-{DateTimeOffset.Now:yyyyMMdd-HHmmss-fff}.jpg"
-
-                : $"yanzi-mobile-file-{DateTimeOffset.Now:yyyyMMdd-HHmmss-fff}";
-
-        }
-
-
-
-        fileName = SanitizeFileName(fileName);
-
-        var path = Path.Combine(downloads, fileName);
-
-        if (!File.Exists(path) && !Directory.Exists(path))
-
-        {
-
-            return path;
-
-        }
-
-
-
-        var stem = Path.GetFileNameWithoutExtension(fileName);
-
-        var extension = Path.GetExtension(fileName);
-
-        return Path.Combine(downloads, $"{stem}-{DateTimeOffset.Now:yyyyMMdd-HHmmss-fff}{extension}");
-
-    }
-
-
-
-    private static string SanitizeFileName(string fileName)
-
-    {
-
-        var invalidChars = Path.GetInvalidFileNameChars();
-
-        var sanitized = new string(fileName.Select(ch => invalidChars.Contains(ch) ? '_' : ch).ToArray()).Trim();
-
-        return string.IsNullOrWhiteSpace(sanitized) ? $"yanzi-mobile-file-{DateTimeOffset.Now:yyyyMMdd-HHmmss-fff}" : sanitized;
-
-    }
-
-
-
-    private static string? GetPayloadString(DeviceMessageRecord message, string key)
-    {
-        if (!message.Payload.TryGetValue(key, out var element))
-        {
-            return null;
-        }
-
-        return element.ValueKind == JsonValueKind.String ? element.GetString() : element.ToString();
-    }
-
-    private static string GetMobileSourceLabel(DeviceMessageRecord message)
-    {
-        var label = FirstNonEmpty(
-            message.SourceDeviceDisplayName,
-            message.SourceDeviceName,
-            GetPayloadString(message, "sourceDeviceDisplayName"),
-            GetPayloadString(message, "sourceDeviceName"),
-            GetPayloadString(message, "deviceName"),
-            GetPayloadString(message, "displayName"));
-        return MobileDeviceNameNormalizer.Normalize(label, message.SourceDeviceId);
-    }
-
-    private static string FirstNonEmpty(params string?[] values)
-    {
-        foreach (var value in values)
-        {
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                return value.Trim();
-            }
-        }
-
-        return string.Empty;
-    }
-
-    private static void SaveMobileInboxMessage(DeviceMessageRecord message, string title, string text, string sourceLabel, string? screenshotDataUrl, string? screenshotFilePath)
-    {
-        try
-        {
-            var record = new
-            {
-                messageId = message.MessageId,
-                sourceDeviceId = message.SourceDeviceId,
-                sourceDeviceName = sourceLabel,
-                kind = message.Kind,
-                title,
-                text,
-                payload = message.Payload,
-                screenshotDataUrl = string.IsNullOrWhiteSpace(screenshotFilePath) ? screenshotDataUrl : null,
-                localFilePath = screenshotFilePath,
-                receivedAtUtc = DateTimeOffset.UtcNow.ToString("O"),
-                createdAt = message.CreatedAt
-            };
-            File.AppendAllText(
-                HostAssets.MobileInboxPath,
-                JsonSerializer.Serialize(record) + Environment.NewLine);
-        }
-        catch (Exception ex)
-        {
-            HostAssets.AppendLog($"Mobile inbox save failed: id={message.MessageId}, {FormatExceptionMessage(ex)}");
-        }
-    }
-
-    public void ShowMobileInboxWindow()
-    {
-        try
-        {
-            if (_mobileMessageToastWindow is { IsVisible: true })
-            {
-                _mobileMessageToastWindow.LoadInboxHistory();
-                _mobileMessageToastWindow.Activate();
-                return;
-            }
-
-            _mobileMessageToastWindow = new MobileMessageToastWindow();
-            _mobileMessageToastWindow.Closed += (_, _) => _mobileMessageToastWindow = null;
-            _mobileMessageToastWindow.ShowActivated = true;
-            _mobileMessageToastWindow.Show();
-            _mobileMessageToastWindow.Activate();
-        }
-        catch (Exception ex)
-        {
-            HostAssets.AppendLog($"Mobile inbox window failed: {FormatExceptionMessage(ex)}");
-        }
-    }
-
-    private void ShowMobileMessageToast(string title, string text, string sourceDeviceId, string? screenshotDataUrl = null, string? screenshotFilePath = null)
-    {
-        try
-        {
-            var sourceLabel = MobileDeviceNameNormalizer.Normalize(sourceDeviceId);
-            if (_mobileMessageToastWindow is { IsVisible: true })
-            {
-                _mobileMessageToastWindow.AppendMessage(title, text, sourceDeviceId, DateTimeOffset.Now, screenshotDataUrl, screenshotFilePath);
-                
-                if (!_mobileMessageToastWindow.IsActive)
-                {
-                    QuickPanelWindow.HasUnreadMessages = true;
-                }
-                return;
-            }
-
-            QuickPanelWindow.HasUnreadMessages = true;
-            
-            var notificationCard = new MobileMessageNotificationCard(sourceLabel, text);
-            notificationCard.Show();
-        }
-        catch (Exception ex)
-        {
-            HostAssets.AppendLog($"Mobile message toast failed: {FormatExceptionMessage(ex)}");
-        }
-    }
-
-
-
-    private static string trimForLog(string value)
-    {
-        var text = value.ReplaceLineEndings(" ").Trim();
-        return text.Length <= 160 ? text : $"{text[..160]}...";
     }
 
     private async Task SyncPersonalWebDavAsync(bool showDisabledMessage)
@@ -1946,7 +993,9 @@ public partial class MainWindow
         try
         {
             var service = new PersonalSyncService(settings);
-            var result = await service.SyncExtensionsAsync();
+            var result = await service.SyncExtensionsAsync(GetPersonalConfigSyncMode());
+            await ExtensionStorageService.SyncPendingCloudWritesAsync();
+            await ExtensionStorageService.ReconcileCloudDataAsync();
             ApplyWebDavSyncResult(result);
             LastRunMessage = BuildPersonalSyncCompletedMessage(result);
         }
@@ -1958,7 +1007,11 @@ public partial class MainWindow
 
     private void StartBackgroundWebDavSync()
     {
-        if (PersonalSyncBackendFactory.IsConfigured(AppSettingsStore.Load()) && !_backgroundWebDavSyncTimer.IsEnabled)
+        if (!HostRuntimeProfile.OwnsBackgroundServices) return;
+        var settings = AppSettingsStore.Load();
+        if (settings.PersonalSyncAutoSyncDelaySeconds > 0 &&
+            PersonalSyncBackendFactory.IsConfigured(settings) &&
+            !_backgroundWebDavSyncTimer.IsEnabled)
         {
             _backgroundWebDavSyncTimer.Start();
         }
@@ -1966,10 +1019,33 @@ public partial class MainWindow
 
     internal void QueueBackgroundWebDavSync(string reason, bool forceImmediate = false)
     {
+        if (!HostRuntimeProfile.OwnsBackgroundServices) return;
         var settings = AppSettingsStore.Load();
         if (!PersonalSyncBackendFactory.IsConfigured(settings))
         {
             return;
+        }
+
+        if (settings.PersonalSyncAutoSyncDelaySeconds <= 0 &&
+            !string.Equals(reason, "api-trigger", StringComparison.OrdinalIgnoreCase))
+        {
+            HostAssets.AppendLog($"Personal sync automatic sync skipped by setting: {reason}");
+            return;
+        }
+
+        if (_backgroundPersonalSyncFailureCount >= 5 || DateTimeOffset.UtcNow < _backgroundPersonalSyncRetryAfterUtc)
+        {
+            HostAssets.AppendLog($"Personal sync background sync deferred after network failure: reason={reason}, failures={_backgroundPersonalSyncFailureCount}, retryAfter={_backgroundPersonalSyncRetryAfterUtc:O}");
+            return;
+        }
+
+        if ((reason.Equals("startup", StringComparison.OrdinalIgnoreCase) ||
+             reason.Equals("cloud-refresh", StringComparison.OrdinalIgnoreCase) ||
+             reason.Equals("timer", StringComparison.OrdinalIgnoreCase)) &&
+            HasRecentlyModifiedExtensionFiles())
+        {
+            reason = "extension-" + reason;
+            forceImmediate = false;
         }
 
         StartBackgroundWebDavSync();
@@ -1982,17 +1058,38 @@ public partial class MainWindow
                 return;
             }
 
+            var extensionChange = reason.Contains("extension", StringComparison.OrdinalIgnoreCase) ||
+                _firstPendingPersonalExtensionSyncAt != DateTimeOffset.MinValue;
+            if (extensionChange)
+            {
+                delaySeconds = Math.Max(delaySeconds, 60);
+                if (_firstPendingPersonalExtensionSyncAt == DateTimeOffset.MinValue)
+                    _firstPendingPersonalExtensionSyncAt = DateTimeOffset.UtcNow;
+                delaySeconds = (int)Math.Min(delaySeconds,
+                    Math.Max(1, (_firstPendingPersonalExtensionSyncAt.AddMinutes(5) - DateTimeOffset.UtcNow).TotalSeconds));
+            }
             _pendingBackgroundWebDavSyncReason = reason;
             _backgroundWebDavSyncDelayTimer.Stop();
             _backgroundWebDavSyncDelayTimer.Interval = TimeSpan.FromSeconds(Math.Clamp(delaySeconds, 2, 120));
             _backgroundWebDavSyncDelayTimer.Start();
-            HostAssets.AppendLog($"Personal sync auto sync scheduled: reason={reason}, delaySeconds={delaySeconds}");
+            if (!extensionChange || _firstPendingPersonalExtensionSyncAt > DateTimeOffset.UtcNow.AddSeconds(-2))
+                HostAssets.AppendLog($"Personal sync auto sync scheduled: reason={reason}, delaySeconds={delaySeconds}");
             return;
         }
+
+        _backgroundWebDavSyncDelayTimer.Stop();
+        _pendingBackgroundWebDavSyncReason = null;
+        _firstPendingPersonalExtensionSyncAt = DateTimeOffset.MinValue;
 
         if (_backgroundWebDavSyncRunning)
         {
             _backgroundWebDavSyncRequested = true;
+            if (reason.Contains("cloud-refresh", StringComparison.OrdinalIgnoreCase) ||
+                reason.Contains("settings-login", StringComparison.OrdinalIgnoreCase) ||
+                reason.Contains("extension", StringComparison.OrdinalIgnoreCase))
+            {
+                _backgroundWebDavSyncRequestedReason = reason;
+            }
             HostAssets.AppendLog($"Personal sync background sync queued while running: {reason}");
             return;
         }
@@ -2023,6 +1120,8 @@ public partial class MainWindow
     private async Task RunBackgroundWebDavSyncAsync(string reason)
     {
         _backgroundWebDavSyncRunning = true;
+        var runId = Guid.NewGuid().ToString("N")[..8];
+        var elapsed = Stopwatch.StartNew();
         var showSyncToast = reason.Contains("cloud-refresh", StringComparison.OrdinalIgnoreCase) ||
                             reason.Contains("settings-login", StringComparison.OrdinalIgnoreCase);
         try
@@ -2033,24 +1132,39 @@ public partial class MainWindow
                 ShowSettingsCloudSyncProgressToast("正在同步个人扩展与本地配置...");
             }
 
-            HostAssets.AppendLog($"Personal sync background sync started: reason={reason}, provider={settings.PersonalSync.Provider}");
+            HostAssets.AppendLog($"Personal sync background sync started: runId={runId}, reason={reason}, provider={settings.PersonalSync.Provider}");
+            var configSyncMode = GetPersonalConfigSyncMode();
             var result = await Task.Run(async () =>
             {
                 var service = new PersonalSyncService(settings);
-                var extensions = await service.SyncExtensionsAsync();
-                var yanm = await service.SyncYanmStateAsync();
-                return (Extensions: extensions, Yanm: yanm);
+                var restored = await ExtensionStorageService.ReconcileCloudDataAsync();
+                var extensions = await service.SyncExtensionsAsync(configSyncMode);
+                var yanm = configSyncMode == PersonalConfigSyncMode.Bidirectional
+                    ? await service.SyncYanmStateAsync()
+                    : await service.BackupYanmStateAsync();
+                var extensionData = await ExtensionStorageService.SyncPendingCloudWritesAsync();
+                return (Extensions: extensions, Yanm: yanm, ExtensionData: extensionData, Restored: restored);
             });
             ApplyWebDavSyncResult(result.Extensions);
             ApplyYanmStateSyncResult(result.Yanm);
-            SyncStatus = $"{BuildPersonalSyncCompletedMessage(result.Extensions, includeConfigSummary: false)} 燕幕{BuildYanmSyncAction(result.Yanm)}。";
-            HostAssets.AppendLog($"Personal sync background sync completed: reason={reason}, uploaded={result.Extensions.UploadedCount}, pulled={result.Extensions.PulledCount}, configUploaded={result.Extensions.ConfigUploaded}, configPulled={result.Extensions.ConfigPulled}, yanmUploaded={result.Yanm.Uploaded}, yanmPulled={result.Yanm.Pulled}, yanmBytes={result.Yanm.PayloadBytes}");
+            ReconcileDeletedExtensionsWithAccountLibrary();
+            SyncStatus = $"{BuildPersonalSyncCompletedMessage(result.Extensions, includeConfigSummary: false)} 燕幕{BuildYanmSyncAction(result.Yanm)}；扩展数据 pending 上传 {result.ExtensionData.UploadedCount}，失败 {result.ExtensionData.FailedCount}。";
+            HostAssets.AppendLog($"Personal sync background sync completed: runId={runId}, reason={reason}, durationMs={elapsed.ElapsedMilliseconds}, configMode={configSyncMode}, uploaded={result.Extensions.UploadedCount}, pulled={result.Extensions.PulledCount}, configUploaded={result.Extensions.ConfigUploaded}, configPulled={result.Extensions.ConfigPulled}, yanmUploaded={result.Yanm.Uploaded}, yanmPulled={result.Yanm.Pulled}, yanmSnapshotBytes={result.Yanm.PayloadBytes}, extensionDataUploaded={result.ExtensionData.UploadedCount}, extensionDataFailed={result.ExtensionData.FailedCount}, dataRestored={result.Restored.RestoredCount}, dataPublished={result.Restored.PublishedCount}, dataSkipped={result.Restored.SkippedCount}");
+            _backgroundPersonalSyncFailureCount = 0;
+            _backgroundPersonalSyncRetryAfterUtc = DateTimeOffset.MinValue;
         }
         catch (Exception ex)
         {
             var message = FormatExceptionMessage(ex);
             SyncStatus = $"个人扩展后台同步失败：{message}";
-            HostAssets.AppendLog($"Personal sync background sync failed: reason={reason} -> {message}");
+            HostAssets.AppendLog($"Personal sync background sync failed: runId={runId}, reason={reason}, durationMs={elapsed.ElapsedMilliseconds} -> {message}");
+            if (IsTransientNetworkException(ex))
+            {
+                _backgroundPersonalSyncFailureCount = Math.Min(_backgroundPersonalSyncFailureCount + 1, 5);
+                var delaySeconds = Math.Min(15 * (1 << (_backgroundPersonalSyncFailureCount - 1)), 300);
+                _backgroundPersonalSyncRetryAfterUtc = DateTimeOffset.UtcNow.AddSeconds(delaySeconds);
+                HostAssets.AppendLog($"Personal sync background sync retry deferred: attempt={_backgroundPersonalSyncFailureCount}/5, delaySeconds={delaySeconds}");
+            }
         }
         finally
         {
@@ -2063,12 +1177,14 @@ public partial class MainWindow
             if (_backgroundWebDavSyncRequested)
             {
                 _backgroundWebDavSyncRequested = false;
-                QueueBackgroundWebDavSync("queued");
+                var nextReason = string.IsNullOrEmpty(_backgroundWebDavSyncRequestedReason) ? "queued" : _backgroundWebDavSyncRequestedReason;
+                _backgroundWebDavSyncRequestedReason = null;
+                QueueBackgroundWebDavSync(nextReason);
             }
         }
     }
 
-    private void ApplyWebDavSyncResult(WebDavSyncResult result)
+    private void ApplyWebDavSyncResult(WebDavSyncResult result, bool syncAccountImmediately = false)
     {
         if (result.PulledCount > 0 || result.ConfigPulled)
         {
@@ -2076,7 +1192,7 @@ public partial class MainWindow
             NotifySettingsWindowExtensionsChanged();
         }
 
-        SyncLocalExtensionsToCloud();
+        SyncLocalExtensionsToCloud(syncAccountImmediately);
 
         if (!result.ConfigPulled)
         {
@@ -2110,45 +1226,842 @@ public partial class MainWindow
         return result.Pulled ? "已拉取" : result.Uploaded ? "已上传" : "无变化";
     }
 
-    public void SyncLocalExtensionsToCloud()
+    public void SyncLocalExtensionsToCloud(bool forceImmediate = false)
     {
+        if (!HostRuntimeProfile.OwnsBackgroundServices) return;
         if (_cloudSyncClient == null || !_cloudSyncClient.HasCredential)
+        {
+            return;
+        }
+
+        if (!Dispatcher.CheckAccess())
+        {
+            _ = Dispatcher.BeginInvoke(new Action(() => SyncLocalExtensionsToCloud(forceImmediate)));
+            return;
+        }
+
+        if (forceImmediate)
+        {
+            _accountExtensionSyncTimer.Stop();
+            _firstPendingAccountExtensionSyncAt = DateTimeOffset.MinValue;
+            RunLocalExtensionsAccountSync();
+            return;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        if (_firstPendingAccountExtensionSyncAt == DateTimeOffset.MinValue)
+            _firstPendingAccountExtensionSyncAt = now;
+        var secondsUntilMaxWait = (_firstPendingAccountExtensionSyncAt.AddMinutes(5) - now).TotalSeconds;
+        _accountExtensionSyncTimer.Stop();
+        _accountExtensionSyncTimer.Interval = TimeSpan.FromSeconds(Math.Clamp(secondsUntilMaxWait, 1, 60));
+        _accountExtensionSyncTimer.Start();
+    }
+
+    private static bool HasRecentlyModifiedExtensionFiles()
+    {
+        var cutoff = DateTime.UtcNow.AddSeconds(-60);
+        foreach (var command in LocalExtensionCatalog.LoadCommands())
+        {
+            var directory = command.ExtensionDirectoryPath;
+            if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
+                continue;
+
+            try
+            {
+                foreach (var file in ExtensionSyncIgnorePolicy.EnumerateIncludedFiles(directory))
+                {
+                    if (ExtensionPackageService.ShouldIncludeInPackage(directory, file) &&
+                        File.GetLastWriteTimeUtc(file) >= cutoff)
+                        return true;
+                }
+            }
+            catch (IOException)
+            {
+                return true;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void RunLocalExtensionsAccountSync()
+    {
+        if (!HostRuntimeProfile.OwnsBackgroundServices) return;
+        if (_cloudSyncClient == null || !_cloudSyncClient.HasCredential)
+            return;
+
+        _ = Task.Run(async () =>
+        {
+            if (!await _extensionSyncLock.WaitAsync(0))
+            {
+                _ = Dispatcher.BeginInvoke(new Action(() => SyncLocalExtensionsToCloud()));
+                return;
+            }
+            try
+            {
+                var commands = System.Windows.Application.Current.Dispatcher.CheckAccess()
+                    ? LocalExtensionCatalog.LoadCommands()
+                    : System.Windows.Application.Current.Dispatcher.Invoke(LocalExtensionCatalog.LoadCommands);
+
+                var cloudExtensions = await _cloudSyncClient.GetUserExtensionsAsync();
+                var cloudRecordMap = cloudExtensions.ToDictionary(
+                    item => item.ExtensionId,
+                    item => item,
+                    StringComparer.OrdinalIgnoreCase);
+                var accountDeletedIds = cloudExtensions
+                    .Where(IsAccountExtensionTombstoned)
+                    .Select(static item => item.ExtensionId)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                if (accountDeletedIds.Count > 0)
+                {
+                    await Dispatcher.InvokeAsync(() => ApplyAccountExtensionDeletions(accountDeletedIds));
+                }
+                var deletedLocalIds = LoadPersonalSyncDeletedExtensionIds();
+                // Retry pending deletion whenever account sync succeeds, even
+                // if WebDAV/personal-sync is disabled or was offline earlier.
+                foreach (var deletedId in deletedLocalIds)
+                {
+                    if (cloudRecordMap.TryGetValue(deletedId, out var entry) &&
+                        IsAccountExtensionTombstoned(entry))
+                        continue;
+                    try
+                    {
+                        await _cloudSyncClient.RemoveUserExtensionAsync(deletedId);
+                        cloudRecordMap.Remove(deletedId);
+                        HostAssets.AppendLog($"Account extension delete synchronized: {deletedId}");
+                    }
+                    catch (Exception ex)
+                    {
+                        HostAssets.AppendLog($"Account extension delete retry pending: {deletedId}: {ex.Message}");
+                    }
+                }
+
+                int successCount = 0;
+                int unchangedCount = 0;
+                int skipCount = 0;
+                int failCount = 0;
+                var failedDetails = new List<string>();
+
+                foreach (var cmd in commands)
+                {
+                    if (cmd.Source == CommandSource.LocalExtension && !IsInternalCommand(cmd))
+                    {
+                        if (!ExtensionDevicePolicy.ShouldSyncPackage(cmd.ExtensionId))
+                        {
+                            skipCount++;
+                            continue;
+                        }
+                        try
+                        {
+                            cloudRecordMap.TryGetValue(cmd.ExtensionId, out var cloudRecord);
+                            if (IsAccountExtensionTombstoned(cloudRecord) ||
+                                deletedLocalIds.Contains(cmd.ExtensionId))
+                            {
+                                skipCount++;
+                                continue;
+                            }
+                            if (cloudRecord != null &&
+                                !string.IsNullOrWhiteSpace(cloudRecord.PublisherUserId) &&
+                                !string.Equals(cloudRecord.PublisherUserId, _cloudSyncClient.CurrentUserId, StringComparison.Ordinal))
+                            {
+                                skipCount++;
+                                continue;
+                            }
+                            if (cloudRecord != null && IsAccountExtensionNewer(cmd, cloudRecord))
+                            {
+                                skipCount++;
+                                HostAssets.AppendLog($"Account extension is newer: skipping local downgrade id={cmd.ExtensionId}, local={cmd.DeclaredVersion}, remote={cloudRecord.LatestVersion}");
+                                continue;
+                            }
+                            if (IsAccountExtensionCurrent(cmd, cloudRecord))
+                            {
+                                unchangedCount++;
+                                continue;
+                            }
+                            // Same-version code from another device is a conflict, not an upgrade.
+                            // Avoid publishing stale source over a newer cloud archive.
+                            if (cloudRecord is { HasArchive: true } &&
+                                !string.IsNullOrWhiteSpace(cloudRecord.ArchiveSha256) &&
+                                string.Equals(
+                                    (cmd.DeclaredVersion ?? "0.1.0").Trim().TrimStart('v', 'V'),
+                                    (cloudRecord.LatestVersion ?? "").Trim().TrimStart('v', 'V'),
+                                    StringComparison.OrdinalIgnoreCase))
+                            {
+                                skipCount++;
+                                HostAssets.AppendLog(
+                                    $"Account extension same-version conflict: automatic upload skipped id={cmd.ExtensionId}, version={cmd.DeclaredVersion}, remoteRevision={cloudRecord.ArchiveRevision}. Bump manifest version before publishing.");
+                                continue;
+                            }
+                            await SyncPrivateExtensionToAccountAsync(cmd, cloudRecord?.ArchiveRevision ?? 0);
+                            successCount++;
+                        }
+                        catch (Exception ex) when (ex.Message.Contains("Only the owner", StringComparison.OrdinalIgnoreCase) ||
+                                                    ex.Message.Contains("403", StringComparison.OrdinalIgnoreCase))
+                        {
+                            skipCount++;
+                             HostAssets.AppendLog($"Skipped syncing extension '{cmd.Title}' (Not owned by current account): {ex.Message}");
+                        }
+                        catch (Exception ex)
+                        {
+                            failCount++;
+                            failedDetails.Add($"'{cmd.Title}': {ex.Message}");
+                            HostAssets.AppendLog($"Failed to sync extension '{cmd.Title}': {ex.Message}");
+                        }
+                    }
+                }
+                HostAssets.AppendLog($"Auto sync local extensions completed: {successCount} synced, {unchangedCount} unchanged, {skipCount} skipped (not owned), {failCount} failed.");
+                if (failCount > 0)
+                {
+                    HostAssets.AppendLog($"Failed sync details: {string.Join("; ", failedDetails)}");
+                }
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"Failed to auto sync local extensions: {ex.Message}");
+            }
+            finally
+            {
+                _extensionSyncLock.Release();
+            }
+        });
+    }
+
+    internal void QueuePrivateExtensionRemovalFromAccount(string extensionId)
+    {
+        if (_cloudSyncClient == null || !_cloudSyncClient.HasCredential || string.IsNullOrWhiteSpace(extensionId))
+        {
+            return;
+        }
+        _ = Task.Run(async () =>
+        {
+            await _extensionUploadLock.WaitAsync();
+            try
+            {
+                // Ignore a queued deletion when the user has already restored it.
+                if (!LoadPersonalSyncDeletedExtensionIds().Contains(extensionId))
+                    return;
+                await _cloudSyncClient.RemoveUserExtensionAsync(extensionId);
+                HostAssets.AppendLog($"Removed deleted extension from account private library: {extensionId}");
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"Deferred account private extension removal: id={extensionId}, error={ex.Message}");
+            }
+            finally
+            {
+                _extensionUploadLock.Release();
+            }
+        });
+    }
+
+    internal void QueuePrivateExtensionUpsertToAccount(string extensionId, bool allowRestore = false)
+    {
+        if (_cloudSyncClient == null || !_cloudSyncClient.HasCredential || string.IsNullOrWhiteSpace(extensionId))
+        {
+            return;
+        }
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var command = LocalExtensionCatalog.LoadCommands().FirstOrDefault(item =>
+                    item.ExtensionId.Equals(extensionId, StringComparison.OrdinalIgnoreCase));
+                if (command != null)
+                {
+                    var cloudExtensions = await _cloudSyncClient.GetUserExtensionsAsync();
+                    var record = cloudExtensions.FirstOrDefault(item => item.ExtensionId.Equals(extensionId, StringComparison.OrdinalIgnoreCase));
+                    var expectedRevision = record?.ArchiveRevision ?? 0;
+                    await SyncPrivateExtensionToAccountAsync(command, expectedRevision, allowRestore: allowRestore);
+                }
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"Deferred account private extension restore: id={extensionId}, error={ex.Message}");
+            }
+        });
+    }
+
+    private async Task SyncPrivateExtensionToAccountAsync(CommandItem command, int expectedRevision = 0, bool allowRestore = false)
+    {
+        if (_cloudSyncClient == null) return;
+        await _extensionUploadLock.WaitAsync();
+        try
+        {
+            // A delete can happen while an earlier upload is waiting on this lock.
+            // Only the current, explicitly restored local state may be uploaded.
+            if (LoadPersonalSyncDeletedExtensionIds().Contains(command.ExtensionId))
+                return;
+            string? publishedIcon = null;
+            try
+            {
+                publishedIcon = await _cloudSyncClient.PublishPrivateIconAsync(command, command.DeclaredVersion);
+            }
+            catch (Exception iconEx)
+            {
+                HostAssets.AppendLog($"Failed to upload private icon for {command.ExtensionId}: {iconEx.Message}");
+            }
+
+            await _cloudSyncClient.UpsertPrivateExtensionAsync(command, publishedIcon);
+            var version = string.IsNullOrWhiteSpace(command.DeclaredVersion) ? "0.1.0" : command.DeclaredVersion;
+            // User shortcuts are account/device state, not extension package content.
+            // Keep archives share-safe; the private manifest still carries the shortcut.
+            var packageBytes = ExtensionPackageService.BuildPackage(
+                command,
+                version,
+                publishedIcon,
+                includeUserShortcut: false);
+            await _cloudSyncClient.UploadPrivateExtensionArchiveAsync(command, packageBytes, version, expectedRevision);
+            await _cloudSyncClient.UpsertUserExtensionAsync(command, publishedIcon,
+                hasArchive: true, restoreDeleted: allowRestore);
+        }
+        finally
+        {
+            _extensionUploadLock.Release();
+        }
+    }
+
+    private int _privateExtensionPullRunning;
+    internal void RefreshMissingPrivateExtensionsFromCloud() => _ = PullMissingPrivateExtensionsFromCloudAsync();
+    private async Task PullMissingPrivateExtensionsFromCloudAsync()
+    {
+        if (_cloudSyncClient == null || !_cloudSyncClient.HasCredential ||
+            Interlocked.Exchange(ref _privateExtensionPullRunning, 1) != 0)
+        {
+            return;
+        }
+
+        try
+        {
+            var items = await _cloudSyncClient.GetUserExtensionsAsync();
+            var localCommands = LocalExtensionCatalog.LoadCommands()
+                .Where(command => command.Source == CommandSource.LocalExtension)
+                .GroupBy(command => command.ExtensionId, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+            var localIds = localCommands.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var recycledIds = ExtensionRecycleBinService.LoadEntries()
+                .Select(static entry => entry.ExtensionId)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            recycledIds.UnionWith(LoadPersonalSyncDeletedExtensionIds());
+
+            var pulledCount = 0;
+            foreach (var item in items)
+            {
+                if (item.Enabled == 0 ||
+                    !ExtensionDevicePolicy.CanSyncInstall(item.ManifestJson) ||
+                    !item.HasArchive ||
+                    string.IsNullOrWhiteSpace(item.ExtensionId) ||
+                    recycledIds.Contains(item.ExtensionId) ||
+                    IsConfigExtensionId(item.ExtensionId))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    // Same manifest version and different source are a conflict, not
+                    // a reason to install over unsubmitted local development code.
+                    string? localHashBeforeDownload = null;
+                    if (localCommands.TryGetValue(item.ExtensionId, out var candidate))
+                    {
+                        if (!string.IsNullOrWhiteSpace(candidate.ExtensionDirectoryPath) &&
+                            ExtensionGitSafety.HasGitWorktree(candidate.ExtensionDirectoryPath))
+                        {
+                            HostAssets.AppendLog($"Account extension Git worktree protected: cloud package cannot overwrite source id={item.ExtensionId}");
+                            continue;
+                        }
+                        var sameVersion = string.Equals(
+                            (candidate.DeclaredVersion ?? "").Trim().TrimStart('v', 'V'),
+                            (item.LatestVersion ?? "").Trim().TrimStart('v', 'V'),
+                            StringComparison.OrdinalIgnoreCase);
+                        if (sameVersion || IsAccountExtensionNewer(candidate, item))
+                        {
+                            try { localHashBeforeDownload = CalculateLocalAccountArchiveSha256(candidate, item); }
+                            catch (Exception ex)
+                            {
+                                HostAssets.AppendLog($"Account extension local content unreadable; overwrite blocked id={item.ExtensionId}: {ex.Message}");
+                                continue;
+                            }
+                        }
+                        var decision = AccountExtensionPullPolicy.Decide(
+                            true, candidate.DeclaredVersion, item.LatestVersion,
+                            localHashBeforeDownload, item.ArchiveSha256);
+                        if (decision != AccountExtensionPullDecision.InstallNewerVersion)
+                        {
+                            if (decision is AccountExtensionPullDecision.SameVersionConflict or
+                                AccountExtensionPullDecision.UnorderedVersionConflict)
+                                HostAssets.AppendLog($"Account extension code conflict: local source preserved id={item.ExtensionId}, local={candidate.DeclaredVersion}, remote={item.LatestVersion}, remoteRevision={item.ArchiveRevision}. Update manifest version and publish deliberately.");
+                            continue;
+                        }
+                    }
+                    var packageBytes = await _cloudSyncClient.DownloadMyExtensionArchiveAsync(item.ExtensionId);
+                    if (!ExtensionDevicePolicy.CanSyncInstallArchive(packageBytes))
+                    {
+                        HostAssets.AppendLog($"Account extension skipped for device policy: id={item.ExtensionId}");
+                        continue;
+                    }
+                    if (!string.IsNullOrWhiteSpace(item.ArchiveSha256) &&
+                        !Convert.ToHexString(SHA256.HashData(packageBytes)).Equals(
+                            item.ArchiveSha256, StringComparison.OrdinalIgnoreCase))
+                        throw new InvalidDataException($"Account extension hash mismatch: {item.ExtensionId}");
+                    string? upgradeBackupPath = null;
+                    if (localCommands.TryGetValue(item.ExtensionId, out var existingCommand))
+                    {
+                        // Re-read after network I/O: another agent can change the
+                        // source while the archive is downloading.
+                        var live = LocalExtensionCatalog.LoadCommands().FirstOrDefault(command =>
+                            command.Source == CommandSource.LocalExtension &&
+                            string.Equals(command.ExtensionId, item.ExtensionId, StringComparison.OrdinalIgnoreCase));
+                        if (live == null || !IsAccountExtensionNewer(live, item))
+                        {
+                            HostAssets.AppendLog($"Account extension changed while downloading; overwrite blocked id={item.ExtensionId}");
+                            continue;
+                        }
+                        string currentHash;
+                        try { currentHash = CalculateLocalAccountArchiveSha256(live, item); }
+                        catch (Exception ex)
+                        {
+                            HostAssets.AppendLog($"Account extension content changed while downloading; overwrite blocked id={item.ExtensionId}: {ex.Message}");
+                            continue;
+                        }
+                        if (!string.Equals(currentHash, localHashBeforeDownload, StringComparison.OrdinalIgnoreCase))
+                        {
+                            HostAssets.AppendLog($"Account extension source edited during cloud download; local source preserved id={item.ExtensionId}");
+                            continue;
+                        }
+                        upgradeBackupPath = BackupExtensionBeforeCloudUpgrade(live, item.ArchiveSha256, currentHash);
+                    }
+                    else if (LocalExtensionCatalog.LoadCommands().Any(command =>
+                                 command.Source == CommandSource.LocalExtension &&
+                                 string.Equals(command.ExtensionId, item.ExtensionId, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        HostAssets.AppendLog($"Account extension installed locally during download; cloud overwrite blocked id={item.ExtensionId}");
+                        continue;
+                    }
+                    var result = await ExtensionInstallService.InstallPackageAsync(
+                        packageBytes, item.ExtensionId, fallbackName: item.DisplayName,
+                        privateIconDownload: (id, token) => _cloudSyncClient.DownloadMyExtensionIconAsync(id, token));
+                    if (upgradeBackupPath != null)
+                        CleanupExtensionUpgradeBackupsAfterSuccess(item.ExtensionId);
+
+                    if (TryGetArchivedManifestShortcut(item.ManifestJson, out var restoredShortcut))
+                    {
+                        LocalExtensionCatalog.SetGlobalShortcut(
+                            result.ExtensionId,
+                            restoredShortcut);
+                    }
+
+                    localIds.Add(result.ExtensionId);
+                    pulledCount++;
+                    HostAssets.AppendLog($"Pulled extension from account library: {result.ExtensionId} v{result.Version}");
+                }
+                catch (IOException ex) when (ex.HResult == unchecked((int)0x80070020) ||
+                                             ex.HResult == unchecked((int)0x80070021))
+                {
+                    HostAssets.AppendLog($"Account extension update deferred until files are released: id={item.ExtensionId}, reason=sharing-violation");
+                }
+                catch (Exception ex)
+                {
+                    HostAssets.AppendLog($"Failed to pull private extension {item.ExtensionId}: {ex.Message}");
+                }
+            }
+
+            if (pulledCount > 0)
+            {
+                await Dispatcher.InvokeAsync(ReloadLocalExtensionsFromExternal);
+                LastRunMessage = $"已从账号小程序库拉取 {pulledCount} 个扩展。";
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"Failed to pull missing private extensions: {ex.Message}");
+        }
+        finally
+        {
+            Volatile.Write(ref _privateExtensionPullRunning, 0);
+        }
+    }
+
+    private static bool IsConfigExtensionId(string extensionId)
+    {
+        return extensionId.Equals("yanzi-webdav-settings", StringComparison.OrdinalIgnoreCase) ||
+               extensionId.Equals("yanzi-quickpanel-settings", StringComparison.OrdinalIgnoreCase) ||
+               extensionId.Equals("yanzi-personal-sync-settings", StringComparison.OrdinalIgnoreCase) ||
+               extensionId.Equals("yanzi-ai-settings", StringComparison.OrdinalIgnoreCase) ||
+               extensionId.Equals("yanzi-general-settings", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void ReconcileDeletedExtensionsWithAccountLibrary()
+    {
+        var deletedIds = LoadPersonalSyncDeletedExtensionIds();
+        if (deletedIds.Count == 0 || _cloudSyncClient == null || !_cloudSyncClient.HasCredential)
         {
             return;
         }
 
         _ = Task.Run(async () =>
         {
+            if (!await _accountDeletionReconcileLock.WaitAsync(0))
+            {
+                return;
+            }
             try
             {
-                var commands = LocalExtensionCatalog.LoadCommands();
-                int successCount = 0;
-                foreach (var cmd in commands)
+                var accountIds = (await _cloudSyncClient.GetUserExtensionsAsync())
+                    .Where(item => !IsAccountExtensionTombstoned(item))
+                    .Select(static item => item.ExtensionId)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var removed = 0;
+                foreach (var extensionId in deletedIds.Where(accountIds.Contains))
                 {
-                    if (cmd.Source == CommandSource.LocalExtension && !IsInternalCommand(cmd))
-                    {
-                        string? publishedIcon = null;
-                        try
-                        {
-                            publishedIcon = await _cloudSyncClient.PublishIconAsync(cmd, cmd.DeclaredVersion);
-                        }
-                        catch (Exception iconEx)
-                        {
-                            HostAssets.AppendLog($"Failed to publish icon for {cmd.ExtensionId}: {iconEx.Message}");
-                        }
-
-                        await _cloudSyncClient.UpsertExtensionAsync(cmd, publishedIcon);
-                        await _cloudSyncClient.UpsertUserExtensionAsync(cmd);
-                        successCount++;
-                    }
+                    await _cloudSyncClient.RemoveUserExtensionAsync(extensionId);
+                    removed++;
                 }
-                HostAssets.AppendLog($"Auto synchronized {successCount} local extensions metadata to cloud db successfully.");
+
+                if (removed > 0)
+                {
+                    HostAssets.AppendLog($"Reconciled deleted extensions in account library: removed={removed}, alreadyAbsent={deletedIds.Count - removed}.");
+                }
             }
             catch (Exception ex)
             {
-                HostAssets.AppendLog($"Failed to auto register local extensions to cloud db: {ex.Message}");
+                HostAssets.AppendLog($"Account library deletion reconciliation failed: {FormatExceptionMessage(ex)}");
+            }
+            finally
+            {
+                _accountDeletionReconcileLock.Release();
             }
         });
+    }
+
+    private void ApplyAccountExtensionDeletions(IReadOnlySet<string> deletedIds)
+    {
+        var removed = 0;
+        foreach (var command in LocalExtensionCatalog.LoadCommands())
+        {
+            if (command.Source != CommandSource.LocalExtension ||
+                IsInternalCommand(command) ||
+                !deletedIds.Contains(command.ExtensionId) ||
+                string.IsNullOrWhiteSpace(command.ExtensionDirectoryPath) ||
+                !Directory.Exists(command.ExtensionDirectoryPath))
+                continue;
+
+            // A cloud tombstone is the account owner's delete operation;
+            // preserve local files in the recycle bin, never erase user data.
+            WebDavSyncService.MarkExtensionDeletedLocally(command.ExtensionId, command.DeclaredVersion);
+            ExtensionRecycleBinService.MoveToRecycleBin(command.ExtensionId, command.ExtensionDirectoryPath);
+            RemoveExtensionFromQuickPanelSettings(command.ExtensionId);
+            removed++;
+        }
+        if (removed == 0) return;
+        ReloadLocalExtensionsFromExternal();
+        QueueBackgroundWebDavSync("extension-account-removed", forceImmediate: true);
+        HostAssets.AppendLog($"Applied account extension tombstones locally: count={removed}");
+    }
+
+    private static bool IsAccountExtensionTombstoned(UserExtensionRecord? record)
+    {
+        if (record == null || record.Enabled != 0 || string.IsNullOrWhiteSpace(record.SettingsJson))
+            return false;
+        try
+        {
+            using var data = JsonDocument.Parse(record.SettingsJson);
+            return data.RootElement.TryGetProperty("_yanziDeleted", out var deleted) &&
+                   deleted.ValueKind == JsonValueKind.True;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static bool IsAccountExtensionNewer(CommandItem command, UserExtensionRecord record)
+    {
+        // A different SHA256 means different content, not a higher cloud version.
+        return AccountExtensionPullPolicy.IsRemoteVersionNewer(
+            command.DeclaredVersion, record.LatestVersion);
+    }
+
+    private static string CalculateLocalAccountArchiveSha256(CommandItem command, UserExtensionRecord remote)
+    {
+        var version = string.IsNullOrWhiteSpace(command.DeclaredVersion)
+            ? "0.1.0" : command.DeclaredVersion;
+        var package = ExtensionPackageService.BuildPackage(command, version,
+            GetArchivedManifestIcon(remote.ManifestJson), includeUserShortcut: false);
+        return Convert.ToHexString(SHA256.HashData(package));
+    }
+    private static string? BackupExtensionBeforeCloudUpgrade(CommandItem command, string? remoteArchiveSha256, string localArchiveSha256)
+    {
+        var source = command.ExtensionDirectoryPath;
+        if (string.IsNullOrWhiteSpace(source) || !Directory.Exists(source)) return null;
+        // Git worktrees will never be replaced by account packages. Avoid
+        // recursively copying the entire .git object store on every cloud pull.
+        if (ExtensionGitSafety.HasGitWorktree(source)) return null;
+        var id = command.ExtensionId;
+        if (id != Path.GetFileName(id))
+            throw new InvalidOperationException("Invalid extension ID for backup path");
+        var root = Path.Combine(HostAssets.DataRootPath, "Backups", "account-extension-upgrades",
+            id + "-upgrade-" + new string((command.DeclaredVersion ?? "unknown").Where(char.IsLetterOrDigit).ToArray()) + "-" +
+            new string((remoteArchiveSha256 ?? "unknown").Where(char.IsLetterOrDigit).Take(16).ToArray()) + "-" +
+            new string(localArchiveSha256.Where(char.IsLetterOrDigit).Take(16).ToArray()));
+        var completedMarker = Path.Combine(root, ".backup-complete");
+        if (File.Exists(completedMarker)) return root;
+        foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+        {
+            var relative = Path.GetRelativePath(source, file);
+            var segments = relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (segments.Any(segment => segment.Equals("node_modules", StringComparison.OrdinalIgnoreCase) ||
+                segment.Equals(".git", StringComparison.OrdinalIgnoreCase) ||
+                segment.Equals(".yanzi-csharp-cache", StringComparison.OrdinalIgnoreCase) ||
+                segment.Equals("backups", StringComparison.OrdinalIgnoreCase) ||
+                segment.Equals("bin", StringComparison.OrdinalIgnoreCase) ||
+                segment.Equals("obj", StringComparison.OrdinalIgnoreCase))) continue;
+            var copy = Path.Combine(root, relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(copy)!);
+            File.Copy(file, copy, overwrite: true);
+        }
+        File.WriteAllText(completedMarker, DateTime.UtcNow.ToString("O"));
+        // Only prune snapshots created by this content-addressed backup scheme.
+        // Historical/manual backups and incomplete snapshots are never deleted here.
+        var backupParent = Path.GetDirectoryName(root)!;
+        foreach (var stale in Directory.EnumerateDirectories(backupParent, id + "-upgrade-*")
+                     .Where(path => File.Exists(Path.Combine(path, ".backup-complete")))
+                     .OrderByDescending(Directory.GetCreationTimeUtc)
+                     .Skip(3))
+        {
+            try { Directory.Delete(stale, recursive: true); }
+            catch (IOException ex) { HostAssets.AppendLog($"Could not prune old account extension snapshot: {stale}: {ex.Message}"); }
+            catch (UnauthorizedAccessException ex) { HostAssets.AppendLog($"Could not prune protected account extension snapshot: {stale}: {ex.Message}"); }
+        }
+        HostAssets.AppendLog($"Account extension backup preserved before upgrade: id={id}, path={root}");
+        return root;
+    }
+
+    private static void CleanupExtensionUpgradeBackupsAfterSuccess(string id)
+    {
+        if (string.IsNullOrWhiteSpace(id) || id != Path.GetFileName(id)) return;
+        var parent = Path.Combine(HostAssets.DataRootPath, "Backups", "account-extension-upgrades");
+        if (!Directory.Exists(parent)) return;
+        foreach (var path in Directory.EnumerateDirectories(parent, id + "-upgrade-*"))
+        {
+            try
+            {
+                Directory.Delete(path, recursive: true);
+                HostAssets.AppendLog($"Account extension upgrade succeeded; temporary snapshot removed: {path}");
+            }
+            catch (IOException ex)
+            {
+                HostAssets.AppendLog($"Account extension upgraded but snapshot cleanup failed: {path}: {ex.Message}");
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                HostAssets.AppendLog($"Account extension upgraded but protected snapshot was retained: {path}: {ex.Message}");
+            }
+        }
+    }
+
+    private static bool IsAccountExtensionCurrent(CommandItem command, UserExtensionRecord? record)
+    {
+        if (record is not { HasArchive: true } || string.IsNullOrWhiteSpace(record.ArchiveSha256))
+            return false;
+
+        var version = string.IsNullOrWhiteSpace(command.DeclaredVersion) ? "0.1.0" : command.DeclaredVersion;
+        if (!string.Equals(record.DisplayName, command.Title, StringComparison.Ordinal))
+            return false;
+        if (!string.Equals(record.LatestVersion, version, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        if (TryGetArchivedManifestShortcut(record.ManifestJson, out var archivedShortcut) &&
+            !string.Equals(
+                archivedShortcut?.Trim(),
+                command.GlobalShortcut?.Trim(),
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var packageBytes = ExtensionPackageService.BuildPackage(
+            command,
+            version,
+            GetArchivedManifestIcon(record.ManifestJson),
+            includeUserShortcut: false);
+        var hash = Convert.ToHexString(SHA256.HashData(packageBytes));
+        return string.Equals(hash, record.ArchiveSha256, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? GetArchivedManifestIcon(string? manifestJson)
+    {
+        if (string.IsNullOrWhiteSpace(manifestJson))
+            return null;
+        try
+        {
+            using var document = JsonDocument.Parse(manifestJson);
+            return document.RootElement.TryGetProperty("icon", out var icon) && icon.ValueKind == JsonValueKind.String
+                ? icon.GetString()
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static bool TryGetArchivedManifestShortcut(
+        string? manifestJson,
+        out string? shortcut)
+    {
+        shortcut = null;
+
+        if (string.IsNullOrWhiteSpace(manifestJson))
+            return false;
+
+        try
+        {
+            using var document = JsonDocument.Parse(manifestJson);
+            if (!document.RootElement.TryGetProperty("globalShortcut", out var property))
+                return false;
+
+            shortcut = property.ValueKind == JsonValueKind.String
+                ? property.GetString()
+                : null;
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    // The existing watcher scheduled cloud sync only. It did not refresh the
+    // host's cached commands or radial menu when manifests changed on disk.
+    private readonly System.Windows.Threading.DispatcherTimer _extensionCatalogRefreshTimer = new()
+    {
+        Interval = TimeSpan.FromMilliseconds(650)
+    };
+    private string _lastCatalogContentSignature = string.Empty;
+
+    private string GetCatalogContentSignature()
+    {
+        try
+        {
+            using var hash = SHA256.Create();
+            foreach (var path in Directory.EnumerateFiles(HostAssets.ExtensionsPath, "*.*",
+                SearchOption.AllDirectories)
+                .Where(path => Path.GetFileName(path).Equals("manifest.json", StringComparison.OrdinalIgnoreCase) ||
+                    path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
+                .Where(path => !path.Contains(".yanzi-csharp-cache", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
+            {
+                var info = new FileInfo(path);
+                var fingerprint = System.Text.Encoding.UTF8.GetBytes(
+                    path + ":" + info.Length + ":" + info.LastWriteTimeUtc.Ticks + "\n");
+                hash.TransformBlock(fingerprint, 0, fingerprint.Length, null, 0);
+            }
+            hash.TransformFinalBlock([], 0, 0);
+            return Convert.ToHexString(hash.Hash!);
+        }
+        catch (IOException) { return string.Empty; }
+        catch (UnauthorizedAccessException) { return string.Empty; }
+    }
+
+    private void StartExtensionContentWatcher()
+    {
+        if (!HostRuntimeProfile.OwnsBackgroundServices) return;
+        _lastCatalogContentSignature = GetCatalogContentSignature();
+        _extensionCatalogRefreshTimer.Tick += (_, _) =>
+        {
+            _extensionCatalogRefreshTimer.Stop();
+            if ((!IsLoaded && !HostRuntimeProfile.IsRuntime) || Dispatcher.HasShutdownStarted || _isReplacingLocalExtensions)
+                return;
+            var current = GetCatalogContentSignature();
+            if (string.IsNullOrEmpty(current) || current == _lastCatalogContentSignature)
+                return;
+            _lastCatalogContentSignature = current;
+            HostAssets.AppendLog("Local manifest changed: refreshing launcher, wheel and quick panel.");
+            ReloadLocalExtensionsFromExternal();
+        };
+
+        try
+        {
+            Directory.CreateDirectory(HostAssets.ExtensionsPath);
+            _extensionContentWatcher = new FileSystemWatcher(HostAssets.ExtensionsPath)
+            {
+                IncludeSubdirectories = true,
+                NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
+                EnableRaisingEvents = true
+            };
+            _extensionContentWatcher.Changed += ExtensionContentWatcher_Changed;
+            _extensionContentWatcher.Created += ExtensionContentWatcher_Changed;
+            _extensionContentWatcher.Deleted += ExtensionContentWatcher_Changed;
+            _extensionContentWatcher.Renamed += ExtensionContentWatcher_Changed;
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"Extension change monitoring unavailable: {ex.Message}");
+        }
+    }
+
+    private void ExtensionContentWatcher_Changed(object sender, FileSystemEventArgs e)
+    {
+        if (_extensionContentWatcher == null || Dispatcher.HasShutdownStarted)
+            return;
+
+        string[] segments;
+        try
+        {
+            var relativePath = Path.GetRelativePath(HostAssets.ExtensionsPath, e.FullPath);
+            segments = relativePath.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
+            // Ignore transient install events and filesystem races on watcher threads.
+            if (segments.Length < 2 ||
+                segments[0].StartsWith(".yanzi-install-", StringComparison.OrdinalIgnoreCase) ||
+                segments[0].StartsWith(".yanzi-backup-", StringComparison.OrdinalIgnoreCase) ||
+                segments[0].StartsWith(".yanzi-staging-", StringComparison.OrdinalIgnoreCase) ||
+                !ExtensionPackageService.ShouldIncludeInPackage(
+                    Path.Combine(HostAssets.ExtensionsPath, segments[0]), e.FullPath))
+                return;
+        }
+        catch (IOException) { return; }
+        catch (UnauthorizedAccessException) { return; }
+        catch (ArgumentException) { return; }
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (!IsLoaded)
+                return;
+            if (string.Equals(segments[1], "manifest.json", StringComparison.OrdinalIgnoreCase) ||
+                e.FullPath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
+            {
+                _extensionCatalogRefreshTimer.Stop();
+                _extensionCatalogRefreshTimer.Start();
+            }
+            QueueBackgroundWebDavSync("extension-file-change");
+            SyncLocalExtensionsToCloud();
+        }));
+    }
+
+    private static HashSet<string> LoadPersonalSyncDeletedExtensionIds()
+    {
+        try
+        {
+            if (!File.Exists(HostAssets.WebDavSyncStatePath))
+            {
+                return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            }
+            var index = JsonSerializer.Deserialize<WebDavSyncIndex>(
+                File.ReadAllText(HostAssets.WebDavSyncStatePath),
+                JsonDefaults.CaseInsensitive);
+            return (index?.Items ?? [])
+                .Where(static item => item.Deleted || item.Purged)
+                .Select(static item => item.ExtensionId)
+                .Where(static id => !string.IsNullOrWhiteSpace(id))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
     }
 
     private async Task<bool> PullWebDavConfigFromCloudAsync()
@@ -2185,6 +2098,24 @@ public partial class MainWindow
                 : snapshot.Provider);
         incomingSettings.Enabled = incomingSettings.Enabled || snapshot.Enabled;
         var incomingSecrets = snapshot.Secrets ?? new PersonalSyncSecretBag();
+        if (!string.IsNullOrWhiteSpace(snapshot.E2eePayload) && _cloudSyncClient.E2eeMasterKey != null)
+        {
+            try
+            {
+                var decryptedSecretsJson = SyncCryptoService.Decrypt(snapshot.E2eePayload, _cloudSyncClient.E2eeMasterKey);
+                var decryptedSecrets = JsonSerializer.Deserialize<PersonalSyncSecretBag>(decryptedSecretsJson);
+                if (decryptedSecrets != null)
+                {
+                    incomingSecrets = decryptedSecrets;
+                    snapshot.Secrets = decryptedSecrets; // 关联原始云端凭据
+                    HostAssets.AppendLog("Personal sync cloud pull: decrypted secrets package successfully using MasterKey.");
+                }
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"Personal sync cloud pull E2EE decrypt failed: {ex.Message}");
+            }
+        }
         if (!ReferenceEquals(snapshot, legacySnapshot) && legacySnapshot != null)
         {
             MergeLegacyWebDavSnapshot(incomingSettings, incomingSecrets, legacySnapshot);
@@ -2231,28 +2162,47 @@ public partial class MainWindow
             return false;
         }
 
+        // 备份合并前云端拉取配置的副本，用于后面对比，避免共享同一个对象引用导致对比失效
+        var originalCloudSettings = ClonePersonalSyncSettings(snapshot.Settings ?? new PersonalSyncSettings());
+        var originalCloudSecrets = ClonePersonalSyncSecretBag(snapshot.Secrets ?? new PersonalSyncSecretBag());
+
         PreserveMissingPersonalSyncValues(localPersonalSync, incomingSettings, localSecrets, incomingSecrets);
 
-        if (ArePersonalSyncSettingsEqual(localPersonalSync, incomingSettings) &&
-            ArePersonalSyncSecretsEqual(localSecrets, incomingSecrets) &&
-            localSettings.PersonalSyncAutoSyncDelaySeconds == incomingAutoSyncDelaySeconds)
-        {
-            HostAssets.AppendLog("Personal sync cloud pull: no local changes detected.");
-            CloudSyncDiagnostics.Log("MainWindow.PersonalSync", "Cloud pull skipped: no local changes");
-            return false;
-        }
+        // 检测是否有本地凭据/配置合并到了云端配置中
+        var hasMergedLocalChanges = !ArePersonalSyncSettingsEqual(originalCloudSettings, incomingSettings) ||
+                                    !ArePersonalSyncSecretsEqual(originalCloudSecrets, incomingSecrets);
 
-        SavePersonalSyncSettings(incomingSettings, incomingSecrets, queueCloudSync: false);
-        SavePersonalSyncAutoSyncDelaySeconds(incomingAutoSyncDelaySeconds, queueCloudSync: false);
-        HostAssets.AppendLog(
-            $"Personal sync cloud pull applied: provider={incomingSettings.Provider}, enabled={incomingSettings.Enabled}, autoSyncDelaySeconds={incomingAutoSyncDelaySeconds}");
-        CloudSyncDiagnostics.Log(
-            "MainWindow.PersonalSync",
-            "Cloud pull applied",
-            ("summary", CloudSyncDiagnostics.DescribePersonalSync(incomingSettings, incomingSecrets)),
-            ("autoSyncDelaySeconds", incomingAutoSyncDelaySeconds));
-        NotifySettingsWindowWebDavConfigChanged();
-        return true;
+        if (hasMergedLocalChanges)
+        {
+            SavePersonalSyncSettings(incomingSettings, incomingSecrets, queueCloudSync: false);
+            SavePersonalSyncAutoSyncDelaySeconds(incomingAutoSyncDelaySeconds, queueCloudSync: false);
+            HostAssets.AppendLog("Personal sync cloud pull: merged local credentials, saving and pushing back to cloud.");
+            await PushWebDavConfigToCloudAsync("cloud-refresh-merged-local");
+            return true;
+        }
+        else
+        {
+            if (ArePersonalSyncSettingsEqual(localPersonalSync, incomingSettings) &&
+                ArePersonalSyncSecretsEqual(localSecrets, incomingSecrets) &&
+                localSettings.PersonalSyncAutoSyncDelaySeconds == incomingAutoSyncDelaySeconds)
+            {
+                HostAssets.AppendLog("Personal sync cloud pull: no local changes detected.");
+                CloudSyncDiagnostics.Log("MainWindow.PersonalSync", "Cloud pull skipped: no local changes");
+                return false;
+            }
+
+            SavePersonalSyncSettings(incomingSettings, incomingSecrets, queueCloudSync: false);
+            SavePersonalSyncAutoSyncDelaySeconds(incomingAutoSyncDelaySeconds, queueCloudSync: false);
+            HostAssets.AppendLog(
+                $"Personal sync cloud pull applied: provider={incomingSettings.Provider}, enabled={incomingSettings.Enabled}, autoSyncDelaySeconds={incomingAutoSyncDelaySeconds}");
+            CloudSyncDiagnostics.Log(
+                "MainWindow.PersonalSync",
+                "Cloud pull applied",
+                ("summary", CloudSyncDiagnostics.DescribePersonalSync(incomingSettings, incomingSecrets)),
+                ("autoSyncDelaySeconds", incomingAutoSyncDelaySeconds));
+            NotifySettingsWindowWebDavConfigChanged();
+            return true;
+        }
     }
 
     private async Task<bool> HasAnyRemoteCloudDataAsync()
@@ -2276,14 +2226,26 @@ public partial class MainWindow
 
     private void ShowSettingsCloudSyncProgressToast(string message)
     {
-        var settingsWindow = System.Windows.Application.Current.Windows.OfType<SettingsWindow>().FirstOrDefault();
-        settingsWindow?.ShowCloudSyncProgressToast(message);
+        // 可能从后台同步线程调用：Application.Windows 与窗口操作必须在 UI 线程
+        RunOnUi(() =>
+        {
+            var settingsWindow = System.Windows.Application.Current.Windows.OfType<SettingsWindow>().FirstOrDefault();
+            settingsWindow?.ShowCloudSyncProgressToast(message);
+        });
     }
 
     private void HideSettingsCloudSyncProgressToast()
     {
-        var settingsWindow = System.Windows.Application.Current.Windows.OfType<SettingsWindow>().FirstOrDefault();
-        settingsWindow?.HideCloudSyncProgressToast();
+        RunOnUi(() =>
+        {
+            var settingsWindow = System.Windows.Application.Current.Windows.OfType<SettingsWindow>().FirstOrDefault();
+            settingsWindow?.HideCloudSyncProgressToast();
+        });
+    }
+
+    private static void RunOnUi(Action action)
+    {
+        UiDispatcher.Post(action);
     }
 
     private static void MergeLegacyWebDavSnapshot(
@@ -2479,18 +2441,51 @@ public partial class MainWindow
             ("reason", reason),
             ("summary", CloudSyncDiagnostics.DescribePersonalSync(sync, secrets)),
             ("autoSyncDelaySeconds", settings.PersonalSyncAutoSyncDelaySeconds));
+        string? e2eePayload = null;
+        if (_cloudSyncClient.E2eeMasterKey != null)
+        {
+            try
+            {
+                var secretsJson = JsonSerializer.Serialize(secrets);
+                e2eePayload = SyncCryptoService.Encrypt(secretsJson, _cloudSyncClient.E2eeMasterKey);
+                HostAssets.AppendLog("Personal sync cloud push: encrypted secrets package successfully using MasterKey.");
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"Personal sync cloud push E2EE failed: {ex.Message}");
+            }
+        }
+
         await _cloudSyncClient.UpsertUserConfigAsync(CloudPersonalSyncConfigId, new CloudPersonalSyncConfigSnapshot
         {
             Enabled = sync.Enabled,
             Provider = sync.Provider,
             Settings = sync,
-            Secrets = secrets,
+            // 个人仓库凭据只保存在本机 DPAPI。账号云只同步后端元数据，
+            // Worker 不再持有可直接访问用户仓库/存储桶的 Token 或密码。
+            Secrets = new PersonalSyncSecretBag(),
+            E2eePayload = e2eePayload,
+            AutoSyncDelaySeconds = settings.PersonalSyncAutoSyncDelaySeconds
+        });
+        await _cloudSyncClient.UpsertUserConfigAsync(CloudLegacyWebDavConfigId, new CloudPersonalSyncConfigSnapshot
+        {
+            Enabled = false,
+            Provider = PersonalSyncProviders.WebDav,
+            Settings = new PersonalSyncSettings { Enabled = false, Provider = PersonalSyncProviders.WebDav },
+            Secrets = new PersonalSyncSecretBag(),
             AutoSyncDelaySeconds = settings.PersonalSyncAutoSyncDelaySeconds
         });
         CloudSyncDiagnostics.Log("MainWindow.PersonalSync", "Cloud push completed", ("reason", reason));
     }
 
     private async Task<bool> PullQuickPanelConfigFromCloudAsync()
+    {
+        await _accountObjectSyncLock.WaitAsync();
+        try { return await PullQuickPanelConfigFromCloudCoreAsync(); }
+        finally { _accountObjectSyncLock.Release(); }
+    }
+
+    private async Task<bool> PullQuickPanelConfigFromCloudCoreAsync()
     {
         if (_cloudSyncClient == null)
         {
@@ -2499,13 +2494,14 @@ public partial class MainWindow
 
         CloudSyncDiagnostics.Log("MainWindow.QuickPanel", "Cloud pull started");
         var snapshot = await _cloudSyncClient.GetUserConfigAsync<CloudQuickPanelConfigSnapshot>(CloudQuickPanelConfigId);
+        snapshot = await TryComposeCloudObjectSnapshotAsync(snapshot);
         if (snapshot == null)
         {
             HostAssets.AppendLog("Quick panel cloud pull: no user config found.");
             CloudSyncDiagnostics.Log("MainWindow.QuickPanel", "Cloud pull found no snapshot", ("shouldBootstrapPush", ShouldSyncLocalQuickPanelConfigToCloud()));
             if (ShouldSyncLocalQuickPanelConfigToCloud())
             {
-                await PushQuickPanelConfigToCloudAsync("cloud-refresh-bootstrap");
+                await PushQuickPanelConfigToCloudCoreAsync("cloud-refresh-bootstrap");
             }
 
             return false;
@@ -2513,10 +2509,18 @@ public partial class MainWindow
 
         var settings = AppSettingsStore.Load();
         var shouldBackfillAiConfig = !HasAiConfigPayload(snapshot) && HasAiSettings(settings);
+        var shouldBackfillExtendedConfig = HasMissingExtendedConfigPayload(snapshot);
         var incoming = snapshot.ToAppSettings();
         var changed =
             !string.Equals(settings.ThemeMode, incoming.ThemeMode, StringComparison.Ordinal) ||
+            snapshot.AutoCloseToastEnabled != null && settings.AutoCloseToastEnabled != incoming.AutoCloseToastEnabled ||
+            snapshot.EnableAutoUpdate != null && settings.EnableAutoUpdate != incoming.EnableAutoUpdate ||
+            snapshot.AutoBackupFrequency != null && !string.Equals(settings.AutoBackupFrequency, incoming.AutoBackupFrequency, StringComparison.OrdinalIgnoreCase) ||
+            snapshot.EnableBrowserHelper != null && settings.EnableBrowserHelper != incoming.EnableBrowserHelper ||
+            snapshot.PreferManualExtensionEditor != null && settings.PreferManualExtensionEditor != incoming.PreferManualExtensionEditor ||
+            snapshot.EnableEverything != null && settings.EnableEverything != incoming.EnableEverything ||
             !string.Equals(settings.LauncherHotkey, incoming.LauncherHotkey, StringComparison.Ordinal) ||
+            snapshot.AppShortcutBindings != null && !AreJsonPayloadsEqual(settings.AppShortcutBindings, incoming.AppShortcutBindings) ||
             settings.LaunchAtStartup != incoming.LaunchAtStartup ||
             settings.RefreshCloudOnStartup != incoming.RefreshCloudOnStartup ||
             settings.CloseToTray != incoming.CloseToTray ||
@@ -2531,6 +2535,9 @@ public partial class MainWindow
             !AreQuickPanelGroupsEqual(settings.QuickPanelGlobalGroups, incoming.QuickPanelGlobalGroups) ||
             !AreQuickPanelGroupsEqual(settings.QuickPanelContextGroups, incoming.QuickPanelContextGroups) ||
             !AreQuickPanelMouseTriggersEqual(settings.QuickPanelMouseTriggers, incoming.QuickPanelMouseTriggers) ||
+            snapshot.MouseGestureAppBindings != null && !AreJsonPayloadsEqual(settings.MouseGestureAppBindings, incoming.MouseGestureAppBindings) ||
+            snapshot.SearchScopeConfigs != null && !AreJsonPayloadsEqual(settings.SearchScopeConfigs, incoming.SearchScopeConfigs) ||
+            snapshot.EnvironmentVariables != null && !AreJsonPayloadsEqual(settings.EnvironmentVariables, incoming.EnvironmentVariables) ||
             !string.Equals(MouseGestureTriggerModes.Normalize(settings.MouseGestureTriggerMode), MouseGestureTriggerModes.Normalize(incoming.MouseGestureTriggerMode), StringComparison.Ordinal) ||
             !string.Equals(MouseTriggerModes.Normalize(settings.WindowSnapAssistMouseTriggerMode), MouseTriggerModes.Normalize(incoming.WindowSnapAssistMouseTriggerMode), StringComparison.Ordinal) ||
             settings.EnableWindowSnapAssist != incoming.EnableWindowSnapAssist ||
@@ -2542,7 +2549,6 @@ public partial class MainWindow
             snapshot.YarnSelect != null && !AreJsonPayloadsEqual(settings.YarnSelect, incoming.YarnSelect) ||
             snapshot.RadialMenu != null && !AreJsonPayloadsEqual(settings.RadialMenu, incoming.RadialMenu) ||
             snapshot.YanyuRules != null && !AreJsonPayloadsEqual(settings.YanyuRules, incoming.YanyuRules) ||
-            snapshot.Yanm != null && !AreJsonPayloadsEqual(settings.Yanm, incoming.Yanm) ||
             HasAiConfigPayload(snapshot) && !AreAiSettingsEqual(settings, incoming);
         var localUpdatedAtUtc = TryParseCloudTimestamp(settings.LauncherConfigUpdatedAtUtc);
         var remoteUpdatedAtUtc = TryParseCloudTimestamp(snapshot.UpdatedAtUtc);
@@ -2553,8 +2559,9 @@ public partial class MainWindow
             if (IsLikelyFreshLocalLauncherConfig(settings) && HasMeaningfulCloudLauncherConfig(snapshot))
             {
                 ApplyCloudLauncherSettings(settings, incoming, snapshot);
-                settings.LauncherConfigUpdatedAtUtc = DateTime.UtcNow.ToString("O");
+                settings.LauncherConfigUpdatedAtUtc = remoteUpdatedAtUtc?.ToString("O") ?? DateTime.UtcNow.ToString("O");
                 AppSettingsStore.Save(settings);
+                RecordAppliedLauncherBaseline(settings);
                 RefreshRuntimeAfterCloudLauncherPull(settings, snapshot);
                 HostAssets.AppendLog(
                     $"Quick panel cloud pull applied over fresh local config: localUpdated={localUpdatedAtUtc:O}, remoteUpdated={remoteUpdatedAtUtc?.ToString("O") ?? "missing"}.");
@@ -2572,23 +2579,24 @@ public partial class MainWindow
                 HostAssets.AppendLog(
                     $"Quick panel cloud pull: merged missing AI config from older cloud snapshot, localUpdated={localUpdatedAtUtc:O}, remoteUpdated={remoteUpdatedAtUtc?.ToString("O") ?? "missing"}.");
                 CloudSyncDiagnostics.Log("MainWindow.QuickPanel", "Cloud pull merged missing AI config", ("remoteUpdatedAtUtc", snapshot.UpdatedAtUtc));
-                await PushQuickPanelConfigToCloudAsync("cloud-refresh-local-newer-ai-merged");
+                await PushQuickPanelConfigToCloudCoreAsync("cloud-refresh-local-newer-ai-merged");
                 return true;
             }
 
             HostAssets.AppendLog(
                 $"Quick panel cloud pull skipped: local config is newer, localUpdated={localUpdatedAtUtc:O}, remoteUpdated={remoteUpdatedAtUtc?.ToString("O") ?? "missing"}.");
             CloudSyncDiagnostics.Log("MainWindow.QuickPanel", "Cloud pull skipped: local config newer", ("remoteUpdatedAtUtc", snapshot.UpdatedAtUtc));
-            await PushQuickPanelConfigToCloudAsync("cloud-refresh-local-newer");
+            await PushQuickPanelConfigToCloudCoreAsync("cloud-refresh-local-newer");
             return false;
         }
 
         if (!changed)
         {
-            if (shouldBackfillAiConfig)
+            RecordAppliedLauncherBaseline(settings);
+            if (shouldBackfillAiConfig || shouldBackfillExtendedConfig)
             {
-                await PushQuickPanelConfigToCloudAsync("cloud-refresh-ai-backfill");
-                HostAssets.AppendLog("Quick panel cloud pull: backfilled missing AI config fields.");
+                await PushQuickPanelConfigToCloudCoreAsync("cloud-refresh-schema-backfill");
+                HostAssets.AppendLog("Quick panel cloud pull: backfilled fields missing from an older cloud snapshot.");
                 return true;
             }
 
@@ -2598,9 +2606,10 @@ public partial class MainWindow
         }
 
         ApplyCloudLauncherSettings(settings, incoming, snapshot);
-        settings.LauncherConfigUpdatedAtUtc = DateTime.UtcNow.ToString("O");
+        settings.LauncherConfigUpdatedAtUtc = remoteUpdatedAtUtc?.ToString("O") ?? DateTime.UtcNow.ToString("O");
 
         AppSettingsStore.Save(settings);
+        RecordAppliedLauncherBaseline(settings);
         RefreshRuntimeAfterCloudLauncherPull(settings, snapshot);
         HostAssets.AppendLog(
             $"Quick panel cloud pull applied: globalGroups={settings.QuickPanelGlobalGroups.Count}, contextGroups={settings.QuickPanelContextGroups.Count}, globalFavs={settings.GlobalFavoriteExtensionIds.Count}, contextFavs={settings.ContextFavoriteExtensionIds.Count}, yanyu={settings.YanyuRules.Count}, radialPages={settings.RadialMenu?.Pages?.Count ?? 0}, aiConfig={HasAiConfigPayload(snapshot)}");
@@ -2615,11 +2624,20 @@ public partial class MainWindow
             ("hasAiConfig", HasAiConfigPayload(snapshot)));
         if (shouldBackfillAiConfig)
         {
-            await PushQuickPanelConfigToCloudAsync("cloud-pull-ai-backfill");
+            await PushQuickPanelConfigToCloudCoreAsync("cloud-pull-ai-backfill");
             HostAssets.AppendLog("Quick panel cloud pull applied: backfilled missing AI config fields.");
         }
 
         return true;
+    }
+
+    private void RecordAppliedLauncherBaseline(AppSettings settings)
+    {
+        var state = CloudObjectSyncStateStore.Load(_cloudSyncClient?.CurrentUserId);
+        if (state.Objects.Count == 0) return;
+        CloudPendingChanges.RecordApplied(state, AccountConfigObjectStore.PrepareWrites(
+            CloudQuickPanelConfigSnapshot.FromSettings(settings), DateTime.UtcNow, state.Objects.Keys, state.KnownLocalDynamicObjectIds));
+        CloudObjectSyncStateStore.Save(state);
     }
 
     private void RefreshRuntimeAfterCloudLauncherPull(AppSettings settings, CloudQuickPanelConfigSnapshot snapshot)
@@ -2644,12 +2662,29 @@ public partial class MainWindow
         NotifySettingsWindowAiConfigChanged();
         NotifySettingsWindowWebDavConfigChanged();
         OnPropertyChanged(nameof(AiChatModelDisplayText));
+        App.Current?.ReloadSettingsWindowIfOpen();
     }
 
     private static void ApplyCloudLauncherSettings(AppSettings settings, AppSettings incoming, CloudQuickPanelConfigSnapshot snapshot)
     {
         settings.ThemeMode = incoming.ThemeMode;
+        if (snapshot.AutoCloseToastEnabled != null) settings.AutoCloseToastEnabled = incoming.AutoCloseToastEnabled;
+        if (snapshot.EnableAutoUpdate != null) settings.EnableAutoUpdate = incoming.EnableAutoUpdate;
+        if (snapshot.AutoBackupFrequency != null) settings.AutoBackupFrequency = incoming.AutoBackupFrequency;
+        if (snapshot.EnableBrowserHelper != null) settings.EnableBrowserHelper = incoming.EnableBrowserHelper;
+        if (snapshot.PreferManualExtensionEditor != null) settings.PreferManualExtensionEditor = incoming.PreferManualExtensionEditor;
+        if (snapshot.EnableEverything != null)
+        {
+            HostAssets.AppendLog($"[CloudSync] ApplyCloudLauncherSettings applying EnableEverything: {settings.EnableEverything} -> {incoming.EnableEverything}");
+            settings.EnableEverything = incoming.EnableEverything;
+        }
         settings.LauncherHotkey = incoming.LauncherHotkey;
+        if (snapshot.AppShortcutBindings != null)
+        {
+            settings.AppShortcutBindings = new Dictionary<string, string>(
+                incoming.AppShortcutBindings,
+                StringComparer.OrdinalIgnoreCase);
+        }
         settings.LaunchAtStartup = incoming.LaunchAtStartup;
         settings.RefreshCloudOnStartup = incoming.RefreshCloudOnStartup;
         settings.CloseToTray = incoming.CloseToTray;
@@ -2664,6 +2699,12 @@ public partial class MainWindow
         settings.DisabledExtensionIds = incoming.DisabledExtensionIds;
         settings.PinnedSearchScopeCommandIds = incoming.PinnedSearchScopeCommandIds;
         settings.QuickPanelMouseTriggers = incoming.QuickPanelMouseTriggers;
+        if (snapshot.MouseGestureAppBindings != null) settings.MouseGestureAppBindings = incoming.MouseGestureAppBindings;
+        if (snapshot.SearchScopeConfigs != null) settings.SearchScopeConfigs = incoming.SearchScopeConfigs;
+        if (snapshot.EnvironmentVariables != null)
+        {
+            settings.EnvironmentVariables = AppEnvironmentVariableStore.PrepareSyncedMetadata(incoming.EnvironmentVariables);
+        }
         settings.MouseGestureTriggerMode = MouseGestureTriggerModes.Normalize(incoming.MouseGestureTriggerMode);
         settings.WindowSnapAssistMouseTriggerMode = MouseTriggerModes.Normalize(incoming.WindowSnapAssistMouseTriggerMode);
         settings.EnableWindowSnapAssist = incoming.EnableWindowSnapAssist;
@@ -2687,16 +2728,9 @@ public partial class MainWindow
             settings.YanyuRules = incoming.YanyuRules;
         }
 
-        if (snapshot.Yanm != null)
-        {
-            settings.Yanm = incoming.Yanm;
-            settings.YanmStateUpdatedAtUtc = string.IsNullOrWhiteSpace(settings.YanmStateUpdatedAtUtc)
-                ? settings.LauncherConfigUpdatedAtUtc
-                : settings.YanmStateUpdatedAtUtc;
-        }
-
         if (HasAiConfigPayload(snapshot))
         {
+            AiCredentialStore.PreserveLocalSecrets(settings, incoming);
             settings.AiBaseUrl = incoming.AiBaseUrl;
             settings.AiApiKey = incoming.AiApiKey;
             settings.AiModel = incoming.AiModel;
@@ -2707,6 +2741,19 @@ public partial class MainWindow
     }
 
     private async Task PushQuickPanelConfigToCloudAsync(string reason)
+    {
+        await _accountObjectSyncLock.WaitAsync();
+        try
+        {
+            await PushQuickPanelConfigToCloudCoreAsync(reason);
+        }
+        finally
+        {
+            _accountObjectSyncLock.Release();
+        }
+    }
+
+    private async Task PushQuickPanelConfigToCloudCoreAsync(string reason)
     {
         if (_cloudSyncClient == null || !_cloudSyncClient.HasCredential)
         {
@@ -2731,10 +2778,466 @@ public partial class MainWindow
             return;
         }
 
+        var capabilities = await TryGetCloudSyncCapabilitiesAsync();
+        if (capabilities?.ObjectsAuthoritative == true)
+        {
+            await PushQuickPanelObjectsToCloudAsync(localSnapshot);
+            HostAssets.AppendLog($"Quick panel cloud push used authoritative object protocol: reason={reason}");
+            return;
+        }
+
         await _cloudSyncClient.UpsertUserConfigAsync(CloudQuickPanelConfigId, localSnapshot);
+        if (capabilities?.ObjectSyncAvailable == true)
+        {
+            await PushQuickPanelObjectsToCloudAsync(localSnapshot);
+        }
+    }
+
+    private async Task<CloudQuickPanelConfigSnapshot?> TryComposeCloudObjectSnapshotAsync(
+        CloudQuickPanelConfigSnapshot? legacySnapshot)
+    {
+        if (_cloudSyncClient == null)
+        {
+            return legacySnapshot;
+        }
+
+        try
+        {
+            var capabilities = await TryGetCloudSyncCapabilitiesAsync();
+            if (capabilities?.ObjectSyncAvailable != true)
+            {
+                return legacySnapshot;
+            }
+
+            var state = CloudObjectSyncStateStore.Load(_cloudSyncClient.CurrentUserId);
+            var baseline = state.LocalBaselines.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
+            CapturePendingLauncherChanges(state, baseline);
+            CloudObjectSyncStateStore.Save(state);
+            await RefreshCloudObjectCacheAsync(state);
+            if (legacySnapshot != null &&
+                (!state.Objects.ContainsKey(AccountConfigObjectStore.QuickPanelIndexObjectId) ||
+                 !state.Objects.ContainsKey(AccountConfigObjectStore.RadialMenuIndexObjectId)))
+            {
+                await BootstrapCloudObjectsFromLegacySnapshotAsync(state, legacySnapshot);
+            }
+            // Also capture edits made while the network request was in flight, against the original baseline.
+            CapturePendingLauncherChanges(state, baseline);
+            var envelopeMap = state.Objects.Values
+                .Select(static item => new LauncherConfigObjectEnvelope
+                {
+                    SchemaVersion = item.SchemaVersion,
+                    ObjectId = item.ObjectId,
+                    UpdatedAtUtc = item.UpdatedAtUtc,
+                    UpdatedByDeviceId = item.UpdatedByDeviceId,
+                    UpdatedByDeviceName = item.UpdatedByDeviceName,
+                    Deleted = item.Deleted,
+                    Payload = item.Payload.Clone()
+                })
+                .ToDictionary(static item => item.ObjectId, StringComparer.OrdinalIgnoreCase);
+
+            if (state.PendingObjectIds.Count > 0)
+            {
+                var localSettings = AppSettingsStore.Load();
+                var localSnapshot = CloudQuickPanelConfigSnapshot.FromSettings(localSettings);
+                var localUpdatedAtUtc = TryParseCloudTimestamp(localSettings.LauncherConfigUpdatedAtUtc) ?? DateTime.UtcNow;
+                var pendingIds = state.PendingObjectIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
+                foreach (var pendingWrite in AccountConfigObjectStore.PrepareWrites(
+                             localSnapshot,
+                             localUpdatedAtUtc,
+                             state.Objects.Keys,
+                             state.KnownLocalDynamicObjectIds).Where(item => pendingIds.Contains(item.ObjectId)))
+                {
+                    envelopeMap[pendingWrite.ObjectId] = pendingWrite.Envelope;
+                }
+            }
+
+            var effectiveEnvelopes = envelopeMap.Values.ToList();
+            var composed = LauncherConfigObjectStore.Compose(
+                legacySnapshot,
+                effectiveEnvelopes.Where(static item => !item.Deleted),
+                out _,
+                preferObjectsOverBase: true);
+            composed = AccountConfigObjectStore.Apply(composed, effectiveEnvelopes);
+            CloudObjectSyncStateStore.Save(state);
+            return composed;
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"Cloud object pull failed; local settings preserved: {FormatExceptionMessage(ex)}");
+            throw;
+        }
+    }
+
+    private static void CapturePendingLauncherChanges(CloudObjectSyncState state, IReadOnlyDictionary<string, CloudObjectSyncCacheEntry> baseline)
+    {
+        var snapshot = CloudQuickPanelConfigSnapshot.FromSettings(AppSettingsStore.Load());
+        var writes = AccountConfigObjectStore.PrepareWrites(snapshot, DateTime.UtcNow, baseline.Keys, state.KnownLocalDynamicObjectIds);
+        CloudPendingChanges.Capture(state, writes, baseline);
+    }
+
+    private async Task<CloudSyncCapabilitiesResponse?> TryGetCloudSyncCapabilitiesAsync()
+    {
+        if (_cloudSyncClient == null)
+        {
+            return null;
+        }
+
+        try
+        {
+            var capabilities = await _cloudSyncClient.GetSyncCapabilitiesAsync();
+            if (!capabilities.Ok) throw new InvalidDataException("云端未返回有效的同步能力信息。");
+            var state = CloudObjectSyncStateStore.Load(_cloudSyncClient.CurrentUserId);
+            state.ServerProtocolVersion = capabilities.ProtocolVersion;
+            state.ObjectSyncAvailable = capabilities.ObjectSyncAvailable;
+            state.ObjectHistoryAvailable = capabilities.ObjectHistoryAvailable;
+            state.ObjectsAuthoritative = capabilities.ObjectsAuthoritative;
+            state.CapabilitiesCheckedAtUtc = DateTime.UtcNow.ToString("O");
+            CloudObjectSyncStateStore.Save(state);
+            CloudSyncDiagnostics.Log(
+                "MainWindow.ObjectSync",
+                "Capabilities negotiated",
+                ("protocolVersion", capabilities.ProtocolVersion),
+                ("objectSyncAvailable", capabilities.ObjectSyncAvailable),
+                ("objectHistoryAvailable", capabilities.ObjectHistoryAvailable),
+                ("objectsAuthoritative", capabilities.ObjectsAuthoritative),
+                ("legacySnapshotWriteRequired", capabilities.LegacySnapshotWriteRequired),
+                ("cachedObjects", state.Objects.Count),
+                ("pendingObjects", state.PendingObjectIds.Count));
+            return capabilities;
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"Cloud sync capability negotiation failed; sync deferred: {FormatExceptionMessage(ex)}");
+            throw;
+        }
+    }
+
+    private Task RefreshCloudObjectCacheAsync(CloudObjectSyncState state) =>
+        _cloudSyncClient == null ? Task.CompletedTask :
+        new AccountObjectSyncService(new CloudAccountObjectRepository(_cloudSyncClient), _accountObjectSyncLock).RefreshAsync(state);
+
+    private async Task BootstrapCloudObjectsFromLegacySnapshotAsync(
+        CloudObjectSyncState state,
+        CloudQuickPanelConfigSnapshot legacySnapshot)
+    {
+        var snapshotUpdatedAtUtc = TryParseCloudTimestamp(legacySnapshot.UpdatedAtUtc) ?? DateTime.UtcNow;
+        foreach (var write in AccountConfigObjectStore.PrepareWrites(
+                     legacySnapshot,
+                     snapshotUpdatedAtUtc,
+                     state.Objects.Keys,
+                     state.KnownLocalDynamicObjectIds))
+        {
+            try
+            {
+                var expectedRevision = state.Objects.TryGetValue(write.ObjectId, out var cached)
+                    ? cached.Revision
+                    : 0;
+                // Migration may fill missing objects, never overwrite existing authoritative objects.
+                if (cached != null) continue;
+
+                var saved = await PutCloudObjectWriteAsync(write, expectedRevision);
+                state.Objects[write.ObjectId] = CloudObjectSyncCacheEntry.FromRecord(saved);
+
+                UpdateKnownDynamicObjectAfterWrite(state, write);
+            }
+            catch (CloudSyncRevisionConflictException)
+            {
+                // 另一台设备可能同时完成了回填；刷新后采用服务端对象即可。
+                await RefreshCloudObjectCacheAsync(state);
+            }
+        }
+        CloudObjectSyncStateStore.Save(state);
+        HostAssets.AppendLog($"Cloud object bootstrap completed from legacy snapshot: objects={state.Objects.Count}, revision={state.LastSyncedRevision}");
+    }
+
+    private async Task PushQuickPanelObjectsToCloudAsync(CloudQuickPanelConfigSnapshot snapshot)
+    {
+        if (_cloudSyncClient == null)
+        {
+            return;
+        }
+
+        CloudObjectSyncState? state = null;
+        try
+        {
+            state = CloudObjectSyncStateStore.Load(_cloudSyncClient.CurrentUserId);
+            var localUpdatedAtUtc = TryParseCloudTimestamp(snapshot.UpdatedAtUtc) ?? DateTime.UtcNow;
+            var writes = AccountConfigObjectStore.PrepareWrites(
+                    snapshot,
+                    localUpdatedAtUtc,
+                    state.Objects.Keys,
+                    state.KnownLocalDynamicObjectIds)
+                .ToDictionary(static item => item.ObjectId, StringComparer.OrdinalIgnoreCase);
+
+            foreach (var write in writes.Values.Where(static item =>
+                         IsCloudDynamicObjectId(item.ObjectId) && !item.Envelope.Deleted))
+            {
+                AddKnownLocalDynamicObject(state, write.ObjectId);
+            }
+
+            var currentDeviceId = DeviceIdentityStore.GetOrCreateDesktopDeviceId();
+            foreach (var write in writes.Values)
+            {
+                if (state.Conflicts.ContainsKey(write.ObjectId)) continue;
+                var matchesBaseline = state.LocalBaselines.TryGetValue(write.ObjectId, out var baseline) &&
+                                      LauncherConfigObjectStore.HasEquivalentPayload(
+                                          write.Envelope,
+                                          new LauncherConfigObjectEnvelope
+                                          {
+                                              ObjectId = baseline.ObjectId,
+                                              Deleted = baseline.Deleted,
+                                              Payload = baseline.Payload.Clone()
+                                          });
+                if (!matchesBaseline)
+                {
+                    AddPendingCloudObject(
+                        state,
+                        write.ObjectId,
+                        localUpdatedAtUtc,
+                        baseline?.Revision ?? 0);
+                }
+            }
+            CloudObjectSyncStateStore.Save(state);
+
+            await RefreshCloudObjectCacheAsync(state);
+
+            var remoteWonConflict = false;
+            foreach (var write in writes.Values)
+            {
+                if (state.Objects.TryGetValue(write.ObjectId, out var cached) &&
+                    LauncherConfigObjectStore.HasEquivalentPayload(
+                        write.Envelope,
+                        new LauncherConfigObjectEnvelope
+                        {
+                            ObjectId = cached.ObjectId,
+                            Deleted = cached.Deleted,
+                            Payload = cached.Payload.Clone()
+                        }))
+                {
+                    UpdateKnownDynamicObjectAfterWrite(state, write);
+                    state.Conflicts.Remove(write.ObjectId); // local already matches remote; stale conflict is resolved
+                    RemovePendingCloudObject(state, write.ObjectId);
+                    continue;
+                }
+
+                if (!state.PendingOperations.ContainsKey(write.ObjectId))
+                {
+                    // 本地内容与原基线一致，但远端已前进：接受远端，不能把旧本地视图反推回去。
+                    remoteWonConflict = true;
+                    continue;
+                }
+            }
+            CloudObjectSyncStateStore.Save(state);
+
+            foreach (var objectId in state.PendingObjectIds.ToArray())
+            {
+                if (state.Conflicts.ContainsKey(objectId)) continue;
+                if (!writes.TryGetValue(objectId, out var write))
+                {
+                    // pending 队列由多个对象域共享。主配置同步不得清除燕幕等其他域的待上传项。
+                    continue;
+                }
+
+                var pending = state.PendingOperations[objectId];
+                var expectedRevision = pending.LastExpectedRevision;
+                pending.AttemptCount++;
+                pending.LastAttemptAtUtc = DateTime.UtcNow.ToString("O");
+                pending.LastExpectedRevision = expectedRevision;
+                try
+                {
+                    var saved = await PutCloudObjectWriteAsync(write, expectedRevision);
+                    state.Objects[objectId] = CloudObjectSyncCacheEntry.FromRecord(saved);
+
+                    UpdateKnownDynamicObjectAfterWrite(state, write);
+                    state.Conflicts.Remove(objectId);
+                    RemovePendingCloudObject(state, objectId);
+                }
+                catch (CloudSyncRevisionConflictException conflict)
+                {
+                    pending.LastObservedRemoteRevision = conflict.CurrentRevision;
+                    pending.LastError = conflict.Message;
+                    await RefreshCloudObjectCacheAsync(state);
+                    if (!state.Objects.TryGetValue(objectId, out var latestRemote))
+                    {
+                        CloudObjectSyncStateStore.Save(state);
+                        continue;
+                    }
+
+                    if (LauncherConfigObjectStore.HasEquivalentPayload(write.Envelope, ToEnvelope(latestRemote)))
+                    {
+                        UpdateKnownDynamicObjectAfterWrite(state, write);
+                        state.Conflicts.Remove(objectId);
+                        RemovePendingCloudObject(state, objectId);
+                        continue;
+                    }
+                    var isSameDevice = string.Equals(latestRemote.UpdatedByDeviceId, currentDeviceId, StringComparison.OrdinalIgnoreCase);
+                    if (isSameDevice)
+                    {
+                        // 远端最新版本亦由本机写入：自动重置 expectedRevision 并在下轮重试覆盖，不阻塞报人工冲突
+                        pending.LastExpectedRevision = latestRemote.Revision;
+                        pending.LastError = string.Empty;
+                        state.Conflicts.Remove(objectId);
+                        HostAssets.AppendLog($"Cloud object revision conflict auto-rebased for same device: object={objectId}, remoteRevision={latestRemote.Revision}");
+                    }
+                    else
+                    {
+                        state.Conflicts[objectId] = new CloudObjectConflictRecord
+                        {
+                            ObjectId = objectId,
+                            DetectedAtUtc = DateTime.UtcNow.ToString("O"),
+                            LocalSchemaVersion = write.Envelope.SchemaVersion,
+                            LocalDeleted = write.Envelope.Deleted,
+                            LocalPayload = write.Envelope.Payload.Clone(),
+                            RemoteRevision = latestRemote.Revision,
+                            RemoteUpdatedAtUtc = latestRemote.UpdatedAtUtc,
+                            RemoteDeviceId = latestRemote.UpdatedByDeviceId,
+                            RemoteDeviceName = latestRemote.UpdatedByDeviceName
+                        };
+                        RemovePendingCloudObject(state, objectId);
+                        remoteWonConflict = true;
+                        HostAssets.AppendLog($"Cloud object conflict preserved for user resolution: object={objectId}, remoteRevision={latestRemote.Revision}, remoteDevice={latestRemote.UpdatedByDeviceName ?? latestRemote.UpdatedByDeviceId ?? "unknown"}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    pending.LastError = FormatExceptionMessage(ex);
+                    HostAssets.AppendLog($"Cloud object write deferred: object={objectId}, attempt={pending.AttemptCount}, error={pending.LastError}");
+                }
+                CloudObjectSyncStateStore.Save(state);
+            }
+
+            if (remoteWonConflict && !state.ObjectsAuthoritative)
+            {
+                var remoteObjects = state.Objects.Values
+                    .Select(static item => new LauncherConfigObjectEnvelope
+                    {
+                        SchemaVersion = item.SchemaVersion,
+                        ObjectId = item.ObjectId,
+                        UpdatedAtUtc = item.UpdatedAtUtc,
+                        UpdatedByDeviceId = item.UpdatedByDeviceId,
+                        UpdatedByDeviceName = item.UpdatedByDeviceName,
+                        Deleted = item.Deleted,
+                        Payload = item.Payload.Clone()
+                    })
+                    .ToList();
+                var reconciled = LauncherConfigObjectStore.Compose(
+                    snapshot,
+                    remoteObjects.Where(static item => !item.Deleted),
+                    out _,
+                    preferObjectsOverBase: true);
+                reconciled = AccountConfigObjectStore.Apply(reconciled, remoteObjects);
+                if (reconciled != null)
+                {
+                    await _cloudSyncClient.UpsertUserConfigAsync(CloudQuickPanelConfigId, reconciled);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            // 旧 Worker 尚未部署对象 API 时继续使用兼容快照；pending 会在接口可用后重试。
+            var message = FormatExceptionMessage(ex);
+            if (state != null)
+            {
+                foreach (var pending in state.PendingOperations.Values)
+                {
+                    pending.LastError = message;
+                }
+                CloudObjectSyncStateStore.Save(state);
+            }
+            HostAssets.AppendLog($"Cloud object push deferred: {message}");
+        }
+    }
+
+    private async Task<CloudSyncObjectRecord> PutCloudObjectWriteAsync(
+        AccountConfigObjectWrite write,
+        long expectedRevision)
+    {
+        return await _cloudSyncClient!.PutSyncObjectAsync(
+            write.ObjectId,
+            write.Envelope.SchemaVersion,
+            expectedRevision,
+            write.Envelope.Deleted,
+            write.Envelope.Payload,
+            DeviceIdentityStore.GetOrCreateDesktopDeviceId(),
+            DeviceIdentityStore.GetDesktopDisplayName());
+    }
+
+    private static void AddPendingCloudObject(CloudObjectSyncState state, string objectId, DateTime localUpdatedAtUtc, long expectedRevision = 0) =>
+        CloudPendingChanges.Enqueue(state, objectId, localUpdatedAtUtc, expectedRevision);
+
+    private static void RemovePendingCloudObject(CloudObjectSyncState state, string objectId)
+    {
+        state.PendingObjectIds.RemoveAll(id => id.Equals(objectId, StringComparison.OrdinalIgnoreCase));
+        state.PendingOperations.Remove(objectId);
+    }
+
+    private static void UpdateKnownDynamicObjectAfterWrite(
+        CloudObjectSyncState state,
+        AccountConfigObjectWrite write)
+    {
+        CloudPendingChanges.RecordApplied(state, [write]);
+        if (!IsCloudDynamicObjectId(write.ObjectId))
+        {
+            return;
+        }
+
+        if (write.Envelope.Deleted)
+        {
+            state.KnownLocalDynamicObjectIds.RemoveAll(
+                id => id.Equals(write.ObjectId, StringComparison.OrdinalIgnoreCase));
+        }
+        else
+        {
+            AddKnownLocalDynamicObject(state, write.ObjectId);
+        }
+    }
+
+    private static void AddKnownLocalDynamicObject(CloudObjectSyncState state, string objectId)
+    {
+        if (!state.KnownLocalDynamicObjectIds.Contains(objectId, StringComparer.OrdinalIgnoreCase))
+        {
+            state.KnownLocalDynamicObjectIds.Add(objectId);
+        }
+    }
+
+    private static bool IsCloudDynamicObjectId(string objectId) =>
+        AccountConfigObjectStore.IsDynamicObjectId(objectId) ||
+        YanmObjectStore.IsDynamicObjectId(objectId);
+
+    private async Task RetryPendingYanmUploadsAsync()
+    {
+        if (_cloudSyncClient?.HasCredential != true) return;
+        // One extra pass handles a same-device 409 rebase without waiting for another user edit.
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var state = CloudObjectSyncStateStore.Load(_cloudSyncClient.CurrentUserId);
+            var pending = state.PendingOperations.Values
+                .Where(item => YanmObjectStore.IsObjectId(item.ObjectId) && !state.Conflicts.ContainsKey(item.ObjectId)).ToArray();
+            if (pending.Length == 0 || !string.IsNullOrWhiteSpace(state.PersistenceError)) return;
+            if (attempt > 0 && pending.Any(item => !string.IsNullOrWhiteSpace(item.LastError))) return;
+            try { await PushYanmStateToCloudAsync("cloud-refresh-pending"); }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"Pending Yanm upload deferred: {FormatExceptionMessage(ex)}");
+                return;
+            }
+        }
     }
 
     private async Task PushYanmStateToCloudAsync(string reason)
+    {
+        await _accountObjectSyncLock.WaitAsync();
+        try
+        {
+            await PushYanmStateToCloudCoreAsync(reason);
+        }
+        finally
+        {
+            _accountObjectSyncLock.Release();
+        }
+    }
+
+    private async Task PushYanmStateToCloudCoreAsync(string reason)
     {
         if (_cloudSyncClient == null || !_cloudSyncClient.HasCredential)
         {
@@ -2748,15 +3251,101 @@ public partial class MainWindow
         settings.Yanm.ComponentState ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var localUpdatedAtUtc = GetYanmStateUpdatedAtUtc(settings);
         var localSummary = DescribeYanmForSync(settings.Yanm);
+        var capabilities = await TryGetCloudSyncCapabilitiesAsync();
+        CloudObjectSyncState? objectState = null;
+        if (capabilities?.ObjectSyncAvailable == true)
+        {
+            objectState = CloudObjectSyncStateStore.Load(_cloudSyncClient.CurrentUserId);
+            await RefreshCloudObjectCacheAsync(objectState);
+            if (objectState.Objects.TryGetValue(YanmObjectStore.LayoutObjectId, out var layoutObject) && !layoutObject.Deleted)
+            {
+                if (!objectState.YanmObjectsInitialized)
+                {
+                    await InitializeYanmObjectsFromRemoteAsync(settings, objectState);
+                    settings = AppSettingsStore.Load();
+                }
+                var objectResult = await SyncYanmObjectsAsync(settings, objectState, reason);
+                if (objectResult.RemoteApplied)
+                {
+                    // 旧端点只接收对象权威状态的单向镜像，用于个人仓库备份和旧客户端读取；
+                    // 新客户端绝不再从该镜像反向覆盖已有对象。
+                    await _cloudSyncClient.UpsertYanmStateAsync(objectResult.RemoteMirror, objectResult.UpdatedAtUtc);
+                }
+                return;
+            }
+        }
         var remote = await _cloudSyncClient.GetYanmStateAsync();
         if (remote?.Yanm != null)
         {
-            var equivalent = AreJsonPayloadsEqual(settings.Yanm, remote.Yanm);
+            remote.Yanm.ComponentState ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            if (IsYanmComponentStateOnlyReason(reason))
+            {
+                var changedState = settings.Yanm.ComponentState
+                    .Where(pair => !remote.Yanm.ComponentState.TryGetValue(pair.Key, out var remoteValue) ||
+                                   !string.Equals(pair.Value, remoteValue, StringComparison.Ordinal))
+                    .ToDictionary(static pair => pair.Key, static pair => pair.Value, StringComparer.OrdinalIgnoreCase);
+                if (changedState.Count == 0)
+                {
+                    HostAssets.AppendLog($"Yanm component state patch skipped: unchanged content, reason={reason}");
+                    if (objectState != null) await SyncYanmObjectsAsync(settings, objectState, reason);
+                    return;
+                }
+
+                var patchResult = await _cloudSyncClient.PatchYanmComponentStateAsync(changedState, localUpdatedAtUtc);
+                var refreshed = await _cloudSyncClient.GetYanmStateAsync();
+                if (refreshed?.Yanm?.ComponentState != null)
+                {
+                    // 只接收服务端合并后的组件状态，绝不让状态补丁反向替换本机布局。
+                    settings.Yanm.ComponentState = new Dictionary<string, string>(
+                        refreshed.Yanm.ComponentState,
+                        StringComparer.OrdinalIgnoreCase);
+                    settings.YanmStateUpdatedAtUtc = TryParseCloudTimestamp(refreshed.UpdatedAtUtc)?.ToString("O") ??
+                                                     DateTime.UtcNow.ToString("O");
+                    AppSettingsStore.Save(settings);
+                    _appSettings = settings;
+                }
+                HostAssets.AppendLog(
+                    $"Yanm component state patch completed: reason={reason}, changedKeys={changedState.Count}, changed={patchResult?.Changed?.ToString() ?? "unknown"}");
+                if (objectState != null) await SyncYanmObjectsAsync(settings, objectState, reason);
+                return;
+            }
+
+            // 布局、组件定义和快捷键写入不拥有 ComponentState。沿用远端状态，
+            // 防止移动/缩放一个组件时把另一台设备刚保存的便签内容整包覆盖。
+            var outboundYanm = CloneYanmSettings(settings.Yanm);
+            outboundYanm.ComponentState = new Dictionary<string, string>(
+                remote.Yanm.ComponentState,
+                StringComparer.OrdinalIgnoreCase);
+            var equivalent = AreJsonPayloadsEqual(outboundYanm, remote.Yanm);
             HostAssets.AppendLog(
                 $"Yanm cloud push preflight: reason={reason}, equivalent={equivalent}, localUpdated={localUpdatedAtUtc}, remoteUpdated={remote.UpdatedAtUtc}, local={localSummary}, remote={DescribeYanmForSync(remote.Yanm)}");
             if (equivalent)
             {
                 HostAssets.AppendLog($"Yanm cloud push skipped: unchanged content, reason={reason}");
+                if (objectState != null) await SyncYanmObjectsAsync(settings, objectState, reason);
+                return;
+            }
+
+            var remoteUpdatedAtUtc = TryParseCloudTimestamp(remote.UpdatedAtUtc);
+            var parsedLocalUpdatedAtUtc = TryParseCloudTimestamp(localUpdatedAtUtc);
+            if (remoteUpdatedAtUtc != null &&
+                (parsedLocalUpdatedAtUtc == null || remoteUpdatedAtUtc.Value > parsedLocalUpdatedAtUtc.Value.AddSeconds(1)))
+            {
+                settings.Yanm = remote.Yanm;
+                settings.YanmStateUpdatedAtUtc = remoteUpdatedAtUtc.Value.ToString("O");
+                AppSettingsStore.Save(settings);
+                _appSettings = AppSettingsStore.Load();
+                if (!_listenerServicesPaused)
+                {
+                    InputHookService.ReloadSettings();
+                    KeyboardDoubleTapService.ApplyYanmSettings(_appSettings.Yanm);
+                    RefreshYanmHotkeyRegistration();
+                }
+                _yanmOverlay?.ReloadSettings();
+                HostAssets.AppendLog(
+                    $"Yanm cloud push converted to pull because remote is newer: reason={reason}, localUpdated={localUpdatedAtUtc}, remoteUpdated={remote.UpdatedAtUtc}");
+                if (objectState != null) await SyncYanmObjectsAsync(settings, objectState, reason);
                 return;
             }
 
@@ -2777,6 +3366,7 @@ public partial class MainWindow
 
                 HostAssets.AppendLog(
                     $"Yanm cloud push converted to pull to protect remote component data: reason={reason}, local={localSummary}, remote={DescribeYanmForSync(remote.Yanm)}");
+                if (objectState != null) await SyncYanmObjectsAsync(settings, objectState, reason);
                 return;
             }
         }
@@ -2785,9 +3375,366 @@ public partial class MainWindow
             HostAssets.AppendLog($"Yanm cloud push preflight: reason={reason}, remote=missing, localUpdated={localUpdatedAtUtc}, local={localSummary}");
         }
 
-        var result = await _cloudSyncClient.UpsertYanmStateAsync(settings.Yanm, localUpdatedAtUtc);
+        var yanmToUpload = remote?.Yanm == null
+            ? settings.Yanm
+            : CloneYanmWithComponentState(settings.Yanm, remote.Yanm.ComponentState);
+        YanmStateResponse? result = null;
+        if (capabilities?.ObjectsAuthoritative != true)
+        {
+            result = await _cloudSyncClient.UpsertYanmStateAsync(yanmToUpload, localUpdatedAtUtc);
+        }
+        if (objectState != null)
+        {
+            settings.Yanm = yanmToUpload;
+            var objectResult = await SyncYanmObjectsAsync(settings, objectState, reason);
+            if (capabilities?.ObjectsAuthoritative == true && objectResult.RemoteApplied)
+            {
+                await _cloudSyncClient.UpsertYanmStateAsync(objectResult.RemoteMirror, objectResult.UpdatedAtUtc);
+            }
+        }
         HostAssets.AppendLog(
             $"Yanm cloud push completed: reason={reason}, changed={result?.Changed?.ToString() ?? "unknown"}, resultUpdated={result?.UpdatedAtUtc}, resultBytes={result?.Bytes ?? 0}, local={localSummary}");
+    }
+
+    private async Task<(YanmSettings RemoteMirror, bool RemoteApplied, string UpdatedAtUtc)> SyncYanmObjectsAsync(
+        AppSettings settings,
+        CloudObjectSyncState state,
+        string reason)
+    {
+        var localUpdatedAtUtc = TryParseCloudTimestamp(GetYanmStateUpdatedAtUtc(settings)) ?? DateTime.UtcNow;
+        var writes = YanmObjectStore.PrepareWrites(
+                settings.Yanm ?? new YanmSettings(),
+                localUpdatedAtUtc,
+                state.Objects.Keys,
+                state.KnownLocalDynamicObjectIds)
+            .ToDictionary(static item => item.ObjectId, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var write in writes.Values.Where(static item =>
+                     YanmObjectStore.IsDynamicObjectId(item.ObjectId) && !item.Envelope.Deleted))
+        {
+            AddKnownLocalDynamicObject(state, write.ObjectId);
+        }
+
+        foreach (var write in writes.Values)
+        {
+            if (state.Conflicts.ContainsKey(write.ObjectId)) continue;
+            var matchesBaseline = state.LocalBaselines.TryGetValue(write.ObjectId, out var baseline) &&
+                                  LauncherConfigObjectStore.HasEquivalentPayload(
+                                      write.Envelope,
+                                      ToEnvelope(baseline));
+            if (!matchesBaseline)
+            {
+                AddPendingCloudObject(state, write.ObjectId, localUpdatedAtUtc, baseline?.Revision ?? 0);
+            }
+        }
+        CloudObjectSyncStateStore.Save(state);
+
+        await RefreshCloudObjectCacheAsync(state);
+        foreach (var write in writes.Values)
+        {
+            if (state.Objects.TryGetValue(write.ObjectId, out var cached) &&
+                LauncherConfigObjectStore.HasEquivalentPayload(write.Envelope, ToEnvelope(cached)))
+            {
+                UpdateKnownDynamicObjectAfterWrite(state, write);
+                RemovePendingCloudObject(state, write.ObjectId);
+            }
+        }
+        CloudObjectSyncStateStore.Save(state);
+
+        foreach (var objectId in state.PendingObjectIds
+                     .Where(YanmObjectStore.IsObjectId)
+                     .ToArray())
+        {
+            if (state.Conflicts.ContainsKey(objectId)) continue;
+            if (!writes.TryGetValue(objectId, out var write))
+            {
+                continue;
+            }
+
+            var pending = state.PendingOperations[objectId];
+            pending.AttemptCount++;
+            pending.LastAttemptAtUtc = DateTime.UtcNow.ToString("O");
+            try
+            {
+                var saved = await PutCloudObjectWriteAsync(write, pending.LastExpectedRevision);
+                state.Objects[objectId] = CloudObjectSyncCacheEntry.FromRecord(saved);
+
+                UpdateKnownDynamicObjectAfterWrite(state, write);
+                state.Conflicts.Remove(objectId);
+                RemovePendingCloudObject(state, objectId);
+            }
+            catch (CloudSyncRevisionConflictException conflict)
+            {
+                pending.LastObservedRemoteRevision = conflict.CurrentRevision;
+                pending.LastError = conflict.Message;
+                await RefreshCloudObjectCacheAsync(state);
+                if (state.Objects.TryGetValue(objectId, out var latestRemote))
+                {
+                    var currentDeviceId = DeviceIdentityStore.GetOrCreateDesktopDeviceId();
+                    if (LauncherConfigObjectStore.HasEquivalentPayload(write.Envelope, ToEnvelope(latestRemote)))
+                    {
+                        UpdateKnownDynamicObjectAfterWrite(state, write);
+                        state.Conflicts.Remove(objectId);
+                        RemovePendingCloudObject(state, objectId);
+                        continue;
+                    }
+                    var isSameDevice = string.Equals(latestRemote.UpdatedByDeviceId, currentDeviceId, StringComparison.OrdinalIgnoreCase);
+                    if (isSameDevice)
+                    {
+                        pending.LastExpectedRevision = latestRemote.Revision;
+                        pending.LastError = string.Empty;
+                        state.Conflicts.Remove(objectId);
+                        HostAssets.AppendLog($"Yanm object revision conflict auto-rebased for same device: object={objectId}, remoteRevision={latestRemote.Revision}");
+                    }
+                    else
+                    {
+                        state.Conflicts[objectId] = new CloudObjectConflictRecord
+                        {
+                            ObjectId = objectId,
+                            DetectedAtUtc = DateTime.UtcNow.ToString("O"),
+                            LocalSchemaVersion = write.Envelope.SchemaVersion,
+                            LocalDeleted = write.Envelope.Deleted,
+                            LocalPayload = write.Envelope.Payload.Clone(),
+                            RemoteRevision = latestRemote.Revision,
+                            RemoteUpdatedAtUtc = latestRemote.UpdatedAtUtc,
+                            RemoteDeviceId = latestRemote.UpdatedByDeviceId,
+                            RemoteDeviceName = latestRemote.UpdatedByDeviceName
+                        };
+                        RemovePendingCloudObject(state, objectId);
+                        HostAssets.AppendLog(
+                            $"Yanm object conflict preserved: object={objectId}, remoteRevision={latestRemote.Revision}, reason={reason}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                pending.LastError = FormatExceptionMessage(ex);
+                HostAssets.AppendLog(
+                    $"Yanm object write deferred: object={objectId}, attempt={pending.AttemptCount}, error={pending.LastError}");
+            }
+            CloudObjectSyncStateStore.Save(state);
+        }
+
+        var remoteEnvelopes = state.Objects.Values
+            .Where(static item => YanmObjectStore.IsObjectId(item.ObjectId))
+            .Select(ToEnvelope)
+            .ToList();
+        var remoteMirror = YanmObjectStore.Apply(
+            new YanmSettings(),
+            remoteEnvelopes,
+            out var remoteApplied,
+            out var remoteUpdatedAtUtc);
+
+        var effectiveMap = remoteEnvelopes.ToDictionary(static item => item.ObjectId, StringComparer.OrdinalIgnoreCase);
+        foreach (var pendingId in state.PendingObjectIds.Where(YanmObjectStore.IsObjectId))
+        {
+            if (writes.TryGetValue(pendingId, out var pendingWrite))
+            {
+                effectiveMap[pendingId] = pendingWrite.Envelope;
+            }
+        }
+        var effective = YanmObjectStore.Apply(
+            settings.Yanm,
+            effectiveMap.Values,
+            out var effectiveApplied,
+            out _);
+        if (effectiveApplied && !AreJsonPayloadsEqual(settings.Yanm, effective))
+        {
+            settings.Yanm = effective;
+            if (!state.PendingObjectIds.Any(YanmObjectStore.IsObjectId) && remoteUpdatedAtUtc.HasValue)
+            {
+                settings.YanmStateUpdatedAtUtc = remoteUpdatedAtUtc.Value.ToString("O");
+            }
+            AppSettingsStore.Save(settings);
+            ApplyYanmObjectSettingsToRuntime(settings);
+        }
+
+        CloudObjectSyncStateStore.Save(state);
+        state.YanmObjectsInitialized = true;
+        CloudObjectSyncStateStore.Save(state);
+        var mirrorUpdatedAt = remoteUpdatedAtUtc?.ToString("O") ?? DateTime.UtcNow.ToString("O");
+        HostAssets.AppendLog(
+            $"Yanm object sync completed: reason={reason}, remoteApplied={remoteApplied}, pending={state.PendingObjectIds.Count(YanmObjectStore.IsObjectId)}, conflicts={state.Conflicts.Keys.Count(YanmObjectStore.IsObjectId)}");
+        return (remoteMirror, remoteApplied, mirrorUpdatedAt);
+    }
+
+    private async Task InitializeYanmObjectsFromRemoteAsync(AppSettings settings, CloudObjectSyncState state)
+    {
+        var localUpdatedAtUtc = TryParseCloudTimestamp(GetYanmStateUpdatedAtUtc(settings)) ?? DateTime.UtcNow;
+        var localWrites = YanmObjectStore.PrepareWrites(
+                settings.Yanm ?? new YanmSettings(),
+                localUpdatedAtUtc,
+                state.Objects.Keys,
+                state.KnownLocalDynamicObjectIds)
+            .ToDictionary(static item => item.ObjectId, StringComparer.OrdinalIgnoreCase);
+
+        var currentDeviceId = DeviceIdentityStore.GetOrCreateDesktopDeviceId();
+        foreach (var write in localWrites.Values)
+        {
+            if (!state.Objects.TryGetValue(write.ObjectId, out var remote))
+            {
+                AddPendingCloudObject(state, write.ObjectId, localUpdatedAtUtc, 0);
+                continue;
+            }
+            if (LauncherConfigObjectStore.HasEquivalentPayload(write.Envelope, ToEnvelope(remote)))
+            {
+                UpdateKnownDynamicObjectAfterWrite(state, write);
+                continue;
+            }
+
+            // 同设备自动转为待上传，覆盖历史版本，无需人工裁决
+            var isSameDevice = string.Equals(remote.UpdatedByDeviceId, currentDeviceId, StringComparison.OrdinalIgnoreCase);
+            if (isSameDevice)
+            {
+                AddPendingCloudObject(state, write.ObjectId, localUpdatedAtUtc, remote.Revision);
+                state.Conflicts.Remove(write.ObjectId);
+                HostAssets.AppendLog($"Yanm object auto-promoted to pending upload for same device: object={write.ObjectId}, remoteRevision={remote.Revision}");
+                continue;
+            }
+
+            // 仅当云端对象来自其他设备（跨设备）且内容不一致时，才保留为显式冲突副本
+            if (HasYanmLayoutUserContent(settings.Yanm))
+            {
+                state.Conflicts[write.ObjectId] = new CloudObjectConflictRecord
+                {
+                    ObjectId = write.ObjectId,
+                    DetectedAtUtc = DateTime.UtcNow.ToString("O"),
+                    LocalSchemaVersion = write.Envelope.SchemaVersion,
+                    LocalDeleted = write.Envelope.Deleted,
+                    LocalPayload = write.Envelope.Payload.Clone(),
+                    RemoteRevision = remote.Revision,
+                    RemoteUpdatedAtUtc = remote.UpdatedAtUtc,
+                    RemoteDeviceId = remote.UpdatedByDeviceId,
+                    RemoteDeviceName = remote.UpdatedByDeviceName
+                };
+            }
+        }
+
+        state.YanmObjectsInitialized = true;
+        CloudObjectSyncStateStore.Save(state);
+
+        var effectiveMap = state.Objects.Values
+            .Where(static item => YanmObjectStore.IsObjectId(item.ObjectId))
+            .Select(ToEnvelope)
+            .ToDictionary(static item => item.ObjectId, StringComparer.OrdinalIgnoreCase);
+        foreach (var pendingId in state.PendingObjectIds.Where(YanmObjectStore.IsObjectId))
+        {
+            if (localWrites.TryGetValue(pendingId, out var pendingWrite))
+            {
+                effectiveMap[pendingId] = pendingWrite.Envelope;
+            }
+        }
+        var effective = YanmObjectStore.Apply(
+            new YanmSettings(),
+            effectiveMap.Values,
+            out var applied,
+            out var updatedAtUtc);
+        if (applied)
+        {
+            settings.Yanm = effective;
+            if (updatedAtUtc.HasValue)
+            {
+                settings.YanmStateUpdatedAtUtc = updatedAtUtc.Value.ToString("O");
+            }
+            AppSettingsStore.Save(settings);
+            ApplyYanmObjectSettingsToRuntime(settings);
+        }
+        else if (effectiveMap.Count > 0 && !HasYanmLayoutUserContent(settings.Yanm))
+        {
+            // 安全防御盾牌：如果云端有燕幕数据，但本地是空白状态，说明是新设备或重装冷启动
+            // 此时必须强制采用云端反向拉回本地，绝不容许后续同步将空白覆盖上云！
+            var remoteEffective = YanmObjectStore.Apply(
+                new YanmSettings(),
+                effectiveMap.Values,
+                out var remoteApplied,
+                out var remoteUpdatedAtUtc);
+            if (remoteApplied)
+            {
+                settings.Yanm = remoteEffective;
+                if (remoteUpdatedAtUtc.HasValue)
+                {
+                    settings.YanmStateUpdatedAtUtc = remoteUpdatedAtUtc.Value.ToString("O");
+                }
+                AppSettingsStore.Save(settings);
+                ApplyYanmObjectSettingsToRuntime(settings);
+            }
+        }
+        CloudPendingChanges.RecordApplied(state, YanmObjectStore.PrepareWrites(settings.Yanm ?? new YanmSettings(), DateTime.UtcNow,
+            state.Objects.Keys, state.KnownLocalDynamicObjectIds));
+        CloudObjectSyncStateStore.Save(state);
+        await Task.CompletedTask;
+    }
+
+    private void ApplyYanmObjectsFromCache(AppSettings settings, CloudObjectSyncState state)
+    {
+        var envelopes = state.Objects.Values
+            .Where(static item => YanmObjectStore.IsObjectId(item.ObjectId))
+            .Select(ToEnvelope)
+            .ToDictionary(static item => item.ObjectId, StringComparer.OrdinalIgnoreCase);
+
+        if (state.PendingObjectIds.Any(YanmObjectStore.IsObjectId))
+        {
+            var localUpdatedAtUtc = TryParseCloudTimestamp(GetYanmStateUpdatedAtUtc(settings)) ?? DateTime.UtcNow;
+            var localWrites = YanmObjectStore.PrepareWrites(
+                    settings.Yanm ?? new YanmSettings(),
+                    localUpdatedAtUtc,
+                    state.Objects.Keys,
+                    state.KnownLocalDynamicObjectIds)
+                .ToDictionary(static item => item.ObjectId, StringComparer.OrdinalIgnoreCase);
+            foreach (var pendingId in state.PendingObjectIds.Where(YanmObjectStore.IsObjectId))
+            {
+                if (localWrites.TryGetValue(pendingId, out var pendingWrite))
+                {
+                    envelopes[pendingId] = pendingWrite.Envelope;
+                }
+            }
+        }
+
+        var effective = YanmObjectStore.Apply(
+            new YanmSettings(),
+            envelopes.Values,
+            out var applied,
+            out var updatedAtUtc);
+        if (!applied) return;
+        if (AreJsonPayloadsEqual(settings.Yanm, effective))
+        {
+            CloudPendingChanges.RecordApplied(state, YanmObjectStore.PrepareWrites(effective, DateTime.UtcNow, state.Objects.Keys, state.KnownLocalDynamicObjectIds));
+            CloudObjectSyncStateStore.Save(state);
+            return;
+        }
+
+        settings.Yanm = effective;
+        if (!state.PendingObjectIds.Any(YanmObjectStore.IsObjectId) && updatedAtUtc.HasValue)
+        {
+            settings.YanmStateUpdatedAtUtc = updatedAtUtc.Value.ToString("O");
+        }
+        AppSettingsStore.Save(settings);
+        CloudPendingChanges.RecordApplied(state, YanmObjectStore.PrepareWrites(effective, DateTime.UtcNow, state.Objects.Keys, state.KnownLocalDynamicObjectIds));
+        CloudObjectSyncStateStore.Save(state);
+        ApplyYanmObjectSettingsToRuntime(settings);
+    }
+
+    private static LauncherConfigObjectEnvelope ToEnvelope(CloudObjectSyncCacheEntry item) => new()
+    {
+        SchemaVersion = item.SchemaVersion,
+        ObjectId = item.ObjectId,
+        UpdatedAtUtc = item.UpdatedAtUtc,
+        UpdatedByDeviceId = item.UpdatedByDeviceId,
+        UpdatedByDeviceName = item.UpdatedByDeviceName,
+        Deleted = item.Deleted,
+        Payload = item.Payload.Clone()
+    };
+
+    private void ApplyYanmObjectSettingsToRuntime(AppSettings settings)
+    {
+        _appSettings = AppSettingsStore.Load();
+        if (!_listenerServicesPaused)
+        {
+            InputHookService.ReloadSettings();
+            KeyboardDoubleTapService.ApplyYanmSettings(_appSettings.Yanm);
+            RefreshYanmHotkeyRegistration();
+        }
+        _yanmOverlay?.ReloadSettings();
     }
 
     public async Task<(bool ok, string message, bool pulled, int payloadBytes)> PullYanmStateFromCloudNowAsync()
@@ -2797,9 +3744,62 @@ public partial class MainWindow
             return (false, "未登录燕子账号，无法读取云端燕幕。", false, 0);
         }
 
+        await _accountObjectSyncLock.WaitAsync();
+        try
+        {
+            return await PullYanmStateFromCloudCoreAsync();
+        }
+        finally
+        {
+            _accountObjectSyncLock.Release();
+        }
+    }
+
+    private async Task<(bool ok, string message, bool pulled, int payloadBytes)> PullYanmStateFromCloudCoreAsync()
+    {
+        if (_cloudSyncClient == null)
+        {
+            return (false, "账号云同步客户端不可用。", false, 0);
+        }
         try
         {
             await _cloudSyncClient.EnsureAuthenticatedAsync();
+            var capabilities = await TryGetCloudSyncCapabilitiesAsync();
+            if (capabilities?.ObjectSyncAvailable == true)
+            {
+                var objectState = CloudObjectSyncStateStore.Load(_cloudSyncClient.CurrentUserId);
+                var baseline = objectState.LocalBaselines.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
+                var local = AppSettingsStore.Load();
+                CloudPendingChanges.Capture(objectState, YanmObjectStore.PrepareWrites(local.Yanm ?? new YanmSettings(), DateTime.UtcNow,
+                    baseline.Keys, objectState.KnownLocalDynamicObjectIds), baseline);
+                CloudObjectSyncStateStore.Save(objectState);
+                await RefreshCloudObjectCacheAsync(objectState);
+                local = AppSettingsStore.Load();
+                CloudPendingChanges.Capture(objectState, YanmObjectStore.PrepareWrites(local.Yanm ?? new YanmSettings(), DateTime.UtcNow,
+                    baseline.Keys, objectState.KnownLocalDynamicObjectIds), baseline);
+                CloudObjectSyncStateStore.Save(objectState);
+                if (objectState.Objects.TryGetValue(YanmObjectStore.LayoutObjectId, out var layoutObject) && !layoutObject.Deleted)
+                {
+                    var objectSettings = AppSettingsStore.Load();
+                    objectSettings.Yanm ??= new YanmSettings();
+                    var before = CloneYanmSettings(objectSettings.Yanm);
+                    if (!objectState.YanmObjectsInitialized)
+                    {
+                        await InitializeYanmObjectsFromRemoteAsync(objectSettings, objectState);
+                    }
+                    else
+                    {
+                        ApplyYanmObjectsFromCache(objectSettings, objectState);
+                    }
+
+                    var after = AppSettingsStore.Load().Yanm;
+                    var pulled = !AreJsonPayloadsEqual(before, after);
+                    return (true,
+                        pulled ? "已按对象 revision 拉取燕幕布局与组件状态。" : "燕幕对象均已是最新。",
+                        pulled,
+                        0);
+                }
+            }
             var response = await _cloudSyncClient.GetYanmStateAsync();
             if (response?.Yanm == null)
             {
@@ -2912,12 +3912,26 @@ public partial class MainWindow
                snapshot.AiServiceProviders.Count > 0;
     }
 
+    private static bool HasMissingExtendedConfigPayload(CloudQuickPanelConfigSnapshot snapshot)
+    {
+        return snapshot.AutoCloseToastEnabled == null ||
+               snapshot.EnableAutoUpdate == null ||
+               snapshot.AutoBackupFrequency == null ||
+               snapshot.EnableBrowserHelper == null ||
+               snapshot.PreferManualExtensionEditor == null ||
+               snapshot.EnableEverything == null ||
+               snapshot.MouseGestureAppBindings == null ||
+               snapshot.SearchScopeConfigs == null ||
+               snapshot.EnvironmentVariables == null;
+    }
+
     private static bool HasAiSettings(AppSettings settings)
     {
         return !string.IsNullOrWhiteSpace(settings.AiBaseUrl) ||
                !string.IsNullOrWhiteSpace(settings.AiApiKey) ||
                !string.IsNullOrWhiteSpace(settings.AiModel) ||
-               !string.IsNullOrWhiteSpace(settings.AiSystemPrompt) ||
+               (!string.IsNullOrWhiteSpace(settings.AiSystemPrompt) &&
+                !string.Equals(settings.AiSystemPrompt, AppSettingsStore.DefaultAiSystemPrompt, StringComparison.Ordinal)) ||
                !string.IsNullOrWhiteSpace(settings.ActiveServiceProviderId) ||
                settings.AiServiceProviders.Count > 0;
     }
@@ -2953,10 +3967,28 @@ public partial class MainWindow
                (snapshot.YanyuRules?.Count ?? 0) > 0 ||
                HasRadialMenuUserContent(snapshot.RadialMenu) ||
                HasYanmLayoutUserContent(snapshot.Yanm) ||
+               HasQuickPanelMouseTriggersContent(snapshot.QuickPanelMouseTriggers) ||
                !string.Equals(snapshot.LauncherHotkey, "Alt+Space", StringComparison.OrdinalIgnoreCase) ||
                !string.Equals(snapshot.QuickPanelTrigger, "MiddleButtonLongPress", StringComparison.OrdinalIgnoreCase) ||
                !string.Equals(MouseGestureTriggerModes.Normalize(snapshot.MouseGestureTriggerMode), MouseGestureTriggerModes.None, StringComparison.OrdinalIgnoreCase) ||
                !string.Equals(MouseTriggerModes.Normalize(snapshot.WindowSnapAssistMouseTriggerMode), MouseTriggerModes.None, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool HasQuickPanelMouseTriggersContent(QuickPanelMouseTriggerSettings? triggers)
+    {
+        if (triggers == null) return false;
+        return triggers.MiddleButtonDown ||
+               triggers.X1ButtonDown ||
+               triggers.X2ButtonDown ||
+               triggers.CtrlLeftClick ||
+               triggers.CtrlLeftDrag ||
+               triggers.CtrlRightClick ||
+               triggers.CtrlMiddleClick ||
+               triggers.MiddleButtonLongPress ||
+               triggers.RightButtonLongPress ||
+               triggers.RightButtonDrag ||
+               triggers.MiddleButtonDrag ||
+               triggers.HorizontalWheel;
     }
 
     private static bool HasQuickPanelGroupsUserContent(IEnumerable<QuickPanelGroupSettings> groups)
@@ -3077,6 +4109,7 @@ public partial class MainWindow
         if (left.TriggerX2ButtonDown != right.TriggerX2ButtonDown) return false;
         if (left.TriggerHorizontalWheel != right.TriggerHorizontalWheel) return false;
         if (left.TriggerCtrlLeftClick != right.TriggerCtrlLeftClick) return false;
+        if (left.TriggerCtrlLeftDrag != right.TriggerCtrlLeftDrag) return false;
         if (left.TriggerCtrlRightClick != right.TriggerCtrlRightClick) return false;
         if (left.TriggerCtrlMiddleClick != right.TriggerCtrlMiddleClick) return false;
         if (left.MouseTriggerMode != right.MouseTriggerMode) return false;
@@ -3259,6 +4292,7 @@ public partial class MainWindow
                left.X1ButtonDown == right.X1ButtonDown &&
                left.X2ButtonDown == right.X2ButtonDown &&
                left.CtrlLeftClick == right.CtrlLeftClick &&
+               left.CtrlLeftDrag == right.CtrlLeftDrag &&
                left.CtrlRightClick == right.CtrlRightClick &&
                left.MiddleButtonLongPress == right.MiddleButtonLongPress &&
                left.RightButtonLongPress == right.RightButtonLongPress &&
@@ -3294,7 +4328,7 @@ public partial class MainWindow
             await PullQuickPanelConfigFromCloudAsync();
             QueueBackgroundWebDavSyncAfterCloudRefresh("settings-login");
             NotifySettingsWindowWebDavConfigChanged();
-            
+
             return true;
         }
         catch (Exception ex)
@@ -3327,16 +4361,16 @@ public partial class MainWindow
                     config.RootPath ?? string.Empty,
                     config.Username ?? string.Empty
                 );
-                
+
                 // Save credential if provided
                 if (!string.IsNullOrWhiteSpace(config.Password))
                 {
                     SaveWebDavCredential(config.Username ?? string.Empty, config.Password);
                 }
-                
+
                 // Notify SettingsWindow to refresh UI if open
                 NotifySettingsWindowWebDavConfigChanged();
-                
+
                 System.Diagnostics.Debug.WriteLine("WebDAV configuration synced from cloud successfully.");
             }
         }
@@ -3448,6 +4482,32 @@ public partial class MainWindow
             ? local.Trim()
             : incoming?.Trim() ?? string.Empty;
 
+    private static PersonalSyncSettings ClonePersonalSyncSettings(PersonalSyncSettings source)
+    {
+        try
+        {
+            var json = JsonSerializer.Serialize(source);
+            return JsonSerializer.Deserialize<PersonalSyncSettings>(json) ?? new PersonalSyncSettings();
+        }
+        catch
+        {
+            return new PersonalSyncSettings();
+        }
+    }
+
+    private static PersonalSyncSecretBag ClonePersonalSyncSecretBag(PersonalSyncSecretBag source)
+    {
+        try
+        {
+            var json = JsonSerializer.Serialize(source);
+            return JsonSerializer.Deserialize<PersonalSyncSecretBag>(json) ?? new PersonalSyncSecretBag();
+        }
+        catch
+        {
+            return new PersonalSyncSecretBag();
+        }
+    }
+
     private static int NormalizePersonalSyncAutoSyncDelay(int value)
     {
         return value is 0 or 2 or 3 or 5 or 10 or 20 or 30 or 60 or 120
@@ -3479,6 +4539,336 @@ public partial class MainWindow
         await RefreshCloudStateAsync();
     }
 
+    private static void CopyJsonPointerField(
+        System.Text.Json.Nodes.JsonNode target,
+        System.Text.Json.Nodes.JsonNode source,
+        string pointer)
+    {
+        if (string.IsNullOrWhiteSpace(pointer) || pointer[0] != '/')
+            throw new InvalidOperationException("此处不是可以单独选择的设置字段。");
+        var segments = pointer[1..].Split('/')
+            .Select(static segment => segment.Replace("~1", "/").Replace("~0", "~")).ToArray();
+        System.Text.Json.Nodes.JsonNode? targetNode = target;
+        System.Text.Json.Nodes.JsonNode? sourceNode = source;
+        foreach (var segment in segments[..^1])
+        {
+            if (targetNode is not System.Text.Json.Nodes.JsonObject targetObject ||
+                sourceNode is not System.Text.Json.Nodes.JsonObject sourceObject ||
+                !targetObject.TryGetPropertyValue(segment, out targetNode) ||
+                !sourceObject.TryGetPropertyValue(segment, out sourceNode))
+                throw new InvalidOperationException("设置结构已经变化，请重新查看差异。");
+        }
+        if (targetNode is not System.Text.Json.Nodes.JsonObject targetParent ||
+            sourceNode is not System.Text.Json.Nodes.JsonObject sourceParent)
+            throw new InvalidOperationException("此类设置需要按整组处理。");
+        var leaf = segments[^1];
+        if (sourceParent.TryGetPropertyValue(leaf, out var sourceValue))
+            targetParent[leaf] = sourceValue?.DeepClone();
+        else
+            targetParent.Remove(leaf);
+    }
+
+    public async Task<(bool ok, string message)> ResolveCloudObjectConflictFieldAsync(
+        string objectId, string pointer, bool useLocalVersion, long reviewedRevision)
+    {
+        if (_cloudSyncClient == null || string.IsNullOrWhiteSpace(objectId))
+            return (false, "账号云同步尚未可用。");
+
+        await _accountObjectSyncLock.WaitAsync();
+        try
+        {
+            var state = CloudObjectSyncStateStore.Load(_cloudSyncClient.CurrentUserId);
+            if (!string.IsNullOrWhiteSpace(state.PersistenceError)) return (false, state.PersistenceError);
+            if (!state.Conflicts.TryGetValue(objectId, out var conflict))
+                return (true, "该冲突已经处理。");
+            if (!state.Objects.TryGetValue(objectId, out var remote) ||
+                conflict.RemoteRevision != reviewedRevision || remote.Revision != reviewedRevision)
+                return (false, "云端版本已变化，请刷新差异后重新选择。");
+            if (conflict.LocalDeleted || remote.Deleted)
+                return (false, "删除与保留的冲突需要整组选择。");
+
+            var localNode = System.Text.Json.Nodes.JsonNode.Parse(conflict.LocalPayload.GetRawText())
+                ?? throw new InvalidDataException("本机设置结构无效。");
+            var remoteNode = System.Text.Json.Nodes.JsonNode.Parse(remote.Payload.GetRawText())
+                ?? throw new InvalidDataException("云端设置结构无效。");
+            if (useLocalVersion)
+            {
+                CopyJsonPointerField(remoteNode, localNode, pointer);
+                await _cloudSyncClient.EnsureAuthenticatedAsync();
+                var envelope = new LauncherConfigObjectEnvelope
+                {
+                    SchemaVersion = conflict.LocalSchemaVersion,
+                    ObjectId = objectId,
+                    UpdatedAtUtc = DateTime.UtcNow.ToString("O"),
+                    UpdatedByDeviceId = DeviceIdentityStore.GetOrCreateDesktopDeviceId(),
+                    UpdatedByDeviceName = DeviceIdentityStore.GetDesktopDisplayName(),
+                    Deleted = false,
+                    Payload = JsonSerializer.SerializeToElement(remoteNode)
+                };
+                var write = new AccountConfigObjectWrite(objectId, envelope);
+                var saved = await PutCloudObjectWriteAsync(write, reviewedRevision);
+                state.Objects[objectId] = CloudObjectSyncCacheEntry.FromRecord(saved);
+                UpdateKnownDynamicObjectAfterWrite(state, write);
+                conflict.RemoteRevision = saved.Revision;
+            }
+            else
+            {
+                CopyJsonPointerField(localNode, remoteNode, pointer);
+                conflict.LocalPayload = JsonSerializer.SerializeToElement(localNode);
+            }
+
+            var currentRemote = state.Objects[objectId];
+            var remaining = SyncUserText.DetailDifferences(
+                conflict.LocalPayload, currentRemote.Payload, conflict.LocalDeleted, currentRemote.Deleted);
+            if (remaining.Count == 0)
+            {
+                state.Conflicts.Remove(objectId);
+                CloudObjectSyncStateStore.Save(state);
+                await ApplyCloudObjectStateToLocalAsync(objectId);
+                return (true, "所有差异已处理，本机与云端已采用最终设置。");
+            }
+            CloudObjectSyncStateStore.Save(state);
+            return (true, $"已采用所选字段，尚有 {remaining.Count} 项差异待处理。全部选择完成后会应用到本机。");
+        }
+        catch (CloudSyncRevisionConflictException)
+        {
+            return (false, "选择期间云端版本变化，请刷新差异后重试。");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"字段冲突处理失败：{FormatExceptionMessage(ex)}");
+        }
+        finally { _accountObjectSyncLock.Release(); }
+    }
+
+    public async Task<(bool ok, string message)> ResolveCloudObjectConflictAsync(
+        string objectId,
+        bool useLocalVersion,
+        long reviewedRevision)
+    {
+        if (_cloudSyncClient == null || string.IsNullOrWhiteSpace(objectId))
+        {
+            return (false, "账号云同步尚未可用。");
+        }
+
+        var conflictLock = _accountObjectSyncLock;
+        await conflictLock.WaitAsync();
+        try
+        {
+            var state = CloudObjectSyncStateStore.Load(_cloudSyncClient.CurrentUserId);
+            if (!string.IsNullOrWhiteSpace(state.PersistenceError)) return (false, state.PersistenceError);
+            if (!state.Conflicts.TryGetValue(objectId, out var conflict))
+            {
+                return (true, "该冲突已经处理。");
+            }
+
+            if (conflict.RemoteRevision != reviewedRevision)
+                return (false, "云端内容刚刚有变化，请查看更新后的差异再选择。");
+
+            if (!useLocalVersion)
+            {
+                state.Conflicts.Remove(objectId);
+                CloudObjectSyncStateStore.Save(state);
+                await ApplyCloudObjectStateToLocalAsync(objectId);
+                return (true, "已使用云端内容。");
+            }
+
+            await _cloudSyncClient.EnsureAuthenticatedAsync();
+            var envelope = new LauncherConfigObjectEnvelope
+            {
+                SchemaVersion = conflict.LocalSchemaVersion,
+                ObjectId = objectId,
+                UpdatedAtUtc = DateTime.UtcNow.ToString("O"),
+                UpdatedByDeviceId = DeviceIdentityStore.GetOrCreateDesktopDeviceId(),
+                UpdatedByDeviceName = DeviceIdentityStore.GetDesktopDisplayName(),
+                Deleted = conflict.LocalDeleted,
+                Payload = conflict.LocalPayload.Clone()
+            };
+            var write = new AccountConfigObjectWrite(objectId, envelope);
+            var saved = await PutCloudObjectWriteAsync(write, conflict.RemoteRevision);
+            state.Objects[objectId] = CloudObjectSyncCacheEntry.FromRecord(saved);
+
+            UpdateKnownDynamicObjectAfterWrite(state, write);
+            state.Conflicts.Remove(objectId);
+            CloudObjectSyncStateStore.Save(state);
+            await ApplyCloudObjectStateToLocalAsync(objectId);
+            return (true, "已保留这台电脑的修改，并同步到云端。");
+        }
+        catch (CloudSyncRevisionConflictException)
+        {
+            return (false, "选择期间云端又有新修改，请刷新后重新查看两份内容。");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"冲突处理失败：{FormatExceptionMessage(ex)}");
+        }
+        finally
+        {
+            conflictLock.Release();
+        }
+    }
+
+    public async Task<CloudSyncObjectRecord> RestoreCloudObjectVersionAsync(
+        string objectId,
+        long expectedRevision,
+        long restoreRevision)
+    {
+        if (_cloudSyncClient == null)
+        {
+            throw new InvalidOperationException("账号云同步客户端不可用。");
+        }
+
+        var syncLock = _accountObjectSyncLock;
+        await syncLock.WaitAsync();
+        try
+        {
+            var state = CloudObjectSyncStateStore.Load(_cloudSyncClient.CurrentUserId);
+            if (!string.IsNullOrWhiteSpace(state.PersistenceError)) throw new IOException(state.PersistenceError);
+            var restored = await _cloudSyncClient.RestoreSyncObjectAsync(
+                objectId,
+                expectedRevision,
+                restoreRevision,
+                DeviceIdentityStore.GetOrCreateDesktopDeviceId(),
+                DeviceIdentityStore.GetDesktopDisplayName());
+            await UpdateDynamicIndexAfterRestoreAsync(restored);
+            return restored;
+        }
+        finally
+        {
+            syncLock.Release();
+        }
+    }
+
+    private async Task UpdateDynamicIndexAfterRestoreAsync(CloudSyncObjectRecord restored)
+    {
+        if (_cloudSyncClient == null || !IsCloudDynamicObjectId(restored.ObjectId))
+        {
+            return;
+        }
+
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var state = CloudObjectSyncStateStore.Load(_cloudSyncClient.CurrentUserId);
+            await RefreshCloudObjectCacheAsync(state);
+            var indexObjectId = YanmObjectStore.IsDynamicObjectId(restored.ObjectId)
+                ? YanmObjectStore.ComponentStateIndexObjectId
+                : restored.ObjectId.StartsWith(AccountConfigObjectStore.RadialMenuPagePrefix, StringComparison.OrdinalIgnoreCase)
+                    ? AccountConfigObjectStore.RadialMenuIndexObjectId
+                    : AccountConfigObjectStore.QuickPanelIndexObjectId;
+            if (!state.Objects.TryGetValue(indexObjectId, out var cachedIndex) || cachedIndex.Deleted)
+            {
+                return;
+            }
+
+            var payload = cachedIndex.Payload.Clone();
+            var changed = false;
+            if (indexObjectId.Equals(YanmObjectStore.ComponentStateIndexObjectId, StringComparison.OrdinalIgnoreCase))
+            {
+                var index = payload.Deserialize<YanmComponentStateIndexPayload>(ObjectPayloadJsonOptions)
+                            ?? new YanmComponentStateIndexPayload();
+                changed = SetIndexedObjectPresence(index.StateObjectIds, restored.ObjectId, !restored.Deleted);
+                payload = JsonSerializer.SerializeToElement(index, ObjectPayloadJsonOptions);
+            }
+            else if (indexObjectId.Equals(AccountConfigObjectStore.RadialMenuIndexObjectId, StringComparison.OrdinalIgnoreCase))
+            {
+                var index = payload.Deserialize<RadialMenuPageIndexPayload>(ObjectPayloadJsonOptions)
+                            ?? new RadialMenuPageIndexPayload();
+                changed = SetIndexedObjectPresence(index.PageObjectIds, restored.ObjectId, !restored.Deleted);
+                payload = JsonSerializer.SerializeToElement(index, ObjectPayloadJsonOptions);
+            }
+            else
+            {
+                var index = payload.Deserialize<QuickPanelGroupIndexPayload>(ObjectPayloadJsonOptions)
+                            ?? new QuickPanelGroupIndexPayload();
+                if (restored.Deleted)
+                {
+                    changed = SetIndexedObjectPresence(index.GlobalObjectIds, restored.ObjectId, false) |
+                              SetIndexedObjectPresence(index.ContextObjectIds, restored.ObjectId, false);
+                }
+                else
+                {
+                    var restoredPayload = restored.Payload.Deserialize<QuickPanelGroupObjectPayload>(ObjectPayloadJsonOptions);
+                    var target = string.Equals(restoredPayload?.Scope, "context", StringComparison.OrdinalIgnoreCase)
+                        ? index.ContextObjectIds
+                        : index.GlobalObjectIds;
+                    var other = ReferenceEquals(target, index.ContextObjectIds)
+                        ? index.GlobalObjectIds
+                        : index.ContextObjectIds;
+                    changed = SetIndexedObjectPresence(other, restored.ObjectId, false) |
+                              SetIndexedObjectPresence(target, restored.ObjectId, true);
+                }
+                payload = JsonSerializer.SerializeToElement(index, ObjectPayloadJsonOptions);
+            }
+
+            if (!changed)
+            {
+                return;
+            }
+
+            var indexWrite = new AccountConfigObjectWrite(indexObjectId, new LauncherConfigObjectEnvelope
+            {
+                ObjectId = indexObjectId,
+                SchemaVersion = cachedIndex.SchemaVersion,
+                UpdatedAtUtc = DateTime.UtcNow.ToString("O"),
+                UpdatedByDeviceId = DeviceIdentityStore.GetOrCreateDesktopDeviceId(),
+                UpdatedByDeviceName = DeviceIdentityStore.GetDesktopDisplayName(),
+                Payload = payload
+            });
+            try
+            {
+                var savedIndex = await PutCloudObjectWriteAsync(indexWrite, cachedIndex.Revision);
+                state.Objects[indexObjectId] = CloudObjectSyncCacheEntry.FromRecord(savedIndex);
+                state.Objects[restored.ObjectId] = CloudObjectSyncCacheEntry.FromRecord(restored);
+
+                CloudObjectSyncStateStore.Save(state);
+                return;
+            }
+            catch (CloudSyncRevisionConflictException)
+            {
+                // 索引被另一设备同时编辑时刷新后合并一次，避免恢复动作丢掉对方新加入的成员。
+                if (attempt > 0) break;
+            }
+        }
+
+        throw new InvalidOperationException("对象版本已恢复，但索引同时被另一设备反复修改；请刷新后重试索引恢复。");
+    }
+
+    internal static bool SetIndexedObjectPresence(List<string> objectIds, string objectId, bool present)
+    {
+        var matches = objectIds.Where(id => id.Equals(objectId, StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (present)
+        {
+            if (matches.Length > 0) return false;
+            objectIds.Add(objectId);
+            return true;
+        }
+
+        if (matches.Length == 0) return false;
+        objectIds.RemoveAll(id => id.Equals(objectId, StringComparison.OrdinalIgnoreCase));
+        return true;
+    }
+
+    private static readonly JsonSerializerOptions ObjectPayloadJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true
+    };
+
+    private Task ApplyCloudObjectStateToLocalAsync(string resolvedObjectId)
+    {
+        var state = CloudObjectSyncStateStore.Load(_cloudSyncClient?.CurrentUserId);
+        var settings = AppSettingsStore.Load();
+        var snapshot = CloudQuickPanelConfigSnapshot.FromSettings(settings);
+        var otherLocalWrites = AccountConfigObjectStore.PrepareWrites(snapshot, DateTime.UtcNow, state.Objects.Keys, state.KnownLocalDynamicObjectIds)
+            .Concat(YanmObjectStore.PrepareWrites(settings.Yanm ?? new YanmSettings(), DateTime.UtcNow, state.Objects.Keys, state.KnownLocalDynamicObjectIds))
+            .Where(write => !write.ObjectId.Equals(resolvedObjectId, StringComparison.OrdinalIgnoreCase));
+        // A choice applies to this conflict only; preserve unrelated edits made while the request was running.
+        CloudPendingChanges.Capture(state, otherLocalWrites, state.LocalBaselines);
+        CloudObjectSyncStateStore.Save(state);
+        ApplyDownloadedAccountSettings(state);
+        return Task.CompletedTask;
+    }
+
     public void SignOutFromSettings()
     {
         if (_cloudSyncClient == null)
@@ -3504,10 +4894,15 @@ public partial class MainWindow
 
     public void RefreshAppSettings()
     {
+        // The same process owns settings and background services; no IPC refresh is needed.
         var settings = AppSettingsStore.Load();
         _appSettings = settings;
         _windowBoundExtensionsService.Reload(_appSettings.WindowBindings);
         OnPropertyChanged(nameof(AiChatModelDisplayText));
+        OnPropertyChanged(nameof(IsFileSearchScopeActive));
+        OnPropertyChanged(nameof(IsFileSearchEnabledInHomeView));
+        OnPropertyChanged(nameof(VisibleCountText));
+        OnPropertyChanged(nameof(FooterHint));
         if (!_listenerServicesPaused)
         {
             InputHookService.ReloadSettings();
@@ -3764,9 +5159,9 @@ public partial class MainWindow
 
         if (string.IsNullOrWhiteSpace(owner)) return "无法获取账号名。";
         var repo = string.IsNullOrWhiteSpace(sync.Gitee.Repo) ? "yanzi-sync" : sync.Gitee.Repo.Trim();
-        
+
         var url = $"https://gitee.com/api/v5/repos/{Uri.EscapeDataString(owner)}/{Uri.EscapeDataString(repo)}/commits/{Uri.EscapeDataString(sha)}?access_token={Uri.EscapeDataString(secrets.GiteeToken.Trim())}";
-        
+
         using var response = await httpClient.GetAsync(url, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
@@ -3799,9 +5194,9 @@ public partial class MainWindow
 
         if (string.IsNullOrWhiteSpace(owner)) return "无法获取账号名。";
         var repo = string.IsNullOrWhiteSpace(sync.GitHub.Repo) ? "yanzi-sync" : sync.GitHub.Repo.Trim();
-        
+
         var url = $"https://api.github.com/repos/{Uri.EscapeDataString(owner)}/{Uri.EscapeDataString(repo)}/commits/{Uri.EscapeDataString(sha)}";
-        
+
         using var response = await httpClient.GetAsync(url, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
@@ -3822,7 +5217,7 @@ public partial class MainWindow
             {
                 var filename = file.TryGetProperty("filename", out var fName) ? fName.GetString() : "unknown";
                 var status = file.TryGetProperty("status", out var fStatus) ? fStatus.GetString() : "modified";
-                
+
                 sb.AppendLine($"--- {filename} ({status}) ---");
                 if (file.TryGetProperty("patch", out var patchElement) && patchElement.ValueKind == JsonValueKind.String)
                 {
@@ -3910,7 +5305,7 @@ public partial class MainWindow
         var branch = string.IsNullOrWhiteSpace(sync.Gitee.Branch) ? "master" : sync.Gitee.Branch.Trim();
         var url = $"https://gitee.com/api/v5/repos/{Uri.EscapeDataString(owner)}/{Uri.EscapeDataString(repo)}/commits?access_token={Uri.EscapeDataString(secrets.GiteeToken.Trim())}&sha={Uri.EscapeDataString(branch)}&per_page=12";
         CloudSyncDiagnostics.Log("MainWindow.GiteeCommits", "Commit query started", ("owner", owner), ("repo", repo), ("branch", branch), ("pathPrefix", sync.Gitee.PathPrefix));
-        
+
         using var response = await httpClient.GetAsync(url, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
@@ -4060,7 +5455,7 @@ public partial class MainWindow
         {
             var sha = item.TryGetProperty("sha", out var shaElement) ? shaElement.GetString() ?? string.Empty : string.Empty;
             var htmlUrl = item.TryGetProperty("html_url", out var htmlUrlElement) ? htmlUrlElement.GetString() ?? string.Empty : string.Empty;
-            
+
             var commit = item.TryGetProperty("commit", out var commitElement) ? commitElement : default;
             var message = commit.ValueKind != JsonValueKind.Undefined && commit.TryGetProperty("message", out var messageElement)
                 ? messageElement.GetString() ?? string.Empty
@@ -4259,6 +5654,16 @@ public partial class MainWindow
         settings.PersonalSyncAutoSyncDelaySeconds = normalized;
         AppSettingsStore.Save(settings);
         _appSettings = settings;
+        if (normalized <= 0)
+        {
+            _backgroundWebDavSyncTimer.Stop();
+            _backgroundWebDavSyncDelayTimer.Stop();
+            _pendingBackgroundWebDavSyncReason = null;
+        }
+        else
+        {
+            StartBackgroundWebDavSync();
+        }
         if (queueCloudSync)
         {
             QueueCloudWebDavConfigSync("personal-sync-delay-saved");
@@ -4310,6 +5715,7 @@ public partial class MainWindow
             QueueCloudYanmStateSync(reason);
         }
         QueueBackgroundWebDavSync($"config-{reason}");
+        App.Current?.ReloadSettingsWindowIfOpen();
     }
 
     private static bool IsYanmSettingsChangeReason(string reason)
@@ -4360,16 +5766,240 @@ public partial class MainWindow
             var result = await Task.Run(async () =>
             {
                 var service = new PersonalSyncService(settings, requireEnabled: false);
-                return await service.SyncExtensionsAsync();
+                var restored = await ExtensionStorageService.ReconcileCloudDataAsync();
+                var extensions = await service.SyncExtensionsAsync(GetPersonalConfigSyncMode());
+                var extensionData = await ExtensionStorageService.SyncPendingCloudWritesAsync();
+                return (Extensions: extensions, ExtensionData: extensionData, Restored: restored);
             });
             AppSettingsStore.Save(settings);
-            ApplyWebDavSyncResult(result);
-            return (true, BuildPersonalSyncCompletedMessage(result));
+            ApplyWebDavSyncResult(result.Extensions, syncAccountImmediately: true);
+            return (true, $"{BuildPersonalSyncCompletedMessage(result.Extensions)} 扩展数据 pending 上传 {result.ExtensionData.UploadedCount}，失败 {result.ExtensionData.FailedCount}。");
         }
         catch (Exception ex)
         {
             return (false, $"个人扩展同步失败：{FormatExceptionMessage(ex)}");
         }
+    }
+
+    private static PersonalConfigSyncMode GetPersonalConfigSyncMode()
+    {
+        var session = SyncSessionStore.Load();
+        return PersonalSyncAuthority.SelectMode(session, File.Exists(SecureCredentialStore.CredentialPath));
+    }
+
+    public async Task<IReadOnlyList<LauncherConfigRestorePointInfo>> GetPersonalConfigRestorePointsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var service = new PersonalSyncService(AppSettingsStore.Load(), requireEnabled: false);
+        return await service.GetLauncherConfigRestorePointsAsync(cancellationToken);
+    }
+
+    public async Task<(bool ok, string message)> RestorePersonalConfigRestorePointAsync(
+        string restorePointId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var service = new PersonalSyncService(AppSettingsStore.Load(), requireEnabled: false);
+            var snapshot = await service.LoadLauncherConfigRestorePointAsync(restorePointId, cancellationToken);
+            var settings = AppSettingsStore.Load();
+            var incoming = snapshot.ToAppSettings();
+            ApplyCloudLauncherSettings(settings, incoming, snapshot);
+            var restoredAtUtc = DateTime.UtcNow;
+            settings.LauncherConfigUpdatedAtUtc = restoredAtUtc.ToString("O");
+            AppSettingsStore.Save(settings);
+            RefreshRuntimeAfterCloudLauncherPull(settings, snapshot);
+
+            // 显式恢复被视为一次新的本地编辑：登录账号时进入账户对象 revision，
+            // 未登录时按个人仓库双向规则写回，原恢复点保持不可变。
+            QueueCloudQuickPanelConfigSync("personal-restore-point-applied");
+            QueueBackgroundWebDavSync("config-personal-restore-point-applied");
+            return (true, $"已恢复个人仓库配置点 {restorePointId}，并作为新的本地版本继续同步。");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"恢复个人仓库配置失败：{FormatExceptionMessage(ex)}");
+        }
+    }
+
+    public IReadOnlyList<ExtensionSyncConflictRecord> GetExtensionSyncConflicts() =>
+        ExtensionSyncConflictStore.Load();
+
+    public IReadOnlyList<ExtensionDataSyncState> GetExtensionDataSyncStates() =>
+        ExtensionDataSyncStateStore.Load();
+
+    public async Task<(bool ok, string message)> ResolveExtensionDataSyncConflictAsync(
+        string extensionId,
+        string key,
+        bool useLocalVersion)
+    {
+        var state = ExtensionDataSyncStateStore.Get(extensionId, key);
+        var conflict = state?.Conflict;
+        if (conflict == null)
+        {
+            return (true, "该扩展数据冲突已经处理。");
+        }
+
+        try
+        {
+            var directory = ExtensionStorageService.GetExtensionStorageDirectoryPath(extensionId);
+            var normalizedKey = ExtensionDataObjectStore.NormalizeKey(key);
+            var targetPath = Path.GetFullPath(Path.Combine(
+                directory,
+                normalizedKey.Replace('/', Path.DirectorySeparatorChar)));
+            var rootPath = Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            if (!targetPath.StartsWith(rootPath, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("扩展数据 key 超出本地存储目录。");
+            }
+
+            var localDeleted = !File.Exists(targetPath);
+            var localContent = localDeleted ? string.Empty : await File.ReadAllTextAsync(targetPath);
+            var latestRemote = (await new PersonalSyncService(AppSettingsStore.Load())
+                .TryReadExtensionDataAsync(extensionId, normalizedKey)).Value;
+            if (latestRemote == null)
+            {
+                return (false, "无法确认当前云端版本，请稍后重试。");
+            }
+            if (localDeleted != conflict.LocalDeleted ||
+                (!localDeleted && !ExtensionDataObjectStore.ComputeContentHash(localContent)
+                    .Equals(conflict.LocalContentHash, StringComparison.OrdinalIgnoreCase)))
+            {
+                ExtensionDataSyncStateStore.PreserveConflict(
+                    extensionId, normalizedKey, localContent, latestRemote, localDeleted);
+                return (false, "本地内容已变化，冲突列表已更新，请重新查看后选择。");
+            }
+            if (!latestRemote.VersionId.Equals(conflict.Remote.VersionId, StringComparison.OrdinalIgnoreCase))
+            {
+                ExtensionDataSyncStateStore.PreserveConflict(
+                    extensionId, normalizedKey, localContent, latestRemote, localDeleted);
+                return (false, "云端内容已变化，冲突列表已更新，请重新查看后选择。");
+            }
+
+            if (useLocalVersion)
+            {
+                var result = conflict.LocalDeleted
+                    ? await ExtensionStorageService.DeleteTextAsync(extensionId, key, "cloud")
+                    : await ExtensionStorageService.WriteTextAsync(
+                        extensionId,
+                        key,
+                        conflict.LocalContent,
+                        "cloud");
+                if (!result.CloudSaved)
+                {
+                    return (false, result.CloudMessage ?? "本地版本尚未写入个人仓库。");
+                }
+                ExtensionDataSyncStateStore.ClearConflict(extensionId, key);
+                return (true, "已采用本地小程序数据，并作为新的 revision 写入个人仓库。");
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
+            if (latestRemote.Deleted)
+            {
+                if (File.Exists(targetPath)) File.Delete(targetPath);
+            }
+            else
+            {
+                await File.WriteAllTextAsync(targetPath, latestRemote.Content, Encoding.UTF8);
+            }
+            ExtensionDataSyncStateStore.MarkSynced(latestRemote);
+            ExtensionDataSyncStateStore.ClearConflict(extensionId, key);
+            return (true, "已接受远端扩展数据，本地冲突副本已清除。");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"扩展数据冲突处理失败：{FormatExceptionMessage(ex)}");
+        }
+    }
+
+    public async Task<(bool ok, string message)> ResolveExtensionSyncConflictAsync(
+        string extensionId,
+        bool useLocalVersion)
+    {
+        var conflict = ExtensionSyncConflictStore.Load().FirstOrDefault(item =>
+            item.ExtensionId.Equals(extensionId, StringComparison.OrdinalIgnoreCase));
+        if (conflict == null)
+        {
+            return (true, "该扩展冲突已经处理。");
+        }
+
+        try
+        {
+            if (!useLocalVersion)
+            {
+                ExtensionSyncConflictStore.Remove(extensionId);
+                return (true, "已接受个人仓库版本，本地冲突副本已清除。");
+            }
+
+            if (conflict.LocalDeleted || conflict.LocalPurged)
+            {
+                var command = LocalExtensionCatalog.LoadCommands().FirstOrDefault(item =>
+                    item.ExtensionId.Equals(extensionId, StringComparison.OrdinalIgnoreCase));
+                if (conflict.LocalPurged)
+                {
+                    if (command?.ExtensionDirectoryPath is { Length: > 0 } directory && Directory.Exists(directory))
+                    {
+                        Directory.Delete(directory, recursive: true);
+                    }
+                    ExtensionRecycleBinService.PurgeAllByExtensionId(extensionId);
+                    WebDavSyncService.MarkExtensionPurgedLocally(extensionId, conflict.LocalVersion);
+                }
+                else
+                {
+                    if (command?.ExtensionDirectoryPath is { Length: > 0 } directory && Directory.Exists(directory))
+                    {
+                        ExtensionRecycleBinService.MoveToRecycleBin(extensionId, directory);
+                    }
+                    WebDavSyncService.MarkExtensionDeletedLocally(extensionId, conflict.LocalVersion);
+                }
+                RemoveExtensionFromQuickPanelSettings(extensionId);
+                RemoveLocalExtensionCommand(extensionId);
+                QueuePrivateExtensionRemovalFromAccount(extensionId);
+            }
+            else
+            {
+                var packageBytes = ExtensionSyncConflictStore.ReadLocalPackage(extensionId)
+                                   ?? throw new FileNotFoundException("本地小程序冲突包已不存在。");
+                var packageHash = Convert.ToHexString(SHA256.HashData(packageBytes)).ToLowerInvariant();
+                if (!string.Equals(packageHash, conflict.LocalPackageHash, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidDataException("本地小程序冲突包 SHA-256 校验失败。");
+                }
+                var installed = await ExtensionInstallService.InstallPackageAsync(packageBytes, extensionId);
+                WebDavSyncService.MarkExtensionRestoredLocally(installed.ExtensionId, installed.Version);
+                ReloadLocalExtensionsFromExternal();
+                QueuePrivateExtensionUpsertToAccount(installed.ExtensionId, allowRestore: true);
+            }
+
+            ExtensionSyncConflictStore.Remove(extensionId);
+            QueueBackgroundWebDavSync("extension-conflict-local-selected", forceImmediate: true);
+            return (true, "已采用本地小程序版本，并作为新的 revision 继续同步。");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"扩展冲突处理失败：{FormatExceptionMessage(ex)}");
+        }
+    }
+
+    private static bool IsYanmComponentStateOnlyReason(string reason)
+    {
+        return reason.Contains("yanm-component-state", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static YanmSettings CloneYanmSettings(YanmSettings source)
+    {
+        return JsonSerializer.Deserialize<YanmSettings>(JsonSerializer.Serialize(source)) ?? new YanmSettings();
+    }
+
+    private static YanmSettings CloneYanmWithComponentState(
+        YanmSettings source,
+        IReadOnlyDictionary<string, string>? componentState)
+    {
+        var clone = CloneYanmSettings(source);
+        clone.ComponentState = componentState == null
+            ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, string>(componentState, StringComparer.OrdinalIgnoreCase);
+        return clone;
     }
 
     private static string BuildPersonalSyncCompletedMessage(WebDavSyncResult result, bool includeConfigSummary = true)
@@ -4392,6 +6022,12 @@ public partial class MainWindow
 
     public async Task<(bool ok, string message, bool uploaded, bool pulled, int payloadBytes)> SyncYanmStateNowAsync()
     {
+        if (GetPersonalConfigSyncMode() == PersonalConfigSyncMode.UploadOnlyBackup)
+        {
+            var accountResult = await PullYanmStateFromCloudNowAsync();
+            return (accountResult.ok, accountResult.message, false, accountResult.pulled, accountResult.payloadBytes);
+        }
+
         try
         {
             var service = new PersonalSyncService(AppSettingsStore.Load(), requireEnabled: false);
@@ -4434,13 +6070,13 @@ public partial class MainWindow
             settings.LauncherHotkey = previous;
             AppSettingsStore.Save(settings);
             RefreshLauncherHotkeyRegistration();
-            message = "主程序快捷键注册失败，可能与系统或其他程序冲突。";
+            message = BrandTerms.Format("{Warehouse}快捷键注册失败，可能与系统或其他程序冲突。");
             return false;
         }
 
         message = string.IsNullOrWhiteSpace(settings.LauncherHotkey)
-            ? "已清除主程序快捷键。"
-            : $"主程序快捷键已更新为 {FormatLauncherHotkeyLabel(settings.LauncherHotkey)}";
+            ? BrandTerms.Format("已清除{Warehouse}快捷键。")
+            : BrandTerms.Format($"{{Warehouse}}快捷键已更新为 {FormatLauncherHotkeyLabel(settings.LauncherHotkey)}");
         return true;
     }
 
@@ -4536,6 +6172,15 @@ public partial class MainWindow
         StoreExtensionDetailOverlay.DataContext = null;
     }
 
+    private void StoreDetailButton_Click(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        if (sender is FrameworkElement fe && fe.Tag is CommandItem item)
+        {
+            ShowStoreExtensionDetail(item);
+        }
+    }
+
     private async void StoreDryRunButton_Click(object sender, RoutedEventArgs e)
     {
         e.Handled = true;
@@ -4546,15 +6191,15 @@ public partial class MainWindow
                 System.Windows.MessageBox.Show("当前扩展在云端没有上传可下载的安装包归档。", "提示", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
                 return;
             }
-            LastRunMessage = $"正在下载并试运行扩展：{item.Title} ...";
+            LastRunMessage = $"正在下载并试运行小程序：{item.Title} ...";
             SyncStatus = $"正在试运行 {item.Title}...";
-            
+
             // 禁用按钮防重复点击
             var btn = sender as System.Windows.Controls.Button;
             if (btn != null) btn.IsEnabled = false;
 
             var result = await RunStoreExtensionTemporaryAsync(item.ExtensionId);
-            
+
             if (btn != null) btn.IsEnabled = true;
 
             if (result.ok)
@@ -4611,7 +6256,7 @@ public partial class MainWindow
     {
         if (string.IsNullOrWhiteSpace(extensionId))
         {
-            return (false, "缺少扩展 ID");
+            return (false, "缺少小程序 ID");
         }
 
         try
@@ -4646,11 +6291,7 @@ public partial class MainWindow
             }
 
             var manifestJson = await File.ReadAllTextAsync(manifestPath);
-            var manifest = JsonSerializer.Deserialize<LocalExtensionManifest>(manifestJson, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                PropertyNameCaseInsensitive = true
-            });
+            var manifest = JsonSerializer.Deserialize<LocalExtensionManifest>(manifestJson, JsonDefaults.CamelCaseIndented);
 
             if (manifest == null || string.IsNullOrWhiteSpace(manifest.Id) || string.IsNullOrWhiteSpace(manifest.Name))
             {
@@ -4661,7 +6302,7 @@ public partial class MainWindow
             var entry = new LocalExtensionCatalogEntry(manifestPath, manifest);
             var tempCommand = LocalExtensionCatalog.CreateCommand(entry);
 
-            // 4. 运行扩展
+            // 4. 运行小程序
             await Dispatcher.InvokeAsync(async () =>
             {
                 MarkExtensionAsSeen(tempCommand);
@@ -4669,7 +6310,7 @@ public partial class MainWindow
                 var explicitInput = runnable.SupportsQueryArgument && !string.IsNullOrWhiteSpace(_activeQueryArgument)
                     ? _activeQueryArgument
                     : null;
-                
+
                 await ExecuteCommandAsync(runnable, explicitInput);
             });
 

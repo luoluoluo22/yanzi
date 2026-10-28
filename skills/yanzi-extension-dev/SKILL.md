@@ -9,7 +9,12 @@ Use this skill when working on local extensions for Yanzi.
 
 ## Quick Start
 
-Yanzi stores runtime extensions under the app's `Extensions/` directory. On Windows development/runtime environment, the actual path is `%LOCALAPPDATA%\OpenQuickHost\Extensions\` (and configuration/storage files under `%LOCALAPPDATA%\OpenQuickHost\`). The Local Agent API authentication Token is located in `%LOCALAPPDATA%\OpenQuickHost\appsettings.local.json` under the `"agentApiToken"` field. Each extension lives in its own folder.
+> **CRITICAL RULE**: Do NOT create, store, or edit extensions inside the workspace Git repository (e.g. `extensions/`). Yanzi extensions are personal user-level runtime assets and MUST ONLY be created, developed, and tested directly inside:
+> `%LOCALAPPDATA%\OpenQuickHost\Extensions\<extension-id>\`
+> (Physical path: `C:\Users\<user>\AppData\Local\OpenQuickHost\Extensions\<extension-id>\`).
+> Runtime data and storage live under `%LOCALAPPDATA%\OpenQuickHost\ExtensionStorage\<extension-id>\`.
+
+Yanzi stores and executes all extensions from the app's `Extensions/` directory in `%LOCALAPPDATA%\OpenQuickHost\Extensions\`. The Local Agent API authentication Token is located in `%LOCALAPPDATA%\OpenQuickHost\appsettings.local.json` under the `"agentApiToken"` field. Each extension lives in its own folder.
 
 Two extension shapes are supported:
 
@@ -27,7 +32,7 @@ For lightweight action extensions inside a single `manifest.json`, choose the ru
 Minimum layout:
 
 ```text
-Extensions/
+%LOCALAPPDATA%\OpenQuickHost\Extensions\
   my-extension/
     manifest.json
 ```

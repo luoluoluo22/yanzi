@@ -1,8 +1,39 @@
 # 燕子浏览器助手开发接口与工作流协议规范 (v1)
 
+> ChatGPT 后台聊天使用独立的小程序服务 `http://127.0.0.1:53921`，不会受下面旧工作流接口 30 秒等待限制影响。安装、定时和事件触发 API 见 [ChatGPT 后台工作台](../tools/chatgpt-bridge/README.md)。浏览器助手 0.2.0 的弹窗可设置燕子实际 API 端口；默认 53919，ChatGPT 专用通道固定 53921。
+
 燕子浏览器助手通过本地 WebSocket 连接（默认端口 `18293`）常驻连接到燕子启动器。燕子启动器的本地 Agent 服务（默认端口 `53919`）对外暴露统一的 HTTP RESTful 接口，使得本地 AI 智能体 (Agent) 或第三方脚本能够远程控制浏览器进行静默数据抓取和交互表单填充。
 
 ---
+
+## 0. 浏览器助手开发控制接口
+
+### 小红书 OpenCLI 只读桥接（2026-10-27）
+
+扩展读取区通过现有 Browser WebSocket 请求宿主执行 OpenCLI；不从推荐流或任意页面昵称推断账号数据。需要包含 `LocalAgentApiServer.OpenCli.cs` 的新版宿主、本机 npm 全局安装的 `@jackwener/opencli`、在线的 OpenCLI Browser Bridge，以及小红书创作者中心登录态。
+
+| 扩展 operation | 宿主固定执行的命令 |
+| --- | --- |
+| `profile` | `xiaohongshu creator-profile --format json` |
+| `notes` | `xiaohongshu creator-notes --limit 20 --format json` |
+| `stats` | `xiaohongshu creator-stats --period seven --format json` |
+
+每次实际读取前先请求 `capabilities`，5 秒无应答时提示宿主需要更新；实际读取宿主超时 90 秒，扩展等待 100 秒，不再被 Popup 的 8 秒计时提前截断。宿主串行执行，忙碌时拒绝新请求；只接受扩展 Origin、合法 requestId 及固定只读操作，不经 Shell 拼接命令。浏览器配置留空时从 `opencli profile list` 选择唯一在线配置，忽略已断线的旧默认配置；多配置时要求填写配置名称或 ID，并显式传入 `--profile`。
+
+内部请求为 `{type:"opencli_request",requestId,site:"xiaohongshu",operation,page:1,profile:""}`。成功应答为 `{type:"opencli_response",requestId,ok:true,result:{data,source:"opencli",profile,command,period,collectedAt}}`；错误应答携带 `ok:false,error`。数据仅返回给请求方，不写账号同步存储或日志。Popup 显示数据来源、浏览器配置与采集时间；`seven` 保留网站统计口径，不能把采集日期冒充统计起止日期。
+
+自动检查：`scripts/verify-opencli-xhs-bridge.ps1`。真实 CLI 验证：`dotnet run --project tests/OpenCliBridgeVerification -- --live`。隔离 WebSocket 验证服务：同项目 `--serve`，监听 `127.0.0.1:53928`，仅用于验收，不代替正式宿主部署。没有升级宿主时扩展应明确报告能力缺失。
+
+### 0.1 自重载扩展
+
+- **接口地址**：`POST http://127.0.0.1:<AgentPort>/v1/browser/reload`
+- **认证 Header**：与 Local Agent API 一致，使用 `X-Yanzi-Token` 或 Bearer Token。
+- **用途**：开发期修改燕子浏览器助手后，让当前已连接的 Edge/Chrome 扩展直接执行 `chrome.runtime.reload()`，无需再打开扩展管理页手工点击“重新加载”。
+- **成功响应**：HTTP 202，表示重载指令已通过 Browser WebSocket 发送。
+- **验证链**：桌面日志应依次看到 `Browser extension reload requested`、`Browser extension reload ACK`，随后旧 WebSocket 断开并由新版扩展重新 `Registered successfully`。
+- **首次启用**：由于旧版扩展本身还没有这段处理逻辑，需要在加入此功能后的第一次由用户手工重新加载一次。从此后可全自动重载。
+- **页面代码更新**：开发自重载会写入一次性刷新标记；新版 Service Worker 启动后自动刷新当前运行网页小程序的标签页，确保旧 content script 不残留。
+- **连接自愈**：浏览器助手每 20 秒心跳；连续 45 秒未收到 pong 会主动判定连接僵死并强制重连，避免桌面端异常退出后 WebSocket 长时间停留在假 OPEN 状态。
 
 ## 1. 外部控制接口 (REST API)
 
@@ -45,6 +76,82 @@ payload = {
 response = requests.post(url, headers=headers, json=payload)
 print(response.json())
 ```
+
+### 1.1 网页小程序数据接口
+
+网页小程序共享同一条 `POST /v1/browser/execute` 控制通道。调用方不直接依赖浏览器 storage。
+
+读取：
+
+```json
+{
+  "action": "webapp_data_get",
+  "appId": "xiaohongshu.filter",
+  "key": "noteStats"
+}
+```
+
+写入：
+
+```json
+{
+  "action": "webapp_data_set",
+  "appId": "xiaohongshu.filter",
+  "key": "customCards",
+  "value": {
+    "version": 1,
+    "items": []
+  }
+}
+```
+
+### 1.2 小红书自定义卡片接口
+
+查询：
+
+```json
+{ "action": "xiaohongshu_custom_card_list" }
+```
+
+新增或更新：
+
+```json
+{
+  "action": "xiaohongshu_custom_card_upsert",
+  "card": {
+    "id": "daily-ai-note-20261004",
+    "title": "今天值得看的 AI 变化",
+    "body": "燕子根据你的关注主题生成的摘要。",
+    "author": "燕子 AI",
+    "badge": "燕子",
+    "imageUrl": "https://example.com/cover.jpg",
+    "url": "https://example.com/note",
+    "priority": 10,
+    "enabled": true
+  }
+}
+```
+
+删除：
+
+```json
+{
+  "action": "xiaohongshu_custom_card_remove",
+  "id": "daily-ai-note-20261004"
+}
+```
+
+清空：
+
+```json
+{ "action": "xiaohongshu_custom_card_clear" }
+```
+
+`title` 必填；`imageUrl` / `url` 仅接受 HTTP(S)。同 id 的 upsert 会原位更新数据。卡片定义保存到 `xiaohongshu.filter/customCards` 并使用燕子现有账户同步。
+
+### 1.3 小红书兴趣数据
+
+`xiaohongshu.filter/noteStats` 为聚合后的个人兴趣行为数据。内容包括打开次数、停留时长、标题、作者、标签、互动数等。页面侧采用本地高频聚合 + 延迟云同步，避免每次 DOM 更新或每秒停留都产生一次云端写入。
 
 ---
 

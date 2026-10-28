@@ -1,0 +1,25 @@
+[Unit]
+Description=Yanzi replaceable server capability node
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=yanzi-server
+Group=yanzi-server
+WorkingDirectory=/opt/yanzi
+EnvironmentFile=-/etc/yanzi-server-node.env
+ExecStart=/usr/bin/node /opt/yanzi/server/yanzi-node/src/index.mjs
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectControlGroups=true
+ReadWritePaths=/var/lib/yanzi-server-node /srv/yanzi-workspace
+
+[Install]
+WantedBy=multi-user.target

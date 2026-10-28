@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Linq;
 using System.Net;
@@ -19,6 +19,7 @@ public sealed class LanDiscoveryService : IDisposable
     private readonly string _agentApiToken;
     private CancellationTokenSource? _cts;
     public static IPAddress? LastKnownMobileIp { get; private set; }
+    public static int LastKnownMobileNotificationPort { get; private set; } = 42981;
 
     public LanDiscoveryService(int agentApiPort, string agentApiToken)
     {
@@ -52,23 +53,26 @@ public sealed class LanDiscoveryService : IDisposable
                 var result = await _udpClient.ReceiveAsync(token);
                 var requestText = Encoding.UTF8.GetString(result.Buffer);
                 
-                if (requestText == DiscoverRequest)
+                if (requestText == DiscoverRequest || requestText == DiscoverRequest + ":42981" || requestText == DiscoverRequest + ":42982")
                 {
-                    LastKnownMobileIp = result.RemoteEndPoint.Address;
+                    // Public discovery is never evidence of an authenticated peer.
                     var ip = GetLocalIpForRemote(result.RemoteEndPoint.Address);
                     if (!string.IsNullOrEmpty(ip))
                     {
                         var response = new
                         {
                             device_id = Environment.MachineName,
+                            deviceId = OpenQuickHost.Sync.DeviceIdentityStore.GetOrCreateDesktopDeviceId(),
+                            protocolVersion = YanziDeviceMessageProtocol.Version,
                             ip = ip,
                             port = _agentApiPort,
-                            token = _agentApiToken
+                            secureProtocol = "yanzi.lan.aead.v1",
+                            pairingRequired = true
                         };
                         var responseJson = JsonSerializer.Serialize(response);
                         var responseBytes = Encoding.UTF8.GetBytes(responseJson);
                         await _udpClient.SendAsync(responseBytes, responseBytes.Length, result.RemoteEndPoint);
-                        HostAssets.AppendLog($"LanDiscoveryService: Replied to {result.RemoteEndPoint} with {responseJson}");
+                        HostAssets.AppendLog("LanDiscoveryService: Discovery response sent.");
                     }
                 }
             }

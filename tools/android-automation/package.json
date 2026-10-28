@@ -1,0 +1,14 @@
+{
+  "name": "yanzi-android-automation",
+  "version": "0.3.3",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "status": "node src/cli.mjs status",
+    "inspect": "node src/cli.mjs inspect"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

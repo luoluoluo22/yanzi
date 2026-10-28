@@ -63,6 +63,11 @@ public sealed class MacCommandActionExecutor : ICommandActionExecutor
         PostKeyboardEvent(keyCode, true, flags);
         Thread.Sleep(18);
         PostKeyboardEvent(keyCode, false, flags);
+        if (flags != CGEventFlags.None)
+        {
+            Thread.Sleep(10);
+            MacInputResetHelper.PostFlagsChanged(MacInputResetHelper.CGEventFlags.None);
+        }
     }
 
     private static void LaunchApplication(string? applicationName)

@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Security.Cryptography;
@@ -10,17 +10,20 @@ internal static class LauncherConfigObjectStore
     public const string DirectoryPath = "state/config-objects";
     public const string ManifestPath = "state/config-manifest.json";
     public const string ChangeDirectoryPath = "state/config-changes";
+    public const string HistoryIndexPath = "state/config-history/index.json";
+    public const string HistoryPointDirectoryPath = "state/config-history/points";
+    public const int MaxRestorePointCount = 30;
 
     public static readonly LauncherConfigObjectDefinition[] Definitions =
     [
         new("settings.general", "settings-general.json"),
+        new("settings.runtime", "settings-runtime.json"),
         new("settings.ai", "settings-ai.json"),
         new("settings.hotkeys", "settings-hotkeys.json"),
         new("settings.mouseTriggers", "settings-mouse-triggers.json"),
         new("quickPanel.groups", "quick-panel-groups.json"),
         new("quickPanel.favorites", "quick-panel-favorites.json"),
         new("radialMenu.pages", "radial-menu-pages.json"),
-        new("yanm.layout", "yanm-layout.json"),
         new("yanyu.rules", "yanyu-rules.json"),
         new("window.controls", "window-controls.json")
     ];
@@ -41,6 +44,16 @@ internal static class LauncherConfigObjectStore
                 EnableAgentApi = snapshot.EnableAgentApi,
                 AgentApiPort = snapshot.AgentApiPort
             }),
+            Create("settings.runtime", updatedAt, sourceDeviceId, sourceDeviceName, new LauncherRuntimeSettingsPayload
+            {
+                AutoCloseToastEnabled = snapshot.AutoCloseToastEnabled,
+                EnableAutoUpdate = snapshot.EnableAutoUpdate,
+                AutoBackupFrequency = snapshot.AutoBackupFrequency,
+                EnableBrowserHelper = snapshot.EnableBrowserHelper,
+                PreferManualExtensionEditor = snapshot.PreferManualExtensionEditor,
+                EnableEverything = snapshot.EnableEverything,
+                EnvironmentVariables = snapshot.EnvironmentVariables
+            }),
             Create("settings.ai", updatedAt, sourceDeviceId, sourceDeviceName, new LauncherAiSettingsPayload
             {
                 AiBaseUrl = snapshot.AiBaseUrl,
@@ -53,12 +66,14 @@ internal static class LauncherConfigObjectStore
             Create("settings.hotkeys", updatedAt, sourceDeviceId, sourceDeviceName, new LauncherHotkeySettingsPayload
             {
                 LauncherHotkey = snapshot.LauncherHotkey,
+                AppShortcutBindings = snapshot.AppShortcutBindings,
                 WindowSnapAssistHotkey = snapshot.WindowSnapAssistHotkey
             }),
             Create("settings.mouseTriggers", updatedAt, sourceDeviceId, sourceDeviceName, new LauncherMouseTriggerSettingsPayload
             {
                 QuickPanelTrigger = snapshot.QuickPanelTrigger,
                 QuickPanelMouseTriggers = snapshot.QuickPanelMouseTriggers,
+                MouseGestureAppBindings = snapshot.MouseGestureAppBindings,
                 MouseGestureTriggerMode = snapshot.MouseGestureTriggerMode,
                 WindowSnapAssistMouseTriggerMode = snapshot.WindowSnapAssistMouseTriggerMode
             }),
@@ -75,15 +90,12 @@ internal static class LauncherConfigObjectStore
                 GlobalFavoriteExtensionIds = snapshot.GlobalFavoriteExtensionIds,
                 ContextFavoriteExtensionIds = snapshot.ContextFavoriteExtensionIds,
                 DisabledExtensionIds = snapshot.DisabledExtensionIds,
-                PinnedSearchScopeCommandIds = snapshot.PinnedSearchScopeCommandIds
+                PinnedSearchScopeCommandIds = snapshot.PinnedSearchScopeCommandIds,
+                SearchScopeConfigs = snapshot.SearchScopeConfigs
             }),
             Create("radialMenu.pages", updatedAt, sourceDeviceId, sourceDeviceName, new RadialMenuPayload
             {
                 RadialMenu = snapshot.RadialMenu
-            }),
-            Create("yanm.layout", updatedAt, sourceDeviceId, sourceDeviceName, new YanmLayoutPayload
-            {
-                Yanm = snapshot.Yanm
             }),
             Create("yanyu.rules", updatedAt, sourceDeviceId, sourceDeviceName, new YanyuRulesPayload
             {
@@ -130,8 +142,12 @@ internal static class LauncherConfigObjectStore
             return false;
         }
 
-        return JsonSerializer.Serialize(left.Payload, JsonOptions)
-            .Equals(JsonSerializer.Serialize(right.Payload, JsonOptions), StringComparison.Ordinal);
+        if (left.Payload.ValueKind == JsonValueKind.Undefined || right.Payload.ValueKind == JsonValueKind.Undefined)
+            return left.Payload.ValueKind == right.Payload.ValueKind;
+        // JSON property ordering is not a user edit. Array ordering still matters.
+        return System.Text.Json.Nodes.JsonNode.DeepEquals(
+            System.Text.Json.Nodes.JsonNode.Parse(left.Payload.GetRawText()),
+            System.Text.Json.Nodes.JsonNode.Parse(right.Payload.GetRawText()));
     }
 
     public static LauncherConfigManifest CreateManifest(IEnumerable<LauncherConfigObjectWrite> writes, DateTime updatedAtUtc)
@@ -196,6 +212,32 @@ internal static class LauncherConfigObjectStore
         return $"{ChangeDirectoryPath}/{updatedAtUtc:yyyyMMddHHmmssfff}-{sourceDeviceId}.json";
     }
 
+    public static string GetRestorePointPath(LauncherConfigRestorePoint point) =>
+        $"{HistoryPointDirectoryPath}/{SanitizePathSegment(point.RestorePointId)}.json";
+
+    public static LauncherConfigRestorePoint CreateRestorePoint(
+        IEnumerable<LauncherConfigObjectWrite> effectiveWrites,
+        IEnumerable<LauncherConfigObjectWrite> changedWrites,
+        DateTime updatedAtUtc,
+        string reason)
+    {
+        var deviceId = DeviceIdentityStore.GetOrCreateDesktopDeviceId();
+        return new LauncherConfigRestorePoint
+        {
+            RestorePointId = $"{ToRevision(updatedAtUtc)}-{deviceId}-{Guid.NewGuid():N}",
+            Revision = ToRevision(updatedAtUtc),
+            CreatedAtUtc = updatedAtUtc.ToString("O"),
+            SourceDeviceId = deviceId,
+            SourceDeviceName = DeviceIdentityStore.GetDesktopDisplayName(),
+            Reason = reason,
+            ChangedObjectIds = changedWrites.Select(static item => item.ObjectId)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(static item => item, StringComparer.OrdinalIgnoreCase)
+                .ToList(),
+            Objects = effectiveWrites.Select(static item => item.Envelope).ToList()
+        };
+    }
+
     public static string GetPath(string objectId)
     {
         var definition = Definitions.FirstOrDefault(item => item.ObjectId.Equals(objectId, StringComparison.OrdinalIgnoreCase))
@@ -206,20 +248,29 @@ internal static class LauncherConfigObjectStore
     public static CloudQuickPanelConfigSnapshot? Compose(
         CloudQuickPanelConfigSnapshot? baseSnapshot,
         IEnumerable<LauncherConfigObjectEnvelope> objects,
-        out DateTime updatedAtUtc)
+        out DateTime updatedAtUtc,
+        bool preferObjectsOverBase = false)
     {
         var snapshot = baseSnapshot == null ? new CloudQuickPanelConfigSnapshot() : CloneByJson(baseSnapshot);
         var applied = false;
-        updatedAtUtc = DateTime.MinValue;
+        var baseUpdatedAtUtc = TryParseUtc(baseSnapshot?.UpdatedAtUtc) ?? DateTime.MinValue;
+        updatedAtUtc = baseUpdatedAtUtc;
         foreach (var envelope in objects)
         {
+            var objectUpdatedAtUtc = TryParseUtc(envelope.UpdatedAtUtc) ?? DateTime.MinValue;
+            // 旧客户端只更新兼容快照时，已有对象文件会变成陈旧副本。
+            // 不能让陈旧对象重新覆盖更新的完整快照。
+            if (!preferObjectsOverBase && baseSnapshot != null && objectUpdatedAtUtc < baseUpdatedAtUtc)
+            {
+                continue;
+            }
+
             if (!TryApply(snapshot, envelope))
             {
                 continue;
             }
 
             applied = true;
-            var objectUpdatedAtUtc = TryParseUtc(envelope.UpdatedAtUtc) ?? DateTime.MinValue;
             if (objectUpdatedAtUtc > updatedAtUtc)
             {
                 updatedAtUtc = objectUpdatedAtUtc;
@@ -262,6 +313,47 @@ internal static class LauncherConfigObjectStore
         return Encoding.UTF8.GetBytes(JsonSerializer.Serialize(changeSet, JsonOptions));
     }
 
+    public static byte[] SerializeHistoryIndex(LauncherConfigHistoryIndex index) =>
+        Encoding.UTF8.GetBytes(JsonSerializer.Serialize(index, JsonOptions));
+
+    public static LauncherConfigHistoryIndex DeserializeHistoryIndex(byte[]? bytes)
+    {
+        if (bytes == null) return new LauncherConfigHistoryIndex();
+        using var document = JsonDocument.Parse(bytes);
+        if (document.RootElement.ValueKind != JsonValueKind.Object ||
+            !document.RootElement.TryGetProperty("restorePoints", out var points) || points.ValueKind != JsonValueKind.Array)
+            throw new JsonException("备份目录缺少有效的历史列表。");
+        var index = JsonSerializer.Deserialize<LauncherConfigHistoryIndex>(bytes, JsonOptions)
+            ?? throw new JsonException("备份目录为空。");
+        if (index.SchemaVersion != 1) throw new JsonException("备份目录版本不受支持。");
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var point in index.RestorePoints)
+        {
+            if (point == null || string.IsNullOrWhiteSpace(point.RestorePointId) || !ids.Add(point.RestorePointId) ||
+                !IsHistoryFile(point.Path, HistoryPointDirectoryPath) ||
+                (!string.IsNullOrEmpty(point.ChangeSetPath) && !IsHistoryFile(point.ChangeSetPath, ChangeDirectoryPath)) ||
+                point.Sha256?.Length != 64 || !point.Sha256.All(Uri.IsHexDigit) || point.ChangedObjectIds == null)
+                throw new JsonException("备份目录包含无效或重复的历史记录。");
+        }
+        return index;
+    }
+
+    private static bool IsHistoryFile(string? path, string directory)
+    {
+        if (path == null || !path.StartsWith(directory + "/", StringComparison.Ordinal) || !path.EndsWith(".json", StringComparison.Ordinal)) return false;
+        var file = path[(directory.Length + 1)..];
+        return file.Length > 5 && file.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' or '.') && !file.Contains("..");
+    }
+
+    public static byte[] SerializeRestorePoint(LauncherConfigRestorePoint restorePoint) =>
+        Encoding.UTF8.GetBytes(JsonSerializer.Serialize(restorePoint, JsonOptions));
+
+    public static LauncherConfigRestorePoint? DeserializeRestorePoint(byte[]? bytes)
+    {
+        if (bytes is not { Length: > 0 }) return null;
+        return JsonSerializer.Deserialize<LauncherConfigRestorePoint>(bytes, JsonOptions);
+    }
+
     private static LauncherConfigObjectEnvelope Create<T>(string objectId, string updatedAtUtc, string sourceDeviceId, string sourceDeviceName, T payload)
     {
         return new LauncherConfigObjectEnvelope
@@ -290,6 +382,17 @@ internal static class LauncherConfigObjectStore
                     snapshot.EnableAgentApi = general.EnableAgentApi;
                     snapshot.AgentApiPort = general.AgentApiPort;
                     return true;
+                case "settings.runtime":
+                    var runtime = envelope.Payload.Deserialize<LauncherRuntimeSettingsPayload>(JsonOptions);
+                    if (runtime == null) return false;
+                    snapshot.AutoCloseToastEnabled = runtime.AutoCloseToastEnabled ?? snapshot.AutoCloseToastEnabled;
+                    snapshot.EnableAutoUpdate = runtime.EnableAutoUpdate ?? snapshot.EnableAutoUpdate;
+                    snapshot.AutoBackupFrequency = runtime.AutoBackupFrequency ?? snapshot.AutoBackupFrequency;
+                    snapshot.EnableBrowserHelper = runtime.EnableBrowserHelper ?? snapshot.EnableBrowserHelper;
+                    snapshot.PreferManualExtensionEditor = runtime.PreferManualExtensionEditor ?? snapshot.PreferManualExtensionEditor;
+                    snapshot.EnableEverything = runtime.EnableEverything ?? snapshot.EnableEverything;
+                    snapshot.EnvironmentVariables = runtime.EnvironmentVariables ?? snapshot.EnvironmentVariables;
+                    return true;
                 case "settings.ai":
                     var ai = envelope.Payload.Deserialize<LauncherAiSettingsPayload>(JsonOptions);
                     if (ai == null) return false;
@@ -304,6 +407,7 @@ internal static class LauncherConfigObjectStore
                     var hotkeys = envelope.Payload.Deserialize<LauncherHotkeySettingsPayload>(JsonOptions);
                     if (hotkeys == null) return false;
                     snapshot.LauncherHotkey = hotkeys.LauncherHotkey ?? snapshot.LauncherHotkey;
+                    snapshot.AppShortcutBindings = hotkeys.AppShortcutBindings ?? snapshot.AppShortcutBindings;
                     snapshot.WindowSnapAssistHotkey = hotkeys.WindowSnapAssistHotkey ?? snapshot.WindowSnapAssistHotkey;
                     return true;
                 case "settings.mouseTriggers":
@@ -311,6 +415,7 @@ internal static class LauncherConfigObjectStore
                     if (mouse == null) return false;
                     snapshot.QuickPanelTrigger = mouse.QuickPanelTrigger ?? snapshot.QuickPanelTrigger;
                     snapshot.QuickPanelMouseTriggers = mouse.QuickPanelMouseTriggers ?? snapshot.QuickPanelMouseTriggers;
+                    snapshot.MouseGestureAppBindings = mouse.MouseGestureAppBindings ?? snapshot.MouseGestureAppBindings;
                     snapshot.MouseGestureTriggerMode = mouse.MouseGestureTriggerMode ?? snapshot.MouseGestureTriggerMode;
                     snapshot.WindowSnapAssistMouseTriggerMode = mouse.WindowSnapAssistMouseTriggerMode ?? snapshot.WindowSnapAssistMouseTriggerMode;
                     return true;
@@ -330,16 +435,12 @@ internal static class LauncherConfigObjectStore
                     snapshot.ContextFavoriteExtensionIds = favorites.ContextFavoriteExtensionIds ?? snapshot.ContextFavoriteExtensionIds;
                     snapshot.DisabledExtensionIds = favorites.DisabledExtensionIds ?? snapshot.DisabledExtensionIds;
                     snapshot.PinnedSearchScopeCommandIds = favorites.PinnedSearchScopeCommandIds ?? snapshot.PinnedSearchScopeCommandIds;
+                    snapshot.SearchScopeConfigs = favorites.SearchScopeConfigs ?? snapshot.SearchScopeConfigs;
                     return true;
                 case "radialMenu.pages":
                     var radial = envelope.Payload.Deserialize<RadialMenuPayload>(JsonOptions);
                     if (radial == null) return false;
                     snapshot.RadialMenu = radial.RadialMenu;
-                    return true;
-                case "yanm.layout":
-                    var yanm = envelope.Payload.Deserialize<YanmLayoutPayload>(JsonOptions);
-                    if (yanm == null) return false;
-                    snapshot.Yanm = yanm.Yanm;
                     return true;
                 case "yanyu.rules":
                     var yanyu = envelope.Payload.Deserialize<YanyuRulesPayload>(JsonOptions);
@@ -494,6 +595,63 @@ internal sealed class LauncherConfigObjectChange
     public int SizeBytes { get; set; }
 }
 
+internal sealed class LauncherConfigHistoryIndex
+{
+    public int SchemaVersion { get; set; } = 1;
+
+    public string UpdatedAtUtc { get; set; } = string.Empty;
+
+    public List<LauncherConfigRestorePointInfo> RestorePoints { get; set; } = [];
+}
+
+public sealed class LauncherConfigRestorePointInfo
+{
+    public string RestorePointId { get; set; } = string.Empty;
+
+    public long Revision { get; set; }
+
+    public string CreatedAtUtc { get; set; } = string.Empty;
+
+    public string? SourceDeviceId { get; set; }
+
+    public string? SourceDeviceName { get; set; }
+
+    public string Reason { get; set; } = string.Empty;
+
+    public string Path { get; set; } = string.Empty;
+
+    public string? ChangeSetPath { get; set; }
+
+    public string Sha256 { get; set; } = string.Empty;
+
+    public int SizeBytes { get; set; }
+
+    public int ObjectCount { get; set; }
+
+    public List<string> ChangedObjectIds { get; set; } = [];
+}
+
+internal sealed class LauncherConfigRestorePoint
+{
+    public int SchemaVersion { get; set; } = 1;
+
+    public string RestorePointId { get; set; } = string.Empty;
+
+    public long Revision { get; set; }
+
+    public string CreatedAtUtc { get; set; } = string.Empty;
+
+    public string? SourceDeviceId { get; set; }
+
+    public string? SourceDeviceName { get; set; }
+
+    public string Reason { get; set; } = string.Empty;
+
+    public List<string> ChangedObjectIds { get; set; } = [];
+
+    public List<LauncherConfigObjectEnvelope> Objects { get; set; } = [];
+}
+
 internal sealed class LauncherGeneralSettingsPayload
 {
     public string? ThemeMode { get; set; }
@@ -502,6 +660,17 @@ internal sealed class LauncherGeneralSettingsPayload
     public bool CloseToTray { get; set; }
     public bool EnableAgentApi { get; set; }
     public int AgentApiPort { get; set; }
+}
+
+internal sealed class LauncherRuntimeSettingsPayload
+{
+    public bool? AutoCloseToastEnabled { get; set; }
+    public bool? EnableAutoUpdate { get; set; }
+    public string? AutoBackupFrequency { get; set; }
+    public bool? EnableBrowserHelper { get; set; }
+    public bool? PreferManualExtensionEditor { get; set; }
+    public bool? EnableEverything { get; set; }
+    public List<AppEnvironmentVariableSettings>? EnvironmentVariables { get; set; }
 }
 
 internal sealed class LauncherAiSettingsPayload
@@ -517,6 +686,7 @@ internal sealed class LauncherAiSettingsPayload
 internal sealed class LauncherHotkeySettingsPayload
 {
     public string? LauncherHotkey { get; set; }
+    public Dictionary<string, string>? AppShortcutBindings { get; set; }
     public string? WindowSnapAssistHotkey { get; set; }
 }
 
@@ -524,6 +694,7 @@ internal sealed class LauncherMouseTriggerSettingsPayload
 {
     public string? QuickPanelTrigger { get; set; }
     public QuickPanelMouseTriggerSettings? QuickPanelMouseTriggers { get; set; }
+    public List<MouseGestureAppBinding>? MouseGestureAppBindings { get; set; }
     public string? MouseGestureTriggerMode { get; set; }
     public string? WindowSnapAssistMouseTriggerMode { get; set; }
 }
@@ -543,16 +714,12 @@ internal sealed class QuickPanelFavoritesPayload
     public List<string>? ContextFavoriteExtensionIds { get; set; }
     public List<string>? DisabledExtensionIds { get; set; }
     public List<string>? PinnedSearchScopeCommandIds { get; set; }
+    public List<SearchScopeConfigItem>? SearchScopeConfigs { get; set; }
 }
 
 internal sealed class RadialMenuPayload
 {
     public RadialMenuSettings? RadialMenu { get; set; }
-}
-
-internal sealed class YanmLayoutPayload
-{
-    public YanmSettings? Yanm { get; set; }
 }
 
 internal sealed class YanyuRulesPayload

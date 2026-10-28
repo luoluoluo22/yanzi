@@ -39,7 +39,7 @@ public static class EverythingSearchService
     private const uint EverythingErrorIpc = 2;
     private static readonly Lock QueryLock = new();
 
-    public static EverythingSearchResponse Search(string? rawQuery, int maxResults = 256)
+    public static EverythingSearchResponse Search(string? rawQuery, int maxResults = 256, CancellationToken cancellationToken = default)
     {
         var query = (rawQuery ?? string.Empty).Trim();
         if (string.IsNullOrWhiteSpace(query))
@@ -53,8 +53,18 @@ public static class EverythingSearchService
             };
         }
 
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return new EverythingSearchResponse { Success = false, IsAvailable = true };
+        }
+
         lock (QueryLock)
         {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return new EverythingSearchResponse { Success = false, IsAvailable = true };
+            }
+
             var attemptedRuntimeStart = false;
 
         retry:
@@ -82,11 +92,21 @@ public static class EverythingSearchService
                     return BuildFailureResponse(errorCode);
                 }
 
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    return new EverythingSearchResponse { Success = false, IsAvailable = true };
+                }
+
                 var visibleCount = (int)EverythingApi.Everything_GetNumResults();
                 var totalCount = (int)EverythingApi.Everything_GetTotResults();
                 var results = new List<EverythingSearchResult>(visibleCount);
                 for (uint index = 0; index < visibleCount; index++)
                 {
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        return new EverythingSearchResponse { Success = false, IsAvailable = true };
+                    }
+
                     var fullPath = GetResultFullPath(index);
                     if (string.IsNullOrWhiteSpace(fullPath))
                     {
@@ -198,17 +218,40 @@ public static class EverythingSearchService
         };
     }
 
+    [ThreadStatic]
+    private static StringBuilder? _threadPathBuffer;
+
+    private static StringBuilder GetThreadPathBuffer()
+    {
+        var buffer = _threadPathBuffer;
+        if (buffer == null)
+        {
+            buffer = new StringBuilder(1024);
+            _threadPathBuffer = buffer;
+        }
+        else
+        {
+            buffer.Clear();
+        }
+
+        return buffer;
+    }
+
     private static string GetResultFullPath(uint index)
     {
-        const int initialCapacity = 1024;
-        var buffer = new StringBuilder(initialCapacity);
+        var buffer = GetThreadPathBuffer();
+        if (buffer.Capacity < 1024)
+        {
+            buffer.EnsureCapacity(1024);
+        }
+
         EverythingApi.Everything_GetResultFullPathNameW(index, buffer, (uint)buffer.Capacity);
         if (buffer.Length > 0)
         {
             return buffer.ToString();
         }
 
-        buffer = new StringBuilder(32768);
+        buffer.EnsureCapacity(32768);
         EverythingApi.Everything_GetResultFullPathNameW(index, buffer, (uint)buffer.Capacity);
         return buffer.ToString();
     }

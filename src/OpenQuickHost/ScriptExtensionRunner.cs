@@ -1,3 +1,4 @@
+using OpenQuickHost.Sync;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -19,8 +20,9 @@ namespace OpenQuickHost;
 
 public static class ScriptExtensionRunner
 {
-    private const string CSharpCacheVersion = "v11";
+    private const string CSharpCacheVersion = "v14-shared-ui";
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> CSharpBuildLocks = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> ExtensionLaunchLocks = new(StringComparer.OrdinalIgnoreCase);
 
     public static async Task<ScriptExecutionResult> PreparePortableAssetsAsync(
         CommandItem command,
@@ -34,6 +36,20 @@ public static class ScriptExtensionRunner
         }
 
         var isInline = string.Equals(command.EntryMode, "inline", StringComparison.OrdinalIgnoreCase);
+
+        if (!isInline &&
+            !string.IsNullOrWhiteSpace(command.EntryPoint) &&
+            command.EntryPoint.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+        {
+            var assemblyPath = Path.Combine(
+                command.ExtensionDirectoryPath!,
+                command.EntryPoint);
+
+            return File.Exists(assemblyPath) && IsLoadableManagedAssembly(assemblyPath)
+                ? new ScriptExecutionResult(true, assemblyPath, string.Empty, 0)
+                : new ScriptExecutionResult(false, string.Empty, $"C# 扩展程序集无效或不存在：{assemblyPath}", -1);
+        }
+
         var source = isInline
             ? command.InlineScriptSource
             : await ReadEntrySourceAsync(command, cancellationToken);
@@ -47,6 +63,9 @@ public static class ScriptExtensionRunner
 
     public static bool CanExecute(CommandItem command)
     {
+        if (command.Source == CommandSource.LocalExtension &&
+            !ExtensionDevicePolicy.CanRun(command.ExtensionId))
+            return false;
         if (string.IsNullOrWhiteSpace(command.Runtime) || string.IsNullOrWhiteSpace(command.ExtensionDirectoryPath))
         {
             return false;
@@ -66,7 +85,17 @@ public static class ScriptExtensionRunner
         string launchSource,
         CancellationToken cancellationToken = default)
     {
-        return await ExecuteAsync(command, inputText, launchSource, null, cancellationToken);
+        return await ExecuteAsync(command, inputText, launchSource, null, null, cancellationToken);
+    }
+
+    public static async Task<ScriptExecutionResult> ExecuteAsync(
+        CommandItem command,
+        string? inputText,
+        string launchSource,
+        Action<string>? onOutputLine,
+        CancellationToken cancellationToken = default)
+    {
+        return await ExecuteAsync(command, inputText, launchSource, null, onOutputLine, cancellationToken);
     }
 
     public static async Task<ScriptExecutionResult> ExecuteAsync(
@@ -76,10 +105,178 @@ public static class ScriptExtensionRunner
         IReadOnlyDictionary<string, string>? state,
         CancellationToken cancellationToken = default)
     {
+        return await ExecuteAsync(command, inputText, launchSource, state, null, cancellationToken);
+    }
+
+    public static async Task<ScriptExecutionResult> ExecuteAsync(
+        CommandItem command,
+        string? inputText,
+        string launchSource,
+        IReadOnlyDictionary<string, string>? state,
+        Action<string>? onOutputLine,
+        CancellationToken cancellationToken = default)
+    {
+        if (command.Source == CommandSource.LocalExtension && !ExtensionDevicePolicy.CanRun(command.ExtensionId))
+            return new ScriptExecutionResult(false, string.Empty, "此小程序未授权在当前设备运行。", -1);
+        if (HostRuntimeProfile.IsShell && RuntimeConnection.IsConnected)
+        {
+            try
+            {
+                var executionId = Guid.NewGuid();
+                using var cancelRequest = cancellationToken.Register(() => RuntimeConnection.Queue("script.cancel", new { executionId }));
+                var response = await RuntimeRpc.CallAsync("script.execute", new
+                { id = command.ExtensionId, input = inputText, source = launchSource, state,
+                    executionId, preview = launchSource == "extension-editor-test" ? RuntimeCommandDescriptor.FromCommand(command) : null },
+                    cancellationToken, requestTimeout: TimeSpan.FromHours(12));
+                var result = response.Deserialize<ScriptExecutionResult>(RuntimeRpc.Json)!;
+                if (onOutputLine != null && !string.IsNullOrEmpty(result.Output))
+                    foreach (var line in result.Output.Split('\n')) onOutputLine(line);
+                return result;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return new ScriptExecutionResult(false, string.Empty, "执行已取消。", -1, IsCancelled: true);
+            }
+            catch (Exception ex)
+            {
+                return new ScriptExecutionResult(false, string.Empty, "Runtime 执行失败：" + ex.Message, -1);
+            }
+        }
+        if (string.IsNullOrWhiteSpace(command.ExtensionId))
+        {
+            return await ExecuteCoreAsync(command, inputText, launchSource, state, onOutputLine, cancellationToken);
+        }
+
+        var launchLock = ExtensionLaunchLocks.GetOrAdd(command.ExtensionId, static _ => new SemaphoreSlim(1, 1));
+        await launchLock.WaitAsync(cancellationToken);
+        try
+        {
+            return await ExecuteCoreAsync(command, inputText, launchSource, state, onOutputLine, cancellationToken);
+        }
+        finally
+        {
+            launchLock.Release();
+        }
+    }
+
+    private static async Task<ScriptExecutionResult> ExecuteCoreAsync(
+        CommandItem command,
+        string? inputText,
+        string launchSource,
+        IReadOnlyDictionary<string, string>? state,
+        Action<string>? onOutputLine,
+        CancellationToken cancellationToken)
+    {
         var executionStopwatch = Stopwatch.StartNew();
         if (!CanExecute(command))
         {
             return new ScriptExecutionResult(false, string.Empty, "扩展没有可执行脚本入口。", -1);
+        }
+
+        var requirementResolution = await YanziCapabilityRequirementResolver
+            .EnsureForCommandAsync(command, cancellationToken)
+            .ConfigureAwait(false);
+        if (!requirementResolution.Success)
+        {
+            return new ScriptExecutionResult(
+                false,
+                string.Empty,
+                $"小程序依赖未满足：{requirementResolution.Error}",
+                -1);
+        }
+
+        if (RunningExtensionRegistry.IsRunning(command.ExtensionId))
+        {
+            // 若该常驻扩展已在宿主中注册了窗口/服务对象，则优先唤醒/切换已有窗口展示
+            string windowKey = $"{command.ExtensionId}-window";
+            if (HostObjectRegistry.TryGetObject(windowKey, out var win) && win != null)
+            {
+                try
+                {
+                    // Background trigger events must not block the scheduler while awaiting remote jobs.
+                    // Observe asynchronous faults without holding the extension launch lock.
+                    if (!string.Equals(launchSource, "launcher", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var triggerMethod = win.GetType().GetMethod(
+                            "HandleTrigger",
+                            BindingFlags.Public | BindingFlags.Instance,
+                            binder: null,
+                            types: [typeof(string)],
+                            modifiers: null);
+
+                        if (triggerMethod != null)
+                        {
+                            var invocation = triggerMethod.Invoke(win, [launchSource]);
+                            if (invocation is Task triggerTask)
+                            {
+                                ObserveBackgroundTriggerTask(triggerTask, command.ExtensionId, launchSource);
+                            }
+
+                            HostAssets.AppendLog(
+                                $"ScriptRunner routed background trigger to already running extension: id={command.ExtensionId}, source={launchSource}");
+                            return new ScriptExecutionResult(
+                                true,
+                                "已发送后台触发事件到正在运行的小程序。",
+                                string.Empty,
+                                0);
+                        }
+                    }
+
+                    // Long-lived background extensions may expose Run(string)
+                    // so non-empty input (for example "录屏") can be routed
+                    // into the existing service instance instead of spawning
+                    // a second managed extension.
+                    if (!string.IsNullOrWhiteSpace(inputText))
+                    {
+                        var runMethod = win.GetType().GetMethod(
+                            "Run",
+                            BindingFlags.Public | BindingFlags.Instance,
+                            binder: null,
+                            types: [typeof(string)],
+                            modifiers: null);
+
+                        if (runMethod != null)
+                        {
+                            var invocation = runMethod.Invoke(win, [inputText]);
+                            if (invocation is Task task)
+                            {
+                                await task.ConfigureAwait(false);
+                            }
+
+                            HostAssets.AppendLog(
+                                $"ScriptRunner routed input to already running extension: id={command.ExtensionId}");
+                            return new ScriptExecutionResult(
+                                true,
+                                "已发送到正在运行的小程序。",
+                                string.Empty,
+                                0);
+                        }
+                    }
+
+                    var toggleMethod = win.GetType().GetMethod("ToggleCalendar") ?? 
+                                       win.GetType().GetMethod("Toggle") ??
+                                       win.GetType().GetMethod("Activate") ??
+                                       win.GetType().GetMethod("Show");
+                    if (toggleMethod != null)
+                    {
+                        var invocation = toggleMethod.Invoke(win, null);
+                        if (invocation is Task task)
+                        {
+                            await task.ConfigureAwait(false);
+                        }
+
+                        HostAssets.AppendLog($"ScriptRunner toggled already running window: id={command.ExtensionId}");
+                        return new ScriptExecutionResult(true, "已呼出正在运行的窗口。", string.Empty, 0);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    HostAssets.AppendLog($"ScriptRunner failed to toggle running window: id={command.ExtensionId}, error={ex.Message}");
+                }
+            }
+
+            HostAssets.AppendLog($"ScriptRunner execute skipped: id={command.ExtensionId}, title={command.Title} is already running.");
+            return new ScriptExecutionResult(true, "该小程序已在后台持续运行中，无需重复启动。", string.Empty, 0);
         }
 
         HostAssets.AppendLog(
@@ -88,16 +285,30 @@ public static class ScriptExtensionRunner
         var isInline = string.Equals(command.EntryMode, "inline", StringComparison.OrdinalIgnoreCase);
         var result = command.Runtime?.ToLowerInvariant() switch
         {
-            "powershell" or "ps1" => await ExecutePowerShellEntryAsync(command, inputText, launchSource, state, isInline, cancellationToken),
+            "powershell" or "ps1" => await ExecutePowerShellEntryAsync(command, inputText, launchSource, state, isInline, onOutputLine, cancellationToken),
 
-            "csharp" or "cs" or "c#" => await ExecuteCSharpEntryAsync(command, inputText, launchSource, state, isInline, cancellationToken),
+            "csharp" or "cs" or "c#" => await ExecuteCSharpEntryAsync(command, inputText, launchSource, state, isInline, onOutputLine, cancellationToken),
 
             _ => new ScriptExecutionResult(false, string.Empty, $"当前还不支持脚本运行时：{command.Runtime}", -1)
         };
 
         HostAssets.AppendLog(
-            $"ScriptRunner execute done: id={command.ExtensionId}, title={command.Title}, success={result.Success}, exitCode={result.ExitCode}, elapsedMs={executionStopwatch.ElapsedMilliseconds}, outputLength={result.Output.Length}, errorLength={result.Error.Length}");
+            $"ScriptRunner execute done: id={command.ExtensionId}, title={command.Title}, success={result.Success}, exitCode={result.ExitCode}, isCancelled={result.IsCancelled}, elapsedMs={executionStopwatch.ElapsedMilliseconds}, outputLength={result.Output.Length}, errorLength={result.Error.Length}");
         return result;
+    }
+
+    private static void ObserveBackgroundTriggerTask(Task task, string extensionId, string launchSource)
+    {
+        _ = task.ContinueWith(
+            completedTask =>
+            {
+                var error = completedTask.Exception?.GetBaseException();
+                HostAssets.AppendLog(
+                    $"ScriptRunner background trigger failed: id={extensionId}, source={launchSource}, exception={error}");
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
     }
 
     private static async Task<ScriptExecutionResult> ExecutePowerShellEntryAsync(
@@ -106,6 +317,7 @@ public static class ScriptExtensionRunner
         string launchSource,
         IReadOnlyDictionary<string, string>? state,
         bool isInline,
+        Action<string>? onOutputLine,
         CancellationToken cancellationToken)
     {
         var entryPath = isInline
@@ -118,7 +330,7 @@ public static class ScriptExtensionRunner
 
         try
         {
-            return await ExecutePowerShellAsync(command, entryPath, inputText, launchSource, state, cancellationToken);
+            return await ExecutePowerShellAsync(command, entryPath, inputText, launchSource, state, onOutputLine, cancellationToken);
         }
         finally
         {
@@ -135,14 +347,91 @@ public static class ScriptExtensionRunner
         string launchSource,
         IReadOnlyDictionary<string, string>? state,
         bool isInline,
+        Action<string>? onOutputLine,
         CancellationToken cancellationToken)
     {
+        if (!isInline &&
+            !string.IsNullOrWhiteSpace(command.EntryPoint) &&
+            command.EntryPoint.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+        {
+            var assemblyPath = Path.Combine(
+                command.ExtensionDirectoryPath!,
+                command.EntryPoint);
+
+            return await ExecutePrecompiledCSharpAsync(
+                command,
+                assemblyPath,
+                inputText,
+                launchSource,
+                state,
+                cancellationToken);
+        }
+
         var source = isInline
             ? command.InlineScriptSource
             : await ReadEntrySourceAsync(command, cancellationToken);
+
         return string.IsNullOrWhiteSpace(source)
             ? new ScriptExecutionResult(false, string.Empty, "C# 扩展缺少源码入口。", -1)
             : await ExecuteCSharpAsync(command, source, inputText, launchSource, state, cancellationToken);
+    }
+
+    private static async Task<ScriptExecutionResult> ExecutePrecompiledCSharpAsync(
+        CommandItem command,
+        string assemblyPath,
+        string? inputText,
+        string launchSource,
+        IReadOnlyDictionary<string, string>? state,
+        CancellationToken cancellationToken)
+    {
+        if (!File.Exists(assemblyPath) || !IsLoadableManagedAssembly(assemblyPath))
+        {
+            return new ScriptExecutionResult(
+                false,
+                string.Empty,
+                $"C# 扩展程序集无效或不存在：{assemblyPath}",
+                -1);
+        }
+
+        var useNativeWindowMode = ShouldUseNativeWindowMode(command, string.Empty);
+        var context = CreateContext(command, inputText, launchSource, state);
+        var contextPath = Path.Combine(
+            Path.GetTempPath(),
+            $"yanzi-{command.ExtensionId}-{Guid.NewGuid():N}.json");
+        var stateUpdatePath = Path.Combine(
+            Path.GetTempPath(),
+            $"yanzi-{command.ExtensionId}-{Guid.NewGuid():N}-state.json");
+
+        try
+        {
+            await File.WriteAllTextAsync(
+                contextPath,
+                JsonSerializer.Serialize(context, JsonOptions),
+                Encoding.UTF8,
+                cancellationToken);
+
+            HostAssets.AppendLog(
+                $"ScriptRunner precompiled csharp load: id={command.ExtensionId}, title={command.Title}, nativeWindowMode={useNativeWindowMode}, assembly={assemblyPath}");
+
+            return await ExecuteManagedAssemblyAsync(
+                command,
+                assemblyPath,
+                context,
+                contextPath,
+                stateUpdatePath,
+                useNativeWindowMode,
+                launchSource,
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            return new ScriptExecutionResult(false, string.Empty, ex.ToString(), -1);
+        }
+        finally
+        {
+            TryDeleteTempFile(contextPath);
+            TryDeleteTempFile(stateUpdatePath);
+        }
     }
 
     private static async Task<string> MaterializeInlineScriptAsync(CommandItem command, string extension, CancellationToken cancellationToken)
@@ -173,12 +462,33 @@ public static class ScriptExtensionRunner
         string? inputText,
         string launchSource,
         IReadOnlyDictionary<string, string>? state,
+        Action<string>? onOutputLine,
         CancellationToken cancellationToken)
     {
         var context = CreateContext(command, inputText, launchSource, state);
         var contextPath = Path.Combine(Path.GetTempPath(), $"yanzi-{command.ExtensionId}-{Guid.NewGuid():N}.json");
         var stateUpdatePath = Path.Combine(Path.GetTempPath(), $"yanzi-{command.ExtensionId}-{Guid.NewGuid():N}-state.json");
         var wrapperPath = Path.Combine(Path.GetTempPath(), $"yanzi-{command.ExtensionId}-{Guid.NewGuid():N}-wrapper.ps1");
+
+        var workingDir = !string.IsNullOrWhiteSpace(command.WorkingDirectory) && Directory.Exists(command.WorkingDirectory)
+            ? command.WorkingDirectory
+            : (string.IsNullOrWhiteSpace(command.ExtensionDirectoryPath)
+                ? Environment.CurrentDirectory
+                : command.ExtensionDirectoryPath);
+
+        var isConsoleKeep = string.Equals(command.UiMode, "console-keep", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(command.UiMode, "console-retain", StringComparison.OrdinalIgnoreCase);
+        var isConsoleClose = string.Equals(command.UiMode, "console", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(command.UiMode, "terminal", StringComparison.OrdinalIgnoreCase);
+        var isConsole = isConsoleKeep || isConsoleClose;
+
+        var args = isConsoleKeep
+            ? $"-NoExit -ExecutionPolicy Bypass -File {Quote(wrapperPath)}"
+            : $"-NoProfile -ExecutionPolicy Bypass -File {Quote(wrapperPath)}";
+
+        var runAsAdmin = command.RunAsAdmin;
+        var useShellExecute = isConsole || runAsAdmin;
+        var shouldRedirect = !useShellExecute;
 
         try
         {
@@ -196,18 +506,45 @@ public static class ScriptExtensionRunner
             var startInfo = new ProcessStartInfo
             {
                 FileName = "powershell.exe",
-                Arguments = $"-NoProfile -ExecutionPolicy Bypass -File {Quote(wrapperPath)}",
-                WorkingDirectory = command.ExtensionDirectoryPath!,
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                CreateNoWindow = true,
-                StandardOutputEncoding = Encoding.UTF8,
-                StandardErrorEncoding = Encoding.UTF8
+                Arguments = args,
+                WorkingDirectory = workingDir,
+                UseShellExecute = useShellExecute,
+                RedirectStandardOutput = shouldRedirect,
+                RedirectStandardError = shouldRedirect,
+                CreateNoWindow = !isConsole,
+                StandardOutputEncoding = shouldRedirect ? Encoding.UTF8 : null,
+                StandardErrorEncoding = shouldRedirect ? Encoding.UTF8 : null
             };
+
+            if (runAsAdmin)
+            {
+                startInfo.Verb = "runas";
+            }
+
             ApplyRuntimeEnvironment(startInfo, command, inputText, contextPath, stateUpdatePath, null, launchSource);
 
-            return await RunProcessAsync(startInfo, "脚本", stateUpdatePath, cancellationToken);
+            if (!command.WaitForExit)
+            {
+                var detachedProcess = Process.Start(startInfo);
+                HostAssets.AppendLog($"ScriptRunner process started detached (WaitForExit=false): label=脚本, pid={detachedProcess?.Id}, file={startInfo.FileName}, workingDir={workingDir}");
+
+                if (detachedProcess != null)
+                {
+                    RunningExtensionRegistry.RegisterProcess(command, detachedProcess, launchSource);
+                }
+
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(30000);
+                    TryDeleteTempFile(contextPath);
+                    TryDeleteTempFile(stateUpdatePath);
+                    TryDeleteTempFile(wrapperPath);
+                });
+
+                return new ScriptExecutionResult(true, "进程已在后台启动（无需等待结束）。", string.Empty, 0);
+            }
+
+            return await RunProcessAsync(startInfo, "脚本", stateUpdatePath, onOutputLine, cancellationToken, command, launchSource);
         }
         catch (Exception ex)
         {
@@ -215,9 +552,12 @@ public static class ScriptExtensionRunner
         }
         finally
         {
-            TryDeleteTempFile(contextPath);
-            TryDeleteTempFile(stateUpdatePath);
-            TryDeleteTempFile(wrapperPath);
+            if (command.WaitForExit)
+            {
+                TryDeleteTempFile(contextPath);
+                TryDeleteTempFile(stateUpdatePath);
+                TryDeleteTempFile(wrapperPath);
+            }
         }
     }
 
@@ -286,6 +626,7 @@ public static class ScriptExtensionRunner
         var cacheFingerprint = string.Join(
             "\n---\n",
             CSharpCacheVersion,
+            YanziSharedUiCompilation.CacheIdentity,
             command.ExtensionId ?? string.Empty,
             source,
             CSharpGlobalUsingsSource,
@@ -349,6 +690,8 @@ public static class ScriptExtensionRunner
                 optimizationLevel: OptimizationLevel.Release,
                 nullableContextOptions: NullableContextOptions.Enable));
 
+        compilation = CSharpAsyncCallbackGuard.Protect(compilation, syntaxTrees[1]);
+
         var tempSuffix = $".{Environment.ProcessId}.{Guid.NewGuid():N}.tmp";
         var tempDllPath = Path.Combine(outputDirectory, $"YanziExtension{tempSuffix}.dll");
         var tempPdbPath = Path.Combine(outputDirectory, $"YanziExtension{tempSuffix}.pdb");
@@ -411,7 +754,11 @@ public static class ScriptExtensionRunner
                 File.WriteAllText(Path.Combine(command.ExtensionDirectoryPath, "debug.log"), $"[{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}] COMPILATION ERROR:{Environment.NewLine}{error}");
             }
         }
-        catch { }
+        catch (Exception logEx)
+        {
+            // 编译错误日志写失败 = 扩展开发者拿不到错误信息，必须留痕
+            HostAssets.AppendLog($"ScriptRunner: failed to write compile debug.log: {logEx.Message}");
+        }
 
         if (useNativeWindowMode)
         {
@@ -438,7 +785,6 @@ public static class ScriptExtensionRunner
     {
         var references = new List<MetadataReference>(
             global::Basic.Reference.Assemblies.Net90.ReferenceInfos.All
-                .Where(info => !info.FileName.Contains(".Private."))
                 .Select(static info => (MetadataReference)info.Reference));
 
         var bundledDirectory = GetBundledNativeWindowReferenceDirectory();
@@ -466,6 +812,8 @@ public static class ScriptExtensionRunner
                 .ToArray());
         }
 
+        // Trusted shared UI metadata is always available for extension compilation.
+        references.Add(YanziSharedUiCompilation.BuildReference());
         var runtimeReferences = BuildNativeWindowRuntimeReferences();
         if (runtimeReferences.Count > 0)
         {
@@ -473,15 +821,16 @@ public static class ScriptExtensionRunner
         }
 
         var finalReferences = references
-            .GroupBy(static reference => reference.Display, StringComparer.OrdinalIgnoreCase)
+            // CoreLib contains these implementations too; prevent CS0433 in C# extensions.
+            .Where(static reference => reference.Display is not ("System.Threading.Thread (net90)" or "System.Text.Encoding.Extensions (net90)"))
+            .GroupBy(static reference =>
+            {
+                var display = reference.Display;
+                if (string.IsNullOrWhiteSpace(display)) return Guid.NewGuid().ToString();
+                return Path.GetFileName(display);
+            }, StringComparer.OrdinalIgnoreCase)
             .Select(static group => group.First())
             .ToList();
-
-        bool hasPrivateXml = finalReferences.Any(r => r.Display != null && r.Display.Contains("System.Private.Xml", StringComparison.OrdinalIgnoreCase));
-        if (hasPrivateXml)
-        {
-            finalReferences.RemoveAll(r => r.Display != null && r.Display.Contains("System.Xml.XmlSerializer", StringComparison.OrdinalIgnoreCase));
-        }
 
         return finalReferences.ToArray();
     }
@@ -687,7 +1036,8 @@ public static class ScriptExtensionRunner
                      "WindowsBase.dll",
                      "PresentationCore.dll",
                      "PresentationFramework.dll",
-                     "System.Xaml.dll"
+                     "System.Xaml.dll",
+                     "System.Windows.Forms.dll"
                  })
         {
             AddTrustedPlatformAssembly(paths, trustedPlatformAssemblies, fileName);
@@ -712,6 +1062,7 @@ public static class ScriptExtensionRunner
             AddCandidateFile(paths, directory, "PresentationCore.dll");
             AddCandidateFile(paths, directory, "PresentationFramework.dll");
             AddCandidateFile(paths, directory, "System.Xaml.dll");
+            AddCandidateFile(paths, directory, "System.Windows.Forms.dll");
         }
 
         return paths
@@ -813,7 +1164,10 @@ public static class ScriptExtensionRunner
                         File.AppendAllText(Path.Combine(command.ExtensionDirectoryPath, "debug.log"), $"[{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}] RUNTIME EXCEPTION:{Environment.NewLine}{ex}{Environment.NewLine}");
                     }
                 }
-                catch { }
+                catch (Exception logEx)
+                {
+                    HostAssets.AppendLog($"ScriptRunner: failed to write runtime debug.log: {logEx.Message}");
+                }
 
                 var result = new ScriptExecutionResult(false, string.Empty, ex.ToString(), -1);
                 ready.TrySetResult(result);
@@ -914,6 +1268,44 @@ public static class ScriptExtensionRunner
         var environmentSnapshot = CaptureRuntimeEnvironmentSnapshot();
         var originalDirectory = Directory.GetCurrentDirectory();
         var loadContext = new AssemblyLoadContext($"yanzi-inprocess-{Guid.NewGuid():N}", isCollectible: true);
+        using var capabilitySession = new YanziExtensionCapabilitySession(command);
+
+        loadContext.Resolving += (_, assemblyName) =>
+        {
+            var sharedUi = YanziSharedUiCompilation.Resolve(assemblyName);
+            if (sharedUi is not null) return sharedUi;
+            if (string.IsNullOrWhiteSpace(command.ExtensionDirectoryPath) ||
+                string.IsNullOrWhiteSpace(assemblyName.Name))
+            {
+                return null;
+            }
+
+            var candidate = Path.Combine(
+                command.ExtensionDirectoryPath,
+                assemblyName.Name + ".dll");
+
+            if (!File.Exists(candidate) ||
+                !IsLoadableManagedAssembly(candidate))
+            {
+                return null;
+            }
+
+            try
+            {
+                using var dependencyStream = new FileStream(
+                    candidate,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete);
+
+                return loadContext.LoadFromStream(dependencyStream);
+            }
+            catch
+            {
+                return null;
+            }
+        };
+
         try
         {
             ApplyRuntimeEnvironment(command, contextPath, stateUpdatePath, launchSource);
@@ -940,7 +1332,11 @@ public static class ScriptExtensionRunner
                 }
             }
 
-            var runtimeContext = CreateInProcessRuntimeContext(assembly, context, stateUpdatePath);
+            assembly.GetType(CSharpAsyncCallbackGuard.HelperType)?.GetField("ErrorHandler")?.SetValue(null,
+                (Action<Exception>)(error => HostAssets.AppendLog(
+                    $"ScriptRunner async callback failed: id={command.ExtensionId}, title={command.Title}, error={error}")));
+
+            var runtimeContext = CreateInProcessRuntimeContext(assembly, context, stateUpdatePath, capabilitySession);
             var runMethod = FindYanziActionRunMethod(assembly, runtimeContext.GetType());
             ready.TrySetResult(null);
 
@@ -966,6 +1362,7 @@ public static class ScriptExtensionRunner
 
             Directory.SetCurrentDirectory(originalDirectory);
             RestoreRuntimeEnvironmentSnapshot(environmentSnapshot);
+            capabilitySession.Dispose();
             if (loadContext.IsCollectible)
             {
                 loadContext.Unload();
@@ -993,9 +1390,18 @@ public static class ScriptExtensionRunner
         finally
         {
             TryDeleteTempFile(stateUpdatePath);
+
+            if (!string.IsNullOrWhiteSpace(command.ExtensionId))
+            {
+                HostObjectRegistry.Remove(
+                    $"{command.ExtensionId}-window");
+            }
+
             if (registryId.HasValue)
             {
-                RunningExtensionRegistry.Remove(registryId.Value, "managed thread completed");
+                RunningExtensionRegistry.Remove(
+                    registryId.Value,
+                    "managed thread completed");
             }
         }
     }
@@ -1003,7 +1409,8 @@ public static class ScriptExtensionRunner
     private static object CreateInProcessRuntimeContext(
         Assembly assembly,
         ScriptExecutionContext context,
-        string stateUpdatePath)
+        string stateUpdatePath,
+        YanziExtensionCapabilitySession capabilitySession)
     {
         var contextType = assembly.GetType(
             "OpenQuickHost.CSharpRuntime.YanziActionContext",
@@ -1044,6 +1451,21 @@ public static class ScriptExtensionRunner
             getRegisteredProperty.SetValue(runtimeContext, proxyGetDelegate);
         }
 
+        // Precompiled extensions may carry an older context contract. New APIs are optional.
+        var registerCapabilityProperty = contextType.GetProperty("RegisterCapabilityJson", BindingFlags.Instance | BindingFlags.Public);
+        if (registerCapabilityProperty?.CanWrite == true &&
+            registerCapabilityProperty.PropertyType == typeof(Action<string, Func<string, Task<string>>>))
+        {
+            registerCapabilityProperty.SetValue(runtimeContext,
+                (Action<string, Func<string, Task<string>>>)capabilitySession.Register);
+        }
+        var invokeCapabilityProperty = contextType.GetProperty("InvokeCapabilityJson", BindingFlags.Instance | BindingFlags.Public);
+        if (invokeCapabilityProperty?.CanWrite == true &&
+            invokeCapabilityProperty.PropertyType == typeof(Func<string, Task<string>>))
+        {
+            invokeCapabilityProperty.SetValue(runtimeContext,
+                (Func<string, Task<string>>)capabilitySession.Invoke);
+        }
         return runtimeContext;
     }
 
@@ -1120,41 +1542,210 @@ public static class ScriptExtensionRunner
         ProcessStartInfo startInfo,
         string label,
         string? stateUpdatePath,
-        CancellationToken cancellationToken)
+        Action<string>? onOutputLine,
+        CancellationToken cancellationToken,
+        CommandItem? command = null,
+        string launchSource = "launcher")
     {
         var processStopwatch = Stopwatch.StartNew();
         var process = new Process { StartInfo = startInfo };
+
+        var outputBuilder = new StringBuilder();
+        var errorBuilder = new StringBuilder();
+
+        if (startInfo.RedirectStandardOutput)
+        {
+            process.OutputDataReceived += (_, e) =>
+            {
+                if (e.Data != null)
+                {
+                    lock (outputBuilder)
+                    {
+                        outputBuilder.AppendLine(e.Data);
+                    }
+                    try { onOutputLine?.Invoke(e.Data); } catch { }
+                }
+            };
+        }
+
+        if (startInfo.RedirectStandardError)
+        {
+            process.ErrorDataReceived += (_, e) =>
+            {
+                if (e.Data != null)
+                {
+                    lock (errorBuilder)
+                    {
+                        errorBuilder.AppendLine(e.Data);
+                    }
+                    try { onOutputLine?.Invoke(e.Data); } catch { }
+                }
+            };
+        }
+
         process.Start();
+
+        Guid? registryInstanceId = null;
+        if (command != null)
+        {
+            registryInstanceId = RunningExtensionRegistry.RegisterProcess(command, process, launchSource);
+        }
+
+        if (startInfo.RedirectStandardOutput)
+        {
+            process.BeginOutputReadLine();
+        }
+        if (startInfo.RedirectStandardError)
+        {
+            process.BeginErrorReadLine();
+        }
+
         var argumentText = startInfo.ArgumentList.Count > 0
             ? string.Join(" ", startInfo.ArgumentList)
             : startInfo.Arguments;
         HostAssets.AppendLog(
             $"ScriptRunner process started: label={label}, file={startInfo.FileName}, args={argumentText}, pid={process.Id}, workingDir={startInfo.WorkingDirectory}");
-        Task<string>? outputTask = startInfo.RedirectStandardOutput
-            ? process.StandardOutput.ReadToEndAsync(cancellationToken)
-            : null;
-        Task<string>? errorTask = startInfo.RedirectStandardError
-            ? process.StandardError.ReadToEndAsync(cancellationToken)
-            : null;
 
-        await process.WaitForExitAsync(cancellationToken);
+        try
+        {
+            var isCancelled = false;
+            try
+            {
+                await process.WaitForExitAsync(cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                isCancelled = true;
+                HostAssets.AppendLog($"ScriptRunner cancellation received: label={label}, pid={process.Id}. Killing process tree...");
+                KillProcessTreeForcefully(process);
+                HostAssets.AppendLog($"ScriptRunner process cancelled: label={label}, pid={process.Id}.");
+            }
 
-        var output = outputTask == null ? string.Empty : (await outputTask).Trim();
-        var error = errorTask == null ? string.Empty : (await errorTask).Trim();
-        var stateUpdates = await TryReadStateUpdatesAsync(stateUpdatePath, cancellationToken);
-        HostAssets.AppendLog(
-            $"ScriptRunner process exited: label={label}, pid={process.Id}, exitCode={process.ExitCode}, elapsedMs={processStopwatch.ElapsedMilliseconds}, outputLength={output.Length}, errorLength={error.Length}");
-        var hasErrorOutput = !string.IsNullOrWhiteSpace(error);
-        var result = process.ExitCode == 0 && !hasErrorOutput
-            ? new ScriptExecutionResult(true, output, error, process.ExitCode, stateUpdates)
-            : new ScriptExecutionResult(
-                false,
-                output,
-                hasErrorOutput ? error : $"{label}退出码：{process.ExitCode}",
-                process.ExitCode == 0 && hasErrorOutput ? -1 : process.ExitCode,
-                stateUpdates);
-        process.Dispose();
-        return result;
+            if (!isCancelled)
+            {
+                try
+                {
+                    process.WaitForExit(1000);
+                }
+                catch
+                {
+                }
+            }
+
+            string output;
+            lock (outputBuilder)
+            {
+                output = outputBuilder.ToString().Trim();
+            }
+
+            string error;
+            lock (errorBuilder)
+            {
+                error = errorBuilder.ToString().Trim();
+            }
+
+            var stateUpdates = await TryReadStateUpdatesAsync(stateUpdatePath, CancellationToken.None);
+            var exitCode = -1;
+            if (!isCancelled)
+            {
+                try
+                {
+                    exitCode = process.ExitCode;
+                }
+                catch
+                {
+                    exitCode = -1;
+                }
+            }
+
+            HostAssets.AppendLog(
+                $"ScriptRunner process exited: label={label}, pid={process.Id}, exitCode={exitCode}, elapsedMs={processStopwatch.ElapsedMilliseconds}, outputLength={output.Length}, errorLength={error.Length}, isCancelled={isCancelled}");
+
+            try
+            {
+                process.Dispose();
+            }
+            catch
+            {
+            }
+
+            if (isCancelled)
+            {
+                return new ScriptExecutionResult(
+                    Success: false,
+                    Output: output,
+                    Error: string.IsNullOrWhiteSpace(error) ? "进程已手动终止。" : error,
+                    ExitCode: -1,
+                    StateUpdates: stateUpdates,
+                    IsCancelled: true);
+            }
+
+            var hasErrorOutput = !string.IsNullOrWhiteSpace(error);
+            var result = exitCode == 0 && !hasErrorOutput
+                ? new ScriptExecutionResult(true, output, error, exitCode, stateUpdates)
+                : new ScriptExecutionResult(
+                    false,
+                    output,
+                    hasErrorOutput ? error : $"{label}退出码：{exitCode}",
+                    exitCode == 0 && hasErrorOutput ? -1 : exitCode,
+                    stateUpdates);
+            return result;
+        }
+        finally
+        {
+            if (registryInstanceId.HasValue)
+            {
+                RunningExtensionRegistry.Remove(registryInstanceId.Value, "process completed");
+            }
+        }
+    }
+
+    private static void KillProcessTreeForcefully(Process process)
+    {
+        try
+        {
+            var pid = process.Id;
+            // 优先使用 Windows taskkill 彻底杀死整棵进程树（包括 node.exe, cmd.exe 等）
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "taskkill",
+                    Arguments = $"/F /T /PID {pid}",
+                    CreateNoWindow = true,
+                    UseShellExecute = false
+                };
+                using var killer = Process.Start(psi);
+                killer?.WaitForExit(1500);
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"KillProcessTreeForcefully taskkill failed for pid {pid}: {ex.Message}");
+            }
+
+            try
+            {
+                if (!process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                process.WaitForExit(500);
+            }
+            catch
+            {
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"KillProcessTreeForcefully failed: {ex.Message}");
+        }
     }
 
     private static bool ShouldUseNativeWindowMode(CommandItem command, string source)
@@ -1179,6 +1770,8 @@ public static class ScriptExtensionRunner
 
     private static ScriptExecutionContext CreateContext(CommandItem command, string? inputText, string launchSource, IReadOnlyDictionary<string, string>? state)
     {
+        if (command.Source == CommandSource.LocalExtension && !ExtensionDevicePolicy.CanRun(command.ExtensionId))
+            throw new InvalidOperationException("此小程序仅允许在指定设备上运行。");
         var settings = AppSettingsStore.Load();
         var agentApiBaseUrl = settings.EnableAgentApi
             ? $"http://127.0.0.1:{settings.AgentApiPort}"
@@ -1312,10 +1905,7 @@ public static class ScriptExtensionRunner
         try
         {
             var json = await File.ReadAllTextAsync(stateUpdatePath, cancellationToken);
-            var payload = JsonSerializer.Deserialize<Dictionary<string, string>>(json, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
+            var payload = JsonSerializer.Deserialize<Dictionary<string, string>>(json, JsonDefaults.CaseInsensitive);
             return payload != null
                 ? new Dictionary<string, string>(payload, StringComparer.OrdinalIgnoreCase)
                 : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -1383,6 +1973,45 @@ public static class ScriptExtensionRunner
             public string StateUpdatePath { get; set; } = Environment.GetEnvironmentVariable("YANZI_STATE_UPDATES_PATH") ?? string.Empty;
             public Action<string, object>? RegisterObject { get; set; }
             public Func<string, object?>? GetRegisteredObject { get; set; }
+            public Action<string, Func<string, Task<string>>>? RegisterCapabilityJson { get; set; }
+            public Func<string, Task<string>>? InvokeCapabilityJson { get; set; }
+            private YanziCapabilityClient? _capabilities;
+            [System.Text.Json.Serialization.JsonIgnore]
+            public YanziCapabilityClient Capabilities => _capabilities ??= new YanziCapabilityClient(this);
+
+            public sealed class YanziCapabilityClient
+            {
+                private readonly YanziActionContext _context;
+                private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);
+                public YanziCapabilityClient(YanziActionContext context) => _context = context;
+
+                public void Register(string name, Func<JsonElement, Task<object?>> handler)
+                {
+                    var register = _context.RegisterCapabilityJson
+                        ?? throw new InvalidOperationException("当前运行时未连接能力注册接口");
+                    register(name, async json =>
+                    {
+                        using var document = JsonDocument.Parse(json);
+                        var result = await handler(document.RootElement.Clone()).ConfigureAwait(false);
+                        return JsonSerializer.Serialize(result, Options);
+                    });
+                }
+
+                public async Task<JsonElement> InvokeAsync(string name, object? payload = null)
+                {
+                    var invoke = _context.InvokeCapabilityJson
+                        ?? throw new InvalidOperationException("当前运行时未连接能力调用接口");
+                    var json = await invoke(JsonSerializer.Serialize(new { name, payload }, Options)).ConfigureAwait(false);
+                    using var document = JsonDocument.Parse(json);
+                    var result = document.RootElement;
+                    if (!result.GetProperty("success").GetBoolean())
+                        throw new InvalidOperationException(result.GetProperty("error").GetString());
+                    return result.GetProperty("data").Clone();
+                }
+
+                public Task<JsonElement> ListAsync() => InvokeAsync("capability.list");
+                public Task<JsonElement> DescribeAsync(string name) => InvokeAsync("capability.describe", new { name });
+            }
 
             public void Log(string message)
             {
@@ -1394,8 +2023,40 @@ public static class ScriptExtensionRunner
                 catch { }
             }
 
+            public void ShowDesktopNotification(string title, string message)
+            {
+                try
+                {
+                    var app = System.Windows.Application.Current;
+                    if (app != null)
+                    {
+                        var method = System.Linq.Enumerable.FirstOrDefault(app.GetType().GetMethods(), m => m.Name == "ShowDesktopNotification");
+                        if (method != null)
+                        {
+                            var parameters = method.GetParameters();
+                            if (parameters.Length == 2)
+                            {
+                                method.Invoke(app, new object[] { title, message });
+                            }
+                            else if (parameters.Length >= 3)
+                            {
+                                var iconArg = System.Enum.ToObject(parameters[2].ParameterType, 1);
+                                method.Invoke(app, new object[] { title, message, iconArg });
+                            }
+                            return;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log($"ShowDesktopNotification error: {ex.Message}");
+                }
+            }
+
             public async Task ShowNotificationAsync(string title, string message)
             {
+                ShowDesktopNotification(title, message);
+
                 if (string.IsNullOrWhiteSpace(AgentApiBaseUrl) || string.IsNullOrWhiteSpace(AgentApiToken)) return;
                 try
                 {
@@ -1447,10 +2108,7 @@ public static class ScriptExtensionRunner
                 }
 
                 var json = await File.ReadAllTextAsync(contextPath);
-                return JsonSerializer.Deserialize<YanziActionContext>(json, new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                }) ?? throw new InvalidOperationException("Failed to read Yanzi context.");
+                return JsonSerializer.Deserialize<YanziActionContext>(json, JsonDefaults.CaseInsensitive) ?? throw new InvalidOperationException("Failed to read Yanzi context.");
             }
 
             private async Task FlushStateUpdatesAsync()
@@ -1520,7 +2178,6 @@ public static class ScriptExtensionRunner
         public sealed class YanziStorageClient
         {
             private readonly YanziActionContext _context;
-            private readonly SemaphoreSlim _cloudWriteGate = new(1, 1);
 
             public YanziStorageClient(YanziActionContext context)
             {
@@ -1537,9 +2194,9 @@ public static class ScriptExtensionRunner
 
                 if (string.Equals(normalizedScope, "both", StringComparison.OrdinalIgnoreCase))
                 {
-                    var localText = await ReadLocalTextAsync(key);
-                    _ = RefreshLocalFromCloudAsync(key);
-                    return localText;
+                    // Let the host perform the local-first read and guarded background refresh.
+                    // Writing the fetched cloud value directly here bypassed pending/conflict checks.
+                    return await ReadCloudTextAsync(key, "both");
                 }
 
                 return await ReadCloudTextAsync(key, normalizedScope);
@@ -1565,20 +2222,38 @@ public static class ScriptExtensionRunner
 
                 if (string.Equals(normalizedScope, "both", StringComparison.OrdinalIgnoreCase))
                 {
-                    await WriteLocalTextAsync(key, content);
-                    _ = TryWriteCloudTextAsync(key, content ?? string.Empty);
+                    // The host marks the key pending before it queues the cloud write, closing the
+                    // refresh-vs-write race that existed when this client wrote the file first.
+                    await WriteCloudTextAsync(key, content ?? string.Empty, "both");
                     return;
                 }
 
-                await WriteCloudTextAsync(key, content ?? string.Empty);
+                await WriteCloudTextAsync(key, content ?? string.Empty, "cloud");
             }
 
-            private async Task WriteCloudTextAsync(string key, string content)
+            public async Task DeleteTextAsync(string key, string scope = "local")
+            {
+                var normalizedScope = NormalizeScope(scope);
+                if (string.Equals(normalizedScope, "local", StringComparison.OrdinalIgnoreCase) ||
+                    string.IsNullOrWhiteSpace(_context.AgentApiBaseUrl))
+                {
+                    var localPath = ResolveLocalPath(key);
+                    if (File.Exists(localPath)) File.Delete(localPath);
+                    return;
+                }
+
+                using var client = CreateClient();
+                using var response = await client.DeleteAsync(
+                    $"/v1/storage/{Uri.EscapeDataString(_context.ExtensionId)}?key={Uri.EscapeDataString(key)}&scope={Uri.EscapeDataString(normalizedScope)}");
+                response.EnsureSuccessStatusCode();
+            }
+
+            private async Task WriteCloudTextAsync(string key, string content, string scope)
             {
                 using var client = CreateClient();
                 using var response = await client.PutAsJsonAsync(
                     $"/v1/storage/{Uri.EscapeDataString(_context.ExtensionId)}",
-                    new StorageWriteRequest(key, content ?? string.Empty, "cloud"));
+                    new StorageWriteRequest(key, content ?? string.Empty, scope));
                 response.EnsureSuccessStatusCode();
             }
 
@@ -1593,39 +2268,6 @@ public static class ScriptExtensionRunner
                 var path = ResolveLocalPath(key);
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                 await File.WriteAllTextAsync(path, content ?? string.Empty, Encoding.UTF8);
-            }
-
-            private async Task RefreshLocalFromCloudAsync(string key)
-            {
-                try
-                {
-                    var cloudText = await ReadCloudTextAsync(key, "cloud");
-                    if (cloudText != null)
-                    {
-                        await WriteLocalTextAsync(key, cloudText);
-                    }
-                }
-                catch
-                {
-                    // Cloud refresh is opportunistic; local-first reads must stay fast.
-                }
-            }
-
-            private async Task TryWriteCloudTextAsync(string key, string content)
-            {
-                await _cloudWriteGate.WaitAsync();
-                try
-                {
-                    await WriteCloudTextAsync(key, content);
-                }
-                catch
-                {
-                    // Cloud writes are queued behind the local save for UI responsiveness.
-                }
-                finally
-                {
-                    _cloudWriteGate.Release();
-                }
             }
 
             public async Task<T?> ReadJsonAsync<T>(string key, string scope = "local")
@@ -1719,4 +2361,5 @@ public sealed record ScriptExecutionResult(
     string Output,
     string Error,
     int ExitCode,
-    IReadOnlyDictionary<string, string>? StateUpdates = null);
+    IReadOnlyDictionary<string, string>? StateUpdates = null,
+    bool IsCancelled = false);

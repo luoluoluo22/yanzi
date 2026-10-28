@@ -12,11 +12,12 @@ import android.widget.Toast;
 
 import org.json.JSONObject;
 
+import cc.luoluoluo.yanzi.mobile.BuildConfig;
 import cc.luoluoluo.yanzi.mobile.R;
 import cc.luoluoluo.yanzi.mobile.YanmComponentEditActivity;
 
 public final class YanmComponentWidgetProvider extends AppWidgetProvider {
-    public static final String ACTION_REFRESH = "cc.luoluoluo.yanzi.mobile.widget.ACTION_REFRESH_YANM_COMPONENT";
+    public static final String ACTION_REFRESH = BuildConfig.APPLICATION_ID + ".widget.ACTION_REFRESH_YANM_COMPONENT";
 
     @Override
     public void onUpdate(Context context, AppWidgetManager appWidgetManager, int[] appWidgetIds) {

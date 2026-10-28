@@ -179,7 +179,7 @@ public partial class LauncherWindow : Window, INotifyPropertyChanged
         set => SetField(ref _snippetIcon, value);
     }
 
-    private string _editorTitle = "添加自定义扩展 (JSON)";
+    private string _editorTitle = "添加自定义小程序 (JSON)";
     public string EditorTitle
     {
         get => _editorTitle;
@@ -305,12 +305,12 @@ public partial class LauncherWindow : Window, INotifyPropertyChanged
 
         _allItems.Add(new LauncherItemViewModel
         {
-            Title = "＋ 添加新扩展",
+            Title = "＋ 添加新小程序",
             Subtitle = "定义一个新的 AppleScript 苹果脚本内容，点击或回车在此面板添加",
             DisplayIcon = "➕",
             AccentBrush = new SolidColorBrush(Color.Parse("#FF10B981")),
             KindText = "新建",
-            CategoryText = "扩展",
+            CategoryText = "小程序",
             Category = "Extension",
             Command = null
         });
@@ -336,7 +336,7 @@ public partial class LauncherWindow : Window, INotifyPropertyChanged
                 DisplayIcon = ext.Glyph ?? (isSnippet ? "📝" : "🍎"),
                 AccentBrush = new SolidColorBrush(Color.Parse(isSnippet ? "#FF8B5CF6" : "#FF10B981")),
                 KindText = isSnippet ? "短语" : "自定义",
-                CategoryText = isSnippet ? "短语" : "扩展",
+                CategoryText = isSnippet ? "短语" : "小程序",
                 Category = isSnippet ? "Snippet" : "Extension",
                 Command = ext
             });
@@ -355,7 +355,7 @@ public partial class LauncherWindow : Window, INotifyPropertyChanged
                     DisplayIcon = cmd.Glyph ?? "⚙",
                     AccentBrush = new SolidColorBrush(Color.Parse("#FF3B82F6")),
                     KindText = "系统",
-                    CategoryText = "扩展",
+                    CategoryText = "小程序",
                     Category = "Extension",
                     Command = cmd
                 });
@@ -526,6 +526,22 @@ public partial class LauncherWindow : Window, INotifyPropertyChanged
 
     public IReadOnlyList<CommandItem> GetCustomExtensions() => _customExtensions;
 
+    public IReadOnlyList<CommandItem> GetInstalledAppCommands()
+    {
+        lock (_cachedApps)
+        {
+            return _cachedApps.Select(app => new CommandItem
+            {
+                ExtensionId = $"app:{app.Name}",
+                Title = app.Name,
+                Description = $"启动应用程序：{app.Path}",
+                ActionKind = CommandActionKind.LaunchApplication,
+                ApplicationName = app.Name,
+                Glyph = "💻"
+            }).ToList();
+        }
+    }
+
     public void AddCustomExtension(CommandItem command)
     {
         _customExtensions.Add(command);
@@ -635,9 +651,9 @@ public partial class LauncherWindow : Window, INotifyPropertyChanged
         if (!string.IsNullOrWhiteSpace(query))
         {
             list = list.Where(item =>
-                item.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                item.Subtitle.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                item.CategoryText.Contains(query, StringComparison.OrdinalIgnoreCase));
+                PinyinHelper.Matches(item.Title, query) ||
+                PinyinHelper.Matches(item.Subtitle, query) ||
+                PinyinHelper.Matches(item.CategoryText, query));
         }
 
         FilteredItems.Clear();
@@ -789,7 +805,7 @@ public partial class LauncherWindow : Window, INotifyPropertyChanged
 
     private void CopyPrompt()
     {
-        var prompt = "请帮我写一个燕子启动器 (Yanzi) 的单文件 JSON 扩展。要求格式如下：\n{\n  \"name\": \"扩展名称\",\n  \"description\": \"描述\",\n  \"icon\": \"🍎\",\n  \"script\": \"这里是单行 AppleScript\",\n  \"globalHotkey\": \"\",\n  \"abbreviation\": \"\",\n  \"snippet\": \"\"\n}";
+        var prompt = "请帮我写一个燕子 (Yanzi) 的单文件 JSON 小程序。要求格式如下：\n{\n  \"name\": \"小程序名称\",\n  \"description\": \"描述\",\n  \"icon\": \"🍎\",\n  \"script\": \"这里是单行 AppleScript\",\n  \"globalHotkey\": \"\",\n  \"abbreviation\": \"\",\n  \"snippet\": \"\"\n}";
         Task.Run(async () =>
         {
             var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
@@ -832,7 +848,7 @@ public partial class LauncherWindow : Window, INotifyPropertyChanged
             else
             {
                 IsSnippetEditor = false;
-                EditorTitle = "添加自定义扩展 (JSON)";
+                EditorTitle = "添加自定义小程序 (JSON)";
                 IsDeleteMode = false;
                 EditorJsonText = GetDefaultJsonTemplate();
             }
@@ -1232,7 +1248,7 @@ public partial class LauncherWindow : Window, INotifyPropertyChanged
                 }
                 catch {}
 
-                EditorTitle = "修改自定义扩展 (JSON)";
+                EditorTitle = "修改自定义小程序 (JSON)";
             }
             IsDeleteMode = true;
         }
@@ -1252,7 +1268,7 @@ public partial class LauncherWindow : Window, INotifyPropertyChanged
             else
             {
                 IsSnippetEditor = false;
-                EditorTitle = "添加自定义扩展 (JSON)";
+                EditorTitle = "添加自定义小程序 (JSON)";
                 if (string.IsNullOrEmpty(EditorJsonText) || EditorJsonText == GetDefaultJsonTemplate())
                 {
                     EditorJsonText = GetDefaultJsonTemplate();
@@ -1274,7 +1290,7 @@ public partial class LauncherWindow : Window, INotifyPropertyChanged
             // Slide editor closed
             WindowWidth = 620;
             
-            ValidationMessage = $"已成功删除扩展：'{nameToDelete}'";
+            ValidationMessage = $"已成功删除小程序：'{nameToDelete}'";
             ValidationColor = Brushes.Orange;
             Task.Delay(2000).ContinueWith(_ => Dispatcher.UIThread.Post(() =>
             {
@@ -1425,7 +1441,7 @@ public class LauncherItemViewModel : INotifyPropertyChanged
     public string DisplayIcon { get; set; } = "🍎";
     public IBrush AccentBrush { get; set; } = Brushes.Blue;
     public string KindText { get; set; } = "系统";
-    public string CategoryText { get; set; } = "扩展";
+    public string CategoryText { get; set; } = "小程序";
     public string Category { get; set; } = "Extension"; // Extension, App, File, Clipboard, Snippet
 
     public CommandItem? Command { get; set; }
@@ -1466,6 +1482,45 @@ public class LauncherItemViewModel : INotifyPropertyChanged
 
 public static class MacIconExtractor
 {
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte[]> _rawPngCache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, global::Avalonia.Media.Imaging.Bitmap> _bitmapCache = new(StringComparer.OrdinalIgnoreCase);
+
+    public static global::Avalonia.Media.Imaging.Bitmap? GetCachedBitmap(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return null;
+
+        if (_bitmapCache.TryGetValue(path, out var cached))
+            return cached;
+
+        var pngBytes = GetFileIconPngBytes(path);
+        if (pngBytes != null && pngBytes.Length > 0)
+        {
+            try
+            {
+                using var ms = new System.IO.MemoryStream(pngBytes);
+                var bmp = new global::Avalonia.Media.Imaging.Bitmap(ms);
+                _bitmapCache[path] = bmp;
+                return bmp;
+            }
+            catch {}
+        }
+        return null;
+    }
+
+    public static void PreloadIcons(IEnumerable<string> paths)
+    {
+        Task.Run(() =>
+        {
+            foreach (var p in paths)
+            {
+                if (!string.IsNullOrWhiteSpace(p))
+                {
+                    GetCachedBitmap(p);
+                }
+            }
+        });
+    }
+
     [DllImport("/usr/lib/libobjc.A.dylib")]
     private static extern IntPtr objc_getClass(string className);
 
@@ -1487,6 +1542,11 @@ public static class MacIconExtractor
         {
             if (!System.OperatingSystem.IsMacOS()) return null;
 
+            if (_rawPngCache.TryGetValue(path, out var cachedBytes))
+            {
+                return cachedBytes;
+            }
+
             if (!path.StartsWith("/"))
             {
                 var fullPath = GetApplicationPath(path);
@@ -1494,6 +1554,11 @@ public static class MacIconExtractor
                 {
                     path = fullPath;
                 }
+            }
+
+            if (_rawPngCache.TryGetValue(path, out var cachedFullPathBytes))
+            {
+                return cachedFullPathBytes;
             }
 
             IntPtr nsStringClass = objc_getClass("NSString");
@@ -1547,6 +1612,7 @@ public static class MacIconExtractor
             IntPtr releaseSel = sel_registerName("release");
             objc_msgSend(pathStr, releaseSel);
 
+            _rawPngCache[path] = buffer;
             return buffer;
         }
         catch (Exception ex)
@@ -1596,5 +1662,34 @@ public static class MacIconExtractor
         {
             return null;
         }
+    }
+
+    public static string? GetFrontmostApplicationName()
+    {
+        try
+        {
+            if (!System.OperatingSystem.IsMacOS()) return null;
+            IntPtr nsWorkspaceClass = objc_getClass("NSWorkspace");
+            IntPtr sharedWorkspaceSel = sel_registerName("sharedWorkspace");
+            IntPtr workspace = objc_msgSend(nsWorkspaceClass, sharedWorkspaceSel);
+            if (workspace == IntPtr.Zero) return null;
+
+            IntPtr frontmostAppSel = sel_registerName("frontmostApplication");
+            IntPtr runningApp = objc_msgSend(workspace, frontmostAppSel);
+            if (runningApp == IntPtr.Zero) return null;
+
+            IntPtr localizedNameSel = sel_registerName("localizedName");
+            IntPtr nameStr = objc_msgSend(runningApp, localizedNameSel);
+            if (nameStr == IntPtr.Zero) return null;
+
+            IntPtr utf8Sel = sel_registerName("UTF8String");
+            IntPtr utf8Ptr = objc_msgSend(nameStr, utf8Sel);
+            if (utf8Ptr != IntPtr.Zero)
+            {
+                return Marshal.PtrToStringUTF8(utf8Ptr);
+            }
+        }
+        catch { }
+        return null;
     }
 }
