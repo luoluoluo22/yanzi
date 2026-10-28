@@ -25,7 +25,7 @@ import java.util.UUID;
  */
 final class ChatHistoryStore extends SQLiteOpenHelper {
     private static final String DB_NAME = "yanzi-chat-history.db";
-    private static final int DB_VERSION = 1;
+    private static final int DB_VERSION = 3;
     private static final String LEGACY_KEY = "desktop_chat_history";
     private static final String MIGRATION_KEY = "chat_history_sqlite_migrated_v1";
     private static final Object LOCK = new Object();
@@ -53,12 +53,26 @@ final class ChatHistoryStore extends SQLiteOpenHelper {
                 "time_ms INTEGER NOT NULL," +
                 "source_device_id TEXT," +
                 "source_device_name TEXT," +
+                "conversation_id TEXT NOT NULL DEFAULT 'group'," +
                 "UNIQUE(account_id, message_id) ON CONFLICT IGNORE)");
         db.execSQL("CREATE INDEX chat_messages_account_time ON chat_messages(account_id, time_ms, id)");
+        db.execSQL("CREATE INDEX chat_messages_conversation_time ON chat_messages(account_id,conversation_id,time_ms,id)");
     }
 
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        // Version 1 is the initial durable store.
+        if (oldVersion < 2) {
+            db.execSQL("ALTER TABLE chat_messages ADD COLUMN conversation_id TEXT NOT NULL DEFAULT 'group'");
+            db.execSQL("CREATE INDEX chat_messages_conversation_time ON chat_messages(account_id,conversation_id,time_ms,id)");
+        }
+        if (oldVersion < 3) {
+            // Recover already-saved server notifications previously routed to an
+            // invisible device:server-* conversation. Leave explicitly routed
+            // agent sessions and all ordinary device chats untouched.
+            db.execSQL("UPDATE chat_messages SET conversation_id='group' " +
+                    "WHERE role='peer' AND kind IN ('text','notify') " +
+                    "AND source_device_id LIKE 'server-%' " +
+                    "AND conversation_id=('device:' || source_device_id)");
+        }
     }
 
     static JSONObject message(String role, String kind, String content, long time,
@@ -103,21 +117,26 @@ final class ChatHistoryStore extends SQLiteOpenHelper {
     }
 
     static JSONArray load(Context context) {
+        return load(context, ChatConversation.GROUP);
+    }
+
+    static JSONArray load(Context context, String conversationId) {
         synchronized (LOCK) {
             JSONArray result = new JSONArray();
             try {
                 migrateLegacyLocked(context);
                 String account = currentAccount(context);
                 try (Cursor cursor = get(context).getReadableDatabase().rawQuery(
-                        "SELECT message_id,role,kind,content,time_ms,source_device_id,source_device_name " +
-                                "FROM chat_messages WHERE account_id=? ORDER BY time_ms ASC,id ASC",
-                        new String[]{account})) {
+                        "SELECT message_id,role,kind,content,time_ms,source_device_id,source_device_name,conversation_id " +
+                                "FROM chat_messages WHERE account_id=? AND conversation_id=? ORDER BY time_ms ASC,id ASC",
+                        new String[]{account, conversationId})) {
                     while (cursor.moveToNext()) {
                         JSONObject value = new JSONObject()
                                 .put("role", cursor.getString(1))
                                 .put("kind", cursor.getString(2))
                                 .put("content", cursor.getString(3))
                                 .put("time", cursor.getLong(4));
+                        value.put("conversationId",cursor.getString(7));
                         String messageId = cursor.getString(0);
                         String sourceId = cursor.getString(5);
                         String sourceName = cursor.getString(6);
@@ -150,6 +169,49 @@ final class ChatHistoryStore extends SQLiteOpenHelper {
         }
     }
 
+    static void clearConversation(Context context, String conversationId) {
+        synchronized(LOCK) {
+            get(context).getWritableDatabase().delete("chat_messages","account_id=? AND conversation_id=?",
+                new String[]{currentAccount(context),conversationId});
+        }
+    }
+
+    static String accountKey(Context context) { return currentAccount(context); }
+    static String preview(Context context,String conversationId) {
+        synchronized(LOCK) {
+            try(Cursor cursor=get(context).getReadableDatabase().rawQuery(
+                "SELECT kind,content FROM chat_messages WHERE account_id=? AND conversation_id=? ORDER BY time_ms DESC,id DESC LIMIT 1",
+                new String[]{currentAccount(context),conversationId})) {
+                if(!cursor.moveToFirst())return "暂无消息";
+                String kind=cursor.getString(0);
+                if(kind.equals("photo"))return "[图片]";
+                if(kind.equals("file"))return "[文件]";
+                return cursor.getString(1).replace('\n',' ').replace('\r',' ');
+            }
+        }
+    }
+
+    static int unread(Context context, String conversationId, long after) {
+        synchronized(LOCK) {
+            try(Cursor cursor=get(context).getReadableDatabase().rawQuery(
+                "SELECT count(*) FROM chat_messages WHERE account_id=? AND conversation_id=? AND role='peer' AND time_ms>?",
+                new String[]{currentAccount(context),conversationId,Long.toString(after)})) {
+                return cursor.moveToFirst()?cursor.getInt(0):0;
+            }
+        }
+    }
+
+    static long lastMessageTime(Context context, String conversationId) {
+        synchronized(LOCK) {
+            try(Cursor cursor=get(context).getReadableDatabase().rawQuery(
+                "SELECT time_ms FROM chat_messages WHERE account_id=? AND conversation_id=? ORDER BY time_ms DESC,id DESC LIMIT 1",
+                new String[]{currentAccount(context),conversationId})) {
+                return cursor.moveToFirst()?cursor.getLong(0):0L;
+            } catch(Exception ignored) {
+                return 0L;
+            }
+        }
+    }
     static File persistPhoto(Context context, byte[] jpegBytes) throws Exception {
         if (jpegBytes == null || jpegBytes.length == 0) throw new java.io.IOException("EMPTY_PHOTO");
         if (jpegBytes.length > MobileAttachmentClient.LIMIT) throw new java.io.IOException("PHOTO_TOO_LARGE");
@@ -236,6 +298,7 @@ final class ChatHistoryStore extends SQLiteOpenHelper {
         row.put("time_ms", value.optLong("time", System.currentTimeMillis()));
         row.put("source_device_id", value.optString("sourceDeviceId", ""));
         row.put("source_device_name", value.optString("sourceDeviceName", ""));
+        row.put("conversation_id",value.optString("conversationId",ChatConversation.GROUP));
         return row;
     }
 

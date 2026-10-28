@@ -18,6 +18,7 @@ public sealed partial class PersonalSyncService
     public async Task<IReadOnlyList<string>> GetExtensionDataKeysAsync(
         string extensionId, CancellationToken cancellationToken = default)
     {
+        if (!ExtensionDevicePolicy.ShouldSyncData(extensionId)) return [];
         var bytes = await _backend.TryReadBytesAsync(ExtensionKeyIndexPath(extensionId), cancellationToken);
         if (bytes == null || bytes.Length == 0) return [];
         var keys = JsonSerializer.Deserialize<List<string>>(bytes) ?? [];
@@ -31,6 +32,8 @@ public sealed partial class PersonalSyncService
     public async Task PublishExtensionDataKeysAsync(
         string extensionId, IEnumerable<string> keys, CancellationToken cancellationToken = default)
     {
+        if (!ExtensionDevicePolicy.ShouldSyncData(extensionId))
+            throw new InvalidOperationException("设备独立数据禁止上传云端。");
         var oldKeys = await GetExtensionDataKeysAsync(extensionId, cancellationToken);
         var merged = oldKeys.Concat(keys.Select(ExtensionDataObjectStore.NormalizeKey))
             .Distinct(StringComparer.Ordinal).OrderBy(static key => key, StringComparer.Ordinal).ToArray();
@@ -46,6 +49,8 @@ public sealed partial class PersonalSyncService
     public async Task<bool> PublishExtensionBinaryAssetIfAbsentAsync(
         string extensionId, string key, byte[] data, CancellationToken cancellationToken = default)
     {
+        if (!ExtensionDevicePolicy.ShouldSyncData(extensionId))
+            throw new InvalidOperationException("设备独立数据禁止上传云端。");
         var path = BuildExtensionDataPath(extensionId, key);
         var existing = await _backend.TryReadBytesAsync(path, cancellationToken);
         if (existing != null)

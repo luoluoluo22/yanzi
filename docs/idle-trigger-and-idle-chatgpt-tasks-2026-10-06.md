@@ -48,7 +48,7 @@
 
 ## 闲置任务小程序
 
-源码：`tools/idle-chatgpt-tasks/`
+源码：`%LOCALAPPDATA%\OpenQuickHost\Extensions\idle-chatgpt-tasks`
 
 本机安装：`%LOCALAPPDATA%\OpenQuickHost\Extensions\idle-chatgpt-tasks\`
 

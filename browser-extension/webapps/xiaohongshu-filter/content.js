@@ -1,6 +1,6 @@
 (() => {
   const APP_ID = "xiaohongshu.filter";
-  const APP_VERSION = "0.7.22";
+  const APP_VERSION = "0.7.24";
   const RULES_KEY = "rules";
   const SETTINGS_KEY = "settings";
   const NOTE_STATS_KEY = "noteStats";
@@ -21,6 +21,7 @@
   const LOCAL_FEED_BATCH_SIZE = 30;
   const LOCAL_FEED_GENERATION_RETRY_MS = 30000;
   const LOCAL_FEED_MAX_NOTES = 240;
+  const LOCAL_FEED_HISTORY_PAGE_SIZE = 20;
   const LOCAL_FEED_MAX_DEDUP_MEMORY = 3000;
   const LOCAL_FEED_MAX_EXPLORATION_NODES = 1600;
   const LOCAL_FEED_FRONTIER_LIMIT = 24;
@@ -30,7 +31,7 @@
   const LOCAL_FEED_RECENT_CONTEXT_LIMIT = 24;
   const LOCAL_FEED_COVERAGE_LIMIT = 12;
   const LOCAL_FEED_SYSTEM_PROMPT_MAX_CHARS = 6000;
-  const LOCAL_FEED_DEFAULT_SYSTEM_PROMPT = "你正在为用户生成个人信息流里的短笔记。目标不是机械改写已有内容，而是持续扩大用户对感兴趣领域的认知边界。\n\n生成原则：\n1. 优先服从用户明确设置的兴趣主题、喜欢/不感兴趣反馈和本轮评价。\n2. 同一主题不要反复讲同一个结论。轮换探索：机制、条件与边界、反例、现实案例、对比、历史变化、可迁移应用、尚未解决的问题。\n3. 每篇只讲清一个值得继续思考的问题或机制，避免空泛总结、鸡汤、标题党、广告和虚构新闻。\n4. 已经覆盖过的主题可以再次出现，但必须换一个实质不同的问题、机制、证据或应用场景，不能只换措辞。\n5. 兴趣主题非空时，大约 70% 围绕兴趣展开，30% 用于相邻领域和新鲜探索；不要让单一主题长期占满信息流。\n6. 如果兴趣主题为空，则主动跨不同现实领域探索，不默认偏向 AI、开发或编程。\n7. 用户对局部文字的反馈只约束该局部观点或表达角度，不要扩大为对整篇或整个主题的判断。\n8. 优先生成能帮助用户建立因果关系、边界条件和迁移能力的内容。\n9. 每次新内容都应从已有探索空间节点继续延伸，并形成一个更具体的新标签；用户标记“继续探索”的节点优先向下生长，标记“停止延伸”的节点及其下游不再扩展。";
+  const LOCAL_FEED_DEFAULT_SYSTEM_PROMPT = "你正在为用户生成个人信息流里的短笔记。目标不是机械改写已有内容，而是持续扩大用户对感兴趣领域的认知边界。\n\n生成原则：\n1. 优先服从用户明确设置的兴趣主题、喜欢/不感兴趣反馈和本轮评价。\n2. 同一主题不要反复讲同一个结论。轮换探索：机制、条件与边界、反例、现实案例、对比、历史变化、可迁移应用、尚未解决的问题。\n3. 每篇只讲清一个值得继续思考的问题或机制，避免空泛总结、鸡汤、标题党、广告和虚构新闻。\n4. 已经覆盖过的主题可以再次出现，但必须换一个实质不同的问题、机制、证据或应用场景，不能只换措辞。\n5. 兴趣主题非空时，大约 70% 围绕兴趣展开，30% 用于相邻领域和新鲜探索；不要让单一主题长期占满信息流。\n6. 如果兴趣主题为空，则主动跨不同现实领域探索，不默认偏向 AI、开发或编程。\n7. 用户对局部文字的反馈只约束该局部观点或表达角度，不要扩大为对整篇或整个主题的判断。\n8. 优先生成能帮助用户建立因果关系、边界条件和迁移能力的内容。";
   const LOCAL_TEST_NOTES = [
     {
       id: "local-test-ai-01",
@@ -170,7 +171,7 @@
   let customCardSequenceIndex = 0;
   let customCardSequenceInitialized = false;
   let localFeedState = {
-    version: 4,
+    version: 5,
     updatedAt: 0,
     notes: [],
     dedupMemory: [],
@@ -182,6 +183,7 @@
     },
     preferences: {
       interests: [],
+      generationEnabled: true,
       systemPrompt: LOCAL_FEED_DEFAULT_SYSTEM_PROMPT,
       updatedAt: 0
     },
@@ -687,6 +689,10 @@
         border-top-color: #f4f4f5 !important;
         animation: yanzi-xhs-interest-status-spin .8s linear infinite !important;
       }
+      .yanzi-xhs-interest-status[data-state="paused"] .yanzi-xhs-interest-status-ring {
+        border-color: #71717a !important;
+        opacity: .65 !important;
+      }
       .yanzi-xhs-interest-status[data-state="ready"] .yanzi-xhs-interest-status-ring {
         border-color: #34c759 !important;
         box-shadow: 0 0 0 1px rgba(52,199,89,.08) !important;
@@ -938,6 +944,26 @@
       .yanzi-xhs-evaluation-head strong {
         font-size: 15px !important;
         font-weight: 650 !important;
+      }
+      .yanzi-xhs-interest-head-actions {
+        display: flex !important;
+        align-items: center !important;
+        gap: 8px !important;
+      }
+      .yanzi-xhs-generation-toggle {
+        border: 1px solid rgba(52,199,89,.38) !important;
+        border-radius: 999px !important;
+        background: rgba(52,199,89,.12) !important;
+        color: #86efac !important;
+        padding: 6px 10px !important;
+        font-size: 12px !important;
+        cursor: pointer !important;
+        white-space: nowrap !important;
+      }
+      .yanzi-xhs-generation-toggle[data-enabled="0"] {
+        border-color: rgba(161,161,170,.35) !important;
+        background: rgba(161,161,170,.10) !important;
+        color: #a1a1aa !important;
       }
       .yanzi-xhs-interest-close,
       .yanzi-xhs-evaluation-close {
@@ -1369,6 +1395,21 @@
         max-height: 430px !important;
         overflow-y: auto !important;
         padding-right: 2px !important;
+      }
+      .yanzi-xhs-history-load-more {
+        width: 100% !important;
+        min-height: 32px !important;
+        margin-top: 8px !important;
+        border: 1px solid rgba(255,255,255,.10) !important;
+        border-radius: 8px !important;
+        background: rgba(255,255,255,.045) !important;
+        color: #d4d4d8 !important;
+        font: 11px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+        cursor: pointer !important;
+      }
+      .yanzi-xhs-history-load-more:hover {
+        background: rgba(255,255,255,.09) !important;
+        color: #fff !important;
       }
       .yanzi-xhs-history-item {
         padding: 10px 11px !important;
@@ -1992,8 +2033,6 @@
       title: trimText(item?.title, 160),
       body: trimText(item?.body, 1200),
       topic: trimText(item?.topic, 80),
-      explorationNodeId: normalizeText(item?.explorationNodeId),
-      parentNodeId: normalizeText(item?.parentNodeId || item?.explorationParentNodeId),
       author: trimText(item?.author || "燕子 · 本地", 80),
       badge: trimText(item?.badge || (item?.source === "chatgpt" ? "AI 生成" : "本地测试"), 24),
       imageUrl: normalizeText(item?.imageUrl),
@@ -2046,7 +2085,7 @@
 
   function createInitialLocalFeedState() {
     return {
-      version: 4,
+      version: 5,
       updatedAt: Date.now(),
       notes: LOCAL_TEST_NOTES.map((note, index) =>
         normalizeLocalFeedNote({
@@ -2065,6 +2104,7 @@
       },
       preferences: {
         interests: [],
+        generationEnabled: true,
         systemPrompt: LOCAL_FEED_DEFAULT_SYSTEM_PROMPT,
         updatedAt: 0
       },
@@ -2552,17 +2592,15 @@
 
     const preferences = {
       interests,
+      generationEnabled: value.preferences?.generationEnabled !== false,
       systemPrompt: String(value.preferences?.systemPrompt || LOCAL_FEED_DEFAULT_SYSTEM_PROMPT)
+        .replace("9. 每次新内容都应从已有探索空间节点继续延伸，并形成一个更具体的新标签；用户标记“继续探索”的节点优先向下生长，标记“停止延伸”的节点及其下游不再扩展。", "")
         .trim()
         .slice(0, LOCAL_FEED_SYSTEM_PROMPT_MAX_CHARS) || LOCAL_FEED_DEFAULT_SYSTEM_PROMPT,
       updatedAt: Number(value.preferences?.updatedAt || 0)
     };
 
-    const exploration = normalizeExplorationGraph(
-      value.exploration,
-      notes,
-      interests
-    );
+    const exploration = { nodes: [], updatedAt: 0 };
 
     const generation = {
       inFlight: value.generation?.inFlight === true,
@@ -2590,7 +2628,7 @@
     }
 
     return {
-      version: 4,
+      version: 5,
       updatedAt: Number(value.updatedAt || 0),
       notes,
       dedupMemory,
@@ -2628,18 +2666,15 @@
     localFeedState.preferences = {
       interests: (localFeedState.preferences?.interests || [])
         .slice(0, LOCAL_FEED_MAX_INTERESTS),
+      generationEnabled: localFeedState.preferences?.generationEnabled !== false,
       systemPrompt: String(
         localFeedState.preferences?.systemPrompt || LOCAL_FEED_DEFAULT_SYSTEM_PROMPT
       ).trim().slice(0, LOCAL_FEED_SYSTEM_PROMPT_MAX_CHARS) || LOCAL_FEED_DEFAULT_SYSTEM_PROMPT,
       updatedAt: Number(localFeedState.preferences?.updatedAt || 0)
     };
 
-    localFeedState.exploration = normalizeExplorationGraph(
-      localFeedState.exploration,
-      localFeedState.notes,
-      localFeedState.preferences.interests
-    );
-    localFeedState.version = 4;
+    localFeedState.exploration = { nodes: [], updatedAt: 0 };
+    localFeedState.version = 5;
 
     await chrome.storage.local.set({
       [LOCAL_FEED_STORAGE_KEY]: localFeedState
@@ -2659,8 +2694,7 @@
     const storedState = stored?.[LOCAL_FEED_STORAGE_KEY];
     const needsMigration =
       !storedState ||
-      Number(storedState?.version || 0) < 4 ||
-      !storedState?.exploration;
+      Number(storedState?.version || 0) < 5;
     localFeedState = normalizeLocalFeedState(storedState);
     localFeedLoaded = true;
     ensureInterestNavButton();
@@ -2894,7 +2928,6 @@
       recent,
       interests,
       coverage: localFeedTopicCoverage(),
-      frontier: localFeedExplorationFrontier(),
       systemPrompt: effectiveLocalFeedSystemPrompt()
     };
   }
@@ -2964,8 +2997,12 @@
     return false;
   }
 
+  function isLocalFeedGenerationEnabled() {
+    return localFeedState.preferences?.generationEnabled !== false;
+  }
+
   async function maybeReplenishLocalFeed() {
-    if (!LOCAL_TEST_NOTES_ENABLED) return;
+    if (!LOCAL_TEST_NOTES_ENABLED || !localFeedLoaded || !isLocalFeedGenerationEnabled()) return;
     reconcileLocalFeedAssignmentsWithDom();
     if (getLocalFeedFutureSupply() > LOCAL_FEED_REPLENISH_THRESHOLD) return;
 
@@ -3011,22 +3048,24 @@
       const currentPreferencesUpdatedAt = Number(
         localFeedState.preferences?.updatedAt || 0
       );
-      if (currentPreferencesUpdatedAt !== requestPreferencesUpdatedAt) {
+      if (currentPreferencesUpdatedAt !== requestPreferencesUpdatedAt || !isLocalFeedGenerationEnabled()) {
         localFeedState.generation = {
           ...localFeedState.generation,
           inFlight: false,
           startedAt: 0,
           requestPreferencesUpdatedAt: 0,
-          lastError: "兴趣已在生成期间更新，旧批次已丢弃"
+          lastError: isLocalFeedGenerationEnabled() ? "兴趣已在生成期间更新，旧批次已丢弃" : ""
         };
         await persistLocalFeedState();
         updateInterestNavButton();
 
-        clearTimeout(localFeedRetryTimer);
-        localFeedRetryTimer = setTimeout(() => {
-          localFeedRetryTimer = null;
-          void maybeReplenishLocalFeed();
-        }, 500);
+        if (isLocalFeedGenerationEnabled()) {
+          clearTimeout(localFeedRetryTimer);
+          localFeedRetryTimer = setTimeout(() => {
+            localFeedRetryTimer = null;
+            void maybeReplenishLocalFeed();
+          }, 500);
+        }
         return;
       }
 
@@ -3050,31 +3089,11 @@
           feedbackAt: 0
         }, localFeedState.notes.length + added.length);
 
-        const nodeMap = explorationNodeMap();
-        const parentNode = nodeMap.get(note.parentNodeId);
-        if (
-          !parentNode ||
-          explorationNodeBlocked(parentNode, nodeMap) ||
-          normalizeText(parentNode.label).toLowerCase() ===
-            normalizeText(note.topic).toLowerCase()
-        ) {
-          continue;
-        }
-
         if (isLocalFeedNearDuplicate(note, dedupeCorpus)) {
           rejectedDuplicates += 1;
           continue;
         }
 
-        const explorationNode = upsertExplorationNode(
-          note.topic,
-          note.parentNodeId,
-          { createdAt: note.createdAt }
-        );
-        if (!explorationNode) continue;
-
-        note.explorationNodeId = explorationNode.id;
-        note.parentNodeId = explorationNode.parentNodeId;
         dedupeCorpus.push(note);
         added.push(note);
       }
@@ -3082,7 +3101,7 @@
       if (!added.length) {
         throw new Error(
           response.notes.length
-            ? "本轮候选笔记均被去重或探索关系校验过滤"
+            ? "本轮候选笔记均被去重过滤"
             : "ChatGPT 本轮没有生成可用笔记"
         );
       }
@@ -3135,16 +3154,20 @@
         inFlight: false,
         startedAt: 0,
         requestPreferencesUpdatedAt: 0,
-        lastError: trimText(error?.message || String(error), 300)
+        lastError: isLocalFeedGenerationEnabled()
+          ? trimText(error?.message || String(error), 300)
+          : ""
       };
       await persistLocalFeedState();
       updateInterestNavButton();
 
-      clearTimeout(localFeedRetryTimer);
-      localFeedRetryTimer = setTimeout(() => {
-        localFeedRetryTimer = null;
-        void maybeReplenishLocalFeed();
-      }, LOCAL_FEED_GENERATION_RETRY_MS);
+      if (isLocalFeedGenerationEnabled()) {
+        clearTimeout(localFeedRetryTimer);
+        localFeedRetryTimer = setTimeout(() => {
+          localFeedRetryTimer = null;
+          void maybeReplenishLocalFeed();
+        }, LOCAL_FEED_GENERATION_RETRY_MS);
+      }
     }
   }
 
@@ -3750,6 +3773,36 @@
     await persistLocalFeedState();
     renderInterestPanel();
     updateInterestNavButton();
+  }
+
+  async function setLocalFeedGenerationEnabled(value) {
+    const next = Boolean(value);
+    if (isLocalFeedGenerationEnabled() === next) return;
+
+    clearTimeout(localFeedRetryTimer);
+    localFeedRetryTimer = null;
+    if (!next) {
+      void chrome.runtime.sendMessage({ type: "yanzi_xhs_cancel_local_notes" }).catch(() => {});
+    }
+    localFeedState.preferences = {
+      ...localFeedState.preferences,
+      generationEnabled: next,
+      updatedAt: Math.max(Date.now(), Number(localFeedState.preferences?.updatedAt || 0) + 1)
+    };
+    if (!next) {
+      localFeedState.generation = {
+        ...localFeedState.generation,
+        inFlight: false,
+        startedAt: 0,
+        requestPreferencesUpdatedAt: 0,
+        lastError: ""
+      };
+    }
+    await persistLocalFeedState();
+    renderInterestPanel();
+    updateInterestNavButton();
+    showToast(next ? "兴趣自动生成已开启" : "兴趣自动生成已暂停，不再请求 GPT 笔记");
+    if (next) void maybeReplenishLocalFeed();
   }
 
   async function updateLocalFeedSystemPrompt(nextPrompt) {
@@ -4396,14 +4449,18 @@
     panel.hidden = true;
     panel.dataset.view = "topics";
     panel.dataset.historyFilter = "all";
+    panel.dataset.historyLimit = String(LOCAL_FEED_HISTORY_PAGE_SIZE);
     panel.innerHTML = [
       '<div class="yanzi-xhs-interest-head">',
-      '<strong>兴趣与探索</strong>',
+      '<strong>兴趣与历史</strong>',
+      '<div class="yanzi-xhs-interest-head-actions">',
+      '<button type="button" class="yanzi-xhs-generation-toggle" role="switch" aria-checked="true">自动生成：开启</button>',
       '<button type="button" class="yanzi-xhs-interest-close" aria-label="关闭">×</button>',
+      '</div>',
       '</div>',
       '<div class="yanzi-xhs-interest-tabs">',
       '<button type="button" class="yanzi-xhs-interest-tab" data-view="topics" data-active="1">兴趣主题</button>',
-      '<button type="button" class="yanzi-xhs-interest-tab" data-view="space" data-active="0">探索空间</button>',
+
       '<button type="button" class="yanzi-xhs-interest-tab" data-view="history" data-active="0">历史笔记</button>',
       '<button type="button" class="yanzi-xhs-interest-tab" data-view="prompt" data-active="0">提示词</button>',
       '</div>',
@@ -4419,25 +4476,7 @@
       '<button type="button" class="yanzi-xhs-interest-clear">清空</button>',
       '</div>',
       '</div>',
-      '<div class="yanzi-xhs-interest-section" data-section="space" hidden>',
-      '<div class="yanzi-xhs-space-summary"></div>',
-      '<div class="yanzi-xhs-space-legend">',
-      '<span><i class="yanzi-xhs-space-dot" data-kind="root"></i>兴趣根节点</span>',
-      '<span><i class="yanzi-xhs-space-dot" data-kind="continue"></i>继续探索</span>',
-      '<span><i class="yanzi-xhs-space-dot"></i>中性</span>',
-      '<span><i class="yanzi-xhs-space-dot" data-kind="stop"></i>停止延伸</span>',
-      '</div>',
-      '<div class="yanzi-xhs-space-layout">',
-      '<div class="yanzi-xhs-space-main">',
-      '<div class="yanzi-xhs-space-toolbar">',
-      '<span>拖动画布空白处框选 · Ctrl/⌘ + 单击增减多选</span>',
-      '<button type="button" class="yanzi-xhs-space-clear-selection" hidden>清除选择</button>',
-      '</div>',
-      '<div class="yanzi-xhs-space-canvas"><svg class="yanzi-xhs-space-svg" role="img" aria-label="探索空间网络"></svg></div>',
-      '</div>',
-      '<div class="yanzi-xhs-space-detail"></div>',
-      '</div>',
-      '</div>',
+
       '<div class="yanzi-xhs-interest-section" data-section="history" hidden>',
       '<div class="yanzi-xhs-history-summary">',
       '<span class="yanzi-xhs-history-summary-text"></span>',
@@ -4449,7 +4488,7 @@
       '<button type="button" class="yanzi-xhs-history-filter" data-filter="dislike" data-active="0">不感兴趣</button>',
       '<button type="button" class="yanzi-xhs-history-filter" data-filter="none" data-active="0">未反馈</button>',
       '</div>',
-      '<div class="yanzi-xhs-history-list"></div>',
+      '<div class="yanzi-xhs-history-list"><button type="button" class="yanzi-xhs-history-load-more" hidden>加载更多历史笔记</button></div>',
       '</div>',
       '<div class="yanzi-xhs-interest-section" data-section="prompt" hidden>',
       '<p class="yanzi-xhs-prompt-help">这是 AI 笔记生成时使用的长期提示词。兴趣主题、反馈、覆盖统计、最近标题以及 JSON 输出协议会由系统在运行时追加，因此不需要写进这里。</p>',
@@ -4509,7 +4548,7 @@
     };
 
     const showView = view => {
-      const next = ["history", "prompt", "space"].includes(view) ? view : "topics";
+      const next = ["history", "prompt"].includes(view) ? view : "topics";
       panel.dataset.view = next;
       panel.querySelectorAll(".yanzi-xhs-interest-tab").forEach(button => {
         button.dataset.active = button.dataset.view === next ? "1" : "0";
@@ -4535,6 +4574,9 @@
       }
     };
 
+    panel.querySelector(".yanzi-xhs-generation-toggle").addEventListener("click", () => {
+      void setLocalFeedGenerationEnabled(!isLocalFeedGenerationEnabled());
+    });
     panel.querySelector(".yanzi-xhs-interest-close").addEventListener("click", () => {
       panel.hidden = true;
     });
@@ -4562,8 +4604,17 @@
     panel.querySelectorAll(".yanzi-xhs-history-filter").forEach(button => {
       button.addEventListener("click", () => {
         panel.dataset.historyFilter = button.dataset.filter || "all";
+        panel.dataset.historyLimit = String(LOCAL_FEED_HISTORY_PAGE_SIZE);
         renderInterestPanel();
       });
+    });
+    panel.querySelector(".yanzi-xhs-history-load-more").addEventListener("click", () => {
+      const currentLimit = Math.max(
+        LOCAL_FEED_HISTORY_PAGE_SIZE,
+        Number(panel.dataset.historyLimit || LOCAL_FEED_HISTORY_PAGE_SIZE)
+      );
+      panel.dataset.historyLimit = String(currentLimit + LOCAL_FEED_HISTORY_PAGE_SIZE);
+      renderInterestPanel();
     });
     panel.querySelector(".yanzi-xhs-prompt-save").addEventListener("click", () => {
       const input = panel.querySelector(".yanzi-xhs-prompt-input");
@@ -4582,6 +4633,15 @@
   function renderInterestPanel() {
     const panel = document.querySelector(".yanzi-xhs-interest-panel");
     if (!panel) return;
+
+    const generationEnabled = isLocalFeedGenerationEnabled();
+    const generationToggle = panel.querySelector(".yanzi-xhs-generation-toggle");
+    generationToggle.dataset.enabled = generationEnabled ? "1" : "0";
+    generationToggle.setAttribute("aria-checked", String(generationEnabled));
+    generationToggle.textContent = generationEnabled ? "自动生成：开启" : "自动生成：关闭";
+    generationToggle.title = generationEnabled
+      ? "关闭后停止向 GPT 请求新笔记，已有笔记继续保留"
+      : "开启后按库存情况恢复 GPT 自动补货";
 
     const interests = localFeedState.preferences?.interests || [];
     const chips = panel.querySelector(".yanzi-xhs-interest-chips");
@@ -4673,7 +4733,7 @@
       item => item.enabled
     ).length;
     panel.querySelector(".yanzi-xhs-interest-status").textContent =
-      interests.length
+      !generationEnabled ? "自动生成已暂停 · 历史笔记仍保留" : interests.length
         ? "已启用 " + enabledInterestCount + " / " + interests.length +
           " 个主题 · 下一轮补货生效"
         : "未设置主题";
@@ -4688,7 +4748,22 @@
       (promptCustomized ? "已自定义" : "系统默认") +
       " · " + systemPrompt.length + " 字 · 下一轮补货生效";
 
-    renderExplorationGraph(panel);
+    const historyCount = (localFeedState.notes || [])
+      .filter(note => note?.source === "chatgpt").length;
+    const historyTab = panel.querySelector(
+      '.yanzi-xhs-interest-tab[data-view="history"]'
+    );
+    historyTab.textContent = historyCount
+      ? "历史笔记 " + historyCount
+      : "历史笔记";
+
+    const loadMoreButton = panel.querySelector(".yanzi-xhs-history-load-more");
+    const list = panel.querySelector(".yanzi-xhs-history-list");
+    if (panel.dataset.view !== "history") {
+      loadMoreButton.hidden = true;
+      list.replaceChildren(loadMoreButton);
+      return;
+    }
 
     const history = localFeedHistoryItems();
     const likeCount = history.filter(note =>
@@ -4698,14 +4773,6 @@
       localFeedFeedbackFor(note.id) === "dislike"
     ).length;
     const noneCount = Math.max(0, history.length - likeCount - dislikeCount);
-
-    const historyTab = panel.querySelector(
-      '.yanzi-xhs-interest-tab[data-view="history"]'
-    );
-    historyTab.textContent = history.length
-      ? "历史笔记 " + history.length
-      : "历史笔记";
-
     panel.querySelector(".yanzi-xhs-history-summary-text").textContent =
       "共 " + history.length +
       " 篇 · 感兴趣 " + likeCount +
@@ -4723,7 +4790,6 @@
       return feedback === filter;
     });
 
-    const list = panel.querySelector(".yanzi-xhs-history-list");
     list.replaceChildren();
 
     if (!filtered.length) {
@@ -4733,10 +4799,21 @@
         ? "这个分类暂时没有笔记"
         : "还没有 AI 生成的历史笔记";
       list.appendChild(empty);
+      loadMoreButton.hidden = true;
+      list.appendChild(loadMoreButton);
       return;
     }
 
-    for (const note of filtered) {
+    const historyLimit = Math.max(
+      LOCAL_FEED_HISTORY_PAGE_SIZE,
+      Number(panel.dataset.historyLimit || LOCAL_FEED_HISTORY_PAGE_SIZE)
+    );
+    const visibleNotes = filtered.slice(0, historyLimit);
+    loadMoreButton.hidden = visibleNotes.length >= filtered.length;
+    loadMoreButton.textContent =
+      "加载更多（" + visibleNotes.length + "/" + filtered.length + "）";
+
+    for (const note of visibleNotes) {
       const feedback = localFeedFeedbackFor(note.id) || "none";
       const selectionSummary = localFeedSelectionFeedbackSummary(note.id);
 
@@ -4799,6 +4876,7 @@
       item.appendChild(meta);
       list.appendChild(item);
     }
+    list.appendChild(loadMoreButton);
   }
 
   function findMessageNavItem() {
@@ -4844,6 +4922,9 @@
   }
 
   function localFeedLoadIndicatorState() {
+    if (!isLocalFeedGenerationEnabled()) {
+      return { state: "paused", label: "AI 笔记已暂停", detail: "不会再请求 GPT 生成新笔记" };
+    }
     const generation = localFeedState.generation || {};
     const futureSupply = getLocalFeedFutureSupply();
     const lastError = normalizeText(generation.lastError);
@@ -4913,6 +4994,7 @@
       indicator.title = loadStatus.label + "：" + loadStatus.detail;
     }
     button.dataset.loadState = loadStatus.state;
+    button.dataset.generationEnabled = isLocalFeedGenerationEnabled() ? "1" : "0";
 
     const interestText = interests.length
       ? "已启用 " + count + " / " + interests.length + " 个兴趣主题"
@@ -6933,13 +7015,35 @@
         const wasHidden = panel.hidden;
         const previousView = panel.dataset.view || "topics";
         const previousFilter = panel.dataset.historyFilter || "all";
+        const previousHistoryLimit =
+          panel.dataset.historyLimit || String(LOCAL_FEED_HISTORY_PAGE_SIZE);
 
         try {
           renderInterestPanel();
           panel.hidden = false;
+          panel.dataset.historyFilter = "all";
+          panel.dataset.historyLimit = String(LOCAL_FEED_HISTORY_PAGE_SIZE);
           panel.querySelector(
             '.yanzi-xhs-interest-tab[data-view="history"]'
           )?.click();
+
+          const historyInitialItemCount = panel.querySelectorAll(
+            ".yanzi-xhs-history-item"
+          ).length;
+          const loadMoreButton = panel.querySelector(
+            ".yanzi-xhs-history-load-more"
+          );
+          const loadMoreWasAvailable = !loadMoreButton.hidden;
+          if (loadMoreWasAvailable) loadMoreButton.click();
+          const historyExpandedItemCount = panel.querySelectorAll(
+            ".yanzi-xhs-history-item"
+          ).length;
+          const historyLoadMoreWorks = loadMoreWasAvailable
+            ? historyExpandedItemCount === Math.min(
+                LOCAL_FEED_HISTORY_PAGE_SIZE * 2,
+                localFeedHistoryItems().length
+              )
+            : historyInitialItemCount === localFeedHistoryItems().length;
 
           debugInterestTest = {
             ok: true,
@@ -6949,74 +7053,9 @@
                 '.yanzi-xhs-interest-tab[data-view="history"]'
               )?.textContent
             ),
-            spaceTabText: normalizeText(
-              panel.querySelector(
-                '.yanzi-xhs-interest-tab[data-view="space"]'
-              )?.textContent
+            explorationSpaceRemoved: !panel.querySelector(
+              '.yanzi-xhs-interest-tab[data-view="space"]'
             ),
-            spaceSummary: normalizeText(
-              panel.querySelector(".yanzi-xhs-space-summary")?.textContent
-            ),
-            spaceRenderedNodes: panel.querySelectorAll(
-              ".yanzi-xhs-space-node"
-            ).length,
-            spaceLayout: (() => {
-              panel.querySelector(
-                '.yanzi-xhs-interest-tab[data-view="space"]'
-              )?.click();
-              const layout = panel.querySelector(".yanzi-xhs-space-layout");
-              const canvas = panel.querySelector(".yanzi-xhs-space-canvas");
-              const detail = panel.querySelector(".yanzi-xhs-space-detail");
-              const result = {
-                panelWidth: Math.round(panel.getBoundingClientRect().width),
-                canvasHeight: Math.round(canvas?.getBoundingClientRect().height || 0),
-                detailWidth: Math.round(detail?.getBoundingClientRect().width || 0),
-                columns: layout ? getComputedStyle(layout).gridTemplateColumns : "",
-                toolbar: normalizeText(
-                  panel.querySelector(".yanzi-xhs-space-toolbar")?.textContent
-                )
-              };
-              panel.querySelector(
-                '.yanzi-xhs-interest-tab[data-view="history"]'
-              )?.click();
-              return result;
-            })(),
-            spaceBatchSelection: (() => {
-              const previousSelection = readExplorationSelection(panel);
-              const previousNodeId = panel.dataset.spaceNodeId || "";
-              const candidates = explorationVisibleNodes()
-                .filter(node =>
-                  node.type !== "legacy-root" &&
-                  node.type !== "legacy"
-                )
-                .slice(0, 2);
-              if (candidates.length < 2) {
-                return { ok: false, reason: "not_enough_nodes" };
-              }
-              writeExplorationSelection(
-                panel,
-                candidates.map(node => node.id)
-              );
-              panel.dataset.spaceNodeId = "";
-              renderExplorationGraph(panel);
-              const result = {
-                ok: true,
-                selectedCount: candidates.length,
-                detailTitle: normalizeText(
-                  panel.querySelector(".yanzi-xhs-space-detail-title")?.textContent
-                ),
-                actionCount: panel.querySelectorAll(
-                  ".yanzi-xhs-space-detail .yanzi-xhs-space-actions button"
-                ).length,
-                highlightedCount: panel.querySelectorAll(
-                  '.yanzi-xhs-space-node[data-multi-selected="1"]'
-                ).length
-              };
-              writeExplorationSelection(panel, previousSelection);
-              panel.dataset.spaceNodeId = previousNodeId;
-              renderExplorationGraph(panel);
-              return result;
-            })(),
             promptTabText: normalizeText(
               panel.querySelector(
                 '.yanzi-xhs-interest-tab[data-view="prompt"]'
@@ -7031,7 +7070,6 @@
               return {
                 recentCount: context.recent.length,
                 coverageCount: context.coverage.length,
-                frontierCount: context.frontier.length,
                 likedCount: context.liked.length,
                 dislikedCount: context.disliked.length,
                 evaluationCount: context.evaluations.length,
@@ -7050,9 +7088,9 @@
               filter: button.dataset.filter || "",
               active: button.dataset.active === "1"
             })),
-            itemCount: panel.querySelectorAll(
-              ".yanzi-xhs-history-item"
-            ).length,
+            itemCount: historyInitialItemCount,
+            historyExpandedItemCount,
+            historyLoadMoreWorks,
             firstItem: (() => {
               const item = panel.querySelector(".yanzi-xhs-history-item");
               return item ? {
@@ -7086,9 +7124,13 @@
           };
         } finally {
           panel.dataset.historyFilter = previousFilter;
+          panel.dataset.historyLimit = previousHistoryLimit;
+          const restoreView = ["topics", "history", "prompt"].includes(previousView)
+            ? previousView
+            : "topics";
           panel.querySelector(
             '.yanzi-xhs-interest-tab[data-view="' +
-            previousView +
+            restoreView +
             '"]'
           )?.click();
           panel.hidden = wasHidden;
@@ -7461,12 +7503,13 @@
         localTestRealNotesPerCard: LOCAL_TEST_REAL_NOTES_PER_CARD,
         localFeedLoaded,
         localFeedDedupMemory: (localFeedState.dedupMemory || []).length,
-        localFeedExplorationNodes: (localFeedState.exploration?.nodes || []).length,
-        localFeedExplorationFrontier: localFeedExplorationFrontier().length,
-        localFeedExplorationContinue: (localFeedState.exploration?.nodes || [])
-          .filter(node => node.status === "continue").length,
-        localFeedExplorationStopped: (localFeedState.exploration?.nodes || [])
-          .filter(node => node.status === "stop").length,
+        explorationSpaceRemoved: !document.querySelector(
+          '.yanzi-xhs-interest-tab[data-view="space"]'
+        ),
+        localFeedHistoryTotal: localFeedHistoryItems().length,
+        localFeedHistoryRendered: document.querySelectorAll(
+          ".yanzi-xhs-history-item"
+        ).length,
         localFeedReady: localFeedState.notes.filter(note => note.state === "ready").length,
         localFeedAssigned: localFeedState.notes.filter(note => note.state === "assigned" && !note.seenAt).length,
         localFeedActiveAssignments: getActiveLocalFeedAssignmentIds().size,
@@ -7489,6 +7532,7 @@
         localFeedDislikes: localFeedState.feedback.filter(item => item.value === "dislike").length,
         localFeedBatchSize: LOCAL_FEED_BATCH_SIZE,
         localFeedInterests: (localFeedState.preferences?.interests || []).slice(),
+        localFeedGenerationEnabled: isLocalFeedGenerationEnabled(),
         localFeedEvaluationsPending: (localFeedState.evaluations || [])
           .filter(item => item.kind !== "chat" && !item.usedAt)
           .map(item => ({
@@ -7583,6 +7627,10 @@
 
     localFeedState = incoming;
     localFeedLoaded = true;
+    if (!isLocalFeedGenerationEnabled()) {
+      clearTimeout(localFeedRetryTimer);
+      localFeedRetryTimer = null;
+    }
     renderInterestPanel();
     updateInterestNavButton();
     scheduleFilter(document);

@@ -1,13 +1,14 @@
 param([switch]$KeepArtifacts)
 
 $ErrorActionPreference = 'Stop'
-$sourceDirectory = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\tools\idle-chatgpt-tasks'))
+$sourceDirectory = Join-Path $env:LOCALAPPDATA 'OpenQuickHost\Extensions\idle-chatgpt-tasks'
 $settings = Get-Content -LiteralPath (Join-Path $env:LOCALAPPDATA 'OpenQuickHost\appsettings.local.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $apiBase = 'http://127.0.0.1:' + $settings.AgentApiPort
 $headers = @{ 'X-Yanzi-Token' = $settings.AgentApiToken }
 $extensionsRoot = Join-Path $env:LOCALAPPDATA 'OpenQuickHost\Extensions'
 $storageRoot = Join-Path $env:LOCALAPPDATA 'OpenQuickHost\ExtensionStorage'
 $fixtureId = 'idle-task-capability-test-' + [Guid]::NewGuid().ToString('N').Substring(0, 10)
+$capabilityName = 'idle.tasks.fixture.' + $fixtureId.Substring($fixtureId.Length - 10)
 $fixtureDirectory = Join-Path $extensionsRoot $fixtureId
 $fixtureStorage = Join-Path $storageRoot $fixtureId
 $checks = New-Object 'System.Collections.Generic.List[string]'
@@ -22,14 +23,14 @@ function Get-CapabilityList {
 }
 function Wait-Capability([bool]$exists) {
     for ($attempt = 0; $attempt -lt 100; $attempt++) {
-        $found = @((Get-CapabilityList).capabilities | Where-Object { $_.name -eq 'idle.tasks.list' }).Count -gt 0
+        $found = @((Get-CapabilityList).capabilities | Where-Object { $_.name -eq $capabilityName }).Count -gt 0
         if ($found -eq $exists) { return }
         Start-Sleep -Milliseconds 150
     }
     throw ('Capability availability timeout. expected=' + $exists)
 }
 function Invoke-Capability($payload) {
-    $body = @{ name = 'idle.tasks.list'; payload = $payload } | ConvertTo-Json -Depth 20 -Compress
+    $body = @{ name = $capabilityName; payload = $payload } | ConvertTo-Json -Depth 20 -Compress
     $response = Invoke-RestMethod -Uri ($apiBase + '/v1/capabilities/invoke') -Method Post -Headers $headers -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($body)) -TimeoutSec 10
     if (-not $response.success) { throw ('idle.tasks.list failed: ' + $response.error) }
     return $response.data
@@ -38,10 +39,14 @@ function Invoke-Capability($payload) {
 try {
     New-Item -ItemType Directory -Path $fixtureDirectory -Force | Out-Null
     New-Item -ItemType Directory -Path $fixtureStorage -Force | Out-Null
-    Copy-Item -LiteralPath (Join-Path $sourceDirectory 'IdleTaskApp.cs') -Destination $fixtureDirectory
+    # Give each fixture its own capability name; the real idle task service is already registered.
+    $sourceText = [IO.File]::ReadAllText((Join-Path $sourceDirectory 'IdleTaskApp.cs'), [Text.Encoding]::UTF8)
+    $sourceText = $sourceText.Replace('"idle.tasks.list"', ('"' + $capabilityName + '"'))
+    [IO.File]::WriteAllText((Join-Path $fixtureDirectory 'IdleTaskApp.cs'), $sourceText, (New-Object Text.UTF8Encoding($false)))
 
     $manifest = Get-Content -LiteralPath (Join-Path $sourceDirectory 'manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     $manifest.id = $fixtureId
+    foreach ($provided in $manifest.provides) { if ($provided.name -eq 'idle.tasks.list') { $provided.name = $capabilityName } }
     $manifest.name = 'Idle task capability verification fixture'
     $manifest.startup = $null
     $manifest.isPublished = $false
@@ -55,7 +60,7 @@ try {
     [IO.File]::WriteAllText((Join-Path $fixtureStorage 'tasks.json'), ($tasks | ConvertTo-Json -Depth 20), (New-Object Text.UTF8Encoding($false)))
 
     $dormant = Invoke-RestMethod -Uri ($apiBase + '/v1/extensions/' + $fixtureId + '/capabilities') -Headers $headers -TimeoutSec 8
-    $declared = @($dormant.capabilities | Where-Object { $_.name -eq 'idle.tasks.list' })[0]
+    $declared = @($dormant.capabilities | Where-Object { $_.name -eq $capabilityName })[0]
     Assert-Check ($null -ne $declared -and -not $declared.available -and $declared.onDemand) 'manifest discovery exposes dormant capability'
 
     $runBody = @{ input=''; launchSource='app-startup' } | ConvertTo-Json -Compress
@@ -65,7 +70,7 @@ try {
     Wait-Capability $true
 
     $active = Invoke-RestMethod -Uri ($apiBase + '/v1/extensions/' + $fixtureId + '/capabilities') -Headers $headers -TimeoutSec 8
-    $registered = @($active.capabilities | Where-Object { $_.name -eq 'idle.tasks.list' })[0]
+    $registered = @($active.capabilities | Where-Object { $_.name -eq $capabilityName })[0]
     Assert-Check ($registered.available -and $registered.providerExtensionId -eq $fixtureId) 'runtime registration binds capability to extension'
 
     $errors = Invoke-Capability @{ status='error'; limit=10 }
@@ -76,14 +81,14 @@ try {
     Assert-Check ($extensions.count -eq 1 -and $extensions.items[0].resultPreview -eq 'synthetic capability result') 'kind filter returns execution feedback'
 
     $calls = (Invoke-RestMethod -Uri ($apiBase + '/v1/capabilities/calls') -Headers $headers -TimeoutSec 8).calls
-    Assert-Check (@($calls | Where-Object { $_.capability -eq 'idle.tasks.list' -and $_.provider -eq $fixtureId -and $_.success }).Count -ge 2) 'call log records successful provider feedback'
+    Assert-Check (@($calls | Where-Object { $_.capability -eq $capabilityName -and $_.provider -eq $fixtureId -and $_.success }).Count -ge 2) 'call log records successful provider feedback'
 
     Invoke-RestMethod -Uri ($apiBase + '/v1/extensions/' + $fixtureId + '/stop') -Method Post -Headers $headers -ContentType 'application/json' -Body '{}' -TimeoutSec 20 | Out-Null
     $started = $false
     Wait-Capability $false
 
     $stopped = Invoke-RestMethod -Uri ($apiBase + '/v1/extensions/' + $fixtureId + '/capabilities') -Headers $headers -TimeoutSec 8
-    $declarationAfterStop = @($stopped.capabilities | Where-Object { $_.name -eq 'idle.tasks.list' })[0]
+    $declarationAfterStop = @($stopped.capabilities | Where-Object { $_.name -eq $capabilityName })[0]
     Assert-Check ($null -ne $declarationAfterStop -and -not $declarationAfterStop.available -and $declarationAfterStop.onDemand) 'stop unregisters runtime while preserving discoverable declaration'
 
     Write-Output ('Idle task capability verification PASSED: ' + $checks.Count + ' checks.')

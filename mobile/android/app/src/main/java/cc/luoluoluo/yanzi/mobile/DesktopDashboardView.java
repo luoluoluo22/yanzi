@@ -35,6 +35,33 @@ final class DesktopDashboardView {
         void select(int index) {
             for (int i = 0; i < actions.length; i++) {if(actions[i]!=null)actions[i].setActive(i == index);};
         }
+        void conversation(String name, Runnable choose) {
+            ActionRef chat=actions[0];
+            chat.label.setText(name);
+            chat.label.setSingleLine(true);
+            chat.label.setMaxWidth(YanziUiKit.dp(chat.root.getContext(),90));
+            chat.label.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            chat.root.setContentDescription("聊天对象："+name);
+            if (name.contains("反重力")) {
+                chat.icon.setImageDrawable(YanziUiKit.getAntigravityLogo(chat.root.getContext()));
+                chat.icon.setColorFilter(null);
+            } else {
+                android.graphics.Path path = MobileIconLibrary.resolveOrDefault("chat");
+                chat.icon.setImageDrawable(new PathDrawable(path, chat.accent));
+            }
+            if(chat.icon.getParent()==chat.root) {
+                chat.root.removeView(chat.icon);
+                LinearLayout icons=new LinearLayout(chat.root.getContext());
+                icons.setGravity(Gravity.CENTER);
+                icons.addView(chat.icon,new LinearLayout.LayoutParams(YanziUiKit.dp(chat.root.getContext(),32),YanziUiKit.dp(chat.root.getContext(),32)));
+                TextView arrow=YanziUiKit.text(chat.root.getContext(),"⌄",18,YanziUiKit.BLUE,true);
+                arrow.setGravity(Gravity.CENTER); arrow.setContentDescription("切换聊天对象");
+                arrow.setOnClickListener(v->choose.run());
+                icons.addView(arrow,new LinearLayout.LayoutParams(YanziUiKit.dp(chat.root.getContext(),40),YanziUiKit.dp(chat.root.getContext(),44)));
+                chat.root.addView(icons,0);
+            }
+            chat.root.setOnLongClickListener(v->{choose.run();return true;});
+        }
     }
 
     private DesktopDashboardView() {}
@@ -55,11 +82,13 @@ final class DesktopDashboardView {
         ActionRef appAction = flatAction(a, "apps", YanziUiKit.PURPLE, "小程序", apps);
         ActionRef fileAction = flatAction(a, "folder-outline", YanziUiKit.ORANGE, "文件", files);
         ActionRef shellAction = flatAction(a, "console", YanziUiKit.GREEN, "终端", shell);
+        ActionRef remoteAction = flatAction(a, "monitor", YanziUiKit.BLUE, "远控", () -> a.startActivity(new android.content.Intent(a, RemoteDesktopActivity.class)));
 
         tools.addView(chatAction.root, weighted());
         tools.addView(appAction.root, weighted());
         tools.addView(fileAction.root, weighted());
         tools.addView(shellAction.root, weighted());
+        tools.addView(remoteAction.root, weighted());
 
         LinearLayout.LayoutParams toolsLp = new LinearLayout.LayoutParams(-1, -2);
         toolsLp.bottomMargin = YanziUiKit.dp(a, 10);

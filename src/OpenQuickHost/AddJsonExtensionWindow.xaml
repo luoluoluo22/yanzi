@@ -1241,15 +1241,15 @@
                                             </Grid.ColumnDefinitions>
                                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                                 <Path Data="{local:IconGeometry lightbulb-on-outline}" Width="{DynamicResource FontSizeSmallPlus}" Height="{DynamicResource FontSizeSmallPlus}" Stretch="Uniform" VerticalAlignment="Center"  Fill="{DynamicResource BrushTextMain}"/>
-                                                <TextBlock Text="未检测到燕子浏览器助手" Margin="6,0,0,0" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                                <TextBlock x:Name="BrowserExtensionGuideTitle" Text="尚未安装燕子浏览器助手" Margin="6,0,0,0" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" VerticalAlignment="Center" />
                                             </StackPanel>
                                             <Button Grid.Column="1" Content="✕" Style="{DynamicResource GhostButtonStyle}" Width="20" Height="20" Padding="0" FontSize="{DynamicResource FontSizeTiny}" ToolTip="暂时忽略" Click="DismissExtensionGuide_Click" />
                                         </Grid>
-                                        <TextBlock Grid.Row="1" Text="加载插件后，燕子可 1 秒自动唤起 DeepSeek 生成并回传代码，无需手动复制粘贴。"
+                                        <TextBlock x:Name="BrowserExtensionGuideDescription" Grid.Row="1" Text="扩展安装状态检测中…"
                                                    Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,8" TextWrapping="Wrap" />
                                         <StackPanel Grid.Row="2" Orientation="Horizontal">
-                                            <Button Content="⚡ 5秒快速加载 (软件已内置)" Style="{DynamicResource PrimaryButtonStyle}" Height="26" Padding="10,0" FontSize="{DynamicResource FontSizeSmall}" Click="QuickInstallBrowserExtension_Click" />
-                                            <Button Content="📖 安装指引" Style="{DynamicResource GhostButtonStyle}" Height="26" Padding="8,0" FontSize="{DynamicResource FontSizeSmall}" Margin="6,0,0,0" Click="OpenExtensionTutorial_Click" />
+                                            <Button x:Name="BrowserExtensionSetupButton" Content="安装浏览器助手" Style="{DynamicResource PrimaryButtonStyle}" Height="26" Padding="10,0" FontSize="{DynamicResource FontSizeSmall}" Click="QuickInstallBrowserExtension_Click" />
+                                            <Button Content="重新检测" Style="{DynamicResource GhostButtonStyle}" Height="26" Padding="8,0" FontSize="{DynamicResource FontSizeSmall}" Margin="6,0,0,0" Click="OpenExtensionTutorial_Click" />
                                         </StackPanel>
                                     </Grid>
                                 </Border>

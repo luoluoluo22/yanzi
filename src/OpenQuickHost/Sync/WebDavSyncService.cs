@@ -1564,6 +1564,7 @@ public sealed class WebDavSyncService
             var changed = false;
             if (Directory.Exists(localDirectory))
             {
+                ExtensionGitSafety.GuardDeletion(localDirectory, "删除/清除");
                 Directory.Delete(localDirectory, recursive: true);
                 changed = true;
             }
@@ -1580,6 +1581,7 @@ public sealed class WebDavSyncService
         {
             if (Directory.Exists(localDirectory))
             {
+                ExtensionGitSafety.GuardDeletion(localDirectory, "删除/清除");
                 Directory.Delete(localDirectory, recursive: true);
                 return true;
             }

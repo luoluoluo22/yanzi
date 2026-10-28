@@ -30,7 +30,7 @@
 
     $deployArgs = @{
       ExtensionId = 'idle-chatgpt-tasks'
-      SourceDirectory = 'F:\Desktop\kaifa\OpenQuickHost\tools\idle-chatgpt-tasks'
+      SourceDirectory = (Join-Path $env:LOCALAPPDATA 'OpenQuickHost\Extensions\idle-chatgpt-tasks')
       Files = @('manifest.json', 'IdleTaskApp.cs')
       VerificationScript = 'F:\Desktop\kaifa\OpenQuickHost\scripts\test-idle-task-list-capability.ps1'
     }

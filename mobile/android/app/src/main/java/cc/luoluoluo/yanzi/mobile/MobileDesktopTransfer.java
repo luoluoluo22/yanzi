@@ -73,27 +73,36 @@ final class MobileDesktopTransfer {
     }
     static String sendBytes(Context context, String cloudBase, String cloudToken, String source,
                             String kind, String name, String mime, byte[] bytes, String text) throws Exception {
+        return sendBytes(context,cloudBase,cloudToken,source,kind,name,mime,bytes,text,ChatConversation.group());
+    }
+    static String sendBytes(Context context, String cloudBase, String cloudToken, String source,
+                            String kind, String name, String mime, byte[] bytes, String text, ChatConversation recipient) throws Exception {
         if (bytes.length == 0 || bytes.length > MobileAttachmentClient.LIMIT) throw new IOException("文件大小需为 1 字节至 30 MB");
         File file = File.createTempFile("desktop-transfer-", ".tmp", context.getCacheDir());
         try {
             try (OutputStream output = new FileOutputStream(file)) { output.write(bytes); }
-            return sendFile(context, cloudBase, cloudToken, source, kind, name, mime, file, text);
+            return sendFile(context, cloudBase, cloudToken, source, kind, name, mime, file, text,recipient);
         } finally { file.delete(); }
     }
 
     static String sendFile(Context context, String cloudBase, String cloudToken, String source,
                            String kind, String name, String mime, File file, String text) throws Exception {
+        return sendFile(context,cloudBase,cloudToken,source,kind,name,mime,file,text,ChatConversation.group());
+    }
+    static String sendFile(Context context, String cloudBase, String cloudToken, String source,
+                           String kind, String name, String mime, File file, String text, ChatConversation recipient) throws Exception {
+        if(recipient.agent) throw new IOException("反重力当前支持文字消息。");
         if (file.length() == 0 || file.length() > MobileAttachmentClient.LIMIT) throw new IOException("文件大小需为 1 字节至 30 MB");
         String id = UUID.randomUUID().toString().replace("-", "");
         String hash = MobileAttachmentClient.hash(file);
-        JSONObject envelope = new JSONObject().put("sourceDeviceId", source).put("targetPlatform", "desktop").put("routing", "account-chat")
-            .put("kind", kind).put("title", kind.equals("photo") ? "手机照片" : name).put("text", text).put("clientMessageId", id)
-            .put("payload", new JSONObject().put("clientTransferId", id).put("sourceDeviceName", MainActivity.buildDeviceDisplayName()));
+        JSONObject envelope = recipient.envelope(source,MainActivity.buildDeviceDisplayName(),text)
+            .put("kind",kind).put("clientMessageId",id);
+        envelope.getJSONObject("payload").put("clientTransferId",id);
         File queued = MobileMessageOutbox.saveAttachment(cloudBase, cloudToken, envelope, file, name, mime);
         if (queued != null) { file = new File(queued.getParentFile(), envelope.getJSONObject("localAttachment").getString("file")); hash = MobileAttachmentClient.hash(file); }
         String lanMessageId = null;
         long start = System.currentTimeMillis();
-        String lan = LanDiscoveryManager.getLanBaseUrl(context);
+        String lan = recipient.id.equals(ChatConversation.GROUP) ? LanDiscoveryManager.getLanBaseUrl(context) : null;
         if (lan != null) {
             HttpURLConnection connection = null;
             try {

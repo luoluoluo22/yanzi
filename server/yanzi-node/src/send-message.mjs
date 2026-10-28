@@ -40,7 +40,7 @@ try {
     targetDeviceId,
     targetPlatform: 'android',
     clientMessageId,
-    payload: {source: 'server', purpose: 'notification'}
+    payload: {source: 'server', purpose: 'notification', conversationId: 'group', accountChat: true}
   });
   if (sent.state !== 'accepted' || !sent.messageId) throw new Error('cloud_send_' + (sent.errorCode || sent.state));
   const status = await client.request('/v1/me/mobile/messages/' + encodeURIComponent(sent.messageId));

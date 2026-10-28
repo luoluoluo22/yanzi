@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -772,8 +772,7 @@ public partial class MainWindow
     /// </summary>
     public void NotifyScheduleChanged(string extensionId, string? schedule)
     {
-        if (HostRuntimeProfile.IsShell) RuntimeConnection.Queue("scheduler.refresh", new { id = extensionId, schedule });
-        else _extensionScheduler?.RefreshExtension(extensionId, schedule);
+        _extensionScheduler?.RefreshExtension(extensionId, schedule);
     }
 
     public void EnsureStandbyRadialMenu()
@@ -1579,7 +1578,7 @@ public partial class MainWindow
 
     public void PauseListenerServices()
     {
-        if (HostRuntimeProfile.IsShell) { _listenerServicesPaused = true; RuntimeConnection.Queue("listeners.pause"); return; }
+        // Listeners are owned in-process by Yanzi.exe.
         _listenerServicesPaused = true;
         StopMousePanelService();
         KeyboardDoubleTapService.Stop();
@@ -1597,7 +1596,7 @@ public partial class MainWindow
 
     public void ResumeListenerServices()
     {
-        if (HostRuntimeProfile.IsShell) { _listenerServicesPaused = false; RuntimeConnection.Queue("listeners.resume"); return; }
+        // Listeners are owned in-process by Yanzi.exe.
         _listenerServicesPaused = false;
         InputHookService.ReloadSettings();
         StartMousePanelService();
@@ -1869,7 +1868,8 @@ public partial class MainWindow
             CapsGuidePopup.IsOpen = false;
         }
 
-        if (_isPinned || !IsVisible || IsRadialPickerMode)
+        // AI chat remains visible while the clipboard popup takes focus.
+        if (_isPinned || IsAiChatMode || !IsVisible || IsRadialPickerMode)
         {
             return;
         }
@@ -3142,7 +3142,7 @@ public partial class MainWindow
             CommandList.SelectedItem = SelectedCommand;
             LastRunMessage = $"已从回收站恢复{BrandTerms.Current.MiniApp}：{command.Title}";
             SyncStatus = $"已恢复{BrandTerms.Current.MiniApp}：{command.Title}";
-            QueuePrivateExtensionUpsertToAccount(command.ExtensionId);
+            QueuePrivateExtensionUpsertToAccount(command.ExtensionId, allowRestore: true);
             QueueBackgroundWebDavSync("extension-restore-settings");
             return Task.FromResult((true, $"已恢复{BrandTerms.Current.MiniApp}：{command.Title}"));
         }

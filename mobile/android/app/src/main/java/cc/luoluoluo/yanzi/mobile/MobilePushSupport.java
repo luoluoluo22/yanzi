@@ -18,6 +18,7 @@ public final class MobilePushSupport {
     public static void registerToken(Context context, String provider, String token) {
         if (!("fcm".equals(provider) || "webhook".equals(provider)) || token == null || token.length() > 512) return;
         context.getSharedPreferences("yanzi-mobile", Context.MODE_PRIVATE).edit().putString("pushProvider", provider).putString("pushToken", token).apply();
+        Log.i("YanziPush", "push token saved provider=" + provider + " length=" + token.length());
         DeviceHeartbeatService.startIfLoggedIn(context);
     }
     public static synchronized void receive(Context context, String messageId) {

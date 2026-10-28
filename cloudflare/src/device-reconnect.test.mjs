@@ -42,3 +42,23 @@ test('device grant and other accounts cannot restore a removed registration', as
     assert.equal(f.written(), null);
   }
 });
+
+
+test('registration UPSERT throttles unchanged heartbeat without suppressing changed device metadata', async () => {
+  let sql = '';
+  const api = createDeviceApi({
+    HttpError, requireAuth: async () => ({ userId: 'account-a', grant: null }),
+    readJson: async () => ({ deviceId: 'd', platform: 'desktop', displayName: 'PC', capabilities: {} }),
+    ensureUser: async () => {}, normalizeDevicePayload: x => x,
+    parseJsonObject: x => JSON.parse(x || '{}'), deviceNetworkLocation: () => null,
+    isoNow: () => '2026-10-14T06:00:00.000Z', json: x => x,
+  });
+  const env = { DB: { prepare: query => {
+    if (query.toLowerCase().includes('insert into user_devices')) sql = query;
+    return { bind: () => ({ first: async () => null, run: async () => ({}) }) };
+  } } };
+  await api.handleDeviceApi(new Request('https://example.test/v1/me/devices', { method: 'POST' }), env, {});
+  assert.match(sql, /where user_devices\.platform <> excluded\.platform/);
+  assert.match(sql, /json_patch\(user_devices\.capabilities_json, excluded\.capabilities_json\) <> user_devices\.capabilities_json/);
+  assert.match(sql, /'-60 seconds'/);
+});

@@ -35,6 +35,8 @@ final class MobileApiTransport {
                 connection.setRequestProperty("User-Agent", "YanziClient-Mobile/" + BuildConfig.VERSION_NAME);
                 connection.setRequestProperty("X-Yanzi-Client", "mobile");
                 connection.setRequestProperty("X-Yanzi-Client-Version", BuildConfig.VERSION_NAME);
+                if (MobileApplicationContext.get() != null)
+                    connection.setRequestProperty("X-Yanzi-Device-Id", MobileDeviceIdentity.stableDeviceId(MobileApplicationContext.get()));
                 connection.setRequestProperty("Accept", "application/json");
                 if (payload != null) {
                     connection.setDoOutput(true);

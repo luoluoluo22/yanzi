@@ -32,6 +32,7 @@ public partial class SettingsWindow
     private async Task RefreshNestAsync()
     {
         if (_nestBusy || _nestDeviceMutation || !IsVisible || !IsYanwoSelected) return;
+        if (NestDeviceList.IsKeyboardFocusWithin && System.Windows.Input.Keyboard.FocusedElement is System.Windows.Controls.TextBox) return;
         _nestBusy = true;
         NestDeviceRefreshButton.IsEnabled = false;
         NestDeviceBatchButton.IsEnabled = false;
@@ -286,6 +287,29 @@ public partial class SettingsWindow
         await RefreshNestAsync();
     }
 
+    private async void NestDeviceRemark_Click(object sender, RoutedEventArgs e)
+    {
+        if (_nestDeviceMutation || sender is not System.Windows.Controls.Button { Tag: NestDeviceRow row }) return;
+        if (row.AccountId != SyncSessionStore.Load()?.UserId || _nestCloud == null) return;
+        var cloud = _nestCloud;
+        _nestDeviceMutation = true;
+        NestDeviceList.IsEnabled = false;
+        var saved = false;
+        try
+        {
+            await cloud.SetPeerDeviceRemarkAsync(row.DeviceId, row.RemarkDraft);
+            saved = true;
+            if (row.AccountId == SyncSessionStore.Load()?.UserId)
+                NestDeviceActionStatus.Text = "备注已同步到账号，其他设备刷新后可见。";
+        }
+        catch (Exception error)
+        {
+            if (row.AccountId == SyncSessionStore.Load()?.UserId) NestDeviceActionStatus.Text = "备注保存失败：" + error.Message;
+        }
+        finally { _nestDeviceMutation = false; NestDeviceList.IsEnabled = true; }
+        if (saved) await RefreshNestAsync();
+    }
+
     private async void NestDeviceAction_Click(object sender, RoutedEventArgs e)
     {
         if (_nestDeviceMutation || sender is not System.Windows.Controls.Button { Tag: NestDeviceRow row }) return;
@@ -331,6 +355,7 @@ public partial class SettingsWindow
         public string AccountId { get; }
         public bool IsCurrent { get; }
         public string Name { get; }
+        public string RemarkDraft { get; set; } = "";
         public string Status { get; }
         public System.Windows.Media.Brush StatusBrush { get; }
         public string Detail { get; }
@@ -339,11 +364,12 @@ public partial class SettingsWindow
         {
             DeviceId = device.DeviceId; AccountId = account; IsCurrent = current;
             Online = device.Online;
+            RemarkDraft = device.Remark ?? "";
             Name = (string.IsNullOrWhiteSpace(device.DisplayName) ? "未命名设备" : device.DisplayName) + (current ? " · 本机" : "") + (sameNameCount > 1 ? $" · 同名登记 {sameNameCount} 条" : "");
             var platform = device.Platform switch { "desktop" => "电脑", "android" => "Android 手机", "ios" => "iPhone / iPad", "web" => "浏览器", _ => device.Platform };
             Status = $"{(device.Online ? "在线" : "离线")} · {platform}";
             StatusBrush = new SolidColorBrush(device.Online ? Colors.LimeGreen : Colors.Gray);
-            Detail = $"最近活动：{FormatTime(device.LastSeenAt)} · 首次登记：{FormatTime(device.CreatedAt)}\n网络地区：{(string.IsNullOrWhiteSpace(device.LastLocation) ? "未记录" : device.LastLocation)} · 标识：{DeviceId[Math.Max(0, DeviceId.Length - 8)..]}";
+            Detail = $"型号 / 主机名：{device.ModelName ?? device.DisplayName}\n最近活动：{FormatTime(device.LastSeenAt)} · 首次登记：{FormatTime(device.CreatedAt)}\n网络地区：{(string.IsNullOrWhiteSpace(device.LastLocation) ? "未记录" : device.LastLocation)} · 标识：{DeviceId[Math.Max(0, DeviceId.Length - 8)..]}";
         }
         private static string FormatTime(string? value) => DateTimeOffset.TryParse(value, out var time) ? time.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : "未记录";
     }

@@ -1752,6 +1752,7 @@ public sealed record AccountSyncObjectStatusItem(
     bool HistoryAvailable)
 {
     public string ConflictSummary { get; init; } = "";
+    public IReadOnlyList<SyncFieldDifference> Differences { get; init; } = [];
 }
 
 public sealed class PersonalConfigRestorePointItem
@@ -1780,47 +1781,60 @@ public sealed class PersonalConfigRestorePointItem
 
 public sealed class ExtensionSyncConflictItem
 {
-    public ExtensionSyncConflictItem(ExtensionSyncConflictRecord record)
+    public ExtensionSyncConflictItem(ExtensionSyncConflictRecord record,
+        string displayName, ImageSource? iconSource, Geometry? vectorIcon)
     {
         ExtensionId = record.ExtensionId;
-        LocalText = record.LocalPurged
-            ? $"本机：彻底删除"
-            : record.LocalDeleted
-                ? $"本机：删除"
-                : $"本机：v{record.LocalVersion}";
-        RemoteText = record.RemotePurged
-            ? $"云端：彻底删除"
-            : record.RemoteDeleted
-                ? $"云端：删除"
-                : $"云端：v{record.RemoteVersion}";
+        DisplayName = displayName;
+        IconSource = iconSource;
+        VectorIcon = vectorIcon;
+        LocalText = record.LocalPurged ? "彻底删除" : record.LocalDeleted ? "已删除" : $"v{record.LocalVersion}";
+        RemoteText = record.RemotePurged ? "彻底删除" : record.RemoteDeleted ? "已删除" : $"v{record.RemoteVersion}";
         RemoteDeviceText = !string.IsNullOrWhiteSpace(record.RemoteDeviceName)
             ? record.RemoteDeviceName!
             : !string.IsNullOrWhiteSpace(record.RemoteDeviceId) ? record.RemoteDeviceId! : "未知设备";
         DetectedAtText = DateTimeOffset.TryParse(record.DetectedAtUtc, out var detectedAt)
             ? detectedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture)
             : record.DetectedAtUtc;
+        Differences =
+        [
+            new SyncFieldDifference("小程序版本", LocalText, RemoteText),
+            new SyncFieldDifference("同步版本", record.LocalRevision.ToString(CultureInfo.InvariantCulture),
+                record.RemoteRevision.ToString(CultureInfo.InvariantCulture))
+        ];
+        Detail = "云端包文件尚未下载，不能逐文件比较；选择前请确认版本和来源设备。";
     }
 
-    public string ExtensionId { get; set; }
-    public string LocalText { get; set; }
-    public string RemoteText { get; set; }
-    public string RemoteDeviceText { get; set; }
-    public string DetectedAtText { get; set; }
+    public string ExtensionId { get; }
+    public string DisplayName { get; }
+    public ImageSource? IconSource { get; }
+    public Geometry? VectorIcon { get; }
+    public bool HasImageIcon => IconSource != null;
+    public bool HasVectorIcon => IconSource == null && VectorIcon != null;
+    public string LocalText { get; }
+    public string RemoteText { get; }
+    public string RemoteDeviceText { get; }
+    public string DetectedAtText { get; }
+    public string Detail { get; }
+    public IReadOnlyList<SyncFieldDifference> Differences { get; }
 }
 
 public sealed class ExtensionDataConflictItem
 {
-    public ExtensionDataConflictItem(ExtensionDataSyncState state)
+    public ExtensionDataConflictItem(ExtensionDataSyncState state,
+        string displayName, ImageSource? iconSource, Geometry? vectorIcon)
     {
         ExtensionId = state.ExtensionId;
         Key = state.Key;
+        DisplayName = displayName;
+        IconSource = iconSource;
+        VectorIcon = vectorIcon;
         var conflict = state.Conflict ?? new ExtensionDataConflict();
-        LocalText = conflict.LocalDeleted
-            ? "本机：已删除"
-            : "本机：待同步的内容已保留";
-        RemoteText = conflict.Remote.Deleted
-            ? "云端：已删除"
-            : "云端：有另一份修改";
+        LocalText = conflict.LocalDeleted ? "已删除" : "本机修改";
+        RemoteText = conflict.Remote.Deleted ? "已删除" : "云端修改";
+        Differences = SyncUserText.ContentDifferences(
+            conflict.LocalContent, conflict.Remote.Content,
+            conflict.LocalDeleted, conflict.Remote.Deleted);
         RemoteDeviceText = !string.IsNullOrWhiteSpace(conflict.Remote.UpdatedByDeviceName)
             ? conflict.Remote.UpdatedByDeviceName
             : !string.IsNullOrWhiteSpace(conflict.Remote.UpdatedByDeviceId)
@@ -1831,16 +1845,22 @@ public sealed class ExtensionDataConflictItem
             : conflict.DetectedAtUtc;
     }
 
-    public string ExtensionId { get; set; }
-    public string Key { get; set; }
-    public string DisplayId => $"{ExtensionId} / {Key}";
-    public string LocalText { get; set; }
-    public string RemoteText { get; set; }
-    public string RemoteDeviceText { get; set; }
-    public string DetectedAtText { get; set; }
-
-    private static string ShortHash(string? value) =>
-        string.IsNullOrWhiteSpace(value) ? "无 hash" : value.Length <= 10 ? value : value[..10];
+    public string ExtensionId { get; }
+    public string Key { get; }
+    public string DisplayName { get; }
+    public string DisplayId => $"{DisplayName} · {FriendlyKey}";
+    public string FriendlyKey => Key.Equals("favorites-v2.json", StringComparison.OrdinalIgnoreCase)
+        ? "收藏内容" : Key.Equals("favorites-v3.json", StringComparison.OrdinalIgnoreCase)
+            ? "收藏同步记录" : Key.Replace("/", " › ");
+    public ImageSource? IconSource { get; }
+    public Geometry? VectorIcon { get; }
+    public bool HasImageIcon => IconSource != null;
+    public bool HasVectorIcon => IconSource == null && VectorIcon != null;
+    public string LocalText { get; }
+    public string RemoteText { get; }
+    public string RemoteDeviceText { get; }
+    public string DetectedAtText { get; }
+    public IReadOnlyList<SyncFieldDifference> Differences { get; }
 }
 
 public sealed class PersonalSyncCommitItem : INotifyPropertyChanged

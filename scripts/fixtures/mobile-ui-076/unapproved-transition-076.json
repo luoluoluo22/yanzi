@@ -1,0 +1,6 @@
+[
+  {
+    "action": "openApp",
+    "packageName": "com.android.settings"
+  }
+]

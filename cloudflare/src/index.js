@@ -1,4 +1,6 @@
+import { meterD1 } from './d1-request-meter.js';
 import { createSyncApi } from './sync-api.js';
+import { findReusablePrivateArchive } from './private-archive-reuse.js';
 import { isCloudServicePath, needsTopLevelCloudAuth, isVipActive, readVipEntitlement, passesLoginRateLimit } from './cloud-access-policy.js';
 import { upgradePageHtml, upgradePageScript } from './upgrade-page.js';
 import { cleanupEnvironment } from './device-environment.js';
@@ -68,6 +70,25 @@ const PUBLIC_STORE_EXTENSION_IDS_SQL = PUBLIC_STORE_EXTENSIONS
 
 // Request-scoped attribution: only authenticated users, never raw identifiers.
 const requestIdentity = new WeakMap();
+const loginAttemptIdentity = new WeakMap();
+const TELEMETRY_ERROR_CODES = new Set(['user_not_found', 'invalid_credentials', 'login_rate_limited',
+  'vip_required', 'unauthorized', 'token_expired', 'device_credential_revoked', 'device_scope_denied',
+  'not_found', 'internal_error', 'export_rate_limited']);
+// Read-only operator correlation against registered random user/device IDs.
+// Never use this for email addresses, passwords, network addresses or login attempts.
+async function identityLookupRef(domain, value) {
+  if (!value) return null;
+  const bytes = new TextEncoder().encode(`yanzi-lookup-${domain}-v1:${value}`);
+  return bytesToHex(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))).slice(0, 24);
+}
+function safeClientVersion(value) {
+  const version = String(value || '').trim().toLowerCase();
+  return /^\d{1,4}(?:\.\d{1,4}){1,3}(?:[-.][a-z0-9]{1,16})?$/.test(version) ? version : 'unknown';
+}
+function safeDeviceClaim(request) {
+  const value = request.headers.get('x-yanzi-device-id') || '';
+  return /^[a-zA-Z0-9_-]{8,100}$/.test(value) ? value : null;
+}
 const cloudVipCache = new Map();
 async function cachedCloudVipRecord(env, userId) {
   const now = Date.now();
@@ -121,24 +142,36 @@ export default {
   async scheduled(event, env, ctx) { ctx.waitUntil(cleanupAttachments(env)); ctx.waitUntil(cleanupExternalAccess(env)); ctx.waitUntil(cleanupEnvironment(env)); },
   async fetch(request, env, ctx) {
     const started = Date.now();
+    const metered = env.DB ? meterD1(env.DB) : null;
+    const requestEnv = metered ? { ...env, DB: metered.db } : env;
     const path = new URL(request.url).pathname;
     // Never log raw path segments: they may contain access tokens or personal data.
     const family = path.startsWith("/v1/") ? path.split("/")[2] : "";
     const route = path === "/health" ? "/health" :
       ["sync", "auth", "devices", "device", "messaging", "messages", "records", "apps", "applications", "me"].includes(family) ? `/v1/${family}` : "/other";
     // Fixed allowlist: never persist untrusted client headers or identifying values.
+    // Bounded endpoint classification for read amplification investigation; no raw URL or query.
+    const endpoint = path === '/v1/me/devices' ? 'devices_list' :
+      path === '/v1/me/mobile/messages' ? 'messages_list' :
+      path === '/v1/me/mobile/messages/events' ? 'messages_events' :
+      path === '/v1/sync/changes' ? 'sync_changes' :
+      path === '/v1/sync/objects' ? 'sync_objects' :
+      path === '/v1/sync/capabilities' ? 'sync_capabilities' :
+      path === '/v1/applications/access-requests' ? 'access_requests' : 'other';
     const rawClient = request.headers.get("x-yanzi-client") || "";
     const client = ["desktop", "server", "android", "mobile", "web"].includes(rawClient) ? rawClient : "unknown";
     let status = 500;
     let category = "server_error";
+    let failureCode = null;
     try {
-      const response = await handleRequest(request, env, ctx);
+      const response = await handleRequest(request, requestEnv, ctx);
       status = response.status;
       category = status >= 500 ? "server_error" : status >= 400 ? "client_error" : "ok";
       return response;
     } catch (error) {
       if (error instanceof HttpError || error instanceof MessagingError) {
         status = error.status;
+        failureCode = TELEMETRY_ERROR_CODES.has(error.code) ? error.code : 'other_handled_error';
         category = "handled_error";
         const rejected = json(
           {
@@ -155,6 +188,7 @@ export default {
         return withCors(rejected);
       }
 
+      failureCode = 'internal_error';
       return withCors(
         json(
           {
@@ -166,11 +200,26 @@ export default {
       );
     } finally {
       // No credentials, query strings, message bodies or device identifiers.
-      if (status >= 400 || Math.random() < 0.01) {
+      const successSampleRate = 0.1; // Keep errors at 100%; bound normal-request telemetry overhead.
+      if (status >= 400 || Math.random() < successSampleRate) {
+        const auth = requestIdentity.get(request);
+        const claimedDevice = safeDeviceClaim(request);
         console.log(JSON.stringify({ event: "yanzi_request", method: request.method,
-          route: route.slice(0, 160), client, status, category, duration_ms: Date.now() - started,
-          user_key: await anonymousKey(env, "user", requestIdentity.get(request)?.userId),
-          device_key: await anonymousKey(env, "device", requestIdentity.get(request)?.deviceId ? `${requestIdentity.get(request).userId}:${requestIdentity.get(request).deviceId}` : null) }));
+          route: route.slice(0, 160), endpoint, client,
+          client_version: safeClientVersion(request.headers.get('x-yanzi-client-version')),
+          status, category, failure_code: failureCode, duration_ms: Date.now() - started,
+          sample_rate: status >= 400 ? 1 : successSampleRate,
+          d1: metered?.usage || null,
+          user_key: await anonymousKey(env, "user", auth?.userId),
+          user_lookup_ref: await identityLookupRef('user', auth?.userId),
+          device_lookup_ref: await identityLookupRef('device', auth?.userId && (auth.deviceId || claimedDevice)
+            ? `${auth.userId}:${auth.deviceId || claimedDevice}` : null),
+          device_lookup_trust: auth?.deviceId ? 'verified' : auth?.userId && claimedDevice ? 'claimed' : null,
+          verified_device_key: await anonymousKey(env, "device", auth?.deviceId && auth?.userId ? `${auth.userId}:${auth.deviceId}` : null),
+          claimed_device_key: await anonymousKey(env, "device-claim", claimedDevice),
+          attempted_account_key: await anonymousKey(env, "login-attempt", loginAttemptIdentity.get(request)),
+          network_key: await anonymousKey(env, 'network-' + new Date().toISOString().slice(0, 10),
+            request.headers.get('cf-connecting-ip')) }));
       }
     }
   }
@@ -410,6 +459,8 @@ async function handleRequest(request, env, ctx) {
   if (url.pathname === "/v1/auth/login" && request.method === "POST") {
     const payload = await readJson(request);
     const email = normalizeEmail(payload.email || payload.username);
+    // Attempted account is NOT an authenticated user; only emit its keyed digest.
+    loginAttemptIdentity.set(request, email);
     await limitLoginBeforeDatabase(request, env, email);
     const password = validatePassword(payload.password);
     const authVersion = payload.authVersion || "";
@@ -1920,23 +1971,31 @@ async function handleRequest(request, env, ctx) {
     }
 
     const revision = currentRevision + 1;
-    const archiveKey = `users/${auth.userId}/extensions/${extensionId}/archive-history/${revision}-${sha256}.zip`;
+    // Reuse immutable bytes within the same account/extension if SHA matches.
+    // D1 history revisions remain independently restorable.
+    const reusableKey = await findReusablePrivateArchive(
+      env, auth.userId, extensionId, sha256, bytes.byteLength
+    );
+    const archiveKey = reusableKey ||
+      `users/${auth.userId}/extensions/${extensionId}/archive-history/${revision}-${sha256}.zip`;
     const now = isoNow();
     const deviceId = String(request.headers.get("x-yanzi-device-id") || "").slice(0, 200);
     const deviceName = String(request.headers.get("x-yanzi-device-name") || "").slice(0, 200);
 
-    await env.PACKAGES.put(archiveKey, bytes, {
-      httpMetadata: {
-        contentType: request.headers.get("content-type") || "application/zip"
-      },
-      customMetadata: {
-        userId: auth.userId,
-        extensionId,
-        version,
-        sha256,
-        private: "true"
-      }
-    });
+    if (!reusableKey) {
+      await env.PACKAGES.put(archiveKey, bytes, {
+        httpMetadata: {
+          contentType: request.headers.get("content-type") || "application/zip"
+        },
+        customMetadata: {
+          userId: auth.userId,
+          extensionId,
+          version,
+          sha256,
+          private: "true"
+        }
+      });
+    }
 
     const results = await env.DB.batch([
       env.DB.prepare(
@@ -1981,7 +2040,8 @@ async function handleRequest(request, env, ctx) {
     ]);
 
     if (Number(results?.[0]?.meta?.changes || 0) === 0) {
-      await env.PACKAGES.delete(archiveKey);
+      // A reused object remains referenced by old revisions.
+      if (!reusableKey) await env.PACKAGES.delete(archiveKey);
       const latest = await env.DB.prepare(
         `select revision from user_extension_archive_heads where user_id = ? and extension_id = ?`
       ).bind(auth.userId, extensionId).first();
@@ -2061,6 +2121,22 @@ async function handleRequest(request, env, ctx) {
     const payload = await readJson(request);
     await ensureUser(env, auth.userId);
 
+    // Deleting an extension is an account-wide tombstone, not just a missing row.
+    // A stale/offline desktop must never re-add it during its next auto-sync.
+    const existingAssociation = await env.DB.prepare(
+      "select enabled, settings_json from user_extensions where user_id = ? and extension_id = ?"
+    ).bind(auth.userId, extensionId).first();
+    let isDeleted = false;
+    try {
+      isDeleted = existingAssociation?.enabled === 0 &&
+        JSON.parse(existingAssociation.settings_json || "{}")._yanziDeleted === true;
+    } catch {
+      isDeleted = false;
+    }
+    if (isDeleted && payload.restoreDeleted !== true) {
+      return json({ error: "extension_deleted", message: "Restore the extension explicitly before re-enabling it." }, 409);
+    }
+
     let settings = payload.settings ?? {};
     if (extensionId === "yanzi-quickpanel-settings") {
       const existing = await env.DB.prepare(
@@ -2093,7 +2169,7 @@ async function handleRequest(request, env, ctx) {
       settings = scrubPersonalSyncSecretsFromValue(settings);
     }
 
-    await env.DB.prepare(
+    const upsertResult = await env.DB.prepare(
       `insert into user_extensions (
         user_id,
         extension_id,
@@ -2106,7 +2182,8 @@ async function handleRequest(request, env, ctx) {
         installed_version = excluded.installed_version,
         enabled = excluded.enabled,
         settings_json = excluded.settings_json,
-        updated_at = excluded.updated_at`
+        updated_at = excluded.updated_at
+      where ? = 1 or coalesce(json_extract(user_extensions.settings_json, '$._yanziDeleted'), 0) != 1`
     )
       .bind(
         auth.userId,
@@ -2114,10 +2191,14 @@ async function handleRequest(request, env, ctx) {
         String(payload.installedVersion ?? payload.version ?? "0.0.0").slice(0, 50),
         payload.enabled === false ? 0 : 1,
         JSON.stringify(settings),
-        isoNow()
+        isoNow(),
+        payload.restoreDeleted === true ? 1 : 0
       )
       .run();
 
+    if (Number(upsertResult.meta?.changes ?? 0) === 0) {
+      return json({ error: "extension_deleted", message: "The extension was deleted on another device." }, 409);
+    }
     return json({ ok: true, userId: auth.userId, extensionId });
   }
 
@@ -2126,11 +2207,21 @@ async function handleRequest(request, env, ctx) {
     const extensionId = decodeURIComponent(myExtensionMatch[1]);
     await ensureUser(env, auth.userId);
 
+    // Keep a durable account-scoped tombstone so an offline desktop cannot
+    // recreate this association during background sync. Original extension
+    // package data is retained for a deliberate recycle-bin restore.
+    const deletedAt = isoNow();
     const result = await env.DB.prepare(
-      `delete from user_extensions
-       where user_id = ? and extension_id = ?`
+      `insert into user_extensions
+         (user_id, extension_id, installed_version, enabled, settings_json, updated_at)
+       select ?, extension_id, '0.0.0', 0, ?, ?
+       from extensions where extension_id = ?
+       on conflict(user_id, extension_id) do update set
+         enabled = 0, settings_json = excluded.settings_json,
+         updated_at = excluded.updated_at`
     )
-      .bind(auth.userId, extensionId)
+      .bind(auth.userId, JSON.stringify({ _yanziDeleted: true, deletedAt }),
+        deletedAt, extensionId)
       .run();
 
     return json({
@@ -4506,7 +4597,7 @@ function withCors(response) {
   response.headers.set("access-control-allow-methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
   response.headers.set(
     "access-control-allow-headers",
-    "content-type,authorization,accept,origin,x-yanzi-client,x-yanzi-client-version,x-api-version,x-client-version"
+    "content-type,authorization,accept,origin,x-yanzi-client,x-yanzi-client-version,x-yanzi-device-id,x-api-version,x-client-version"
   );
   return response;
 }

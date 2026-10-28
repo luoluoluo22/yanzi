@@ -1,0 +1,30 @@
+{
+  "id": "vpn-manager",
+  "name": "VPN 管理",
+  "version": "0.1.1",
+  "category": "网络工具",
+  "description": "Mihomo 独立代理核心、节点/策略选择、订阅环境变量引用和云同步设置。默认不接管系统代理，需明确手动启用。",
+  "keywords": [
+    "VPN",
+    "代理",
+    "Mihomo",
+    "Clash",
+    "节点",
+    "订阅"
+  ],
+  "icon": "mdi:shield-key-outline",
+  "accentHex": "#4067B2",
+  "runtime": "csharp",
+  "uiMode": "native-window",
+  "entryMode": "entry",
+  "entry": "VpnManager.cs",
+  "permissions": [
+    "network",
+    "context.read"
+  ],
+  "startup": { "mode": "on_app_launch" },
+  "runAsAdmin": false,
+  "waitForExit": false,
+  "toggleWindow": false,
+  "isPublished": false
+}
