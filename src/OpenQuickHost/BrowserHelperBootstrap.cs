@@ -55,7 +55,10 @@ internal static class BrowserHelperBootstrap
         {
             ("Edge", Path.Combine(local, "Microsoft", "Edge", "User Data"), "msedge.exe", "Microsoft", "Edge", "Application"),
             ("Chrome", Path.Combine(local, "Google", "Chrome", "User Data"), "chrome.exe", "Google", "Chrome", "Application"),
-            ("Brave", Path.Combine(local, "BraveSoftware", "Brave-Browser", "User Data"), "brave.exe", "BraveSoftware", "Brave-Browser", "Application")
+            ("Brave", Path.Combine(local, "BraveSoftware", "Brave-Browser", "User Data"), "brave.exe", "BraveSoftware", "Brave-Browser", "Application"),
+            ("Ego", Path.Combine(local, "Citro Labs", "ego lite", "User Data"), "ego.exe", "Citro Labs", "ego lite", "Application"),
+            ("Vivaldi", Path.Combine(local, "Vivaldi", "User Data"), "vivaldi.exe", "Vivaldi", "Application", ""),
+            ("Opera", Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Opera Software", "Opera Stable"), "opera.exe", "Programs", "Opera", "")
         };
         var results = new List<BrowserProfile>();
         foreach (var (browser, dataDir, exeName, company, product, application) in browsers)
@@ -65,12 +68,14 @@ internal static class BrowserHelperBootstrap
             string[] profiles;
             try
             {
-                profiles = Directory.Exists(dataDir)
-                    ? Directory.GetDirectories(dataDir)
-                        .Where(p => Path.GetFileName(p).Equals("Default", StringComparison.OrdinalIgnoreCase)
-                                    || Path.GetFileName(p).StartsWith("Profile ", StringComparison.OrdinalIgnoreCase))
-                        .ToArray()
-                    : Array.Empty<string>();
+                profiles = !Directory.Exists(dataDir) ? Array.Empty<string>()
+                    : File.Exists(Path.Combine(dataDir, "Preferences"))
+                        ? new[] { dataDir } // Opera stores Preferences at the profile root.
+                        : Directory.GetDirectories(dataDir)
+                            .Where( p => Path.GetFileName(p).Equals("Default", StringComparison.OrdinalIgnoreCase)
+                                        || Path.GetFileName(p).Equals("Profile", StringComparison.OrdinalIgnoreCase)
+                                        || Path.GetFileName(p).StartsWith("Profile ", StringComparison.OrdinalIgnoreCase))
+                            .ToArray();
             }
             catch (IOException) { profiles = Array.Empty<string>(); }
             catch (UnauthorizedAccessException) { profiles = Array.Empty<string>(); }
@@ -268,6 +273,9 @@ internal static class BrowserHelperBootstrap
         {
             "Edge" => "edge://extensions",
             "Brave" => "brave://extensions",
+            "Ego" => "chrome://extensions",
+            "Vivaldi" => "vivaldi://extensions",
+            "Opera" => "opera://extensions",
             _ => "chrome://extensions"
         };
         var start = new ProcessStartInfo(profile.Executable) { UseShellExecute = true };

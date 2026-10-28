@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows;
@@ -375,7 +375,7 @@ public partial class App : WpfApplication
 
             // Run once per Windows user: stage the packaged extension outside the versioned app
             // directory and notify on fresh devices. Browser consent is never bypassed.
-            _ = Task.Run(() =>
+            _ = Task.Run(async () =>
             {
                 try
                 {
@@ -383,6 +383,7 @@ public partial class App : WpfApplication
                     if (bundled == null) return;
                     BrowserHelperBootstrap.EnsureStableBundle(bundled);
                     BrowserHelperBootstrap.WriteRuntimeConfiguration(settings.AgentApiPort);
+                    await BrowserHelperDistribution.UpdateManagedEgoIfRunningAsync();
                     var profiles = BrowserHelperBootstrap.Inspect();
                     if (profiles.Count == 0 || profiles.Any(p => p.Installed)) return;
                     var notice = System.IO.Path.Combine(

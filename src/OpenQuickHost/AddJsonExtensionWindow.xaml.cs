@@ -579,45 +579,83 @@ public partial class AddJsonExtensionWindow : Window
         });
     }
 
-    private void QuickInstallBrowserExtension_Click(object sender, RoutedEventArgs e)
+    private async void QuickInstallBrowserExtension_Click(object sender, RoutedEventArgs e)
     {
         try
         {
             _browserProfiles = BrowserHelperBootstrap.Inspect();
             _browserProfileScannedAtUtc = DateTime.UtcNow;
-            var profile = _browserProfiles.FirstOrDefault(p => p.Installed)
-                ?? _browserProfiles.FirstOrDefault(p => p.Browser == "Edge")
-                ?? _browserProfiles.FirstOrDefault();
-            if (profile == null)
+            var profile = BrowserHelperDistribution.ChooseTarget(this, _browserProfiles);
+            if (profile == null) return;
+
+            if (profile.Browser == "Edge")
             {
-                ShowError("尚未检测到 Edge、Chrome 或 Brave。请先安装一种受支持的浏览器。");
+                if (profile.Installed)
+                {
+                    BrowserHelperBootstrap.OpenExtensionSettings(profile);
+                    System.Windows.MessageBox.Show(this,
+                        "已打开 Edge 扩展管理页。请检查燕子助手是否启用；商店安装版由 Edge 自动更新。",
+                        "Edge 扩展检查", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                else
+                {
+                    BrowserHelperDistribution.OpenStore(profile);
+                    System.Windows.MessageBox.Show(this,
+                        "已用 Edge 打开微软官方扩展商店，请点击【获取】并确认授权。"
+                        + "\n\n此商店版由 Edge 自动更新，不会替换已有的本地开发版。",
+                        "Edge 官方安装", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                UpdateBrowserExtensionBannerVisibility();
                 return;
             }
 
-            if (!profile.Installed)
+            var bundled = BrowserHelperBootstrap.FindBundledDirectory();
+            if (bundled == null)
             {
-                var bundled = BrowserHelperBootstrap.FindBundledDirectory();
-                if (bundled == null)
-                {
-                    ShowError("安装包缺少内置的浏览器助手文件。请修复或重新安装燕子。");
-                    return;
-                }
-                // Use an installation-independent path. Replacing the desktop version must not
-                // invalidate the Chrome/Edge unpacked-extension reference.
-                var stable = BrowserHelperBootstrap.EnsureStableBundle(bundled);
-                BrowserHelperBootstrap.WriteRuntimeConfiguration(_settings.AgentApiPort);
-                try { System.Windows.Clipboard.SetText(stable); }
-                catch (Exception copyError) { HostAssets.AppendLog($"Browser helper path copy failed: {copyError.Message}"); }
-                Process.Start("explorer.exe", $"/select,\\\"{Path.Combine(stable, "manifest.json")}\\\"");
+                ShowError("安装包缺少内置的浏览器助手文件，请修复或重新安装燕子。");
+                return;
             }
+            var stable = BrowserHelperBootstrap.EnsureStableBundle(bundled);
+            BrowserHelperBootstrap.WriteRuntimeConfiguration(_settings.AgentApiPort);
+            if (profile.Browser == "Ego")
+            {
+                BrowserExtensionSetupButton.IsEnabled = false;
+                try
+                {
+                    var (success, message) = await BrowserHelperDistribution.ConfigureEgoAsync(stable, true);
+                    if (success)
+                    {
+                        // Enables a future desktop-startup update check, only after explicit user action.
+                        System.IO.File.WriteAllText(BrowserHelperDistribution.ManagedEgoMarker,
+                            DateTime.UtcNow.ToString("O"));
+                    }
+                    System.Windows.MessageBox.Show(this, message,
+                        "Ego 助手" + (success ? "已就绪" : "需要处理"),
+                        MessageBoxButton.OK,
+                        success ? MessageBoxImage.Information : MessageBoxImage.Warning);
+                }
+                finally { BrowserExtensionSetupButton.IsEnabled = true; }
+                UpdateBrowserExtensionBannerVisibility();
+                return;
+            }
+
+            // Chrome, Brave, Vivaldi and Opera require a store-signed build for seamless
+            // updates. Until Chrome Web Store publishing is configured, guide the user's
+            // one-time, explicit developer-mode authorization instead of bypassing it.
+            try { System.Windows.Clipboard.SetText(stable); }
+            catch (Exception ex) { HostAssets.AppendLog($"BrowserHelper path copy skipped: {ex.GetType().Name}"); }
             BrowserHelperBootstrap.OpenExtensionSettings(profile);
             var instructions = profile.Installed
-                ? profile.Enabled
-                    ? "检测到助手已启用，但没有连接桌面端。请在扩展页重新加载扩展，并在助手面板中选择【重新连接服务】。"
-                    : "检测到助手已安装但未启用。请在扩展页开启【燕子浏览器助手】，然后重新连接服务。"
-                : "已自动准备好稳定目录中的燕子浏览器助手。\\n\\n首次安装需要在浏览器内授权：\\n1. 在扩展管理页面启用【开发者模式】；\\n2. 点击【加载已解压的扩展程序】；\\n3. 已尝试复制 BrowserHelper 路径到剪贴板：在文件夹选择窗口中粘贴该路径并确认。\\n\\n之后燕子升级将继续使用同一路径，不需要重复加载。";
+                ? "检测到扩展已安装。请在扩展管理页确认版本与启用状态；"
+                  + "如果它是本地加载版，燕子升级后请点击【重新加载】。商店版则由浏览器自动更新。"
+                : $"已为 {profile.Browser} 准备燕子助手稳定目录：\n{stable}"
+                  + "\n\n1. 在扩展管理页打开【开发者模式】；"
+                  + "\n2. 点击【加载已解压的扩展程序】；"
+                  + "\n3. 粘贴已复制的稳定目录路径并确认。"
+                  + "\n\n本地加载版不会自动获得商店更新。后续会提供 Chrome Web Store 发行渠道。";
             System.Windows.MessageBox.Show(this, instructions,
-                "燕子浏览器助手 · 安装与修复", MessageBoxButton.OK, MessageBoxImage.Information);
+                $"{profile.Browser} · 燕子助手安装与修复",
+                MessageBoxButton.OK, MessageBoxImage.Information);
             UpdateBrowserExtensionBannerVisibility();
         }
         catch (Exception ex)
