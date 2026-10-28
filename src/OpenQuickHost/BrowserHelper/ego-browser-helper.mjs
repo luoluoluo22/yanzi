@@ -7,7 +7,7 @@ const options = globalThis.__yanziHelperOptions || {};
 const extensionPath = options.path;
 const action = options.action || 'update';
 if (!extensionPath || !path.isAbsolute(extensionPath)) throw Error('INVALID_EXTENSION_PATH');
-if (!['install', 'update'].includes(action)) throw Error('INVALID_ACTION');
+if (!['install', 'update', 'reload'].includes(action)) throw Error('INVALID_ACTION');
 const manifest = JSON.parse(fs.readFileSync(path.join(extensionPath, 'manifest.json'), 'utf8'));
 if (manifest.manifest_version !== 3 || !/Yanzi Browser Helper/i.test(manifest.name))
   throw Error('INVALID_YANZI_MANIFEST');
@@ -33,6 +33,7 @@ const result = {status:'unknown', version:manifest.version};
 if (existing) {
   result.id = existing.id;
   result.version = existing.version;
+  result.path = existing.path || null;
   if (!existing.enabled) throw Error('EXTENSION_DISABLED');
   if (!existing.path || normalize(existing.path) !== normalize(extensionPath)) {
     // Preserve existing Chrome extension ID and chrome.storage.local; the caller
@@ -41,7 +42,7 @@ if (existing) {
     result.source = existing.path ? 'other-unpacked' : 'store';
   } else if (compare(existing.version, manifest.version) > 0) {
     throw Error('CANDIDATE_WOULD_DOWNGRADE_INSTALLED_VERSION');
-  } else if (compare(existing.version, manifest.version) === 0) {
+  } else if (compare(existing.version, manifest.version) === 0 && action !== 'reload') {
     result.status = 'ready';
   } else {
     const reloaded = await cdp('Extensions.loadUnpacked', {path: extensionPath}, null);
@@ -49,7 +50,7 @@ if (existing) {
     const installed = match(await getExtensions()).find(x => x.id === existing.id);
     if (id !== existing.id || !installed?.enabled || installed.version !== manifest.version)
       throw Error('EGO_UPGRADE_VERIFICATION_FAILED');
-    result.status = 'updated';
+    result.status = action === 'reload' ? 'reloaded' : 'updated';
     result.version = installed.version;
   }
 } else if (action === 'update') {
@@ -63,5 +64,6 @@ if (existing) {
     throw Error('EGO_INSTALL_VERIFICATION_FAILED');
   result.status = 'installed';
   result.id = id;
+  result.path = extensionPath;
 }
 console.log('YANZI_EGO_RESULT ' + JSON.stringify(result));

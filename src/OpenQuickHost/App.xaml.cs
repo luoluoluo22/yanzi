@@ -384,6 +384,7 @@ public partial class App : WpfApplication
                     BrowserHelperBootstrap.EnsureStableBundle(bundled);
                     BrowserHelperBootstrap.WriteRuntimeConfiguration(settings.AgentApiPort);
                     await BrowserHelperDistribution.UpdateManagedEgoIfRunningAsync();
+                    BrowserHelperDistribution.StartManagedEgoMonitor();
                     var profiles = BrowserHelperBootstrap.Inspect();
                     if (profiles.Count == 0 || profiles.Any(p => p.Installed)) return;
                     var notice = System.IO.Path.Combine(

@@ -3,6 +3,9 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -101,15 +104,19 @@ internal static class BrowserHelperDistribution
         Process.Start(start);
     }
 
-    internal static async Task<(bool Success, string Message)> ConfigureEgoAsync(
-        string extensionDirectory, bool allowInstall, CancellationToken cancellationToken = default)
+    internal sealed record EgoResult(bool Success, string Message, string Status = "",
+        string? ExtensionId = null, string? ActualPath = null, string? Version = null);
+
+    internal static async Task<EgoResult> ConfigureEgoAsync(
+        string extensionDirectory, bool allowInstall, CancellationToken cancellationToken = default,
+        bool forceReload = false)
     {
         var cli = FindEgoCli();
-        if (cli == null) return (false, "找不到 ego-browser 命令。请先安装并启动 Ego Lite。");
+        if (cli == null) return new EgoResult(false, "找不到 ego-browser 命令。请先安装并启动 Ego Lite。");
         var script = Path.Combine(AppContext.BaseDirectory, "BrowserHelper", "ego-browser-helper.mjs");
-        if (!File.Exists(script)) return (false, "安装包缺少 Ego 自动安装脚本，请修复燕子安装包。");
+        if (!File.Exists(script)) return new EgoResult(false, "安装包缺少 Ego 自动安装脚本，请修复燕子安装包。");
         if (!File.Exists(Path.Combine(extensionDirectory, "manifest.json")))
-            return (false, "稳定目录缺少浏览器扩展，请先更新燕子。");
+            return new EgoResult(false, "扩展目录缺少 manifest.json，请先检查安装路径。");
 
         var start = new ProcessStartInfo(cli)
         {
@@ -124,7 +131,7 @@ internal static class BrowserHelperDistribution
         var options = System.Text.Json.JsonSerializer.Serialize(new
         {
             path = extensionDirectory,
-            action = allowInstall ? "install" : "update"
+            action = forceReload ? "reload" : allowInstall ? "install" : "update"
         });
         start.ArgumentList.Add("nodejs");
         start.ArgumentList.Add("-e");
@@ -133,7 +140,7 @@ internal static class BrowserHelperDistribution
         try
         {
             using var process = new Process { StartInfo = start };
-            if (!process.Start()) return (false, "Ego 运行时未启动。");
+            if (!process.Start()) return new EgoResult(false, "Ego 运行时未启动。");
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             deadline.CancelAfter(TimeSpan.FromSeconds(25));
             // Drain both streams concurrently to avoid a blocked process.
@@ -145,25 +152,31 @@ internal static class BrowserHelperDistribution
             var line = (output + "\n" + error).Split('\n', StringSplitOptions.RemoveEmptyEntries)
                 .FirstOrDefault(x => x.Contains("YANZI_EGO_RESULT ", StringComparison.Ordinal));
             if (process.ExitCode != 0 || line == null)
-                return (false, "Ego 检查失败：" + (error.Length > 300 ? error[..300] : error));
+                return new EgoResult(false, "Ego 检查失败：" + (error.Length > 300 ? error[..300] : error));
             using var json = System.Text.Json.JsonDocument.Parse(line[(line.IndexOf("YANZI_EGO_RESULT ", StringComparison.Ordinal)
                 + "YANZI_EGO_RESULT ".Length)..]);
             var result = json.RootElement;
             var state = result.GetProperty("status").GetString() ?? "";
-            var version = result.TryGetProperty("version", out var v) ? v.GetString() : "";
-            if (state is "installed" or "updated" or "ready")
-                return (true, $"Ego 燕子助手已就绪，版本 {version}。");
+            var version = result.TryGetProperty("version", out var v) && v.ValueKind == JsonValueKind.String
+                ? v.GetString() : "";
+            var id = result.TryGetProperty("id", out var idValue) && idValue.ValueKind == JsonValueKind.String
+                ? idValue.GetString() : null;
+            var actualPath = result.TryGetProperty("path", out var pathValue)
+                && pathValue.ValueKind == JsonValueKind.String ? pathValue.GetString() : null;
+            if (state is "installed" or "updated" or "ready" or "reloaded")
+                return new EgoResult(true, $"Ego 燕子助手已就绪，版本 {version}。", state, id, actualPath, version);
             if (state == "external")
-                return (false, "Ego 已加载其他路径的燕子助手；为保护扩展 ID 和数据，未重复安装。请先在扩展管理页确认旧版本路径。");
-            return (false, $"Ego 返回状态：{state}");
+                return new EgoResult(false, "Ego 已加载另一个路径中的燕子助手，可登记当前目录以保留 ID 和数据。",
+                    state, id, actualPath, version);
+            return new EgoResult(false, $"Ego 返回状态：{state}", state, id, actualPath, version);
         }
         catch (OperationCanceledException)
         {
-            return (false, "Ego 检查超时，未确认安装成功。");
+            return new EgoResult(false, "Ego 检查超时，未确认安装成功。");
         }
         catch (Exception ex)
         {
-            return (false, $"Ego 检查失败：{ex.GetType().Name}：{ex.Message}");
+            return new EgoResult(false, $"Ego 检查失败：{ex.GetType().Name}：{ex.Message}");
         }
     }
 
@@ -192,17 +205,109 @@ internal static class BrowserHelperDistribution
         return null;
     }
 
+    internal sealed record EgoManagedState(
+        string Mode, string Path, string ExtensionId, string Fingerprint);
+
     internal static string ManagedEgoMarker => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "OpenQuickHost", ".ego-managed-install");
 
+    internal static string GetBundleFingerprint(string directory)
+    {
+        if (!File.Exists(Path.Combine(directory, "manifest.json")))
+            throw new FileNotFoundException("托管扩展缺少 manifest.json。");
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        foreach (var file in Directory.GetFiles(directory, "*", SearchOption.AllDirectories)
+            .Where(p => {
+                var rel = Path.GetRelativePath(directory, p).Replace('\\', '/');
+                return !rel.StartsWith("scratch/", StringComparison.OrdinalIgnoreCase)
+                    && !rel.StartsWith("node_modules/", StringComparison.OrdinalIgnoreCase)
+                    && !rel.StartsWith(".git/", StringComparison.OrdinalIgnoreCase)
+                    && !rel.EndsWith(".md", StringComparison.OrdinalIgnoreCase)
+                    && !rel.EndsWith(".map", StringComparison.OrdinalIgnoreCase);
+            }).OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
+        {
+            hash.AppendData(Encoding.UTF8.GetBytes(Path.GetRelativePath(directory, file).Replace('\\', '/')));
+            hash.AppendData(SHA256.HashData(File.ReadAllBytes(file)));
+        }
+        return Convert.ToHexString(hash.GetHashAndReset());
+    }
+
+    internal static void SaveManagedEgo(EgoManagedState state)
+    {
+        if (!Path.IsPathFullyQualified(state.Path)
+            || state.ExtensionId.Length != 32 || !state.ExtensionId.All(c => c is >= 'a' and <= 'p'))
+            throw new InvalidDataException("Ego 扩展托管登记信息无效。");
+        Directory.CreateDirectory(Path.GetDirectoryName(ManagedEgoMarker)!);
+        var temp = ManagedEgoMarker + ".tmp-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            File.WriteAllText(temp, JsonSerializer.Serialize(state), new UTF8Encoding(false));
+            File.Move(temp, ManagedEgoMarker, overwrite: true);
+        }
+        finally { if (File.Exists(temp)) File.Delete(temp); }
+    }
+
+    internal static EgoManagedState? ReadManagedEgo()
+    {
+        if (!File.Exists(ManagedEgoMarker)) return null;
+        try
+        {
+            var contents = File.ReadAllText(ManagedEgoMarker);
+            // Old 1.0.65 installations stored a timestamp only.
+            if (!contents.TrimStart().StartsWith("{", StringComparison.Ordinal)) return null;
+            var result = JsonSerializer.Deserialize<EgoManagedState>(contents);
+            if (result == null || result.ExtensionId.Length != 32
+                || !Path.IsPathFullyQualified(result.Path)
+                || result.Mode is not ("stable" or "source")) return null;
+            return result;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+            or JsonException or ArgumentException or NullReferenceException) { return null; }
+    }
+
+    private static System.Threading.Timer? _egoManagementTimer;
+    private static int _egoManagementCheckRunning;
+
+    internal static void StartManagedEgoMonitor()
+    {
+        // Local-only check. No network polling; does not run if Ego has never
+        // been explicitly enrolled. One check per minute while Yanzi is running.
+        if (!File.Exists(ManagedEgoMarker)) return;
+        if (_egoManagementTimer != null) return;
+        _egoManagementTimer = new System.Threading.Timer(async _ =>
+        {
+            if (Interlocked.Exchange(ref _egoManagementCheckRunning, 1) != 0) return;
+            try { await UpdateManagedEgoIfRunningAsync(); }
+            finally { Interlocked.Exchange(ref _egoManagementCheckRunning, 0); }
+        }, null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
+    }
+
     internal static async Task UpdateManagedEgoIfRunningAsync()
     {
-        if (!File.Exists(ManagedEgoMarker)) return;
+        var state = ReadManagedEgo();
+        if (state == null) return;
         if (Process.GetProcessesByName("ego").Length == 0) return;
-        var result = await ConfigureEgoAsync(BrowserHelperBootstrap.StableDirectory, false);
-        HostAssets.AppendLog(result.Success
-            ? "[BrowserHelper] Ego managed extension reload checked."
-            : $"[BrowserHelper] Ego managed extension reload skipped: {result.Message}");
+        if (!File.Exists(Path.Combine(state.Path, "manifest.json"))) return;
+        try
+        {
+            var fingerprint = GetBundleFingerprint(state.Path);
+            if (fingerprint == state.Fingerprint) return;
+            // Never overwrite the developer's Git worktree with a store package:
+            // reload its existing path after the developer updates the source.
+            var result = await ConfigureEgoAsync(state.Path, allowInstall: false,
+                forceReload: true);
+            if (!result.Success || result.ExtensionId != state.ExtensionId)
+            {
+                HostAssets.AppendLog($"[BrowserHelper] Ego managed reload skipped: {result.Message}");
+                return;
+            }
+            SaveManagedEgo(state with { Fingerprint = fingerprint });
+            HostAssets.AppendLog($"[BrowserHelper] Ego managed {state.Mode} extension reloaded, ID preserved.");
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"[BrowserHelper] Ego managed reload error: {ex.GetType().Name}");
+        }
     }
 }
