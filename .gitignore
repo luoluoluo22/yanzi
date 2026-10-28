@@ -50,15 +50,17 @@ publish/
 # Temporary release notes drafts
 RELEASE_NOTES.md
 
-# 杞憲涓庝笓鍒╃敵鎶ユ潗鏂?杞憲鐢虫姤鏉愭枡_*
-鍟嗘爣鐢虫姤鍥炬牱_*
-鐕曞瓙Logo_*
-*鐢虫姤鏉愭枡*
+# 软著与专利申报材料
+软著申报材料_*
+商标申报图样_*
+燕子Logo_*
+*申报材料*
 *.pdf
 
-# 鐜鍙橀噺涓庢満瀵嗘枃浠?env.md
-鐜鍙橀噺.md
-*鐜鍙橀噺*
+# 环境变量与机密文件
+env.md
+环境变量.md
+*环境变量*
 *.token*
 *.secret*
 .tmp-repro/
