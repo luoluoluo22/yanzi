@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using System.Text.Json;
 
 namespace OpenQuickHost.Sync;
 
@@ -20,6 +21,18 @@ public sealed class AuthResponse
     public string Username { get; init; } = string.Empty;
 
     public string? Email { get; init; }
+
+    [JsonPropertyName("isVip")]
+    public bool IsVip { get; init; }
+
+    [JsonPropertyName("vipType")]
+    public string? VipType { get; init; }
+
+    [JsonPropertyName("vipExpireAt")]
+    public string? VipExpireAt { get; init; }
+
+    [JsonPropertyName("daysRemaining")]
+    public int DaysRemaining { get; init; }
 }
 
 public sealed class SendCodeResponse
@@ -42,6 +55,66 @@ public sealed class AuthMeResponse
     public string? Email { get; init; }
 
     public bool IsAdmin { get; init; }
+
+    [JsonPropertyName("isVip")]
+    public bool IsVip { get; init; }
+
+    [JsonPropertyName("vipType")]
+    public string? VipType { get; init; }
+
+    [JsonPropertyName("vipExpireAt")]
+    public string? VipExpireAt { get; init; }
+
+    [JsonPropertyName("daysRemaining")]
+    public int DaysRemaining { get; init; }
+}
+
+public sealed class VipStatusResponse
+{
+    [JsonPropertyName("ok")]
+    public bool Ok { get; init; }
+
+    [JsonPropertyName("userId")]
+    public string UserId { get; init; } = string.Empty;
+
+    [JsonPropertyName("username")]
+    public string Username { get; init; } = string.Empty;
+
+    [JsonPropertyName("isVip")]
+    public bool IsVip { get; init; }
+
+    [JsonPropertyName("vipType")]
+    public string? VipType { get; init; }
+
+    [JsonPropertyName("vipExpireAt")]
+    public string? VipExpireAt { get; init; }
+
+    [JsonPropertyName("daysRemaining")]
+    public int DaysRemaining { get; init; }
+}
+
+public sealed class RedeemLicenseResponse
+{
+    [JsonPropertyName("ok")]
+    public bool Ok { get; init; }
+
+    [JsonPropertyName("message")]
+    public string Message { get; init; } = string.Empty;
+
+    [JsonPropertyName("code")]
+    public string Code { get; init; } = string.Empty;
+
+    [JsonPropertyName("isVip")]
+    public bool IsVip { get; init; }
+
+    [JsonPropertyName("vipType")]
+    public string? VipType { get; init; }
+
+    [JsonPropertyName("vipExpireAt")]
+    public string? VipExpireAt { get; init; }
+
+    [JsonPropertyName("daysRemaining")]
+    public int DaysRemaining { get; init; }
 }
 
 public sealed class AppUpdateInfoResponse
@@ -78,6 +151,7 @@ public sealed class AppUpdateInfoResponse
 
     [JsonPropertyName("updated_at")]
     public string UpdatedAt { get; init; } = string.Empty;
+
 }
 
 public sealed class ExtensionListResponse
@@ -178,6 +252,9 @@ public sealed class UserExtensionRecord
     [JsonPropertyName("user_id")]
     public string UserId { get; init; } = string.Empty;
 
+    [JsonPropertyName("publisher_user_id")]
+    public string PublisherUserId { get; init; } = string.Empty;
+
     [JsonPropertyName("extension_id")]
     public string ExtensionId { get; init; } = string.Empty;
 
@@ -192,6 +269,36 @@ public sealed class UserExtensionRecord
 
     [JsonPropertyName("updated_at")]
     public string UpdatedAt { get; init; } = string.Empty;
+
+    [JsonPropertyName("display_name")]
+    public string? DisplayName { get; init; }
+
+    [JsonPropertyName("latest_version")]
+    public string? LatestVersion { get; init; }
+
+    [JsonPropertyName("manifest_json")]
+    public string? ManifestJson { get; init; }
+
+    [JsonPropertyName("icon")]
+    public string? Icon { get; init; }
+
+    [JsonPropertyName("archive_sha256")]
+    public string? ArchiveSha256 { get; init; }
+
+    [JsonPropertyName("has_archive")]
+    public bool HasArchive { get; init; }
+
+    [JsonPropertyName("archive_revision")]
+    public int ArchiveRevision { get; init; }
+
+    [JsonPropertyName("archive_download_url")]
+    public string? ArchiveDownloadUrl { get; init; }
+
+    [JsonPropertyName("is_private")]
+    public bool IsPrivate { get; init; }
+
+    [JsonPropertyName("is_published")]
+    public int IsPublished { get; init; }
 }
 
 public sealed class WebDavConfigDto
@@ -291,6 +398,124 @@ public sealed class YanmStateResponse
     [JsonPropertyName("yanm")]
     public YanmSettings? Yanm { get; init; }
 
+    [JsonPropertyName("changed")]
+    public bool? Changed { get; init; }
+
     [JsonPropertyName("bytes")]
     public int Bytes { get; init; }
+}
+
+public sealed class CloudSyncObjectListResponse
+{
+    public bool Ok { get; init; }
+
+    public string UserId { get; init; } = string.Empty;
+
+    public long SinceRevision { get; init; }
+
+    public long CurrentRevision { get; init; }
+
+    public long CursorRevision { get; init; }
+
+    public bool HasMore { get; init; }
+
+    public IReadOnlyList<CloudSyncObjectRecord> Objects { get; init; } = [];
+}
+
+public sealed class SecretVaultKeyResponse
+{
+    public bool Ok { get; init; }
+
+    public int Version { get; init; }
+
+    public string Key { get; init; } = string.Empty;
+}
+
+public sealed class CloudSyncCapabilitiesResponse
+{
+    public bool Ok { get; init; }
+
+    public int ProtocolVersion { get; init; }
+
+    public bool ObjectSyncAvailable { get; init; }
+
+    public bool ObjectHistoryAvailable { get; init; }
+
+    public bool ObjectsAuthoritative { get; init; }
+
+    public bool LegacySnapshotReadSupported { get; init; }
+
+    public bool LegacySnapshotWriteRequired { get; init; } = true;
+
+    public int MaxObjectPayloadBytes { get; init; }
+}
+
+public sealed class CloudSyncObjectHistoryResponse
+{
+    public bool Ok { get; init; }
+
+    public string UserId { get; init; } = string.Empty;
+
+    public string ObjectId { get; init; } = string.Empty;
+
+    public long CurrentRevision { get; init; }
+
+    public long NextBeforeRevision { get; init; }
+
+    public bool HasMore { get; init; }
+
+    public IReadOnlyList<CloudSyncObjectHistoryRecord> Versions { get; init; } = [];
+}
+
+public sealed class CloudSyncObjectHistoryRecord
+{
+    public string ObjectId { get; init; } = string.Empty;
+
+    public int SchemaVersion { get; init; } = 1;
+
+    public long Revision { get; init; }
+
+    public string UpdatedAtUtc { get; init; } = string.Empty;
+
+    public string? UpdatedByDeviceId { get; init; }
+
+    public string? UpdatedByDeviceName { get; init; }
+
+    public bool Deleted { get; init; }
+
+    public JsonElement Payload { get; init; }
+
+    public string Operation { get; init; } = "update";
+
+    public long? RestoredFromRevision { get; init; }
+}
+
+public sealed class CloudSyncObjectWriteResponse
+{
+    public bool Ok { get; init; }
+
+    public string UserId { get; init; } = string.Empty;
+
+    public CloudSyncObjectRecord? Object { get; init; }
+
+    public long? RestoredFromRevision { get; init; }
+}
+
+public sealed class CloudSyncObjectRecord
+{
+    public string ObjectId { get; init; } = string.Empty;
+
+    public int SchemaVersion { get; init; } = 1;
+
+    public long Revision { get; init; }
+
+    public string UpdatedAtUtc { get; init; } = string.Empty;
+
+    public string? UpdatedByDeviceId { get; init; }
+
+    public string? UpdatedByDeviceName { get; init; }
+
+    public bool Deleted { get; init; }
+
+    public JsonElement Payload { get; init; }
 }

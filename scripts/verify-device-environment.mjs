@@ -1,0 +1,21 @@
+import assert from 'node:assert/strict';
+import {createHmac,randomUUID} from 'node:crypto';
+import {writeFile} from 'node:fs/promises';
+const [base,output]=process.argv.slice(2);
+if(!/^http:\/\/127\.0\.0\.1:\d+$/.test(base))throw Error('Isolated local Worker required');
+const user='environment-'+randomUUID(),device='phone-'+randomUUID();
+const header=Buffer.from('{"alg":"HS256","typ":"JWT"}').toString('base64url');
+const claims=Buffer.from(JSON.stringify({sub:user,username:'environment fixture',exp:Math.floor(Date.now()/1000)+3600})).toString('base64url');
+const token=header+'.'+claims+'.'+createHmac('sha256','local-phone-message-verification').update(header+'.'+claims).digest('base64url');
+async function request(path,method='GET',body){const response=await fetch(base+path,{method,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});return {status:response.status,body:await response.json()};}
+assert.equal((await request('/v1/me/devices','POST',{deviceId:device,platform:'android',displayName:'Environment fixture'})).status,200);
+const path='/v1/me/devices/'+device+'/environment/yanzi-location';
+const value={sequence:1,enabled:true,observedAt:new Date().toISOString(),place:'home',confidence:'high',network:{type:'wifi'}};
+assert.equal((await request(path,'PUT',{...value,location:{latitude:31,longitude:121,accuracy:5}})).status,200);
+assert.equal((await request(path)).body.value.location,undefined);
+assert.equal((await request(path,'PUT',{enabled:false,sequence:2})).status,200);
+assert.equal((await request(path,'PUT',value)).status,409);
+assert.equal((await request(path)).body.exists,false);
+assert.equal((await request('/v1/me/devices/not-owned/environment/yanzi-location')).status,404);
+await writeFile(output,JSON.stringify({baseUrl:base,token,deviceId:device,extensionId:'yanzi-location'}));
+console.log('Real Worker/D1 environment API: privacy, stop, ordering and device ownership passed.');

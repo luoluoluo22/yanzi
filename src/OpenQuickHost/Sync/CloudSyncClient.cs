@@ -5,24 +5,100 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using Yanzi.Core;
 
 namespace OpenQuickHost.Sync;
 
-public sealed class CloudSyncClient
+public sealed partial class CloudSyncClient
 {
     private readonly HttpClient _httpClient;
     private readonly HttpClient _directHttpClient;
+    private readonly HttpClient _largeTransferHttpClient;
+    private readonly HttpClient _directLargeTransferHttpClient;
     private readonly SyncOptions _options;
     private SyncSession? _session;
     private SavedCredential? _credential;
+    private readonly object _transportRetryLock = new();
+    private int _consecutiveTransportFailures;
+    private DateTimeOffset _transportRetryAfterUtc;
+    public AccountSyncCoordinator AccountCoordinator { get; }
+    // Coalesce concurrent private-extension reads. Only reuse a successful
+    // account-scoped snapshot for a short interval; writes invalidate it.
+    private readonly SemaphoreSlim _extensionSnapshotFetchLock = new(1, 1);
+    private readonly object _extensionSnapshotLock = new();
+    private IReadOnlyList<UserExtensionRecord>? _extensionSnapshot;
+    private string? _extensionSnapshotUserId;
+    private DateTimeOffset _extensionSnapshotExpiresUtc;
+    private long _extensionSnapshotGeneration;
 
-    public CloudSyncClient(SyncOptions options)
+    private void InvalidateExtensionSnapshot()
     {
+        lock (_extensionSnapshotLock)
+        {
+            _extensionSnapshot = null;
+            _extensionSnapshotExpiresUtc = DateTimeOffset.MinValue;
+            _extensionSnapshotGeneration++;
+        }
+    }
+
+    private readonly SemaphoreSlim _authenticationLock = new(1, 1);
+    // Independent from GET transport cooling: background sign-ins must never hammer the auth endpoint.
+    private readonly CloudLoginRetryPolicy _automaticLoginRetry = new();
+    // Avoid old clients re-polling paid cloud APIs on every background interval after 403.
+    private long _cloudMembershipDeniedUntilUnixMs;
+    private readonly object _secretVaultRecoveryKeyLock = new();
+    private byte[]? _secretVaultRecoveryKey;
+    private string? _secretVaultRecoveryKeyAccount;
+    private DateTimeOffset _secretVaultRecoveryKeyExpiresAtUtc;
+
+    public byte[]? E2eeMasterKey { get; private set; }
+
+    private (byte[] MasterKey, string LoginHash) DeriveSyncKeys(string email, string password)
+    {
+        return SyncCryptoService.DeriveKeys(password, email);
+    }
+
+    public CloudSyncClient(SyncOptions options, AccountSyncCoordinator? coordinator = null)
+    {
+        AccountCoordinator = coordinator ?? new AccountSyncCoordinator();
         _options = options;
-        _httpClient = CreateHttpClient(options.BaseUrl, useProxy: true);
-        _directHttpClient = CreateHttpClient(options.BaseUrl, useProxy: false);
+        _httpClient = CreateHttpClient(options.BaseUrl, useProxy: true, TimeSpan.FromSeconds(30));
+        _directHttpClient = CreateHttpClient(options.BaseUrl, useProxy: false, TimeSpan.FromSeconds(30));
+        _largeTransferHttpClient = CreateHttpClient(options.BaseUrl, useProxy: true, TimeSpan.FromMinutes(10));
+        _directLargeTransferHttpClient = CreateHttpClient(options.BaseUrl, useProxy: false, TimeSpan.FromMinutes(10));
         _session = SyncSessionStore.Load();
         _credential = SecureCredentialStore.Load();
+    }
+
+    private DateTime _sessionDiskTime;
+    private DateTime _credentialDiskTime;
+    public void AdoptRuntimeEncryptionKey(string account, byte[] key)
+    {
+        if (CurrentUserId != account || key.Length != 32) throw new InvalidOperationException("账号状态已变化。");
+        E2eeMasterKey = key.ToArray();
+    }
+    public async Task ReloadPersistedSessionAsync()
+    {
+        var sessionTime = File.GetLastWriteTimeUtc(SyncSessionStore.SessionPath);
+        var credentialTime = File.GetLastWriteTimeUtc(SecureCredentialStore.CredentialPath);
+        if (sessionTime == _sessionDiskTime && credentialTime == _credentialDiskTime) return;
+        await _authenticationLock.WaitAsync();
+        try
+        {
+            var session = SyncSessionStore.Load();
+            var credential = SecureCredentialStore.Load();
+            var accountChanged = session?.UserId != _session?.UserId;
+            if (accountChanged) ClearSecretVaultRecoveryKey();
+            if (accountChanged || session?.AccessToken != _session?.AccessToken)
+                AccountCoordinator.Invalidate();
+            _session = session;
+            _credential = credential;
+            E2eeMasterKey = credential != null ? DeriveSyncKeys(credential.LoginEmail, credential.Password).MasterKey
+                : accountChanged || session == null ? null : E2eeMasterKey;
+            _sessionDiskTime = sessionTime;
+            _credentialDiskTime = credentialTime;
+        }
+        finally { _authenticationLock.Release(); }
     }
 
     public string CurrentUserLabel =>
@@ -32,14 +108,43 @@ public sealed class CloudSyncClient
                 ? _credential!.LoginEmail
                 : "未登录";
 
+    public string? CurrentUserId => _session?.UserId;
+    internal string TaskJournalAccount => _options.BaseUrl.TrimEnd('/') + "\n" + CurrentUserId;
+
     public bool HasCredential => !string.IsNullOrWhiteSpace(_credential?.LoginEmail) && !string.IsNullOrWhiteSpace(_credential?.Password);
+
+    public string? GetSavedPassword() => _credential?.Password;
 
     public void SetCredential(string email, string password, bool remember)
     {
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            throw new InvalidOperationException("邮箱不能为空。");
+        }
+
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            throw new InvalidOperationException("密码不能为空。");
+        }
+
+        var normalizedEmail = email.Trim();
+        var normalizedPassword = password.Trim();
+
+        CloudSyncDiagnostics.Log(
+            "CloudSyncClient.Auth",
+            "Credential updated",
+            ("email", normalizedEmail),
+            ("remember", remember),
+            ("passwordLength", normalizedPassword.Length));
+
+        // 本地派生并缓存 E2eeMasterKey
+        var keys = DeriveSyncKeys(normalizedEmail, normalizedPassword);
+        E2eeMasterKey = keys.MasterKey;
+
         _credential = new SavedCredential
         {
-            Email = email.Trim(),
-            Password = password
+            Email = normalizedEmail,
+            Password = normalizedPassword
         };
 
         if (remember)
@@ -51,35 +156,71 @@ public sealed class CloudSyncClient
             SecureCredentialStore.Clear();
         }
 
+        _automaticLoginRetry.Reset();
+        Interlocked.Exchange(ref _cloudMembershipDeniedUntilUnixMs, 0);
         ClearSession();
     }
 
     public void ClearCredential()
     {
+        CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Credential cleared");
         _credential = null;
+        E2eeMasterKey = null;
         SecureCredentialStore.Clear();
+        _automaticLoginRetry.Reset();
+        Interlocked.Exchange(ref _cloudMembershipDeniedUntilUnixMs, 0);
         ClearSession();
     }
 
     public void ClearSessionOnly()
     {
+        CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Session cleared only");
         ClearSession();
     }
 
     public async Task EnsureAuthenticatedAsync(CancellationToken cancellationToken = default)
     {
+        var expectedGeneration = AccountCoordinator.Generation;
+        bool authenticated;
+        await _authenticationLock.WaitAsync(cancellationToken);
+        try { AccountCoordinator.RequireCurrent(expectedGeneration); authenticated = await EnsureAuthenticatedCoreAsync(cancellationToken); }
+        finally { _authenticationLock.Release(); }
+        // Vault requests authenticate too. Never restore while holding the authentication gate.
+        if (authenticated) await RestoreVaultAfterLoginAsync(cancellationToken);
+    }
+
+    private async Task<bool> EnsureAuthenticatedCoreAsync(CancellationToken cancellationToken)
+    {
         if (HasValidSession())
         {
-            return;
+            if (E2eeMasterKey == null && HasCredential)
+            {
+                var restoredKeys = DeriveSyncKeys(_credential!.LoginEmail, _credential.Password);
+                E2eeMasterKey = restoredKeys.MasterKey;
+                CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "E2eeMasterKey restored from saved credential for existing session");
+            }
+            return false;
         }
 
         if (!HasCredential)
         {
+            CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Authentication blocked: missing credential");
             throw new InvalidOperationException("缺少登录凭据，请先登录。");
         }
 
-        _session = await LoginAsync(_credential!.LoginEmail, _credential.Password, cancellationToken);
-        SyncSessionStore.Save(_session);
+        if (_automaticLoginRetry.IsCoolingDown(DateTimeOffset.UtcNow))
+            throw new InvalidOperationException("保存的登录凭据已被服务器拒绝，自动重试已暂停。请重新登录。");
+
+        CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Authenticating with saved credential", ("email", _credential?.LoginEmail));
+
+        // 自动登录时，基于本地存储的凭据重新派生并缓存 E2eeMasterKey
+        var keys = DeriveSyncKeys(_credential!.LoginEmail, _credential.Password);
+        E2eeMasterKey = keys.MasterKey;
+
+        // 这里传递明文密码，LoginAsync 内部会将其转为 LoginHash 进行网络传输
+        var authenticated = await LoginCoreAsync(_credential.LoginEmail, _credential.Password, cancellationToken, isAutomatic: true);
+        CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Authentication completed", ("userId", authenticated.UserId), ("username", authenticated.Username));
+        return true;
     }
 
     public async Task<SendCodeResponse> SendRegistrationCodeAsync(string email, string username, CancellationToken cancellationToken = default)
@@ -98,42 +239,129 @@ public sealed class CloudSyncClient
 
     public async Task<SyncSession> RegisterAsync(string email, string username, string password, string code, CancellationToken cancellationToken = default)
     {
+        var generation = AccountCoordinator.Generation;
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            throw new InvalidOperationException("密码不能为空。");
+        }
+
+        if (string.IsNullOrWhiteSpace(code))
+        {
+            throw new InvalidOperationException("验证码不能为空。");
+        }
+
+        var normalizedPassword = password.Trim();
+        var normalizedCode = code.Trim();
+
+        CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Register requested", ("email", email), ("username", username), ("passwordLength", normalizedPassword.Length), ("codeLength", normalizedCode.Length));
+
+        // 注册时派生并缓存 E2eeMasterKey
+        var keys = DeriveSyncKeys(email, normalizedPassword);
+        E2eeMasterKey = keys.MasterKey;
+
         var payload = new
         {
             email = email.Trim(),
             username = username.Trim(),
-            password,
-            code = code.Trim()
+            password = keys.LoginHash, // 发送 LoginHash 给云端
+            code = normalizedCode
         };
 
         using var response = await SendJsonAsync(HttpMethod.Post, "/v1/auth/register", payload, includeAuth: false, cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);
-        _session = await ReadSessionAsync(response, cancellationToken);
-        SyncSessionStore.Save(_session);
-        return _session;
+        var session = await ReadSessionAsync(response, cancellationToken);
+        _automaticLoginRetry.Reset();
+        AccountCoordinator.Commit(generation, () => { _session = session; SyncSessionStore.Save(session); });
+        await RestoreVaultAfterLoginAsync(cancellationToken);
+        CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Register completed", ("userId", session.UserId), ("username", session.Username));
+        return session;
     }
 
     public async Task<SyncSession> LoginAsync(string email, string password, CancellationToken cancellationToken = default)
     {
+        var session = await LoginCoreAsync(email, password, cancellationToken);
+        await RestoreVaultAfterLoginAsync(cancellationToken);
+        return session;
+    }
+
+    private async Task RestoreVaultAfterLoginAsync(CancellationToken cancellationToken)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(12));
+        try { await AccountEnvironmentSecretVault.RestoreAfterAuthenticationAsync(this, timeout.Token); }
+        catch (CloudVipRequiredException)
+        {
+            // Cloud membership expiry must never prevent login, licence redemption,
+            // membership renewal or access to the user's historical data export.
+            HostAssets.AppendLog("[VIP] Secret vault sync suspended; account login remains available.");
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            HostAssets.AppendLog("Environment secret vault restore timed out; login remains available.");
+        }
+    }
+
+    private async Task<SyncSession> LoginCoreAsync(string email, string password, CancellationToken cancellationToken, bool isAutomatic = false)
+    {
+        var generation = AccountCoordinator.Generation;
+        CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Login requested", ("email", email), ("passwordLength", password?.Length ?? 0));
+
+        var normalizedPassword = password ?? string.Empty;
+        var keys = DeriveSyncKeys(email, normalizedPassword);
+        E2eeMasterKey = keys.MasterKey;
+
         var payload = new
         {
             email = email.Trim(),
-            password
+            password = keys.LoginHash,
+            authVersion = "e2ee-v1",
+            legacyPassword = normalizedPassword
         };
 
-        using var response = await SendJsonAsync(HttpMethod.Post, "/v1/auth/login", payload, includeAuth: false, cancellationToken);
+        HttpResponseMessage response;
+        try
+        {
+            response = await SendJsonAsync(HttpMethod.Post, "/v1/auth/login", payload, includeAuth: false, cancellationToken);
+        }
+        catch (Exception ex) when (ex is HttpRequestException ||
+            (ex is OperationCanceledException && !cancellationToken.IsCancellationRequested))
+        {
+            var delay = _automaticLoginRetry.RecordFailure(null, null, DateTimeOffset.UtcNow);
+            CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Login transport cooldown",
+                ("delaySeconds", (int)delay.TotalSeconds), ("automatic", isAutomatic));
+            throw;
+        }
+
+        using (response)
+        {
+        if (!response.IsSuccessStatusCode)
+        {
+            var retryAfter = response.Headers.RetryAfter?.Delta;
+            if (retryAfter == null && response.Headers.RetryAfter?.Date is DateTimeOffset retryAt)
+                retryAfter = retryAt - DateTimeOffset.UtcNow;
+            var delay = _automaticLoginRetry.RecordFailure(response.StatusCode, retryAfter, DateTimeOffset.UtcNow);
+            CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Login HTTP cooldown",
+                ("statusCode", (int)response.StatusCode), ("delaySeconds", (int)delay.TotalSeconds),
+                ("automatic", isAutomatic));
+        }
         if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Unauthorized)
         {
+            // The server confirmed credentials are invalid or the account is absent.
+            // Retry no sooner than 10 minutes later instead of once per background poll.
             ClearSession();
             // 登录失败时不清除本地加密记住的凭据文件，避免因后端暂时网络波动或接口不可用导致本地凭据被强行抹除。
             // 这样既能在网络恢复后自动重连，也能在需要重新登录时在弹窗中保留自动填充邮箱的能力。
+            CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Login rejected", ("email", email), ("statusCode", (int)response.StatusCode));
             throw new InvalidOperationException("邮箱或密码错误。");
         }
 
         await EnsureSuccessAsync(response, cancellationToken);
-        _session = await ReadSessionAsync(response, cancellationToken);
-        SyncSessionStore.Save(_session);
-        return _session;
+        var session = await ReadSessionAsync(response, cancellationToken);
+        AccountCoordinator.Commit(generation, () => { _session = session; SyncSessionStore.Save(session); });
+        _automaticLoginRetry.Reset();
+        CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Login completed", ("userId", session.UserId), ("username", session.Username));
+        return session;
+        }
     }
 
     public async Task<SendCodeResponse> SendPasswordResetCodeAsync(string email, CancellationToken cancellationToken = default)
@@ -151,18 +379,42 @@ public sealed class CloudSyncClient
 
     public async Task<SyncSession> ResetPasswordAsync(string email, string password, string code, CancellationToken cancellationToken = default)
     {
+        var generation = AccountCoordinator.Generation;
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            throw new InvalidOperationException("密码不能为空。");
+        }
+
+        if (string.IsNullOrWhiteSpace(code))
+        {
+            throw new InvalidOperationException("验证码不能为空。");
+        }
+
+        var previousMasterKey = E2eeMasterKey?.ToArray();
+        var normalizedPassword = password.Trim();
+        var normalizedCode = code.Trim();
+
+        CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Reset password requested", ("email", email), ("passwordLength", normalizedPassword.Length), ("codeLength", normalizedCode.Length));
+
+        // 重置密码时派生并缓存 E2eeMasterKey
+        var keys = DeriveSyncKeys(email, normalizedPassword);
+        E2eeMasterKey = keys.MasterKey;
+
         var payload = new
         {
             email = email.Trim(),
-            password,
-            code = code.Trim()
+            password = keys.LoginHash, // 发送 LoginHash 给云端
+            code = normalizedCode
         };
 
         using var response = await SendJsonAsync(HttpMethod.Post, "/v1/auth/reset-password", payload, includeAuth: false, cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);
-        _session = await ReadSessionAsync(response, cancellationToken);
-        SyncSessionStore.Save(_session);
-        return _session;
+        var session = await ReadSessionAsync(response, cancellationToken);
+        AccountCoordinator.Commit(generation, () => { _session = session; SyncSessionStore.Save(session); });
+        await AccountEnvironmentSecretVault.RewrapAfterPasswordChangeAsync(this, previousMasterKey, keys.MasterKey, cancellationToken);
+        await RestoreVaultAfterLoginAsync(cancellationToken);
+        CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Reset password completed", ("userId", session.UserId), ("username", session.Username));
+        return session;
     }
 
     public async Task<HealthResponse?> GetHealthAsync(CancellationToken cancellationToken = default)
@@ -181,6 +433,81 @@ public sealed class CloudSyncClient
         return await ReadAsync<AuthMeResponse>(response, cancellationToken);
     }
 
+    public async Task<VipStatusResponse?> GetVipStatusAsync(CancellationToken cancellationToken = default)
+    {
+        await EnsureAuthenticatedAsync(cancellationToken);
+        using var request = CreateRequest(HttpMethod.Get, "/v1/user/vip-status", includeAuth: true);
+        using var response = await SendAsyncWithFallback(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        var status = await ReadAsync<VipStatusResponse>(response, cancellationToken);
+        if (status != null && _session != null)
+        {
+            _session.IsVip = status.IsVip;
+            _session.VipType = status.VipType;
+            _session.VipExpireAt = status.VipExpireAt;
+            _session.DaysRemaining = status.DaysRemaining;
+            if (status.IsVip) Interlocked.Exchange(ref _cloudMembershipDeniedUntilUnixMs, 0);
+            SyncSessionStore.Save(_session);
+        }
+        return status;
+    }
+
+    /// <summary>
+    /// Export historical sync objects without requiring a current VIP subscription.
+    /// This deliberately does not claim to include attachment binaries or external WebDAV data.
+    /// </summary>
+    public async Task<string> ExportHistoricalCloudSyncObjectsAsync(CancellationToken cancellationToken = default)
+    {
+        await EnsureAuthenticatedAsync(cancellationToken);
+        var allObjects = new List<JsonElement>();
+        long cursor = 0;
+        for (var pageIndex = 0; pageIndex < 1000; pageIndex++)
+        {
+            using var request = CreateRequest(HttpMethod.Get, $"/v1/user/cloud-export?cursor={cursor}", includeAuth: true);
+            using var response = await SendAsyncWithFallback(request, cancellationToken);
+            await EnsureSuccessAsync(response, cancellationToken);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+            var payload = document.RootElement;
+            if (!payload.TryGetProperty("objects", out var pageObjects) || pageObjects.ValueKind != JsonValueKind.Array)
+                throw new InvalidOperationException("历史云数据格式不正确，导出已停止。");
+            foreach (var item in pageObjects.EnumerateArray()) allObjects.Add(item.Clone());
+            var next = payload.GetProperty("cursorRevision").GetInt64();
+            var hasMore = payload.GetProperty("hasMore").GetBoolean();
+            if (!hasMore)
+            {
+                return JsonSerializer.Serialize(new
+                {
+                    format = "yanzi-cloud-sync-objects-v1",
+                    exportedAtUtc = DateTimeOffset.UtcNow,
+                    note = "仅包含云同步对象；附件文件与第三方网盘数据不在此备份中。",
+                    objects = allObjects
+                }, new JsonSerializerOptions { WriteIndented = true });
+            }
+            if (next <= cursor) throw new InvalidOperationException("云端导出游标未前进，已中止以防数据重复。");
+            cursor = next;
+        }
+        throw new InvalidOperationException("历史云数据超过安全分页上限，请联系维护者协助导出。");
+    }
+
+    public async Task<RedeemLicenseResponse?> RedeemLicenseAsync(string code, CancellationToken cancellationToken = default)
+    {
+        await EnsureAuthenticatedAsync(cancellationToken);
+        var payload = new { code = code.Trim().ToUpperInvariant() };
+        using var response = await SendJsonAsync(HttpMethod.Post, "/v1/licenses/redeem", payload, includeAuth: true, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        var result = await ReadAsync<RedeemLicenseResponse>(response, cancellationToken);
+        if (result != null && result.Ok && _session != null)
+        {
+            _session.IsVip = result.IsVip;
+            _session.VipType = result.VipType;
+            _session.VipExpireAt = result.VipExpireAt;
+            _session.DaysRemaining = result.DaysRemaining;
+            if (result.IsVip) Interlocked.Exchange(ref _cloudMembershipDeniedUntilUnixMs, 0);
+            SyncSessionStore.Save(_session);
+        }
+        return result;
+    }
+
     public async Task<IReadOnlyList<CloudExtensionRecord>> GetExtensionsAsync(CancellationToken cancellationToken = default)
     {
         var cacheBust = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -197,16 +524,51 @@ public sealed class CloudSyncClient
     public async Task<IReadOnlyList<UserExtensionRecord>> GetUserExtensionsAsync(CancellationToken cancellationToken = default)
     {
         await EnsureAuthenticatedAsync(cancellationToken);
-        using var request = CreateRequest(HttpMethod.Get, "/v1/me/extensions", includeAuth: true);
-        using var response = await SendAsyncWithFallback(request, cancellationToken);
-        response.EnsureSuccessStatusCode();
-        var payload = await ReadAsync<UserExtensionListResponse>(response, cancellationToken);
-        return payload?.Items ?? [];
+        await _extensionSnapshotFetchLock.WaitAsync(cancellationToken);
+        try
+        {
+            var userId = CurrentUserId;
+            long generation;
+            lock (_extensionSnapshotLock)
+            {
+                if (_extensionSnapshot != null &&
+                    string.Equals(_extensionSnapshotUserId, userId, StringComparison.Ordinal) &&
+                    _extensionSnapshotExpiresUtc > DateTimeOffset.UtcNow)
+                    return _extensionSnapshot;
+                generation = _extensionSnapshotGeneration;
+            }
+
+            using var request = CreateRequest(HttpMethod.Get, "/v1/me/extensions", includeAuth: true);
+            using var response = await SendAsyncWithFallback(request, cancellationToken);
+            response.EnsureSuccessStatusCode();
+            var payload = await ReadAsync<UserExtensionListResponse>(response, cancellationToken);
+            IReadOnlyList<UserExtensionRecord> result = payload?.Items ?? [];
+            lock (_extensionSnapshotLock)
+            {
+                // A concurrent upload/removal must not install an old snapshot.
+                if (_extensionSnapshotGeneration == generation &&
+                    string.Equals(CurrentUserId, userId, StringComparison.Ordinal))
+                {
+                    _extensionSnapshot = result;
+                    _extensionSnapshotUserId = userId;
+                    _extensionSnapshotExpiresUtc = DateTimeOffset.UtcNow.AddSeconds(20);
+                }
+            }
+            return result;
+        }
+        finally
+        {
+            _extensionSnapshotFetchLock.Release();
+        }
     }
 
     public async Task UpsertExtensionAsync(CommandItem command, string? iconOverride = null, CancellationToken cancellationToken = default)
     {
         await EnsureAuthenticatedAsync(cancellationToken);
+        var accentHex = System.Windows.Application.Current?.Dispatcher.CheckAccess() != false
+            ? command.AccentBrush?.ToString()
+            : System.Windows.Application.Current.Dispatcher.Invoke(() => command.AccentBrush?.ToString());
+
         var body = JsonSerializer.Serialize(new
         {
             manifest = new
@@ -216,12 +578,12 @@ public sealed class CloudSyncClient
                 version = command.DeclaredVersion,
                 category = command.Category,
                 description = command.Subtitle,
-                accentHex = command.AccentBrush?.ToString(),
+                accentHex = accentHex,
                 keywords = command.Keywords,
                 icon = string.IsNullOrWhiteSpace(iconOverride) ? command.IconReference : iconOverride,
                 queryPrefixes = command.QueryPrefixes,
                 queryTargetTemplate = command.QueryTargetTemplate,
-                globalShortcut = command.GlobalShortcut,
+                globalShortcut = (string?)null,
                 hotkeyBehavior = command.HotkeyBehavior,
                 runtime = command.Runtime,
                 entryMode = command.EntryMode,
@@ -256,7 +618,35 @@ public sealed class CloudSyncClient
         response.EnsureSuccessStatusCode();
     }
 
+    public async Task UpsertPrivateExtensionAsync(CommandItem command, string? iconOverride = null, CancellationToken cancellationToken = default)
+    {
+        await EnsureAuthenticatedAsync(cancellationToken);
+        var body = JsonSerializer.Serialize(new
+        {
+            manifest = BuildManifestPayload(command, iconOverride)
+        });
+
+        using var request = CreateJsonRequest(
+            HttpMethod.Put,
+            $"/v1/me/extensions/{Uri.EscapeDataString(command.ExtensionId)}/private",
+            body,
+            includeAuth: true);
+        using var response = await SendAsyncWithFallback(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        InvalidateExtensionSnapshot();
+    }
+
     public async Task<string?> PublishIconAsync(CommandItem command, string version, CancellationToken cancellationToken = default)
+    {
+        return await UploadIconAsync(command, version, privateLibrary: false, cancellationToken);
+    }
+
+    public async Task<string?> PublishPrivateIconAsync(CommandItem command, string version, CancellationToken cancellationToken = default)
+    {
+        return await UploadIconAsync(command, version, privateLibrary: true, cancellationToken);
+    }
+
+    private async Task<string?> UploadIconAsync(CommandItem command, string version, bool privateLibrary, CancellationToken cancellationToken)
     {
         var iconReference = command.IconReference?.Trim();
         if (string.IsNullOrWhiteSpace(iconReference) || ExtensionIconLibrary.IsBuiltInReference(iconReference))
@@ -278,9 +668,12 @@ public sealed class CloudSyncClient
         }
 
         await EnsureAuthenticatedAsync(cancellationToken);
+        var path = privateLibrary
+            ? $"/v1/me/extensions/{Uri.EscapeDataString(command.ExtensionId)}/icon"
+            : $"/v1/extensions/{Uri.EscapeDataString(command.ExtensionId)}/icon";
         using var request = CreateRequest(
             HttpMethod.Put,
-            $"/v1/extensions/{Uri.EscapeDataString(command.ExtensionId)}/icon?version={Uri.EscapeDataString(version)}&filename={Uri.EscapeDataString(Path.GetFileName(localPath))}",
+            $"{path}?version={Uri.EscapeDataString(version)}&filename={Uri.EscapeDataString(Path.GetFileName(localPath))}",
             includeAuth: true);
         request.Content = new ByteArrayContent(await File.ReadAllBytesAsync(localPath, cancellationToken));
         request.Content.Headers.ContentType = new MediaTypeHeaderValue(GetMimeType(localPath));
@@ -291,17 +684,43 @@ public sealed class CloudSyncClient
         return string.IsNullOrWhiteSpace(payload.IconUrl) ? iconReference : payload.IconUrl;
     }
 
-    public async Task UpsertUserExtensionAsync(CommandItem command, CancellationToken cancellationToken = default)
+    public async Task UpsertUserExtensionAsync(CommandItem command, string? iconOverride = null, bool hasArchive = false, CancellationToken cancellationToken = default, bool restoreDeleted = false)
     {
         await EnsureAuthenticatedAsync(cancellationToken);
+        var icon = string.IsNullOrWhiteSpace(iconOverride) ? command.IconReference : iconOverride;
+        var accentHex = System.Windows.Application.Current?.Dispatcher.CheckAccess() != false
+            ? command.AccentBrush?.ToString()
+            : System.Windows.Application.Current.Dispatcher.Invoke(() => command.AccentBrush?.ToString());
+
         var body = JsonSerializer.Serialize(new
         {
             installedVersion = command.DeclaredVersion,
             enabled = true,
+            restoreDeleted,
             settings = new
             {
                 source = "openquickhost-desktop",
-                title = command.Title
+                title = command.Title,
+                name = command.Title,
+                displayName = command.Title,
+                description = command.Subtitle,
+                icon,
+                accentHex = accentHex,
+                hasArchive,
+                packageScope = hasArchive ? "private-account" : "",
+                manifest = new
+                {
+                    id = command.ExtensionId,
+                    name = command.Title,
+                    displayName = command.Title,
+                    version = command.DeclaredVersion,
+                    category = command.Category,
+                    description = command.Subtitle,
+                    icon,
+                    accentHex = accentHex,
+                    runtime = command.Runtime,
+                    entryMode = command.EntryMode
+                }
             }
         });
 
@@ -312,6 +731,7 @@ public sealed class CloudSyncClient
             includeAuth: true);
         using var response = await SendAsyncWithFallback(request, cancellationToken);
         response.EnsureSuccessStatusCode();
+        InvalidateExtensionSnapshot();
     }
 
     public async Task DeleteExtensionAsync(string extensionId, CancellationToken cancellationToken = default)
@@ -334,6 +754,7 @@ public sealed class CloudSyncClient
             includeAuth: true);
         using var response = await SendAsyncWithFallback(request, cancellationToken);
         response.EnsureSuccessStatusCode();
+        InvalidateExtensionSnapshot();
     }
 
     public async Task<T?> GetUserConfigAsync<T>(string configId, CancellationToken cancellationToken = default)
@@ -367,6 +788,213 @@ public sealed class CloudSyncClient
             includeAuth: true);
         using var response = await SendAsyncWithFallback(request, cancellationToken);
         response.EnsureSuccessStatusCode();
+        InvalidateExtensionSnapshot();
+    }
+
+    internal async Task<byte[]> GetSecretVaultRecoveryKeyAsync(CancellationToken cancellationToken = default)
+    {
+        await EnsureAuthenticatedAsync(cancellationToken);
+        var accountId = CurrentUserId ?? throw new InvalidOperationException("当前账号未登录。");
+        lock (_secretVaultRecoveryKeyLock)
+        {
+            if (string.Equals(_secretVaultRecoveryKeyAccount, accountId, StringComparison.Ordinal) &&
+                _secretVaultRecoveryKey is { Length: 32 } cached &&
+                _secretVaultRecoveryKeyExpiresAtUtc > DateTimeOffset.UtcNow)
+                return cached.ToArray();
+        }
+
+        using var request = CreateRequest(HttpMethod.Get, "/v1/sync/vault-key", includeAuth: true);
+        using var response = await SendAsyncWithFallback(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        var payload = await ReadAsync<SecretVaultKeyResponse>(response, cancellationToken)
+            ?? throw new InvalidDataException("云端未返回凭证库恢复密钥。");
+        if (!payload.Ok || payload.Version != 1 || string.IsNullOrWhiteSpace(payload.Key))
+            throw new InvalidDataException("云端凭证库恢复密钥无效。");
+        var normalized = payload.Key.Replace('-', '+').Replace('_', '/');
+        normalized = normalized.PadRight(normalized.Length + ((4 - normalized.Length % 4) % 4), '=');
+        var key = Convert.FromBase64String(normalized);
+        if (key.Length != 32) throw new InvalidDataException("云端凭证库恢复密钥长度无效。");
+        lock (_secretVaultRecoveryKeyLock)
+        {
+            _secretVaultRecoveryKeyAccount = accountId;
+            _secretVaultRecoveryKey = key.ToArray();
+            _secretVaultRecoveryKeyExpiresAtUtc = DateTimeOffset.UtcNow.AddMinutes(30);
+        }
+        return key;
+    }
+
+    public async Task<CloudSyncObjectListResponse> GetSyncObjectsAsync(CancellationToken cancellationToken = default)
+    {
+        await EnsureAuthenticatedAsync(cancellationToken);
+        using var request = CreateRequest(HttpMethod.Get, "/v1/sync/objects", includeAuth: true);
+        using var response = await SendAsyncWithFallback(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return await ReadAsync<CloudSyncObjectListResponse>(response, cancellationToken)
+            ?? new CloudSyncObjectListResponse();
+    }
+
+    public async Task<CloudSyncCapabilitiesResponse> GetSyncCapabilitiesAsync(CancellationToken cancellationToken = default)
+    {
+        await EnsureAuthenticatedAsync(cancellationToken);
+        using var request = CreateRequest(HttpMethod.Get, "/v1/sync/capabilities", includeAuth: true);
+        using var response = await SendAsyncWithFallback(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return await ReadAsync<CloudSyncCapabilitiesResponse>(response, cancellationToken)
+            ?? new CloudSyncCapabilitiesResponse();
+    }
+
+    public async Task<CloudSyncObjectRecord?> GetSyncObjectAsync(
+        string objectId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(objectId))
+        {
+            throw new ArgumentException("同步对象 ID 不能为空。", nameof(objectId));
+        }
+
+        await EnsureAuthenticatedAsync(cancellationToken);
+        using var request = CreateRequest(
+            HttpMethod.Get,
+            $"/v1/sync/objects/{Uri.EscapeDataString(objectId.Trim())}",
+            includeAuth: true);
+        using var response = await SendAsyncWithFallback(request, cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        await EnsureSuccessAsync(response, cancellationToken);
+        var result = await ReadAsync<CloudSyncObjectWriteResponse>(response, cancellationToken);
+        return result?.Object;
+    }
+
+    public async Task<CloudSyncObjectListResponse> GetSyncChangesAsync(
+        long sinceRevision,
+        int limit = 200,
+        CancellationToken cancellationToken = default)
+    {
+        if (sinceRevision < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sinceRevision));
+        }
+
+        await EnsureAuthenticatedAsync(cancellationToken);
+        var normalizedLimit = Math.Clamp(limit, 1, 500);
+        using var request = CreateRequest(
+            HttpMethod.Get,
+            $"/v1/sync/changes?since={sinceRevision}&limit={normalizedLimit}",
+            includeAuth: true);
+        using var response = await SendAsyncWithFallback(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return await ReadAsync<CloudSyncObjectListResponse>(response, cancellationToken)
+            ?? new CloudSyncObjectListResponse();
+    }
+
+    public async Task<CloudSyncObjectRecord> PutSyncObjectAsync(
+        string objectId,
+        int schemaVersion,
+        long expectedRevision,
+        bool deleted,
+        object payload,
+        string? updatedByDeviceId,
+        string? updatedByDeviceName,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(objectId))
+        {
+            throw new ArgumentException("同步对象 ID 不能为空。", nameof(objectId));
+        }
+        if (expectedRevision < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(expectedRevision));
+        }
+
+        await EnsureAuthenticatedAsync(cancellationToken);
+        var body = JsonSerializer.Serialize(new
+        {
+            schemaVersion,
+            expectedRevision,
+            deleted,
+            payload,
+            updatedByDeviceId,
+            updatedByDeviceName
+        });
+        using var request = CreateJsonRequest(
+            HttpMethod.Put,
+            $"/v1/sync/objects/{Uri.EscapeDataString(objectId.Trim())}",
+            body,
+            includeAuth: true);
+        using var response = await SendAsyncWithFallback(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        var result = await ReadAsync<CloudSyncObjectWriteResponse>(response, cancellationToken);
+        return result?.Object ?? throw new InvalidDataException("云端未返回写入后的同步对象。");
+    }
+
+    public async Task<CloudSyncObjectHistoryResponse> GetSyncObjectHistoryAsync(
+        string objectId,
+        long beforeRevision = 0,
+        int limit = 50,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(objectId))
+        {
+            throw new ArgumentException("同步对象 ID 不能为空。", nameof(objectId));
+        }
+        if (beforeRevision < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(beforeRevision));
+        }
+
+        await EnsureAuthenticatedAsync(cancellationToken);
+        var normalizedLimit = Math.Clamp(limit, 1, 200);
+        using var request = CreateRequest(
+            HttpMethod.Get,
+            $"/v1/sync/history?objectId={Uri.EscapeDataString(objectId.Trim())}&before={beforeRevision}&limit={normalizedLimit}",
+            includeAuth: true);
+        using var response = await SendAsyncWithFallback(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return await ReadAsync<CloudSyncObjectHistoryResponse>(response, cancellationToken)
+            ?? new CloudSyncObjectHistoryResponse();
+    }
+
+    public async Task<CloudSyncObjectRecord> RestoreSyncObjectAsync(
+        string objectId,
+        long expectedRevision,
+        long restoreRevision,
+        string? updatedByDeviceId,
+        string? updatedByDeviceName,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(objectId))
+        {
+            throw new ArgumentException("同步对象 ID 不能为空。", nameof(objectId));
+        }
+        if (expectedRevision < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(expectedRevision));
+        }
+        if (restoreRevision <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(restoreRevision));
+        }
+
+        await EnsureAuthenticatedAsync(cancellationToken);
+        var body = JsonSerializer.Serialize(new
+        {
+            expectedRevision,
+            restoreRevision,
+            updatedByDeviceId,
+            updatedByDeviceName
+        });
+        using var request = CreateJsonRequest(
+            HttpMethod.Post,
+            $"/v1/sync/objects/{Uri.EscapeDataString(objectId.Trim())}/restore",
+            body,
+            includeAuth: true);
+        using var response = await SendAsyncWithFallback(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        var result = await ReadAsync<CloudSyncObjectWriteResponse>(response, cancellationToken);
+        return result?.Object ?? throw new InvalidDataException("云端未返回恢复后的同步对象。");
     }
 
     public async Task<YanmStateResponse?> GetYanmStateAsync(CancellationToken cancellationToken = default)
@@ -398,13 +1026,37 @@ public sealed class CloudSyncClient
         return await ReadAsync<YanmStateResponse>(response, cancellationToken);
     }
 
+    public async Task<YanmStateResponse?> PatchYanmComponentStateAsync(
+        IReadOnlyDictionary<string, string> componentState,
+        string? updatedAtUtc = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (componentState.Count == 0)
+        {
+            throw new ArgumentException("燕幕组件状态补丁不能为空。", nameof(componentState));
+        }
+
+        await EnsureAuthenticatedAsync(cancellationToken);
+        var body = JsonSerializer.Serialize(new
+        {
+            updatedAtUtc = string.IsNullOrWhiteSpace(updatedAtUtc) ? DateTime.UtcNow.ToString("O") : updatedAtUtc,
+            componentState
+        });
+
+        using var request = CreateJsonRequest(HttpMethod.Put, "/v1/me/yanm-state/component-state", body, includeAuth: true);
+        using var response = await SendAsyncWithFallback(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return await ReadAsync<YanmStateResponse>(response, cancellationToken);
+    }
+
     public async Task RegisterDeviceAsync(
         string deviceId,
         string platform,
         string displayName,
         object? capabilities = null,
         string? pushToken = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool reactivateRemovedDevice = false)
     {
         await EnsureAuthenticatedAsync(cancellationToken);
         var body = JsonSerializer.Serialize(new
@@ -413,6 +1065,7 @@ public sealed class CloudSyncClient
             platform,
             displayName,
             pushToken,
+            reactivateRemovedDevice,
             capabilities = capabilities ?? new { }
         });
 
@@ -421,20 +1074,33 @@ public sealed class CloudSyncClient
         await EnsureSuccessAsync(response, cancellationToken);
     }
 
+    public async Task<DeviceMessageListResponse> GetPendingDeviceMessagePageAsync(
+        string deviceId,
+        long after = 0,
+        int limit = 20,
+        CancellationToken cancellationToken = default)
+    {
+        if (after < 0) throw new ArgumentOutOfRangeException(nameof(after));
+        await EnsureAuthenticatedAsync(cancellationToken);
+        using var request = CreateRequest(
+            HttpMethod.Get,
+            $"/v1/me/mobile/messages?deviceId={Uri.EscapeDataString(deviceId)}&limit={limit}&after={after}",
+            includeAuth: true);
+        using var response = await SendAsyncWithFallback(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return await ReadAsync<DeviceMessageListResponse>(response, cancellationToken)
+            ?? new DeviceMessageListResponse { DeviceId = deviceId, NextCursor = after, HighWater = after };
+    }
+
     public async Task<IReadOnlyList<DeviceMessageRecord>> GetPendingDeviceMessagesAsync(
         string deviceId,
         int limit = 20,
         CancellationToken cancellationToken = default)
     {
-        await EnsureAuthenticatedAsync(cancellationToken);
-        using var request = CreateRequest(
-            HttpMethod.Get,
-            $"/v1/me/mobile/messages?deviceId={Uri.EscapeDataString(deviceId)}&limit={limit}",
-            includeAuth: true);
-        using var response = await SendAsyncWithFallback(request, cancellationToken);
-        await EnsureSuccessAsync(response, cancellationToken);
-        var payload = await ReadAsync<DeviceMessageListResponse>(response, cancellationToken);
-        return payload?.Items ?? [];
+        var items = (await GetPendingDeviceMessagePageAsync(deviceId, 0, limit, cancellationToken)).Items;
+        var taskAccount = TaskJournalAccount;
+        foreach (var message in items) PlatformTaskJournal.Observed(taskAccount, message);
+        return items;
     }
 
     public async Task<string> SendDeviceMessageAsync(
@@ -445,9 +1111,18 @@ public sealed class CloudSyncClient
         string text,
         string? targetDeviceId = null,
         object? payload = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? clientMessageId = null,
+        DateTimeOffset? expiresAt = null)
     {
         await EnsureAuthenticatedAsync(cancellationToken);
+        var taskAccount = TaskJournalAccount;
+        clientMessageId ??= Guid.NewGuid().ToString("N");
+        if (expiresAt == null && DeviceMessageOutbox.ReadSaved(CurrentUserId!, clientMessageId) is { } previous)
+        {
+            using var savedEnvelope = JsonDocument.Parse(previous);
+            if (savedEnvelope.RootElement.TryGetProperty("expiresAt", out var savedExpiry) && savedExpiry.ValueKind == JsonValueKind.String && DateTimeOffset.TryParse(savedExpiry.GetString(), out var deadline)) expiresAt = deadline;
+        }
         var body = JsonSerializer.Serialize(new
         {
             sourceDeviceId,
@@ -456,21 +1131,131 @@ public sealed class CloudSyncClient
             kind,
             title,
             text,
-            payload = payload ?? new { }
+            payload = payload ?? new { },
+            clientMessageId,
+            expiresAt = (expiresAt ?? (YanziDeviceMessageProtocol.IsExecution(kind) ? DateTimeOffset.UtcNow.AddMinutes(2) : DateTimeOffset.UtcNow.AddDays(30))).ToString("O")
         });
+        var saved = DeviceMessageOutbox.Save(CurrentUserId!, clientMessageId, body);
+        PlatformTaskJournal.Envelope(taskAccount, body);
+        string id;
+        try { id = await SendSavedDeviceMessageAsync(body, cancellationToken); }
+        catch (DeviceMessageRejectedException error) { PlatformTaskJournal.Envelope(taskAccount, body, status: "failed", result: "HTTP " + error.StatusCode); DeviceMessageOutbox.Fail(saved); throw; }
+        catch (Exception error) { PlatformTaskJournal.Envelope(taskAccount, body, status: "unknown", result: error.Message); throw; }
+        DeviceMessageOutbox.Complete(saved);
+        return id;
+    }
 
+    private async Task<string> SendSavedDeviceMessageAsync(string body, CancellationToken cancellationToken)
+    {
+        var taskAccount = TaskJournalAccount;
         using var request = CreateJsonRequest(HttpMethod.Post, "/v1/me/mobile/messages", body, includeAuth: true);
         using var response = await SendAsyncWithFallback(request, cancellationToken);
+        if ((int)response.StatusCode is 400 or 403 or 404 or 409 or 410 or 413 or 426)
+            throw new DeviceMessageRejectedException((int)response.StatusCode);
         await EnsureSuccessAsync(response, cancellationToken);
         var result = await ReadAsync<DeviceMessageCreateResponse>(response, cancellationToken);
+        PlatformTaskJournal.Envelope(taskAccount, body, result?.MessageId, "submitted");
         return result?.MessageId ?? string.Empty;
+    }
+
+    // Capability invocations and background replay use different client instances.
+    // Serialize their durable jobs before uploading or constructing an envelope.
+    private static readonly SemaphoreSlim _chatDeliveryGate = new(1, 1);
+    public async Task<string> DeliverChatJobAsync(DesktopChatJob job, CancellationToken cancellationToken = default)
+    {
+        await _chatDeliveryGate.WaitAsync(cancellationToken);
+        try
+        {
+        await EnsureAuthenticatedAsync(cancellationToken);
+        job = DesktopChatOutbox.Find(job) ?? throw new InvalidOperationException("outbox_job_missing");
+        if (job.CompletedMessageId != null) return job.CompletedMessageId;
+        if (job.Account != CurrentUserId) throw new InvalidOperationException("outbox_account_mismatch");
+        if (DateTimeOffset.UtcNow - job.CreatedAt > TimeSpan.FromDays(30))
+        { DesktopChatOutbox.Complete(job); throw new InvalidOperationException("message_expired"); }
+        await RegisterDeviceAsync(job.Source, "desktop", DeviceIdentityStore.GetDesktopDisplayName(), cancellationToken: cancellationToken);
+        if (job.FilePath != null && job.Attachment == null)
+        {
+            job = job with { Attachment = await UploadMobileAttachmentAsync(job.FilePath, cancellationToken) };
+            DesktopChatOutbox.Save(job);
+        }
+        object payload = job.Attachment is { } attachment ? new {
+            source = "desktop-chat", attachmentId = attachment.AttachmentId, fileName = attachment.FileName,
+            size = attachment.Size, sha256 = attachment.Sha256, contentType = attachment.ContentType,
+            clientTransferId = job.Id, clientOperationId = job.Id, conversationId = job.ConversationId
+        } : new { source = "desktop-chat", clientTransferId = job.Id, clientOperationId = job.Id, conversationId = job.ConversationId };
+        var id = await SendDeviceMessageAsync(job.Source, "android", job.Kind, "YanziChat", job.Text,
+            targetDeviceId: job.TargetDeviceId, payload: payload, cancellationToken: cancellationToken, clientMessageId: job.Id, expiresAt: job.CreatedAt.AddDays(30));
+        DesktopChatOutbox.Complete(job, id);
+        return id;
+        } finally { _chatDeliveryGate.Release(); }
+    }
+
+    /// <summary>Ephemeral AI snapshots via authenticated websocket relay; never enqueue in D1/outbox.</summary>
+    public async Task SendTransientChatStreamAsync(string sourceDeviceId, string targetDeviceId, string content,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureAuthenticatedAsync(cancellationToken);
+        var body = JsonSerializer.Serialize(new { sourceDeviceId, targetDeviceId, content });
+        using var request = CreateJsonRequest(HttpMethod.Post, "/v1/me/mobile/messages/stream", body, includeAuth: true);
+        using var response = await SendAsyncWithFallback(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+    }
+
+    private readonly SemaphoreSlim _outboxReplay = new(1, 1);
+    public async Task ReplayDeviceOutboxAsync(CancellationToken cancellationToken = default)
+    {
+        if (!await _outboxReplay.WaitAsync(0, cancellationToken)) return;
+        try
+        {
+            await EnsureAuthenticatedAsync(cancellationToken);
+            foreach (var job in DesktopChatOutbox.Pending(CurrentUserId!))
+                try { await DeliverChatJobAsync(job, cancellationToken); }
+                catch (DeviceMessageRejectedException error) { DesktopChatOutbox.Complete(job, "rejected:" + error.StatusCode); HostAssets.AppendLog("Chat outbox terminal rejection: " + error.StatusCode); }
+            foreach (var path in DeviceMessageOutbox.Pending(CurrentUserId!))
+            {
+                var body = File.ReadAllText(path);
+                using var document = JsonDocument.Parse(body);
+                if (document.RootElement.TryGetProperty("expiresAt", out var expiry) && expiry.ValueKind == JsonValueKind.String &&
+                    DateTimeOffset.TryParse(expiry.GetString(), out var deadline) && deadline <= DateTimeOffset.UtcNow)
+                { PlatformTaskJournal.Envelope(TaskJournalAccount, body, status: "expired"); DeviceMessageOutbox.Complete(path); HostAssets.AppendLog("Device outbox command expired before sending."); continue; }
+                try { await SendSavedDeviceMessageAsync(body, cancellationToken); }
+                catch (DeviceMessageRejectedException error) { PlatformTaskJournal.Envelope(TaskJournalAccount, body, status: "failed", result: "HTTP " + error.StatusCode); DeviceMessageOutbox.Fail(path); HostAssets.AppendLog("Device outbox terminal rejection: " + error.StatusCode); continue; }
+                DeviceMessageOutbox.Complete(path);
+            }
+        }
+        finally { _outboxReplay.Release(); }
+    }
+
+    public async Task<DeviceMessageRecord> QueryTaskMessageAsync(string id, CancellationToken cancellationToken = default)
+    {
+        await EnsureAuthenticatedAsync(cancellationToken);
+        var taskAccount = TaskJournalAccount;
+        using var request=CreateRequest(HttpMethod.Get,$"/v1/me/mobile/messages/{Uri.EscapeDataString(id)}",includeAuth:true);
+        using var response=await SendAsyncWithFallback(request,cancellationToken);
+        await EnsureSuccessAsync(response,cancellationToken);
+        var message=await ReadAsync<DeviceMessageRecord>(response,cancellationToken) ?? throw new InvalidDataException("任务响应无效");
+        PlatformTaskJournal.Observed(taskAccount,message); return message;
+    }
+
+    public async Task<bool> ClaimDeviceMessageAsync(string messageId, string deviceId, CancellationToken cancellationToken = default)
+    {
+        await EnsureAuthenticatedAsync(cancellationToken);
+        using var request = CreateJsonRequest(HttpMethod.Post, $"/v1/me/mobile/messages/{Uri.EscapeDataString(messageId)}/claim",
+            JsonSerializer.Serialize(new { deviceId }), includeAuth: true);
+        using var response = await SendAsyncWithFallback(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+        return document.RootElement.GetProperty("acquired").GetBoolean();
     }
 
     public async Task<HttpResponseMessage> GetMobileMessagesEventsStreamAsync(string deviceId, CancellationToken cancellationToken)
     {
+        var generation = AccountCoordinator.Generation;
+        ThrowIfTransportCoolingDown(cancellationToken);
         await EnsureAuthenticatedAsync(cancellationToken);
-        
-        var request = new HttpRequestMessage(HttpMethod.Get, $"/v1/me/mobile/messages/events?deviceId={Uri.EscapeDataString(deviceId)}");
+        AccountCoordinator.RequireCurrent(generation);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/v1/me/mobile/messages/events?deviceId={Uri.EscapeDataString(deviceId)}");
         request.Version = HttpVersion.Version11;
         request.VersionPolicy = HttpVersionPolicy.RequestVersionOrLower;
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
@@ -486,27 +1271,32 @@ public sealed class CloudSyncClient
             (_directHttpClient, "direct"),
             (_httpClient, "proxy-retry")
         };
-
         for (var index = 0; index < attempts.Length; index++)
         {
             try
             {
-                var response = await attempts[index].client.SendAsync(CloneRequest(request), HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-                response.EnsureSuccessStatusCode();
+                using var attemptRequest = await CloneRequestAsync(request, cancellationToken);
+                var response = await attempts[index].client.SendAsync(attemptRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                try { AccountCoordinator.RequireCurrent(generation); response.EnsureSuccessStatusCode(); }
+                catch { response.Dispose(); throw; }
+                ResetTransportBackoff();
                 return response;
             }
-            catch (Exception ex) when (IsRetryableTransportException(ex) && index < attempts.Length - 1)
+            catch (Exception ex) when (AccountCoordinator.Generation == generation && IsRetryableTransportException(ex, cancellationToken) && index < attempts.Length - 1)
             {
                 lastError = ex;
                 await Task.Delay(TimeSpan.FromMilliseconds(250 * (index + 1)), cancellationToken);
             }
             catch (Exception ex)
             {
+                AccountCoordinator.RequireCurrent(generation);
                 lastError = ex;
-                if (index == attempts.Length - 1)
+                var retryable = IsRetryableTransportException(ex, cancellationToken);
+                if (retryable)
                 {
-                    throw new InvalidOperationException($"Failed to establish SSE connection: {ex.Message}", lastError);
+                    RegisterTransportFailure();
                 }
+                throw new InvalidOperationException($"Failed to establish SSE connection: {ex.Message}", lastError);
             }
         }
         throw new InvalidOperationException("Failed to establish SSE connection.", lastError);
@@ -520,7 +1310,7 @@ public sealed class CloudSyncClient
         CancellationToken cancellationToken = default)
     {
         await EnsureAuthenticatedAsync(cancellationToken);
-        
+
         object bodyObj;
         if (success.HasValue)
         {
@@ -528,6 +1318,7 @@ public sealed class CloudSyncClient
             {
                 deviceId,
                 success = success.Value,
+                resultState = result?.StartsWith("execution_result_unknown", StringComparison.Ordinal) == true ? "unknown" : "executed",
                 result = result ?? string.Empty
             };
         }
@@ -572,26 +1363,82 @@ public sealed class CloudSyncClient
 
     public async Task UploadExtensionArchiveAsync(CommandItem command, byte[] packageBytes, string version, CancellationToken cancellationToken = default)
     {
+        await UploadArchiveAsync(command, packageBytes, version, privateLibrary: false, expectedRevision: 0, cancellationToken);
+    }
+
+    public async Task UploadPrivateExtensionArchiveAsync(CommandItem command, byte[] packageBytes, string version, int expectedRevision = 0, CancellationToken cancellationToken = default)
+    {
+        await UploadArchiveAsync(command, packageBytes, version, privateLibrary: true, expectedRevision, cancellationToken);
+        InvalidateExtensionSnapshot();
+    }
+
+    private async Task UploadArchiveAsync(CommandItem command, byte[] packageBytes, string version, bool privateLibrary, int expectedRevision, CancellationToken cancellationToken)
+    {
         await EnsureAuthenticatedAsync(cancellationToken);
+        var path = privateLibrary
+            ? $"/v1/me/extensions/{Uri.EscapeDataString(command.ExtensionId)}/archive"
+            : $"/v1/extensions/{Uri.EscapeDataString(command.ExtensionId)}/archive";
+
+        var url = $"{path}?version={Uri.EscapeDataString(version)}";
+        if (privateLibrary)
+        {
+            url += $"&expectedRevision={expectedRevision}";
+        }
+
         using var request = CreateRequest(
             HttpMethod.Put,
-            $"/v1/extensions/{Uri.EscapeDataString(command.ExtensionId)}/archive?version={Uri.EscapeDataString(version)}",
+            url,
             includeAuth: true);
         request.Content = new ByteArrayContent(packageBytes);
         request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
-        using var response = await SendAsyncWithFallback(request, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        using var response = await SendAsyncWithFallback(
+            request,
+            cancellationToken,
+            largeTransfer: true);
+        await EnsureSuccessAsync(response, cancellationToken);
     }
 
     public async Task<byte[]> DownloadExtensionArchiveAsync(string extensionId, CancellationToken cancellationToken = default)
     {
-        using var response = await SendAsyncWithFallback(
+        using var request = CreateRequest(
             HttpMethod.Get,
             $"/v1/extensions/{Uri.EscapeDataString(extensionId)}/archive",
-            includeAuth: false,
-            cancellationToken: cancellationToken);
+            includeAuth: false);
+        using var response = await SendAsyncWithFallback(
+            request,
+            cancellationToken,
+            largeTransfer: true);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsByteArrayAsync(cancellationToken);
+    }
+
+    public async Task<byte[]> DownloadMyExtensionArchiveAsync(string extensionId, CancellationToken cancellationToken = default)
+    {
+        await EnsureAuthenticatedAsync(cancellationToken);
+        using var request = CreateRequest(
+            HttpMethod.Get,
+            $"/v1/me/extensions/{Uri.EscapeDataString(extensionId)}/archive",
+            includeAuth: true);
+        using var response = await SendAsyncWithFallback(
+            request,
+            cancellationToken,
+            largeTransfer: true);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return await response.Content.ReadAsByteArrayAsync(cancellationToken);
+    }
+
+    public async Task<(byte[] Content, string? ContentType)> DownloadMyExtensionIconAsync(
+        string extensionId, CancellationToken cancellationToken = default)
+    {
+        await EnsureAuthenticatedAsync(cancellationToken);
+        using var request = CreateRequest(HttpMethod.Get,
+            $"/v1/me/extensions/{Uri.EscapeDataString(extensionId)}/icon", includeAuth: true);
+        using var response = await SendAsyncWithFallback(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+        if (bytes.Length is 0 or > 8388608)
+            throw new InvalidDataException("Private extension icon payload is empty or too large.");
+        return (bytes, response.Content.Headers.ContentType?.MediaType);
     }
 
     public async Task<bool> CheckExtensionArchiveExistsAsync(string extensionId, CancellationToken cancellationToken = default)
@@ -655,129 +1502,66 @@ public sealed class CloudSyncClient
 
     private void ClearSession()
     {
-        _session = null;
-        SyncSessionStore.Clear();
+        ClearSecretVaultRecoveryKey();
+        AccountCoordinator.Invalidate(() => { _session = null; SyncSessionStore.Clear(); });
     }
 
-    private HttpRequestMessage CreateJsonRequest(HttpMethod method, string path, string body, bool includeAuth)
+    private void ClearSecretVaultRecoveryKey()
     {
-        var request = CreateRequest(method, path, includeAuth);
-        request.Content = new StringContent(body, Encoding.UTF8, "application/json");
-        return request;
-    }
-
-    private HttpRequestMessage CreateRequest(HttpMethod method, string path, bool includeAuth)
-    {
-        var request = new HttpRequestMessage(method, path);
-        request.Version = HttpVersion.Version11;
-        request.VersionPolicy = HttpVersionPolicy.RequestVersionOrLower;
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        if (includeAuth && HasValidSession())
+        lock (_secretVaultRecoveryKeyLock)
         {
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _session!.AccessToken);
+            if (_secretVaultRecoveryKey != null)
+                System.Security.Cryptography.CryptographicOperations.ZeroMemory(_secretVaultRecoveryKey);
+            _secretVaultRecoveryKey = null;
+            _secretVaultRecoveryKeyAccount = null;
+            _secretVaultRecoveryKeyExpiresAtUtc = default;
         }
-
-        return request;
     }
 
-    private async Task<HttpResponseMessage> SendJsonAsync(HttpMethod method, string path, object body, bool includeAuth, CancellationToken cancellationToken)
+    private static object BuildManifestPayload(CommandItem command, string? iconOverride = null)
     {
-        var request = CreateJsonRequest(method, path, JsonSerializer.Serialize(body), includeAuth);
-        return await SendAsyncWithFallback(request, cancellationToken);
-    }
-
-    private Task<HttpResponseMessage> SendAsyncWithFallback(HttpMethod method, string path, bool includeAuth, CancellationToken cancellationToken)
-    {
-        var request = CreateRequest(method, path, includeAuth);
-        return SendAsyncWithFallback(request, cancellationToken);
-    }
-
-    private async Task<HttpResponseMessage> SendAsyncWithFallback(HttpRequestMessage request, CancellationToken cancellationToken)
-    {
-        Exception? lastError = null;
-        var attempts = new (HttpClient client, string label)[]
+        return new
         {
-            (_httpClient, "proxy"),
-            (_directHttpClient, "direct"),
-            (_httpClient, "proxy-retry")
+            name = command.ExtensionId,
+            displayName = command.Title,
+            version = command.DeclaredVersion,
+            category = command.Category,
+            description = command.Subtitle,
+            accentHex = System.Windows.Application.Current?.Dispatcher.CheckAccess() != false
+                ? command.AccentBrush?.ToString()
+                : System.Windows.Application.Current.Dispatcher.Invoke(() => command.AccentBrush?.ToString()),
+            keywords = command.Keywords,
+            icon = string.IsNullOrWhiteSpace(iconOverride) ? command.IconReference : iconOverride,
+            queryPrefixes = command.QueryPrefixes,
+            queryTargetTemplate = command.QueryTargetTemplate,
+            globalShortcut = command.GlobalShortcut,
+            hotkeyBehavior = command.HotkeyBehavior,
+            runtime = command.Runtime,
+            entryMode = command.EntryMode,
+            entry = command.EntryPoint,
+            permissions = command.Permissions,
+            script = string.IsNullOrWhiteSpace(command.InlineScriptSource)
+                ? null
+                : new
+                {
+                    source = command.InlineScriptSource
+                },
+            hostedView = command.HostedView == null
+                ? null
+                : new
+                {
+                    type = command.HostedView.Type,
+                    title = command.HostedView.Title,
+                    description = command.HostedView.Description,
+                    inputLabel = command.HostedView.InputLabel,
+                    inputPlaceholder = command.HostedView.InputPlaceholder,
+                    outputLabel = command.HostedView.OutputLabel,
+                    actionButtonText = command.HostedView.ActionButtonText,
+                    actionType = command.HostedView.ActionType,
+                    outputTemplate = command.HostedView.OutputTemplate,
+                    emptyState = command.HostedView.EmptyState
+                }
         };
-
-        for (var index = 0; index < attempts.Length; index++)
-        {
-            try
-            {
-                return await attempts[index].client.SendAsync(CloneRequest(request), cancellationToken);
-            }
-            catch (Exception ex) when (IsRetryableTransportException(ex) && index < attempts.Length - 1)
-            {
-                lastError = ex;
-                await Task.Delay(TimeSpan.FromMilliseconds(250 * (index + 1)), cancellationToken);
-            }
-        }
-
-        throw lastError ?? new HttpRequestException("Cloud request failed before receiving a response.");
-    }
-
-    private static HttpClient CreateHttpClient(string baseUrl, bool useProxy)
-    {
-        var handler = new HttpClientHandler
-        {
-            UseProxy = useProxy
-        };
-
-        var client = new HttpClient(handler)
-        {
-            BaseAddress = new Uri(baseUrl, UriKind.Absolute),
-            Timeout = TimeSpan.FromSeconds(15),
-            DefaultRequestVersion = HttpVersion.Version11,
-            DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrLower
-        };
-        client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("YanziClient-Desktop", "0.2.3"));
-        client.DefaultRequestHeaders.TryAddWithoutValidation("X-Yanzi-Client", "desktop");
-        client.DefaultRequestHeaders.TryAddWithoutValidation("X-Yanzi-Client-Version", "0.2.3");
-        return client;
-    }
-
-    private static bool IsRetryableTransportException(Exception ex)
-    {
-        var message = ex.ToString();
-        return message.Contains("SSL connection could not be established", StringComparison.OrdinalIgnoreCase) ||
-               message.Contains("unexpected EOF", StringComparison.OrdinalIgnoreCase) ||
-               message.Contains("0 bytes from the transport stream", StringComparison.OrdinalIgnoreCase) ||
-               message.Contains("response ended prematurely", StringComparison.OrdinalIgnoreCase) ||
-               message.Contains("ResponseEnded", StringComparison.OrdinalIgnoreCase) ||
-               message.Contains("request was canceled", StringComparison.OrdinalIgnoreCase) ||
-               message.Contains("operation was canceled", StringComparison.OrdinalIgnoreCase) ||
-               message.Contains("timed out", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static HttpRequestMessage CloneRequest(HttpRequestMessage request)
-    {
-        var clone = new HttpRequestMessage(request.Method, request.RequestUri)
-        {
-            Version = request.Version,
-            VersionPolicy = request.VersionPolicy
-        };
-
-        foreach (var header in request.Headers)
-        {
-            clone.Headers.TryAddWithoutValidation(header.Key, header.Value);
-        }
-
-        if (request.Content == null)
-        {
-            return clone;
-        }
-
-        var bytes = request.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
-        var content = new ByteArrayContent(bytes);
-        foreach (var header in request.Content.Headers)
-        {
-            content.Headers.TryAddWithoutValidation(header.Key, header.Value);
-        }
-
-        clone.Content = content;
-        return clone;
     }
 
     private static async Task<SyncSession> ReadSessionAsync(HttpResponseMessage response, CancellationToken cancellationToken)
@@ -790,7 +1574,11 @@ public sealed class CloudSyncClient
             ExpiresAt = auth.ExpiresAt,
             UserId = auth.UserId,
             Username = auth.Username,
-            Email = auth.Email
+            Email = auth.Email,
+            IsVip = auth.IsVip,
+            VipType = auth.VipType,
+            VipExpireAt = auth.VipExpireAt,
+            DaysRemaining = auth.DaysRemaining
         };
     }
 
@@ -798,6 +1586,7 @@ public sealed class CloudSyncClient
     {
         if (!HasValidSession())
         {
+            CloudSyncDiagnostics.Log("CloudSyncClient.Config", "Fetch legacy WebDAV config skipped: no valid session");
             return null;
         }
 
@@ -805,21 +1594,31 @@ public sealed class CloudSyncClient
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, "/v1/sync/webdav-config");
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _session!.AccessToken);
-            
+
             using var response = await _httpClient.SendAsync(request, cancellationToken);
-            
+
             if (response.StatusCode == HttpStatusCode.NotFound)
             {
                 // No WebDAV config on server
+                CloudSyncDiagnostics.Log("CloudSyncClient.Config", "Legacy WebDAV config endpoint returned not found");
                 return null;
             }
-            
+
             await EnsureSuccessAsync(response, cancellationToken);
-            
-            return await ReadAsync<WebDavConfigDto>(response, cancellationToken);
+
+            var dto = await ReadAsync<WebDavConfigDto>(response, cancellationToken);
+            CloudSyncDiagnostics.Log(
+                "CloudSyncClient.Config",
+                "Legacy WebDAV config fetched",
+                ("found", dto != null),
+                ("hasPassword", !string.IsNullOrWhiteSpace(dto?.Password)),
+                ("username", dto?.Username),
+                ("serverUrl", dto?.ServerUrl));
+            return dto;
         }
         catch (Exception ex)
         {
+            CloudSyncDiagnostics.Log("CloudSyncClient.Config", "Legacy WebDAV config fetch failed", ("error", ex.Message));
             System.Diagnostics.Debug.WriteLine($"Failed to fetch WebDAV config: {ex.Message}");
             return null;
         }
@@ -831,7 +1630,7 @@ public sealed class CloudSyncClient
         return await JsonSerializer.DeserializeAsync<T>(stream, JsonOptions, cancellationToken);
     }
 
-    private static async Task EnsureSuccessAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    private async Task EnsureSuccessAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         if (response.IsSuccessStatusCode)
         {
@@ -867,6 +1666,23 @@ public sealed class CloudSyncClient
         }
 
         var message = error?.Message;
+        if (response.StatusCode == HttpStatusCode.Forbidden &&
+            string.Equals(error?.Error, "vip_required", StringComparison.OrdinalIgnoreCase))
+        {
+            Interlocked.Exchange(ref _cloudMembershipDeniedUntilUnixMs,
+                DateTimeOffset.UtcNow.AddMinutes(30).ToUnixTimeMilliseconds());
+            throw new CloudVipRequiredException();
+        }
+        if (response.StatusCode == HttpStatusCode.Conflict &&
+            string.Equals(error?.Error, "sync_revision_conflict", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new CloudSyncRevisionConflictException(
+                message ?? "同步对象 revision 冲突。",
+                error?.Details?.ObjectId,
+                error?.Details?.ExpectedRevision ?? 0,
+                error?.Details?.CurrentRevision ?? 0);
+        }
+
         if (!string.IsNullOrWhiteSpace(message))
         {
             throw new InvalidOperationException(message);
@@ -885,7 +1701,39 @@ public sealed class CloudSyncClient
         public string? Error { get; set; }
 
         public string? Message { get; set; }
+
+        public SyncConflictDetails? Details { get; set; }
     }
+
+    private sealed class SyncConflictDetails
+    {
+        public string? ObjectId { get; set; }
+
+        public long ExpectedRevision { get; set; }
+
+        public long CurrentRevision { get; set; }
+    }
+}
+
+public sealed class CloudSyncRevisionConflictException : InvalidOperationException
+{
+    public CloudSyncRevisionConflictException(
+        string message,
+        string? objectId,
+        long expectedRevision,
+        long currentRevision)
+        : base(message)
+    {
+        ObjectId = objectId ?? string.Empty;
+        ExpectedRevision = expectedRevision;
+        CurrentRevision = currentRevision;
+    }
+
+    public string ObjectId { get; }
+
+    public long ExpectedRevision { get; }
+
+    public long CurrentRevision { get; }
 }
 
 public sealed class DeviceMessageListResponse
@@ -897,6 +1745,14 @@ public sealed class DeviceMessageListResponse
     public string? DeviceId { get; set; }
 
     public List<DeviceMessageRecord> Items { get; set; } = [];
+
+    public long NextCursor { get; set; }
+
+    public long HighWater { get; set; }
+
+    public bool CursorReset { get; set; }
+
+    public bool HasMore { get; set; }
 }
 
 public sealed class DeviceMessageCreateResponse
@@ -908,6 +1764,14 @@ public sealed class DeviceMessageCreateResponse
 
 public sealed class DeviceMessageRecord
 {
+    public List<DeviceMessageReceipt> Receipts { get; set; } = [];
+    public int ProtocolVersion { get; set; } = YanziDeviceMessageProtocol.Version;
+    public long? Sequence { get; set; }
+    public string? ClientMessageId { get; set; }
+    public string? OperationId { get; set; }
+    public string? TraceId { get; set; }
+    public string? CorrelationId { get; set; }
+    public string? CausationId { get; set; }
     public string MessageId { get; set; } = string.Empty;
 
     public string? SourceDeviceId { get; set; }
@@ -937,4 +1801,11 @@ public sealed class DeviceMessageRecord
     public string? AckedAt { get; set; }
 
     public string? ExpiresAt { get; set; }
+}
+
+public sealed record DeviceMessageReceipt(string DeviceId, string DisplayName, string Status, string AckedAt);
+
+public sealed class CloudVipRequiredException : InvalidOperationException
+{
+    public CloudVipRequiredException() : base("燕子云同步、跨设备消息等服务需要有效 VIP。请打开设置中的‘升级 VIP’，购买或输入卡密激活；本地功能不受影响。") { }
 }

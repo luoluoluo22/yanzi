@@ -29,13 +29,13 @@ namespace OpenQuickHost
                     displayLabel = config.Key switch
                     {
                         "all" => "全部",
-                        "extension" => "扩展",
-                        "application" => "应用",
+                        "extension" => BrandTerms.Current.MiniApp,
+                        "application" => "软件",
                         "file" => "文件",
                         "system" => "系统",
-                        "yanyu" => "燕语",
+                        "yanyu" => BrandTerms.Current.YanVoice,
                         "ai" => "AI对话",
-                        "store" => "扩展商店",
+                        "store" => $"{BrandTerms.Current.MiniApp}商店",
                         _ => config.Label
                     };
                 }
@@ -63,6 +63,7 @@ namespace OpenQuickHost
             }
 
             ScopesListBox.ItemsSource = _items;
+            EnableEverythingCheckBox.IsChecked = _settings.EnableEverything;
         }
 
         private void MoveUpButton_Click(object sender, RoutedEventArgs e)
@@ -105,7 +106,26 @@ namespace OpenQuickHost
                 });
             }
 
+            var wasEnabled = _settings.EnableEverything;
+            var isEnabled = EnableEverythingCheckBox.IsChecked == true;
+            _settings.EnableEverything = isEnabled;
+
+            if (wasEnabled != isEnabled)
+            {
+                if (isEnabled)
+                {
+                    EverythingRuntimeService.EnsureStartedInBackground();
+                }
+                else
+                {
+                    EverythingRuntimeService.StopOwnedRuntime();
+                    EverythingRuntimeService.KillAllYanziEverythingProcesses();
+                }
+            }
+
             AppSettingsStore.Save(_settings);
+            _mainWindow.RefreshAppSettings();
+            _mainWindow.NotifyQuickPanelSettingsChanged("search-scopes-saved", refreshYanmOverlay: false);
             DialogResult = true;
             Close();
         }

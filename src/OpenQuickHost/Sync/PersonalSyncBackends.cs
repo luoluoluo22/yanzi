@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Net.Http.Headers;
@@ -24,10 +24,10 @@ internal interface IPersonalSyncBackend
 
 internal static class PersonalSyncBackendFactory
 {
-    public static IPersonalSyncBackend? Create(AppSettings settings)
+    public static IPersonalSyncBackend? Create(AppSettings settings, bool requireEnabled = true)
     {
         var sync = settings.PersonalSync ?? new PersonalSyncSettings();
-        if (!sync.Enabled)
+        if (requireEnabled && !sync.Enabled)
         {
             return null;
         }
@@ -45,7 +45,25 @@ internal static class PersonalSyncBackendFactory
         };
     }
 
-    public static bool IsConfigured(AppSettings settings) => Create(settings) != null;
+    public static bool IsConfigured(AppSettings settings) =>
+        settings.PersonalSync?.Enabled == true && IsManuallyConfigured(settings);
+
+    public static bool IsManuallyConfigured(AppSettings settings)
+    {
+        var sync = settings.PersonalSync ?? new PersonalSyncSettings();
+        var secrets = PersonalSyncSecretStore.Load();
+        // Configuration checks must not allocate backend HttpClients and connection pools.
+        return PersonalSyncProviders.Normalize(sync.Provider) switch
+        {
+            PersonalSyncProviders.GitHub => IsGitHubConfigured(sync.GitHub, secrets),
+            PersonalSyncProviders.Gitee => IsGiteeConfigured(sync.Gitee, secrets),
+            PersonalSyncProviders.GitLab => IsGitLabConfigured(sync.GitLab, secrets),
+            PersonalSyncProviders.Gitea => IsGiteaConfigured(sync.Gitea, secrets),
+            PersonalSyncProviders.S3 => IsS3Configured(sync.S3, secrets),
+            PersonalSyncProviders.WebDav => IsWebDavConfigured(sync.WebDav, secrets),
+            _ => false
+        };
+    }
 
     public static string GetDisplayName(AppSettings settings) =>
         PersonalSyncProviders.GetDisplayName(settings.PersonalSync?.Provider);
@@ -223,7 +241,7 @@ internal abstract class PersonalSyncBackendBase : IPersonalSyncBackend
                 var extensionId = parts[0];
                 var fileName = parts[^1];
                 var extName = GetExtensionTitle(extensionId);
-                var webUrl = GenerateWebUrl(path);
+                var webUrl = GenerateWebUrl(normalized);
                 var linkText = string.IsNullOrWhiteSpace(webUrl) ? fileName : $"{webUrl}";
                 return $"上传数据：备份 【{extName}】 的 {linkText}";
             }
@@ -261,7 +279,7 @@ internal abstract class PersonalSyncBackendBase : IPersonalSyncBackend
                 var extensionId = parts[0];
                 var fileName = parts[^1];
                 var extName = GetExtensionTitle(extensionId);
-                var webUrl = GenerateWebUrl(path);
+                var webUrl = GenerateWebUrl(normalized);
                 var linkText = string.IsNullOrWhiteSpace(webUrl) ? fileName : $"{webUrl}";
                 return $"上传数据：清除 【{extName}】 的 {linkText}";
             }
@@ -286,6 +304,29 @@ internal sealed class GitHubPersonalSyncBackend : PersonalSyncBackendBase
         _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
         _httpClient.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");
         _httpClient.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("Yanzi", "0.1"));
+    }
+
+    /// <summary>Disaster-recovery copies must never be placed in public or archived GitHub repositories.</summary>
+    internal async Task VerifyPrivateRepositoryAsync(CancellationToken cancellationToken = default)
+    {
+        var owner = await ResolveOwnerAsync(cancellationToken);
+        using var response = await _httpClient.GetAsync(
+            $"https://api.github.com/repos/{Uri.EscapeDataString(owner)}/{Uri.EscapeDataString(_config.Repo)}",
+            cancellationToken);
+        if (!response.IsSuccessStatusCode)
+            throw await PersonalSyncFailure.CreateFailureAsync("GitHub", response, cancellationToken);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(cancellationToken));
+        AssertPrivateBackupRepository(document.RootElement);
+    }
+
+    internal static void AssertPrivateBackupRepository(JsonElement repository)
+    {
+        if (!repository.TryGetProperty("private", out var privacy) ||
+            privacy.ValueKind != JsonValueKind.True)
+            throw new InvalidOperationException("Disaster-backup repository must be private.");
+        if (repository.TryGetProperty("archived", out var archived) &&
+            archived.ValueKind == JsonValueKind.True)
+            throw new InvalidOperationException("Archived repositories cannot receive disaster backups.");
     }
 
     public override string DisplayRoot => $"github://{GetConfiguredOwnerDisplay()}/{_config.Repo}@{ResolveBranch()}";
@@ -610,6 +651,10 @@ internal sealed class GitHubPersonalSyncBackend : PersonalSyncBackendBase
         }
 
         _resolvedOwner = owner;
+        if (string.IsNullOrWhiteSpace(_config.Username))
+        {
+            _config.Username = owner;
+        }
         return _resolvedOwner;
     }
 
@@ -683,38 +728,196 @@ internal sealed class GiteePersonalSyncBackend : PersonalSyncBackendBase
     public override async Task ProbeAsync(CancellationToken cancellationToken)
     {
         var owner = await ResolveOwnerAsync(cancellationToken);
+        CloudSyncDiagnostics.Log("GiteeBackend", "Probe started", ("owner", owner), ("repo", _config.Repo), ("branch", ResolveBranch()));
         using var response = await _httpClient.GetAsync($"https://gitee.com/api/v5/repos/{Uri.EscapeDataString(owner)}/{Uri.EscapeDataString(_config.Repo)}?access_token={Uri.EscapeDataString(_secrets.GiteeToken.Trim())}", cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NotFound && await CanCreateRepositoryForOwnerAsync(owner, cancellationToken))
+        {
+            CloudSyncDiagnostics.Log("GiteeBackend", "Repository missing, creating automatically", ("owner", owner), ("repo", _config.Repo));
+            await CreateRepositoryAsync(cancellationToken);
+            return;
+        }
+
         if (!response.IsSuccessStatusCode)
         {
+            CloudSyncDiagnostics.Log("GiteeBackend", "Probe failed", ("owner", owner), ("repo", _config.Repo), ("statusCode", (int)response.StatusCode));
             throw await PersonalSyncFailure.CreateFailureAsync("Gitee", response, cancellationToken);
         }
+
+        CloudSyncDiagnostics.Log("GiteeBackend", "Probe completed", ("owner", owner), ("repo", _config.Repo));
     }
+
+    // Gitee's contents API returns a truncated representation of large binary blobs.
+    // Keep a small manifest at the original ZIP path and verify content-addressed chunks.
+    private const int MaxDirectPackageBytes = 5 * 1024 * 1024;
+    private const string ChunkMarker = "yanzi-gitee-chunks-v1";
+
+    private sealed class GiteeChunkManifest
+    {
+        public string Marker { get; set; } = ChunkMarker;
+        public long TotalLength { get; set; }
+        public string Sha256 { get; set; } = "";
+        public List<GiteeChunkPart> Parts { get; set; } = [];
+    }
+
+    private sealed class GiteeChunkPart
+    {
+        public string Path { get; set; } = "";
+        public int Length { get; set; }
+        public string Sha256 { get; set; } = "";
+    }
+
+    private static bool IsExtensionZip(string path) =>
+        path.StartsWith("packages/", StringComparison.OrdinalIgnoreCase) &&
+        path.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
 
     public override async Task<byte[]?> TryReadBytesAsync(string relativePath, CancellationToken cancellationToken)
     {
+        var bytes = await TryReadDirectBytesAsync(relativePath, cancellationToken);
+        if (bytes == null || !IsExtensionZip(relativePath) || bytes.Length < 4 || bytes[0] != (byte)'{')
+            return bytes;
+
+        GiteeChunkManifest? manifest;
+        try { manifest = JsonSerializer.Deserialize<GiteeChunkManifest>(bytes, JsonOptions); }
+        catch (JsonException) { return bytes; }
+        if (manifest?.Marker != ChunkMarker) return bytes;
+
+        if (manifest.TotalLength <= 0 || manifest.TotalLength > 268435456 ||
+            manifest.Parts is not { Count: > 0 and <= 64 } ||
+            manifest.Parts.Any(p => p.Length <= 0 || p.Length > MaxDirectPackageBytes ||
+                !p.Path.StartsWith(relativePath + ".chunks/", StringComparison.Ordinal) ||
+                !p.Path.EndsWith(".part", StringComparison.Ordinal)))
+            throw new System.IO.InvalidDataException($"Gitee 分块扩展包索引无效：{relativePath}");
+
+        using var stream = new System.IO.MemoryStream((int)manifest.TotalLength);
+        foreach (var part in manifest.Parts)
+        {
+            var chunk = await TryReadDirectBytesAsync(part.Path, cancellationToken)
+                ?? throw new System.IO.FileNotFoundException($"Gitee 分块扩展包缺少文件：{part.Path}");
+            if (chunk.Length != part.Length ||
+                !Convert.ToHexString(SHA256.HashData(chunk)).Equals(part.Sha256, StringComparison.OrdinalIgnoreCase))
+                throw new System.IO.InvalidDataException($"Gitee 分块扩展包校验失败：{part.Path}");
+            await stream.WriteAsync(chunk, cancellationToken);
+        }
+
+        var merged = stream.ToArray();
+        if (merged.Length != manifest.TotalLength ||
+            !Convert.ToHexString(SHA256.HashData(merged)).Equals(manifest.Sha256, StringComparison.OrdinalIgnoreCase))
+            throw new System.IO.InvalidDataException($"Gitee 分块扩展包整体校验失败：{relativePath}");
+        return merged;
+    }
+
+    private async Task<byte[]?> TryReadDirectBytesAsync(string relativePath, CancellationToken cancellationToken)
+    {
         var path = BuildPath(relativePath);
         var owner = await ResolveOwnerAsync(cancellationToken);
-        using var response = await _httpClient.GetAsync($"https://gitee.com/api/v5/repos/{Uri.EscapeDataString(owner)}/{Uri.EscapeDataString(_config.Repo)}/contents/{EncodePath(path)}?access_token={Uri.EscapeDataString(_secrets.GiteeToken.Trim())}&ref={Uri.EscapeDataString(ResolveBranch())}", cancellationToken);
+        CloudSyncDiagnostics.Log("GiteeBackend", "Read requested", ("owner", owner), ("repo", _config.Repo), ("path", path));
+        var uri = $"https://gitee.com/api/v5/repos/{Uri.EscapeDataString(owner)}/{Uri.EscapeDataString(_config.Repo)}/contents/{EncodePath(path)}?access_token={Uri.EscapeDataString(_secrets.GiteeToken.Trim())}&ref={Uri.EscapeDataString(ResolveBranch())}";
+        using var response = await ReadGiteeWithRetryAsync(uri, cancellationToken);
         if (response.StatusCode == HttpStatusCode.NotFound)
         {
+            CloudSyncDiagnostics.Log("GiteeBackend", "Read returned not found", ("path", path));
             return null;
         }
-
         if (!response.IsSuccessStatusCode)
         {
+            CloudSyncDiagnostics.Log("GiteeBackend", "Read failed", ("path", path), ("statusCode", (int)response.StatusCode));
             throw await PersonalSyncFailure.CreateFailureAsync("Gitee", response, cancellationToken);
         }
+        var rawJson = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(rawJson) || rawJson.Trim() == "[]") return null;
+        if (GiteeContentPayload.IsDirectoryResponse(rawJson))
+        {
+            // Gitee returns a JSON array for a directory, even for a file-style read.
+            // The requested key has no file content; its child files remain untouched.
+            CloudSyncDiagnostics.Log("GiteeBackend", "Read returned directory listing", ("path", path));
+            return null;
+        }
+        var payload = JsonSerializer.Deserialize<GiteeContentPayload>(rawJson, JsonOptions);
+        var bytes = DecodeBase64Content(payload?.Content);
+        CloudSyncDiagnostics.Log("GiteeBackend", "Read completed", ("path", path), ("bytes", bytes.Length), ("sha", payload?.Sha));
+        return bytes;
+    }
 
-        var payload = await response.Content.ReadFromJsonAsync<GiteeContentPayload>(JsonOptions, cancellationToken);
-        return DecodeBase64Content(payload?.Content);
+    internal static bool IsRetryableGiteeReadStatus(HttpStatusCode status) =>
+        (int)status == 429 || ((int)status >= 500 && (int)status <= 599);
+
+    private async Task<HttpResponseMessage> ReadGiteeWithRetryAsync(
+        string uri, CancellationToken cancellationToken)
+    {
+        const int attempts = 4;
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                var response = await _httpClient.GetAsync(uri, cancellationToken);
+                if (!IsRetryableGiteeReadStatus(response.StatusCode) || attempt >= attempts)
+                    return response;
+                CloudSyncDiagnostics.Log("GiteeBackend", "Transient read; retry",
+                    ("statusCode", (int)response.StatusCode), ("attempt", attempt));
+                response.Dispose();
+            }
+            catch (HttpRequestException) when (attempt < attempts)
+            {
+                CloudSyncDiagnostics.Log("GiteeBackend", "Transient transport read; retry",
+                    ("attempt", attempt));
+            }
+            catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested && attempt < attempts)
+            {
+                CloudSyncDiagnostics.Log("GiteeBackend", "Transient read timeout; retry",
+                    ("attempt", attempt));
+            }
+            await Task.Delay(TimeSpan.FromMilliseconds(400 * (1 << (attempt - 1))), cancellationToken);
+        }
     }
 
     public override async Task WriteBytesAsync(string relativePath, byte[] content, string contentType, CancellationToken cancellationToken)
+    {
+        if (!IsExtensionZip(relativePath) || content.Length <= MaxDirectPackageBytes)
+        {
+            await WriteDirectBytesAsync(relativePath, content, contentType, cancellationToken);
+            return;
+        }
+
+        var manifest = new GiteeChunkManifest
+        {
+            TotalLength = content.Length,
+            Sha256 = Convert.ToHexString(SHA256.HashData(content))
+        };
+        for (var i = 0; i < content.Length; i += MaxDirectPackageBytes)
+        {
+            var chunk = content.AsSpan(i, Math.Min(MaxDirectPackageBytes, content.Length - i)).ToArray();
+            var hash = Convert.ToHexString(SHA256.HashData(chunk));
+            var partPath = $"{relativePath}.chunks/{hash}.part";
+            // Publish the manifest only after every chunk has been verified.
+            var existing = await TryReadDirectBytesAsync(partPath, cancellationToken);
+            if (existing == null || existing.Length != chunk.Length ||
+                !SHA256.HashData(existing).SequenceEqual(SHA256.HashData(chunk)))
+                await WriteDirectBytesAsync(partPath, chunk, "application/octet-stream", cancellationToken);
+            var verified = await TryReadDirectBytesAsync(partPath, cancellationToken);
+            if (verified == null || verified.Length != chunk.Length ||
+                !SHA256.HashData(verified).SequenceEqual(SHA256.HashData(chunk)))
+                throw new System.IO.InvalidDataException($"Gitee 分块扩展包上传验证失败：{partPath}");
+            manifest.Parts.Add(new GiteeChunkPart { Path = partPath, Length = chunk.Length, Sha256 = hash });
+        }
+        await WriteDirectBytesAsync(relativePath, JsonSerializer.SerializeToUtf8Bytes(manifest, JsonOptions),
+            "application/json; charset=utf-8", cancellationToken);
+    }
+
+    private async Task WriteDirectBytesAsync(string relativePath, byte[] content, string contentType, CancellationToken cancellationToken)
     {
         var path = BuildPath(relativePath);
         var owner = await ResolveOwnerAsync(cancellationToken);
         var sha = await TryGetShaAsync(path, cancellationToken);
         var method = string.IsNullOrWhiteSpace(sha) ? HttpMethod.Post : HttpMethod.Put;
+        CloudSyncDiagnostics.Log(
+            "GiteeBackend",
+            "Write requested",
+            ("owner", owner),
+            ("repo", _config.Repo),
+            ("path", path),
+            ("bytes", content.Length),
+            ("method", method.Method),
+            ("hasExistingSha", !string.IsNullOrWhiteSpace(sha)));
         using var request = new HttpRequestMessage(method, $"https://gitee.com/api/v5/repos/{Uri.EscapeDataString(owner)}/{Uri.EscapeDataString(_config.Repo)}/contents/{EncodePath(path)}")
         {
             Content = JsonContent.Create(new GiteeWritePayload
@@ -729,8 +932,10 @@ internal sealed class GiteePersonalSyncBackend : PersonalSyncBackendBase
         using var response = await _httpClient.SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
+            CloudSyncDiagnostics.Log("GiteeBackend", "Write failed", ("path", path), ("statusCode", (int)response.StatusCode));
             throw await PersonalSyncFailure.CreateFailureAsync("Gitee", response, cancellationToken);
         }
+        CloudSyncDiagnostics.Log("GiteeBackend", "Write completed", ("path", path), ("bytes", content.Length));
     }
 
     public override async Task DeleteFileAsync(string relativePath, CancellationToken cancellationToken)
@@ -740,8 +945,11 @@ internal sealed class GiteePersonalSyncBackend : PersonalSyncBackendBase
         var sha = await TryGetShaAsync(path, cancellationToken);
         if (string.IsNullOrWhiteSpace(sha))
         {
+            CloudSyncDiagnostics.Log("GiteeBackend", "Delete skipped: sha missing", ("path", path));
             return;
         }
+
+        CloudSyncDiagnostics.Log("GiteeBackend", "Delete requested", ("owner", owner), ("repo", _config.Repo), ("path", path), ("sha", sha));
 
         using var request = new HttpRequestMessage(HttpMethod.Delete, $"https://gitee.com/api/v5/repos/{Uri.EscapeDataString(owner)}/{Uri.EscapeDataString(_config.Repo)}/contents/{EncodePath(path)}")
         {
@@ -756,8 +964,11 @@ internal sealed class GiteePersonalSyncBackend : PersonalSyncBackendBase
         using var response = await _httpClient.SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode && response.StatusCode != HttpStatusCode.NotFound)
         {
+            CloudSyncDiagnostics.Log("GiteeBackend", "Delete failed", ("path", path), ("statusCode", (int)response.StatusCode));
             throw await PersonalSyncFailure.CreateFailureAsync("Gitee", response, cancellationToken);
         }
+
+        CloudSyncDiagnostics.Log("GiteeBackend", "Delete completed", ("path", path), ("statusCode", (int)response.StatusCode));
     }
 
     private async Task<string?> TryGetShaAsync(string path, CancellationToken cancellationToken)
@@ -774,7 +985,15 @@ internal sealed class GiteePersonalSyncBackend : PersonalSyncBackendBase
             throw await PersonalSyncFailure.CreateFailureAsync("Gitee", response, cancellationToken);
         }
 
-        var payload = await response.Content.ReadFromJsonAsync<GiteeContentPayload>(JsonOptions, cancellationToken);
+        var rawJson = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(rawJson) || rawJson.Trim() == "[]")
+        {
+            return null;
+        }
+
+        if (GiteeContentPayload.IsDirectoryResponse(rawJson))
+            throw new System.IO.InvalidDataException($"Gitee path is a directory, not a writable file: {path}");
+        var payload = JsonSerializer.Deserialize<GiteeContentPayload>(rawJson, JsonOptions);
         return payload?.Sha;
     }
 
@@ -797,12 +1016,15 @@ internal sealed class GiteePersonalSyncBackend : PersonalSyncBackendBase
         if (!string.IsNullOrWhiteSpace(_config.Username))
         {
             _resolvedOwner = _config.Username.Trim();
+            CloudSyncDiagnostics.Log("GiteeBackend", "Owner resolved from config", ("owner", _resolvedOwner));
             return _resolvedOwner;
         }
 
+        CloudSyncDiagnostics.Log("GiteeBackend", "Resolving owner from token");
         using var response = await _httpClient.GetAsync($"https://gitee.com/api/v5/user?access_token={Uri.EscapeDataString(_secrets.GiteeToken.Trim())}", cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
+            CloudSyncDiagnostics.Log("GiteeBackend", "Owner resolve failed", ("statusCode", (int)response.StatusCode));
             throw await PersonalSyncFailure.CreateFailureAsync("Gitee", response, cancellationToken);
         }
 
@@ -814,7 +1036,48 @@ internal sealed class GiteePersonalSyncBackend : PersonalSyncBackendBase
         }
 
         _resolvedOwner = owner;
+        if (string.IsNullOrWhiteSpace(_config.Username))
+        {
+            _config.Username = owner;
+        }
+        CloudSyncDiagnostics.Log("GiteeBackend", "Owner resolved from token", ("owner", _resolvedOwner));
         return _resolvedOwner;
+    }
+
+    private async Task<bool> CanCreateRepositoryForOwnerAsync(string owner, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(_config.Username))
+        {
+            return true;
+        }
+
+        var authenticatedLogin = await ResolveOwnerAsync(cancellationToken);
+        return string.Equals(owner, authenticatedLogin, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task CreateRepositoryAsync(CancellationToken cancellationToken)
+    {
+        var repoName = _config.Repo.Trim();
+        CloudSyncDiagnostics.Log("GiteeBackend", "Create repository requested", ("repo", repoName));
+        using var response = await _httpClient.PostAsJsonAsync(
+            "https://gitee.com/api/v5/user/repos",
+            new GiteeCreateRepoPayload
+            {
+                AccessToken = _secrets.GiteeToken.Trim(),
+                Name = repoName,
+                Description = "This is a Yanzi personal sync repository.",
+                Private = true,
+                AutoInit = true
+            },
+            JsonOptions,
+            cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            CloudSyncDiagnostics.Log("GiteeBackend", "Create repository failed", ("repo", repoName), ("statusCode", (int)response.StatusCode));
+            throw await PersonalSyncFailure.CreateFailureAsync("Gitee", response, cancellationToken);
+        }
+
+        CloudSyncDiagnostics.Log("GiteeBackend", "Create repository completed", ("repo", repoName));
     }
 
     private static string EncodePath(string path) => string.Join("/", path.Split('/').Select(Uri.EscapeDataString));
@@ -838,6 +1101,12 @@ internal sealed class GitLabPersonalSyncBackend : PersonalSyncBackendBase
     public override async Task ProbeAsync(CancellationToken cancellationToken)
     {
         using var response = await _httpClient.GetAsync($"{ResolveApiBase()}/projects/{Uri.EscapeDataString(_config.ProjectPath.Trim())}", cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NotFound && await CanCreateProjectAsync(cancellationToken))
+        {
+            await CreateProjectAsync(cancellationToken);
+            return;
+        }
+
         if (!response.IsSuccessStatusCode)
         {
             throw await PersonalSyncFailure.CreateFailureAsync("GitLab", response, cancellationToken);
@@ -918,6 +1187,69 @@ internal sealed class GitLabPersonalSyncBackend : PersonalSyncBackendBase
     private string BuildPath(string relativePath) => CombineWithPrefix(_config.PathPrefix, relativePath);
 
     private string ResolveBranch() => string.IsNullOrWhiteSpace(_config.Branch) ? "main" : _config.Branch.Trim();
+
+    private Task<bool> CanCreateProjectAsync(CancellationToken cancellationToken)
+    {
+        return Task.FromResult(true);
+    }
+
+    private async Task CreateProjectAsync(CancellationToken cancellationToken)
+    {
+        var projectPath = _config.ProjectPath.Trim();
+        string name = projectPath;
+        int? namespaceId = null;
+
+        if (projectPath.Contains('/'))
+        {
+            var parts = projectPath.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (parts.Length > 1)
+            {
+                var namespaceName = string.Join("/", parts.Take(parts.Length - 1));
+                name = parts.Last();
+                namespaceId = await FindNamespaceIdAsync(namespaceName, cancellationToken);
+            }
+        }
+
+        using var response = await _httpClient.PostAsJsonAsync(
+            $"{ResolveApiBase()}/projects",
+            new GitLabCreateProjectPayload
+            {
+                Name = name,
+                Path = name,
+                Visibility = "private",
+                InitializeWithReadme = true,
+                NamespaceId = namespaceId
+            },
+            JsonOptions,
+            cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw await PersonalSyncFailure.CreateFailureAsync("GitLab", response, cancellationToken);
+        }
+    }
+
+    private async Task<int?> FindNamespaceIdAsync(string path, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var response = await _httpClient.GetAsync(
+                $"{ResolveApiBase()}/namespaces?search={Uri.EscapeDataString(path)}",
+                cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            var namespaces = await response.Content.ReadFromJsonAsync<List<GitLabNamespaceDto>>(JsonOptions, cancellationToken);
+            var matched = namespaces?.FirstOrDefault(n => string.Equals(n.Path, path, StringComparison.OrdinalIgnoreCase));
+            return matched?.Id;
+        }
+        catch
+        {
+            return null;
+        }
+    }
 }
 
 internal sealed class GiteaPersonalSyncBackend : PersonalSyncBackendBase
@@ -940,6 +1272,12 @@ internal sealed class GiteaPersonalSyncBackend : PersonalSyncBackendBase
     {
         var owner = await ResolveOwnerAsync(cancellationToken);
         using var response = await _httpClient.GetAsync($"{ResolveApiBase()}/repos/{Uri.EscapeDataString(owner)}/{Uri.EscapeDataString(_config.Repo.Trim())}", cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NotFound && await CanCreateRepositoryForOwnerAsync(owner, cancellationToken))
+        {
+            await CreateRepositoryAsync(cancellationToken);
+            return;
+        }
+
         if (!response.IsSuccessStatusCode)
         {
             throw await PersonalSyncFailure.CreateFailureAsync("Gitea", response, cancellationToken);
@@ -1082,7 +1420,60 @@ internal sealed class GiteaPersonalSyncBackend : PersonalSyncBackendBase
         }
 
         _resolvedOwner = owner;
+        if (string.IsNullOrWhiteSpace(_config.Username))
+        {
+            _config.Username = owner;
+        }
         return _resolvedOwner;
+    }
+
+    private async Task<bool> CanCreateRepositoryForOwnerAsync(string owner, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(_config.Username))
+        {
+            return true;
+        }
+
+        var authenticatedLogin = await ResolveAuthenticatedLoginAsync(cancellationToken);
+        return string.Equals(owner, authenticatedLogin, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task<string> ResolveAuthenticatedLoginAsync(CancellationToken cancellationToken)
+    {
+        using var response = await _httpClient.GetAsync($"{ResolveApiBase()}/user", cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw await PersonalSyncFailure.CreateFailureAsync("Gitea", response, cancellationToken);
+        }
+
+        var payload = await response.Content.ReadFromJsonAsync<GitProviderViewerPayload>(JsonOptions, cancellationToken);
+        var login = payload?.Login?.Trim();
+        if (string.IsNullOrWhiteSpace(login))
+        {
+            throw new InvalidOperationException("Gitea Token 未返回可用账号名，无法创建同步仓库。");
+        }
+
+        return login;
+    }
+
+    private async Task CreateRepositoryAsync(CancellationToken cancellationToken)
+    {
+        var repoName = _config.Repo.Trim();
+        using var response = await _httpClient.PostAsJsonAsync(
+            $"{ResolveApiBase()}/user/repos",
+            new GiteaCreateRepoPayload
+            {
+                Name = repoName,
+                Description = "This is a Yanzi personal sync repository.",
+                Private = true,
+                AutoInit = true
+            },
+            JsonOptions,
+            cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw await PersonalSyncFailure.CreateFailureAsync("Gitea", response, cancellationToken);
+        }
     }
 
     private static string EncodePath(string path) => string.Join("/", path.Split('/').Select(Uri.EscapeDataString));
@@ -1310,8 +1701,7 @@ internal sealed class WebDavPersonalSyncBackend : PersonalSyncBackendBase
 
     private async Task EnsureParentCollectionsAsync(string relativePath, CancellationToken cancellationToken)
     {
-        var fullPath = BuildPath(relativePath);
-        var segments = fullPath.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var segments = relativePath.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (segments.Length <= 1)
         {
             return;
@@ -1406,6 +1796,17 @@ internal sealed class GitProviderViewerPayload
 
 internal sealed class GiteeContentPayload
 {
+    // A directory response is an array of entries, not a file envelope.
+    internal static bool IsDirectoryResponse(string rawJson)
+    {
+        foreach (var ch in rawJson)
+        {
+            if (char.IsWhiteSpace(ch)) continue;
+            return ch == '[';
+        }
+        return false;
+    }
+
     public string? Content { get; set; }
 
     public string? Sha { get; set; }
@@ -1526,6 +1927,66 @@ internal sealed class GiteeDeletePayload
     public string Sha { get; set; } = string.Empty;
 
     public string Branch { get; set; } = string.Empty;
+}
+
+internal sealed class GiteeCreateRepoPayload
+{
+    [JsonPropertyName("access_token")]
+    public string AccessToken { get; set; } = string.Empty;
+
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+
+    [JsonPropertyName("description")]
+    public string Description { get; set; } = string.Empty;
+
+    [JsonPropertyName("private")]
+    public bool Private { get; set; } = true;
+
+    [JsonPropertyName("auto_init")]
+    public bool AutoInit { get; set; } = true;
+}
+
+internal sealed class GiteaCreateRepoPayload
+{
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+
+    [JsonPropertyName("description")]
+    public string Description { get; set; } = string.Empty;
+
+    [JsonPropertyName("private")]
+    public bool Private { get; set; } = true;
+
+    [JsonPropertyName("auto_init")]
+    public bool AutoInit { get; set; } = true;
+}
+
+internal sealed class GitLabCreateProjectPayload
+{
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+
+    [JsonPropertyName("path")]
+    public string Path { get; set; } = string.Empty;
+
+    [JsonPropertyName("visibility")]
+    public string Visibility { get; set; } = "private";
+
+    [JsonPropertyName("initialize_with_readme")]
+    public bool InitializeWithReadme { get; set; } = true;
+
+    [JsonPropertyName("namespace_id")]
+    public int? NamespaceId { get; set; }
+}
+
+internal sealed class GitLabNamespaceDto
+{
+    [JsonPropertyName("id")]
+    public int Id { get; set; }
+
+    [JsonPropertyName("path")]
+    public string Path { get; set; } = string.Empty;
 }
 
 internal sealed class GitLabWritePayload

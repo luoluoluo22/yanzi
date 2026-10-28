@@ -1,0 +1,1351 @@
+{
+  "project": "shadcn/ui",
+  "official_repository": "https://github.com/shadcn-ui/ui",
+  "upstream_sha": "0132174664c07d41262fb51012d0cc782e458e6c",
+  "upstream_commit_url": "https://github.com/shadcn-ui/ui/commit/0132174664c07d41262fb51012d0cc782e458e6c",
+  "registry_style": "base-nova",
+  "registry_mode": "live immutable local snapshot",
+  "reference_timestamp_utc": "2026-10-08T13:19:21.638279+00:00",
+  "design": "Base UI / Tailwind design reference, not WPF-executable code",
+  "catalog_count": 64,
+  "downloaded_registry": 61,
+  "downloaded_examples": 60,
+  "registry_compositions_without_single_package": [
+    "data-table",
+    "date-picker",
+    "typography"
+  ],
+  "examples_without_single_file": [
+    "data-table",
+    "date-picker",
+    "direction",
+    "typography"
+  ],
+  "components": [
+    {
+      "name": "Accordion",
+      "slug": "accordion",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/accordion",
+      "wpf_api": "YanziAccordion",
+      "kind": "registry",
+      "registry_path": "registry/accordion.json",
+      "example_path": "examples/accordion-example.tsx",
+      "registry_dependencies": [],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/accordion.json",
+      "source_files": [
+        "registry/base-nova/ui/accordion.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/accordion-example.tsx"
+    },
+    {
+      "name": "Alert",
+      "slug": "alert",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/alert",
+      "wpf_api": "YanziPrimitives.Alert",
+      "kind": "registry",
+      "registry_path": "registry/alert.json",
+      "example_path": "examples/alert-example.tsx",
+      "registry_dependencies": [],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/alert.json",
+      "source_files": [
+        "registry/base-nova/ui/alert.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/alert-example.tsx"
+    },
+    {
+      "name": "Alert Dialog",
+      "slug": "alert-dialog",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/alert-dialog",
+      "wpf_api": "YanziDialog.Confirm",
+      "kind": "registry",
+      "registry_path": "registry/alert-dialog.json",
+      "example_path": "examples/alert-dialog-example.tsx",
+      "registry_dependencies": [
+        "button"
+      ],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/alert-dialog.json",
+      "source_files": [
+        "registry/base-nova/ui/alert-dialog.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/alert-dialog-example.tsx"
+    },
+    {
+      "name": "Aspect Ratio",
+      "slug": "aspect-ratio",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/aspect-ratio",
+      "wpf_api": "YanziLayoutPrimitives.AspectRatio",
+      "kind": "registry",
+      "registry_path": "registry/aspect-ratio.json",
+      "example_path": "examples/aspect-ratio-example.tsx",
+      "registry_dependencies": [],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/aspect-ratio.json",
+      "source_files": [
+        "registry/base-nova/ui/aspect-ratio.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/aspect-ratio-example.tsx"
+    },
+    {
+      "name": "Attachment",
+      "slug": "attachment",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/attachment",
+      "wpf_api": "YanziContentPrimitives.Attachment",
+      "kind": "registry",
+      "registry_path": "registry/attachment.json",
+      "example_path": "examples/attachment-example.tsx",
+      "registry_dependencies": [
+        "button"
+      ],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/attachment.json",
+      "source_files": [
+        "registry/base-nova/ui/attachment.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/attachment-example.tsx"
+    },
+    {
+      "name": "Avatar",
+      "slug": "avatar",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/avatar",
+      "wpf_api": "YanziPrimitives.Avatar",
+      "kind": "registry",
+      "registry_path": "registry/avatar.json",
+      "example_path": "examples/avatar-example.tsx",
+      "registry_dependencies": [],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/avatar.json",
+      "source_files": [
+        "registry/base-nova/ui/avatar.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/avatar-example.tsx"
+    },
+    {
+      "name": "Badge",
+      "slug": "badge",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/badge",
+      "wpf_api": "YanziBadge",
+      "kind": "registry",
+      "registry_path": "registry/badge.json",
+      "example_path": "examples/badge-example.tsx",
+      "registry_dependencies": [],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/badge.json",
+      "source_files": [
+        "registry/base-nova/ui/badge.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/badge-example.tsx"
+    },
+    {
+      "name": "Breadcrumb",
+      "slug": "breadcrumb",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/breadcrumb",
+      "wpf_api": "YanziLayoutPrimitives.Breadcrumb",
+      "kind": "registry",
+      "registry_path": "registry/breadcrumb.json",
+      "example_path": "examples/breadcrumb-example.tsx",
+      "registry_dependencies": [],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/breadcrumb.json",
+      "source_files": [
+        "registry/base-nova/ui/breadcrumb.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/breadcrumb-example.tsx"
+    },
+    {
+      "name": "Bubble",
+      "slug": "bubble",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/bubble",
+      "wpf_api": "YanziContentPrimitives.MessageBubble",
+      "kind": "registry",
+      "registry_path": "registry/bubble.json",
+      "example_path": "examples/bubble-example.tsx",
+      "registry_dependencies": [],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/bubble.json",
+      "source_files": [
+        "registry/base-nova/ui/bubble.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/bubble-example.tsx"
+    },
+    {
+      "name": "Button",
+      "slug": "button",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/button",
+      "wpf_api": "Yanzi.Button.*",
+      "kind": "registry",
+      "registry_path": "registry/button.json",
+      "example_path": "examples/button-example.tsx",
+      "registry_dependencies": [],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/button.json",
+      "source_files": [
+        "registry/base-nova/ui/button.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/button-example.tsx"
+    },
+    {
+      "name": "Button Group",
+      "slug": "button-group",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/button-group",
+      "wpf_api": "YanziButtonGroup",
+      "kind": "registry",
+      "registry_path": "registry/button-group.json",
+      "example_path": "examples/button-group-example.tsx",
+      "registry_dependencies": [
+        "separator"
+      ],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/button-group.json",
+      "source_files": [
+        "registry/base-nova/ui/button-group.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/button-group-example.tsx"
+    },
+    {
+      "name": "Calendar",
+      "slug": "calendar",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/calendar",
+      "wpf_api": "Yanzi.Calendar",
+      "kind": "registry",
+      "registry_path": "registry/calendar.json",
+      "example_path": "examples/calendar-example.tsx",
+      "registry_dependencies": [
+        "button"
+      ],
+      "npm_dependencies": [
+        "cn",
+        "react-day-picker@latest",
+        "date-fns"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/calendar.json",
+      "source_files": [
+        "registry/base-nova/ui/calendar.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/calendar-example.tsx"
+    },
+    {
+      "name": "Card",
+      "slug": "card",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/card",
+      "wpf_api": "Yanzi.Card",
+      "kind": "registry",
+      "registry_path": "registry/card.json",
+      "example_path": "examples/card-example.tsx",
+      "registry_dependencies": [],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/card.json",
+      "source_files": [
+        "registry/base-nova/ui/card.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/card-example.tsx"
+    },
+    {
+      "name": "Carousel",
+      "slug": "carousel",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/carousel",
+      "wpf_api": "YanziCarousel",
+      "kind": "registry",
+      "registry_path": "registry/carousel.json",
+      "example_path": "examples/carousel-example.tsx",
+      "registry_dependencies": [
+        "button"
+      ],
+      "npm_dependencies": [
+        "cn",
+        "embla-carousel-react"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/carousel.json",
+      "source_files": [
+        "registry/base-nova/ui/carousel.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/carousel-example.tsx"
+    },
+    {
+      "name": "Chart",
+      "slug": "chart",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/chart",
+      "wpf_api": "YanziBarChart",
+      "kind": "registry",
+      "registry_path": "registry/chart.json",
+      "example_path": "examples/chart-example.tsx",
+      "registry_dependencies": [
+        "card"
+      ],
+      "npm_dependencies": [
+        "cn",
+        "recharts@3.8.0"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/chart.json",
+      "source_files": [
+        "registry/base-nova/ui/chart.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/chart-example.tsx"
+    },
+    {
+      "name": "Checkbox",
+      "slug": "checkbox",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/checkbox",
+      "wpf_api": "Yanzi.CheckBox.Preview",
+      "kind": "registry",
+      "registry_path": "registry/checkbox.json",
+      "example_path": "examples/checkbox-example.tsx",
+      "registry_dependencies": [],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/checkbox.json",
+      "source_files": [
+        "registry/base-nova/ui/checkbox.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/checkbox-example.tsx"
+    },
+    {
+      "name": "Collapsible",
+      "slug": "collapsible",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/collapsible",
+      "wpf_api": "YanziLayoutPrimitives.Collapsible",
+      "kind": "registry",
+      "registry_path": "registry/collapsible.json",
+      "example_path": "examples/collapsible-example.tsx",
+      "registry_dependencies": [],
+      "npm_dependencies": [],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/collapsible.json",
+      "source_files": [
+        "registry/base-nova/ui/collapsible.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/collapsible-example.tsx"
+    },
+    {
+      "name": "Combobox",
+      "slug": "combobox",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/combobox",
+      "wpf_api": "YanziCombobox",
+      "kind": "registry",
+      "registry_path": "registry/combobox.json",
+      "example_path": "examples/combobox-example.tsx",
+      "registry_dependencies": [
+        "button",
+        "input-group"
+      ],
+      "npm_dependencies": [
+        "cn",
+        "@base-ui/react"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/combobox.json",
+      "source_files": [
+        "registry/base-nova/ui/combobox.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/combobox-example.tsx"
+    },
+    {
+      "name": "Command",
+      "slug": "command",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/command",
+      "wpf_api": "YanziCommandPalette",
+      "kind": "registry",
+      "registry_path": "registry/command.json",
+      "example_path": "examples/command-example.tsx",
+      "registry_dependencies": [
+        "dialog",
+        "input-group"
+      ],
+      "npm_dependencies": [
+        "cn",
+        "cmdk"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/command.json",
+      "source_files": [
+        "registry/base-nova/ui/command.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/command-example.tsx"
+    },
+    {
+      "name": "Context Menu",
+      "slug": "context-menu",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/context-menu",
+      "wpf_api": "YanziContextMenu",
+      "kind": "registry",
+      "registry_path": "registry/context-menu.json",
+      "example_path": "examples/context-menu-example.tsx",
+      "registry_dependencies": [],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/context-menu.json",
+      "source_files": [
+        "registry/base-nova/ui/context-menu.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/context-menu-example.tsx"
+    },
+    {
+      "name": "Data Table",
+      "slug": "data-table",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/data-table",
+      "wpf_api": "Yanzi.DataGrid",
+      "kind": "composition",
+      "registry_path": null,
+      "example_path": null,
+      "registry_dependencies": [],
+      "npm_dependencies": [],
+      "note": "Official composition or typography docs; no standalone base-nova registry package.",
+      "example_note": "No single -example.tsx in the official base examples directory."
+    },
+    {
+      "name": "Date Picker",
+      "slug": "date-picker",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/date-picker",
+      "wpf_api": "Yanzi.DatePicker",
+      "kind": "composition",
+      "registry_path": null,
+      "example_path": null,
+      "registry_dependencies": [],
+      "npm_dependencies": [],
+      "note": "Official composition or typography docs; no standalone base-nova registry package.",
+      "example_note": "No single -example.tsx in the official base examples directory."
+    },
+    {
+      "name": "Dialog",
+      "slug": "dialog",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/dialog",
+      "wpf_api": "YanziContentDialog",
+      "kind": "registry",
+      "registry_path": "registry/dialog.json",
+      "example_path": "examples/dialog-example.tsx",
+      "registry_dependencies": [
+        "button"
+      ],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/dialog.json",
+      "source_files": [
+        "registry/base-nova/ui/dialog.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/dialog-example.tsx"
+    },
+    {
+      "name": "Direction",
+      "slug": "direction",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/direction",
+      "wpf_api": "YanziContentPrimitives.Direction",
+      "kind": "registry",
+      "registry_path": "registry/direction.json",
+      "example_path": null,
+      "registry_dependencies": [],
+      "npm_dependencies": [
+        "@base-ui/react"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/direction.json",
+      "source_files": [
+        "registry/base-nova/ui/direction.tsx"
+      ],
+      "example_note": "No single -example.tsx in the official base examples directory."
+    },
+    {
+      "name": "Drawer",
+      "slug": "drawer",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/drawer",
+      "wpf_api": "YanziSheet.ShowDrawer",
+      "kind": "registry",
+      "registry_path": "registry/drawer.json",
+      "example_path": "examples/drawer-example.tsx",
+      "registry_dependencies": [],
+      "npm_dependencies": [
+        "cn",
+        "@base-ui/react"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/drawer.json",
+      "source_files": [
+        "registry/base-nova/ui/drawer.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/drawer-example.tsx"
+    },
+    {
+      "name": "Dropdown Menu",
+      "slug": "dropdown-menu",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/dropdown-menu",
+      "wpf_api": "YanziDropdownMenu",
+      "kind": "registry",
+      "registry_path": "registry/dropdown-menu.json",
+      "example_path": "examples/dropdown-menu-example.tsx",
+      "registry_dependencies": [],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/dropdown-menu.json",
+      "source_files": [
+        "registry/base-nova/ui/dropdown-menu.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/dropdown-menu-example.tsx"
+    },
+    {
+      "name": "Empty",
+      "slug": "empty",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/empty",
+      "wpf_api": "YanziPrimitives.EmptyState",
+      "kind": "registry",
+      "registry_path": "registry/empty.json",
+      "example_path": "examples/empty-example.tsx",
+      "registry_dependencies": [],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/empty.json",
+      "source_files": [
+        "registry/base-nova/ui/empty.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/empty-example.tsx"
+    },
+    {
+      "name": "Field",
+      "slug": "field",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/field",
+      "wpf_api": "YanziPrimitives.Field",
+      "kind": "registry",
+      "registry_path": "registry/field.json",
+      "example_path": "examples/field-example.tsx",
+      "registry_dependencies": [
+        "label",
+        "separator"
+      ],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/field.json",
+      "source_files": [
+        "registry/base-nova/ui/field.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/field-example.tsx"
+    },
+    {
+      "name": "Hover Card",
+      "slug": "hover-card",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/hover-card",
+      "wpf_api": "YanziHoverCard.Attach",
+      "kind": "registry",
+      "registry_path": "registry/hover-card.json",
+      "example_path": "examples/hover-card-example.tsx",
+      "registry_dependencies": [],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/hover-card.json",
+      "source_files": [
+        "registry/base-nova/ui/hover-card.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/hover-card-example.tsx"
+    },
+    {
+      "name": "Input",
+      "slug": "input",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/input",
+      "wpf_api": "Yanzi.Input",
+      "kind": "registry",
+      "registry_path": "registry/input.json",
+      "example_path": "examples/input-example.tsx",
+      "registry_dependencies": [],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/input.json",
+      "source_files": [
+        "registry/base-nova/ui/input.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/input-example.tsx"
+    },
+    {
+      "name": "Input Group",
+      "slug": "input-group",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/input-group",
+      "wpf_api": "YanziInputGroup",
+      "kind": "registry",
+      "registry_path": "registry/input-group.json",
+      "example_path": "examples/input-group-example.tsx",
+      "registry_dependencies": [
+        "button",
+        "input",
+        "textarea"
+      ],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/input-group.json",
+      "source_files": [
+        "registry/base-nova/ui/input-group.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/input-group-example.tsx"
+    },
+    {
+      "name": "Input OTP",
+      "slug": "input-otp",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/input-otp",
+      "wpf_api": "YanziOtpInput",
+      "kind": "registry",
+      "registry_path": "registry/input-otp.json",
+      "example_path": "examples/input-otp-example.tsx",
+      "registry_dependencies": [],
+      "npm_dependencies": [
+        "cn",
+        "input-otp"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/input-otp.json",
+      "source_files": [
+        "registry/base-nova/ui/input-otp.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/input-otp-example.tsx"
+    },
+    {
+      "name": "Item",
+      "slug": "item",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/item",
+      "wpf_api": "YanziItem",
+      "kind": "registry",
+      "registry_path": "registry/item.json",
+      "example_path": "examples/item-example.tsx",
+      "registry_dependencies": [
+        "separator"
+      ],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/item.json",
+      "source_files": [
+        "registry/base-nova/ui/item.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/item-example.tsx"
+    },
+    {
+      "name": "Kbd",
+      "slug": "kbd",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/kbd",
+      "wpf_api": "YanziPrimitives.Kbd",
+      "kind": "registry",
+      "registry_path": "registry/kbd.json",
+      "example_path": "examples/kbd-example.tsx",
+      "registry_dependencies": [],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/kbd.json",
+      "source_files": [
+        "registry/base-nova/ui/kbd.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/kbd-example.tsx"
+    },
+    {
+      "name": "Label",
+      "slug": "label",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/label",
+      "wpf_api": "YanziPrimitives.Field",
+      "kind": "registry",
+      "registry_path": "registry/label.json",
+      "example_path": "examples/label-example.tsx",
+      "registry_dependencies": [],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/label.json",
+      "source_files": [
+        "registry/base-nova/ui/label.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/label-example.tsx"
+    },
+    {
+      "name": "Marker",
+      "slug": "marker",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/marker",
+      "wpf_api": "YanziContentPrimitives.Marker",
+      "kind": "registry",
+      "registry_path": "registry/marker.json",
+      "example_path": "examples/marker-example.tsx",
+      "registry_dependencies": [],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/marker.json",
+      "source_files": [
+        "registry/base-nova/ui/marker.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/marker-example.tsx"
+    },
+    {
+      "name": "Menubar",
+      "slug": "menubar",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/menubar",
+      "wpf_api": "Yanzi.Menubar",
+      "kind": "registry",
+      "registry_path": "registry/menubar.json",
+      "example_path": "examples/menubar-example.tsx",
+      "registry_dependencies": [
+        "dropdown-menu"
+      ],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/menubar.json",
+      "source_files": [
+        "registry/base-nova/ui/menubar.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/menubar-example.tsx"
+    },
+    {
+      "name": "Message",
+      "slug": "message",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/message",
+      "wpf_api": "YanziContentPrimitives.MessageBubble",
+      "kind": "registry",
+      "registry_path": "registry/message.json",
+      "example_path": "examples/message-example.tsx",
+      "registry_dependencies": [],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/message.json",
+      "source_files": [
+        "registry/base-nova/ui/message.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/message-example.tsx"
+    },
+    {
+      "name": "Message Scroller",
+      "slug": "message-scroller",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/message-scroller",
+      "wpf_api": "YanziMessageScroller",
+      "kind": "registry",
+      "registry_path": "registry/message-scroller.json",
+      "example_path": "examples/message-scroller-example.tsx",
+      "registry_dependencies": [
+        "button"
+      ],
+      "npm_dependencies": [
+        "cn",
+        "@shadcn/react"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/message-scroller.json",
+      "source_files": [
+        "registry/base-nova/ui/message-scroller.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/message-scroller-example.tsx"
+    },
+    {
+      "name": "Native Select",
+      "slug": "native-select",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/native-select",
+      "wpf_api": "Yanzi.Select",
+      "kind": "registry",
+      "registry_path": "registry/native-select.json",
+      "example_path": "examples/native-select-example.tsx",
+      "registry_dependencies": [],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/native-select.json",
+      "source_files": [
+        "registry/base-nova/ui/native-select.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/native-select-example.tsx"
+    },
+    {
+      "name": "Navigation Menu",
+      "slug": "navigation-menu",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/navigation-menu",
+      "wpf_api": "Yanzi.Menubar",
+      "kind": "registry",
+      "registry_path": "registry/navigation-menu.json",
+      "example_path": "examples/navigation-menu-example.tsx",
+      "registry_dependencies": [],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/navigation-menu.json",
+      "source_files": [
+        "registry/base-nova/ui/navigation-menu.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/navigation-menu-example.tsx"
+    },
+    {
+      "name": "Pagination",
+      "slug": "pagination",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/pagination",
+      "wpf_api": "YanziPagination",
+      "kind": "registry",
+      "registry_path": "registry/pagination.json",
+      "example_path": "examples/pagination-example.tsx",
+      "registry_dependencies": [
+        "button"
+      ],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/pagination.json",
+      "source_files": [
+        "registry/base-nova/ui/pagination.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/pagination-example.tsx"
+    },
+    {
+      "name": "Popover",
+      "slug": "popover",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/popover",
+      "wpf_api": "YanziPopover.Attach",
+      "kind": "registry",
+      "registry_path": "registry/popover.json",
+      "example_path": "examples/popover-example.tsx",
+      "registry_dependencies": [],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/popover.json",
+      "source_files": [
+        "registry/base-nova/ui/popover.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/popover-example.tsx"
+    },
+    {
+      "name": "Progress",
+      "slug": "progress",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/progress",
+      "wpf_api": "Yanzi.Progress",
+      "kind": "registry",
+      "registry_path": "registry/progress.json",
+      "example_path": "examples/progress-example.tsx",
+      "registry_dependencies": [],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/progress.json",
+      "source_files": [
+        "registry/base-nova/ui/progress.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/progress-example.tsx"
+    },
+    {
+      "name": "Questionnaire",
+      "slug": "questionnaire",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/questionnaire",
+      "wpf_api": "YanziQuestionnaire",
+      "kind": "registry",
+      "registry_path": "registry/questionnaire.json",
+      "example_path": "examples/questionnaire-example.tsx",
+      "registry_dependencies": [
+        "button"
+      ],
+      "npm_dependencies": [
+        "cn",
+        "@shadcn/react"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/questionnaire.json",
+      "source_files": [
+        "registry/base-nova/ui/questionnaire.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/questionnaire-example.tsx"
+    },
+    {
+      "name": "Radio Group",
+      "slug": "radio-group",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/radio-group",
+      "wpf_api": "YanziRadio / YanziRadioGroup",
+      "kind": "registry",
+      "registry_path": "registry/radio-group.json",
+      "example_path": "examples/radio-group-example.tsx",
+      "registry_dependencies": [],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/radio-group.json",
+      "source_files": [
+        "registry/base-nova/ui/radio-group.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/radio-group-example.tsx"
+    },
+    {
+      "name": "Resizable",
+      "slug": "resizable",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/resizable",
+      "wpf_api": "YanziLayoutPrimitives.Resizable",
+      "kind": "registry",
+      "registry_path": "registry/resizable.json",
+      "example_path": "examples/resizable-example.tsx",
+      "registry_dependencies": [],
+      "npm_dependencies": [
+        "cn",
+        "react-resizable-panels"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/resizable.json",
+      "source_files": [
+        "registry/base-nova/ui/resizable.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/resizable-example.tsx"
+    },
+    {
+      "name": "Scroll Area",
+      "slug": "scroll-area",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/scroll-area",
+      "wpf_api": "YanziLayoutPrimitives.ScrollArea",
+      "kind": "registry",
+      "registry_path": "registry/scroll-area.json",
+      "example_path": "examples/scroll-area-example.tsx",
+      "registry_dependencies": [],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/scroll-area.json",
+      "source_files": [
+        "registry/base-nova/ui/scroll-area.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/scroll-area-example.tsx"
+    },
+    {
+      "name": "Select",
+      "slug": "select",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/select",
+      "wpf_api": "Yanzi.Select",
+      "kind": "registry",
+      "registry_path": "registry/select.json",
+      "example_path": "examples/select-example.tsx",
+      "registry_dependencies": [],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/select.json",
+      "source_files": [
+        "registry/base-nova/ui/select.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/select-example.tsx"
+    },
+    {
+      "name": "Separator",
+      "slug": "separator",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/separator",
+      "wpf_api": "YanziPrimitives.Separator",
+      "kind": "registry",
+      "registry_path": "registry/separator.json",
+      "example_path": "examples/separator-example.tsx",
+      "registry_dependencies": [],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/separator.json",
+      "source_files": [
+        "registry/base-nova/ui/separator.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/separator-example.tsx"
+    },
+    {
+      "name": "Sheet",
+      "slug": "sheet",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/sheet",
+      "wpf_api": "YanziSheet.ShowAt",
+      "kind": "registry",
+      "registry_path": "registry/sheet.json",
+      "example_path": "examples/sheet-example.tsx",
+      "registry_dependencies": [
+        "button"
+      ],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/sheet.json",
+      "source_files": [
+        "registry/base-nova/ui/sheet.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/sheet-example.tsx"
+    },
+    {
+      "name": "Sidebar",
+      "slug": "sidebar",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/sidebar",
+      "wpf_api": "YanziSidebar",
+      "kind": "registry",
+      "registry_path": "registry/sidebar.json",
+      "example_path": "examples/sidebar-example.tsx",
+      "registry_dependencies": [
+        "button",
+        "input",
+        "separator",
+        "sheet",
+        "skeleton",
+        "tooltip",
+        "use-mobile"
+      ],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/sidebar.json",
+      "source_files": [
+        "registry/base-nova/ui/sidebar.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/sidebar-example.tsx"
+    },
+    {
+      "name": "Skeleton",
+      "slug": "skeleton",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/skeleton",
+      "wpf_api": "YanziPrimitives.Skeleton",
+      "kind": "registry",
+      "registry_path": "registry/skeleton.json",
+      "example_path": "examples/skeleton-example.tsx",
+      "registry_dependencies": [],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/skeleton.json",
+      "source_files": [
+        "registry/base-nova/ui/skeleton.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/skeleton-example.tsx"
+    },
+    {
+      "name": "Slider",
+      "slug": "slider",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/slider",
+      "wpf_api": "Yanzi.Slider",
+      "kind": "registry",
+      "registry_path": "registry/slider.json",
+      "example_path": "examples/slider-example.tsx",
+      "registry_dependencies": [],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/slider.json",
+      "source_files": [
+        "registry/base-nova/ui/slider.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/slider-example.tsx"
+    },
+    {
+      "name": "Spinner",
+      "slug": "spinner",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/spinner",
+      "wpf_api": "YanziLoadingRing",
+      "kind": "registry",
+      "registry_path": "registry/spinner.json",
+      "example_path": "examples/spinner-example.tsx",
+      "registry_dependencies": [],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/spinner.json",
+      "source_files": [
+        "registry/base-nova/ui/spinner.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/spinner-example.tsx"
+    },
+    {
+      "name": "Switch",
+      "slug": "switch",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/switch",
+      "wpf_api": "Yanzi.Switch.Shadcn",
+      "kind": "registry",
+      "registry_path": "registry/switch.json",
+      "example_path": "examples/switch-example.tsx",
+      "registry_dependencies": [],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/switch.json",
+      "source_files": [
+        "registry/base-nova/ui/switch.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/switch-example.tsx"
+    },
+    {
+      "name": "Table",
+      "slug": "table",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/table",
+      "wpf_api": "Yanzi.DataGrid",
+      "kind": "registry",
+      "registry_path": "registry/table.json",
+      "example_path": "examples/table-example.tsx",
+      "registry_dependencies": [],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/table.json",
+      "source_files": [
+        "registry/base-nova/ui/table.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/table-example.tsx"
+    },
+    {
+      "name": "Tabs",
+      "slug": "tabs",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/tabs",
+      "wpf_api": "Yanzi.Tabs",
+      "kind": "registry",
+      "registry_path": "registry/tabs.json",
+      "example_path": "examples/tabs-example.tsx",
+      "registry_dependencies": [],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/tabs.json",
+      "source_files": [
+        "registry/base-nova/ui/tabs.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/tabs-example.tsx"
+    },
+    {
+      "name": "Textarea",
+      "slug": "textarea",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/textarea",
+      "wpf_api": "Yanzi.Textarea",
+      "kind": "registry",
+      "registry_path": "registry/textarea.json",
+      "example_path": "examples/textarea-example.tsx",
+      "registry_dependencies": [],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/textarea.json",
+      "source_files": [
+        "registry/base-nova/ui/textarea.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/textarea-example.tsx"
+    },
+    {
+      "name": "Toast",
+      "slug": "toast",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/toast",
+      "wpf_api": "YanziToast.Show",
+      "kind": "registry",
+      "registry_path": "registry/toast.json",
+      "example_path": "examples/toast-example.tsx",
+      "registry_dependencies": [
+        "button"
+      ],
+      "npm_dependencies": [
+        "cn",
+        "@base-ui/react"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/toast.json",
+      "source_files": [
+        "registry/base-nova/ui/toast.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/toast-example.tsx"
+    },
+    {
+      "name": "Toggle",
+      "slug": "toggle",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/toggle",
+      "wpf_api": "Yanzi.ToggleButton",
+      "kind": "registry",
+      "registry_path": "registry/toggle.json",
+      "example_path": "examples/toggle-example.tsx",
+      "registry_dependencies": [],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/toggle.json",
+      "source_files": [
+        "registry/base-nova/ui/toggle.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/toggle-example.tsx"
+    },
+    {
+      "name": "Toggle Group",
+      "slug": "toggle-group",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/toggle-group",
+      "wpf_api": "YanziToggleGroup",
+      "kind": "registry",
+      "registry_path": "registry/toggle-group.json",
+      "example_path": "examples/toggle-group-example.tsx",
+      "registry_dependencies": [
+        "toggle"
+      ],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/toggle-group.json",
+      "source_files": [
+        "registry/base-nova/ui/toggle-group.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/toggle-group-example.tsx"
+    },
+    {
+      "name": "Tooltip",
+      "slug": "tooltip",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/tooltip",
+      "wpf_api": "Yanzi.Tooltip",
+      "kind": "registry",
+      "registry_path": "registry/tooltip.json",
+      "example_path": "examples/tooltip-example.tsx",
+      "registry_dependencies": [],
+      "npm_dependencies": [
+        "cn"
+      ],
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/tooltip.json",
+      "source_files": [
+        "registry/base-nova/ui/tooltip.tsx"
+      ],
+      "example_url": "https://raw.githubusercontent.com/shadcn-ui/ui/0132174664c07d41262fb51012d0cc782e458e6c/apps/v4/registry/bases/base/examples/tooltip-example.tsx"
+    },
+    {
+      "name": "Typography",
+      "slug": "typography",
+      "official_docs": "https://ui.shadcn.com/docs/components/base/typography",
+      "wpf_api": "TextBlock / tokens",
+      "kind": "composition",
+      "registry_path": null,
+      "example_path": null,
+      "registry_dependencies": [],
+      "npm_dependencies": [],
+      "note": "Official composition or typography docs; no standalone base-nova registry package.",
+      "example_note": "No single -example.tsx in the official base examples directory."
+    }
+  ],
+  "checksums": {
+    "registry/accordion.json": "01509cb2a91779ee74c2d4a1f75842c0a258bed1758be4f2567af9daabdc39ac",
+    "examples/accordion-example.tsx": "2d22b2749b4e3f32ed753ff5fdc46db6c8e5d4bce8b42d7af1c7e02aca41d0fe",
+    "registry/alert.json": "0799cfc29a481568f6e9b48e96518a446032350dec576bfe31b7f67b4b262028",
+    "examples/alert-example.tsx": "2f13f1ad964a31981386a08d890acb94e329ad009d6e484b4ae4a8b6008463b2",
+    "registry/alert-dialog.json": "974543244faee02eb4ea40264b7e0bbda2b01c3f2c369de965d2ac771c57a8af",
+    "examples/alert-dialog-example.tsx": "d6ac5f3c57c5ebe0c2d74446ebb001aa06eb3de43529530a62c318ca176d7e18",
+    "registry/aspect-ratio.json": "8600bbd8874ad9f0c3f60625b7def0960369a93c5cac09ee5a5fad7500500248",
+    "examples/aspect-ratio-example.tsx": "d81a6912343f21f28f6939a20012f3033edb523e64fd892c3c9148246df4ef6a",
+    "registry/attachment.json": "f6c6d376067d2734375a607256d59ce6c3ea4e486deda510b31844102033d353",
+    "examples/attachment-example.tsx": "39fbf1843c0941ad3dffe4978209902b6b552f96884f6d3687335c87b1c8c16f",
+    "registry/avatar.json": "bbcabf0121fb2ff93a8522f8f80b74631e732a31399b1b7991c0b8c3167e2172",
+    "examples/avatar-example.tsx": "78f6fb795d33ef90fa2c4790b5ee3db29ca2b4ff62110941c23807ba8e0eda62",
+    "registry/badge.json": "ccc20021cdcbf0fb23c0d4d28f1da4adde8e51ba59f4b11dd2722ed97a5ee3a4",
+    "examples/badge-example.tsx": "b5ec41da831fe3034393d95bd93625d0f2331115353c96d5773a921cefdc2a97",
+    "registry/breadcrumb.json": "5e7a33d921824d659494dc90411393cdf795c0ad5c94631da5c2883924623350",
+    "examples/breadcrumb-example.tsx": "3880b085f86ee868367576aec07f021b955c14b72aa27d0749849d812032e34b",
+    "registry/bubble.json": "be11ab3fa78ec7bd4736f4ab98c16a2d5a230536206d5a4fd06259422b55cb14",
+    "examples/bubble-example.tsx": "9164d600a337d988bfca1124916ceaecb14c95bbb129ae0291d230dbdec61361",
+    "registry/button.json": "9ba7e870178813f0552b818a913a2792fb500c779e36395740b4973e3025d427",
+    "examples/button-example.tsx": "18eb30f758a5f64d918014952bce3f867a4ba06f79fa36f92f83ac331ef82f8a",
+    "registry/button-group.json": "da9bceac03af172022b214f89561b2bf9e0cccac63d46cfe2e1c9f2c8e6792e9",
+    "examples/button-group-example.tsx": "5d2ed228eb49d7d254b5fab75e42d40eafb504dfc811273e763678d4e9710a26",
+    "registry/calendar.json": "cc9ff16599d1664cec2d6a91ba82d0927953d8eedd51a7d56bba48a6522c28eb",
+    "examples/calendar-example.tsx": "12e806d3568ee4c3b960766a7bd45f5437967bebe4c32dbcb0d3875bb2355993",
+    "registry/card.json": "e73e3fe00ab2e14c4db1dccb1ff5c67041a94c0926ac3216c1dc6dd6dee9d7e0",
+    "examples/card-example.tsx": "00daf26ba404d0bfc41167a244d993ddc2837ba820cedfd6967d4a96932b3425",
+    "registry/carousel.json": "14737a7cf92048df9de47f9d1a9527d6d3beafba12115f52a3c353134ee2b50b",
+    "examples/carousel-example.tsx": "3f04d744b24e2e9ade532b5b7aa2ade70c305ade9c87c47f2a2335766cac2bb6",
+    "registry/chart.json": "c867c2180d6250e8f2883491abd802e1caae65eca6b11af415d42048cec798c5",
+    "examples/chart-example.tsx": "70465e6e68a3a0471c4b1bb71072da8abc60b56e5f41a1907b8b065219e15a64",
+    "registry/checkbox.json": "e6df7b595f25a7ee97c3fb94e0ddc35998f74c98b990d3030e485905ec677178",
+    "examples/checkbox-example.tsx": "1d1980a77777c91d3b8ca8014433b20c508c76a9a096b4e3c8dd71714ab7dabe",
+    "registry/collapsible.json": "74f78cd88a30185243847968977cf1de9ffbf576547f2ec1f14b5ef55505b90d",
+    "examples/collapsible-example.tsx": "dd365dedc98eea455ed379673d956197900692ee581fbe029d5ab97775f049b5",
+    "registry/combobox.json": "d4b9231b00428269f6fa42bf3e26714f15c69245f35b62d1bbae6d1a4853d314",
+    "examples/combobox-example.tsx": "6b63f6a5671af4738a91b738830ef645da299b5088e59a084ea1ca5d2748ff2a",
+    "registry/command.json": "626b25da7b65ae2e800e5c7bc516f2223c2a144fb745ddaf0dcbf746d879f3d1",
+    "examples/command-example.tsx": "e118eb5c70fb7aca6cd08dd833fb0d1216a805df0b7b360c2a30c1776fe56aa9",
+    "registry/context-menu.json": "57bfdd236a7f4cb83625edf4c33265ce009738947666d00311034a88f6868756",
+    "examples/context-menu-example.tsx": "6af7465c3be63adcfe2dd9038f695f7a063502bcca61b97a2d4739bd24bb72a0",
+    "registry/dialog.json": "40fc321d25eb9590d07db54b00d9bc1a74274a549aa06d5915a34ba302ed8b94",
+    "examples/dialog-example.tsx": "8c0951ad73042f692673b1552d6dac25c0c69b1d0f218d1e9e603aeab93fd09d",
+    "registry/direction.json": "bf226602a949b5da7b3f8b3cbd0ed962d1e5d8a76c634055cdb05816c6bd1f32",
+    "registry/drawer.json": "fc81c0adadef868df72172c9cf83237b8ab791a4f0f3e300540883be56c26982",
+    "examples/drawer-example.tsx": "eb76b83c16db78286f92aae1042c547550fe57d8f430c12272e52141817088f4",
+    "registry/dropdown-menu.json": "335c59dba30145f434a9cc9ccb0438a3c5e2afe857fc11b029de1ecb415224d7",
+    "examples/dropdown-menu-example.tsx": "2d5b5ad4b4181c66250c6748aee9365249eb3a3f13ab298387b1e82257070e08",
+    "registry/empty.json": "e89ffe0fc2969956f6e1d601bd3f00b068600ac08e31590f65344e79ff242230",
+    "examples/empty-example.tsx": "c40ecdb43cbc685ab147ff603953b508c57d2abd47b8cca44e886fbc5530dc36",
+    "registry/field.json": "586110f5563cbb5dc0929207ee34361f1349cf2f816465799c60b98821e4cedc",
+    "examples/field-example.tsx": "54e279b7e55e513d3f313df38bff379feedda7ce89ad92c142cebb65ff993fc6",
+    "registry/hover-card.json": "d5588ff6c235f25578739d9402e2577fe436814301403f228d42b65e1cdf8e48",
+    "examples/hover-card-example.tsx": "ef4dfa7cd7f58cac2224ec228717f531429074a77be19be0a6d0b605cb3ba19c",
+    "registry/input.json": "bbad1bba130ac9750a61844eeb8f043e8a710846e07689fa85398b80a46c2741",
+    "examples/input-example.tsx": "f77f44d96b1f4e268191fff736a2daa7884bd3d04ffb63fa6f9dbb821da3cdd2",
+    "registry/input-group.json": "acf9c5497a6c844dee87fbd4afefb6cd8be9ce50d050d14d58a340d955e517a1",
+    "examples/input-group-example.tsx": "52d34e3f375eff925391b0a30fb6c667ac0b7f65a00d2046b61e394dc368aad8",
+    "registry/input-otp.json": "1f8309b2749a129b011c93928416a0da7d6009b55ae8118d45850e488eac8989",
+    "examples/input-otp-example.tsx": "2bd8a52b61fcb99cfa7337489b11279bf72ec4543bf84ab8c47e797920572e20",
+    "registry/item.json": "eb7167bffffb69a5e808fec2a80923fbf80f594d2f942efa2da1a605fdfd87b7",
+    "examples/item-example.tsx": "d72b202993064cd9a69521596b424a1515815fdd0c3562d48a6b5f5def89d154",
+    "registry/kbd.json": "4cfe2ba8e19f4d19d090eb039e3f1c041c9cfb379ce948237a9b5018203f7a6c",
+    "examples/kbd-example.tsx": "3fbd8b8b3ad0f286205ff0a2796b9404922bb477e947820c1337135f2e588bba",
+    "registry/label.json": "89b01e14fd39dceece9fa421e71e78ea83286bd43a2ca1c2f55d2e8d3958fff2",
+    "examples/label-example.tsx": "c20d97df902332467e5f76f76b7b752a6e0504d744f874101146851d1867e649",
+    "registry/marker.json": "3e02a701ba7d9d4c4b41522e33c45171722d14c285c02995b8577b8a426a7a3d",
+    "examples/marker-example.tsx": "1a6c7b909f4f486e287e01ebc09d8c64ffc38f7971a867352277023384ad31b8",
+    "registry/menubar.json": "265f030bd11d52072325f749bfd2c8070a9a1cc48098aa3fb245b2460801e6cd",
+    "examples/menubar-example.tsx": "9db7cb209ee6e3e08d8408f2238b0bf91d25611132159b1120893565459b11ac",
+    "registry/message.json": "6a484395f7ed32d3b254619cc542aeed6ce77a5628d1e9a04d4b5baaf7de0c41",
+    "examples/message-example.tsx": "2b653b3ae6de3b1dcbdb74743a4b94faf4dbc42f325e9957dfdcfc28fa529212",
+    "registry/message-scroller.json": "4893726e4c327b2964ba71b2ea8ca8be73a989c6cdfc567657416eacac8bcfe9",
+    "examples/message-scroller-example.tsx": "43ab1c6161d424cb42168573d8ec442af96c558022061cdf0f60088ec0925f10",
+    "registry/native-select.json": "743d128b09f67c1921e3c302e778834639e5be92c454205cabfb61eed34b4ff1",
+    "examples/native-select-example.tsx": "67366f6c3785982b683b2541bc68b7e7a4562a227850fdb798dc79ba147ea453",
+    "registry/navigation-menu.json": "1fdd735ea7449af8ebbd932b3e89b34a1efa8a3b193ac979d0d723660526c017",
+    "examples/navigation-menu-example.tsx": "4a2fd068c7b5c3543500d82a37cd115951e2657e4926ade4cdfa5f06ec2c752a",
+    "registry/pagination.json": "d2c45af4aaf4a676f420c673f337e8ba89dc7db75bf9fa11143f8a947f3a7f42",
+    "examples/pagination-example.tsx": "2cc67f36da0b0f3cf9dbbd224e4c60d568f825672b72496a68a0e53db97b0f94",
+    "registry/popover.json": "ba5fe84f353f6c0fd2133a2ab893f5e8861fc60dc4dea548a7ec875acaa37b2c",
+    "examples/popover-example.tsx": "668dd4d2682d6940ed0d2619a1c181fed7c03937351ed3d994b16df9da79a0f4",
+    "registry/progress.json": "359e72beff723311ec2e4d5154a0f80dedd253bd6b16959a4db0773714ceab52",
+    "examples/progress-example.tsx": "0774c7a6bc4c241f22b4f53ae910ad3bba9b8a558d1c293c75d7e90fc7bc187a",
+    "registry/questionnaire.json": "7eac8ca2fb479be1a18c97cced020b93c22cec1926dea72c8be324cdb3b62fa9",
+    "examples/questionnaire-example.tsx": "56616a86a91b4bba801ceec7fecfe279330aa84c4b1863952f721cdee01cfff1",
+    "registry/radio-group.json": "874b30662ba338d06362491b663cae9198281a4bc385b6be6425f2de442384d7",
+    "examples/radio-group-example.tsx": "abb4e0ca3f42884001666c790aa061c31f6e1ae01c1451d80ed8c6f699f55ea0",
+    "registry/resizable.json": "7415e497f342485720b6c878c81604eda0aa8b479a2211e4355c324de89a1672",
+    "examples/resizable-example.tsx": "6076eabb0585591cb286be56359172dfde616e5cf3847916b422e1526a2940ab",
+    "registry/scroll-area.json": "be6cdcfbf02a2fa091ec92cb2bc34e35b8a4e4b3a2d041973cfcd68396e6da1d",
+    "examples/scroll-area-example.tsx": "6cf563576388bf298a71e164e1d9b3bb1b869bcfe75851cb17111a728352f06e",
+    "registry/select.json": "425e9b0a28b72617f18fabd75384050113295b88e7ba01c35bede2c72bd5d476",
+    "examples/select-example.tsx": "5571f7345411108bbaa1030ef502914b3e1e2cba3136ffac9ffaac73b8f967a7",
+    "registry/separator.json": "3ad65962485f464592201cb90017b3d52a5c9fe272ce41ee049485b4c42e0d76",
+    "examples/separator-example.tsx": "88f72bb831d292634125fd7ffa1839d68087295639b6f0f248f029488938973b",
+    "registry/sheet.json": "72b36d92af7fcbc9bd2d1d4ef0cbc65f4fc8178f7bb2bedaf657460f15011cf4",
+    "examples/sheet-example.tsx": "380fc3aa16a9750431bfc0ea5763c7359b72c0c76f18d362d1d430b68092cab0",
+    "registry/sidebar.json": "02b1ea430fb246da062048f0161a01d1b34a2c787f6974958c9b20a3142120a6",
+    "examples/sidebar-example.tsx": "098cd742d7f8df6ccf983f103f49bd9a6bcc44e6c4576dc5b62d2d68d3784f49",
+    "registry/skeleton.json": "85692a09912f518ffd64c540dfcf098fe748a807baf288c107cf8126496cf886",
+    "examples/skeleton-example.tsx": "848b6c79fecadd25362f816a5223efb767cb890d337eb7f9650570798673e800",
+    "registry/slider.json": "646bcd7913417b786bbf7578484f851bf89c81a62f70ef9c4f3522e2af80a951",
+    "examples/slider-example.tsx": "231f663761e7c5ea9e067978bef9d581af858956bffaafae35f6ace0f2943db4",
+    "registry/spinner.json": "d949d0b91ff34620eecf2bb359536fd3e6942b518dc0a396b77fd02a90661b61",
+    "examples/spinner-example.tsx": "e6737fcd144925ba7569e60ef169168cf5fd2a7cfa9d0cbc0003ccafc635e844",
+    "registry/switch.json": "1f22350ccbf358a3aa198305c41d91e146abc0a7d5b18a9a23488b8d6b264ab4",
+    "examples/switch-example.tsx": "ccff0a0d4b1b1bb1e91471f53e421e0831bd578dbe41844eb9f4da5cc77bb2f1",
+    "registry/table.json": "054c89df40058a96723c9ed8cde6308e738f3a303fd19301ce94ade032306b60",
+    "examples/table-example.tsx": "dcfd2fa9f630c6fc5440f1f0af57e8c8b9062a31879e1fc0be29ee8621ccf0c2",
+    "registry/tabs.json": "b4552a0329dd9a6e2bfaf03405c133874df5a4930c7bb3dd84c9ab5c45b89402",
+    "examples/tabs-example.tsx": "8df264574f17761f00573bca98bf77823506fe60abfb887a2a9f8ee6ea8c8eaa",
+    "registry/textarea.json": "8f01f6bc4ee556263bae7644e8b527022fa77ff203f33a258bb47142ef7d9c81",
+    "examples/textarea-example.tsx": "3199a0816889450768a891d9c3c97ca7618d7d03eca0867cf359bb2d3c9b30d9",
+    "registry/toast.json": "161ed77c409fe7345ee6308f7cf66f7bcf2717d8d5e1a8b36a7f8e8fa0df745e",
+    "examples/toast-example.tsx": "664bf58972f6779baa3e6ed383ca5759392b7824dac44cc09b74be55070f3e6a",
+    "registry/toggle.json": "f06447a03bcc1e510f3a50d5e7735bd82bdc17bc77849596709727c215bcc20e",
+    "examples/toggle-example.tsx": "8033aa988070b03a9692aca63329ffbfe7f848960fbc63652ba9361295d8d64d",
+    "registry/toggle-group.json": "9f103af4a048ec392cb09b886985ec733a360a0033cc7138349f1775851a89d4",
+    "examples/toggle-group-example.tsx": "a8408862275ace9b42e45199b2aaab45e5aa48134b36d52a5e84d6b4d5baecee",
+    "registry/tooltip.json": "2f55867faecee2d3616cfd8c6a80b538909a21e62fdfa2788b1ead56093e5395",
+    "examples/tooltip-example.tsx": "c60557bd5445d1f6bf7065764d0323fe903d9ee49df702d7c56b2b3a16435d12",
+    "theme/globals.css": "cbae6d633c38be59fc036d1e5cf60203ae7619ea6af9b4cdd8d632a211ccffa9",
+    "theme/components.json": "6dcf0aabad57e5566a727835bccea6148504c0fbb7610f69c0022da3b8e28582",
+    "LICENSE.md": "1564074e13439397221ffd522e2e504d56561994a23d371aa5e3ad43e4f5423f",
+    "theme/design-tokens.json": "7a19921b3bd5eb2f1b395d0245aa504d003e8b42562b54979caec864e1bbcf43"
+  }
+}

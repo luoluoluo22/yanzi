@@ -38,6 +38,7 @@ public sealed class WindowBoundExtensionsService : IDisposable
 
     public void Start(WindowBindingSettings settings)
     {
+        if (!HostRuntimeProfile.GlobalListenersEnabled) return;
         _settings = settings ?? new WindowBindingSettings();
         EnsureWinEventHooks();
         if (!_fallbackTimer.IsEnabled)
@@ -51,6 +52,7 @@ public sealed class WindowBoundExtensionsService : IDisposable
 
     public void Reload(WindowBindingSettings settings)
     {
+        if (!HostRuntimeProfile.GlobalListenersEnabled) return;
         _settings = settings ?? new WindowBindingSettings();
         if (!_settings.Enabled)
         {
@@ -493,7 +495,7 @@ public sealed class WindowBoundExtensionsService : IDisposable
             return false;
         }
 
-        var dpi = GetDpiForWindow(GetForegroundWindow());
+        var dpi = ScreenHelper.GetDpiForWindow(GetForegroundWindow());
         var scale = dpi <= 0 ? 1 : dpi / 96.0;
         var x = point.X / scale;
         var y = point.Y / scale;
@@ -631,7 +633,7 @@ public sealed class WindowBoundExtensionsService : IDisposable
             _ = GetWindowText(hwnd, titleBuilder, titleBuilder.Capacity);
             title = titleBuilder.ToString();
 
-            dpi = GetDpiForWindow(hwnd);
+            dpi = ScreenHelper.GetDpiForWindow(hwnd);
             if (dpi == 0)
             {
                 dpi = 96;
@@ -759,9 +761,6 @@ public sealed class WindowBoundExtensionsService : IDisposable
             return false;
         }
     }
-
-    [DllImport("user32.dll")]
-    private static extern uint GetDpiForWindow(IntPtr hwnd);
 
     private delegate void WinEventDelegate(IntPtr hWinEventHook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint dwEventThread, uint dwmsEventTime);
 

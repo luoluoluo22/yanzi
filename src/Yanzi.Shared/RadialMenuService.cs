@@ -31,17 +31,17 @@ public class RadialMenuService
     public double GrandChildRingCenterX { get; private set; }
     public double GrandChildRingCenterY { get; private set; }
 
-    public double ChildRingEllipseX => ChildRingCenterX - 120;
-    public double ChildRingEllipseY => ChildRingCenterY - 120;
-    public double ChildRingCenterEllipseX => ChildRingCenterX - 32;
-    public double ChildRingCenterEllipseY => ChildRingCenterY - 32;
+    public double ChildRingEllipseX => ChildRingCenterX - 100;
+    public double ChildRingEllipseY => ChildRingCenterY - 100;
+    public double ChildRingCenterEllipseX => ChildRingCenterX - 26;
+    public double ChildRingCenterEllipseY => ChildRingCenterY - 26;
     public double ChildRingTitleX => ChildRingCenterX - 75;
     public double ChildRingTitleY => ChildRingCenterY - 10;
 
-    public double GrandChildRingEllipseX => GrandChildRingCenterX - 98;
-    public double GrandChildRingEllipseY => GrandChildRingCenterY - 98;
-    public double GrandChildRingCenterEllipseX => GrandChildRingCenterX - 27;
-    public double GrandChildRingCenterEllipseY => GrandChildRingCenterY - 27;
+    public double GrandChildRingEllipseX => GrandChildRingCenterX - 80;
+    public double GrandChildRingEllipseY => GrandChildRingCenterY - 80;
+    public double GrandChildRingCenterEllipseX => GrandChildRingCenterX - 22;
+    public double GrandChildRingCenterEllipseY => GrandChildRingCenterY - 22;
     public double GrandChildRingTitleX => GrandChildRingCenterX - 64;
     public double GrandChildRingTitleY => GrandChildRingCenterY - 10;
 
@@ -78,7 +78,7 @@ public class RadialMenuService
 
     public void BuildItems(int radius, double windowWidth, double windowHeight, double centerX, double centerY)
     {
-        var effectiveRadius = Math.Clamp(radius - 10, 82, 96);
+        var effectiveRadius = Math.Clamp(radius - 10, 68, 80);
         Items.Clear();
         OuterItems.Clear();
         ChildItems.Clear();
@@ -92,19 +92,19 @@ public class RadialMenuService
         CenterPrimaryText = PageTitle;
 
         var center = new Point(centerX, centerY);
-        BuildSeparators(MainSeparators, center.X, center.Y, 34, 135, RadialMenuSettings.InnerSlotCount);
-        BuildSeparators(OuterSeparators, center.X, center.Y, 135, 215, RadialMenuSettings.OuterSlotCount);
+        BuildSeparators(MainSeparators, center.X, center.Y, 26, 110, RadialMenuSettings.InnerSlotCount);
+        BuildSeparators(OuterSeparators, center.X, center.Y, 110, 176, RadialMenuSettings.OuterSlotCount);
 
         for (var index = 0; index < RadialMenuSettings.InnerSlotCount; index++)
         {
             var angle = (-90 + index * 45) * Math.PI / 180.0;
-            var x = center.X + Math.Cos(angle) * effectiveRadius - 38;
-            var y = center.Y + Math.Sin(angle) * effectiveRadius - 30;
+            var x = center.X + Math.Cos(angle) * 78 - 32;
+            var y = center.Y + Math.Sin(angle) * 78 - 25;
             var item = items.ElementAtOrDefault(index);
             var slot = GetSlotSettings(_currentPageId, index);
             Items.Add(new RadialMenuItemViewModel(_currentPageId, index, item, slot?.ChildPageId ?? string.Empty, 
                 ResolvePageName(slot?.ChildPageId), x, y, angle * 180.0 / Math.PI, RadialMenuRing.Inner,
-                CreateSectorGeometry(center.X, center.Y, 44, 136, angle * 180.0 / Math.PI - 22.5, angle * 180.0 / Math.PI + 22.5)));
+                CreateSectorGeometry(center.X, center.Y, 26, 110, angle * 180.0 / Math.PI - 22.5, angle * 180.0 / Math.PI + 22.5)));
         }
 
         for (var offset = 0; offset < RadialMenuSettings.OuterSlotCount; offset++)
@@ -112,13 +112,13 @@ public class RadialMenuService
             var index = RadialMenuSettings.InnerSlotCount + offset;
             var angleDegrees = -90 + offset * 22.5;
             var angle = angleDegrees * Math.PI / 180.0;
-            var x = center.X + Math.Cos(angle) * 178 - 31;
-            var y = center.Y + Math.Sin(angle) * 178 - 25;
+            var x = center.X + Math.Cos(angle) * 143 - 25;
+            var y = center.Y + Math.Sin(angle) * 143 - 20;
             var item = items.ElementAtOrDefault(index);
             var slot = GetSlotSettings(_currentPageId, index);
             OuterItems.Add(new RadialMenuItemViewModel(_currentPageId, index, item, slot?.ChildPageId ?? string.Empty, 
                 ResolvePageName(slot?.ChildPageId), x, y, angleDegrees, RadialMenuRing.Outer,
-                CreateSectorGeometry(center.X, center.Y, 136, 215, angleDegrees - 11.25, angleDegrees + 11.25)));
+                CreateSectorGeometry(center.X, center.Y, 110, 176, angleDegrees - 11.25, angleDegrees + 11.25)));
         }
     }
 
@@ -172,28 +172,28 @@ public class RadialMenuService
         var items = _commandProvider(parent.ChildPageId).ToList();
         var angle = parent.AngleDegrees * Math.PI / 180.0;
         var center = new Point(centerX, centerY);
-        ChildRingCenterX = center.X + Math.Cos(angle) * 250;
-        ChildRingCenterY = center.Y + Math.Sin(angle) * 250;
-        var clamped = ClampRingCenter(ChildRingCenterX, ChildRingCenterY, 134, windowWidth, windowHeight);
+        ChildRingCenterX = center.X + Math.Cos(angle) * 210;
+        ChildRingCenterY = center.Y + Math.Sin(angle) * 210;
+        var clamped = ClampRingCenter(ChildRingCenterX, ChildRingCenterY, 112, windowWidth, windowHeight);
         ChildRingCenterX = clamped.X;
         ChildRingCenterY = clamped.Y;
         ChildRingTitle = parent.ChildPageTitle;
 
-        BuildSeparators(ChildSeparators, ChildRingCenterX, ChildRingCenterY, 32, 120, RadialMenuSettings.InnerSlotCount);
+        BuildSeparators(ChildSeparators, ChildRingCenterX, ChildRingCenterY, 26, 100, RadialMenuSettings.InnerSlotCount);
 
         ChildItems.Clear();
-        const double radius = 78;
+        const double radius = 64;
         for (var index = 0; index < 8; index++)
         {
             var childAngle = (-90 + index * 45) * Math.PI / 180.0;
-            var x = ChildRingCenterX + Math.Cos(childAngle) * radius - 34;
-            var y = ChildRingCenterY + Math.Sin(childAngle) * radius - 27;
+            var x = ChildRingCenterX + Math.Cos(childAngle) * radius - 28;
+            var y = ChildRingCenterY + Math.Sin(childAngle) * radius - 22;
             var item = items.ElementAtOrDefault(index);
             var slot = GetSlotSettings(parent.ChildPageId, index);
             ChildItems.Add(new RadialMenuItemViewModel(parent.ChildPageId, index, item, 
                 slot?.ChildPageId ?? string.Empty, ResolvePageName(slot?.ChildPageId), 
                 x, y, childAngle * 180.0 / Math.PI, RadialMenuRing.Child,
-                CreateSectorGeometry(ChildRingCenterX, ChildRingCenterY, 32, 120, childAngle * 180.0 / Math.PI - 22.5, childAngle * 180.0 / Math.PI + 22.5)));
+                CreateSectorGeometry(ChildRingCenterX, ChildRingCenterY, 26, 100, childAngle * 180.0 / Math.PI - 22.5, childAngle * 180.0 / Math.PI + 22.5)));
         }
 
         HasChildRing = true;
@@ -214,23 +214,23 @@ public class RadialMenuService
 
         var items = _commandProvider(parent.ChildPageId).ToList();
         var angle = parent.AngleDegrees * Math.PI / 180.0;
-        GrandChildRingCenterX = ChildRingCenterX + Math.Cos(angle) * 216;
-        GrandChildRingCenterY = ChildRingCenterY + Math.Sin(angle) * 216;
-        var clamped = ClampRingCenter(GrandChildRingCenterX, GrandChildRingCenterY, 112, windowWidth, windowHeight);
+        GrandChildRingCenterX = ChildRingCenterX + Math.Cos(angle) * 180;
+        GrandChildRingCenterY = ChildRingCenterY + Math.Sin(angle) * 180;
+        var clamped = ClampRingCenter(GrandChildRingCenterX, GrandChildRingCenterY, 92, windowWidth, windowHeight);
         GrandChildRingCenterX = clamped.X;
         GrandChildRingCenterY = clamped.Y;
         GrandChildRingTitle = parent.ChildPageTitle;
 
-        BuildSeparators(GrandChildSeparators, GrandChildRingCenterX, GrandChildRingCenterY, 27, 98, RadialMenuSettings.InnerSlotCount);
+        BuildSeparators(GrandChildSeparators, GrandChildRingCenterX, GrandChildRingCenterY, 22, 80, RadialMenuSettings.InnerSlotCount);
 
         GrandChildItems.Clear();
-        const double radius = 64;
+        const double radius = 52;
         for (var index = 0; index < 8; index++)
         {
             var childAngleDegrees = -90 + index * 45.0;
             var childAngle = childAngleDegrees * Math.PI / 180.0;
-            var x = GrandChildRingCenterX + Math.Cos(childAngle) * radius - 31;
-            var y = GrandChildRingCenterY + Math.Sin(childAngle) * radius - 25;
+            var x = GrandChildRingCenterX + Math.Cos(childAngle) * radius - 25;
+            var y = GrandChildRingCenterY + Math.Sin(childAngle) * radius - 20;
             var item = items.ElementAtOrDefault(index);
             var slot = GetSlotSettings(parent.ChildPageId, index);
             GrandChildItems.Add(new RadialMenuItemViewModel(
@@ -243,7 +243,7 @@ public class RadialMenuService
                 y,
                 childAngleDegrees,
                 RadialMenuRing.GrandChild,
-                CreateSectorGeometry(GrandChildRingCenterX, GrandChildRingCenterY, 27, 98, childAngleDegrees - 22.5, childAngleDegrees + 22.5)));
+                CreateSectorGeometry(GrandChildRingCenterX, GrandChildRingCenterY, 22, 80, childAngleDegrees - 22.5, childAngleDegrees + 22.5)));
         }
 
         HasGrandChildRing = true;

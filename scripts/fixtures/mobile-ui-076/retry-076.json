@@ -1,0 +1,10 @@
+[
+  {
+    "action": "find",
+    "selector": {
+      "resourceId": "com.android.fileexplorer:id/yanzi_nonexistent_retry_076"
+    },
+    "maxAttempts": 3,
+    "retryDelayMs": 200
+  }
+]

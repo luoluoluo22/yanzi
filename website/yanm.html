@@ -1,7 +1,8 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="zh-CN">
 
 <head>
+  <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
   <link rel="icon" href="/assets/logo-white-transparent.png" type="image/png">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -268,7 +269,7 @@
     </div>
     <nav>
       <a href="/">首页</a>
-      <a href="/store.html">扩展商店</a>
+      <a href="/store.html">小程序商店</a>
       <a href="/yanm.html" class="active">燕幕</a>
       <a href="/docs/product-overview.html">文档</a>
       <a href="/index.html#download">免费下载</a>
@@ -341,6 +342,11 @@
     const SCALE_MODE_KEY = "yanzi.yanm.scaleMode";
     let currentSnapshot = null;
     let saveTimer = 0;
+    let isSaving = false;
+    let hasPendingChanges = false;
+    let retryCount = 0;
+    const MAX_RETRIES = 3;
+    let retryTimer = 0;
     let scaleMode = localStorage.getItem(SCALE_MODE_KEY) || "fit"; // "fit" or "actual"
 
     function getToken() {
@@ -547,14 +553,14 @@
       }
 
       try {
-        const result = await dispatchInvoke(message.method, message.args || {});
+        const result = await dispatchInvoke(message.method, message.args || {}, message.componentId || "");
         event.source.postMessage({ type: "yanm.reply", id: message.id, ok: true, result }, "*");
       } catch (error) {
         event.source.postMessage({ type: "yanm.reply", id: message.id, ok: false, error: error.message || "调用失败" }, "*");
       }
     });
 
-    async function dispatchInvoke(method, args) {
+    async function dispatchInvoke(method, args, componentId) {
       if (!currentSnapshot) {
         throw new Error("燕幕数据未加载");
       }
@@ -574,7 +580,10 @@
           };
         case "state.get": {
           const key = String(args.key || "");
-          return { key, value: String(currentSnapshot.yanm.componentState[key] || "") };
+          const state = currentSnapshot.yanm.componentState || {};
+          const scopedKey = componentId ? `component:${componentId}:${key}` : "";
+          const value = (scopedKey && state[scopedKey] != null) ? state[scopedKey] : (state[key] != null ? state[key] : "");
+          return { key, value: String(value) };
         }
         case "state.set": {
           const key = String(args.key || "");
@@ -582,7 +591,8 @@
             throw new Error("state.set 缺少 key");
           }
           const value = String(args.value || "");
-          currentSnapshot.yanm.componentState[key] = value;
+          const scopedKey = componentId ? `component:${componentId}:${key}` : key;
+          currentSnapshot.yanm.componentState[scopedKey] = value;
           queueSaveYanm();
           return { key, value };
         }
@@ -593,8 +603,18 @@
 
     function queueSaveYanm() {
       clearTimeout(saveTimer);
+      clearTimeout(retryTimer);
       syncLabel.textContent = "状态已修改，准备写回燕子云端...";
-      saveTimer = setTimeout(saveYanm, 900);
+      saveTimer = setTimeout(triggerSave, 3000);
+    }
+
+    function triggerSave() {
+      if (isSaving) {
+        hasPendingChanges = true;
+        syncLabel.textContent = "检测到新修改，将在上一次写入完成后自动更新...";
+        return;
+      }
+      saveYanm();
     }
 
     async function saveYanm() {
@@ -602,6 +622,10 @@
         return;
       }
 
+      isSaving = true;
+      hasPendingChanges = false;
+      syncLabel.textContent = "正在写回燕子云端...";
+      
       const updatedAtUtc = new Date().toISOString();
       try {
         await api("/v1/me/yanm-state", {
@@ -613,8 +637,26 @@
         });
         currentSnapshot.updatedAtUtc = updatedAtUtc;
         syncLabel.textContent = `已写回燕子云端：${new Date(updatedAtUtc).toLocaleString()}`;
+        retryCount = 0;
+        isSaving = false;
+        
+        if (hasPendingChanges) {
+          triggerSave();
+        }
       } catch (error) {
-        syncLabel.textContent = error.message || "写回燕子云端失败";
+        isSaving = false;
+        console.error("Save yanm failed:", error);
+        
+        if (retryCount < MAX_RETRIES) {
+          retryCount++;
+          const delay = retryCount * 2000;
+          syncLabel.textContent = `写回失败 (${error.message || "未知错误"})，将在 ${delay / 1000} 秒后重试 (第 ${retryCount}/${MAX_RETRIES} 次)...`;
+          clearTimeout(retryTimer);
+          retryTimer = setTimeout(triggerSave, delay);
+        } else {
+          syncLabel.textContent = `写回燕子云端失败：${error.message || "网络错误"}。可以再次修改或手动刷新。`;
+          retryCount = 0;
+        }
       }
     }
 
@@ -662,7 +704,7 @@
       loadYanm();
     }
   </script>
-  <script src="/assets/auth.js"></script>
+  <script src="/assets/auth.js?v=20260701-4"></script>
 </body>
 
 </html>

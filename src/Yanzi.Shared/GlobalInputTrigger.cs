@@ -123,7 +123,7 @@ public sealed class DisabledGlobalInputTriggerListener : IGlobalInputTriggerList
 
 public class GlobalInputTriggerSettings
 {
-    public int LongPressThresholdMs { get; set; } = 500;
+    public int LongPressThresholdMs { get; set; } = 280;
     public int DragThresholdPixels { get; set; } = 30;
     public bool EnableSecondaryButtonLongPress { get; set; } = true;
     public bool EnableSecondaryButtonDrag { get; set; } = true;

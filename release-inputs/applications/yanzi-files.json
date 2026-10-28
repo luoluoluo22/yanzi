@@ -1,0 +1,12 @@
+{
+  "certificateSha256": "8a0ec0b84d1a05edcc89dd020bf81901f9ed7f083887db7c05201c59b31e1ee3",
+  "version": "0.1.0",
+  "packageName": "cc.luoluoluo.yanzi.files",
+  "name": "文件",
+  "apkPath": "release-inputs/applications/yanzi-files-0.1.0.apk",
+  "kind": "android-apk",
+  "applicationId": "yanzi-files",
+  "description": "系统授权目录浏览、搜索、多选分享、永久删除、重命名与新建文件夹",
+  "versionCode": 1,
+  "minHostVersionCode": 42
+}

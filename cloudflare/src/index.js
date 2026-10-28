@@ -1,5 +1,27 @@
-const mobilePollRateLimitMap = new Map();
-const TOKEN_TTL_SECONDS = 60 * 60 * 12;
+import { meterD1 } from './d1-request-meter.js';
+import { createSyncApi } from './sync-api.js';
+import { findReusablePrivateArchive } from './private-archive-reuse.js';
+import { isCloudServicePath, needsTopLevelCloudAuth, isVipActive, readVipEntitlement, passesLoginRateLimit } from './cloud-access-policy.js';
+import { upgradePageHtml, upgradePageScript } from './upgrade-page.js';
+import { cleanupEnvironment } from './device-environment.js';
+import { createDeviceApi } from './device-api.js';
+import { createDeviceRepository } from './device-repository.js';
+import { createSyncObjectRepository } from './sync-object-repository.js';
+import { readJson } from './request-json.js';
+import { HttpError } from './http-error.js';
+import { normalizeDevicePayload, normalizeDeviceMessagePayload, normalizeDeviceId, normalizeOptionalDeviceId, normalizeDevicePlatform, normalizeOptionalDevicePlatform, normalizeMessageKind, normalizeMessageId, normalizeMessageLimit, normalizeShortText, normalizeOptionalString, normalizeJsonObject, normalizeOptionalIsoDate } from './device-payload.js';
+import { handleAttachments, ownedAttachment, cleanupAttachments, MessagingError } from './mobile-attachments.js';
+import { authorizeDeviceCredential } from './device-credentials.js';
+import { accountLanLink } from './account-lan-links.js';
+import { sendOfflinePush } from './mobile-push.js';
+import { handleApplicationPlatform } from './application-platform.js';
+import { handleExternalAccess, cleanupExternalAccess } from './external-access.js';
+import { handleRecordApi } from './record-api.js';
+import { DEVICE_MESSAGE_PROTOCOL, acceptsAccountChat, isAccountChat, messageMatchesDevice,
+  isExecutionMessage, canonicalMessageJson, executionDeadline, traceContext } from './device-message-protocol.js';
+export { DeviceRelay } from './device-relay.js';
+const TOKEN_TTL_SECONDS = 60 * 60 * 24 * 30;
+const DEVICE_ONLINE_WINDOW_MS = 2 * 60 * 1000;
 const PASSWORD_ITERATIONS = 100000;
 const VERIFICATION_CODE_TTL_MINUTES = 10;
 const PUBLIC_SITE_ORIGIN = "https://yanzi.luoluoluo.cc.cd";
@@ -45,139 +67,128 @@ const PUBLIC_STORE_EXTENSION_IDS_SQL = PUBLIC_STORE_EXTENSIONS
   .map((item) => `'${item.extension_id.replace(/'/g, "''")}'`)
   .join(", ");
 
-export class DeviceRelayRoom {
-  constructor(state, env) {
-    this.state = state;
-    this.env = env;
+
+// Request-scoped attribution: only authenticated users, never raw identifiers.
+const requestIdentity = new WeakMap();
+const loginAttemptIdentity = new WeakMap();
+const TELEMETRY_ERROR_CODES = new Set(['user_not_found', 'invalid_credentials', 'login_rate_limited',
+  'vip_required', 'unauthorized', 'token_expired', 'device_credential_revoked', 'device_scope_denied',
+  'not_found', 'internal_error', 'export_rate_limited']);
+// Read-only operator correlation against registered random user/device IDs.
+// Never use this for email addresses, passwords, network addresses or login attempts.
+async function identityLookupRef(domain, value) {
+  if (!value) return null;
+  const bytes = new TextEncoder().encode(`yanzi-lookup-${domain}-v1:${value}`);
+  return bytesToHex(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))).slice(0, 24);
+}
+function safeClientVersion(value) {
+  const version = String(value || '').trim().toLowerCase();
+  return /^\d{1,4}(?:\.\d{1,4}){1,3}(?:[-.][a-z0-9]{1,16})?$/.test(version) ? version : 'unknown';
+}
+function safeDeviceClaim(request) {
+  const value = request.headers.get('x-yanzi-device-id') || '';
+  return /^[a-zA-Z0-9_-]{8,100}$/.test(value) ? value : null;
+}
+const cloudVipCache = new Map();
+async function cachedCloudVipRecord(env, userId) {
+  const now = Date.now();
+  let cached = cloudVipCache.get(userId);
+  if (!cached || cached.checkedUntil < now) {
+    // Indexed read only; no D1 schema/table writes on status polling.
+    const {row} = await readVipEntitlement(env.DB, userId, now);
+    cached = {row, checkedUntil:now + 15000};
+    if (cloudVipCache.size >= 2000) cloudVipCache.clear();
+    cloudVipCache.set(userId, cached);
   }
-
-  async fetch(request) {
-    const url = new URL(request.url);
-
-    if (url.pathname === "/v1/me/mobile/messages/ws" && request.method === "GET") {
-      if (request.headers.get("Upgrade") !== "websocket") {
-        return json({ error: "upgrade_required", message: "WebSocket upgrade required" }, 426);
-      }
-
-      const auth = await requireAuth(request, this.env);
-      const deviceId = normalizeDeviceId(url.searchParams.get("deviceId"));
-      await ensureUser(this.env, auth.userId);
-      const device = await ensureOwnedDevice(this.env, auth.userId, deviceId);
-      await touchDevice(this.env, auth.userId, deviceId);
-
-      const pair = new WebSocketPair();
-      const [client, server] = Object.values(pair);
-      server.serializeAttachment({
-        userId: auth.userId,
-        deviceId,
-        platform: device.platform,
-        connectedAt: isoNow()
-      });
-      this.state.acceptWebSocket(server);
-
-      server.send(JSON.stringify({
-        type: "connected",
-        deviceId,
-        serverTime: isoNow()
-      }));
-      await this.pushPendingToSocket(server);
-
-      return new Response(null, {
-        status: 101,
-        webSocket: client
-      });
-    }
-
-    if (url.pathname === "/internal/device-relay/notify" && request.method === "POST") {
-      await this.broadcastPending();
-      return new Response(JSON.stringify({ ok: true }), {
-        headers: { "Content-Type": "application/json" }
-      });
-    }
-
-    return new Response("Not found", { status: 404 });
-  }
-
-  async webSocketMessage(ws, message) {
-    if (typeof message !== "string") {
-      return;
-    }
-
-    let payload;
-    try {
-      payload = JSON.parse(message);
-    } catch {
-      return;
-    }
-
-    if (payload.type === "ping") {
-      ws.send(JSON.stringify({ type: "pong", serverTime: isoNow() }));
-      return;
-    }
-
-    if (payload.type === "pull") {
-      await this.pushPendingToSocket(ws);
-    }
-  }
-
-  async webSocketClose(ws, code, reason) {
-    ws.close(code, reason);
-  }
-
-  async webSocketError(ws) {
-    ws.close(1011, "websocket error");
-  }
-
-  async broadcastPending() {
-    const sockets = this.state.getWebSockets();
-    for (const ws of sockets) {
-      await this.pushPendingToSocket(ws);
-    }
-  }
-
-  async pushPendingToSocket(ws) {
-    const attachment = ws.deserializeAttachment();
-    if (!attachment?.userId || !attachment?.deviceId || !attachment?.platform) {
-      return;
-    }
-
-    const items = await getPendingDeviceMessageItems(
-      this.env,
-      attachment.userId,
-      attachment.deviceId,
-      attachment.platform,
-      20
-    );
-    if (items.length === 0) {
-      return;
-    }
-
-    ws.send(JSON.stringify({
-      type: "messages",
-      items,
-      serverTime: isoNow()
-    }));
-    await markDeviceMessagesDelivered(this.env, attachment.userId, items);
-  }
+  return cached.row;
+}
+async function ensureCloudVipUser(env, userId) {
+  if (env.CLOUD_VIP_ONLY !== 'true') return;
+  const id = String(userId || '');
+  if (!id) throw new HttpError(401, 'unauthorized', 'Authentication required');
+  if (!isVipActive(await cachedCloudVipRecord(env, id), Date.now()))
+    throw new HttpError(403, 'vip_required', '云服务需要有效 VIP 会员；本地免费功能不受影响。', {
+      upgradeUrl: 'https://wzyp.cn/shop/4AOUCE2B',
+      activationPath: '/v1/licenses/redeem',
+      exportPath: '/v1/user/cloud-export',
+      retryAfterSeconds: 1800
+    });
+}
+async function finalizeCloudAuth(request, env, auth) {
+  recordAuthenticatedUser(request, auth);
+  if (isCloudServicePath(new URL(request.url).pathname))
+    await ensureCloudVipUser(env, auth?.userId);
+  return auth;
+}
+async function limitLoginBeforeDatabase(request, env, email) {
+  if (!env.LOGIN_RATE_LIMITER?.limit) return;
+  const ip = request.headers.get('cf-connecting-ip') || 'unknown';
+  const key = await anonymousKey(env, 'login-limit', `${email}:${ip}`);
+  if (!key) return;
+  if (!(await passesLoginRateLimit(env.LOGIN_RATE_LIMITER, key)))
+    throw new HttpError(429, 'login_rate_limited', 'Too many login attempts; try again in one minute');
 }
 
+async function anonymousKey(env, domain, value) {
+  if (!env.AUTH_TOKEN_SECRET || !value) return null;
+  const digest = await hmacSha256(env.AUTH_TOKEN_SECRET, `yanzi-telemetry-${domain}-v1:${value}`);
+  return digest.slice(0, 16);
+}
+function recordAuthenticatedUser(request, auth) {
+  if (auth?.userId) requestIdentity.set(request, { userId: String(auth.userId), deviceId: auth.deviceId ? String(auth.deviceId) : null });
+  return auth;
+}
 export default {
-  async fetch(request, env) {
+  async scheduled(event, env, ctx) { ctx.waitUntil(cleanupAttachments(env)); ctx.waitUntil(cleanupExternalAccess(env)); ctx.waitUntil(cleanupEnvironment(env)); },
+  async fetch(request, env, ctx) {
+    const started = Date.now();
+    const metered = env.DB ? meterD1(env.DB) : null;
+    const requestEnv = metered ? { ...env, DB: metered.db } : env;
+    const path = new URL(request.url).pathname;
+    // Never log raw path segments: they may contain access tokens or personal data.
+    const family = path.startsWith("/v1/") ? path.split("/")[2] : "";
+    const route = path === "/health" ? "/health" :
+      ["sync", "auth", "devices", "device", "messaging", "messages", "records", "apps", "applications", "me"].includes(family) ? `/v1/${family}` : "/other";
+    // Fixed allowlist: never persist untrusted client headers or identifying values.
+    // Bounded endpoint classification for read amplification investigation; no raw URL or query.
+    const endpoint = path === '/v1/me/devices' ? 'devices_list' :
+      path === '/v1/me/mobile/messages' ? 'messages_list' :
+      path === '/v1/me/mobile/messages/events' ? 'messages_events' :
+      path === '/v1/sync/changes' ? 'sync_changes' :
+      path === '/v1/sync/objects' ? 'sync_objects' :
+      path === '/v1/sync/capabilities' ? 'sync_capabilities' :
+      path === '/v1/applications/access-requests' ? 'access_requests' : 'other';
+    const rawClient = request.headers.get("x-yanzi-client") || "";
+    const client = ["desktop", "server", "android", "mobile", "web"].includes(rawClient) ? rawClient : "unknown";
+    let status = 500;
+    let category = "server_error";
+    let failureCode = null;
     try {
-      return await handleRequest(request, env);
+      const response = await handleRequest(request, requestEnv, ctx);
+      status = response.status;
+      category = status >= 500 ? "server_error" : status >= 400 ? "client_error" : "ok";
+      return response;
     } catch (error) {
-      if (error instanceof HttpError) {
-        return withCors(
-          json(
-            {
-              error: error.code,
-              message: error.message
-            },
-            error.status
-          )
+      if (error instanceof HttpError || error instanceof MessagingError) {
+        status = error.status;
+        failureCode = TELEMETRY_ERROR_CODES.has(error.code) ? error.code : 'other_handled_error';
+        category = "handled_error";
+        const rejected = json(
+          {
+            error: error.code,
+            message: error.message,
+            ...(error.details ? { details: error.details } : {})
+          },
+          error.status
         );
+        if (error.code === 'login_rate_limited' || error.code === 'export_rate_limited') {
+          rejected.headers.set('retry-after', '60');
+          rejected.headers.set('cache-control', 'no-store');
+        }
+        return withCors(rejected);
       }
 
+      failureCode = 'internal_error';
       return withCors(
         json(
           {
@@ -187,18 +198,67 @@ export default {
           500
         )
       );
+    } finally {
+      // No credentials, query strings, message bodies or device identifiers.
+      const successSampleRate = 0.1; // Keep errors at 100%; bound normal-request telemetry overhead.
+      if (status >= 400 || Math.random() < successSampleRate) {
+        const auth = requestIdentity.get(request);
+        const claimedDevice = safeDeviceClaim(request);
+        console.log(JSON.stringify({ event: "yanzi_request", method: request.method,
+          route: route.slice(0, 160), endpoint, client,
+          client_version: safeClientVersion(request.headers.get('x-yanzi-client-version')),
+          status, category, failure_code: failureCode, duration_ms: Date.now() - started,
+          sample_rate: status >= 400 ? 1 : successSampleRate,
+          d1: metered?.usage || null,
+          user_key: await anonymousKey(env, "user", auth?.userId),
+          user_lookup_ref: await identityLookupRef('user', auth?.userId),
+          device_lookup_ref: await identityLookupRef('device', auth?.userId && (auth.deviceId || claimedDevice)
+            ? `${auth.userId}:${auth.deviceId || claimedDevice}` : null),
+          device_lookup_trust: auth?.deviceId ? 'verified' : auth?.userId && claimedDevice ? 'claimed' : null,
+          verified_device_key: await anonymousKey(env, "device", auth?.deviceId && auth?.userId ? `${auth.userId}:${auth.deviceId}` : null),
+          claimed_device_key: await anonymousKey(env, "device-claim", claimedDevice),
+          attempted_account_key: await anonymousKey(env, "login-attempt", loginAttemptIdentity.get(request)),
+          network_key: await anonymousKey(env, 'network-' + new Date().toISOString().slice(0, 10),
+            request.headers.get('cf-connecting-ip')) }));
+      }
     }
   }
 };
 
-async function handleRequest(request, env) {
+async function handleRequest(request, env, ctx) {
   const url = new URL(request.url);
 
   if (request.method === "OPTIONS") {
     return withCors(new Response(null, { status: 204 }));
   }
+  // Protect formerly public, resource-consuming catalogue and community APIs.
+  // Auth is checked ahead of R2/D1 reads, without trusting client version headers.
+  if (env.CLOUD_VIP_ONLY === 'true' && needsTopLevelCloudAuth(url.pathname)) {
+    await requireAuth(request, env);
+  }
+
+  const platformApi = {
+    requireAuth, ensureCloudVipUser, verifyToken, signToken, read: readUserSyncObject,
+    write: writeUserSyncObject, json, HttpError
+  };
+  const externalResponse = await handleExternalAccess(request, env, platformApi);
+  if (externalResponse) return externalResponse;
+  const recordResponse = await handleRecordApi(request, env, platformApi);
+  if (recordResponse) return recordResponse;
+  const applicationResponse = await handleApplicationPlatform(request, env, platformApi);
+  if (applicationResponse) return applicationResponse;
+  const syncResponse = await handleSyncApi(request, env, ctx);
+  if (syncResponse) return syncResponse;
+  const deviceResponse = await handleDeviceApi(request, env, ctx);
+  if (deviceResponse) return deviceResponse;
 
   if (url.pathname.startsWith("/downloads/") && request.method === "GET") {
+    // Paid application packages are not free anonymous R2 egress. Keep signed
+    // Android release/upgrade manifests public so users can obtain an updated client.
+    if (env.CLOUD_VIP_ONLY === 'true' && url.pathname.startsWith('/downloads/applications/')) {
+      const auth = await requireAuth(request, env);
+      await ensureCloudVipUser(env, auth.userId);
+    }
     const key = url.pathname.substring(1);
     const object = await env.PACKAGES.get(key);
     if (!object) {
@@ -207,20 +267,36 @@ async function handleRequest(request, env) {
     const headers = new Headers();
     object.writeHttpMetadata(headers);
     headers.set("etag", object.httpEtag || "");
-    headers.set("Content-Type", "application/zip");
+    if (!headers.has("Content-Type")) headers.set("Content-Type", key.endsWith('.apk')
+      ? "application/vnd.android.package-archive" : key.endsWith('.json') ? "application/json; charset=utf-8" : "application/zip");
+    headers.set("Cache-Control", key.endsWith('releases.json') ? "public, max-age=60" : "public, max-age=3600");
     headers.set("Access-Control-Allow-Origin", "*");
     return new Response(object.body, { headers });
   }
 
   if (url.pathname === "/v1/debug/list-packages" && request.method === "GET") {
-    const list = await env.PACKAGES.list();
+    const auth = await requireAuth(request, env);
+    if (!isAdminUser(auth, env)) throw new HttpError(403, 'admin_required', 'Administrator required');
+    const list = await env.PACKAGES.list({ prefix: 'downloads/' });
     const keys = list.objects.map(obj => obj.key);
     return json({ count: keys.length, keys });
   }
 
+  if (url.pathname === '/upgrade' && request.method === 'GET') {
+    return new Response(upgradePageHtml, {headers:{'content-type':'text/html; charset=utf-8',
+      'content-security-policy':"default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'",
+      'cache-control':'public, max-age=3600'}});
+  }
+  if (url.pathname === '/upgrade.js' && request.method === 'GET') {
+    return new Response(upgradePageScript, {headers:{'content-type':'application/javascript; charset=utf-8',
+      'cache-control':'public, max-age=3600',
+      'x-content-type-options':'nosniff'}});
+  }
+
   if (url.pathname === "/health") {
-    const result = await env.DB.prepare("select datetime('now') as now").first();
-    return json({ ok: true, now: result?.now ?? null });
+    // Never spend a D1 read for an unauthenticated health probe.
+    // Database availability is verified separately by protected internal checks.
+    return json({ ok: true, now: isoNow(), foundationRevision: "2026-10-03-domains-v1", deviceEnvironmentProtocol: 1 });
   }
 
   if (url.pathname === "/v1/auth/register" && request.method === "POST") {
@@ -268,7 +344,7 @@ async function handleRequest(request, env) {
       throw new HttpError(400, "verification_required", "Email verification is required");
     }
 
-    if (String(verification.username).toLowerCase() !== username) {
+    if (String(verification.username).trim().toLowerCase() !== username.trim().toLowerCase()) {
       throw new HttpError(400, "verification_mismatch", "Verification code does not match this username");
     }
 
@@ -318,6 +394,7 @@ async function handleRequest(request, env) {
       ).bind(email)
     ]);
 
+    recordAuthenticatedUser(request, { userId });
     return json(await buildAuthResponse(env, { userId, username, email }));
   }
 
@@ -382,7 +459,12 @@ async function handleRequest(request, env) {
   if (url.pathname === "/v1/auth/login" && request.method === "POST") {
     const payload = await readJson(request);
     const email = normalizeEmail(payload.email || payload.username);
+    // Attempted account is NOT an authenticated user; only emit its keyed digest.
+    loginAttemptIdentity.set(request, email);
+    await limitLoginBeforeDatabase(request, env, email);
     const password = validatePassword(payload.password);
+    const authVersion = payload.authVersion || "";
+    const legacyPassword = payload.legacyPassword ? validatePassword(payload.legacyPassword) : null;
 
     const user = await env.DB.prepare(
       `select
@@ -402,17 +484,54 @@ async function handleRequest(request, env) {
       throw new HttpError(404, "user_not_found", "User does not exist");
     }
 
-    const passwordHash = await hashPassword(
-      password,
-      user.password_salt,
-      Number(user.password_iterations || PASSWORD_ITERATIONS)
-    );
+    const salt = user.password_salt;
+    const iterations = Number(user.password_iterations || PASSWORD_ITERATIONS);
+    let authenticated = false;
+    let silentUpgradeRequired = false;
+    let finalLoginHash = "";
 
-    if (passwordHash !== user.password_hash) {
+    const isLoginHash = typeof password === "string" && /^[0-9a-f]{64}$/i.test(password);
+
+    if (isLoginHash) {
+      const hashAsUpgraded = await hashPassword(password, salt, iterations);
+      if (hashAsUpgraded === user.password_hash) {
+        authenticated = true;
+      } else if (legacyPassword) {
+        const hashAsLegacy = await hashPassword(legacyPassword, salt, iterations);
+        if (hashAsLegacy === user.password_hash) {
+          authenticated = true;
+          silentUpgradeRequired = true;
+          finalLoginHash = password;
+        }
+      }
+    } else {
+      const hashAsLegacy = await hashPassword(password, salt, iterations);
+      if (hashAsLegacy === user.password_hash) {
+        authenticated = true;
+      } else {
+        const serverDerivedLoginHash = await deriveLoginHashInServer(password, email);
+        const hashAsUpgraded = await hashPassword(serverDerivedLoginHash, salt, iterations);
+        if (hashAsUpgraded === user.password_hash) {
+          authenticated = true;
+        }
+      }
+    }
+
+    if (!authenticated) {
       throw new HttpError(401, "invalid_credentials", "Invalid email or password");
     }
 
+    if (silentUpgradeRequired && finalLoginHash) {
+      const newHash = await hashPassword(finalLoginHash, salt, iterations);
+      await env.DB.prepare(
+        `update auth_users set password_hash = ? where user_id = ?`
+      )
+        .bind(newHash, user.user_id)
+        .run();
+    }
+
     await touchUser(env, user.user_id);
+    recordAuthenticatedUser(request, { userId: user.user_id });
     return json(await buildAuthResponse(env, { userId: user.user_id, username: user.username, email: user.email }));
   }
 
@@ -539,237 +658,508 @@ async function handleRequest(request, env) {
       ).bind(now, user.user_id)
     ]);
 
+    recordAuthenticatedUser(request, { userId: user.user_id });
     return json(await buildAuthResponse(env, { userId: user.user_id, username: user.username, email: user.email }));
   }
 
   if (url.pathname === "/v1/auth/me" && request.method === "GET") {
     const auth = await requireAuth(request, env);
+    const vipInfo = await getUserVipInfo(env, auth.userId);
+    // Legacy clients poll account status. Never create/query the wish-wall tables
+    // for free users who cannot access that paid cloud feature.
+    if (env.CLOUD_VIP_ONLY === 'true' && !vipInfo.isVip) {
+      return json({userId:auth.userId, username:auth.username, email:auth.email,
+        points:0, wishesCount:0, acceptedCount:0, isAdmin:isAdminUser(auth, env),
+        ...vipInfo});
+    }
+    let points = 0;
+    let wishesCount = 0;
+    let acceptedCount = 0;
+    try {
+      await ensureWishWallTables(env);
+      const userPoints = await env.DB.prepare(
+        "select points, wishes_count, accepted_count from user_points where user_id = ?"
+      ).bind(auth.userId).first();
+      if (userPoints) {
+        points = Number(userPoints.points) || 0;
+        wishesCount = Number(userPoints.wishes_count) || 0;
+        acceptedCount = Number(userPoints.accepted_count) || 0;
+      }
+    } catch (e) {
+      console.warn("user_points query fallback:", e);
+    }
     return json({
       userId: auth.userId,
       username: auth.username,
       email: auth.email,
-      isAdmin: isAdminUser(auth, env)
+      points,
+      wishesCount,
+      acceptedCount,
+      isAdmin: isAdminUser(auth, env),
+      ...vipInfo
     });
   }
 
-  if ((url.pathname === "/v1/me/yanm-state" || url.pathname === "/v1/me/yanm-webdav-state") && request.method === "GET") {
+  // --- VIP 会员与卡密 License 相关 API ---
+  if (url.pathname === "/v1/user/vip-status" && request.method === "GET") {
     const auth = await requireAuth(request, env);
-    const snapshot = await readYanmStateForUser(env, auth.userId);
-    if (!snapshot) {
-      throw new HttpError(404, "yanm_state_missing", "Yanm state was not found in account cloud snapshot");
-    }
-
-    const viewUrl = await getYanmStateViewUrl(env, auth.userId);
-
+    const vipInfo = await getUserVipInfo(env, auth.userId);
     return json({
       ok: true,
       userId: auth.userId,
-      source: snapshot.source || "cloud-config",
-      warning: snapshot.warning || "",
-      diagnostics: snapshot.diagnostics || null,
-      updatedAtUtc: snapshot.updatedAtUtc || null,
-      yanm: snapshot.yanm || null,
-      bytes: snapshot.bytes,
-      viewUrl: viewUrl || null
+      username: auth.username,
+      ...vipInfo
     });
   }
 
-  if (url.pathname === "/v1/sync/webdav-config" && request.method === "GET") {
+  // Membership discovery works for free users (including older signed-in clients).
+  if (url.pathname === "/v1/user/cloud-access" && request.method === "GET") {
     const auth = await requireAuth(request, env);
-    const config = await getUserWebDavConfig(env, auth.userId);
-    return json({
-      ok: true,
-      enabled: config.enabled,
-      serverUrl: config.serverUrl,
-      rootPath: config.rootPath,
-      username: config.username,
-      password: config.password
+    const vipInfo = await getUserVipInfo(env, auth.userId);
+    const response = json({ ok: true, ...vipInfo,
+      cloudVipOnly: env.CLOUD_VIP_ONLY === 'true',
+      canUseCloud: env.CLOUD_VIP_ONLY !== 'true' || vipInfo.isVip,
+      freeVersionCeiling: '1.0',
+      upgradeUrl: 'https://wzyp.cn/shop/4AOUCE2B',
+      redeemPath: '/v1/licenses/redeem',
+      exportPath: '/v1/user/cloud-export',
+      message: vipInfo.isVip ? '会员云服务已开通' : '本地免费功能继续可用，云服务及后续版本需要激活 VIP'
     });
+    response.headers.set('cache-control', 'no-store');
+    return response;
   }
 
-  if ((url.pathname === "/v1/me/yanm-state" || url.pathname === "/v1/me/yanm-webdav-state") && request.method === "PUT") {
+  // Authenticated historical data portability. Read-only and paginated to avoid
+  // breaking users' access to their own pre-existing data after membership expiry.
+  if (url.pathname === "/v1/user/cloud-export" && request.method === "GET") {
+    const auth = await requireAuth(request, env);
+    const rawCursor = url.searchParams.get('cursor') ?? '0';
+    if (!/^(?:0|[1-9][0-9]{0,15})$/.test(rawCursor) || !Number.isSafeInteger(Number(rawCursor)))
+      throw new HttpError(400, 'invalid_export_cursor', 'Invalid export cursor');
+    if (env.EXPORT_RATE_LIMITER?.limit) {
+      const key = await anonymousKey(env, 'export', auth.userId);
+      if (!(await passesLoginRateLimit(env.EXPORT_RATE_LIMITER, key)))
+        throw new HttpError(429, 'export_rate_limited', 'Export temporarily rate limited; retry in one minute');
+    }
+    const page = await readUserSyncObjects(env, auth.userId, Number(rawCursor), 100);
+    const response = json({ok:true, format:'yanzi-cloud-sync-objects-v1',
+      note:'Snapshot of sync objects only; attachments and external storage must be exported separately.',
+      ...page});
+    response.headers.set('cache-control','no-store');
+    response.headers.set('content-disposition','attachment; filename="yanzi-sync-objects.json"');
+    return response;
+  }
+
+  if (url.pathname === "/v1/licenses/redeem" && request.method === "POST") {
     const auth = await requireAuth(request, env);
     const payload = await readJson(request);
-    if (!payload.yanm || typeof payload.yanm !== "object") {
-      throw new HttpError(400, "invalid_yanm", "Yanm payload is required");
+    const rawCode = String(payload?.code || "").trim().toUpperCase();
+    if (!rawCode) {
+      throw new HttpError(400, "code_required", "请输入卡密激活码");
     }
 
-    const updatedAtUtc = normalizeOptionalIsoDate(payload.updatedAtUtc) || isoNow();
-    const result = await writeYanmStateForUser(env, auth.userId, {
-      updatedAtUtc,
-      yanm: payload.yanm
-    });
+    await ensureLicenseTables(env);
+    const license = await env.DB.prepare(
+      "select code, type, duration_days, status, used_by_user_id from license_keys where code = ?"
+    ).bind(rawCode).first();
 
-    const viewUrl = await getYanmStateViewUrl(env, auth.userId);
+    if (!license) {
+      throw new HttpError(404, "invalid_license", "激活码不存在，请核对后重试");
+    }
+
+    if (license.status === "used") {
+      throw new HttpError(400, "license_already_used", "该激活码已被使用");
+    }
+
+    if (license.status === "revoked") {
+      throw new HttpError(400, "license_revoked", "该激活码已作废");
+    }
+
+    const currentUser = await env.DB.prepare(
+      "select vip_expire_at, vip_type from users where user_id = ?"
+    ).bind(auth.userId).first();
+
+    const now = new Date();
+    let newVipType = license.type;
+    let newExpireAt;
+
+    if (license.type === "lifetime" || currentUser?.vip_type === "lifetime") {
+      newVipType = "lifetime";
+      newExpireAt = "2099-12-31T23:59:59.000Z";
+    } else {
+      let baseTime = now.getTime();
+      if (currentUser?.vip_expire_at) {
+        const existingExpire = new Date(currentUser.vip_expire_at).getTime();
+        if (existingExpire > baseTime) {
+          baseTime = existingExpire;
+        }
+      }
+      const addDays = Number(license.duration_days) || (license.type === "year" ? 365 : 30);
+      newExpireAt = new Date(baseTime + addDays * 86400 * 1000).toISOString();
+    }
+
+    const nowIso = now.toISOString();
+
+    await env.DB.batch([
+      env.DB.prepare(
+        `update license_keys
+         set status = 'used',
+             used_by_user_id = ?,
+             used_at = ?
+         where code = ? and status = 'unused'`
+      ).bind(auth.userId, nowIso, rawCode),
+      env.DB.prepare(
+        `update users
+         set vip_expire_at = ?,
+             vip_type = ?,
+             updated_at = ?
+         where user_id = ?`
+      ).bind(newExpireAt, newVipType, nowIso, auth.userId)
+    ]);
+
+    cloudVipCache.delete(auth.userId);
+    const updatedVipInfo = await getUserVipInfo(env, auth.userId);
 
     return json({
       ok: true,
-      userId: auth.userId,
-      source: result.source,
-      updatedAtUtc,
-      bytes: result.bytes,
-      viewUrl: viewUrl || null
+      message: "激活成功！感谢您对燕子开发维护的支持。",
+      code: rawCode,
+      ...updatedVipInfo
     });
   }
 
-  if (url.pathname === "/v1/me/yanm-state/component-state" && request.method === "PUT") {
-    const auth = await requireAuth(request, env);
+  if (url.pathname === "/v1/licenses/generate" && request.method === "POST") {
+    const adminSecret = request.headers.get("x-admin-secret");
+    let isAuthorized = Boolean(adminSecret && env.AUTH_TOKEN_SECRET && adminSecret === env.AUTH_TOKEN_SECRET);
+
+    if (!isAuthorized) {
+      try {
+        const auth = await requireAuth(request, env);
+        isAuthorized = isAdminUser(auth, env);
+      } catch (e) {
+        // 未认证
+      }
+    }
+
+    if (!isAuthorized) {
+      throw new HttpError(403, "admin_required", "需要管理员权限");
+    }
+
     const payload = await readJson(request);
-    const componentStatePatch = normalizeYanmComponentStatePatch(payload);
-    const updatedAtUtc = normalizeOptionalIsoDate(payload.updatedAtUtc) || isoNow();
-    const result = await patchYanmComponentStateForUser(env, auth.userId, componentStatePatch, updatedAtUtc);
-    const viewUrl = await getYanmStateViewUrl(env, auth.userId);
+    const count = Math.min(Math.max(1, parseInt(payload?.count || "1", 10)), 500);
+    const type = String(payload?.type || "year").toLowerCase();
+    const batchTag = String(payload?.batchTag || `batch_${isoNow().slice(0, 10)}`).trim();
+
+    let durationDays = 365;
+    let typePrefix = "1Y";
+    if (type === "month") {
+      durationDays = 30;
+      typePrefix = "1M";
+    } else if (type === "lifetime") {
+      durationDays = 36500;
+      typePrefix = "LIFE";
+    }
+
+    await ensureLicenseTables(env);
+    const nowIso = isoNow();
+    const generatedCodes = [];
+    const statements = [];
+
+    const chars = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+    for (let i = 0; i < count; i++) {
+      let part1 = "";
+      let part2 = "";
+      let part3 = "";
+      const randomBytes = new Uint8Array(12);
+      crypto.getRandomValues(randomBytes);
+      for (let j = 0; j < 4; j++) part1 += chars[randomBytes[j] % chars.length];
+      for (let j = 4; j < 8; j++) part2 += chars[randomBytes[j] % chars.length];
+      for (let j = 8; j < 12; j++) part3 += chars[randomBytes[j] % chars.length];
+      const code = `YZ-${typePrefix}-${part1}-${part2}-${part3}`;
+      generatedCodes.push(code);
+
+      statements.push(
+        env.DB.prepare(
+          `insert into license_keys (code, type, duration_days, batch_tag, status, created_at)
+           values (?, ?, ?, ?, 'unused', ?)`
+        ).bind(code, type, durationDays, batchTag, nowIso)
+      );
+    }
+
+    const chunkSize = 50;
+    for (let i = 0; i < statements.length; i += chunkSize) {
+      await env.DB.batch(statements.slice(i, i + chunkSize));
+    }
 
     return json({
       ok: true,
-      userId: auth.userId,
-      source: result.source,
-      updatedAtUtc,
-      changedKeys: Object.keys(componentStatePatch),
-      bytes: result.bytes,
-      viewUrl: viewUrl || null
+      count: generatedCodes.length,
+      type,
+      batchTag,
+      codes: generatedCodes
     });
+  }
+
+  if (url.pathname === "/v1/licenses/list" && request.method === "GET") {
+    const adminSecret = request.headers.get("x-admin-secret");
+    let isAuthorized = Boolean(adminSecret && env.AUTH_TOKEN_SECRET && adminSecret === env.AUTH_TOKEN_SECRET);
+    if (!isAuthorized) {
+      try {
+        const auth = await requireAuth(request, env);
+        isAuthorized = isAdminUser(auth, env);
+      } catch (e) {}
+    }
+    if (!isAuthorized) {
+      throw new HttpError(403, "admin_required", "需要管理员权限");
+    }
+
+    await ensureLicenseTables(env);
+    const status = url.searchParams.get("status") || "all";
+    const batchTag = url.searchParams.get("batchTag");
+
+    let query = "select code, type, duration_days, batch_tag, status, used_by_user_id, used_at, created_at from license_keys";
+    const conditions = [];
+    const params = [];
+    if (status !== "all") {
+      conditions.push("status = ?");
+      params.push(status);
+    }
+    if (batchTag) {
+      conditions.push("batch_tag = ?");
+      params.push(batchTag);
+    }
+    if (conditions.length > 0) {
+      query += " where " + conditions.join(" and ");
+    }
+    query += " order by created_at desc limit 500";
+
+    let stmt = env.DB.prepare(query);
+    if (params.length > 0) {
+      stmt = stmt.bind(...params);
+    }
+    const result = await stmt.all();
+
+    const summary = await env.DB.prepare(`
+      select
+        count(*) as total,
+        sum(case when status = 'unused' then 1 else 0 end) as unused_count,
+        sum(case when status = 'used' then 1 else 0 end) as used_count
+      from license_keys
+    `).first();
+
+    return json({
+      ok: true,
+      summary,
+      licenses: result.results || []
+    });
+  }
+
+  // --- 心愿墙 Wish Wall 相关 API ---
+  if (url.pathname === "/v1/wishes/leaderboard" && request.method === "GET") {
+    const leaderboard = await getWishLeaderboard(env);
+    return json({ ok: true, leaderboard });
+  }
+
+  if (url.pathname === "/v1/user/points" && request.method === "GET") {
+    const auth = await requireAuth(request, env);
+    const details = await getUserPointsDetail(env, auth.userId);
+    return json({ ok: true, userId: auth.userId, ...details });
+  }
+
+  if (url.pathname === "/v1/wishes" && request.method === "GET") {
+    const status = url.searchParams.get("status") || "all";
+    const category = url.searchParams.get("category") || "all";
+    const search = url.searchParams.get("search") || "";
+    const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
+    const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get("limit") || "12", 10)));
+    const result = await listWishes(env, { status, category, search, page, limit });
+    return json({ ok: true, ...result });
+  }
+
+  if (url.pathname === "/v1/wishes" && request.method === "POST") {
+    const auth = await requireAuth(request, env);
+    const payload = await readJson(request);
+    const result = await createWish(env, auth, payload);
+    return json({ ok: true, wish: result.wish, pointsGained: result.pointsGained });
+  }
+
+  const wishAcceptMatch = url.pathname.match(/^\/v1\/wishes\/([^/]+)\/accept$/);
+  if (wishAcceptMatch && request.method === "POST") {
+    const auth = await requireAuth(request, env);
+    const wishId = decodeURIComponent(wishAcceptMatch[1]);
+    const payload = await readJson(request);
+    const result = await acceptWishReply(env, auth, wishId, payload);
+    return json({ ok: true, ...result });
+  }
+
+  const wishReplyMatch = url.pathname.match(/^\/v1\/wishes\/([^/]+)\/replies$/);
+  if (wishReplyMatch && request.method === "POST") {
+    const auth = await requireAuth(request, env);
+    const wishId = decodeURIComponent(wishReplyMatch[1]);
+    const payload = await readJson(request);
+    const result = await createWishReply(env, auth, wishId, payload);
+    return json({ ok: true, reply: result.reply });
+  }
+
+  const wishDetailMatch = url.pathname.match(/^\/v1\/wishes\/([^/]+)$/);
+  if (wishDetailMatch && request.method === "GET") {
+    const wishId = decodeURIComponent(wishDetailMatch[1]);
+    const result = await getWishDetail(env, wishId);
+    return json({ ok: true, ...result });
+  }
+
+  if (wishDetailMatch && request.method === "PUT") {
+    const auth = await requireAuth(request, env);
+    const wishId = decodeURIComponent(wishDetailMatch[1]);
+    const payload = await readJson(request);
+    const result = await updateWish(env, auth, wishId, payload);
+    return json({ ok: true, wish: result.wish });
+  }
+
+  if (wishDetailMatch && request.method === "DELETE") {
+    const auth = await requireAuth(request, env);
+    const wishId = decodeURIComponent(wishDetailMatch[1]);
+    const result = await deleteWish(env, auth, wishId);
+    return json({ ok: true, ...result });
   }
 
   if (url.pathname === "/v1/app/update/latest" && request.method === "GET") {
-    const channel = normalizeReleaseChannel(url.searchParams.get("channel"));
-    const row = await env.DB.prepare(
-      `select
-        channel,
-        version,
-        title,
-        notes,
-        download_url,
-        file_name,
-        download_code,
-        provider,
-        sha256,
-        published_at,
-        updated_at,
-        updated_by_user_id,
-        updated_by_username
-      from app_release_channels
-      where channel = ?`
-    )
-      .bind(channel)
-      .first();
-
-    return json(serializeAppRelease(row, channel));
-  }
-
-  if (url.pathname === "/v1/admin/app/update/latest") {
-    const auth = await requireAdmin(request, env);
-    const channel = normalizeReleaseChannel(url.searchParams.get("channel"));
-
-    if (request.method === "GET") {
-      const row = await env.DB.prepare(
-        `select
-          channel,
-          version,
-          title,
-          notes,
-          download_url,
-          file_name,
-          download_code,
-          provider,
-          sha256,
-          published_at,
-          updated_at,
-          updated_by_user_id,
-          updated_by_username
-        from app_release_channels
-        where channel = ?`
-      )
-        .bind(channel)
-        .first();
-
-      return json({
-        ...serializeAppRelease(row, channel),
-        is_admin: true
+    try {
+      const ghResponse = await fetch("https://api.github.com/repos/luoluoluo22/yanzi/releases/latest", {
+        headers: {
+          "User-Agent": "Yanzi-Updater-Worker"
+        }
       });
+      if (!ghResponse.ok) {
+        throw new Error(`GitHub API returned status ${ghResponse.status}`);
+      }
+      const data = await ghResponse.json();
+      const assets = data.assets || [];
+      let winVersion = "0.3.19";
+      let macVersion = "0.1.0";
+      let androidVersion = "0.2.24";
+
+      if (data.tag_name) {
+        if (data.tag_name.startsWith("v")) {
+          winVersion = data.tag_name.replace(/^v/, "");
+        } else if (data.tag_name.startsWith("macos-v")) {
+          macVersion = data.tag_name.replace(/^macos-v/, "");
+        } else if (data.tag_name.startsWith("android-v")) {
+          androidVersion = data.tag_name.replace(/^android-v/, "");
+        }
+      }
+
+      // 提取多平台构建产物
+      const winSetupAsset = assets.find(asset => asset.name.endsWith(".exe")) || null;
+      const winPortableAsset = assets.find(asset => asset.name.includes("Portable") && asset.name.endsWith(".zip")) || null;
+      const macAsset = assets.find(asset => asset.name.endsWith(".dmg") || (asset.name.includes("macos") && asset.name.endsWith(".dmg"))) || null;
+      const androidAsset = assets.find(asset => asset.name.endsWith(".apk")) || null;
+
+      const defaultWinFileName = winSetupAsset ? winSetupAsset.name : `Yanzi-win-Setup-${winVersion}.exe`;
+      const defaultWinDownloadUrl = winSetupAsset ? winSetupAsset.browser_download_url : `https://github.com/luoluoluo22/yanzi/releases/download/v${winVersion}/${defaultWinFileName}`;
+      const defaultMacFileName = macAsset ? macAsset.name : `Yanzi-macos-v${macVersion}.dmg`;
+      const defaultMacDownloadUrl = macAsset ? macAsset.browser_download_url : `https://github.com/luoluoluo22/yanzi/releases/download/macos-v${macVersion}/${defaultMacFileName}`;
+
+      const requestedPlatform = (url.searchParams.get("platform") || "windows").toLowerCase();
+
+      const platforms = {
+        windows: {
+          name: "Windows",
+          version: winVersion,
+          file_name: defaultWinFileName,
+          download_url: defaultWinDownloadUrl,
+          mirror_url: `https://ghfast.top/${defaultWinDownloadUrl}`,
+          portable_url: winPortableAsset ? winPortableAsset.browser_download_url : `https://github.com/luoluoluo22/yanzi/releases/download/v${winVersion}/Yanzi-win-Portable-${winVersion}.zip`,
+          lanzou_url: "https://wwbnh.lanzout.com/b0pnkaj6j",
+          quark_url: "https://pan.quark.cn/s/1ef15a1cafe1?pwd=dWvh",
+          has_asset: Boolean(winSetupAsset)
+        },
+        mac: {
+          name: "macOS",
+          version: macVersion,
+          file_name: defaultMacFileName,
+          download_url: defaultMacDownloadUrl,
+          mirror_url: `https://ghfast.top/${defaultMacDownloadUrl}`,
+          has_asset: Boolean(macAsset)
+        },
+        android: {
+          name: "Android",
+          version: androidVersion,
+          file_name: androidAsset ? androidAsset.name : `Yanzi-android-v${androidVersion}.apk`,
+          download_url: "https://wwbnh.lanzout.com/b0pnm6z2j",
+          has_asset: Boolean(androidAsset)
+        }
+      };
+
+      const selectedPlatform = platforms[requestedPlatform] || platforms.windows;
+
+      const payload = {
+        channel: "stable",
+        version: selectedPlatform.version,
+        title: data.name || `燕子启动器 ${selectedPlatform.name} v${selectedPlatform.version}`,
+        notes: data.body || "",
+        download_url: selectedPlatform.download_url,
+        file_name: selectedPlatform.file_name,
+        download_code: "",
+        provider: "github",
+        sha256: "",
+        published_at: data.published_at || new Date().toISOString(),
+        platforms: platforms
+      };
+
+      const result = withCors(json(payload));
+      result.headers.set('cache-control', 'public, max-age=300');
+      return result;
+    } catch (err) {
+      console.error("Fetch GitHub releases failed:", err);
+      // 容错：如果 GitHub 接口报错，返回兜底配置
+      const fallbackVersion = "0.3.19";
+      const fallbackWinUrl = `https://github.com/luoluoluo22/yanzi/releases/download/v${fallbackVersion}/Yanzi-win-Setup-${fallbackVersion}.exe`;
+      const fallbackMacUrl = `https://github.com/luoluoluo22/yanzi/releases/download/v${fallbackVersion}/Yanzi-${fallbackVersion}.dmg`;
+
+      const fallbackPlatforms = {
+        windows: {
+          name: "Windows",
+          version: fallbackVersion,
+          file_name: `Yanzi-win-Setup-${fallbackVersion}.exe`,
+          download_url: fallbackWinUrl,
+          mirror_url: `https://ghfast.top/${fallbackWinUrl}`,
+          portable_url: `https://github.com/luoluoluo22/yanzi/releases/download/v${fallbackVersion}/Yanzi-win-Portable-${fallbackVersion}.zip`,
+          lanzou_url: "https://wwbnh.lanzout.com/b0pnkaj6j",
+          quark_url: "https://pan.quark.cn/s/1ef15a1cafe1?pwd=dWvh",
+          has_asset: true
+        },
+        mac: {
+          name: "macOS",
+          version: fallbackVersion,
+          file_name: `Yanzi-${fallbackVersion}.dmg`,
+          download_url: fallbackMacUrl,
+          mirror_url: `https://ghfast.top/${fallbackMacUrl}`,
+          has_asset: false
+        },
+        android: {
+          name: "Android",
+          version: "0.2.24",
+          file_name: "Yanzi-android-v0.2.24.apk",
+          download_url: "https://wwbnh.lanzout.com/b0pnm6z2j",
+          has_asset: true
+        }
+      };
+
+      return withCors(json({
+        channel: "stable",
+        version: fallbackVersion,
+        title: `燕子启动器 v${fallbackVersion}`,
+        notes: "从 GitHub 抓取最新版失败，已启用本地缓存兜底",
+        download_url: fallbackWinUrl,
+        file_name: `Yanzi-win-Setup-${fallbackVersion}.exe`,
+        download_code: "",
+        provider: "github",
+        sha256: "",
+        published_at: "2026-08-25T00:00:00Z",
+        platforms: fallbackPlatforms
+      }));
     }
-
-    if (request.method !== "PUT") {
-      return json({ error: "method_not_allowed", message: "Method not allowed" }, 405);
-    }
-
-    const payload = await readJson(request);
-    const release = normalizeAppReleasePayload(payload, channel);
-    const now = isoNow();
-
-    await env.DB.prepare(
-      `insert into app_release_channels (
-        channel,
-        version,
-        title,
-        notes,
-        download_url,
-        file_name,
-        download_code,
-        provider,
-        sha256,
-        published_at,
-        updated_at,
-        updated_by_user_id,
-        updated_by_username
-      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      on conflict(channel) do update set
-        version = excluded.version,
-        title = excluded.title,
-        notes = excluded.notes,
-        download_url = excluded.download_url,
-        file_name = excluded.file_name,
-        download_code = excluded.download_code,
-        provider = excluded.provider,
-        sha256 = excluded.sha256,
-        published_at = excluded.published_at,
-        updated_at = excluded.updated_at,
-        updated_by_user_id = excluded.updated_by_user_id,
-        updated_by_username = excluded.updated_by_username`
-    )
-      .bind(
-        channel,
-        release.version,
-        release.title,
-        release.notes,
-        release.download_url,
-        release.file_name,
-        release.download_code,
-        release.provider,
-        release.sha256,
-        release.published_at,
-        now,
-        auth.userId,
-        auth.username
-      )
-      .run();
-
-    const saved = await env.DB.prepare(
-      `select
-        channel,
-        version,
-        title,
-        notes,
-        download_url,
-        file_name,
-        download_code,
-        provider,
-        sha256,
-        published_at,
-        updated_at,
-        updated_by_user_id,
-        updated_by_username
-      from app_release_channels
-      where channel = ?`
-    )
-      .bind(channel)
-      .first();
-
-    return json({
-      ok: true,
-      ...serializeAppRelease(saved, channel),
-      is_admin: true
-    });
   }
 
   if (url.pathname === "/v1/extensions" && request.method === "GET") {
@@ -1142,12 +1532,16 @@ async function handleRequest(request, env) {
   if (iconDownloadMatch && request.method === "GET") {
     const extensionId = decodeURIComponent(iconDownloadMatch[1]);
     const row = await env.DB.prepare(
-      `select icon_key
+      `select extension_id, manifest_json, icon_key, is_published
        from extensions
        where extension_id = ?`
     )
       .bind(extensionId)
       .first();
+
+    if (row && !isStoreVisibleExtension(row)) {
+      return json({ error: "not_found", message: "Icon not found" }, 404);
+    }
 
     if (!row?.icon_key) {
       return json({ error: "not_found", message: "Icon not found" }, 404);
@@ -1236,7 +1630,7 @@ async function handleRequest(request, env) {
   if (archiveDownloadMatch && request.method === "GET") {
     const extensionId = decodeURIComponent(archiveDownloadMatch[1]);
     const row = await env.DB.prepare(
-      `select archive_key, latest_version, archive_sha256
+      `select extension_id, manifest_json, archive_key, latest_version, archive_sha256, is_published
        from extensions
        where extension_id = ?`
     )
@@ -1247,15 +1641,15 @@ async function handleRequest(request, env) {
     let latestVersion = "latest";
     let sha256 = "";
 
-    if (row?.archive_key) {
+    if (row?.archive_key && isStoreVisibleExtension(row)) {
       archiveKey = row.archive_key;
       latestVersion = row.latest_version || "latest";
       sha256 = row.archive_sha256 || "";
     } else {
       const preset = PUBLIC_STORE_EXTENSION_MAP.get(extensionId);
       if (preset && preset.package_path) {
-        archiveKey = preset.package_path.startsWith("/") 
-          ? preset.package_path.substring(1) 
+        archiveKey = preset.package_path.startsWith("/")
+          ? preset.package_path.substring(1)
           : preset.package_path;
         latestVersion = preset.latest_version || "latest";
       }
@@ -1286,468 +1680,438 @@ async function handleRequest(request, env) {
 
     const rows = await env.DB.prepare(
       `select
-        user_id,
-        extension_id,
-        installed_version,
-        enabled,
-        settings_json,
-        updated_at
-      from user_extensions
-      where user_id = ?
-      order by updated_at desc`
+        ue.user_id,
+        ue.extension_id,
+        ue.installed_version,
+        ue.enabled,
+        ue.settings_json,
+        ue.updated_at,
+        e.display_name,
+        coalesce(archive_head.version, e.latest_version) as latest_version,
+        e.manifest_json,
+        e.icon_key,
+        coalesce(archive_head.archive_key, e.archive_key) as archive_key,
+        coalesce(archive_head.archive_sha256, e.archive_sha256) as archive_sha256,
+        coalesce(archive_head.revision, 0) as archive_revision,
+        coalesce(archive_head.updated_at, '') as archive_updated_at,
+        coalesce(archive_head.updated_by_device_id, '') as archive_updated_by_device_id,
+        coalesce(archive_head.updated_by_device_name, '') as archive_updated_by_device_name,
+        e.publisher_user_id,
+        e.publisher_username,
+        e.published_at,
+        e.is_published,
+        e.updated_at as extension_updated_at
+      from user_extensions ue
+      left join extensions e on e.extension_id = ue.extension_id
+      left join user_extension_archive_heads archive_head
+        on archive_head.user_id = ue.user_id and archive_head.extension_id = ue.extension_id
+      where ue.user_id = ?
+      order by ue.updated_at desc`
     )
       .bind(auth.userId)
       .all();
 
     return json({
       userId: auth.userId,
+      items: (rows.results ?? []).map((row) => serializeUserExtensionRecord(url, row, auth.userId))
+    });
+  }
+
+  const myPrivateExtensionMatch = url.pathname.match(/^\/v1\/me\/extensions\/([^/]+)\/private$/);
+  if (myPrivateExtensionMatch && request.method === "PUT") {
+    const auth = await requireAuth(request, env);
+    const extensionId = decodeURIComponent(myPrivateExtensionMatch[1]);
+    const payload = await readJson(request);
+    const manifest = payload.manifest ?? payload;
+    await ensureUser(env, auth.userId);
+    await upsertPrivateExtensionMetadata(env, auth, extensionId, manifest);
+
+    return json({
+      ok: true,
+      userId: auth.userId,
+      extensionId,
+      latestVersion: String(manifest.version ?? "0.0.0").slice(0, 50)
+    });
+  }
+
+  const myIconMatch = url.pathname.match(/^\/v1\/me\/extensions\/([^/]+)\/icon$/);
+  if (myIconMatch && request.method === "PUT") {
+    const auth = await requireAuth(request, env);
+    const extensionId = decodeURIComponent(myIconMatch[1]);
+    await ensureUser(env, auth.userId);
+    await ensurePrivateExtensionWritable(env, auth, extensionId);
+
+    const version = (url.searchParams.get("version") || "0.0.0").slice(0, 50);
+    const filename = String(url.searchParams.get("filename") || "icon.png").slice(0, 200);
+    const bytes = await request.arrayBuffer();
+    if (!bytes || bytes.byteLength === 0) {
+      throw new HttpError(400, "invalid_icon", "Icon payload is empty");
+    }
+
+    const contentType = request.headers.get("content-type") || "application/octet-stream";
+    const extension = resolveIconExtension(filename, contentType);
+    const iconKey = `users/${auth.userId}/extensions/${extensionId}/${version}/icon${extension}`;
+    const now = isoNow();
+
+    await env.PACKAGES.put(iconKey, bytes, {
+      httpMetadata: { contentType },
+      customMetadata: {
+        userId: auth.userId,
+        extensionId,
+        version,
+        private: "true"
+      }
+    });
+
+    await env.DB.prepare(
+      `update extensions
+       set icon_key = ?,
+           latest_version = coalesce(nullif(?, ''), latest_version),
+           updated_at = ?
+       where extension_id = ?`
+    )
+      .bind(iconKey, version, now, extensionId)
+      .run();
+
+    return json({
+      ok: true,
+      userId: auth.userId,
+      extensionId,
+      icon_url: buildMyExtensionIconUrl(url, extensionId, Date.now())
+    });
+  }
+
+  if (myIconMatch && request.method === "GET") {
+    const auth = await requireAuth(request, env);
+    const extensionId = decodeURIComponent(myIconMatch[1]);
+    await ensureUserCanReadExtension(env, auth.userId, extensionId);
+
+    const row = await env.DB.prepare(
+      `select icon_key
+       from extensions
+       where extension_id = ?`
+    )
+      .bind(extensionId)
+      .first();
+
+    if (!row?.icon_key) {
+      return json({ error: "not_found", message: "Icon not found" }, 404);
+    }
+
+    const object = await env.PACKAGES.get(row.icon_key);
+    if (!object) {
+      return json({ error: "not_found", message: "Stored icon is missing" }, 404);
+    }
+
+    const headers = new Headers();
+    object.writeHttpMetadata(headers);
+    headers.set("cache-control", "private, max-age=300");
+    return withCors(new Response(object.body, { headers }));
+  }
+
+  const myArchiveHistoryMatch = url.pathname.match(/^\/v1\/me\/extensions\/([^/]+)\/archive\/history$/);
+  if (myArchiveHistoryMatch && request.method === "GET") {
+    const auth = await requireAuth(request, env);
+    const extensionId = decodeURIComponent(myArchiveHistoryMatch[1]);
+    await ensureUser(env, auth.userId);
+    await ensureUserCanReadExtension(env, auth.userId, extensionId);
+    const rows = await env.DB.prepare(
+      `select revision, version, archive_sha256, updated_at,
+              updated_by_device_id, updated_by_device_name,
+              operation, restored_from_revision
+       from user_extension_archive_history
+       where user_id = ? and extension_id = ?
+       order by revision desc limit 100`
+    ).bind(auth.userId, extensionId).all();
+    return json({
+      extensionId,
       items: rows.results ?? []
     });
   }
 
-  if (url.pathname === "/v1/me/devices" && request.method === "GET") {
+  const myArchiveRestoreMatch = url.pathname.match(/^\/v1\/me\/extensions\/([^/]+)\/archive\/restore$/);
+  if (myArchiveRestoreMatch && request.method === "POST") {
     const auth = await requireAuth(request, env);
+    const extensionId = decodeURIComponent(myArchiveRestoreMatch[1]);
     await ensureUser(env, auth.userId);
-
-    const rows = await env.DB.prepare(
-      `select
-        device_id,
-        platform,
-        display_name,
-        capabilities_json,
-        last_seen_at,
-        created_at,
-        updated_at
-      from user_devices
-      where user_id = ?
-      order by updated_at desc`
-    )
-      .bind(auth.userId)
-      .all();
-
-    return json({
-      ok: true,
-      userId: auth.userId,
-      items: (rows.results ?? []).map(serializeDeviceRecord)
-    });
-  }
-
-  if (url.pathname === "/v1/me/devices" && request.method === "POST") {
-    const auth = await requireAuth(request, env);
+    await ensurePrivateExtensionWritable(env, auth, extensionId);
     const payload = await readJson(request);
-    await ensureUser(env, auth.userId);
-
-    const device = normalizeDevicePayload(payload);
-    const existingDeviceOwner = await env.DB.prepare(
-      `select user_id
-       from user_devices
-       where device_id = ?`
-    )
-      .bind(device.deviceId)
-      .first();
-    if (existingDeviceOwner && String(existingDeviceOwner.user_id) !== auth.userId) {
-      throw new HttpError(409, "device_id_taken", "Device ID is already bound to another account");
+    const sourceRevision = Number(payload.revision);
+    const expectedRevision = Number(payload.expectedRevision);
+    if (!Number.isInteger(sourceRevision) || sourceRevision <= 0 ||
+        !Number.isInteger(expectedRevision) || expectedRevision < 0) {
+      throw new HttpError(400, "invalid_revision", "revision must be positive and expectedRevision must be non-negative");
     }
 
-    const now = isoNow();
-    await env.DB.prepare(
-      `insert into user_devices (
-        device_id,
-        user_id,
-        platform,
-        display_name,
-        push_token,
-        capabilities_json,
-        last_seen_at,
-        created_at,
-        updated_at
-      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      on conflict(device_id) do update set
-        platform = excluded.platform,
-        display_name = excluded.display_name,
-        push_token = excluded.push_token,
-        capabilities_json = excluded.capabilities_json,
-        last_seen_at = excluded.last_seen_at,
-        updated_at = excluded.updated_at`
-    )
-      .bind(
-        device.deviceId,
-        auth.userId,
-        device.platform,
-        device.displayName,
-        device.pushToken,
-        JSON.stringify(device.capabilities),
-        now,
-        now,
-        now
-      )
-      .run();
+    const current = await env.DB.prepare(
+      `select revision from user_extension_archive_heads where user_id = ? and extension_id = ?`
+    ).bind(auth.userId, extensionId).first();
+    const currentRevision = Number(current?.revision || 0);
+    if (currentRevision !== expectedRevision) {
+      const error = new HttpError(409, "archive_revision_conflict", "private archive revision does not match expectedRevision");
+      error.details = { extensionId, expectedRevision, currentRevision };
+      throw error;
+    }
+    const source = await env.DB.prepare(
+      `select version, archive_key, archive_sha256
+       from user_extension_archive_history
+       where user_id = ? and extension_id = ? and revision = ?`
+    ).bind(auth.userId, extensionId, sourceRevision).first();
+    if (!source?.archive_key) {
+      throw new HttpError(404, "not_found", "archive history revision not found");
+    }
 
+    const revision = currentRevision + 1;
+    const now = isoNow();
+    const deviceId = String(payload.updatedByDeviceId || request.headers.get("x-yanzi-device-id") || "").slice(0, 200);
+    const deviceName = String(payload.updatedByDeviceName || request.headers.get("x-yanzi-device-name") || "").slice(0, 200);
+    const results = await env.DB.batch([
+      env.DB.prepare(
+        `update user_extension_archive_heads
+         set revision = ?, version = ?, archive_key = ?, archive_sha256 = ?,
+             updated_at = ?, updated_by_device_id = ?, updated_by_device_name = ?
+         where user_id = ? and extension_id = ? and revision = ?`
+      ).bind(
+        revision, source.version, source.archive_key, source.archive_sha256,
+        now, deviceId, deviceName, auth.userId, extensionId, expectedRevision
+      ),
+      env.DB.prepare(
+        `insert into user_extension_archive_history (
+           user_id, extension_id, revision, version, archive_key, archive_sha256,
+           updated_at, updated_by_device_id, updated_by_device_name,
+           operation, restored_from_revision
+         )
+         select user_id, extension_id, revision, version, archive_key, archive_sha256,
+                updated_at, updated_by_device_id, updated_by_device_name, 'restore', ?
+         from user_extension_archive_heads
+         where user_id = ? and extension_id = ? and revision = ?`
+      ).bind(sourceRevision, auth.userId, extensionId, revision),
+      env.DB.prepare(
+        `update extensions
+         set latest_version = ?, archive_key = ?, archive_sha256 = ?, updated_at = ?
+         where extension_id = ? and exists (
+           select 1 from user_extension_archive_heads head
+           where head.user_id = ? and head.extension_id = ? and head.revision = ?
+         )`
+      ).bind(source.version, source.archive_key, source.archive_sha256, now,
+             extensionId, auth.userId, extensionId, revision)
+    ]);
+    if (Number(results?.[0]?.meta?.changes || 0) === 0) {
+      const latest = await env.DB.prepare(
+        `select revision from user_extension_archive_heads where user_id = ? and extension_id = ?`
+      ).bind(auth.userId, extensionId).first();
+      const error = new HttpError(409, "archive_revision_conflict", "private archive changed during restore");
+      error.details = { extensionId, expectedRevision, currentRevision: Number(latest?.revision || 0) };
+      throw error;
+    }
     return json({
       ok: true,
-      userId: auth.userId,
-      device: {
-        deviceId: device.deviceId,
-        platform: device.platform,
-        displayName: device.displayName,
-        capabilities: device.capabilities,
-        lastSeenAt: now
-      }
+      extensionId,
+      revision,
+      restoredFromRevision: sourceRevision,
+      version: source.version,
+      sha256: source.archive_sha256,
+      updatedAtUtc: now,
+      updatedByDeviceId: deviceId,
+      updatedByDeviceName: deviceName,
+      archive_download_url: buildMyExtensionArchiveUrl(url, extensionId)
     });
   }
 
-  if (url.pathname === "/v1/me/mobile/messages" && request.method === "POST") {
+  const myArchiveMatch = url.pathname.match(/^\/v1\/me\/extensions\/([^/]+)\/archive$/);
+  if (myArchiveMatch && request.method === "PUT") {
     const auth = await requireAuth(request, env);
-    const payload = await readJson(request);
+    const extensionId = decodeURIComponent(myArchiveMatch[1]);
     await ensureUser(env, auth.userId);
+    await ensurePrivateExtensionWritable(env, auth, extensionId);
 
-    const message = normalizeDeviceMessagePayload(payload);
-    if (message.sourceDeviceId) {
-      await ensureOwnedDevice(env, auth.userId, message.sourceDeviceId);
-      await touchDevice(env, auth.userId, message.sourceDeviceId);
+    const version = (url.searchParams.get("version") || "0.0.0").slice(0, 50);
+    const bytes = await request.arrayBuffer();
+    if (!bytes || bytes.byteLength === 0) {
+      throw new HttpError(400, "invalid_archive", "Archive payload is empty");
     }
 
-    if (message.targetDeviceId) {
-      await ensureOwnedDevice(env, auth.userId, message.targetDeviceId);
-    }
-
-    const now = isoNow();
-    const messageId = `msg_${randomHex(12)}`;
-    await env.DB.prepare(
-      `insert into device_messages (
-        message_id,
-        user_id,
-        source_device_id,
-        target_device_id,
-        target_platform,
-        kind,
-        title,
-        body_text,
-        payload_json,
-        status,
-        created_at,
-        expires_at
-      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`
-    )
-      .bind(
-        messageId,
-        auth.userId,
-        message.sourceDeviceId,
-        message.targetDeviceId,
-        message.targetPlatform,
-        message.kind,
-        message.title,
-        message.bodyText,
-        JSON.stringify(message.payload),
-        now,
-        message.expiresAt
-      )
-      .run();
-
-    await notifyDeviceRelay(env, auth.userId);
-
-    return json({
-      ok: true,
-      userId: auth.userId,
-      messageId,
-      createdAt: now
-    });
-  }
-
-  if (url.pathname === "/v1/me/mobile/messages/ws" && request.method === "GET") {
-    const auth = await requireAuth(request, env);
-    const deviceId = normalizeDeviceId(url.searchParams.get("deviceId"));
-    await ensureUser(env, auth.userId);
-    await ensureOwnedDevice(env, auth.userId, deviceId);
-
-    if (!env.DEVICE_RELAY) {
-      throw new HttpError(503, "relay_unavailable", "Device relay is not configured");
-    }
-
-    return env.DEVICE_RELAY.getByName(auth.userId).fetch(request);
-  }
-
-  if (url.pathname === "/v1/me/mobile/messages/events" && request.method === "GET") {
-    const auth = await requireAuth(request, env);
-    const deviceId = normalizeDeviceId(url.searchParams.get("deviceId"));
-    await ensureUser(env, auth.userId);
-    const device = await ensureOwnedDevice(env, auth.userId, deviceId);
-    await touchDevice(env, auth.userId, deviceId);
-
-    const { readable, writable } = new TransformStream();
-    const writer = writable.getWriter();
-    const encoder = new TextEncoder();
-
-    let isClosed = false;
-
-    request.signal.addEventListener("abort", () => {
-      isClosed = true;
-    });
-
-    const sendSseMessage = async (data) => {
-      try {
-        await writer.write(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
-      } catch (err) {
-        isClosed = true;
-      }
-    };
-
-    (async () => {
-      try {
-        await sendSseMessage({ type: "connected" });
-
-        while (!isClosed) {
-          const rows = await env.DB.prepare(
-            `select
-              message_id,
-              source_device_id,
-              target_device_id,
-              target_platform,
-              kind,
-              title,
-              body_text,
-              payload_json,
-              status,
-              created_at,
-              delivered_at,
-              acked_at,
-              expires_at
-            from device_messages
-            where user_id = ?
-              and status = 'pending'
-              and (expires_at is null or expires_at > ?)
-              and (
-                target_device_id = ?
-                or (
-                  target_device_id is null
-                  and target_platform = ?
-                )
-              )
-            order by created_at asc`
-          )
-            .bind(auth.userId, isoNow(), deviceId, device.platform)
-            .all();
-
-          const items = (rows.results ?? []).map(serializeDeviceMessageRecord);
-          if (items.length > 0) {
-            await sendSseMessage({ type: "messages", items });
-
-            const deliveredAt = isoNow();
-            await env.DB.prepare(
-              `update device_messages
-               set delivered_at = coalesce(delivered_at, ?)
-               where user_id = ?
-                 and message_id in (${items.map(() => "?").join(",")})`
-            )
-              .bind(deliveredAt, auth.userId, ...items.map((item) => item.messageId))
-              .run();
-          }
-
-          await new Promise(resolve => setTimeout(resolve, 2000));
-        }
-      } catch (err) {
-        // SSE loop exception
-      } finally {
-        try {
-          await writer.close();
-        } catch (e) {}
-      }
-    })();
-
-    return new Response(readable, {
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        "Connection": "keep-alive",
-        "Access-Control-Allow-Origin": "*"
-      }
-    });
-  }
-
-  if (url.pathname === "/v1/me/mobile/messages" && request.method === "GET") {
-    const auth = await requireAuth(request, env);
-    const deviceId = normalizeDeviceId(url.searchParams.get("deviceId"));
-
-    const now = Date.now();
-    const rateLimitKey = `${auth.userId}:${deviceId}`;
-    const lastRequestTime = mobilePollRateLimitMap.get(rateLimitKey) || 0;
-    mobilePollRateLimitMap.set(rateLimitKey, now);
-    if (mobilePollRateLimitMap.size > 5000) {
-      mobilePollRateLimitMap.clear();
-    }
-    if (now - lastRequestTime < 3000) {
+    const sha256 = await digestHex(bytes);
+    const current = await env.DB.prepare(
+      `select revision, version, archive_key, archive_sha256, updated_at,
+              updated_by_device_id, updated_by_device_name
+       from user_extension_archive_heads
+       where user_id = ? and extension_id = ?`
+    ).bind(auth.userId, extensionId).first();
+    const currentRevision = Number(current?.revision || 0);
+    if (current?.archive_sha256 && String(current.archive_sha256) === sha256) {
       return json({
         ok: true,
+        unchanged: true,
         userId: auth.userId,
-        deviceId,
-        items: []
+        extensionId,
+        version: current.version || version,
+        archiveKey: current.archive_key,
+        sha256,
+        revision: currentRevision,
+        updatedAtUtc: current.updated_at || "",
+        archive_download_url: buildMyExtensionArchiveUrl(url, extensionId)
       });
     }
 
-    const limit = normalizeMessageLimit(url.searchParams.get("limit"));
-    await ensureUser(env, auth.userId);
-    const device = await ensureOwnedDevice(env, auth.userId, deviceId);
-    await touchDevice(env, auth.userId, deviceId);
-
-    const rows = await env.DB.prepare(
-      `select
-        message_id,
-        source_device_id,
-        target_device_id,
-        target_platform,
-        kind,
-        title,
-        body_text,
-        payload_json,
-        status,
-        created_at,
-        delivered_at,
-        acked_at,
-        expires_at
-      from device_messages
-      where user_id = ?
-        and status = 'pending'
-        and (expires_at is null or expires_at > ?)
-        and (
-          target_device_id = ?
-          or (
-            target_device_id is null
-            and target_platform = ?
-          )
-        )
-      order by created_at asc
-      limit ?`
-    )
-      .bind(auth.userId, isoNow(), deviceId, device.platform, limit)
-      .all();
-
-    const items = (rows.results ?? []).map(serializeDeviceMessageRecord);
-    if (items.length > 0) {
-      const deliveredAt = isoNow();
-      await env.DB.prepare(
-        `update device_messages
-         set delivered_at = coalesce(delivered_at, ?)
-         where user_id = ?
-           and message_id in (${items.map(() => "?").join(",")})`
-      )
-        .bind(deliveredAt, auth.userId, ...items.map((item) => item.messageId))
-        .run();
+    const expectedRaw = url.searchParams.get("expectedRevision");
+    if (expectedRaw == null && currentRevision > 0) {
+      const error = new HttpError(428, "archive_revision_required", "expectedRevision is required for an existing private archive");
+      error.details = { extensionId, currentRevision };
+      throw error;
+    }
+    const expectedRevision = expectedRaw == null ? 0 : Number(expectedRaw);
+    if (!Number.isInteger(expectedRevision) || expectedRevision < 0) {
+      throw new HttpError(400, "invalid_expected_revision", "expectedRevision must be a non-negative integer");
+    }
+    if (expectedRevision !== currentRevision) {
+      const error = new HttpError(409, "archive_revision_conflict", "private archive revision does not match expectedRevision");
+      error.details = { extensionId, expectedRevision, currentRevision };
+      throw error;
     }
 
-    return json({
-      ok: true,
-      userId: auth.userId,
-      deviceId,
-      items
-    });
-  }
+    const revision = currentRevision + 1;
+    // Reuse immutable bytes within the same account/extension if SHA matches.
+    // D1 history revisions remain independently restorable.
+    const reusableKey = await findReusablePrivateArchive(
+      env, auth.userId, extensionId, sha256, bytes.byteLength
+    );
+    const archiveKey = reusableKey ||
+      `users/${auth.userId}/extensions/${extensionId}/archive-history/${revision}-${sha256}.zip`;
+    const now = isoNow();
+    const deviceId = String(request.headers.get("x-yanzi-device-id") || "").slice(0, 200);
+    const deviceName = String(request.headers.get("x-yanzi-device-name") || "").slice(0, 200);
 
-  const deviceMessageAckMatch = url.pathname.match(/^\/v1\/me\/mobile\/messages\/([^/]+)\/ack$/);
-  if (deviceMessageAckMatch && request.method === "POST") {
-    const auth = await requireAuth(request, env);
-    const messageId = normalizeMessageId(decodeURIComponent(deviceMessageAckMatch[1]));
-    const payload = await readJson(request);
-    const deviceId = normalizeDeviceId(payload.deviceId);
-    await ensureUser(env, auth.userId);
-    await ensureOwnedDevice(env, auth.userId, deviceId);
-    await touchDevice(env, auth.userId, deviceId);
-
-    const success = payload.success;
-    const resultText = payload.result || "";
-
-    let newStatus = "acked";
-    let updatedPayloadJson = null;
-
-    if (success !== undefined) {
-      newStatus = success ? "completed" : "failed";
-      const msgRow = await env.DB.prepare(
-        "select payload_json from device_messages where user_id = ? and message_id = ?"
-      )
-        .bind(auth.userId, messageId)
-        .first();
-
-      let originPayload = {};
-      try {
-        if (msgRow && msgRow.payload_json) {
-          originPayload = JSON.parse(msgRow.payload_json);
+    if (!reusableKey) {
+      await env.PACKAGES.put(archiveKey, bytes, {
+        httpMetadata: {
+          contentType: request.headers.get("content-type") || "application/zip"
+        },
+        customMetadata: {
+          userId: auth.userId,
+          extensionId,
+          version,
+          sha256,
+          private: "true"
         }
-      } catch (e) {}
-
-      originPayload.executionResult = {
-        success: !!success,
-        output: resultText,
-        time: isoNow()
-      };
-      updatedPayloadJson = JSON.stringify(originPayload);
+      });
     }
 
-    let result;
-    if (updatedPayloadJson) {
-      result = await env.DB.prepare(
-        `update device_messages
-         set status = ?,
-             acked_at = ?,
-             payload_json = ?
-         where user_id = ?
-           and message_id = ?
-           and status = 'pending'`
-      )
-        .bind(newStatus, isoNow(), updatedPayloadJson, auth.userId, messageId)
-        .run();
-    } else {
-      result = await env.DB.prepare(
-        `update device_messages
-         set status = 'acked',
-             acked_at = ?
-         where user_id = ?
-           and message_id = ?
-           and status = 'pending'`
-      )
-        .bind(isoNow(), auth.userId, messageId)
-        .run();
+    const results = await env.DB.batch([
+      env.DB.prepare(
+        `insert into user_extension_archive_heads (
+           user_id, extension_id, revision, version, archive_key, archive_sha256,
+           updated_at, updated_by_device_id, updated_by_device_name
+         ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         on conflict(user_id, extension_id) do update set
+           revision = excluded.revision,
+           version = excluded.version,
+           archive_key = excluded.archive_key,
+           archive_sha256 = excluded.archive_sha256,
+           updated_at = excluded.updated_at,
+           updated_by_device_id = excluded.updated_by_device_id,
+           updated_by_device_name = excluded.updated_by_device_name
+         where user_extension_archive_heads.revision = ?`
+      ).bind(
+        auth.userId, extensionId, revision, version, archiveKey, sha256,
+        now, deviceId, deviceName, expectedRevision
+      ),
+      env.DB.prepare(
+        `insert into user_extension_archive_history (
+           user_id, extension_id, revision, version, archive_key, archive_sha256,
+           updated_at, updated_by_device_id, updated_by_device_name, operation
+         )
+         select user_id, extension_id, revision, version, archive_key, archive_sha256,
+                updated_at, updated_by_device_id, updated_by_device_name, 'put'
+         from user_extension_archive_heads
+         where user_id = ? and extension_id = ? and revision = ? and archive_key = ?
+         on conflict(user_id, extension_id, revision) do nothing`
+      ).bind(auth.userId, extensionId, revision, archiveKey),
+      env.DB.prepare(
+        `update extensions
+         set latest_version = ?, archive_key = ?, archive_sha256 = ?, updated_at = ?
+         where extension_id = ?
+           and exists (
+             select 1 from user_extension_archive_heads head
+             where head.user_id = ? and head.extension_id = ?
+               and head.revision = ? and head.archive_key = ?
+           )`
+      ).bind(version, archiveKey, sha256, now, extensionId, auth.userId, extensionId, revision, archiveKey)
+    ]);
+
+    if (Number(results?.[0]?.meta?.changes || 0) === 0) {
+      // A reused object remains referenced by old revisions.
+      if (!reusableKey) await env.PACKAGES.delete(archiveKey);
+      const latest = await env.DB.prepare(
+        `select revision from user_extension_archive_heads where user_id = ? and extension_id = ?`
+      ).bind(auth.userId, extensionId).first();
+      const error = new HttpError(409, "archive_revision_conflict", "private archive changed during upload");
+      error.details = { extensionId, expectedRevision, currentRevision: Number(latest?.revision || 0) };
+      throw error;
     }
 
     return json({
       ok: true,
       userId: auth.userId,
-      messageId,
-      acked: Number(result.meta?.changes ?? 0) > 0
+      extensionId,
+      version,
+      archiveKey,
+      sha256,
+      revision,
+      updatedAtUtc: now,
+      updatedByDeviceId: deviceId,
+      updatedByDeviceName: deviceName,
+      archive_download_url: buildMyExtensionArchiveUrl(url, extensionId)
     });
   }
 
-  const singleMessageMatch = url.pathname.match(/^\/v1\/me\/mobile\/messages\/([^/]+)$/);
-  if (singleMessageMatch && request.method === "GET") {
+  if (myArchiveMatch && request.method === "GET") {
     const auth = await requireAuth(request, env);
-    const messageId = normalizeMessageId(decodeURIComponent(singleMessageMatch[1]));
+    const extensionId = decodeURIComponent(myArchiveMatch[1]);
     await ensureUser(env, auth.userId);
+    await ensureUserCanReadExtension(env, auth.userId, extensionId);
 
-    const row = await env.DB.prepare(
-      `select
-        message_id,
-        source_device_id,
-        target_device_id,
-        target_platform,
-        kind,
-        title,
-        body_text,
-        payload_json,
-        status,
-        created_at,
-        delivered_at,
-        acked_at,
-        expires_at
-      from device_messages
-      where user_id = ?
-        and message_id = ?`
-    )
-      .bind(auth.userId, messageId)
-      .first();
-
-    if (!row) {
-      throw new HttpError(404, "message_not_found", "Message not found");
+    const requestedRevision = Number(url.searchParams.get("revision") || 0);
+    if (!Number.isInteger(requestedRevision) || requestedRevision < 0) {
+      throw new HttpError(400, "invalid_revision", "revision must be a non-negative integer");
+    }
+    let row = requestedRevision > 0
+      ? await env.DB.prepare(
+          `select archive_key, version as latest_version, archive_sha256, revision
+           from user_extension_archive_history
+           where user_id = ? and extension_id = ? and revision = ?`
+        ).bind(auth.userId, extensionId, requestedRevision).first()
+      : await env.DB.prepare(
+          `select archive_key, version as latest_version, archive_sha256, revision
+           from user_extension_archive_heads
+           where user_id = ? and extension_id = ?`
+        ).bind(auth.userId, extensionId).first();
+    if (!row && requestedRevision === 0) {
+      row = await env.DB.prepare(
+        `select archive_key, latest_version, archive_sha256, 0 as revision
+         from extensions where extension_id = ?`
+      ).bind(extensionId).first();
     }
 
-    return json(serializeDeviceMessageRecord(row));
+    if (!row?.archive_key) {
+      return json({ error: "not_found", message: "Archive not found" }, 404);
+    }
+
+    const object = await env.PACKAGES.get(row.archive_key);
+    if (!object) {
+      return json({ error: "not_found", message: `Stored package is missing: ${row.archive_key}` }, 404);
+    }
+
+    const headers = new Headers();
+    object.writeHttpMetadata(headers);
+    headers.set("etag", row.archive_sha256 || object.httpEtag || "");
+    headers.set("x-yanzi-archive-revision", String(row.revision || 0));
+    headers.set("cache-control", "private, max-age=60");
+    headers.set(
+      "content-disposition",
+      `attachment; filename="${extensionId}-${row.latest_version || "latest"}.zip"`
+    );
+    return withCors(new Response(object.body, { headers }));
   }
 
   const myExtensionMatch = url.pathname.match(/^\/v1\/me\/extensions\/([^/]+)$/);
@@ -1757,7 +2121,55 @@ async function handleRequest(request, env) {
     const payload = await readJson(request);
     await ensureUser(env, auth.userId);
 
-    await env.DB.prepare(
+    // Deleting an extension is an account-wide tombstone, not just a missing row.
+    // A stale/offline desktop must never re-add it during its next auto-sync.
+    const existingAssociation = await env.DB.prepare(
+      "select enabled, settings_json from user_extensions where user_id = ? and extension_id = ?"
+    ).bind(auth.userId, extensionId).first();
+    let isDeleted = false;
+    try {
+      isDeleted = existingAssociation?.enabled === 0 &&
+        JSON.parse(existingAssociation.settings_json || "{}")._yanziDeleted === true;
+    } catch {
+      isDeleted = false;
+    }
+    if (isDeleted && payload.restoreDeleted !== true) {
+      return json({ error: "extension_deleted", message: "Restore the extension explicitly before re-enabling it." }, 409);
+    }
+
+    let settings = payload.settings ?? {};
+    if (extensionId === "yanzi-quickpanel-settings") {
+      const existing = await env.DB.prepare(
+        `select settings_json from user_extensions where user_id = ? and extension_id = ?`
+      )
+        .bind(auth.userId, extensionId)
+        .first();
+      let existingSettings = {};
+      if (existing?.settings_json) {
+        try {
+          existingSettings = JSON.parse(String(existing.settings_json));
+        } catch {
+          existingSettings = {};
+        }
+      }
+
+      const incomingUpdatedAt = Date.parse(String(settings.updatedAtUtc || ""));
+      const existingUpdatedAt = Date.parse(String(existingSettings.updatedAtUtc || ""));
+      const incomingIsStale = Number.isFinite(existingUpdatedAt) &&
+        (!Number.isFinite(incomingUpdatedAt) || incomingUpdatedAt + 1000 < existingUpdatedAt);
+
+      // 主配置和燕幕状态共用兼容存储行。按字段合并可避免任一写入
+      // 把另一条同步链维护的字段整包擦除；过期客户端提交则不覆盖新快照。
+      settings = incomingIsStale ? existingSettings : { ...existingSettings, ...settings };
+    }
+    if (extensionId === "yanzi-quickpanel-settings" || extensionId === "yanzi-ai-settings") {
+      settings = scrubAiSecretsFromValue(settings);
+    }
+    if (extensionId === "yanzi-personal-sync-settings" || extensionId === "yanzi-webdav-settings") {
+      settings = scrubPersonalSyncSecretsFromValue(settings);
+    }
+
+    const upsertResult = await env.DB.prepare(
       `insert into user_extensions (
         user_id,
         extension_id,
@@ -1770,18 +2182,23 @@ async function handleRequest(request, env) {
         installed_version = excluded.installed_version,
         enabled = excluded.enabled,
         settings_json = excluded.settings_json,
-        updated_at = excluded.updated_at`
+        updated_at = excluded.updated_at
+      where ? = 1 or coalesce(json_extract(user_extensions.settings_json, '$._yanziDeleted'), 0) != 1`
     )
       .bind(
         auth.userId,
         extensionId,
         String(payload.installedVersion ?? payload.version ?? "0.0.0").slice(0, 50),
         payload.enabled === false ? 0 : 1,
-        JSON.stringify(payload.settings ?? {}),
-        isoNow()
+        JSON.stringify(settings),
+        isoNow(),
+        payload.restoreDeleted === true ? 1 : 0
       )
       .run();
 
+    if (Number(upsertResult.meta?.changes ?? 0) === 0) {
+      return json({ error: "extension_deleted", message: "The extension was deleted on another device." }, 409);
+    }
     return json({ ok: true, userId: auth.userId, extensionId });
   }
 
@@ -1790,11 +2207,21 @@ async function handleRequest(request, env) {
     const extensionId = decodeURIComponent(myExtensionMatch[1]);
     await ensureUser(env, auth.userId);
 
+    // Keep a durable account-scoped tombstone so an offline desktop cannot
+    // recreate this association during background sync. Original extension
+    // package data is retained for a deliberate recycle-bin restore.
+    const deletedAt = isoNow();
     const result = await env.DB.prepare(
-      `delete from user_extensions
-       where user_id = ? and extension_id = ?`
+      `insert into user_extensions
+         (user_id, extension_id, installed_version, enabled, settings_json, updated_at)
+       select ?, extension_id, '0.0.0', 0, ?, ?
+       from extensions where extension_id = ?
+       on conflict(user_id, extension_id) do update set
+         enabled = 0, settings_json = excluded.settings_json,
+         updated_at = excluded.updated_at`
     )
-      .bind(auth.userId, extensionId)
+      .bind(auth.userId, JSON.stringify({ _yanziDeleted: true, deletedAt }),
+        deletedAt, extensionId)
       .run();
 
     return json({
@@ -1808,6 +2235,32 @@ async function handleRequest(request, env) {
   return json({ error: "not_found", message: "Route not found" }, 404);
 }
 
+async function getUserVipInfo(env, userId) {
+  try {
+    const userRecord = await cachedCloudVipRecord(env, String(userId));
+
+    if (!userRecord) {
+      return { isVip: false, vipType: null, vipExpireAt: null, daysRemaining: 0 };
+    }
+
+    const isLifetime = userRecord.vip_type === "lifetime";
+    const expiryTime = userRecord.vip_expire_at ? new Date(userRecord.vip_expire_at).getTime() : 0;
+    const nowTime = Date.now();
+    const hasValidExpiry = expiryTime > nowTime;
+    const daysRemaining = isLifetime ? 99999 : (hasValidExpiry ? Math.ceil((expiryTime - nowTime) / (86400 * 1000)) : 0);
+
+    return {
+      isVip: Boolean(isLifetime || hasValidExpiry),
+      vipType: userRecord.vip_type || null,
+      vipExpireAt: userRecord.vip_expire_at || null,
+      daysRemaining
+    };
+  } catch (e) {
+    console.warn("getUserVipInfo error:", e);
+    return { isVip: false, vipType: null, vipExpireAt: null, daysRemaining: 0 };
+  }
+}
+
 async function buildAuthResponse(env, user) {
   const now = Math.floor(Date.now() / 1000);
   const expiresAt = now + TOKEN_TTL_SECONDS;
@@ -1819,33 +2272,91 @@ async function buildAuthResponse(env, user) {
     exp: expiresAt
   });
 
+  const vipInfo = await getUserVipInfo(env, user.userId);
+
   return {
     accessToken,
     expiresAt,
     userId: user.userId,
     username: user.username,
-    email: user.email ?? null
+    email: user.email ?? null,
+    ...vipInfo
   };
 }
 
 async function requireAuth(request, env) {
   const header = request.headers.get("authorization") || "";
-  const prefix = "Bearer ";
-  if (!header.startsWith(prefix)) {
-    throw new HttpError(401, "unauthorized", "Missing bearer token");
+
+  // 1. 优先尝试以 Bearer Token 进行验证
+  if (header.startsWith("Bearer ")) {
+    const token = header.slice(7).trim();
+    try {
+      const payload = await verifyToken(env, token);
+      if (payload?.sub && payload?.username && payload.type === 'device')
+        return await finalizeCloudAuth(request, env, await authorizeDeviceCredential(request, env, payload, HttpError));
+      if (payload?.sub && payload?.username && !payload.type) {
+        return await finalizeCloudAuth(request, env, {
+          userId: String(payload.sub),
+          username: String(payload.username),
+          email: payload.email ? String(payload.email) : null
+        });
+      }
+    } catch (tokenErr) {
+      if (tokenErr.status === 403 || tokenErr.status === 401 && ["token_expired", "device_credential_revoked"].includes(tokenErr.code)) {
+        throw tokenErr;
+      }
+    }
   }
 
-  const token = header.slice(prefix.length).trim();
-  const payload = await verifyToken(env, token);
-  if (!payload?.sub || !payload?.username) {
-    throw new HttpError(401, "unauthorized", "Invalid token payload");
+  // 2. 尝试以 Basic Auth 账户密码直接鉴权作为备用
+  if (header.startsWith("Basic ")) {
+    const credentials = header.slice(6).trim();
+    try {
+      const decoded = atob(credentials);
+      const colonIndex = decoded.indexOf(":");
+      if (colonIndex !== -1) {
+        const usernameOrEmail = decoded.substring(0, colonIndex);
+        const password = decoded.substring(colonIndex + 1);
+
+        if (usernameOrEmail && password) {
+          const email = normalizeEmail(usernameOrEmail);
+          const user = await env.DB.prepare(
+            `select
+              user_id,
+              username,
+              email,
+              password_hash,
+              password_salt,
+              password_iterations
+            from auth_users
+            where email = ?`
+          )
+            .bind(email)
+            .first();
+
+          if (user) {
+            const passwordHash = await hashPassword(
+              password,
+              user.password_salt,
+              Number(user.password_iterations || PASSWORD_ITERATIONS)
+          );
+            if (passwordHash === user.password_hash) {
+              return await finalizeCloudAuth(request, env, {
+                userId: String(user.user_id),
+                username: String(user.username),
+                email: user.email ? String(user.email) : null
+              });
+            }
+          }
+        }
+      }
+    } catch (basicAuthErr) {
+      if (basicAuthErr instanceof HttpError && basicAuthErr.code === 'vip_required') throw basicAuthErr;
+      // 捕获 Base64 编码或数据库请求异常
+    }
   }
 
-  return {
-    userId: String(payload.sub),
-    username: String(payload.username),
-    email: payload.email ? String(payload.email) : null
-  };
+  throw new HttpError(401, "unauthorized", "Invalid credentials or token");
 }
 
 async function requireAdmin(request, env) {
@@ -1884,7 +2395,7 @@ async function verifyToken(env, token) {
   const [encodedHeader, encodedPayload, signature] = parts;
   const expected = await hmacSha256(env.AUTH_TOKEN_SECRET, `${encodedHeader}.${encodedPayload}`);
   if (signature !== expected) {
-    throw new HttpError(401, "unauthorized", "Invalid token signature");
+    throw new HttpError(401, "invalid_token_signature", "Token signature verification failed");
   }
 
   const payload = JSON.parse(base64UrlDecode(encodedPayload));
@@ -1894,6 +2405,51 @@ async function verifyToken(env, token) {
   }
 
   return payload;
+}
+
+async function deriveLoginHashInServer(password, email) {
+  const enc = new TextEncoder();
+  const passwordBytes = enc.encode(password);
+  const saltBytes = enc.encode(email.trim().toLowerCase());
+
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw",
+    passwordBytes,
+    "PBKDF2",
+    false,
+    ["deriveBits"]
+  );
+
+  const masterKeyBits = await crypto.subtle.deriveBits(
+    {
+      name: "PBKDF2",
+      salt: saltBytes,
+      iterations: 50000,
+      hash: "SHA-256"
+    },
+    keyMaterial,
+    256
+  );
+
+  const hmacKey = await crypto.subtle.importKey(
+    "raw",
+    masterKeyBits,
+    {
+      name: "HMAC",
+      hash: "SHA-256"
+    },
+    false,
+    ["sign"]
+  );
+
+  const messageBytes = enc.encode("login-verification");
+  const signature = await crypto.subtle.sign(
+    "HMAC",
+    hmacKey,
+    messageBytes
+  );
+
+  return bytesToHex(new Uint8Array(signature));
 }
 
 async function hashPassword(password, salt, iterations) {
@@ -1969,262 +2525,6 @@ function validatePassword(value) {
   }
 
   return password;
-}
-
-function normalizeDevicePayload(payload) {
-  return {
-    deviceId: normalizeDeviceId(payload.deviceId || payload.device_id),
-    platform: normalizeDevicePlatform(payload.platform),
-    displayName: normalizeShortText(payload.displayName || payload.display_name || payload.name, "displayName", 80),
-    pushToken: normalizeOptionalString(payload.pushToken || payload.push_token, 512),
-    capabilities: normalizeJsonObject(payload.capabilities, "capabilities")
-  };
-}
-
-function normalizeDeviceMessagePayload(payload) {
-  const targetDeviceId = normalizeOptionalDeviceId(payload.targetDeviceId || payload.target_device_id);
-  const targetPlatform = targetDeviceId
-    ? null
-    : normalizeOptionalDevicePlatform(payload.targetPlatform || payload.target_platform) || "desktop";
-
-  return {
-    sourceDeviceId: normalizeOptionalDeviceId(payload.sourceDeviceId || payload.source_device_id),
-    targetDeviceId,
-    targetPlatform,
-    kind: normalizeMessageKind(payload.kind),
-    title: normalizeOptionalString(payload.title, 120),
-    bodyText: normalizeOptionalString(payload.text || payload.bodyText || payload.body_text || payload.body, 4000),
-    payload: normalizeJsonObject(payload.payload, "payload"),
-    expiresAt: normalizeOptionalIsoDate(payload.expiresAt || payload.expires_at)
-  };
-}
-
-function normalizeDeviceId(value) {
-  const id = String(value || "").trim();
-  if (!/^[a-zA-Z0-9_.:-]{6,96}$/.test(id)) {
-    throw new HttpError(400, "invalid_device_id", "deviceId must be 6-96 chars: a-z, 0-9, _, ., :, -");
-  }
-
-  return id;
-}
-
-function normalizeOptionalDeviceId(value) {
-  if (value == null || String(value).trim() === "") {
-    return null;
-  }
-
-  return normalizeDeviceId(value);
-}
-
-function normalizeDevicePlatform(value) {
-  const platform = String(value || "").trim().toLowerCase();
-  if (!/^(desktop|android|ios|web)$/.test(platform)) {
-    throw new HttpError(400, "invalid_platform", "platform must be desktop, android, ios, or web");
-  }
-
-  return platform;
-}
-
-function normalizeOptionalDevicePlatform(value) {
-  if (value == null || String(value).trim() === "") {
-    return null;
-  }
-
-  return normalizeDevicePlatform(value);
-}
-
-function normalizeMessageKind(value) {
-  const kind = String(value || "text").trim().toLowerCase();
-  if (!/^[a-z0-9_.:-]{1,40}$/.test(kind)) {
-    throw new HttpError(400, "invalid_message_kind", "kind must be 1-40 lowercase chars");
-  }
-
-  return kind;
-}
-
-function normalizeMessageId(value) {
-  const id = String(value || "").trim();
-  if (!/^msg_[a-f0-9]{24}$/.test(id)) {
-    throw new HttpError(400, "invalid_message_id", "messageId format is invalid");
-  }
-
-  return id;
-}
-
-function normalizeMessageLimit(value) {
-  const limit = Number.parseInt(String(value || "20"), 10);
-  if (!Number.isFinite(limit)) {
-    return 20;
-  }
-
-  return Math.min(Math.max(limit, 1), 50);
-}
-
-function normalizeShortText(value, fieldName, maxLength) {
-  const text = String(value || "").trim();
-  if (!text) {
-    throw new HttpError(400, `invalid_${fieldName}`, `${fieldName} is required`);
-  }
-
-  return text.slice(0, maxLength);
-}
-
-function normalizeOptionalString(value, maxLength) {
-  if (value == null) {
-    return null;
-  }
-
-  const text = String(value).trim();
-  return text ? text.slice(0, maxLength) : null;
-}
-
-function normalizeJsonObject(value, fieldName) {
-  if (value == null) {
-    return {};
-  }
-
-  if (typeof value !== "object" || Array.isArray(value)) {
-    throw new HttpError(400, `invalid_${fieldName}`, `${fieldName} must be an object`);
-  }
-
-  return value;
-}
-
-async function ensureOwnedDevice(env, userId, deviceId) {
-  const device = await env.DB.prepare(
-    `select device_id, platform, display_name
-     from user_devices
-     where user_id = ? and device_id = ?`
-  )
-    .bind(userId, deviceId)
-    .first();
-
-  if (!device) {
-    throw new HttpError(404, "device_not_found", "Device was not found in this account");
-  }
-
-  return {
-    deviceId: device.device_id,
-    platform: device.platform,
-    displayName: device.display_name
-  };
-}
-
-async function touchDevice(env, userId, deviceId) {
-  await env.DB.prepare(
-    `update user_devices
-     set last_seen_at = ?,
-         updated_at = ?
-     where user_id = ? and device_id = ?`
-  )
-    .bind(isoNow(), isoNow(), userId, deviceId)
-    .run();
-}
-
-async function getPendingDeviceMessageItems(env, userId, deviceId, platform, limit = 20) {
-  const rows = await env.DB.prepare(
-    `select
-      message_id,
-      source_device_id,
-      target_device_id,
-      target_platform,
-      kind,
-      title,
-      body_text,
-      payload_json,
-      status,
-      created_at,
-      delivered_at,
-      acked_at,
-      expires_at
-    from device_messages
-    where user_id = ?
-      and status = 'pending'
-      and (expires_at is null or expires_at > ?)
-      and (
-        target_device_id = ?
-        or (
-          target_device_id is null
-          and target_platform = ?
-        )
-      )
-    order by created_at asc
-    limit ?`
-  )
-    .bind(userId, isoNow(), deviceId, platform, limit)
-    .all();
-
-  return (rows.results ?? []).map(serializeDeviceMessageRecord);
-}
-
-async function markDeviceMessagesDelivered(env, userId, items) {
-  if (!items || items.length === 0) {
-    return;
-  }
-
-  await env.DB.prepare(
-    `update device_messages
-     set delivered_at = coalesce(delivered_at, ?)
-     where user_id = ?
-       and message_id in (${items.map(() => "?").join(",")})`
-  )
-    .bind(isoNow(), userId, ...items.map((item) => item.messageId))
-    .run();
-}
-
-async function notifyDeviceRelay(env, userId) {
-  if (!env.DEVICE_RELAY) {
-    return;
-  }
-
-  try {
-    await env.DEVICE_RELAY
-      .getByName(userId)
-      .fetch(new Request("https://device-relay.internal/internal/device-relay/notify", {
-        method: "POST"
-      }));
-  } catch {
-    // The HTTP polling fallback will pick up pending messages if the relay is unavailable.
-  }
-}
-
-function serializeDeviceRecord(row) {
-  return {
-    deviceId: row.device_id,
-    platform: row.platform,
-    displayName: row.display_name,
-    capabilities: parseJsonObject(row.capabilities_json),
-    lastSeenAt: row.last_seen_at,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at
-  };
-}
-
-function serializeDeviceMessageRecord(row) {
-  return {
-    messageId: row.message_id,
-    sourceDeviceId: row.source_device_id || null,
-    targetDeviceId: row.target_device_id || null,
-    targetPlatform: row.target_platform || null,
-    kind: row.kind,
-    title: row.title || "",
-    text: row.body_text || "",
-    payload: parseJsonObject(row.payload_json),
-    status: row.status,
-    createdAt: row.created_at,
-    deliveredAt: row.delivered_at || null,
-    ackedAt: row.acked_at || null,
-    expiresAt: row.expires_at || null
-  };
-}
-
-function parseJsonObject(value) {
-  try {
-    const parsed = JSON.parse(value || "{}");
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
-  } catch {
-    return {};
-  }
 }
 
 async function sendVerificationEmail(env, email, username, code) {
@@ -2418,6 +2718,48 @@ function serializeStoreExtensionRecord(url, row, definition) {
   };
 }
 
+function serializeUserExtensionRecord(url, row, userId) {
+  const manifest = parseManifestJson(row.manifest_json);
+  const settings = parseManifestJson(row.settings_json);
+  const extensionId = row.extension_id;
+  const displayName = row.display_name || settings.displayName || settings.title || manifest.displayName || manifest.name || extensionId;
+  const icon = row.icon_key
+    ? buildMyExtensionIconUrl(url, extensionId, row.extension_updated_at || row.updated_at || "")
+    : (manifest.icon || settings.icon || settings.manifest?.icon || "");
+  return {
+    user_id: row.user_id,
+    extension_id: extensionId,
+    installed_version: row.installed_version,
+    enabled: Number(row.enabled ?? 1),
+    settings_json: row.settings_json || "{}",
+    settings,
+    updated_at: row.updated_at,
+    display_name: displayName,
+    latest_version: row.latest_version || row.installed_version,
+    manifest_json: row.manifest_json || "",
+    manifest,
+    icon_key: row.icon_key || "",
+    icon,
+    archive_key: row.archive_key || "",
+    archive_sha256: row.archive_sha256 || "",
+    archive_revision: Number(row.archive_revision || 0),
+    archive_updated_at: row.archive_updated_at || "",
+    archive_updated_by_device_id: row.archive_updated_by_device_id || "",
+    archive_updated_by_device_name: row.archive_updated_by_device_name || "",
+    has_archive: Boolean(row.archive_key),
+    archive_download_url: row.archive_key ? buildMyExtensionArchiveUrl(url, extensionId) : null,
+    publisher_user_id: row.publisher_user_id || "",
+    publisher_username: row.publisher_username || "",
+    published_at: row.published_at || "",
+    is_published: Number(row.is_published ?? 0),
+    is_private: String(row.publisher_user_id || "") === String(userId) && Number(row.is_published ?? 0) === 0,
+    description: manifest.description || settings.description || settings.manifest?.description || "",
+    category: manifest.category || settings.manifest?.category || "扩展",
+    accent_hex: manifest.accentHex || manifest.accent_hex || settings.accentHex || settings.accent_hex || settings.manifest?.accentHex || "",
+    keywords: Array.isArray(manifest.keywords) ? manifest.keywords : []
+  };
+}
+
 function resolveStoreIcon(url, row, manifestIcon, extensionId) {
   if (row?.icon_key) {
     return buildExtensionIconUrl(url, extensionId, row.updated_at || row.published_at || "");
@@ -2470,6 +2812,19 @@ function buildExtensionIconUrl(url, extensionId, cacheBust = "") {
   }
 
   return iconUrl.toString();
+}
+
+function buildMyExtensionIconUrl(url, extensionId, cacheBust = "") {
+  const iconUrl = new URL(`/v1/me/extensions/${encodeURIComponent(extensionId)}/icon`, url.origin);
+  if (cacheBust) {
+    iconUrl.searchParams.set("v", String(cacheBust));
+  }
+
+  return iconUrl.toString();
+}
+
+function buildMyExtensionArchiveUrl(url, extensionId) {
+  return `${url.origin}/v1/me/extensions/${encodeURIComponent(extensionId)}/archive`;
 }
 
 function resolveIconExtension(filename, contentType) {
@@ -2626,14 +2981,110 @@ function serializeAppRelease(row, channel = DEFAULT_APP_UPDATE_CHANNEL) {
   };
 }
 
-async function ensureUser(env, userId) {
-  await env.DB.prepare(
-    `insert into users (user_id, created_at, updated_at)
-     values (?, ?, ?)
-     on conflict(user_id) do update set updated_at = excluded.updated_at`
+async function upsertPrivateExtensionMetadata(env, auth, extensionId, manifest) {
+  const existing = await env.DB.prepare(
+    `select publisher_user_id
+     from extensions
+     where extension_id = ?`
   )
-    .bind(userId, isoNow(), isoNow())
+    .bind(extensionId)
+    .first();
+
+  if (existing?.publisher_user_id &&
+      String(existing.publisher_user_id) !== auth.userId) {
+    throw new HttpError(403, "forbidden", "Only the owner can update this private extension");
+  }
+
+  const now = isoNow();
+  const displayName = String(manifest.displayName ?? manifest.name ?? extensionId).slice(0, 200);
+  const latestVersion = String(manifest.version ?? "0.0.0").slice(0, 50);
+
+  await env.DB.prepare(
+    `insert into extensions (
+      extension_id,
+      display_name,
+      latest_version,
+      manifest_json,
+      publisher_user_id,
+      publisher_username,
+      published_at,
+      is_published,
+      updated_at
+    ) values (?, ?, ?, ?, ?, ?, ?, 0, ?)
+    on conflict(extension_id) do update set
+      display_name = excluded.display_name,
+      latest_version = excluded.latest_version,
+      manifest_json = excluded.manifest_json,
+      publisher_user_id = coalesce(extensions.publisher_user_id, excluded.publisher_user_id),
+      publisher_username = excluded.publisher_username,
+      is_published = extensions.is_published,
+      updated_at = excluded.updated_at`
+  )
+    .bind(
+      extensionId,
+      displayName,
+      latestVersion,
+      JSON.stringify(manifest),
+      auth.userId,
+      auth.username,
+      now,
+      now
+    )
     .run();
+}
+
+async function ensurePrivateExtensionWritable(env, auth, extensionId) {
+  let row = await env.DB.prepare(
+    `select publisher_user_id, display_name, latest_version
+     from extensions
+     where extension_id = ?`
+  )
+    .bind(extensionId)
+    .first();
+
+  if (!row) {
+    await upsertPrivateExtensionMetadata(env, auth, extensionId, {
+      name: extensionId,
+      displayName: extensionId,
+      version: "0.0.0"
+    });
+    row = await env.DB.prepare(
+      `select publisher_user_id
+       from extensions
+       where extension_id = ?`
+    )
+      .bind(extensionId)
+      .first();
+  }
+
+  if (row?.publisher_user_id && String(row.publisher_user_id) !== auth.userId) {
+    throw new HttpError(403, "forbidden", "Only the owner can update this extension");
+  }
+}
+
+async function ensureUserCanReadExtension(env, userId, extensionId) {
+  const row = await env.DB.prepare(
+    `select e.publisher_user_id, e.is_published, ue.user_id
+     from extensions e
+     left join user_extensions ue
+       on ue.extension_id = e.extension_id
+      and ue.user_id = ?
+     where e.extension_id = ?`
+  )
+    .bind(userId, extensionId)
+    .first();
+
+  if (!row) {
+    throw new HttpError(404, "extension_not_found", "Extension not found");
+  }
+
+  if (Number(row.is_published ?? 0) === 1 ||
+      String(row.publisher_user_id || "") === String(userId) ||
+      String(row.user_id || "") === String(userId)) {
+    return;
+  }
+
+  throw new HttpError(403, "forbidden", "You do not have access to this extension");
 }
 
 async function touchUser(env, userId) {
@@ -2686,6 +3137,9 @@ async function getUserWebDavConfig(env, userId) {
 async function readYanmStateForUser(env, userId) {
   try {
     const syncConfig = await getUserPersonalSyncConfig(env, userId);
+    if (!hasPersonalSyncCredential(syncConfig)) {
+      throw new HttpError(409, "sync_credentials_device_local", "Personal sync credentials are stored on the desktop device");
+    }
     let result;
     const provider = syncConfig.provider;
     if (provider === "github") {
@@ -2725,6 +3179,10 @@ async function readYanmStateForUser(env, userId) {
       };
     }
 
+    if (error instanceof HttpError && error.code === "sync_credentials_device_local") {
+      return null;
+    }
+
     throw error;
   }
 }
@@ -2756,7 +3214,7 @@ async function readYanmStateFromCloudConfig(env, userId) {
 
   const text = JSON.stringify(yanm);
   return {
-    updatedAtUtc: String(row.updated_at || ""),
+    updatedAtUtc: String(settings.yanmUpdatedAtUtc || row.updated_at || ""),
     yanm,
     bytes: textEncoder.encode(text).length
   };
@@ -2783,6 +3241,7 @@ async function writeYanmStateToCloudConfig(env, userId, snapshot) {
   }
 
   settings.yanm = snapshot.yanm;
+  settings.yanmUpdatedAtUtc = snapshot.updatedAtUtc || isoNow();
 
   await ensureSystemConfigExtension(env, "yanzi-quickpanel-settings", {
     displayName: "Yanzi Quick Panel Settings",
@@ -2906,6 +3365,17 @@ function buildLegacyWebDavConfig(syncConfig) {
     username: String(webDav.username || webDav.Username || "").trim(),
     password: String(syncConfig.secrets.WebDavPassword || syncConfig.secrets.webDavPassword || "").trim()
   };
+}
+
+function hasPersonalSyncCredential(syncConfig) {
+  const secrets = syncConfig?.secrets || {};
+  if (syncConfig?.provider === "github") return Boolean(String(secrets.githubToken || secrets.GitHubToken || "").trim());
+  if (syncConfig?.provider === "gitee") return Boolean(String(secrets.giteeToken || secrets.GiteeToken || "").trim());
+  if (syncConfig?.provider === "gitlab") return Boolean(String(secrets.gitLabToken || secrets.gitlabToken || secrets.GitLabToken || "").trim());
+  if (syncConfig?.provider === "gitea") return Boolean(String(secrets.giteaToken || secrets.GiteaToken || "").trim());
+  if (syncConfig?.provider === "s3") return Boolean(String(secrets.s3SecretAccessKey || secrets.S3SecretAccessKey || "").trim());
+  if (syncConfig?.provider === "webdav") return Boolean(String(secrets.webDavPassword || secrets.WebDavPassword || "").trim());
+  return false;
 }
 
 function base64ToUtf8(str) {
@@ -3654,12 +4124,35 @@ async function writeYanmStateToS3(syncConfig, snapshot) {
 }
 
 async function writeYanmStateForUser(env, userId, snapshot) {
+  let currentSnapshot = null;
+  try {
+    currentSnapshot = await readYanmStateForUser(env, userId);
+    if (currentSnapshot?.yanm && areJsonValuesEquivalent(currentSnapshot.yanm, snapshot.yanm)) {
+      return {
+        source: currentSnapshot.source || "cloud-config",
+        updatedAtUtc: currentSnapshot.updatedAtUtc || null,
+        changed: false,
+        bytes: currentSnapshot.bytes || textEncoder.encode(JSON.stringify(currentSnapshot.yanm)).length
+      };
+    }
+  } catch (error) {
+    if (!(error instanceof HttpError) || (error.status !== 404 && error.status !== 409)) {
+      console.warn("Yanm sync unchanged check failed", {
+        userId,
+        error: error?.message || String(error)
+      });
+    }
+  }
+
   let isSyncWritten = false;
   let syncProvider = "cloud-config";
   let syncError = null;
 
   try {
     const syncConfig = await getUserPersonalSyncConfig(env, userId);
+    if (!hasPersonalSyncCredential(syncConfig)) {
+      throw new HttpError(409, "sync_credentials_device_local", "Personal sync credentials are stored on the desktop device");
+    }
     syncProvider = syncConfig.provider;
     if (syncConfig.provider === "github") {
       await writeYanmStateToGitHub(syncConfig, snapshot);
@@ -3699,8 +4192,67 @@ async function writeYanmStateForUser(env, userId, snapshot) {
 
   return {
     source: isSyncWritten ? syncProvider : "cloud-config",
+    updatedAtUtc: snapshot.updatedAtUtc,
+    changed: true,
     bytes: dbResult.bytes
   };
+}
+
+function areJsonValuesEquivalent(left, right) {
+  return stableJsonStringify(left) === stableJsonStringify(right);
+}
+
+function stableJsonStringify(value) {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+
+  if (Array.isArray(value)) {
+    return `[${value.map(stableJsonStringify).join(",")}]`;
+  }
+
+  const keys = Object.keys(value).sort();
+  return `{${keys.map((key) => `${JSON.stringify(key)}:${stableJsonStringify(value[key])}`).join(",")}}`;
+}
+
+function scrubAiSecretsFromValue(value) {
+  if (Array.isArray(value)) {
+    return value.map(scrubAiSecretsFromValue);
+  }
+  if (value === null || typeof value !== "object") {
+    return value;
+  }
+
+  const sanitized = {};
+  for (const [key, child] of Object.entries(value)) {
+    const normalizedKey = key.toLowerCase();
+    sanitized[key] = normalizedKey === "apikey" || normalizedKey === "aiapikey"
+      ? ""
+      : scrubAiSecretsFromValue(child);
+  }
+  return sanitized;
+}
+
+function scrubPersonalSyncSecretsFromValue(value) {
+  const sanitized = value && typeof value === "object" && !Array.isArray(value)
+    ? JSON.parse(JSON.stringify(value))
+    : {};
+  sanitized.secrets = {};
+  for (const key of [
+    "webDavPassword",
+    "password",
+    "token",
+    "githubToken",
+    "giteeToken",
+    "gitLabToken",
+    "giteaToken",
+    "s3SecretAccessKey"
+  ]) {
+    if (Object.prototype.hasOwnProperty.call(sanitized, key)) {
+      sanitized[key] = "";
+    }
+  }
+  return sanitized;
 }
 
 function normalizeYanmComponentStatePatch(payload) {
@@ -3744,16 +4296,40 @@ async function patchYanmComponentStateForUser(env, userId, componentStatePatch, 
     ...(yanm[stateKey] && typeof yanm[stateKey] === "object" && !Array.isArray(yanm[stateKey]) ? yanm[stateKey] : {})
   };
 
+  const changedKeys = [];
   for (const [key, value] of Object.entries(componentStatePatch)) {
+    const hasExisting = Object.prototype.hasOwnProperty.call(state, key);
+    const existingValue = hasExisting ? String(state[key] ?? "") : null;
+    if (!hasExisting || existingValue !== value) {
+      changedKeys.push(key);
+    }
+
     state[key] = value;
+  }
+
+  if (changedKeys.length === 0) {
+    return {
+      source: current.source || "cloud-config",
+      updatedAtUtc: current.updatedAtUtc || null,
+      changed: false,
+      changedKeys: [],
+      bytes: current.bytes || textEncoder.encode(JSON.stringify(current.yanm)).length
+    };
   }
 
   yanm[stateKey] = state;
 
-  return writeYanmStateForUser(env, userId, {
-    updatedAtUtc: updatedAtUtc || isoNow(),
+  const effectiveUpdatedAtUtc = updatedAtUtc || isoNow();
+  const result = await writeYanmStateForUser(env, userId, {
+    updatedAtUtc: effectiveUpdatedAtUtc,
     yanm
   });
+  return {
+    ...result,
+    updatedAtUtc: effectiveUpdatedAtUtc,
+    changed: true,
+    changedKeys
+  };
 }
 
 async function ensureSystemConfigExtension(env, extensionId, metadata) {
@@ -4000,31 +4576,9 @@ function base64EncodeUtf8(value) {
   return btoa(binary);
 }
 
-function normalizeOptionalIsoDate(value) {
-  if (!value) {
-    return null;
-  }
-
-  const date = new Date(String(value));
-  if (Number.isNaN(date.getTime())) {
-    throw new HttpError(400, "invalid_updated_at", "updatedAtUtc must be a valid datetime");
-  }
-
-  return date.toISOString();
-}
-
 function trimForMessage(value) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
   return text.length > 240 ? `${text.slice(0, 240)}...` : text;
-}
-
-async function readJson(request) {
-  const body = await request.json();
-  if (!body || typeof body !== "object") {
-    throw new HttpError(400, "invalid_json", "Request body must be a JSON object");
-  }
-
-  return body;
 }
 
 function json(data, status = 200) {
@@ -4040,10 +4594,10 @@ function json(data, status = 200) {
 
 function withCors(response) {
   response.headers.set("access-control-allow-origin", "*");
-  response.headers.set("access-control-allow-methods", "GET,POST,PUT,DELETE,OPTIONS");
+  response.headers.set("access-control-allow-methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
   response.headers.set(
     "access-control-allow-headers",
-    "content-type,authorization,accept,origin,x-yanzi-client,x-yanzi-client-version,x-api-version,x-client-version"
+    "content-type,authorization,accept,origin,x-yanzi-client,x-yanzi-client-version,x-yanzi-device-id,x-api-version,x-client-version"
   );
   return response;
 }
@@ -4098,14 +4652,6 @@ function generateVerificationCode() {
 }
 
 const textEncoder = new TextEncoder();
-
-class HttpError extends Error {
-  constructor(status, code, message) {
-    super(message);
-    this.status = status;
-    this.code = code;
-  }
-}
 
 class WebDavHttpError extends HttpError {
   constructor(status, code, message, diagnostics) {
@@ -4181,3 +4727,466 @@ async function getYanmStateViewUrl(env, userId) {
   }
   return null;
 }
+
+// ==========================================
+// 心愿墙 (Wish Wall) 与 积分体系 (Points System)
+// ==========================================
+
+let _wishWallTablesInitialized = false;
+
+async function ensureWishWallTables(env) {
+  if (_wishWallTablesInitialized) return;
+  try {
+    await env.DB.prepare(`
+      CREATE TABLE IF NOT EXISTS wishes (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        username TEXT NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL,
+        category TEXT NOT NULL DEFAULT '通用',
+        status TEXT NOT NULL DEFAULT 'open',
+        accepted_reply_id TEXT,
+        reward_points INTEGER NOT NULL DEFAULT 50,
+        reply_count INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    `).run();
+
+    await env.DB.prepare(`
+      CREATE TABLE IF NOT EXISTS wish_replies (
+        id TEXT PRIMARY KEY,
+        wish_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        username TEXT NOT NULL,
+        content TEXT NOT NULL,
+        code_snippet TEXT,
+        is_accepted INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
+      )
+    `).run();
+
+    await env.DB.prepare(`
+      CREATE TABLE IF NOT EXISTS user_points (
+        user_id TEXT PRIMARY KEY,
+        username TEXT NOT NULL,
+        points INTEGER NOT NULL DEFAULT 0,
+        wishes_count INTEGER NOT NULL DEFAULT 0,
+        accepted_count INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL
+      )
+    `).run();
+
+    await env.DB.prepare(`
+      CREATE TABLE IF NOT EXISTS point_transactions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        amount INTEGER NOT NULL,
+        action_type TEXT NOT NULL,
+        description TEXT NOT NULL,
+        reference_id TEXT,
+        created_at TEXT NOT NULL
+      )
+    `).run();
+
+    await env.DB.prepare(`
+      CREATE INDEX IF NOT EXISTS idx_wishes_status_created ON wishes (status, created_at DESC)
+    `).run().catch(() => {});
+
+    await env.DB.prepare(`
+      CREATE INDEX IF NOT EXISTS idx_wish_replies_wish_id ON wish_replies (wish_id, created_at ASC)
+    `).run().catch(() => {});
+
+    await env.DB.prepare(`
+      CREATE INDEX IF NOT EXISTS idx_user_points_rank ON user_points (points DESC, accepted_count DESC)
+    `).run().catch(() => {});
+
+    // 清理历史测试种子假数据，保持完全纯净的初始化状态
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM wish_replies WHERE wish_id LIKE 'wsh_%' OR user_id LIKE 'seed_%'"),
+      env.DB.prepare("DELETE FROM wishes WHERE id LIKE 'wsh_%' OR user_id LIKE 'seed_%'"),
+      env.DB.prepare("DELETE FROM user_points WHERE user_id LIKE 'seed_%'")
+    ]).catch(() => {});
+
+    _wishWallTablesInitialized = true;
+  } catch (err) {
+    console.error("Failed to ensure wish wall tables:", err);
+  }
+}
+
+async function addPoints(env, userId, username, amount, actionType, description, referenceId = null) {
+  await ensureWishWallTables(env);
+  const now = isoNow();
+  const txId = `ptx_${randomHex(8)}`;
+
+  const existing = await env.DB.prepare(
+    "SELECT user_id, points, wishes_count, accepted_count FROM user_points WHERE user_id = ?"
+  ).bind(userId).first();
+
+  let newPoints = amount;
+  let wishesCount = 0;
+  let acceptedCount = 0;
+
+  if (existing) {
+    newPoints = (existing.points || 0) + amount;
+    wishesCount = existing.wishes_count || 0;
+    acceptedCount = existing.accepted_count || 0;
+  }
+
+  if (actionType === "publish_wish") {
+    wishesCount += 1;
+  } else if (actionType === "be_accepted") {
+    acceptedCount += 1;
+  }
+
+  await env.DB.batch([
+    env.DB.prepare(`
+      INSERT INTO user_points (user_id, username, points, wishes_count, accepted_count, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(user_id) DO UPDATE SET
+        username = excluded.username,
+        points = excluded.points,
+        wishes_count = excluded.wishes_count,
+        accepted_count = excluded.accepted_count,
+        updated_at = excluded.updated_at
+    `).bind(userId, username, Math.max(0, newPoints), wishesCount, acceptedCount, now),
+
+    env.DB.prepare(`
+      INSERT INTO point_transactions (id, user_id, amount, action_type, description, reference_id, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).bind(txId, userId, amount, actionType, description, referenceId, now)
+  ]);
+
+  return { points: newPoints, wishesCount, acceptedCount };
+}
+
+async function listWishes(env, { status = "all", category = "all", search = "", page = 1, limit = 12 }) {
+  await ensureWishWallTables(env);
+  const conditions = [];
+  const bindings = [];
+
+  if (status && status !== "all") {
+    conditions.push("status = ?");
+    bindings.push(status);
+  }
+
+  if (category && category !== "all") {
+    conditions.push("category = ?");
+    bindings.push(category);
+  }
+
+  if (search && search.trim()) {
+    conditions.push("(title LIKE ? OR description LIKE ?)");
+    const term = `%${search.trim()}%`;
+    bindings.push(term, term);
+  }
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const countSql = `SELECT COUNT(*) as total FROM wishes ${whereClause}`;
+  let totalRow = await env.DB.prepare(countSql).bind(...bindings).first();
+  let total = totalRow?.total || 0;
+
+  const offset = (page - 1) * limit;
+  const listSql = `
+    SELECT id, user_id, username, title, description, category, status, accepted_reply_id, reward_points, reply_count, created_at, updated_at
+    FROM wishes
+    ${whereClause}
+    ORDER BY
+      CASE status WHEN 'open' THEN 1 WHEN 'answered' THEN 2 ELSE 3 END ASC,
+      created_at DESC
+    LIMIT ? OFFSET ?
+  `;
+  const { results: wishes } = await env.DB.prepare(listSql).bind(...bindings, limit, offset).all();
+
+  return { wishes: wishes || [], total, page, limit };
+}
+
+async function getWishDetail(env, wishId) {
+  await ensureWishWallTables(env);
+  const wish = await env.DB.prepare(
+    "SELECT * FROM wishes WHERE id = ?"
+  ).bind(wishId).first();
+
+  if (!wish) {
+    throw new HttpError(404, "wish_not_found", "心愿不存在或已被移除");
+  }
+
+  const { results: replies } = await env.DB.prepare(`
+    SELECT id, wish_id, user_id, username, content, code_snippet, is_accepted, created_at
+    FROM wish_replies
+    WHERE wish_id = ?
+    ORDER BY is_accepted DESC, created_at ASC
+  `).bind(wishId).all();
+
+  return { wish, replies: replies || [] };
+}
+
+async function createWish(env, auth, payload) {
+  await ensureWishWallTables(env);
+  const title = String(payload.title || "").trim();
+  const description = String(payload.description || "").trim();
+  const category = String(payload.category || "通用").trim();
+  const rewardPoints = 50;
+
+  if (!title) {
+    throw new HttpError(400, "invalid_title", "请提供心愿标题");
+  }
+  if (title.length < 3 || title.length > 80) {
+    throw new HttpError(400, "invalid_title_length", "标题长度应在 3 到 80 个字符之间");
+  }
+  if (!description || description.length < 5) {
+    throw new HttpError(400, "invalid_description", "请详细描述您希望小程序具备的功能（至少 5 个字符）");
+  }
+
+  const wishId = `wsh_${randomHex(8)}`;
+  const now = isoNow();
+
+  await env.DB.prepare(`
+    INSERT INTO wishes (id, user_id, username, title, description, category, status, reward_points, reply_count, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, 'open', ?, 0, ?, ?)
+  `).bind(wishId, auth.userId, auth.username, title, description, category, rewardPoints, now, now).run();
+
+  // 发布心愿给发布者奖励 +5 积分
+  const pointResult = await addPoints(env, auth.userId, auth.username, 5, "publish_wish", `发布心愿《${title.substring(0, 20)}》`, wishId);
+
+  const wish = await env.DB.prepare("SELECT * FROM wishes WHERE id = ?").bind(wishId).first();
+  return { wish, pointsGained: 5, userPoints: pointResult.points };
+}
+
+async function createWishReply(env, auth, wishId, payload) {
+  await ensureWishWallTables(env);
+  const content = String(payload.content || "").trim();
+  const codeSnippet = String(payload.codeSnippet || "").trim();
+
+  if (!content && !codeSnippet) {
+    throw new HttpError(400, "empty_reply", "请提供方案说明或小程序代码");
+  }
+
+  const wish = await env.DB.prepare("SELECT * FROM wishes WHERE id = ?").bind(wishId).first();
+  if (!wish) {
+    throw new HttpError(404, "wish_not_found", "心愿不存在");
+  }
+
+  const replyId = `wrp_${randomHex(8)}`;
+  const now = isoNow();
+
+  const newStatus = wish.status === "open" ? "answered" : wish.status;
+
+  await env.DB.batch([
+    env.DB.prepare(`
+      INSERT INTO wish_replies (id, wish_id, user_id, username, content, code_snippet, is_accepted, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+    `).bind(replyId, wishId, auth.userId, auth.username, content, codeSnippet, now),
+
+    env.DB.prepare(`
+      UPDATE wishes
+      SET reply_count = reply_count + 1,
+          status = ?,
+          updated_at = ?
+      WHERE id = ?
+    `).bind(newStatus, now, wishId)
+  ]);
+
+  const reply = await env.DB.prepare("SELECT * FROM wish_replies WHERE id = ?").bind(replyId).first();
+  return { reply };
+}
+
+async function acceptWishReply(env, auth, wishId, payload) {
+  await ensureWishWallTables(env);
+  const replyId = String(payload.replyId || "").trim();
+  if (!replyId) {
+    throw new HttpError(400, "reply_id_required", "请指定要验收采纳的方案 ID");
+  }
+
+  const wish = await env.DB.prepare("SELECT * FROM wishes WHERE id = ?").bind(wishId).first();
+  if (!wish) {
+    throw new HttpError(404, "wish_not_found", "心愿不存在");
+  }
+
+  if (wish.user_id !== auth.userId) {
+    throw new HttpError(403, "forbidden", "只有心愿发布者本人才能验收并采纳方案");
+  }
+
+  if (wish.status === "accepted") {
+    throw new HttpError(400, "already_accepted", "该心愿已验收完成，不可重复验收");
+  }
+
+  const reply = await env.DB.prepare("SELECT * FROM wish_replies WHERE id = ? AND wish_id = ?").bind(replyId, wishId).first();
+  if (!reply) {
+    throw new HttpError(404, "reply_not_found", "指定的方案回复不存在");
+  }
+
+  const now = isoNow();
+
+  await env.DB.batch([
+    env.DB.prepare(`
+      UPDATE wishes
+      SET status = 'accepted',
+          accepted_reply_id = ?,
+          updated_at = ?
+      WHERE id = ?
+    `).bind(replyId, now, wishId),
+
+    env.DB.prepare(`
+      UPDATE wish_replies
+      SET is_accepted = 1
+      WHERE id = ?
+    `).bind(replyId)
+  ]);
+
+  // 奖励方案提交者 +50 积分
+  await addPoints(env, reply.user_id, reply.username, 50, "be_accepted", `小程序方案被采纳 (心愿: ${wish.title.substring(0, 20)})`, wishId);
+
+  // 奖励验收结单的发布者 +10 积分
+  await addPoints(env, auth.userId, auth.username, 10, "accept_wish", `验收并通过小程序方案 (心愿: ${wish.title.substring(0, 20)})`, wishId);
+
+  const updatedWish = await env.DB.prepare("SELECT * FROM wishes WHERE id = ?").bind(wishId).first();
+  return {
+    ok: true,
+    wish: updatedWish,
+    developerReward: 50,
+    creatorReward: 10,
+    acceptedReplyId: replyId
+  };
+}
+
+async function getWishLeaderboard(env) {
+  try {
+    await ensureWishWallTables(env);
+    const { results: leaderboard } = await env.DB.prepare(`
+      SELECT user_id, username, points, wishes_count, accepted_count, updated_at
+      FROM user_points
+      ORDER BY points DESC, accepted_count DESC
+      LIMIT 10
+    `).all();
+    return leaderboard || [];
+  } catch (err) {
+    console.warn("getWishLeaderboard fallback:", err);
+    return [];
+  }
+}
+
+async function getUserPointsDetail(env, userId) {
+  try {
+    await ensureWishWallTables(env);
+    const userPoints = await env.DB.prepare(
+      "SELECT points, wishes_count, accepted_count FROM user_points WHERE user_id = ?"
+    ).bind(userId).first();
+
+    const { results: transactions } = await env.DB.prepare(`
+      SELECT id, amount, action_type, description, reference_id, created_at
+      FROM point_transactions
+      WHERE user_id = ?
+      ORDER BY created_at DESC
+      LIMIT 20
+    `).bind(userId).all();
+
+    return {
+      points: userPoints?.points ?? 0,
+      wishesCount: userPoints?.wishes_count ?? 0,
+      acceptedCount: userPoints?.accepted_count ?? 0,
+      transactions: transactions || []
+    };
+  } catch (err) {
+    console.warn("getUserPointsDetail fallback:", err);
+    return {
+      points: 0,
+      wishesCount: 0,
+      acceptedCount: 0,
+      transactions: []
+    };
+  }
+}
+
+async function updateWish(env, auth, wishId, payload) {
+  await ensureWishWallTables(env);
+  const wish = await env.DB.prepare("SELECT * FROM wishes WHERE id = ?").bind(wishId).first();
+  if (!wish) {
+    throw new HttpError(404, "wish_not_found", "心愿不存在");
+  }
+
+  if (wish.user_id !== auth.userId && !isAdminUser(auth, env)) {
+    throw new HttpError(403, "forbidden", "只有心愿发布者本人才能修改该心愿");
+  }
+
+  if (wish.status === "accepted") {
+    throw new HttpError(400, "cannot_edit_accepted_wish", "已验收结单的心愿不可修改");
+  }
+
+  const title = payload.title ? String(payload.title).trim() : wish.title;
+  const description = payload.description ? String(payload.description).trim() : wish.description;
+  const category = payload.category ? String(payload.category).trim() : wish.category;
+  const now = isoNow();
+
+  await env.DB.prepare(`
+    UPDATE wishes
+    SET title = ?, description = ?, category = ?, updated_at = ?
+    WHERE id = ?
+  `).bind(title, description, category, now, wishId).run();
+
+  const updated = await env.DB.prepare("SELECT * FROM wishes WHERE id = ?").bind(wishId).first();
+  return { wish: updated };
+}
+
+async function deleteWish(env, auth, wishId) {
+  await ensureWishWallTables(env);
+  const wish = await env.DB.prepare("SELECT * FROM wishes WHERE id = ?").bind(wishId).first();
+  if (!wish) {
+    throw new HttpError(404, "wish_not_found", "心愿不存在");
+  }
+
+  if (wish.user_id !== auth.userId && !isAdminUser(auth, env)) {
+    throw new HttpError(403, "forbidden", "只有心愿发布者本人才能删除该心愿");
+  }
+
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM wish_replies WHERE wish_id = ?").bind(wishId),
+    env.DB.prepare("DELETE FROM wishes WHERE id = ?").bind(wishId)
+  ]);
+
+  return { ok: true, deleted: true, wishId };
+}
+
+let _licenseTablesInitialized = false;
+async function ensureLicenseTables(env) {
+  if (_licenseTablesInitialized) return;
+  try {
+    await env.DB.prepare(`
+      CREATE TABLE IF NOT EXISTS license_keys (
+        code TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        duration_days INTEGER NOT NULL DEFAULT 0,
+        batch_tag TEXT,
+        status TEXT NOT NULL DEFAULT 'unused',
+        used_by_user_id TEXT,
+        used_at TEXT,
+        created_at TEXT NOT NULL
+      )
+    `).run();
+
+    try {
+      await env.DB.prepare("ALTER TABLE users ADD COLUMN vip_expire_at TEXT").run();
+    } catch (e) {
+      // Column might already exist
+    }
+    try {
+      await env.DB.prepare("ALTER TABLE users ADD COLUMN vip_type TEXT").run();
+    } catch (e) {
+      // Column might already exist
+    }
+
+    _licenseTablesInitialized = true;
+  } catch (e) {
+    console.warn("ensureLicenseTables error:", e);
+  }
+}
+
+
+
+const { getSyncDatabase, ensureUser, normalizeSyncObjectId, normalizeSyncRevision, serializeUserSyncObject, serializeUserSyncObjectHistory, getUserSyncRevision, readUserSyncObjects, readUserSyncObject, readUserSyncObjectHistory, writeUserSyncObject } = createSyncObjectRepository({ HttpError, isoNow, scrubAiSecretsFromValue, textEncoder });
+const { ensureOwnedDevice, touchDevice, getPendingDeviceMessagePage, getPendingDeviceMessageItems, markDeviceMessagesDelivered, notifyDeviceRelay, serializeDeviceRecord, deviceNetworkLocation, serializeDeviceMessageRecord, parseJsonObject, expireDeviceCommands } = createDeviceRepository({ DEVICE_MESSAGE_PROTOCOL, DEVICE_ONLINE_WINDOW_MS, HttpError, acceptsAccountChat, ensureUser, isoNow });
+
+const { handleDeviceApi } = createDeviceApi({ DEVICE_MESSAGE_PROTOCOL, HttpError, acceptsAccountChat, accountLanLink, canonicalMessageJson, deviceNetworkLocation, ensureOwnedDevice, ensureUser, executionDeadline, expireDeviceCommands, getPendingDeviceMessagePage, getPendingDeviceMessageItems, isAccountChat, isExecutionMessage, isoNow, json, messageMatchesDevice, normalizeDeviceId, normalizeDeviceMessagePayload, normalizeDevicePayload, normalizeMessageId, normalizeMessageLimit, normalizeShortText, notifyDeviceRelay, ownedAttachment, parseJsonObject, randomHex, readJson, requireAuth, sendOfflinePush, serializeDeviceMessageRecord, serializeDeviceRecord, signToken, touchDevice, traceContext });
+
+const { handleSyncApi } = createSyncApi({ HttpError, ensureUser, getUserWebDavConfig, getYanmStateViewUrl, handleAttachments, hmacSha256, isoNow, json, normalizeOptionalIsoDate, normalizeSyncObjectId, normalizeSyncRevision, normalizeYanmComponentStatePatch, notifyDeviceRelay, patchYanmComponentStateForUser, readJson, readUserSyncObject, readUserSyncObjectHistory, readUserSyncObjects, readYanmStateForUser, requireAuth, writeUserSyncObject, writeYanmStateForUser });

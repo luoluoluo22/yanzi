@@ -2,8 +2,10 @@ using System.Collections.Concurrent;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Xml.Linq;
 using Microsoft.Win32;
 
@@ -29,6 +31,49 @@ public static class NativeFileIconService
         return GetIcon(resolvedPath, isFolder: false);
     }
 
+    private static string ExtractCleanPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return string.Empty;
+        }
+
+        var clean = path.Trim();
+
+        if (clean.StartsWith("\"") && clean.Length > 2)
+        {
+            var endQuote = clean.IndexOf('"', 1);
+            if (endQuote > 0)
+            {
+                return clean[1..endQuote];
+            }
+        }
+
+        if (File.Exists(clean) || Directory.Exists(clean))
+        {
+            return clean;
+        }
+
+        var exeIndex = clean.IndexOf(".exe", StringComparison.OrdinalIgnoreCase);
+        if (exeIndex > 0)
+        {
+            var candidate = clean[..(exeIndex + 4)].Trim('"');
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        var firstSpace = clean.IndexOf(' ');
+        if (firstSpace > 0)
+        {
+            var candidate = clean[..firstSpace].Trim('"');
+            return candidate;
+        }
+
+        return clean.Trim('"');
+    }
+
     public static ImageSource? GetIcon(string path, bool isFolder)
     {
         if (string.IsNullOrWhiteSpace(path))
@@ -36,13 +81,155 @@ public static class NativeFileIconService
             return null;
         }
 
+        if (IsDesktopTarget(path))
+        {
+            return GetDesktopIcon();
+        }
+
+        if (IsDownloadsTarget(path))
+        {
+            return GetDownloadsIcon();
+        }
+
         if (path.StartsWith("shell:AppsFolder\\", StringComparison.OrdinalIgnoreCase))
         {
             return IconCache.GetOrAdd(path, _ => LoadUwpIcon(path));
         }
 
-        var cacheKey = BuildCacheKey(path, isFolder);
-        return IconCache.GetOrAdd(cacheKey, _ => LoadSmallIcon(path, isFolder));
+        if (path.StartsWith("shell:", StringComparison.OrdinalIgnoreCase))
+        {
+            return IconCache.GetOrAdd(path, _ =>
+            {
+                var hq = LoadHighQualityIcon(path, 256);
+                if (hq != null) return hq;
+                return LoadSmallIcon(path, isFolder: true);
+            });
+        }
+
+        var cleanPath = ExtractCleanPath(path);
+
+        var isImg = !isFolder && (IsImageFile(path) || IsImageFile(cleanPath));
+        var cacheKey = !isFolder && (IsShortcutPath(path) || IsShortcutPath(cleanPath) || isImg) ? path : BuildCacheKey(cleanPath, isFolder);
+        return IconCache.GetOrAdd(cacheKey, _ =>
+        {
+            if (!isFolder)
+            {
+                // 0. 如果是图片文件且物理文件存在，优先直接生成超清缩略图 (限制96px尺寸，解码极快且跨线程安全)
+                var directCandidate = File.Exists(path) ? path : (File.Exists(cleanPath) ? cleanPath : null);
+                if (directCandidate != null && IsImageFile(directCandidate))
+                {
+                    var imgThumb = LoadImageThumbnail(directCandidate, 96);
+                    if (imgThumb != null)
+                    {
+                        return imgThumb;
+                    }
+                }
+
+                // 1. 优先尝试为原始文件/快捷方式 (.lnk / .exe / .url) 提取 Windows Shell 权威 256x256 高品质原画图标
+                if (File.Exists(path))
+                {
+                    var rawHq = LoadHighQualityIcon(path, 256);
+                    if (rawHq != null) return rawHq;
+                }
+
+                // 2. 如果原始路径是快捷方式且直接提取失败，解析其真实 Target Path 提取高品质图标
+                string? resolvedTarget = null;
+                if (IsShortcutPath(cleanPath) && TryResolveShortcutIconTarget(cleanPath, out var target1))
+                {
+                    resolvedTarget = ExtractCleanPath(target1);
+                }
+                else if (IsShortcutPath(path) && TryResolveShortcutIconTarget(path, out var target2))
+                {
+                    resolvedTarget = ExtractCleanPath(target2);
+                }
+
+                if (!string.IsNullOrWhiteSpace(resolvedTarget) && File.Exists(resolvedTarget))
+                {
+                    var targetHq = LoadHighQualityIcon(resolvedTarget, 256);
+                    if (targetHq != null) return targetHq;
+                }
+
+                // 3. 尝试 cleanPath 的 LoadHighQualityIcon
+                if (!string.IsNullOrWhiteSpace(cleanPath) && File.Exists(cleanPath))
+                {
+                    var cleanHq = LoadHighQualityIcon(cleanPath, 256);
+                    if (cleanHq != null) return cleanHq;
+                }
+            }
+
+            // 4. 小图标兜底
+            var targetToUse = !string.IsNullOrWhiteSpace(cleanPath) ? cleanPath : path;
+            var small = LoadSmallIcon(targetToUse, isFolder);
+            if (small == null && IsShortcutPath(path))
+            {
+                return LoadSmallIcon(path, isFolder);
+            }
+            return small;
+        });
+    }
+
+    public static bool IsImageExtension(string? extension)
+    {
+        if (string.IsNullOrWhiteSpace(extension)) return false;
+        var ext = extension.StartsWith('.') ? extension : $".{extension}";
+        return ext.Equals(".png", StringComparison.OrdinalIgnoreCase) ||
+               ext.Equals(".jpg", StringComparison.OrdinalIgnoreCase) ||
+               ext.Equals(".jpeg", StringComparison.OrdinalIgnoreCase) ||
+               ext.Equals(".webp", StringComparison.OrdinalIgnoreCase) ||
+               ext.Equals(".bmp", StringComparison.OrdinalIgnoreCase) ||
+               ext.Equals(".gif", StringComparison.OrdinalIgnoreCase) ||
+               ext.Equals(".jfif", StringComparison.OrdinalIgnoreCase) ||
+               ext.Equals(".ico", StringComparison.OrdinalIgnoreCase) ||
+               ext.Equals(".tif", StringComparison.OrdinalIgnoreCase) ||
+               ext.Equals(".tiff", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static bool IsImageFile(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return false;
+        try
+        {
+            var ext = Path.GetExtension(path);
+            return IsImageExtension(ext);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public static ImageSource? LoadImageThumbnail(string path, int targetSize = 96)
+    {
+        try
+        {
+            if (!File.Exists(path)) return null;
+
+            var bitmap = new BitmapImage();
+            bitmap.BeginInit();
+            bitmap.UriSource = new Uri(path);
+            bitmap.DecodePixelWidth = targetSize;
+            bitmap.CacheOption = BitmapCacheOption.OnLoad;
+            bitmap.CreateOptions = BitmapCreateOptions.IgnoreColorProfile;
+            bitmap.EndInit();
+            bitmap.Freeze();
+            return bitmap;
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"[NativeFileIconService] LoadImageThumbnail failed for '{path}': {ex.Message}");
+            return null;
+        }
+    }
+
+    public static void ClearCacheForPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return;
+        IconCache.TryRemove(path, out _);
+        var clean = ExtractCleanPath(path);
+        if (!string.IsNullOrWhiteSpace(clean) && !string.Equals(clean, path, StringComparison.OrdinalIgnoreCase))
+        {
+            IconCache.TryRemove(clean, out _);
+        }
     }
 
     private static string BuildCacheKey(string path, bool isFolder)
@@ -50,6 +237,11 @@ public static class NativeFileIconService
         if (isFolder)
         {
             return "__folder__";
+        }
+
+        if (IsImageFile(path))
+        {
+            return path;
         }
 
         var extension = Path.GetExtension(path);
@@ -67,7 +259,8 @@ public static class NativeFileIconService
                (extension.Equals(".exe", StringComparison.OrdinalIgnoreCase) ||
                 extension.Equals(".lnk", StringComparison.OrdinalIgnoreCase) ||
                 extension.Equals(".url", StringComparison.OrdinalIgnoreCase) ||
-                extension.Equals(".ico", StringComparison.OrdinalIgnoreCase));
+                extension.Equals(".ico", StringComparison.OrdinalIgnoreCase) ||
+                IsImageExtension(extension));
     }
 
     private static ImageSource? LoadSmallIcon(string path, bool isFolder)
@@ -102,7 +295,7 @@ public static class NativeFileIconService
             var image = Imaging.CreateBitmapSourceFromHIcon(
                 shinfo.hIcon,
                 System.Windows.Int32Rect.Empty,
-                System.Windows.Media.Imaging.BitmapSizeOptions.FromEmptyOptions());
+                System.Windows.Media.Imaging.BitmapSizeOptions.FromWidthAndHeight(32, 32));
             image.Freeze();
             return image;
         }
@@ -110,6 +303,211 @@ public static class NativeFileIconService
         {
             DestroyIcon(shinfo.hIcon);
         }
+    }
+
+    public static bool IsDesktopTarget(string? target)
+    {
+        if (string.IsNullOrWhiteSpace(target)) return false;
+        var t = target.Trim();
+        if (t.Equals("shell:Desktop", StringComparison.OrdinalIgnoreCase) ||
+            t.Equals("stock:desktop", StringComparison.OrdinalIgnoreCase) ||
+            t.Equals("desktop", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        try
+        {
+            var desktop = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+            if (!string.IsNullOrWhiteSpace(desktop) && string.Equals(t.TrimEnd('\\', '/'), desktop.TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            var desktopDir = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+            if (!string.IsNullOrWhiteSpace(desktopDir) && string.Equals(t.TrimEnd('\\', '/'), desktopDir.TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+        catch { }
+
+        return false;
+    }
+
+    public static ImageSource? GetDesktopIcon()
+    {
+        return IconCache.GetOrAdd("stock:desktop", _ =>
+        {
+            try
+            {
+                // 1. 优先尝试从 shell:Desktop 提取 Windows Shell 原生 256x256 高清原画图标
+                var hq = LoadHighQualityIcon("shell:Desktop", 256);
+                if (hq != null) return hq;
+
+                // 2. 尝试从真实桌面物理路径提取
+                var desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+                if (!string.IsNullOrWhiteSpace(desktopPath) && Directory.Exists(desktopPath))
+                {
+                    var pathHq = LoadHighQualityIcon(desktopPath, 256);
+                    if (pathHq != null) return pathHq;
+                }
+
+                // 3. 兜底使用 Windows 原生 Stock Icon (SIID_DESKTOP)
+                var stock = LoadStockIcon(SIID_DESKTOP);
+                if (stock != null) return stock;
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"[NativeFileIconService] GetDesktopIcon failed: {ex.Message}");
+            }
+            return null;
+        });
+    }
+
+    public static bool IsDownloadsTarget(string? target)
+    {
+        if (string.IsNullOrWhiteSpace(target)) return false;
+        var t = target.Trim();
+        if (t.Equals("shell:Downloads", StringComparison.OrdinalIgnoreCase) ||
+            t.Equals("stock:downloads", StringComparison.OrdinalIgnoreCase) ||
+            t.Equals("stock:download", StringComparison.OrdinalIgnoreCase) ||
+            t.Equals("downloads", StringComparison.OrdinalIgnoreCase) ||
+            t.Equals("download", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        try
+        {
+            var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            if (!string.IsNullOrWhiteSpace(userProfile))
+            {
+                var defaultDownloads = Path.Combine(userProfile, "Downloads");
+                if (string.Equals(t.TrimEnd('\\', '/'), defaultDownloads.TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            // 读取 Windows 注册表 KnownFolder Downloads 重定向路径
+            var regPath = Microsoft.Win32.Registry.GetValue(
+                @"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders",
+                "{374DE290-123F-4565-9164-39C4925E467B}",
+                null) as string;
+            if (!string.IsNullOrWhiteSpace(regPath))
+            {
+                var expanded = Environment.ExpandEnvironmentVariables(regPath).TrimEnd('\\', '/');
+                if (string.Equals(t.TrimEnd('\\', '/'), expanded, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+        }
+        catch { }
+
+        return false;
+    }
+
+    public static ImageSource? GetDownloadsIcon()
+    {
+        return IconCache.GetOrAdd("stock:downloads", _ =>
+        {
+            try
+            {
+                // 1. 优先尝试通过 shell:Downloads 提取 Windows Shell 原生 256x256 原画图标
+                var hq = LoadHighQualityIcon("shell:Downloads", 256);
+                if (hq != null) return hq;
+
+                // 2. 尝试从真实用户 Downloads 目录提取
+                var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                if (!string.IsNullOrWhiteSpace(userProfile))
+                {
+                    var downloadsPath = Path.Combine(userProfile, "Downloads");
+                    if (Directory.Exists(downloadsPath))
+                    {
+                        var pathHq = LoadHighQualityIcon(downloadsPath, 256);
+                        if (pathHq != null) return pathHq;
+                    }
+                }
+
+                // 3. 从系统 imageres.dll 中提取资源 ID -184 (Windows 官方系统下载文件夹图标)
+                var sysDir = Environment.GetFolderPath(Environment.SpecialFolder.System);
+                var imageres = Path.Combine(sysDir, "imageres.dll");
+                if (File.Exists(imageres))
+                {
+                    var icon = ExtractIconFromDll(imageres, -184, 256);
+                    if (icon != null) return icon;
+                }
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"[NativeFileIconService] GetDownloadsIcon failed: {ex.Message}");
+            }
+            return null;
+        });
+    }
+
+    public static ImageSource? ExtractIconFromDll(string dllPath, int resourceId, int size)
+    {
+        try
+        {
+            IntPtr[] phicon = new IntPtr[1];
+            uint[] piconid = new uint[1];
+            uint count = PrivateExtractIcons(dllPath, resourceId, size, size, phicon, piconid, 1, 0);
+            if (count > 0 && phicon[0] != IntPtr.Zero)
+            {
+                try
+                {
+                    var source = Imaging.CreateBitmapSourceFromHIcon(
+                        phicon[0],
+                        System.Windows.Int32Rect.Empty,
+                        System.Windows.Media.Imaging.BitmapSizeOptions.FromEmptyOptions());
+                    source.Freeze();
+                    return source;
+                }
+                finally
+                {
+                    DestroyIcon(phicon[0]);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"[NativeFileIconService] ExtractIconFromDll failed ({dllPath}, {resourceId}): {ex.Message}");
+        }
+        return null;
+    }
+
+    public static ImageSource? LoadStockIcon(uint siid)
+    {
+        try
+        {
+            var info = new SHSTOCKICONINFO();
+            info.cbSize = (uint)Marshal.SizeOf(typeof(SHSTOCKICONINFO));
+            int hr = SHGetStockIconInfo(siid, SHGSI_ICON | SHGSI_LARGEICON, ref info);
+            if (hr == 0 && info.hIcon != IntPtr.Zero)
+            {
+                try
+                {
+                    var source = Imaging.CreateBitmapSourceFromHIcon(
+                        info.hIcon,
+                        System.Windows.Int32Rect.Empty,
+                        System.Windows.Media.Imaging.BitmapSizeOptions.FromEmptyOptions());
+                    source.Freeze();
+                    return source;
+                }
+                finally
+                {
+                    DestroyIcon(info.hIcon);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"[NativeFileIconService] LoadStockIcon failed for siid={siid}: {ex.Message}");
+        }
+        return null;
     }
 
     private static bool IsShortcutPath(string path)
@@ -221,10 +619,8 @@ public static class NativeFileIconService
             return mappedPath;
         }
 
-        if (openTarget.StartsWith("ms-settings:", StringComparison.OrdinalIgnoreCase))
-        {
-            return ResolveSettingsAppPath(extensionId);
-        }
+        // Removed generic fallback to SystemSettings.exe for ms-settings: 
+        // to preserve the curated VectorIcon and AccentBrush for each setting.
 
         if (TryResolveExecutablePath(openTarget, out var executablePath))
         {
@@ -260,12 +656,7 @@ public static class NativeFileIconService
                 Path.Combine(systemDirectory, "mmc.exe")),
             "system-registry-editor" => ResolveExistingPath(
                 Path.Combine(systemDirectory, "regedit.exe")),
-            "system-settings-sound" or "system-settings-apps-volume" or "system-settings-microphone-privacy" or
-            "system-settings-webcam-privacy" or "system-settings-printers" or "system-settings-default-apps" or
-            "system-settings-power" or "system-settings-storage" or "system-settings-personalization" or
-            "system-settings-windows-update" or "system-settings-default-output" or
-            "system-settings-default-input" or "system-settings-sound-devices" or
-            "system-settings-accessibility-audio" => ResolveExistingPath(immersiveControlPanelPath),
+            // Mappings for ms-settings are removed to preserve curated VectorIcons
             _ => null
         };
     }
@@ -362,6 +753,69 @@ public static class NativeFileIconService
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool DestroyIcon(IntPtr hIcon);
 
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    private static extern uint PrivateExtractIcons(
+        string szFileName, int nIconIndex, int cxIcon, int cyIcon,
+        IntPtr[] phicon, uint[] piconid, uint nIcons, uint flags);
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct SHSTOCKICONINFO
+    {
+        public uint cbSize;
+        public IntPtr hIcon;
+        public int iSysImageIndex;
+        public int iIcon;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+        public string szPath;
+    }
+
+    [DllImport("shell32.dll", SetLastError = false)]
+    private static extern int SHGetStockIconInfo(uint siid, uint uFlags, ref SHSTOCKICONINFO psii);
+
+    private const uint SHGSI_ICON = 0x000000100;
+    private const uint SHGSI_LARGEICON = 0x000000000;
+    public const uint SIID_DOCASSOC = 1;
+    public const uint SIID_APPLICATION = 2;
+    public const uint SIID_FOLDER = 3;
+    public const uint SIID_DRIVEFIXED = 8;
+    public const uint SIID_DESKTOP = 34;
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern int SHCreateItemFromParsingName(
+        string pszPath,
+        IntPtr pbc,
+        [MarshalAs(UnmanagedType.LPStruct)] Guid riid,
+        out IShellItemImageFactory ppv);
+
+    [DllImport("gdi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool DeleteObject(IntPtr hObject);
+
+    [ComImport]
+    [Guid("bcc18b79-ba16-442f-80c4-8a59c30c463b")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IShellItemImageFactory
+    {
+        [PreserveSig]
+        int GetImage(
+            [In, MarshalAs(UnmanagedType.Struct)] NativeSize size,
+            [In] int flags,
+            out IntPtr phbm);
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeSize
+    {
+        public int Width;
+        public int Height;
+
+        public NativeSize(int width, int height)
+        {
+            Width = width;
+            Height = height;
+        }
+    }
+
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct Shfileinfo
     {
@@ -376,10 +830,204 @@ public static class NativeFileIconService
         public string szTypeName;
     }
 
+    /// <summary>
+    /// 使用 IShellItemImageFactory COM 接口获取高品质图标 (支持 256x256).
+    /// 此方法能正确获取 Windows 11 上 UWP 应用重定向 exe (如 notepad.exe) 的 Fluent 图标.
+    /// </summary>
+    private static ImageSource? LoadHighQualityIcon(string path, int size)
+    {
+        try
+        {
+            var iidImageFactory = new Guid("bcc18b79-ba16-442f-80c4-8a59c30c463b");
+            int hr = SHCreateItemFromParsingName(path, IntPtr.Zero, iidImageFactory, out var factory);
+            if (hr != 0 || factory == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                var nativeSize = new NativeSize(size, size);
+                // SIIGBF_ICONONLY = 0x04 (only icon, no thumbnail), SIIGBF_BIGGERSIZEOK = 0x01
+                hr = factory.GetImage(nativeSize, 0x04 | 0x01, out var hBitmap);
+                if (hr != 0 || hBitmap == IntPtr.Zero)
+                {
+                    return null;
+                }
+
+                try
+                {
+                    var source = Imaging.CreateBitmapSourceFromHBitmap(
+                        hBitmap,
+                        IntPtr.Zero,
+                        System.Windows.Int32Rect.Empty,
+                        System.Windows.Media.Imaging.BitmapSizeOptions.FromEmptyOptions());
+                        
+                    var cropped = CropTransparentBorders(source);
+                    if (cropped == null) return null;
+                    cropped.Freeze();
+                    return cropped;
+                }
+                finally
+                {
+                    DeleteObject(hBitmap);
+                }
+            }
+            finally
+            {
+                Marshal.ReleaseComObject(factory);
+            }
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static System.Windows.Media.Imaging.BitmapSource? CropTransparentBorders(System.Windows.Media.Imaging.BitmapSource source)
+    {
+        if (source == null) return null;
+        
+        System.Windows.Media.Imaging.BitmapSource checkSource = source;
+        if (source.Format != System.Windows.Media.PixelFormats.Bgra32 && 
+            source.Format != System.Windows.Media.PixelFormats.Pbgra32)
+        {
+            try
+            {
+                checkSource = new System.Windows.Media.Imaging.FormatConvertedBitmap(source, System.Windows.Media.PixelFormats.Bgra32, null, 0);
+            }
+            catch
+            {
+                return source;
+            }
+        }
+
+        int width = checkSource.PixelWidth;
+        int height = checkSource.PixelHeight;
+        if (width <= 48 || height <= 48) return source;
+
+        int stride = (width * checkSource.Format.BitsPerPixel + 7) / 8;
+        byte[] pixels = new byte[height * stride];
+        checkSource.CopyPixels(pixels, stride, 0);
+
+        // Helper function to find bounding box for a given alpha threshold
+        (int minX, int maxX, int minY, int maxY, bool found) GetBoundingBox(int alphaThreshold)
+        {
+            int minX = 0, maxX = width - 1, minY = 0, maxY = height - 1;
+            bool foundAny = false;
+            for (int y = 0; y < height && !foundAny; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    if (pixels[y * stride + x * 4 + 3] > alphaThreshold) { minY = y; foundAny = true; break; }
+                }
+            }
+            if (!foundAny) return (0, width - 1, 0, height - 1, false);
+
+            foundAny = false;
+            for (int y = height - 1; y >= minY && !foundAny; y--)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    if (pixels[y * stride + x * 4 + 3] > alphaThreshold) { maxY = y; foundAny = true; break; }
+                }
+            }
+
+            foundAny = false;
+            for (int x = 0; x < width && !foundAny; x++)
+            {
+                for (int y = minY; y <= maxY; y++)
+                {
+                    if (pixels[y * stride + x * 4 + 3] > alphaThreshold) { minX = x; foundAny = true; break; }
+                }
+            }
+
+            foundAny = false;
+            for (int x = width - 1; x >= minX && !foundAny; x--)
+            {
+                for (int y = minY; y <= maxY; y++)
+                {
+                    if (pixels[y * stride + x * 4 + 3] > alphaThreshold) { maxX = x; foundAny = true; break; }
+                }
+            }
+            return (minX, maxX, minY, maxY, true);
+        }
+
+        var bounds10 = GetBoundingBox(10);
+        if (!bounds10.found) return source;
+
+        var bounds128 = GetBoundingBox(128);
+
+        int cropWidth10 = bounds10.maxX - bounds10.minX + 1;
+        int cropHeight10 = bounds10.maxY - bounds10.minY + 1;
+        
+        int cropWidth128 = bounds128.found ? (bounds128.maxX - bounds128.minX + 1) : 0;
+        int cropHeight128 = bounds128.found ? (bounds128.maxY - bounds128.minY + 1) : 0;
+
+        // If the core opaque part of the icon is very small (< 64x64), but the noisy part is very large,
+        // it means we extracted a small icon padded with noisy transparency to 256x256.
+        // Return null to fall back to LoadSmallIcon which natively retrieves the 32x32 clean icon.
+        if (cropWidth128 < 64 && cropHeight128 < 64 && (cropWidth10 > 100 || cropHeight10 > 100))
+        {
+            return null; // Force fallback
+        }
+        
+        // Also if the 10-alpha bounding box itself is very small, we can also fallback or return the cropped.
+        // But if it's very small, the cropped bitmap will be small and look good when scaled up.
+        // Actually, if it's very small, falling back to 32x32 native icon is often better quality.
+        if (cropWidth10 < 48 && cropHeight10 < 48)
+        {
+            return null; // Force fallback
+        }
+
+        if (cropWidth10 == width && cropHeight10 == height) return source;
+
+        try
+        {
+            var cropped = new System.Windows.Media.Imaging.CroppedBitmap(source, new System.Windows.Int32Rect(bounds10.minX, bounds10.minY, cropWidth10, cropHeight10));
+            
+            // 确保裁切后的图标保持 1:1 标准正方形画布（居中），彻底杜绝由于纵向/横向纸张图形在容器中被 UniformToFill 强行拉伸变形的问题
+            int maxDim = Math.Max(cropWidth10, cropHeight10);
+            if (cropWidth10 == maxDim && cropHeight10 == maxDim)
+            {
+                return cropped;
+            }
+
+            var renderTarget = new System.Windows.Media.Imaging.RenderTargetBitmap(maxDim, maxDim, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+            var visual = new DrawingVisual();
+            using (var dc = visual.RenderOpen())
+            {
+                double offsetX = (maxDim - cropWidth10) / 2.0;
+                double offsetY = (maxDim - cropHeight10) / 2.0;
+                dc.DrawImage(cropped, new Rect(offsetX, offsetY, cropWidth10, cropHeight10));
+            }
+            renderTarget.Render(visual);
+            return renderTarget;
+        }
+        catch
+        {
+            return source;
+        }
+    }
+
     private static ImageSource? LoadUwpIcon(string path)
     {
         try
         {
+            // 1. 优先使用 Windows 权威 COM 接口 IShellItemImageFactory 直接提取系统与 UWP 高清 Fluent 原生图标
+            var hqIcon = LoadHighQualityIcon(path, 256);
+            if (hqIcon != null)
+            {
+                return hqIcon;
+            }
+
+            var smallIcon = LoadHighQualityIcon(path, 48);
+            if (smallIcon != null)
+            {
+                return smallIcon;
+            }
+
+            // 2. 降级尝试从 UWP AppxManifest 注册表清单与资源包中解析
             string? logoPath = GetUwpLogoPath(path);
             if (!string.IsNullOrEmpty(logoPath) && File.Exists(logoPath))
             {

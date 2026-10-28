@@ -1,0 +1,10 @@
+{
+  "extension": "capability-lab",
+  "entry": "CapabilityLab.cs",
+  "from": "ui-v2-optimized",
+  "previousSha256": "41D1CA4CF86FA0FF39F016A67CFECF6E0F3545C22274C9FDACD01259E04B7064",
+  "updatedSha256": "68313E64063D01558AEBD53462BC8B4D52B7B000CD79CDC27EA6D782818C6979",
+  "patch": "patches/capability-lab-badge-v3.patch",
+  "component": "Yanzi.UI.Wpf.YanziBadge",
+  "validation": "git apply --check; exact deployed SHA256; real host Roslyn dynamic compile; production rendered window"
+}

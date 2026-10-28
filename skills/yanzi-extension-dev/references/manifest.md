@@ -13,12 +13,15 @@ Common fields:
   "icon": "mdi:puzzle-outline",
   "accentHex": "#FF10B981",
   "globalShortcut": "Ctrl+Alt+T",
-  "hotkeyBehavior": "show-view"
+  "hotkeyBehavior": "show-view",
+  "requires": ["git"]
 }
 ```
 
 - `icon`: supports full `mdi:name`, `app:name`, relative image paths, absolute paths, or HTTPS image URLs.
 - `accentHex`: optional button/card color in launcher, quick panel, and radial menu. Use `#RRGGBB` or `#AARRGGBB`.
+- `requires`: declares capabilities/runtime dependencies the mini-app needs. The host resolves these before launch. Automatic system providers currently support `git`, `python`, `node`, and `ffmpeg`, including minimum versions such as `python>=3.12`, `node>=22`, and `ffmpeg>=8`.
+- `provides`: declares capabilities exported by this mini-app to Yanzi's capability network. Do not use `provides` for dependencies.
 
 JSON extension example:
 
@@ -126,6 +129,25 @@ C# multi-file extension example (with startup):
   }
 }
 ```
+
+Idle trigger example:
+
+```json
+{
+  "startup": {
+    "idle": {
+      "enabled": true,
+      "afterMinutes": 5,
+      "repeatMinutes": 10,
+      "pauseWhenFullscreen": true
+    }
+  }
+}
+```
+
+- `startup.idle` is a generic mini-app trigger. The host treats the PC as idle only after keyboard and mouse have had no input for `afterMinutes` **and** there is no fullscreen foreground window.
+- `repeatMinutes = 0` means once per continuous idle period. A positive value allows another run after that many minutes while the same idle period continues.
+- Idle launches use `context.LaunchSource == "idle"`; headless/background work should branch on this value and avoid opening its normal UI.
 
 Web app extension example:
 

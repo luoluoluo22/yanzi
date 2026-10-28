@@ -34,6 +34,6 @@ if (-not $sourceDir) {
     throw 'No WindowsDesktop reference source found.'
 }
 
-foreach ($file in @('PresentationFramework.dll', 'PresentationCore.dll', 'WindowsBase.dll', 'System.Xaml.dll')) {
+foreach ($file in @('PresentationFramework.dll', 'PresentationCore.dll', 'WindowsBase.dll', 'System.Xaml.dll', 'System.Windows.Forms.dll')) {
     Copy-Item (Join-Path $sourceDir $file) $OutputDir -Force
 }

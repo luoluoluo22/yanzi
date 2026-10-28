@@ -1,0 +1,108 @@
+name: Publish Yanzi Windows v1.0.28
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: yanzi-windows-release-v1.0.28
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 75
+    steps:
+      - name: Check out exact release source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Set up .NET 9 and Node
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Verify Lanzou capabilities and safe browser operations
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet build src/Yanzi.CapabilityVerification/Yanzi.CapabilityVerification.csproj -c Release -p:SkipStopRunningApp=true -v:quiet
+          if ($LASTEXITCODE -ne 0) { throw 'Capability build failed' }
+          dotnet src/Yanzi.CapabilityVerification/bin/Release/net9.0-windows/Yanzi.CapabilityVerification.dll --lanzou
+          if ($LASTEXITCODE -ne 0) { throw 'Lanzou capability tests failed' }
+          node tests/lanzou-network-observer.test.cjs
+          if ($LASTEXITCODE -ne 0) { throw 'Network observer tests failed' }
+          node tests/lanzou-upload-security.test.cjs
+          if ($LASTEXITCODE -ne 0) { throw 'Upload security tests failed' }
+
+      - name: Build self-contained desktop installer assets
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $script = './scripts/publish-installer.ps1'
+          $source = (Get-Content $script -Raw).Replace('https://repo.huaweicloud.com/repository/nuget/v3/index.json', 'https://api.nuget.org/v3/index.json')
+          Set-Content -Path $script -Value $source
+          & ./scripts/publish-installer.ps1 -Version 1.0.28 -ArtifactRoot "$env:RUNNER_TEMP\yanzi-release" -SkipBaselineDownload
+          if ($LASTEXITCODE -ne 0) { throw 'Windows packaging failed' }
+
+      - name: Check package completeness and hashes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TEMP 'yanzi-release\installer'
+          $files = @('Yanzi-win-Setup-1.0.28.exe','Yanzi-win-Portable-1.0.28.zip','Yanzi-1.0.28-full.nupkg','RELEASES','assets.win.json','releases.win.json')
+          foreach ($name in $files) {
+            $file = Join-Path $root $name
+            if (!(Test-Path -LiteralPath $file)) { throw "Release missing file $name" }
+            $info = Get-Item -LiteralPath $file
+            if ($info.Length -lt 10) { throw "Release file incomplete: $name" }
+            if ($name -match '\.(exe|zip|nupkg)$' -and $info.Length -lt 1000000) { throw "Release binary truncated: $name" }
+            Write-Host "$name bytes=$($info.Length) sha256=$((Get-FileHash $file -Algorithm SHA256).Hash)"
+          }
+
+      - name: Publish and verify release assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $repo = 'luoluoluo22/yanzi'
+          $tag = 'v1.0.28'
+          $notes = Join-Path $env:RUNNER_TEMP 'yanzi-release-notes-v1028.md'
+          @(
+            '# 燕子 Yanzi v1.0.28 浏览器助手自动发现修复',
+            '',
+            '**修复与改进**',
+            '- 识别 Microsoft Edge 新版 Secure Preferences 的已解压扩展状态，避免误报未安装。',
+            '- 桌面端在扩展稳定目录输出仅含端口号的连接提示，助手启动和重连时自动读取，不保存 API Token。',
+            '- 首次加载向导复制路径并保留浏览器授权，已安装后由稳定目录自动更新。',
+            '- Windows 已启用的用户代理用于 Velopack 更新元数据与安装包下载，避免 Clash 配置无法生效。',
+            '',
+            '**质量验证**',
+            '- Edge 扩展安装检测及 API 端口单元测试、JavaScript 语法和 Windows .NET 9 CI。',
+            '- 首次启用开发者模式后，仍须在浏览器里确认加载未打包扩展。',
+            '- 安装包无代码签名，请从官方 GitHub Release 校验 SHA-256。'
+          ) -join "`n" | Set-Content -LiteralPath $notes -Encoding utf8
+          gh release view $tag --repo $repo *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --repo $repo --target $env:GITHUB_SHA --title '燕子 Yanzi v1.0.28 · 蓝奏云能力' --notes-file $notes --draft
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot create release draft' }
+          }
+          $root = Join-Path $env:RUNNER_TEMP 'yanzi-release\installer'
+          $names = @('Yanzi-win-Setup-1.0.28.exe','Yanzi-win-Portable-1.0.28.zip','Yanzi-1.0.28-full.nupkg','RELEASES','assets.win.json','releases.win.json')
+          $paths = @($names | ForEach-Object { Join-Path $root $_ })
+          gh release upload $tag @paths --repo $repo --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'Asset upload failed; draft retained' }
+          $assets = (gh release view $tag --repo $repo --json assets | ConvertFrom-Json).assets
+          foreach ($name in $names) {
+            $asset = $assets | Where-Object { $_.name -eq $name } | Select-Object -First 1
+            if (!$asset -or $asset.size -le 0) { throw "Published asset incomplete: $name" }
+          }
+          gh release edit $tag --repo $repo --draft=false --prerelease=false
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot publish verified release' }
+          Write-Host "PUBLIC_RELEASE_VERIFIED=https://github.com/$repo/releases/tag/$tag"

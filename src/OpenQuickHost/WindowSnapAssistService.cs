@@ -4,6 +4,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Threading;
+using static OpenQuickHost.Win32Native;
 
 namespace OpenQuickHost;
 
@@ -66,6 +67,7 @@ public sealed class WindowSnapAssistService : IDisposable
 
     public void Start()
     {
+        if (!HostRuntimeProfile.GlobalListenersEnabled) return;
         if (_timer.IsEnabled)
         {
             return;
@@ -427,11 +429,11 @@ public sealed class WindowSnapAssistService : IDisposable
         try
         {
             // Get the window's icon (small icon first, then large)
-            var icon = SendMessage(hwnd, WmGeticon, IconSmall2, IntPtr.Zero);
+            var icon = SendMessageHungSafe(hwnd, WmGeticon, (IntPtr)IconSmall2, IntPtr.Zero);
             if (icon == IntPtr.Zero)
-                icon = SendMessage(hwnd, WmGeticon, IconSmall, IntPtr.Zero);
+                icon = SendMessageHungSafe(hwnd, WmGeticon, (IntPtr)IconSmall, IntPtr.Zero);
             if (icon == IntPtr.Zero)
-                icon = SendMessage(hwnd, WmGeticon, IconBig, IntPtr.Zero);
+                icon = SendMessageHungSafe(hwnd, WmGeticon, (IntPtr)IconBig, IntPtr.Zero);
             if (icon == IntPtr.Zero)
                 icon = GetClassLongPtr(hwnd, GclHiconSm);
             if (icon == IntPtr.Zero)
@@ -1080,36 +1082,6 @@ public sealed class WindowSnapAssistService : IDisposable
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    private struct POINT
-    {
-        public int X;
-        public int Y;
-
-        public POINT(int x, int y)
-        {
-            X = x;
-            Y = y;
-        }
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct RECT
-    {
-        public int Left;
-        public int Top;
-        public int Right;
-        public int Bottom;
-
-        public RECT(int left, int top, int right, int bottom)
-        {
-            Left = left;
-            Top = top;
-            Right = right;
-            Bottom = bottom;
-        }
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
     private struct MONITORINFO
     {
         public int cbSize;
@@ -1172,9 +1144,6 @@ public sealed class WindowSnapAssistService : IDisposable
         public POINT ptScreenPos;
     }
 
-    [DllImport("user32.dll")]
-    private static extern bool GetCursorPos(out POINT lpPoint);
-
     [DllImport("dwmapi.dll")]
     private static extern int DwmGetWindowAttribute(IntPtr hwnd, int dwAttribute, out RECT pvAttribute, int cbAttribute);
 
@@ -1190,22 +1159,34 @@ public sealed class WindowSnapAssistService : IDisposable
     private static extern IntPtr LoadCursor(IntPtr hInstance, int lpCursorName);
 
     [DllImport("user32.dll")]
-    private static extern IntPtr GetForegroundWindow();
-
-    [DllImport("user32.dll")]
-    private static extern IntPtr WindowFromPoint(POINT point);
-
-    [DllImport("user32.dll")]
-    private static extern IntPtr GetAncestor(IntPtr hwnd, uint gaFlags);
-
-    [DllImport("user32.dll")]
     private static extern IntPtr SendMessage(IntPtr hWnd, int msg, int wParam, IntPtr lParam);
+
+    private const uint SmtoAbortIfHung = 0x0002;
+
+    // 带超时的跨线程消息：目标进程挂起（未响应窗口很常见）时 SendMessage 会无限期阻塞
+    // 本应用 UI 线程，导致整个启动器跟着“未响应”
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr SendMessageTimeout(
+        IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam, uint fuFlags, uint uTimeout, out IntPtr lpdwResult);
+
+    private static IntPtr SendMessageHungSafe(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam)
+    {
+        try
+        {
+            if (SendMessageTimeout(hWnd, msg, wParam, lParam, SmtoAbortIfHung, 200, out var result) == IntPtr.Zero)
+            {
+                return IntPtr.Zero;
+            }
+            return result;
+        }
+        catch
+        {
+            return IntPtr.Zero;
+        }
+    }
 
     [DllImport("user32.dll", EntryPoint = "GetClassLongPtrW")]
     private static extern IntPtr GetClassLongPtr(IntPtr hWnd, int nIndex);
-
-    [DllImport("user32.dll")]
-    private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
 
     [DllImport("user32.dll")]
     private static extern bool IsWindowVisible(IntPtr hWnd);
@@ -1215,9 +1196,6 @@ public sealed class WindowSnapAssistService : IDisposable
 
     [DllImport("user32.dll")]
     private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-
-    [DllImport("user32.dll")]
-    private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
 
     [DllImport("user32.dll")]
     private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
@@ -1239,9 +1217,6 @@ public sealed class WindowSnapAssistService : IDisposable
 
     [DllImport("user32.dll", EntryPoint = "GetWindowTextLengthW")]
     private static extern int GetWindowTextLength(IntPtr hWnd);
-
-    [DllImport("user32.dll", EntryPoint = "GetWindowTextW", CharSet = CharSet.Unicode)]
-    private static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
 
     [DllImport("user32.dll", EntryPoint = "GetClassNameW", CharSet = CharSet.Unicode)]
     private static extern int GetClassName(IntPtr hWnd, char[] lpClassName, int nMaxCount);

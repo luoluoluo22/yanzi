@@ -6,7 +6,7 @@ namespace OpenQuickHost;
 
 public partial class MouseTriggerCaptureWindow : Window
 {
-    private const int LongPressMilliseconds = 550;
+    private const int LongPressMilliseconds = 300;
     private const double DragThreshold = 18;
     private MouseButton? _downButton;
     private System.Windows.Point _downPoint;

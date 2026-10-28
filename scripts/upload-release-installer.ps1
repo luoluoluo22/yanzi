@@ -1,27 +1,77 @@
-param(
+﻿param(
     [string]$Version = "0.1.0",
+    [string]$Platform = "windows", # windows 或 android
     [string]$Repo = "luoluoluo22/yanzi",
     [string]$Target = "main",
     [string]$InstallerPath = "",
+    [string]$Notes = "",
     [switch]$Draft,
-    [switch]$KeepProxy
+    [switch]$KeepProxy,
+    [string]$GithubToken = ""
 )
 
 $ErrorActionPreference = "Stop"
 
 $root = Resolve-Path (Join-Path $PSScriptRoot "..")
-$tag = if ($Version.StartsWith("v", [StringComparison]::OrdinalIgnoreCase)) { $Version } else { "v$Version" }
-$plainVersion = $tag.TrimStart("v")
+if ([string]::IsNullOrEmpty($Version) -or $Version -eq "0.1.0") {
+    $projectPath = Join-Path $root "src\OpenQuickHost\OpenQuickHost.csproj"
+    if (Test-Path $projectPath) {
+        [xml]$xml = Get-Content $projectPath
+        $Version = $xml.Project.PropertyGroup.Version.Trim()
+        Write-Host "Auto-detected version from csproj: $Version"
+    }
+}
+$plainVersion = if ($Version.StartsWith("v", [StringComparison]::OrdinalIgnoreCase)) { $Version.Substring(1) } else { $Version }
+
+$tag = if ($Platform -eq "android") { "android-v$plainVersion" } else { "v$plainVersion" }
 
 $installerOutDir = Join-Path $root ".artifacts\installer"
-if (!(Test-Path $installerOutDir)) {
-    throw "Installer directory not found: $installerOutDir. Run scripts\publish-installer.ps1 first."
-}
 
-$fileName = "Yanzi-win-Setup-$plainVersion.exe"
-$installerSetupPath = Join-Path $installerOutDir $fileName
-if (!(Test-Path -LiteralPath $installerSetupPath)) {
-    throw "$fileName not found under $installerOutDir. Run scripts\publish-installer.ps1 first."
+if ($Platform -eq "android") {
+    $fileName = "yanzi-mobile-$plainVersion.apk"
+    $installerSetupPath = if ($InstallerPath) { Resolve-Path $InstallerPath } else { Join-Path $installerOutDir $fileName }
+    if (!(Test-Path -LiteralPath $installerSetupPath)) {
+        $gradleReleaseApk = Join-Path $root "mobile\android\app\build\outputs\apk\release\app-release.apk"
+        $mvpApk = Join-Path $root "mobile\android\app\build\manual-release\yanzi-mobile-release.apk"
+        $mvpDebugApk = Join-Path $root "mobile\android\app\build\manual-debug\yanzi-mobile-debug.apk"
+        
+        if (Test-Path $gradleReleaseApk) {
+            $installerSetupPath = $gradleReleaseApk
+        } elseif (Test-Path $mvpApk) {
+            $installerSetupPath = $mvpApk
+        } elseif (Test-Path $mvpDebugApk) {
+            $installerSetupPath = $mvpDebugApk
+        } else {
+            throw "Android APK not found. Build Android app first or pass -InstallerPath."
+        }
+    }
+
+    $targetApkPath = Join-Path $installerOutDir $fileName
+    $targetResolved = Resolve-Path $targetApkPath -ErrorAction SilentlyContinue
+    if (-not $targetResolved -or (Resolve-Path $installerSetupPath).Path -ne $targetResolved.Path) {
+        if (!(Test-Path $installerOutDir)) { New-Item -ItemType Directory -Path $installerOutDir -Force | Out-Null }
+        Copy-Item -LiteralPath $installerSetupPath -Destination $targetApkPath -Force
+        $installerSetupPath = $targetApkPath
+    }
+
+    $sdkPath = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } elseif ($env:ANDROID_SDK_ROOT) { $env:ANDROID_SDK_ROOT } else { "F:\SDK" }
+    $apkSigner = Get-ChildItem -Path (Join-Path $sdkPath "build-tools") -Recurse -Filter "apksigner.bat" -ErrorAction SilentlyContinue |
+        Sort-Object FullName -Descending |
+        Select-Object -First 1 -ExpandProperty FullName
+    if (-not $apkSigner) {
+        throw "Android apksigner not found under $sdkPath\build-tools; cannot verify APK before upload."
+    }
+
+    & $apkSigner verify --verbose $installerSetupPath | Out-Host
+    if ($LASTEXITCODE -ne 0) {
+        throw "Android APK signature verification failed: $installerSetupPath. Build a signed APK before upload."
+    }
+} else {
+    $fileName = "Yanzi-win-Setup-$plainVersion.exe"
+    $installerSetupPath = if ($InstallerPath) { Resolve-Path $InstallerPath } else { Join-Path $installerOutDir $fileName }
+    if (!(Test-Path -LiteralPath $installerSetupPath)) {
+        throw "$fileName not found under $installerOutDir. Run scripts\publish-installer.ps1 first."
+    }
 }
 
 if (-not $KeepProxy) {
@@ -29,34 +79,24 @@ if (-not $KeepProxy) {
     $env:HTTPS_PROXY = ""
     $env:ALL_PROXY = ""
     $env:NO_PROXY = ""
+} else {
+    if ([string]::IsNullOrWhiteSpace($env:HTTP_PROXY)) {
+        $env:HTTP_PROXY = "http://127.0.0.1:7890"
+        $env:HTTPS_PROXY = "http://127.0.0.1:7890"
+        $env:ALL_PROXY = "http://127.0.0.1:7890"
+    }
 }
+
+$env:GODEBUG = "http2client=0"
 
 $gh = Get-Command gh -ErrorAction SilentlyContinue
 if (-not $gh) {
     throw "GitHub CLI was not found. Install gh first: https://cli.github.com/"
 }
 
-gh api user --jq .login | Out-Host
-
 $hash = (Get-FileHash -LiteralPath $installerSetupPath -Algorithm SHA256).Hash.ToLowerInvariant()
 $notesPath = Join-Path ([IO.Path]::GetTempPath()) "yanzi-release-$plainVersion.md"
-
-$notesContent = @"
-# 燕子 Yanzi v$plainVersion 更新内容
-
-**✨ 界面与交互优化**
-- 【修复】设置界面第二次打开时无响应或报错退出的问题。
-- 【修复】初次呼出设置面板瞬间出现的白屏/闪屏问题，改为全局底色提前渲染。
-- 【性能】彻底重构了设置面板的生命周期为“后台常驻”，首次加载后每次打开均为秒级展现，不再有由于大量数据加载带来的鼠标卡顿感。
-
-**🎛️ 轮盘功能升级**
-- 【增强】调整了燕环（轮盘）的“目标应用”智能判定逻辑。过去仅依赖“前台激活窗口”；现在已支持自动嗅探并提取**鼠标指针悬停位置**下的窗口进程。即使它处于后台非激活状态，依然能精准唤出针对该应用的专属轮盘工具。
-
----
-一键安装包：$fileName
-
-SHA256: $hash
-"@
+$notesContent = "Yanzi Release v$plainVersion"
 [System.IO.File]::WriteAllText($notesPath, $notesContent, [System.Text.Encoding]::UTF8)
 
 $releaseExists = $true
@@ -68,21 +108,25 @@ if ($LASTEXITCODE -ne 0) {
 }
 $ErrorActionPreference = $oldEAP
 
+$latestArgs = if ($Platform -eq "android") { @("--latest=false") } else { @() }
+$releaseTitle = if ($Platform -eq "android") { "Yanzi for Android $plainVersion" } else { "Yanzi $plainVersion" }
+
 if (-not $releaseExists) {
-    gh release create $tag `
-        --repo $Repo `
-        --target $Target `
-        --title "Yanzi $plainVersion" `
-        --notes-file $notesPath `
-        --draft | Out-Host
+    $releaseArgs = @('release','create',$tag,'--repo',$Repo,'--target',$Target,'--title',$releaseTitle,'--notes-file',$notesPath) + $latestArgs
+    & gh @releaseArgs | Out-Host
 } else {
-    gh release edit $tag `
-        --repo $Repo `
-        --title "Yanzi $plainVersion" `
-        --notes-file $notesPath | Out-Host
+    $releaseArgs = @('release','edit',$tag,'--repo',$Repo,'--title',$releaseTitle,'--notes-file',$notesPath) + $latestArgs
+    & gh @releaseArgs | Out-Host
 }
 
-$filesToUpload = Get-ChildItem -Path $installerOutDir -File | Where-Object { $_.Name.Contains($plainVersion) -or $_.Name -match "releases\.win\.json|RELEASES" }
+if ($LASTEXITCODE -ne 0) { throw "Failed to create or edit release; upload was not attempted." }
+
+$filesToUpload = if ($Platform -eq "android") {
+    Get-ChildItem -Path $installerOutDir -File | Where-Object { $_.Name.Contains($plainVersion) -and $_.Name.EndsWith(".apk") }
+} else {
+    Get-ChildItem -Path $installerOutDir -File | Where-Object { $_.Name.Contains($plainVersion) -or $_.Name -match "releases\.win\.json|RELEASES" }
+}
+
 foreach ($file in $filesToUpload) {
     $maxRetries = 5
     $retryCount = 0
@@ -118,7 +162,54 @@ foreach ($file in $filesToUpload) {
 }
 
 if (-not $Draft) {
-    gh release edit $tag --repo $Repo --draft=false | Out-Host
+    gh release edit $tag --repo $Repo --draft=false @latestArgs | Out-Host
 }
 
+$token = if ($GithubToken) { $GithubToken } elseif ($env:GITHUB_TOKEN) { $env:GITHUB_TOKEN } else { "" }
+if (-not [string]::IsNullOrEmpty($token)) {
+    try {
+        Write-Host "Updating release notes to Chinese via GitHub API to prevent encoding issues..."
+        $headers = @{
+            "Authorization" = "token $token"
+            "Accept"        = "application/vnd.github.v3+json"
+            "User-Agent"    = "PowerShell"
+        }
+        
+        $tagUrl = "https://api.github.com/repos/$Repo/releases/tags/$tag"
+        $releaseObj = Invoke-RestMethod -Uri $tagUrl -Headers $headers -Method Get
+        $releaseId = $releaseObj.id
+        
+        $chineseBody = ""
+        if (-not [string]::IsNullOrWhiteSpace($Notes)) {
+            $chineseBody = $Notes.Trim()
+        } elseif (Test-Path (Join-Path $root "RELEASE_NOTES.md")) {
+            $chineseBody = (Get-Content (Join-Path $root "RELEASE_NOTES.md") -Raw -Encoding UTF8).Trim()
+        }
+
+        if ([string]::IsNullOrWhiteSpace($chineseBody)) {
+            $chineseBody = if ($Platform -eq "android") {
+                "# 燕子 Yanzi for Android v$plainVersion 更新内容`n`n**✨ 移动端优化**`n- 优化移动端运行稳定性与同步体验。`n`n---`n安装包：$fileName`nSHA256: $hash"
+            } else {
+                "# 燕子 Yanzi v$plainVersion 更新内容`n`n**✨ 版本更新与优化**`n- 优化交互体验并修复已知问题。`n`n---`n一键安装包：$fileName`nSHA256: $hash"
+            }
+        }
+
+        $payload = @{
+            "name" = if ($Platform -eq "android") { "Yanzi for Android $plainVersion" } else { "燕子 Yanzi v$plainVersion" }
+            "body" = $chineseBody
+        } | ConvertTo-Json -Depth 10
+
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($payload)
+        $patchUrl = "https://api.github.com/repos/$Repo/releases/$releaseId"
+        
+        $null = Invoke-RestMethod -Uri $patchUrl -Headers $headers -Method Patch -ContentType "application/json; charset=utf-8" -Body $bytes
+        Write-Host "Successfully patched release notes to Chinese."
+    } catch {
+        Write-Warning "Could not patch release notes to Chinese via API: $_"
+    }
+}
+
+if ($Platform -eq "android" -and -not $Draft) {
+    & (Join-Path $PSScriptRoot 'publish-mobile-update.ps1') -Version $plainVersion -ApkPath $installerSetupPath -Repo $Repo
+}
 gh release view $tag --repo $Repo --json tagName,name,isDraft,url,assets | Out-Host

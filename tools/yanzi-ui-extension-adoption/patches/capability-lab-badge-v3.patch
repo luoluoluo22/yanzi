@@ -1,0 +1,125 @@
+--- a/CapabilityLab.cs
++++ b/CapabilityLab.cs
+@@ -279,19 +279,16 @@
+         });
+         top.Children.Add(title);
+ 
+-        var badge = new Border
+-        {
++        // Shared 22-DIP capsule Badge, not a stretchable hand-built Border.
++        var badge = new YanziBadge
++        {
++            Content = "未检查",
++            Variant = YanziBadgeVariant.Secondary,
+             Background = Brush("#1F2937"),
+-            CornerRadius = new CornerRadius(10),
+-            Padding = new Thickness(9, 4, 9, 4)
+-        };
+-        var badgeText = new TextBlock
+-        {
+-            Text = "未检查",
+-            FontSize = 11,
+-            Foreground = Brush("#94A3B8")
+-        };
+-        badge.Child = badgeText;
++            Foreground = Brush("#94A3B8"),
++            HorizontalAlignment = HorizontalAlignment.Right,
++            VerticalAlignment = VerticalAlignment.Top
++        };
+         Grid.SetColumn(badge, 1);
+         top.Children.Add(badge);
+         stack.Children.Add(top);
+@@ -367,7 +364,7 @@
+         stack.Children.Add(buttons);
+ 
+         container.Child = stack;
+-        var card = new CapabilityCard(spec, container, badge, badgeText, version, path, progress, stage, check, ensure, experiment);
++        var card = new CapabilityCard(spec, container, badge, version, path, progress, stage, check, ensure, experiment);
+         check.Click += async (_, _) => await CheckAsync(card);
+         ensure.Click += async (_, _) => await EnsureAsync(card);
+         experiment.Click += async (_, _) => await RunExperimentAsync(card);
+@@ -693,18 +690,14 @@
+ 
+         if (available)
+         {
+-            card.Badge.Background = Brush("#123C2A");
+-            card.BadgeText.Foreground = Brush("#6EE7B7");
+-            card.BadgeText.Text = "已就绪";
++            SetBadgeStatus(card, "已就绪", "#123C2A", "#6EE7B7");
+             card.Progress.Value = 100;
+             card.Stage.Text = "满足 " + card.Spec.Requirement;
+             card.Stage.Foreground = Brush("#6EE7B7");
+         }
+         else
+         {
+-            card.Badge.Background = Brush("#3B2C16");
+-            card.BadgeText.Foreground = Brush("#FBBF24");
+-            card.BadgeText.Text = "需准备";
++            SetBadgeStatus(card, "需准备", "#3B2C16", "#FBBF24");
+             card.Progress.Value = 0;
+             card.Stage.Text = string.IsNullOrWhiteSpace(error) ? "未满足版本要求" : error;
+             card.Stage.Foreground = Brush("#FBBF24");
+@@ -720,25 +713,26 @@
+ 
+         if (state == "failed")
+         {
+-            card.Badge.Background = Brush("#3F1D24");
+-            card.BadgeText.Foreground = Brush("#FCA5A5");
+-            card.BadgeText.Text = "失败";
++            SetBadgeStatus(card, "失败", "#3F1D24", "#FCA5A5");
+             card.Stage.Foreground = Brush("#FCA5A5");
+         }
+         else if (state == "completed")
+         {
+-            card.Badge.Background = Brush("#123C2A");
+-            card.BadgeText.Foreground = Brush("#6EE7B7");
+-            card.BadgeText.Text = "已完成";
++            SetBadgeStatus(card, "已完成", "#123C2A", "#6EE7B7");
+             card.Stage.Foreground = Brush("#6EE7B7");
+         }
+         else
+         {
+-            card.Badge.Background = Brush("#172554");
+-            card.BadgeText.Foreground = Brush("#93C5FD");
+-            card.BadgeText.Text = state == "installing" ? "安装中" : state == "verifying" ? "验证中" : "检测中";
++            SetBadgeStatus(card, state == "installing" ? "安装中" : state == "verifying" ? "验证中" : "检测中", "#172554", "#93C5FD");
+             card.Stage.Foreground = Brush("#93C5FD");
+         }
++    }
++
++    private static void SetBadgeStatus(CapabilityCard card, string label, string background, string foreground)
++    {
++        card.Badge.Content = label;
++        card.Badge.Background = Brush(background);
++        card.Badge.Foreground = Brush(foreground);
+     }
+ 
+     private void SetCardBusy(CapabilityCard card, bool busy)
+@@ -835,8 +829,7 @@
+     {
+         public CapabilitySpec Spec { get; }
+         public Border Container { get; }
+-        public Border Badge { get; }
+-        public TextBlock BadgeText { get; }
++        public YanziBadge Badge { get; }
+         public TextBlock Version { get; }
+         public TextBlock Path { get; }
+         public ProgressBar Progress { get; }
+@@ -848,8 +841,7 @@
+         public CapabilityCard(
+             CapabilitySpec spec,
+             Border container,
+-            Border badge,
+-            TextBlock badgeText,
++            YanziBadge badge,
+             TextBlock version,
+             TextBlock path,
+             ProgressBar progress,
+@@ -861,7 +853,6 @@
+             Spec = spec;
+             Container = container;
+             Badge = badge;
+-            BadgeText = badgeText;
+             Version = version;
+             Path = path;
+             Progress = progress;
