@@ -240,12 +240,13 @@ public partial class AddJsonExtensionWindow
         }
     }
 
-    // ===================== 触发方式（右侧三段卡） =====================
+    // ===================== 触发方式 =====================
     private void TriggerStartupSwitch_Click(object sender, RoutedEventArgs e)
     {
         if (_isInitializing) return;
         var enabled = TriggerStartupSwitch.IsChecked == true;
         StartupModeBox.Text = enabled ? "on_app_launch" : string.Empty;
+        UpdateTriggerLabels();
         TryRefreshJsonFromHiddenForm();
     }
 
@@ -258,6 +259,46 @@ public partial class AddJsonExtensionWindow
         if (dialog.ShowDialog() != true) return;
 
         StartupScheduleBox.Text = dialog.ResultSchedule ?? string.Empty;
+        UpdateTriggerLabels();
+        TryRefreshJsonFromHiddenForm();
+    }
+
+    private void TriggerIdleSwitch_Click(object sender, RoutedEventArgs e)
+    {
+        if (_isInitializing || _suppressSimpleSync) return;
+        if (TriggerIdleSwitch.IsChecked == true)
+        {
+            _manualIdleTrigger = new LocalExtensionIdleTriggerManifest
+            {
+                Enabled = true,
+                AfterMinutes = ParseOptionalPositiveInt(IdleAfterMinutesBox?.Text) ?? 5,
+                RepeatMinutes = ParseOptionalNonNegativeInt(IdleRepeatMinutesBox?.Text) ?? 10,
+                PauseWhenFullscreen = true
+            };
+        }
+        else
+        {
+            _manualIdleTrigger = null;
+        }
+
+        UpdateTriggerLabels();
+        TryRefreshJsonFromHiddenForm();
+    }
+
+    private void IdleTriggerConfig_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_isInitializing || _suppressSimpleSync || TriggerIdleSwitch?.IsChecked != true)
+        {
+            return;
+        }
+
+        _manualIdleTrigger = new LocalExtensionIdleTriggerManifest
+        {
+            Enabled = true,
+            AfterMinutes = ParseOptionalPositiveInt(IdleAfterMinutesBox?.Text) ?? 5,
+            RepeatMinutes = ParseOptionalNonNegativeInt(IdleRepeatMinutesBox?.Text) ?? 10,
+            PauseWhenFullscreen = true
+        };
         UpdateTriggerLabels();
         TryRefreshJsonFromHiddenForm();
     }
@@ -428,6 +469,27 @@ public partial class AddJsonExtensionWindow
         {
             TriggerStartupSwitch.IsChecked = (StartupModeBox.Text ?? string.Empty).Trim() == "on_app_launch";
         }
+        if (TriggerIdleSwitch != null)
+        {
+            var idle = _manualIdleTrigger;
+            _suppressSimpleSync = true;
+            try
+            {
+                TriggerIdleSwitch.IsChecked = idle?.Enabled == true;
+                if (IdleAfterMinutesBox != null) IdleAfterMinutesBox.Text = (idle?.AfterMinutes ?? 5).ToString();
+                if (IdleRepeatMinutesBox != null) IdleRepeatMinutesBox.Text = (idle?.RepeatMinutes ?? 10).ToString();
+            }
+            finally
+            {
+                _suppressSimpleSync = false;
+            }
+            if (TriggerIdleLabel != null)
+            {
+                TriggerIdleLabel.Text = idle?.Enabled == true
+                    ? $"闲置 {Math.Max(1, idle.AfterMinutes)} 分钟后触发 · 全屏前台时暂停"
+                    : "未启用 · 无键鼠输入且无全屏窗口";
+            }
+        }
         if (TriggerGestureLabel != null && TriggerGestureSequenceText != null && TriggerGestureExtraRow != null)
         {
             if (_manualMouseGesture != null && !string.IsNullOrEmpty(_manualMouseGesture.Sequence))
@@ -479,6 +541,17 @@ public partial class AddJsonExtensionWindow
                 UpdateGesturePresetStyles();
             }
         }
+
+        if (TriggerSummaryLabel != null)
+        {
+            var count = 0;
+            if ((StartupModeBox.Text ?? string.Empty).Trim() == "on_app_launch") count++;
+            if (!string.IsNullOrWhiteSpace(StartupScheduleBox.Text)) count++;
+            if (_manualIdleTrigger?.Enabled == true) count++;
+            if (!string.IsNullOrWhiteSpace(GlobalShortcutBox.Text)) count++;
+            if (_manualMouseGesture != null && !string.IsNullOrWhiteSpace(_manualMouseGesture.Sequence)) count++;
+            TriggerSummaryLabel.Text = count == 0 ? "未设置" : $"{count} 项已启用";
+        }
     }
 
     private void UpdateGesturePresetStyles()
@@ -528,6 +601,12 @@ public partial class AddJsonExtensionWindow
 
         GestureConflictHintText.Text = "当前序列未与现有小程序冲突。";
         GestureConflictHintText.Foreground = new WpfSolidColorBrush(WpfColor.FromRgb(0x34, 0xD3, 0x99));
+    }
+
+    private static int? ParseOptionalNonNegativeInt(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        return int.TryParse(raw.Trim(), out var value) && value >= 0 ? value : null;
     }
 
     private static int? ParseOptionalPositiveInt(string? raw)

@@ -13,6 +13,13 @@ internal static class CaptureClipboard
     private static extern IntPtr GetOpenClipboardWindow();
 
     [DllImport("user32.dll")]
+    private static extern uint GetClipboardSequenceNumber();
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsClipboardFormatAvailable(uint format);
+
+    [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
@@ -30,16 +37,27 @@ internal static class CaptureClipboard
             stream.Position = 0;
             using var bitmap = new System.Drawing.Bitmap(stream);
 
-            Forms.Clipboard.SetDataObject(bitmap, true, 3, 60);
+            var sequenceBefore = GetClipboardSequenceNumber();
+            // Other clipboard consumers can briefly hold the clipboard open.
+            Forms.Clipboard.SetDataObject(bitmap, true, 12, 90);
+            var sequenceAfter = GetClipboardSequenceNumber();
+            var imageFormatAvailable =
+                IsClipboardFormatAvailable(2) ||  // CF_BITMAP
+                IsClipboardFormatAvailable(8) ||  // CF_DIB
+                IsClipboardFormatAvailable(17);   // CF_DIBV5
             CaptureDiagnostics.Mark(
                 "clipboard.image.copied",
-                ("durationMs", Stopwatch.GetElapsedTime(start).TotalMilliseconds));
+                ("durationMs", Stopwatch.GetElapsedTime(start).TotalMilliseconds),
+                ("sequenceBefore", sequenceBefore),
+                ("sequenceAfter", sequenceAfter),
+                ("imageFormatAvailable", imageFormatAvailable));
         }
         catch (Exception ex)
         {
             CaptureDiagnostics.Mark(
                 "clipboard.image.failed",
                 ("durationMs", Stopwatch.GetElapsedTime(start).TotalMilliseconds),
+                ("sequence", GetClipboardSequenceNumber()),
                 ("openProcess", GetOpenClipboardProcess()),
                 ("error", ex));
             throw;

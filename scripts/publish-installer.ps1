@@ -88,13 +88,10 @@ $publishArgs = @(
 dotnet @publishArgs
 if ($LASTEXITCODE -ne 0) { throw 'Desktop publish failed.' }
 
-$runtimePublishArgs = $publishArgs.Clone()
-$runtimePublishArgs[1] = Join-Path $root 'src\Yanzi.Runtime\Yanzi.Runtime.csproj'
-$runtimePublishArgs[$runtimePublishArgs.Length - 1] = Join-Path $publishDir 'Runtime'
-dotnet @runtimePublishArgs
-if ($LASTEXITCODE -ne 0) { throw 'Shared Runtime publish failed.' }
-Assert-PayloadFile 'Runtime\Yanzi.Runtime.exe'
-Assert-PayloadFile 'Runtime\Yanzi.dll'
+# Single-process distribution: package only Yanzi.exe and its dependencies.
+if (Test-Path (Join-Path $publishDir 'Runtime')) {
+    throw 'Invalid release payload: duplicate Runtime directory detected.'
+}
 
 Write-Host "Verifying installer payload..."
 Assert-PayloadFile "Yanzi.exe"
@@ -121,6 +118,8 @@ Assert-PayloadFile "NativeWindowRefs\WindowsBase.dll"
 Assert-PayloadFile "NativeWindowRefs\System.Xaml.dll"
 Assert-PayloadFile "NativeWindowRefs\System.Windows.Forms.dll"
 
+& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'verify-release-layout.ps1') -PublishDirectory $publishDir -ExpectedVersion $assemblyVersion
+if ($LASTEXITCODE -ne 0) { throw 'Single-process release layout verification failed.' }
 Write-Host "Published installer payload:"
 Write-Host "  $publishDir"
 

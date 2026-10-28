@@ -199,4 +199,25 @@ final class YanziUiKit {
         image.setLayoutParams(new ViewGroup.LayoutParams(dp(c,size),dp(c,size)));
         return image;
     }
+
+    static android.graphics.drawable.Drawable getAntigravityLogo(Context context) {
+        try {
+            java.io.File cacheFile = new java.io.File(context.getFilesDir(), "agent-icons/antigravity.png");
+            if (cacheFile.isFile() && cacheFile.length() > 0) {
+                android.graphics.Bitmap bm = android.graphics.BitmapFactory.decodeFile(cacheFile.getAbsolutePath());
+                if (bm != null) {
+                    return new android.graphics.drawable.BitmapDrawable(context.getResources(), bm);
+                }
+            }
+        } catch (Exception ignored) {}
+
+        try {
+            int resId = context.getResources().getIdentifier("antigravity_logo", "drawable", context.getPackageName());
+            if (resId != 0) {
+                return androidx.core.content.ContextCompat.getDrawable(context, resId);
+            }
+        } catch (Exception ignored) {}
+
+        return new PathDrawable(MobileIconLibrary.resolveOrDefault("rocket-launch"), BLUE);
+    }
 }

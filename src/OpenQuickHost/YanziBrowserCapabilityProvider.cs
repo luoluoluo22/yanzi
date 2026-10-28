@@ -22,6 +22,45 @@ public static class YanziBrowserCapabilityProvider
 
         yield return new()
         {
+            Name = "browser.workflow.status",
+            Description = "查询当前扩展保存的工作流步骤检查点和中断状态；不包含输入值或网页内容",
+            Permissions = ["browser.read"],
+            Category = "browser",
+            InputSchema = YanziCapabilitySchema.Parse("""
+            {"type":"object","properties":{"taskId":{"type":"string","maxLength":128},"browser":{"type":"string","minLength":1,"maxLength":50},"connectionId":{"type":"string","minLength":1,"maxLength":128}},"additionalProperties":false}
+            """),
+            OutputSchema = YanziCapabilitySchema.Parse("""{"type":"object"}"""),
+            Handler = WorkflowStatusAsync
+        };
+
+        yield return new()
+        {
+            Name = "browser.snapshot",
+            Description = "读取当前主浏览器会话中指定网页的结构化语义快照（标题、控件、开放 Shadow DOM），不读取输入值和密码",
+            Permissions = ["browser.read", "network.read"],
+            Category = "browser",
+            InputSchema = YanziCapabilitySchema.Parse("""
+            {
+              "type":"object",
+              "properties":{
+                "url":{"type":"string","minLength":1},
+                "limit":{"type":"integer","minimum":1,"maximum":120},
+                "maxTextLength":{"type":"integer","minimum":30,"maximum":250},
+                "browser":{"type":"string","minLength":1,"maxLength":50},
+                "connectionId":{"type":"string","minLength":1,"maxLength":128},
+                "closeOnComplete":{"type":"boolean"},
+                "timeoutSeconds":{"type":"integer","minimum":5,"maximum":120}
+              },
+              "required":["url"],
+              "additionalProperties":false
+            }
+            """),
+            OutputSchema = YanziCapabilitySchema.Parse("""{"type":"object"}"""),
+            Handler = SnapshotAsync
+        };
+
+        yield return new()
+        {
             Name = "browser.scrape",
             Description = "在浏览器中打开指定网页并按 CSS Selector 提取结构化内容",
             Permissions = ["browser.read", "network.read"],
@@ -32,6 +71,8 @@ public static class YanziBrowserCapabilityProvider
               "properties":{
                 "url":{"type":"string","minLength":1},
                 "selectors":{"type":"object"},
+                "browser":{"type":"string","minLength":1,"maxLength":50},
+                "connectionId":{"type":"string","minLength":1,"maxLength":128},
                 "closeOnComplete":{"type":"boolean"},
                 "timeoutSeconds":{"type":"integer","minimum":5,"maximum":120}
               },
@@ -65,6 +106,8 @@ public static class YanziBrowserCapabilityProvider
                   "additionalProperties":false
                 }},
                 "clickSelector":{"type":"string"},
+                "browser":{"type":"string","minLength":1,"maxLength":50},
+                "connectionId":{"type":"string","minLength":1,"maxLength":128},
                 "closeOnComplete":{"type":"boolean"},
                 "timeoutSeconds":{"type":"integer","minimum":5,"maximum":120}
               },
@@ -79,7 +122,7 @@ public static class YanziBrowserCapabilityProvider
         yield return new()
         {
             Name = "browser.workflow",
-            Description = "执行声明式网页工作流；仅允许 wait/fill/click/scroll/scrape 原子步骤，不执行任意 JavaScript",
+            Description = "执行声明式网页工作流；支持跨页面续接与 wait/waitForUrl/assert/navigate/fill/click/scroll/scrape/snapshot/fetch；禁止任意脚本，不执行任意 JavaScript",
             Permissions = ["browser.read", "browser.write", "network.read"],
             Category = "browser",
             RiskLevel = "medium",
@@ -89,6 +132,8 @@ public static class YanziBrowserCapabilityProvider
               "properties":{
                 "url":{"type":"string","minLength":1},
                 "steps":{"type":"array","items":{"type":"object"}},
+                "browser":{"type":"string","minLength":1,"maxLength":50},
+                "connectionId":{"type":"string","minLength":1,"maxLength":128},
                 "closeOnComplete":{"type":"boolean"},
                 "timeoutSeconds":{"type":"integer","minimum":5,"maximum":120}
               },
@@ -110,9 +155,10 @@ public static class YanziBrowserCapabilityProvider
             enabled = settings.EnableBrowserHelper,
             connected = server?.IsBrowserConnected == true,
             browser = server?.ConnectedBrowserName ?? "",
+            connections = server?.ConnectedBrowserSessions ?? [],
             localApiListening = server?.IsListening == true,
             provider = "yanzi-browser-extension",
-            supportedWorkflowSteps = new[] { "wait", "fill", "click", "scroll", "scrape" }
+            supportedWorkflowSteps = new[] { "wait", "waitForUrl", "assert", "navigate", "fill", "click", "scroll", "scrape", "fetch" }
         });
     }
 
@@ -177,6 +223,37 @@ public static class YanziBrowserCapabilityProvider
         return await ExecuteBrowserTaskAsync(input, task);
     }
 
+    private static async Task<object?> SnapshotAsync(object? payload)
+    {
+        var input = (JsonElement)payload!;
+        var url = RequireHttpUrl(input.GetProperty("url").GetString()!);
+        var step = new Dictionary<string, object?> { ["type"] = "snapshot", ["key"] = "semantic" };
+        if (input.TryGetProperty("limit", out var limit) && limit.TryGetInt32(out var limitValue))
+            step["limit"] = limitValue;
+        if (input.TryGetProperty("maxTextLength", out var textLength) && textLength.TryGetInt32(out var textLengthValue))
+            step["maxTextLength"] = textLengthValue;
+        return await ExecuteBrowserTaskAsync(input, new Dictionary<string, object?>
+        {
+            ["action"] = "workflow",
+            ["url"] = url,
+            ["steps"] = new object[] { step },
+            ["closeOnComplete"] = GetCloseOnComplete(input),
+            ["timeoutSeconds"] = input.TryGetProperty("timeoutSeconds", out var duration) && duration.TryGetInt32(out var timeoutValue)
+                ? timeoutValue : 30
+        });
+    }
+
+    private static async Task<object?> WorkflowStatusAsync(object? payload)
+    {
+        var input = (JsonElement)payload!;
+        var request = new Dictionary<string, object?> { ["action"] = "workflow_state" };
+        if (input.ValueKind == JsonValueKind.Object &&
+            input.TryGetProperty("taskId", out var id) &&
+            id.ValueKind == JsonValueKind.String)
+            request["targetTaskId"] = id.GetString();
+        return await ExecuteBrowserTaskAsync(input, request);
+    }
+
     private static async Task<object?> WorkflowAsync(object? payload)
     {
         var input = (JsonElement)payload!;
@@ -199,7 +276,9 @@ public static class YanziBrowserCapabilityProvider
             ["action"] = "workflow",
             ["url"] = url,
             ["steps"] = steps.Clone(),
-            ["closeOnComplete"] = GetCloseOnComplete(input)
+            ["closeOnComplete"] = GetCloseOnComplete(input),
+            ["timeoutSeconds"] = input.TryGetProperty("timeoutSeconds", out var workflowTimeout) && workflowTimeout.TryGetInt32(out var configuredTimeout)
+                ? configuredTimeout : 30
         });
     }
 
@@ -216,6 +295,16 @@ public static class YanziBrowserCapabilityProvider
                              timeout.TryGetInt32(out var timeoutValue)
             ? timeoutValue
             : 30;
+
+        // Routing is handled by the host, not the page script. The browser and
+        // connectionId are never persisted in form data or executed as page JS.
+        foreach (var field in new[] { "browser", "connectionId" })
+        {
+            if (input.ValueKind == JsonValueKind.Object &&
+                input.TryGetProperty(field, out var route) &&
+                route.ValueKind == JsonValueKind.String)
+                task[field] = route.GetString();
+        }
 
         var result = await server.RunBrowserTaskAsync(task, timeoutSeconds);
         if (!result.success)
@@ -258,7 +347,7 @@ public static class YanziBrowserCapabilityProvider
             throw new ArgumentException($"步骤 {index} 缺少 type。");
 
         var type = typeElement.GetString()?.Trim().ToLowerInvariant();
-        if (type is not ("wait" or "fill" or "click" or "scroll" or "scrape"))
+        if (type is not ("wait" or "waitforurl" or "assert" or "navigate" or "fill" or "click" or "scroll" or "scrape" or "snapshot" or "fetch"))
             throw new ArgumentException($"步骤 {index} 不支持类型：{type}");
 
         switch (type)
@@ -270,6 +359,34 @@ public static class YanziBrowserCapabilityProvider
                 if (step.TryGetProperty("timeout", out var timeout) &&
                     (!timeout.TryGetInt32(out var timeoutValue) || timeoutValue < 0 || timeoutValue > 30000))
                     throw new ArgumentException($"步骤 {index}.timeout 必须在 0-30000ms。");
+                if (step.TryGetProperty("urlIncludes", out var waitUrl) &&
+                    (waitUrl.ValueKind != JsonValueKind.String ||
+                     (waitUrl.GetString() ?? "").Length > 2000))
+                    throw new ArgumentException($"步骤 {index}.urlIncludes 无效。");
+                break;
+
+            case "waitforurl":
+                if (!step.TryGetProperty("urlIncludes", out var urlMatch) ||
+                    urlMatch.ValueKind != JsonValueKind.String ||
+                    string.IsNullOrWhiteSpace(urlMatch.GetString()) ||
+                    urlMatch.GetString()!.Length > 2000)
+                    throw new ArgumentException($"步骤 {index} waitForUrl 需要有效 urlIncludes。");
+                break;
+
+            case "navigate":
+                if (!step.TryGetProperty("url", out var navigateUrl) ||
+                    navigateUrl.ValueKind != JsonValueKind.String)
+                    throw new ArgumentException($"步骤 {index} navigate 缺少 url。");
+                RequireHttpUrl(navigateUrl.GetString() ?? "");
+                break;
+
+            case "assert":
+                if (step.TryGetProperty("selector", out var assertSelector) &&
+                    assertSelector.ValueKind == JsonValueKind.String)
+                    ValidateSelector(assertSelector.GetString(), $"步骤 {index}.selector");
+                if (!step.TryGetProperty("selector", out _) &&
+                    !step.TryGetProperty("urlIncludes", out _))
+                    throw new ArgumentException($"步骤 {index} assert 至少需要 selector 或 urlIncludes。");
                 break;
 
             case "fill":
@@ -282,12 +399,30 @@ public static class YanziBrowserCapabilityProvider
 
             case "click":
                 ValidateRequiredSelector(step, index);
+                if (step.TryGetProperty("waitForUrl", out var targetUrl) &&
+                    (targetUrl.ValueKind != JsonValueKind.String ||
+                     (targetUrl.GetString() ?? "").Length > 2000))
+                    throw new ArgumentException($"步骤 {index}.waitForUrl 无效。");
                 break;
 
             case "scroll":
                 if (step.TryGetProperty("distance", out var distance) &&
                     (!distance.TryGetInt32(out var distanceValue) || Math.Abs((long)distanceValue) > 100000))
                     throw new ArgumentException($"步骤 {index}.distance 超出允许范围。");
+                break;
+
+            case "snapshot":
+                if (step.TryGetProperty("limit", out var limit) &&
+                    (!limit.TryGetInt32(out var maxNodes) || maxNodes < 1 || maxNodes > 120))
+                    throw new ArgumentException($"步骤 {index}.limit 必须在 1-120。");
+                if (step.TryGetProperty("maxTextLength", out var maxText) &&
+                    (!maxText.TryGetInt32(out var maxLen) || maxLen < 30 || maxLen > 250))
+                    throw new ArgumentException($"步骤 {index}.maxTextLength 必须在 30-250。");
+                if (step.TryGetProperty("key", out var snapshotKey) &&
+                    (snapshotKey.ValueKind != JsonValueKind.String ||
+                     string.IsNullOrWhiteSpace(snapshotKey.GetString()) ||
+                     snapshotKey.GetString()!.Length > 60))
+                    throw new ArgumentException($"步骤 {index}.key 无效。");
                 break;
 
             case "scrape":

@@ -47,6 +47,7 @@ public partial class App : WpfApplication
     private static string SingleInstanceAppId => HostRuntimeProfile.AppId;
 
     private Forms.NotifyIcon? _notifyIcon;
+    private Yanzi.UI.Wpf.YanziDropdownMenu? _trayMenu;
     private SettingsWindow? _settingsWindow;
     private RunningExtensionsWindow? _runningExtensionsWindow;
     private InputStateWindow? _inputStateWindow;
@@ -57,7 +58,6 @@ public partial class App : WpfApplication
     internal void NotifyExternalAccessReady() => _externalAccessApproval?.Wake();
     private LanDiscoveryService? _lanDiscoveryService;
     private SingleInstanceService? _singleInstanceService;
-    private SharedRuntimeHost? _sharedRuntimeHost;
     private bool _listenerServicesPaused;
     private bool _isAutoPausedByBlacklist;
     private IntPtr _foregroundHook = IntPtr.Zero;
@@ -70,7 +70,7 @@ public partial class App : WpfApplication
 
     internal bool IsVerificationHarness { get; set; }
 
-    protected override async void OnStartup(WpfStartupEventArgs e)
+    protected override void OnStartup(WpfStartupEventArgs e)
     {
         if (IsVerificationHarness) return;
         // 运行端到端加密 E2EE 模块启动自检
@@ -206,15 +206,15 @@ public partial class App : WpfApplication
         // 3. 只有抢占到 Mutex 的唯一主实例，才进行后续复杂的环境配置初始化
         TrySetProcessDpiAwareness();
         base.OnStartup(e);
-        if (HostRuntimeProfile.IsShell)
+        // Single-process startup: no shared Runtime installation, discovery or IPC attachment.
+        // Retire only legacy Yanzi-managed Runtime processes after winning the primary-instance lock.
+        try { LegacyRuntimeMigrationService.StopManagedProcesses(); }
+        catch (Exception ex)
         {
-            try { await RuntimeConnection.EnsureAvailableAsync(); }
-            catch (Exception ex)
-            {
-                System.Windows.MessageBox.Show(ex.Message, "燕子 Runtime", MessageBoxButton.OK, MessageBoxImage.Error);
-                Shutdown(1);
-                return;
-            }
+            HostAssets.AppendLog("Single-process migration blocked: " + ex.Message);
+            System.Windows.MessageBox.Show("旧版燕子后台进程未能退出。请先结束旧版 Runtime，然后重新打开燕子。", "燕子升级", MessageBoxButton.OK, MessageBoxImage.Warning);
+            Shutdown(1);
+            return;
         }
         YanziBuiltinCapabilityRegistration.Register();
 
@@ -225,6 +225,9 @@ public partial class App : WpfApplication
 
         SyncConfigLoader.EnsureExampleFile();
         var settings = AppSettingsStore.Load();
+        // Sync registry user environment before launching companion services or mini-apps.
+        try { WindowsEnvironmentVariablePublisher.Synchronize(); }
+        catch (Exception ex) { HostAssets.AppendLog($"[WindowsEnv] Startup synchronization failed: {ex.GetType().Name}"); }
         HostAssets.AppendLog($"[App.OnStartup] Loaded settings: EnableEverything={settings.EnableEverything}, UpdatedAt={settings.LauncherConfigUpdatedAtUtc}");
         ApplyTheme(settings.ThemeMode);
         EventManager.RegisterClassHandler(typeof(Window), Window.LoadedEvent, new RoutedEventHandler(Window_GlobalLoaded));
@@ -241,6 +244,8 @@ public partial class App : WpfApplication
         }
 
         if (HostRuntimeProfile.OwnsBackgroundServices) _ = Task.Run(() => OpenQuickHost.Sync.ExtensionRecycleBinService.PurgeExpiredItems(30));
+        // Keep only bounded, known-safe Yanzi installer snapshots on installed unified hosts.
+        YanziArtifactRetentionService.Start();
 
         ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown;
 
@@ -256,22 +261,8 @@ public partial class App : WpfApplication
 
             // 无论前台还是后台启动，都必须初始化后台核心服务（WebDAV、Everything、WindowBinding、鼠标手势等）
             window.InitializeBackgroundServices();
-            if (HostRuntimeProfile.IsRuntime)
-            {
-                _sharedRuntimeHost = new SharedRuntimeHost(window);
-                _sharedRuntimeHost.Start();
-            }
-            else
-            {
-                await RuntimeConnection.AttachAsync(window);
-            }
+            // UI and background services are now hosted by this one Yanzi.exe process.
             if (HostRuntimeProfile.OwnsBackgroundServices) _externalAccessApproval = new ExternalAccessApprovalService();
-            if (Current?.TryFindResource("TrayContextMenu") is System.Windows.Controls.ContextMenu accessMenu)
-            {
-                var accessItem = new System.Windows.Controls.MenuItem { Header = "AI / 外部应用授权" };
-                accessItem.Click += (_, _) => ShowExternalApprovals();
-                accessMenu.Items.Add(accessItem);
-            }
             window.EnsureStandbyRadialMenu();
 
             bool explicitlyHidden = ShouldStartHidden(e.Args);
@@ -325,6 +316,54 @@ public partial class App : WpfApplication
                     System.Windows.Threading.DispatcherPriority.ApplicationIdle);
             }
 
+            // Development-only visual review of the actual Yanyu editor. Never persists preview edits.
+            if (HostRuntimeProfile.IsDevelopment && e.Args.Any(static arg =>
+                    arg.Equals("--yanyu-preview", StringComparison.OrdinalIgnoreCase)))
+            {
+                _ = Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    window.ShowPanel();
+                    var exampleRule = new YanyuRuleSettings
+                    {
+                        TriggerText = "123",
+                        TriggerSuffix = YanyuTriggerSuffix.Space,
+                        Enabled = true,
+                        ActionType = YanyuActionTypes.PasteText,
+                        TextContent = "1234",
+                        Description = "公共组件样式预览"
+                    };
+                    var editor = new YanyuEditorWindow(
+                        "编辑燕语 · 本地预览",
+                        "查看公共组件样式。预览中的保存与删除不会更改实际规则。",
+                        exampleRule,
+                        Array.Empty<CommandItem>(),
+                        isEditMode: true)
+                    {
+                        Owner = window
+                    };
+                    if (editor.ShowDialog() == true && !editor.WasDeleted)
+                        HostAssets.AppendLog($"Yanyu preview-only validation: suffix={editor.EditedRule.TriggerSuffix}; boundProcess={editor.EditedRule.BoundProcessName}");
+                }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            }
+
+            // Development-only list preview for the actual 燕语 results (no fixture writes).
+            if (HostRuntimeProfile.IsDevelopment && e.Args.Any(static arg =>
+                    arg.Equals("--yanyu-list-preview", StringComparison.OrdinalIgnoreCase)))
+            {
+                _ = Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    window.ShowPanel();
+                    var tab = window.SearchScopes.FirstOrDefault(static scope => scope.Key == "yanyu");
+                    if (tab != null)
+                        window.SelectedSearchScope = tab;
+                    if (window.FindName("SearchBox") is System.Windows.Controls.TextBox search)
+                    {
+                        search.Text = "测试";
+                        search.Focus();
+                    }
+                }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            }
+
             // 4. 燕子 1.0.0 VIP 维护计划启动门禁自检（在保用户或终身 VIP 0 延迟秒过；未开通或已到期则触发激活引导）
             _ = Task.Run(async () =>
             {
@@ -333,6 +372,36 @@ public partial class App : WpfApplication
 
             // 5. 标识整个应用的所有核心初始化步骤均顺利执行完成，正式转换为运行期柔性容错模式
             _isAppFullyInitialized = true;
+
+            // Run once per Windows user: stage the packaged extension outside the versioned app
+            // directory and notify on fresh devices. Browser consent is never bypassed.
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var bundled = BrowserHelperBootstrap.FindBundledDirectory();
+                    if (bundled == null) return;
+                    BrowserHelperBootstrap.EnsureStableBundle(bundled);
+                    BrowserHelperBootstrap.WriteRuntimeConfiguration(settings.AgentApiPort);
+                    await BrowserHelperDistribution.UpdateManagedEgoIfRunningAsync();
+                    BrowserHelperDistribution.StartManagedEgoMonitor();
+                    var profiles = BrowserHelperBootstrap.Inspect();
+                    if (profiles.Count == 0 || profiles.Any(p => p.Installed)) return;
+                    var notice = System.IO.Path.Combine(
+                        BrowserHelperBootstrap.StableDirectory, ".first-start-notice");
+                    if (System.IO.File.Exists(notice)
+                        && DateTime.TryParse(System.IO.File.ReadAllText(notice), out var lastShown)
+                        && DateTime.UtcNow - lastShown.ToUniversalTime() < TimeSpan.FromDays(1)) return;
+                    System.IO.File.WriteAllText(notice, DateTime.UtcNow.ToString("O"));
+                    _ = Dispatcher.BeginInvoke(new Action(() =>
+                        ShowDesktopNotification("燕子浏览器助手",
+                            "已为这台电脑准备浏览器助手。首次使用请在燕子 AI 对话中完成浏览器授权安装。")));
+                }
+                catch (Exception ex)
+                {
+                    HostAssets.AppendLog($"BrowserHelper bootstrap: {ex.Message}");
+                }
+            });
 
             // 预加载设置窗口并提前创建 HWND 与 DWM 深色环境，避免第一次打开时因主线程创建句柄和排版引发首屏闪白或卡顿
             _ = Dispatcher.BeginInvoke(new Action(() =>
@@ -541,13 +610,6 @@ public partial class App : WpfApplication
             UpdateWindowDwmTheme(window);
         }
 
-        // Force Tray Context Menu to update its dynamic resources by toggling its style
-        if (Current.TryFindResource("TrayContextMenu") is System.Windows.Controls.ContextMenu menu)
-        {
-            var currentStyle = menu.Style;
-            menu.Style = null;
-            menu.Style = currentStyle;
-        }
     }
 
     private static void TryRegisterUriProtocol()
@@ -613,8 +675,7 @@ public partial class App : WpfApplication
 
     protected override void OnExit(WpfExitEventArgs e)
     {
-        _sharedRuntimeHost?.Dispose();
-        if (HostRuntimeProfile.IsShell) RuntimeConnection.Detach();
+        // No Runtime IPC connection is created by the official Windows application.
         DispatcherUnhandledException -= App_DispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException -= CurrentDomain_UnhandledException;
         TaskScheduler.UnobservedTaskException -= TaskScheduler_UnobservedTaskException;
@@ -799,7 +860,12 @@ public partial class App : WpfApplication
                  },
                 () =>
                 {
-                    window.Dispatcher.Invoke(() => window.QueueBackgroundWebDavSync("api-trigger", forceImmediate: true));
+                    window.Dispatcher.Invoke(() =>
+                    {
+                        window.QueueBackgroundWebDavSync("api-trigger", forceImmediate: true);
+                        window.SyncLocalExtensionsToCloud(forceImmediate: true);
+                        window.RefreshMissingPrivateExtensionsFromCloud();
+                    });
                 },
                 (id) =>
                 {
@@ -948,25 +1014,14 @@ public partial class App : WpfApplication
             window.HideMousePanel();
         };
 
-        // 右键弹出 WPF ContextMenu
-        notifyIcon.MouseUp += (s, e) =>
+        // Shared popup menu with left-opening submenus for the notification area.
+        notifyIcon.MouseUp += (_, e) =>
         {
-            if (e.Button == Forms.MouseButtons.Right)
-            {
-                UpdateLastUserActiveProcess(Win32Native.GetForegroundWindow());
-                _lastTrayForegroundProcess = !string.IsNullOrWhiteSpace(_lastUserActiveProcess) ? _lastUserActiveProcess : YarnSelectService.GetForegroundProcessName();
-                if (WpfApplication.Current.TryFindResource("TrayContextMenu") is System.Windows.Controls.ContextMenu menu)
-                {
-                    UpdateTrayMenuState(menu);
-                    // 激活托盘宿主句柄以确保菜单失去焦点时能自动关闭，避免调用未显示Window的Activate()
-                    var helper = new System.Windows.Interop.WindowInteropHelper(window);
-                    if (helper.Handle != IntPtr.Zero)
-                    {
-                        Win32Native.SetForegroundWindow(helper.Handle);
-                    }
-                    menu.IsOpen = true;
-                }
-            }
+            if (e.Button != Forms.MouseButtons.Right) return;
+            UpdateLastUserActiveProcess(Win32Native.GetForegroundWindow());
+            _lastTrayForegroundProcess = !string.IsNullOrWhiteSpace(_lastUserActiveProcess)
+                ? _lastUserActiveProcess : YarnSelectService.GetForegroundProcessName();
+            ShowTrayMenu(window);
         };
 
         return notifyIcon;
@@ -1397,82 +1452,103 @@ public partial class App : WpfApplication
             WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
     }
 
-    private void UpdateTrayMenuState(System.Windows.Controls.ContextMenu menu)
+    private static FrameworkElement TrayMenuIcon(string key, bool destructive = false)
     {
-        foreach (var item in GetAllMenuItems(menu))
+        var icon = new System.Windows.Shapes.Path
         {
-            if (Equals(item.Tag, "show-searchbox"))
-            {
-                item.Visibility = MainWindow != null && MainWindow.IsVisible ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
-            }
-            else if (Equals(item.Tag, "mobile-chat"))
-            {
-                item.Visibility = System.Windows.Visibility.Visible;
-            }
-            else if (Equals(item.Tag, "service-toggle"))
-            {
-                item.Header = _listenerServicesPaused ? "恢复全部服务" : "暂停全部服务";
-            }
-            else if (Equals(item.Tag, "mouse-panel"))
-            {
-                item.IsEnabled = !_listenerServicesPaused;
-            }
-            else if (Equals(item.Tag, "running-extensions"))
-            {
-                var count = RunningExtensionRegistry.GetRunningCount();
-                item.Header = $"正在运行的小程序 ({count})";
-                item.IsEnabled = count > 0;
-            }
-            else if (Equals(item.Tag, "add-current-to-blacklist"))
-            {
-                var proc = !string.IsNullOrWhiteSpace(_lastUserActiveProcess) ? _lastUserActiveProcess : _lastTrayForegroundProcess;
-                bool isInvalid = string.IsNullOrWhiteSpace(proc) || string.Equals(proc, "desktop", StringComparison.OrdinalIgnoreCase);
-
-                var settings = AppSettingsStore.Load();
-                var blacklist = settings.GlobalServiceBlacklistedProcesses ?? new List<string>();
-                bool alreadyInList = !isInvalid && blacklist.Any(p => ProcessHelper.ProcessNameMatches(proc, p));
-
-                // 动态更新对应进程的真实图标
-                if (!isInvalid && _lastUserActiveProcessIcon != null)
-                {
-                    item.Icon = new System.Windows.Controls.Image
-                    {
-                        Source = _lastUserActiveProcessIcon,
-                        Width = 16,
-                        Height = 16,
-                        Stretch = System.Windows.Media.Stretch.Uniform
-                    };
-                }
-
-                if (isInvalid)
-                {
-                    item.Header = "添加当前应用到黑名单";
-                    item.IsEnabled = false;
-                }
-                else if (alreadyInList)
-                {
-                    item.Header = $"已在黑名单: {proc} (点击移出)";
-                    item.IsEnabled = true;
-                }
-                else
-                {
-                    item.Header = $"添加「{proc}」到黑名单";
-                    item.IsEnabled = true;
-                }
-            }
-        }
+            Data = ExtensionIconLibrary.ResolveVectorIcon($"mdi:{key}"),
+            Width = 16, Height = 16, Stretch = Stretch.Uniform, Opacity = 0.9
+        };
+        icon.SetResourceReference(System.Windows.Shapes.Shape.FillProperty,
+            destructive ? "Yanzi.Color.Destructive" : "Yanzi.Color.MutedForeground");
+        return icon;
     }
 
-    private static IEnumerable<System.Windows.Controls.MenuItem> GetAllMenuItems(System.Windows.Controls.ItemsControl parent)
+    /// <summary>Tray context menu rendered by the reusable shared UI component.</summary>
+    private Yanzi.UI.Wpf.YanziDropdownMenu CreateTrayMenu()
     {
-        foreach (var item in parent.Items.OfType<System.Windows.Controls.MenuItem>())
+        var menu = new Yanzi.UI.Wpf.YanziDropdownMenu { SubmenuWidth = 255 };
+        menu.Surface.Width = 235;
+        bool light = string.Equals(_currentThemeMode, "Light", StringComparison.OrdinalIgnoreCase) ||
+            (string.Equals(_currentThemeMode, "System", StringComparison.OrdinalIgnoreCase) && IsSystemLightTheme());
+        menu.UseStandaloneTheme(light ? Yanzi.UI.Wpf.YanziTheme.Light : Yanzi.UI.Wpf.YanziTheme.Dark);
+
+        if (MainWindow is not { IsVisible: true })
+            menu.AddAction(Current?.TryFindResource("Term.Warehouse") as string ?? "仓库",
+                () => TrayShow_Click(this, new RoutedEventArgs()), icon: TrayMenuIcon("search"));
+        menu.AddAction("手机", () => TrayMobileInbox_Click(this, new RoutedEventArgs()), icon: TrayMenuIcon("mobile"));
+        var backpack = menu.AddAction(Current?.TryFindResource("Term.Backpack") as string ?? "背包",
+            () => TrayMousePanel_Click(this, new RoutedEventArgs()), icon: TrayMenuIcon("backpack"));
+        backpack.IsEnabled = !_listenerServicesPaused;
+        menu.AddSeparator();
+        menu.AddSubmenu("应用黑名单", child =>
         {
-            yield return item;
-            foreach (var child in GetAllMenuItems(item))
-            {
-                yield return child;
-            }
-        }
+            var proc = !string.IsNullOrWhiteSpace(_lastUserActiveProcess)
+                ? _lastUserActiveProcess : _lastTrayForegroundProcess;
+            bool invalid = string.IsNullOrWhiteSpace(proc) ||
+                string.Equals(proc, "desktop", StringComparison.OrdinalIgnoreCase);
+            var blacklist = AppSettingsStore.Load().GlobalServiceBlacklistedProcesses ?? new List<string>();
+            bool blocked = !invalid && blacklist.Any(p => ProcessHelper.ProcessNameMatches(proc, p));
+            string label = invalid ? "添加当前应用到黑名单" : blocked
+                ? $"已在黑名单: {proc} (点击移出)"
+                : $"添加「{proc}」到黑名单";
+            FrameworkElement icon = !invalid && _lastUserActiveProcessIcon is not null
+                ? new System.Windows.Controls.Image
+                {
+                    Source = _lastUserActiveProcessIcon, Width = 16, Height = 16, Stretch = Stretch.Uniform
+                }
+                : TrayMenuIcon("block-helper", destructive: true);
+            var item = child.AddAction(label,
+                () => TrayAddCurrentToBlacklist_Click(this, new RoutedEventArgs()), icon);
+            item.IsEnabled = !invalid;
+            child.AddAction("管理全局黑名单...",
+                () => TrayAddGlobalBlacklist_Click(this, new RoutedEventArgs()), TrayMenuIcon("settings"));
+        }, icon: TrayMenuIcon("block-helper"));
+        int count = RunningExtensionRegistry.GetRunningCount();
+        var running = menu.AddAction($"正在运行的小程序 ({count})",
+            () => TrayRunningExtensions_Click(this, new RoutedEventArgs()), icon: TrayMenuIcon("running"));
+        running.IsEnabled = count > 0;
+        menu.AddSubmenu("工具与排错", child =>
+        {
+            child.AddAction("重置键盘和鼠标状态",
+                () => TrayResetInputState_Click(this, new RoutedEventArgs()), TrayMenuIcon("shortcut"));
+            child.AddAction("查看输入状态",
+                () => TrayInputState_Click(this, new RoutedEventArgs()), TrayMenuIcon("mouse-panel"));
+        }, icon: TrayMenuIcon("shortcut"));
+        menu.AddSubmenu("任务与赞助", child =>
+        {
+            child.AddAction("任务与成就",
+                () => TrayQuestCenter_Click(this, new RoutedEventArgs()), TrayMenuIcon("trophy"));
+            child.AddAction("赞助维护 / 激活卡密",
+                () => TrayVipActivation_Click(this, new RoutedEventArgs()), TrayMenuIcon("star"));
+        }, icon: TrayMenuIcon("trophy"));
+        menu.AddAction("AI / 外部应用授权", ShowExternalApprovals, icon: TrayMenuIcon("shield-check"));
+        menu.AddSeparator();
+        menu.AddAction("设置", () => TraySettings_Click(this, new RoutedEventArgs()), icon: TrayMenuIcon("settings"));
+        menu.AddAction(_listenerServicesPaused ? "恢复全部服务" : "暂停全部服务",
+            () => TrayToggleMousePanelService_Click(this, new RoutedEventArgs()),
+            icon: TrayMenuIcon(_listenerServicesPaused ? "play" : "pause"));
+        menu.AddAction("退出", () => TrayExit_Click(this, new RoutedEventArgs()),
+            destructive: true, icon: TrayMenuIcon("logout", destructive: true));
+        return menu;
+    }
+
+    private void ShowTrayMenu(MainWindow window)
+    {
+        if (_trayMenu is not null) _trayMenu.IsOpen = false;
+        var menu = CreateTrayMenu();
+        _trayMenu = menu;
+        var pointer = Forms.Cursor.Position;
+        var work = Forms.Screen.FromPoint(pointer).WorkingArea;
+        var source = System.Windows.PresentationSource.FromVisual(window);
+        var fromDevice = source?.CompositionTarget?.TransformFromDevice ?? System.Windows.Media.Matrix.Identity;
+        var cursor = fromDevice.Transform(new System.Windows.Point(pointer.X, pointer.Y));
+        var area = new System.Windows.Rect(
+            fromDevice.Transform(new System.Windows.Point(work.Left, work.Top)),
+            fromDevice.Transform(new System.Windows.Point(work.Right, work.Bottom)));
+        var helper = new System.Windows.Interop.WindowInteropHelper(window);
+        if (helper.Handle != IntPtr.Zero) Win32Native.SetForegroundWindow(helper.Handle);
+        menu.ShowAtScreenPoint(cursor, area);
     }
 
     private static Icon? TryCreateNotifyIcon()

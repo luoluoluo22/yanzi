@@ -92,7 +92,7 @@ public static class ExtensionPackageService
             // 使用固定的时间戳（2020-01-01），确保相同内容生成相同的hash
             var fixedTimestamp = new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero);
             
-            foreach (var filePath in Directory.EnumerateFiles(directoryPath, "*", SearchOption.AllDirectories)
+            foreach (var filePath in ExtensionSyncIgnorePolicy.EnumerateIncludedFiles(directoryPath)
                          .Where(path => ShouldIncludeInPackage(directoryPath, path))
                          .OrderBy(path => Path.GetRelativePath(directoryPath, path), StringComparer.Ordinal))
             {
@@ -110,11 +110,13 @@ public static class ExtensionPackageService
                 using var fileStream = File.OpenRead(filePath);
                 fileStream.CopyTo(entryStream);
             }
+            ExtensionGitSafety.AddProvenance(archive, directoryPath);
         }
 
-        var dependencyDlls = Directory
-            .EnumerateFiles(directoryPath, "*.dll", SearchOption.AllDirectories)
-            .Where(path => ShouldIncludeInPackage(directoryPath, path))
+        var dependencyDlls = ExtensionSyncIgnorePolicy
+            .EnumerateIncludedFiles(directoryPath)
+            .Where(path => Path.GetExtension(path).Equals(".dll", StringComparison.OrdinalIgnoreCase) &&
+                           ShouldIncludeInPackage(directoryPath, path))
             .Select(path => Path.GetRelativePath(directoryPath, path))
             .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
             .ToArray();
@@ -212,7 +214,10 @@ public static class ExtensionPackageService
         // 内联脚本执行时生成的临时文件不属于小程序内容。将其打包会让每次运行都产生新哈希并重复上传。
         if (segments.Length == 1 &&
             (segments[0].StartsWith(".yanzi-inline-", StringComparison.OrdinalIgnoreCase) ||
-             segments[0].Equals("debug.log", StringComparison.OrdinalIgnoreCase)))
+             segments[0].Equals("debug.log", StringComparison.OrdinalIgnoreCase) ||
+             segments[0].Equals("rice-cooker-link.json", StringComparison.OrdinalIgnoreCase) ||
+             segments[0].EndsWith(".local.json", StringComparison.OrdinalIgnoreCase) ||
+             segments[0].EndsWith(".user.json", StringComparison.OrdinalIgnoreCase)))
         {
             return false;
         }
@@ -224,6 +229,17 @@ public static class ExtensionPackageService
         }
 
         if (segments.Any(static segment =>
+                segment.Equals("node_modules", StringComparison.OrdinalIgnoreCase) ||
+                segment.Equals(".runtime", StringComparison.OrdinalIgnoreCase) ||
+                segment.Equals(".raccoon-runtime", StringComparison.OrdinalIgnoreCase) ||
+                segment.Equals(".git", StringComparison.OrdinalIgnoreCase) ||
+                segment.Equals(".env", StringComparison.OrdinalIgnoreCase) ||
+                (segment.StartsWith(".env.", StringComparison.OrdinalIgnoreCase) &&
+                 !segment.Equals(".env.example", StringComparison.OrdinalIgnoreCase))))
+        {
+            return false;
+        }
+if (segments.Any(static segment =>
                 segment.Equals("bin", StringComparison.OrdinalIgnoreCase) ||
                 segment.Equals("obj", StringComparison.OrdinalIgnoreCase) ||
                 segment.Equals("backup", StringComparison.OrdinalIgnoreCase) ||
@@ -237,7 +253,9 @@ public static class ExtensionPackageService
         }
 
         return !(segments.Length == 1 &&
-                 Path.GetExtension(filePath).Equals(".zip", StringComparison.OrdinalIgnoreCase));
+                 Path.GetExtension(filePath).Equals(".zip", StringComparison.OrdinalIgnoreCase)) &&
+               !string.Equals(normalizedRelativePath, ExtensionGitSafety.ProvenanceEntry, StringComparison.OrdinalIgnoreCase) &&
+               ExtensionSyncIgnorePolicy.ShouldInclude(rootDirectory, filePath);
     }
 
     private static readonly JsonSerializerOptions JsonOptions = new()

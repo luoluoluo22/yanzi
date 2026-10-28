@@ -19,30 +19,22 @@ public static class YanziPrimitives
         return line;
     }
 
-    public static Border Kbd(string shortcut)
+    // Compatibility entry point: all keycaps now use the shared Kbd style/control.
+    public static Border Kbd(string shortcut) => new YanziKbd { KeyText = shortcut };
+
+    public static YanziKbdGroup KbdGroup(params string[] keys)
     {
-        var frame = new Border { Padding = new Thickness(6, 2, 6, 2), CornerRadius = new CornerRadius(4),
-            BorderThickness = new Thickness(1), VerticalAlignment = VerticalAlignment.Center };
-        Resource(frame, Border.BackgroundProperty, "Muted");
-        Resource(frame, Border.BorderBrushProperty, "Border");
-        var title = new TextBlock { Text = shortcut, FontFamily = new FontFamily("Consolas"), FontSize = 11 };
-        Resource(title, TextBlock.ForegroundProperty, "Foreground");
-        frame.Child = title;
-        return frame;
+        var group = new YanziKbdGroup();
+        foreach (var key in keys)
+            group.Children.Add(new YanziKbd { KeyText = key, Margin = new Thickness(0, 0, 4, 0) });
+        return group;
     }
 
-    public static Border Avatar(string initials, double diameter = 42)
-    {
-        var avatar = new Border { Width = diameter, Height = diameter,
-            CornerRadius = new CornerRadius(diameter / 2), VerticalAlignment = VerticalAlignment.Center };
-        Resource(avatar, Border.BackgroundProperty, "Secondary");
-        var text = new TextBlock { Text = initials, HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center, FontWeight = FontWeights.SemiBold,
-            FontSize = Math.Max(10, diameter * 0.31) };
-        Resource(text, TextBlock.ForegroundProperty, "SecondaryForeground");
-        avatar.Child = text;
-        return avatar;
-    }
+    public static Border Avatar(string initials, double diameter = 42) =>
+        new YanziAvatar { Initials = initials, Diameter = diameter };
+
+    public static Border Avatar(string initials, double diameter, ImageSource? image) =>
+        new YanziAvatar { Initials = initials, Diameter = diameter, ImageSource = image };
 
     public static Border Skeleton(double width, double height, bool animate = true)
     {
@@ -113,12 +105,71 @@ public static class YanziPrimitives
         return panel;
     }
 
+    public static YanziLabel Label(string caption, FrameworkElement target, bool required = false) =>
+        new() { Caption = caption, Target = target, Required = required };
+
+
+    /// <summary>Group related accessible form fields under one heading.</summary>
+    public static StackPanel FieldSet(string legend, string? description = null)
+    {
+        var panel = new StackPanel { Margin = new Thickness(0, 0, 0, 14) };
+        var heading = new TextBlock
+        {
+            Text = legend, FontSize = 15, FontWeight = FontWeights.SemiBold,
+            Margin = new Thickness(0, 0, 0, 5)
+        };
+        Resource(heading, TextBlock.ForegroundProperty, "Foreground");
+        panel.Children.Add(heading);
+        if (!string.IsNullOrWhiteSpace(description))
+        {
+            var detail = new TextBlock
+            {
+                Text = description, FontSize = 12, TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 14)
+            };
+            Resource(detail, TextBlock.ForegroundProperty, "MutedForeground");
+            panel.Children.Add(detail);
+        }
+        return panel;
+    }
+
+    /// <summary>Compose labeled inputs, help text and validation errors.</summary>
+    public static StackPanel ValidatedField(string label, FrameworkElement control,
+        string? description = null, string? error = null, bool required = false)
+    {
+        var panel = new StackPanel { Margin = new Thickness(0, 0, 0, 14) };
+        panel.Children.Add(Label(label, control, required));
+        panel.Children.Add(control);
+        if (!string.IsNullOrWhiteSpace(description))
+        {
+            var hint = new TextBlock
+            {
+                Text = description, FontSize = 12, TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 5, 0, 0)
+            };
+            Resource(hint, TextBlock.ForegroundProperty, "MutedForeground");
+            panel.Children.Add(hint);
+        }
+        if (!string.IsNullOrWhiteSpace(error))
+        {
+            var issue = new TextBlock
+            {
+                Text = error, FontSize = 12, TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 5, 0, 0)
+            };
+            Resource(issue, TextBlock.ForegroundProperty, "Destructive");
+            panel.Children.Add(issue);
+            if (control is Control input)
+                input.SetResourceReference(Control.BorderBrushProperty, "Yanzi.Color.Destructive");
+            System.Windows.Automation.AutomationProperties.SetHelpText(control, error);
+        }
+        return panel;
+    }
+
     public static StackPanel Field(string label, FrameworkElement control, string? description = null)
     {
         var panel = new StackPanel { Margin = new Thickness(0, 0, 0, 12) };
-        var text = new TextBlock { Text = label, FontSize = 13, FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(0, 0, 0, 7) };
-        Resource(text, TextBlock.ForegroundProperty, "Foreground");
+        var text = new YanziLabel { Caption = label, Target = control };
         panel.Children.Add(text);
         panel.Children.Add(control);
         if (!string.IsNullOrWhiteSpace(description))

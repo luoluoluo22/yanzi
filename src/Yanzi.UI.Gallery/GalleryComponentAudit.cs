@@ -93,6 +93,13 @@ internal sealed partial class GalleryWindow
         public DateTimeOffset? UpdatedAt { get; set; }
     }
 
+    private static string NormalizeAuditResult(string? value) => value switch
+    {
+        "通过" => "通过",
+        "不一致" or "不通过" => "不通过",
+        _ => "待核对"
+    };
+
     private static readonly HashSet<string> IsolatedPreviewNames = new(StringComparer.Ordinal)
     {
         "Accordion", "Alert", "Alert Dialog", "Aspect Ratio", "Attachment", "Avatar",
@@ -113,6 +120,7 @@ internal sealed partial class GalleryWindow
 
     private void ShowComponent(YanziComponentDescriptor item)
     {
+        if (_page == 0 && _scroll != null) _overviewReturnScrollOffset = _scroll.VerticalOffset;
         _activeComponent = item;
         _page = -1;
         _pageTitle.Text = item.Name;
@@ -120,6 +128,7 @@ internal sealed partial class GalleryWindow
         _body.Children.Clear();
         _body.SetResourceReference(System.Windows.Documents.TextElement.FontFamilyProperty, "Yanzi.Font.Geist");
         _overviewGrid = null;
+        _overviewCatalogGrid = null;
         if (!_sidebarManuallySet) SetSidebarVisible(true, false);
         UpdateNavigation();
         _statusText.Text = "正在核对：" + item.Name + " · 默认均为待核对，不代表已还原";
@@ -132,6 +141,9 @@ internal sealed partial class GalleryWindow
         var reference = Card("官方参考 / " + item.Name,
             "逐项对照官网及燕子的真实 WPF 实现。名称和 API 已登记，不等于视觉/交互已验收。");
         var actions = new WrapPanel { Margin = new Thickness(0, 0, 0, 12) };
+        var backToWall = Button("← 返回全部组件", YanziUi.Styles.PillOutlineButton, ReturnToOverviewWall);
+        System.Windows.Automation.AutomationProperties.SetName(backToWall, "返回全部组件首页");
+        actions.Children.Add(backToWall);
         var openOfficial = Button("打开 shadcn 官方组件页面 ↗", YanziUi.Styles.PillDefaultButton, () =>
         {
             try
@@ -178,33 +190,11 @@ internal sealed partial class GalleryWindow
         _body.Children.Remove(stageRoot);
         _body.Children.Insert(0, stageRoot);
 
-        var review = Card("逐项对比清单", "每一项默认「待核对」，只有人工验证后才能设为通过或不一致。记录保存在本地，不会自动报喜。");
+        var review = Card("逐项对比清单",
+            "点击「通过」或「不通过」立即保存；未选择的项目保持未核对。备注可以单独保存。");
         var oldRecord = LoadComponentAudit(item);
-        var selectors = new List<ComboBox>();
-        for (int i = 0; i < ComparisonDimensions.Length; i++)
-        {
-            var itemRow = new Grid { Margin = new Thickness(0, 0, 0, 12) };
-            itemRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            itemRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            itemRow.Children.Add(Text((i + 1).ToString("00") + "  " + ComparisonDimensions[i],
-                13, false, "Yanzi.Color.Foreground"));
-            var select = YanziUi.WithStyle(new ComboBox
-            {
-                Width = 138, Height = 32, Margin = new Thickness(16, 0, 0, 0)
-            }, YanziUi.Styles.Select);
-            foreach (var state in new[] { "待核对", "通过", "不一致" })
-                select.Items.Add(state);
-            select.SelectedItem = oldRecord.Results.Length > i &&
-                new[] { "待核对", "通过", "不一致" }.Contains(oldRecord.Results[i])
-                ? oldRecord.Results[i] : "待核对";
-            System.Windows.Automation.AutomationProperties.SetName(select, "核对：" + ComparisonDimensions[i]);
-            Grid.SetColumn(select, 1);
-            itemRow.Children.Add(select);
-            review.Children.Add(itemRow);
-            selectors.Add(select);
-        }
-        review.Children.Add(Text("问题、截图坐标与修复建议", 12, true, "Yanzi.Color.Foreground",
-            new Thickness(0, 13, 0, 8)));
+        var states = Enumerable.Range(0, ComparisonDimensions.Length)
+            .Select(i => NormalizeAuditResult(oldRecord.Results.ElementAtOrDefault(i))).ToArray();
         var notes = YanziUi.WithStyle(new TextBox
         {
             Text = oldRecord.Notes, MinHeight = 94, AcceptsReturn = true,
@@ -212,13 +202,13 @@ internal sealed partial class GalleryWindow
             VerticalContentAlignment = VerticalAlignment.Top
         }, YanziUi.Styles.TextareaSoft);
         System.Windows.Automation.AutomationProperties.SetName(notes, "组件对比备注");
-        review.Children.Add(notes);
-        review.Children.Add(Button("保存 " + item.Name + " 核对记录", YanziUi.Styles.PillDefaultButton, () =>
+
+        void SaveCurrentAudit()
         {
             var record = new ComponentAuditRecord
             {
                 Name = item.Name, Notes = notes.Text, UpdatedAt = DateTimeOffset.Now,
-                Results = selectors.Select(x => x.SelectedItem?.ToString() ?? "待核对").ToArray()
+                Results = states.ToArray()
             };
             try
             {
@@ -228,17 +218,77 @@ internal sealed partial class GalleryWindow
                 File.WriteAllText(temporary, JsonSerializer.Serialize(record,
                     new JsonSerializerOptions { WriteIndented = true }), Encoding.UTF8);
                 File.Move(temporary, path, true);
-                Status(item.Name + " 核对记录已保存：" + record.Results.Count(x => x == "通过")
-                    + "/6 通过、" + record.Results.Count(x => x == "不一致") + " 项不一致");
+                Status(item.Name + " 已保存：通过 " + record.Results.Count(x => x == "通过")
+                    + " / 不通过 " + record.Results.Count(x => x == "不通过")
+                    + " / 未核对 " + record.Results.Count(x => x == "待核对"));
             }
             catch (Exception ex) { Status("保存失败：" + ex.Message); }
-        }));
-        var progress = Card("验收说明", "官方基准和本地实现需并排人工比较；自动化构建通过不能替代像素、交互和无障碍专项验收。");
-        progress.Children.Add(Text("默认对照状态：待核对。完成六项并保存后，方可将该组件记为通过。若某项不一致，请在备注中记录差异及截图。", 12, false, "Yanzi.Color.MutedForeground"));
+        }
+
+        for (int i = 0; i < ComparisonDimensions.Length; i++)
+        {
+            var index = i;
+            var itemRow = new Grid { Margin = new Thickness(0, 0, 0, 9) };
+            itemRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            itemRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            itemRow.Children.Add(Text((index + 1).ToString("00") + "  " + ComparisonDimensions[index],
+                13, false, "Yanzi.Color.Foreground"));
+            var choices = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(12, 0, 0, 0) };
+            Button? pass = null;
+            Button? fail = null;
+            void RefreshButtons()
+            {
+                if (pass is null || fail is null) return;
+                YanziUi.WithStyle(pass, states[index] == "通过"
+                    ? YanziUi.Styles.PillDefaultButton : YanziUi.Styles.PillOutlineButton);
+                YanziUi.WithStyle(fail, states[index] == "不通过"
+                    ? YanziUi.Styles.PillDefaultButton : YanziUi.Styles.PillOutlineButton);
+            }
+            pass = Button("通过", YanziUi.Styles.PillOutlineButton, () =>
+            {
+                states[index] = "通过";
+                RefreshButtons();
+                SaveCurrentAudit();
+            });
+            fail = Button("不通过", YanziUi.Styles.PillOutlineButton, () =>
+            {
+                states[index] = "不通过";
+                RefreshButtons();
+                SaveCurrentAudit();
+            });
+            foreach (var button in new[] { pass, fail })
+            {
+                button.Width = 72;
+                button.Height = 29;
+                button.FontSize = 12;
+                button.Margin = new Thickness(0, 0, 5, 0);
+            }
+            System.Windows.Automation.AutomationProperties.SetName(pass,
+                "通过：" + ComparisonDimensions[index]);
+            System.Windows.Automation.AutomationProperties.SetName(fail,
+                "不通过：" + ComparisonDimensions[index]);
+            choices.Children.Add(pass);
+            choices.Children.Add(fail);
+            RefreshButtons();
+            Grid.SetColumn(choices, 1);
+            itemRow.Children.Add(choices);
+            review.Children.Add(itemRow);
+        }
+
+        review.Children.Add(Text("问题、截图坐标与修复建议", 12, true, "Yanzi.Color.Foreground",
+            new Thickness(0, 13, 0, 8)));
+        review.Children.Add(notes);
+        review.Children.Add(Button("保存备注", YanziUi.Styles.PillDefaultButton, SaveCurrentAudit));
+
+        var progress = Card("验收说明",
+            "参照官网的实际渲染与交互手工判断；编译、自动测试通过不等于人工通过。");
+        progress.Children.Add(Text("每项只需点击「通过」或「不通过」，立即持久化；未点击保留待核对状态。修改批注不会丢失。",
+            12, false, "Yanzi.Color.MutedForeground"));
         if (oldRecord.UpdatedAt is not null)
             progress.Children.Add(Text("上次保存：" + oldRecord.UpdatedAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
-                + " · 通过 " + oldRecord.Results.Count(x => x == "通过") + "/6",
-                12, false, "Yanzi.Color.Foreground", new Thickness(0, 9, 0, 0)));
+                + " · 通过 " + states.Count(x => x == "通过") + "/6"
+                + " · 不通过 " + states.Count(x => x == "不通过"), 12, false,
+                "Yanzi.Color.Foreground", new Thickness(0, 9, 0, 0)));
     }
 
     private static int GetComponentIndex(YanziComponentDescriptor item)
@@ -306,11 +356,10 @@ internal sealed partial class GalleryWindow
                 Add(YanziContentPrimitives.MessageBubble("Show me the components.", true));
                 break;
             case "Calendar":
-                Add(YanziUi.WithStyle(new Calendar
-                {
-                    SelectedDate = DateTime.Today,
-                    Margin = new Thickness(0, 0, 10, 0)
-                }, YanziUi.Styles.Calendar));
+                var month = new YanziCalendarMonth(new DateTime(2026, 10, 1));
+                month.SetSelectedDate(new DateTime(2026, 10, 8));
+                month.DateSelected += (_, day) => Status("日历：" + day.ToString("yyyy-MM-dd"));
+                Add(month);
                 break;
             case "Carousel":
                 var carousel = new YanziCarousel { Width = 330, Height = 150 };
@@ -336,9 +385,44 @@ internal sealed partial class GalleryWindow
                     new Thickness(8)), false));
                 break;
             case "Direction":
-                var rtl = Text("يمين · Right-to-left · 方向", 14, false, "Yanzi.Color.Foreground");
-                rtl.FlowDirection = FlowDirection.RightToLeft;
-                Add(rtl);
+                var directionDemo = new StackPanel { Width = 405 };
+                var directionControls = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 12)
+                };
+                var directionLabel = Text("LTR", 13, true, "Yanzi.Color.Foreground");
+                var directionPanel = new StackPanel { Margin = new Thickness(10) };
+                var directionBorder = new Border
+                {
+                    BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(8),
+                    Padding = new Thickness(10), Child = directionPanel
+                };
+                directionBorder.SetResourceReference(Border.BorderBrushProperty, "Yanzi.Color.Border");
+                directionBorder.SetResourceReference(Border.BackgroundProperty, "Yanzi.Color.Card");
+                directionPanel.Children.Add(Text("RTL / LTR · العربية", 14, true, "Yanzi.Color.Foreground"));
+                var mirroredRow = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal, Margin = new Thickness(0, 10, 0, 0)
+                };
+                mirroredRow.Children.Add(YanziUi.WithStyle(new TextBox { Width = 150,
+                    Text = "مرحباً" }, YanziUi.Styles.InputSoft));
+                mirroredRow.Children.Add(YanziUi.WithStyle(new Button
+                {
+                    Content = "Action", Margin = new Thickness(8, 0, 0, 0)
+                }, YanziUi.Styles.OutlineButton));
+                directionPanel.Children.Add(mirroredRow);
+                var changeDirection = Button("切换 RTL / LTR", YanziUi.Styles.PillOutlineButton, () =>
+                {
+                    var rtl = directionBorder.FlowDirection != FlowDirection.RightToLeft;
+                    directionBorder.FlowDirection = rtl ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
+                    directionLabel.Text = rtl ? "RTL" : "LTR";
+                    Status("Direction：" + directionLabel.Text);
+                });
+                directionControls.Children.Add(changeDirection);
+                directionControls.Children.Add(directionLabel);
+                directionDemo.Children.Add(directionControls);
+                directionDemo.Children.Add(directionBorder);
+                Add(directionDemo);
                 break;
             case "Empty":
                 Add(YanziPrimitives.EmptyState("No results", "Try searching for a different item."));
@@ -351,12 +435,23 @@ internal sealed partial class GalleryWindow
                     () => Status("选择通知设置")));
                 break;
             case "Marker":
-                Add(YanziContentPrimitives.Marker("Ready", true));
-                Add(YanziContentPrimitives.Marker("Requires attention", false));
+                var markers = new StackPanel { Width = 410 };
+                markers.Children.Add(YanziContentPrimitives.MarkerVariant("An inline marker for notes."));
+                markers.Children.Add(YanziContentPrimitives.MarkerVariant("A border marker for row boundaries.", "border"));
+                markers.Children.Add(YanziContentPrimitives.MarkerVariant("End of conversation", "separator"));
+                markers.Children.Add(YanziContentPrimitives.Marker("Running tests", true));
+                Add(markers);
                 break;
             case "Message":
-                Add(YanziContentPrimitives.MessageBubble("Incoming sample message", false));
-                Add(YanziContentPrimitives.MessageBubble("Outgoing reply", true));
+                var messages = new StackPanel { Width = 455 };
+                messages.Children.Add(YanziContentPrimitives.MessageRow(
+                    "Hello, what can I help with today?", false, "AI", "Assistant", "10:24 AM"));
+                messages.Children.Add(YanziContentPrimitives.MessageRow(
+                    "Show me how to compose a message.", true, "ME", "You", "Sent · 10:25 AM"));
+                messages.Children.Add(YanziContentPrimitives.MessageRow(
+                    "Messages can include an avatar, header, bubble and footer.", false, "AI",
+                    "Assistant", "Completed"));
+                Add(messages);
                 break;
             case "Pagination":
                 var paging = new YanziPagination { PageCount = 8 };
@@ -373,6 +468,33 @@ internal sealed partial class GalleryWindow
                 var resize = YanziLayoutPrimitives.Resizable(left, right, 135, 125);
                 resize.Width = 320;
                 Add(resize);
+
+                var top = new Border { Padding = new Thickness(12) };
+                top.SetResourceReference(Border.BackgroundProperty, "Yanzi.Color.Secondary");
+                top.Child = Text("上面板（拖动水平手柄）", 13, false, "Yanzi.Color.Foreground");
+                var bottom = new Border { Padding = new Thickness(12) };
+                bottom.SetResourceReference(Border.BackgroundProperty, "Yanzi.Color.Card");
+                bottom.Child = Text("下面板", 13, false, "Yanzi.Color.Foreground");
+                var vertical = YanziLayoutPrimitives.ResizableVertical(top, bottom, 112, 260);
+                vertical.Width = 320;
+                vertical.Margin = new Thickness(0, 16, 0, 0);
+                Add(vertical);
+
+                var saved = YanziLayoutPrimitives.GetResizableFirstSize(vertical, vertical: true);
+                var controls = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
+                controls.Children.Add(Button("保存面板高度", YanziUi.Styles.OutlineButton,
+                    () =>
+                    {
+                        saved = YanziLayoutPrimitives.GetResizableFirstSize(vertical, vertical: true);
+                        Status("已保存上面板高度：" + saved.ToString("0") + " DIP");
+                    }));
+                controls.Children.Add(Button("恢复高度", YanziUi.Styles.OutlineButton,
+                    () =>
+                    {
+                        YanziLayoutPrimitives.SetResizableFirstSize(vertical, saved, vertical: true);
+                        Status("已恢复上面板高度");
+                    }));
+                Add(controls);
                 break;
             case "Scroll Area":
                 var scrolling = new StackPanel();
@@ -382,23 +504,49 @@ internal sealed partial class GalleryWindow
                 var area = YanziLayoutPrimitives.ScrollArea(scrolling, 150);
                 area.Width = 260;
                 Add(area);
+                var horizontalContent = new StackPanel { Orientation = Orientation.Horizontal };
+                for (int i = 1; i <= 12; i++)
+                {
+                    var chip = YanziUi.WithStyle(new Button
+                    {
+                        Content = "项目 " + i,
+                        Margin = new Thickness(0, 0, 8, 0),
+                        MinHeight = 34
+                    }, YanziUi.Styles.OutlineButton);
+                    horizontalContent.Children.Add(chip);
+                }
+                var horizontalArea = YanziLayoutPrimitives.ScrollArea(horizontalContent, 70, horizontal: true);
+                horizontalArea.Width = 275;
+                horizontalArea.Margin = new Thickness(0, 12, 0, 0);
+                Add(horizontalArea);
                 break;
             case "Skeleton":
-                var sk = new StackPanel();
-                sk.Children.Add(YanziPrimitives.Skeleton(220, 14));
-                sk.Children.Add(YanziPrimitives.Skeleton(165, 14));
-                Add(sk);
+                var skeletons = new StackPanel { Width = 400 };
+                var skeletonRow = new StackPanel { Orientation = Orientation.Horizontal,
+                    Margin = new Thickness(0, 0, 0, 18) };
+                skeletonRow.Children.Add(YanziPrimitives.Skeleton(44, 44));
+                var skeletonLines = new StackPanel { Margin = new Thickness(12, 2, 0, 0) };
+                skeletonLines.Children.Add(YanziPrimitives.Skeleton(175, 13));
+                skeletonLines.Children.Add(YanziPrimitives.Skeleton(115, 13));
+                skeletonRow.Children.Add(skeletonLines);
+                skeletons.Children.Add(skeletonRow);
+                skeletons.Children.Add(YanziPrimitives.Skeleton(390, 112));
+                skeletons.Children.Add(YanziPrimitives.Skeleton(260, 12));
+                skeletons.Children.Add(YanziPrimitives.Skeleton(340, 12));
+                var formSkeleton = new StackPanel { Margin = new Thickness(0, 15, 0, 0) };
+                formSkeleton.Children.Add(YanziPrimitives.Skeleton(90, 12));
+                formSkeleton.Children.Add(YanziPrimitives.Skeleton(380, 35));
+                skeletons.Children.Add(formSkeleton);
+                Add(skeletons);
                 break;
             case "Table":
-                var table = YanziUi.WithStyle(new DataGrid
+                var table = new YanziTable { Width = 360 };
+                table.SetData(new[] { "姓名", "岗位" }, new IReadOnlyList<string>[]
                 {
-                    Width = 320, Height = 155, AutoGenerateColumns = true, IsReadOnly = true,
-                    ItemsSource = new[]
-                    {
-                        new { Name = "Alice", Role = "Designer" },
-                        new { Name = "Bob", Role = "Developer" }
-                    }
-                }, YanziUi.Styles.DataGrid);
+                    new[] { "Alice", "设计师" },
+                    new[] { "Bob", "开发者" }
+                });
+                table.SelectedRowChanged += (_, row) => Status("选中：" + table.Rows[row][0]);
                 Add(table);
                 break;
             case "Toggle Group":
@@ -427,7 +575,46 @@ internal sealed partial class GalleryWindow
                         Variant = variant, Margin = new Thickness(0, 0, 9, 9) },
                         YanziUi.Styles.BadgeGeistPreview));
                 break;
-            case "Input": Add(new YanziSearchBox("Name", useGeist: true)); break;
+            case "Input":
+            {
+                var inputExamples = new StackPanel { Width = 430 };
+                var textInput = YanziUi.WithStyle(new TextBox
+                { Text = "Jordan Lee", FontSize = 14 }, YanziUi.Styles.InputSoft);
+                inputExamples.Children.Add(YanziPrimitives.ValidatedField(
+                    "Name", textInput, "Basic text input"));
+                var email = YanziUi.WithStyle(new TextBox { Text = "invalid-email" },
+                    YanziUi.Styles.InputSoft);
+                inputExamples.Children.Add(YanziPrimitives.ValidatedField(
+                    "Email", email, "Enter a valid email.", "Please enter a valid email address.", true));
+                var pwd = YanziUi.WithStyle(new PasswordBox(), YanziUi.Styles.Password);
+                inputExamples.Children.Add(YanziPrimitives.ValidatedField("Password", pwd,
+                    "Native masked entry"));
+                var amount = YanziUi.WithStyle(new TextBox { Text = "42" },
+                    YanziUi.Styles.InputSoft);
+                amount.PreviewTextInput += (_, e) =>
+                    e.Handled = !e.Text.All(char.IsDigit);
+                inputExamples.Children.Add(YanziPrimitives.Field("Number", amount,
+                    "Digits only; invalid keys are ignored."));
+                inputExamples.Children.Add(YanziPrimitives.Field("Disabled",
+                    YanziUi.WithStyle(new TextBox { Text = "Cannot edit", IsEnabled = false },
+                        YanziUi.Styles.InputSoft)));
+                var filePicker = Button("选择文件…", YanziUi.Styles.PillOutlineButton, () =>
+                {
+                    var picker = new Microsoft.Win32.OpenFileDialog();
+                    if (picker.ShowDialog(this) == true)
+                        Status("Selected: " + System.IO.Path.GetFileName(picker.FileName));
+                });
+                inputExamples.Children.Add(YanziPrimitives.Field("File", filePicker));
+                var searchRow = new StackPanel { Orientation = Orientation.Horizontal };
+                var searchInput = YanziUi.WithStyle(new TextBox { Width = 276 },
+                    YanziUi.Styles.InputSoft);
+                searchRow.Children.Add(searchInput);
+                searchRow.Children.Add(Button("Search", YanziUi.Styles.PillDefaultButton,
+                    () => Status("Search: " + searchInput.Text)));
+                inputExamples.Children.Add(YanziPrimitives.Field("Inline", searchRow));
+                Add(inputExamples);
+                break;
+            }
             case "Textarea":
                 Add(YanziUi.WithStyle(new TextBox { Width = 290, Height = 90,
                     AcceptsReturn = true, Text = "Message", TextWrapping = TextWrapping.Wrap },
@@ -446,6 +633,13 @@ internal sealed partial class GalleryWindow
                 group.Select("default");
                 group.SelectionChanged += (_, value) => Status("选中：" + value);
                 Add(group);
+                var legacyRadio = YanziUi.WithStyle(new RadioButton
+                {
+                    Content = "兼容旧式 RadioButton（使用公共模板）",
+                    IsChecked = true,
+                    Margin = new Thickness(0, 8, 0, 0)
+                }, YanziUi.Styles.Radio);
+                Add(legacyRadio);
                 break;
             case "Alert Dialog":
                 Add(Button("打开 Alert Dialog", YanziUi.Styles.PillDefaultButton, () =>
@@ -468,8 +662,31 @@ internal sealed partial class GalleryWindow
                 Add(grouped);
                 break;
             case "Progress":
-                Add(YanziUi.WithStyle(new ProgressBar { Width = 270, Height = 11,
-                    Minimum = 0, Maximum = 100, Value = 67 }, YanziUi.Styles.Progress));
+                var progressDemo = new StackPanel { Width = 400 };
+                var progressHeading = new DockPanel { Margin = new Thickness(0, 0, 0, 10) };
+                var valueText = Text("56%", 13, true, "Yanzi.Color.Foreground");
+                DockPanel.SetDock(valueText, Dock.Right);
+                progressHeading.Children.Add(valueText);
+                progressHeading.Children.Add(Text("Upload progress", 13, true, "Yanzi.Color.Foreground"));
+                progressDemo.Children.Add(progressHeading);
+                var bar = YanziUi.WithStyle(new ProgressBar
+                {
+                    Minimum = 0, Maximum = 100, Value = 56,
+                    Height = 9, Width = 392
+                }, YanziUi.Styles.Progress);
+                progressDemo.Children.Add(bar);
+                var adjust = YanziUi.WithStyle(new Slider
+                {
+                    Minimum = 0, Maximum = 100, Value = 56,
+                    Width = 392, Margin = new Thickness(0, 14, 0, 0)
+                }, YanziUi.Styles.Slider);
+                adjust.ValueChanged += (_, _) =>
+                {
+                    bar.Value = adjust.Value;
+                    valueText.Text = Math.Round(adjust.Value).ToString() + "%";
+                };
+                progressDemo.Children.Add(adjust);
+                Add(progressDemo);
                 break;
             case "Slider":
                 Add(YanziUi.WithStyle(new Slider { Width = 260, Minimum = 0,
@@ -482,14 +699,41 @@ internal sealed partial class GalleryWindow
                     ? WithToolTip(hint, "来自 Yanzi UI 的 Tooltip") : new TextBlock());
                 break;
             case "Chart":
-                var chart = new YanziBarChart { Width = 280, Height = 178 };
-                chart.SetData([new YanziBarPoint("Mon", 40),
-                    new YanziBarPoint("Tue", 88), new YanziBarPoint("Wed", 60)]);
-                Add(chart);
+            {
+                var chartPane = new StackPanel { Width = 500 };
+                var chartKind = YanziUi.WithStyle(new ComboBox
+                {
+                    Width = 160, HorizontalAlignment = HorizontalAlignment.Left,
+                    Margin = new Thickness(0, 0, 0, 12)
+                }, YanziUi.Styles.Select);
+                foreach (var title in new[] { "柱状图", "折线图", "面积图", "饼图" })
+                    chartKind.Items.Add(title);
+                chartKind.SelectedIndex = 0;
+                chartPane.Children.Add(chartKind);
+                var chart = new YanziChart { Width = 460, Height = 230 };
+                chart.SetData(new[]
+                {
+                    new YanziBarPoint("周一", 40),
+                    new YanziBarPoint("周二", 88),
+                    new YanziBarPoint("周三", 60),
+                    new YanziBarPoint("周四", 72),
+                    new YanziBarPoint("周五", 55)
+                });
+                chartKind.SelectionChanged += (_, _) =>
+                {
+                    chart.Kind = (YanziChartKind)chartKind.SelectedIndex;
+                    Status("Chart 图形：" + chartKind.SelectedItem);
+                };
+                chart.SelectedPointChanged += (_, index) =>
+                    Status($"Chart 数据：{chart.Points[index].Label} {chart.Points[index].Value:0.##}");
+                chartPane.Children.Add(chart);
+                Add(chartPane);
                 break;
+            }
             case "Tabs":
                 var tabs = YanziUi.WithStyle(new TabControl { Width = 300, Height = 120 },
                     YanziUi.Styles.Tabs);
+                tabs.SetResourceReference(TabControl.ItemContainerStyleProperty, YanziUi.Styles.TabItem);
                 tabs.Items.Add(new TabItem { Header = "Overview",
                     Content = new TextBlock { Text = "Overview content", Margin = new Thickness(12) } });
                 tabs.Items.Add(new TabItem { Header = "Details",
@@ -519,22 +763,68 @@ internal sealed partial class GalleryWindow
                 Add(Text("The quick brown fox · 文字排版", 21, true,
                     "Yanzi.Color.Foreground"));
                 break;
-            case "Card":
-                Add(Text("Card / 标题、内容与操作区的间距", 14, false,
-                    "Yanzi.Color.Foreground"));
-                break;
             case "Label":
-            case "Field":
-                Add(Text("Name", 13, true, "Yanzi.Color.Foreground"));
-                Add(YanziUi.WithStyle(new TextBox { Width = 220, Text = "Sample" },
-                    YanziUi.Styles.InputSoft));
+            {
+                var labels = new StackPanel { Width = 410 };
+                var entry = YanziUi.WithStyle(new TextBox { Text = "jordan@example.com" },
+                    YanziUi.Styles.InputSoft);
+                labels.Children.Add(YanziPrimitives.ValidatedField("Email address", entry,
+                    "Clicking the label focuses the input.", required: true));
+                var agree = YanziUi.WithStyle(new CheckBox
+                { Content = "Accept terms and conditions" }, YanziUi.Styles.CheckBoxPreview);
+                labels.Children.Add(YanziPrimitives.Label("Terms", agree));
+                labels.Children.Add(agree);
+                var disabled = YanziUi.WithStyle(new TextBox
+                { IsEnabled = false, Text = "Disabled" }, YanziUi.Styles.InputSoft);
+                labels.Children.Add(YanziPrimitives.Label("Disabled label", disabled));
+                labels.Children.Add(disabled);
+                Add(labels);
                 break;
+            }
+            case "Field":
+            {
+                var form = YanziPrimitives.FieldSet("Profile",
+                    "This information will appear on invoices and emails.");
+                form.Width = 435;
+                form.Children.Add(YanziPrimitives.ValidatedField("Full name",
+                    YanziUi.WithStyle(new TextBox { Text = "Jordan Lee" }, YanziUi.Styles.InputSoft),
+                    "Enter the name to display.", required: true));
+                form.Children.Add(YanziPrimitives.ValidatedField("Email",
+                    YanziUi.WithStyle(new TextBox { Text = "invalid-email" }, YanziUi.Styles.InputSoft),
+                    "We'll send updates to this address.", "Please enter a valid email."));
+                form.Children.Add(YanziPrimitives.ValidatedField("Readonly",
+                    YanziUi.WithStyle(new TextBox
+                    { Text = "Read-only field", IsReadOnly = true }, YanziUi.Styles.InputSoft)));
+                var inline = new StackPanel { Orientation = Orientation.Horizontal };
+                var search = YanziUi.WithStyle(new TextBox { Width = 265 },
+                    YanziUi.Styles.InputSoft);
+                inline.Children.Add(search);
+                inline.Children.Add(Button("Search", YanziUi.Styles.PillDefaultButton,
+                    () => Status("Field: " + search.Text)));
+                form.Children.Add(YanziPrimitives.Field("Inline search", inline));
+                Add(form);
+                break;
+            }
             case "Kbd":
-                Add(YanziPrimitives.Kbd("Ctrl + K"));
+                Add(YanziPrimitives.Kbd("␣ 空格"));
+                Add(YanziPrimitives.Kbd("↵ 回车"));
+                Add(YanziPrimitives.Kbd("⇥ 制表"));
+                Add(YanziPrimitives.KbdGroup("Ctrl", "K"));
                 break;
             case "Toast":
-                Add(Button("显示 Toast", YanziUi.Styles.PillDefaultButton,
-                    () => YanziToast.Show(this, "已保存（演示）", YanziToastKind.Success)));
+                var toastControls = new StackPanel { Orientation = Orientation.Horizontal };
+                foreach (var kind in new[]
+                    { YanziToastKind.Info, YanziToastKind.Success, YanziToastKind.Warning, YanziToastKind.Error, YanziToastKind.Loading })
+                {
+                    var copy = kind;
+                    toastControls.Children.Add(Button("Show " + copy,
+                        YanziUi.Styles.PillOutlineButton,
+                        () => YanziToast.Show(this, copy + ": operation completed", copy,
+                            description: "This notification is owned by the shared WPF toaster.",
+                            actionLabel: copy == YanziToastKind.Success ? "Undo" : null,
+                            onAction: copy == YanziToastKind.Success ? () => Status("Undo selected") : null)));
+                }
+                Add(toastControls);
                 break;
             case "Alert":
                 Add(YanziPrimitives.Alert("Heads up!", "You can add components to your app."));
@@ -552,5 +842,9 @@ internal sealed partial class GalleryWindow
         return true;
     }
 
-    private static Button WithToolTip(Button button, string tip) { button.ToolTip = tip; return button; }
+    private static Button WithToolTip(Button button, string tip)
+    {
+        button.ToolTip = YanziUi.WithStyle(new ToolTip { Content = tip }, YanziUi.Styles.Tooltip);
+        return button;
+    }
 }

@@ -48,6 +48,7 @@ internal static class LauncherConfigObjectStore
             {
                 AutoCloseToastEnabled = snapshot.AutoCloseToastEnabled,
                 EnableAutoUpdate = snapshot.EnableAutoUpdate,
+                AutoBackupFrequency = snapshot.AutoBackupFrequency,
                 EnableBrowserHelper = snapshot.EnableBrowserHelper,
                 PreferManualExtensionEditor = snapshot.PreferManualExtensionEditor,
                 EnableEverything = snapshot.EnableEverything,
@@ -386,6 +387,7 @@ internal static class LauncherConfigObjectStore
                     if (runtime == null) return false;
                     snapshot.AutoCloseToastEnabled = runtime.AutoCloseToastEnabled ?? snapshot.AutoCloseToastEnabled;
                     snapshot.EnableAutoUpdate = runtime.EnableAutoUpdate ?? snapshot.EnableAutoUpdate;
+                    snapshot.AutoBackupFrequency = runtime.AutoBackupFrequency ?? snapshot.AutoBackupFrequency;
                     snapshot.EnableBrowserHelper = runtime.EnableBrowserHelper ?? snapshot.EnableBrowserHelper;
                     snapshot.PreferManualExtensionEditor = runtime.PreferManualExtensionEditor ?? snapshot.PreferManualExtensionEditor;
                     snapshot.EnableEverything = runtime.EnableEverything ?? snapshot.EnableEverything;
@@ -664,6 +666,7 @@ internal sealed class LauncherRuntimeSettingsPayload
 {
     public bool? AutoCloseToastEnabled { get; set; }
     public bool? EnableAutoUpdate { get; set; }
+    public string? AutoBackupFrequency { get; set; }
     public bool? EnableBrowserHelper { get; set; }
     public bool? PreferManualExtensionEditor { get; set; }
     public bool? EnableEverything { get; set; }

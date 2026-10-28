@@ -1,4 +1,5 @@
 import { handleEnvironment } from './device-environment.js';
+import { handleDeviceRemark } from './device-remarks.js';
 export function selectImplicitExecutionTarget(rows, isOnline) {
   const candidates = Array.isArray(rows) ? rows : [];
   const online = candidates.filter(item => isOnline(item));
@@ -11,6 +12,8 @@ export function selectImplicitExecutionTarget(rows, isOnline) {
 export function createDeviceApi(api) {
   const { DEVICE_MESSAGE_PROTOCOL, HttpError, acceptsAccountChat, accountLanLink, canonicalMessageJson, deviceNetworkLocation, ensureOwnedDevice, ensureUser, executionDeadline, expireDeviceCommands, getPendingDeviceMessagePage, getPendingDeviceMessageItems, isAccountChat, isExecutionMessage, isoNow, json, messageMatchesDevice, normalizeDeviceId, normalizeDeviceMessagePayload, normalizeDevicePayload, normalizeMessageId, normalizeMessageLimit, normalizeShortText, notifyDeviceRelay, ownedAttachment, parseJsonObject, randomHex, readJson, requireAuth, sendOfflinePush, serializeDeviceMessageRecord, serializeDeviceRecord, signToken, touchDevice, traceContext } = api;
 async function handleDeviceApi(request, env, ctx) {
+  const remark = await handleDeviceRemark(request, env, api);
+  if (remark) return remark;
   const environment = await handleEnvironment(request, env, api);
   if (environment) return environment;
   const url = new URL(request.url);
@@ -65,6 +68,9 @@ async function handleDeviceApi(request, env, ctx) {
     if (parseJsonObject(existingDeviceOwner?.capabilities_json).disabled === true && !reactivate)
       throw new HttpError(403, 'device_removed', 'This device registration has been removed');
     delete device.capabilities.disabled;
+    // Device registrations (including scoped credentials) cannot change account-owned labels.
+    delete device.capabilities.accountRemark;
+    delete device.capabilities.accountRemarkUpdatedAt;
     if (reactivate) device.capabilities.disabled = false;
     delete device.capabilities.networkLocation;
     const location = deviceNetworkLocation(request);
@@ -89,7 +95,12 @@ async function handleDeviceApi(request, env, ctx) {
         push_token = coalesce(excluded.push_token, user_devices.push_token),
         capabilities_json = json_patch(user_devices.capabilities_json, excluded.capabilities_json),
         last_seen_at = excluded.last_seen_at,
-        updated_at = excluded.updated_at`
+        updated_at = excluded.updated_at
+      where user_devices.platform <> excluded.platform
+         or user_devices.display_name <> excluded.display_name
+         or (excluded.push_token is not null and excluded.push_token <> coalesce(user_devices.push_token, ''))
+         or json_patch(user_devices.capabilities_json, excluded.capabilities_json) <> user_devices.capabilities_json
+         or user_devices.last_seen_at <= strftime('%Y-%m-%dT%H:%M:%fZ', excluded.last_seen_at, '-60 seconds')`
     )
       .bind(
         device.deviceId,
@@ -330,6 +341,37 @@ async function handleDeviceApi(request, env, ctx) {
       messageId,
       createdAt: now
     });
+  }
+
+  // Ephemeral agent stream: authenticated relay publication ONLY. No D1 message insert,
+  // sequence increment, offline push, or durable history entry.
+  if (url.pathname === "/v1/me/mobile/messages/stream" && request.method === "POST") {
+    const auth = await requireAuth(request, env);
+    const payload = await readJson(request);
+    const sourceDeviceId = normalizeDeviceId(payload.sourceDeviceId);
+    const targetDeviceId = normalizeDeviceId(payload.targetDeviceId);
+    await ensureOwnedDevice(env, auth.userId, sourceDeviceId);
+    const targetDevice = await ensureOwnedDevice(env, auth.userId, targetDeviceId);
+    if (targetDevice.platform !== 'android')
+      throw new HttpError(400, 'stream_target_not_android', 'Stream target must be Android');
+    const content = payload.content;
+    if (typeof content !== 'string' || !content.startsWith('\u001eYANZI_STREAM:') || content.length > 48000)
+      throw new HttpError(400, 'invalid_stream_payload', 'Invalid transient stream content');
+    let control;
+    try { control = JSON.parse(content.slice('\u001eYANZI_STREAM:'.length)); }
+    catch { throw new HttpError(400, 'invalid_stream_json', 'Stream control must be JSON'); }
+    if (control.v !== 1 || !/^[a-zA-Z0-9_-]{8,128}$/.test(control.id || '') ||
+        typeof control.conversationId !== 'string' || control.conversationId.length > 200 ||
+        !['start', 'update', 'cancelled', 'error', 'complete'].includes(control.state) ||
+        !Number.isSafeInteger(control.seq) || control.seq < 0 || typeof control.text !== 'string')
+      throw new HttpError(400, 'invalid_stream_fields', 'Invalid stream control fields');
+    if (!env.DEVICE_RELAY)
+      throw new HttpError(503, 'relay_unavailable', 'Realtime relay not available');
+    const delivered = await env.DEVICE_RELAY.get(env.DEVICE_RELAY.idFromName(auth.userId)).publish({
+      type: 'agent-stream', userId: auth.userId, targetDeviceId, sourceDeviceId,
+      sourceDeviceName: 'Antigravity', content
+    });
+    return json({ ok: true, delivered: delivered.delivered ?? 0, durable: false });
   }
 
   if (url.pathname === "/v1/me/mobile/messages/ws" && request.method === "GET") {

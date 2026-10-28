@@ -1,4 +1,4 @@
-param(
+﻿param(
     [Parameter(Mandatory=$true)][string]$Version,
     [Parameter(Mandatory=$true)][string]$ApkPath,
     [string]$Repo='luoluoluo22/yanzi',
@@ -16,7 +16,13 @@ if ($LASTEXITCODE -ne 0 -or $badging[0] -notmatch "name='cc.luoluoluo.yanzi.mobi
 }
 & (Join-Path $tools.FullName 'apksigner.bat') verify $apk
 if ($LASTEXITCODE -ne 0) {throw 'APK signature verification failed'}
+$prevOut = [Console]::OutputEncoding
+$prevEnc = $OutputEncoding
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
 $releaseRaw=& gh release view "android-v$Version" --repo $Repo --json tagName,name,body,isDraft,assets
+[Console]::OutputEncoding = $prevOut
+$OutputEncoding = $prevEnc
 if ($LASTEXITCODE -ne 0) {throw 'Publish the GitHub Android release before its update manifest'}
 $release=$releaseRaw | ConvertFrom-Json
 if ($release.isDraft) {throw 'Draft releases cannot be offered as updates'}

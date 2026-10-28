@@ -1,4 +1,5 @@
 using System.IO;
+using System.Diagnostics;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -31,6 +32,37 @@ public partial class MainWindow
         AccountEnvironmentSecretVault.QueueRestoreFromCloud();
         await PollMobileMessagesSafeAsync("websocket-resync");
         var buffer = new byte[16384];
+        long lastSocketActivity = Stopwatch.GetTimestamp();
+        int processingMessage = 0;
+        using var heartbeatLifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        // Cloudflare's device relay understands application-level "ping" / "pong". Unlike
+        // the framework's transport keepalive this also detects a silently stalled relay.
+        var heartbeat = Task.Run(async () =>
+        {
+            try
+            {
+                while (!heartbeatLifetime.IsCancellationRequested && socket.State == WebSocketState.Open)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(25), heartbeatLifetime.Token);
+                    if (Volatile.Read(ref processingMessage) == 0 &&
+                        Stopwatch.GetElapsedTime(Interlocked.Read(ref lastSocketActivity)) > TimeSpan.FromSeconds(90))
+                    {
+                        HostAssets.AppendLog("Mobile bridge websocket stale for 90s; reconnecting.");
+                        socket.Abort();
+                        break;
+                    }
+                    if (socket.State != WebSocketState.Open) break;
+                    await socket.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes("ping")),
+                        WebSocketMessageType.Text, true, heartbeatLifetime.Token);
+                }
+            }
+            catch (OperationCanceledException) when (heartbeatLifetime.IsCancellationRequested) { }
+            catch (Exception error) when (!heartbeatLifetime.IsCancellationRequested)
+            {
+                HostAssets.AppendLog("Mobile bridge websocket heartbeat failed: " + error.GetType().Name);
+                socket.Abort();
+            }
+        }, heartbeatLifetime.Token);
         try
         {
             while (!cancellationToken.IsCancellationRequested && socket.State == WebSocketState.Open)
@@ -44,6 +76,7 @@ public partial class MainWindow
                     if (body.Length + result.Count > 2 * 1024 * 1024) throw new IOException("Realtime frame exceeds limit");
                     body.Write(buffer, 0, result.Count);
                 } while (!result.EndOfMessage);
+                Interlocked.Exchange(ref lastSocketActivity, Stopwatch.GetTimestamp());
                 var text = Encoding.UTF8.GetString(body.ToArray());
                 if (text == "pong") continue;
                 using var document = JsonDocument.Parse(text);
@@ -52,9 +85,18 @@ public partial class MainWindow
                 if (type == "message")
                 {
                     var message = JsonSerializer.Deserialize<DeviceMessageRecord>(root.GetProperty("message").GetRawText(), new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
-                    var handled = await HandleMobileDeviceMessageAsync(message);
-                    if (handled.hasResult) await _cloudSyncClient.AckDeviceMessageAsync(message.MessageId, _desktopDeviceId!, handled.success, handled.output, cancellationToken);
-                    else await _cloudSyncClient.AckDeviceMessageAsync(message.MessageId, _desktopDeviceId!, cancellationToken: cancellationToken);
+                    Interlocked.Exchange(ref processingMessage, 1);
+                    try
+                    {
+                        var handled = await HandleMobileDeviceMessageAsync(message);
+                        if (handled.hasResult) await _cloudSyncClient.AckDeviceMessageAsync(message.MessageId, _desktopDeviceId!, handled.success, handled.output, cancellationToken);
+                        else await _cloudSyncClient.AckDeviceMessageAsync(message.MessageId, _desktopDeviceId!, cancellationToken: cancellationToken);
+                    }
+                    finally
+                    {
+                        Interlocked.Exchange(ref lastSocketActivity, Stopwatch.GetTimestamp());
+                        Interlocked.Exchange(ref processingMessage, 0);
+                    }
                 }
                 else if (type == "messages-ready" || type == "ready") await PollMobileMessagesSafeAsync("websocket-hint");
                 else if (type == "external-access-ready")
@@ -90,6 +132,9 @@ public partial class MainWindow
         }
         finally
         {
+            heartbeatLifetime.Cancel();
+            try { await heartbeat; }
+            catch (OperationCanceledException) { }
             await Dispatcher.InvokeAsync(() =>
             {
                 _mobileMessagePollTimer.Interval = TimeSpan.FromSeconds(60);

@@ -6,16 +6,21 @@ internal static class GitHubSecondaryBackupVerification
 {
     public static async Task RunAsync(bool live)
     {
-        var unconfirmed = AppSettingsStore.Load();
-        unconfirmed.PersonalSync.GitHubBackupEnabled = true;
-        unconfirmed.PersonalSync.GitHubBackupRecoveryKeyConfirmed = false;
-        var guarded = await GitHubSecondaryBackupService.BackupAsync(unconfirmed, force: true);
-        if (guarded.Created || guarded.Status != "offline-recovery-key-not-confirmed")
-            throw new Exception("Backup must not run before offline key export confirmation.");
         var key = RandomNumberGenerator.GetBytes(32);
         var incorrect = RandomNumberGenerator.GetBytes(32);
         var root = Path.Combine(Path.GetTempPath(), "yanzi-restore-audit-" + Guid.NewGuid().ToString("N"));
+        using var isolatedData = HostAssets.UseIsolatedDataRootForVerification(Path.Combine(root, "source-device-profile"));
+        if (GitHubSecondaryBackupService.IsRecoveryKeyConfirmed()) throw new Exception("A new device must require an exported key.");
         Directory.CreateDirectory(root);
+        var extension = Path.Combine(HostAssets.ResolveDataFilePath("Extensions"), "synthetic-backup-test");
+        Directory.CreateDirectory(extension);
+        File.WriteAllText(Path.Combine(extension, "manifest.json"), "{}");
+        File.WriteAllText(Path.Combine(extension, "main.cs"), "// synthetic test");
+        var unconfirmed = new AppSettings();
+        unconfirmed.PersonalSync.GitHubBackupEnabled = true;
+        var guard = await GitHubSecondaryBackupService.BackupAsync(unconfirmed, force: true);
+        if (guard.Created || guard.Status != "offline-recovery-key-not-confirmed")
+            throw new Exception("Backup must not run before the device key is exported.");
         try
         {
             var archive = GitHubSecondaryBackupService.BuildArchive();
@@ -43,10 +48,16 @@ internal static class GitHubSecondaryBackupVerification
             // A new Windows profile must be able to import an offline recovery key.
             var rescueFile = Path.Combine(root, "offline-key.txt");
             GitHubSecondaryBackupService.ExportRecoveryKey(rescueFile);
+            if (!GitHubSecondaryBackupService.IsRecoveryKeyConfirmed()) throw new Exception("Export must confirm this device key.");
+            var marker = HostAssets.ResolveDataFilePath("github-backup-key-confirmation.sha256");
+            File.WriteAllBytes(marker, new byte[32]);
+            if (GitHubSecondaryBackupService.IsRecoveryKeyConfirmed()) throw new Exception("A marker for a different key must not be accepted.");
+            GitHubSecondaryBackupService.ExportRecoveryKey(Path.Combine(root, "offline-key-second.txt"));
             var sourceKey = GitHubSecondaryBackupService.LoadOrCreateKey();
             using (HostAssets.UseIsolatedDataRootForVerification(Path.Combine(root, "new-device-profile")))
             {
                 GitHubSecondaryBackupService.ImportRecoveryKey(rescueFile);
+                if (!GitHubSecondaryBackupService.IsRecoveryKeyConfirmed()) throw new Exception("Imported offline key must be confirmed.");
                 var imported = GitHubSecondaryBackupService.LoadOrCreateKey();
                 if (!sourceKey.AsSpan().SequenceEqual(imported))
                     throw new Exception("Off-machine recovery key cannot decrypt snapshots.");

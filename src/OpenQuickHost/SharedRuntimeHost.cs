@@ -45,7 +45,7 @@ public sealed class SharedRuntimeHost : IDisposable
 
     public void Start()
     {
-        if (!HostRuntimeProfile.IsRuntime) throw new InvalidOperationException("Only Runtime may host background IPC.");
+        if (!HostRuntimeProfile.OwnsBackgroundServices) throw new InvalidOperationException("Only the background service owner may host IPC.");
         Current = this;
         _server.Start();
         _settingsTimer.Start();
@@ -94,6 +94,9 @@ public sealed class SharedRuntimeHost : IDisposable
                     return (object)new
                     {
                         protocolVersion = RuntimeRpc.Version, pid = Environment.ProcessId, instanceId = _instanceId,
+                        releaseVersion = typeof(App).Assembly.GetName().Version?.ToString(),
+                        releaseHash = ReleaseBuildIdentity.AssemblySha256,
+                        executablePath = Environment.ProcessPath,
                         startedAt = _started, backgroundServices = _window.GetRuntimeServiceStatus(),
                         clients = GetLiveClients().Select(c => new { pid = c.Pid, development = c.Development }).ToArray(),
                         running = RunningExtensionRegistry.GetSnapshot()

@@ -19,9 +19,10 @@ internal sealed partial class GalleryWindow
         wrap.Children.Add(YanziPrimitives.Avatar("YZ", 44));
         wrap.Children.Add(YanziPrimitives.Avatar("AI", 44));
         wrap.Children.Add(YanziPrimitives.Avatar("DEV", 44));
-        wrap.Children.Add(YanziPrimitives.Kbd("⌘ K"));
-        wrap.Children.Add(YanziPrimitives.Kbd("Ctrl"));
-        wrap.Children.Add(YanziPrimitives.Kbd("Esc"));
+        wrap.Children.Add(YanziPrimitives.Kbd("␣ 空格"));
+        wrap.Children.Add(YanziPrimitives.Kbd("↵ 回车"));
+        wrap.Children.Add(YanziPrimitives.Kbd("⇥ 制表"));
+        wrap.Children.Add(YanziPrimitives.KbdGroup("Ctrl", "+", "B"));
         foreach (FrameworkElement element in wrap.Children)
             element.Margin = new Thickness(0, 0, 12, 10);
         baseCard.Children.Add(wrap);
@@ -134,17 +135,14 @@ internal sealed partial class GalleryWindow
             IsSnapToTickEnabled = true, Margin = new Thickness(0, 0, 0, 18) }, YanziUi.Styles.Slider);
         slider.ValueChanged += (_, _) => sliderValue.Text = $"{slider.Value:0}%";
         values.Children.Add(slider);
-        var date = YanziUi.WithStyle(new DatePicker { SelectedDate = DateTime.Today, Width = 190,
-            HorizontalAlignment = HorizontalAlignment.Left }, YanziUi.Styles.DatePicker);
+        var date = new YanziDatePicker { SelectedDate = DateTime.Today, Width = 220 };
+        date.SelectedDateChanged += (_, selected) => Status("日期：" + selected?.ToString("yyyy-MM-dd"));
         values.Children.Add(YanziPrimitives.Field("日期", date));
         values.Children.Add(YanziUi.WithStyle(new ProgressBar { Value = 45, Maximum = 100, Height = 8,
             Margin = new Thickness(0, 9, 0, 12) }, YanziUi.Styles.Progress));
-        var calendar = YanziUi.WithStyle(new Calendar
-        {
-            SelectionMode = CalendarSelectionMode.SingleDate,
-            SelectedDate = DateTime.Today,
-            Margin = new Thickness(0, 4, 0, 10)
-        }, YanziUi.Styles.Calendar);
+        var calendar = new YanziCalendarMonth(DateTime.Today) { Margin = new Thickness(0, 4, 0, 10) };
+        calendar.SetSelectedDate(DateTime.Today);
+        calendar.DateSelected += (_, selected) => Status("日历：" + selected.ToString("yyyy-MM-dd"));
         values.Children.Add(calendar);
 
         var otp = Card("Input OTP / Button Group", "单字符输入框和组合按钮；键盘可逐格输入，方便检验焦点交互。");
@@ -222,44 +220,29 @@ internal sealed partial class GalleryWindow
         reusableNav.Children.Add(sidebarDemo);
 
         var resize = Card("Resizable / Scroll Area", "拖动左右分栏中间的灰色边缘，观察空间分配；列表支持滚动。");
-        var grid = new Grid { Height = 160 };
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 90 });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(5) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 90 });
-        var a = new Border { Padding = new Thickness(12), CornerRadius = new CornerRadius(6) };
-        a.SetResourceReference(Border.BackgroundProperty, "Yanzi.Color.Secondary");
-        a.Child = Text("左侧区域\n可以调整宽度", 12, false, "Yanzi.Color.Foreground");
-        grid.Children.Add(a);
-        var splitter = new GridSplitter { Width = 5, HorizontalAlignment = HorizontalAlignment.Stretch };
-        splitter.SetResourceReference(BackgroundProperty, "Yanzi.Color.Border");
-        Grid.SetColumn(splitter, 1);
-        grid.Children.Add(splitter);
-        var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
-        Grid.SetColumn(scroll, 2);
-        var list = new StackPanel { Margin = new Thickness(12) };
-        for (int i = 1; i <= 16; i++) list.Children.Add(Text($"消息 {i:00}", 12, false, "Yanzi.Color.Foreground",
-            new Thickness(0, 0, 0, 11)));
-        scroll.Content = list;
-        grid.Children.Add(scroll);
-        resize.Children.Add(grid);
+        var leftPanel = new Border { Padding = new Thickness(12), CornerRadius = new CornerRadius(6) };
+        leftPanel.SetResourceReference(Border.BackgroundProperty, "Yanzi.Color.Secondary");
+        leftPanel.Child = Text("左侧区域\n可以调整宽度", 12, false, "Yanzi.Color.Foreground");
+        var messages = new StackPanel { Margin = new Thickness(12) };
+        for (int i = 1; i <= 16; i++)
+            messages.Children.Add(Text($"消息 {i:00}", 12, false, "Yanzi.Color.Foreground",
+                new Thickness(0, 0, 0, 11)));
+        var messageScroll = YanziLayoutPrimitives.ScrollArea(messages, 160);
+        resize.Children.Add(YanziLayoutPrimitives.Resizable(leftPanel, messageScroll, 180, 160));
     }
 
     private void DataCatalog()
     {
-        var tableCard = Card("Table / Data Table", "列头、行选择、滚动与排序由 WPF DataGrid 原生实现。");
-        var table = YanziUi.WithStyle(new DataGrid
+        var tableCard = Card("Table / Data Table", "通过共享 YanziTable 呈现表头排序、行选择和主题状态。");
+        var table = new YanziTable { Margin = new Thickness(0, 0, 0, 7) };
+        table.SetData(new[] { "小程序", "状态", "类型" }, new IReadOnlyList<string>[]
         {
-            Height = 225,
-            Margin = new Thickness(0, 0, 0, 7),
-            SelectionMode = DataGridSelectionMode.Single
-        }, YanziUi.Styles.DataGrid);
-        table.ItemsSource = new[]
-        {
-            new { 小程序 = "剪贴板", 状态 = "运行中", 类型 = "系统工具" },
-            new { 小程序 = "日历", 状态 = "已启用", 类型 = "效率工具" },
-            new { 小程序 = "截图 OCR", 状态 = "等待中", 类型 = "生产力" },
-            new { 小程序 = "灵感白板", 状态 = "已启用", 类型 = "创作工具" }
-        };
+            new[] { "剪贴板", "运行中", "系统工具" },
+            new[] { "日历", "已启用", "效率工具" },
+            new[] { "截图 OCR", "等待中", "生产力" },
+            new[] { "灵感白板", "已启用", "创作工具" }
+        });
+        table.SelectedRowChanged += (_, index) => Status("选中小程序：" + table.Rows[index][0]);
         tableCard.Children.Add(table);
 
         var chart = Card("Chart / 可视化", "原生 WPF 图形绘制，使用语义颜色；仅供验证外观，不代表真实业务数据。");
@@ -334,10 +317,11 @@ internal sealed partial class GalleryWindow
         }));
         chatCard.Children.Add(typeRow);
 
-        var reusableData = Card("Bar Chart / Item", "图表接收真实数据点并根据数值重新绘制，列表项支持操作回调。");
-        var dynamicChart = new YanziBarChart();
+        var reusableData = Card("Chart / Item", "共享 Chart 支持多图形模式、数值提示和数据点选择。");
+        var dynamicChart = new YanziChart { Kind = YanziChartKind.Area };
         dynamicChart.SetData(new[] { new YanziBarPoint("Mon", 3), new YanziBarPoint("Tue", 8),
             new YanziBarPoint("Wed", 5), new YanziBarPoint("Thu", 9), new YanziBarPoint("Fri", 6) });
+        dynamicChart.SelectedPointChanged += (_, i) => Status("图表：" + dynamicChart.Points[i].Label);
         reusableData.Children.Add(dynamicChart);
         reusableData.Children.Add(YanziPrimitives.Separator());
         reusableData.Children.Add(new YanziItem("剪贴板", "后台正常运行", "▣", () => Status("查看剪贴板（演示）")));
@@ -361,16 +345,13 @@ internal sealed partial class GalleryWindow
 
         var menus = Card("Dropdown Menu / Context Menu / Popover", "点击按钮展开菜单或 Popover，支持鼠标退出后关闭。");
         var dropdown = Button("打开下拉菜单  ⌄", YanziUi.Styles.OutlineButton, () => { });
-        var context = YanziUi.WithStyle(new ContextMenu(), YanziUi.Styles.Menu);
+        var context = new YanziDropdownMenu { PreferAbove = false, AlignStart = true };
         foreach (var name in new[] { "新建", "复制", "重命名", "归档" })
         {
             var action = name;
-            var item = YanziUi.WithStyle(new MenuItem { Header = name }, YanziUi.Styles.MenuItem);
-            item.Click += (_, _) => Status("菜单：" + action);
-            context.Items.Add(item);
+            context.AddAction(name, () => Status("菜单：" + action));
         }
-        dropdown.ContextMenu = context;
-        dropdown.Click += (_, _) => context.IsOpen = true;
+        context.Attach(dropdown);
         menus.Children.Add(dropdown);
         var popButton = Button("打开 Popover", YanziUi.Styles.SecondaryButton, () => { });
         menus.Children.Add(popButton);
@@ -390,7 +371,7 @@ internal sealed partial class GalleryWindow
         hovers.Children.Add(Button("失败 Toast", YanziUi.Styles.DestructiveButton,
             () => YanziToast.Show(this, "操作失败，请重试", YanziToastKind.Error)));
 
-        var more = Card("Hover Card / Menubar / Direction", "悬停提示卡、原生菜单栏与右到左文字流向。");
+        var more = Card("Hover Card / Menubar / Direction", "悬停提示卡、公共 Menubar 和右到左文字流向。");
         var hoverButton = Button("鼠标悬停这里", YanziUi.Styles.OutlineButton, () => { });
         var hoverBody = new StackPanel();
         hoverBody.Children.Add(Text("Yanzi UI", 14, true, "Yanzi.Color.Foreground"));
@@ -398,14 +379,12 @@ internal sealed partial class GalleryWindow
             new Thickness(0, 9, 0, 0)));
         YanziHoverCard.Attach(hoverButton, hoverBody);
         more.Children.Add(hoverButton);
-        var menuBar = YanziUi.WithStyle(new Menu { Margin = new Thickness(0, 12, 0, 13) }, YanziUi.Styles.Menubar);
+        var menuBar = new YanziMenubar { Margin = new Thickness(0, 12, 0, 13) };
         foreach (var title in new[] { "文件", "编辑", "查看" })
         {
-            var top = new MenuItem { Header = title };
-            var item = new MenuItem { Header = "查看示例" };
-            item.Click += (_, _) => Status("菜单栏：" + title);
-            top.Items.Add(item);
-            menuBar.Items.Add(top);
+            var category = title;
+            menuBar.AddMenu(category, menu =>
+                menu.AddAction("查看示例", () => Status("菜单栏：" + category)));
         }
         more.Children.Add(menuBar);
         more.Children.Add(YanziContentPrimitives.Direction(Text("مرحبا · RTL direction", 13, false, "Yanzi.Color.Foreground"),

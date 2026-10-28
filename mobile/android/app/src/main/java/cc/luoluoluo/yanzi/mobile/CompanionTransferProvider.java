@@ -14,7 +14,10 @@ import java.util.concurrent.*;
 /** Signature-scoped companion files/workflows. The host retains all account credentials. */
 public final class CompanionTransferProvider extends ContentProvider {
     private static final ExecutorService WORK=Executors.newSingleThreadExecutor();
+    private static final ExecutorService FEED_WORK=Executors.newFixedThreadPool(2);
     private static final Set<String> RUNNING=ConcurrentHashMap.newKeySet();
+    private static final String YANJI_FEED_URL="https://43-156-149-208.sslip.io/chatgpt/yanji/feed";
+    private static final String YANJI_FEED_STREAM_URL="https://43-156-149-208.sslip.io/chatgpt/yanji/feed/stream";
     public boolean onCreate(){MobileNetworkRouting.initialize(getContext());return true;}
     private void authorize(String ext)throws Exception {
         Context c=getContext();c.enforceCallingOrSelfPermission(c.getPackageName()+".permission.EXTENSION_STORAGE","Companion permission required");
@@ -39,6 +42,24 @@ public final class CompanionTransferProvider extends ContentProvider {
             authorize(ext);Context c=getContext();android.content.SharedPreferences prefs=c.getSharedPreferences("yanzi-mobile",0);
             String token=prefs.getString("token",""),base=prefs.getString("baseUrl","https://sync.luoluoluo.cc.cd");
             if(token.isEmpty())throw new IOException("LOGIN_REQUIRED");
+            if(method.equals("feed-stream")) {
+                if(!"yanzi-cards".equals(ext))throw new SecurityException("Feed scope denied");
+                int cursor=Math.max(0,args.getInt("cursor",0)),limit=Math.max(2,Math.min(32,args.getInt("limit",16)));
+                JSONArray seen;try{seen=new JSONArray(args.getString("seenTitles","[]"));}catch(Exception invalid){seen=new JSONArray();}
+                JSONArray trimmed=new JSONArray();for(int i=Math.max(0,seen.length()-80);i<seen.length();i++){String title=seen.optString(i).trim();if(!title.isEmpty())trimmed.put(title);}
+                JSONObject request=new JSONObject().put("cursor",cursor).put("limit",limit).put("seenTitles",trimmed);
+                try{request.put("interests",new JSONArray(args.getString("interests","[]")));}catch(Exception ignored){request.put("interests",new JSONArray());}
+                try{request.put("liked",new JSONArray(args.getString("liked","[]")));}catch(Exception ignored){request.put("liked",new JSONArray());}
+                try{request.put("disliked",new JSONArray(args.getString("disliked","[]")));}catch(Exception ignored){request.put("disliked",new JSONArray());}
+                String systemPrompt=args.getString("systemPrompt","").trim();if(systemPrompt.length()>6000)systemPrompt=systemPrompt.substring(0,6000);request.put("systemPrompt",systemPrompt);
+                ParcelFileDescriptor[] pipe=ParcelFileDescriptor.createPipe();
+                ParcelFileDescriptor readSide=pipe[0],writeSide=pipe[1];
+                FEED_WORK.execute(()->{
+                    try(OutputStream stream=new ParcelFileDescriptor.AutoCloseOutputStream(writeSide)){yanjiFeedStream(token,request,stream);}
+                    catch(Exception error){try(OutputStream stream=new ParcelFileDescriptor.AutoCloseOutputStream(writeSide)){stream.write((new JSONObject().put("type","error").put("error",error.getMessage()==null?error.getClass().getSimpleName():error.getMessage()).toString()+"\n").getBytes("UTF-8"));stream.flush();}catch(Exception ignored){}}
+                });
+                Bundle out=new Bundle();out.putParcelable("stream",readSide);out.putBoolean("ok",true);return out;
+            }
             JSONObject value;
             if(method.equals("devices")){value=MobileMessageClient.requestWithoutQueue(base,"/v1/me/devices",token,"GET",null);value.put("accountId",SecureLanConnection.currentAccount(c));}
             else if(method.equals("handoff")||method.equals("handoff-status")) {
@@ -66,6 +87,19 @@ public final class CompanionTransferProvider extends ContentProvider {
                     catch(Exception network){value=new JSONObject().put("queued",true).put("localOnly",true).put("clientMessageId",id);}
                 }
             }
+            else if(method.equals("feed")) {
+                if(!"yanzi-cards".equals(ext))throw new SecurityException("Feed scope denied");
+                int cursor=Math.max(0,args.getInt("cursor",0)),limit=Math.max(2,Math.min(8,args.getInt("limit",6)));
+                JSONArray seen;
+                try{seen=new JSONArray(args.getString("seenTitles","[]"));}catch(Exception invalid){seen=new JSONArray();}
+                JSONArray trimmed=new JSONArray();for(int i=Math.max(0,seen.length()-30);i<seen.length();i++){String title=seen.optString(i).trim();if(!title.isEmpty())trimmed.put(title);}
+                JSONObject request=new JSONObject().put("cursor",cursor).put("limit",limit).put("seenTitles",trimmed);
+                try{request.put("interests",new JSONArray(args.getString("interests","[]")));}catch(Exception ignored){request.put("interests",new JSONArray());}
+                try{request.put("liked",new JSONArray(args.getString("liked","[]")));}catch(Exception ignored){request.put("liked",new JSONArray());}
+                try{request.put("disliked",new JSONArray(args.getString("disliked","[]")));}catch(Exception ignored){request.put("disliked",new JSONArray());}
+                String systemPrompt=args.getString("systemPrompt","").trim();if(systemPrompt.length()>6000)systemPrompt=systemPrompt.substring(0,6000);request.put("systemPrompt",systemPrompt);
+                value=yanjiFeed(token,request);
+            }
             else if(method.equals("submit")) {
                 String id=args.getString("jobId","");File record=job(c,ext,id);
                 String capability=args.getString("capability","");
@@ -90,6 +124,46 @@ public final class CompanionTransferProvider extends ContentProvider {
             value.remove("inputPath");value.remove("resultPath");value.put("ok",true);
             Bundle out=new Bundle();out.putString("result",value.toString());return out;
         }catch(SecurityException error){throw error;}catch(Exception error){Bundle out=new Bundle();out.putString("result",new JSONObject().toString());try{out.putString("result",new JSONObject().put("ok",false).put("error",error.getMessage()==null?error.getClass().getSimpleName():error.getMessage()).toString());}catch(Exception ignored){}return out;}
+    }
+    private static void yanjiFeedStream(String token,JSONObject payload,OutputStream sink)throws Exception {
+        URL url=new URL(YANJI_FEED_STREAM_URL);
+        HttpURLConnection connection=MobileNetworkRouting.openCloudConnection(url);
+        try{
+            connection.setConnectTimeout(8000);connection.setReadTimeout(300000);connection.setRequestMethod("POST");connection.setDoOutput(true);
+            connection.setRequestProperty("User-Agent","YanziClient-Mobile/"+BuildConfig.VERSION_NAME);
+            connection.setRequestProperty("X-Yanzi-Client","mobile-companion");
+            connection.setRequestProperty("Authorization","Bearer "+token);
+            connection.setRequestProperty("Content-Type","application/json; charset=utf-8");
+            connection.setRequestProperty("Accept","application/x-ndjson");
+            byte[] bytes=payload.toString().getBytes("UTF-8");connection.setFixedLengthStreamingMode(bytes.length);
+            try(OutputStream out=connection.getOutputStream()){out.write(bytes);}
+            int status=connection.getResponseCode();InputStream input=status>=200&&status<300?connection.getInputStream():connection.getErrorStream();
+            if(input==null)throw new IOException("FEED_EMPTY_RESPONSE");
+            if(status<200||status>=300){
+                ByteArrayOutputStream error=new ByteArrayOutputStream();try(InputStream in=input){byte[] b=new byte[4096];int n;while((n=in.read(b))>0&&error.size()<65536)error.write(b,0,n);}
+                throw new IOException("FEED_HTTP_"+status+" "+error.toString("UTF-8"));
+            }
+            try(BufferedInputStream in=new BufferedInputStream(input)){byte[] b=new byte[4096];int n;long total=0;while((n=in.read(b))>0){total+=n;if(total>2L*1024*1024)throw new IOException("FEED_STREAM_TOO_LARGE");sink.write(b,0,n);sink.flush();}}
+        }finally{connection.disconnect();}
+    }
+    private static JSONObject yanjiFeed(String token,JSONObject payload)throws Exception {
+        URL url=new URL(YANJI_FEED_URL);
+        HttpURLConnection connection=MobileNetworkRouting.openCloudConnection(url);
+        try{
+            connection.setConnectTimeout(8000);connection.setReadTimeout(180000);connection.setRequestMethod("POST");connection.setDoOutput(true);
+            connection.setRequestProperty("User-Agent","YanziClient-Mobile/"+BuildConfig.VERSION_NAME);
+            connection.setRequestProperty("X-Yanzi-Client","mobile-companion");
+            connection.setRequestProperty("Authorization","Bearer "+token);
+            connection.setRequestProperty("Content-Type","application/json; charset=utf-8");
+            byte[] bytes=payload.toString().getBytes("UTF-8");connection.setFixedLengthStreamingMode(bytes.length);
+            try(OutputStream out=connection.getOutputStream()){out.write(bytes);}
+            int status=connection.getResponseCode();InputStream input=status>=200&&status<300?connection.getInputStream():connection.getErrorStream();
+            ByteArrayOutputStream out=new ByteArrayOutputStream();if(input!=null)try(InputStream in=input){byte[] b=new byte[4096];int n;while((n=in.read(b))>0){if(out.size()+n>512000)throw new IOException("FEED_RESPONSE_TOO_LARGE");out.write(b,0,n);}}
+            JSONObject result=out.size()==0?new JSONObject():new JSONObject(out.toString("UTF-8"));
+            if(status<200||status>=300)throw new IOException(result.optString("error","FEED_HTTP_"+status));
+            if(!result.optBoolean("ok")||result.optJSONArray("items")==null)throw new IOException("FEED_INVALID_RESPONSE");
+            return result;
+        }finally{connection.disconnect();}
     }
     private static String resolveDesktopTarget(JSONArray devices,String requested)throws Exception {
         if(requested!=null&&!requested.isEmpty()){

@@ -139,3 +139,23 @@ test('times out when submission is not acknowledged, instead of returning old re
   await p.clock.tickAsync(11000);
   assert.equal((await result).status, 'error'); assert.match((await result).message, /已发送.*超时/);
 });
+
+test('feedback guard rejects a different conversation before changing the composer', async t => {
+  const p=page(t,html);
+  const before=p.win.document.querySelector('#prompt-textarea').textContent;
+  const result=await p.run({action:'chatgpt_feedback_send',prompt:'不得发送',
+    temporary:false,newChat:false,expectedConversationId:'another-conversation',
+    expectedUrl:'https://chatgpt.com/c/another-conversation'});
+  assert.equal(result.status,'error');
+  assert.equal(p.win.document.querySelector('#prompt-textarea').textContent,before);
+  assert.match(result.message,/身份|对话/);
+});
+
+test('subagent continuation checks expected conversation before submitting',async t=>{
+  const p=page(t,html);
+  const result=await p.run({action:'chatgpt_subagent_continue',prompt:'DO NOT SEND',
+    temporary:false,newChat:false,expectedConversationId:'not-the-current-conversation',
+    expectedUrl:'https://chatgpt.com/c/not-the-current-conversation'});
+  assert.equal(result.status,'error');
+  assert.equal(p.win.document.querySelector('#prompt-textarea').textContent,'');
+});

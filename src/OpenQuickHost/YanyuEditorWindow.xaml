@@ -2,6 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:OpenQuickHost"
+        xmlns:ui="clr-namespace:Yanzi.UI.Wpf;assembly=Yanzi.UI.Wpf"
         Title="{local:Term YanVoice, Suffix='编辑'}"
         Width="820"
         Height="620"
@@ -10,173 +11,10 @@
         WindowStartupLocation="CenterOwner"
         PreviewKeyDown="Window_PreviewKeyDown"
         Style="{StaticResource DialogWindow}">
-    <Window.Resources>
-        <Style x:Key="YanyuInputStyle" TargetType="TextBox">
-            <Setter Property="Background" Value="#FF1E1E1E" />
-            <Setter Property="Foreground" Value="#FFF5F5F5" />
-            <Setter Property="BorderBrush" Value="#FF2A2A2A" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CaretBrush" Value="White" />
-            <Setter Property="SelectionBrush" Value="#FF3B82F6" />
-            <Setter Property="SelectionOpacity" Value="0.35" />
-            <Setter Property="Padding" Value="12,8" />
-        </Style>
-
-        <Style x:Key="YanyuComboBoxTextBoxStyle" TargetType="TextBox" BasedOn="{StaticResource YanyuInputStyle}">
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="VerticalContentAlignment" Value="Center" />
-        </Style>
-
-        <Style x:Key="YanyuComboBoxItemStyle" TargetType="ComboBoxItem">
-            <Setter Property="Foreground" Value="#FFF5F5F5" />
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="Padding" Value="10,8" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ComboBoxItem">
-                        <Border x:Name="Root"
-                                Background="{TemplateBinding Background}"
-                                CornerRadius="6"
-                                Padding="{TemplateBinding Padding}">
-                            <ContentPresenter />
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsHighlighted" Value="True">
-                                <Setter TargetName="Root" Property="Background" Value="#263B82F6" />
-                            </Trigger>
-                            <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="Root" Property="Background" Value="#303B82F6" />
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <Style x:Key="YanyuExtensionListItemStyle" TargetType="ListBoxItem">
-            <Setter Property="Foreground" Value="White" />
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="Padding" Value="10,7" />
-            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ListBoxItem">
-                        <Border x:Name="Root"
-                                Background="{TemplateBinding Background}"
-                                Padding="{TemplateBinding Padding}"
-                                CornerRadius="6">
-                            <ContentPresenter />
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Root" Property="Background" Value="#1AFFFFFF" />
-                            </Trigger>
-                            <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="Root" Property="Background" Value="#263B82F6" />
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <Style x:Key="YanyuComboBoxToggleStyle" TargetType="ToggleButton">
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Focusable" Value="False" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ToggleButton">
-                        <Border Background="Transparent" />
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <Style x:Key="YanyuComboBoxStyle" TargetType="ComboBox">
-            <Setter Property="Background" Value="#FF1E1E1E" />
-            <Setter Property="Foreground" Value="#FFF5F5F5" />
-            <Setter Property="BorderBrush" Value="#FF2A2A2A" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="ItemContainerStyle" Value="{StaticResource YanyuComboBoxItemStyle}" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ComboBox">
-                        <Grid SnapsToDevicePixels="True">
-                            <Border x:Name="Root"
-                                    Background="{TemplateBinding Background}"
-                                    BorderBrush="{TemplateBinding BorderBrush}"
-                                    BorderThickness="{TemplateBinding BorderThickness}" />
-                            <ContentPresenter x:Name="ContentSite"
-                                              Margin="12,0,36,0"
-                                              VerticalAlignment="Center"
-                                              HorizontalAlignment="Left"
-                                              Content="{TemplateBinding SelectionBoxItem}"
-                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
-                                              ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}"
-                                              IsHitTestVisible="False" />
-                            <TextBox x:Name="PART_EditableTextBox"
-                                     Margin="4,0,36,0"
-                                     Style="{StaticResource YanyuComboBoxTextBoxStyle}"
-                                     Visibility="Hidden"
-                                     Focusable="True"
-                                     IsReadOnly="{TemplateBinding IsReadOnly}" />
-                            <ToggleButton Style="{StaticResource YanyuComboBoxToggleStyle}"
-                                          IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}" />
-                            <Path Width="10"
-                                  Height="6"
-                                  Margin="0,0,14,0"
-                                  HorizontalAlignment="Right"
-                                  VerticalAlignment="Center"
-                                  Fill="{DynamicResource BrushTextSec}"
-                                  IsHitTestVisible="False"
-                                  Data="M0,0 L5,6 L10,0 Z" />
-                            <Popup x:Name="PART_Popup"
-                                   Placement="Bottom"
-                                   IsOpen="{TemplateBinding IsDropDownOpen}"
-                                   AllowsTransparency="True"
-                                   Focusable="False"
-                                   PopupAnimation="Fade">
-                                <Border MinWidth="{TemplateBinding ActualWidth}"
-                                        MaxHeight="{TemplateBinding MaxDropDownHeight}"
-                                        Background="#F21A1A1A"
-                                        BorderBrush="#30FFFFFF"
-                                        BorderThickness="1"
-                                        CornerRadius="8"
-                                        Padding="4">
-                                    <ScrollViewer>
-                                        <ItemsPresenter />
-                                    </ScrollViewer>
-                                </Border>
-                            </Popup>
-                        </Grid>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsEditable" Value="True">
-                                <Setter TargetName="ContentSite" Property="Visibility" Value="Hidden" />
-                                <Setter TargetName="PART_EditableTextBox" Property="Visibility" Value="Visible" />
-                            </Trigger>
-                            <Trigger Property="IsKeyboardFocusWithin" Value="True">
-                                <Setter TargetName="Root" Property="BorderBrush" Value="#FF3B82F6" />
-                            </Trigger>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Root" Property="Background" Value="#FF242424" />
-                                <Setter TargetName="Root" Property="BorderBrush" Value="#FF3A3A3A" />
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Opacity" Value="0.55" />
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-    </Window.Resources>
-
     <Border Margin="1"
             CornerRadius="0"
-            Background="#F2161616"
-            BorderBrush="#22FFFFFF"
+            Background="{DynamicResource Yanzi.Color.Background}"
+            BorderBrush="{DynamicResource Yanzi.Color.Border}"
             BorderThickness="1">
         <Grid Margin="24">
             <Grid.RowDefinitions>
@@ -185,31 +23,31 @@
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <StackPanel>
-                <TextBlock x:Name="TitleText"
-                           Text="{local:Term YanVoice, Prefix='编辑'}"
-                           Style="{StaticResource TitleText}" />
-                <TextBlock x:Name="DescriptionText"
-                           Margin="0,8,0,0"
-                           Style="{StaticResource DescriptionText}"
-                           Text="配置缩写词、触发后缀和执行动作。" />
-            </StackPanel>
+            <Grid Grid.Row="0" Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <CheckBox x:Name="UseRegexCheckBox"
+                          Grid.Column="0"
+                          VerticalAlignment="Center"
+                          Content="正则匹配"
+                          Style="{DynamicResource Yanzi.CheckBox.Preview}" />
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="启用" VerticalAlignment="Center"
+                               Foreground="{DynamicResource Yanzi.Color.Foreground}"
+                               Margin="0,0,8,0" />
+                    <CheckBox x:Name="EnabledCheckBox"
+                              IsChecked="True"
+                              ToolTip="启用或停用这条燕语"
+                              Style="{DynamicResource Yanzi.Switch.Shadcn}" />
+                </StackPanel>
+            </Grid>
 
             <ScrollViewer Grid.Row="1"
-                          Margin="0,20,0,0"
+                          Margin="0,8,0,0"
                           VerticalScrollBarVisibility="Auto">
                 <StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
-                        <CheckBox x:Name="EnabledCheckBox"
-                                  Content="启用"
-                                  IsChecked="True"
-                                  Foreground="White"
-                                  Margin="0,0,24,0" />
-                        <CheckBox x:Name="UseRegexCheckBox"
-                                  Content="正则匹配"
-                                  Foreground="White" />
-                    </StackPanel>
-
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
@@ -223,28 +61,36 @@
 
                         <StackPanel Grid.Row="0" Grid.Column="0">
                             <TextBlock Text="缩写词"
-                                       Foreground="White"
+                                       Foreground="{DynamicResource Yanzi.Color.Foreground}"
                                        FontWeight="SemiBold" />
                             <TextBox x:Name="TriggerTextBox"
                                      Height="40"
                                      Margin="0,8,0,0"
-                                     Style="{StaticResource YanyuInputStyle}" />
+                                     Style="{DynamicResource Yanzi.Input}" />
                         </StackPanel>
 
                         <StackPanel Grid.Row="0" Grid.Column="2">
                             <TextBlock Text="触发后缀"
-                                       Foreground="White"
+                                       Foreground="{DynamicResource Yanzi.Color.Foreground}"
                                        FontWeight="SemiBold" />
                             <ComboBox x:Name="SuffixComboBox"
                                       Height="40"
                                       Margin="0,8,0,0"
                                       IsEditable="True"
-                                      Style="{StaticResource YanyuComboBoxStyle}" />
+                                      StaysOpenOnEdit="True"
+                                      TextSearch.TextPath="Label"
+                                      Style="{DynamicResource Yanzi.Select}">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <ui:YanziKbd KeyText="{Binding KbdLabel}" />
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
                         </StackPanel>
 
                         <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,16,0,0">
                             <TextBlock Text="动作类型"
-                                       Foreground="White"
+                                       Foreground="{DynamicResource Yanzi.Color.Foreground}"
                                        FontWeight="SemiBold" />
                             <ComboBox x:Name="ActionTypeComboBox"
                                       Height="40"
@@ -252,39 +98,53 @@
                                       DisplayMemberPath="Label"
                                       SelectedValuePath="Value"
                                       SelectionChanged="ActionTypeComboBox_SelectionChanged"
-                                      Style="{StaticResource YanyuComboBoxStyle}" />
+                                      Style="{DynamicResource Yanzi.Select}" />
                         </StackPanel>
 
                         <StackPanel Grid.Row="1" Grid.Column="2" Margin="0,16,0,0">
                             <TextBlock Text="绑定进程"
-                                       Foreground="White"
+                                       Foreground="{DynamicResource Yanzi.Color.Foreground}"
                                        FontWeight="SemiBold" />
-                            <TextBox x:Name="BoundProcessBox"
-                                     Height="40"
-                                     Margin="0,8,0,0"
-                                     Style="{StaticResource YanyuInputStyle}" />
+                            <ComboBox x:Name="BoundProcessBox"
+                                      Height="40"
+                                      Margin="0,8,0,0"
+                                      IsEditable="True"
+                                      IsTextSearchEnabled="True"
+                                      StaysOpenOnEdit="True"
+                                      TextSearch.TextPath="ProcessName"
+                                      Style="{DynamicResource Yanzi.Select}">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal">
+                                            <Image Source="{Binding Icon}" Width="16" Height="16"
+                                                   Margin="0,0,8,0" VerticalAlignment="Center" />
+                                            <TextBlock Text="{Binding ProcessName}" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
                         </StackPanel>
                     </Grid>
-                    <TextBlock Text="绑定进程可选，例如 code 或 notepad；多个进程用逗号分隔。留空表示所有应用生效。"
+                    <TextBlock Text="可选择正在运行的进程，也可输入进程名；多个进程用逗号分隔。留空表示所有应用。"
                                Margin="2,8,0,0"
-                               Foreground="{DynamicResource BrushTextSec}"
+                               Foreground="{DynamicResource Yanzi.Color.MutedForeground}"
                                FontSize="{DynamicResource FontSizeSmallPlus}"
                                TextWrapping="Wrap" />
 
                     <Border x:Name="TextContentPanel"
-                            Margin="0,20,0,0"
-                            Background="#FF1D1D1D"
-                            BorderBrush="#FF2B2B2B"
+                            Margin="0,20,0,0" Style="{DynamicResource Yanzi.Card}"
+                            Background="{DynamicResource Yanzi.Color.Card}"
+                            BorderBrush="{DynamicResource Yanzi.Color.Border}"
                             BorderThickness="1"
                             CornerRadius="10"
                             Padding="14">
                         <StackPanel>
                             <TextBlock Text="文本内容"
-                                       Foreground="White"
+                                       Foreground="{DynamicResource Yanzi.Color.Foreground}"
                                        FontWeight="SemiBold" />
                             <TextBlock Text="正则捕获可用 {0}、{1}、{name} 占位符。"
                                        Margin="0,6,0,0"
-                                       Foreground="{DynamicResource BrushTextSec}"
+                                       Foreground="{DynamicResource Yanzi.Color.MutedForeground}"
                                        FontSize="{DynamicResource FontSizeSmallPlus}" />
                             <TextBox x:Name="TextContentBox"
                                      Margin="0,10,0,0"
@@ -292,25 +152,25 @@
                                      AcceptsReturn="True"
                                      TextWrapping="Wrap"
                                      VerticalScrollBarVisibility="Auto"
-                                     Style="{StaticResource YanyuInputStyle}" />
+                                     Style="{DynamicResource Yanzi.Textarea}" />
                         </StackPanel>
                     </Border>
 
                     <Border x:Name="ExtensionPanel"
-                            Margin="0,20,0,0"
-                            Background="#FF1D1D1D"
-                            BorderBrush="#FF2B2B2B"
+                            Margin="0,20,0,0" Style="{DynamicResource Yanzi.Card}"
+                            Background="{DynamicResource Yanzi.Color.Card}"
+                            BorderBrush="{DynamicResource Yanzi.Color.Border}"
                             BorderThickness="1"
                             CornerRadius="10"
                             Padding="14">
                         <StackPanel>
-                            <TextBlock Text="绑定扩展"
-                                       Foreground="White"
+                            <TextBlock Text="绑定小程序"
+                                       Foreground="{DynamicResource Yanzi.Color.Foreground}"
                                        FontWeight="SemiBold" />
                             <Grid Margin="0,10,0,0" Height="40">
                                 <TextBox x:Name="ExtensionSearchBox"
                                          Height="40"
-                                         Style="{StaticResource YanyuInputStyle}"
+                                         Style="{DynamicResource Yanzi.Input}"
                                          PreviewKeyDown="ExtensionSearchBox_PreviewKeyDown"
                                          TextChanged="ExtensionSearchBox_TextChanged" />
                                 <Border x:Name="SelectedExtensionIcon"
@@ -339,7 +199,7 @@
                                                   Stretch="Uniform" />
                                         </Viewbox>
                                         <TextBlock Text="{Binding DisplayGlyph}"
-                                                   Foreground="White"
+                                                   Foreground="{DynamicResource Yanzi.Color.Foreground}"
                                                    FontSize="{DynamicResource FontSizeNormal}"
                                                    FontWeight="SemiBold"
                                                    HorizontalAlignment="Center"
@@ -349,14 +209,14 @@
                                 </Border>
                             </Grid>
                             <ListBox x:Name="ExtensionListBox"
-                                     Margin="0,8,0,0"
+                                     Margin="0,8,0,0" Style="{DynamicResource Yanzi.List}"
                                      MaxHeight="180"
                                      Visibility="Collapsed"
-                                     Background="#FF1A1A1A"
+                                     Background="{DynamicResource Yanzi.Color.Popover}"
                                      BorderBrush="{DynamicResource BrushBorder}"
                                      BorderThickness="1"
-                                     Foreground="White"
-                                     ItemContainerStyle="{StaticResource YanyuExtensionListItemStyle}"
+                                     Foreground="{DynamicResource Yanzi.Color.Foreground}"
+                                     ItemContainerStyle="{DynamicResource Yanzi.ListItem}"
                                      SelectionChanged="ExtensionListBox_SelectionChanged"
                                      PreviewKeyDown="ExtensionListBox_PreviewKeyDown"
                                      MouseDoubleClick="ExtensionListBox_MouseDoubleClick"
@@ -392,7 +252,7 @@
                                                               Stretch="Uniform" />
                                                     </Viewbox>
                                                     <TextBlock Text="{Binding DisplayGlyph}"
-                                                               Foreground="White"
+                                                               Foreground="{DynamicResource Yanzi.Color.Foreground}"
                                                                FontSize="{DynamicResource FontSizeNormal}"
                                                                FontWeight="SemiBold"
                                                                HorizontalAlignment="Center"
@@ -403,10 +263,10 @@
 
                                             <StackPanel Grid.Column="2" VerticalAlignment="Center">
                                                 <TextBlock Text="{Binding Label}"
-                                                           Foreground="White"
+                                                           Foreground="{DynamicResource Yanzi.Color.Foreground}"
                                                            FontSize="{DynamicResource FontSizeNormal}" />
                                                 <TextBlock Text="{Binding Detail}"
-                                                           Foreground="{DynamicResource BrushTextSec}"
+                                                           Foreground="{DynamicResource Yanzi.Color.MutedForeground}"
                                                            FontSize="{DynamicResource FontSizeSmall}"
                                                            Margin="0,3,0,0"
                                                            TextTrimming="CharacterEllipsis" />
@@ -420,7 +280,7 @@
 
                     <TextBlock Text="说明"
                                Margin="0,20,0,0"
-                               Foreground="White"
+                               Foreground="{DynamicResource Yanzi.Color.Foreground}"
                                FontWeight="SemiBold" />
                     <TextBox x:Name="DescriptionBox"
                              Margin="0,8,0,0"
@@ -428,7 +288,7 @@
                              AcceptsReturn="True"
                              TextWrapping="Wrap"
                              VerticalScrollBarVisibility="Auto"
-                             Style="{StaticResource YanyuInputStyle}" />
+                             Style="{DynamicResource Yanzi.Textarea}" />
                 </StackPanel>
             </ScrollViewer>
 
@@ -451,19 +311,19 @@
                 <Button x:Name="DeleteButton"
                         Grid.Column="1"
                         Content="删除"
-                        Style="{StaticResource SecondaryBtn}"
+                        Style="{DynamicResource Yanzi.Button.Destructive}"
                         Width="90"
                         Margin="0,0,10,0"
                         Click="DeleteButton_Click" />
                 <Button Grid.Column="2"
                         Content="取消"
-                        Style="{StaticResource SecondaryBtn}"
+                        Style="{DynamicResource Yanzi.Button.Outline}"
                         Width="90"
                         Margin="0,0,10,0"
                         Click="CancelButton_Click" />
                 <Button Grid.Column="3"
                         Content="保存"
-                        Style="{StaticResource PrimaryBtn}"
+                        Style="{DynamicResource Yanzi.Button.Default}"
                         Width="90"
                         Click="SaveButton_Click" />
             </Grid>

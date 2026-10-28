@@ -9,7 +9,12 @@ void Check(bool condition, string message)
     if (!condition) throw new InvalidOperationException(message);
 }
 Check(HostRuntimeProfile.IsDevelopment == expectDev, "Incorrect runtime channel");
+Check(HostRuntimeProfile.IsUnified == !expectDev, "Production must run unified; explicit Dev must remain isolated");
+Check(HostRuntimeProfile.OwnsBackgroundServices == !expectDev, "Only unified production may own background services");
+Check(!HostRuntimeProfile.IsRuntime, "Legacy dual-process Runtime must not start during profile verification");
+Check(HostRuntimeProfile.IsShell, "Both unified Stable and isolated Dev run as UI shell processes");
 Check(HostRuntimeProfile.AppId == (expectDev ? "Yanzi.OpenQuickHost.Dev.Shell" : "Yanzi.OpenQuickHost.Shell"), "Incorrect singleton namespace");
+Check(HostRuntimeProfile.OwnsBackgroundServices == !expectDev, "Single-process background owner regression");
 Check(Path.GetFileName(HostAssets.DataRootPath) == (expectDev ? "OpenQuickHost.Dev" : "OpenQuickHost"), "Incorrect data directory");
 
 var temp = Path.Combine(Path.GetTempPath(), "yanzi-profile-check-" + Guid.NewGuid().ToString("N"));
@@ -23,6 +28,21 @@ try
     Check(saved.AgentApiPort == (expectDev ? 53920 : 53919), "Incorrect API port");
     Check(saved.EnableLanSync == !expectDev && saved.EnableWebDavSync == (!expectDev && expectedWebDav), "Sync policy failed after save/reload");
     Check(saved.LaunchAtStartup == !expectDev && saved.EnableAutoUpdate == !expectDev, "Registration/update policy failed");
+    // A build/test binary must never rebind the official startup entries,
+    // even if compiled in Release mode without --dev.
+    const string stableStartupKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
+    static object? ReadStartup(string name)
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(stableStartupKey);
+        return key?.GetValue(name);
+    }
+    var stableBefore = ReadStartup("Yanzi");
+    var runtimeBefore = ReadStartup("Yanzi.Runtime");
+    StartupRegistrationService.Apply(true);
+    StartupRegistrationService.Apply(false);
+    Check(Equals(stableBefore, ReadStartup("Yanzi")) &&
+          Equals(runtimeBefore, ReadStartup("Yanzi.Runtime")),
+          "Non-installed executable unexpectedly modified production startup registration");
     if (expectDev)
     {
         Check(!saved.PersonalSync.Enabled, "Dev enabled personal sync");

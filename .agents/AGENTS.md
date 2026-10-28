@@ -4,6 +4,15 @@
 
 ---
 
+## 0. 持续开发与按需发布（2026-10-10 起优先执行）
+
+> [!IMPORTANT]
+> **开发即验证，验证后及时合并，合并不等于发布。**
+> 所有 Agent 在修改代码前先阅读根目录 [AGENTS.md](../AGENTS.md) 和 [持续开发、验证、合并与按需发布规范](../docs/development-integration-release-policy.md)。分支上的开发过程可分步 Commit，关联测试与审查通过即可合并 main；不得将未验收代码并入 main。合并到 main 默认不更新用户正式安装版，不自动启动、关闭或重启正式进程；只有存在明确的发布/部署意图时才执行发布门禁。
+> Cloudflare main 变更会触发实际生产部署，必须执行专门的线上授权/迁移门禁；不能将该特殊情况误称为“只提交代码”。
+> 与以下旧版“自动启动”“自主公开发布”等要求冲突时，以 2026-10-10 新规范为准。
+
+---
 ## 1. 脚本编码规范与 PowerShell 兼容性
 
 > [!IMPORTANT]
@@ -59,24 +68,15 @@
 
 ---
 
-## 4. 本地修改与测试构建后的自动启动规约
+## 4. 开发构建后的运行时验证与正式实例隔离
 
 > [!IMPORTANT]
-> **构建成功后自动启动程序**
-> 1. 在完成本地代码修改并执行 `dotnet build` 构建通过（0 错误）后，AI Agent **必须自动启动程序**以便用户直接体验与验收，无需等待用户额外提醒或手动启动。
-> 2. **进程管理与启动命令规范**：
->    - 若系统中已有旧版 `Yanzi` 进程在运行，先安全终止旧进程：
->      ```powershell
->      Stop-Process -Name Yanzi -Force -ErrorAction SilentlyContinue
->      ```
->    - 为防止进程受控制台生命周期回收影响，必须使用独立进程创建方式拉起可执行文件（兼容 Windows PowerShell 5.1）：
->      ```powershell
->      Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = "F:\Desktop\kaifa\OpenQuickHost\src\OpenQuickHost\bin\Debug\net9.0-windows\Yanzi.exe --tray"; CurrentDirectory = "F:\Desktop\kaifa\OpenQuickHost\src\OpenQuickHost\bin\Debug\net9.0-windows" }
->      ```
->      脱离终端作业独立运行，保证桌面窗口正常渲染且不阻塞命令行交互。
+> 1. `dotnet build` 通过（0 错误）表示编译通过，**不等于应立即部署或重启用户正在使用的正式程序**；常态开发先做受影响模块的自动测试，再按新规范合并代码。
+> 2. 需要窗口、宿主或浏览器交互验证时，优先使用隔离开发实例、独立进程或明确的热重载机制，并核对当前运行的其他 Agent/任务；不得默认执行 `Stop-Process -Name Yanzi -Force`。
+> 3. 只有用户明确请求本机正式安装、更新或发布，或命中预先明确批准的具体部署任务时，才允许切换正式程序；此时必须遵守备份、健康检查、版本核验和回滚门禁。
+> 4. 发布源码已通过相应门禁的情况下，可直接复用现有 Commit/tag 构建；无需为发布目的重新提交未变化源码。
 
 ---
-
 ## 5. 燕子小程序（Extension）开发与测试规约
 
 > [!IMPORTANT]
@@ -103,6 +103,35 @@
 
 
 
+
+---
+
+### Windows 小程序动工前的强制流程
+
+> [!IMPORTANT]
+> **先读 [`docs/miniapps/DEVELOPMENT_WORKFLOW.md`](../docs/miniapps/DEVELOPMENT_WORKFLOW.md)，再定位 `%LOCALAPPDATA%\OpenQuickHost\Extensions\<id>`。**
+> 每次新建、修复或移植：①读取用户目录 manifest/入口与现状；②备份并逐文件对比（禁止用旧仓库副本覆盖）；③仅在用户目录修改；④凭据只引用既有环境变量管理器；⑤测试编译/运行/回退；⑥依赖既有自动同步，不自建同步或提交业务源码；⑦仅在真实核对云端和目标设备后报告“跨设备同步成功”。
+> **小程序源码修改不得创建宿主仓库业务 PR**。只有通用 API、SDK、文档、测试或 CI 需要变更时，才另行修改宿主 Git，运行 `scripts/verify-miniapp-repository-isolation.ps1` 并遵守发布门禁。
+
+---
+
+### 浏览器助手 / 网页小程序开发完成后的强制刷新验收
+
+> [!IMPORTANT]
+> **“代码已修改”不等于“开发完成”。浏览器助手或网页小程序的开发完成条件必须包含扩展自重载与当前页面刷新。**
+> 1. 只要本次修改涉及 `browser-extension/`、`browser-extension/webapps/`、Popup、Service Worker 或任一网页小程序 content script，完成代码修改与语法检查后，AI Agent **必须调用项目现有的浏览器扩展自重载链路**，不得仅告诉用户“手动刷新/手动重载扩展”。
+> 2. 标准执行入口为 `scripts/dev-browser-extension-refresh.ps1`。该脚本读取燕子当前 `appsettings.local.json` 中的 Local Agent API 端口与 Token，并调用 `POST /v1/browser/reload`。
+> 3. 扩展收到重载请求后，必须先写入 `yanziPendingExtensionReloadRefresh`，再执行 `chrome.runtime.reload()`；新版 Service Worker 启动后由 `refreshWebAppTabsAfterExtensionReload()` **自动刷新当前所有已安装网页小程序所匹配的标签页**，确保页面不继续运行旧 content script。
+> 4. 验收至少确认：
+>    - `POST /v1/browser/reload` 返回 HTTP 202；
+>    - 扩展重新连接；
+>    - 日志出现 `Browser extension reload ACK`；
+>    - 日志出现 `Browser extension runtime ready`，并记录 `refreshedWebAppTabs`；
+>    - 用户当前正在使用的目标网页已经重新加载为最新代码。
+> 5. 如果 Local Agent API 暂时不可用，但燕子进程应当在线，先恢复/重启燕子 Local Agent API，再重试自动刷新；**不能把“API 未启动”当作跳过刷新步骤的理由**。
+> 6. 只有在浏览器本身未运行、扩展未安装/未连接或当前机器客观无法进行真实页面验收时，才允许结束时明确标注“未完成运行时刷新验收”；其他情况下必须刷新后才能宣称开发完成。
+> 7. 以后修改网页小程序时，默认形成固定闭环：**修改 → 静态检查/测试 → 扩展自重载 → 自动刷新匹配网页 → 运行时验收**。
+> 8. 网页小程序版本号必须保持一致：`webapps/catalog.json` 中的版本与 content script 对外 probe 返回的版本必须同步更新；刷新后应通过 `probe_webapps` 确认运行时报告的版本就是最新版本。
 
 ---
 

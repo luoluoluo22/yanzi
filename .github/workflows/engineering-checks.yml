@@ -3,7 +3,7 @@ on:
   pull_request:
   push:
     branches: [main]
-    paths: ["src/**", "mobile/**", "cloudflare/**", "protocol/**", "sdk/**", "scripts/**", ".github/workflows/engineering-checks.yml"]
+    paths: ["src/**", "mobile/**", "cloudflare/**", "protocol/**", "sdk/**", "scripts/**", "browser-extension/**", ".gitignore", "extensions/**", "website/store-packages/**", "tools/idle-chatgpt-tasks/**", ".github/workflows/engineering-checks.yml"]
 jobs:
   portable-contracts:
     runs-on: ubuntu-latest
@@ -15,8 +15,16 @@ jobs:
         with: {dotnet-version: "9.0.x"}
       - uses: actions/setup-java@v4
         with: {distribution: temurin, java-version: "17"}
+      - name: Protect on-demand application releases
+        run: python3 scripts/verify-release-trigger-policy.py
       - name: Worker and SDK user scenarios
         run: node --test cloudflare/src/*.test.mjs cloudflare/tests/*.test.mjs protocol/sdk/*.test.mjs sdk/javascript/*.test.mjs
+      - name: Browser workflow checkpoint and recovery regression
+        run: node scripts/test-browser-workflow-checkpoints.cjs
+      - name: Browser multi-extension routing and response ownership
+        run: dotnet run --project scripts/BrowserMultiSessionTests/BrowserMultiSessionTests.csproj -c Release
+      - name: R2 capacity monitor regressions
+        run: python3 -m unittest scripts/cloudflare/test_r2_storage_guard.py
       - name: Platform independent account and settings scenarios
         run: dotnet run --project src/Yanzi.CoreVerification -c Release
       - name: Android transport scenarios without an emulator
@@ -35,14 +43,41 @@ jobs:
         with: {node-version: "22"}
       - uses: actions/setup-dotnet@v4
         with: {dotnet-version: "9.0.x"}
+      - name: Reject Windows miniapp packages in the host Git repository
+        run: ./scripts/verify-miniapp-repository-isolation.ps1
+      - name: Browser helper install and connection regression
+        run: |
+          dotnet run --project tests/BrowserHelperBootstrapVerification/BrowserHelperBootstrapVerification.csproj -c Debug
+          node --check browser-extension/background.js
+          node --check browser-extension/workflow-orchestrator.js
+          node --check scripts/ego-extension-dev-check.mjs
+          node --check scripts/ego-extension-dev-reload.mjs
+          node --check browser-extension/workflow-checkpoints.js
+          node --check browser-extension/popup/popup.js
+      - name: Agent task integration policy regression
+        shell: pwsh
+        run: ./scripts/test-agent-finish-policy.ps1
       - name: Desktop build
         run: dotnet build OpenQuickHost.sln -c Debug -v:minimal
       - name: Settings ownership and object conflict regression
-        run: dotnet run --project src/Yanzi.SyncVerification -c Debug
+        run: |
+          dotnet run --project src/Yanzi.SyncVerification -c Debug
+          dotnet run --project src/Yanzi.SyncVerification -c Debug -- --chat-conversation-metadata
+          dotnet run --project src/Yanzi.SyncVerification -c Debug -- --mobile-extension-catalog
+          dotnet run --project src/Yanzi.SyncVerification -c Debug -- --account-extension-pull-policy
+      - name: AI chat parallelism, SSE and clipboard regression
+        shell: pwsh
+        run: |
+          dotnet run --project src/Yanzi.SyncVerification -c Debug --no-build -- --ai-chat-parallel
+          dotnet run --project src/Yanzi.SyncVerification -c Debug --no-build -- --ai-chat-sse
+          ./scripts/verify-ai-chat-regression.ps1
       - name: Desktop transport regression
         run: ./scripts/test-network-retry.ps1
       - name: Local API authorization and route domains
-        run: dotnet run --project src/Yanzi.SyncVerification -c Debug -- --local-api-boundaries
+        run: |
+          dotnet run --project src/Yanzi.SyncVerification -c Debug -- --local-api-boundaries
+          dotnet run --project src/Yanzi.SyncVerification -c Debug --no-build -- --github-private-backup-policy
+          dotnet run --project src/Yanzi.SyncVerification -c Debug --no-build -- --keyboard-remap-doubletap
       - name: Migrated D1 device and SDK regression
         run: |
           ./scripts/test-worker-ownership.ps1

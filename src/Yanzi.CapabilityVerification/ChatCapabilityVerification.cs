@@ -87,6 +87,19 @@ internal static class ChatCapabilityVerification
             Check(!YanziChatCapabilityProvider.MakeResult(message, "phone-a", "Other phone").acked, "different_direct_target_not_success");
             message.Status = "failed";
             Check(YanziChatCapabilityProvider.MakeResult(message, "phone-b", "Phone B").status == "failed", "explicit_device_failure_not_success");
+            var account = new DeviceMessageRecord { MessageId="account-message", Kind="text", Status="acked", AckedAt="global" };
+            account.Payload["accountChat"] = Input(true);
+            Check(!YanziChatCapabilityProvider.MakeAccountResult(account, peers).allOnlineAcked, "broadcast_global_ack_cannot_confirm_phone");
+            account.Receipts.Add(new("phone-b", "Phone B", "completed", "phone-b-ack"));
+            var shared = YanziChatCapabilityProvider.MakeAccountResult(account, peers);
+            Check(shared.status=="completed" && shared.allOnlineAcked && shared.devices.Length==2, "online_ack_completes_broadcast_with_offline_phone_visible");
+            Check(shared.devices.Single(d=>d.deviceId=="phone-a").receipt.status=="pending", "offline_phone_pending_after_other_phone_ack");
+            YanziCapabilitySchema.Validate(send.OutputSchema, Input(shared));
+            var bothOnline = peers.Select(p=>p with { Online=true }).ToArray();
+            Check(!YanziChatCapabilityProvider.MakeAccountResult(account, bothOnline).allOnlineAcked, "every_online_phone_requires_own_ack");
+            account.Receipts.Add(new("phone-a", "Phone A", "completed", "phone-a-ack"));
+            Check(YanziChatCapabilityProvider.MakeAccountResult(account, bothOnline).allOnlineAcked, "two_online_phone_acks_complete_broadcast");
+            Check(!YanziChatCapabilityProvider.MakeAccountResult(account, []).allOnlineAcked, "zero_phones_not_claimed_delivered");
         }
         finally { Directory.Delete(root, true); }
         Console.WriteLine($"CHAT_CAPABILITY_SCHEMA_PERMISSIONS_SELECTION_TARGET_ACK_TIMEOUT=PASSED; checks={checks}");

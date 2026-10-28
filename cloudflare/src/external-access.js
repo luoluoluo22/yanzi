@@ -1,6 +1,8 @@
 import {applicationBody,normalizeDataKey} from './application-platform.js';
+import {createPendingApprovalCache} from './pending-approval-cache.js';
 import {scopesOf,selectScopes,listAccessResources} from './access-resources.js';
 const now=()=>Math.floor(Date.now()/1000);
+const pendingApprovalCache=createPendingApprovalCache({ttlMs:15_000,maxUsers:1_000});
 const random=()=>Array.from(crypto.getRandomValues(new Uint8Array(32)),b=>b.toString(16).padStart(2,'0')).join('');
 async function hash(value){return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value))),b=>b.toString(16).padStart(2,'0')).join('');}
 function response(api,value,status=200){const r=api.json(value,status);r.headers.set('cache-control','no-store');return r;}
@@ -41,6 +43,7 @@ export async function handleExternalAccess(request,env,api){
       SELECT ?,?,?,?,?,?,?,? WHERE (SELECT count(*) FROM external_access_invites WHERE user_id=? AND revoked=0 AND expires_at>?)<10`)
       .bind(await hash(invite),auth.userId,extensionId,key,access,created,expires,scopes?JSON.stringify(scopes):null,auth.userId,created).run();
     if(!r.meta.changes)throw new E(429,'invite_limit','At most 10 active invitation addresses');
+    pendingApprovalCache.invalidate(auth.userId);
     return response(api,{ok:true,address:url.origin+'/connect/'+invite,expiresAt:expires,extensionId,key,access,resources:scopes||[{extensionId,key,access}]});
   }
   const revoke=path.match(/^\/v1\/applications\/access-invites\/([a-f0-9]{64})$/);
@@ -48,11 +51,12 @@ export async function handleExternalAccess(request,env,api){
     const auth=await api.requireAuth(request,env),inviteHash=await hash(revoke[1]);
     await env.DB.batch([env.DB.prepare('UPDATE external_access_invites SET revoked=1 WHERE invite_hash=? AND user_id=?').bind(inviteHash,auth.userId),
       env.DB.prepare("UPDATE external_access_requests SET status='denied',decided_at=? WHERE invite_hash=? AND user_id=? AND status='pending'").bind(now(),inviteHash,auth.userId)]);
+    pendingApprovalCache.invalidate(auth.userId);
     return response(api,{ok:true});
   }
   if(path==='/v1/applications/access-requests'&&request.method==='GET'){
     const auth=await api.requireAuth(request,env);
-    const rows=await env.DB.prepare("SELECT * FROM external_access_requests WHERE user_id=? AND status='pending' AND expires_at>? ORDER BY created_at LIMIT 10").bind(auth.userId,now()).all();
+    const rows=await pendingApprovalCache.load(auth.userId,()=>env.DB.prepare("SELECT * FROM external_access_requests WHERE user_id=? AND status='pending' AND expires_at>? ORDER BY created_at LIMIT 10").bind(auth.userId,now()).all());
     return response(api,{ok:true,accountId:auth.userId,requests:rows.results.map(r=>({requestId:r.request_id,extensionId:r.extension_id,dataKey:r.data_key,access:r.access,clientName:r.client_name,userCode:r.user_code,expiresAt:r.expires_at,scopes:scopesOf(r),requiresScopeConfirmation:!!r.scopes_json}))});
   }
   const decision=path.match(/^\/v1\/applications\/access-requests\/([a-f0-9-]{36})\/decision$/);
@@ -61,6 +65,7 @@ export async function handleExternalAccess(request,env,api){
     if(typeof input.approve!=='boolean')throw new E(400,'decision_required','approve must be a boolean');
     const row=await env.DB.prepare('SELECT * FROM external_access_requests WHERE request_id=? AND user_id=?').bind(id,auth.userId).first();
     if(!row)throw new E(404,'request_not_found','Request not found');
+    if (api.ensureCloudVipUser) await api.ensureCloudVipUser(env,row.user_id);
     if(row.status!=='pending'||row.expires_at<=time)throw new E(409,'request_already_decided','Request handled or expired');
     const approvedScopes=input.approve&&row.scopes_json?selectScopes(input.scopes,scopesOf(row),E):null;
     let expires=0;
@@ -79,12 +84,14 @@ export async function handleExternalAccess(request,env,api){
     const updated=await env.DB.prepare("UPDATE external_access_requests SET status=?,decided_at=?,token_expires_at=? WHERE request_id=? AND user_id=? AND status='pending' AND expires_at>?")
       .bind(input.approve?'approved':'denied',time,expires,id,auth.userId,time).run();
     if(!updated.meta.changes)throw new E(409,'request_already_decided','Another device handled the request');
+    pendingApprovalCache.invalidate(auth.userId);
     return response(api,{ok:true,status:input.approve?'approved':'denied'});
   }
   const connect=path.match(/^\/connect\/([a-f0-9]{64})(?:\/(requests|resources))?$/);
   if(connect){
     const inviteHash=await hash(connect[1]),invite=await env.DB.prepare('SELECT * FROM external_access_invites WHERE invite_hash=? AND revoked=0 AND expires_at>?').bind(inviteHash,now()).first();
     if(!invite)throw new E(404,'invitation_unavailable','Invitation unavailable or expired');
+    if (api.ensureCloudVipUser) await api.ensureCloudVipUser(env,invite.user_id);
     const address=url.origin+'/connect/'+connect[1];
     const available=scopesOf(invite);
     if(request.method==='GET'&&connect[2]==='resources')return response(api,{ok:true,resources:available,containsData:false});
@@ -107,6 +114,7 @@ export async function handleExternalAccess(request,env,api){
         AND (SELECT count(*) FROM external_access_requests WHERE invite_hash=? AND created_at>?)<3`)
         .bind(id,inviteHash,invite.user_id,invite.extension_id,invite.data_key,access,clientName,userCode,await hash(secret),time,time+300,scopes?JSON.stringify(scopes):null,invite.user_id,time,inviteHash,time-60).run();
       if(!result.meta.changes)throw new E(429,'request_limit','Too many authorization requests; retry later');
+      pendingApprovalCache.invalidate(invite.user_id);
       if(env.DEVICE_RELAY)try {
         await env.DEVICE_RELAY.get(env.DEVICE_RELAY.idFromName(invite.user_id)).publish({type:'external-access-ready',userId:invite.user_id});
       }catch{ /* Durable request remains available to compensation polling. */ }

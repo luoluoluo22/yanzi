@@ -6,12 +6,14 @@ public partial class MainWindow
 {
     public object GetRuntimeServiceStatus() => new
     {
-        owner = HostRuntimeProfile.IsRuntime ? "runtime" : "shell",
+        owner = HostRuntimeProfile.IsUnified ? "unified" : HostRuntimeProfile.IsRuntime ? "runtime" : "shell",
         initialized = _isBackgroundServicesInitialized,
         inputHook = InputHookService.IsRunning,
         keyboardHook = KeyboardDoubleTapService.IsRunning,
         mouseGestures = MouseGestureService.IsRunning,
         scheduler = _extensionScheduler?.IsStarted == true,
+        idleTrigger = _extensionIdleTriggerService?.IsStarted == true,
+        idleTriggerObservedAt = _extensionIdleTriggerService?.LastObservedAt,
         mobileBridge = _mobileMessageBridgeTask is { IsCompleted: false },
         presenceHeartbeat = _desktopPresenceHeartbeatTimer.IsEnabled,
         mobilePolling = _mobileMessagePollTimer.IsEnabled,

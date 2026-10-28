@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -277,6 +277,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly DispatcherTimer _backgroundWebDavSyncTimer;
     private readonly DispatcherTimer _backgroundWebDavSyncDelayTimer;
     private readonly DispatcherTimer _accountExtensionSyncTimer;
+    private readonly DispatcherTimer _privateExtensionReconcileTimer;
     private FileSystemWatcher? _extensionContentWatcher;
     private DateTimeOffset _firstPendingAccountExtensionSyncAt = DateTimeOffset.MinValue;
     private DateTimeOffset _firstPendingPersonalExtensionSyncAt = DateTimeOffset.MinValue;
@@ -338,6 +339,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         Instance = this;
         InitializeComponent();
+        InitializeFooterQuickMenu();
+        // Namespaced Yanzi UI tokens do not override legacy search result resources.
+        var yanyuTheme = AppSettingsStore.Load().ThemeMode;
+        Yanzi.UI.Wpf.YanziUi.ApplyTo(this,
+            string.Equals(yanyuTheme, "Light", StringComparison.OrdinalIgnoreCase)
+                ? Yanzi.UI.Wpf.YanziTheme.Light : Yanzi.UI.Wpf.YanziTheme.Dark);
         if (HostRuntimeProfile.IsDevelopment) Title = HostRuntimeProfile.DisplayName;
         AddHandler(Keyboard.PreviewKeyDownEvent, new System.Windows.Input.KeyEventHandler((s, e) =>
         {
@@ -400,6 +407,24 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             RunLocalExtensionsAccountSync();
         };
         StartExtensionContentWatcher();
+        // A periodic metadata check covers missed filesystem watcher events.
+        // Download checks use the private account API, not the costly Gitee backup.
+        _privateExtensionReconcileTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(3) };
+        _privateExtensionReconcileTimer.Tick += (_, _) =>
+        {
+            if (!IsLoaded || Dispatcher.HasShutdownStarted || _cloudSyncClient?.HasCredential != true)
+                return;
+            var signature = GetCatalogContentSignature();
+            if (!string.IsNullOrWhiteSpace(signature) &&
+                !string.Equals(signature, _lastCatalogContentSignature, StringComparison.Ordinal))
+            {
+                _lastCatalogContentSignature = signature;
+                ReloadLocalExtensionsFromExternal();
+                SyncLocalExtensionsToCloud();
+            }
+            RefreshMissingPrivateExtensionsFromCloud();
+        };
+        _privateExtensionReconcileTimer.Start();
 
         _cloudReconnectTimer = new DispatcherTimer();
         _cloudReconnectTimer.Tick += CloudReconnectTimer_Tick;
@@ -522,6 +547,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _extensionContentWatcher = null;
             _extensionCatalogRefreshTimer.Stop();
             _accountExtensionSyncTimer.Stop();
+            _privateExtensionReconcileTimer.Stop();
         };
     }
 
@@ -1670,8 +1696,27 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private static bool IsYanyuSwitchHit(DependencyObject? source)
+    {
+        for (var current = source; current != null;)
+        {
+            if (current is System.Windows.Controls.CheckBox { DataContext: CommandItem { IsYanyuRule: true } })
+                return true;
+            current = current is System.Windows.Media.Visual
+                ? System.Windows.Media.VisualTreeHelper.GetParent(current)
+                : LogicalTreeHelper.GetParent(current);
+        }
+        return false;
+    }
+
     private void CommandList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
+        if (IsYanyuSwitchHit(e.OriginalSource as DependencyObject))
+        {
+            e.Handled = true;
+            return;
+        }
+
         if (CommandList.SelectedItem is CommandItem item && item.Source == CommandSource.Cloud)
         {
             ShowStoreExtensionDetail(item);
@@ -1683,6 +1728,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void CommandList_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
+        if (IsYanyuSwitchHit(e.OriginalSource as DependencyObject))
+        {
+            _commandListDragStartPoint = null;
+            _commandListDragSource = null;
+            return;
+        }
+
         if (TryResolveCommandListItem(sender, e.OriginalSource as DependencyObject, out var command))
         {
             _commandListDragStartPoint = e.GetPosition(CommandList);
@@ -2425,9 +2477,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 return;
             }
 
-            if (FooterQuickMenuPopup.IsOpen)
+            if (_footerQuickMenu?.IsOpen == true)
             {
-                FooterQuickMenuPopup.IsOpen = false;
+                CloseFooterQuickMenu();
+                e.Handled = true;
                 return;
             }
 
@@ -2632,14 +2685,73 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
     }
 
-    private void FooterQuickMenuButton_Click(object sender, RoutedEventArgs e)
+    // The Warehouse footer menu is composed from the shared UI library.
+    private Yanzi.UI.Wpf.YanziDropdownMenu? _footerQuickMenu;
+
+    private static FrameworkElement WarehouseQuickActionIcon(string key, bool filled = false)
     {
-        FooterQuickMenuPopup.IsOpen = !FooterQuickMenuPopup.IsOpen;
+        var icon = new System.Windows.Shapes.Path
+        {
+            Data = ExtensionIconLibrary.ResolveVectorIcon($"mdi:{key}"),
+            Width = 16, Height = 16,
+            Stretch = Stretch.Uniform,
+            StrokeThickness = 1.5,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        icon.SetResourceReference(
+            filled ? System.Windows.Shapes.Shape.FillProperty : System.Windows.Shapes.Shape.StrokeProperty,
+            "Yanzi.Color.MutedForeground");
+        return icon;
+    }
+
+    private void InitializeFooterQuickMenu()
+    {
+        var menu = new Yanzi.UI.Wpf.YanziDropdownMenu { PreferAbove = true, AlignStart = true };
+        // The shared component measures each row's text/icon/padding and enforces this minimum.
+        menu.UseContentWidth(minimumWidth: 176);
+        var light = string.Equals(AppSettingsStore.Load().ThemeMode, "Light", StringComparison.OrdinalIgnoreCase);
+        menu.UseStandaloneTheme(light ? Yanzi.UI.Wpf.YanziTheme.Light : Yanzi.UI.Wpf.YanziTheme.Dark);
+
+        var export = menu.AddAction("导出 Skill",
+            () => QuickMenuInstallSkill_Click(this, new RoutedEventArgs()),
+            icon: WarehouseQuickActionIcon("skill-export"));
+        export.ToolTip = "把程序内置技能组复制到外部文件夹进行编辑或备份";
+
+        var sync = menu.AddAction("同步燕子云",
+            () => QuickMenuRefreshCloud_Click(this, new RoutedEventArgs()),
+            icon: WarehouseQuickActionIcon("refresh"));
+        sync.ToolTip = "强制重新同步当前账户下的云端小程序状态";
+
+        menu.AddSeparator();
+
+        var docs = menu.AddAction("帮助文档",
+            () => QuickMenuOpenDocs_Click(this, new RoutedEventArgs()),
+            icon: WarehouseQuickActionIcon("help-docs"));
+        docs.ToolTip = "打开本地使用说明与小程序开发参考文档";
+
+        var support = menu.AddAction("赞助维护与卡密",
+            () => QuickMenuOpenVip_Click(this, new RoutedEventArgs()),
+            icon: WarehouseQuickActionIcon("star", filled: true));
+        support.ToolTip = "输入卡密激活 VIP 维护支持";
+
+        var about = menu.AddAction("关于燕子",
+            () => QuickMenuOpenAbout_Click(this, new RoutedEventArgs()),
+            icon: WarehouseQuickActionIcon("about", filled: true));
+        about.ToolTip = "查看燕子的版本信息与产品声明";
+
+        menu.Attach(FooterQuickMenuButton);
+        _footerQuickMenu = menu;
+    }
+
+    private void CloseFooterQuickMenu()
+    {
+        if (_footerQuickMenu is not null)
+            _footerQuickMenu.IsOpen = false;
     }
 
     private async void FooterAddExtensionButton_Click(object sender, RoutedEventArgs e)
     {
-        FooterQuickMenuPopup.IsOpen = false;
+        CloseFooterQuickMenu();
         await AddJsonExtensionAsync();
     }
 
@@ -2671,13 +2783,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void QuickMenuInstallSkill_Click(object sender, RoutedEventArgs e)
     {
-        FooterQuickMenuPopup.IsOpen = false;
+        CloseFooterQuickMenu();
         ExportSkillsToFolder();
     }
 
     private void QuickMenuOpenSettings_Click(object sender, RoutedEventArgs e)
     {
-        FooterQuickMenuPopup.IsOpen = false;
+        CloseFooterQuickMenu();
         if (System.Windows.Application.Current is App app)
         {
             app.OpenSettingsWindow("general");
@@ -2696,13 +2808,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async void QuickMenuRefreshCloud_Click(object sender, RoutedEventArgs e)
     {
-        FooterQuickMenuPopup.IsOpen = false;
+        CloseFooterQuickMenu();
         await RefreshCloudStateAsync();
     }
 
     private void QuickMenuOpenDocs_Click(object sender, RoutedEventArgs e)
     {
-        FooterQuickMenuPopup.IsOpen = false;
+        CloseFooterQuickMenu();
         try
         {
             Process.Start(new ProcessStartInfo
@@ -2720,7 +2832,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void QuickMenuOpenVip_Click(object sender, RoutedEventArgs e)
     {
-        FooterQuickMenuPopup.IsOpen = false;
+        CloseFooterQuickMenu();
         if (CloudSyncClient != null)
         {
             var win = new VipActivationWindow(CloudSyncClient, () =>
@@ -2736,7 +2848,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void QuickMenuOpenAbout_Click(object sender, RoutedEventArgs e)
     {
-        FooterQuickMenuPopup.IsOpen = false;
+        CloseFooterQuickMenu();
         if (System.Windows.Application.Current is App app)
         {
             app.OpenSettingsWindow("about");
@@ -3476,7 +3588,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             SharedRuntimeHost.Current?.RequestShell("command.ui", runnable.ExtensionId);
             return;
         }
-        if (HostRuntimeProfile.IsShell && runnable.HostedView == null && (ScriptExtensionRunner.CanExecute(runnable) || runnable.App != null))
+        if (HostRuntimeProfile.IsShell && RuntimeConnection.IsConnected && runnable.HostedView == null && (ScriptExtensionRunner.CanExecute(runnable) || runnable.App != null))
         {
             await ExecuteThroughRuntimeAsync(runnable, explicitInput, launchSource);
             return;
@@ -4505,9 +4617,16 @@ public sealed record HostedViewActionDefinition(
     string? Scope,
     string? DefaultValue);
 
+public sealed record ExtensionIdleTriggerDefinition(
+    bool Enabled,
+    int AfterMinutes,
+    int RepeatMinutes,
+    bool PauseWhenFullscreen);
+
 public sealed record ExtensionStartupDefinition(
     string? Mode,
-    string? Schedule);
+    string? Schedule,
+    ExtensionIdleTriggerDefinition? Idle = null);
 
 public sealed class HostedViewStateBindingContext : INotifyPropertyChanged
 {
@@ -4686,6 +4805,10 @@ public sealed class CloudQuickPanelConfigSnapshot
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? EnableAutoUpdate { get; set; }
 
+    [JsonPropertyName("autoBackupFrequency")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? AutoBackupFrequency { get; set; }
+
     [JsonPropertyName("enableBrowserHelper")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? EnableBrowserHelper { get; set; }
@@ -4823,6 +4946,7 @@ public sealed class CloudQuickPanelConfigSnapshot
             ThemeMode = settings.ThemeMode,
             AutoCloseToastEnabled = settings.AutoCloseToastEnabled,
             EnableAutoUpdate = settings.EnableAutoUpdate,
+            AutoBackupFrequency = settings.AutoBackupFrequency,
             EnableBrowserHelper = settings.EnableBrowserHelper,
             PreferManualExtensionEditor = settings.PreferManualExtensionEditor,
             EnableEverything = settings.EnableEverything,
@@ -4885,6 +5009,7 @@ public sealed class CloudQuickPanelConfigSnapshot
             ThemeMode = ThemeMode,
             AutoCloseToastEnabled = AutoCloseToastEnabled ?? false,
             EnableAutoUpdate = EnableAutoUpdate ?? true,
+            AutoBackupFrequency = AutoBackupFrequency ?? "None",
             EnableBrowserHelper = EnableBrowserHelper ?? true,
             PreferManualExtensionEditor = PreferManualExtensionEditor ?? false,
             EnableEverything = EnableEverything ?? true,
@@ -5323,6 +5448,13 @@ public sealed class CommandItem : INotifyPropertyChanged
     public bool UseGlyphIcon => !HasImageIcon && !HasVectorIcon;
 
     public string Title { get; }
+
+    // Optional presentation-only metadata for the dedicated 燕语 search result row.
+    public bool IsYanyuRule { get; init; }
+    public bool YanyuEnabled { get; init; }
+    public string YanyuTriggerKeyLabel { get; init; } = string.Empty;
+    public string YanyuSummary { get; init; } = string.Empty;
+    public IReadOnlyList<ProcessItem> YanyuBoundProcesses { get; init; } = [];
 
     public string Subtitle { get; }
 

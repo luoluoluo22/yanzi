@@ -9,6 +9,12 @@ public static class AppEnvironmentVariableStore
 {
     private static string SecretPath => HostAssets.ResolveDataFilePath("environment-variables.dat");
 
+    // Provider-only credentials are not injected into general extension environments.
+    private static readonly HashSet<string> ProviderOnlySecrets = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "CNBLOGS_TOKEN"
+    };
+
     private static readonly HashSet<string> ReservedNames = new(StringComparer.OrdinalIgnoreCase)
     {
         "YANZI_INPUT",
@@ -60,6 +66,7 @@ public static class AppEnvironmentVariableStore
             .ToArray();
         var deletedNames = previous.Keys.Except(current.Keys, StringComparer.OrdinalIgnoreCase).ToArray();
         AccountEnvironmentSecretVault.QueueUploadFromLocal(changedNames, deletedNames);
+        WindowsEnvironmentVariablePublisher.Synchronize();
     }
 
     /// <summary>
@@ -138,7 +145,7 @@ public static class AppEnvironmentVariableStore
     {
         foreach (var variable in Load())
         {
-            if (IsValidEnvironmentName(variable.Name))
+            if (IsValidEnvironmentName(variable.Name) && !ProviderOnlySecrets.Contains(variable.Name))
             {
                 setVariable(variable.Name, variable.Value ?? string.Empty);
             }
@@ -149,7 +156,7 @@ public static class AppEnvironmentVariableStore
     {
         return Load()
             .Select(static item => item.Name)
-            .Where(IsValidEnvironmentName)
+            .Where(name => IsValidEnvironmentName(name) && !ProviderOnlySecrets.Contains(name))
             .ToArray();
     }
 
@@ -202,6 +209,7 @@ public static class AppEnvironmentVariableStore
             })
             .ToList();
         AppSettingsStore.Save(settings);
+        WindowsEnvironmentVariablePublisher.Synchronize();
     }
 
     private static Dictionary<string, string> LoadSecretValues()

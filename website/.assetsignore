@@ -1,0 +1,6 @@
+# Wrangler may generate temporary build files inside website/ during deployment.
+# These files and deployment configuration must never become public site assets.
+.wrangler/
+wrangler.jsonc
+.assetsignore
+*.log

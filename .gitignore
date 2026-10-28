@@ -31,6 +31,7 @@ cloudflare/.dev.vars
 .env
 .env.*
 !.env.example
+mobile/android/app/google-services.json
 
 .vs/
 docs/local-release-assets/
@@ -92,3 +93,13 @@ __pycache__/
 **/.next/
 **/.turbo/
 **/.parcel-cache/
+
+# Local credential provisioning script (contains machine-specific secret)
+scripts/set-yanzi-github-token.ps1
+src/OpenQuickHost/Sync/*.cs.bak-*
+
+# User-installed Windows miniapps are managed outside the host Git repository.
+/extensions/
+
+.dev.vars*
+!.dev.vars.example

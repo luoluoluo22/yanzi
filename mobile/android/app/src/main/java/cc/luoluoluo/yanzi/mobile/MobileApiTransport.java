@@ -35,6 +35,8 @@ final class MobileApiTransport {
                 connection.setRequestProperty("User-Agent", "YanziClient-Mobile/" + BuildConfig.VERSION_NAME);
                 connection.setRequestProperty("X-Yanzi-Client", "mobile");
                 connection.setRequestProperty("X-Yanzi-Client-Version", BuildConfig.VERSION_NAME);
+                if (MobileApplicationContext.get() != null)
+                    connection.setRequestProperty("X-Yanzi-Device-Id", MobileDeviceIdentity.stableDeviceId(MobileApplicationContext.get()));
                 connection.setRequestProperty("Accept", "application/json");
                 if (payload != null) {
                     connection.setDoOutput(true);
@@ -58,7 +60,11 @@ final class MobileApiTransport {
                 if (statusCode < 200 || statusCode >= 300) {
                     String message = body;
                     try {
-                        message = new JSONObject(body).optString("message", body);
+                        JSONObject errorBody = new JSONObject(body);
+                        message = errorBody.optString("message", body);
+                        if (statusCode == 403 && "vip_required".equals(errorBody.optString("error"))) {
+                            message = "燕子云端服务需要 VIP，已暂停该操作；本地功能仍可使用。请在 Windows 燕子设置中选择‘升级 VIP’购买或输入卡密激活。购买地址：https://wzyp.cn/shop/4AOUCE2B";
+                        }
                     }
                     catch (Exception ignored) {
                     }

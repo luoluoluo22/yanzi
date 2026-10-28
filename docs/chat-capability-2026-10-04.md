@@ -53,3 +53,13 @@ waitForAck=false 只提交，返回 pending 和 messageId。
 本轮完成正式能力发送闭环，未修改 Android APK、手机数据或云端 Worker，未提交或推送 Git。没有再次进行息屏测试；此前 K70 息屏接收延迟问题仍是独立的已知问题。本轮无 USB 连接，未用 ADB 人工核对手机聊天画面；成功依据为指定设备在既有落库后 ACK 链中返回的真实成功回执。
 
 最终激活 Runtime：20261004-225632-024（PID 19612）；Shell PID 24544。最终目录与 chat.status 再次核验通过。
+
+## 2026-10-07：MCP 默认账号共享消息
+
+`chat.send` 省略或留空 `target` 时走现有账号聊天队列，消息没有 targetDeviceId，所有同账号接收实例独立同步与 ACK；离线设备上线后可在消息有效期内补收。只有明确填写设备 ID、名称或别名才定向发送。
+
+共享发送/查询返回 routing=account、devices（各 Android 设备回执）与 allOnlineAcked。completed/acked 表示本次观察开始时在线的 Android 手机均返回成功 ACK，不表示离线设备已收到；等待期间固定在线集合，避免设备离线使缺失 ACK 被误判为成功。chat.status 省略 targetDeviceId 会查询共享消息各手机，提供 targetDeviceId 则只查询该手机。定向发送的返回行为保持原契约。
+
+40 项 ChatCapabilityVerification 通过，新增全局 ACK 不能替代手机 ACK、两在线手机独立 ACK、离线设备 pending、无手机不可宣称送达与输出 Schema 验证。Runtime 构建 0 错误，已激活 20261007-212824-785。
+
+真实 MCP 共享测试：msg_0c14e36423fc695b0290d4ba；OnePlus android-4a817bcf-6a70-46a1-b90d-b3cefb655d11 于 2026-10-07T13:28:52.055Z ACK，K70 android-f85961cb-a306-46aa-8125-33f9d8614a7e 于 13:28:53.263Z ACK；allOnlineAcked=true。未更改手机 APK、云端 Worker或历史定向消息。旧定向测试不会自动变成共享消息。

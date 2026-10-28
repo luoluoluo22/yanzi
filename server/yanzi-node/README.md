@@ -45,6 +45,44 @@ curl http://127.0.0.1:8789/capabilities
 
 服务器注册为 `platform=server`，并通过设备的 `capabilityCatalog` 自动上报当前能力。收到 `capability.invoke` 后仍会二次校验消息中的 owner / device-grant 授权。
 
+## 服务器向燕记手机发送消息
+
+Cloudflare 的自定义防火墙要求 `User-Agent` 包含 `YanziClient`。Server Node 和发送 CLI 均携带 `YanziClient-Server/1.0`，不需要关闭防火墙。
+
+首次授权由已登录的 Windows 燕子客户端执行；账号所有者令牌只用于签发，不离开 Windows：
+
+```powershell
+.\scripts\provision-yanzi-server-chat.ps1 -SshDestination "root@YOUR_SERVER"
+```
+
+要求预先信任 SSH 主机指纹，并设置密钥登录；远端执行 `sudo -n` 必须可用。只有绑定本服务器、K70 目标和 `device.presence/messages.receive/chat.send` 的设备 JWT 会通过加密 SSH 输入传到服务器。失败时脚本尽力撤销刚签发的凭据。每次授权最多有效 30 天，到期前需要重新执行。
+
+授权成功后，可在 Ubuntu 用 stdin 发送一条测试文本（不会把正文或凭据写入进程命令行）：
+
+```bash
+printf '%s\n' '燕子服务器连接测试' | sudo bash /opt/yanzi/server/yanzi-node/scripts/send-message.sh
+```
+
+返回 `cloudStatus=pending` 表示云端已经接受但手机尚未 ACK；只有 `acked` 才表示指定手机确认接收。手机离线时云端消息仍可保留，系统通知另取决于 Android 推送服务配置。发送使用独立持久 outbox，`YANZI_MESSAGE_CLIENT_ID` 可设置为稳定 ID 以便失败重试时去重。
+
+## 每天 10:00 新闻早报（2026-10-11）
+
+服务器使用 `scripts/news_digest.py` 抓取中新社国内/国际/财经及 BBC 世界/科技 RSS，仅取过去 36 小时带发布时间的新闻，去重后按类别选取最多 9 条。ChatGPT Gateway（`gpt-6-sol`）只根据标题与简介生成导读；若不可用则降级为带原文链接的标题列表，新闻源不足 3 条则不发送，以免旧闻充数。
+
+已部署到 Ubuntu 的 `/etc/systemd/system/yanzi-news-daily.service` 和 `.timer`，系统时区为 `Asia/Shanghai`，每天上午 10:00 运行；`Persistent=true` 可在重启后补执行错过的任务。同一日期的消息 ID 和正文持久化到 `/var/lib/yanzi-news`，重新运行不会重复发送，服务日志不包含令牌。
+
+恢复新服务器时，在部署 Node 和设备级凭据后运行：
+
+```bash
+sudo install -d -m 0700 /var/lib/yanzi-news
+sudo install -m 0644 infra/server/yanzi-news-daily.service /etc/systemd/system/
+sudo install -m 0644 infra/server/yanzi-news-daily.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now yanzi-news-daily.timer
+```
+
+`sudo python3 server/yanzi-node/scripts/news_digest.py` 为只采集和预览模式；`--send --test` 发送隔离测试消息，`--send` 会按当天的幂等键正式推送。运行需访问 `/etc/chatgpt-gateway/token`（只读），消息发送仍走 `/etc/yanzi-server-node.env` 的受限设备令牌。令牌最多有效 30 天，过期前 7 天的新闻正文会提示重新授权；正式轮换须在已登录 Windows 电脑运行 `scripts/provision-yanzi-server-chat.ps1`。
+
 ## 数据目录
 
 - 运行状态：`/var/lib/yanzi-server-node`

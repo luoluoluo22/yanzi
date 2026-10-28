@@ -198,6 +198,7 @@ extends Activity {
     private HorizontalScrollView aiAttachmentScrollView;
     private LinearLayout aiAttachmentContainer;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private static final ExecutorService messageExecutor = Executors.newSingleThreadExecutor();
     private SharedPreferences prefs;
     private String deviceId;
     private androidx.core.widget.NestedScrollView mainScrollView;
@@ -225,10 +226,7 @@ extends Activity {
             long time = intent.getLongExtra("time", System.currentTimeMillis());
             android.util.Log.i("MainActivity", "Received CHAT_MESSAGE broadcast, kind=" + kind + ", source=" + sourceDeviceName);
             if (msg != null) {
-                MainActivity.this.runOnUiThread(() ->
-                        MainActivity.this.renderChatMessage("peer", kind == null ? "text" : kind, msg,
-                                time, sourceDeviceId == null ? "" : sourceDeviceId,
-                                sourceDeviceName == null ? "电脑" : sourceDeviceName, true));
+                MainActivity.this.runOnUiThread(() -> MainActivity.this.loadChatHistory());
             }
         }
     };
@@ -254,6 +252,7 @@ extends Activity {
     private ApplicationCatalogView applicationStore;
     private DesktopDashboardView.Result desktopDashboard;
     private View bottomTabs;
+    private boolean isKeyboardVisible = false;
     private String selectedTab = "";
     private int pendingMessageSends;
     private android.widget.ImageView profileAvatarView;
@@ -405,6 +404,606 @@ extends Activity {
     private Button chatSendButton;
     private Button chatPhotoButton;
     private Button chatFileButton;
+    private ChatConversation chatConversation = ChatConversation.group();
+    private ChatConversation attachmentConversation;
+    private String chatHistoryAccount="";
+    private LinearLayout agentSessionHeaderLayout;
+    private TextView tvCurrentSessionTitle;
+    private volatile String pendingAgentConversationId = "";
+    private volatile long pendingAgentStartedAt = 0L;
+    private volatile String pendingAgentRequestMessageId = "";
+    private volatile int pendingAgentPeerBaseline = 0;
+    private volatile boolean agentStopInFlight = false;
+    private final java.util.Map<String, android.widget.TextView> agentStreamTextViews = new java.util.HashMap<>();
+    private final java.util.Map<String, android.view.View> agentStreamContainers = new java.util.HashMap<>();
+    private final java.util.Map<String, Integer> agentStreamSequences = new java.util.HashMap<>();
+
+    private String chatPreferenceKey(String suffix) {
+        return "chatObjects."+ChatHistoryStore.accountKey(this)+"."+suffix;
+    }
+
+    private void restoreAgentWaitState() {
+        if (this.prefs == null || !this.pendingAgentConversationId.isEmpty()) return;
+        String conversationId = this.prefs.getString(chatPreferenceKey("agent_wait.conversation"), "");
+        long startedAt = this.prefs.getLong(chatPreferenceKey("agent_wait.started_at"), 0L);
+        if (conversationId.isEmpty() || startedAt <= 0L) return;
+        if (System.currentTimeMillis() - startedAt > 12L * 60L * 1000L) {
+            this.prefs.edit()
+                    .remove(chatPreferenceKey("agent_wait.conversation"))
+                    .remove(chatPreferenceKey("agent_wait.started_at"))
+                    .remove(chatPreferenceKey("agent_wait.request_id"))
+                    .remove(chatPreferenceKey("agent_wait.peer_baseline"))
+                    .apply();
+            return;
+        }
+        this.pendingAgentConversationId = conversationId;
+        this.pendingAgentStartedAt = startedAt;
+        this.pendingAgentRequestMessageId = this.prefs.getString(chatPreferenceKey("agent_wait.request_id"), "");
+        this.pendingAgentPeerBaseline = this.prefs.getInt(chatPreferenceKey("agent_wait.peer_baseline"), 0);
+    }
+
+    private int countPeerMessages(String conversationId) {
+        if (conversationId == null || conversationId.isEmpty()) return 0;
+        JSONArray history = ChatHistoryStore.load(this, conversationId);
+        int count = 0;
+        for (int i = 0; i < history.length(); i++) {
+            JSONObject item = history.optJSONObject(i);
+            if (item != null && "peer".equals(item.optString("role"))) count++;
+        }
+        return count;
+    }
+
+    private void beginAgentWait(ChatConversation recipient, long startedAt) {
+        if (recipient == null || !recipient.agent) return;
+        this.pendingAgentConversationId = recipient.id;
+        this.pendingAgentStartedAt = startedAt;
+        this.pendingAgentRequestMessageId = "";
+        this.pendingAgentPeerBaseline = this.countPeerMessages(recipient.id);
+        this.agentStopInFlight = false;
+        if (this.prefs != null) {
+            this.prefs.edit()
+                    .putString(chatPreferenceKey("agent_wait.conversation"), recipient.id)
+                    .putLong(chatPreferenceKey("agent_wait.started_at"), startedAt)
+                    .putInt(chatPreferenceKey("agent_wait.peer_baseline"), this.pendingAgentPeerBaseline)
+                    .remove(chatPreferenceKey("agent_wait.request_id"))
+                    .apply();
+        }
+        this.updateChatSendButtonState();
+    }
+
+    private void rememberAgentRequestMessageId(String conversationId, String messageId) {
+        if (conversationId == null || messageId == null || messageId.isEmpty()) return;
+        if (!conversationId.equals(this.pendingAgentConversationId)) return;
+        this.pendingAgentRequestMessageId = messageId;
+        if (this.prefs != null) {
+            this.prefs.edit().putString(chatPreferenceKey("agent_wait.request_id"), messageId).apply();
+        }
+    }
+
+    private void clearAgentWait(String conversationId) {
+        if (conversationId != null && !conversationId.isEmpty()
+                && !conversationId.equals(this.pendingAgentConversationId)) return;
+        this.pendingAgentConversationId = "";
+        this.pendingAgentStartedAt = 0L;
+        this.pendingAgentRequestMessageId = "";
+        this.pendingAgentPeerBaseline = 0;
+        this.agentStopInFlight = false;
+        if (this.prefs != null) {
+            this.prefs.edit()
+                    .remove(chatPreferenceKey("agent_wait.conversation"))
+                    .remove(chatPreferenceKey("agent_wait.started_at"))
+                    .remove(chatPreferenceKey("agent_wait.request_id"))
+                    .remove(chatPreferenceKey("agent_wait.peer_baseline"))
+                    .apply();
+        }
+        this.updateChatSendButtonState();
+    }
+
+    private boolean isCurrentAgentWaiting() {
+        this.restoreAgentWaitState();
+        return this.chatConversation != null
+                && this.chatConversation.agent
+                && this.chatConversation.id.equals(this.pendingAgentConversationId);
+    }
+
+    private void updateChatSendButtonState() {
+        if (this.chatSendButton == null) return;
+        this.restoreAgentWaitState();
+        boolean waiting = this.isCurrentAgentWaiting();
+        boolean anotherAgentIsWaiting = this.chatConversation != null
+                && this.chatConversation.agent
+                && !this.pendingAgentConversationId.isEmpty()
+                && !this.chatConversation.id.equals(this.pendingAgentConversationId);
+
+        if (waiting) {
+            this.chatSendButton.setText(this.agentStopInFlight ? "停止中" : "停止");
+            this.chatSendButton.setEnabled(!this.agentStopInFlight);
+        } else if (anotherAgentIsWaiting) {
+            this.chatSendButton.setText("等待中");
+            this.chatSendButton.setEnabled(false);
+        } else {
+            this.chatSendButton.setText("发送");
+            this.chatSendButton.setEnabled(true);
+        }
+
+        this.chatSendButton.setTextColor(Color.WHITE);
+        GradientDrawable background = new GradientDrawable();
+        background.setCornerRadius((float)this.dp(9));
+        if (waiting) background.setColor(Color.rgb(196, 55, 55));
+        else if (anotherAgentIsWaiting) background.setColor(Color.rgb(65, 75, 90));
+        else background.setColor(Color.rgb(30, 58, 95));
+        this.chatSendButton.setBackground((Drawable)background);
+    }
+
+    private String waitForExecutionMessage(String baseUrl, String token, String messageId,
+                                           int attempts, int sleepMs) throws Exception {
+        for (int i = 0; i < attempts; i++) {
+            JSONObject detail = YanziApiClient.fetchMessageDetail(baseUrl, token, messageId);
+            JSONObject actual = detail.optJSONObject("message");
+            if (actual != null) detail = actual;
+            String state = detail.optString("status");
+            if ("completed".equals(state) || "acked".equals(state)) {
+                JSONObject payload = detail.optJSONObject("payload");
+                JSONObject execution = payload == null ? null : payload.optJSONObject("executionResult");
+                return execution == null ? detail.optString("result", "") : execution.optString("output", "");
+            }
+            if ("failed".equals(state) || "expired".equals(state)
+                    || "cancelled".equals(state) || "unknown".equals(state)) {
+                JSONObject payload = detail.optJSONObject("payload");
+                JSONObject execution = payload == null ? null : payload.optJSONObject("executionResult");
+                String output = execution == null ? detail.optString("result", "") : execution.optString("output", "");
+                throw new IllegalStateException(output.isEmpty() ? "控制请求：" + state : output);
+            }
+            Thread.sleep(sleepMs);
+        }
+        throw new java.io.IOException("等待电脑确认超时");
+    }
+
+    private void stopCurrentAgentGeneration() {
+        android.util.Log.i("YanziAgentStop", "tap waiting=" + this.isCurrentAgentWaiting()
+                + " inFlight=" + this.agentStopInFlight);
+        if (!this.isCurrentAgentWaiting() || this.agentStopInFlight) return;
+        final ChatConversation recipient = this.chatConversation;
+        final String conversationId = recipient.id;
+        this.agentStopInFlight = true;
+        this.updateChatSendButtonState();
+        this.setStatus("正在停止反重力生成…");
+
+        this.executor.execute(() -> {
+            try {
+                // If Stop is tapped immediately after Send, first wait until the original request
+                // has actually been accepted. Otherwise the cancel command can race ahead of it.
+                String originalMessageId = "";
+                for (int i = 0; i < 60; i++) {
+                    if (!conversationId.equals(this.pendingAgentConversationId)) return;
+                    originalMessageId = this.pendingAgentRequestMessageId;
+                    if (originalMessageId != null && !originalMessageId.isEmpty()) break;
+                    Thread.sleep(100);
+                }
+                android.util.Log.i("YanziAgentStop", "requestReady=" + (originalMessageId != null && !originalMessageId.isEmpty()));
+                if (originalMessageId == null || originalMessageId.isEmpty()) {
+                    throw new java.io.IOException("原请求尚未提交到电脑");
+                }
+
+                String baseUrl = this.normalizedBaseUrl();
+                String token = this.requireToken();
+                try {
+                    YanziApiClient.registerDevice(baseUrl, token, this.deviceId, this.buildDeviceName());
+                } catch (Exception ex) {
+                    if (!MainActivity.isUnauthorized(ex)) throw ex;
+                    token = this.refreshToken();
+                    YanziApiClient.registerDevice(baseUrl, token, this.deviceId, this.buildDeviceName());
+                }
+
+                // Fast path: if the desktop has not claimed the run-extension request yet,
+                // cancel it in the cloud queue so Antigravity never starts.
+                boolean cancelledBeforeExecution = false;
+                try {
+                    cancelledBeforeExecution = YanziApiClient.cancelPendingExecution(
+                            baseUrl, token, originalMessageId, this.deviceId);
+                } catch (Exception earlyCancelError) {
+                    // Cloud pre-cancellation is best-effort; an exception must not prevent
+                    // the real CLI stop command from reaching a LAN-executed job.
+                    android.util.Log.w("YanziAgentStop", "early cloud cancellation unavailable: "
+                            + earlyCancelError.getClass().getSimpleName());
+                }
+
+                android.util.Log.i("YanziAgentStop", "cloudCancelledPending=" + cancelledBeforeExecution);
+                if (!cancelledBeforeExecution) {
+                    // A failed cloud cancellation means the request was already claimed, or it used
+                    // LAN transport. In both cases send /取消 through the same conversation. The
+                    // desktop processes the original run-extension before this control message, and
+                    // main.cs creates the worker/active lock before returning, so there is no need
+                    // to compete with the normal send thread for the original message receipt.
+                    if (!conversationId.equals(this.pendingAgentConversationId)) return;
+                    String cancelMessageId = YanziApiClient.sendConversation(
+                            baseUrl, token, this.deviceId, recipient, "/取消");
+                    android.util.Log.i("YanziAgentStop", "sentCancelControl");
+                    this.waitForExecutionMessage(baseUrl, token, cancelMessageId, 80, 250);
+                    android.util.Log.i("YanziAgentStop", "cancelControlAcknowledged");
+
+                    // worker.cjs polls every 250 ms and kills the whole agy process tree.
+                    Thread.sleep(500);
+                }
+
+                final boolean didCancelPending = cancelledBeforeExecution;
+                this.runOnUiThread(() -> {
+                    if (!conversationId.equals(this.pendingAgentConversationId)) return;
+                    this.clearAgentWait(conversationId);
+                    this.loadChatHistory();
+                    this.setStatus(didCancelPending
+                            ? "已取消等待中的反重力任务"
+                            : "已停止反重力生成");
+                    Toast.makeText(
+                            this,
+                            didCancelPending ? "已取消任务" : "已停止生成",
+                            Toast.LENGTH_SHORT).show();
+                });
+            } catch (Exception ex) {
+                android.util.Log.w("YanziAgentStop", "stop failed " + ex.getClass().getSimpleName());
+                this.runOnUiThread(() -> {
+                    if (!conversationId.equals(this.pendingAgentConversationId)) return;
+                    this.agentStopInFlight = false;
+                    this.updateChatSendButtonState();
+                    this.setStatus("停止失败：" + ex.getMessage());
+                });
+            }
+        });
+    }
+
+    private void maybeCompleteAgentWaitFromHistory(JSONArray history) {
+        this.restoreAgentWaitState();
+        if (history == null || this.pendingAgentConversationId.isEmpty()
+                || this.chatConversation == null
+                || !this.chatConversation.agent
+                || !this.chatConversation.id.equals(this.pendingAgentConversationId)) return;
+        int peerCount = 0;
+        for (int i = 0; i < history.length(); i++) {
+            JSONObject item = history.optJSONObject(i);
+            if (item != null && "peer".equals(item.optString("role"))) peerCount++;
+        }
+        if (peerCount > this.pendingAgentPeerBaseline) {
+            this.clearAgentWait(this.pendingAgentConversationId);
+            return;
+        }
+
+        // Compatibility fallback for a wait state created by an older Dev build that did not
+        // persist the peer baseline.
+        if (this.pendingAgentPeerBaseline == 0) {
+            for (int i = history.length() - 1; i >= 0; i--) {
+                JSONObject item = history.optJSONObject(i);
+                if (item == null || !"peer".equals(item.optString("role"))) continue;
+                long time = item.optLong("time", 0L);
+                if (time >= this.pendingAgentStartedAt) {
+                    this.clearAgentWait(this.pendingAgentConversationId);
+                    return;
+                }
+            }
+        }
+    }
+
+    private void selectChatConversation(ChatConversation target) {
+        if (chatInputEditText != null) prefs.edit().putString(chatPreferenceKey("draft."+chatConversation.id),
+            chatInputEditText.getText().toString()).apply();
+        chatConversation=target;
+        if (chatInputEditText != null) {
+            chatInputEditText.setText(prefs.getString(chatPreferenceKey("draft."+target.id),""));
+            chatInputEditText.setHint(target.agent ? "给反重力发送消息…" : "发送消息…");
+        }
+        prefs.edit().putLong(chatPreferenceKey("seen."+target.id),System.currentTimeMillis())
+            .putString(chatPreferenceKey("last_selected_conversation_id"), target.id)
+            .putString(chatPreferenceKey("last_selected_target_device"), target.targetDeviceId)
+            .putLong(chatPreferenceKey("last_used_time." + target.id), System.currentTimeMillis())
+            .apply();
+        if (desktopDashboard != null) desktopDashboard.conversation(target.agent?"反重力":target.name,this::showChatConversations);
+        if (chatAttachBtn != null) chatAttachBtn.setVisibility(target.agent?View.GONE:View.VISIBLE);
+        this.updateAntigravitySessionHeader();
+        this.updateChatSendButtonState();
+        selectSubTab(0); loadChatHistory();
+        if (target.agent) {
+            String baseUrl = null;
+            String token = null;
+            try {
+                baseUrl = this.normalizedBaseUrl();
+                token = this.requireToken();
+            } catch (Exception ignored) {}
+            AntigravitySessionManager.fetchConversationHistory(this, baseUrl, token, target.targetDeviceId, target.id, this::loadChatHistory);
+        }
+    }
+
+    private List<ChatConversation> sortChatConversations(List<ChatConversation> rawList) {
+        if (rawList == null || rawList.isEmpty()) return new ArrayList<>();
+        List<ChatConversation> result = new ArrayList<>();
+        ChatConversation group = null;
+        for (ChatConversation c : rawList) {
+            if (ChatConversation.GROUP.equals(c.id)) {
+                group = c;
+            } else {
+                result.add(c);
+            }
+        }
+
+        final String activeId = (this.chatConversation != null && !ChatConversation.GROUP.equals(this.chatConversation.id))
+                ? this.chatConversation.id
+                : this.prefs.getString(chatPreferenceKey("last_selected_conversation_id"), "");
+
+        java.util.Collections.sort(result, (a, b) -> {
+            boolean aActive = a.id.equals(activeId);
+            boolean bActive = b.id.equals(activeId);
+            if (aActive != bActive) return aActive ? -1 : 1;
+
+            long timeA = Math.max(this.prefs.getLong(chatPreferenceKey("last_used_time." + a.id), 0L),
+                    ChatHistoryStore.lastMessageTime(this, a.id));
+            long timeB = Math.max(this.prefs.getLong(chatPreferenceKey("last_used_time." + b.id), 0L),
+                    ChatHistoryStore.lastMessageTime(this, b.id));
+            if (timeA != timeB) return Long.compare(timeB, timeA);
+
+            if (a.agent != b.agent) return a.agent ? -1 : 1;
+            return a.name.compareToIgnoreCase(b.name);
+        });
+
+        if (group != null) {
+            result.add(group);
+        } else {
+            result.add(ChatConversation.group());
+        }
+        return result;
+    }
+
+    private void restoreLastSelectedConversation() {
+        try {
+            String lastId = this.prefs.getString(chatPreferenceKey("last_selected_conversation_id"), "");
+            if (lastId.isEmpty() || ChatConversation.GROUP.equals(lastId)) return;
+            final String cacheKey = chatPreferenceKey("contacts");
+            JSONArray cached = new JSONArray();
+            try { cached = new JSONArray(this.prefs.getString(cacheKey, "[]")); } catch (Exception ignored) {}
+            List<ChatConversation> list = ChatConversation.contacts(cached, this.deviceId);
+            for (ChatConversation c : list) {
+                if (c.id.equals(lastId)) {
+                    this.selectChatConversation(c);
+                    return;
+                }
+            }
+            String targetDev = this.prefs.getString(chatPreferenceKey("last_selected_target_device"), "");
+            if (targetDev.isEmpty() && lastId.startsWith("agent:antigravity:")) {
+                String[] parts = lastId.split(":");
+                if (parts.length >= 3 && !parts[2].isEmpty()) targetDev = parts[2];
+            }
+            if (!targetDev.isEmpty()) {
+                String title = AntigravitySessionManager.getSessionTitle(this, targetDev, lastId);
+                ChatConversation sessionConv = new ChatConversation(lastId, "反重力 · " + title, targetDev, "desktop", true);
+                this.selectChatConversation(sessionConv);
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private void updateAntigravitySessionHeader() {
+        if (this.agentSessionHeaderLayout == null || this.tvCurrentSessionTitle == null) return;
+        if (this.chatConversation == null || !this.chatConversation.agent) {
+            this.agentSessionHeaderLayout.setVisibility(View.GONE);
+            return;
+        }
+        this.agentSessionHeaderLayout.setVisibility(View.VISIBLE);
+        String title = AntigravitySessionManager.getSessionTitle(this, this.chatConversation.targetDeviceId, this.chatConversation.id);
+        this.tvCurrentSessionTitle.setText("会话: " + title + " ▾");
+    }
+
+    private void showAntigravitySessionMenu(View anchor) {
+        if (this.chatConversation == null || !this.chatConversation.agent) return;
+        final String targetDevice = this.chatConversation.targetDeviceId;
+        final String currentSessionId = this.chatConversation.id;
+
+        LinearLayout cardView = new LinearLayout((Context)this);
+        cardView.setOrientation(LinearLayout.VERTICAL);
+        cardView.setPadding(this.dp(14), this.dp(12), this.dp(14), this.dp(12));
+
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.rgb(15, 23, 42));
+        bg.setStroke(this.dp(1), Color.rgb(51, 65, 85));
+        bg.setCornerRadius((float)this.dp(12));
+        cardView.setBackground((Drawable)bg);
+
+        final android.widget.PopupWindow popup = new android.widget.PopupWindow(
+                cardView,
+                this.dp(270),
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                true);
+        popup.setOutsideTouchable(true);
+        popup.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+        popup.setElevation((float)this.dp(8));
+
+        // 1. 新建会话按钮
+        LinearLayout newBtn = new LinearLayout((Context)this);
+        newBtn.setOrientation(LinearLayout.HORIZONTAL);
+        newBtn.setGravity(Gravity.CENTER_VERTICAL);
+        newBtn.setPadding(this.dp(12), this.dp(10), this.dp(12), this.dp(10));
+        newBtn.setClickable(true);
+        newBtn.setFocusable(true);
+
+        GradientDrawable newBg = new GradientDrawable();
+        newBg.setColor(Color.argb(35, 37, 99, 235));
+        newBg.setCornerRadius((float)this.dp(8));
+        newBtn.setBackground((Drawable)newBg);
+
+        ImageView newBtnLogo = new ImageView((Context)this);
+        newBtnLogo.setImageDrawable(YanziUiKit.getAntigravityLogo(this));
+        newBtnLogo.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        LinearLayout.LayoutParams nLogoLp = new LinearLayout.LayoutParams(this.dp(16), this.dp(16));
+        nLogoLp.rightMargin = this.dp(8);
+        newBtn.addView((View)newBtnLogo, (ViewGroup.LayoutParams)nLogoLp);
+
+        TextView newTv = new TextView((Context)this);
+        newTv.setText("➕ 新建会话");
+        newTv.setTextColor(Color.rgb(125, 211, 252));
+        newTv.setTextSize(13.5f);
+        newTv.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        newBtn.addView((View)newTv);
+
+        newBtn.setOnClickListener(v -> {
+            popup.dismiss();
+            AntigravitySessionManager.SessionItem created = AntigravitySessionManager.createNewSession(this, targetDevice);
+            ChatConversation newConv = new ChatConversation(created.id, "反重力", targetDevice, this.chatConversation.platform, true);
+            this.selectChatConversation(newConv);
+            Toast.makeText((Context)this, "已开启新会话", Toast.LENGTH_SHORT).show();
+        });
+        cardView.addView((View)newBtn, new LinearLayout.LayoutParams(-1, -2));
+
+        // 分割线
+        View divider = new View((Context)this);
+        divider.setBackgroundColor(Color.rgb(30, 41, 59));
+        LinearLayout.LayoutParams divLp = new LinearLayout.LayoutParams(-1, this.dp(1));
+        divLp.topMargin = this.dp(10);
+        divLp.bottomMargin = this.dp(8);
+        cardView.addView(divider, divLp);
+
+        // 标题行：近期会话 + 刷新状态
+        LinearLayout headerRow = new LinearLayout((Context)this);
+        headerRow.setOrientation(LinearLayout.HORIZONTAL);
+        headerRow.setGravity(Gravity.CENTER_VERTICAL);
+        headerRow.setPadding(this.dp(4), 0, this.dp(4), this.dp(6));
+
+        TextView sectionTitle = new TextView((Context)this);
+        sectionTitle.setText("电脑会话列表");
+        sectionTitle.setTextColor(Color.rgb(100, 116, 139));
+        sectionTitle.setTextSize(11.5f);
+        headerRow.addView((View)sectionTitle, new LinearLayout.LayoutParams(0, -2, 1.0f));
+
+        final TextView refreshStatus = new TextView((Context)this);
+        refreshStatus.setText("正在拉取…");
+        refreshStatus.setTextColor(Color.rgb(56, 189, 248));
+        refreshStatus.setTextSize(11f);
+        headerRow.addView((View)refreshStatus);
+        cardView.addView((View)headerRow);
+
+        ScrollView listScroll = new ScrollView((Context)this);
+        LinearLayout.LayoutParams scrollLp = new LinearLayout.LayoutParams(-1, this.dp(240));
+        final LinearLayout listLayout = new LinearLayout((Context)this);
+        listLayout.setOrientation(LinearLayout.VERTICAL);
+
+        java.util.function.Consumer<List<AntigravitySessionManager.SessionItem>> renderItems = list -> {
+            listLayout.removeAllViews();
+            for (final AntigravitySessionManager.SessionItem item : list) {
+                final boolean isCurrent = item.id.equals(currentSessionId) || (currentSessionId.endsWith(":" + item.rawId) && !item.rawId.isEmpty());
+
+                LinearLayout itemRow = new LinearLayout((Context)this);
+                itemRow.setOrientation(LinearLayout.VERTICAL);
+                itemRow.setPadding(this.dp(8), this.dp(8), this.dp(8), this.dp(8));
+                itemRow.setClickable(true);
+                itemRow.setFocusable(true);
+
+                GradientDrawable itemBg = new GradientDrawable();
+                if (isCurrent) {
+                    itemBg.setColor(Color.argb(25, 34, 197, 94));
+                    itemBg.setStroke(this.dp(1), Color.rgb(34, 197, 94));
+                } else {
+                    itemBg.setColor(Color.TRANSPARENT);
+                }
+                itemBg.setCornerRadius((float)this.dp(6));
+                itemRow.setBackground((Drawable)itemBg);
+
+                LinearLayout topRow = new LinearLayout((Context)this);
+                topRow.setOrientation(LinearLayout.HORIZONTAL);
+                topRow.setGravity(Gravity.CENTER_VERTICAL);
+
+                TextView statusDot = new TextView((Context)this);
+                statusDot.setText(isCurrent ? "● " : "○ ");
+                statusDot.setTextColor(isCurrent ? Color.rgb(34, 197, 94) : Color.rgb(71, 85, 105));
+                statusDot.setTextSize(12f);
+                topRow.addView((View)statusDot);
+
+                TextView titleTv = new TextView((Context)this);
+                titleTv.setText((CharSequence)item.title);
+                titleTv.setTextColor(isCurrent ? Color.WHITE : Color.rgb(203, 213, 225));
+                titleTv.setTextSize(13f);
+                titleTv.setTypeface(android.graphics.Typeface.DEFAULT, isCurrent ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
+                titleTv.setSingleLine(true);
+                titleTv.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                topRow.addView((View)titleTv, new LinearLayout.LayoutParams(0, -2, 1.0f));
+
+                itemRow.addView(topRow);
+
+                if (item.preview != null && !item.preview.isEmpty() && !item.preview.equals(item.title)) {
+                    TextView prevTv = new TextView((Context)this);
+                    prevTv.setText(item.preview);
+                    prevTv.setTextColor(Color.rgb(100, 116, 139));
+                    prevTv.setTextSize(11f);
+                    prevTv.setSingleLine(true);
+                    prevTv.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                    prevTv.setPadding(this.dp(14), this.dp(2), 0, 0);
+                    itemRow.addView((View)prevTv);
+                }
+
+                itemRow.setOnClickListener(v -> {
+                    popup.dismiss();
+                    if (!isCurrent) {
+                        ChatConversation chosen = new ChatConversation(item.id, "反重力", targetDevice, this.chatConversation.platform, true);
+                        this.selectChatConversation(chosen);
+                    }
+                });
+
+                listLayout.addView((View)itemRow);
+            }
+        };
+
+        // 先渲染本地已有缓存
+        List<AntigravitySessionManager.SessionItem> cached = AntigravitySessionManager.getSessions(this, targetDevice);
+        renderItems.accept(cached);
+
+        listScroll.addView((View)listLayout, new LinearLayout.LayoutParams(-1, -2));
+        cardView.addView((View)listScroll, (ViewGroup.LayoutParams)scrollLp);
+
+        // 异步拉取电脑端最新会话
+        String reqBaseUrl = null;
+        String reqToken = null;
+        try {
+            reqBaseUrl = this.normalizedBaseUrl();
+            reqToken = this.requireToken();
+        } catch (Exception ignored) {}
+        AntigravitySessionManager.fetchRemoteSessions(this, reqBaseUrl, reqToken, targetDevice, fresh -> {
+            if (isFinishing() || !popup.isShowing()) return;
+            refreshStatus.setText("已同步 (" + fresh.size() + ")");
+            refreshStatus.setTextColor(Color.rgb(34, 197, 94));
+            renderItems.accept(fresh);
+        });
+
+        popup.showAsDropDown(anchor, 0, this.dp(4));
+    }
+
+    private void showChatConversations() {
+        final String account=ChatHistoryStore.accountKey(this);
+        final String cacheKey=chatPreferenceKey("contacts");
+        JSONArray cached=new JSONArray();
+        try {cached=new JSONArray(prefs.getString(cacheKey,"[]"));} catch(Exception ignored) {}
+        final List<ChatConversation> rawContacts=ChatConversation.contacts(cached,deviceId);
+        if(rawContacts.stream().noneMatch(c->c.id.equals(chatConversation.id))) rawContacts.add(chatConversation);
+        final List<ChatConversation> contacts=sortChatConversations(rawContacts);
+        final ChatConversationAdapter adapter=new ChatConversationAdapter(this,contacts,chatConversation.id);
+        final AlertDialog dialog=new AlertDialog.Builder(this).setTitle("聊天对象")
+            .setSingleChoiceItems(adapter,-1,(d,which)->{
+                if(account.equals(ChatHistoryStore.accountKey(this))) selectChatConversation(contacts.get(which));
+                d.dismiss();
+            }).setNegativeButton("取消",null).create();
+        dialog.show();
+        this.executor.execute(() -> {
+            final JSONArray devices;
+            try {
+                devices=MobileMessageClient.readSystemFirst(normalizedBaseUrl(),"/v1/me/devices",requireToken()).optJSONArray("items");
+            } catch(Exception unavailable) {
+                this.runOnUiThread(()->{if(dialog.isShowing()) dialog.setTitle("聊天对象 · 使用缓存");});
+                return;
+            }
+            this.runOnUiThread(() -> {
+                if(isFinishing() || !dialog.isShowing() || !account.equals(ChatHistoryStore.accountKey(this))) return;
+                if(devices!=null) prefs.edit().putString(cacheKey,devices.toString()).apply();
+                List<ChatConversation> fresh = ChatConversation.contacts(devices, deviceId);
+                if (fresh.stream().noneMatch(c -> c.id.equals(chatConversation.id))) fresh.add(chatConversation);
+                contacts.clear();
+                contacts.addAll(sortChatConversations(fresh));
+                adapter.notifyDataSetChanged();
+                for(int i=0;i<contacts.size();i++) if(contacts.get(i).id.equals(chatConversation.id)) dialog.getListView().setItemChecked(i,true);
+            });
+        });
+    }
     private TextView flatLogTv;
     private androidx.core.widget.NestedScrollView flatLogScrollView;
     private android.widget.Button btnShowFileManager;
@@ -985,6 +1584,8 @@ extends Activity {
     }
 
     protected void onPause() {
+        if(this.chatInputEditText!=null && this.prefs!=null) this.prefs.edit()
+            .putString(chatPreferenceKey("draft."+chatConversation.id),chatInputEditText.getText().toString()).apply();
         sForeground = false;
         FloatingWheelService.setAppForeground(false);
         this.diagnosticRefreshHandler.removeCallbacks(this.diagnosticRefreshRunnable);
@@ -2053,6 +2654,8 @@ extends Activity {
                 () -> this.selectSubTab(1),
                 () -> this.selectSubTab(2),
                 () -> this.selectSubTab(3));
+        this.desktopDashboard.conversation(chatConversation.name,this::showChatConversations);
+        this.restoreLastSelectedConversation();
 
         // 子 Tab 条
         LinearLayout subTabBar = new LinearLayout((Context)this);
@@ -2121,6 +2724,7 @@ extends Activity {
 
         this.offlineHintView = new LinearLayout((Context)this);
         this.offlineHintView.setOrientation(1);
+        this.offlineHintView.setVisibility(View.GONE);
         this.offlineHintView.setGravity(17);
         this.offlineHintView.setPadding(0, this.dp(100), 0, this.dp(100));
 
@@ -2673,9 +3277,117 @@ extends Activity {
 
         LinearLayout notifyRow = YanziUiKit.row(this, "bell-outline", YanziUiKit.ORANGE, "消息通知", "声音、振动、横幅与锁屏提醒", this::openNotificationSettings);
         this.profileTabPage.addView((View)notifyRow, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
+        LinearLayout voiceMemoryRow = YanziUiKit.row(this, "microphone", YanziUiKit.BLUE, "声音记忆", "本机录音 · 锁屏持续 · 分段保存", () -> startActivity(new Intent(this, VoiceMemoryActivity.class)));
+        this.profileTabPage.addView((View)voiceMemoryRow, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
 
         LinearLayout itemAccessibility = YanziUiKit.row(this, "accessibility", YanziUiKit.BLUE, "无障碍服务", "只在自动化需要时开启", this::openAccessibilitySettings);
         this.profileTabPage.addView((View)itemAccessibility, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
+        // Local, explicit consent for remote screenshots, accessibility tree and gestures.
+        // Having accessibility enabled for local screenshots does not automatically enable remote access.
+        boolean remoteScreenEnabled = this.prefs.getBoolean("remoteScreenControlEnabled", false);
+        LinearLayout remoteScreenRow = YanziUiKit.switchRow(this, "shield-account", YanziUiKit.BLUE,
+                "远程屏幕控制", "允许燕子远程查看界面、截图和执行点击；可随时关闭", remoteScreenEnabled,
+                (buttonView, isChecked) -> {
+                    if (!isChecked) {
+                        this.prefs.edit().putBoolean("remoteScreenControlEnabled", false).apply();
+                        this.setStatus("已关闭远程屏幕控制。");
+                        return;
+                    }
+                    new android.app.AlertDialog.Builder(this)
+                            .setTitle("允许远程屏幕控制？")
+                            .setMessage("启用后，已登录的燕子账户可远程获取屏幕截图、界面文字，并执行点击、滑动和系统导航。请勿在处理密码、验证码或敏感信息时保持开启。设备锁定时禁止操作。")
+                            .setPositiveButton("允许", (dialog, which) -> {
+                                this.prefs.edit().putBoolean("remoteScreenControlEnabled", true).apply();
+                                if (!MobileAccessibilityService.isEnabled()) openAccessibilitySettings();
+                                else this.setStatus("已允许远程屏幕控制。");
+                            })
+                            .setNegativeButton("取消", (dialog, which) -> buttonView.setChecked(false))
+                            .setOnCancelListener(dialog -> buttonView.setChecked(false))
+                            .show();
+                });
+        this.profileTabPage.addView((View)remoteScreenRow, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
+
+        boolean uiAutomationEnabled = this.prefs.getBoolean("remoteUiAutomationEnabled", false);
+        LinearLayout uiAutomationRow = YanziUiKit.switchRow(this, "gesture-tap-hold", YanziUiKit.PURPLE,
+                "远程界面自动化", "可定位控件、输入文字，并运行可取消的自动化任务；需要无障碍", uiAutomationEnabled,
+                (buttonView, isChecked) -> {
+                    if (!isChecked) {
+                        this.prefs.edit().putBoolean("remoteUiAutomationEnabled", false).apply();
+                        this.setStatus("已禁用远程界面自动化，正在执行的任务将停止。");
+                        return;
+                    }
+                    if (!this.prefs.getBoolean("remoteScreenControlEnabled", false)) {
+                        buttonView.setChecked(false);
+                        this.setStatus("请先开启「远程屏幕控制」。");
+                        return;
+                    }
+                    new android.app.AlertDialog.Builder(this)
+                            .setTitle("允许远程界面自动化？")
+                            .setMessage("启用后，已登录的燕子账户可对当前解锁屏幕中的非密码输入框设置文字、点击控件，并运行最长85秒的多步骤任务。任务会拒绝跨应用操作；授权可随时关闭。请勿在涉及支付、个人资料或验证码的界面保持开启。")
+                            .setPositiveButton("允许", (dialog, which) -> {
+                                this.prefs.edit().putBoolean("remoteUiAutomationEnabled", true).apply();
+                                if (!MobileAccessibilityService.isEnabled()) openAccessibilitySettings();
+                                else this.setStatus("已允许远程界面自动化。");
+                            })
+                            .setNegativeButton("取消", (dialog, which) -> buttonView.setChecked(false))
+                            .setOnCancelListener(dialog -> buttonView.setChecked(false))
+                            .show();
+                });
+        this.profileTabPage.addView((View)uiAutomationRow, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
+        // Reading files and writing files are independent remote permissions.
+        // Neither is implicitly granted by Accessibility or remote screen control.
+        boolean sharedFilesEnabled = this.prefs.getBoolean("remoteSharedFilesReadEnabled", false);
+        LinearLayout remoteFilesRow = YanziUiKit.switchRow(this, "folder-outline", YanziUiKit.BLUE,
+                "远程文件读取", "读取公共存储的下载、文档和照片；另需 Android 文件管理授权", sharedFilesEnabled,
+                (buttonView, isChecked) -> {
+                    if (!isChecked) {
+                        this.prefs.edit().putBoolean("remoteSharedFilesReadEnabled", false)
+                                .putBoolean("remoteSharedFilesWriteEnabled", false).apply();
+                        this.setStatus("已禁用远程文件访问和写入。");
+                        return;
+                    }
+                    new android.app.AlertDialog.Builder(this)
+                            .setTitle("授权远程读取手机文件？")
+                            .setMessage("燕子账户将可远程列出、读取公共存储中的文件及图片。无法访问其他 App 的私有数据。还需在 Android「所有文件访问权限」中手动允许燕子；随时可在此关闭。")
+                            .setPositiveButton("允许读取", (dialog, which) -> {
+                                this.prefs.edit().putBoolean("remoteSharedFilesReadEnabled", true).apply();
+                                if (!MobileSharedStorage.hasAndroidPermission()) openSharedStoragePermissionSettings();
+                                else this.setStatus("已开启远程文件读取。");
+                            })
+                            .setNegativeButton("取消", (dialog, which) -> buttonView.setChecked(false))
+                            .setOnCancelListener(dialog -> buttonView.setChecked(false))
+                            .show();
+                });
+        this.profileTabPage.addView((View)remoteFilesRow, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
+        boolean sharedWriteEnabled = this.prefs.getBoolean("remoteSharedFilesWriteEnabled", false);
+        LinearLayout remoteFileWriteRow = YanziUiKit.switchRow(this, "file-edit-outline", YanziUiKit.ORANGE,
+                "远程新建文件", "单独授权；仅允许新建文件，禁止覆盖或删除已有文件", sharedWriteEnabled,
+                (buttonView, isChecked) -> {
+                    if (!isChecked) {
+                        this.prefs.edit().putBoolean("remoteSharedFilesWriteEnabled", false).apply();
+                        this.setStatus("已关闭远程文件写入。");
+                        return;
+                    }
+                    if (!this.prefs.getBoolean("remoteSharedFilesReadEnabled", false)) {
+                        buttonView.setChecked(false);
+                        this.setStatus("请先开启远程文件读取。");
+                        return;
+                    }
+                    new android.app.AlertDialog.Builder(this)
+                            .setTitle("允许远程新建文件？")
+                            .setMessage("启用后，已登录的燕子账户可在手机公共存储中远程创建新文件。仅能创建不存在的文件，不允许覆盖、修改或删除现有文件。可随时关闭。")
+                            .setPositiveButton("允许新建", (dialog, which) -> {
+                                this.prefs.edit().putBoolean("remoteSharedFilesWriteEnabled", true).apply();
+                                if (!MobileSharedStorage.hasAndroidPermission()) openSharedStoragePermissionSettings();
+                                else this.setStatus("已允许远程新建文件。");
+                            })
+                            .setNegativeButton("取消", (dialog, which) -> buttonView.setChecked(false))
+                            .setOnCancelListener(dialog -> buttonView.setChecked(false))
+                            .show();
+                });
+        this.profileTabPage.addView((View)remoteFileWriteRow, (ViewGroup.LayoutParams)YanziUiKit.cardLp(this));
+
+
 
         this.profileTabPage.addView((View)YanziUiKit.sectionLabel(this, "关于"));
 
@@ -2695,6 +3407,7 @@ extends Activity {
         this.bottomTabs = this.buildBottomTabs();
         shell.addView(this.bottomTabs, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, this.dp(64)));
         this.setContentView((View)shell);
+        this.setupKeyboardVisibilityListener();
         this.selectTab("desktop");
         this.setStatus(this.prefs.getString("token", "").trim().isEmpty() ? "\u8bf7\u5148\u767b\u5f55\u71d5\u5b50\u8d26\u53f7\u3002" : "\u5df2\u52a0\u8f7d\u672c\u5730\u767b\u5f55\u6001\u3002");
         this.renderCachedYanm();
@@ -2708,6 +3421,23 @@ extends Activity {
         new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
             UpdateManager.checkUpdate(MainActivity.this, false);
         }, 2000L);
+    }
+
+    private void openSharedStoragePermissionSettings() {
+        try {
+            android.content.Intent intent = new android.content.Intent(
+                    android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                    android.net.Uri.parse("package:" + getPackageName()));
+            startActivity(intent);
+            setStatus("请在系统设置中允许燕子「管理所有文件」，返回燕子后生效。");
+        } catch (Exception ex) {
+            try {
+                startActivity(new android.content.Intent(
+                        android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION));
+            } catch (Exception ignored) {
+                setStatus("无法直接打开设置。请手动在系统设置搜索「所有文件访问权限」，允许燕子。");
+            }
+        }
     }
 
     private LinearLayout createTabPage() {
@@ -4003,13 +4733,16 @@ extends Activity {
     private void sendTextValueToDesktop(String text, String pendingStatus) {
         this.setStatus(pendingStatus);
         beginMessageSend();
-        this.executor.execute(() -> {
+        MobileSessionStore.Snapshot sendSession = MobileSessionStore.snapshot(this);
+        long queuedAt = android.os.SystemClock.elapsedRealtime();
+        messageExecutor.execute(() -> {
+            android.util.Log.i("YanziSend", "queue_wait_ms=" + (android.os.SystemClock.elapsedRealtime() - queuedAt));
             try {
+                sendSession.requireCurrent();
                 String messageId;
                 String baseUrl = this.normalizedBaseUrl();
                 String token = this.requireToken();
                 try {
-                    YanziApiClient.registerDevice(baseUrl, token, this.deviceId, this.buildDeviceName());
                     messageId = YanziApiClient.sendTextToDesktop(baseUrl, token, this.deviceId, text);
                 }
                 catch (Exception ex) {
@@ -4017,11 +4750,10 @@ extends Activity {
                         throw ex;
                     }
                     token = this.refreshToken();
-                    YanziApiClient.registerDevice(baseUrl, token, this.deviceId, this.buildDeviceName());
                     messageId = YanziApiClient.sendTextToDesktop(baseUrl, token, this.deviceId, text);
                 }
                 String sentMessageId = messageId;
-                this.runOnUiThread(() -> this.setStatus("\u5df2\u53d1\u9001\u5230\u4e91\u7aef\uff0cmessageId=" + sentMessageId + "\u3002\u7b49\u5f85\u7535\u8111\u63a5\u6536\u3002"));
+                this.runOnUiThread(() -> this.setStatus("消息已提交，id=" + sentMessageId));
             }
             catch (Exception ex) {
                 this.runOnUiThread(() -> this.setStatus("\u53d1\u9001\u5931\u8d25\uff1a" + ex.getMessage()));
@@ -4045,8 +4777,12 @@ extends Activity {
         this.setStatus("\u6b63\u5728\u5904\u7406\u7167\u7247...");
         this.showPhotoProgress("\u6b63\u5728\u53d1\u9001\u7167\u7247...");
         beginMessageSend();
-        this.executor.execute(() -> {
+        MobileSessionStore.Snapshot sendSession = MobileSessionStore.snapshot(this);
+        long queuedAt = android.os.SystemClock.elapsedRealtime();
+        messageExecutor.execute(() -> {
+            android.util.Log.i("YanziSend", "queue_wait_ms=" + (android.os.SystemClock.elapsedRealtime() - queuedAt));
             try {
+                sendSession.requireCurrent();
                 String messageId;
                 byte[] jpegBytes = this.readJpegBytesFromUri(uri);
                 int[] size = MainActivity.readImageSizeFromJpegBytes(jpegBytes);
@@ -4201,7 +4937,7 @@ extends Activity {
 
                 this.runOnUiThread(() -> {
                     this.cacheRemoteExtensions(loadedDesktopExtensions);
-                    this.renderExtensions(unifiedExtensions);
+                    this.renderExtensions(unifiedExtensions, true);
                     this.renderLocalMobileExtensions();
                     if (this.swipeRefresh != null) {
                         this.swipeRefresh.setRefreshing(false);
@@ -4355,11 +5091,66 @@ extends Activity {
         return items;
     }
 
+    private String desktopExtensionOrderKey() {
+        return "desktop.extensionOrder." + ChatHistoryStore.accountKey(this);
+    }
+
+    /** Only a successful full refresh updates the stored catalog. Cached/search renders are read-only. */
+    private List<RemoteExtension> orderedDesktopExtensions(List<RemoteExtension> extensions, boolean fullRefresh) {
+        ArrayList<String> available = new ArrayList<>();
+        java.util.LinkedHashMap<String, RemoteExtension> byId = new java.util.LinkedHashMap<>();
+        for (RemoteExtension extension : extensions) {
+            if (extension == null || extension.extensionId == null || extension.extensionId.isEmpty()) continue;
+            if (!byId.containsKey(extension.extensionId)) {
+                byId.put(extension.extensionId, extension);
+                if (extension.hasDesktopRuntime) available.add(extension.extensionId);
+            }
+        }
+        ArrayList<String> saved = new ArrayList<>();
+        try {
+            JSONArray array = new JSONArray(this.prefs.getString(desktopExtensionOrderKey(), "[]"));
+            for (int i = 0; i < array.length(); i++) {
+                String id = array.optString(i, "");
+                if (!id.isEmpty()) saved.add(id);
+            }
+        } catch (Exception ignored) {}
+        List<String> order = DesktopExtensionOrder.reconcile(saved, available);
+        if (fullRefresh) this.prefs.edit()
+                .putString(desktopExtensionOrderKey(), new JSONArray(order).toString()).apply();
+        ArrayList<RemoteExtension> result = new ArrayList<>();
+        for (String id : order) result.add(byId.remove(id));
+        result.addAll(byId.values());
+        return result;
+    }
+
+    private void saveDesktopExtensionOrder(GridLayout grid) {
+        JSONArray ids = new JSONArray();
+        for (int i = 0; i < grid.getChildCount(); i++) {
+            Object id = grid.getChildAt(i).getTag();
+            if (id instanceof String) ids.put((String) id);
+        }
+        // Persist the complete catalog, including entries currently beyond the visible grid.
+        ArrayList<String> stored = new ArrayList<>();
+        for (int i = 0; i < ids.length(); i++) stored.add(ids.optString(i));
+        for (RemoteExtension extension : currentDesktopExtensions) {
+            if (extension.hasDesktopRuntime && !stored.contains(extension.extensionId))
+                stored.add(extension.extensionId);
+        }
+        this.prefs.edit().putString(desktopExtensionOrderKey(),
+                new JSONArray(stored).toString()).commit();
+        this.currentDesktopExtensions = orderedDesktopExtensions(currentDesktopExtensions, false);
+        this.setStatus("小程序顺序已固定，后续新添加的会排在末尾");
+    }
+
     private void renderExtensions(List<RemoteExtension> extensions) {
-        this.currentDesktopExtensions = extensions;
+        this.renderExtensions(extensions, false);
+    }
+
+    private void renderExtensions(List<RemoteExtension> extensions, boolean fullRefresh) {
+        this.currentDesktopExtensions = orderedDesktopExtensions(extensions, fullRefresh);
         String query = this.searchDesktopExtensionsInput != null && this.searchDesktopExtensionsInput.getText() != null ? this.searchDesktopExtensionsInput.getText().toString().trim().toLowerCase() : "";
         ArrayList<RemoteExtension> filtered = new ArrayList<RemoteExtension>();
-        for(RemoteExtension e:extensions){
+        for(RemoteExtension e:this.currentDesktopExtensions){
             if(!e.hasDesktopRuntime)continue;
             if(!query.isEmpty()&&(e.name==null||!e.name.toLowerCase().contains(query))&&(e.description==null||!e.description.toLowerCase().contains(query)))continue;
             filtered.add(e);
@@ -4383,19 +5174,27 @@ extends Activity {
         int cellWidth = Math.max(this.dp(72), (screenWidth - this.dp(40)) / 4);
         for (RemoteExtension extension : filtered) {
             LinearLayout card = this.iconCard();
+            card.setPadding(this.dp(3), this.dp(3), this.dp(3), this.dp(2));
             card.setGravity(17);
             card.setOnClickListener(
                     v -> this.runRemoteExtension(extension, (View)card));
+            card.setTag(extension.extensionId);
             card.setOnLongClickListener(v -> {
-                this.showUnifiedExtensionActions(
-                        extension,
-                        (View)card);
+                if (!query.isEmpty()) {
+                    this.setStatus("清除搜索后可长按拖动排序");
+                    return true;
+                }
+                android.content.ClipData clip = android.content.ClipData.newPlainText(
+                        "yanzi-extension-order", extension.extensionId);
+                boolean started = card.startDragAndDrop(clip,
+                        new View.DragShadowBuilder(card), card, 0);
+                if (!started) this.showUnifiedExtensionActions(extension, card);
                 return true;
             });
             GridLayout.LayoutParams cardParams = new GridLayout.LayoutParams();
             cardParams.width = cellWidth;
             cardParams.height = -2;
-            cardParams.setMargins(this.dp(2), this.dp(3), this.dp(2), this.dp(3));
+            cardParams.setMargins(this.dp(1), this.dp(1), this.dp(1), this.dp(1));
             card.setLayoutParams((ViewGroup.LayoutParams)cardParams);
             Path path = MobileIconLibrary.resolveOrDefault(extension.icon);
             ImageView img = new ImageView((Context)this);
@@ -4418,20 +5217,61 @@ extends Activity {
             img.setBackground((Drawable)gd);
             img.setImageDrawable((Drawable)new PathDrawable(path, -1));
             img.setPadding(this.dp(8), this.dp(8), this.dp(8), this.dp(8));
-            ImageView iconView = img;
-            LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(this.dp(54), this.dp(54));
+            android.widget.FrameLayout iconHolder = new android.widget.FrameLayout(this);
+            LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(this.dp(50), this.dp(50));
             iconParams.setMargins(0, 0, 0, this.dp(1));
-            iconParams.gravity = 1;
-            card.addView((View)iconView, (ViewGroup.LayoutParams)iconParams);
+            iconParams.gravity = Gravity.CENTER_HORIZONTAL;
+            iconHolder.addView(img, new android.widget.FrameLayout.LayoutParams(-1, -1));
+            TextView more = this.textView("⋯", 15, Color.WHITE, false);
+            more.setGravity(Gravity.CENTER);
+            more.setBackgroundColor(Color.argb(140, 15, 23, 42));
+            more.setContentDescription("更多设置：" + extension.name);
+            more.setOnClickListener(v -> this.showUnifiedExtensionActions(extension, card));
+            android.widget.FrameLayout.LayoutParams moreParams =
+                    new android.widget.FrameLayout.LayoutParams(
+                            this.dp(23), this.dp(21), Gravity.RIGHT | Gravity.TOP);
+            iconHolder.addView(more, moreParams);
+            card.addView(iconHolder, iconParams);
             TextView name = this.textView(extension.name, 11, -1, false);
-            name.setGravity(17);
+            name.setGravity(Gravity.TOP | Gravity.CENTER_HORIZONTAL);
             name.setMaxLines(2);
             LinearLayout.LayoutParams nameParams = new LinearLayout.LayoutParams(-1, -2);
-            nameParams.gravity = 1;
-            card.addView((View)name, (ViewGroup.LayoutParams)nameParams);
+            nameParams.gravity = Gravity.CENTER_HORIZONTAL;
+            card.addView(name, nameParams);
 
             grid.addView((View)card);
         }
+        grid.setOnDragListener((view, event) -> {
+            switch (event.getAction()) {
+                case android.view.DragEvent.ACTION_DRAG_STARTED:
+                    return query.isEmpty() && event.getLocalState() instanceof View
+                            && grid.indexOfChild((View)event.getLocalState()) >= 0;
+                case android.view.DragEvent.ACTION_DRAG_LOCATION: {
+                    View moving = (View)event.getLocalState();
+                    int oldIndex = grid.indexOfChild(moving);
+                    if (oldIndex < 0) return true;
+                    for (int i = 0; i < grid.getChildCount(); i++) {
+                        View target = grid.getChildAt(i);
+                        if (target == moving) continue;
+                        if (event.getX() >= target.getLeft() && event.getX() <= target.getRight()
+                                && event.getY() >= target.getTop() && event.getY() <= target.getBottom()) {
+                            grid.removeView(moving);
+                            grid.addView(moving, i);
+                            break;
+                        }
+                    }
+                    return true;
+                }
+                case android.view.DragEvent.ACTION_DROP:
+                    this.saveDesktopExtensionOrder(grid);
+                    return true;
+                case android.view.DragEvent.ACTION_DRAG_ENDED:
+                    if (!event.getResult()) this.renderExtensions(this.currentDesktopExtensions);
+                    return true;
+                default:
+                    return true;
+            }
+        });
         this.adjustViewPagerHeight();
     }
 
@@ -4594,7 +5434,38 @@ extends Activity {
             return;
         }
 
-        this.showSetWidgetExtensionDialog(extension);
+        new AlertDialog.Builder(this)
+                .setTitle(extension.name)
+                .setItems(new String[]{"更多设置", "从账号云端目录移除"}, (dialog, which) -> {
+                    if (which == 0) this.showSetWidgetExtensionDialog(extension);
+                    else this.confirmRemoveCloudExtension(extension);
+                }).show();
+    }
+
+    private void confirmRemoveCloudExtension(RemoteExtension extension) {
+        new AlertDialog.Builder(this)
+                .setTitle("从云端移除：" + extension.name)
+                .setMessage("将从本账号同步目录移除这个小程序，不会删除电脑上的文件。"
+                        + "如果电脑还安装着它并重新同步，可能再次出现。")
+                .setNegativeButton("取消", null)
+                .setPositiveButton("移除", (dialog, which) -> this.executor.execute(() -> {
+                    try {
+                        String id = MobileApiClient.encodePath(extension.extensionId);
+                        MobileApiClient.doRequest(this.normalizedBaseUrl(),
+                                "/v1/me/extensions/" + id,
+                                this.requireToken(), "移除云端小程序", "DELETE", null, 15000);
+                        this.runOnUiThread(() -> {
+                            ArrayList<RemoteExtension> left = new ArrayList<>(this.currentDesktopExtensions);
+                            left.removeIf(e -> e.extensionId.equals(extension.extensionId));
+                            this.cacheRemoteExtensions(left);
+                            this.renderExtensions(left, true);
+                            this.setStatus("已从云端目录移除：" + extension.name);
+                        });
+                    } catch (Exception ex) {
+                        this.runOnUiThread(() -> this.setStatus(
+                                "移除失败：" + ex.getMessage()));
+                    }
+                })).show();
     }
 
     private void runRemoteExtension(RemoteExtension extension, View cardView) {
@@ -4896,6 +5767,7 @@ extends Activity {
             }
 
             if (index == 0) {
+                if(changed) this.loadChatHistory();
                 if (this.btnShowChat != null) {
                     this.btnShowChat.setTextColor(YanziUiKit.BLUE);
                     this.btnShowChat.setBackground((android.graphics.drawable.Drawable)activeBg);
@@ -5071,16 +5943,49 @@ extends Activity {
         }
     }
 
+    private void setupKeyboardVisibilityListener() {
+        final View decorView = this.getWindow().getDecorView();
+        decorView.getViewTreeObserver().addOnGlobalLayoutListener(new android.view.ViewTreeObserver.OnGlobalLayoutListener() {
+            private boolean lastVisible = false;
+            private final android.graphics.Rect rect = new android.graphics.Rect();
+
+            @Override
+            public void onGlobalLayout() {
+                decorView.getWindowVisibleDisplayFrame(rect);
+                int screenHeight = decorView.getRootView().getHeight();
+                int keypadHeight = screenHeight - rect.bottom;
+                boolean visible = keypadHeight > screenHeight * 0.15;
+                if (visible != lastVisible) {
+                    lastVisible = visible;
+                    MainActivity.this.isKeyboardVisible = visible;
+                    MainActivity.this.runOnUiThread(MainActivity.this::updateBottomTabsVisibility);
+                }
+            }
+        });
+    }
+
     private void beginMessageSend() {
-        runOnUiThread(() -> { pendingMessageSends++; updateBottomTabsVisibility(); });
+        runOnUiThread(() -> { pendingMessageSends++; });
     }
 
     private void finishMessageSend() {
-        runOnUiThread(() -> { pendingMessageSends = Math.max(0, pendingMessageSends - 1); updateBottomTabsVisibility(); });
+        runOnUiThread(() -> {
+            pendingMessageSends = Math.max(0, pendingMessageSends - 1);
+            if (this.currentSubTabIndex == 0 && this.chatInputEditText != null && this.chatInputEditText.getVisibility() == View.VISIBLE) {
+                this.chatInputEditText.post(() -> {
+                    if (this.chatInputEditText != null && !this.chatInputEditText.isFocused() && this.isKeyboardVisible) {
+                        this.chatInputEditText.requestFocus();
+                    }
+                });
+            }
+        });
     }
 
     private void updateBottomTabsVisibility() {
-        if (bottomTabs != null) bottomTabs.setVisibility(pendingMessageSends > 0 || isAiLoading ? View.GONE : View.VISIBLE);
+        if (bottomTabs != null) {
+            boolean shouldHide = this.isKeyboardVisible || isAiLoading;
+            bottomTabs.setVisibility(shouldHide ? View.GONE : View.VISIBLE);
+        }
     }
 
     private void updateConnectionUi() {
@@ -5462,6 +6367,61 @@ extends Activity {
         });
         builder.setNegativeButton((CharSequence)"关闭", null);
         builder.show();
+    }
+
+    void showChatPhotoFullscreen(Uri imageUri, String pathOrUri) {
+        if (imageUri == null && (pathOrUri == null || pathOrUri.isEmpty())) return;
+        try {
+            final android.app.Dialog dialog = new android.app.Dialog((Context)this, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
+            FrameLayout root = new FrameLayout((Context)this);
+            root.setBackgroundColor(Color.argb(245, 10, 15, 25));
+
+            final ImageView fullIv = new ImageView((Context)this);
+            fullIv.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            fullIv.setAdjustViewBounds(true);
+
+            if (imageUri != null) {
+                fullIv.setImageURI(imageUri);
+            } else if (pathOrUri.startsWith("/")) {
+                fullIv.setImageURI(Uri.fromFile(new java.io.File(pathOrUri)));
+            } else {
+                fullIv.setImageURI(Uri.parse(pathOrUri));
+            }
+
+            FrameLayout.LayoutParams ivParams = new FrameLayout.LayoutParams(-1, -1, Gravity.CENTER);
+            root.addView((View)fullIv, (ViewGroup.LayoutParams)ivParams);
+
+            LinearLayout topBar = new LinearLayout((Context)this);
+            topBar.setOrientation(LinearLayout.HORIZONTAL);
+            topBar.setGravity(Gravity.CENTER_VERTICAL);
+            topBar.setPadding(this.dp(16), this.dp(28), this.dp(16), this.dp(12));
+            topBar.setBackgroundColor(Color.argb(140, 0, 0, 0));
+
+            TextView titleView = new TextView((Context)this);
+            titleView.setText("查看照片 (点击任意处返回)");
+            titleView.setTextColor(Color.WHITE);
+            titleView.setTextSize(14f);
+            LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(0, -2, 1.0f);
+            topBar.addView((View)titleView, (ViewGroup.LayoutParams)titleLp);
+
+            TextView closeBtn = new TextView((Context)this);
+            closeBtn.setText("✕ 关闭");
+            closeBtn.setTextColor(Color.rgb(203, 213, 225));
+            closeBtn.setTextSize(14f);
+            closeBtn.setPadding(this.dp(8), this.dp(4), this.dp(8), this.dp(4));
+            closeBtn.setOnClickListener(v -> dialog.dismiss());
+            topBar.addView((View)closeBtn, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-2, -2));
+
+            root.addView((View)topBar, (ViewGroup.LayoutParams)new FrameLayout.LayoutParams(-1, -2, Gravity.TOP));
+
+            root.setOnClickListener(v -> dialog.dismiss());
+            fullIv.setOnClickListener(v -> dialog.dismiss());
+
+            dialog.setContentView((View)root);
+            dialog.show();
+        } catch (Exception ex) {
+            Toast.makeText(this.getApplicationContext(), "打开大图失败: " + ex.getMessage(), Toast.LENGTH_SHORT).show();
+        }
     }
 
     private boolean isTextFile(String fileName) {
@@ -6824,26 +7784,21 @@ extends Activity {
         boolean isFeedback = "\u7cfb\u7edf\u53cd\u9988".equals(sender) || (sender != null && sender.startsWith("\u7cfb\u7edf\u53cd\u9988"));
         boolean isToolMsg = sender != null && sender.startsWith("\u5de5\u5177\u8c03\u7528:");
         if (isUser) {
-            msgContainer.setGravity(0x800005);
-            tv = new TextView((Context)this);
-            tv.setText((CharSequence)displayText, TextView.BufferType.SPANNABLE);
-            tv.setTextColor(Color.rgb((int)74, (int)222, (int)128));
-            tv.setTextSize(2, 14.0f);
-            tv.setPadding(this.dp(12), this.dp(8), this.dp(12), this.dp(8));
-            tv.setTextIsSelectable(true);
+            msgContainer.setGravity(Gravity.END);
+            LinearLayout userBubble = new LinearLayout(this);
+            userBubble.setOrientation(LinearLayout.VERTICAL);
+            userBubble.setPadding(dp(12), dp(8), dp(12), dp(8));
             GradientDrawable bg = new GradientDrawable();
-            bg.setColor(Color.argb((int)30, (int)74, (int)222, (int)128));
-            bg.setCornerRadius((float)this.dp(12));
-            tv.setBackground((Drawable)bg);
-            tv.setOnLongClickListener(v -> {
+            bg.setColor(Color.rgb(37, 99, 235));
+            bg.setCornerRadius(dp(12));
+            userBubble.setBackground(bg);
+            ChatRichText.render(userBubble, displayText,
+                    Math.max(dp(160), getResources().getDisplayMetrics().widthPixels - dp(110)));
+            userBubble.setOnLongClickListener(v -> {
                 this.showAiMessageMenu(info);
                 return true;
             });
-            msgContainer.setOnLongClickListener(v -> {
-                this.showAiMessageMenu(info);
-                return true;
-            });
-            msgContainer.addView((View)tv, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-2, -2));
+            msgContainer.addView(userBubble, new LinearLayout.LayoutParams(-2, -2));
         } else if (isToolMsg) {
             msgContainer.setGravity(0x800003);
             LinearLayout header = new LinearLayout((Context)this);
@@ -9733,165 +10688,9 @@ extends Activity {
 
     private void renderMarkdownMessage(LinearLayout container, String text, int textColor, AiMessageInfo info) {
         if (text == null || text.isEmpty()) return;
-
-        String[] lines = text.split("\n", -1);
-        ArrayList<String> currentTextBlock = new ArrayList<>();
-        ArrayList<String> currentTableBlock = new ArrayList<>();
-
-        for (String line : lines) {
-            String trimmed = line.trim();
-            boolean isTable = trimmed.startsWith("|") && trimmed.endsWith("|");
-
-            if (isTable) {
-                if (!currentTextBlock.isEmpty()) {
-                    renderNormalTextBlock(container, TextUtils.join("\n", currentTextBlock), textColor, info);
-                    currentTextBlock.clear();
-                }
-                currentTableBlock.add(line);
-            } else {
-                if (!currentTableBlock.isEmpty()) {
-                    renderTableBlock(container, currentTableBlock);
-                    currentTableBlock.clear();
-                }
-                currentTextBlock.add(line);
-            }
-        }
-
-        if (!currentTextBlock.isEmpty()) {
-            renderNormalTextBlock(container, TextUtils.join("\n", currentTextBlock), textColor, info);
-        }
-        if (!currentTableBlock.isEmpty()) {
-            renderTableBlock(container, currentTableBlock);
-        }
-    }
-
-    private void renderNormalTextBlock(LinearLayout container, String text, int textColor, AiMessageInfo info) {
-        if (text == null || text.trim().isEmpty()) return;
-        TextView tv = new TextView(container.getContext());
-        tv.setText(parseMarkdownToSpanned(text), TextView.BufferType.SPANNABLE);
-        tv.setTextColor(textColor);
-        tv.setTextSize(2, 14.0f);
-        tv.setPadding(dp(4), dp(4), dp(4), dp(4));
-        tv.setTextIsSelectable(true);
-        tv.setOnLongClickListener(v -> {
-            this.showAiMessageMenu(info);
-            return true;
-        });
-
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        container.addView(tv, params);
-    }
-
-    private void renderTableBlock(LinearLayout container, ArrayList<String> tableLines) {
-        Context context = container.getContext();
-        HorizontalScrollView hsv = new HorizontalScrollView(context);
-        hsv.setFillViewport(true);
-
-        LinearLayout.LayoutParams hsvParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        hsvParams.setMargins(0, dp(8), 0, dp(8));
-        hsv.setLayoutParams(hsvParams);
-
-        TableLayout tableLayout = new TableLayout(context);
-        tableLayout.setStretchAllColumns(true);
-
-        GradientDrawable tableBg = new GradientDrawable();
-        tableBg.setColor(Color.rgb(17, 24, 39));
-        tableBg.setCornerRadius(dp(8));
-        tableBg.setStroke(dp(1), Color.rgb(75, 85, 99));
-        tableLayout.setBackground(tableBg);
-        tableLayout.setPadding(dp(1), dp(1), dp(1), dp(1));
-
-        TableLayout.LayoutParams tableParams = new TableLayout.LayoutParams(
-                TableLayout.LayoutParams.MATCH_PARENT,
-                TableLayout.LayoutParams.WRAP_CONTENT);
-        tableLayout.setLayoutParams(tableParams);
-
-        boolean isHeader = true;
-        int rowIndex = 0;
-
-        for (String line : tableLines) {
-            String trimmed = line.trim();
-            if (trimmed.replaceAll("[|\\s-:]", "").isEmpty()) {
-                continue;
-            }
-
-            String[] rawCells = trimmed.split("\\|", -1);
-            if (rawCells.length <= 1) continue;
-
-            int startCell = trimmed.startsWith("|") ? 1 : 0;
-            int endCell = trimmed.endsWith("|") ? rawCells.length - 1 : rawCells.length;
-
-            ArrayList<String> cells = new ArrayList<>();
-            for (int c = startCell; c < endCell; c++) {
-                cells.add(rawCells[c].trim());
-            }
-
-            TableRow row = new TableRow(context);
-
-            GradientDrawable rowBg = new GradientDrawable();
-            if (isHeader) {
-                rowBg.setColor(Color.rgb(30, 41, 59));
-            } else {
-                rowBg.setColor(rowIndex % 2 == 0 ? Color.rgb(17, 24, 39) : Color.rgb(31, 41, 55));
-            }
-            row.setBackground(rowBg);
-
-            for (String cellText : cells) {
-                TextView cellTv = new TextView(context);
-                cellTv.setText(parseMarkdownToSpanned(cellText), TextView.BufferType.SPANNABLE);
-                cellTv.setTextSize(2, 12.0f);
-                cellTv.setPadding(dp(10), dp(8), dp(10), dp(8));
-                cellTv.setGravity(Gravity.CENTER);
-
-                if (isHeader) {
-                    cellTv.setTextColor(Color.WHITE);
-                    cellTv.setTypeface(null, Typeface.BOLD);
-                } else {
-                    cellTv.setTextColor(Color.rgb(229, 231, 235));
-                }
-                row.addView(cellTv);
-            }
-
-            tableLayout.addView(row);
-            isHeader = false;
-            rowIndex++;
-        }
-
-        hsv.addView(tableLayout);
-        container.addView(hsv);
-    }
-
-    private android.text.Spanned parseMarkdownToSpanned(String text) {
-        if (text == null) return new android.text.SpannableString("");
-        String escaped = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
-
-        escaped = escaped.replaceAll("(?m)^######\\s+(.*?)\\s*$", "<h6>$1</h6>");
-        escaped = escaped.replaceAll("(?m)^#####\\s+(.*?)\\s*$", "<h5>$1</h5>");
-        escaped = escaped.replaceAll("(?m)^####\\s+(.*?)\\s*$", "<h4>$1</h4>");
-        escaped = escaped.replaceAll("(?m)^###\\s+(.*?)\\s*$", "<h3>$1</h3>");
-        escaped = escaped.replaceAll("(?m)^##\\s+(.*?)\\s*$", "<h2>$1</h2>");
-        escaped = escaped.replaceAll("(?m)^#\\s+(.*?)\\s*$", "<h1>$1</h1>");
-
-        escaped = escaped.replaceAll("\\*\\*(.*?)\\*\\*", "<b>$1</b>");
-        escaped = escaped.replaceAll("\\*(.*?)\\*", "<i>$1</i>");
-        escaped = escaped.replaceAll("__(.*?)__", "<u>$1</u>");
-        escaped = escaped.replaceAll("`(.*?)`", "<tt><font color=\"#4ADE80\">$1</font></tt>");
-        escaped = escaped.replaceAll("(?m)^\\s*-\\s+(.*)$", "&bull; $1");
-        escaped = escaped.replaceAll("(?m)^\\s*\\*\\s+(.*)$", "&bull; $1");
-        escaped = escaped.replace("\n", "<br/>");
-
-        // Remove trailing <br/> added right after heading tags
-        escaped = escaped.replaceAll("</h([1-6])><br/>", "</h$1>");
-
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
-            return Html.fromHtml(escaped, Html.FROM_HTML_MODE_LEGACY);
-        } else {
-            return Html.fromHtml(escaped);
-        }
+        // Device messages and AI responses share the same selectable, link-aware renderer.
+        ChatRichText.render(container, text,
+                Math.max(dp(180), getResources().getDisplayMetrics().widthPixels - dp(64)));
     }
 
     private void toggleTtsStatus(ImageView speakBtn) {
@@ -11516,6 +12315,7 @@ extends Activity {
     }
 
     private void pickChatPhoto() {
+        this.attachmentConversation=this.chatConversation;
         try {
             Intent intent = new Intent("android.intent.action.OPEN_DOCUMENT");
             intent.addCategory("android.intent.category.OPENABLE");
@@ -11528,6 +12328,7 @@ extends Activity {
     }
 
     private void pickChatFile() {
+        this.attachmentConversation=this.chatConversation;
         try {
             Intent intent = new Intent("android.intent.action.GET_CONTENT");
             intent.setType("*/*");
@@ -11540,20 +12341,27 @@ extends Activity {
     }
 
     private void sendPhotoToDesktopChat(Uri uri) {
+        final ChatConversation recipient=attachmentConversation==null?chatConversation:attachmentConversation;
+        attachmentConversation=null;
+        if(recipient.agent) { this.setStatus("反重力当前支持文字消息。");return; }
         this.setStatus("正在处理照片...");
         this.showPhotoProgress("正在发送照片...");
 
         beginMessageSend();
-        this.executor.execute(() -> {
+        MobileSessionStore.Snapshot sendSession = MobileSessionStore.snapshot(this);
+        long queuedAt = android.os.SystemClock.elapsedRealtime();
+        messageExecutor.execute(() -> {
+            android.util.Log.i("YanziSend", "queue_wait_ms=" + (android.os.SystemClock.elapsedRealtime() - queuedAt));
             try {
+                sendSession.requireCurrent();
                 byte[] jpegBytes = this.readJpegBytesFromUri(uri);
                 File stablePhoto = ChatHistoryStore.persistPhoto(this, jpegBytes);
                 String stablePath = stablePhoto.getAbsolutePath();
                 long sentAt = System.currentTimeMillis();
                 String localDeviceName = MainActivity.buildDeviceDisplayName();
                 this.runOnUiThread(() -> {
-                    this.renderChatMessage("self", "photo", stablePath, sentAt, this.deviceId, localDeviceName, true);
-                    this.saveChatMessageToLocal("self", "photo", stablePath, sentAt);
+                    MobileChatController.append(this,this.deviceId,"self","photo",stablePath,sentAt,recipient.id);
+                    this.loadChatHistory();
                 });
 
                 int[] size = MainActivity.readImageSizeFromJpegBytes(jpegBytes);
@@ -11564,11 +12372,13 @@ extends Activity {
                 String token = this.requireToken();
                 String messageId;
                 try {
-                    messageId = YanziApiClient.sendPhotoToDesktop(baseUrl, token, this.deviceId, jpegBytes, width, height);
+                    messageId = MobileDesktopTransfer.sendBytes(this,baseUrl,token,this.deviceId,"photo",
+                        "photo-"+sentAt+".jpg","image/jpeg",jpegBytes,"手机照片 "+width+"x"+height,recipient);
                 } catch (Exception ex) {
                     if (!MainActivity.isUnauthorized(ex)) throw ex;
                     token = this.refreshToken();
-                    messageId = YanziApiClient.sendPhotoToDesktop(baseUrl, token, this.deviceId, jpegBytes, width, height);
+                    messageId = MobileDesktopTransfer.sendBytes(this,baseUrl,token,this.deviceId,"photo",
+                        "photo-"+sentAt+".jpg","image/jpeg",jpegBytes,"手机照片 "+width+"x"+height,recipient);
                 }
                 final String finalMsgId = messageId;
                 this.runOnUiThread(() -> {
@@ -11586,12 +12396,19 @@ extends Activity {
     }
 
     private void sendFileToDesktopChat(Uri uri) {
+        final ChatConversation recipient=attachmentConversation==null?chatConversation:attachmentConversation;
+        attachmentConversation=null;
+        if(recipient.agent) { this.setStatus("反重力当前支持文字消息。");return; }
         this.setStatus("\u6b63\u5728\u5904\u7406\u6587\u4ef6...");
         this.showPhotoProgress("\u6b63\u5728\u53d1\u9001\u6587\u4ef6...");
 
         beginMessageSend();
-        this.executor.execute(() -> {
+        MobileSessionStore.Snapshot sendSession = MobileSessionStore.snapshot(this);
+        long queuedAt = android.os.SystemClock.elapsedRealtime();
+        messageExecutor.execute(() -> {
+            android.util.Log.i("YanziSend", "queue_wait_ms=" + (android.os.SystemClock.elapsedRealtime() - queuedAt));
             try {
+                sendSession.requireCurrent();
                 String fileName = "file_" + System.currentTimeMillis();
                 long fileSize = 0;
                 android.database.Cursor cursor = this.getContentResolver().query(uri, null, null, null, null);
@@ -11635,12 +12452,12 @@ extends Activity {
                         }
                     }
                     messageId = MobileDesktopTransfer.sendFile(this, baseUrl, token, this.deviceId,
-                            "file", finalFileName, "application/octet-stream", stagedFile, "手机文件：" + finalFileName);
+                            "file", finalFileName, "application/octet-stream", stagedFile, "手机文件：" + finalFileName,recipient);
                 } finally { stagedFile.delete(); }
 
                 this.runOnUiThread(() -> {
-                    this.renderChatMessage("self", "file", finalFileName, true);
-                    this.saveChatMessageToLocal("self", "file", finalFileName);
+                    MobileChatController.append(this,this.deviceId,"self","file",finalFileName,System.currentTimeMillis(),recipient.id);
+                    this.loadChatHistory();
                 });
 
                 this.runOnUiThread(() -> {
@@ -11659,38 +12476,86 @@ extends Activity {
 
     private void handleSendChatMessageClick() {
         if (this.chatInputEditText == null) return;
+        if(!chatHistoryAccount.equals(ChatHistoryStore.accountKey(this))) {loadChatHistory();setStatus("账号已改变，请重新输入消息。");return;}
         String text = this.chatInputEditText.getText().toString().trim();
         if (text.isEmpty()) return;
+        final ChatConversation recipient=this.chatConversation;
+        this.restoreAgentWaitState();
+        if (recipient.agent
+                && !this.pendingAgentConversationId.isEmpty()
+                && !recipient.id.equals(this.pendingAgentConversationId)) {
+            Toast.makeText(this, "另一个反重力会话正在生成，请先等待或切回后停止。", Toast.LENGTH_SHORT).show();
+            return;
+        }
 
         this.chatInputEditText.setText("");
+        this.chatInputEditText.requestFocus();
+        this.chatInputEditText.setSelection(0);
         this.setStatus("正在发送...");
         long sentAt = System.currentTimeMillis();
+        final boolean waitsForAgentReply = recipient.agent && !text.startsWith("/");
         this.renderChatMessage("self", "text", text, sentAt, this.deviceId, MainActivity.buildDeviceDisplayName(), true);
-        this.saveChatMessageToLocal("self", "text", text, sentAt);
+        MobileChatController.append(this,this.deviceId,"self","text",text,sentAt,recipient.id);
 
         beginMessageSend();
-        this.executor.execute(() -> {
+        MobileSessionStore.Snapshot sendSession = MobileSessionStore.snapshot(this);
+        long queuedAt = android.os.SystemClock.elapsedRealtime();
+        messageExecutor.execute(() -> {
+            android.util.Log.i("YanziSend", "queue_wait_ms=" + (android.os.SystemClock.elapsedRealtime() - queuedAt));
             try {
+                sendSession.requireCurrent();
                 String baseUrl = this.normalizedBaseUrl();
                 String token = this.requireToken();
                 String messageId = "";
                 try {
-                    YanziApiClient.registerDevice(baseUrl, token, this.deviceId, this.buildDeviceName());
-                    messageId = YanziApiClient.sendTextToDesktop(baseUrl, token, this.deviceId, text);
+
+                    messageId = YanziApiClient.sendConversation(baseUrl,token,this.deviceId,recipient,text);
                 } catch (Exception ex) {
                     if (!MainActivity.isUnauthorized(ex)) {
                         throw ex;
                     }
                     token = this.refreshToken();
-                    YanziApiClient.registerDevice(baseUrl, token, this.deviceId, this.buildDeviceName());
-                    messageId = YanziApiClient.sendTextToDesktop(baseUrl, token, this.deviceId, text);
+
+                    messageId = YanziApiClient.sendConversation(baseUrl,token,this.deviceId,recipient,text);
                 }
                 final String finalMsgId = messageId;
+                if (waitsForAgentReply) this.rememberAgentRequestMessageId(recipient.id, messageId);
                 this.runOnUiThread(() -> this.setStatus("\u6d88\u606f\u5df2\u53d1\u9001\uff0cid=" + finalMsgId));
+                if(recipient.agent) {
+                    for(int attempts=0;attempts<20;attempts++) {
+                        JSONObject detail=YanziApiClient.fetchMessageDetail(baseUrl,token,messageId);
+                        JSONObject actual=detail.optJSONObject("message"); if(actual!=null) detail=actual;
+                        String state=detail.optString("status");
+                        if(state.equals("failed") || state.equals("expired") || state.equals("cancelled") || state.equals("unknown")) {
+                            JSONObject p=detail.optJSONObject("payload");
+                            JSONObject r=p==null?null:p.optJSONObject("executionResult");
+                            throw new IllegalStateException(r==null?detail.optString("result","反重力请求："+state):r.optString("output","反重力请求："+state));
+                        }
+                        if(state.equals("completed") || state.equals("acked")) {
+                            if(text.startsWith("/")) {
+                                JSONObject p=detail.optJSONObject("payload");
+                                JSONObject r=p==null?null:p.optJSONObject("executionResult");
+                                String output=r==null?detail.optString("result",""):r.optString("output","");
+                                if(!output.isEmpty()) {
+                                    final String commandOutput=output;
+                                    this.runOnUiThread(()->{
+                                        try {sendSession.requireCurrent();} catch(Exception changed) {return;}
+                                        MobileChatController.append(this,this.deviceId,"peer","text",commandOutput,System.currentTimeMillis(),recipient.id);
+                                        loadChatHistory();
+                                    });
+                                }
+                            }
+                            break;
+                        }
+                        Thread.sleep(1000);
+                    }
+                }
             } catch (Exception ex) {
                 this.runOnUiThread(() -> {
-                    this.setStatus("\u53d1\u9001\u5931\u8d25\uff1a" + ex.getMessage());
-                    this.renderChatMessage("system", "text", "\u53d1\u9001\u5931\u8d25\uff1a" + ex.getMessage(), true);
+                    try {sendSession.requireCurrent();} catch(Exception changed) {return;}
+                    this.setStatus("发送失败：" + ex.getMessage());
+                    MobileChatController.append(this,this.deviceId,"system","text","发送失败："+ex.getMessage(),System.currentTimeMillis(),recipient.id);
+                    this.loadChatHistory();
                 });
             } finally { finishMessageSend(); }
         });
@@ -11700,12 +12565,57 @@ extends Activity {
         this.chatContainerLayout = new LinearLayout((Context)this);
         this.chatContainerLayout.setOrientation(LinearLayout.VERTICAL);
 
+        this.agentSessionHeaderLayout = new LinearLayout((Context)this);
+        this.agentSessionHeaderLayout.setOrientation(LinearLayout.HORIZONTAL);
+        this.agentSessionHeaderLayout.setGravity(Gravity.CENTER_VERTICAL);
+        this.agentSessionHeaderLayout.setPadding(this.dp(12), this.dp(4), this.dp(12), this.dp(4));
+        this.agentSessionHeaderLayout.setVisibility(View.GONE);
+
+        LinearLayout sessionPill = new LinearLayout((Context)this);
+        sessionPill.setOrientation(LinearLayout.HORIZONTAL);
+        sessionPill.setGravity(Gravity.CENTER_VERTICAL);
+        sessionPill.setPadding(this.dp(8), this.dp(4), this.dp(10), this.dp(4));
+        sessionPill.setClickable(true);
+        sessionPill.setFocusable(true);
+
+        GradientDrawable pillBg = new GradientDrawable();
+        pillBg.setColor(Color.argb(220, 24, 34, 48));
+        pillBg.setStroke(this.dp(1), Color.rgb(51, 65, 85));
+        pillBg.setCornerRadius((float)this.dp(14));
+        sessionPill.setBackground((Drawable)pillBg);
+
+        ImageView pillLogo = new ImageView((Context)this);
+        pillLogo.setImageDrawable(YanziUiKit.getAntigravityLogo(this));
+        pillLogo.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        LinearLayout.LayoutParams logoLp = new LinearLayout.LayoutParams(this.dp(16), this.dp(16));
+        logoLp.rightMargin = this.dp(6);
+        sessionPill.addView((View)pillLogo, (ViewGroup.LayoutParams)logoLp);
+
+        this.tvCurrentSessionTitle = new TextView((Context)this);
+        this.tvCurrentSessionTitle.setText("会话: 默认会话 ▾");
+        this.tvCurrentSessionTitle.setTextColor(Color.rgb(125, 211, 252));
+        this.tvCurrentSessionTitle.setTextSize(12.5f);
+        this.tvCurrentSessionTitle.setSingleLine(true);
+        this.tvCurrentSessionTitle.setMaxWidth(this.dp(220));
+        this.tvCurrentSessionTitle.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        sessionPill.addView((View)this.tvCurrentSessionTitle);
+
+        sessionPill.setOnClickListener(v -> this.showAntigravitySessionMenu(sessionPill));
+
+        this.agentSessionHeaderLayout.addView((View)sessionPill);
+        this.chatContainerLayout.addView((View)this.agentSessionHeaderLayout);
+
         ScrollView scroll = new ScrollView((Context)this);
         this.chatMessageScrollView = scroll;
         scroll.setFillViewport(true);
         scroll.setNestedScrollingEnabled(true);
         scroll.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
         scroll.setOnTouchListener((v, event) -> {
+            if (event.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) {
+                if (this.isKeyboardVisible && this.chatInputEditText != null) {
+                    this.hideKeyboard((View)this.chatInputEditText);
+                }
+            }
             if (this.swipeRefresh != null && this.currentSubTabIndex == 0) {
                 switch (event.getActionMasked()) {
                     case android.view.MotionEvent.ACTION_DOWN:
@@ -11758,12 +12668,19 @@ extends Activity {
         inputRow.addView((View)this.chatVoiceToggleBtn, (ViewGroup.LayoutParams)voiceToggleParams);
 
         this.chatInputEditText = this.input("发送消息...", "");
+        this.chatInputEditText.setSingleLine(false);
+        this.chatInputEditText.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+                | android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                | android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        this.chatInputEditText.setMinHeight(this.dp(40));
+        this.chatInputEditText.setMaxLines(5);
+        this.chatInputEditText.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
         GradientDrawable inputBg = new GradientDrawable();
         inputBg.setColor(ThemeConfig.COLOR_CARD_BACKGROUND);
         inputBg.setCornerRadius((float)this.dp(8));
         this.chatInputEditText.setBackground((Drawable)inputBg);
 
-        LinearLayout.LayoutParams editParams = new LinearLayout.LayoutParams(0, this.dp(40), 1.0f);
+        LinearLayout.LayoutParams editParams = new LinearLayout.LayoutParams(0, -2, 1.0f);
         editParams.rightMargin = this.dp(8);
         inputRow.addView((View)this.chatInputEditText, (ViewGroup.LayoutParams)editParams);
 
@@ -11841,7 +12758,13 @@ extends Activity {
         inputRow.addView((View)this.chatAttachBtn, (ViewGroup.LayoutParams)attachParams);
 
         this.chatSendButton = this.button("发送");
-        this.chatSendButton.setOnClickListener(v -> this.handleSendChatMessageClick());
+        this.chatSendButton.setFocusable(false);
+        this.chatSendButton.setFocusableInTouchMode(false);
+        this.chatSendButton.setOnClickListener(v -> {
+            if (this.isCurrentAgentWaiting()) this.stopCurrentAgentGeneration();
+            else this.handleSendChatMessageClick();
+        });
+        this.updateChatSendButtonState();
         LinearLayout.LayoutParams sendParams = new LinearLayout.LayoutParams(this.dp(60), this.dp(40));
         inputRow.addView((View)this.chatSendButton, (ViewGroup.LayoutParams)sendParams);
 
@@ -11878,6 +12801,7 @@ extends Activity {
     }
 
     private void launchCameraForChat() {
+        this.attachmentConversation=this.chatConversation;
         Intent intent = new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
         if (intent.resolveActivity(this.getPackageManager()) != null) {
             try {
@@ -11902,20 +12826,51 @@ extends Activity {
     }
 
     private void saveChatMessageToLocal(String role, String kind, String content, long time) {
-        MobileChatController.append(this, this.deviceId, role, kind, content, time);
+        MobileChatController.append(this, this.deviceId, role, kind, content, time,chatConversation.id);
     }
 
     private void loadChatHistory() {
         if (this.chatMessageListLayout == null) return;
+        String account=ChatHistoryStore.accountKey(this);
+        if(!chatHistoryAccount.isEmpty() && !chatHistoryAccount.equals(account)) {
+            chatConversation=ChatConversation.group();
+            if(chatInputEditText!=null) chatInputEditText.setText("");
+            if(desktopDashboard!=null) desktopDashboard.conversation("群聊",this::showChatConversations);
+            if(chatAttachBtn!=null) chatAttachBtn.setVisibility(View.VISIBLE);
+        }
+        chatHistoryAccount=account;
         this.chatMessageListLayout.removeAllViews();
+        this.agentStreamTextViews.clear();
+        this.agentStreamContainers.clear();
+        this.agentStreamSequences.clear();
         this.lastRenderedChatTimeMs = Long.MIN_VALUE;
-        JSONArray arr = MobileChatController.load(this);
+        if(this.prefs!=null && sForeground && "desktop".equals(selectedTab) && currentSubTabIndex==0)
+            this.prefs.edit().putLong(chatPreferenceKey("seen."+chatConversation.id),System.currentTimeMillis()).apply();
+        this.updateAntigravitySessionHeader();
+        JSONArray arr = ChatHistoryStore.load(this,chatConversation.id);
+        java.util.Set<String> embeddedImages = new java.util.HashSet<>();
+        for (int i = 0; i < arr.length(); ++i) {
+            JSONObject obj = arr.optJSONObject(i);
+            if (obj == null) continue;
+            if ("text".equals(obj.optString("kind", "text"))) {
+                embeddedImages.addAll(ChatRichText.extractImageNames(obj.optString("content", "")));
+            }
+        }
         for (int i = 0; i < arr.length(); ++i) {
             JSONObject obj = arr.optJSONObject(i);
             if (obj == null) continue;
             String kind = obj.optString("kind", "text");
             String content = obj.optString("content", "");
             if (MobileChatController.isDevelopmentChatArtifact(kind, content)) continue;
+            if ("photo".equals(kind)) {
+                String rawName = ChatRichText.parseFileName(content);
+                if (rawName != null) {
+                    String cleanName = rawName.replaceFirst("^att_[a-f0-9]{32}-", "").toLowerCase(java.util.Locale.ROOT);
+                    if (embeddedImages.contains(cleanName) || embeddedImages.contains(rawName.toLowerCase(java.util.Locale.ROOT))) {
+                        continue;
+                    }
+                }
+            }
             this.renderChatMessage(
                     obj.optString("role", "peer"),
                     kind,
@@ -11925,9 +12880,24 @@ extends Activity {
                     obj.optString("sourceDeviceName", ""),
                     false);
         }
+        this.maybeCompleteAgentWaitFromHistory(arr);
+        this.scrollChatToBottom(false);
+    }
+
+    private void scrollChatToBottom(boolean smooth) {
+        if (this.chatMessageListLayout == null) return;
         if (this.chatMessageListLayout.getParent() instanceof ScrollView) {
-            ScrollView sv = (ScrollView)this.chatMessageListLayout.getParent();
-            sv.post(() -> sv.fullScroll(View.FOCUS_DOWN));
+            ScrollView sv = (ScrollView) this.chatMessageListLayout.getParent();
+            sv.post(() -> {
+                View child = sv.getChildAt(0);
+                if (child != null) {
+                    if (smooth) {
+                        sv.smoothScrollTo(0, child.getBottom());
+                    } else {
+                        sv.scrollTo(0, child.getBottom());
+                    }
+                }
+            });
         }
     }
 
@@ -11948,6 +12918,98 @@ extends Activity {
         onReceivedChatMessage(kind, msg, "", "电脑", System.currentTimeMillis());
     }
 
+    public static void onReceivedAgentStream(AgentStreamProtocol.Event event, String sourceDeviceId,
+                                             String sourceDeviceName) {
+        if (event == null) return;
+        android.util.Log.i("YanziAgentStream", "received state=" + event.state + " seq=" + event.seq + " chars=" + event.text.length());
+        MainActivity activity = sInstance;
+        if (activity != null) {
+            activity.runOnUiThread(() -> {
+                if (sInstance != activity || activity.isFinishing()) return;
+                activity.renderAgentStream(event, sourceDeviceId, sourceDeviceName);
+            });
+        }
+    }
+
+    private void renderAgentStream(AgentStreamProtocol.Event event, String sourceDeviceId, String sourceDeviceName) {
+        if (this.chatMessageListLayout == null || this.chatConversation == null
+                || !event.conversationId.equals(this.chatConversation.id)) {
+            android.util.Log.i("YanziAgentStream", "ignored mismatch current=" + (this.chatConversation == null ? "null" : this.chatConversation.id)
+                    + " incoming=" + event.conversationId);
+            return;
+        }
+        android.util.Log.i("YanziAgentStream", "render state=" + event.state + " seq=" + event.seq);
+        Integer previous = this.agentStreamSequences.get(event.id);
+        if (previous != null && event.seq <= previous) return;
+        this.agentStreamSequences.put(event.id, event.seq);
+
+        if ("cancelled".equals(event.state)) {
+            View old = this.agentStreamContainers.remove(event.id);
+            if (old != null) this.chatMessageListLayout.removeView(old);
+            this.agentStreamTextViews.remove(event.id);
+            this.agentStreamSequences.remove(event.id);
+            if (event.conversationId.equals(this.pendingAgentConversationId)) this.clearAgentWait(event.conversationId);
+            return;
+        }
+
+        TextView streamText = this.agentStreamTextViews.get(event.id);
+        if (streamText == null) {
+            LinearLayout row = new LinearLayout((Context)this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.START);
+            row.setPadding(0, this.dp(5), 0, this.dp(5));
+
+            LinearLayout column = new LinearLayout((Context)this);
+            column.setOrientation(LinearLayout.VERTICAL);
+            column.setGravity(Gravity.START);
+
+            TextView sender = new TextView((Context)this);
+            String resolved = ChatHistoryStore.resolveDeviceName(this, sourceDeviceId, sourceDeviceName);
+            sender.setText(resolved == null || resolved.isEmpty() ? "反重力" : "反重力 · " + resolved);
+            sender.setTextSize(12f);
+            sender.setTextColor(Color.rgb(125, 138, 154));
+            LinearLayout.LayoutParams senderLp = new LinearLayout.LayoutParams(-2, -2);
+            senderLp.bottomMargin = this.dp(4);
+            column.addView(sender, senderLp);
+
+            LinearLayout bubble = new LinearLayout((Context)this);
+            bubble.setOrientation(LinearLayout.VERTICAL);
+            bubble.setPadding(this.dp(13), this.dp(9), this.dp(13), this.dp(9));
+            GradientDrawable bg = new GradientDrawable();
+            bg.setColor(Color.rgb(24, 34, 48));
+            bg.setCornerRadius((float)this.dp(11));
+            bubble.setBackground((Drawable)bg);
+
+            streamText = new TextView((Context)this);
+            streamText.setTextColor(Color.WHITE);
+            streamText.setTextSize(15f);
+            streamText.setTextIsSelectable(true);
+            streamText.setLineSpacing(0f, 1.16f);
+            int maxBubbleWidth = Math.max(this.dp(180),
+                    getResources().getDisplayMetrics().widthPixels - this.dp(118));
+            streamText.setMaxWidth(maxBubbleWidth);
+            bubble.addView(streamText, new LinearLayout.LayoutParams(-2, -2));
+
+            column.addView(bubble, new LinearLayout.LayoutParams(-2, -2));
+            LinearLayout.LayoutParams columnLp = new LinearLayout.LayoutParams(-2, -2);
+            columnLp.rightMargin = this.dp(54);
+            row.addView(column, columnLp);
+            this.chatMessageListLayout.addView(row, new LinearLayout.LayoutParams(-1, -2));
+            this.agentStreamTextViews.put(event.id, streamText);
+            this.agentStreamContainers.put(event.id, row);
+        }
+
+        String value = event.text == null || event.text.isEmpty() ? "正在生成…" : event.text;
+        if ("error".equals(event.state) && !value.contains("执行异常"))
+            value = value + "\n\n生成或消息投递失败，请检查任务结果。";
+        streamText.setText(value);
+        if ("complete".equals(event.state) || "error".equals(event.state)) {
+            if (event.conversationId.equals(this.pendingAgentConversationId)) this.clearAgentWait(event.conversationId);
+            this.setStatus("complete".equals(event.state) ? "反重力已生成，正在同步聊天历史…" : "反重力任务结束，但出现错误");
+        } else this.setStatus("反重力正在生成…");
+        this.scrollChatToBottom(true);
+    }
+
     public static void onReceivedChatMessage(String kind, String msg, String sourceDeviceId,
                                              String sourceDeviceName, long time) {
         android.util.Log.i("MainActivity", "onReceivedChatMessage, kind=" + kind +
@@ -11956,10 +13018,7 @@ extends Activity {
         if (activity != null) {
             activity.runOnUiThread(() -> {
                 if (sInstance != activity || activity.isFinishing()) return;
-                activity.renderChatMessage("peer", kind, msg, time,
-                        sourceDeviceId == null ? "" : sourceDeviceId,
-                        sourceDeviceName == null || sourceDeviceName.trim().isEmpty() ? "其他设备" : sourceDeviceName,
-                        true);
+                activity.loadChatHistory();
             });
         }
     }
@@ -12011,9 +13070,8 @@ extends Activity {
                 bubbleContainer.addView((View)systemText, (ViewGroup.LayoutParams)systemLp);
                 this.chatMessageListLayout.addView((View)bubbleContainer,
                         (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -2));
-                if (scrollToBottom && this.chatMessageListLayout.getParent() instanceof ScrollView) {
-                    ScrollView sv = (ScrollView)this.chatMessageListLayout.getParent();
-                    sv.post(() -> sv.fullScroll(View.FOCUS_DOWN));
+                if (scrollToBottom) {
+                    this.scrollChatToBottom(true);
                 }
                 return;
             }
@@ -12027,7 +13085,7 @@ extends Activity {
                         this, sourceDeviceId, sourceDeviceName);
                 TextView sender = new TextView((Context)this);
                 sender.setText(labelValue);
-                sender.setTextSize(11f);
+                sender.setTextSize(12f);
                 sender.setTextColor(Color.rgb(125, 138, 154));
                 sender.setMaxLines(1);
                 sender.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -12041,7 +13099,7 @@ extends Activity {
             bubble.setPadding(this.dp(13), this.dp(9), this.dp(13), this.dp(9));
 
             GradientDrawable gd = new GradientDrawable();
-            gd.setColor(isSelf ? Color.rgb(44, 126, 79) : Color.rgb(24, 34, 48));
+            gd.setColor(isSelf ? Color.rgb(37, 99, 235) : Color.rgb(24, 34, 48));
             gd.setCornerRadius((float)this.dp(11));
             bubble.setBackground((Drawable)gd);
 
@@ -12053,12 +13111,20 @@ extends Activity {
                 if (content != null && (content.startsWith("content://") || content.startsWith("file://") || content.startsWith("/"))) {
                     try {
                         ImageView iv = new ImageView((Context)this);
-                        iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
-                        LinearLayout.LayoutParams imgLp = new LinearLayout.LayoutParams(this.dp(170), this.dp(170));
+                        iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                        iv.setAdjustViewBounds(true);
+                        iv.setMaxWidth(this.dp(240));
+                        iv.setMaxHeight(this.dp(300));
+                        LinearLayout.LayoutParams imgLp = new LinearLayout.LayoutParams(-2, -2);
                         iv.setLayoutParams((ViewGroup.LayoutParams)imgLp);
                         Uri imageUri = content.startsWith("/") ? Uri.fromFile(new java.io.File(content)) : Uri.parse(content);
                         iv.setImageURI(imageUri);
                         if (iv.getDrawable() != null) {
+                            final Uri finalImageUri = imageUri;
+                            final String finalContent = content;
+                            iv.setClickable(true);
+                            iv.setFocusable(true);
+                            iv.setOnClickListener(v -> this.showChatPhotoFullscreen(finalImageUri, finalContent));
                             bubble.addView((View)iv);
                             shown = true;
                         }
@@ -12094,19 +13160,14 @@ extends Activity {
                     }
                 });
             } else {
-                TextView text = new TextView((Context)this);
-                text.setText((CharSequence)content);
-                text.setTextColor(Color.WHITE);
-                text.setTextSize(15f);
-                text.setLineSpacing(0f, 1.08f);
-                text.setMaxWidth(maxBubbleWidth);
-                bubble.addView((View)text);
+                // Text is rendered as safe Markdown: selectable spans and tappable HTTP(S) links.
+                ChatRichText.render(bubble, content, maxBubbleWidth);
             }
 
             bubble.setOnLongClickListener(v -> {
                 PopupMenu popup = new PopupMenu((Context)MainActivity.this, bubble);
                 popup.getMenu().add(0, 1, 0, "复制消息");
-                popup.getMenu().add(0, 2, 0, "清理全部消息");
+                popup.getMenu().add(0, 2, 0, "清理当前会话");
                 popup.setOnMenuItemClickListener(item -> {
                     int id = item.getItemId();
                     if (id == 1) {
@@ -12126,9 +13187,9 @@ extends Activity {
                     } else if (id == 2) {
                         new android.app.AlertDialog.Builder((Context)MainActivity.this)
                                 .setTitle("提示")
-                                .setMessage("确定要清理全部聊天消息吗？")
+                                .setMessage("确定要清理当前对象的聊天消息吗？")
                                 .setPositiveButton("确定", (dialog, which) -> {
-                                    MobileChatController.clear(MainActivity.this);
+                                    ChatHistoryStore.clearConversation(MainActivity.this,chatConversation.id);
                                     MainActivity.this.loadChatHistory();
                                     Toast.makeText(MainActivity.this, "聊天历史已清理", Toast.LENGTH_SHORT).show();
                                 })
@@ -12150,9 +13211,8 @@ extends Activity {
             this.chatMessageListLayout.addView((View)bubbleContainer,
                     (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(-1, -2));
 
-            if (scrollToBottom && this.chatMessageListLayout.getParent() instanceof ScrollView) {
-                ScrollView sv = (ScrollView)this.chatMessageListLayout.getParent();
-                sv.post(() -> sv.fullScroll(View.FOCUS_DOWN));
+            if (scrollToBottom) {
+                this.scrollChatToBottom(true);
             }
         });
     }
@@ -12161,7 +13221,7 @@ extends Activity {
         TextView marker = new TextView((Context)this);
         marker.setText(formatChatMessageTime(time));
         marker.setTextColor(Color.rgb(112, 126, 145));
-        marker.setTextSize(11f);
+        marker.setTextSize(12f);
         marker.setGravity(Gravity.CENTER);
         marker.setPadding(this.dp(8), this.dp(9), this.dp(8), this.dp(4));
         this.chatMessageListLayout.addView(marker,

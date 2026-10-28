@@ -21,6 +21,9 @@ public sealed class CaptureExtensionService
     private Thread? _uiThread;
     private Dispatcher? _dispatcher;
     private Window? _activeWindow;
+    private CaptureOcrHotkeyReceiver? _ocrHotkey;
+    private CaptureOcrClient? _ocrClient;
+    private CaptureShortcutPreferences _preferences = new();
     private bool _flowActive;
     private bool _initialized;
     private bool _stopping;
@@ -83,6 +86,12 @@ public sealed class CaptureExtensionService
             if (_stopping)
                 return;
 
+            if (string.Equals(input?.Trim(), "settings", StringComparison.OrdinalIgnoreCase))
+            {
+                OpenSettings();
+                return;
+            }
+
             if (_flowActive)
             {
                 Activate();
@@ -103,7 +112,7 @@ public sealed class CaptureExtensionService
             }
             else
             {
-                StartCaptureFlow();
+                StartCaptureFlow(string.Equals(input?.Trim(), "ocr", StringComparison.OrdinalIgnoreCase));
             }
         });
     }
@@ -157,7 +166,20 @@ public sealed class CaptureExtensionService
         try
         {
             _dispatcher = Dispatcher.CurrentDispatcher;
+            _ocrClient = new CaptureOcrClient(
+                _context?.AgentApiBaseUrl ?? string.Empty,
+                _context?.AgentApiToken ?? string.Empty,
+                CaptureDataDirectory, message => _context?.Log(message));
             Prewarm();
+            _preferences = CapturePreferencesStore.Load(CaptureDataDirectory);
+            _ocrHotkey = new CaptureOcrHotkeyReceiver(() => Run("ocr"));
+            if (!_ocrHotkey.TryApply(_preferences.OcrShortcut))
+            {
+                if (_ocrHotkey.TryApply("Ctrl+Alt+F3"))
+                    _context?.Log("OCR 预设快捷键被占用：" + _preferences.OcrShortcut + "；已启用备用键 Ctrl+Alt+F3");
+                else
+                    _context?.Log("截图 OCR 快捷键注册失败：" + _preferences.OcrShortcut + "；备用键也不可用");
+            }
             _ready.TrySetResult(true);
 
             if (!_stopping)
@@ -179,6 +201,8 @@ public sealed class CaptureExtensionService
             }
 
             _activeWindow = null;
+            _ocrHotkey?.Dispose();
+            _ocrHotkey = null;
 
             lock (_sync)
             {
@@ -252,7 +276,28 @@ public sealed class CaptureExtensionService
         }
     }
 
-    private void StartCaptureFlow()
+    private string CaptureDataDirectory => _context?.ExtensionDataDirectory
+        ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "OpenQuickHost", "ExtensionData", "yanzi-capture");
+
+    private bool ApplyCaptureSettings(CaptureShortcutPreferences next)
+    {
+        if (_ocrHotkey is null || !_ocrHotkey.TryApply(next.OcrShortcut))
+            return false;
+        _preferences = next;
+        return true;
+    }
+
+    private void OpenSettings()
+    {
+        var settings = new CaptureSettingsWindow(CaptureDataDirectory,
+            ApplyCaptureSettings, _ocrHotkey?.RegisteredShortcut);
+        if (_activeWindow?.IsVisible == true)
+            settings.Owner = _activeWindow;
+        settings.ShowDialog();
+    }
+
+    private void StartCaptureFlow(bool ocrOnly = false)
     {
         if (_flowActive || _stopping)
             return;
@@ -277,7 +322,10 @@ public sealed class CaptureExtensionService
                             Environment.SpecialFolder.LocalApplicationData),
                         "OpenQuickHost",
                         "ExtensionData",
-                        "yanzi-capture"));
+                        "yanzi-capture"),
+                ocrOnly: ocrOnly,
+                openSettings: () => OpenSettings(),
+                ocrClient: _ocrClient);
 
             _activeWindow = workspace;
 
@@ -371,7 +419,7 @@ public sealed class CaptureExtensionService
             ("height", document.BaseImage.PixelHeight));
 
         var start = System.Diagnostics.Stopwatch.GetTimestamp();
-        var editor = new EditorWindow(document);
+        var editor = new EditorWindow(document, _ocrClient);
         _activeWindow = editor;
         _flowActive = true;
 

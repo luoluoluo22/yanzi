@@ -118,7 +118,7 @@ internal sealed partial class GalleryWindow : Window
         brandLine.Children.Add(logo);
         brandLine.Children.Add(Text("Yanzi UI", 20, true, "Yanzi.Brush.Text", new Thickness(0, 4, 0, 0)));
         brand.Children.Add(brandLine);
-        brand.Children.Add(Text("SHADCN DESIGN  /  v0.7.9", 10, false, "Yanzi.Brush.TextMuted", new Thickness(0, 11, 0, 0)));
+        brand.Children.Add(Text("SHADCN DESIGN  /  v0.8.1", 10, false, "Yanzi.Brush.TextMuted", new Thickness(0, 11, 0, 0)));
         sidebarLayout.Children.Add(brand);
 
         var footer = new StackPanel { Margin = new Thickness(8, 12, 0, 3) };
@@ -303,8 +303,10 @@ internal sealed partial class GalleryWindow : Window
 
     private void UpdateOverviewColumns()
     {
-        if (_page != 0 || _overviewGrid == null || _scroll == null) return;
-        _overviewGrid.Columns = _scroll.ActualWidth < 880 ? 2 : 3;
+        if (_page != 0 || _scroll == null) return;
+        var columns = _scroll.ActualWidth < 750 ? 2 : _scroll.ActualWidth < 1320 ? 3 : 4;
+        if (_overviewCatalogGrid != null) _overviewCatalogGrid.Columns = columns;
+        if (_overviewGrid != null) _overviewGrid.Columns = Math.Min(3, columns);
     }
 
     private void UpdateNavigation()
@@ -341,6 +343,7 @@ internal sealed partial class GalleryWindow : Window
         else
             _body.ClearValue(TextElement.FontFamilyProperty);
         _overviewGrid = null;
+        _overviewCatalogGrid = null;
         if (!_sidebarManuallySet) SetSidebarVisible(_page != 0, false);
         UpdateNavigation();
         _statusText.Text = $"正在浏览：{Pages[_page].Title} · 所有操作均为可撤销或模拟测试";
@@ -506,16 +509,15 @@ internal sealed partial class GalleryWindow : Window
 
         var menu = Card("上下文菜单", "右键下方按钮，测试菜单打开、焦点和快捷键操作。");
         var target = Button("右键点击我  ···", YanziUi.Styles.SecondaryButton, () => Status("点击了菜单演示按钮"));
-        var contextMenu = YanziUi.WithStyle(new ContextMenu(), YanziUi.Styles.Menu);
+        var contextMenu = new YanziContextMenu();
         foreach (var title in new[] { "复制", "重命名", "删除" })
         {
-            var item = YanziUi.WithStyle(new MenuItem { Header = title }, YanziUi.Styles.MenuItem);
-            item.Click += (_, _) => Status($"选择菜单：{title}（演示）");
-            contextMenu.Items.Add(item);
+            var action = title;
+            contextMenu.AddAction(title, () => Status($"选择菜单：{action}（演示）"));
         }
-        target.ContextMenu = contextMenu;
+        contextMenu.Attach(target);
         menu.Children.Add(target);
-        menu.Children.Add(CodeKey("Yanzi.Menu / Yanzi.MenuItem"));
+        menu.Children.Add(CodeKey("YanziContextMenu / Attach"));
     }
 
     private void Lists()
@@ -528,18 +530,16 @@ internal sealed partial class GalleryWindow : Window
         {
             if (list.SelectedItem is string s) Status("已选中：" + s);
         };
-        var menu = YanziUi.WithStyle(new ContextMenu(), YanziUi.Styles.Menu);
-        var copy = YanziUi.WithStyle(new MenuItem { Header = "复制项目名称" }, YanziUi.Styles.MenuItem);
-        copy.Click += (_, _) =>
+        var menu = new YanziContextMenu();
+        menu.AddAction("复制项目名称", () =>
         {
             if (list.SelectedItem is string selected)
             {
                 Clipboard.SetText(selected);
                 Status("已复制：" + selected);
             }
-        };
-        menu.Items.Add(copy);
-        list.ContextMenu = menu;
+        });
+        menu.Attach(list);
         section.Children.Add(list);
         section.Children.Add(CodeKey("Yanzi.List / Yanzi.ListItem"));
 
@@ -641,14 +641,14 @@ internal sealed partial class GalleryWindow : Window
 
         var live = Card("实时调节", "修改下拉框中的变体，观察同一个实例的外观变化；切换主题也会同步更新。");
         var row = new StackPanel { Orientation = Orientation.Horizontal };
-        var selection = new ComboBox
+        var selection = YanziUi.WithStyle(new ComboBox
         {
             Width = 172,
             Height = 34,
             Margin = new Thickness(0, 0, 20, 0),
             ItemsSource = Enum.GetValues<YanziBadgeVariant>(),
             SelectedIndex = 0
-        };
+        }, YanziUi.Styles.Select);
         var preview = YanziUi.WithStyle(new YanziBadge { Content = "Preview" }, YanziUi.Styles.BadgeGeistPreview);
         selection.SelectionChanged += (_, _) =>
         {

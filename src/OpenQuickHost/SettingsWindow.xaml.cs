@@ -729,11 +729,17 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 NewVersionInfo = updateInfo.TargetFullRelease.Version.ToString();
                 HasNewVersion = true;
 
+                // 用户可能已在其他设备续费，检查更新前刷新服务端权益。
+                if (_mainWindow.CloudSyncClient?.HasCredential == true)
+                {
+                    try { await _mainWindow.CloudSyncClient.GetVipStatusAsync(); }
+                    catch (Exception ex) { HostAssets.AppendLog($"[VIP] 更新前刷新权益失败，沿用已缓存授权: {ex.Message}"); }
+                }
                 // 维护期校验：检查当前用户是否有权升级到该版本
                 var session = SyncSessionStore.Load();
                 var newVerReleaseDate = await ReleaseHistoryProvider.GetReleaseDateAsync(NewVersionInfo);
-                bool isEntitled = AppVersionInfo.IsVersionEntitled(
-                    session?.IsVip ?? false,
+                bool isEntitled = AppVersionInfo.IsUpdateEntitled(
+                    NewVersionInfo,
                     session?.VipType,
                     session?.VipExpireAt,
                     newVerReleaseDate
@@ -776,10 +782,15 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private async void DownloadUpdatesButton_Click(object sender, System.Windows.RoutedEventArgs e)
     {
         if (_newVersionUpdateInfo == null) return;
+        if (_mainWindow.CloudSyncClient?.HasCredential == true)
+        {
+            try { await _mainWindow.CloudSyncClient.GetVipStatusAsync(); }
+            catch (Exception ex) { HostAssets.AppendLog($"[VIP] 下载前刷新权益失败，沿用已缓存授权: {ex.Message}"); }
+        }
         var session = SyncSessionStore.Load();
         var newVerReleaseDate = await ReleaseHistoryProvider.GetReleaseDateAsync(NewVersionInfo);
-        bool isEntitled = AppVersionInfo.IsVersionEntitled(
-            session?.IsVip ?? false,
+        bool isEntitled = AppVersionInfo.IsUpdateEntitled(
+            NewVersionInfo,
             session?.VipType,
             session?.VipExpireAt,
             newVerReleaseDate
@@ -1284,6 +1295,10 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private string _backupStatusText = string.Empty;
 
+    public string AutoBackupDirectory => string.IsNullOrWhiteSpace(_settings.CustomBackupDirectory)
+        ? Path.Combine(HostAssets.DataRootPath, "Backups")
+        : _settings.CustomBackupDirectory;
+
     public string AutoBackupFrequency
     {
         get => _settings.AutoBackupFrequency;
@@ -1305,6 +1320,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             if (value == _settings.CustomBackupDirectory) return;
             _settings = _settings with { CustomBackupDirectory = value };
             OnPropertyChanged();
+            OnPropertyChanged(nameof(AutoBackupDirectory));
             UpdateBackupStatusText();
         }
     }
@@ -3431,8 +3447,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     {
         var count = EnvironmentVariables.Count(item => !string.IsNullOrWhiteSpace(item.Name));
         return count == 0
-            ? "尚未配置环境变量。应用小程序和脚本将只能读取系统环境变量。"
-            : $"已配置 {count} 个用户环境变量，脚本运行和应用小程序桥接均可读取。";
+            ? "尚未配置环境变量。小程序和其他电脑软件只能读取已有的 Windows 环境变量。"
+            : $"已配置 {count} 个环境变量：同步至 Windows 当前用户环境，新启动的独立程序也可读取；特殊凭证及系统核心变量除外。";
     }
 
     private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -5077,6 +5093,35 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         if (SyncPersonalSyncButton != null) SyncPersonalSyncButton.IsEnabled = enabled;
     }
 
+    private static (string name, ImageSource? image, Geometry? vector) ResolveConflictExtensionVisual(string extensionId)
+    {
+        var name = extensionId;
+        ImageSource? image = null;
+        Geometry? vector = null;
+        try
+        {
+            var directory = Path.Combine(LocalExtensionCatalog.CatalogRootPath, extensionId);
+            var manifestPath = Path.Combine(directory, "manifest.json");
+            if (!File.Exists(manifestPath)) return (name, image, vector);
+            using var document = JsonDocument.Parse(File.ReadAllText(manifestPath));
+            var root = document.RootElement;
+            if (root.TryGetProperty("name", out var title) && title.ValueKind == JsonValueKind.String &&
+                !string.IsNullOrWhiteSpace(title.GetString()))
+                name = title.GetString()!;
+            if (root.TryGetProperty("icon", out var icon) && icon.ValueKind == JsonValueKind.String)
+            {
+                var reference = icon.GetString() ?? "";
+                image = ExtensionIconLibrary.ResolveImageSource(reference, directory);
+                vector = ExtensionIconLibrary.ResolveVectorIcon(reference);
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"Sync conflict visual fallback: id={extensionId}, error={ex.GetType().Name}");
+        }
+        return (name, image, vector);
+    }
+
     private void RefreshPersonalExtensionSyncStatus()
     {
         try
@@ -5084,14 +5129,16 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             ExtensionSyncConflictItems.Clear();
             foreach (var conflict in _mainWindow.GetExtensionSyncConflicts())
             {
-                ExtensionSyncConflictItems.Add(new ExtensionSyncConflictItem(conflict));
+                var visual = ResolveConflictExtensionVisual(conflict.ExtensionId);
+                ExtensionSyncConflictItems.Add(new ExtensionSyncConflictItem(conflict, visual.name, visual.image, visual.vector));
             }
             OnPropertyChanged(nameof(HasExtensionSyncConflicts));
             ExtensionDataConflictItems.Clear();
             var dataStates = _mainWindow.GetExtensionDataSyncStates();
             foreach (var state in dataStates.Where(static item => item.Conflict != null))
             {
-                ExtensionDataConflictItems.Add(new ExtensionDataConflictItem(state));
+                var visual = ResolveConflictExtensionVisual(state.ExtensionId);
+                ExtensionDataConflictItems.Add(new ExtensionDataConflictItem(state, visual.name, visual.image, visual.vector));
             }
             OnPropertyChanged(nameof(HasExtensionDataConflicts));
             var dataPending = dataStates.Count(static item => item.Pending);
@@ -5268,6 +5315,29 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         finally
         {
             button.IsEnabled = true;
+        }
+    }
+
+    private void ExportGitHubBackupKeyButton_Click(object sender, RoutedEventArgs e)
+    {
+        var message = "恢复密钥可解密您的 GitHub 灾难备份。请选择安全位置保存，并将文件另存到其他设备或安全介质；不要上传到仓库或分享给他人。";
+        if (System.Windows.MessageBox.Show(this, message, "导出恢复密钥", MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK) return;
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = "保存 GitHub 备份恢复密钥",
+            FileName = "yanzi-github-recovery-key.txt",
+            Filter = "文本文件 (*.txt)|*.txt|所有文件 (*.*)|*.*",
+            OverwritePrompt = true
+        };
+        if (dialog.ShowDialog(this) != true) return;
+        try
+        {
+            GitHubSecondaryBackupService.ExportRecoveryKey(dialog.FileName);
+            System.Windows.MessageBox.Show(this, "恢复密钥已导出。请将它保存在其他设备或安全介质上。", "导出成功", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(this, $"导出失败：{ex.Message}", "导出恢复密钥", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
@@ -6939,6 +7009,33 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private async void UseLocalAccountSyncFieldButton_Click(object sender, RoutedEventArgs e)
+    {
+        await ResolveAccountSyncFieldFromButtonAsync(sender, useLocalVersion: true);
+    }
+
+    private async void AcceptRemoteAccountSyncFieldButton_Click(object sender, RoutedEventArgs e)
+    {
+        await ResolveAccountSyncFieldFromButtonAsync(sender, useLocalVersion: false);
+    }
+
+    private async Task ResolveAccountSyncFieldFromButtonAsync(object sender, bool useLocalVersion)
+    {
+        if (sender is not System.Windows.Controls.Button { DataContext: SyncFieldDifference item } button ||
+            !item.CanChooseField)
+            return;
+        button.IsEnabled = false;
+        try
+        {
+            var result = await _mainWindow.ResolveCloudObjectConflictFieldAsync(
+                item.ObjectId, item.JsonPointer, useLocalVersion, item.Revision);
+            SyncStatusText = result.message;
+            RefreshAccountObjectSyncStatus();
+            RefreshSyncActivityLog();
+        }
+        finally { button.IsEnabled = true; }
+    }
+
     private async Task ResolveAccountSyncConflictFromButtonAsync(object sender, bool useLocalVersion)
     {
         if (sender is not System.Windows.Controls.Button { DataContext: AccountSyncObjectStatusItem item } button)
@@ -7015,7 +7112,10 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                 conflict != null,
                 state.ObjectHistoryAvailable)
             {
-                ConflictSummary = conflict == null ? "" : SyncUserText.Differences(conflict, cached)
+                ConflictSummary = conflict == null ? "" : SyncUserText.Differences(conflict, cached),
+                Differences = conflict == null || cached == null ? [] : SyncUserText.DetailDifferences(
+                    conflict.LocalPayload, cached.Payload, conflict.LocalDeleted, cached.Deleted)
+                    .Select(row => row with { ObjectId = objectId, Revision = conflict.RemoteRevision }).ToArray()
             };
         }).ToArray();
 

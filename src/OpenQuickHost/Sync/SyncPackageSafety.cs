@@ -66,6 +66,8 @@ internal static class SyncPackageSafety
         var root = Path.GetDirectoryName(Path.GetFullPath(targetDirectory))!;
         targetDirectory = ResolveExtensionDirectory(root, Path.GetFileName(targetDirectory));
         Directory.CreateDirectory(root);
+        if (ExtensionGitSafety.HandleIncoming(targetDirectory, bytes, "个人同步覆盖"))
+            return Task.CompletedTask;
         var staging = Path.Combine(root, $".yanzi-sync-{Guid.NewGuid():N}");
         var backup = Path.Combine(root, $".yanzi-old-{Guid.NewGuid():N}");
         Directory.CreateDirectory(staging);
@@ -74,7 +76,11 @@ internal static class SyncPackageSafety
             cancellationToken.ThrowIfCancellationRequested();
             using (var stream = new MemoryStream(bytes, writable: false))
             using (var archive = new ZipArchive(stream, ZipArchiveMode.Read))
+            {
+                ExtensionGitSafety.ValidateArchiveEntries(archive);
                 archive.ExtractToDirectory(staging);
+            }
+            ExtensionGitSafety.RemoveTransportMetadata(staging);
             cancellationToken.ThrowIfCancellationRequested();
             var hadOriginal = Directory.Exists(targetDirectory);
             if (hadOriginal) Directory.Move(targetDirectory, backup);

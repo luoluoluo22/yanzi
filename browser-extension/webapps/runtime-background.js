@@ -4,6 +4,7 @@ const YANZI_WEBAPP_DATA_PREFIX = "yanziWebAppData::";
 const YANZI_WEBAPP_MARKET_APP_ID = "yanzi.browser.market";
 const YANZI_WEBAPP_MARKET_KEY = "installed-apps";
 const YANZI_WEBAPP_HOST_TIMEOUT_MS = 8000;
+const YANZI_WEBAPP_SCRIPT_PREFIX = "yanzi-webapp-";
 
 let yanziWebAppCatalog = null;
 const yanziWebAppHostRequests = new Map();
@@ -68,7 +69,92 @@ async function listMarketApps() {
   }));
 }
 
+function webAppContentScriptId(appId) {
+  return YANZI_WEBAPP_SCRIPT_PREFIX +
+    String(appId || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+}
+
+function normalizeRegisteredWebAppScript(script) {
+  return {
+    matches: [...(script?.matches || [])].sort(),
+    js: [...(script?.js || [])].sort(),
+    runAt: script?.runAt || "document_idle",
+    persistAcrossSessions: script?.persistAcrossSessions !== false
+  };
+}
+
+async function syncRegisteredWebAppContentScripts(installed = null) {
+  const catalog = await loadYanziWebAppCatalog();
+  const installedMap = installed || await getInstalledWebApps();
+  const desired = (catalog.apps || [])
+    .filter(app =>
+      Boolean(installedMap[app.id]) &&
+      Boolean(app.contentScript) &&
+      Array.isArray(app.matches) &&
+      app.matches.length > 0
+    )
+    .map(app => ({
+      id: webAppContentScriptId(app.id),
+      matches: app.matches,
+      js: [app.contentScript],
+      runAt: "document_idle",
+      persistAcrossSessions: true
+    }));
+
+  const registered = await chrome.scripting.getRegisteredContentScripts();
+  const owned = registered.filter(script =>
+    String(script.id || "").startsWith(YANZI_WEBAPP_SCRIPT_PREFIX)
+  );
+  const desiredById = new Map(desired.map(script => [script.id, script]));
+  const registeredById = new Map(owned.map(script => [script.id, script]));
+  const removeIds = [];
+  const addScripts = [];
+
+  for (const script of owned) {
+    const wanted = desiredById.get(script.id);
+    if (!wanted) {
+      removeIds.push(script.id);
+      continue;
+    }
+
+    const currentShape = JSON.stringify(
+      normalizeRegisteredWebAppScript(script)
+    );
+    const wantedShape = JSON.stringify(
+      normalizeRegisteredWebAppScript(wanted)
+    );
+    if (currentShape !== wantedShape) {
+      removeIds.push(script.id);
+      addScripts.push(wanted);
+    }
+  }
+
+  for (const script of desired) {
+    if (!registeredById.has(script.id)) {
+      addScripts.push(script);
+    }
+  }
+
+  if (removeIds.length) {
+    await chrome.scripting.unregisterContentScripts({ ids: removeIds });
+  }
+  if (addScripts.length) {
+    await chrome.scripting.registerContentScripts(addScripts);
+  }
+
+  globalThis.yanziBrowserHost?.log?.(
+    "[网页小程序] 动态 content script 已同步：" +
+    desired.length + " 个已安装网页小程序。"
+  );
+
+  return desired.length;
+}
+
 async function applyInstalledWebAppState(installed) {
+  await syncRegisteredWebAppContentScripts(installed);
   const catalog = await loadYanziWebAppCatalog();
   const tabs = await chrome.tabs.query({});
   for (const app of catalog.apps || []) {
@@ -95,6 +181,7 @@ async function setWebAppInstalled(appId, enabled) {
   const installed = await getInstalledWebApps();
   installed[appId] = Boolean(enabled);
   await saveInstalledWebApps(installed, true);
+  await syncRegisteredWebAppContentScripts(installed);
   await refreshYanziWebAppContextMenus();
 
   const tabs = await chrome.tabs.query({});
@@ -127,12 +214,175 @@ async function injectWebAppIntoTab(tabId, app) {
   }
 }
 
+const yanziWebAppInjectionJobs = new Map();
+
+function delayYanziWebApp(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function withYanziWebAppTimeout(promise, timeoutMs, fallback = false) {
+  return Promise.race([
+    Promise.resolve(promise),
+    new Promise(resolve => setTimeout(() => resolve(fallback), timeoutMs))
+  ]);
+}
+
+function pingYanziWebApp(tabId, appId, timeoutMs = 1200) {
+  return new Promise(resolve => {
+    let settled = false;
+    const finish = value => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(Boolean(value));
+    };
+    const timer = setTimeout(() => finish(false), timeoutMs);
+
+    chrome.tabs.sendMessage(
+      tabId,
+      {
+        type: "yanzi_webapp_ping",
+        appId
+      },
+      response => {
+        if (chrome.runtime.lastError) {
+          finish(false);
+          return;
+        }
+        finish(
+          response?.ok === true &&
+          response?.appId === appId
+        );
+      }
+    );
+  });
+}
+
+async function injectWebAppIntoTabReliable(tabId, app) {
+  if (!app?.contentScript) return false;
+
+  const key = String(tabId) + ":" + app.id;
+  const existing = yanziWebAppInjectionJobs.get(key);
+  if (existing) return existing;
+
+  const job = (async () => {
+    if (await pingYanziWebApp(tabId, app.id)) return true;
+
+    let lastError = "";
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        await withYanziWebAppTimeout(
+          injectWebAppIntoTab(tabId, app),
+          5000,
+          false
+        );
+      } catch (error) {
+        lastError = error?.message || String(error);
+      }
+
+      for (let poll = 0; poll < 8; poll += 1) {
+        if (await pingYanziWebApp(tabId, app.id)) {
+          if (attempt > 1) {
+            globalThis.yanziBrowserHost?.log?.(
+              "[网页小程序] " + app.id + " 第 " + attempt +
+              " 次注入后恢复响应，Tab=" + tabId
+            );
+          }
+          return true;
+        }
+        await delayYanziWebApp(250);
+      }
+
+      await delayYanziWebApp(350 * attempt);
+    }
+
+    const message =
+      "[网页小程序] " + app.id +
+      " 注入后仍未响应，Tab=" + tabId +
+      (lastError ? "，最后错误: " + lastError : "");
+    globalThis.yanziBrowserHost?.log?.(message);
+    return false;
+  })();
+
+  yanziWebAppInjectionJobs.set(key, job);
+  try {
+    return await job;
+  } finally {
+    yanziWebAppInjectionJobs.delete(key);
+  }
+}
+
+function waitForYanziWebAppTabComplete(tabId, timeoutMs = 15000) {
+  return new Promise(async resolve => {
+    try {
+      const current = await chrome.tabs.get(tabId);
+      if (current?.status === "complete") {
+        resolve(true);
+        return;
+      }
+    } catch {
+      resolve(false);
+      return;
+    }
+
+    let settled = false;
+    const finish = value => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      chrome.tabs.onUpdated.removeListener(listener);
+      resolve(Boolean(value));
+    };
+    const listener = (updatedTabId, info) => {
+      if (updatedTabId === tabId && info.status === "complete") {
+        finish(true);
+      }
+    };
+    const timer = setTimeout(() => finish(false), timeoutMs);
+    chrome.tabs.onUpdated.addListener(listener);
+  });
+}
+
+function reloadYanziWebAppTabAndWait(tabId, timeoutMs = 20000) {
+  return new Promise(resolve => {
+    let settled = false;
+    const finish = value => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      chrome.tabs.onUpdated.removeListener(listener);
+      resolve(Boolean(value));
+    };
+    const listener = (updatedTabId, info) => {
+      if (updatedTabId === tabId && info.status === "complete") {
+        finish(true);
+      }
+    };
+    const timer = setTimeout(() => finish(false), timeoutMs);
+
+    chrome.tabs.onUpdated.addListener(listener);
+    chrome.tabs.reload(tabId).catch(() => finish(false));
+  });
+}
+
 async function injectInstalledWebApps(tabId, url) {
   const apps = await listMarketApps();
   for (const app of apps) {
     if (!app.installed) continue;
-    if ((app.matches || []).some(pattern => matchPattern(url, pattern))) {
-      await injectWebAppIntoTab(tabId, app);
+    if (!(app.matches || []).some(pattern => matchPattern(url, pattern))) continue;
+
+    try {
+      const ready = await injectWebAppIntoTabReliable(tabId, app);
+      if (!ready) {
+        globalThis.yanziBrowserHost?.log?.(
+          "[网页小程序] " + app.id + " 自动注入未就绪，Tab=" + tabId
+        );
+      }
+    } catch (error) {
+      globalThis.yanziBrowserHost?.log?.(
+        "[网页小程序] " + app.id + " 自动注入失败，Tab=" + tabId +
+        "：" + (error?.message || error)
+      );
     }
   }
 }
@@ -141,7 +391,11 @@ async function ensureWebAppInjected(tabId, appId) {
   const catalog = await loadYanziWebAppCatalog();
   const app = (catalog.apps || []).find(item => item.id === appId);
   if (!app) return false;
-  await injectWebAppIntoTab(tabId, app);
+
+  const ready = await injectWebAppIntoTabReliable(tabId, app);
+  if (!ready) {
+    throw new Error("webapp_not_ready:" + appId);
+  }
   return true;
 }
 
@@ -447,7 +701,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 async function refreshWebAppTabsAfterExtensionReload() {
   const stored = await chrome.storage.local.get("yanziPendingExtensionReloadRefresh");
-  if (!stored.yanziPendingExtensionReloadRefresh) return false;
+  if (!stored.yanziPendingExtensionReloadRefresh) return 0;
 
   // Clear first so tab reloads cannot form a loop if the service worker restarts again.
   await chrome.storage.local.remove("yanziPendingExtensionReloadRefresh");
@@ -466,39 +720,50 @@ async function refreshWebAppTabsAfterExtensionReload() {
     }
   }
 
+  let requested = 0;
   for (const tabId of tabIds) {
     try {
       await chrome.tabs.reload(tabId);
+      requested += 1;
     } catch (error) {
       globalThis.yanziBrowserHost?.log?.(
-        `[网页小程序] 开发重载后刷新 Tab ${tabId} 失败: ${error?.message || error}`
+        "[网页小程序] 开发重载后刷新 Tab " + tabId +
+        " 失败：" + (error?.message || error)
       );
     }
   }
 
   globalThis.yanziBrowserHost?.log?.(
-    `[网页小程序] 扩展自重载完成，已刷新 ${tabIds.size} 个网页小程序标签页。`
+    "[网页小程序] 扩展自重载完成，已请求刷新 " +
+    requested + " / " + tabIds.size +
+    " 个网页小程序标签页；页面加载后由动态 content script 自动注入。"
   );
-  return tabIds.size;
+  return requested;
 }
 
 async function initializeYanziWebApps() {
-  await getInstalledWebApps();
+  const installed = await getInstalledWebApps();
+
+  // Register persistent content scripts before development tab reloads.
+  // Chromium now owns the normal injection lifecycle; manual injection remains
+  // only as a non-blocking fallback for tabs that were already open.
+  await syncRegisteredWebAppContentScripts(installed);
   await refreshYanziWebAppContextMenus();
 
   const refreshedTabCount = await refreshWebAppTabsAfterExtensionReload();
-  if (!refreshedTabCount) {
-    const tabs = await chrome.tabs.query({});
-    for (const tab of tabs) {
-      if (tab.id && tab.url) await injectInstalledWebApps(tab.id, tab.url);
-    }
-  }
 
   globalThis.yanziBrowserHost?.send?.({
     type: "browser_extension_runtime_ready",
     version: chrome.runtime.getManifest().version,
     refreshedWebAppTabs: refreshedTabCount
   });
+
+  const tabs = await chrome.tabs.query({});
+  for (const tab of tabs) {
+    if (tab.id && tab.url) {
+      void injectInstalledWebApps(tab.id, tab.url);
+    }
+  }
 
   if (globalThis.yanziBrowserHost?.isConnected?.()) {
     void reconcileAllWebAppData();

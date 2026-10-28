@@ -1,0 +1,1 @@
+{"name":"yanzi","version":"0.1.0","description":"燕子日常操作 MCP：小程序、应用、微信文件传输助手和设备能力。","extensions":{"com.openai":{"interface":{"displayName":"燕子","shortDescription":"调用小程序与日常操作能力"}}}}

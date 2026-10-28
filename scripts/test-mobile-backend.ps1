@@ -11,7 +11,7 @@ try {
     Stop-YanziLocalWorkerPort -Port $Port
     npx.cmd wrangler d1 migrations apply openquickhost-sync-db --local --persist-to $root --config $config | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Local migrations failed' }
-    $worker=Start-Process npx.cmd -ArgumentList @('wrangler','dev','--local','--persist-to',$root,'--ip','127.0.0.1','--port',$Port,'--config',$config,'--var','AUTH_TOKEN_SECRET:local-phone-message-verification') -WorkingDirectory $repo -WindowStyle Hidden -RedirectStandardOutput (Join-Path $root 'worker.log') -RedirectStandardError (Join-Path $root 'worker.err') -PassThru
+    $worker=Start-Process npx.cmd -ArgumentList @('wrangler','dev','--local','--persist-to',$root,'--ip','127.0.0.1','--port',$Port,'--config',$config,'--var','AUTH_TOKEN_SECRET:local-phone-message-verification','--var','CLOUD_VIP_ONLY:false') -WorkingDirectory $repo -WindowStyle Hidden -RedirectStandardOutput (Join-Path $root 'worker.log') -RedirectStandardError (Join-Path $root 'worker.err') -PassThru
     $base="http://127.0.0.1:$Port"
     $ready=$false
     foreach ($attempt in 1..40) { try { $ready=(Invoke-RestMethod "$base/health" -TimeoutSec 1).ok } catch {} ; if ($ready) { break }; Start-Sleep -Milliseconds 500 }

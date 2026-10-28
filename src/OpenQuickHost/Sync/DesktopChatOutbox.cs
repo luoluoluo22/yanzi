@@ -6,7 +6,7 @@ using System.Text.Json;
 namespace OpenQuickHost.Sync;
 
 public sealed record DesktopChatJob(string Id, string Account, string Source, string Kind, string Text, string? FilePath,
-    DateTimeOffset CreatedAt, MobileAttachment? Attachment = null, string? CompletedMessageId = null, string? TargetDeviceId = null);
+    DateTimeOffset CreatedAt, MobileAttachment? Attachment = null, string? CompletedMessageId = null, string? TargetDeviceId = null, string? ConversationId = null);
 
 public static class DesktopChatOutbox
 {
@@ -14,7 +14,7 @@ public static class DesktopChatOutbox
     private static string Root(string account) => Path.Combine(HostAssets.ResolveDataDirectoryPath("device-chat-outbox"),
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(account))));
     private static string RecordPath(DesktopChatJob job) => Path.Combine(Root(job.Account), job.Id, "job.json");
-    public static DesktopChatJob Enqueue(string account, string source, string id, string kind, string text, string? file, string? targetDeviceId = null)
+    public static DesktopChatJob Enqueue(string account, string source, string id, string kind, string text, string? file, string? targetDeviceId = null, string? conversationId = null)
     {
         lock (Gate)
         {
@@ -38,7 +38,7 @@ public static class DesktopChatOutbox
                 if (info.Name == "job.json") saved = Path.Combine(directory, "attachment-job.json");
                 File.Copy(file, saved);
             }
-            var job = new DesktopChatJob(id, account, source, kind, text, saved, DateTimeOffset.UtcNow, TargetDeviceId: targetDeviceId);
+            var job = new DesktopChatJob(id, account, source, kind, text, saved, DateTimeOffset.UtcNow, TargetDeviceId: targetDeviceId, ConversationId: conversationId);
             Save(job);
             return job;
         }

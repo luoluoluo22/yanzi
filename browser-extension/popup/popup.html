@@ -7,24 +7,51 @@
 </head>
 <body>
   <div class="app-container">
-    <!-- Header -->
     <header class="app-header">
-      <div class="logo-wrapper">
-        <img src="../assets/icon48.png" alt="燕子启动器 Logo" class="app-logo-img">
+      <div class="app-brand">
+        <div class="logo-wrapper">
+          <img src="../assets/icon48.png" alt="燕子启动器 Logo" class="app-logo-img">
+        </div>
+        <div class="brand">
+          <h1>燕子浏览器助手</h1>
+          <p>让浏览更智能，让知识触手可及</p>
+        </div>
       </div>
-      <div class="brand">
-        <h1>燕子浏览器助手</h1>
-        <p>Yanzi Browser Helper</p>
+      <div class="header-meta">
+        <span class="version-badge" id="extension-version">v0.5.61</span>
+        <span class="header-meta-label">本地优先</span>
       </div>
     </header>
 
-    <nav class="panel-tabs" aria-label="控制台页面">
-      <button type="button" data-panel="overview" aria-pressed="true">连接与服务</button>
-      <button type="button" data-panel="market" aria-pressed="false">网页小程序</button>
-      <button type="button" data-panel="api" aria-pressed="false">API 接入</button>
-      <button type="button" data-panel="logs" aria-pressed="false">执行日志</button>
-    </nav>
-    <div class="panel-content" id="panel-overview">
+    <div class="app-workspace">
+      <aside class="app-sidebar">
+        <div class="sidebar-section-label">工作区</div>
+        <nav class="panel-tabs" aria-label="控制台页面">
+          <button type="button" data-panel="market" aria-pressed="false">
+            <span class="sidebar-icon" aria-hidden="true">▦</span>
+            <span class="sidebar-item-copy"><strong>网页小程序</strong><small>发现与使用</small></span>
+          </button>
+          <button type="button" data-panel="overview" aria-pressed="false">
+            <span class="sidebar-icon" aria-hidden="true">↔</span>
+            <span class="sidebar-item-copy"><strong>连接与服务</strong><small>账号 · 同步 · 存储</small></span>
+          </button>
+          <button type="button" data-panel="opencli" aria-pressed="false">
+            <span class="sidebar-icon" aria-hidden="true">⌘</span>
+            <span class="sidebar-item-copy"><strong>个人数据读取</strong><small>小红书 · B 站 · 抖音</small></span>
+          </button>
+          <button type="button" data-panel="logs" aria-pressed="false">
+            <span class="sidebar-icon" aria-hidden="true">◷</span>
+            <span class="sidebar-item-copy"><strong>执行日志</strong><small>运行记录 · 调试</small></span>
+          </button>
+        </nav>
+        <div class="sidebar-spacer"></div>
+        <section class="sidebar-help-card">
+          <div class="sidebar-help-title"><span aria-hidden="true">✦</span> 帮帮忙</div>
+          <p>复制小程序的开发背景，让其他 AI 快速接手。</p>
+        </section>
+      </aside>
+      <main class="app-main">
+    <div class="panel-content" id="panel-overview" hidden>
     <section class="status-section glass-card">
       <div class="status-row">
         <span class="status-label">燕子主程序连接</span>
@@ -36,34 +63,43 @@
       <p class="server-info"><label for="server-port">燕子 API 端口</label>
         <input id="server-port" type="number" min="1" max="65535" value="53919" style="width:90px">
         <button id="save-port">保存</button></p>
-      <p class="server-info">ChatGPT 小程序：<span id="chatgpt-status">检查中</span> · 127.0.0.1:53921</p>
       <p class="guide-help">两个通道独立。燕子 API 端口应与主程序设置一致。</p>
     </section>
     <section class="glass-card service-card">
-      <h2>ChatGPT 网页 API</h2><p>在已登录浏览器的后台标签页中调用。支持临时聊天、结构化回复、定时与事件触发。</p>
-      <div class="guide-actions"><button type="button" id="open-workbench">打开后台工作台</button><button type="button" id="show-api">查看调用格式</button></div>
-      <a class="guide-link" href="api.html" target="_blank" rel="noopener">打开完整 API 接入文档 ↗</a>
+      <h2>Agent 团队 · Ego API</h2>
+      <p>主管和子 Agent 统一由燕子小程序管理，浏览器自动化只使用 Ego Browser API，不再由扩展执行。</p>
+      <div class="guide-actions"><button type="button" id="open-workbench">打开 Agent 团队</button></div>
     </section>
     <footer class="app-footer"><button id="reconnect-btn" class="btn primary-btn btn-glow">重新连接燕子主程序</button></footer>
     </div>
-    <div class="panel-content" id="panel-market" hidden>
-      <section class="glass-card market-intro">
-        <div class="section-title-row">
-          <h2>网页小程序市场</h2>
+    <div class="panel-content" id="panel-market">
+      <section class="market-intro">
+        <div class="market-intro-heading">
+          <div>
+            <h2>网页小程序</h2>
+            <p>按网站组合燕子能力。搜索名称、功能或标签，快速定位需要维护的小程序。</p>
+          </div>
           <span class="log-count" id="market-count">0 个</span>
         </div>
-        <p>按网站安装燕子能力。安装状态与网页小程序数据会在燕子连接后同步到账号云。</p>
-        <div class="guide-actions">
+        <div class="market-intro-actions">
+          <span class="market-sync-status" id="market-sync-status" role="status" aria-live="polite"></span>
           <button type="button" id="sync-webapps">立即同步</button>
-          <span class="market-sync-status" id="market-sync-status"></span>
         </div>
       </section>
+      <label class="market-search">
+        <span class="market-search-icon" aria-hidden="true">⌕</span>
+        <input id="market-search" type="search" autocomplete="off" placeholder="搜索小程序、功能、标签…" aria-label="搜索小程序、功能和标签">
+        <kbd id="market-search-shortcut">Ctrl K</kbd>
+      </label>
+      <nav id="market-categories" class="market-categories" aria-label="小程序分类筛选">
+        <button type="button" class="market-category-chip" data-market-category="全部" aria-pressed="true"><span>全部</span><small>0</small></button>
+      </nav>
       <section id="market-list" class="market-list" aria-live="polite">
         <div class="market-empty">正在读取网页小程序…</div>
       </section>
       <section class="glass-card webapp-rules-card" id="xhs-rules-card">
         <div class="section-title-row">
-          <h2>小红书屏蔽规则</h2>
+          <h2>小红书内容规则</h2>
           <span class="log-count" id="xhs-rule-count">0 条</span>
         </div>
         <div id="xhs-rule-list" class="webapp-rule-list">
@@ -85,9 +121,31 @@
         </div>
       </section>
     </div>
-    <div class="panel-content" id="panel-api" hidden>
-      <a class="guide-link" href="api.html" target="_blank" rel="noopener">在新标签页查看完整文档 ↗</a>
-      <section class="glass-card" data-api-guide></section>
+    <div class="panel-content" id="panel-opencli" hidden>
+      <section class="glass-card opencli-panel">
+        <h2>个人数据读取</h2>
+        <p class="guide-help">通过本机 OpenCLI 和已登录浏览器读取账号数据。只读、手动触发，不同步至云端。</p>
+        <label for="opencli-site">平台</label>
+        <select id="opencli-site">
+          <option value="xiaohongshu">小红书</option>
+          <option value="bilibili">哔哩哔哩</option>
+          <option value="douyin">抖音</option>
+        </select>
+        <label for="opencli-operation">数据类型</label>
+        <select id="opencli-operation"></select>
+        <div class="opencli-actions">
+          <button id="opencli-read" type="button">读取数据</button>
+          <button id="opencli-copy" type="button" disabled>复制 JSON</button>
+        </div>
+        <div id="opencli-pagination" class="opencli-pagination" hidden>
+          <button type="button" id="opencli-prev" disabled>上一页</button>
+          <span id="opencli-page-label">第 1 页</span>
+          <button type="button" id="opencli-next" disabled>下一页</button>
+        </div>
+        <p class="opencli-status" id="opencli-status" role="status" aria-live="polite"></p>
+        <p class="opencli-summary" id="opencli-summary"></p>
+        <pre class="opencli-result" id="opencli-result" aria-label="读取结果"></pre>
+      </section>
     </div>
     <div class="panel-content" id="panel-logs" hidden>
     <section class="logs-section glass-card">
@@ -100,8 +158,12 @@
       </div>
     </section>
     </div>
+      </main>
+    </div>
   </div>
-  <script src="api-guide.js"></script>
+  
   <script src="popup.js"></script>
+  
+  <script src="opencli-panel.js"></script>
 </body>
 </html>

@@ -25,9 +25,12 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Explicit user approval in Android Special app access; never granted via Accessibility. -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
 
     <supports-screens
         android:anyDensity="true"
@@ -43,7 +46,7 @@
         android:fullBackupContent="@xml/environment_backup_rules"
         android:dataExtractionRules="@xml/environment_extraction_rules"
         android:icon="@drawable/yanzi_launcher_bitmap"
-        android:label="@string/app_name"
+        android:label="${voiceMemoryAppLabel}"
         android:resizeableActivity="true"
         android:roundIcon="@drawable/yanzi_launcher_bitmap"
         android:supportsRtl="true"
@@ -57,6 +60,7 @@
         <activity android:name=".EnvironmentSettingsActivity" android:exported="false" />
         <activity android:name=".NotificationSettingsActivity" android:exported="false" />
         <activity android:name=".TaskRecoveryActivity" android:exported="false" />
+        <activity android:name=".VoiceMemoryActivity" android:exported="${voiceMemoryActivityExported}" />
         <service android:name=".EnvironmentJobService" android:exported="false" android:permission="android.permission.BIND_JOB_SERVICE" />
         <provider android:name=".CompanionTransferProvider" android:authorities="${applicationId}.companion-transfer" android:exported="true" android:permission="${applicationId}.permission.EXTENSION_STORAGE" />
         <activity
@@ -92,6 +96,7 @@
             android:exported="false" />
         <service android:name=".DeviceHeartbeatService"
             android:foregroundServiceType="remoteMessaging" android:exported="false" />
+        <service android:name=".VoiceMemoryService" android:foregroundServiceType="microphone" android:exported="false" />
         <service android:name=".FirebasePushService" android:enabled="${fcmEnabled}" android:exported="false">
             <intent-filter><action android:name="com.google.firebase.MESSAGING_EVENT" /></intent-filter>
         </service>
@@ -125,6 +130,7 @@
         </receiver>
 
         <activity android:name=".ApplicationCatalogActivity" android:exported="false" />
+        <activity android:name=".RemoteDesktopActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize" />
         <activity android:name=".AiDataAccessActivity" android:exported="false" />
         <activity android:name=".ExternalAccessActivity" android:exported="false" />
         <!-- Yanm Widget Provider -->

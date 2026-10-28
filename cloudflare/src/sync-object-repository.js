@@ -74,6 +74,11 @@ async function getUserSyncRevision(env, userId) {
 
 async function readUserSyncObjects(env, userId, sinceRevision, limit) {
   const currentRevision = await getUserSyncRevision(env, userId);
+  // When the client is current, avoid an unnecessary object-table query.
+  // Keep the initial snapshot (sinceRevision=0) unchanged for bootstrap clients.
+  if (sinceRevision > 0 && sinceRevision >= currentRevision) {
+    return { currentRevision, cursorRevision: currentRevision, hasMore: false, objects: [] };
+  }
   const rows = await env.DB.prepare(
     `select object_id, schema_version, object_revision, updated_at,
             updated_by_device_id, updated_by_device_name, deleted, payload_json

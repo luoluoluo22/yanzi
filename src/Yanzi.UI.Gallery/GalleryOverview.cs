@@ -15,7 +15,7 @@ internal sealed partial class GalleryWindow
         var hero = new StackPanel
         {
             HorizontalAlignment = HorizontalAlignment.Center,
-            Margin = new Thickness(8, 12, 8, 34),
+            Margin = new Thickness(8, 2, 8, 16),
             MaxWidth = 690
         };
         _body.Children.Add(hero);
@@ -24,21 +24,24 @@ internal sealed partial class GalleryWindow
             Content = "Reusable desktop components  ↗",
             Variant = YanziBadgeVariant.Secondary,
             HorizontalAlignment = HorizontalAlignment.Center,
-            Margin = new Thickness(0, 0, 0, 16)
+            Margin = new Thickness(0, 0, 0, 8)
         };
         YanziUi.WithStyle(tag, YanziUi.Styles.BadgeGeistPreview);
         hero.Children.Add(tag);
-        var headline = Text("The foundation for Yanzi UI", 27, true, "Yanzi.Color.Foreground", new Thickness(0, 0, 0, 11));
+        var headline = Text("The foundation for Yanzi UI", 23, true, "Yanzi.Color.Foreground", new Thickness(0, 0, 0, 7));
         headline.TextAlignment = TextAlignment.Center;
         hero.Children.Add(headline);
         var description = Text("可组合、可扩展的 Windows 原生组件。直接操作下面的按钮、输入框、菜单和表单，观察真实的视觉与交互。", 13, false,
-            "Yanzi.Color.MutedForeground", new Thickness(8, 0, 8, 20));
+            "Yanzi.Color.MutedForeground", new Thickness(8, 0, 8, 12));
         description.TextAlignment = TextAlignment.Center;
         hero.Children.Add(description);
         var heroActions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
-        heroActions.Children.Add(PreviewGeistButton(Button("浏览组件  →", YanziUi.Styles.PillDefaultButton, () => ShowPage(8))));
+        heroActions.Children.Add(PreviewGeistButton(Button("浏览组件  →", YanziUi.Styles.PillDefaultButton, () => _overviewCatalogHeading?.BringIntoView())));
         heroActions.Children.Add(PreviewGeistButton(Button("视觉规范", YanziUi.Styles.PillOutlineButton, () => ShowPage(6))));
         hero.Children.Add(heroActions);
+
+        // The registry-driven component wall is the first section of the homepage.
+        OverviewComponentWall();
 
         var threeColumns = new UniformGrid { Columns = 3, Margin = new Thickness(0, 0, 6, 0) };
         _overviewGrid = threeColumns;

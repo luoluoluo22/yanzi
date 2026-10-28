@@ -64,9 +64,9 @@ if (-not $NoExtension) {
     $manifest = [ordered]@{
         id = 'yanzi-ui-gallery'
         name = '组件评估'
-        version = '0.7.9'
+        version = '0.8.1'
         category = '开发工具'
-        description = '查看并体验燕子公共 UI 组件：按钮、输入、选择、列表、弹窗、颜色主题，并记录评估建议。'
+        description = '首页展示 64 个真实公共 WPF 组件预览，点击标题进入独立详情和验收记录。'
         keywords = @('UI', '组件库', '设计系统', '组件评估', '视觉预览', 'ui-gallery')
         icon = 'mdi:palette-outline'
         accentHex = '#3B82F6'

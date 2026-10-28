@@ -32,6 +32,7 @@ public final class LanPairingActivity extends Activity {
             AccountLanConnections.refresh(this, prefs.getString("baseUrl", "https://sync.luoluoluo.cc.cd"), token, device);
             probe(true);
         });
+        Button remarks = new Button(this); remarks.setText("设备备注"); remarks.setOnClickListener(v -> DeviceRemarksDialog.show(this)); root.addView(remarks);
         Button back = new Button(this); back.setText("返回"); back.setOnClickListener(v -> finish()); root.addView(back);
         ScrollView scroll = new ScrollView(this); scroll.addView(root); setContentView(scroll); probe(false);
     }

@@ -1,13 +1,6 @@
 name: Publish application release
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "release-inputs/applications/**"
-      - ".github/workflows/publish-application-release.yml"
-      - "scripts/application-release-ci.py"
-      - "scripts/application-release-changes.py"
   workflow_dispatch:
     inputs:
       application:

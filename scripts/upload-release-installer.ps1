@@ -47,7 +47,8 @@ if ($Platform -eq "android") {
     }
 
     $targetApkPath = Join-Path $installerOutDir $fileName
-    if ((Resolve-Path $installerSetupPath) -ne (Resolve-Path $targetApkPath -ErrorAction SilentlyContinue)) {
+    $targetResolved = Resolve-Path $targetApkPath -ErrorAction SilentlyContinue
+    if (-not $targetResolved -or (Resolve-Path $installerSetupPath).Path -ne $targetResolved.Path) {
         if (!(Test-Path $installerOutDir)) { New-Item -ItemType Directory -Path $installerOutDir -Force | Out-Null }
         Copy-Item -LiteralPath $installerSetupPath -Destination $targetApkPath -Force
         $installerSetupPath = $targetApkPath
