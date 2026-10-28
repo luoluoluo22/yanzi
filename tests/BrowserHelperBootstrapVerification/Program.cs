@@ -63,6 +63,24 @@ try
     BrowserHelperBootstrap.EnsureStableBundle(source, target);
     Assert(File.ReadAllText(Path.Combine(target, "background.js")) == "const a=2;" &&
            File.ReadAllText(Path.Combine(target + ".previous", "background.js")) == "const a=1;", "update keeps one rollback copy");
+
+    // Independent extension updates must survive an application startup with an
+    // older or same-version embedded package.
+    File.WriteAllText(Path.Combine(target, ".yanzi-source-commit"), new string('a', 40));
+    File.WriteAllText(Path.Combine(target, ".yanzi-source-tree-sha256"), new string('B', 64));
+    File.WriteAllText(Path.Combine(target, "background.js"), "const a=3;");
+    File.WriteAllText(Path.Combine(source, "background.js"), "const a=4;");
+    BrowserHelperBootstrap.EnsureStableBundle(source, target);
+    Assert(File.ReadAllText(Path.Combine(target, "background.js")) == "const a=3;",
+        "remote channel update survives bundled app restart at same version");
+
+    File.WriteAllText(Path.Combine(source, "manifest.json"),
+        JsonSerializer.Serialize(new { name = "Yanzi Browser Helper", version = "0.2" }));
+    BrowserHelperBootstrap.EnsureStableBundle(source, target);
+    Assert(File.ReadAllText(Path.Combine(target, "background.js")) == "const a=4;",
+        "newer bundled package can supersede independent channel");
+
+
     File.WriteAllText(Path.Combine(source, "manifest.json"), "{\"name\":\"Unknown Extension\",\"version\":\"0.2\"}");
     try
     {

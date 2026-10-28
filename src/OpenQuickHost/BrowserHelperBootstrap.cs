@@ -232,6 +232,38 @@ internal static class BrowserHelperBootstrap
         if (File.Exists(marker) && File.ReadAllText(marker).Trim() == fingerprint)
             return target;
 
+        // Preserve a verified independent browser helper update across host restarts.
+        // A newer bundled extension is still allowed to replace this channel version.
+        var remoteCommitMarker = Path.Combine(target, ".yanzi-source-commit");
+        var remoteTreeMarker = Path.Combine(target, ".yanzi-source-tree-sha256");
+        if (File.Exists(remoteCommitMarker) && File.Exists(remoteTreeMarker)
+            && File.Exists(Path.Combine(target, "manifest.json")))
+        {
+            try
+            {
+                var commit = File.ReadAllText(remoteCommitMarker).Trim();
+                var digest = File.ReadAllText(remoteTreeMarker).Trim();
+                if (commit.Length == 40 && commit.All(Uri.IsHexDigit)
+                    && digest.Length == 64 && digest.All(Uri.IsHexDigit))
+                {
+                    using var installed = JsonDocument.Parse(File.ReadAllText(Path.Combine(target, "manifest.json")));
+                    using var bundled = JsonDocument.Parse(File.ReadAllText(Path.Combine(source, "manifest.json")));
+                    if (IsYanziManifest(installed.RootElement) && IsYanziManifest(bundled.RootElement)
+                        && installed.RootElement.TryGetProperty("version", out var installedVersion)
+                        && bundled.RootElement.TryGetProperty("version", out var bundledVersion)
+                        && Version.TryParse(installedVersion.GetString(), out var installedParsed)
+                        && Version.TryParse(bundledVersion.GetString(), out var bundledParsed)
+                        && installedParsed >= bundledParsed)
+                        return target;
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                                       or JsonException or ArgumentException)
+            {
+                // Ignore corrupt remote metadata and retain the bundled fallback.
+            }
+        }
+
         Directory.CreateDirectory(Path.GetDirectoryName(target)!);
         var staging = target + ".staging-" + Guid.NewGuid().ToString("N");
         var backup = target + ".previous";
