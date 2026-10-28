@@ -1,4 +1,4 @@
-param([switch]$SkipRuntime)
+param([Alias('SkipRuntime')][switch]$SkipSingleProcessCheck)
 $ErrorActionPreference = 'Stop'
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 Push-Location $repo
@@ -15,12 +15,11 @@ try {
             'src/Yanzi.UI.Verification/Yanzi.UI.Verification.csproj',
             '-c', 'Release', '--no-restore') }
     )
-    if (-not $SkipRuntime) {
-        $checks += @{ Name = 'Isolated Runtime lifecycle'; Command = @(
+    if (-not $SkipSingleProcessCheck) {
+        $checks += @{ Name = 'Single-process background ownership'; Command = @(
             'dotnet', 'run', '--project',
-            'src/Yanzi.RuntimeVerification/Yanzi.RuntimeVerification.csproj',
-            '-c', 'Release', '--no-restore', '--',
-            'src/Yanzi.Runtime/bin/Release/net9.0-windows/Yanzi.Runtime.exe') }
+            'src/Yanzi.SyncVerification/Yanzi.SyncVerification.csproj',
+            '-c', 'Release', '--no-restore', '--', '--single-process') }
     }
     foreach ($check in $checks) {
         Write-Host ('RUN ' + $check.Name)

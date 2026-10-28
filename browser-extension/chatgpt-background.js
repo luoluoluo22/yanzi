@@ -1,15 +1,49 @@
-// Dedicated bridge leaves the existing Yanzi connection independent.
-let chatGptSocket = null;
+// ChatGPT helper functions used by local content features.
+// Legacy extension-driven Bridge transport has been removed: Agent execution uses Ego Browser API.
 const CHATGPT_MAX_CONCURRENT_TASKS = 4;
 let chatGptActiveTaskCount = 0;
 const chatGptExecutionWaiters = [];
 const chatGptReservedTabs = new Set();
 const chatGptTabWaiters = new Map();
+const chatGptFocusRestores = new Map();
+
+async function restoreChatGptFocus(taskId, senderTabId) {
+  const entry=chatGptFocusRestores.get(taskId);
+  if(!entry || (senderTabId && entry.targetTabId !== senderTabId))return false;
+  chatGptFocusRestores.delete(taskId);
+  try {
+    const [current]=await chrome.tabs.query({active:true,windowId:entry.windowId});
+    if(current?.id !== entry.targetTabId)return false; // user already moved away
+    if(entry.previousTabId && entry.previousTabId !== entry.targetTabId) {
+      await chrome.tabs.update(entry.previousTabId,{active:true});
+    }
+    return true;
+  } catch{return false;}
+}
+chrome.runtime.onMessage?.addListener?.((msg,sender)=>{
+  if(msg?.type!=='yanzi_chatgpt_sent_focus_restore' ||
+     typeof msg.taskId!=='string')return false;
+  void restoreChatGptFocus(msg.taskId,sender.tab?.id);
+  return false;
+});
 let xhsLocalFeedGenerationPromise = null;
+let xhsLocalFeedGenerationTabId = null;
+let xhsLocalFeedGenerationCancelled = false;
+let xhsLocalFeedGenerationPaused = false;
+const XHS_LOCAL_FEED_STORAGE_KEY = "yanzi.xhs.local-feed.v2";
+
+function cancelXhsLocalFeedGeneration() {
+  xhsLocalFeedGenerationPaused = true;
+  if (!xhsLocalFeedGenerationPromise) return;
+  xhsLocalFeedGenerationCancelled = true;
+  if (xhsLocalFeedGenerationTabId) {
+    void chrome.tabs.remove(xhsLocalFeedGenerationTabId).catch(() => {});
+  }
+}
 const XHS_EVALUATION_TAB_TTL_MS = 60 * 1000;
 const XHS_EVALUATION_ALARM_PREFIX = "xhs-evaluation-close:";
 const chatGptAssetWaiters = new Map();
-const chatGptOperations = new Set(["chatgpt_status", "chatgpt_new_chat", "chatgpt_send", "chatgpt_feedback_send", "chatgpt_subagent_continue", "chatgpt_image", "chatgpt_capture_images", "chatgpt_messages", "chatgpt_diagnostics", "chatgpt_network_probe", "chatgpt_close", "chatgpt_cleanup"]);
+const chatGptOperations = new Set(["chatgpt_verify_delivery", "chatgpt_status", "chatgpt_new_chat", "chatgpt_send", "chatgpt_feedback_send", "chatgpt_subagent_continue", "chatgpt_image", "chatgpt_capture_images", "chatgpt_messages", "chatgpt_diagnostics", "chatgpt_network_probe", "chatgpt_close", "chatgpt_cleanup"]);
 
 async function acquireChatGptExecutionSlot() {
   if (chatGptActiveTaskCount < CHATGPT_MAX_CONCURRENT_TASKS) {
@@ -138,51 +172,6 @@ async function waitChatGptTab(tabId, timeout = 30000) {
   throw new Error("ChatGPT 标签页加载超时");
 }
 
-function cacheChatGptImageAsset(dataUrl) {
-  if (!chatGptSocket || chatGptSocket.readyState !== WebSocket.OPEN) {
-    throw new Error('ChatGPT 工作台连接不可用，无法缓存图片');
-  }
-  if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) {
-    throw new Error('图片缓存数据无效');
-  }
-
-  const requestId = crypto.randomUUID();
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      chatGptAssetWaiters.delete(requestId);
-      reject(new Error('缓存生成图片超时'));
-    }, 60000);
-
-    chatGptAssetWaiters.set(requestId, {
-      resolve: asset => { clearTimeout(timer); resolve(asset); },
-      reject: error => { clearTimeout(timer); reject(error); }
-    });
-
-    try {
-      chatGptSocket.send(JSON.stringify({
-        type: 'asset_upload',
-        requestId,
-        dataUrl
-      }));
-    } catch (error) {
-      clearTimeout(timer);
-      chatGptAssetWaiters.delete(requestId);
-      reject(error);
-    }
-  });
-}
-
-function reportChatGptNetworkProgress(taskId,stage,snapshot=null) {
-  if(typeof taskId!=="string" || !taskId ||
-     chatGptSocket?.readyState!==WebSocket.OPEN) return;
-  try {
-    chatGptSocket.send(JSON.stringify({
-      type:"job_network_progress",taskId,stage,
-      ...(snapshot ? {snapshot}: {})
-    }));
-  } catch { /* Diagnostics must never interrupt task execution. */ }
-}
-
 // Only inspect the original reserved tab after Chrome loses the async response
 // port. Never click Send, inject a prompt, or navigate during reconciliation.
 async function recoverChatGptPageAfterChannelDrop(tabId, prompt, { maxWaitMs = 90000 } = {}) {
@@ -268,6 +257,151 @@ async function recoverChatGptPageAfterChannelDrop(tabId, prompt, { maxWaitMs = 9
   return null;
 }
 
+// Never send or refresh the parent composer when recovering a timeout.
+// Inspect an exact saved conversation and a unique child Job marker.
+async function verifyChatGptDelivery(task) {
+  const result={type:'task_response',taskId:task.taskId,status:'error',data:null};
+  const expected=task.expectedUrl;
+  if(!/^https:\/\/chatgpt\.com\/c\/[A-Za-z0-9_-]{8,120}$/.test(expected||'') ||
+     task.expectedConversationId!==expected.slice('https://chatgpt.com/c/'.length) ||
+     !/^[0-9a-f-]{36}$/i.test(task.marker||''))
+    return {...result,message:'delivery_verification_identity_invalid'};
+  let created=null;
+  const freshRead=task.freshRead===true;
+  const inspectionUrl=freshRead
+    ? expected+'#yanzi-readonly-'+encodeURIComponent(task.taskId||crypto.randomUUID())
+    : expected;
+  try {
+    const tabs=await chrome.tabs.query({url:'https://chatgpt.com/*'});
+    const matches=tabs.filter(tab=>tab.url===expected);
+    if(matches.length>1)throw new Error('delivery_verification_ambiguous_tabs');
+    let tab=freshRead?null:matches[0];
+    if(!tab) {
+      tab=await chrome.tabs.create({url:inspectionUrl,active:false});
+      created=tab.id;
+    }
+    await waitChatGptTab(tab.id,30000);
+    let observation={observed:'not_found',verified:false,replyText:''};
+    for(let attempt=0;attempt<4;attempt++) {
+      const current=await chrome.tabs.get(tab.id);
+      if(current.url!==inspectionUrl || current.discarded)
+        throw new Error('delivery_verification_conversation_changed');
+      const probe=await withChatGptPageScriptTimeout(()=>
+        chrome.scripting.executeScript({target:{tabId:tab.id},func:marker=>{
+          const nodes=[...document.querySelectorAll('[data-message-author-role]')];
+          const canonical=nodes.length?nodes.map(el=>({
+            role:el.getAttribute('data-message-author-role'),
+            text:(el.innerText||el.textContent||'').trim()
+          })):[...document.querySelectorAll('[data-chatgpt-search-unit-key]')]
+            .map(el=>({role:(el.getAttribute('data-chatgpt-search-unit-key')||'').split(':').at(-1),
+              text:(el.innerText||el.textContent||'').trim()}))
+            .filter(e=>['user','assistant'].includes(e.role));
+          const modern=canonical.length?canonical:[...document.querySelectorAll(
+            '[data-user-message-bubble="true"], [class*="MarkdownRoot-"]')]
+            .map(el=>({role:el.matches('[data-user-message-bubble="true"]')?'user':'assistant',
+              text:(el.innerText||el.textContent||'').trim()}));
+          const term='任务 Job：'+marker;
+          const match=canonical.length?canonical:modern;
+          const idx=match.findLastIndex(item=>item.role==='user' && item.text.includes(term));
+          if(idx<0)return {observed:'not_found',verified:false,replyText:''};
+          const nextUser=match.findIndex((item,i)=>i>idx && item.role==='user');
+          const following=match.slice(idx+1,nextUser<0?undefined:nextUser);
+          const reply=following.findLast(item=>item.role==='assistant' && item.text.length>0);
+          const streaming=Boolean(document.querySelector(
+            '[data-testid="stop-button"], [data-is-streaming="true"]'));
+          return reply&&!streaming
+            ?{observed:'completed',verified:true,replyText:reply.text.slice(0,16000)}
+            :{observed:'sent_waiting_reply',verified:false,replyText:reply?.text||''};
+        },args:[task.marker]}),12000);
+      observation=probe?.[0]?.result||observation;
+      if(observation.verified)break;
+      if(attempt<3)await new Promise(r=>setTimeout(r,1200));
+    }
+    return {...result,status:'success',data:{
+      url:expected,conversationId:task.expectedConversationId,marker:task.marker,
+      ...observation,readOnly:true
+    }};
+  }catch(error){return {...result,message:error?.message||String(error)};}
+  finally {
+    if(created) {
+      try {
+        const tab=await chrome.tabs.get(created);
+        if(tab.url===inspectionUrl && !tab.active && !tab.pinned)
+          await chrome.tabs.remove(created);
+      }catch{}
+    }
+  }
+}
+
+// Ego may return an ephemeral tab ID for an inactive background creation.
+// Only before ANY page send, confirm its existence; a missing new tab may be
+// recreated once as active, then restore the user's previous active page.
+// Never use this fallback to resend an uncertain existing conversation.
+// Bounded, ID-only trace for diagnosing tab eviction in Ego. No page text.
+const yanziAgentTabTrace=[];
+function traceAgentTab(event,tabId,detail={}) {
+  yanziAgentTabTrace.push({at:Date.now(),event,tabId,
+    ...detail});
+  if(yanziAgentTabTrace.length>48)yanziAgentTabTrace.splice(0,yanziAgentTabTrace.length-48);
+}
+chrome.tabs?.onRemoved?.addListener?.((tabId,info)=>{
+  traceAgentTab('removed',tabId,{windowClosing:!!info?.isWindowClosing});
+});
+chrome.tabs?.onReplaced?.addListener?.((addedTabId,removedTabId)=>{
+  traceAgentTab('replaced',removedTabId,{newId:addedTabId});
+});
+async function createVerifiedChatGptTab(url) {
+  const first=await chrome.tabs.create({url,active:false});
+  traceAgentTab('created-background',first.id,{windowId:first.windowId});
+  try {
+    await waitChatGptTab(first.id,15000);
+    traceAgentTab('background-ready',first.id);
+    return first;
+  } catch(error) {
+    traceAgentTab('background-error',first.id,{message:String(error?.message||error).slice(0,160)});
+    if(!/No tab with id|tab (?:not found|does not exist)|Invalid tab ID/i
+      .test(String(error?.message||error))) throw error;
+    await new Promise(resolve=>setTimeout(resolve,300));
+    try { await chrome.tabs.get(first.id); throw error; }
+    catch(second) {
+      if(String(second?.message||second)!==String(error?.message||error) &&
+         !/No tab with id|tab (?:not found|does not exist)|Invalid tab ID/i
+            .test(String(second?.message||second))) throw second;
+    }
+    const [previous]=await chrome.tabs.query({active:true,currentWindow:true});
+    const fallback=await chrome.tabs.create({url,active:true});
+    traceAgentTab('created-foreground-fallback',fallback.id,{windowId:fallback.windowId});
+    try {
+      try {
+        await waitChatGptTab(fallback.id,20000);
+        traceAgentTab('foreground-fallback-ready',fallback.id);
+        return fallback;
+      } catch(fallbackError) {
+        if(!/No tab with id|tab (?:not found|does not exist)|Invalid tab ID/i
+          .test(String(fallbackError?.message||fallbackError)) ||
+          typeof chrome.windows?.create!=='function')throw fallbackError;
+        traceAgentTab('foreground-fallback-removed',fallback.id);
+        // Last pre-send recovery: a separate minimized window does not join
+        // Ego's current tab group and must never reuse or navigate user tabs.
+        const isolated=await chrome.windows.create({
+          url,focused:false,state:'minimized',type:'normal'
+        });
+        const isolatedTab=isolated?.tabs?.[0];
+        if(!Number.isInteger(isolatedTab?.id))
+          throw new Error('isolated_agent_window_has_no_tab');
+        traceAgentTab('created-isolated-window',isolatedTab.id,{windowId:isolated.id});
+        await waitChatGptTab(isolatedTab.id,20000);
+        traceAgentTab('isolated-window-ready',isolatedTab.id);
+        return isolatedTab;
+      }
+    } finally {
+      if(previous?.id && previous.id!==fallback.id) {
+        try { await chrome.tabs.update(previous.id,{active:true}); }catch{}
+      }
+    }
+  }
+}
+
 async function runChatGptTask(task) {
   task = {
     ...task,
@@ -285,6 +419,8 @@ async function runChatGptTask(task) {
     data: null
   };
 
+  if(task.action==='chatgpt_verify_delivery')return verifyChatGptDelivery(task);
+
   const needsExecutionSlot = ![
     "chatgpt_status",
     "chatgpt_close",
@@ -296,6 +432,7 @@ async function runChatGptTask(task) {
     : null;
 
   let reservedTabId = null;
+  let activeFocusTaskId = null;
   let networkWatch = null;
   let networkTimer = null;
 
@@ -508,7 +645,7 @@ async function runChatGptTask(task) {
     if (task.action === "chatgpt_subagent_continue" && !tab) {
       // Recover the exact child conversation on a new inactive tab,
       // without taking over any user-controlled tab.
-      tab = await chrome.tabs.create({url:task.expectedUrl,active:false});
+      tab = await createVerifiedChatGptTab(task.expectedUrl);
       created = true;
       await reserveChatGptTab(tab.id);
       reservedTabId = tab.id;
@@ -537,9 +674,16 @@ async function runChatGptTask(task) {
     }
 
     if (freshChat) {
-      const newChatUrl = task.temporary
+      const newChatBase = task.temporary
         ? "https://chatgpt.com/?temporary-chat=true"
         : "https://chatgpt.com/";
+      // Independent Agent conversations must have a distinct navigation URL:
+      // Ego's Clutter Free extension closes duplicate chatgpt.com root tabs.
+      // A fragment changes only tab identity, not ChatGPT server requests.
+      const newChatUrl = task.tabPolicy === "new"
+        ? newChatBase + "#yanzi-agent-" +
+          encodeURIComponent(task.taskId || crypto.randomUUID())
+        : newChatBase;
 
       if (!tab && task.tabPolicy !== "new") {
         for (const candidate of tabs.filter(owns)) {
@@ -570,10 +714,7 @@ async function runChatGptTask(task) {
         tab = await chrome.tabs.update(tab.id, { url: newChatUrl });
         reused = true;
       } else {
-        tab = await chrome.tabs.create({
-          url: newChatUrl,
-          active: false
-        });
+        tab = await createVerifiedChatGptTab(newChatUrl);
         created = true;
         await reserveChatGptTab(tab.id);
         reservedTabId = tab.id;
@@ -624,12 +765,31 @@ async function runChatGptTask(task) {
     if(owns(targetForNetwork) && !targetForNetwork.active)
       networkWatch=globalThis.yanziChatGptNetworkObserver?.start(tab.id)||null;
     if(networkWatch) {
-      reportChatGptNetworkProgress(task.taskId,"watch_started",networkWatch.snapshot());
-      reportChatGptNetworkProgress(task.taskId,"page_dispatch_started",networkWatch.snapshot());
+      globalThis.reportChatGptNetworkProgress?.(task.taskId,"watch_started",networkWatch.snapshot());
+      globalThis.reportChatGptNetworkProgress?.(task.taskId,"page_dispatch_started",networkWatch.snapshot());
       networkTimer=setInterval(()=>{
-        reportChatGptNetworkProgress(task.taskId,"page_dispatch_started",
+        globalThis.reportChatGptNetworkProgress?.(task.taskId,"page_dispatch_started",
           networkWatch?.snapshot()||null);
       },1500);
+    }
+    // Optional active-composer handshake only on tabs owned by Yanzi.
+    // A hidden tab may accept execCommand while keeping React's Send disabled.
+    if(task.focusForSend === true &&
+       ['chatgpt_send','chatgpt_subagent_continue','chatgpt_feedback_send'].includes(task.action)) {
+      const current=await chrome.tabs.get(tab.id);
+      if(owns(current) && !current.active && !current.pinned &&
+         current.status==='complete') {
+        const [previous]=await chrome.tabs.query({active:true,windowId:current.windowId});
+        if(previous?.id && previous.id!==tab.id) {
+          chatGptFocusRestores.set(task.taskId,{
+            previousTabId:previous.id,targetTabId:tab.id,windowId:current.windowId
+          });
+          activeFocusTaskId=task.taskId;
+          await chrome.tabs.update(tab.id,{active:true});
+          await chrome.windows.update(current.windowId,{focused:true});
+          await new Promise(resolve=>setTimeout(resolve,500));
+        }
+      }
     }
     let response;
     try {
@@ -637,6 +797,54 @@ async function runChatGptTask(task) {
         type: "yanzi_chatgpt_task",
         task
       });
+      // Reload only a Yanzi-owned, inactive NEW conversation whose content
+      // script explicitly proved that no send was attempted. Never retry a
+      // failed/uncertain in-flight response, manual tab or bound parent chat.
+      let accountRefreshes = 0;
+      const isPreSendAccountFailure = item =>
+        item?.status === "error" && item.errorCode === "account_load_failed" &&
+        item.deliveryPhase === "before_send";
+      while (isPreSendAccountFailure(response) && accountRefreshes < 2) {
+        const current = await chrome.tabs.get(tab.id);
+        if (!freshChat || task.tabId != null || !owns(current) ||
+            current.active || current.pinned || current.discarded ||
+            !/^https:\/\/chatgpt\.com\//.test(current.url || "")) break;
+        // Re-check the actual page, rather than trusting a stale response.
+        const [probe] = await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: () => {
+            if (document.querySelector('#prompt-textarea, main [contenteditable="true"][role="textbox"]')) return false;
+            const main = document.querySelector("main") || document.body;
+            return /无法加载你的账户|无法加载您的账户|Unable to load your account|Couldn't load your account|We couldn't load your account/i
+              .test((main?.innerText || main?.textContent || "").slice(0, 1200));
+          }
+        });
+        if (probe?.result !== true) break;
+        await new Promise(resolve => setTimeout(resolve, 1200 * (accountRefreshes + 1)));
+        const beforeReload = await chrome.tabs.get(tab.id);
+        if (beforeReload.active || beforeReload.pinned || !owns(beforeReload) ||
+            beforeReload.url !== current.url) break;
+        await chrome.tabs.reload(tab.id);
+        accountRefreshes++;
+        await waitChatGptTab(tab.id);
+        await withChatGptPageScriptTimeout(() => chrome.scripting.executeScript({
+          target: { tabId: tab.id }, files: ["chatgpt-content.js"]
+        }), 12000);
+        response = await chrome.tabs.sendMessage(tab.id, {
+          type: "yanzi_chatgpt_task", task
+        });
+      }
+      if (accountRefreshes) {
+        response = {
+          ...response,
+          data: { ...(response?.data || {}), accountPageRecovery: { refreshes: accountRefreshes,
+            recovered: response?.status === "success" } },
+          ...(isPreSendAccountFailure(response) ? {
+            message: "ChatGPT 账户页面自动刷新 " + accountRefreshes +
+              " 次后仍加载失败；未发送消息，请检查浏览器账户状态"
+          } : {})
+        };
+      }
     } catch (error) {
       if (task.action !== "chatgpt_send" ||
           !/message channel closed before a response|message port closed before a response|Extension context invalidated/i.test(error?.message || ""))
@@ -653,7 +861,7 @@ async function runChatGptTask(task) {
     }
 
     if(networkTimer!==null){clearInterval(networkTimer);networkTimer=null;}
-    if(networkWatch)reportChatGptNetworkProgress(task.taskId,"page_reply_received",
+    if(networkWatch)globalThis.reportChatGptNetworkProgress?.(task.taskId,"page_reply_received",
       networkWatch.snapshot());
     const networkTrace=networkWatch?.stop()||null;
     if (!response) {
@@ -752,14 +960,26 @@ async function runChatGptTask(task) {
     };
   } catch (error) {
     const networkTrace=networkWatch?.stop()||null;
+    let tabSnapshot=[];
+    if(/No tab with id|Invalid tab ID|tab does not exist/i.test(String(error?.message||error))){
+      try {
+        tabSnapshot=(await chrome.tabs.query({url:'https://chatgpt.com/*'})).map(t=>({
+          id:t.id,active:!!t.active,discarded:!!t.discarded,status:t.status
+        })).slice(-15);
+      }catch{}
+    }
     return {
       ...result,
-      data:networkTrace ? {network:networkTrace}:null,
+      data:{...(networkTrace ? {network:networkTrace}:{}),
+        tabTrace:yanziAgentTabTrace.slice(-24),tabSnapshot},
       message: error?.message || String(error)
     };
   } finally {
     if(networkTimer!==null)clearInterval(networkTimer);
     networkWatch?.stop();
+    if(activeFocusTaskId) {
+      await restoreChatGptFocus(activeFocusTaskId,null);
+    }
     if (reservedTabId) {
       releaseChatGptTab(reservedTabId);
     }
@@ -781,6 +1001,7 @@ async function runIsolatedChatGptTask(task) {
     if (!chatGptOperations.has(task.action)) {
       throw new Error("不支持的 ChatGPT 操作");
     }
+    if (task.isCancelled?.()) throw new Error("兴趣生成已暂停");
 
     const newChatUrl = task.temporary === false
       ? "https://chatgpt.com/"
@@ -790,8 +1011,11 @@ async function runIsolatedChatGptTask(task) {
       url: newChatUrl,
       active: false
     });
+    task.onTabCreated?.(tab.id);
+    if (task.isCancelled?.()) throw new Error("兴趣生成已暂停");
 
     await waitChatGptTab(tab.id);
+    if (task.isCancelled?.()) throw new Error("兴趣生成已暂停");
     await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       files: ["chatgpt-content.js"]
@@ -835,13 +1059,8 @@ async function runIsolatedChatGptTask(task) {
   }
 }
 
-function normalizeXhsGeneratedNotes(value, requestedCount, frontier = []) {
+function normalizeXhsGeneratedNotes(value, requestedCount) {
   const source = Array.isArray(value?.notes) ? value.notes : [];
-  const allowedParentIds = new Set(
-    (Array.isArray(frontier) ? frontier : [])
-      .map(item => String(item?.id || "").trim())
-      .filter(Boolean)
-  );
   const seen = new Set();
   const notes = [];
 
@@ -849,8 +1068,7 @@ function normalizeXhsGeneratedNotes(value, requestedCount, frontier = []) {
     const title = String(item?.title || "").replace(/\s+/g, " ").trim().slice(0, 80);
     const body = String(item?.body || "").replace(/\s+/g, " ").trim().slice(0, 500);
     const topic = String(item?.topic || "").replace(/\s+/g, " ").trim().slice(0, 40);
-    const parentNodeId = String(item?.parentNodeId || "").trim().slice(0, 120);
-    if (!title || !body || !topic || !allowedParentIds.has(parentNodeId)) continue;
+    if (!title || !body || !topic) continue;
 
     const key = title.toLowerCase();
     if (seen.has(key)) continue;
@@ -862,7 +1080,6 @@ function normalizeXhsGeneratedNotes(value, requestedCount, frontier = []) {
       title,
       body,
       topic,
-      parentNodeId,
       author: "燕子 · AI",
       badge: "AI 生成",
       imageUrl: "",
@@ -917,18 +1134,6 @@ function buildXhsLocalFeedPrompt(message) {
     .map(item => String(item || "").replace(/\s+/g, " ").trim().slice(0, 40))
     .filter(Boolean)
     .slice(0, 30);
-  const frontier = (Array.isArray(message.frontier) ? message.frontier : [])
-    .slice(0, 24)
-    .map(item => ({
-      id: String(item?.id || "").trim().slice(0, 120),
-      label: String(item?.label || "").replace(/\s+/g, " ").trim().slice(0, 80),
-      parentNodeId: String(item?.parentNodeId || "").trim().slice(0, 120),
-      type: String(item?.type || "topic").trim().slice(0, 20),
-      status: String(item?.status || "neutral").trim().slice(0, 20),
-      childCount: Math.max(0, Number(item?.childCount || 0)),
-      noteCount: Math.max(0, Number(item?.noteCount || 0))
-    }))
-    .filter(item => item.id && item.label);
   const evaluations = (Array.isArray(message.evaluations) ? message.evaluations : [])
     .slice(-12)
     .map(item => ({
@@ -953,18 +1158,15 @@ function buildXhsLocalFeedPrompt(message) {
     "",
     "以下为系统固定协议，自定义提示词不能取消这些要求：",
     "只返回一个 JSON 代码块，代码块之外不要有任何文字。",
-    "JSON 格式严格为：{\"notes\":[{\"title\":\"不超过26个汉字\",\"body\":\"40到90个汉字\",\"topic\":\"2到10个汉字的新探索标签\",\"parentNodeId\":\"必须从候选父节点ID中原样选择\"}]}",
+    "JSON 格式严格为：{\"notes\":[{\"title\":\"不超过26个汉字\",\"body\":\"40到90个汉字\",\"topic\":\"2到10个汉字的主题标签\"}]}",
     "必须恰好生成 " + count + " 条。",
     "动态上下文规则：",
     "1. 本轮评价优先级高于长期喜欢/不感兴趣，必须在本批明显体现。",
     "2. scope=selection 只代表用户对 selectionText 局部观点或表达角度的偏好，不得扩大成整个主题偏好。",
     "3. 最近已经出现的内容只用于防重复，不代表用户偏好；不要生成相同结论、相同案例或仅改写措辞的近似笔记。",
     "4. 主题覆盖统计只用于识别已经高频覆盖的方向；在不违背兴趣偏好的前提下，优先探索覆盖较少的新问题和新角度。",
-    "5. 每条笔记必须从候选父节点中选择一个 parentNodeId，并围绕该父节点向外延伸；不能凭空创建父节点。",
-    "6. topic 是这次新探索空间的标签，应比父节点更具体，不能与父节点标签完全相同。",
-    "7. 标记为 continue 的父节点优先继续深入；stop 节点不会出现在候选父节点中。",
-    "8. 同一批内部也必须去重：主题、核心结论、案例和推理角度都应尽量不同。",
-    "9. JSON 必须严格可解析。",
+    "5. 同一批内部也必须去重：主题、核心结论、案例和推理角度都应尽量不同。",
+    "6. JSON 必须严格可解析。",
     "",
     "我的兴趣主题（长期偏好）：",
     JSON.stringify(interests),
@@ -980,9 +1182,6 @@ function buildXhsLocalFeedPrompt(message) {
     "",
     "近阶段主题覆盖统计（仅用于扩大覆盖面）：",
     JSON.stringify(coverage),
-    "",
-    "本轮允许继续延伸的候选父节点（parentNodeId 只能从这里选择）：",
-    JSON.stringify(frontier),
     "",
     "最近已经出现的标题/主题（仅用于防重）：",
     JSON.stringify(recent)
@@ -1177,9 +1376,12 @@ async function generateXhsLocalFeedNotes(message) {
     action: "chatgpt_send",
     prompt: buildXhsLocalFeedPrompt({ ...message, count: requestedCount }),
     temporary: true,
-    timeoutSeconds: 360
+    timeoutSeconds: 360,
+    isCancelled: () => xhsLocalFeedGenerationCancelled,
+    onTabCreated: tabId => { xhsLocalFeedGenerationTabId = tabId; }
   });
 
+  if (xhsLocalFeedGenerationCancelled) throw new Error("兴趣生成已暂停");
   if (response?.status !== "success") {
     throw new Error(response?.message || "ChatGPT 本地笔记生成失败");
   }
@@ -1187,7 +1389,6 @@ async function generateXhsLocalFeedNotes(message) {
   const notes = normalizeXhsGeneratedNotes(
     response.data?.json,
     requestedCount,
-    message.frontier
   );
   if (!notes.length) {
     throw new Error(
@@ -1205,14 +1406,6 @@ async function generateXhsLocalFeedNotes(message) {
       likedCount: Array.isArray(message.liked) ? message.liked.length : 0,
       dislikedCount: Array.isArray(message.disliked) ? message.disliked.length : 0,
       recentCount: Array.isArray(message.recent) ? message.recent.length : 0,
-      frontier: (Array.isArray(message.frontier) ? message.frontier : [])
-        .slice(0, 24)
-        .map(item => ({
-          id: String(item?.id || "").trim(),
-          label: String(item?.label || "").trim(),
-          status: String(item?.status || "neutral").trim()
-        }))
-        .filter(item => item.id && item.label),
       coverage: (Array.isArray(message.coverage) ? message.coverage : [])
         .slice(0, 12)
         .map(item => ({
@@ -1250,22 +1443,45 @@ function queueXhsLocalFeedGeneration(message) {
     return xhsLocalFeedGenerationPromise;
   }
 
+  xhsLocalFeedGenerationCancelled = false;
+  xhsLocalFeedGenerationTabId = null;
   const run = generateXhsLocalFeedNotes(message);
   xhsLocalFeedGenerationPromise = run.finally(() => {
     xhsLocalFeedGenerationPromise = null;
+    xhsLocalFeedGenerationTabId = null;
   });
   return xhsLocalFeedGenerationPromise;
 }
 
+chrome.storage?.onChanged?.addListener?.((changes, areaName) => {
+  if (areaName !== "local" || !changes?.[XHS_LOCAL_FEED_STORAGE_KEY]?.newValue) return;
+  xhsLocalFeedGenerationPaused =
+    changes[XHS_LOCAL_FEED_STORAGE_KEY].newValue.preferences?.generationEnabled === false;
+  if (xhsLocalFeedGenerationPaused) cancelXhsLocalFeedGeneration();
+});
+
 chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
   if (message?.type === "yanzi_xhs_generate_local_notes") {
-    queueXhsLocalFeedGeneration(message)
+    chrome.storage.local.get(XHS_LOCAL_FEED_STORAGE_KEY)
+      .then(stored => {
+        if (xhsLocalFeedGenerationPaused ||
+            stored?.[XHS_LOCAL_FEED_STORAGE_KEY]?.preferences?.generationEnabled === false) {
+          throw new Error("兴趣自动生成已暂停");
+        }
+        return queueXhsLocalFeedGeneration(message);
+      })
       .then(data => sendResponse({ ok: true, ...data }))
       .catch(error => sendResponse({
         ok: false,
         error: error?.message || String(error)
       }));
     return true;
+  }
+
+  if (message?.type === "yanzi_xhs_cancel_local_notes") {
+    cancelXhsLocalFeedGeneration();
+    sendResponse({ ok: true });
+    return;
   }
 
   if (message?.type === "yanzi_xhs_evaluate_note") {
@@ -1288,119 +1504,3 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
     return true;
   }
 });
-
-
-// Feedback origin must be captured from the actual ChatGPT page, not guessed
-// from whichever tab happens to be active when an asynchronous job completes.
-const CHATGPT_FEEDBACK_ORIGIN_MENU = "yanzi-chatgpt-bind-feedback-origin";
-function installChatGptFeedbackOriginMenu() {
-  chrome.contextMenus.remove(CHATGPT_FEEDBACK_ORIGIN_MENU, () => {
-    void chrome.runtime.lastError;
-    chrome.contextMenus.create({
-      id: CHATGPT_FEEDBACK_ORIGIN_MENU,
-      title: "燕子：将此 ChatGPT 对话设为开发反馈回传目标",
-      contexts: ["page"],
-      documentUrlPatterns: ["https://chatgpt.com/*"]
-    }, () => { void chrome.runtime.lastError; });
-  });
-}
-chrome.runtime.onInstalled.addListener(installChatGptFeedbackOriginMenu);
-installChatGptFeedbackOriginMenu();
-
-chrome.contextMenus.onClicked.addListener((info, tab) => {
-  if (info.menuItemId !== CHATGPT_FEEDBACK_ORIGIN_MENU) return;
-  void (async () => {
-    const sendStatus = async value => {
-      await chrome.storage.local.set({ chatgptFeedbackOriginStatus: value });
-      await chrome.action.setBadgeText({ text: value.pending ? "…" : value.ok ? "↩" : "!" });
-      await chrome.action.setBadgeBackgroundColor({ color: value.pending ? "#687480" : value.ok ? "#287B54" : "#B74B4B" });
-    };
-    try {
-      if (!tab?.id || !/^https:\/\/chatgpt\.com\/c\/[A-Za-z0-9_-]{8,120}\/?(?:[?#].*)?$/.test(tab.url || "")) {
-        throw new Error("请先进入已有的正式 ChatGPT 对话，再执行绑定");
-      }
-      if (chatGptSocket?.readyState !== WebSocket.OPEN)
-        throw new Error("ChatGPT 本地工作台连接不可用");
-      const [probe] = await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: () => ({
-          url: location.href,
-          temporary: Boolean(
-            document.querySelector('button[aria-label="Save chat"], [data-testid="save-chat-button"]') ||
-            (document.body?.innerText || "").slice(0, 1200).includes("Temporary Chat"))
-        })
-      });
-      const actual = probe?.result;
-      if (!actual || actual.temporary || actual.url.split(/[?#]/)[0].replace(/\/$/,"") !==
-          tab.url.split(/[?#]/)[0].replace(/\/$/,"")) {
-        throw new Error("对话位置或临时模式无法确认，绑定已取消");
-      }
-      const requestId=crypto.randomUUID();
-      chatGptSocket.send(JSON.stringify({
-        type:"origin_bind",requestId,tabId:tab.id,url:actual.url,
-        conversationId:new URL(actual.url).pathname.split("/")[2],
-        temporary:false
-      }));
-      await sendStatus({ok:true,pending:true,tabId:tab.id,message:"已提交绑定请求，等待工作台确认"});
-    } catch(error) {
-      await sendStatus({ok:false,message:error?.message || String(error)});
-    }
-  })();
-});
-
-function connectChatGptBridge() {
-  if (chatGptSocket && chatGptSocket.readyState < 2) return;
-  const socket = new WebSocket("ws://127.0.0.1:53921/v1/browser/ws");
-  chatGptSocket = socket;
-  socket.onopen = () => {
-    chrome.storage.local.set({ chatgptBridgeStatus: "connected" });
-    socket.send(JSON.stringify({ type: "register", client: "yanzi-chatgpt", version: chrome.runtime.getManifest().version }));
-  };
-  socket.onmessage = async event => {
-    try {
-      const task = JSON.parse(event.data);
-      if (task.type === 'origin_bind_ack') {
-        const ok = task.ok === true;
-        await chrome.storage.local.set({
-          chatgptFeedbackOriginStatus: ok
-            ? {ok:true,pending:false,binding:task.binding,at:Date.now()}
-            : {ok:false,pending:false,message:task.error,at:Date.now()}
-        });
-        await chrome.action.setBadgeText({text:ok ? "↩" : "!"});
-        await chrome.action.setBadgeBackgroundColor({color:ok ? "#287B54" : "#B74B4B"});
-        return;
-      }
-      if (task.type === 'asset_response') {
-        const waiter = chatGptAssetWaiters.get(task.requestId);
-        if (!waiter) return;
-        chatGptAssetWaiters.delete(task.requestId);
-        if (task.ok) waiter.resolve(task.asset);
-        else waiter.reject(new Error(task.error || '图片缓存失败'));
-        return;
-      }
-      if (task.type !== "task_request") return;
-      const response = await runChatGptTask(task);
-      if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(response));
-    } catch (error) { console.warn("ChatGPT bridge:", error.message); }
-  };
-  socket.onclose = () => {
-    if (chatGptSocket !== socket) return;
-    chatGptSocket = null;
-    for (const [requestId, waiter] of chatGptAssetWaiters) {
-      waiter.reject(new Error('ChatGPT 工作台连接已断开'));
-      chatGptAssetWaiters.delete(requestId);
-    }
-    chrome.storage.local.set({ chatgptBridgeStatus: "disconnected" });
-    setTimeout(connectChatGptBridge, 3000);
-  };
-  socket.onerror = () => socket.close();
-}
-setInterval(() => {
-  if (chatGptSocket?.readyState === WebSocket.OPEN) chatGptSocket.send(JSON.stringify({ type: "ping" }));
-  else connectChatGptBridge();
-}, 20000);
-chrome.alarms.create("chatgptBridgeReconnect", { periodInMinutes: 0.5 });
-chrome.alarms.onAlarm.addListener(alarm => {
-  if (alarm.name === "chatgptBridgeReconnect") connectChatGptBridge();
-});
-connectChatGptBridge();

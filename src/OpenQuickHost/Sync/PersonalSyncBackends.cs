@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Net.Http.Headers;
@@ -304,6 +304,29 @@ internal sealed class GitHubPersonalSyncBackend : PersonalSyncBackendBase
         _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
         _httpClient.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");
         _httpClient.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("Yanzi", "0.1"));
+    }
+
+    /// <summary>Disaster-recovery copies must never be placed in public or archived GitHub repositories.</summary>
+    internal async Task VerifyPrivateRepositoryAsync(CancellationToken cancellationToken = default)
+    {
+        var owner = await ResolveOwnerAsync(cancellationToken);
+        using var response = await _httpClient.GetAsync(
+            $"https://api.github.com/repos/{Uri.EscapeDataString(owner)}/{Uri.EscapeDataString(_config.Repo)}",
+            cancellationToken);
+        if (!response.IsSuccessStatusCode)
+            throw await PersonalSyncFailure.CreateFailureAsync("GitHub", response, cancellationToken);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(cancellationToken));
+        AssertPrivateBackupRepository(document.RootElement);
+    }
+
+    internal static void AssertPrivateBackupRepository(JsonElement repository)
+    {
+        if (!repository.TryGetProperty("private", out var privacy) ||
+            privacy.ValueKind != JsonValueKind.True)
+            throw new InvalidOperationException("Disaster-backup repository must be private.");
+        if (repository.TryGetProperty("archived", out var archived) &&
+            archived.ValueKind == JsonValueKind.True)
+            throw new InvalidOperationException("Archived repositories cannot receive disaster backups.");
     }
 
     public override string DisplayRoot => $"github://{GetConfiguredOwnerDisplay()}/{_config.Repo}@{ResolveBranch()}";
@@ -802,6 +825,13 @@ internal sealed class GiteePersonalSyncBackend : PersonalSyncBackendBase
         }
         var rawJson = await response.Content.ReadAsStringAsync(cancellationToken);
         if (string.IsNullOrWhiteSpace(rawJson) || rawJson.Trim() == "[]") return null;
+        if (GiteeContentPayload.IsDirectoryResponse(rawJson))
+        {
+            // Gitee returns a JSON array for a directory, even for a file-style read.
+            // The requested key has no file content; its child files remain untouched.
+            CloudSyncDiagnostics.Log("GiteeBackend", "Read returned directory listing", ("path", path));
+            return null;
+        }
         var payload = JsonSerializer.Deserialize<GiteeContentPayload>(rawJson, JsonOptions);
         var bytes = DecodeBase64Content(payload?.Content);
         CloudSyncDiagnostics.Log("GiteeBackend", "Read completed", ("path", path), ("bytes", bytes.Length), ("sha", payload?.Sha));
@@ -961,6 +991,8 @@ internal sealed class GiteePersonalSyncBackend : PersonalSyncBackendBase
             return null;
         }
 
+        if (GiteeContentPayload.IsDirectoryResponse(rawJson))
+            throw new System.IO.InvalidDataException($"Gitee path is a directory, not a writable file: {path}");
         var payload = JsonSerializer.Deserialize<GiteeContentPayload>(rawJson, JsonOptions);
         return payload?.Sha;
     }
@@ -1764,6 +1796,17 @@ internal sealed class GitProviderViewerPayload
 
 internal sealed class GiteeContentPayload
 {
+    // A directory response is an array of entries, not a file envelope.
+    internal static bool IsDirectoryResponse(string rawJson)
+    {
+        foreach (var ch in rawJson)
+        {
+            if (char.IsWhiteSpace(ch)) continue;
+            return ch == '[';
+        }
+        return false;
+    }
+
     public string? Content { get; set; }
 
     public string? Sha { get; set; }

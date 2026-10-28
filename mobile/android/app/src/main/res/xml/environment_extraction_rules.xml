@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <data-extraction-rules>
-    <cloud-backup><exclude domain="sharedpref" path="mobile-environment.xml" /></cloud-backup>
-    <device-transfer><exclude domain="sharedpref" path="mobile-environment.xml" /></device-transfer>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="mobile-environment.xml" />
+        <exclude domain="external" path="Music/VoiceMemory/" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="mobile-environment.xml" />
+        <exclude domain="external" path="Music/VoiceMemory/" />
+    </device-transfer>
 </data-extraction-rules>

@@ -29,8 +29,10 @@ public static class ExtensionInstallService
             await using var stream = new MemoryStream(packageBytes, writable: false);
             using (var archive = new ZipArchive(stream, ZipArchiveMode.Read))
             {
+                ExtensionGitSafety.ValidateArchiveEntries(archive);
                 archive.ExtractToDirectory(tempDirectory, overwriteFiles: true);
             }
+            ExtensionGitSafety.RemoveTransportMetadata(tempDirectory);
 
             var manifestPath = Path.Combine(tempDirectory, "manifest.json");
             if (!File.Exists(manifestPath))
@@ -76,9 +78,15 @@ public static class ExtensionInstallService
                 throw new InvalidOperationException($"扩展 ID 不匹配。协议里是 {requestedExtensionId}，扩展包里是 {manifest.Id}。");
             }
 
+            if (!(manifest.DevicePolicy ?? new LocalExtensionDevicePolicy())
+                    .AllowsDevice(ExtensionDevicePolicy.CurrentDeviceId))
+                throw new InvalidOperationException("此小程序仅支持指定设备，当前设备不会安装。");
+
             manifest = await LocalizeRemoteIconAsync(tempDirectory, manifest, cancellationToken, privateIconDownload);
 
-            var targetDirectory = Path.Combine(HostAssets.ExtensionsPath, manifest.Id);
+            var targetDirectory = SyncPackageSafety.ResolveExtensionDirectory(HostAssets.ExtensionsPath, manifest.Id);
+            if (ExtensionGitSafety.HandleIncoming(targetDirectory, packageBytes, "账号小程序升级"))
+                return new ExtensionInstallResult(manifest.Id, manifest.Name, manifest.Version ?? "0.1.0", targetDirectory);
             // 升级采用“旧目录先挪走 → 新目录就位 → 删旧”的顺序：直接 Delete 后 Move 之间
             // 一旦崩溃/断电，扩展会凭空消失且无任何恢复手段。
             // 备份目录用点前缀命名，扩展目录扫描会跳过（见 LocalExtensionCatalog）。

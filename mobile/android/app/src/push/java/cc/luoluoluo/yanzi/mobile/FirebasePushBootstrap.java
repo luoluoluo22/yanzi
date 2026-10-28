@@ -20,6 +20,9 @@ public final class FirebasePushBootstrap {
                 .setApiKey(selected.getJSONArray("api_key").getJSONObject(0).getString("current_key"))
                 .setProjectId(config.getJSONObject("project_info").getString("project_id"))
                 .setGcmSenderId(config.getJSONObject("project_info").getString("project_number")).build());
-        FirebaseMessaging.getInstance().getToken().addOnSuccessListener(token -> MobilePushSupport.registerToken(context, "fcm", token));
+        FirebaseMessaging.getInstance().getToken().addOnSuccessListener(token -> {
+            android.util.Log.i("YanziPush", "FCM token generated length=" + token.length());
+            MobilePushSupport.registerToken(context, "fcm", token);
+        }).addOnFailureListener(error -> android.util.Log.w("YanziPush", "FCM token failed: " + error.getClass().getSimpleName()));
     }
 }

@@ -1,5 +1,6 @@
 (() => {
   let busy = false;
+  let lastEditorInputStatus = null;
   const inputSelector = '#prompt-textarea, main [contenteditable="true"][role="textbox"]';
   const sendSelector = 'button[data-testid="send-button"], button[aria-label="Send prompt"], button[aria-label="发送提示"], main button[aria-label="发送"], main button[aria-label="Send"]';
   const stopSelector = 'button[data-testid="stop-button"], button[aria-label="Stop generating"], button[aria-label="停止生成"], main button[aria-label="停止"], main button[aria-label="Stop"]';
@@ -187,7 +188,9 @@
     // Require an explicit action control that ChatGPT exposes only after a turn is settled.
     const actionLabels = /^(复制|Copy|重新生成|Regenerate|重试|Retry|赞|踩|Good response|Bad response|Share|分享|评价回复)$/i;
     return Array.from((document.querySelector('main') || document).querySelectorAll('button')).some(button =>
-      actionLabels.test((button.getAttribute('aria-label') || button.textContent || '').trim())
+      (actionLabels.test((button.getAttribute('aria-label') || button.textContent || '').trim()) ||
+        /^(?:复制消息|重新生成回复|朗读|Copy message|Regenerate response|Read aloud)$/i.test(
+          (button.getAttribute('aria-label') || button.textContent || '').trim()))
     );
   }
   function temporaryEvidence() {
@@ -205,6 +208,18 @@
     const saveControl = Array.from(document.querySelectorAll('button')).find(el => !el.closest('[data-message-author-role], [data-chatgpt-search-unit-key]') && /^(Save chat|保存聊天|保存对话)$/.test(el.getAttribute('aria-label') || el.textContent.trim()));
     if (saveControl && new URL(location.href).searchParams.get('temporary-chat') === 'true') return 'save-chat-control';
     return null;
+  }
+  // A verified temporary chat can lose its heading/button after a reply.
+  // Only relax post-send DOM checks; before sending we still require DOM proof.
+  function verifiedTemporaryReplyContext(confirmedAtSend, sentConversationId) {
+    if (!confirmedAtSend) return false;
+    try {
+      const url = new URL(location.href);
+      const currentConversationId = url.pathname.match(/^\/c\/([^/]+)/)?.[1] || null;
+      return url.origin === "https://chatgpt.com"
+        && url.searchParams.get("temporary-chat") === "true"
+        && (!sentConversationId || currentConversationId === sentConversationId);
+    } catch { return false; }
   }
   const meta = () => ({ url: location.href, conversationId: location.pathname.match(/^\/c\/([^/]+)/)?.[1] || null, visibility: document.visibilityState, temporary: Boolean(temporaryEvidence()), temporaryEvidence: temporaryEvidence(), automationRevision: '2026-10-06-send-ack-watchdog-v2' });
   const pageSnapshots = () => {
@@ -375,6 +390,17 @@
 
   const diagnostics = () => ({
     ...meta(), title: document.title, readyState: document.readyState,
+    editor: (() => {
+      const box=document.querySelector(inputSelector);
+      const button=document.querySelector(sendSelector);
+      return {
+        visibility:document.visibilityState,documentHasFocus:document.hasFocus(),
+        focusedEditor:Boolean(box && document.activeElement===box),
+        editorChars:(box?.value || box?.innerText || box?.textContent || '').length,
+        sendPresent:Boolean(button),sendDisabled:button?.disabled ?? null,
+        lastInsertion:lastEditorInputStatus
+      };
+    })(),
     inputs: Array.from(document.querySelectorAll('textarea, [contenteditable="true"]')).map(el => ({ tag: el.tagName, id: el.id, role: el.getAttribute('role'), placeholder: el.getAttribute('placeholder') })),
     buttons: Array.from((document.querySelector('main') || document).querySelectorAll('button')).map(el => ({ label: el.getAttribute('aria-label'), testId: el.getAttribute('data-testid'), disabled: el.disabled })).slice(-20),
     notice: document.querySelector(inputSelector) ? '' : (document.querySelector('main')?.innerText || document.body.innerText || '').slice(0, 600)
@@ -392,6 +418,15 @@
   if (globalThis.__yanziChatGptInstalled) return;
   globalThis.__yanziChatGptInstalled = true;
   function checkPage() {
+    // Identify the account failure screen before waiting for a missing composer.
+    const main = document.querySelector('main') || document.body;
+    const accountNotice = (main?.innerText || main?.textContent || '').slice(0, 1200);
+    if (!document.querySelector(inputSelector) &&
+        /无法加载你的账户|无法加载您的账户|Unable to load your account|Couldn't load your account|We couldn't load your account/i.test(accountNotice)) {
+      const error = new Error('ChatGPT 无法加载账户页面，请刷新后重试；如持续失败，请检查登录状态');
+      error.code = 'account_load_failed';
+      throw error;
+    }
     if (document.querySelector('a[href*="/auth/login"], button[data-testid="login-button"]')) throw new Error("ChatGPT 未登录，请在浏览器中登录");
     if (document.querySelector('iframe[src*="challenges.cloudflare.com"], #challenge-running')) throw new Error("ChatGPT 需要人工完成验证");
   }
@@ -511,6 +546,8 @@
   async function execute(task) {
     if (busy) throw new Error("页面正在执行其他请求");
     busy = true;
+    // Only a strictly pre-send account error can be safely retried.
+    let messageSubmitted = false;
     try {
       const defaultTimeoutSeconds = task.action === "chatgpt_image" ? 900 : 180;
       const requestedTimeoutSeconds = Number(task.timeoutSeconds);
@@ -562,14 +599,34 @@
         // ChatGPT restores the same draft across new tabs. Submit only the exact requested text.
       } else if (input.tagName === "TEXTAREA") {
         Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(input, task.prompt);
+        input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: task.prompt }));
       } else {
-        input.replaceChildren(...task.prompt.split("\n").map(line => {
-          const p = document.createElement("p");
-          p.textContent = line || "\u200b";
-          return p;
-        }));
+        // ChatGPT uses a stateful contenteditable editor (Lexical/ProseMirror).
+        // Direct replaceChildren + untrusted InputEvent can leave Send disabled
+        // even though text is visibly present. Browser-native insertText emits
+        // the editor's real input event and updates its application state.
+        input.focus();
+        let nativeInserted = false;
+        try {
+          if (typeof document.execCommand === "function")
+            nativeInserted = document.execCommand("insertText", false, task.prompt) === true;
+        } catch { /* older WebViews may not support native contenteditable input */ }
+        if (!nativeInserted) {
+          input.replaceChildren(...task.prompt.split("\n").map(line => {
+            const p = document.createElement("p");
+            p.textContent = line || "\u200b";
+            return p;
+          }));
+          input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: task.prompt }));
+        }
+        lastEditorInputStatus={
+          nativeAttempted:typeof document.execCommand==='function',
+          nativeSucceeded:nativeInserted,
+          focusedEditor:document.activeElement===input,
+          insertedChars:(input.innerText||input.textContent||'').length,
+          sendDisabledImmediately:document.querySelector(sendSelector)?.disabled??null
+        };
       }
-      input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: task.prompt }));
 
       const uploadedFiles = await uploadAttachments(task.attachments, deadline);
 
@@ -578,12 +635,19 @@
         return button && !button.disabled ? button : null;
       }, Math.min(deadline, Date.now() + 10000), "等待发送按钮");
       if (task.temporary === true && !temporaryEvidence()) throw new Error('临时聊天状态已改变，未发送消息');
+      const confirmedTemporaryAtSend = task.temporary === true && Boolean(temporaryEvidence());
       if (["chatgpt_feedback_send", "chatgpt_subagent_continue"].includes(task.action)) {
         const currentId = location.pathname.match(/^\/c\/([^/]+)/)?.[1];
         if (currentId !== task.expectedConversationId || temporaryEvidence())
           throw new Error("发送前对话已切换，反馈未发送");
       }
+      messageSubmitted = true;
       send.click();
+      if (task.focusForSend === true && task.taskId) {
+        // Inform the privileged extension to restore the previous active tab.
+        // This event happens only after the click: never trigger a resend.
+        void chrome.runtime.sendMessage({ type:'yanzi_chatgpt_sent_focus_restore', taskId:task.taskId }).catch(()=>{});
+      }
       await waitFor(() => {
         const currentMessages = messages();
         if (currentMessages.filter(m => m.role === "user").length > userCount) return true;
@@ -593,6 +657,7 @@
         const currentDraft = (currentInput?.value || currentInput?.innerText || "").trim();
         return currentDraft ? null : true;
       }, Math.min(deadline, Date.now() + 15000), "确认消息已发送");
+      const sentConversationId = location.pathname.match(/^\/c\/([^/]+)/)?.[1] || null;
       let last = "", lastImages = "", changedAt = Date.now();
       const durableTask = Number(task.timeoutSeconds) === 0;
       const stalledForMs = 5 * 60 * 1000;
@@ -647,11 +712,18 @@
           hasExpectedPayload &&
           !generating &&
           replyHasCompletionControls() &&
-          Date.now() - changedAt >= 3000
+          Date.now() - changedAt >= 1500
         ) {
-          if (task.temporary === true && !temporaryEvidence()) throw new Error('回复完成后无法确认临时状态，已保留页面供检查');
+          const replyModeEvidence = temporaryEvidence();
+          const verifiedSession = task.temporary === true
+            && verifiedTemporaryReplyContext(confirmedTemporaryAtSend, sentConversationId);
+          if (task.temporary === true && !replyModeEvidence
+              && !verifiedSession)
+            throw new Error('回复完成后临时聊天会话身份不符，已保留页面供检查');
           return {
             ...meta(),
+            temporary: Boolean(replyModeEvidence || verifiedSession),
+            temporaryEvidence: replyModeEvidence || (verifiedSession ? 'verified-send-url-and-conversation' : null),
             ...latest,
             images: latest?.images || [],
             uploadedFiles,
@@ -690,15 +762,28 @@
             changedAt = Date.now();
           }
         }
-        await pause(500);
+        await pause(200);
       }
       throw new Error("等待回复超时；消息可能已发送，请查询聊天后再决定是否重试");
+    } catch (error) {
+      if (error?.message?.includes('等待发送按钮超时')) {
+        error.code = 'send_button_unavailable';
+        error.deliveryPhase = messageSubmitted ? 'after_send' : 'before_send';
+      }
+      if (error?.code === 'account_load_failed') {
+        error.deliveryPhase = messageSubmitted ? 'after_send' : 'before_send';
+        if (messageSubmitted) error.message += '；消息可能已发送，禁止自动刷新或重发';
+      }
+      throw error;
     } finally { busy = false; }
   }
   chrome.runtime.onMessage.addListener((message, sender, respond) => {
     if (message.type !== "yanzi_chatgpt_task" || message.task.action === 'chatgpt_messages') return;
     execute(message.task).then(data => respond({ status: "success", data }))
-      .catch(error => respond({ status: "error", data: { diagnostics: diagnostics() }, message: error.message }));
+      .catch(error => respond({ status: "error", data: { diagnostics: diagnostics() },
+        ...(error?.code ? { errorCode: error.code } : {}),
+        ...(error?.deliveryPhase ? { deliveryPhase: error.deliveryPhase } : {}),
+        message: error.message }));
     return true;
   });
 })();

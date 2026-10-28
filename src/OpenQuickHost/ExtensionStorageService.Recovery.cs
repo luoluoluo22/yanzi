@@ -101,6 +101,7 @@ public static partial class ExtensionStorageService
         foreach (var extensionId in known)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (!ExtensionDevicePolicy.ShouldSyncData(extensionId)) continue;
             var dir = GetExtensionStorageDirectoryPath(extensionId);
             var localFiles = Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories)
                 .Where(path => IsPortableDataForExtension(extensionId, Path.GetRelativePath(dir, path).Replace('\\', '/')))
@@ -236,6 +237,7 @@ public static partial class ExtensionStorageService
     // folders: some extensions persist bearer tokens, cookies and browser session data.
     internal static bool IsPortableDataForExtension(string extensionId, string key)
     {
+        if (!ExtensionDevicePolicy.ShouldSyncData(extensionId)) return false;
         if (!IsPortableExtensionFile(key)) return false;
         var relative = key.Replace('\\', '/');
         if (string.Equals(extensionId, "yanzi-notes", StringComparison.OrdinalIgnoreCase))

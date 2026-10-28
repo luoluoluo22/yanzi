@@ -42,37 +42,55 @@ public partial class MainWindow
     private Yanzi.UI.Wpf.YanziDropdownMenu? _activeAiChatMenu;
     private AiChatTopic? _selectedAiChatTopic;
     private readonly HttpClient _aiHttpClient = new() { Timeout = TimeSpan.FromSeconds(300) };
-    private CancellationTokenSource? _aiChatStreamCancellation;
-    private string _aiChatInputText = string.Empty;
-    private string _aiChatStatusText = "选择或新建话题开始对话";
-    private string _aiChatSendErrorText = string.Empty;
-    private bool _isAiChatRequestInFlight;
-    private bool _isAiChatSubmissionPending;
     private static readonly TimeSpan AiModelDiscoveryInterval = TimeSpan.FromMinutes(15);
     private readonly Dictionary<string, DateTimeOffset> _aiModelDiscoveryAttempts = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _aiModelDiscoveryInFlight = new(StringComparer.OrdinalIgnoreCase);
     private DispatcherTimer? _aiModelDiscoveryTimer;
-    public bool IsAiChatRequestInFlight
-    {
-        get => _isAiChatRequestInFlight;
-        set
-        {
-            if (_isAiChatRequestInFlight != value)
-            {
-                _isAiChatRequestInFlight = value;
-                OnPropertyChanged();
-                OnPropertyChanged(nameof(AiChatCancelVisibility));
-                OnPropertyChanged(nameof(AiChatSendVisibility));
-            }
-        }
-    }
+    private string _aiChatInputText = string.Empty;
+    private string _aiChatStatusText = "选择或新建话题开始对话";
+    private string _aiChatSendErrorText = string.Empty;
+    // A request belongs to a conversation, not to the window. All mutations occur on the WPF dispatcher.
+    private readonly AiChatRequestTracker _aiRequestTracker = new();
+    private readonly Dictionary<string, string> _aiTopicErrors = new(StringComparer.Ordinal);
+    private sealed record AiRequestProfile(string BaseUrl, string ApiKey, string Model, bool IsChatGptPlan);
 
-    public Visibility AiChatCancelVisibility => _aiChatStreamCancellation != null ? Visibility.Visible : Visibility.Collapsed;
-    public Visibility AiChatSendVisibility => _aiChatStreamCancellation != null ? Visibility.Collapsed : Visibility.Visible;
+    public bool IsAiChatRequestInFlight => _selectedAiChatTopic != null &&
+        (_aiRequestTracker.IsActive(_selectedAiChatTopic.Id) ||
+         _aiRequestTracker.IsPreparing(_selectedAiChatTopic.Id));
+    public Visibility AiChatCancelVisibility =>
+        _selectedAiChatTopic != null && _aiRequestTracker.IsActive(_selectedAiChatTopic.Id)
+            ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility AiChatSendVisibility => AiChatCancelVisibility == Visibility.Visible
+        ? Visibility.Collapsed : Visibility.Visible;
+
+    private void RefreshAiTopicRequestState()
+    {
+        OnPropertyChanged(nameof(IsAiChatRequestInFlight));
+        OnPropertyChanged(nameof(AiChatCancelVisibility));
+        OnPropertyChanged(nameof(AiChatSendVisibility));
+    }
 
     private void AiChatStopButton_Click(object sender, RoutedEventArgs e)
     {
-        _aiChatStreamCancellation?.Cancel();
+        if (_selectedAiChatTopic != null &&
+            _aiRequestTracker.TryGetActive(_selectedAiChatTopic.Id, out var request))
+            request.Cancel();
+    }
+
+    private void SetAiTopicStatus(AiChatTopic topic, string status, string? error = null)
+    {
+        if (error != null) _aiTopicErrors[topic.Id] = error;
+        if (!ReferenceEquals(_selectedAiChatTopic, topic)) return;
+        AiChatStatusText = status;
+        if (error != null) AiChatSendErrorText = error;
+    }
+
+    private void AppendAiTopicMessage(AiChatTopic topic, AiChatMessage message)
+    {
+        topic.Messages.Add(message);
+        if (ReferenceEquals(_selectedAiChatTopic, topic)) _aiChatMessages.Add(message);
+        topic.NotifyMessagesChanged();
+        ReorderTopics();
     }
 
     private string _lastNonAiSearchScopeKey = SearchScopeAll;
@@ -111,6 +129,9 @@ public partial class MainWindow
             OnPropertyChanged(nameof(HasSelectedTopic));
             OnPropertyChanged(nameof(NoTopicVisibility));
             LoadTopicMessages();
+            RefreshAiTopicRequestState();
+            AiChatSendErrorText = _selectedAiChatTopic != null &&
+                _aiTopicErrors.TryGetValue(_selectedAiChatTopic.Id, out var error) ? error : string.Empty;
         }
     }
 
@@ -419,7 +440,8 @@ public partial class MainWindow
     private void SelectTopic(AiChatTopic topic)
     {
         SelectedAiChatTopic = topic;
-        AiChatStatusText = IsAiConfigured(_appSettings) ? "继续对话" : "请先配置 AI";
+        AiChatStatusText = IsAiChatRequestInFlight ? "此对话正在生成…" :
+            IsAiConfigured(_appSettings) ? "继续对话" : "请先配置 AI";
         FocusAiInput();
     }
 
@@ -450,6 +472,8 @@ public partial class MainWindow
 
     private void DeleteTopic(AiChatTopic topic)
     {
+        if (_aiRequestTracker.TryGetActive(topic.Id, out var pending)) pending.Cancel();
+        _aiTopicErrors.Remove(topic.Id);
         _aiChatTopics.Remove(topic);
         if (_selectedAiChatTopic == topic)
         {
@@ -695,7 +719,7 @@ public partial class MainWindow
 
     private void ResendMessage(AiChatMessage message)
     {
-        if (_isAiChatRequestInFlight)
+        if (IsAiChatRequestInFlight)
         {
             return;
         }
@@ -780,7 +804,6 @@ public partial class MainWindow
     public void RefreshAiModelSelector()
     {
         OnPropertyChanged(nameof(AiChatModelDisplayText));
-        _ = RefreshAiModelCatalogAsync();
     }
 
     private void AiChatModelMenuButton_Click(object sender, RoutedEventArgs e)
@@ -793,7 +816,7 @@ public partial class MainWindow
             return;
         }
 
-        // Show cached models immediately while asynchronously refreshing all providers.
+        // Display cached models while asynchronously refreshing the catalog.
         _appSettings = AppSettingsStore.Load();
         QueueAiModelCatalogRefreshes();
         OnPropertyChanged(nameof(AiChatModelDisplayText));
@@ -830,7 +853,7 @@ public partial class MainWindow
                 {
                     if (models.Length == 0)
                     {
-                        submenu.AddLabel("模型正在同步，或服务商暂未提供模型");
+                        submenu.AddLabel("暂无模型，请先在设置中添加");
                         return;
                     }
                     foreach (var model in models)
@@ -879,6 +902,8 @@ public partial class MainWindow
         _aiModelDiscoveryAttempts.Clear();
         if (IsAiChatMode) QueueAiModelCatalogRefreshes();
     }
+
+
 
     private void StartAiModelDiscovery()
     {
@@ -944,18 +969,28 @@ public partial class MainWindow
             var current = AppSettingsStore.Load();
             var target = (current.AiServiceProviders ?? []).FirstOrDefault(p =>
                 p.IsEnabled && string.Equals(p.Id, id, StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(p.BaseUrl, snapshot.BaseUrl, StringComparison.OrdinalIgnoreCase));
+                string.Equals(p.BaseUrl, snapshot.BaseUrl, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(p.ApiKey, snapshot.ApiKey, StringComparison.Ordinal) &&
+                string.Equals(p.ProviderType, snapshot.ProviderType, StringComparison.OrdinalIgnoreCase));
             if (target == null) return;
-            if (!SettingsAiController.SameModelIds(target.Models, discovered))
+            var pinnedModels = SettingsAiController.IncludeSelectedModel(discovered,
+                string.Equals(current.ActiveServiceProviderId, id, StringComparison.OrdinalIgnoreCase) ? current.AiModel : null,
+                target.SelectedModel);
+            if (!SettingsAiController.SameModelIds(target.Models, pinnedModels))
             {
                 current = AppSettingsStore.Update(settings =>
                 {
                     var latest = (settings.AiServiceProviders ?? []).FirstOrDefault(p =>
                         p.IsEnabled && string.Equals(p.Id, id, StringComparison.OrdinalIgnoreCase) &&
-                        string.Equals(p.BaseUrl, snapshot.BaseUrl, StringComparison.OrdinalIgnoreCase));
-                    if (latest != null && !SettingsAiController.SameModelIds(latest.Models, discovered))
+                        string.Equals(p.BaseUrl, snapshot.BaseUrl, StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(p.ApiKey, snapshot.ApiKey, StringComparison.Ordinal) &&
+                        string.Equals(p.ProviderType, snapshot.ProviderType, StringComparison.OrdinalIgnoreCase));
+                    if (latest != null)
                     {
-                        latest.Models = discovered.ToList();
+                        var updated = SettingsAiController.IncludeSelectedModel(discovered,
+                            string.Equals(settings.ActiveServiceProviderId, id, StringComparison.OrdinalIgnoreCase) ? settings.AiModel : null,
+                            latest.SelectedModel);
+                        if (!SettingsAiController.SameModelIds(latest.Models, updated)) latest.Models = updated;
                     }
                     return settings;
                 });
@@ -989,260 +1024,172 @@ public partial class MainWindow
 
     private async void SubmitAiChatMessage()
     {
-        // Lock before awaiting attachment preparation: repeated Enter must not duplicate requests.
-        if (_isAiChatSubmissionPending || IsAiChatRequestInFlight)
-        {
+        if (_selectedAiChatTopic == null) CreateNewTopic();
+        var topic = _selectedAiChatTopic!;
+        // Two fast Enter presses in the same topic are rejected, but other topics remain interactive.
+        if (!_aiRequestTracker.TryPrepare(topic.Id))
             return;
-        }
-
-        _isAiChatSubmissionPending = true;
+        RefreshAiTopicRequestState();
         try
         {
-            await SubmitAiChatMessageCore();
+            await SubmitAiChatMessageCore(topic);
         }
         catch (Exception ex)
         {
             HostAssets.AppendLog($"SubmitAiChatMessage failed: {ex}");
-            AiChatSendErrorText = $"发送失败：{TrimForLog(FormatExceptionMessage(ex), 160)}";
-            AiChatStatusText = AiChatSendErrorText;
+            SetAiTopicStatus(topic, "发送失败", $"发送失败：{TrimForLog(FormatExceptionMessage(ex), 160)}");
         }
         finally
         {
-            _isAiChatSubmissionPending = false;
+            _aiRequestTracker.EndPreparing(topic.Id);
+            RefreshAiTopicRequestState();
         }
     }
 
-    private async Task SubmitAiChatMessageCore()
+    private async Task SubmitAiChatMessageCore(AiChatTopic topic)
     {
-        // Read the visible editor directly if the two-way binding has not settled.
+        // Snapshot editor, attachments, mode, and provider before the first await: topic switching
+        // or model changes cannot redirect a request already in progress.
         var userInput = (AiChatInputBox?.Text ?? AiChatInputText).Trim();
-        if (string.IsNullOrEmpty(userInput) && _aiChatAttachments.Count == 0)
+        var pendingAttachments = _aiChatAttachments.ToArray();
+        if (string.IsNullOrEmpty(userInput) && pendingAttachments.Length == 0) return;
+        var mode = DetermineAiConversationMode(userInput);
+        var settings = _appSettings;
+        if (!IsAiConfigured(settings))
         {
+            var msg = string.IsNullOrWhiteSpace(settings.AiApiKey)
+                ? "无法发送：当前服务商缺少 API Key。请打开「模型服务」重新配置。"
+                : "无法发送：当前服务商的模型或接口地址尚未配置。";
+            SetAiTopicStatus(topic, msg, msg);
             return;
         }
-
-        if (IsAiChatRequestInFlight)
-        {
-            return;
-        }
-
-        if (!IsAiConfigured(_appSettings))
-        {
-            var missingKey = string.IsNullOrWhiteSpace(_appSettings.AiApiKey);
-            AiChatSendErrorText = missingKey
-                ? "无法发送：当前服务商缺少 API Key。请打开右上角「设置」→「模型服务」重新配置。"
-                : "无法发送：当前服务商的模型或接口地址尚未配置，请在「设置」→「模型服务」检查。";
-            AiChatStatusText = AiChatSendErrorText;
-            HostAssets.AppendLog($"AI chat submission rejected before request: keyPresent={!missingKey}, modelPresent={!string.IsNullOrWhiteSpace(_appSettings.AiModel)}, urlPresent={!string.IsNullOrWhiteSpace(_appSettings.AiBaseUrl)}");
-            return;
-        }
-
-        AiChatSendErrorText = string.Empty;
-        // 确保有话题
-        if (_selectedAiChatTopic == null)
-        {
-            CreateNewTopic();
-        }
-
-        var messageAttachments = await BuildMessageAttachmentsAsync(_aiChatAttachments);
-
-        // 添加用户消息
+        var profile = new AiRequestProfile(
+            settings.AiBaseUrl.Trim(), settings.AiApiKey.Trim(), settings.AiModel.Trim(),
+            string.Equals(settings.ActiveServiceProviderId, ChatGptPlanProviderId,
+                StringComparison.OrdinalIgnoreCase));
+        _aiTopicErrors.Remove(topic.Id);
+        if (ReferenceEquals(_selectedAiChatTopic, topic)) AiChatSendErrorText = string.Empty;
+        var messageAttachments = await BuildMessageAttachmentsAsync(pendingAttachments);
         var userMessage = new AiChatMessage(true, userInput, messageAttachments);
-        _aiChatMessages.Add(userMessage);
-        _selectedAiChatTopic!.Messages.Add(userMessage);
-        
-        // 如果是第一条消息，使用它作为话题标题
-        if (_selectedAiChatTopic.Messages.Count == 1)
-        {
-            var title = userInput.Length > 30 ? userInput.Substring(0, 30) + "..." : userInput;
-            _selectedAiChatTopic.Title = title;
-        }
-        
-        _selectedAiChatTopic.NotifyMessagesChanged();
-        ReorderTopics();
-        // 用户消息必须在请求前持久化，AI 请求失败也不能丢失对话。
+        AppendAiTopicMessage(topic, userMessage);
+        if (topic.Messages.Count == 1)
+            topic.Title = userInput.Length > 30 ? userInput[..30] + "..." : userInput;
         SaveTopicsToStorage();
+        if (ReferenceEquals(_selectedAiChatTopic, topic))
+        {
+            // Don't erase a second conversation's input if the user switched while attachments loaded.
+            AiChatInputText = string.Empty;
+            _aiChatAttachments.Clear();
+        }
 
-        // 清空输入
-        AiChatInputText = string.Empty;
-        _aiChatAttachments.Clear();
-
-        // 请求 AI
-        IsAiChatRequestInFlight = true;
-        AiChatStatusText = "AI 正在输入…";
-
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+        _aiRequestTracker.Start(topic.Id, cancellation);
+        topic.IsGenerating = true;
+        RefreshAiTopicRequestState();
+        SetAiTopicStatus(topic, "AI 正在生成…");
+        HostAssets.AppendLog($"AI conversation route: topic={topic.Id}, mode={mode}, model={profile.Model}, streaming=true");
         try
         {
-            var conversationMode = DetermineAiConversationMode(userInput);
-            HostAssets.AppendLog($"AI conversation route: mode={conversationMode}, input={TrimForLog(userInput, 180)}");
-
-            var useStreamingChat =
-                conversationMode == AiConversationMode.Chat &&
-                string.Equals(_appSettings.ActiveServiceProviderId, ChatGptPlanProviderId, StringComparison.OrdinalIgnoreCase);
-
-            if (useStreamingChat)
+            if (mode == AiConversationMode.Chat)
             {
-                var requestMessages = BuildAiRequestMessages(conversationMode);
-                var streamingMessage = new AiChatMessage(false, string.Empty) { IsStreaming = true };
-                _aiChatMessages.Add(streamingMessage);
-                _selectedAiChatTopic.Messages.Add(streamingMessage);
-                _selectedAiChatTopic.NotifyMessagesChanged();
-                ReorderTopics();
-
-                var streamedText = new StringBuilder();
-                var textLock = new object();
-                // The HTTP reader never touches WPF. UI refreshes are limited to 5/s,
-                // and Markdown is parsed once only after the stream has finished.
-                using var streamCancellation = new CancellationTokenSource(TimeSpan.FromMinutes(5));
-                _aiChatStreamCancellation = streamCancellation;
-                OnPropertyChanged(nameof(AiChatCancelVisibility));
-                OnPropertyChanged(nameof(AiChatSendVisibility));
-                var latestUiText = string.Empty;
-                var lastPersisted = DateTime.UtcNow;
-                var flushTimer = new DispatcherTimer(DispatcherPriority.Background)
-                {
-                    Interval = TimeSpan.FromMilliseconds(200)
-                };
-                flushTimer.Tick += (_, _) =>
-                {
-                    string snapshot;
-                    lock (textLock) snapshot = streamedText.ToString();
-                    if (snapshot != latestUiText)
-                    {
-                        streamingMessage.Text = snapshot;
-                        latestUiText = snapshot;
-                    }
-
-                    if (snapshot.Length > 0 && DateTime.UtcNow - lastPersisted > TimeSpan.FromSeconds(6))
-                    {
-                        SaveTopicsToStorage();
-                        lastPersisted = DateTime.UtcNow;
-                    }
-                };
-                flushTimer.Start();
+                // The placeholder belongs exclusively to its originating topic.
+                var requestMessages = BuildAiRequestMessages(mode, topic);
+                var reply = new AiChatMessage(false, string.Empty) { IsStreaming = true };
+                AppendAiTopicMessage(topic, reply);
+                var buffer = new StringBuilder();
+                var lastVisualUpdate = DateTime.UtcNow;
                 try
                 {
-                    var finalText = await Task.Run(() =>
-                        RequestAiChatCompletionStreamingAsync(
-                            requestMessages,
-                            delta =>
+                    var answer = await RequestAiChatCompletionStreamingAsync(
+                        requestMessages, profile, mode,
+                        delta =>
+                        {
+                            buffer.Append(delta);
+                            var now = DateTime.UtcNow;
+                            if ((now - lastVisualUpdate).TotalMilliseconds >= 160 || buffer.Length < 64)
                             {
-                                lock (textLock) streamedText.Append(delta);
-                            },
-                            streamCancellation.Token), streamCancellation.Token);
-
-                    streamingMessage.Text = finalText;
-                    streamingMessage.IsStreaming = false;
-                    AiChatStatusText = "继续对话";
-                    SaveTopicsToStorage();
+                                reply.Text = buffer.ToString();
+                                lastVisualUpdate = now;
+                            }
+                        }, cancellation.Token);
+                    reply.Text = answer;
+                    reply.IsStreaming = false;
+                    SetAiTopicStatus(topic, "继续对话");
                 }
-                catch (OperationCanceledException) when (streamCancellation.IsCancellationRequested)
+                catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
                 {
-                    string partial;
-                    lock (textLock) partial = streamedText.ToString();
-                    streamingMessage.Text = partial.Length == 0
-                        ? "生成已停止或超过五分钟，请重试。原始问题已保留。"
-                        : partial + $"{Environment.NewLine}{Environment.NewLine}> 生成已停止，已保留部分回复。";
-                    streamingMessage.IsStreaming = false;
-                    SaveTopicsToStorage();
-                    AiChatStatusText = "生成已停止";
-                    return;
+                    reply.Text = buffer.Length == 0 ? "生成已停止，原始问题已保留。"
+                        : buffer + Environment.NewLine + Environment.NewLine + "> 已停止生成，保留部分回复。";
+                    reply.IsStreaming = false;
+                    SetAiTopicStatus(topic, "生成已停止");
                 }
                 catch
                 {
-                    string partial;
-                    lock (textLock) partial = streamedText.ToString();
-                    streamingMessage.Text = partial.Length == 0
-                        ? "回复中断，请重试。当前问题已经保留。"
-                        : partial + $"{Environment.NewLine}{Environment.NewLine}> 回复在生成过程中中断，已保留当前内容，可以重试。";
-                    streamingMessage.IsStreaming = false;
-                    SaveTopicsToStorage();
+                    reply.Text = buffer.Length == 0 ? "回复中断，请重试。当前问题已保留。"
+                        : buffer + Environment.NewLine + Environment.NewLine + "> 回复中断，已保留部分内容。";
+                    reply.IsStreaming = false;
                     throw;
                 }
-                finally
-                {
-                    flushTimer.Stop();
-                    _aiChatStreamCancellation = null;
-                    OnPropertyChanged(nameof(AiChatCancelVisibility));
-                    OnPropertyChanged(nameof(AiChatSendVisibility));
-                }
-
-                return;
             }
-
-            int loopCount = 0;
-            const int maxLoops = 5;
-            bool keepLooping = true;
-
-            while (keepLooping && loopCount < maxLoops)
+            else
             {
-                loopCount++;
-                var reply = await RequestAiChatCompletionAsync(conversationMode);
-                
-                // 解析工具调用
-                var toolCall = conversationMode == AiConversationMode.Agent ? ParseToolCall(reply) : null;
-                if (toolCall != null)
+                // Agent tool calls are parsed only after a complete SSE response, but the HTTP
+                // transport itself streams so upstream gateways don't wait for the full answer.
+                for (int round = 0; round < 5; round++)
                 {
-                    var toolName = toolCall.ToolName;
-                    
-                    // 将大模型的每一次回复（包含工具调用JSON的 assistant 消息）作为工具调用指示添加到界面上
-                    var aiMessage = new AiChatMessage(false, reply)
+                    cancellation.Token.ThrowIfCancellationRequested();
+                    var reply = await RequestAiChatCompletionStreamingAsync(
+                        BuildAiRequestMessages(mode, topic), profile, mode, _ => { }, cancellation.Token);
+                    var toolCall = ParseToolCall(reply);
+                    if (toolCall == null)
                     {
-                        IsToolCall = true,
-                        ToolName = toolName
+                        AppendAiTopicMessage(topic, new AiChatMessage(false, reply));
+                        break;
+                    }
+                    var call = new AiChatMessage(false, reply)
+                    {
+                        IsToolCall = true, ToolName = toolCall.ToolName
                     };
-                    _aiChatMessages.Add(aiMessage);
-                    _selectedAiChatTopic.Messages.Add(aiMessage);
-                    _selectedAiChatTopic.NotifyMessagesChanged();
-                    ReorderTopics();
-                    
-                    AiChatStatusText = $"AI 正在调用工具: {toolName}…";
-                    
-                    // 执行本地工具
-                    string feedback;
+                    AppendAiTopicMessage(topic, call);
+                    SetAiTopicStatus(topic, $"AI 正在调用工具：{toolCall.ToolName}…");
                     try
                     {
-                        feedback = await ExecuteToolAsync(toolCall);
+                        cancellation.Token.ThrowIfCancellationRequested();
+                        call.ToolFeedback = await ExecuteToolAsync(toolCall);
+                    }
+                    catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+                    {
+                        throw;
                     }
                     catch (Exception ex)
                     {
-                        feedback = $"【系统反馈】执行工具失败：{ex.Message}";
+                        call.ToolFeedback = $"【系统反馈】执行工具失败：{ex.Message}";
                     }
-                    
-                    // 合并：将反馈直接更新至该工具调用消息的 ToolFeedback 属性上
-                    aiMessage.ToolFeedback = feedback;
-                    _selectedAiChatTopic.NotifyMessagesChanged();
-                    ReorderTopics();
-                    
-                    AiChatStatusText = "AI 正在思考系统反馈…";
+                    topic.NotifyMessagesChanged();
+                    SetAiTopicStatus(topic, "AI 正在分析工具结果…");
                 }
-                else
-                {
-                    // 没有检测到工具调用，这是最终的自然语言回复
-                    var aiMessage = new AiChatMessage(false, reply);
-                    _aiChatMessages.Add(aiMessage);
-                    _selectedAiChatTopic.Messages.Add(aiMessage);
-                    _selectedAiChatTopic.NotifyMessagesChanged();
-                    ReorderTopics();
-                    
-                    keepLooping = false;
-                }
+                SetAiTopicStatus(topic, "继续对话");
             }
-
-            AiChatStatusText = "继续对话";
-            SaveTopicsToStorage();
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            SetAiTopicStatus(topic, "生成已停止");
         }
         catch (Exception ex)
         {
-            HostAssets.AppendLog($"AI request failed: {FormatExceptionMessage(ex)}");
-            SaveTopicsToStorage();
-            AiChatSendErrorText = $"AI 请求失败：{TrimForLog(FormatExceptionMessage(ex), 160)}";
-            AiChatStatusText = AiChatSendErrorText;
+            HostAssets.AppendLog($"AI request failed: topic={topic.Id}, model={profile.Model}, error={FormatExceptionMessage(ex)}");
+            var error = $"AI 请求失败：{TrimForLog(FormatExceptionMessage(ex), 160)}";
+            SetAiTopicStatus(topic, error, error);
         }
         finally
         {
-            IsAiChatRequestInFlight = false;
-            _ = Dispatcher.BeginInvoke(() => FocusAiInput(), DispatcherPriority.Background);
+            SaveTopicsToStorage();
+            _aiRequestTracker.Finish(topic.Id);
+            topic.IsGenerating = false;
+            RefreshAiTopicRequestState();
+            // Do not steal keyboard focus from a different conversation.
+            if (ReferenceEquals(_selectedAiChatTopic, topic))
+                _ = Dispatcher.BeginInvoke(() => FocusAiInput(), DispatcherPriority.Background);
         }
     }
 
@@ -1474,8 +1421,11 @@ public partial class MainWindow
                             var command = commands.FirstOrDefault(c => string.Equals(c.ExtensionId, extIdToDelete, StringComparison.OrdinalIgnoreCase));
                             if (command != null)
                             {
+                                WebDavSyncService.MarkExtensionDeletedLocally(extIdToDelete, command.DeclaredVersion);
                                 ExtensionRecycleBinService.MoveToRecycleBin(extIdToDelete, command.ExtensionDirectoryPath);
                                 ReloadLocalExtensionsFromExternal();
+                                QueuePrivateExtensionRemovalFromAccount(extIdToDelete);
+                                QueueBackgroundWebDavSync("extension-ai-delete", forceImmediate: true);
                                 return true;
                             }
                             return false;
@@ -1743,193 +1693,88 @@ public partial class MainWindow
         return AiConversationMode.Chat;
     }
 
+
     private async Task<string> RequestAiChatCompletionStreamingAsync(
-        IReadOnlyList<object> messages,
-        Action<string> onDelta,
-        CancellationToken cancellationToken)
+        IReadOnlyList<object> messages, AiRequestProfile profile, AiConversationMode mode,
+        Action<string> onDelta, CancellationToken cancellationToken)
     {
-        var endpoint = BuildAiChatEndpoint(_appSettings.AiBaseUrl.Trim());
-        var payload = JsonSerializer.Serialize(new
-        {
-            model = _appSettings.AiModel.Trim(),
-            messages,
-            stream = true,
-            yanzi_mode = "chat",
-            verbosity = "high",
-            reasoning_effort = "high"
-        });
-
-        HostAssets.AppendLog(
-            $"AI streaming request start: model={_appSettings.AiModel.Trim()}, messages={messages.Count}");
-
+        var endpoint = BuildAiChatEndpoint(profile.BaseUrl);
+        object payloadObject = profile.IsChatGptPlan
+            ? new { model = profile.Model, messages, stream = true,
+                    yanzi_mode = mode == AiConversationMode.Agent ? "agent" : "chat",
+                    verbosity = mode == AiConversationMode.Agent ? "medium" : "high",
+                    reasoning_effort = mode == AiConversationMode.Agent ? "medium" : "high" }
+            : new { model = profile.Model, messages, stream = true };
         using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _appSettings.AiApiKey.Trim());
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", profile.ApiKey);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
-        request.Content = new StringContent(payload, Encoding.UTF8, "application/json");
-
+        request.Content = new StringContent(JsonSerializer.Serialize(payloadObject), Encoding.UTF8, "application/json");
+        var timer = System.Diagnostics.Stopwatch.StartNew();
+        HostAssets.AppendLog($"AI SSE request start: model={profile.Model}, messages={messages.Count}, agent={mode == AiConversationMode.Agent}");
         using var response = await _aiHttpClient.SendAsync(
-            request,
-            HttpCompletionOption.ResponseHeadersRead,
-            cancellationToken).ConfigureAwait(false);
-
+            request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
-            var errorBody = await response.Content.ReadAsStringAsync();
-            HostAssets.AppendLog(
-                $"AI streaming request failed: status={(int)response.StatusCode}, body={TrimForLog(errorBody, 1000)}");
-            throw new InvalidOperationException($"{(int)response.StatusCode} {response.ReasonPhrase}");
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            HostAssets.AppendLog($"AI SSE failed: model={profile.Model}, status={(int)response.StatusCode}, ms={timer.ElapsedMilliseconds}, body={TrimForLog(body, 280)}");
+            // Retry as a non-streaming request ONLY when the provider explicitly rejected
+            // the stream option. Never retry 5xx/504: the upstream may still be executing.
+            var streamRejected = (response.StatusCode == System.Net.HttpStatusCode.BadRequest ||
+                                  response.StatusCode == System.Net.HttpStatusCode.UnprocessableEntity) &&
+                                 body.Contains("stream", StringComparison.OrdinalIgnoreCase) &&
+                                 (body.Contains("not support", StringComparison.OrdinalIgnoreCase) ||
+                                  body.Contains("unsupported", StringComparison.OrdinalIgnoreCase) ||
+                                  body.Contains("不支持", StringComparison.OrdinalIgnoreCase));
+            if (streamRejected)
+            {
+                HostAssets.AppendLog($"AI provider does not support SSE: model={profile.Model}; falling back once.");
+                return await RequestAiChatCompletionCompatibilityAsync(messages, profile, mode, onDelta, cancellationToken);
+            }
+            throw new InvalidOperationException($"供应商返回 {(int)response.StatusCode} {response.ReasonPhrase}");
         }
-
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        using var reader = new StreamReader(stream, Encoding.UTF8);
-
-        var output = new StringBuilder();
-        var sawDone = false;
-
-        while (true)
+        // A few compatible gateways ignore stream=true and return one regular JSON response.
+        // Use that answer instead of silently displaying an empty stream.
+        if (response.Content.Headers.ContentType?.MediaType?.Contains("json", StringComparison.OrdinalIgnoreCase) == true)
         {
-            var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
-            if (line == null)
-            {
-                break;
-            }
-
-            if (!line.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            var data = line[5..].Trim();
-            if (string.IsNullOrWhiteSpace(data))
-            {
-                continue;
-            }
-
-            if (string.Equals(data, "[DONE]", StringComparison.Ordinal))
-            {
-                sawDone = true;
-                break;
-            }
-
-            using var doc = JsonDocument.Parse(data);
-            var root = doc.RootElement;
-
-            if (root.TryGetProperty("error", out var error))
-            {
-                var message = error.TryGetProperty("message", out var messageElement)
-                    ? messageElement.GetString()
-                    : error.ToString();
-                throw new InvalidOperationException(message ?? "AI 流式响应失败");
-            }
-
-            if (!root.TryGetProperty("choices", out var choices) ||
-                choices.ValueKind != JsonValueKind.Array ||
-                choices.GetArrayLength() == 0)
-            {
-                continue;
-            }
-
-            var choice = choices[0];
-            if (!choice.TryGetProperty("delta", out var delta) ||
-                !delta.TryGetProperty("content", out var contentElement) ||
-                contentElement.ValueKind != JsonValueKind.String)
-            {
-                continue;
-            }
-
-            var deltaText = contentElement.GetString();
-            if (string.IsNullOrEmpty(deltaText))
-            {
-                continue;
-            }
-
-            output.Append(deltaText);
-            onDelta(deltaText);
+            var json = await response.Content.ReadAsStringAsync(cancellationToken);
+            var parsed = JsonSerializer.Deserialize<AiChatCompletionResponse>(json, JsonDefaults.CaseInsensitive);
+            var completed = parsed?.Choices?.Select(c => c.Message?.Content)
+                .FirstOrDefault(c => !string.IsNullOrWhiteSpace(c))?.Trim();
+            if (string.IsNullOrWhiteSpace(completed)) throw new IOException("供应商忽略流式请求且未返回内容");
+            onDelta(completed);
+            return completed;
         }
-
-        if (!sawDone)
-        {
-            throw new IOException("AI 流式响应提前结束");
-        }
-
-        var result = output.ToString().Trim();
-        if (string.IsNullOrWhiteSpace(result))
-        {
-            throw new InvalidOperationException("AI 返回为空");
-        }
-
-        HostAssets.AppendLog($"AI streaming response success: contentLength={result.Length}");
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        var result = await AiChatSseParser.ReadAsync(stream, onDelta, cancellationToken);
+        HostAssets.AppendLog($"AI SSE success: model={profile.Model}, bytes={result.Length}, ms={timer.ElapsedMilliseconds}");
         return result;
     }
 
-    private async Task<string> RequestAiChatCompletionAsync(AiConversationMode conversationMode)
+    private async Task<string> RequestAiChatCompletionCompatibilityAsync(
+        IReadOnlyList<object> messages, AiRequestProfile profile, AiConversationMode mode,
+        Action<string> onDelta, CancellationToken cancellationToken)
     {
-        if (!IsAiConfigured(_appSettings))
-        {
-            throw new InvalidOperationException("AI 未配置");
-        }
-
-        var endpoint = BuildAiChatEndpoint(_appSettings.AiBaseUrl.Trim());
-        var messages = BuildAiRequestMessages(conversationMode);
-        var isChatGptPlan = string.Equals(
-            _appSettings.ActiveServiceProviderId,
-            ChatGptPlanProviderId,
-            StringComparison.OrdinalIgnoreCase);
-
-        object payloadObject = isChatGptPlan
-            ? new
-            {
-                model = _appSettings.AiModel.Trim(),
-                messages,
-                yanzi_mode = conversationMode == AiConversationMode.Agent ? "agent" : "chat",
-                verbosity = conversationMode == AiConversationMode.Agent ? "medium" : "high",
-                reasoning_effort = conversationMode == AiConversationMode.Agent ? "medium" : "high"
-            }
-            : new
-            {
-                model = _appSettings.AiModel.Trim(),
-                messages,
-                temperature = 0.7
-            };
-
-        var payload = JsonSerializer.Serialize(payloadObject);
-
-        HostAssets.AppendLog(
-            $"AI request start: model={_appSettings.AiModel.Trim()}, mode={conversationMode}, verbosity={(conversationMode == AiConversationMode.Agent ? "medium" : "high")}, reasoning={(conversationMode == AiConversationMode.Agent ? "medium" : "high")}, messages={messages.Count}, lastUserAttachments={_aiChatMessages.LastOrDefault(static m => m.IsUser)?.Attachments.Count ?? 0}");
-
+        var endpoint = BuildAiChatEndpoint(profile.BaseUrl);
+        object payload = profile.IsChatGptPlan
+            ? new { model = profile.Model, messages,
+                    yanzi_mode = mode == AiConversationMode.Agent ? "agent" : "chat",
+                    verbosity = mode == AiConversationMode.Agent ? "medium" : "high",
+                    reasoning_effort = mode == AiConversationMode.Agent ? "medium" : "high" }
+            : new { model = profile.Model, messages };
         using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _appSettings.AiApiKey.Trim());
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        request.Content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
-
-        using var response = await _aiHttpClient.SendAsync(request);
-        var body = await response.Content.ReadAsStringAsync();
-        
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", profile.ApiKey);
+        request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+        using var response = await _aiHttpClient.SendAsync(request, cancellationToken);
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
         if (!response.IsSuccessStatusCode)
-        {
-            HostAssets.AppendLog(
-                $"AI request failed response: status={(int)response.StatusCode} {response.ReasonPhrase}, body={TrimForLog(body, 800)}");
-            throw new InvalidOperationException($"{(int)response.StatusCode} {response.ReasonPhrase}");
-        }
-
+            throw new InvalidOperationException($"供应商兼容请求失败：{(int)response.StatusCode} {response.ReasonPhrase}");
         var parsed = JsonSerializer.Deserialize<AiChatCompletionResponse>(body, JsonDefaults.CaseInsensitive);
-
-        var content = parsed?.Choices?
-            .Select(c => c.Message?.Content)
-            .FirstOrDefault(t => !string.IsNullOrWhiteSpace(t))
-            ?.Trim();
-
-        if (string.IsNullOrWhiteSpace(content))
-        {
-            HostAssets.AppendLog($"AI response empty: body={TrimForLog(body, 1200)}");
-            throw new InvalidOperationException("AI 返回为空");
-        }
-
-        var finishReason = parsed?.Choices?.FirstOrDefault()?.FinishReason;
-        HostAssets.AppendLog(
-            $"AI response success: finishReason={finishReason ?? "unknown"}, contentLength={content.Length}, body={TrimForLog(body, 1200)}");
-
-        return content;
+        var text = parsed?.Choices?.Select(choice => choice.Message?.Content)
+            .FirstOrDefault(content => !string.IsNullOrWhiteSpace(content))?.Trim();
+        if (string.IsNullOrWhiteSpace(text))
+            throw new IOException("供应商兼容请求返回空内容");
+        onDelta(text);
+        return text;
     }
 
     private const string DEEP_CHAT_SYSTEM_PROMPT =
@@ -1968,7 +1813,7 @@ public partial class MainWindow
         "3. execute_command: 在电脑端执行命令行命令。参数: command (要执行的命令文本)。【重要】电脑端已默认在 PowerShell 5.1 环境中执行命令，请直接输入 PowerShell 的 Cmdlet 或表达式，严禁外层嵌套调用 powershell、powershell.exe -Command 或 cmd /c，避免转义错误和执行超时。\n\n" +
         "【注意】如果你调用了工具，系统会在后台真实执行，并在执行完成后将真实的结果反馈给你，之后你再根据执行结果来决定是继续调用工具还是输出最终的自然语言回复。";
 
-    private IReadOnlyList<object> BuildAiRequestMessages(AiConversationMode conversationMode)
+    private IReadOnlyList<object> BuildAiRequestMessages(AiConversationMode conversationMode, AiChatTopic requestTopic)
     {
         var settings = AppSettingsStore.Load();
 
@@ -1983,7 +1828,7 @@ public partial class MainWindow
                 }
             };
 
-            foreach (var message in _aiChatMessages)
+            foreach (var message in requestTopic.Messages)
             {
                 if (message.IsToolCall)
                 {
@@ -2030,7 +1875,7 @@ public partial class MainWindow
             }
         };
 
-        foreach (var message in _aiChatMessages)
+        foreach (var message in requestTopic.Messages)
         {
             messages.Add(new
             {
@@ -2379,9 +2224,7 @@ public sealed class AiChatMessage : INotifyPropertyChanged
     private string? _toolName;
     private string? _toolFeedback;
     private bool _isExpanded = true; // 默认展开，让用户能够直观看到执行状态
-    private bool _showTimeDivider;
     private bool _isStreaming;
-
     public bool IsStreaming
     {
         get => _isStreaming;
@@ -2392,13 +2235,11 @@ public sealed class AiChatMessage : INotifyPropertyChanged
             OnPropertyChanged();
             OnPropertyChanged(nameof(FormattedText));
             OnPropertyChanged(nameof(StreamingTextVisibility));
-            OnPropertyChanged(nameof(FormattedTextVisibility));
         }
     }
-
     public string FormattedText => IsStreaming ? string.Empty : Text;
     public Visibility StreamingTextVisibility => IsStreaming ? Visibility.Visible : Visibility.Collapsed;
-    public Visibility FormattedTextVisibility => IsStreaming ? Visibility.Collapsed : Visibility.Visible;
+    private bool _showTimeDivider;
 
     public bool IsToolCall
     {
@@ -2556,6 +2397,19 @@ public sealed class AiChatTopic : INotifyPropertyChanged
     }
 
     public string Id { get; }
+
+    private bool _isGenerating;
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsGenerating
+    {
+        get => _isGenerating;
+        set
+        {
+            if (_isGenerating == value) return;
+            _isGenerating = value;
+            OnPropertyChanged();
+        }
+    }
 
     public string Title
     {

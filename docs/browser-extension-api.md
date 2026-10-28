@@ -8,6 +8,22 @@
 
 ## 0. 浏览器助手开发控制接口
 
+### 小红书 OpenCLI 只读桥接（2026-10-27）
+
+扩展读取区通过现有 Browser WebSocket 请求宿主执行 OpenCLI；不从推荐流或任意页面昵称推断账号数据。需要包含 `LocalAgentApiServer.OpenCli.cs` 的新版宿主、本机 npm 全局安装的 `@jackwener/opencli`、在线的 OpenCLI Browser Bridge，以及小红书创作者中心登录态。
+
+| 扩展 operation | 宿主固定执行的命令 |
+| --- | --- |
+| `profile` | `xiaohongshu creator-profile --format json` |
+| `notes` | `xiaohongshu creator-notes --limit 20 --format json` |
+| `stats` | `xiaohongshu creator-stats --period seven --format json` |
+
+每次实际读取前先请求 `capabilities`，5 秒无应答时提示宿主需要更新；实际读取宿主超时 90 秒，扩展等待 100 秒，不再被 Popup 的 8 秒计时提前截断。宿主串行执行，忙碌时拒绝新请求；只接受扩展 Origin、合法 requestId 及固定只读操作，不经 Shell 拼接命令。浏览器配置留空时从 `opencli profile list` 选择唯一在线配置，忽略已断线的旧默认配置；多配置时要求填写配置名称或 ID，并显式传入 `--profile`。
+
+内部请求为 `{type:"opencli_request",requestId,site:"xiaohongshu",operation,page:1,profile:""}`。成功应答为 `{type:"opencli_response",requestId,ok:true,result:{data,source:"opencli",profile,command,period,collectedAt}}`；错误应答携带 `ok:false,error`。数据仅返回给请求方，不写账号同步存储或日志。Popup 显示数据来源、浏览器配置与采集时间；`seven` 保留网站统计口径，不能把采集日期冒充统计起止日期。
+
+自动检查：`scripts/verify-opencli-xhs-bridge.ps1`。真实 CLI 验证：`dotnet run --project tests/OpenCliBridgeVerification -- --live`。隔离 WebSocket 验证服务：同项目 `--serve`，监听 `127.0.0.1:53928`，仅用于验收，不代替正式宿主部署。没有升级宿主时扩展应明确报告能力缺失。
+
 ### 0.1 自重载扩展
 
 - **接口地址**：`POST http://127.0.0.1:<AgentPort>/v1/browser/reload`

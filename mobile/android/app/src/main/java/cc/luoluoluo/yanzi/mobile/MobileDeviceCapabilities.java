@@ -21,6 +21,29 @@ final class MobileDeviceCapabilities {
         items.put(descriptor("mobile.apps.openUri", false, new JSONArray().put("uri").put("app")));
         items.put(descriptor("mobile.apps.shareText", false, new JSONArray().put("text").put("app")));
         items.put(descriptor("mobile.apps.settings", false, new JSONArray().put("app")));
+        items.put(descriptor("mobile.storage.status", true, new JSONArray()));
+        items.put(descriptor("mobile.storage.list", true, new JSONArray().put("path")));
+        items.put(descriptor("mobile.storage.read", true, new JSONArray().put("path").put("offset").put("length")));
+        items.put(descriptor("mobile.storage.write", false, new JSONArray().put("path").put("content")));
+        items.put(descriptor("mobile.photos.list", true, new JSONArray()));
+        items.put(descriptor("mobile.photos.preview", true, new JSONArray().put("path")));
+        items.put(descriptor("mobile.ui.status", true, new JSONArray()));
+        items.put(descriptor("mobile.ui.find", true, new JSONArray().put("selector")));
+        items.put(descriptor("mobile.ui.click", false, new JSONArray().put("selector")));
+        items.put(descriptor("mobile.ui.type", false, new JSONArray().put("selector").put("value")));
+        items.put(descriptor("mobile.ui.wait", true, new JSONArray().put("selector")));
+        items.put(descriptor("mobile.ui.verify", true, new JSONArray().put("selector")));
+        items.put(descriptor("mobile.ui.task.start", false, new JSONArray().put("steps")));
+        items.put(descriptor("mobile.ui.task.status", true, new JSONArray().put("taskId")));
+        items.put(descriptor("mobile.ui.task.history", true, new JSONArray().put("limit")));
+        items.put(descriptor("mobile.ui.task.cancel", false, new JSONArray().put("taskId")));
+        items.put(descriptor("mobile.screen.status", true, new JSONArray()));
+        items.put(descriptor("mobile.screen.capture", true, new JSONArray()));
+        items.put(descriptor("mobile.screen.tree", true, new JSONArray()));
+        items.put(descriptor("mobile.screen.inspect", true, new JSONArray().put("packageName")));
+        items.put(descriptor("mobile.screen.tap", false, new JSONArray().put("x").put("y")));
+        items.put(descriptor("mobile.screen.swipe", false, new JSONArray().put("x").put("y").put("x2").put("y2")));
+        items.put(descriptor("mobile.screen.action", false, new JSONArray().put("action")));
         return items;
     }
 
@@ -112,6 +135,32 @@ final class MobileDeviceCapabilities {
             case "mobile.apps.shareText":
             case "mobile.apps.settings":
                 return MobileAppCapabilities.invoke(context, name, arguments);
+            case "mobile.storage.status":
+            case "mobile.storage.list":
+            case "mobile.storage.read":
+            case "mobile.storage.write":
+            case "mobile.photos.list":
+            case "mobile.photos.preview":
+                return MobileSharedStorage.invoke(context, name, arguments);
+            case "mobile.ui.status":
+            case "mobile.ui.find":
+            case "mobile.ui.click":
+            case "mobile.ui.type":
+            case "mobile.ui.wait":
+            case "mobile.ui.verify":
+            case "mobile.ui.task.start":
+            case "mobile.ui.task.status":
+            case "mobile.ui.task.history":
+            case "mobile.ui.task.cancel":
+                return MobileUiAutomation.invoke(context, name, arguments);
+            case "mobile.screen.status":
+            case "mobile.screen.capture":
+            case "mobile.screen.tree":
+            case "mobile.screen.inspect":
+            case "mobile.screen.tap":
+            case "mobile.screen.swipe":
+            case "mobile.screen.action":
+                return MobileRemoteControl.invoke(context, name, arguments);
             case "mobile.files.read": {
                 String fileName = arguments.getString("name");
                 if (fileName.isEmpty() || fileName.contains("/") || fileName.contains("\\") || fileName.equals(".") || fileName.equals("..")) throw new IOException("file_scope_denied");

@@ -1,6 +1,29 @@
 name = "yanzi-sync"
 main = "src/index.js"
 compatibility_date = "2026-04-23"
+
+# VIP entitlement must be enforced on every costly cloud endpoint.
+[vars]
+CLOUD_VIP_ONLY = "true"
+
+# Persist sampled structured request logs without D1 writes.
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+# Bound requests per login identity + client network, before any D1 auth lookup.
+[[ratelimits]]
+name = "LOGIN_RATE_LIMITER"
+namespace_id = "9101101"
+  [ratelimits.simple]
+  limit = 8
+  period = 60
+[[ratelimits]]
+name = "EXPORT_RATE_LIMITER"
+namespace_id = "9101102"
+  [ratelimits.simple]
+  limit = 30
+  period = 60
 [[durable_objects.bindings]]
 name = "DEVICE_RELAY"
 class_name = "DeviceRelay"

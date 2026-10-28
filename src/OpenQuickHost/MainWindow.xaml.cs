@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -277,6 +277,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly DispatcherTimer _backgroundWebDavSyncTimer;
     private readonly DispatcherTimer _backgroundWebDavSyncDelayTimer;
     private readonly DispatcherTimer _accountExtensionSyncTimer;
+    private readonly DispatcherTimer _privateExtensionReconcileTimer;
     private FileSystemWatcher? _extensionContentWatcher;
     private DateTimeOffset _firstPendingAccountExtensionSyncAt = DateTimeOffset.MinValue;
     private DateTimeOffset _firstPendingPersonalExtensionSyncAt = DateTimeOffset.MinValue;
@@ -406,6 +407,24 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             RunLocalExtensionsAccountSync();
         };
         StartExtensionContentWatcher();
+        // A periodic metadata check covers missed filesystem watcher events.
+        // Download checks use the private account API, not the costly Gitee backup.
+        _privateExtensionReconcileTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(3) };
+        _privateExtensionReconcileTimer.Tick += (_, _) =>
+        {
+            if (!IsLoaded || Dispatcher.HasShutdownStarted || _cloudSyncClient?.HasCredential != true)
+                return;
+            var signature = GetCatalogContentSignature();
+            if (!string.IsNullOrWhiteSpace(signature) &&
+                !string.Equals(signature, _lastCatalogContentSignature, StringComparison.Ordinal))
+            {
+                _lastCatalogContentSignature = signature;
+                ReloadLocalExtensionsFromExternal();
+                SyncLocalExtensionsToCloud();
+            }
+            RefreshMissingPrivateExtensionsFromCloud();
+        };
+        _privateExtensionReconcileTimer.Start();
 
         _cloudReconnectTimer = new DispatcherTimer();
         _cloudReconnectTimer.Tick += CloudReconnectTimer_Tick;
@@ -528,6 +547,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _extensionContentWatcher = null;
             _extensionCatalogRefreshTimer.Stop();
             _accountExtensionSyncTimer.Stop();
+            _privateExtensionReconcileTimer.Stop();
         };
     }
 
@@ -3568,7 +3588,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             SharedRuntimeHost.Current?.RequestShell("command.ui", runnable.ExtensionId);
             return;
         }
-        if (HostRuntimeProfile.IsShell && runnable.HostedView == null && (ScriptExtensionRunner.CanExecute(runnable) || runnable.App != null))
+        if (HostRuntimeProfile.IsShell && RuntimeConnection.IsConnected && runnable.HostedView == null && (ScriptExtensionRunner.CanExecute(runnable) || runnable.App != null))
         {
             await ExecuteThroughRuntimeAsync(runnable, explicitInput, launchSource);
             return;
@@ -4785,6 +4805,10 @@ public sealed class CloudQuickPanelConfigSnapshot
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? EnableAutoUpdate { get; set; }
 
+    [JsonPropertyName("autoBackupFrequency")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? AutoBackupFrequency { get; set; }
+
     [JsonPropertyName("enableBrowserHelper")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? EnableBrowserHelper { get; set; }
@@ -4922,6 +4946,7 @@ public sealed class CloudQuickPanelConfigSnapshot
             ThemeMode = settings.ThemeMode,
             AutoCloseToastEnabled = settings.AutoCloseToastEnabled,
             EnableAutoUpdate = settings.EnableAutoUpdate,
+            AutoBackupFrequency = settings.AutoBackupFrequency,
             EnableBrowserHelper = settings.EnableBrowserHelper,
             PreferManualExtensionEditor = settings.PreferManualExtensionEditor,
             EnableEverything = settings.EnableEverything,
@@ -4984,6 +5009,7 @@ public sealed class CloudQuickPanelConfigSnapshot
             ThemeMode = ThemeMode,
             AutoCloseToastEnabled = AutoCloseToastEnabled ?? false,
             EnableAutoUpdate = EnableAutoUpdate ?? true,
+            AutoBackupFrequency = AutoBackupFrequency ?? "None",
             EnableBrowserHelper = EnableBrowserHelper ?? true,
             PreferManualExtensionEditor = PreferManualExtensionEditor ?? false,
             EnableEverything = EnableEverything ?? true,

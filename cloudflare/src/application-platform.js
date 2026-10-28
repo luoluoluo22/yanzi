@@ -43,6 +43,7 @@ export async function authorizeData(request,env,api,extensionId,key,write=false)
   if (header.startsWith('Bearer ')) {
     const claims=await api.verifyToken(env,header.slice(7).trim());
     if (claims.type==='extension-access') {
+      if (api.ensureCloudVipUser) await api.ensureCloudVipUser(env, claims.sub);
       const grant=await api.read(env,claims.sub,'applicationGrant.v1.'+claims.grantId);
       if(grant?.payload?.scopes){
         if(grant.deleted||grant.payload.expiresAt<=Date.now()/1000)throw new api.HttpError(403,'scope_denied','Access denied or revoked');

@@ -1,4 +1,8 @@
+import { meterD1 } from './d1-request-meter.js';
 import { createSyncApi } from './sync-api.js';
+import { findReusablePrivateArchive } from './private-archive-reuse.js';
+import { isCloudServicePath, needsTopLevelCloudAuth, isVipActive, readVipEntitlement, passesLoginRateLimit } from './cloud-access-policy.js';
+import { upgradePageHtml, upgradePageScript } from './upgrade-page.js';
 import { cleanupEnvironment } from './device-environment.js';
 import { createDeviceApi } from './device-api.js';
 import { createDeviceRepository } from './device-repository.js';
@@ -64,25 +68,127 @@ const PUBLIC_STORE_EXTENSION_IDS_SQL = PUBLIC_STORE_EXTENSIONS
   .join(", ");
 
 
+// Request-scoped attribution: only authenticated users, never raw identifiers.
+const requestIdentity = new WeakMap();
+const loginAttemptIdentity = new WeakMap();
+const TELEMETRY_ERROR_CODES = new Set(['user_not_found', 'invalid_credentials', 'login_rate_limited',
+  'vip_required', 'unauthorized', 'token_expired', 'device_credential_revoked', 'device_scope_denied',
+  'not_found', 'internal_error', 'export_rate_limited']);
+// Read-only operator correlation against registered random user/device IDs.
+// Never use this for email addresses, passwords, network addresses or login attempts.
+async function identityLookupRef(domain, value) {
+  if (!value) return null;
+  const bytes = new TextEncoder().encode(`yanzi-lookup-${domain}-v1:${value}`);
+  return bytesToHex(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))).slice(0, 24);
+}
+function safeClientVersion(value) {
+  const version = String(value || '').trim().toLowerCase();
+  return /^\d{1,4}(?:\.\d{1,4}){1,3}(?:[-.][a-z0-9]{1,16})?$/.test(version) ? version : 'unknown';
+}
+function safeDeviceClaim(request) {
+  const value = request.headers.get('x-yanzi-device-id') || '';
+  return /^[a-zA-Z0-9_-]{8,100}$/.test(value) ? value : null;
+}
+const cloudVipCache = new Map();
+async function cachedCloudVipRecord(env, userId) {
+  const now = Date.now();
+  let cached = cloudVipCache.get(userId);
+  if (!cached || cached.checkedUntil < now) {
+    // Indexed read only; no D1 schema/table writes on status polling.
+    const {row} = await readVipEntitlement(env.DB, userId, now);
+    cached = {row, checkedUntil:now + 15000};
+    if (cloudVipCache.size >= 2000) cloudVipCache.clear();
+    cloudVipCache.set(userId, cached);
+  }
+  return cached.row;
+}
+async function ensureCloudVipUser(env, userId) {
+  if (env.CLOUD_VIP_ONLY !== 'true') return;
+  const id = String(userId || '');
+  if (!id) throw new HttpError(401, 'unauthorized', 'Authentication required');
+  if (!isVipActive(await cachedCloudVipRecord(env, id), Date.now()))
+    throw new HttpError(403, 'vip_required', '云服务需要有效 VIP 会员；本地免费功能不受影响。', {
+      upgradeUrl: 'https://wzyp.cn/shop/4AOUCE2B',
+      activationPath: '/v1/licenses/redeem',
+      exportPath: '/v1/user/cloud-export',
+      retryAfterSeconds: 1800
+    });
+}
+async function finalizeCloudAuth(request, env, auth) {
+  recordAuthenticatedUser(request, auth);
+  if (isCloudServicePath(new URL(request.url).pathname))
+    await ensureCloudVipUser(env, auth?.userId);
+  return auth;
+}
+async function limitLoginBeforeDatabase(request, env, email) {
+  if (!env.LOGIN_RATE_LIMITER?.limit) return;
+  const ip = request.headers.get('cf-connecting-ip') || 'unknown';
+  const key = await anonymousKey(env, 'login-limit', `${email}:${ip}`);
+  if (!key) return;
+  if (!(await passesLoginRateLimit(env.LOGIN_RATE_LIMITER, key)))
+    throw new HttpError(429, 'login_rate_limited', 'Too many login attempts; try again in one minute');
+}
+
+async function anonymousKey(env, domain, value) {
+  if (!env.AUTH_TOKEN_SECRET || !value) return null;
+  const digest = await hmacSha256(env.AUTH_TOKEN_SECRET, `yanzi-telemetry-${domain}-v1:${value}`);
+  return digest.slice(0, 16);
+}
+function recordAuthenticatedUser(request, auth) {
+  if (auth?.userId) requestIdentity.set(request, { userId: String(auth.userId), deviceId: auth.deviceId ? String(auth.deviceId) : null });
+  return auth;
+}
 export default {
   async scheduled(event, env, ctx) { ctx.waitUntil(cleanupAttachments(env)); ctx.waitUntil(cleanupExternalAccess(env)); ctx.waitUntil(cleanupEnvironment(env)); },
   async fetch(request, env, ctx) {
+    const started = Date.now();
+    const metered = env.DB ? meterD1(env.DB) : null;
+    const requestEnv = metered ? { ...env, DB: metered.db } : env;
+    const path = new URL(request.url).pathname;
+    // Never log raw path segments: they may contain access tokens or personal data.
+    const family = path.startsWith("/v1/") ? path.split("/")[2] : "";
+    const route = path === "/health" ? "/health" :
+      ["sync", "auth", "devices", "device", "messaging", "messages", "records", "apps", "applications", "me"].includes(family) ? `/v1/${family}` : "/other";
+    // Fixed allowlist: never persist untrusted client headers or identifying values.
+    // Bounded endpoint classification for read amplification investigation; no raw URL or query.
+    const endpoint = path === '/v1/me/devices' ? 'devices_list' :
+      path === '/v1/me/mobile/messages' ? 'messages_list' :
+      path === '/v1/me/mobile/messages/events' ? 'messages_events' :
+      path === '/v1/sync/changes' ? 'sync_changes' :
+      path === '/v1/sync/objects' ? 'sync_objects' :
+      path === '/v1/sync/capabilities' ? 'sync_capabilities' :
+      path === '/v1/applications/access-requests' ? 'access_requests' : 'other';
+    const rawClient = request.headers.get("x-yanzi-client") || "";
+    const client = ["desktop", "server", "android", "mobile", "web"].includes(rawClient) ? rawClient : "unknown";
+    let status = 500;
+    let category = "server_error";
+    let failureCode = null;
     try {
-      return await handleRequest(request, env, ctx);
+      const response = await handleRequest(request, requestEnv, ctx);
+      status = response.status;
+      category = status >= 500 ? "server_error" : status >= 400 ? "client_error" : "ok";
+      return response;
     } catch (error) {
       if (error instanceof HttpError || error instanceof MessagingError) {
-        return withCors(
-          json(
-            {
-              error: error.code,
-              message: error.message,
-              ...(error.details ? { details: error.details } : {})
-            },
-            error.status
-          )
+        status = error.status;
+        failureCode = TELEMETRY_ERROR_CODES.has(error.code) ? error.code : 'other_handled_error';
+        category = "handled_error";
+        const rejected = json(
+          {
+            error: error.code,
+            message: error.message,
+            ...(error.details ? { details: error.details } : {})
+          },
+          error.status
         );
+        if (error.code === 'login_rate_limited' || error.code === 'export_rate_limited') {
+          rejected.headers.set('retry-after', '60');
+          rejected.headers.set('cache-control', 'no-store');
+        }
+        return withCors(rejected);
       }
 
+      failureCode = 'internal_error';
       return withCors(
         json(
           {
@@ -92,6 +198,29 @@ export default {
           500
         )
       );
+    } finally {
+      // No credentials, query strings, message bodies or device identifiers.
+      const successSampleRate = 0.1; // Keep errors at 100%; bound normal-request telemetry overhead.
+      if (status >= 400 || Math.random() < successSampleRate) {
+        const auth = requestIdentity.get(request);
+        const claimedDevice = safeDeviceClaim(request);
+        console.log(JSON.stringify({ event: "yanzi_request", method: request.method,
+          route: route.slice(0, 160), endpoint, client,
+          client_version: safeClientVersion(request.headers.get('x-yanzi-client-version')),
+          status, category, failure_code: failureCode, duration_ms: Date.now() - started,
+          sample_rate: status >= 400 ? 1 : successSampleRate,
+          d1: metered?.usage || null,
+          user_key: await anonymousKey(env, "user", auth?.userId),
+          user_lookup_ref: await identityLookupRef('user', auth?.userId),
+          device_lookup_ref: await identityLookupRef('device', auth?.userId && (auth.deviceId || claimedDevice)
+            ? `${auth.userId}:${auth.deviceId || claimedDevice}` : null),
+          device_lookup_trust: auth?.deviceId ? 'verified' : auth?.userId && claimedDevice ? 'claimed' : null,
+          verified_device_key: await anonymousKey(env, "device", auth?.deviceId && auth?.userId ? `${auth.userId}:${auth.deviceId}` : null),
+          claimed_device_key: await anonymousKey(env, "device-claim", claimedDevice),
+          attempted_account_key: await anonymousKey(env, "login-attempt", loginAttemptIdentity.get(request)),
+          network_key: await anonymousKey(env, 'network-' + new Date().toISOString().slice(0, 10),
+            request.headers.get('cf-connecting-ip')) }));
+      }
     }
   }
 };
@@ -102,9 +231,14 @@ async function handleRequest(request, env, ctx) {
   if (request.method === "OPTIONS") {
     return withCors(new Response(null, { status: 204 }));
   }
+  // Protect formerly public, resource-consuming catalogue and community APIs.
+  // Auth is checked ahead of R2/D1 reads, without trusting client version headers.
+  if (env.CLOUD_VIP_ONLY === 'true' && needsTopLevelCloudAuth(url.pathname)) {
+    await requireAuth(request, env);
+  }
 
   const platformApi = {
-    requireAuth, verifyToken, signToken, read: readUserSyncObject,
+    requireAuth, ensureCloudVipUser, verifyToken, signToken, read: readUserSyncObject,
     write: writeUserSyncObject, json, HttpError
   };
   const externalResponse = await handleExternalAccess(request, env, platformApi);
@@ -119,6 +253,12 @@ async function handleRequest(request, env, ctx) {
   if (deviceResponse) return deviceResponse;
 
   if (url.pathname.startsWith("/downloads/") && request.method === "GET") {
+    // Paid application packages are not free anonymous R2 egress. Keep signed
+    // Android release/upgrade manifests public so users can obtain an updated client.
+    if (env.CLOUD_VIP_ONLY === 'true' && url.pathname.startsWith('/downloads/applications/')) {
+      const auth = await requireAuth(request, env);
+      await ensureCloudVipUser(env, auth.userId);
+    }
     const key = url.pathname.substring(1);
     const object = await env.PACKAGES.get(key);
     if (!object) {
@@ -129,20 +269,34 @@ async function handleRequest(request, env, ctx) {
     headers.set("etag", object.httpEtag || "");
     if (!headers.has("Content-Type")) headers.set("Content-Type", key.endsWith('.apk')
       ? "application/vnd.android.package-archive" : key.endsWith('.json') ? "application/json; charset=utf-8" : "application/zip");
-    headers.set("Cache-Control", key.endsWith('releases.json') ? "no-store" : "public, max-age=3600");
+    headers.set("Cache-Control", key.endsWith('releases.json') ? "public, max-age=60" : "public, max-age=3600");
     headers.set("Access-Control-Allow-Origin", "*");
     return new Response(object.body, { headers });
   }
 
   if (url.pathname === "/v1/debug/list-packages" && request.method === "GET") {
+    const auth = await requireAuth(request, env);
+    if (!isAdminUser(auth, env)) throw new HttpError(403, 'admin_required', 'Administrator required');
     const list = await env.PACKAGES.list({ prefix: 'downloads/' });
     const keys = list.objects.map(obj => obj.key);
     return json({ count: keys.length, keys });
   }
 
+  if (url.pathname === '/upgrade' && request.method === 'GET') {
+    return new Response(upgradePageHtml, {headers:{'content-type':'text/html; charset=utf-8',
+      'content-security-policy':"default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'",
+      'cache-control':'public, max-age=3600'}});
+  }
+  if (url.pathname === '/upgrade.js' && request.method === 'GET') {
+    return new Response(upgradePageScript, {headers:{'content-type':'application/javascript; charset=utf-8',
+      'cache-control':'public, max-age=3600',
+      'x-content-type-options':'nosniff'}});
+  }
+
   if (url.pathname === "/health") {
-    const result = await env.DB.prepare("select datetime('now') as now").first();
-    return json({ ok: true, now: result?.now ?? null, foundationRevision: "2026-10-03-domains-v1", deviceEnvironmentProtocol: 1 });
+    // Never spend a D1 read for an unauthenticated health probe.
+    // Database availability is verified separately by protected internal checks.
+    return json({ ok: true, now: isoNow(), foundationRevision: "2026-10-03-domains-v1", deviceEnvironmentProtocol: 1 });
   }
 
   if (url.pathname === "/v1/auth/register" && request.method === "POST") {
@@ -240,6 +394,7 @@ async function handleRequest(request, env, ctx) {
       ).bind(email)
     ]);
 
+    recordAuthenticatedUser(request, { userId });
     return json(await buildAuthResponse(env, { userId, username, email }));
   }
 
@@ -304,6 +459,9 @@ async function handleRequest(request, env, ctx) {
   if (url.pathname === "/v1/auth/login" && request.method === "POST") {
     const payload = await readJson(request);
     const email = normalizeEmail(payload.email || payload.username);
+    // Attempted account is NOT an authenticated user; only emit its keyed digest.
+    loginAttemptIdentity.set(request, email);
+    await limitLoginBeforeDatabase(request, env, email);
     const password = validatePassword(payload.password);
     const authVersion = payload.authVersion || "";
     const legacyPassword = payload.legacyPassword ? validatePassword(payload.legacyPassword) : null;
@@ -373,6 +531,7 @@ async function handleRequest(request, env, ctx) {
     }
 
     await touchUser(env, user.user_id);
+    recordAuthenticatedUser(request, { userId: user.user_id });
     return json(await buildAuthResponse(env, { userId: user.user_id, username: user.username, email: user.email }));
   }
 
@@ -499,11 +658,20 @@ async function handleRequest(request, env, ctx) {
       ).bind(now, user.user_id)
     ]);
 
+    recordAuthenticatedUser(request, { userId: user.user_id });
     return json(await buildAuthResponse(env, { userId: user.user_id, username: user.username, email: user.email }));
   }
 
   if (url.pathname === "/v1/auth/me" && request.method === "GET") {
     const auth = await requireAuth(request, env);
+    const vipInfo = await getUserVipInfo(env, auth.userId);
+    // Legacy clients poll account status. Never create/query the wish-wall tables
+    // for free users who cannot access that paid cloud feature.
+    if (env.CLOUD_VIP_ONLY === 'true' && !vipInfo.isVip) {
+      return json({userId:auth.userId, username:auth.username, email:auth.email,
+        points:0, wishesCount:0, acceptedCount:0, isAdmin:isAdminUser(auth, env),
+        ...vipInfo});
+    }
     let points = 0;
     let wishesCount = 0;
     let acceptedCount = 0;
@@ -520,7 +688,6 @@ async function handleRequest(request, env, ctx) {
     } catch (e) {
       console.warn("user_points query fallback:", e);
     }
-    const vipInfo = await getUserVipInfo(env, auth.userId);
     return json({
       userId: auth.userId,
       username: auth.username,
@@ -543,6 +710,44 @@ async function handleRequest(request, env, ctx) {
       username: auth.username,
       ...vipInfo
     });
+  }
+
+  // Membership discovery works for free users (including older signed-in clients).
+  if (url.pathname === "/v1/user/cloud-access" && request.method === "GET") {
+    const auth = await requireAuth(request, env);
+    const vipInfo = await getUserVipInfo(env, auth.userId);
+    const response = json({ ok: true, ...vipInfo,
+      cloudVipOnly: env.CLOUD_VIP_ONLY === 'true',
+      canUseCloud: env.CLOUD_VIP_ONLY !== 'true' || vipInfo.isVip,
+      freeVersionCeiling: '1.0',
+      upgradeUrl: 'https://wzyp.cn/shop/4AOUCE2B',
+      redeemPath: '/v1/licenses/redeem',
+      exportPath: '/v1/user/cloud-export',
+      message: vipInfo.isVip ? '会员云服务已开通' : '本地免费功能继续可用，云服务及后续版本需要激活 VIP'
+    });
+    response.headers.set('cache-control', 'no-store');
+    return response;
+  }
+
+  // Authenticated historical data portability. Read-only and paginated to avoid
+  // breaking users' access to their own pre-existing data after membership expiry.
+  if (url.pathname === "/v1/user/cloud-export" && request.method === "GET") {
+    const auth = await requireAuth(request, env);
+    const rawCursor = url.searchParams.get('cursor') ?? '0';
+    if (!/^(?:0|[1-9][0-9]{0,15})$/.test(rawCursor) || !Number.isSafeInteger(Number(rawCursor)))
+      throw new HttpError(400, 'invalid_export_cursor', 'Invalid export cursor');
+    if (env.EXPORT_RATE_LIMITER?.limit) {
+      const key = await anonymousKey(env, 'export', auth.userId);
+      if (!(await passesLoginRateLimit(env.EXPORT_RATE_LIMITER, key)))
+        throw new HttpError(429, 'export_rate_limited', 'Export temporarily rate limited; retry in one minute');
+    }
+    const page = await readUserSyncObjects(env, auth.userId, Number(rawCursor), 100);
+    const response = json({ok:true, format:'yanzi-cloud-sync-objects-v1',
+      note:'Snapshot of sync objects only; attachments and external storage must be exported separately.',
+      ...page});
+    response.headers.set('cache-control','no-store');
+    response.headers.set('content-disposition','attachment; filename="yanzi-sync-objects.json"');
+    return response;
   }
 
   if (url.pathname === "/v1/licenses/redeem" && request.method === "POST") {
@@ -612,6 +817,7 @@ async function handleRequest(request, env, ctx) {
       ).bind(newExpireAt, newVipType, nowIso, auth.userId)
     ]);
 
+    cloudVipCache.delete(auth.userId);
     const updatedVipInfo = await getUserVipInfo(env, auth.userId);
 
     return json({
@@ -901,7 +1107,9 @@ async function handleRequest(request, env, ctx) {
         platforms: platforms
       };
 
-      return withCors(json(payload));
+      const result = withCors(json(payload));
+      result.headers.set('cache-control', 'public, max-age=300');
+      return result;
     } catch (err) {
       console.error("Fetch GitHub releases failed:", err);
       // 容错：如果 GitHub 接口报错，返回兜底配置
@@ -1763,23 +1971,31 @@ async function handleRequest(request, env, ctx) {
     }
 
     const revision = currentRevision + 1;
-    const archiveKey = `users/${auth.userId}/extensions/${extensionId}/archive-history/${revision}-${sha256}.zip`;
+    // Reuse immutable bytes within the same account/extension if SHA matches.
+    // D1 history revisions remain independently restorable.
+    const reusableKey = await findReusablePrivateArchive(
+      env, auth.userId, extensionId, sha256, bytes.byteLength
+    );
+    const archiveKey = reusableKey ||
+      `users/${auth.userId}/extensions/${extensionId}/archive-history/${revision}-${sha256}.zip`;
     const now = isoNow();
     const deviceId = String(request.headers.get("x-yanzi-device-id") || "").slice(0, 200);
     const deviceName = String(request.headers.get("x-yanzi-device-name") || "").slice(0, 200);
 
-    await env.PACKAGES.put(archiveKey, bytes, {
-      httpMetadata: {
-        contentType: request.headers.get("content-type") || "application/zip"
-      },
-      customMetadata: {
-        userId: auth.userId,
-        extensionId,
-        version,
-        sha256,
-        private: "true"
-      }
-    });
+    if (!reusableKey) {
+      await env.PACKAGES.put(archiveKey, bytes, {
+        httpMetadata: {
+          contentType: request.headers.get("content-type") || "application/zip"
+        },
+        customMetadata: {
+          userId: auth.userId,
+          extensionId,
+          version,
+          sha256,
+          private: "true"
+        }
+      });
+    }
 
     const results = await env.DB.batch([
       env.DB.prepare(
@@ -1824,7 +2040,8 @@ async function handleRequest(request, env, ctx) {
     ]);
 
     if (Number(results?.[0]?.meta?.changes || 0) === 0) {
-      await env.PACKAGES.delete(archiveKey);
+      // A reused object remains referenced by old revisions.
+      if (!reusableKey) await env.PACKAGES.delete(archiveKey);
       const latest = await env.DB.prepare(
         `select revision from user_extension_archive_heads where user_id = ? and extension_id = ?`
       ).bind(auth.userId, extensionId).first();
@@ -1904,6 +2121,22 @@ async function handleRequest(request, env, ctx) {
     const payload = await readJson(request);
     await ensureUser(env, auth.userId);
 
+    // Deleting an extension is an account-wide tombstone, not just a missing row.
+    // A stale/offline desktop must never re-add it during its next auto-sync.
+    const existingAssociation = await env.DB.prepare(
+      "select enabled, settings_json from user_extensions where user_id = ? and extension_id = ?"
+    ).bind(auth.userId, extensionId).first();
+    let isDeleted = false;
+    try {
+      isDeleted = existingAssociation?.enabled === 0 &&
+        JSON.parse(existingAssociation.settings_json || "{}")._yanziDeleted === true;
+    } catch {
+      isDeleted = false;
+    }
+    if (isDeleted && payload.restoreDeleted !== true) {
+      return json({ error: "extension_deleted", message: "Restore the extension explicitly before re-enabling it." }, 409);
+    }
+
     let settings = payload.settings ?? {};
     if (extensionId === "yanzi-quickpanel-settings") {
       const existing = await env.DB.prepare(
@@ -1936,7 +2169,7 @@ async function handleRequest(request, env, ctx) {
       settings = scrubPersonalSyncSecretsFromValue(settings);
     }
 
-    await env.DB.prepare(
+    const upsertResult = await env.DB.prepare(
       `insert into user_extensions (
         user_id,
         extension_id,
@@ -1949,7 +2182,8 @@ async function handleRequest(request, env, ctx) {
         installed_version = excluded.installed_version,
         enabled = excluded.enabled,
         settings_json = excluded.settings_json,
-        updated_at = excluded.updated_at`
+        updated_at = excluded.updated_at
+      where ? = 1 or coalesce(json_extract(user_extensions.settings_json, '$._yanziDeleted'), 0) != 1`
     )
       .bind(
         auth.userId,
@@ -1957,10 +2191,14 @@ async function handleRequest(request, env, ctx) {
         String(payload.installedVersion ?? payload.version ?? "0.0.0").slice(0, 50),
         payload.enabled === false ? 0 : 1,
         JSON.stringify(settings),
-        isoNow()
+        isoNow(),
+        payload.restoreDeleted === true ? 1 : 0
       )
       .run();
 
+    if (Number(upsertResult.meta?.changes ?? 0) === 0) {
+      return json({ error: "extension_deleted", message: "The extension was deleted on another device." }, 409);
+    }
     return json({ ok: true, userId: auth.userId, extensionId });
   }
 
@@ -1969,11 +2207,21 @@ async function handleRequest(request, env, ctx) {
     const extensionId = decodeURIComponent(myExtensionMatch[1]);
     await ensureUser(env, auth.userId);
 
+    // Keep a durable account-scoped tombstone so an offline desktop cannot
+    // recreate this association during background sync. Original extension
+    // package data is retained for a deliberate recycle-bin restore.
+    const deletedAt = isoNow();
     const result = await env.DB.prepare(
-      `delete from user_extensions
-       where user_id = ? and extension_id = ?`
+      `insert into user_extensions
+         (user_id, extension_id, installed_version, enabled, settings_json, updated_at)
+       select ?, extension_id, '0.0.0', 0, ?, ?
+       from extensions where extension_id = ?
+       on conflict(user_id, extension_id) do update set
+         enabled = 0, settings_json = excluded.settings_json,
+         updated_at = excluded.updated_at`
     )
-      .bind(auth.userId, extensionId)
+      .bind(auth.userId, JSON.stringify({ _yanziDeleted: true, deletedAt }),
+        deletedAt, extensionId)
       .run();
 
     return json({
@@ -1989,10 +2237,7 @@ async function handleRequest(request, env, ctx) {
 
 async function getUserVipInfo(env, userId) {
   try {
-    await ensureLicenseTables(env);
-    const userRecord = await env.DB.prepare(
-      "select vip_expire_at, vip_type from users where user_id = ?"
-    ).bind(userId).first();
+    const userRecord = await cachedCloudVipRecord(env, String(userId));
 
     if (!userRecord) {
       return { isVip: false, vipType: null, vipExpireAt: null, daysRemaining: 0 };
@@ -2048,13 +2293,13 @@ async function requireAuth(request, env) {
     try {
       const payload = await verifyToken(env, token);
       if (payload?.sub && payload?.username && payload.type === 'device')
-        return await authorizeDeviceCredential(request, env, payload, HttpError);
+        return await finalizeCloudAuth(request, env, await authorizeDeviceCredential(request, env, payload, HttpError));
       if (payload?.sub && payload?.username && !payload.type) {
-        return {
+        return await finalizeCloudAuth(request, env, {
           userId: String(payload.sub),
           username: String(payload.username),
           email: payload.email ? String(payload.email) : null
-        };
+        });
       }
     } catch (tokenErr) {
       if (tokenErr.status === 403 || tokenErr.status === 401 && ["token_expired", "device_credential_revoked"].includes(tokenErr.code)) {
@@ -2096,16 +2341,17 @@ async function requireAuth(request, env) {
               Number(user.password_iterations || PASSWORD_ITERATIONS)
           );
             if (passwordHash === user.password_hash) {
-              return {
+              return await finalizeCloudAuth(request, env, {
                 userId: String(user.user_id),
                 username: String(user.username),
                 email: user.email ? String(user.email) : null
-              };
+              });
             }
           }
         }
       }
     } catch (basicAuthErr) {
+      if (basicAuthErr instanceof HttpError && basicAuthErr.code === 'vip_required') throw basicAuthErr;
       // 捕获 Base64 编码或数据库请求异常
     }
   }
@@ -4351,7 +4597,7 @@ function withCors(response) {
   response.headers.set("access-control-allow-methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
   response.headers.set(
     "access-control-allow-headers",
-    "content-type,authorization,accept,origin,x-yanzi-client,x-yanzi-client-version,x-api-version,x-client-version"
+    "content-type,authorization,accept,origin,x-yanzi-client,x-yanzi-client-version,x-yanzi-device-id,x-api-version,x-client-version"
   );
   return response;
 }

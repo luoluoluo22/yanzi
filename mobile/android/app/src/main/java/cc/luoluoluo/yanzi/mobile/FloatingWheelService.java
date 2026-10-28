@@ -2209,6 +2209,17 @@ public class FloatingWheelService extends Service {
                         Intent syncIntent = new Intent(BuildConfig.APPLICATION_ID + ".SYNC_YANM");
                         this.sendBroadcast(syncIntent);
                     } else if ("YanziChat".equals(title)) {
+                        AgentStreamProtocol.Event streamEvent = AgentStreamProtocol.parse(text);
+                        if (streamEvent != null) {
+                            android.util.Log.i("YanziAgentStream", "LAN event state=" + streamEvent.state + " seq=" + streamEvent.seq);
+                            String streamSourceId = json.optString("sourceDeviceId", peerDevice == null ? "" : peerDevice);
+                            JSONObject streamPayload = json.optJSONObject("payload");
+                            String streamSourceName = json.optString("sourceDeviceName", "");
+                            if (streamSourceName.isEmpty() && streamPayload != null)
+                                streamSourceName = streamPayload.optString("sourceDeviceName", "");
+                            if (streamSourceName.isEmpty()) streamSourceName = peerDisplayName(streamSourceId);
+                            MainActivity.onReceivedAgentStream(streamEvent, streamSourceId, streamSourceName);
+                        } else {
                         synchronized (MobileDesktopTransfer.deliveryLock) {
                         int receiptCount = MobileDesktopTransfer.cleanupReceipts(this);
                         String logicalId = json.optString("clientMessageId");
@@ -2242,7 +2253,8 @@ public class FloatingWheelService extends Service {
                         if (sourceName.isEmpty() && messagePayload != null) sourceName = messagePayload.optString("sourceDeviceName", "");
                         if (sourceName.isEmpty()) sourceName = peerDisplayName(sourceId);
                         long receivedAt = ChatHistoryStore.messageTime(json);
-                        this.saveChatMessageToPrefs(kind, content, sourceId, sourceName, receivedAt);
+                        ChatHistoryStore.append(this,ChatHistoryStore.message("peer",kind,content,receivedAt,
+                            json.optString("messageId"),sourceId,sourceName).put("conversationId",ChatConversation.incoming(json)));
                         Intent chatIntent = new Intent(BuildConfig.APPLICATION_ID + ".CHAT_MESSAGE");
                         chatIntent.putExtra("message", content);
                         chatIntent.putExtra("kind", kind);
@@ -2253,6 +2265,7 @@ public class FloatingWheelService extends Service {
                         Log.d(TAG, "Saved and broadcast chat message from " + sourceName);
                         if (logicalId.matches("[a-f0-9]{32}"))
                             if (!inboxPrefs.edit().putString("lanTransfer." + logicalId, new JSONObject().put("state", "completed").put("savedAt", System.currentTimeMillis()).toString()).commit()) throw new java.io.IOException("inbox_result_commit_failed");
+                        }
                         }
                         }
                     } else {

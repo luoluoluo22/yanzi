@@ -12,7 +12,7 @@ if (-not $process -or $process.CommandLine -notmatch '--dev' -or
 }
 $window = $a::RootElement.FindFirst([System.Windows.Automation.TreeScope]::Children,
     (New-Object System.Windows.Automation.PropertyCondition($a::NameProperty,
-        '燕子设置 · 统一 UI 试用（开发版）')))
+        '燕子设置 · 统一 UI（开发版）')))
 if (-not $window -or $window.Current.ProcessId -ne $ProcessId) {
     throw 'Preview settings window not ready'
 }

@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
 using System.Diagnostics;
@@ -122,27 +122,36 @@ public partial class SettingsWindow
 
     private void AddProviderButton_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new AddProviderWindow();
-        dialog.Owner = this;
-        if (dialog.ShowDialog() == true)
+        try
         {
-            var newProvider = new AiServiceProviderSettings
+            var dialog = new AddProviderWindow();
+            dialog.Owner = this;
+            if (dialog.ShowDialog() == true)
             {
-                Id = Guid.NewGuid().ToString(),
-                Name = dialog.ProviderName,
-                ProviderType = dialog.ProviderType,
-                BaseUrl = BuildDefaultProviderBaseUrl(dialog.ProviderType),
-                ApiKey = "",
-                IsEnabled = true,
-                Models = [],
-                SelectedModel = string.Empty
-            };
+                var newProvider = new AiServiceProviderSettings
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    Name = dialog.ProviderName,
+                    ProviderType = dialog.ProviderType,
+                    BaseUrl = BuildDefaultProviderBaseUrl(dialog.ProviderType),
+                    ApiKey = "",
+                    IsEnabled = true,
+                    Models = [],
+                    SelectedModel = string.Empty
+                };
 
-            var vm = new SettingsAiProviderVM(newProvider);
-            _aiServiceProvidersList.Add(vm);
-            SelectedServiceProvider = vm;
-            HasAiSettingsChanged = true;
-            OnPropertyChanged(nameof(FilteredProviders));
+                var vm = new SettingsAiProviderVM(newProvider);
+                _aiServiceProvidersList.Add(vm);
+                SelectedServiceProvider = vm;
+                HasAiSettingsChanged = true;
+                OnPropertyChanged(nameof(FilteredProviders));
+                QueueAiSettingsSave();
+            }
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"SettingsWindow.Ai: AddProviderWindow failed: {ex}");
+            System.Windows.MessageBox.Show(this, $"打开添加提供商窗口失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
@@ -156,6 +165,7 @@ public partial class SettingsWindow
                 SelectedServiceProvider.SelectedModel = SelectedServiceProvider.Models.FirstOrDefault() ?? string.Empty;
             }
             HasAiSettingsChanged = true;
+            QueueAiSettingsSave();
         }
     }
 
@@ -178,6 +188,7 @@ public partial class SettingsWindow
                         SelectedServiceProvider.SelectedModel = modelName;
                     }
                     HasAiSettingsChanged = true;
+                    QueueAiSettingsSave();
                 }
             }
         }
@@ -235,6 +246,7 @@ public partial class SettingsWindow
                     }
 
                     HasAiSettingsChanged = true;
+                    QueueAiSettingsSave();
                     ShowToast($"已添加 {addedCount} 个模型");
                 }
             }
@@ -295,6 +307,7 @@ public partial class SettingsWindow
     {
         return providerType switch
         {
+            "Ego ChatGPT" => "http://127.0.0.1:8765/v1",
             "Gemini" => "https://generativelanguage.googleapis.com/v1beta",
             "Anthropic" => "https://api.anthropic.com/v1",
             "Ollama" => "http://localhost:11434/v1",
@@ -321,6 +334,7 @@ public partial class SettingsWindow
     private void AiModelComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         HasAiSettingsChanged = true;
+        QueueAiSettingsSave();
     }
 
 

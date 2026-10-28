@@ -137,6 +137,27 @@ internal static class InstalledApplicationCatalog
         // 阶段三：同名但不同启动目标的应用必须共存。
         // 过去这里按 Title 只保留一项，会把新版/旧版微信、多个 IDE 版本等错误合并。
         // 现在保留质量最高的一项作为自然名称，其余条目加可读后缀并使用路径稳定 ID。
+        // Resolve alternate shell aliases before variant titles are generated.
+        var physicalTitles = refinedEntries
+            .Where(static entry => entry.DisplayPath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            .Select(static entry => entry.NormalizedTitle)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        refinedEntries = refinedEntries
+            .Where(entry => !entry.LaunchTarget.StartsWith("shell:AppsFolder", StringComparison.OrdinalIgnoreCase)
+                || !physicalTitles.Contains(entry.NormalizedTitle))
+            .ToList();
+        // The default browser profile shortcut duplicates the bare executable.
+        // Keep shortcuts for non-default profiles as separate launch choices.
+        var bareExecutables = refinedEntries
+            .Where(static entry => entry.DisplayPath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+                && string.IsNullOrWhiteSpace(entry.Arguments))
+            .Select(static entry => entry.NormalizedDisplayPath)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        refinedEntries = refinedEntries
+            .Where(entry => !bareExecutables.Contains(entry.NormalizedDisplayPath)
+                || string.IsNullOrWhiteSpace(entry.Arguments)
+                || !string.Equals(entry.Arguments.Replace(((char)34).ToString(), string.Empty).Trim(), "--profile-directory=Default", StringComparison.OrdinalIgnoreCase))
+            .ToList();
         var titleGroups = new Dictionary<string, List<InstalledApplicationEntry>>(StringComparer.OrdinalIgnoreCase);
         foreach (var entry in refinedEntries)
         {
@@ -210,6 +231,15 @@ internal static class InstalledApplicationCatalog
             }
         }
 
+        // Prefer a physical executable when AppsFolder publishes the same app name.
+        var physicalNames = finalResults
+            .Where(static entry => entry.DisplayPath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            .Select(static entry => entry.NormalizedTitle)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        finalResults = finalResults
+            .Where(entry => !entry.LaunchTarget.StartsWith("shell:AppsFolder", StringComparison.OrdinalIgnoreCase)
+                || !physicalNames.Contains(entry.NormalizedTitle))
+            .ToList();
         return finalResults
             .OrderBy(static entry => entry.Title, StringComparer.OrdinalIgnoreCase)
             .ToList();
