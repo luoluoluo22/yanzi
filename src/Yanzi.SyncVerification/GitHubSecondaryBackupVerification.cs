@@ -48,11 +48,15 @@ internal static class GitHubSecondaryBackupVerification
             // A new Windows profile must be able to import an offline recovery key.
             var rescueFile = Path.Combine(root, "offline-key.txt");
             GitHubSecondaryBackupService.ExportRecoveryKey(rescueFile);
-            if (!GitHubSecondaryBackupService.IsRecoveryKeyConfirmed()) throw new Exception("Export must confirm this device key.");
+            if (GitHubSecondaryBackupService.IsRecoveryKeyConfirmed()) throw new Exception("Export alone must not confirm offline storage.");
+            GitHubSecondaryBackupService.ConfirmExportedRecoveryKey(rescueFile);
+            if (!GitHubSecondaryBackupService.IsRecoveryKeyConfirmed()) throw new Exception("Explicit confirmation must bind this device key.");
             var marker = HostAssets.ResolveDataFilePath("github-backup-key-confirmation.sha256");
             File.WriteAllBytes(marker, new byte[32]);
             if (GitHubSecondaryBackupService.IsRecoveryKeyConfirmed()) throw new Exception("A marker for a different key must not be accepted.");
-            GitHubSecondaryBackupService.ExportRecoveryKey(Path.Combine(root, "offline-key-second.txt"));
+            var secondFile = Path.Combine(root, "offline-key-second.txt");
+            GitHubSecondaryBackupService.ExportRecoveryKey(secondFile);
+            GitHubSecondaryBackupService.ConfirmExportedRecoveryKey(secondFile);
             var sourceKey = GitHubSecondaryBackupService.LoadOrCreateKey();
             using (HostAssets.UseIsolatedDataRootForVerification(Path.Combine(root, "new-device-profile")))
             {

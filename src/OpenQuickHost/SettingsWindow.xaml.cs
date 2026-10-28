@@ -5333,7 +5333,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         try
         {
             GitHubSecondaryBackupService.ExportRecoveryKey(dialog.FileName);
-            System.Windows.MessageBox.Show(this, "恢复密钥已导出。请将它保存在其他设备或安全介质上。", "导出成功", MessageBoxButton.OK, MessageBoxImage.Information);
+            var confirmed = System.Windows.MessageBox.Show(this,
+                "密钥文件已导出。您是否已将它保存在其他设备或安全介质上？选择‘否’时，GitHub 灾难备份仍会暂停。",
+                "确认离线保存", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (confirmed == MessageBoxResult.Yes)
+                GitHubSecondaryBackupService.ConfirmExportedRecoveryKey(dialog.FileName);
         }
         catch (Exception ex)
         {

@@ -294,7 +294,6 @@ public static class GitHubSecondaryBackupService
         {
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(destination))!);
             File.WriteAllText(destination, "YANZI-GITHUB-RECOVERY-KEY-V1:" + Convert.ToBase64String(key));
-            ConfirmRecoveryKey(key);
         }
         finally { CryptographicOperations.ZeroMemory(key); }
     }
@@ -318,6 +317,28 @@ public static class GitHubSecondaryBackupService
             ConfirmRecoveryKey(key);
         }
         finally { CryptographicOperations.ZeroMemory(key); }
+    }
+
+    public static void ConfirmExportedRecoveryKey(string source)
+    {
+        const string prefix = "YANZI-GITHUB-RECOVERY-KEY-V1:";
+        var text = File.ReadAllText(source).Trim();
+        if (!text.StartsWith(prefix, StringComparison.Ordinal))
+            throw new InvalidDataException("Recovery-key file format mismatch.");
+        var exported = Convert.FromBase64String(text[prefix.Length..]);
+        byte[]? current = null;
+        try
+        {
+            current = LoadOrCreateKey();
+            if (exported.Length != current.Length || !CryptographicOperations.FixedTimeEquals(exported, current))
+                throw new InvalidOperationException("The exported key does not match this device.");
+            ConfirmRecoveryKey(current);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(exported);
+            if (current != null) CryptographicOperations.ZeroMemory(current);
+        }
     }
 
     private static void ConfirmRecoveryKey(byte[] key)
