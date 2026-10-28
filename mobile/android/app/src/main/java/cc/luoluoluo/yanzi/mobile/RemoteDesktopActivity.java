@@ -5,6 +5,7 @@ import android.app.AlertDialog;
 import android.os.Bundle;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.content.res.Configuration;
 import android.graphics.Color;
 import android.view.Gravity;
 import android.view.View;
@@ -142,6 +143,14 @@ public final class RemoteDesktopActivity extends Activity {
         root.addView(viewer,new LinearLayout.LayoutParams(-1,0,1f));
         viewer.loadUrl(url);
     }
+    @Override public void onConfigurationChanged(Configuration config) {
+        super.onConfigurationChanged(config);
+        if (viewer != null) {
+            viewer.requestLayout();
+            viewer.invalidate();
+        }
+    }
+
     private void disconnectView(){
         if(viewer!=null){
             viewer.stopLoading();
