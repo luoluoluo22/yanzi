@@ -1,4 +1,4 @@
-﻿<Window x:Class="OpenQuickHost.SettingsWindow"
+<Window x:Class="OpenQuickHost.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -1578,6 +1578,7 @@
 
                                         <!-- Configuration Fields -->
                                         <StackPanel Grid.Row="1" Margin="20,20,20,16">
+                                            <Button Content="导出 GitHub 备份恢复密钥" Click="ExportGitHubBackupKeyButton_Click" HorizontalAlignment="Left" Margin="0,0,0,12" ToolTip="将恢复密钥保存到其他设备或安全介质，避免设备损坏后无法恢复备份。"/>
                                             <Grid>
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*"/>

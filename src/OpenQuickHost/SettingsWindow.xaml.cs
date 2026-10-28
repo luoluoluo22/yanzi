@@ -5318,6 +5318,33 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private void ExportGitHubBackupKeyButton_Click(object sender, RoutedEventArgs e)
+    {
+        var message = "恢复密钥可解密您的 GitHub 灾难备份。请选择安全位置保存，并将文件另存到其他设备或安全介质；不要上传到仓库或分享给他人。";
+        if (System.Windows.MessageBox.Show(this, message, "导出恢复密钥", MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK) return;
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = "保存 GitHub 备份恢复密钥",
+            FileName = "yanzi-github-recovery-key.txt",
+            Filter = "文本文件 (*.txt)|*.txt|所有文件 (*.*)|*.*",
+            OverwritePrompt = true
+        };
+        if (dialog.ShowDialog(this) != true) return;
+        try
+        {
+            GitHubSecondaryBackupService.ExportRecoveryKey(dialog.FileName);
+            var confirmed = System.Windows.MessageBox.Show(this,
+                "密钥文件已导出。您是否已将它保存在其他设备或安全介质上？选择‘否’时，GitHub 灾难备份仍会暂停。",
+                "确认离线保存", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (confirmed == MessageBoxResult.Yes)
+                GitHubSecondaryBackupService.ConfirmExportedRecoveryKey(dialog.FileName);
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(this, $"导出失败：{ex.Message}", "导出恢复密钥", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
     private async void RefreshPersonalSyncCommitsButton_Click(object sender, RoutedEventArgs e)
     {
         await RefreshPersonalSyncCommitsAsync(forceMessage: true);

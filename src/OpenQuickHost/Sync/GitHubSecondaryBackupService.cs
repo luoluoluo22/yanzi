@@ -27,12 +27,16 @@ public static class GitHubSecondaryBackupService
         HostAssets.ResolveDataFilePath("github-backup-recovery-key.dat");
     private static string StatePath =>
         HostAssets.ResolveDataFilePath("github-backup-state.json");
+    private static string RecoveryKeyConfirmationPath =>
+        HostAssets.ResolveDataFilePath("github-backup-key-confirmation.sha256");
 
     public static async Task<GitHubBackupResult> BackupAsync(
         AppSettings settings, bool force = false, CancellationToken cancellationToken = default)
     {
         if (!settings.PersonalSync.GitHubBackupEnabled && !force)
             return new GitHubBackupResult(false, "disabled", 0, null);
+        if (!IsRecoveryKeyConfirmed())
+            return new GitHubBackupResult(false, "offline-recovery-key-not-confirmed", 0, null);
         var secrets = PersonalSyncSecretStore.Load();
         if (string.IsNullOrWhiteSpace(secrets.GitHubToken) ||
             string.IsNullOrWhiteSpace(settings.PersonalSync.GitHub.Repo))
@@ -310,8 +314,60 @@ public static class GitHubSecondaryBackupService
             var tmp = RecoveryKeyPath + ".tmp";
             File.WriteAllBytes(tmp, ProtectedData.Protect(key, null, DataProtectionScope.CurrentUser));
             File.Move(tmp, RecoveryKeyPath, overwrite: false);
+            ConfirmRecoveryKey(key);
         }
         finally { CryptographicOperations.ZeroMemory(key); }
+    }
+
+    public static void ConfirmExportedRecoveryKey(string source)
+    {
+        const string prefix = "YANZI-GITHUB-RECOVERY-KEY-V1:";
+        var text = File.ReadAllText(source).Trim();
+        if (!text.StartsWith(prefix, StringComparison.Ordinal))
+            throw new InvalidDataException("Recovery-key file format mismatch.");
+        var exported = Convert.FromBase64String(text[prefix.Length..]);
+        byte[]? current = null;
+        try
+        {
+            current = LoadOrCreateKey();
+            if (exported.Length != current.Length || !CryptographicOperations.FixedTimeEquals(exported, current))
+                throw new InvalidOperationException("The exported key does not match this device.");
+            ConfirmRecoveryKey(current);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(exported);
+            if (current != null) CryptographicOperations.ZeroMemory(current);
+        }
+    }
+
+    private static void ConfirmRecoveryKey(byte[] key)
+    {
+        var fingerprint = SHA256.HashData(key);
+        try { File.WriteAllBytes(RecoveryKeyConfirmationPath, fingerprint); }
+        finally { CryptographicOperations.ZeroMemory(fingerprint); }
+    }
+
+    internal static bool IsRecoveryKeyConfirmed()
+    {
+        if (!File.Exists(RecoveryKeyPath) || !File.Exists(RecoveryKeyConfirmationPath)) return false;
+        byte[]? key = null;
+        byte[]? fingerprint = null;
+        try
+        {
+            key = LoadOrCreateKey();
+            fingerprint = SHA256.HashData(key);
+            var recorded = File.ReadAllBytes(RecoveryKeyConfirmationPath);
+            return recorded.Length == fingerprint.Length && CryptographicOperations.FixedTimeEquals(recorded, fingerprint);
+        }
+        catch (IOException) { return false; }
+        catch (UnauthorizedAccessException) { return false; }
+        catch (CryptographicException) { return false; }
+        finally
+        {
+            if (key != null) CryptographicOperations.ZeroMemory(key);
+            if (fingerprint != null) CryptographicOperations.ZeroMemory(fingerprint);
+        }
     }
 
     public static byte[] LoadOrCreateKey()

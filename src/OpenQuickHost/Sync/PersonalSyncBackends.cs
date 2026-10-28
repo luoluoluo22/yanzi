@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Net.Http.Headers;
@@ -363,6 +363,10 @@ internal sealed class GitHubPersonalSyncBackend : PersonalSyncBackendBase
         }
 
         var payload = await response.Content.ReadFromJsonAsync<GitHubContentPayload>(JsonOptions, cancellationToken);
+        if ((relativePath.EndsWith(".yzbk", StringComparison.OrdinalIgnoreCase) ||
+             relativePath.EndsWith(".bin", StringComparison.OrdinalIgnoreCase)) &&
+            !string.IsNullOrWhiteSpace(payload?.GitUrl))
+            return await ReadBlobBytesAsync(payload.GitUrl, cancellationToken);
         if (!string.IsNullOrWhiteSpace(payload?.Content))
         {
             return DecodeBase64Content(payload.Content);
