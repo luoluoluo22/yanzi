@@ -42,6 +42,10 @@ public partial class MainWindow
     private Yanzi.UI.Wpf.YanziDropdownMenu? _activeAiChatMenu;
     private AiChatTopic? _selectedAiChatTopic;
     private readonly HttpClient _aiHttpClient = new() { Timeout = TimeSpan.FromSeconds(300) };
+    private static readonly TimeSpan AiModelDiscoveryInterval = TimeSpan.FromMinutes(15);
+    private readonly Dictionary<string, DateTimeOffset> _aiModelDiscoveryAttempts = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _aiModelDiscoveryInFlight = new(StringComparer.OrdinalIgnoreCase);
+    private DispatcherTimer? _aiModelDiscoveryTimer;
     private string _aiChatInputText = string.Empty;
     private string _aiChatStatusText = "选择或新建话题开始对话";
     private string _aiChatSendErrorText = string.Empty;
@@ -733,6 +737,7 @@ public partial class MainWindow
     {
         LoadTopicsFromStorage();
         RefreshAiModelSelector();
+        StartAiModelDiscovery();
         
         // 切换到 AI Chat 模式时，调整窗口大小以获得更好的阅读体验
         if (WindowState == WindowState.Normal)
@@ -774,6 +779,7 @@ public partial class MainWindow
             return;
         }
 
+        _aiModelDiscoveryTimer?.Stop();
         if (_activeAiChatMenu is not null) _activeAiChatMenu.IsOpen = false;
         SaveTopicsToStorage();
 
@@ -810,8 +816,9 @@ public partial class MainWindow
             return;
         }
 
-        // Reload once when opening: another settings window may have added models.
+        // Display cached models while asynchronously refreshing the catalog.
         _appSettings = AppSettingsStore.Load();
+        QueueAiModelCatalogRefreshes();
         OnPropertyChanged(nameof(AiChatModelDisplayText));
 
         var menu = CreateAiChatMenu();
@@ -892,8 +899,127 @@ public partial class MainWindow
         _appSettings = AppSettingsStore.Load();
         RefreshAiModelSelector();
         OnPropertyChanged(nameof(AiChatModelDisplayText));
+        _aiModelDiscoveryAttempts.Clear();
+        if (IsAiChatMode) QueueAiModelCatalogRefreshes();
     }
 
+
+
+    private void StartAiModelDiscovery()
+    {
+        if (_aiModelDiscoveryTimer == null)
+        {
+            _aiModelDiscoveryTimer = new DispatcherTimer(DispatcherPriority.Background)
+            {
+                Interval = AiModelDiscoveryInterval
+            };
+            _aiModelDiscoveryTimer.Tick += (_, _) =>
+            {
+                if (IsAiChatMode) QueueAiModelCatalogRefreshes();
+            };
+        }
+
+        _aiModelDiscoveryTimer.Start();
+        QueueAiModelCatalogRefreshes();
+    }
+
+    private void QueueAiModelCatalogRefreshes()
+    {
+        foreach (var provider in (_appSettings.AiServiceProviders ?? []).Where(p => p.IsEnabled))
+        {
+            _ = RefreshAiModelCatalogAsync(provider.Id);
+        }
+    }
+
+    // Fetch asynchronously, retain the last successful list on failure, and
+    // never change the selected model implicitly.
+    private async Task RefreshAiModelCatalogAsync(string? providerId = null)
+    {
+        providerId ??= _appSettings.ActiveServiceProviderId;
+        var provider = (_appSettings.AiServiceProviders ?? []).FirstOrDefault(p =>
+            p.IsEnabled && string.Equals(p.Id, providerId, StringComparison.OrdinalIgnoreCase));
+        if (provider is null || string.IsNullOrWhiteSpace(provider.Id) ||
+            string.IsNullOrWhiteSpace(provider.ApiKey) || string.IsNullOrWhiteSpace(provider.BaseUrl))
+        {
+            return;
+        }
+
+        var id = provider.Id;
+        if (_aiModelDiscoveryInFlight.Contains(id) ||
+            (_aiModelDiscoveryAttempts.TryGetValue(id, out var lastAttempt) &&
+             DateTimeOffset.UtcNow - lastAttempt < AiModelDiscoveryInterval))
+        {
+            return;
+        }
+
+        _aiModelDiscoveryAttempts[id] = DateTimeOffset.UtcNow;
+        _aiModelDiscoveryInFlight.Add(id);
+        var snapshot = new AiProviderSnapshot(provider.ProviderType, provider.BaseUrl, provider.ApiKey);
+        try
+        {
+            var discovered = await SettingsAiController.FetchAvailableModelsAsync(snapshot);
+            if (discovered.Count == 0)
+            {
+                HostAssets.AppendLog($"AI model discovery returned an empty list: provider={id}; keeping cache.");
+                return;
+            }
+
+            // A settings transaction reloads the latest selected model and account
+            // state, avoiding overwrites while the network request is in flight.
+            var current = AppSettingsStore.Load();
+            var target = (current.AiServiceProviders ?? []).FirstOrDefault(p =>
+                p.IsEnabled && string.Equals(p.Id, id, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(p.BaseUrl, snapshot.BaseUrl, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(p.ApiKey, snapshot.ApiKey, StringComparison.Ordinal) &&
+                string.Equals(p.ProviderType, snapshot.ProviderType, StringComparison.OrdinalIgnoreCase));
+            if (target == null) return;
+            var pinnedModels = SettingsAiController.IncludeSelectedModel(discovered,
+                string.Equals(current.ActiveServiceProviderId, id, StringComparison.OrdinalIgnoreCase) ? current.AiModel : null,
+                target.SelectedModel);
+            if (!SettingsAiController.SameModelIds(target.Models, pinnedModels))
+            {
+                current = AppSettingsStore.Update(settings =>
+                {
+                    var latest = (settings.AiServiceProviders ?? []).FirstOrDefault(p =>
+                        p.IsEnabled && string.Equals(p.Id, id, StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(p.BaseUrl, snapshot.BaseUrl, StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(p.ApiKey, snapshot.ApiKey, StringComparison.Ordinal) &&
+                        string.Equals(p.ProviderType, snapshot.ProviderType, StringComparison.OrdinalIgnoreCase));
+                    if (latest != null)
+                    {
+                        var updated = SettingsAiController.IncludeSelectedModel(discovered,
+                            string.Equals(settings.ActiveServiceProviderId, id, StringComparison.OrdinalIgnoreCase) ? settings.AiModel : null,
+                            latest.SelectedModel);
+                        if (!SettingsAiController.SameModelIds(latest.Models, updated)) latest.Models = updated;
+                    }
+                    return settings;
+                });
+                HostAssets.AppendLog($"AI model catalog refreshed: provider={id}, count={discovered.Count}.");
+            }
+
+            if (IsAiChatMode &&
+                string.Equals(_appSettings.ActiveServiceProviderId, id, StringComparison.OrdinalIgnoreCase))
+            {
+                _appSettings = current;
+                RefreshAiModelSelector();
+                OnPropertyChanged(nameof(AiChatModelDisplayText));
+                if (!IsAiChatRequestInFlight && !string.IsNullOrWhiteSpace(current.AiModel) &&
+                    !discovered.Contains(current.AiModel, StringComparer.OrdinalIgnoreCase))
+                {
+                    AiChatStatusText = "当前模型已不在服务商最新列表中，请选择可用模型。";
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            // Do not log key material, query strings, or raw provider errors.
+            HostAssets.AppendLog($"AI model discovery unavailable: provider={id}, type={ex.GetType().Name}; using cache.");
+        }
+        finally
+        {
+            _aiModelDiscoveryInFlight.Remove(id);
+        }
+    }
 
 
     private async void SubmitAiChatMessage()
