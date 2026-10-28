@@ -379,7 +379,7 @@
         <Setter Property="MinHeight" Value="32"/>
         <Setter Property="Padding" Value="10,4"/>
         <Setter Property="FontFamily" Value="{DynamicResource Yanzi.Font.Geist}"/>
-        <Setter Property="FontSize" Value="16"/>
+        <Setter Property="FontSize" Value="{DynamicResource Yanzi.Font.Body}"/>
         <Setter Property="Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
         <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Card}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Input}"/>
@@ -772,7 +772,7 @@
         <Setter Property="MinHeight" Value="32"/>
         <Setter Property="Padding" Value="10,4"/>
         <Setter Property="FontFamily" Value="{DynamicResource Yanzi.Font.Geist}"/>
-        <Setter Property="FontSize" Value="16"/>
+        <Setter Property="FontSize" Value="{DynamicResource Yanzi.Font.Body}"/>
         <Setter Property="VerticalContentAlignment" Value="Center"/>
         <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Input}"/>
         <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Card}"/>

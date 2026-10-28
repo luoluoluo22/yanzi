@@ -31,6 +31,8 @@
 >    `%LOCALAPPDATA%\OpenQuickHost\ExtensionStorage\<extension-id>\`
 > 3. **严禁在 Git 仓库中创建小程序**：**严禁在宿主 Git 仓库代码树内（如根目录或 `extensions/` 目录下）创建或存放自用小程序**！燕子宿主仓库保持独立与纯净，所有小程序的开发测试与热重载，均直接在 `%LOCALAPPDATA%\OpenQuickHost\Extensions\` 下闭环进行。
 
+> **每次开工前必须执行的清单**：请先阅读 [Windows 小程序开发七步工作流](miniapps/DEVELOPMENT_WORKFLOW.md)。它明确了定位真实用户安装目录、审阅差异、备份、就地修改、环境变量凭据引用、自动同步及跨设备验收的完整顺序。不要因为需测试、提交或复制另一台设备，就在燕子宿主 Git 仓库另存一份业务小程序。
+
 ### 2.1 推荐工程目录结构
 
 ```text

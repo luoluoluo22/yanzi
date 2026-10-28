@@ -8,18 +8,18 @@
         MinWidth="720"
         MinHeight="480"
         WindowStartupLocation="CenterScreen"
-        Background="#FF111111">
+        Background="{DynamicResource BrushBG}">
     <Grid>
-        <Border x:Name="LoadingPanel" Background="#FF111111">
+        <Border x:Name="LoadingPanel" Background="{DynamicResource BrushBG}">
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                 <TextBlock x:Name="LoadingTitle"
                            Text="正在打开应用"
-                           Foreground="White"
+                           Foreground="{DynamicResource BrushTextMain}"
                            FontSize="{DynamicResource FontSizeLargePlus}"
                            FontWeight="SemiBold"
                            TextAlignment="Center"/>
                 <TextBlock Text="正在加载本地界面"
-                           Foreground="#FF9CA3AF"
+                           Foreground="{DynamicResource BrushTextSec}"
                            FontSize="{DynamicResource FontSizeSmallPlus}"
                            Margin="0,8,0,0"
                            TextAlignment="Center"/>
@@ -28,16 +28,16 @@
         <wv2:WebView2 x:Name="Browser" Visibility="Hidden" />
         <Border x:Name="ErrorPanel"
                 Visibility="Collapsed"
-                Background="#FF18181B"
+                Background="{DynamicResource BrushInputBG}"
                 Padding="24">
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="560">
                 <TextBlock Text="应用扩展加载失败"
-                           Foreground="White"
+                           Foreground="{DynamicResource BrushTextMain}"
                            FontSize="{DynamicResource FontSizeTitle}"
                            FontWeight="SemiBold"
                            TextAlignment="Center"/>
                 <TextBlock x:Name="ErrorTextBlock"
-                           Foreground="#FFA1A1AA"
+                           Foreground="{DynamicResource BrushTextMuted}"
                            FontSize="{DynamicResource FontSizeNormal}"
                            TextWrapping="Wrap"
                            TextAlignment="Center"

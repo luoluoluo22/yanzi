@@ -23,8 +23,9 @@ android {
         applicationId = "cc.luoluoluo.yanzi.mobile"
         minSdk = 26
         targetSdk = 35
-        versionCode = 54
-        versionName = "0.2.54"
+        // Next development build follows the last published Android release (0.2.76).
+        versionCode = 77
+        versionName = "0.2.77"
         providers.gradleProperty("YANZI_ANDROID_VERSION_CODE").orNull?.let {
             val candidate = it.toIntOrNull()
             require(candidate != null && candidate > 0) { "Invalid candidate Android version code" }
@@ -35,6 +36,8 @@ android {
             versionName = it
         }
         manifestPlaceholders["fcmEnabled"] = fcmEnabled.toString()
+        manifestPlaceholders["voiceMemoryActivityExported"] = "false"
+        manifestPlaceholders["voiceMemoryAppLabel"] = "@string/app_name"
         if (fcmEnabled) {
             val config = pushConfigFile!!.readText().replace("\\", "\\\\").replace("\"", "\\\"").replace("\r", "").replace("\n", "")
             buildConfigField("String", "FCM_CONFIG", "\"$config\"")
@@ -91,7 +94,11 @@ android {
         getByName("debug") { buildConfigField("boolean", "BUNDLED_WAKE_MODEL", bundledWakeModel.toString()) }
         create("dev") {
             initWith(getByName("debug"))
-            applicationIdSuffix = ".dev"
+            applicationIdSuffix = providers.gradleProperty("YANZI_ANDROID_DEV_SUFFIX").orNull ?: ".dev"
+            if (applicationIdSuffix == ".voiceqa") {
+                manifestPlaceholders["voiceMemoryActivityExported"] = "true"
+                manifestPlaceholders["voiceMemoryAppLabel"] = "燕记录音测试"
+            }
             versionNameSuffix = "-dev"
             buildConfigField("boolean", "BUNDLED_WAKE_MODEL", bundledWakeModel.toString())
             isDebuggable = true

@@ -6,10 +6,15 @@ import java.util.Locale;
 /** Chat persistence and message policy are independent of Activity lifetime. */
 final class MobileChatController {
     static void append(Context context, String deviceId, String role, String kind, String content, long time) {
+        append(context,deviceId,role,kind,content,time,ChatConversation.GROUP);
+    }
+    static void append(Context context, String deviceId, String role, String kind, String content, long time, String conversationId) {
         if (isDevelopmentChatArtifact(kind, content)) return;
         boolean self = "self".equals(role);
-        ChatHistoryStore.append(context, ChatHistoryStore.message(role, kind, content, time, "",
-            self ? deviceId : "", self ? MobileDeviceIdentity.buildDeviceDisplayName() : ""));
+        org.json.JSONObject message=ChatHistoryStore.message(role, kind, content, time, "",
+            self ? deviceId : "", self ? MobileDeviceIdentity.buildDeviceDisplayName() : "");
+        try { message.put("conversationId",conversationId); } catch(Exception ignored) {}
+        ChatHistoryStore.append(context,message);
     }
     static JSONArray load(Context context) { return ChatHistoryStore.load(context); }
     static void clear(Context context) { ChatHistoryStore.clear(context); }

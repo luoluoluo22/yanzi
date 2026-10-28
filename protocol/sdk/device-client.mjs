@@ -165,15 +165,46 @@ export class DeviceClient {
   async sync() {
     if (this.syncing) return; this.syncing = true;
     try {
-      // Restart from pending messages, including messages below a previously saved cursor whose ACK was lost.
-      let cursor = 0;
+      const cursorKey = this.prefix + 'cursor';
+      const recoveryAttemptKey = this.prefix + 'recoveryAttemptAt';
+      const recoveryCompletedKey = this.prefix + 'recoveryCompletedAt';
+      const savedNumber = value => value == null ? null :
+        (Number.isSafeInteger(Number(value)) && Number(value) >= 0 ? Number(value) : null);
+      let persistedCursor = savedNumber(await this.store.get(cursorKey));
+      const lastAttempt = savedNumber(await this.store.get(recoveryAttemptKey));
+      const lastCompleted = savedNumber(await this.store.get(recoveryCompletedKey));
+      const now = this.now();
+      // Normal polls resume from the persisted cursor. An hourly bootstrap scan
+      // recovers messages whose ACK may have been lost after the cursor advanced.
+      // Throttle failed recoveries so a broken connection cannot cause full
+      // inbox scans on every 30-second poll.
+      const recoveryDue = lastCompleted === null || now < lastCompleted ||
+        now - lastCompleted >= 60 * 60 * 1000;
+      const recoveryReady = lastAttempt === null || now < lastAttempt ||
+        now - lastAttempt >= 5 * 60 * 1000;
+      const recovering = recoveryDue && recoveryReady;
+      if (recovering) await this.store.set(recoveryAttemptKey, now);
+      let cursor = recovering ? 0 : (persistedCursor ?? 0);
       for (let page = 0; page < 100; page++) {
-        const response = await this.request('/v1/me/mobile/messages?deviceId=' + encodeURIComponent(this.deviceId) + '&limit=50&after=' + cursor);
+        const response = await this.request('/v1/me/mobile/messages?deviceId=' +
+          encodeURIComponent(this.deviceId) + '&limit=50&after=' + cursor);
         for (const message of response.items || []) await this.consume(message);
-        await this.store.set(this.prefix + 'cursor', response.nextCursor || cursor);
-        if (!response.hasMore) return;
-        if (response.nextCursor <= cursor) throw new DeviceProtocolError('non_monotonic_cursor');
-        cursor = response.nextCursor;
+        const nextCursor = savedNumber(response.nextCursor);
+        if (nextCursor === null || (response.hasMore && nextCursor <= cursor))
+          throw new DeviceProtocolError('non_monotonic_cursor');
+        // An occasional recovery from zero must not roll the regular cursor back.
+        // A server-reported reset *does* replace a stale cursor after DB rebuild.
+        const durableNext = response.cursorReset && !recovering
+          ? nextCursor : Math.max(persistedCursor ?? 0, nextCursor);
+        if (durableNext !== persistedCursor) {
+          await this.store.set(cursorKey, durableNext);
+          persistedCursor = durableNext;
+        }
+        if (!response.hasMore) {
+          if (recovering) await this.store.set(recoveryCompletedKey, this.now());
+          return;
+        }
+        cursor = nextCursor;
       }
       throw new DeviceProtocolError('sync_backpressure');
     } finally { this.syncing = false; }

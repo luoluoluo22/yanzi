@@ -44,6 +44,11 @@ internal static class ExtensionDataCatalogVerification
             !ExtensionStorageService.IsPortableDataForExtension("yanzi-album", "桌面钉图/pinned.png") ||
             ExtensionStorageService.IsPortableDataForExtension("yanzi-album", "private/session.json"))
             throw new Exception("Album personal assets must be portable without leaking device state");
+        // VPN credential/cache/runtime files must never enter generic extension-data recovery.
+        if (ExtensionStorageService.IsPortableDataForExtension("vpn-manager", "vpn-runtime/active-config.yaml") ||
+            ExtensionStorageService.IsPortableDataForExtension("vpn-manager", "vpn/settings.json") ||
+            ExtensionStorageService.IsPortableDataForExtension("vpn-manager", "proxy-lease.json"))
+            throw new Exception("VPN runtime or account state escaped the explicit synced-metadata boundary");
         if (!ExtensionStorageService.IsPortableDataForExtension("taskbar-calendar", "calendar_reminders.json") ||
             ExtensionStorageService.IsPortableDataForExtension("taskbar-calendar", "calendar_cache.json") ||
             ExtensionStorageService.IsPortableDataForExtension("taskbar-calendar", "calendar_reminders.json.tmp"))

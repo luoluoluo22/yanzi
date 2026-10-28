@@ -45,7 +45,8 @@ export class DeviceRelay extends DurableObject {
         continue;
       }
       const message = event.message;
-      const matches = isAccountWakeEvent(event) ? true : event.type === 'receipt'
+      const matches = event.type === 'agent-stream' ? peer.deviceId === event.targetDeviceId
+        : isAccountWakeEvent(event) ? true : event.type === 'receipt'
         ? peer.deviceId === event.sourceDeviceId
         : messageMatchesDevice(message, peer);
       if (!matches) continue;

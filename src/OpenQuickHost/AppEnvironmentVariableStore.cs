@@ -66,6 +66,7 @@ public static class AppEnvironmentVariableStore
             .ToArray();
         var deletedNames = previous.Keys.Except(current.Keys, StringComparer.OrdinalIgnoreCase).ToArray();
         AccountEnvironmentSecretVault.QueueUploadFromLocal(changedNames, deletedNames);
+        WindowsEnvironmentVariablePublisher.Synchronize();
     }
 
     /// <summary>
@@ -208,6 +209,7 @@ public static class AppEnvironmentVariableStore
             })
             .ToList();
         AppSettingsStore.Save(settings);
+        WindowsEnvironmentVariablePublisher.Synchronize();
     }
 
     private static Dictionary<string, string> LoadSecretValues()

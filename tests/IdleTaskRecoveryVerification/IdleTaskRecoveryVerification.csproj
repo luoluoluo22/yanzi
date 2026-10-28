@@ -6,11 +6,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <IdleTaskSource Condition="'$(IdleTaskSource)' == ''">$(LOCALAPPDATA)\OpenQuickHost\Extensions\idle-chatgpt-tasks\IdleTaskApp.cs</IdleTaskSource>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Program.cs"/>
     <Compile Include="TestRuntimeContext.cs"/>
-    <Compile Include="..\..\tools\idle-chatgpt-tasks\IdleTaskApp.cs" Link="IdleTaskApp.cs"/>
+    <Compile Include="$(IdleTaskSource)" Link="IdleTaskApp.cs"/>
     <ProjectReference Include="..\..\src\OpenQuickHost\OpenQuickHost.csproj"/>
   </ItemGroup>
 </Project>

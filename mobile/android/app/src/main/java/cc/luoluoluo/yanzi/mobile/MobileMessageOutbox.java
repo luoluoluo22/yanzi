@@ -105,13 +105,15 @@ final class MobileMessageOutbox {
             if (name.endsWith(".json") && age > 30L * 86400000) complete(file);
         }
     }
-    static void replay(String base, String token) throws Exception {
+    static void replay(String base, String token) throws Exception { replay(base, token, null); }
+    static void replay(String base, String token, MobileSessionStore.Snapshot session) throws Exception {
         if (!replaying.compareAndSet(false, true)) return;
         try {
             File[] pending = root(base, token).listFiles((dir, name) -> name.endsWith(".json"));
             if (pending == null) return;
             Arrays.sort(pending, java.util.Comparator.comparingLong(File::lastModified));
             for (int i = 0; i < Math.min(20, pending.length); i++) {
+                if (session != null) session.requireCurrent();
                 JSONObject envelope = read(pending[i]);
                 String expiry = envelope.optString("expiresAt");
                 if (!expiry.isEmpty() && java.time.Instant.parse(expiry).toEpochMilli() <= System.currentTimeMillis()) {
@@ -119,6 +121,7 @@ final class MobileMessageOutbox {
                 }
                 try {
                     envelope = prepare(pending[i], base, token);
+                    if (session != null) session.requireCurrent();
                     MobileMessageClient.requestWithoutQueue(base, "/v1/me/mobile/messages", token, "POST", envelope);
                     complete(pending[i]);
                 } catch (MobileMessageClient.HttpFailure error) {

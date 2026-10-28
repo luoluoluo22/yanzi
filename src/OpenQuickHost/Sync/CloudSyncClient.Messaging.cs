@@ -51,7 +51,19 @@ public sealed partial class CloudSyncClient
             x.TryGetProperty("online", out var online) && online.ValueKind == JsonValueKind.True,
             x.TryGetProperty("lastSeenAt", out var seen) ? seen.GetString() : null,
             x.TryGetProperty("createdAt", out var created) ? created.GetString() : null,
-            x.TryGetProperty("lastLocation", out var location) ? location.GetString() : null)).ToArray();
+            x.TryGetProperty("lastLocation", out var location) ? location.GetString() : null,
+            x.TryGetProperty("modelName", out var model) ? model.GetString() : null,
+            x.TryGetProperty("remark", out var remark) ? remark.GetString() : null)).ToArray();
+    }
+    public async Task<JsonElement> SetPeerDeviceRemarkAsync(string deviceId, string remark, CancellationToken cancellationToken = default)
+    {
+        await EnsureAuthenticatedAsync(cancellationToken);
+        using var request = CreateRequest(HttpMethod.Put, "/v1/me/devices/" + Uri.EscapeDataString(deviceId) + "/remark", true);
+        request.Content = JsonContent.Create(new { remark });
+        using var response = await SendAsyncWithFallback(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+        return json.RootElement.Clone();
     }
     public async Task<JsonElement?> GetPeerDescriptorAsync(string deviceId, CancellationToken cancellationToken = default)
     {
@@ -203,4 +215,5 @@ public sealed partial class CloudSyncClient
 }
 
 public sealed record PeerDeviceInfo(string DeviceId, string DisplayName, string Platform,
-    bool Online = false, string? LastSeenAt = null, string? CreatedAt = null, string? LastLocation = null);
+    bool Online = false, string? LastSeenAt = null, string? CreatedAt = null, string? LastLocation = null,
+    string? ModelName = null, string? Remark = null);

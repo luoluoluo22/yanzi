@@ -48,10 +48,30 @@ async function getPendingDeviceMessagePage(env, userId, deviceId, platform, limi
   const effectiveAfter = after > highWater ? 0 : after;
   const upperBound = highWater;
   const acceptsChat = acceptsAccountChat({ platform, capabilities }) ? 1 : 0;
+  // A caught-up incremental client needs no history join at all.
+  if (cursorProvided && effectiveAfter > 0 && effectiveAfter >= highWater) {
+    return {items: [], nextCursor: highWater, hasMore: false, highWater, cursorReset: effectiveAfter !== after};
+  }
   let rows;
+  let scannedThrough = upperBound;
 
-  if (cursorProvided) {
-    rows = await env.DB.prepare(
+  // A zero cursor also serves existing one-shot consumers that do not persist
+  // nextCursor. Keep their full pending-message lookup on bootstrap so they
+  // cannot miss messages following a long unrelated-device history.
+  if (cursorProvided && effectiveAfter > 0) {
+    // Bound the candidate sequence window BEFORE joining/filtering messages. A
+    // stale cursor can otherwise scan the entire account history each poll.
+    // Even an empty result advances the cursor, but must not claim hasMore:
+    // older desktop clients reject an empty page with hasMore=true.
+    const candidateWindow = Math.min(512, Math.max(64, limit * 16));
+    const candidateRows = await env.DB.prepare(
+      `SELECT sequence FROM device_message_sequence
+       WHERE user_id = ? AND sequence > ? AND sequence <= ?
+       ORDER BY sequence ASC LIMIT ?`
+    ).bind(userId, effectiveAfter, upperBound, candidateWindow).all();
+    const candidates = candidateRows.results ?? [];
+    scannedThrough = candidates.length ? Number(candidates[candidates.length - 1].sequence) : upperBound;
+    rows = candidates.length ? await env.DB.prepare(
       `SELECT m.*, q.sequence
        FROM device_message_sequence q
        JOIN device_messages m ON m.user_id = q.user_id AND m.message_id = q.message_id
@@ -69,12 +89,33 @@ async function getPendingDeviceMessagePage(env, userId, deviceId, platform, limi
          )
        ORDER BY q.sequence ASC LIMIT ?`
     ).bind(
-      userId, effectiveAfter, upperBound, isoNow(), deviceId, acceptsChat,
+      userId, effectiveAfter, scannedThrough, isoNow(), deviceId, acceptsChat,
       deviceId, deviceId, platform, limit + 1
-    ).all();
+    ).all() : {results: []};
+  } else if (!acceptsChat) {
+    // Server/IoT receivers do not subscribe to account chat. Use the
+    // indexed targeted pending-message branches, not the chat-history scan.
+    rows = await env.DB.prepare(
+      `SELECT * FROM (
+         SELECT m.*, q.sequence
+         FROM device_messages m INDEXED BY idx_device_messages_user_target
+         JOIN device_message_sequence q ON q.user_id = m.user_id AND q.message_id = m.message_id
+         WHERE m.user_id = ? AND m.status = 'pending' AND m.target_device_id = ?
+           AND q.sequence <= ? AND (m.expires_at IS NULL OR m.expires_at > ?)
+         UNION ALL
+         SELECT m.*, q.sequence
+         FROM device_messages m INDEXED BY idx_device_messages_user_target
+         JOIN device_message_sequence q ON q.user_id = m.user_id AND q.message_id = m.message_id
+         WHERE m.user_id = ? AND m.status = 'pending' AND m.target_device_id IS NULL
+           AND m.target_platform = ? AND q.sequence <= ?
+           AND coalesce(json_extract(m.payload_json, '$.accountChat'), 0) <> 1
+           AND (m.expires_at IS NULL OR m.expires_at > ?)
+       ) ORDER BY sequence ASC LIMIT ?`
+    ).bind(userId, deviceId, upperBound, isoNow(),
+      userId, platform, upperBound, isoNow(), limit + 1).all();
   } else {
-    // Compatibility path for pre-cursor clients. Query only currently
-    // deliverable rows instead of replay-scanning the entire account history.
+    // Compatibility path for chat-capable pre-cursor clients. Query only
+    // currently deliverable rows instead of replay-scanning the entire account history.
     rows = await env.DB.prepare(
       `SELECT * FROM (
          SELECT m.*, q.sequence
@@ -112,11 +153,15 @@ async function getPendingDeviceMessagePage(env, userId, deviceId, platform, limi
   }
 
   const allItems = (rows.results ?? []).map(serializeDeviceMessageRecord);
-  const hasMore = allItems.length > limit;
-  const items = hasMore ? allItems.slice(0, limit) : allItems;
-  const nextCursor = hasMore && items.length
+  const overLimit = allItems.length > limit;
+  const items = overLimit ? allItems.slice(0, limit) : allItems;
+  // Do not skip any matching item when the output limit is reached. When the
+  // window has fewer matches, advancing past all inspected candidates avoids
+  // repeatedly charging D1 for old messages belonging to other devices.
+  const nextCursor = overLimit && items.length
     ? Number(items[items.length - 1].sequence || effectiveAfter)
-    : highWater;
+    : scannedThrough;
+  const hasMore = overLimit || (cursorProvided && effectiveAfter > 0 && items.length > 0 && scannedThrough < highWater);
   return { items, nextCursor, hasMore, highWater, cursorReset: effectiveAfter !== after };
 }
 
@@ -155,13 +200,18 @@ async function notifyDeviceRelay(env, userId, event) {
 }
 
 function serializeDeviceRecord(row, referenceNowMs = Date.now()) {
+  const capabilities = parseJsonObject(row.capabilities_json);
+  const remark = typeof capabilities.accountRemark === 'string' ? capabilities.accountRemark : '';
   const lastSeenAtMs = Date.parse(String(row.last_seen_at || ""));
   const online = Number.isFinite(lastSeenAtMs)
     && Math.max(0, referenceNowMs - lastSeenAtMs) <= DEVICE_ONLINE_WINDOW_MS;
   return {
     deviceId: row.device_id,
     platform: row.platform,
-    displayName: row.display_name,
+    displayName: remark || row.display_name,
+    modelName: row.display_name,
+    remark,
+    remarkUpdatedAt: capabilities.accountRemarkUpdatedAt || null,
     capabilities: parseJsonObject(row.capabilities_json),
     needsMessageUpgrade: row.platform === 'android' && !parseJsonObject(row.capabilities_json).receiveMobileMessages,
     lastSeenAt: row.last_seen_at,

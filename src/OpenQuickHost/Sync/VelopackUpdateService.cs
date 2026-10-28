@@ -1,6 +1,8 @@
 using System;
 using System.IO;
 using System.Net.Http;
+using System.Net;
+using Microsoft.Win32;
 using System.Threading;
 using System.Threading.Tasks;
 using Velopack;
@@ -65,7 +67,7 @@ public sealed class VelopackUpdateService
                 _resolvedUpdateUrl = $"{_repoUrl.TrimEnd('/')}/releases/latest/download/";
             }
 
-            var source = new SimpleWebSource(_resolvedUpdateUrl);
+            var source = new SimpleWebSource(_resolvedUpdateUrl, new YanziProxyFileDownloader());
             _updateManager = new UpdateManager(source, null, null);
             
             // 记录完整的诊断启动信息
@@ -410,7 +412,8 @@ public sealed class VelopackUpdateService
         {
             // 尝试请求 RELEASES 文件（Velopack 约定），仅判定是否可达
             var releasesUrl = updateUrl.TrimEnd('/') + "/RELEASES";
-            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            using var client = new HttpClient(YanziProxyFileDownloader.CreateSystemProxyHandler())
+            { Timeout = TimeSpan.FromSeconds(10) };
             var response = await client.GetAsync(releasesUrl, HttpCompletionOption.ResponseHeadersRead);
             HostAssets.AppendLog(
                 $"VelopackUpdateService: network diagnosis OK. " +
@@ -422,5 +425,59 @@ public sealed class VelopackUpdateService
                 $"VelopackUpdateService: network diagnosis FAILED. " +
                 $"ExceptionType={ex.GetType().FullName}, Message={ex.Message}");
         }
+    }
+}
+
+
+/// <summary>
+/// Uses the signed-in Windows user's enabled HTTP proxy for update metadata and package
+/// downloads only. The system WinHTTP proxy may be "Direct" even when Edge/Clash has
+/// configured a WinINET proxy; no process-wide proxy environment is modified.
+/// </summary>
+internal sealed class YanziProxyFileDownloader : HttpClientFileDownloader
+{
+    protected override HttpClientHandler CreateHttpClientHandler() => CreateSystemProxyHandler();
+
+    internal static HttpClientHandler CreateSystemProxyHandler()
+    {
+        var handler = new HttpClientHandler();
+        try
+        {
+            using var settings = Registry.CurrentUser.OpenSubKey(
+                @"Software\Microsoft\Windows\CurrentVersion\Internet Settings");
+            if (settings?.GetValue("ProxyEnable") is not int enabled || enabled != 1)
+                return handler;
+            var definition = settings.GetValue("ProxyServer") as string;
+            if (string.IsNullOrWhiteSpace(definition)) return handler;
+
+            string? proxy = null;
+            foreach (var entry in definition.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                var parts = entry.Split('=', 2);
+                if (parts.Length == 1 && proxy == null) proxy = parts[0];
+                if (parts.Length == 2 && parts[0].Equals("https", StringComparison.OrdinalIgnoreCase))
+                {
+                    proxy = parts[1];
+                    break;
+                }
+                if (parts.Length == 2 && parts[0].Equals("http", StringComparison.OrdinalIgnoreCase))
+                    proxy ??= parts[1];
+            }
+            if (string.IsNullOrWhiteSpace(proxy)) return handler;
+            if (!proxy.Contains("://", StringComparison.Ordinal)) proxy = "http://" + proxy;
+            if (!Uri.TryCreate(proxy, UriKind.Absolute, out var uri)
+                || uri.Scheme is not ("http" or "https")
+                || string.IsNullOrEmpty(uri.Host))
+                return handler;
+
+            handler.Proxy = new WebProxy(uri) { BypassProxyOnLocal = true };
+            handler.UseProxy = true;
+        }
+        catch (Exception ex) when (ex is System.Security.SecurityException
+                                   or UnauthorizedAccessException or ArgumentException)
+        {
+            // A missing or protected registry key must never disable normal direct updates.
+        }
+        return handler;
     }
 }

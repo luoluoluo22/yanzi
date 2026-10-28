@@ -30,7 +30,7 @@ public sealed record AppSettings
 
     public bool EnableAutoUpdate { get; set; } = true;
 
-    public string AutoBackupFrequency { get; set; } = "Weekly";
+    public string AutoBackupFrequency { get; set; } = "None";
 
     public string LastAutoBackupTime { get; set; } = string.Empty;
 

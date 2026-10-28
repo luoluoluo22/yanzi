@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -418,6 +419,8 @@ public partial class AddJsonExtensionWindow : Window
     }
 
     private bool _isExtensionGuideDismissed = false;
+    private DateTime _browserProfileScannedAtUtc = DateTime.MinValue;
+    private IReadOnlyList<BrowserHelperBootstrap.BrowserProfile> _browserProfiles = Array.Empty<BrowserHelperBootstrap.BrowserProfile>();
     private System.Windows.Threading.DispatcherTimer? _browserExtensionCheckTimer;
 
     private void StartBrowserExtensionStateWatcher()
@@ -452,6 +455,13 @@ public partial class AddJsonExtensionWindow : Window
             ? Array.Empty<string>()
             : LocalAgentApiServer.GetRunningBrowserNames();
         bool browserRunning = runningBrowsers.Count > 0;
+        if (!isConnected && DateTime.UtcNow - _browserProfileScannedAtUtc > TimeSpan.FromSeconds(20))
+        {
+            _browserProfileScannedAtUtc = DateTime.UtcNow;
+            _browserProfiles = BrowserHelperBootstrap.Inspect();
+        }
+        var installedProfile = _browserProfiles.FirstOrDefault(p => p.Installed);
+        var installedEnabled = _browserProfiles.Any(p => p.Installed && p.Enabled);
 
         // 1. 刷新顶部状态胶囊与呼吸指示灯
         if (BrowserStatusDot != null && BrowserStatusText != null && BrowserConnectionStatusBadge != null)
@@ -467,7 +477,8 @@ public partial class AddJsonExtensionWindow : Window
             else if (browserRunning)
             {
                 BrowserStatusDot.Fill = AmberBrush;
-                BrowserStatusText.Text = $"{string.Join(" / ", runningBrowsers)} 已启动，助手未连接";
+                BrowserStatusText.Text = installedEnabled ? "助手已安装但未连接"
+                    : installedProfile != null ? "助手已禁用或未就绪" : "未安装燕子浏览器助手";
                 BrowserStatusText.Foreground = AmberBrush;
                 BrowserConnectionStatusBadge.Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x18, 0xFB, 0xBF, 0x24));
                 BrowserConnectionStatusBadge.BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x33, 0xFB, 0xBF, 0x24));
@@ -475,15 +486,29 @@ public partial class AddJsonExtensionWindow : Window
             else
             {
                 BrowserStatusDot.Fill = Text3Brush;
-                BrowserStatusText.Text = "浏览器未启动";
+                BrowserStatusText.Text = installedEnabled ? "助手已安装 · 浏览器未运行"
+                    : installedProfile != null ? "助手已安装但未启用" : "浏览器未启动 · 待安装助手";
                 BrowserStatusText.Foreground = Text2Brush;
                 BrowserConnectionStatusBadge.Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x12, 0x90, 0x90, 0xA8));
                 BrowserConnectionStatusBadge.BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x24, 0x90, 0x90, 0xA8));
             }
         }
 
-        // 2. 刷新引导横幅
+        // 2. 区分未安装、已禁用和已安装但未连接；浏览器连接握手才算最终验收成功。
         if (BrowserExtensionGuideBanner == null) return;
+        if (BrowserExtensionGuideTitle != null && BrowserExtensionGuideDescription != null && BrowserExtensionSetupButton != null)
+        {
+            BrowserExtensionGuideTitle.Text = installedEnabled ? "燕子浏览器助手已安装，但尚未连接"
+                : installedProfile != null ? "燕子浏览器助手已安装，但未启用"
+                : "尚未安装燕子浏览器助手";
+            BrowserExtensionGuideDescription.Text = installedEnabled
+                ? "请检查浏览器助手是否启用、点击重新连接服务，连接成功后此提示自动关闭。"
+                : installedProfile != null
+                    ? "检测到浏览器配置文件中存在扩展，请在扩展管理页启用，然后连接桌面端。"
+                    : "燕子已内置扩展安装包，可以准备稳定目录并引导你完成浏览器的必要授权。";
+            BrowserExtensionSetupButton.Content = installedEnabled ? "打开浏览器检查连接"
+                : installedProfile != null ? "前往启用扩展" : "安装浏览器助手";
+        }
         if (isConnected)
         {
             _isExtensionGuideDismissed = false;
@@ -554,103 +579,147 @@ public partial class AddJsonExtensionWindow : Window
         });
     }
 
-    private void QuickInstallBrowserExtension_Click(object sender, RoutedEventArgs e)
+    private async void QuickInstallBrowserExtension_Click(object sender, RoutedEventArgs e)
     {
         try
         {
-            var extPath = FindBrowserExtensionDirectory();
-            if (string.IsNullOrEmpty(extPath) || !Directory.Exists(extPath))
+            _browserProfiles = BrowserHelperBootstrap.Inspect();
+            _browserProfileScannedAtUtc = DateTime.UtcNow;
+            var profile = BrowserHelperDistribution.ChooseTarget(this, _browserProfiles);
+            if (profile == null) return;
+
+            if (profile.Browser == "Edge")
             {
-                ShowError("未找到内置的浏览器插件目录。");
+                if (profile.Installed)
+                {
+                    BrowserHelperBootstrap.OpenExtensionSettings(profile);
+                    System.Windows.MessageBox.Show(this,
+                        "已打开 Edge 扩展管理页。请检查燕子助手是否启用；商店安装版由 Edge 自动更新。",
+                        "Edge 扩展检查", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                else
+                {
+                    BrowserHelperDistribution.OpenStore(profile);
+                    System.Windows.MessageBox.Show(this,
+                        "已用 Edge 打开微软官方扩展商店，请点击【获取】并确认授权。"
+                        + "\n\n此商店版由 Edge 自动更新，不会替换已有的本地开发版。",
+                        "Edge 官方安装", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                UpdateBrowserExtensionBannerVisibility();
                 return;
             }
 
-            // 1. 在资源管理器中高亮定位 manifest.json 文件或文件夹
-            var manifestFile = Path.Combine(extPath, "manifest.json");
-            if (File.Exists(manifestFile))
+            var bundled = BrowserHelperBootstrap.FindBundledDirectory();
+            if (bundled == null)
             {
-                Process.Start("explorer.exe", $"/select,\"{manifestFile}\"");
+                ShowError("安装包缺少内置的浏览器助手文件，请修复或重新安装燕子。");
+                return;
             }
-            else
+            var stable = BrowserHelperBootstrap.EnsureStableBundle(bundled);
+            BrowserHelperBootstrap.WriteRuntimeConfiguration(_settings.AgentApiPort);
+            if (profile.Browser == "Ego")
             {
-                Process.Start("explorer.exe", $"\"{extPath}\"");
-            }
-
-            // 2. 唤起默认浏览器打开小程序管理页
-            try
-            {
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = "chrome://extensions",
-                    UseShellExecute = true
-                });
-            }
-            catch
-            {
+                BrowserExtensionSetupButton.IsEnabled = false;
                 try
                 {
-                    Process.Start(new ProcessStartInfo
+                    var outcome = await BrowserHelperDistribution.ConfigureEgoAsync(stable, true);
+                    if (outcome.Status == "external"
+                        && !string.IsNullOrWhiteSpace(outcome.ActualPath)
+                        && !string.IsNullOrWhiteSpace(outcome.ExtensionId))
                     {
-                        FileName = "edge://extensions",
-                        UseShellExecute = true
-                    });
+                        // Do NOT transplant an existing extension. Its ID, Chrome storage
+                        // and permissions may depend on the original unpacked path.
+                        var existingPath = outcome.ActualPath;
+                        var confirm = System.Windows.MessageBox.Show(this,
+                            "Ego 中已有燕子浏览器助手：" +
+                            $"\n版本：{outcome.Version}\n扩展 ID：{outcome.ExtensionId}" +
+                            $"\n当前路径：{existingPath}" +
+                            "\n\n建议保留此路径，不安装第二份，以免改变扩展 ID 或丢失数据。"
+                            + "\n燕子可以登记并管理此路径：检测文件变化后自动重新加载。"
+                            + "\n注意：如果这是 Git 开发目录，源码更新仍由 Git 负责，燕子不会覆盖工作区文件。"
+                            + "\n\n是否启用此安全托管方式？",
+                            "保留 Ego 原扩展与数据",
+                            MessageBoxButton.YesNo, MessageBoxImage.Question);
+                        if (confirm != MessageBoxResult.Yes) return;
+                        var reload = await BrowserHelperDistribution.ConfigureEgoAsync(existingPath,
+                            allowInstall: false, forceReload: true);
+                        if (!reload.Success || reload.ExtensionId != outcome.ExtensionId)
+                        {
+                            System.Windows.MessageBox.Show(this,
+                                $"Ego 重新加载未通过 ID 校验，未启用托管。{reload.Message}",
+                                "Ego 安装检查", MessageBoxButton.OK, MessageBoxImage.Warning);
+                            return;
+                        }
+                        BrowserHelperDistribution.SaveManagedEgo(new(
+                            "source", existingPath, outcome.ExtensionId,
+                            BrowserHelperDistribution.GetBundleFingerprint(existingPath)));
+                        BrowserHelperDistribution.StartManagedEgoMonitor();
+                        System.Windows.MessageBox.Show(this,
+                            $"已保留原扩展 ID：{reload.ExtensionId}。"
+                            + "\n已启用开发目录托管：源码文件改变后，燕子下次启动将自动重新加载。"
+                            + "\nGit 工作区未修改，也不会额外安装扩展。",
+                            "Ego 原路径托管成功", MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
+                    else
+                    {
+                        if (outcome.Success && !string.IsNullOrWhiteSpace(outcome.ExtensionId))
+                        {
+                            BrowserHelperDistribution.SaveManagedEgo(new(
+                                "stable", stable, outcome.ExtensionId,
+                                BrowserHelperDistribution.GetBundleFingerprint(stable)));
+                            BrowserHelperDistribution.StartManagedEgoMonitor();
+                        }
+                        System.Windows.MessageBox.Show(this, outcome.Message,
+                            "Ego 助手" + (outcome.Success ? "已就绪" : "需要处理"),
+                            MessageBoxButton.OK,
+                            outcome.Success ? MessageBoxImage.Information : MessageBoxImage.Warning);
+                    }
                 }
-                catch (Exception ex)
-                {
-                    HostAssets.AppendLog($"AddJsonExtension: failed to open edge://extensions: {ex.Message}");
-                }
+                finally { BrowserExtensionSetupButton.IsEnabled = true; }
+                UpdateBrowserExtensionBannerVisibility();
+                return;
             }
 
-            System.Windows.MessageBox.Show(
-                this,
-                "已为你打开插件目录与浏览器小程序页！\n\n【极速加载步骤】：\n1. 开启浏览器右上角的「开发者模式」；\n2. 将高亮选中的 browser-extension 文件夹直接拖入浏览器即可！\n\n安装完成后燕子将自动感知并就绪。",
-                "燕子浏览器助手加载指引",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
+            // Chrome, Brave, Vivaldi and Opera require a store-signed build for seamless
+            // updates. Until Chrome Web Store publishing is configured, guide the user's
+            // one-time, explicit developer-mode authorization instead of bypassing it.
+            try { System.Windows.Clipboard.SetText(stable); }
+            catch (Exception ex) { HostAssets.AppendLog($"BrowserHelper path copy skipped: {ex.GetType().Name}"); }
+            BrowserHelperBootstrap.OpenExtensionSettings(profile);
+            var instructions = profile.Installed
+                ? "检测到扩展已安装。请在扩展管理页确认版本与启用状态；"
+                  + "如果它是本地加载版，燕子升级后请点击【重新加载】。商店版则由浏览器自动更新。"
+                : $"已为 {profile.Browser} 准备燕子助手稳定目录：\n{stable}"
+                  + "\n\n1. 在扩展管理页打开【开发者模式】；"
+                  + "\n2. 点击【加载已解压的扩展程序】；"
+                  + "\n3. 粘贴已复制的稳定目录路径并确认。"
+                  + "\n\n本地加载版不会自动获得商店更新。后续会提供 Chrome Web Store 发行渠道。";
+            System.Windows.MessageBox.Show(this, instructions,
+                $"{profile.Browser} · 燕子助手安装与修复",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            UpdateBrowserExtensionBannerVisibility();
         }
         catch (Exception ex)
         {
-            HostAssets.AppendLog($"Quick install browser extension failed: {ex}");
-            ShowError($"打开插件目录失败：{ex.Message}");
+            HostAssets.AppendLog($"Browser helper setup failed: {ex}");
+            ShowError($"浏览器助手安装/修复失败：{ex.Message}");
         }
     }
 
     private void OpenExtensionTutorial_Click(object sender, RoutedEventArgs e)
     {
-        try
-        {
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = "https://github.com/luoluoluo22/yanzi#readme",
-                UseShellExecute = true
-            });
-        }
-        catch
-        {
-            QuickInstallBrowserExtension_Click(sender, e);
-        }
-    }
-
-    private static string? FindBrowserExtensionDirectory()
-    {
-        try
-        {
-            var baseDir = AppDomain.CurrentDomain.BaseDirectory;
-            var dir1 = Path.Combine(baseDir, "browser-extension");
-            if (Directory.Exists(dir1)) return dir1;
-
-            var dir2 = Path.GetFullPath(Path.Combine(baseDir, @"..\..\..\..\browser-extension"));
-            if (Directory.Exists(dir2)) return dir2;
-
-            var dir3 = Path.GetFullPath(Path.Combine(baseDir, @"..\..\..\browser-extension"));
-            if (Directory.Exists(dir3)) return dir3;
-        }
-        catch (Exception ex)
-        {
-            HostAssets.AppendLog($"AddJsonExtension: browser-extension dir probe failed: {ex.Message}");
-        }
-
-        return null;
+        _browserProfileScannedAtUtc = DateTime.MinValue;
+        _isExtensionGuideDismissed = false;
+        UpdateBrowserExtensionBannerVisibility();
+        var agentServer = ((App)System.Windows.Application.Current).AgentApiServer;
+        var connected = agentServer?.IsBrowserConnected == true;
+        var installed = _browserProfiles.FirstOrDefault(p => p.Installed);
+        var message = connected ? "浏览器助手已连接，功能验收通过。"
+            : installed is null ? "尚未检测到浏览器助手，请点击【安装浏览器助手】。"
+            : installed.Enabled ? "扩展已启用，但尚未和燕子桌面端建立连接。"
+            : "扩展已安装但未启用，请点击【前往启用扩展】。";
+        System.Windows.MessageBox.Show(this, message, "浏览器助手重新检测",
+            MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     private void CustomPromptTextBox_GotFocus(object sender, RoutedEventArgs e)
@@ -3606,8 +3675,8 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine();
         builder.AppendLine("最小示例：");
         builder.AppendLine("打开类：{\"name\":\"打开设置\",\"openTarget\":\"ms-settings:\"}");
-        builder.AppendLine("PowerShell：{\"id\":\"ps-demo\",\"name\":\"PowerShell 示例\",\"version\":\"0.1.0\",\"category\":\"脚本\",\"description\":\"执行 PowerShell。\",\"keywords\":[\"ps\"],\"runtime\":\"powershell\",\"entryMode\":\"inline\",\"permissions\":[],\"script\":{\"source\":\"param([string]$InputText = \\\"\\\", [string]$ContextPath = \\\"\\\")\\nWrite-Output $InputText\"}}");
-        builder.AppendLine("C#：{\"id\":\"csharp-demo\",\"name\":\"C# 示例\",\"version\":\"0.1.0\",\"category\":\"脚本\",\"description\":\"执行 C#。\",\"keywords\":[\"csharp\"],\"runtime\":\"csharp\",\"entryMode\":\"inline\",\"permissions\":[],\"script\":{\"source\":\"public static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        return Task.FromResult(context.InputText ?? string.Empty);\\n    }\\n}\"}}");
+        builder.AppendLine("PowerShell：{\"id\":\"ps-demo\",\"name\":\"PowerShell 示例\",\"version\":\"0.1.0\",\"category\":\"脚本\",\"description\":\"执行 PowerShell。\",\"keywords\":[\"ps\"],\"runtime\":\"powershell\",\"entryMode\":\"inline\",\"permissions\":[],\"script\":{\"source\":\"param([string]$InputText = \\\"\\\", [string]$ContextPath = \\\"\\\")\nWrite-Output $InputText\"}}");
+        builder.AppendLine("C#：{\"id\":\"csharp-demo\",\"name\":\"C# 示例\",\"version\":\"0.1.0\",\"category\":\"脚本\",\"description\":\"执行 C#。\",\"keywords\":[\"csharp\"],\"runtime\":\"csharp\",\"entryMode\":\"inline\",\"permissions\":[],\"script\":{\"source\":\"public static class YanziAction\n{\n    public static Task<string> RunAsync(YanziActionContext context)\n    {\n        return Task.FromResult(context.InputText ?? string.Empty);\n    }\n}\"}}");
         return builder.ToString();
     }
 
@@ -3799,7 +3868,7 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("    \"maxResults\": 50");
         builder.AppendLine("  },");
         builder.AppendLine("  \"script\": {");
-        builder.AppendLine("    \"source\": \"using System.Text.Json;\\npublic static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        var q = (context.InputText ?? string.Empty).Trim();\\n        var items = new object[]\\n        {\\n            new { id = \\\"doc-1\\\", title = \\\"接口文档\\\", subtitle = \\\"脚本生成的示例结果\\\", kind = \\\"record\\\", openTarget = \\\"https://example.com/docs\\\", keywords = new[] { \\\"文档\\\", q }, accentHex = \\\"#FF10B981\\\" },\\n            new { id = \\\"tool-1\\\", title = \\\"打开工具页\\\", subtitle = \\\"支持 URL / 文件 / 普通记录\\\", kind = \\\"url\\\", openTarget = \\\"https://example.com/tools?q=\\\" + System.Uri.EscapeDataString(q), keywords = new[] { \\\"工具\\\", q }, accentHex = \\\"#FF06B6D4\\\" }\\n        };\\n        return Task.FromResult(JsonSerializer.Serialize(items));\\n    }\\n}\"");
+        builder.AppendLine("    \"source\": \"using System.Text.Json;\npublic static class YanziAction\n{\n    public static Task<string> RunAsync(YanziActionContext context)\n    {\n        var q = (context.InputText ?? string.Empty).Trim();\n        var items = new object[]\n        {\n            new { id = \\\"doc-1\\\", title = \\\"接口文档\\\", subtitle = \\\"脚本生成的示例结果\\\", kind = \\\"record\\\", openTarget = \\\"https://example.com/docs\\\", keywords = new[] { \\\"文档\\\", q }, accentHex = \\\"#FF10B981\\\" },\n            new { id = \\\"tool-1\\\", title = \\\"打开工具页\\\", subtitle = \\\"支持 URL / 文件 / 普通记录\\\", kind = \\\"url\\\", openTarget = \\\"https://example.com/tools?q=\\\" + System.Uri.EscapeDataString(q), keywords = new[] { \\\"工具\\\", q }, accentHex = \\\"#FF06B6D4\\\" }\n        };\n        return Task.FromResult(JsonSerializer.Serialize(items));\n    }\n}\"");
         builder.AppendLine("  }");
         builder.AppendLine("}");
         builder.AppendLine();
@@ -3816,7 +3885,7 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("  \"permissions\": [],");
         builder.AppendLine("  \"icon\": \"mdi:code-tags\",");
         builder.AppendLine("  \"script\": {");
-        builder.AppendLine("    \"source\": \"using System.Threading.Tasks;\\npublic static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        var input = context.InputText ?? string.Empty;\\n        return Task.FromResult(\\\"收到输入：\\\" + input);\\n    }\\n}\"");
+        builder.AppendLine("    \"source\": \"using System.Threading.Tasks;\npublic static class YanziAction\n{\n    public static Task<string> RunAsync(YanziActionContext context)\n    {\n        var input = context.InputText ?? string.Empty;\n        return Task.FromResult(\\\"收到输入：\\\" + input);\n    }\n}\"");
         builder.AppendLine("  }");
         builder.AppendLine("}");
         builder.AppendLine();
@@ -3834,7 +3903,7 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("  \"permissions\": [],");
         builder.AppendLine("  \"icon\": \"mdi:counter\",");
         builder.AppendLine("  \"script\": {");
-        builder.AppendLine("    \"source\": \"using System.Threading.Tasks;\\npublic static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        var input = context.InputText ?? string.Empty;\\n        return Task.FromResult(\\\"原文：\\\" + input + \\\"\\\\n长度：\\\" + input.Length);\\n    }\\n}\"");
+        builder.AppendLine("    \"source\": \"using System.Threading.Tasks;\npublic static class YanziAction\n{\n    public static Task<string> RunAsync(YanziActionContext context)\n    {\n        var input = context.InputText ?? string.Empty;\n        return Task.FromResult(\\\"原文：\\\" + input + \\\"\\\n长度：\\\" + input.Length);\n    }\n}\"");
         builder.AppendLine("  }");
         builder.AppendLine("}");
         builder.AppendLine();
@@ -3915,7 +3984,7 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("    \"xaml\": \"<Grid xmlns=\\\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\\\" xmlns:x=\\\"http://schemas.microsoft.com/winfx/2006/xaml\\\" xmlns:oqh=\\\"clr-namespace:Yanzi\\\"><Grid.RowDefinitions><RowDefinition Height=\\\"Auto\\\"/><RowDefinition Height=\\\"12\\\"/><RowDefinition Height=\\\"*\\\"/><RowDefinition Height=\\\"Auto\\\"/></Grid.RowDefinitions><TextBlock Text=\\\"脚本工具台\\\" FontSize=\\\"22\\\" FontWeight=\\\"SemiBold\\\" Foreground=\\\"White\\\"/><Grid Grid.Row=\\\"2\\\"><Grid.ColumnDefinitions><ColumnDefinition Width=\\\"*\\\"/><ColumnDefinition Width=\\\"16\\\"/><ColumnDefinition Width=\\\"*\\\"/></Grid.ColumnDefinitions><StackPanel Grid.Column=\\\"0\\\"><TextBlock Text=\\\"输入\\\" Foreground=\\\"White\\\" Margin=\\\"0,0,0,8\\\"/><TextBox Text=\\\"{Binding [input], UpdateSourceTrigger=PropertyChanged}\\\" AcceptsReturn=\\\"True\\\" TextWrapping=\\\"Wrap\\\" VerticalScrollBarVisibility=\\\"Auto\\\" MinHeight=\\\"360\\\" Padding=\\\"12\\\"/></StackPanel><Border Grid.Column=\\\"2\\\" Background=\\\"#FF171717\\\" BorderBrush=\\\"#FF2E2E2E\\\" BorderThickness=\\\"1\\\" CornerRadius=\\\"12\\\" Padding=\\\"12\\\"><TextBox Text=\\\"{Binding [output]}\\\" IsReadOnly=\\\"True\\\" AcceptsReturn=\\\"True\\\" Background=\\\"Transparent\\\" BorderThickness=\\\"0\\\" Foreground=\\\"#FFE5E7EB\\\" TextWrapping=\\\"Wrap\\\" VerticalScrollBarVisibility=\\\"Auto\\\"/></Border></Grid><DockPanel Grid.Row=\\\"3\\\" Margin=\\\"0,14,0,0\\\"><TextBlock Text=\\\"{Binding [status]}\\\" Foreground=\\\"#FF9CA3AF\\\" VerticalAlignment=\\\"Center\\\"/><Button Content=\\\"执行脚本\\\" DockPanel.Dock=\\\"Right\\\" oqh:HostedViewBridge.Action=\\\"runScript;inputFrom=input;outputTo=output;successMessage=脚本执行完成\\\"/></DockPanel></Grid>\"");
         builder.AppendLine("  },");
         builder.AppendLine("  \"script\": {");
-        builder.AppendLine("    \"source\": \"using System.Threading.Tasks;\\npublic static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        var input = context.InputText ?? string.Empty;\\n        return Task.FromResult(\\\"输入长度：\\\" + input.Length + \\\"\\\\n\\\\n\\\" + input.ToUpperInvariant());\\n    }\\n}\"");
+        builder.AppendLine("    \"source\": \"using System.Threading.Tasks;\npublic static class YanziAction\n{\n    public static Task<string> RunAsync(YanziActionContext context)\n    {\n        var input = context.InputText ?? string.Empty;\n        return Task.FromResult(\\\"输入长度：\\\" + input.Length + \\\"\\\n\\\n\\\" + input.ToUpperInvariant());\n    }\n}\"");
         builder.AppendLine("  }");
         builder.AppendLine("}");
         builder.AppendLine();
@@ -3959,7 +4028,7 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("    \"xaml\": \"<Grid xmlns=\\\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\\\" xmlns:x=\\\"http://schemas.microsoft.com/winfx/2006/xaml\\\" xmlns:oqh=\\\"clr-namespace:Yanzi\\\"><Grid.RowDefinitions><RowDefinition Height=\\\"Auto\\\"/><RowDefinition Height=\\\"12\\\"/><RowDefinition Height=\\\"Auto\\\"/><RowDefinition Height=\\\"12\\\"/><RowDefinition Height=\\\"*\\\"/><RowDefinition Height=\\\"Auto\\\"/></Grid.RowDefinitions><TextBlock Text=\\\"路径工具台\\\" FontSize=\\\"22\\\" FontWeight=\\\"SemiBold\\\" Foreground=\\\"White\\\"/><Border Grid.Row=\\\"2\\\" Background=\\\"#FF171717\\\" BorderBrush=\\\"#FF2E2E2E\\\" BorderThickness=\\\"1\\\" CornerRadius=\\\"12\\\" Padding=\\\"18\\\"><StackPanel><TextBlock Text=\\\"目标目录\\\" Foreground=\\\"White\\\" Margin=\\\"0,0,0,8\\\"/><TextBox Text=\\\"{Binding [path], UpdateSourceTrigger=PropertyChanged}\\\" Padding=\\\"10\\\"/><TextBlock Text=\\\"匹配规则\\\" Foreground=\\\"White\\\" Margin=\\\"0,16,0,8\\\"/><TextBox Text=\\\"{Binding [rule], UpdateSourceTrigger=PropertyChanged}\\\" Padding=\\\"10\\\"/></StackPanel></Border><Border Grid.Row=\\\"4\\\" Background=\\\"#FF171717\\\" BorderBrush=\\\"#FF2E2E2E\\\" BorderThickness=\\\"1\\\" CornerRadius=\\\"12\\\" Padding=\\\"12\\\"><TextBox Text=\\\"{Binding [result]}\\\" IsReadOnly=\\\"True\\\" AcceptsReturn=\\\"True\\\" Background=\\\"Transparent\\\" BorderThickness=\\\"0\\\" Foreground=\\\"#FFE5E7EB\\\" TextWrapping=\\\"Wrap\\\" VerticalScrollBarVisibility=\\\"Auto\\\"/></Border><DockPanel Grid.Row=\\\"5\\\" Margin=\\\"0,14,0,0\\\"><TextBlock Text=\\\"{Binding [status]}\\\" Foreground=\\\"#FF9CA3AF\\\" VerticalAlignment=\\\"Center\\\"/><Button Content=\\\"执行检查\\\" DockPanel.Dock=\\\"Right\\\" oqh:HostedViewBridge.Action=\\\"runScript;inputFrom=path;outputTo=result;successMessage=检查完成\\\"/></DockPanel></Grid>\"");
         builder.AppendLine("  },");
         builder.AppendLine("  \"script\": {");
-        builder.AppendLine("    \"source\": \"using System.IO;\\nusing System.Threading.Tasks;\\npublic static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        var path = context.InputText ?? string.Empty;\\n        if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))\\n        {\\n            return Task.FromResult(\\\"目录不存在：\\\" + path);\\n        }\\n\\n        var files = Directory.GetFiles(path);\\n        return Task.FromResult(\\\"目录：\\\" + path + \\\"\\\\n文件数：\\\" + files.Length);\\n    }\\n}\"");
+        builder.AppendLine("    \"source\": \"using System.IO;\nusing System.Threading.Tasks;\npublic static class YanziAction\n{\n    public static Task<string> RunAsync(YanziActionContext context)\n    {\n        var path = context.InputText ?? string.Empty;\n        if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))\n        {\n            return Task.FromResult(\\\"目录不存在：\\\" + path);\n        }\n\n        var files = Directory.GetFiles(path);\n        return Task.FromResult(\\\"目录：\\\" + path + \\\"\\\n文件数：\\\" + files.Length);\n    }\n}\"");
         builder.AppendLine("  }");
         builder.AppendLine("}");
         builder.AppendLine();
@@ -3984,7 +4053,7 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("    \"xaml\": \"<Grid xmlns=\\\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\\\" xmlns:x=\\\"http://schemas.microsoft.com/winfx/2006/xaml\\\" xmlns:oqh=\\\"clr-namespace:Yanzi\\\"><Grid.RowDefinitions><RowDefinition Height=\\\"Auto\\\"/><RowDefinition Height=\\\"12\\\"/><RowDefinition Height=\\\"*\\\"/><RowDefinition Height=\\\"Auto\\\"/></Grid.RowDefinitions><DockPanel><TextBlock Text=\\\"搜索预览台\\\" FontSize=\\\"22\\\" FontWeight=\\\"SemiBold\\\" Foreground=\\\"White\\\"/><Button Content=\\\"搜索\\\" DockPanel.Dock=\\\"Right\\\" oqh:HostedViewBridge.Action=\\\"runScript;inputFrom=query;outputTo=preview;successMessage=搜索完成\\\"/></DockPanel><Grid Grid.Row=\\\"2\\\"><Grid.ColumnDefinitions><ColumnDefinition Width=\\\"340\\\"/><ColumnDefinition Width=\\\"16\\\"/><ColumnDefinition Width=\\\"*\\\"/></Grid.ColumnDefinitions><StackPanel Grid.Column=\\\"0\\\"><TextBlock Text=\\\"关键词\\\" Foreground=\\\"White\\\" Margin=\\\"0,0,0,8\\\"/><TextBox Text=\\\"{Binding [query], UpdateSourceTrigger=PropertyChanged}\\\" Padding=\\\"10\\\"/><TextBlock Text=\\\"说明\\\" Foreground=\\\"White\\\" Margin=\\\"0,18,0,8\\\"/><Border Background=\\\"#FF171717\\\" BorderBrush=\\\"#FF2E2E2E\\\" BorderThickness=\\\"1\\\" CornerRadius=\\\"12\\\" Padding=\\\"12\\\"><TextBlock Text=\\\"可用于搜索文件、接口说明、知识片段等。\\\" Foreground=\\\"#FFCBD5E1\\\" TextWrapping=\\\"Wrap\\\"/></Border></StackPanel><Border Grid.Column=\\\"2\\\" Background=\\\"#FF171717\\\" BorderBrush=\\\"#FF2E2E2E\\\" BorderThickness=\\\"1\\\" CornerRadius=\\\"12\\\" Padding=\\\"12\\\"><TextBox Text=\\\"{Binding [preview]}\\\" IsReadOnly=\\\"True\\\" AcceptsReturn=\\\"True\\\" Background=\\\"Transparent\\\" BorderThickness=\\\"0\\\" Foreground=\\\"#FFE5E7EB\\\" TextWrapping=\\\"Wrap\\\" VerticalScrollBarVisibility=\\\"Auto\\\"/></Border></Grid><TextBlock Grid.Row=\\\"3\\\" Text=\\\"{Binding [status]}\\\" Foreground=\\\"#FF9CA3AF\\\" Margin=\\\"0,14,0,0\\\"/></Grid>\"");
         builder.AppendLine("  },");
         builder.AppendLine("  \"script\": {");
-        builder.AppendLine("    \"source\": \"using System.Threading.Tasks;\\npublic static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        var q = context.InputText ?? string.Empty;\\n        return Task.FromResult(string.IsNullOrWhiteSpace(q) ? \\\"请输入关键词。\\\" : \\\"查询：\\\" + q + \\\"\\\\n\\\\n这里是搜索结果预览占位内容。\\\");\\n    }\\n}\"");
+        builder.AppendLine("    \"source\": \"using System.Threading.Tasks;\npublic static class YanziAction\n{\n    public static Task<string> RunAsync(YanziActionContext context)\n    {\n        var q = context.InputText ?? string.Empty;\n        return Task.FromResult(string.IsNullOrWhiteSpace(q) ? \\\"请输入关键词。\\\" : \\\"查询：\\\" + q + \\\"\\\n\\\n这里是搜索结果预览占位内容。\\\");\n    }\n}\"");
         builder.AppendLine("  }");
         builder.AppendLine("}");
         builder.AppendLine();
@@ -4060,7 +4129,7 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("  \"entryMode\": \"inline\",");
         builder.AppendLine("  \"permissions\": [],");
         builder.AppendLine("  \"script\": {");
-        builder.AppendLine("    \"source\": \"using System;\\nusing System.Threading;\\nusing System.Threading.Tasks;\\nusing System.Windows;\\nusing System.Windows.Controls;\\npublic static class YanziAction\\n{\\n    public static Task<string> RunAsync(YanziActionContext context)\\n    {\\n        var input = context.InputText ?? string.Empty;\\n        Exception? error = null;\\n\\n        var thread = new Thread(() =>\\n        {\\n            try\\n            {\\n                var textBlock = new TextBlock\\n                {\\n                    Text = string.IsNullOrWhiteSpace(input) ? \\\"这是一个独立原生窗口示例。\\\" : \\\"输入内容：\\\" + input,\\n                    Margin = new Thickness(24),\\n                    TextWrapping = TextWrapping.Wrap,\\n                    FontSize = 16\\n                };\\n\\n                var closeButton = new Button\\n                {\\n                    Content = \\\"关闭\\\",\\n                    Width = 88,\\n                    Height = 32,\\n                    Margin = new Thickness(24, 0, 24, 24),\\n                    HorizontalAlignment = HorizontalAlignment.Right\\n                };\\n\\n                var panel = new DockPanel();\\n                DockPanel.SetDock(closeButton, Dock.Bottom);\\n                panel.Children.Add(closeButton);\\n                panel.Children.Add(textBlock);\\n\\n                var window = new Window\\n                {\\n                    Title = \\\"原生窗口示例\\\",\\n                    Width = 520,\\n                    Height = 320,\\n                    MinWidth = 420,\\n                    MinHeight = 240,\\n                    Content = panel,\\n                    WindowStartupLocation = WindowStartupLocation.CenterScreen\\n                };\\n\\n                closeButton.Click += (_, _) => window.Close();\\n                window.ShowDialog();\\n            }\\n            catch (Exception ex)\\n            {\\n                error = ex;\\n            }\\n        });\\n\\n        thread.SetApartmentState(ApartmentState.STA);\\n        thread.IsBackground = false;\\n        thread.Start();\\n        thread.Join();\\n\\n        if (error != null)\\n        {\\n            throw error;\\n        }\\n\\n        return Task.FromResult(\\\"窗口已关闭\\\");\\n    }\\n}\"");
+        builder.AppendLine("    \"source\": \"using System;\nusing System.Threading;\nusing System.Threading.Tasks;\nusing System.Windows;\nusing System.Windows.Controls;\npublic static class YanziAction\n{\n    public static Task<string> RunAsync(YanziActionContext context)\n    {\n        var input = context.InputText ?? string.Empty;\n        Exception? error = null;\n\n        var thread = new Thread(() =>\n        {\n            try\n            {\n                var textBlock = new TextBlock\n                {\n                    Text = string.IsNullOrWhiteSpace(input) ? \\\"这是一个独立原生窗口示例。\\\" : \\\"输入内容：\\\" + input,\n                    Margin = new Thickness(24),\n                    TextWrapping = TextWrapping.Wrap,\n                    FontSize = 16\n                };\n\n                var closeButton = new Button\n                {\n                    Content = \\\"关闭\\\",\n                    Width = 88,\n                    Height = 32,\n                    Margin = new Thickness(24, 0, 24, 24),\n                    HorizontalAlignment = HorizontalAlignment.Right\n                };\n\n                var panel = new DockPanel();\n                DockPanel.SetDock(closeButton, Dock.Bottom);\n                panel.Children.Add(closeButton);\n                panel.Children.Add(textBlock);\n\n                var window = new Window\n                {\n                    Title = \\\"原生窗口示例\\\",\n                    Width = 520,\n                    Height = 320,\n                    MinWidth = 420,\n                    MinHeight = 240,\n                    Content = panel,\n                    WindowStartupLocation = WindowStartupLocation.CenterScreen\n                };\n\n                closeButton.Click += (_, _) => window.Close();\n                window.ShowDialog();\n            }\n            catch (Exception ex)\n            {\n                error = ex;\n            }\n        });\n\n        thread.SetApartmentState(ApartmentState.STA);\n        thread.IsBackground = false;\n        thread.Start();\n        thread.Join();\n\n        if (error != null)\n        {\n            throw error;\n        }\n\n        return Task.FromResult(\\\"窗口已关闭\\\");\n    }\n}\"");
         builder.AppendLine("  }");
         builder.AppendLine("}");
         builder.AppendLine();
@@ -4079,7 +4148,7 @@ public partial class AddJsonExtensionWindow : Window
         builder.AppendLine("  \"entryMode\": \"inline\",");
         builder.AppendLine("  \"permissions\": [\"storage\"],");
         builder.AppendLine("  \"script\": {");
-        builder.AppendLine("    \"source\": \"using System;\\nusing System.Threading;\\nusing System.Threading.Tasks;\\nusing System.Windows;\\nusing System.Windows.Controls;\\nusing System.Windows.Media;\\npublic static class YanziAction\\n{\\n    public static async Task<string> RunAsync(YanziActionContext context)\\n    {\\n        var storage = context.Storage;\\n        string noteContent;\\n        try\\n        {\\n            noteContent = await storage.ReadTextAsync(\\\"note.txt\\\", scope: \\\"local\\\") ?? string.Empty;\\n        }\\n        catch\\n        {\\n            noteContent = string.Empty;\\n        }\\n\\n        Exception? error = null;\\n        var thread = new Thread(() =>\\n        {\\n            try\\n            {\\n                var window = new Window\\n                {\\n                    Title = \\\"独立笔记\\\",\\n                    Width = 600,\\n                    Height = 500,\\n                    MinWidth = 400,\\n                    MinHeight = 300,\\n                    Background = new SolidColorBrush(Color.FromRgb(30, 30, 30)),\\n                    WindowStartupLocation = WindowStartupLocation.CenterScreen\\n                };\\n\\n                var textBox = new TextBox\\n                {\\n                    Text = noteContent,\\n                    AcceptsReturn = true,\\n                    TextWrapping = TextWrapping.Wrap,\\n                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,\\n                    Background = new SolidColorBrush(Color.FromRgb(20, 20, 20)),\\n                    Foreground = Brushes.White,\\n                    FontSize = 14,\\n                    Padding = new Thickness(12),\\n                    Margin = new Thickness(10),\\n                    MinHeight = 360\\n                };\\n\\n                var saveButton = new Button\\n                {\\n                    Content = \\\"保存笔记\\\",\\n                    Margin = new Thickness(10, 0, 10, 10),\\n                    Height = 32,\\n                    Background = new SolidColorBrush(Color.FromRgb(60, 60, 80)),\\n                    Foreground = Brushes.White,\\n                    BorderThickness = new Thickness(0)\\n                };\\n\\n                var statusText = new TextBlock\\n                {\\n                    Text = \\\"就绪\\\",\\n                    Margin = new Thickness(10),\\n                    Foreground = new SolidColorBrush(Color.FromRgb(150, 150, 150)),\\n                    FontSize = 12\\n                };\\n\\n                saveButton.Click += async (_, _) =>\\n                {\\n                    await storage.WriteTextAsync(\\\"note.txt\\\", textBox.Text, scope: \\\"both\\\");\\n                    statusText.Text = \\\"已保存到本地，云端同步在后台进行\\\";\\n                };\\n\\n                var panel = new StackPanel();\\n                panel.Children.Add(textBox);\\n                panel.Children.Add(saveButton);\\n                panel.Children.Add(statusText);\\n                window.Content = panel;\\n                window.ShowDialog();\\n            }\\n            catch (Exception ex)\\n            {\\n                error = ex;\\n            }\\n        });\\n\\n        thread.SetApartmentState(ApartmentState.STA);\\n        thread.IsBackground = false;\\n        thread.Start();\\n        thread.Join();\\n\\n        if (error != null)\\n        {\\n            throw error;\\n        }\\n\\n        return \\\"笔记窗口已关闭\\\";\\n    }\\n}\"");
+        builder.AppendLine("    \"source\": \"using System;\nusing System.Threading;\nusing System.Threading.Tasks;\nusing System.Windows;\nusing System.Windows.Controls;\nusing System.Windows.Media;\npublic static class YanziAction\n{\n    public static async Task<string> RunAsync(YanziActionContext context)\n    {\n        var storage = context.Storage;\n        string noteContent;\n        try\n        {\n            noteContent = await storage.ReadTextAsync(\\\"note.txt\\\", scope: \\\"local\\\") ?? string.Empty;\n        }\n        catch\n        {\n            noteContent = string.Empty;\n        }\n\n        Exception? error = null;\n        var thread = new Thread(() =>\n        {\n            try\n            {\n                var window = new Window\n                {\n                    Title = \\\"独立笔记\\\",\n                    Width = 600,\n                    Height = 500,\n                    MinWidth = 400,\n                    MinHeight = 300,\n                    Background = new SolidColorBrush(Color.FromRgb(30, 30, 30)),\n                    WindowStartupLocation = WindowStartupLocation.CenterScreen\n                };\n\n                var textBox = new TextBox\n                {\n                    Text = noteContent,\n                    AcceptsReturn = true,\n                    TextWrapping = TextWrapping.Wrap,\n                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,\n                    Background = new SolidColorBrush(Color.FromRgb(20, 20, 20)),\n                    Foreground = Brushes.White,\n                    FontSize = 14,\n                    Padding = new Thickness(12),\n                    Margin = new Thickness(10),\n                    MinHeight = 360\n                };\n\n                var saveButton = new Button\n                {\n                    Content = \\\"保存笔记\\\",\n                    Margin = new Thickness(10, 0, 10, 10),\n                    Height = 32,\n                    Background = new SolidColorBrush(Color.FromRgb(60, 60, 80)),\n                    Foreground = Brushes.White,\n                    BorderThickness = new Thickness(0)\n                };\n\n                var statusText = new TextBlock\n                {\n                    Text = \\\"就绪\\\",\n                    Margin = new Thickness(10),\n                    Foreground = new SolidColorBrush(Color.FromRgb(150, 150, 150)),\n                    FontSize = 12\n                };\n\n                saveButton.Click += async (_, _) =>\n                {\n                    await storage.WriteTextAsync(\\\"note.txt\\\", textBox.Text, scope: \\\"both\\\");\n                    statusText.Text = \\\"已保存到本地，云端同步在后台进行\\\";\n                };\n\n                var panel = new StackPanel();\n                panel.Children.Add(textBox);\n                panel.Children.Add(saveButton);\n                panel.Children.Add(statusText);\n                window.Content = panel;\n                window.ShowDialog();\n            }\n            catch (Exception ex)\n            {\n                error = ex;\n            }\n        });\n\n        thread.SetApartmentState(ApartmentState.STA);\n        thread.IsBackground = false;\n        thread.Start();\n        thread.Join();\n\n        if (error != null)\n        {\n            throw error;\n        }\n\n        return \\\"笔记窗口已关闭\\\";\n    }\n}\"");
         builder.AppendLine("  }");
         builder.AppendLine("}");
         builder.AppendLine();

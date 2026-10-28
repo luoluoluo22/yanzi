@@ -22,9 +22,28 @@ public sealed partial class CloudSyncClient
     private int _consecutiveTransportFailures;
     private DateTimeOffset _transportRetryAfterUtc;
     public AccountSyncCoordinator AccountCoordinator { get; }
+    // Coalesce concurrent private-extension reads. Only reuse a successful
+    // account-scoped snapshot for a short interval; writes invalidate it.
+    private readonly SemaphoreSlim _extensionSnapshotFetchLock = new(1, 1);
+    private readonly object _extensionSnapshotLock = new();
+    private IReadOnlyList<UserExtensionRecord>? _extensionSnapshot;
+    private string? _extensionSnapshotUserId;
+    private DateTimeOffset _extensionSnapshotExpiresUtc;
+    private long _extensionSnapshotGeneration;
+
+    private void InvalidateExtensionSnapshot()
+    {
+        lock (_extensionSnapshotLock)
+        {
+            _extensionSnapshot = null;
+            _extensionSnapshotExpiresUtc = DateTimeOffset.MinValue;
+            _extensionSnapshotGeneration++;
+        }
+    }
+
     private readonly SemaphoreSlim _authenticationLock = new(1, 1);
-    // Suppress repeated automatic sign-ins after a definitive 401/404; explicit login still works.
-    private long _automaticLoginRejectedUntilUnixMs;
+    // Independent from GET transport cooling: background sign-ins must never hammer the auth endpoint.
+    private readonly CloudLoginRetryPolicy _automaticLoginRetry = new();
     // Avoid old clients re-polling paid cloud APIs on every background interval after 403.
     private long _cloudMembershipDeniedUntilUnixMs;
     private readonly object _secretVaultRecoveryKeyLock = new();
@@ -137,7 +156,7 @@ public sealed partial class CloudSyncClient
             SecureCredentialStore.Clear();
         }
 
-        Interlocked.Exchange(ref _automaticLoginRejectedUntilUnixMs, 0);
+        _automaticLoginRetry.Reset();
         Interlocked.Exchange(ref _cloudMembershipDeniedUntilUnixMs, 0);
         ClearSession();
     }
@@ -148,7 +167,7 @@ public sealed partial class CloudSyncClient
         _credential = null;
         E2eeMasterKey = null;
         SecureCredentialStore.Clear();
-        Interlocked.Exchange(ref _automaticLoginRejectedUntilUnixMs, 0);
+        _automaticLoginRetry.Reset();
         Interlocked.Exchange(ref _cloudMembershipDeniedUntilUnixMs, 0);
         ClearSession();
     }
@@ -189,7 +208,7 @@ public sealed partial class CloudSyncClient
             throw new InvalidOperationException("缺少登录凭据，请先登录。");
         }
 
-        if (DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() < Interlocked.Read(ref _automaticLoginRejectedUntilUnixMs))
+        if (_automaticLoginRetry.IsCoolingDown(DateTimeOffset.UtcNow))
             throw new InvalidOperationException("保存的登录凭据已被服务器拒绝，自动重试已暂停。请重新登录。");
 
         CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Authenticating with saved credential", ("email", _credential?.LoginEmail));
@@ -199,7 +218,7 @@ public sealed partial class CloudSyncClient
         E2eeMasterKey = keys.MasterKey;
 
         // 这里传递明文密码，LoginAsync 内部会将其转为 LoginHash 进行网络传输
-        var authenticated = await LoginCoreAsync(_credential.LoginEmail, _credential.Password, cancellationToken);
+        var authenticated = await LoginCoreAsync(_credential.LoginEmail, _credential.Password, cancellationToken, isAutomatic: true);
         CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Authentication completed", ("userId", authenticated.UserId), ("username", authenticated.Username));
         return true;
     }
@@ -251,7 +270,7 @@ public sealed partial class CloudSyncClient
         using var response = await SendJsonAsync(HttpMethod.Post, "/v1/auth/register", payload, includeAuth: false, cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);
         var session = await ReadSessionAsync(response, cancellationToken);
-        Interlocked.Exchange(ref _automaticLoginRejectedUntilUnixMs, 0);
+        _automaticLoginRetry.Reset();
         AccountCoordinator.Commit(generation, () => { _session = session; SyncSessionStore.Save(session); });
         await RestoreVaultAfterLoginAsync(cancellationToken);
         CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Register completed", ("userId", session.UserId), ("username", session.Username));
@@ -282,7 +301,7 @@ public sealed partial class CloudSyncClient
         }
     }
 
-    private async Task<SyncSession> LoginCoreAsync(string email, string password, CancellationToken cancellationToken)
+    private async Task<SyncSession> LoginCoreAsync(string email, string password, CancellationToken cancellationToken, bool isAutomatic = false)
     {
         var generation = AccountCoordinator.Generation;
         CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Login requested", ("email", email), ("passwordLength", password?.Length ?? 0));
@@ -299,13 +318,36 @@ public sealed partial class CloudSyncClient
             legacyPassword = normalizedPassword
         };
 
-        using var response = await SendJsonAsync(HttpMethod.Post, "/v1/auth/login", payload, includeAuth: false, cancellationToken);
+        HttpResponseMessage response;
+        try
+        {
+            response = await SendJsonAsync(HttpMethod.Post, "/v1/auth/login", payload, includeAuth: false, cancellationToken);
+        }
+        catch (Exception ex) when (ex is HttpRequestException ||
+            (ex is OperationCanceledException && !cancellationToken.IsCancellationRequested))
+        {
+            var delay = _automaticLoginRetry.RecordFailure(null, null, DateTimeOffset.UtcNow);
+            CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Login transport cooldown",
+                ("delaySeconds", (int)delay.TotalSeconds), ("automatic", isAutomatic));
+            throw;
+        }
+
+        using (response)
+        {
+        if (!response.IsSuccessStatusCode)
+        {
+            var retryAfter = response.Headers.RetryAfter?.Delta;
+            if (retryAfter == null && response.Headers.RetryAfter?.Date is DateTimeOffset retryAt)
+                retryAfter = retryAt - DateTimeOffset.UtcNow;
+            var delay = _automaticLoginRetry.RecordFailure(response.StatusCode, retryAfter, DateTimeOffset.UtcNow);
+            CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Login HTTP cooldown",
+                ("statusCode", (int)response.StatusCode), ("delaySeconds", (int)delay.TotalSeconds),
+                ("automatic", isAutomatic));
+        }
         if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Unauthorized)
         {
             // The server confirmed credentials are invalid or the account is absent.
             // Retry no sooner than 10 minutes later instead of once per background poll.
-            Interlocked.Exchange(ref _automaticLoginRejectedUntilUnixMs,
-                DateTimeOffset.UtcNow.AddMinutes(10).ToUnixTimeMilliseconds());
             ClearSession();
             // 登录失败时不清除本地加密记住的凭据文件，避免因后端暂时网络波动或接口不可用导致本地凭据被强行抹除。
             // 这样既能在网络恢复后自动重连，也能在需要重新登录时在弹窗中保留自动填充邮箱的能力。
@@ -316,9 +358,10 @@ public sealed partial class CloudSyncClient
         await EnsureSuccessAsync(response, cancellationToken);
         var session = await ReadSessionAsync(response, cancellationToken);
         AccountCoordinator.Commit(generation, () => { _session = session; SyncSessionStore.Save(session); });
-        Interlocked.Exchange(ref _automaticLoginRejectedUntilUnixMs, 0);
+        _automaticLoginRetry.Reset();
         CloudSyncDiagnostics.Log("CloudSyncClient.Auth", "Login completed", ("userId", session.UserId), ("username", session.Username));
         return session;
+        }
     }
 
     public async Task<SendCodeResponse> SendPasswordResetCodeAsync(string email, CancellationToken cancellationToken = default)
@@ -481,11 +524,42 @@ public sealed partial class CloudSyncClient
     public async Task<IReadOnlyList<UserExtensionRecord>> GetUserExtensionsAsync(CancellationToken cancellationToken = default)
     {
         await EnsureAuthenticatedAsync(cancellationToken);
-        using var request = CreateRequest(HttpMethod.Get, "/v1/me/extensions", includeAuth: true);
-        using var response = await SendAsyncWithFallback(request, cancellationToken);
-        response.EnsureSuccessStatusCode();
-        var payload = await ReadAsync<UserExtensionListResponse>(response, cancellationToken);
-        return payload?.Items ?? [];
+        await _extensionSnapshotFetchLock.WaitAsync(cancellationToken);
+        try
+        {
+            var userId = CurrentUserId;
+            long generation;
+            lock (_extensionSnapshotLock)
+            {
+                if (_extensionSnapshot != null &&
+                    string.Equals(_extensionSnapshotUserId, userId, StringComparison.Ordinal) &&
+                    _extensionSnapshotExpiresUtc > DateTimeOffset.UtcNow)
+                    return _extensionSnapshot;
+                generation = _extensionSnapshotGeneration;
+            }
+
+            using var request = CreateRequest(HttpMethod.Get, "/v1/me/extensions", includeAuth: true);
+            using var response = await SendAsyncWithFallback(request, cancellationToken);
+            response.EnsureSuccessStatusCode();
+            var payload = await ReadAsync<UserExtensionListResponse>(response, cancellationToken);
+            IReadOnlyList<UserExtensionRecord> result = payload?.Items ?? [];
+            lock (_extensionSnapshotLock)
+            {
+                // A concurrent upload/removal must not install an old snapshot.
+                if (_extensionSnapshotGeneration == generation &&
+                    string.Equals(CurrentUserId, userId, StringComparison.Ordinal))
+                {
+                    _extensionSnapshot = result;
+                    _extensionSnapshotUserId = userId;
+                    _extensionSnapshotExpiresUtc = DateTimeOffset.UtcNow.AddSeconds(20);
+                }
+            }
+            return result;
+        }
+        finally
+        {
+            _extensionSnapshotFetchLock.Release();
+        }
     }
 
     public async Task UpsertExtensionAsync(CommandItem command, string? iconOverride = null, CancellationToken cancellationToken = default)
@@ -559,6 +633,7 @@ public sealed partial class CloudSyncClient
             includeAuth: true);
         using var response = await SendAsyncWithFallback(request, cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);
+        InvalidateExtensionSnapshot();
     }
 
     public async Task<string?> PublishIconAsync(CommandItem command, string version, CancellationToken cancellationToken = default)
@@ -609,7 +684,7 @@ public sealed partial class CloudSyncClient
         return string.IsNullOrWhiteSpace(payload.IconUrl) ? iconReference : payload.IconUrl;
     }
 
-    public async Task UpsertUserExtensionAsync(CommandItem command, string? iconOverride = null, bool hasArchive = false, CancellationToken cancellationToken = default)
+    public async Task UpsertUserExtensionAsync(CommandItem command, string? iconOverride = null, bool hasArchive = false, CancellationToken cancellationToken = default, bool restoreDeleted = false)
     {
         await EnsureAuthenticatedAsync(cancellationToken);
         var icon = string.IsNullOrWhiteSpace(iconOverride) ? command.IconReference : iconOverride;
@@ -621,6 +696,7 @@ public sealed partial class CloudSyncClient
         {
             installedVersion = command.DeclaredVersion,
             enabled = true,
+            restoreDeleted,
             settings = new
             {
                 source = "openquickhost-desktop",
@@ -655,6 +731,7 @@ public sealed partial class CloudSyncClient
             includeAuth: true);
         using var response = await SendAsyncWithFallback(request, cancellationToken);
         response.EnsureSuccessStatusCode();
+        InvalidateExtensionSnapshot();
     }
 
     public async Task DeleteExtensionAsync(string extensionId, CancellationToken cancellationToken = default)
@@ -677,6 +754,7 @@ public sealed partial class CloudSyncClient
             includeAuth: true);
         using var response = await SendAsyncWithFallback(request, cancellationToken);
         response.EnsureSuccessStatusCode();
+        InvalidateExtensionSnapshot();
     }
 
     public async Task<T?> GetUserConfigAsync<T>(string configId, CancellationToken cancellationToken = default)
@@ -710,6 +788,7 @@ public sealed partial class CloudSyncClient
             includeAuth: true);
         using var response = await SendAsyncWithFallback(request, cancellationToken);
         response.EnsureSuccessStatusCode();
+        InvalidateExtensionSnapshot();
     }
 
     internal async Task<byte[]> GetSecretVaultRecoveryKeyAsync(CancellationToken cancellationToken = default)
@@ -1102,13 +1181,24 @@ public sealed partial class CloudSyncClient
         object payload = job.Attachment is { } attachment ? new {
             source = "desktop-chat", attachmentId = attachment.AttachmentId, fileName = attachment.FileName,
             size = attachment.Size, sha256 = attachment.Sha256, contentType = attachment.ContentType,
-            clientTransferId = job.Id, clientOperationId = job.Id
-        } : new { source = "desktop-chat", clientTransferId = job.Id, clientOperationId = job.Id };
+            clientTransferId = job.Id, clientOperationId = job.Id, conversationId = job.ConversationId
+        } : new { source = "desktop-chat", clientTransferId = job.Id, clientOperationId = job.Id, conversationId = job.ConversationId };
         var id = await SendDeviceMessageAsync(job.Source, "android", job.Kind, "YanziChat", job.Text,
             targetDeviceId: job.TargetDeviceId, payload: payload, cancellationToken: cancellationToken, clientMessageId: job.Id, expiresAt: job.CreatedAt.AddDays(30));
         DesktopChatOutbox.Complete(job, id);
         return id;
         } finally { _chatDeliveryGate.Release(); }
+    }
+
+    /// <summary>Ephemeral AI snapshots via authenticated websocket relay; never enqueue in D1/outbox.</summary>
+    public async Task SendTransientChatStreamAsync(string sourceDeviceId, string targetDeviceId, string content,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureAuthenticatedAsync(cancellationToken);
+        var body = JsonSerializer.Serialize(new { sourceDeviceId, targetDeviceId, content });
+        using var request = CreateJsonRequest(HttpMethod.Post, "/v1/me/mobile/messages/stream", body, includeAuth: true);
+        using var response = await SendAsyncWithFallback(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
     }
 
     private readonly SemaphoreSlim _outboxReplay = new(1, 1);
@@ -1279,6 +1369,7 @@ public sealed partial class CloudSyncClient
     public async Task UploadPrivateExtensionArchiveAsync(CommandItem command, byte[] packageBytes, string version, int expectedRevision = 0, CancellationToken cancellationToken = default)
     {
         await UploadArchiveAsync(command, packageBytes, version, privateLibrary: true, expectedRevision, cancellationToken);
+        InvalidateExtensionSnapshot();
     }
 
     private async Task UploadArchiveAsync(CommandItem command, byte[] packageBytes, string version, bool privateLibrary, int expectedRevision, CancellationToken cancellationToken)

@@ -66,7 +66,7 @@ test('dedicated new tab first, then exact same conversation on followup; persist
   assert.equal(task.tabPolicy,'new');
   assert.equal(task.newChat,true);
   assert.equal(task.temporary,false);
-  assert.equal(task.closeAfter,false);
+  assert.equal(task.closeAfter,true); // saved child conversation can be resumed after its tab closes
   assert.equal(task.prompt,create.prompt);
   const duplicate=await api('/api/subagents','POST',create);
   assert.equal(duplicate.status,200);

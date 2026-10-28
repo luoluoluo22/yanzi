@@ -7,7 +7,7 @@
         MinWidth="560"
         MinHeight="320"
         Background="{DynamicResource BrushBG}"
-        Foreground="White"
+        Foreground="{DynamicResource BrushTextMain}"
         WindowStartupLocation="CenterScreen">
     <Grid Margin="18">
         <Grid.RowDefinitions>
@@ -19,7 +19,7 @@
         <DockPanel Grid.Row="0" Margin="0,0,0,12">
             <StackPanel DockPanel.Dock="Left">
                 <TextBlock Text="输入状态" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" />
-                <TextBlock x:Name="SummaryTextBlock" Margin="0,6,0,0" Foreground="#FF9CA3AF" />
+                <TextBlock x:Name="SummaryTextBlock" Margin="0,6,0,0" Foreground="{DynamicResource BrushTextSec}" />
             </StackPanel>
             <Button DockPanel.Dock="Right"
                     Width="90"
@@ -52,7 +52,7 @@
                            Grid.Row="1"
                            Margin="0,8,0,18"
                            FontSize="{DynamicResource FontSizeNormalPlus}"
-                           Foreground="#FFD1D5DB"
+                           Foreground="{DynamicResource BrushTextSec}"
                            TextWrapping="Wrap" />
 
                 <TextBlock Grid.Row="2"
@@ -63,7 +63,7 @@
                            Grid.Row="3"
                            Margin="0,8,0,0"
                            FontSize="{DynamicResource FontSizeNormalPlus}"
-                           Foreground="#FFD1D5DB"
+                           Foreground="{DynamicResource BrushTextSec}"
                            TextWrapping="Wrap" />
             </Grid>
         </Border>

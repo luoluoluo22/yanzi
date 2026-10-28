@@ -1,5 +1,7 @@
 # 燕子小程序公共 UI 接入：首批两款 WPF 小程序
 
+> **2026-10-13 架构迁移提示：** v1.0.22 起正式 Windows 版仅运行 `Yanzi.exe`。下文涉及双进程 Runtime、历史候选快照的描述仅供研究历史；相关安装与发布脚本已停用，不应在正式环境执行。新的发布规则见 `docs/continuous-improvement/single-process.md`。
+
 最后核对：2026-10-09
 
 ## 评估结果

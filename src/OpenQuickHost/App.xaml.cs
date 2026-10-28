@@ -58,7 +58,6 @@ public partial class App : WpfApplication
     internal void NotifyExternalAccessReady() => _externalAccessApproval?.Wake();
     private LanDiscoveryService? _lanDiscoveryService;
     private SingleInstanceService? _singleInstanceService;
-    private SharedRuntimeHost? _sharedRuntimeHost;
     private bool _listenerServicesPaused;
     private bool _isAutoPausedByBlacklist;
     private IntPtr _foregroundHook = IntPtr.Zero;
@@ -71,7 +70,7 @@ public partial class App : WpfApplication
 
     internal bool IsVerificationHarness { get; set; }
 
-    protected override async void OnStartup(WpfStartupEventArgs e)
+    protected override void OnStartup(WpfStartupEventArgs e)
     {
         if (IsVerificationHarness) return;
         // 运行端到端加密 E2EE 模块启动自检
@@ -207,15 +206,15 @@ public partial class App : WpfApplication
         // 3. 只有抢占到 Mutex 的唯一主实例，才进行后续复杂的环境配置初始化
         TrySetProcessDpiAwareness();
         base.OnStartup(e);
-        if (HostRuntimeProfile.IsShell)
+        // Single-process startup: no shared Runtime installation, discovery or IPC attachment.
+        // Retire only legacy Yanzi-managed Runtime processes after winning the primary-instance lock.
+        try { LegacyRuntimeMigrationService.StopManagedProcesses(); }
+        catch (Exception ex)
         {
-            try { await RuntimeConnection.EnsureAvailableAsync(); }
-            catch (Exception ex)
-            {
-                System.Windows.MessageBox.Show(ex.Message, "燕子 Runtime", MessageBoxButton.OK, MessageBoxImage.Error);
-                Shutdown(1);
-                return;
-            }
+            HostAssets.AppendLog("Single-process migration blocked: " + ex.Message);
+            System.Windows.MessageBox.Show("旧版燕子后台进程未能退出。请先结束旧版 Runtime，然后重新打开燕子。", "燕子升级", MessageBoxButton.OK, MessageBoxImage.Warning);
+            Shutdown(1);
+            return;
         }
         YanziBuiltinCapabilityRegistration.Register();
 
@@ -226,6 +225,9 @@ public partial class App : WpfApplication
 
         SyncConfigLoader.EnsureExampleFile();
         var settings = AppSettingsStore.Load();
+        // Sync registry user environment before launching companion services or mini-apps.
+        try { WindowsEnvironmentVariablePublisher.Synchronize(); }
+        catch (Exception ex) { HostAssets.AppendLog($"[WindowsEnv] Startup synchronization failed: {ex.GetType().Name}"); }
         HostAssets.AppendLog($"[App.OnStartup] Loaded settings: EnableEverything={settings.EnableEverything}, UpdatedAt={settings.LauncherConfigUpdatedAtUtc}");
         ApplyTheme(settings.ThemeMode);
         EventManager.RegisterClassHandler(typeof(Window), Window.LoadedEvent, new RoutedEventHandler(Window_GlobalLoaded));
@@ -242,6 +244,8 @@ public partial class App : WpfApplication
         }
 
         if (HostRuntimeProfile.OwnsBackgroundServices) _ = Task.Run(() => OpenQuickHost.Sync.ExtensionRecycleBinService.PurgeExpiredItems(30));
+        // Keep only bounded, known-safe Yanzi installer snapshots on installed unified hosts.
+        YanziArtifactRetentionService.Start();
 
         ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown;
 
@@ -257,15 +261,7 @@ public partial class App : WpfApplication
 
             // 无论前台还是后台启动，都必须初始化后台核心服务（WebDAV、Everything、WindowBinding、鼠标手势等）
             window.InitializeBackgroundServices();
-            if (HostRuntimeProfile.IsRuntime)
-            {
-                _sharedRuntimeHost = new SharedRuntimeHost(window);
-                _sharedRuntimeHost.Start();
-            }
-            else
-            {
-                await RuntimeConnection.AttachAsync(window);
-            }
+            // UI and background services are now hosted by this one Yanzi.exe process.
             if (HostRuntimeProfile.OwnsBackgroundServices) _externalAccessApproval = new ExternalAccessApprovalService();
             window.EnsureStandbyRadialMenu();
 
@@ -376,6 +372,36 @@ public partial class App : WpfApplication
 
             // 5. 标识整个应用的所有核心初始化步骤均顺利执行完成，正式转换为运行期柔性容错模式
             _isAppFullyInitialized = true;
+
+            // Run once per Windows user: stage the packaged extension outside the versioned app
+            // directory and notify on fresh devices. Browser consent is never bypassed.
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var bundled = BrowserHelperBootstrap.FindBundledDirectory();
+                    if (bundled == null) return;
+                    BrowserHelperBootstrap.EnsureStableBundle(bundled);
+                    BrowserHelperBootstrap.WriteRuntimeConfiguration(settings.AgentApiPort);
+                    await BrowserHelperDistribution.UpdateManagedEgoIfRunningAsync();
+                    BrowserHelperDistribution.StartManagedEgoMonitor();
+                    var profiles = BrowserHelperBootstrap.Inspect();
+                    if (profiles.Count == 0 || profiles.Any(p => p.Installed)) return;
+                    var notice = System.IO.Path.Combine(
+                        BrowserHelperBootstrap.StableDirectory, ".first-start-notice");
+                    if (System.IO.File.Exists(notice)
+                        && DateTime.TryParse(System.IO.File.ReadAllText(notice), out var lastShown)
+                        && DateTime.UtcNow - lastShown.ToUniversalTime() < TimeSpan.FromDays(1)) return;
+                    System.IO.File.WriteAllText(notice, DateTime.UtcNow.ToString("O"));
+                    _ = Dispatcher.BeginInvoke(new Action(() =>
+                        ShowDesktopNotification("燕子浏览器助手",
+                            "已为这台电脑准备浏览器助手。首次使用请在燕子 AI 对话中完成浏览器授权安装。")));
+                }
+                catch (Exception ex)
+                {
+                    HostAssets.AppendLog($"BrowserHelper bootstrap: {ex.Message}");
+                }
+            });
 
             // 预加载设置窗口并提前创建 HWND 与 DWM 深色环境，避免第一次打开时因主线程创建句柄和排版引发首屏闪白或卡顿
             _ = Dispatcher.BeginInvoke(new Action(() =>
@@ -649,8 +675,7 @@ public partial class App : WpfApplication
 
     protected override void OnExit(WpfExitEventArgs e)
     {
-        _sharedRuntimeHost?.Dispose();
-        if (HostRuntimeProfile.IsShell) RuntimeConnection.Detach();
+        // No Runtime IPC connection is created by the official Windows application.
         DispatcherUnhandledException -= App_DispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException -= CurrentDomain_UnhandledException;
         TaskScheduler.UnobservedTaskException -= TaskScheduler_UnobservedTaskException;
@@ -835,7 +860,12 @@ public partial class App : WpfApplication
                  },
                 () =>
                 {
-                    window.Dispatcher.Invoke(() => window.QueueBackgroundWebDavSync("api-trigger", forceImmediate: true));
+                    window.Dispatcher.Invoke(() =>
+                    {
+                        window.QueueBackgroundWebDavSync("api-trigger", forceImmediate: true);
+                        window.SyncLocalExtensionsToCloud(forceImmediate: true);
+                        window.RefreshMissingPrivateExtensionsFromCloud();
+                    });
                 },
                 (id) =>
                 {

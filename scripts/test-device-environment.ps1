@@ -12,7 +12,7 @@ try {
     Stop-YanziLocalWorkerPort -Port $Port
     npx.cmd wrangler d1 migrations apply openquickhost-sync-db --local --persist-to $state --config $config | Out-Null
     if($LASTEXITCODE -ne 0){throw 'Local migrations failed'}
-    $worker=Start-Process npx.cmd -ArgumentList @('wrangler','dev','--local','--persist-to',$state,'--ip','127.0.0.1','--port',$Port,'--config',$config,'--var','AUTH_TOKEN_SECRET:local-phone-message-verification') -WorkingDirectory $repo -WindowStyle Hidden -RedirectStandardOutput (Join-Path $artifact 'worker.log') -RedirectStandardError (Join-Path $artifact 'worker.err') -PassThru
+    $worker=Start-Process npx.cmd -ArgumentList @('wrangler','dev','--local','--persist-to',$state,'--ip','127.0.0.1','--port',$Port,'--config',$config,'--var','AUTH_TOKEN_SECRET:local-phone-message-verification','--var','CLOUD_VIP_ONLY:false') -WorkingDirectory $repo -WindowStyle Hidden -RedirectStandardOutput (Join-Path $artifact 'worker.log') -RedirectStandardError (Join-Path $artifact 'worker.err') -PassThru
     $deadline=(Get-Date).AddSeconds(60);$ready=$false
     do {try{$ready=(Invoke-RestMethod "$base/health" -TimeoutSec 1).ok}catch{$ready=$false};if(-not $ready){Start-Sleep -Milliseconds 300}}while(-not $ready -and (Get-Date)-lt $deadline)
     if(-not $ready){throw 'Worker startup timeout'}

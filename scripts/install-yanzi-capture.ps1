@@ -2,7 +2,9 @@ $ErrorActionPreference = "Stop"
 
 $repo = Split-Path -Parent $PSScriptRoot
 $project = Join-Path $repo "src\Yanzi.Capture\Yanzi.Capture.csproj"
-$templateManifest = Join-Path $repo "src\Yanzi.Capture\Extension\manifest.json"
+$templateManifest = Join-Path $env:LOCALAPPDATA "OpenQuickHost\Extensions\yanzi-capture\manifest.json"
+# Per-user extension definition is the source of truth. Cloud sync installs missing miniapps.
+if (-not (Test-Path -LiteralPath $templateManifest)) { throw 'yanzi-capture miniapp is not installed; restore it through account sync first.' }
 $extensionRoot = Join-Path $env:LOCALAPPDATA "OpenQuickHost\Extensions\yanzi-capture"
 $installedManifest = Join-Path $extensionRoot "manifest.json"
 $outputRoot = Join-Path $repo "src\Yanzi.Capture\bin\Release\net9.0-windows10.0.19041.0"

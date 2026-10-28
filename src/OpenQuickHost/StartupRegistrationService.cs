@@ -5,8 +5,8 @@ namespace OpenQuickHost;
 
 /// <summary>
 /// Only the installed, stable Shell may own startup registration.
-/// Development snapshots and the Runtime process must never replace the stable
-/// launch path. The Shell starts its protected background Runtime on demand.
+/// Development snapshots and historical Runtime processes must never replace the
+/// stable launch path. The installed Yanzi.exe owns UI and background services.
 /// </summary>
 public static class StartupRegistrationService
 {
@@ -45,7 +45,7 @@ public static class StartupRegistrationService
 
         // Legacy installers created a second startup entry that can pin an old
         // version of Runtime indefinitely. On the official migration, use just
-        // the stable Shell entry; it restores Runtime through EnsureAvailableAsync.
+        // the stable Yanzi.exe entry; no separate Runtime will be started.
         if (key.GetValue("Yanzi.Runtime") != null)
             key.DeleteValue("Yanzi.Runtime", throwOnMissingValue: false);
     }

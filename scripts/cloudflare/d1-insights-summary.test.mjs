@@ -10,6 +10,7 @@ test('hides SQL literals while preserving query structure', () => {
   assert.ok(!redacted.includes('123'));
   assert.match(redacted, /device_messages/);
 });
+
 test('sorts by reads and emits only sanitized query shape', () => {
   const summary = summarizeInsights([
     { query: "SELECT * FROM users WHERE email='private@example.test'", totalRowsRead: 5, numberOfTimesRun: 1 },
@@ -19,4 +20,35 @@ test('sorts by reads and emits only sanitized query shape', () => {
   assert.equal(summary[0].calls, 10);
   assert.ok(!summary[0].pattern.includes('hidden'));
   assert.ok(!summary[1].pattern.includes('private@example.test'));
+});
+
+test('quoted comment markers cannot leak SQL string values', () => {
+  const sql = "SELECT 'api-key--private-suffix' AS token, 'secret/*in-string*/tail' AS payload, 'a''b' AS x -- real comment\nFROM t";
+  const redacted = sanitizeSql(sql);
+  for (const secret of ['api-key', 'private-suffix', 'secret', 'in-string', 'tail', 'real comment']) {
+    assert.ok(!redacted.includes(secret), redacted);
+  }
+  assert.match(redacted, /FROM t/);
+});
+
+test('redacts SQLite numeric forms and alternative quoted identifiers', () => {
+  const sql = 'SELECT 1e123, 1.5E-20, .2e+10, 0xABC, 5., 42, `secret-name`, [private id], "hidden-id" FROM t';
+  const redacted = sanitizeSql(sql);
+  for (const secret of ['1e123', '1.5E-20', '.2e+10', '0xABC', '42', 'secret-name', 'private id', 'hidden-id']) {
+    assert.ok(!redacted.includes(secret), redacted);
+  }
+  assert.match(redacted, /^SELECT \?, \?, \?, \?, \?, \?, \?, \?, \? FROM t$/);
+});
+
+test('unclosed quotes and comments fail closed', () => {
+  assert.equal(sanitizeSql("SELECT 'secret--not-closed"), 'SELECT ?');
+  assert.equal(sanitizeSql('SELECT /* secret--not-closed'), 'SELECT');
+});
+
+test('fingerprints are based on sanitized SQL shape, not guessable literals', () => {
+  const a = summarizeInsights([{ query: "SELECT * FROM users WHERE pin = '1234'" }])[0];
+  const b = summarizeInsights([{ query: "SELECT * FROM users WHERE pin = '9999'" }])[0];
+  assert.equal(a.pattern, b.pattern);
+  assert.equal(a.fingerprint, b.fingerprint);
+  assert.ok(!a.pattern.includes('1234'));
 });
