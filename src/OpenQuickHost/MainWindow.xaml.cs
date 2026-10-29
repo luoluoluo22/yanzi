@@ -378,6 +378,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             _cloudSyncClient = new CloudSyncClient(_syncOptions, _accountObjectSyncLock);
             AccountEnvironmentSecretVault.Attach(_cloudSyncClient);
+            AccountEnvironmentSecretVault.CredentialsRestored += OnAccountCredentialsRestored;
+            Closed += (_, _) => AccountEnvironmentSecretVault.CredentialsRestored -= OnAccountCredentialsRestored;
         }
 
         _backgroundWebDavSyncTimer = new DispatcherTimer

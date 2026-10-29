@@ -4522,6 +4522,17 @@ public partial class MainWindow
         settingsWindow?.RefreshWebDavConfigFromExternal();
     }
 
+    private void OnAccountCredentialsRestored()
+    {
+        if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
+        _ = Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
+            OnAiSettingsChanged();
+            NotifySettingsWindowAiConfigChanged();
+        }));
+    }
+
     private void NotifySettingsWindowAiConfigChanged()
     {
         var settingsWindow = System.Windows.Application.Current.Windows.OfType<SettingsWindow>().FirstOrDefault();

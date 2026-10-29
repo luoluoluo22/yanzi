@@ -2052,6 +2052,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private void SelectedServiceProvider_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (_isRefreshingSettingsFromDisk) return;
         HasAiSettingsChanged = true;
     }
 
@@ -6312,6 +6313,15 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     public void RefreshAiConfigFromExternal()
     {
+        if (HasAiSettingsChanged || _aiSaveTimer?.IsEnabled == true)
+        {
+            _deferredAiCredentialRefresh = true;
+            return;
+        }
+        var wasRefreshing = _isRefreshingSettingsFromDisk;
+        _isRefreshingSettingsFromDisk = true;
+        try
+        {
         _settings = AppSettingsStore.Load();
         _settingsPersistence.Reset(_settings);
         AiBaseUrl = _settings.AiBaseUrl;
@@ -6331,6 +6341,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             ("providerCount", _settings.AiServiceProviders.Count),
             ("activeProviderId", _settings.ActiveServiceProviderId ?? string.Empty),
             ("providerNames", string.Join(", ", _settings.AiServiceProviders.Select(static provider => provider.Name ?? string.Empty))));
+        }
+        finally { _isRefreshingSettingsFromDisk = wasRefreshing; }
     }
 
     public void ShowCloudSyncProgressToast(string message)

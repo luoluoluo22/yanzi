@@ -31,6 +31,7 @@ public partial class SettingsWindow
     private DispatcherTimer? _aiSaveTimer;
     private DispatcherTimer? _aiStatusHideTimer;
     private bool _isAiSaveStatusVisible;
+    private bool _deferredAiCredentialRefresh;
 
     public bool IsAiSaveStatusVisible
     {
@@ -117,6 +118,11 @@ public partial class SettingsWindow
 
         // 6. 重置状态
         HasAiSettingsChanged = false;
+        if (_deferredAiCredentialRefresh)
+        {
+            _deferredAiCredentialRefresh = false;
+            RefreshAiConfigFromExternal();
+        }
         _aiStatusHideTimer = ShowSaveStatusTemporarily(_aiStatusHideTimer, visible => IsAiSaveStatusVisible = visible);
     }
 
@@ -333,6 +339,7 @@ public partial class SettingsWindow
 
     private void AiModelComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        if (_isRefreshingSettingsFromDisk) return;
         HasAiSettingsChanged = true;
         QueueAiSettingsSave();
     }

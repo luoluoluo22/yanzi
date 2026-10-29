@@ -1,6 +1,7 @@
 using System.IO;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace OpenQuickHost.Sync;
 
@@ -207,14 +208,21 @@ public static class AiCredentialStore
             bag.ProviderApiKeys = new Dictionary<string, string>(bag.ProviderApiKeys ?? [], StringComparer.OrdinalIgnoreCase);
             return bag;
         }
-        catch
+        catch (Exception ex) when (ex is IOException or CryptographicException or JsonException or UnauthorizedAccessException)
         {
-            return new AiCredentialBag();
+            HostAssets.AppendLog($"AI credentials unreadable; existing encrypted file preserved: {ex.GetType().Name}");
+            return new AiCredentialBag { FailedToRead = true };
         }
     }
 
     private static void Save(AiCredentialBag bag)
     {
+        // Never replace an unreadable, potentially recoverable encrypted credential file.
+        if (bag.FailedToRead)
+        {
+            HostAssets.AppendLog("AI credential save skipped because encrypted source was unreadable.");
+            return;
+        }
         Directory.CreateDirectory(Path.GetDirectoryName(SecretPath)!);
         var bytes = JsonSerializer.SerializeToUtf8Bytes(bag, JsonOptions);
         var protectedBytes = ProtectedData.Protect(bytes, null, DataProtectionScope.CurrentUser);
@@ -224,6 +232,9 @@ public static class AiCredentialStore
 
     private sealed class AiCredentialBag
     {
+        [JsonIgnore]
+        public bool FailedToRead { get; set; }
+
         public string LegacyApiKey { get; set; } = string.Empty;
 
         public Dictionary<string, string> ProviderApiKeys { get; set; } = new(StringComparer.OrdinalIgnoreCase);

@@ -8,6 +8,7 @@ namespace OpenQuickHost.Sync;
 internal static class AccountEnvironmentSecretVault
 {
     internal const string ObjectId = "environmentSecrets.v1";
+    internal static event Action? CredentialsRestored;
     internal static bool IsManagedObjectId(string? objectId) =>
         string.Equals(objectId, ObjectId, StringComparison.Ordinal);
     private static string AccountCachePath => HostAssets.ResolveDataFilePath("environment-secret-vault-cache.dat");
@@ -22,6 +23,9 @@ internal static class AccountEnvironmentSecretVault
     private static string? _pendingAccountId;
     private static readonly HashSet<string> PendingChangedNames = new(StringComparer.OrdinalIgnoreCase);
     private static readonly HashSet<string> PendingDeletedNames = new(StringComparer.OrdinalIgnoreCase);
+
+    private static bool IsValidVaultName(string? name) =>
+        AiCredentialStore.IsAccountVaultKey(name) || AppEnvironmentVariableStore.IsValidEnvironmentName(name);
 
     internal static void Attach(CloudSyncClient client)
     {
@@ -63,10 +67,10 @@ internal static class AccountEnvironmentSecretVault
                 }
             _pendingAccountId = accountId;
             if (changedNames != null)
-                foreach (var name in changedNames.Where(AppEnvironmentVariableStore.IsValidEnvironmentName))
+                foreach (var name in changedNames.Where(IsValidVaultName))
                     PendingChangedNames.Add(AppEnvironmentVariableStore.NormalizeName(name));
             if (deletedNames != null)
-                foreach (var name in deletedNames.Where(AppEnvironmentVariableStore.IsValidEnvironmentName))
+                foreach (var name in deletedNames.Where(IsValidVaultName))
                     PendingDeletedNames.Add(AppEnvironmentVariableStore.NormalizeName(name));
             _uploadDebounce?.Cancel();
             _uploadDebounce?.Dispose();
@@ -135,6 +139,7 @@ internal static class AccountEnvironmentSecretVault
             {
                 if (local.Count > 0) await WriteVaultAsync(client, local, record, recoveryKey, cancellationToken);
                 CompletePending(accountId, pending.Changed, pending.Deleted);
+                CredentialsRestored?.Invoke();
                 return;
             }
 
@@ -157,6 +162,7 @@ internal static class AccountEnvironmentSecretVault
             SaveAccountSnapshot(accountId, merged);
             if (changed) await WriteVaultAsync(client, merged, record, recoveryKey, cancellationToken);
             CompletePending(accountId, pending.Changed, pending.Deleted);
+            CredentialsRestored?.Invoke();
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -222,6 +228,10 @@ internal static class AccountEnvironmentSecretVault
     private static void ApplyAllSecrets(IReadOnlyDictionary<string, string> secrets)
     {
         AiCredentialStore.ApplyFromAccountVault(secrets);
+        // Counts only: never log provider identifiers or credential values.
+        var expectedAiCount = secrets.Count(static pair => AiCredentialStore.IsAccountVaultKey(pair.Key));
+        var localAiCount = AiCredentialStore.SnapshotForAccountVault().Count;
+        HostAssets.AppendLog($"Account vault AI credentials restored: {localAiCount}/{expectedAiCount} entries");
         var environment = secrets
             .Where(static pair => !AiCredentialStore.IsAccountVaultKey(pair.Key))
             .ToDictionary(static pair => pair.Key, static pair => pair.Value, StringComparer.OrdinalIgnoreCase);
@@ -279,7 +289,7 @@ internal static class AccountEnvironmentSecretVault
 
             if (changedNames != null)
             {
-                foreach (var name in changedNames.Where(AppEnvironmentVariableStore.IsValidEnvironmentName))
+                foreach (var name in changedNames.Where(IsValidVaultName))
                 {
                     var normalized = AppEnvironmentVariableStore.NormalizeName(name);
                     if (!changed.Contains(normalized, StringComparer.OrdinalIgnoreCase)) changed.Add(normalized);
@@ -288,7 +298,7 @@ internal static class AccountEnvironmentSecretVault
             }
             if (deletedNames != null)
             {
-                foreach (var name in deletedNames.Where(AppEnvironmentVariableStore.IsValidEnvironmentName))
+                foreach (var name in deletedNames.Where(IsValidVaultName))
                 {
                     var normalized = AppEnvironmentVariableStore.NormalizeName(name);
                     if (!deleted.Contains(normalized, StringComparer.OrdinalIgnoreCase)) deleted.Add(normalized);
