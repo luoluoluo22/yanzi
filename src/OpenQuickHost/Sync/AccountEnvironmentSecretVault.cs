@@ -74,7 +74,7 @@ internal static class AccountEnvironmentSecretVault
             token = _uploadDebounce.Token;
         }
         PersistPending(expectedAccountId, changedNames, deletedNames);
-        SaveAccountSnapshot(expectedAccountId, AppEnvironmentVariableStore.SnapshotSecretValuesForVault());
+        SaveAccountSnapshot(expectedAccountId, SnapshotAllSecrets());
         if (client == null) return;
 
         _ = Task.Run(async () =>
@@ -127,7 +127,7 @@ internal static class AccountEnvironmentSecretVault
         {
             var accountId = client.CurrentUserId!;
             PrepareLocalAccountScope(accountId);
-            var local = AppEnvironmentVariableStore.SnapshotSecretValuesForVault();
+            var local = SnapshotAllSecrets();
             var pending = SnapshotPending(accountId);
             var recoveryKey = await client.GetSecretVaultRecoveryKeyAsync(cancellationToken);
             var record = await client.GetSyncObjectAsync(ObjectId, cancellationToken);
@@ -153,7 +153,7 @@ internal static class AccountEnvironmentSecretVault
                 }
             }
 
-            AppEnvironmentVariableStore.ApplySecretValuesFromVault(merged);
+            ApplyAllSecrets(merged);
             SaveAccountSnapshot(accountId, merged);
             if (changed) await WriteVaultAsync(client, merged, record, recoveryKey, cancellationToken);
             CompletePending(accountId, pending.Changed, pending.Deleted);
@@ -185,7 +185,7 @@ internal static class AccountEnvironmentSecretVault
         {
             var accountId = client.CurrentUserId!;
             PrepareLocalAccountScope(accountId);
-            var local = AppEnvironmentVariableStore.SnapshotSecretValuesForVault();
+            var local = SnapshotAllSecrets();
             var recoveryKey = await client.GetSecretVaultRecoveryKeyAsync(cancellationToken);
             var current = await client.GetSyncObjectAsync(ObjectId, cancellationToken);
             var usedRecoveryKey = false;
@@ -209,12 +209,31 @@ internal static class AccountEnvironmentSecretVault
         }
     }
 
+
+    // The account vault stores two disjoint namespaces; AI keys are never environmental data.
+    private static Dictionary<string, string> SnapshotAllSecrets()
+    {
+        var result = AppEnvironmentVariableStore.SnapshotSecretValuesForVault();
+        foreach (var pair in AiCredentialStore.SnapshotForAccountVault())
+            result[pair.Key] = pair.Value;
+        return result;
+    }
+
+    private static void ApplyAllSecrets(IReadOnlyDictionary<string, string> secrets)
+    {
+        AiCredentialStore.ApplyFromAccountVault(secrets);
+        var environment = secrets
+            .Where(static pair => !AiCredentialStore.IsAccountVaultKey(pair.Key))
+            .ToDictionary(static pair => pair.Key, static pair => pair.Value, StringComparer.OrdinalIgnoreCase);
+        AppEnvironmentVariableStore.ApplySecretValuesFromVault(environment);
+    }
+
     private static void PrepareLocalAccountScope(string accountId)
     {
         lock (AccountCacheGate)
         {
             var cache = LoadLocalAccountCache();
-            var current = AppEnvironmentVariableStore.SnapshotSecretValuesForVault();
+            var current = SnapshotAllSecrets();
             if (string.Equals(cache.LastAccountId, accountId, StringComparison.Ordinal))
             {
                 if (!cache.Accounts.ContainsKey(accountId))
@@ -227,7 +246,7 @@ internal static class AccountEnvironmentSecretVault
 
             if (cache.Accounts.TryGetValue(accountId, out var saved))
             {
-                AppEnvironmentVariableStore.ApplySecretValuesFromVault(saved);
+                ApplyAllSecrets(saved);
             }
             else if (cache.Accounts.Count == 0 && string.IsNullOrWhiteSpace(cache.LastAccountId))
             {
@@ -236,7 +255,7 @@ internal static class AccountEnvironmentSecretVault
             else
             {
                 var empty = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                AppEnvironmentVariableStore.ApplySecretValuesFromVault(empty);
+                ApplyAllSecrets(empty);
                 cache.Accounts[accountId] = empty;
             }
 

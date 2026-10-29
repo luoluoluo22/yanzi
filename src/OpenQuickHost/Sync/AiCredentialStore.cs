@@ -68,6 +68,7 @@ public static class AiCredentialStore
 
     public static void Capture(AppSettings settings)
     {
+        var changedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         lock (BagIoLock)
         {
             var bag = Load();
@@ -75,7 +76,10 @@ public static class AiCredentialStore
             // unknown, never as a command to erase an existing DPAPI credential.
             if (!string.IsNullOrWhiteSpace(settings.AiApiKey))
             {
-                bag.LegacyApiKey = settings.AiApiKey.Trim();
+                var nextKey = settings.AiApiKey.Trim();
+                if (!string.Equals(bag.LegacyApiKey, nextKey, StringComparison.Ordinal))
+                    changedNames.Add(LegacyVaultKey);
+                bag.LegacyApiKey = nextKey;
             }
 
             foreach (var provider in settings.AiServiceProviders ?? [])
@@ -83,10 +87,68 @@ public static class AiCredentialStore
                 var id = provider.Id?.Trim() ?? string.Empty;
                 if (id.Length > 0 && !string.IsNullOrWhiteSpace(provider.ApiKey))
                 {
-                    bag.ProviderApiKeys[id] = provider.ApiKey.Trim();
+                    var nextKey = provider.ApiKey.Trim();
+                    if (!bag.ProviderApiKeys.TryGetValue(id, out var previousKey) ||
+                        !string.Equals(previousKey, nextKey, StringComparison.Ordinal))
+                        changedNames.Add(ProviderVaultKey(id));
+                    bag.ProviderApiKeys[id] = nextKey;
                 }
             }
 
+            Save(bag);
+        }
+        if (changedNames.Count > 0)
+            AccountEnvironmentSecretVault.QueueUploadFromLocal(changedNames);
+    }
+
+
+    // AI keys enter only the account E2EE vault; never normal config or extension environments.
+    internal const string AccountVaultPrefix = "__YANZI_AI_CREDENTIAL_V1__:";
+    private const string LegacyVaultKey = AccountVaultPrefix + "legacy";
+    internal static bool IsAccountVaultKey(string? key) =>
+        key?.StartsWith(AccountVaultPrefix, StringComparison.OrdinalIgnoreCase) == true;
+
+    private static string ProviderVaultKey(string id) =>
+        AccountVaultPrefix + "provider:" + Convert.ToHexString(System.Text.Encoding.UTF8.GetBytes(id));
+
+    internal static Dictionary<string, string> SnapshotForAccountVault()
+    {
+        lock (BagIoLock)
+        {
+            var bag = Load();
+            var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (!string.IsNullOrWhiteSpace(bag.LegacyApiKey)) result[LegacyVaultKey] = bag.LegacyApiKey;
+            foreach (var pair in bag.ProviderApiKeys)
+                if (!string.IsNullOrWhiteSpace(pair.Key) && !string.IsNullOrWhiteSpace(pair.Value))
+                    result[ProviderVaultKey(pair.Key)] = pair.Value;
+            return result;
+        }
+    }
+
+    internal static void ApplyFromAccountVault(IReadOnlyDictionary<string, string> allSecrets)
+    {
+        lock (BagIoLock)
+        {
+            var bag = new AiCredentialBag();
+            foreach (var pair in allSecrets)
+            {
+                if (!IsAccountVaultKey(pair.Key) || string.IsNullOrWhiteSpace(pair.Value)) continue;
+                if (string.Equals(pair.Key, LegacyVaultKey, StringComparison.OrdinalIgnoreCase))
+                {
+                    bag.LegacyApiKey = pair.Value;
+                    continue;
+                }
+                const string prefix = AccountVaultPrefix + "provider:";
+                if (!pair.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+                try
+                {
+                    var hexId = pair.Key[prefix.Length..];
+                    if (hexId.Length == 0 || hexId.Length > 2048 || hexId.Length % 2 != 0) continue;
+                    var id = System.Text.Encoding.UTF8.GetString(Convert.FromHexString(hexId));
+                    if (!string.IsNullOrWhiteSpace(id)) bag.ProviderApiKeys[id] = pair.Value;
+                }
+                catch (FormatException) { }
+            }
             Save(bag);
         }
     }

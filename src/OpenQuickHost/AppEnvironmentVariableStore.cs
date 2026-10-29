@@ -170,7 +170,8 @@ public static class AppEnvironmentVariableStore
         var normalized = NormalizeName(name);
         return !string.IsNullOrWhiteSpace(normalized) &&
                !normalized.Contains('=') &&
-               !ReservedNames.Contains(normalized);
+               !ReservedNames.Contains(normalized) &&
+               !AiCredentialStore.IsAccountVaultKey(normalized);
     }
 
     internal static Dictionary<string, string> SnapshotSecretValuesForVault()
