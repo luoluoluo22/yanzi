@@ -743,7 +743,9 @@ public sealed partial class LocalAgentApiServer : IDisposable
 
             if (await TryHandleConsoleLogoutAsync(request, response, path))
                 return;
-            if (!IsAuthorized(request))
+            // Only dedicated model credentials may access paid LLM routes.
+            var llmRoute = path is "/v1/models" or "/v1/chat/completions";
+            if (llmRoute ? !LocalLlmApiTokenStore.IsAuthorized(request) : !IsAuthorized(request))
             {
                 await WriteJsonAsync(response, 401, new { error = "unauthorized" });
                 return;

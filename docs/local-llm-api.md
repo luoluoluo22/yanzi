@@ -1,61 +1,62 @@
 # 燕子本机 LLM API（OpenAI Chat Completions 兼容）
 
-新增接口复用现有 Agent API 监听器、端口、Bearer Token 和「模型服务」供应商配置，不维护第二份密钥。它仅供本机应用访问：服务端对非回环客户端已有拒绝策略。
+燕子在现有 Agent API 端口上提供 OpenAI 兼容的模型接口。由「模型服务」统一管理上游供应商和模型，调用应用只需要本机地址、独立 LLM Token 和模型名称，不接触上游供应商 Key。
 
-## 使用
+## 开通与调用
 
-1. 在燕子设置中启用 **Agent API**，为 Agent API 设置**非默认的私有 Token**。历史示例 token \`yanzi-local-dev-token\` 不允许调用 LLM API，防止任意本地软件轻易消费付费额度。
-2. 在「模型服务」中启用供应商、录入 API URL/Key，并将模型加入该供应商的模型列表。
-3. 取本机实际配置的 Agent API 端口（例如 \`42980\`；不同安装配置可能不同），访问 \`http://127.0.0.1:<port>/v1\`。
+1. 在「燕子设置 → Agent API」保持本机 API 启用，找到「LLM API 专用密钥」，点击「复制 LLM 密钥」。首次使用会生成 256-bit 随机 Token，并以 Windows 当前用户 DPAPI 加密保存。各台电脑的 Token 独立，不能直接跨电脑复制加密文件。
+2. 在「模型服务」中启用供应商并配置有效 API Key、Base URL 和模型列表。供应商 Key 由现有 AI 凭证库管理；它们不会通过 LLM API 返回。
+3. API 地址是 `http://127.0.0.1:<AgentApiPort>/v1`。两台既有设备实际配置的端口为 `42980`，但其他安装可能使用不同端口。
+4. 使用 **LLM 专用 Token** 作为 `Authorization: Bearer ...`；历史 Agent API Token（包括默认值）不能访问模型接口，原 Agent API 的调用方不受影响。
 
-**模型发现**
+### 模型发现
 
-\`\`\`bash
-curl http://127.0.0.1:42980/v1/models -H "Authorization: Bearer YOUR_PRIVATE_AGENT_API_TOKEN"
-\`\`\`
+```bash
+curl "http://127.0.0.1:42980/v1/models" \
+  -H "Authorization: Bearer YOUR_LOCAL_LLM_TOKEN"
+```
 
-每个模型返回 \`id="<providerId>/<upstreamModelId>"\`、\`owned_by\`、\`provider_id\`。同名模型必须使用该带供应商前缀的 ID 进行选择。唯一模型名也可直接用作 \`model\`；\`default\` 使用燕子当前选定的供应商和模型。
+模型 ID 采用 `<providerId>/<modelId>` 避免同名冲突；唯一模型名也允许直接填写。使用 `model="default"` 时按「模型服务」中当前活跃的服务商和模型路由。只列出已启用供应商的配置模型。
 
-**普通对话**
+### 非流式
 
-\`\`\`bash
-curl http://127.0.0.1:42980/v1/chat/completions \
-  -H "Authorization: Bearer YOUR_PRIVATE_AGENT_API_TOKEN" \
+```bash
+curl "http://127.0.0.1:42980/v1/chat/completions" \
+  -H "Authorization: Bearer YOUR_LOCAL_LLM_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"model":"default","messages":[{"role":"user","content":"你好"}]}'
-\`\`\`
+```
 
-**流式调用**
+### 流式 SSE
 
-\`\`\`bash
-curl -N http://127.0.0.1:42980/v1/chat/completions \
-  -H "Authorization: Bearer YOUR_PRIVATE_AGENT_API_TOKEN" \
+```bash
+curl -N "http://127.0.0.1:42980/v1/chat/completions" \
+  -H "Authorization: Bearer YOUR_LOCAL_LLM_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"model":"default","stream":true,"messages":[{"role":"user","content":"你好"}]}'
-\`\`\`
+```
 
-**Python OpenAI SDK**
+### Python OpenAI SDK
 
-\`\`\`python
+```python
 from openai import OpenAI
 
 client = OpenAI(
     base_url="http://127.0.0.1:42980/v1",
-    api_key="YOUR_PRIVATE_AGENT_API_TOKEN",
+    api_key="YOUR_LOCAL_LLM_TOKEN"
 )
-response = client.chat.completions.create(
+answer = client.chat.completions.create(
     model="default",
     messages=[{"role": "user", "content": "你好"}],
 )
-print(response.choices[0].message.content)
-\`\`\`
+print(answer.choices[0].message.content)
+```
 
-## 实现与边界
+## 实现范围及限制
 
-- OpenAI-compatible / New API / CherryIN / Ollama / Ego ChatGPT 类供应商：透传标准 \`/chat/completions\` JSON、工具调用和 SSE。供应商须真正支持 OpenAI chat/completions 协议。
-- Anthropic、Gemini：文本聊天适配成统一返回格式；\`stream=true\` 会返回符合 SSE 规范的一次性结果，目前**不是原生逐 token 流式**，且暂不支持其工具调用、图片内容块、复杂结构消息。明确拒绝无法无损转换的输入，避免静默丢字段。
-- \`OpenAI-Response\` 类型的原生 Responses API 暂未适配；错误码为 \`unsupported_provider_protocol\`，不错误地将它当作 chat completions。
-- Azure OpenAI 需要服务商给出兼容的 \`/chat/completions\` URL（含正确部署和 api-version 参数）。本版未提供专属 Azure 签名/版本拼装。
-- 最大请求 JSON 为 1 MiB；上游请求超时 4 分钟。无法访问提供商返回结构化错误，不会返回其 Key 或原始错误正文。
-- API 只读取燕子模型服务配置。修改供应商、启用状态和模型列表后无需重启 API 服务；下一次请求重新读取配置。
-- **本功能不代表提供免费模型额度。** 调用消耗的是所选供应商现有账户的额度/套餐资源；错误、限流及计费规则由供应商决定。
+- 提供 `GET /v1/models` 和 `POST /v1/chat/completions`；复用现有 Agent API 的本机监听器、端口及本机限制。LLM 专用鉴权与通用 Agent API Token 严格隔离。
+- 对 OpenAI Chat Completions 兼容服务商进行 JSON 和 SSE 转发。多模型同名时要求使用 `providerId/modelId`。
+- Anthropic 和 Gemini 原生协议已支持纯文本消息适配，但其 `stream=true` 目前是一次性 SSE，不是逐 token 透传，暂不支持工具调用和多模态内容。
+- 原生 OpenAI Responses API 和 Azure OpenAI 的专属鉴权/部署参数未单独适配，必须使用供应商提供的 Chat Completions 兼容入口。
+- 请求体上限 1 MiB，上游响应最长等待约四分钟。不把上游 Key 或原始错误正文返回给客户端。API 不提供额外免费模型额度，实际使用受上游供应商计费和限制约束。
+- 密钥仅通过本机设置按钮供用户主动复制，永不嵌入公开 API 文档或日志。密钥文件损坏时拒绝访问，不能静默重置导致已接入应用失效。

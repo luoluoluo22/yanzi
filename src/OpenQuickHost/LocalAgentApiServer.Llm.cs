@@ -33,14 +33,7 @@ public sealed partial class LocalAgentApiServer
             return true;
         }
 
-        // Agent API authentication has already run before reaching this route.
-        // The historical default token is public and must not authorize paid-model usage.
-        if (string.IsNullOrWhiteSpace(_token) || _token == "yanzi-local-dev-token")
-        {
-            await WriteLlmErrorAsync(response, 503, "token_not_configured",
-                "Set a private Agent API token in Yanzi settings before using the LLM API.");
-            return true;
-        }
+        // Already authorized with a separate DPAPI-backed LLM credential.
 
         // Browser origins are not trusted merely because they can reach localhost.
         var origin = request.Headers["Origin"];

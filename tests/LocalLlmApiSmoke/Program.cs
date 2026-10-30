@@ -69,7 +69,9 @@ internal static class Program
             }
         };
 
-        var server = new LocalAgentApiServer("private-test-token");
+        var key = LocalLlmApiTokenStore.LoadOrCreate();
+        Assert(key.Length == 64 && key == LocalLlmApiTokenStore.LoadOrCreate(), "DPAPI token persists");
+        var server = new LocalAgentApiServer("yanzi-local-dev-token");
         var listener = new HttpListener();
         listener.Prefixes.Add($"http://127.0.0.1:{proxyPort}/");
         listener.Start();
@@ -81,7 +83,7 @@ internal static class Program
                 HttpListenerContext ctx;
                 try { ctx = await listener.GetContextAsync(); }
                 catch (HttpListenerException) { break; }
-                if (ctx.Request.Headers["Authorization"] != "Bearer private-test-token")
+                if (!LocalLlmApiTokenStore.IsAuthorized(ctx.Request))
                 {
                     await LocalAgentApiServer.WriteTestJsonAsync(ctx.Response, 401, new { error = "unauthorized" });
                     continue;
@@ -90,7 +92,10 @@ internal static class Program
             }
         });
         using var http = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{proxyPort}/") };
-        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "private-test-token");
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "yanzi-local-dev-token");
+        using (var denied = await http.GetAsync("v1/models"))
+            Assert((int)denied.StatusCode == 401, "default Agent token cannot invoke LLM");
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", key);
 
         var models = await http.GetStringAsync("v1/models");
         Assert(models.Contains("openai/demo") && models.Contains("second/demo") &&
@@ -123,7 +128,7 @@ internal static class Program
         Assert(mockCount == 3, "upstream called for valid requests only");
         gatewayCts.Cancel(); mockCts.Cancel(); listener.Stop(); upstream.Stop();
         await Task.WhenAll(gatewayTask, mockTask);
-        Console.WriteLine("LLM API smoke: 5 assertions passed; upstream HTTP and SSE verified.");
+        Console.WriteLine("LLM API smoke: dedicated auth, DPAPI, model routing, HTTP and SSE verified.");
     }
 
     private static void Assert(bool ok, string name)
@@ -133,6 +138,15 @@ internal static class Program
     }
 }
 
+public static class HostAssets
+{
+    public static string ResolveDataFilePath(string name)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "yanzi-llm-smoke-" + Environment.ProcessId);
+        Directory.CreateDirectory(dir);
+        return Path.Combine(dir, name);
+    }
+}
 public sealed class AppSettings
 {
     public List<AiServiceProviderSettings> AiServiceProviders { get; set; } = new();

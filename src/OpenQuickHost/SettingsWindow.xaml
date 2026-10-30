@@ -1207,6 +1207,14 @@
                                                 <Button Grid.Column="2" Content="复制 Token" Style="{DynamicResource Yanzi.Button.Outline}" Height="36" Padding="12,0" Margin="8,0,0,0" Click="CopyAgentApiToken_Click"/>
                                             </Grid>
                                             <TextBlock x:Name="AgentApiTokenHintText" Text="默认隐藏；复制后粘贴到 API 控制台的 X-Yanzi-Token。请勿公开分享。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,8,0,0" TextWrapping="Wrap"/>
+                                            <Grid Margin="0,15,0,0">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0">
+                                                    <TextBlock Text="LLM API 专用密钥" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold"/>
+                                                    <TextBlock x:Name="LlmApiTokenHintText" Text="与 Agent API Token 独立，自动生成并由 Windows 加密保护。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" TextWrapping="Wrap" Margin="0,5,8,0"/>
+                                                </StackPanel>
+                                                <Button Grid.Column="1" Content="复制 LLM 密钥" Style="{DynamicResource Yanzi.Button.Outline}" Height="36" Padding="12,0" Click="CopyLlmApiToken_Click" VerticalAlignment="Center"/>
+                                            </Grid>
                                         </StackPanel>
                                     </StackPanel>
                                 </StackPanel>

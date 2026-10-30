@@ -3878,6 +3878,19 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private void CopyLlmApiToken_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            System.Windows.Clipboard.SetText(LocalLlmApiTokenStore.LoadOrCreate());
+            LlmApiTokenHintText.Text = "已复制本机 LLM 专用密钥，请勿公开分享。";
+        }
+        catch (Exception ex)
+        {
+            LlmApiTokenHintText.Text = "复制失败：" + ex.GetType().Name;
+        }
+    }
+
     private void OpenApiDocsUrlButton_Click(object sender, RoutedEventArgs e)
     {
         try
