@@ -782,6 +782,7 @@ public sealed partial class LocalAgentApiServer : IDisposable
         if (existing != null) return existing;
         var router = new LocalApiRouter();
         router.Add((request, path) => request.HttpMethod == "GET" && path == "/v1/me/devices/peers", HandleAccountRoute0Async);
+        router.AddHandled(TryHandleLlmApiAsync);
         router.AddHandled(TryHandleMobileDeviceApiAsync);
         router.AddHandled(TryCompanionFiles);
         router.Add((request, path) => request.HttpMethod == "GET" && path == "/v1/me/devices/protocol", HandleAccountRoute3Async);
