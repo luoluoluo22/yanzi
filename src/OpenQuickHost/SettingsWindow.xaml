@@ -5524,16 +5524,12 @@
                                                    FontSize="{DynamicResource FontSizeSmallPlus}"
                                                    VerticalAlignment="Center"
                                                    Margin="10,0,0,0" />
-                                        <Border Grid.Column="2"
-                                                Visibility="{Binding IsEnabled, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                                Background="#1A22C55E"
-                                                BorderBrush="#FF22C55E"
-                                                BorderThickness="1"
-                                                CornerRadius="4"
-                                                Padding="5,2"
-                                                VerticalAlignment="Center">
-                                            <TextBlock Text="ON" Foreground="#FF22C55E" FontSize="8" FontWeight="Bold" />
-                                        </Border>
+                                        <CheckBox Grid.Column="2"
+                                                  Style="{DynamicResource Yanzi.Switch.Shadcn}"
+                                                  IsChecked="{Binding IsEnabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                  Click="SaveSettingsToggle_Click"
+                                                  ToolTip="启用或停用此模型服务"
+                                                  VerticalAlignment="Center" />
                                     </Grid>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
@@ -5549,7 +5545,7 @@
 
                     <Border Grid.Column="1" Background="{DynamicResource BrushBorder}" Width="1" VerticalAlignment="Stretch" />
 
-                    <ScrollViewer Grid.Column="2" Margin="14,0,0,0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" CanContentScroll="True" PanningMode="VerticalOnly">
+                    <ScrollViewer Grid.Column="2" Margin="14,0,0,0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" CanContentScroll="False" PanningMode="VerticalOnly">
                         <StackPanel>
                             <Border Style="{DynamicResource Yanzi.Settings.Surface}" Padding="16"
                                     Visibility="{Binding DataContext.SelectPromptVisibility, RelativeSource={RelativeSource AncestorType=Window}}">
