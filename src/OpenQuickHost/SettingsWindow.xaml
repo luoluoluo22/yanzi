@@ -1240,37 +1240,59 @@
                                         <Button Grid.Column="1" Content="添加变量" Style="{DynamicResource Yanzi.Button.Outline}" Height="30" Padding="12,0" Click="AddEnvironmentVariableButton_Click"/>
                                     </Grid>
 
-                                    <ItemsControl ItemsSource="{Binding EnvironmentVariables}" Margin="0,16,0,0">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate>
-                                                <Border Style="{DynamicResource Yanzi.Settings.Surface}" Padding="12" Margin="0,0,0,10">
-                                                    <Grid>
-                                                        <Grid.RowDefinitions>
-                                                            <RowDefinition Height="Auto"/>
-                                                            <RowDefinition Height="Auto"/>
-                                                        </Grid.RowDefinitions>
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="1.2*"/>
-                                                            <ColumnDefinition Width="14"/>
-                                                            <ColumnDefinition Width="1.8*"/>
-                                                            <ColumnDefinition Width="14"/>
-                                                            <ColumnDefinition Width="1.5*"/>
-                                                            <ColumnDefinition Width="Auto"/>
-                                                        </Grid.ColumnDefinitions>
-
-                                                        <TextBlock Text="名称" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}"/>
-                                                        <TextBlock Grid.Column="2" Text="值" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}"/>
-                                                        <TextBlock Grid.Column="4" Text="说明" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}"/>
-
-                                                        <TextBox Grid.Row="1" Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Height="34" Margin="0,6,0,0" Padding="10,7" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
-                                                        <TextBox Grid.Row="1" Grid.Column="2" Text="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Height="34" Margin="0,6,0,0" Padding="10,7" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
-                                                        <TextBox Grid.Row="1" Grid.Column="4" Text="{Binding Description, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Height="34" Margin="0,6,0,0" Padding="10,7" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
-                                                        <Button Grid.Row="1" Grid.Column="5" Content="删除" Style="{DynamicResource Yanzi.Button.Outline}" Height="34" Padding="14,0" Margin="12,6,0,0" Click="RemoveEnvironmentVariableButton_Click"/>
-                                                    </Grid>
-                                                </Border>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
+                                    <!-- A single table header keeps variable rows compact and aligned. -->
+                                    <Border Margin="0,16,0,0" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="8">
+                                        <StackPanel>
+                                            <Border Background="#0AFFFFFF" Padding="12,10" CornerRadius="8,8,0,0" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="1.2*"/>
+                                                        <ColumnDefinition Width="14"/>
+                                                        <ColumnDefinition Width="1.8*"/>
+                                                        <ColumnDefinition Width="14"/>
+                                                        <ColumnDefinition Width="1.5*"/>
+                                                        <ColumnDefinition Width="76"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Text="名称" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" />
+                                                    <TextBlock Grid.Column="2" Text="值" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" />
+                                                    <TextBlock Grid.Column="4" Text="说明" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" />
+                                                    <TextBlock Grid.Column="5" Text="操作" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" HorizontalAlignment="Center"/>
+                                                </Grid>
+                                            </Border>
+                                            <ItemsControl ItemsSource="{Binding EnvironmentVariables}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Border Padding="12,7" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1">
+                                                            <Border.Style>
+                                                                <Style TargetType="Border">
+                                                                    <Setter Property="Background" Value="Transparent"/>
+                                                                    <Style.Triggers>
+                                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                                            <Setter Property="Background" Value="#0DFFFFFF"/>
+                                                                        </Trigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Border.Style>
+                                                            <Grid>
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="1.2*"/>
+                                                                    <ColumnDefinition Width="14"/>
+                                                                    <ColumnDefinition Width="1.8*"/>
+                                                                    <ColumnDefinition Width="14"/>
+                                                                    <ColumnDefinition Width="1.5*"/>
+                                                                    <ColumnDefinition Width="76"/>
+                                                                </Grid.ColumnDefinitions>
+                                                                <TextBox Grid.Column="0" Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Height="34" Padding="10,7" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}" />
+                                                                <TextBox Grid.Column="2" Text="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Height="34" Padding="10,7" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}" />
+                                                                <TextBox Grid.Column="4" Text="{Binding Description, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Height="34" Padding="10,7" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}" />
+                                                                <Button Grid.Column="5" Content="删除" Style="{DynamicResource Yanzi.Button.Outline}" Height="34" Width="60" Padding="10,0" Margin="12,0,0,0" Click="RemoveEnvironmentVariableButton_Click" />
+                                                            </Grid>
+                                                        </Border>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </StackPanel>
+                                    </Border>
 
                                     <Grid Margin="0,8,0,0">
                                         <Grid.ColumnDefinitions>
