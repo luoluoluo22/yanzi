@@ -1283,7 +1283,7 @@
                                                                     <ColumnDefinition Width="76"/>
                                                                 </Grid.ColumnDefinitions>
                                                                 <TextBox Grid.Column="0" Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Height="34" Padding="10,7" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}" />
-                                                                <TextBox Grid.Column="2" Text="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Height="34" Padding="10,7" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}" />
+                                                                <local:SecretValueEditor Grid.Column="2" Height="34" Value="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" ValueEdited="SecretValueEditor_ValueEdited" AutomationProperties.Name="环境变量值" />
                                                                 <TextBox Grid.Column="4" Text="{Binding Description, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Height="34" Padding="10,7" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}" />
                                                                 <Button Grid.Column="5" Content="删除" Style="{DynamicResource Yanzi.Button.Outline}" Height="34" Width="60" Padding="10,0" Margin="12,0,0,0" Click="RemoveEnvironmentVariableButton_Click" />
                                                             </Grid>
@@ -5602,7 +5602,7 @@
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <TextBox Text="{Binding ApiKey, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,0" Height="36" VerticalContentAlignment="Center" Padding="10,0" TextChanged="AiSettings_TextChanged" Style="{DynamicResource Yanzi.Input}"/>
+                                        <local:SecretValueEditor Height="36" Value="{Binding ApiKey, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" ValueEdited="SecretValueEditor_ValueEdited" AutomationProperties.Name="API 密钥"/>
                                         <Button Grid.Column="1" Content="检测" Height="36" Margin="8,0,0,0" Style="{DynamicResource Yanzi.Button.Outline}" Padding="16,0" Click="CheckApiKeyButton_Click"/>
                                     </Grid>
                                     <TextBlock Text="多个密钥使用逗号分隔 · 本机 Windows 加密保存，通过账号端到端加密保险库跨设备同步，不上传普通配置或个人仓库" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeTiny}" Margin="0,4,0,0" TextWrapping="Wrap"/>

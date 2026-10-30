@@ -4869,6 +4869,25 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
+    // Reusable masked editor emits this event only for user edits, never for eye clicks
+    // or initial bindings. Keep each settings page's existing debounced save policy.
+    private void SecretValueEditor_ValueEdited(object sender, EventArgs e)
+    {
+        if (_isLoadingSettings || _isRefreshingSettingsFromDisk || sender is not SecretValueEditor editor)
+            return;
+
+        switch (editor.DataContext)
+        {
+            case SettingsAiProviderVM:
+                HasAiSettingsChanged = true;
+                QueueAiSettingsSave(500);
+                break;
+            case EnvironmentVariableEditorItem:
+                QueueEnvironmentVariablesSave(500);
+                break;
+        }
+    }
+
     private void AddEnvironmentVariableButton_Click(object sender, RoutedEventArgs e)
     {
         EnvironmentVariables.Add(new EnvironmentVariableEditorItem("NOTION_TOKEN", string.Empty, "Notion Integration Token"));
