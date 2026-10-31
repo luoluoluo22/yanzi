@@ -25,6 +25,10 @@ if (args.Length == 2 && args[0] == "--account-p2p-readonly")
     using var qaResultDocument = JsonDocument.Parse(JsonSerializer.Serialize(result));
     if (qaResultDocument.RootElement.GetProperty("existingWorker").ValueKind != JsonValueKind.True)
         throw new InvalidOperationException("Existing worker was modified or replaced");
+    var canReuse = bootstrap.GetMethod("CanReuseConnectedWorker",
+        BindingFlags.Static | BindingFlags.NonPublic)!;
+    if (canReuse.Invoke(null, null) is not true)
+        throw new InvalidOperationException("Existing worker is not bound to the current account grant");
     Console.WriteLine("ACCOUNT_P2P_LIVE_READONLY=PASSED");
     return;
 }

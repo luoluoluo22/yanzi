@@ -206,10 +206,13 @@ internal static class YanziServiceModuleCatalog
             suppressPeerNotification = payload.ValueKind == JsonValueKind.Object &&
                 payload.TryGetProperty("suppressPeerNotification", out var suppress) &&
                 suppress.ValueKind == JsonValueKind.True;
-            var prepared = await YanziAccountTransferBootstrap.PrepareAsync(target);
-            using var detail = JsonDocument.Parse(JsonSerializer.Serialize(prepared));
-            peerDeviceId = detail.RootElement.GetProperty("peerDeviceId").GetString();
-            notifyAutoPaired = detail.RootElement.GetProperty("autoPaired").GetBoolean();
+            if (target is not null || !YanziAccountTransferBootstrap.CanReuseConnectedWorker())
+            {
+                var prepared = await YanziAccountTransferBootstrap.PrepareAsync(target);
+                using var detail = JsonDocument.Parse(JsonSerializer.Serialize(prepared));
+                peerDeviceId = detail.RootElement.GetProperty("peerDeviceId").GetString();
+                notifyAutoPaired = detail.RootElement.GetProperty("autoPaired").GetBoolean();
+            }
         }
         var dir = DirectoryFor(module);
         var token = (await File.ReadAllTextAsync(Path.Combine(dir, module.TokenFile))).Trim();

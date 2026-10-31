@@ -141,13 +141,27 @@ public static class YanziTemporaryTransferCapabilityProvider
         {
             var targetDeviceId = input.TryGetProperty("targetDeviceId", out var targetDevice) &&
                 targetDevice.ValueKind == JsonValueKind.String ? targetDevice.GetString() : null;
-            await YanziServiceModuleCatalog.EnsureCapabilityAsync("files.p2p.connect",
-                YanziCapabilityCaller.LocalAgent, targetDeviceQuery: targetDeviceId);
-            object connectArguments = !string.IsNullOrWhiteSpace(targetDeviceId)
-                ? new { targetDeviceId } : new { };
-            var connection = await YanziCapabilityInvocationService.InvokeAsync(
-                "files.p2p.connect", connectArguments, YanziCapabilityCaller.LocalAgent);
-            if (!connection.Success) throw new IOException("p2p_account_connect_failed: " + connection.Error);
+            if (string.IsNullOrWhiteSpace(OpenQuickHost.Sync.SyncSessionStore.Load()?.UserId))
+                throw new UnauthorizedAccessException("p2p_account_login_required");
+            var connected = false;
+            if (string.IsNullOrWhiteSpace(targetDeviceId) &&
+                YanziAccountTransferBootstrap.CanReuseConnectedWorker() &&
+                YanziTransferServiceBridge.Installed)
+            {
+                var status = JsonSerializer.SerializeToElement(await YanziTransferServiceBridge.StatusAsync());
+                connected = status.TryGetProperty("connected", out var current) &&
+                    current.ValueKind == JsonValueKind.True;
+            }
+            if (!connected)
+            {
+                await YanziServiceModuleCatalog.EnsureCapabilityAsync("files.p2p.connect",
+                    YanziCapabilityCaller.LocalAgent, targetDeviceQuery: targetDeviceId);
+                object connectArguments = !string.IsNullOrWhiteSpace(targetDeviceId)
+                    ? new { targetDeviceId } : new { };
+                var connection = await YanziCapabilityInvocationService.InvokeAsync(
+                    "files.p2p.connect", connectArguments, YanziCapabilityCaller.LocalAgent);
+                if (!connection.Success) throw new IOException("p2p_account_connect_failed: " + connection.Error);
+            }
         }
         var backups = input.TryGetProperty("backupCount", out var b) ? b.GetInt32() : 0;
         var result = await Engine().PublishWithBackupsAsync(file, request, backups, CancellationToken.None);

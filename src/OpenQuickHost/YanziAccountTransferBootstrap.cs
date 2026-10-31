@@ -38,6 +38,57 @@ internal static class YanziAccountTransferBootstrap
             $"10.244.{third}.{(first ? 1 : 2)}", $"10.244.{third}.{(first ? 2 : 1)}");
     }
 
+    // Short-lived account grants can be checked locally when the independent
+    // worker is already connected, so a cloud outage does not interrupt a transfer.
+    // A logged-out account or an expired/revoked local grant cannot reuse the worker.
+    internal static bool CanReuseConnectedWorker()
+    {
+        var account = SyncSessionStore.Load()?.UserId;
+        if (string.IsNullOrWhiteSpace(account)) return false;
+        var root = Path.Combine(Environment.GetFolderPath(
+            Environment.SpecialFolder.LocalApplicationData), "YanziTransferService");
+        var configuration = Path.Combine(root, "config.json");
+        if (!File.Exists(configuration)) return false;
+        try
+        {
+            using var cfg = JsonDocument.Parse(File.ReadAllText(configuration));
+            var tunnel = cfg.RootElement.GetProperty("tunnel");
+            var expectedName = tunnel.GetProperty("networkName").GetString() ?? "";
+            var expectedPeer = tunnel.GetProperty("peerName").GetString() ?? "";
+            var expectedHost = tunnel.GetProperty("hostname").GetString() ?? "";
+            var own = DeviceIdentityStore.GetOrCreateDesktopDeviceId();
+            var hasGeneratedPair = File.Exists(Path.Combine(root, "pairing.json"));
+            foreach (var peer in YanziLanPairing.List().Where(p =>
+                p.OwnerAccount == account && p.Scopes.Contains("account.owner")))
+            {
+                if (!hasGeneratedPair)
+                {
+                    if (expectedName == "yanzi-independent-transfer-01" &&
+                        expectedPeer.Length >= 3 &&
+                        peer.DisplayName.Contains(expectedPeer, StringComparison.OrdinalIgnoreCase))
+                        return true;
+                    continue;
+                }
+                var key = YanziLanPairing.Key(peer);
+                PairPlan plan;
+                try { plan = Derive(account, own, peer.DeviceId, key); }
+                finally { CryptographicOperations.ZeroMemory(key); }
+                if (expectedName == plan.NetworkName &&
+                    expectedPeer == NetworkHostname(peer.DeviceId) &&
+                    expectedHost == NetworkHostname(own) &&
+                    tunnel.GetProperty("localIp").GetString() == plan.LocalIp)
+                    return true;
+            }
+        }
+        catch (Exception ex) when (ex is IOException or JsonException or
+            InvalidDataException or UnauthorizedAccessException or
+            System.Security.Cryptography.CryptographicException)
+        {
+            HostAssets.AppendLog("[AccountP2P] Worker reuse denied: " + ex.GetType().Name);
+        }
+        return false;
+    }
+
     internal static async Task<object> PrepareAsync(string? peerQuery = null, CancellationToken ct = default)
     {
         var account = SyncSessionStore.Load()?.UserId;
