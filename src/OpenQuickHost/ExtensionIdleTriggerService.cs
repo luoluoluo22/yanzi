@@ -105,6 +105,7 @@ public sealed class ExtensionIdleTriggerService
                 var enabled = _mainWindow.IsExtensionEnabled(command.ExtensionId);
                 var blockedByFullscreen = idle.PauseWhenFullscreen && fullscreen;
                 var dispatchInFlight = _runningExtensions.Contains(command.ExtensionId);
+                var hostPolicy = _mainWindow.CheckHostDispatchConditions(command);
                 var repeatReady = repeatMinutes > 0
                     && state.LastTriggeredAt.HasValue
                     && now - state.LastTriggeredAt.Value >= TimeSpan.FromMinutes(repeatMinutes);
@@ -113,7 +114,8 @@ public sealed class ExtensionIdleTriggerService
                     && !blockedByFullscreen
                     && enabled
                     && (!state.TriggeredInCurrentIdlePeriod || repeatReady)
-                    && !dispatchInFlight;
+                    && !dispatchInFlight
+                    && hostPolicy.Allowed;
 
                 if (shouldTrigger)
                 {
@@ -131,7 +133,8 @@ public sealed class ExtensionIdleTriggerService
                     fullscreen,
                     enabled,
                     dispatchInFlight,
-                    now);
+                    now,
+                    hostPolicy.Allowed ? null : hostPolicy.Reason);
 
                 if (shouldTrigger)
                 {
@@ -177,7 +180,8 @@ public sealed class ExtensionIdleTriggerService
         bool fullscreen,
         bool enabled,
         bool dispatchInFlight,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        string? hostPolicyReason)
     {
         try
         {
@@ -199,6 +203,10 @@ public sealed class ExtensionIdleTriggerService
             {
                 nextEligibleAt = now + (threshold - idleDuration);
                 reason = "waiting-idle";
+            }
+            else if (hostPolicyReason != null)
+            {
+                reason = hostPolicyReason;
             }
             else if (dispatchInFlight)
             {

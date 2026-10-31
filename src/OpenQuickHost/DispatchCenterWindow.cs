@@ -30,9 +30,9 @@ public sealed class DispatchCenterWindow : Window
     private List<Row> _rows = [];
 
     private sealed record Row(string Name, string ExtensionId, string Trigger,
-        string State, string Reason, string NextRun)
+        string State, string Reason, string NextRun, string Priority, string Conditions)
     {
-        public string Diagnostic => $"{Name} ({ExtensionId})\n事件：{Trigger}\n状态：{State}\n原因：{Reason}\n下次执行：{NextRun}";
+        public string Diagnostic => $"{Name} ({ExtensionId})\n事件：{Trigger}\n优先级：{Priority}\n执行条件：{Conditions}\n状态：{State}\n原因：{Reason}\n下次执行：{NextRun}";
     }
 
     public DispatchCenterWindow(Func<IReadOnlyDictionary<string, DateTime>> nextRuns)
@@ -73,7 +73,7 @@ public sealed class DispatchCenterWindow : Window
         var view = new GridView();
         foreach (var (label, binding, width) in new[] {
             ("小程序", "Name", 145d), ("事件", "Trigger", 155d),
-            ("状态", "State", 100d), ("原因", "Reason", 300d), ("下次运行", "NextRun", 160d)
+            ("优先级", "Priority", 75d), ("状态", "State", 90d), ("原因", "Reason", 240d), ("下次运行", "NextRun", 160d)
         })
         {
             view.Columns.Add(new GridViewColumn { Header = label,
@@ -118,7 +118,8 @@ public sealed class DispatchCenterWindow : Window
         var result = string.IsNullOrEmpty(search) ? _rows
             : _rows.Where(x => x.Diagnostic.Contains(search, StringComparison.OrdinalIgnoreCase)).ToList();
         _list.ItemsSource = result;
-        _footer.Text = $"共 {_rows.Count} 个调度项 · 显示 {result.Count} 个。右键复制诊断信息。仅显示记录，不会启动小程序。";
+        var capacity = HostDispatchJournal.Shared.CapacitySnapshot();
+        _footer.Text = $"调度执行 {capacity.Running}/{capacity.Capacity} · 排队 {capacity.Waiting} · 共 {_rows.Count} 项 / 显示 {result.Count} 项。右键复制诊断；本页不会启动小程序。";
     }
 
     private void Refresh()
@@ -165,7 +166,15 @@ public sealed class DispatchCenterWindow : Window
                     catch (Exception ex) when (ex is IOException or JsonException or FormatException)
                     { reason = "闲时诊断数据暂不可读"; }
                 }
-                rows.Add(new Row(manifest.Name, manifest.Id, trigger, state, reason, next));
+                var execution = manifest.Events?.Execution;
+                var conditions = execution?.Conditions;
+                var clauses = new List<string>();
+                if (conditions?.RequireOnline == true) clauses.Add("联网");
+                if (conditions?.RequireAcPower == true) clauses.Add("接电");
+                if (conditions?.MaxCpuPercent is { } cpu) clauses.Add($"CPU≤{cpu}%");
+                if (conditions?.MinIdleMinutes is { } idle) clauses.Add($"闲置≥{idle}分");
+                rows.Add(new Row(manifest.Name, manifest.Id, trigger, state, reason, next,
+                    execution?.Priority ?? "normal", clauses.Count == 0 ? "无附加限制" : string.Join(" + ", clauses)));
             }
         }
         _rows = rows.OrderBy(x => x.Name).ThenBy(x => x.Trigger).ToList();

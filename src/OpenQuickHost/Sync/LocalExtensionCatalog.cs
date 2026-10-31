@@ -1290,6 +1290,22 @@ public sealed record LocalExtensionHostEventsManifest
     public string[]? Subscribe { get; init; }
     public LocalExtensionBeforeExitManifest? BeforeExit { get; init; }
     public bool RecoverInterrupted { get; init; }
+    public LocalExtensionHostExecutionManifest? Execution { get; init; }
+}
+
+public sealed record LocalExtensionHostExecutionManifest
+{
+    /// <summary>low / normal / high; defaults to normal, does not override permissions.</summary>
+    public string Priority { get; init; } = "normal";
+    public LocalExtensionHostConditionsManifest? Conditions { get; init; }
+}
+
+public sealed record LocalExtensionHostConditionsManifest
+{
+    public bool RequireOnline { get; init; }
+    public bool RequireAcPower { get; init; }
+    public int? MaxCpuPercent { get; init; }
+    public int? MinIdleMinutes { get; init; }
 }
 
 public sealed record LocalExtensionBeforeExitManifest

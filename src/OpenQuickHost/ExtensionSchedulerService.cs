@@ -143,9 +143,10 @@ public sealed class ExtensionSchedulerService
             _runningExtensions.Add(extensionId);
             HostAssets.AppendLog($"ExtensionScheduler: executing {command.Title} ({extensionId}).");
 
+            var accepted = false;
             try
             {
-                await _mainWindow.ExecuteScheduledExtensionAsync(command);
+                accepted = await _mainWindow.ExecuteScheduledExtensionAsync(command);
             }
             catch (Exception ex)
             {
@@ -156,8 +157,8 @@ public sealed class ExtensionSchedulerService
                 _runningExtensions.Remove(extensionId);
             }
 
-            // Calculate next run time
-            UpdateNextRunTime(extensionId, command.Startup?.Schedule);
+            // Conditions not met: keep the due occurrence for retry on the next timer tick.
+            if (accepted) UpdateNextRunTime(extensionId, command.Startup?.Schedule);
         }
     }
 

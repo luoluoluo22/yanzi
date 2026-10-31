@@ -18,7 +18,7 @@ public sealed class HostDispatchJournal
     private readonly string _path;
     private readonly object _gate = new();
     private readonly HashSet<string> _pending = new(StringComparer.OrdinalIgnoreCase);
-    private readonly SemaphoreSlim _slots = new(2, 2);
+    private readonly HostPriorityGate _slots = new(concurrency: 2, maxQueue: 128);
     private List<Entry> _history;
 
     public static HostDispatchJournal Shared { get; } = new(
@@ -53,6 +53,8 @@ public sealed class HostDispatchJournal
         lock (_gate) return _history.OrderByDescending(x => x.CreatedUtc).ToArray();
     }
 
+    public (int Running, int Waiting, int Capacity) CapacitySnapshot() => _slots.Snapshot();
+
     public IReadOnlyList<Entry> Interrupted()
     {
         lock (_gate) return _history.Where(x => x.State == "interrupted").ToArray();
@@ -80,7 +82,7 @@ public sealed class HostDispatchJournal
 
     public async Task<bool> DispatchAsync(string extensionId, string eventName,
         Func<CancellationToken, Task> action, CancellationToken cancellationToken = default,
-        string? previousId = null)
+        string? previousId = null, int priority = 1)
     {
         if (string.IsNullOrWhiteSpace(extensionId) || string.IsNullOrWhiteSpace(eventName))
             throw new ArgumentException("Dispatch requires extension and event.");
@@ -98,11 +100,16 @@ public sealed class HostDispatchJournal
             catch { _pending.Remove(extensionId); _history.Remove(entry); throw; }
         }
 
-        var acquired = false;
+        IDisposable? lease = null;
         try
         {
-            await _slots.WaitAsync(cancellationToken);
-            acquired = true;
+            lease = await _slots.AcquireAsync(priority, cancellationToken);
+            if (lease is null)
+            {
+                Update(entry.Id, "waiting", "全局调度队列已满，等待下次事件重试");
+                return false;
+            }
+            cancellationToken.ThrowIfCancellationRequested();
             Update(entry.Id, "running", "已获得执行槽");
             await action(cancellationToken);
             Update(entry.Id, "dispatched", "事件已交付小程序；后续异步任务由小程序自行报告");
@@ -116,7 +123,7 @@ public sealed class HostDispatchJournal
         }
         finally
         {
-            if (acquired) _slots.Release();
+            lease?.Dispose();
             lock (_gate) _pending.Remove(extensionId);
         }
     }
