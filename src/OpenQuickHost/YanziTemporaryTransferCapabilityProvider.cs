@@ -41,8 +41,50 @@ public static class YanziTemporaryTransferCapabilityProvider
         },"required":["receipt"],"additionalProperties":false}
         """;
 
+    private static TransferChannel P2pChannel() =>
+        YanziTemporaryTransferAdapters.LoadChannels().Single(c => c.Id == "easytier-p2p");
+
+    private static async Task<object?> P2pStatusAsync(object? _)
+    {
+        var profile = P2pChannel();
+        var managed = YanziEasyTierSessionManager.IsOwned(profile);
+        bool connected = false;
+        if (managed)
+            connected = await new TemporaryEasyTierP2pAdapter(YanziEasyTierSessionManager.IsOwned)
+                .IsDirectAsync(profile, CancellationToken.None);
+        return new { managed, connected, transport = connected ? "p2p/udp" : "unavailable",
+            channelEnabled = profile.Enabled, zeroRelayFallback = true };
+    }
+
     public static IEnumerable<YanziCapabilityProviderDefinition> Create()
     {
+        yield return new()
+        {
+            Name = "files.p2p.connect",
+            Description = "显式启动受燕子管理的 EasyTier P2P-only + KCP 会话；不修改系统代理和路由",
+            Category = "files", Permissions = ["files.read"], RiskLevel = "medium",
+            InputSchema = YanziCapabilitySchema.Parse("""{"type":"object","properties":{},"additionalProperties":false}"""),
+            OutputSchema = YanziCapabilitySchema.Parse("""{"type":"object"}"""),
+            Handler = _ => Task.FromResult<object?>(YanziEasyTierSessionManager.Start(P2pChannel()))
+        };
+        yield return new()
+        {
+            Name = "files.p2p.status",
+            Description = "检查燕子管理的 EasyTier 会话是否已经建立 p2p/udp 直连",
+            Category = "files", Permissions = ["files.read"],
+            InputSchema = YanziCapabilitySchema.Parse("""{"type":"object","properties":{},"additionalProperties":false}"""),
+            OutputSchema = YanziCapabilitySchema.Parse("""{"type":"object"}"""),
+            Handler = P2pStatusAsync
+        };
+        yield return new()
+        {
+            Name = "files.p2p.stop",
+            Description = "仅停止当前燕子发起的 EasyTier 会话并终止临时文件分享",
+            Category = "files", Permissions = ["files.read"], RiskLevel = "medium",
+            InputSchema = YanziCapabilitySchema.Parse("""{"type":"object","properties":{},"additionalProperties":false}"""),
+            OutputSchema = YanziCapabilitySchema.Parse("""{"type":"object"}"""),
+            Handler = _ => Task.FromResult<object?>(YanziEasyTierSessionManager.Stop())
+        };
         yield return new()
         {
             Name = "files.temporary.channels",

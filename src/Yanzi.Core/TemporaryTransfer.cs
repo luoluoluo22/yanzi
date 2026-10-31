@@ -5,7 +5,7 @@ namespace Yanzi.Core.TemporaryTransfer;
 
 /// <summary>Directions are explicit: observed performance is often asymmetric.</summary>
 public enum TransferEndpoint { Home, Office, Phone, Other }
-public enum ChannelKind { Sftp, HttpMultipart, BrowserHandoff }
+public enum ChannelKind { Sftp, HttpMultipart, BrowserHandoff, DirectP2p }
 public enum ChannelRegion { ChinaMainland, Overseas, Unknown }
 
 public sealed record TransferChannel(
@@ -13,7 +13,9 @@ public sealed record TransferChannel(
     bool Enabled = false, int Priority = 0, bool SupportsUnattended = true,
     string? Remote = null, string? Host = null, string? Account = null,
     string? RemoteDirectory = null, string? KnownHostsFile = null,
-    string? IdentityFile = null, string? Note = null);
+    string? IdentityFile = null, string? Note = null,
+    string? P2pCliPath = null, string? P2pPeerName = null, string? P2pRemoteIp = null,
+    int P2pRpcPort = 0, int P2pSocksPort = 0, int P2pListenPort = 0);
 
 public sealed record TransferRequest(
     TransferEndpoint Source, TransferEndpoint Destination, long Bytes,
@@ -34,6 +36,8 @@ public static class TransferPolicy
     public const long MaximumFileBytes = 5L * 1024 * 1024 * 1024;
     public static readonly IReadOnlyList<TransferChannel> BuiltIns = new[]
     {
+        new TransferChannel("easytier-p2p", ChannelKind.DirectP2p, ChannelRegion.ChinaMainland,
+            MaximumFileBytes, Priority: 500, Note: "Direct UDP P2P with KCP; opt-in and no silent relay."),
         new TransferChannel("sg-sftp", ChannelKind.Sftp, ChannelRegion.Overseas,
             MaximumFileBytes, Priority: 40, Note: "Key-based SFTP, explicit configuration; verified home→office, office upload unstable."),
         new TransferChannel("83blue", ChannelKind.HttpMultipart, ChannelRegion.Overseas,
@@ -60,6 +64,10 @@ public static class TransferPolicy
             else if (c.MaxFileBytes < request.Bytes) reason = "capacity_exceeded";
             else if (!c.SupportsUnattended) reason = "browser_handoff_required";
             else if (domestic && c.Region != ChannelRegion.ChinaMainland) reason = "domestic_route_required";
+            else if (c.Kind == ChannelKind.DirectP2p &&
+                (string.IsNullOrWhiteSpace(c.P2pCliPath) || string.IsNullOrWhiteSpace(c.P2pPeerName) ||
+                 string.IsNullOrWhiteSpace(c.P2pRemoteIp) || c.P2pRpcPort < 1024 ||
+                 c.P2pSocksPort < 1024 || c.P2pListenPort < 1024)) reason = "p2p_not_configured";
             else if (c.Kind == ChannelKind.HttpMultipart && !request.AllowPublicProvider) reason = "public_upload_not_authorized";
             else if (c.Kind == ChannelKind.Sftp && (string.IsNullOrWhiteSpace(c.Host) || string.IsNullOrWhiteSpace(c.Account)
                          || string.IsNullOrWhiteSpace(c.RemoteDirectory) || string.IsNullOrWhiteSpace(c.KnownHostsFile)))
@@ -125,11 +133,13 @@ public sealed class TemporaryTransferCoordinator
         string digest;
         await using (var input = File.OpenRead(source))
             digest = Convert.ToHexString(await SHA256.HashDataAsync(input, cancellationToken));
-        foreach (var choice in Plan(request).Where(c => c.Eligible && (excludedChannels is null || !excludedChannels.Contains(c.Id))))
+        foreach (var choice in Plan(request).Where(c => c.Eligible && (excludedChannels is null || !excludedChannels.Contains(c.Id))
+                     && (request.PreferredChannel != "easytier-p2p" || c.Id == "easytier-p2p")))
         {
             if (!_adapters.TryGetValue(choice.Id, out var adapter))
             {
                 attempts.Add(new TransferAttempt(choice.Id, false, "adapter_unavailable"));
+                if (choice.Id == "easytier-p2p") break;
                 continue;
             }
             var channel = _channels.First(c => c.Id.Equals(choice.Id, StringComparison.OrdinalIgnoreCase));
@@ -149,6 +159,7 @@ public sealed class TemporaryTransferCoordinator
             {
                 _failures[choice.Id] = _failures.GetValueOrDefault(choice.Id) + 1;
                 attempts.Add(new TransferAttempt(choice.Id, false, ex is OperationCanceledException ? "timeout" : ex.GetType().Name));
+                if (choice.Id == "easytier-p2p") break; // Never silently upload via another route.
             }
         }
         throw new IOException("temporary_transfer_unavailable: " + string.Join(", ", attempts.Select(a => a.ChannelId + ":" + a.Error)));
@@ -221,7 +232,7 @@ public sealed class TemporaryTransferCoordinator
         try
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeout.CancelAfter(TimeSpan.FromMinutes(5));
+            timeout.CancelAfter(channel.Kind == ChannelKind.DirectP2p ? TimeSpan.FromMinutes(45) : TimeSpan.FromMinutes(5));
             await adapter.DownloadAsync(channel, receipt, part, timeout.Token);
             var info = new FileInfo(part);
             if (!info.Exists || info.Length != receipt.Bytes) throw new InvalidDataException("size_mismatch");

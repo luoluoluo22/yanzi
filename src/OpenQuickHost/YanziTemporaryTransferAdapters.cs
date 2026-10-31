@@ -18,7 +18,7 @@ namespace OpenQuickHost;
 internal static class YanziTemporaryTransferAdapters
 {
     public static IReadOnlyList<ITemporaryTransferAdapter> Create() =>
-        [new TemporarySftpAdapter(), new TemporaryPublicUploadAdapter("83blue"),
+        [new TemporaryEasyTierP2pAdapter(YanziEasyTierSessionManager.IsOwned), new TemporarySftpAdapter(), new TemporaryPublicUploadAdapter("83blue"),
          new TemporaryPublicUploadAdapter("tflink")];
 
     public static IReadOnlyList<TransferChannel> LoadChannels()
@@ -45,7 +45,13 @@ internal static class YanziTemporaryTransferAdapters
                 Account = GetOptional(item, "account"),
                 RemoteDirectory = GetOptional(item, "remoteDirectory"),
                 KnownHostsFile = GetOptional(item, "knownHostsFile"),
-                IdentityFile = GetOptional(item, "identityFile")
+                IdentityFile = GetOptional(item, "identityFile"),
+                P2pCliPath = GetOptional(item, "p2pCliPath"),
+                P2pPeerName = GetOptional(item, "p2pPeerName"),
+                P2pRemoteIp = GetOptional(item, "p2pRemoteIp"),
+                P2pRpcPort = item.TryGetProperty("p2pRpcPort", out var rpc) && rpc.TryGetInt32(out var rv) ? rv : 0,
+                P2pSocksPort = item.TryGetProperty("p2pSocksPort", out var socks) && socks.TryGetInt32(out var sv) ? sv : 0,
+                P2pListenPort = item.TryGetProperty("p2pListenPort", out var listen) && listen.TryGetInt32(out var lv) ? lv : 0
             };
         }
         return defaults.Values.ToArray();
