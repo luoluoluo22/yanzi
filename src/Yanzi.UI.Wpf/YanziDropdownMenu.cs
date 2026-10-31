@@ -60,6 +60,8 @@ public sealed class YanziDropdownMenu
     /// <summary>Expand child panels to the left of their parents (e.g. right-edge tray menus).</summary>
     public bool OpenChildrenToLeft { get; set; }
     public double SubmenuWidth { get; set; } = 194;
+    /// <summary>Optional scroll limit for tall submenus; non-model menus are unaffected.</summary>
+    public double? SubmenuMaxHeight { get; set; }
 
     /// <summary>
     /// Size the root menu to its widest item's rendered text, icon and padding,
@@ -470,6 +472,17 @@ public sealed class YanziDropdownMenu
         row.Children.Add(arrow);
         var level = new Level { Parent = parent, ParentTrigger = trigger };
         level.Panel.Width = SubmenuWidth;
+        if (SubmenuMaxHeight is > 0)
+        {
+            level.Panel.MaxHeight = SubmenuMaxHeight.Value;
+            level.Panel.Child = new ScrollViewer
+            {
+                Content = level.Rows,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                PanningMode = PanningMode.VerticalOnly
+            };
+        }
         _submenus.Add(trigger, level);
         _arrows.Add(trigger, arrow);
 
@@ -501,6 +514,8 @@ public sealed class YanziDropdownMenu
         if (_screenPlacement && _screenCanvas is not null)
         {
             // Absolute-position the child WITHOUT changing Popup's size or screen origin.
+            if (SubmenuMaxHeight is > 0)
+                next.Panel.MaxHeight = Math.Max(72, Math.Min(SubmenuMaxHeight.Value, _screenCanvas.Height - 8));
             next.Panel.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
             double x = Canvas.GetLeft(parent.Panel) +
                 (OpenChildrenToLeft ? -(PanelWidth(next) + 4) : PanelWidth(parent) + 4);

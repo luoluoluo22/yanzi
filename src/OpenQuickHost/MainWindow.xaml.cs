@@ -339,6 +339,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         Instance = this;
         InitializeComponent();
+        // Pin the tag strip to the launcher's left edge instead of centering it
+        // over the panel, whose width changes from 700 to 1100 in AI mode.
+        SearchScopePopup.Placement = System.Windows.Controls.Primitives.PlacementMode.Custom;
+        SearchScopePopup.VerticalOffset = 0;
+        SearchScopePopup.CustomPopupPlacementCallback = (popupSize, _, _) =>
+        [
+            new System.Windows.Controls.Primitives.CustomPopupPlacement(
+                new System.Windows.Point(0, -popupSize.Height - 20),
+                System.Windows.Controls.Primitives.PopupPrimaryAxis.Horizontal)
+        ];
         InitializeFooterQuickMenu();
         // Namespaced Yanzi UI tokens do not override legacy search result resources.
         var yanyuTheme = AppSettingsStore.Load().ThemeMode;
@@ -817,9 +827,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (WindowState == WindowState.Normal)
         {
-            // 保存当前窗口的顶部中心点
-            var centerX = Left + Width / 2;
-            var centerY = Top;
+            // 保持原有窗口及顶部标签栏的左边缘位置
+            var anchorLeft = Left;
+            var anchorTop = Top;
 
             // 先恢复最小约束，再恢复默认窗口大小，避免 AI 模式较大的 MinWidth 把 Width 卡住
             MinWidth = _defaultMinWindowWidth;
@@ -827,9 +837,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Width = _defaultWindowWidth;
             Height = _defaultWindowHeight;
 
-            // 根据新尺寸重新计算位置，保持顶部中心不变
-            Left = centerX - Width / 2;
-            Top = centerY;
+            // 从右侧收起窗口，标签栏仍停留在原有屏幕位置
+            Left = anchorLeft;
+            Top = anchorTop;
+            RepositionSearchScopePopup();
         }
     }
 

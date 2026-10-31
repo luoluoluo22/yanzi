@@ -755,9 +755,9 @@ public partial class MainWindow
         // 切换到 AI Chat 模式时，调整窗口大小以获得更好的阅读体验
         if (WindowState == WindowState.Normal)
         {
-            // 保存当前窗口中心点
-            var centerX = Left + Width / 2;
-            var centerY = Top;  // 使用顶部位置
+            // 保持窗口和顶部标签栏的左边缘位置不变
+            var anchorLeft = Left;
+            var anchorTop = Top;  // 使用顶部位置
             
             // 调整窗口大小
             Width = 1100;
@@ -765,9 +765,10 @@ public partial class MainWindow
             MinWidth = 900;
             MinHeight = 600;
             
-            // 根据新尺寸重新计算位置，保持顶部中心不变
-            Left = centerX - Width / 2;
-            Top = centerY;
+            // 只向右侧扩展，不再围绕中心横向移动窗口
+            Left = anchorLeft;
+            Top = anchorTop;
+            RepositionSearchScopePopup();
         }
         
         if (_aiChatTopics.Count == 0)
@@ -840,7 +841,9 @@ public partial class MainWindow
         menu.UseContentWidth(190);
 
         var providers = (_appSettings.AiServiceProviders ?? [])
-            .Where(provider => provider.IsEnabled).ToArray();
+            .Where(provider => provider.IsEnabled)
+            .OrderBy(provider => string.Equals(provider.Id, _appSettings.ActiveServiceProviderId,
+                StringComparison.OrdinalIgnoreCase) ? 0 : 1).ToArray();
         if (providers.Length == 0)
         {
             menu.AddLabel("尚未启用模型供应商");
@@ -849,17 +852,21 @@ public partial class MainWindow
         }
         else
         {
-            var widestModel = providers.SelectMany(provider => provider.Models ?? [])
+            var widestModel = providers.SelectMany(provider => (provider.Models ?? []).Concat(provider.DiscoveredModels ?? []))
                 .Where(model => !string.IsNullOrWhiteSpace(model))
                 .DefaultIfEmpty("").MaxBy(model => model.Length) ?? "";
             // Give full model IDs enough room, including provider-specific suffixes.
             menu.SubmenuWidth = Math.Clamp(widestModel.Length * 9 + 58, 194, 420);
+            menu.SubmenuMaxHeight = 440;
             foreach (var provider in providers)
             {
                 var providerId = provider.Id;
-                var models = (provider.Models ?? [])
-                    .Where(model => !string.IsNullOrWhiteSpace(model))
-                    .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+                var preferredModel = string.Equals(providerId, _appSettings.ActiveServiceProviderId,
+                    StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(_appSettings.AiModel)
+                    ? _appSettings.AiModel : provider.SelectedModel;
+                var configured = new HashSet<string>(provider.Models ?? [], StringComparer.OrdinalIgnoreCase);
+                var models = AiModelMenuOrdering.Order(provider.Models,
+                    provider.DiscoveredModels, preferredModel);
                 var isActive = string.Equals(providerId, _appSettings.ActiveServiceProviderId,
                     StringComparison.OrdinalIgnoreCase);
                 var item = menu.AddSubmenu(provider.Name, submenu =>
@@ -869,13 +876,23 @@ public partial class MainWindow
                         submenu.AddLabel("暂无模型，请先在设置中添加");
                         return;
                     }
+                    var lastSection = string.Empty;
                     foreach (var model in models)
                     {
                         var modelId = model;
-                        var selected = isActive && string.Equals(modelId, _appSettings.AiModel,
+                        var selected = string.Equals(modelId, preferredModel,
                             StringComparison.OrdinalIgnoreCase);
+                        var section = selected ? "当前模型" : configured.Contains(modelId)
+                            ? "已配置模型" : "其他可用模型";
+                        if (!string.Equals(section, lastSection, StringComparison.Ordinal))
+                        {
+                            if (lastSection.Length > 0) submenu.AddSeparator();
+                            submenu.AddLabel(section);
+                            lastSection = section;
+                        }
                         submenu.AddAction(modelId, () => SelectAiChatProviderModel(providerId, modelId),
                             selected ? Yanzi.UI.Wpf.YanziIcons.Check(15) : null);
+
                     }
                 }, isActive ? Yanzi.UI.Wpf.YanziIcons.Check(15) : null);
                 item.ToolTip = "选择 " + provider.Name + " 提供的模型";
@@ -893,10 +910,13 @@ public partial class MainWindow
         var settings = AppSettingsStore.Load();
         var provider = settings.AiServiceProviders?.FirstOrDefault(item =>
             item.IsEnabled && string.Equals(item.Id, providerId, StringComparison.OrdinalIgnoreCase));
-        if (provider == null || !(provider.Models ?? []).Any(candidate =>
+        if (provider == null || !(provider.Models ?? []).Concat(provider.DiscoveredModels ?? []).Any(candidate =>
                 string.Equals(candidate, model, StringComparison.OrdinalIgnoreCase)))
             return;
 
+        provider.Models ??= [];
+        if (!provider.Models.Contains(model, StringComparer.OrdinalIgnoreCase))
+            provider.Models.Add(model);
         settings.ActiveServiceProviderId = provider.Id;
         settings.AiBaseUrl = provider.BaseUrl;
         settings.AiApiKey = provider.ApiKey;
@@ -989,7 +1009,7 @@ public partial class MainWindow
             var pinnedModels = SettingsAiController.IncludeSelectedModel(discovered,
                 string.Equals(current.ActiveServiceProviderId, id, StringComparison.OrdinalIgnoreCase) ? current.AiModel : null,
                 target.SelectedModel);
-            if (!SettingsAiController.SameModelIds(target.Models, pinnedModels))
+            if (!SettingsAiController.SameModelIds(target.DiscoveredModels, pinnedModels))
             {
                 current = AppSettingsStore.Update(settings =>
                 {
@@ -1003,7 +1023,7 @@ public partial class MainWindow
                         var updated = SettingsAiController.IncludeSelectedModel(discovered,
                             string.Equals(settings.ActiveServiceProviderId, id, StringComparison.OrdinalIgnoreCase) ? settings.AiModel : null,
                             latest.SelectedModel);
-                        if (!SettingsAiController.SameModelIds(latest.Models, updated)) latest.Models = updated;
+                        if (!SettingsAiController.SameModelIds(latest.DiscoveredModels, updated)) latest.DiscoveredModels = updated;
                     }
                     return settings;
                 });

@@ -1844,6 +1844,8 @@ public sealed class AiServiceProviderSettings
     public string BaseUrl { get; set; } = string.Empty;
     public string ApiKey { get; set; } = string.Empty;
     public bool IsEnabled { get; set; } = true;
+    // Models explicitly chosen in Settings; never replaced by automatic discovery.
     public List<string> Models { get; set; } = [];
+    public List<string> DiscoveredModels { get; set; } = [];
     public string SelectedModel { get; set; } = string.Empty;
 }
