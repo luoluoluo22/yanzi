@@ -62,48 +62,6 @@ public static class YanziTemporaryTransferCapabilityProvider
     {
         yield return new()
         {
-            Name = "files.p2p.connect",
-            Description = "显式启动受燕子管理的 EasyTier P2P-only + KCP 会话；不修改系统代理和路由",
-            Category = "files", Permissions = ["files.read"], RiskLevel = "medium",
-            InputSchema = YanziCapabilitySchema.Parse("""{"type":"object","properties":{},"additionalProperties":false}"""),
-            OutputSchema = YanziCapabilitySchema.Parse("""{"type":"object"}"""),
-            Handler = _ => YanziTransferServiceBridge.Installed ?
-                YanziTransferServiceBridge.ConnectAsync() :
-                Task.FromResult<object?>(YanziEasyTierSessionManager.Start(P2pChannel()))
-        };
-        yield return new()
-        {
-            Name = "files.p2p.status",
-            Description = "检查燕子管理的 EasyTier 会话是否已经建立 p2p/udp 直连",
-            Category = "files", Permissions = ["files.read"],
-            InputSchema = YanziCapabilitySchema.Parse("""{"type":"object","properties":{},"additionalProperties":false}"""),
-            OutputSchema = YanziCapabilitySchema.Parse("""{"type":"object"}"""),
-            Handler = P2pStatusAsync
-        };
-        yield return new()
-        {
-            Name = "files.p2p.stop",
-            Description = "仅停止当前燕子发起的 EasyTier 会话并终止临时文件分享",
-            Category = "files", Permissions = ["files.read"], RiskLevel = "medium",
-            InputSchema = YanziCapabilitySchema.Parse("""{"type":"object","properties":{},"additionalProperties":false}"""),
-            OutputSchema = YanziCapabilitySchema.Parse("""{"type":"object"}"""),
-            Handler = _ => YanziTransferServiceBridge.Installed ?
-                YanziTransferServiceBridge.StopAsync() :
-                Task.FromResult<object?>(YanziEasyTierSessionManager.Stop())
-        };
-        yield return new()
-        {
-            Name = "files.p2p.jobs",
-            Description = "查询独立燕子传输服务的持久化传输任务（宿主重启后仍可查询）",
-            Category = "files", Permissions = ["files.read"],
-            InputSchema = YanziCapabilitySchema.Parse("""{"type":"object","properties":{},"additionalProperties":false}"""),
-            OutputSchema = YanziCapabilitySchema.Parse("""{"type":"object"}"""),
-            Handler = _ => YanziTransferServiceBridge.Installed
-                ? YanziTransferServiceBridge.JobsAsync()
-                : Task.FromResult<object?>(new { jobs = Array.Empty<object>(), independentWorker = false })
-        };
-        yield return new()
-        {
             Name = "files.temporary.channels",
             Description = "查看临时传输通道配置、容量和启用状态；不影响正式同步",
             Category = "files", Permissions = ["files.read"],
@@ -177,6 +135,9 @@ public static class YanziTemporaryTransferCapabilityProvider
         var file = Path.GetFullPath(input.GetProperty("path").GetString()!);
         if (!File.Exists(file)) throw new FileNotFoundException("temporary_file_missing", file);
         var request = BuildRequest(input, new FileInfo(file).Length);
+        if (request.PreferredChannel == "easytier-p2p" ||
+            YanziTemporaryTransferAdapters.LoadChannels().Any(c => c.Id == "easytier-p2p" && c.Enabled))
+            await YanziServiceModuleCatalog.EnsureCapabilityAsync("files.p2p.connect", YanziCapabilityCaller.LocalAgent);
         var backups = input.TryGetProperty("backupCount", out var b) ? b.GetInt32() : 0;
         var result = await Engine().PublishWithBackupsAsync(file, request, backups, CancellationToken.None);
         object? notification = null;
@@ -212,6 +173,8 @@ public static class YanziTemporaryTransferCapabilityProvider
                 ?? throw new InvalidDataException("invalid_receipt");
             receipts = [one];
         }
+        if (receipts.Any(r => r.ChannelId == "easytier-p2p"))
+            await YanziServiceModuleCatalog.EnsureCapabilityAsync("files.p2p.connect", YanziCapabilityCaller.LocalAgent);
         var root = HostAssets.ResolveDataDirectoryPath("temporary-transfer/inbox");
         var output = await Engine().ReceiveFromCandidatesAsync(receipts, root, CancellationToken.None);
         return new { verified = true, output.FilePath, output.Bytes, output.Sha256, output.ChannelId };

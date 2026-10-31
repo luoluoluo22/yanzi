@@ -1,0 +1,63 @@
+{
+  "id": "yanzi-transfer-service",
+  "repository": "https://github.com/luoluoluo22/yanzi-transfer-service.git",
+  "revision": "3381213e509c03ef0d6fe305a09f0ea91800f352",
+  "installScript": "scripts/install-windows.ps1",
+  "localDirectory": "YanziTransferService",
+  "tokenHeader": "x-yanzi-service-token",
+  "tokenFile": "control.token",
+  "configFile": "config.json",
+  "portField": "controlPort",
+  "capabilities": [
+    {
+      "name": "files.p2p.connect",
+      "description": "建立独立 P2P 传输连接",
+      "method": "POST",
+      "route": "/v1/connect",
+      "category": "files",
+      "permissions": [
+        "files.read"
+      ]
+    },
+    {
+      "name": "files.p2p.status",
+      "description": "查询独立服务与 P2P 链路状态",
+      "method": "GET",
+      "route": "/v1/status",
+      "category": "files",
+      "permissions": [
+        "files.read"
+      ],
+      "project": {
+        "managed": "tunnel.managed",
+        "connected": "tunnel.direct",
+        "transport": "tunnel.transport",
+        "activeJobs": "jobs",
+        "worker": "$module",
+        "independentFromHost": "$true",
+        "channelEnabled": "$true",
+        "zeroRelayFallback": "$true"
+      }
+    },
+    {
+      "name": "files.p2p.stop",
+      "description": "手动停止空闲的 P2P 隧道",
+      "method": "POST",
+      "route": "/v1/tunnel/stop",
+      "category": "files",
+      "permissions": [
+        "files.read"
+      ]
+    },
+    {
+      "name": "files.p2p.jobs",
+      "description": "查询独立传输服务的持久任务",
+      "method": "GET",
+      "route": "/v1/jobs",
+      "category": "files",
+      "permissions": [
+        "files.read"
+      ]
+    }
+  ]
+}

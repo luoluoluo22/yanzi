@@ -99,5 +99,6 @@ public static class YanziBuiltinCapabilityRegistration
         YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziEverythingCapabilityProvider.Create());
         YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziBandizipCapabilityProvider.Create());
         YanziCapabilityProviderSdk.RegisterProvider("yanzi-host", YanziThunderCapabilityProvider.Create());
+        YanziServiceModuleCatalog.RegisterInstalled();
     }
 }

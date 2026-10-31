@@ -17,10 +17,17 @@ namespace OpenQuickHost;
 /// </summary>
 internal static class YanziTemporaryTransferAdapters
 {
-    public static IReadOnlyList<ITemporaryTransferAdapter> Create() =>
-        [YanziTransferServiceBridge.Installed ? (ITemporaryTransferAdapter)new TemporaryDaemonP2pAdapter() :
-            new TemporaryEasyTierP2pAdapter(YanziEasyTierSessionManager.IsOwned), new TemporarySftpAdapter(), new TemporaryPublicUploadAdapter("83blue"),
-         new TemporaryPublicUploadAdapter("tflink")];
+    public static IReadOnlyList<ITemporaryTransferAdapter> Create()
+    {
+        // Disabled or missing module never invokes the legacy host-owned P2P worker.
+        var adapters = new List<ITemporaryTransferAdapter>();
+        if (YanziTransferServiceBridge.Installed)
+            adapters.Add(new TemporaryDaemonP2pAdapter());
+        adapters.Add(new TemporarySftpAdapter());
+        adapters.Add(new TemporaryPublicUploadAdapter("83blue"));
+        adapters.Add(new TemporaryPublicUploadAdapter("tflink"));
+        return adapters;
+    }
 
     public static IReadOnlyList<TransferChannel> LoadChannels()
     {

@@ -54,6 +54,7 @@ public static class YanziAgentCapabilityCatalog
                 runEndpoint = $"/v1/extensions/{Uri.EscapeDataString(x.ExtensionId)}/run",
                 capabilities = ForExtension(x)
             }).ToArray(),
+            serviceModules = YanziServiceModuleCatalog.AvailableModules(),
             hostCapabilities = YanziCapabilityRegistry.List().Where(x => !installedIds.Contains(x.ProviderExtensionId))
                 .Select(FromRegistered).ToArray()
         };

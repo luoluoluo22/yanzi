@@ -29,7 +29,8 @@ public static class YanziCapabilityInvocationService
             {
                 try
                 {
-                    providerLease = await YanziFileWorkflow.AcquireProviderAsync(capabilityName);
+                    if (!await YanziServiceModuleCatalog.EnsureCapabilityAsync(capabilityName, caller))
+                        providerLease = await YanziFileWorkflow.AcquireProviderAsync(capabilityName);
                 }
                 catch (IOException ex) when (ex.Message.StartsWith("workflow_provider_not_installed", StringComparison.Ordinal))
                 {

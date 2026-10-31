@@ -118,6 +118,17 @@ public static class ScriptExtensionRunner
     {
         if (command.Source == CommandSource.LocalExtension && !ExtensionDevicePolicy.CanRun(command.ExtensionId))
             return new ScriptExecutionResult(false, string.Empty, "此小程序未授权在当前设备运行。", -1);
+        try
+        {
+            await YanziServiceModuleCatalog.EnsureExtensionDependenciesAsync(
+                command.ExtensionDirectoryPath, command.Permissions, cancellationToken);
+        }
+        catch (Exception ex) when (ex is IOException or System.ComponentModel.Win32Exception or
+            System.Net.Http.HttpRequestException or OperationCanceledException)
+        {
+            return new ScriptExecutionResult(false, string.Empty,
+                "小程序依赖服务安装失败：" + ex.Message, -1);
+        }
         if (HostRuntimeProfile.IsShell && RuntimeConnection.IsConnected)
         {
             try
