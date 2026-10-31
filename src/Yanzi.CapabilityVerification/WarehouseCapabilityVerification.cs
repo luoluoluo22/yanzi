@@ -41,6 +41,12 @@ internal static class WarehouseCapabilityVerification
             ?? throw new InvalidOperationException("Capability entry lookup missing.");
         var help = window.GetMethod("BuildCapabilityHelpContext", flags)
             ?? throw new InvalidOperationException("Help context formatter missing.");
+        var integration = window.GetMethod("BuildCapabilityIntegrationText", flags)
+            ?? throw new InvalidOperationException("Integration instructions formatter missing.");
+        var docsUrl = window.GetMethod("CapabilityDocsUrl", flags)
+            ?? throw new InvalidOperationException("Documentation URL builder missing.");
+        Assert((string)docsUrl.Invoke(null, [53919])! == "http://127.0.0.1:53919/docs#capability-console",
+            "Documentation link should target the existing capability console.");
         var format = window.GetMethod("FormatCapabilityDetails", flags, null, [typeof(YanziCapabilityDescriptor)], null)
             ?? throw new InvalidOperationException("Registered details formatter missing.");
 
@@ -54,6 +60,18 @@ internal static class WarehouseCapabilityVerification
             var entry = getEntry.Invoke(null, [command]);
             Assert(entry != null, "Capability row must retain registered or declared metadata");
             var context = (string)help.Invoke(null, [entry])!;
+            var instructions = (string)integration.Invoke(null, [entry, 53919])!;
+            Assert(instructions.Contains(command.Title, StringComparison.Ordinal), "Instructions omit capability name");
+            Assert(instructions.Contains("POST http://127.0.0.1:53919/v1/capabilities/invoke", StringComparison.Ordinal) &&
+                   instructions.Contains("GET http://127.0.0.1:53919/v1/agent/catalog", StringComparison.Ordinal),
+                "Instructions must include actual discovery and invoke endpoints");
+            Assert(instructions.Contains("输入 Schema：", StringComparison.Ordinal) &&
+                   instructions.Contains("输出 Schema：", StringComparison.Ordinal),
+                "Instructions must include I/O contracts");
+            Assert(instructions.Contains("燕子设置", StringComparison.Ordinal),
+                "Instructions must tell users where to get a token");
+            Assert(!instructions.Contains("yanzi-local-dev-token", StringComparison.Ordinal),
+                "Instructions must never hardcode a credential");
             Assert(context.Contains(command.Title, StringComparison.Ordinal), "Help context missing invocation name");
             Assert(context.Contains("输入 Schema：", StringComparison.Ordinal) &&
                    context.Contains("输出 Schema：", StringComparison.Ordinal),
@@ -90,7 +108,7 @@ internal static class WarehouseCapabilityVerification
                 $"Capability scope alias failed: {term}");
         }
 
-        Console.WriteLine($"WAREHOUSE_CAPABILITY_UI_QA=PASS; registered={registered.Count}; projected={commands.Count}; alias=3; providerIcons=true; helpContext=true; nonRunnable=true");
+        Console.WriteLine($"WAREHOUSE_CAPABILITY_UI_QA=PASS; registered={registered.Count}; projected={commands.Count}; alias=3; providerIcons=true; helpContext=true; integrationDocs=true; nonRunnable=true");
     }
 
     private static void VerifyDeclaredProvider(Type window, BindingFlags flags)

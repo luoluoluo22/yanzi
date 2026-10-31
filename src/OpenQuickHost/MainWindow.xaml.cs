@@ -663,6 +663,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged(nameof(StoreVisibility));
             OnPropertyChanged(nameof(NormalLauncherVisibility));
             OnPropertyChanged(nameof(IsFileSearchScopeActive));
+            OnPropertyChanged(nameof(IsCapabilityScopeActive));
             OnPropertyChanged(nameof(AiChatModelDisplayText));
             OnPropertyChanged(nameof(IsAllScopeActive));
 
