@@ -8,6 +8,8 @@
 
 **第三阶段开发知识库：** `scripts/dev-knowledge.ps1 -Mode coverage -Query '设置'` 可发现尚未登记的 XAML 事件入口；统一开发前检查在执行专项/隐藏桌面测试后自动生成带 Git 版本和测试范围的本机 QA 回执。它不会把测试结果冒充真实客户端 UI 验收。详见 [开发知识库](../../docs/dev-knowledge.md)。
 
+**第四阶段故障诊断入口：** `scripts/dev-diagnose.ps1 -Description 'Gemini 401 CREDENTIALS_MISSING'` 可综合错误指纹、已登记功能及测试、近期 Git 改动与本机 QA 记录，生成证据限定的排查候选。仅在明确传入 `-Log` 时读取受限本机日志并提取已知指纹；`-ScreenshotNote` 是观察文字，不读取原图。参见 [故障诊断](../../docs/dev-diagnostics.md)。
+
 ## 一条命令定位功能
 
 在项目仓库根目录执行：

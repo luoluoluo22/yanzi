@@ -11,6 +11,8 @@
 
 **功能索引候选与 QA 知识库（2026-10-31）。** 如果功能没有业务映射，可用 `scripts/dev-knowledge.ps1 -Mode coverage -Query '<关键词>'` 查找真实 XAML 控件与事件候选，不得把候选关系直接当已确认实现。`dev-preflight.ps1` 显式运行测试后会把有来源的本机 QA 回执关联到功能，但工作区未提交变更或 Git SHA 不同的记录不能被标为当前通过；隔离桌面测试不能冒充真机验收。详见 [知识库规范](docs/dev-knowledge.md)。
 
+**故障定位优先（2026-10-31）。** 收到故障描述、错误截图文字或授权的本机日志后，先执行 `scripts/dev-diagnose.ps1 -Description '<症状>'`；需要时显式传入 `-ScreenshotNote`（人工/视觉读出的文字）或白名单 `-Log`。诊断工具只返回可能相关功能、源码、最近改动、QA 记录及下一步检查，不宣称已定位根因，不自动上传原始日志/密钥。再使用 `dev-preflight.ps1` 制定可验证的修改计划，按 PR/CI 门禁集成。详见 [故障诊断规范](docs/dev-diagnostics.md)。
+
 **Windows 小程序唯一开发位置：`%LOCALAPPDATA%\OpenQuickHost\Extensions\<extensionId>\`。** 直接修改用户已安装的小程序，由原有账号同步机制处理，不要为业务小程序新建宿主仓库副本、PR 或安装包；该规范的完整操作和验收门禁见上述七步工作流。
 
 **开发任务的强制结束条件：已验证的代码必须进入 GitHub main。** 每个 AI（含并行子 Agent）在任务完成后先提交自己的隔离分支，再运行 `scripts/finish-agent-task.ps1 -VerificationScript <仓库内验收脚本> -Apply` 创建 PR、等待 CI、无冲突时合并，并回读 main 的合并提交。不得把“本地已修改、已 Commit、已 Push、安装包已发布”说成“开发集成完成”。若存在 CI 失败、PR 冲突、生产部署风险或超时，必须明确标记 `awaiting-integration`，保留独立 worktree 并继续协调修复；不得静默遗留在其他分支。详见 [自动集成门禁](docs/development-integration-release-policy.md#多-ai-开发任务强制收尾门禁2026-10-22)。
