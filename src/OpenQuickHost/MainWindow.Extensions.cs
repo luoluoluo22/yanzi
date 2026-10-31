@@ -3332,6 +3332,12 @@ public partial class MainWindow
 
         var selectedItem = CommandList.ItemContainerGenerator.ContainerFromItem(SelectedCommand) as FrameworkElement;
         var selectedCommand = SelectedCommand;
+        if (selectedCommand?.Source == CommandSource.Capability)
+        {
+            OpenCapabilityContextMenu(selectedCommand, keyboardInvoked: true);
+            return;
+        }
+
         if (selectedCommand?.IsFileSystemResult == true)
         {
             ShowFileResultContextMenu(selectedItem, keyboardInvoked: true);

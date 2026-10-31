@@ -395,7 +395,8 @@ internal static class AppSettingsMigration
             ("system", "系统"),
             ("yanyu", BrandTerms.DefaultYanVoice),
             ("ai", "AI对话"),
-            ("store", $"{BrandTerms.DefaultMiniApp}商店")
+            ("store", $"{BrandTerms.DefaultMiniApp}商店"),
+            ("capability", "能力")
         };
 
         foreach (var def in defaultList)

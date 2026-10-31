@@ -53,6 +53,12 @@ jobs:
           $ErrorActionPreference = 'Stop'
           ./scripts/test-device-deploy-agent.ps1
           if ($LASTEXITCODE -ne 0) { throw 'Deployment agent test failed' }
+      - name: Verify unified capability catalog UI projection
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet run --project src/Yanzi.CapabilityVerification/Yanzi.CapabilityVerification.csproj -c Release -- --warehouse-capability-ui
+          if ($LASTEXITCODE -ne 0) { throw 'Capability catalog UI verification failed' }
       - name: Build installer
         shell: pwsh
         run: |
