@@ -12,6 +12,28 @@
 
 **CI 快速通道（2026-10-31）：** 当一次 PR 或主线提交的所有变更仅涉及本目录，以及经过明确白名单核验的开发导航脚本与文档时，`engineering-checks.yml` 仍保留原有 `portable-contracts`、`desktop-and-worker` 检查，但改为运行 Python 开发工具回归与隔离运行范围检查；任何客户端、工作流、安全策略或未知文件改动都执行原有全量 CI。规则、失败回退与如何复核见 [CI 分层策略](../../docs/ci-path-policy.md)。本目录仍是开发辅助索引，不是客户端运行时依赖。
 
+## 第六阶段：单次 MCP 调用完成开发任务初查
+
+当任务需要同时查故障根因线索、源码入口、修改影响、专项测试和历史 QA 时，可直接在已授权的远程电脑上**用一条命令**调用任务级批处理：
+
+`python tools/dev-navigator/task_batch.py --query "模型列表不能滚动" --expect "50个模型能滚动访问"`
+
+加入 `--ui-query`、`--path`、`--base`、`--screenshot-note` 等参数可限定范围；`--json` 输出结构化结果。`--sequential` 是可比对的顺序执行基线，默认在首次索引后并发执行**只读**故障诊断与开发前检查，避免两次独立建立索引。
+
+默认不执行测试，也不修改源码、提交或发布。需要执行已在白名单审查的专项测试，显式添加 `--run-targeted`；需要现有隔离桌面 UI 验证，再添加 `--run-hidden-ui`。失败时返回非零退出码，并以稳定的错误类型标记失败阶段，不返回原始异常信息、API Key、测试日志正文或用户原始输入。真实客户端与物理输入验收仍需要独立执行。
+
+输出的 `stages` 包含每阶段状态、耗时与失败类型；`metrics.elapsedTotalMs` 仅为本地 Python 流程墙钟时间，不包含 MCP 网络排队/传输。`actualRemoteMcpCallCount` 固定为 null（工具内部无法观察远程连接器调用次数）；一条命令只需要一次外部 MCP 执行调用，但不能保证网络运行时间必然更短。默认不写任务报告到磁盘，显式测试则遵循既有 QA ledger 留存规则。
+
+**2026-10-31 一轮远程实测（家里电脑，同一工作树，单次样本）：** 独立调用 `dev-diagnose`、`dev-preflight`、`dev-knowledge qa` 的工具请求墙钟分别为 3591/2716/2058 ms，合计 8365 ms；一次 `task_batch` 为 3844 ms。此对比含接入延迟与缓存效应，不是多轮统计，不应用作保障性指标或将所有场景认定为节省 54%。
+
+独立验证：
+
+`python -m unittest discover -s tools/dev-navigator -p "test_*.py" -v`
+
+`python tools/dev-navigator/task_batch.py --query "ai-model-menu" --expect "模型可滚动" --json`
+
+---
+
 ## 一条命令定位功能
 
 在项目仓库根目录执行：
