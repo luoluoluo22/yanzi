@@ -6,5 +6,7 @@
   <ItemGroup>
     <ProjectReference Include="../../src/Yanzi.Core/Yanzi.Core.csproj" />
     <Compile Include="../../src/OpenQuickHost/YanziTemporaryTransferAdapters.cs" Link="YanziTemporaryTransferAdapters.cs" />
+    <Compile Include="../../src/OpenQuickHost/TemporaryEasyTierP2pAdapter.cs" Link="TemporaryEasyTierP2pAdapter.cs" />
+    <Compile Include="../../src/OpenQuickHost/YanziEasyTierSessionManager.cs" Link="YanziEasyTierSessionManager.cs" />
   </ItemGroup>
 </Project>
