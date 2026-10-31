@@ -302,6 +302,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string? _desktopDeviceId;
     private string _activeFilterScopeKey = SearchScopeAll;
     private SearchScopeTab? _selectedSearchScope;
+    private double _scopeTabsHorizontalCompensation;
     private bool _listenerServicesPaused;
     private readonly double _defaultWindowWidth;
     private readonly double _defaultWindowHeight;
@@ -339,14 +340,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         Instance = this;
         InitializeComponent();
-        // Pin the tag strip to the launcher's left edge instead of centering it
-        // over the panel, whose width changes from 700 to 1100 in AI mode.
+        // Keep the tab strip fixed on screen while the panel expands symmetrically.
+        // Popup placement compensates for the centered panel's left-edge movement.
         SearchScopePopup.Placement = System.Windows.Controls.Primitives.PlacementMode.Custom;
         SearchScopePopup.VerticalOffset = 0;
         SearchScopePopup.CustomPopupPlacementCallback = (popupSize, _, _) =>
         [
             new System.Windows.Controls.Primitives.CustomPopupPlacement(
-                new System.Windows.Point(0, -popupSize.Height - 20),
+                new System.Windows.Point(_scopeTabsHorizontalCompensation, -popupSize.Height - 20),
                 System.Windows.Controls.Primitives.PopupPrimaryAxis.Horizontal)
         ];
         InitializeFooterQuickMenu();
@@ -827,8 +828,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (WindowState == WindowState.Normal)
         {
-            // 保持原有窗口及顶部标签栏的左边缘位置
-            var anchorLeft = Left;
+            // 退出 AI 模式时以原窗口中心收缩，同时保持标签栏位置不变
+            var geometry = AiWindowResizeGeometry.KeepCenterAndScopeTabs(
+                Left, Width, _defaultWindowWidth, _scopeTabsHorizontalCompensation);
+            _scopeTabsHorizontalCompensation = geometry.PopupOffset;
             var anchorTop = Top;
 
             // 先恢复最小约束，再恢复默认窗口大小，避免 AI 模式较大的 MinWidth 把 Width 卡住
@@ -837,8 +840,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Width = _defaultWindowWidth;
             Height = _defaultWindowHeight;
 
-            // 从右侧收起窗口，标签栏仍停留在原有屏幕位置
-            Left = anchorLeft;
+            // 保持窗口中心不变，弹窗补偿量随尺寸同步恢复
+            Left = geometry.Left;
             Top = anchorTop;
             RepositionSearchScopePopup();
         }

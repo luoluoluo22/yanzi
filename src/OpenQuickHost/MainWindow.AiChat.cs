@@ -755,8 +755,10 @@ public partial class MainWindow
         // 切换到 AI Chat 模式时，调整窗口大小以获得更好的阅读体验
         if (WindowState == WindowState.Normal)
         {
-            // 保持窗口和顶部标签栏的左边缘位置不变
-            var anchorLeft = Left;
+            // 窗口以中心向两侧扩展；顶部标签栏由弹窗独立补偿，保持屏幕位置不变
+            var geometry = AiWindowResizeGeometry.KeepCenterAndScopeTabs(
+                Left, Width, 1100, _scopeTabsHorizontalCompensation);
+            _scopeTabsHorizontalCompensation = geometry.PopupOffset;
             var anchorTop = Top;  // 使用顶部位置
             
             // 调整窗口大小
@@ -765,8 +767,8 @@ public partial class MainWindow
             MinWidth = 900;
             MinHeight = 600;
             
-            // 只向右侧扩展，不再围绕中心横向移动窗口
-            Left = anchorLeft;
+            // 根据原中心位置计算左边缘，左右各扩展一半
+            Left = geometry.Left;
             Top = anchorTop;
             RepositionSearchScopePopup();
         }
