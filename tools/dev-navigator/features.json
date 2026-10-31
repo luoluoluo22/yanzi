@@ -1,0 +1,211 @@
+{
+  "features": [
+    {
+      "id": "ai-chat",
+      "title": "AI 对话",
+      "aliases": [
+        "AI对话",
+        "AI聊天",
+        "聊天窗口",
+        "发送消息",
+        "回复中断",
+        "Gemini聊天",
+        "模型对话日志"
+      ],
+      "paths": [
+        "src/OpenQuickHost/MainWindow.AiChat.cs",
+        "src/OpenQuickHost/AiChatDiagnostics.cs",
+        "src/OpenQuickHost/GeminiNativeChatClient.cs",
+        "src/OpenQuickHost/AiChatSseParser.cs",
+        "src/OpenQuickHost/MainWindow.xaml"
+      ],
+      "handlers": [
+        "AiChatSettingsButton_Click",
+        "AiChatLogButton_Click"
+      ],
+      "tests": [
+        "tests/GeminiNativeChatVerification/*.csproj",
+        "scripts/verify-ai-chat-regression.ps1"
+      ]
+    },
+    {
+      "id": "ai-model-menu",
+      "title": "AI 对话模型菜单",
+      "aliases": [
+        "模型列表",
+        "模型选择",
+        "模型菜单",
+        "模型滚动",
+        "模型置顶",
+        "模型切换",
+        "模型服务模型显示",
+        "模型列表不能滚动"
+      ],
+      "paths": [
+        "src/OpenQuickHost/AiModelMenuOrdering.cs",
+        "src/OpenQuickHost/MainWindow.AiChat.cs",
+        "src/OpenQuickHost/AppSettingsModels.cs",
+        "src/Yanzi.UI.Wpf/YanziDropdownMenu.cs",
+        "src/OpenQuickHost/MainWindow.xaml"
+      ],
+      "handlers": [
+        "AiChatModelMenuButton_Click"
+      ],
+      "tests": [
+        "tests/ModelMenuScrollVerification/*.csproj",
+        "scripts/test-ai-model-discovery.ps1"
+      ]
+    },
+    {
+      "id": "ai-window-layout",
+      "title": "AI 对话窗口位置与标签栏",
+      "aliases": [
+        "AI窗口",
+        "窗口扩展",
+        "窗口居中",
+        "左右扩展",
+        "标签左移",
+        "标签栏",
+        "切换标签",
+        "窗口位置"
+      ],
+      "paths": [
+        "src/OpenQuickHost/MainWindow.AiChat.cs",
+        "src/OpenQuickHost/MainWindow.xaml.cs",
+        "src/OpenQuickHost/AiWindowResizeGeometry.cs",
+        "src/OpenQuickHost/MainWindow.xaml"
+      ],
+      "handlers": [
+        "AiChatNewTopicButton_Click"
+      ],
+      "tests": [
+        "tests/AiWindowResizeGeometryVerification/*.csproj",
+        "scripts/verify-yanzi-ui-hidden.ps1"
+      ]
+    },
+    {
+      "id": "ai-provider-settings",
+      "title": "模型服务供应商设置",
+      "aliases": [
+        "模型服务",
+        "Gemini接入",
+        "API密钥",
+        "密钥同步",
+        "供应商检测",
+        "模型供应商"
+      ],
+      "paths": [
+        "src/OpenQuickHost/SettingsWindow.Ai.cs",
+        "src/OpenQuickHost/SettingsAiController.cs",
+        "src/OpenQuickHost/SettingsWindow.xaml",
+        "src/OpenQuickHost/AppSettingsModels.cs"
+      ],
+      "handlers": [
+        "AiChatSettingsButton_Click"
+      ],
+      "tests": [
+        "tests/GeminiProviderVerification/*.csproj",
+        "scripts/test-gemini-regression.ps1"
+      ]
+    },
+    {
+      "id": "clipboard-sync",
+      "title": "剪贴板同步与收藏",
+      "aliases": [
+        "剪贴板",
+        "收藏同步",
+        "复制粘贴",
+        "Ctrl+C",
+        "Ctrl+V",
+        "同步冲突"
+      ],
+      "paths": [
+        "src/OpenQuickHost/*Clipboard*.cs",
+        "src/OpenQuickHost/*CloudSync*.cs"
+      ],
+      "tests": [
+        "scripts/test-capture-clipboard-shortcut.ps1",
+        "scripts/test-cloud-object-sync.ps1"
+      ]
+    },
+    {
+      "id": "smart-action",
+      "title": "智能识别和燕选",
+      "aliases": [
+        "燕选",
+        "智能识别",
+        "左键选中右键",
+        "环境变量",
+        "智能动作"
+      ],
+      "paths": [
+        "src/OpenQuickHost/*Smart*.cs",
+        "src/OpenQuickHost/*MouseGesture*.cs"
+      ],
+      "tests": [
+        "scripts/test-local-agent-ui.ps1"
+      ]
+    },
+    {
+      "id": "release",
+      "title": "版本发布与双端部署",
+      "aliases": [
+        "发布",
+        "自动发布",
+        "双端安装",
+        "部署回执",
+        "release",
+        "安装包",
+        "发布总控"
+      ],
+      "paths": [
+        "scripts/release-lifecycle.ps1",
+        "scripts/deploy-to-devices.ps1",
+        "scripts/device-deploy-receipt.ps1",
+        "scripts/install-deploy-receipt-agent.ps1"
+      ],
+      "tests": [
+        "scripts/test-release-lifecycle.ps1",
+        "scripts/test-device-deploy-agent.ps1"
+      ]
+    },
+    {
+      "id": "llm-api",
+      "title": "本地统一 LLM API",
+      "aliases": [
+        "统一LLM",
+        "LLM API",
+        "本地接口",
+        "模型API",
+        "OpenAI兼容接口"
+      ],
+      "paths": [
+        "src/OpenQuickHost/LocalAgentApiServer.Llm.cs",
+        "src/OpenQuickHost/LocalAgentApiServer.cs"
+      ],
+      "tests": [
+        "tests/LocalLlmApiSmoke/*.csproj",
+        "scripts/test-local-llm-api.ps1"
+      ]
+    },
+    {
+      "id": "browser-helper",
+      "title": "浏览器助手与扩展",
+      "aliases": [
+        "浏览器助手",
+        "Edge扩展",
+        "Ego扩展",
+        "网页API",
+        "ChatGPT Bridge"
+      ],
+      "paths": [
+        "browser-extension/*",
+        "src/OpenQuickHost/*Browser*.cs"
+      ],
+      "tests": [
+        "tests/BrowserHelperBootstrapVerification/*.csproj",
+        "scripts/test-browser-ai.ps1"
+      ]
+    }
+  ]
+}
