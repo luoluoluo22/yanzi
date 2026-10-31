@@ -16,7 +16,7 @@ foreach ($item in @(
     '_aiRequestTracker.TryPrepare(topic.Id)',
     '_aiRequestTracker.Start(topic.Id, cancellation)',
     'BuildAiRequestMessages(mode, topic)',
-    'AiChatSseParser.ReadAsync(stream, onDelta, cancellationToken)',
+    'AiChatSseParser.ReadAsync(stream, delta =>',
     'topic.IsGenerating = true',
     'topic.IsGenerating = false')) {
     if (-not $chat.Contains($item)) { throw "AI chat missing topic-scoped requirement: $item" }
@@ -25,5 +25,9 @@ if (-not $xaml.Contains('Visibility="{Binding AiChatCancelVisibility}"') -or
     -not $xaml.Contains('Visibility="{Binding StreamingTextVisibility}"') -or
     -not $xaml.Contains('Binding IsGenerating')) {
     throw 'AI chat streaming and per-conversation controls have regressed.'
+}
+# The SSE callback may wrap onDelta to record first-token timing; retain both forwarding and cancellation.
+if ($chat -notmatch '(?s)AiChatSseParser\.ReadAsync\(stream,\s*delta\s*=>.*?onDelta\(delta\);.*?\},\s*cancellationToken\)') {
+    throw 'AI chat SSE must forward deltas and propagate cancellation.'
 }
 Write-Output 'AI_CHAT_CLIENT_REGRESSION_PASSED'
