@@ -283,6 +283,12 @@ public partial class SettingsWindow
 
         try
         {
+            if (string.Equals(SelectedServiceProvider.ProviderType, "Gemini", StringComparison.OrdinalIgnoreCase))
+            {
+                var availableModels = await FetchAvailableModelsAsync(SelectedServiceProvider);
+                System.Windows.MessageBox.Show($"连接检测成功！已发现 {availableModels.Count} 个模型。", "检测成功", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
             using (var client = new HttpClient { Timeout = TimeSpan.FromSeconds(8) })
             {
                 client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);

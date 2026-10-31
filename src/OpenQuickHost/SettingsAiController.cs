@@ -51,7 +51,8 @@ internal static class SettingsAiController
         var apiKey = provider.ApiKey.Trim();
         var providerType = provider.ProviderType?.Trim() ?? string.Empty;
 
-        if (string.Equals(providerType, "Gemini", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(providerType, "Gemini", StringComparison.OrdinalIgnoreCase) &&
+            !baseUrl.EndsWith("/openai", StringComparison.OrdinalIgnoreCase))
         {
             var separator = baseUrl.Contains('?') ? "&" : "?";
             return new HttpRequestMessage(HttpMethod.Get, $"{baseUrl}/models{separator}key={Uri.EscapeDataString(apiKey)}");

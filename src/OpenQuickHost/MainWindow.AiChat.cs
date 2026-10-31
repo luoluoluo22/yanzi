@@ -2043,7 +2043,11 @@ public partial class MainWindow
     private static string BuildAiChatEndpoint(string baseUrl)
     {
         var trimmed = baseUrl.TrimEnd('/');
-        if (trimmed.EndsWith("/v1/chat/completions", StringComparison.OrdinalIgnoreCase))
+        if (trimmed.Equals("https://generativelanguage.googleapis.com/v1beta", StringComparison.OrdinalIgnoreCase))
+            return $"{trimmed}/openai/chat/completions";
+        if (trimmed.Equals("https://generativelanguage.googleapis.com/v1beta/openai", StringComparison.OrdinalIgnoreCase))
+            return $"{trimmed}/chat/completions";
+        if (trimmed.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase))
         {
             return trimmed;
         }
