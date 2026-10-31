@@ -6,6 +6,10 @@ on:
         description: Source project version (must match main)
         type: string
         required: true
+      expected_sha:
+        description: Immutable commit SHA for queued releases (optional for manual releases)
+        type: string
+        required: false
 permissions:
   contents: write
 concurrency:
@@ -31,7 +35,12 @@ jobs:
           $ErrorActionPreference = 'Stop'
           [xml]$proj = Get-Content src/OpenQuickHost/OpenQuickHost.csproj -Raw
           $version = $proj.Project.PropertyGroup.Version.Trim()
-          $requested = (Get-Content $env:GITHUB_EVENT_PATH -Raw | ConvertFrom-Json).inputs.version
+          $inputs = (Get-Content $env:GITHUB_EVENT_PATH -Raw | ConvertFrom-Json).inputs
+          $requested = $inputs.version
+          $expected = [string]$inputs.expected_sha
+          if ($expected -and ($expected -notmatch '^[a-f0-9]{40}$' -or $expected -ne $env:GITHUB_SHA)) {
+            throw "Release source SHA mismatch: expected=$expected actual=$env:GITHUB_SHA"
+          }
           if ($version -ne $requested -or $version -notmatch '^\d+\.\d+\.\d+$') { throw "Invalid version: source=$version requested=$requested" }
           "VERSION=$version" >> $env:GITHUB_ENV
       - name: Test ChatGPT Agent integration
@@ -45,6 +54,12 @@ jobs:
             node --test test/agent-console.test.mjs test/agent-console-popup.test.mjs test/background.test.mjs test/browser-delivery-verify.test.mjs test/longrun-reconciliation.test.mjs test/browser-version-election.test.mjs
             if ($LASTEXITCODE -ne 0) { throw 'Agent tests failed' }
           } finally { Pop-Location }
+      - name: Verify delayed release queue safety
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./scripts/test-release-queue.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Deferred queue test failed' }
       - name: Verify deployment receiver safety
         env:
           GH_TOKEN: ${{ github.token }}
