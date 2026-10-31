@@ -40,6 +40,7 @@ public partial class MainWindow
     private readonly ObservableCollection<AiChatTopic> _aiChatTopics = [];
     private readonly ObservableCollection<AiChatAttachment> _aiChatAttachments = [];
     private Yanzi.UI.Wpf.YanziDropdownMenu? _activeAiChatMenu;
+    private AiChatLogWindow? _aiChatLogWindow;
     private AiChatTopic? _selectedAiChatTopic;
     private readonly HttpClient _aiHttpClient = new() { Timeout = TimeSpan.FromSeconds(300) };
     private static readonly TimeSpan AiModelDiscoveryInterval = TimeSpan.FromMinutes(15);
@@ -251,6 +252,18 @@ public partial class MainWindow
         {
             app.OpenSettingsWindow("ai");
         }
+    }
+
+    private void AiChatLogButton_Click(object sender, RoutedEventArgs e)
+    {
+        SuppressAutoHideFor(TimeSpan.FromSeconds(2));
+        if (_aiChatLogWindow == null || !_aiChatLogWindow.IsLoaded)
+        {
+            _aiChatLogWindow = new AiChatLogWindow(this, () => _selectedAiChatTopic?.Id);
+            _aiChatLogWindow.Closed += (_, _) => _aiChatLogWindow = null;
+            _aiChatLogWindow.Show();
+        }
+        _aiChatLogWindow.Activate();
     }
 
     private void AiChatNewTopicButton_Click(object sender, RoutedEventArgs e)
@@ -1067,6 +1080,7 @@ public partial class MainWindow
             settings.AiBaseUrl.Trim(), settings.AiApiKey.Trim(), settings.AiModel.Trim(),
             string.Equals(settings.ActiveServiceProviderId, ChatGptPlanProviderId,
                 StringComparison.OrdinalIgnoreCase));
+        AiChatDiagnostics.Record(topic.Id, profile.Model, "created", $"mode={mode} transport={(GeminiNativeChatClient.IsGeminiApi(profile.BaseUrl) ? "gemini-native" : "compatible")}");
         _aiTopicErrors.Remove(topic.Id);
         if (ReferenceEquals(_selectedAiChatTopic, topic)) AiChatSendErrorText = string.Empty;
         var messageAttachments = await BuildMessageAttachmentsAsync(pendingAttachments);
@@ -1101,7 +1115,7 @@ public partial class MainWindow
                 try
                 {
                     var answer = await RequestAiChatCompletionStreamingAsync(
-                        requestMessages, profile, mode,
+                        requestMessages, profile, mode, topic.Id,
                         delta =>
                         {
                             buffer.Append(delta);
@@ -1139,7 +1153,7 @@ public partial class MainWindow
                 {
                     cancellation.Token.ThrowIfCancellationRequested();
                     var reply = await RequestAiChatCompletionStreamingAsync(
-                        BuildAiRequestMessages(mode, topic), profile, mode, _ => { }, cancellation.Token);
+                        BuildAiRequestMessages(mode, topic), profile, mode, topic.Id, _ => { }, cancellation.Token);
                     var toolCall = ParseToolCall(reply);
                     if (toolCall == null)
                     {
@@ -1177,6 +1191,8 @@ public partial class MainWindow
         }
         catch (Exception ex)
         {
+            AiChatDiagnostics.Record(topic.Id, profile.Model, "failed",
+                $"kind={ex.GetType().Name} inner={ex.InnerException?.GetType().Name ?? "none"} status={(ex is HttpRequestException http ? (int?)http.StatusCode : null)?.ToString() ?? "n/a"}");
             HostAssets.AppendLog($"AI request failed: topic={topic.Id}, model={profile.Model}, error={FormatExceptionMessage(ex)}");
             var error = $"AI 请求失败：{TrimForLog(FormatExceptionMessage(ex), 160)}";
             SetAiTopicStatus(topic, error, error);
@@ -1185,6 +1201,7 @@ public partial class MainWindow
         {
             SaveTopicsToStorage();
             _aiRequestTracker.Finish(topic.Id);
+            AiChatDiagnostics.Record(topic.Id, profile.Model, "finished");
             topic.IsGenerating = false;
             RefreshAiTopicRequestState();
             // Do not steal keyboard focus from a different conversation.
@@ -1696,8 +1713,17 @@ public partial class MainWindow
 
     private async Task<string> RequestAiChatCompletionStreamingAsync(
         IReadOnlyList<object> messages, AiRequestProfile profile, AiConversationMode mode,
-        Action<string> onDelta, CancellationToken cancellationToken)
+        string topicId, Action<string> onDelta, CancellationToken cancellationToken)
     {
+        if (GeminiNativeChatClient.IsGeminiApi(profile.BaseUrl))
+        {
+            var native = await GeminiNativeChatClient.SendAsync(_aiHttpClient, profile.BaseUrl,
+                profile.ApiKey, profile.Model, messages, cancellationToken,
+                stage => AiChatDiagnostics.Record(topicId, profile.Model, stage));
+            onDelta(native);
+            return native;
+        }
+        AiChatDiagnostics.Record(topicId, profile.Model, "sse-request-sent", $"messages={messages.Count}");
         var endpoint = BuildAiChatEndpoint(profile.BaseUrl);
         object payloadObject = profile.IsChatGptPlan
             ? new { model = profile.Model, messages, stream = true,
@@ -1713,6 +1739,7 @@ public partial class MainWindow
         HostAssets.AppendLog($"AI SSE request start: model={profile.Model}, messages={messages.Count}, agent={mode == AiConversationMode.Agent}");
         using var response = await _aiHttpClient.SendAsync(
             request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        AiChatDiagnostics.Record(topicId, profile.Model, "sse-headers", $"httpStatus={(int)response.StatusCode} elapsedMs={timer.ElapsedMilliseconds}");
         if (!response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -1745,7 +1772,17 @@ public partial class MainWindow
             return completed;
         }
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        var result = await AiChatSseParser.ReadAsync(stream, onDelta, cancellationToken);
+        var firstDeltaSeen = false;
+        var result = await AiChatSseParser.ReadAsync(stream, delta =>
+        {
+            if (!firstDeltaSeen)
+            {
+                firstDeltaSeen = true;
+                AiChatDiagnostics.Record(topicId, profile.Model, "sse-first-delta", $"elapsedMs={timer.ElapsedMilliseconds}");
+            }
+            onDelta(delta);
+        }, cancellationToken);
+        AiChatDiagnostics.Record(topicId, profile.Model, "sse-completed", $"elapsedMs={timer.ElapsedMilliseconds} chars={result.Length}");
         HostAssets.AppendLog($"AI SSE success: model={profile.Model}, bytes={result.Length}, ms={timer.ElapsedMilliseconds}");
         return result;
     }

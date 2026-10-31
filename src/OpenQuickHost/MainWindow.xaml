@@ -1811,7 +1811,8 @@
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
                         </ScrollViewer>
-                        <Button Grid.Row="3" Margin="12,6,12,12"
+                        <StackPanel Grid.Row="3" Margin="12,6,12,12" Orientation="Horizontal">
+                        <Button Width="132" Margin="0,0,8,0"
                                 Height="38" HorizontalContentAlignment="Left"
                                 Style="{DynamicResource Yanzi.Button.Outline}"
                                 Click="AiChatSettingsButton_Click">
@@ -1822,6 +1823,18 @@
                                 <TextBlock Text="设置" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
+                        <Button Width="132" Height="38"
+                                Style="{DynamicResource Yanzi.Button.Outline}"
+                                ToolTip="查看模型请求日志（不包含密钥和对话内容）"
+                                Click="AiChatLogButton_Click">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Data="{local:IconGeometry file-document-outline}" Width="15" Height="15"
+                                      Stretch="Uniform" Margin="0,0,9,0"
+                                      Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                                <TextBlock Text="日志" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                        </StackPanel>
                     </Grid>
                 </Border>
 

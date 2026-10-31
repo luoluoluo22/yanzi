@@ -1691,6 +1691,11 @@ public partial class App : WpfApplication
                 HostAssets.AppendLog($"Settings window exists but not loaded yet. visibility={_settingsWindow.Visibility}, opacity={_settingsWindow.Opacity}, windowState={_settingsWindow.WindowState}.");
             }
 
+            // An owned settings window stays above a Topmost AI chat window.
+            if (string.Equals(sectionKey, "ai", StringComparison.OrdinalIgnoreCase) &&
+                mainWindow.IsVisible && _settingsWindow.Owner != mainWindow)
+                _settingsWindow.Owner = mainWindow;
+
             if (_settingsWindow.WindowState == WindowState.Minimized)
             {
                 HostAssets.AppendLog("Settings window was minimized, restoring to normal.");
