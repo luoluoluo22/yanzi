@@ -5,7 +5,7 @@ No global mouse or keyboard input. Does not write the clipboard.
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('all','shared-ui','capture-ocr-toast')]
+    [ValidateSet('all','shared-ui','capture-ocr-toast','ai-chat-model')]
     [string]$Scenario = 'all',
     [ValidateSet('hidden','offscreen')]
     [string]$Mode = 'hidden',
@@ -18,7 +18,7 @@ $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 Push-Location $root
 try {
-    if ($Mode -eq 'offscreen' -and $Scenario -ne 'shared-ui') {
+    if ($Mode -eq 'offscreen' -and $Scenario -notin @('shared-ui','ai-chat-model')) {
         throw 'OCR toast test cannot use offscreen mode: it would show a toast on the current desktop. Use hidden mode.'
     }
     $sampleProject = 'tools/yanzi-ui-test-samples/Yanzi.UiTestSamples.csproj'
@@ -36,6 +36,7 @@ try {
         'all' { @('Yanzi.UiTestSamples.PublicControlsScenario','Yanzi.UiTestSamples.CaptureOcrToastScenario') }
         'shared-ui' { @('Yanzi.UiTestSamples.PublicControlsScenario') }
         'capture-ocr-toast' { @('Yanzi.UiTestSamples.CaptureOcrToastScenario') }
+        'ai-chat-model' { @('Yanzi.UiTestSamples.AiChatHierarchicalModelScenario') }
     }
     $passed = 0
     $failed = 0
