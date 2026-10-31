@@ -3667,8 +3667,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 HideToTray();
             }
 
+            var hostEventName = HostWebViewEventBridge.EventNameForLaunchSource(launchSource);
+            if (!string.IsNullOrEmpty(hostEventName))
+            {
+                var delivered = await AppExtensionWindow.TryDeliverHostEventToRunningAsync(
+                    runnable.ExtensionId, hostEventName);
+                if (delivered.HasValue)
+                {
+                    if (!delivered.Value)
+                        throw new InvalidOperationException($"小程序未确认接收宿主事件：{hostEventName}");
+                    HostAssets.AppendRecent(runnable.Title);
+                    LastRunMessage = $"已通知运行中的小程序：{runnable.Title}";
+                    return;
+                }
+            }
             var backgroundHostEvent = runnable.App.RunInBackground &&
-                launchSource is "app-startup" or "host.resume" or "host.unlock" or "network.online" or "recovery";
+                HostWebViewEventBridge.IsBackgroundLaunchSource(launchSource);
             if (AppExtensionWindow.TryActivateExisting(runnable,
                 activate: !backgroundHostEvent))
             {
@@ -3703,6 +3717,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
 
             window.Show();
+            if (!string.IsNullOrEmpty(hostEventName) &&
+                !await window.DeliverHostEventAsync(hostEventName))
+                throw new InvalidOperationException($"新启动小程序未确认宿主事件：{hostEventName}");
             HostAssets.AppendRecent(runnable.Title);
             LastRunMessage = $"已打开应用{BrandTerms.Current.MiniApp}：{runnable.Title}";
             return;

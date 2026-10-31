@@ -65,7 +65,7 @@ public partial class AppExtensionWindow : Window
                 e.Cancel = true;
                 Hide();
             };
-            if (launchSource is "app-startup" or "host.resume" or "host.unlock" or "network.online" or "recovery")
+            if (HostWebViewEventBridge.IsBackgroundLaunchSource(launchSource))
             { WindowState = WindowState.Minimized; ShowActivated = false; ShowInTaskbar = false; }
         }
     }
@@ -183,10 +183,9 @@ public partial class AppExtensionWindow : Window
     }
 
     /// <summary>
-    /// Await a WebView miniapp's explicit promise-based shutdown hook.
-    /// A DOM event alone is not an acknowledgement of asynchronous persistence.
+    /// Deliver a host event to the existing WebView, without activating a window.
     /// </summary>
-    internal static async Task<bool?> TryPrepareForHostExitAsync(string extensionId, TimeSpan timeout)
+    internal static async Task<bool?> TryDeliverHostEventToRunningAsync(string extensionId, string eventName)
     {
         var windows = TrackedWindows()
             .Where(w => w._command.ExtensionId.Equals(extensionId, StringComparison.OrdinalIgnoreCase))
@@ -194,16 +193,42 @@ public partial class AppExtensionWindow : Window
         if (windows.Length == 0) return null;
         foreach (var window in windows)
         {
+            if (!await window.DeliverHostEventAsync(eventName)) return false;
+        }
+        return true;
+    }
+
+    internal async Task<bool> DeliverHostEventAsync(string eventName)
+    {
+        try
+        {
+            if (!await _navigationReady.Task.WaitAsync(TimeSpan.FromSeconds(12))) return false;
+            var web = Browser.CoreWebView2;
+            if (web is null) return false;
+            return await HostWebViewEventBridge.NotifyAsync(web, eventName);
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"WebView host event failed: {_command.ExtensionId} {eventName} {ex.GetType().Name}");
+            return false;
+        }
+    }
+
+    /// <summary>Await explicit async save; a DOM event alone is not an acknowledgement.</summary>
+    internal static async Task<bool?> TryPrepareForHostExitAsync(string extensionId, TimeSpan timeout,
+        CancellationToken cancellationToken = default)
+    {
+        var windows = TrackedWindows()
+            .Where(w => w._command.ExtensionId.Equals(extensionId, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (windows.Length == 0) return null;
+        foreach (var window in windows)
+        {
+            if (!await window._navigationReady.Task.WaitAsync(timeout, cancellationToken)) return false;
             if (window.Browser.CoreWebView2 == null) return false;
-            const string expression = "(async()=>{if(typeof window.yanzi?.beforeExit!=='function')return false;await window.yanzi.beforeExit();return true;})()";
-            var json = await window.Browser.CoreWebView2
-                .CallDevToolsProtocolMethodAsync("Runtime.evaluate",
-                    JsonSerializer.Serialize(new { expression, awaitPromise = true, returnByValue = true }))
-                .WaitAsync(timeout);
-            using var result = JsonDocument.Parse(json);
-            if (result.RootElement.TryGetProperty("exceptionDetails", out _)) return false;
-            if (!result.RootElement.GetProperty("result").TryGetProperty("value", out var value)
-                || value.ValueKind != JsonValueKind.True) return false;
+            // An explicit resolved Promise (not a DOM event) confirms the save.
+            if (!await HostWebViewEventBridge.PrepareForExitAsync(
+                    window.Browser.CoreWebView2, timeout, cancellationToken)) return false;
         }
         return true;
     }
@@ -231,7 +256,7 @@ public partial class AppExtensionWindow : Window
         await InitializeAsync();
         if (_definition.RunInBackground)
         {
-            if (_launchSource is "app-startup" or "host.resume" or "host.unlock" or "network.online" or "recovery")
+            if (HostWebViewEventBridge.IsBackgroundLaunchSource(_launchSource))
             { Hide(); WindowState = WindowState.Normal; }
         }
     }

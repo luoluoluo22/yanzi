@@ -15,6 +15,7 @@ if (args.Contains("--github-secondary-backup-verify")) { await GitHubSecondaryBa
 
 if (args.Contains("--task-recovery")) { PlatformTaskVerification.Run(); return; }
 if (args.Contains("--host-dispatch")) { await HostDispatchVerification.RunAsync(); return; }
+if (args.Contains("--host-runtime-dispatch")) { await HostRuntimeDispatchVerification.RunAsync(); return; }
 
 if (args.Length == 2 && args[0] == "--release-readiness")
 {
