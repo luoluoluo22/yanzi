@@ -3,31 +3,60 @@ on:
   pull_request:
   push:
     branches: [main]
-    paths: ["src/**", "mobile/**", "cloudflare/**", "protocol/**", "sdk/**", "scripts/**", "browser-extension/**", ".gitignore", "extensions/**", "website/store-packages/**", "tools/idle-chatgpt-tasks/**", ".github/workflows/engineering-checks.yml"]
+    paths: ["src/**", "mobile/**", "cloudflare/**", "protocol/**", "sdk/**", "scripts/**", "browser-extension/**", ".gitignore", "extensions/**", "website/store-packages/**", "tools/idle-chatgpt-tasks/**", "tools/dev-navigator/**", ".github/workflows/engineering-checks.yml"]
 jobs:
+  classify:
+    runs-on: ubuntu-latest
+    outputs:
+      tier: ${{ steps.route.outputs.tier }}
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 2}
+      - name: Classify changed paths (unknown means full regression)
+        id: route
+        env:
+          CI_EVENT: ${{ github.event_name }}
+          CI_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          CI_HEAD: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 scripts/classify-ci-change.py --event "$CI_EVENT" --base "$CI_BASE" --head "$CI_HEAD" --output "$GITHUB_OUTPUT"
   portable-contracts:
+    needs: classify
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
+        if: needs.classify.outputs.tier == 'full'
         with: {node-version: "22"}
       - uses: actions/setup-dotnet@v4
+        if: needs.classify.outputs.tier == 'full'
         with: {dotnet-version: "9.0.x"}
       - uses: actions/setup-java@v4
+        if: needs.classify.outputs.tier == 'full'
         with: {distribution: temurin, java-version: "17"}
+      - name: CI path classifier security regression
+        if: needs.classify.outputs.tier == 'full'
+        run: python3 scripts/test-ci-change-classifier.py
       - name: Protect on-demand application releases
+        if: needs.classify.outputs.tier == 'full'
         run: python3 scripts/verify-release-trigger-policy.py
       - name: Worker and SDK user scenarios
+        if: needs.classify.outputs.tier == 'full'
         run: node --test cloudflare/src/*.test.mjs cloudflare/tests/*.test.mjs protocol/sdk/*.test.mjs sdk/javascript/*.test.mjs
       - name: Browser workflow checkpoint and recovery regression
+        if: needs.classify.outputs.tier == 'full'
         run: node scripts/test-browser-workflow-checkpoints.cjs
       - name: Browser multi-extension routing and response ownership
+        if: needs.classify.outputs.tier == 'full'
         run: dotnet run --project scripts/BrowserMultiSessionTests/BrowserMultiSessionTests.csproj -c Release
       - name: R2 capacity monitor regressions
+        if: needs.classify.outputs.tier == 'full'
         run: python3 -m unittest scripts/cloudflare/test_r2_storage_guard.py
       - name: Platform independent account and settings scenarios
+        if: needs.classify.outputs.tier == 'full'
         run: dotnet run --project src/Yanzi.CoreVerification -c Release
       - name: Android transport scenarios without an emulator
+        if: needs.classify.outputs.tier == 'full'
         run: |
           mkdir -p "$RUNNER_TEMP/yanzi-java"
           javac -encoding UTF-8 -d "$RUNNER_TEMP/yanzi-java" mobile/android/app/src/main/java/cc/luoluoluo/yanzi/mobile/{CloudRequestRetry,HttpResponseBody}.java scripts/java/{CloudRequestRetryVerification,HttpResponseBodyVerification}.java
@@ -35,17 +64,27 @@ jobs:
           java -cp "$RUNNER_TEMP/yanzi-java" cc.luoluoluo.yanzi.mobile.HttpResponseBodyVerification
           javac -encoding UTF-8 -d "$RUNNER_TEMP/yanzi-java" mobile/android/app/src/main/java/cc/luoluoluo/yanzi/mobile/{EnvironmentPolicy,BackgroundCadence}.java scripts/java/EnvironmentPolicyVerification.java
           java -cp "$RUNNER_TEMP/yanzi-java" cc.luoluoluo.yanzi.mobile.EnvironmentPolicyVerification
+      - name: Developer-only fast regression
+        if: needs.classify.outputs.tier == 'dev-tools'
+        run: |
+          python3 scripts/test-ci-change-classifier.py
+          python3 -m unittest discover -s tools/dev-navigator -p 'test_*.py' -v
   desktop-and-worker:
-    runs-on: windows-latest
+    needs: classify
+    runs-on: ${{ needs.classify.outputs.tier == 'dev-tools' && 'ubuntu-latest' || 'windows-latest' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
+        if: needs.classify.outputs.tier == 'full'
         with: {node-version: "22"}
       - uses: actions/setup-dotnet@v4
+        if: needs.classify.outputs.tier == 'full'
         with: {dotnet-version: "9.0.x"}
       - name: Reject Windows miniapp packages in the host Git repository
+        if: needs.classify.outputs.tier == 'full'
         run: ./scripts/verify-miniapp-repository-isolation.ps1
       - name: Browser helper install and connection regression
+        if: needs.classify.outputs.tier == 'full'
         run: |
           dotnet run --project tests/BrowserHelperBootstrapVerification/BrowserHelperBootstrapVerification.csproj -c Debug
           node --check browser-extension/background.js
@@ -55,31 +94,41 @@ jobs:
           node --check browser-extension/workflow-checkpoints.js
           node --check browser-extension/popup/popup.js
       - name: Agent task integration policy regression
+        if: needs.classify.outputs.tier == 'full'
         shell: pwsh
         run: ./scripts/test-agent-finish-policy.ps1
       - name: Desktop build
+        if: needs.classify.outputs.tier == 'full'
         run: dotnet build OpenQuickHost.sln -c Debug -v:minimal
       - name: Settings ownership and object conflict regression
+        if: needs.classify.outputs.tier == 'full'
         run: |
           dotnet run --project src/Yanzi.SyncVerification -c Debug
           dotnet run --project src/Yanzi.SyncVerification -c Debug -- --chat-conversation-metadata
           dotnet run --project src/Yanzi.SyncVerification -c Debug -- --mobile-extension-catalog
           dotnet run --project src/Yanzi.SyncVerification -c Debug -- --account-extension-pull-policy
       - name: AI chat parallelism, SSE and clipboard regression
+        if: needs.classify.outputs.tier == 'full'
         shell: pwsh
         run: |
           dotnet run --project src/Yanzi.SyncVerification -c Debug --no-build -- --ai-chat-parallel
           dotnet run --project src/Yanzi.SyncVerification -c Debug --no-build -- --ai-chat-sse
           ./scripts/verify-ai-chat-regression.ps1
       - name: Desktop transport regression
+        if: needs.classify.outputs.tier == 'full'
         run: ./scripts/test-network-retry.ps1
       - name: Local API authorization and route domains
+        if: needs.classify.outputs.tier == 'full'
         run: |
           dotnet run --project src/Yanzi.SyncVerification -c Debug -- --local-api-boundaries
           dotnet run --project src/Yanzi.SyncVerification -c Debug --no-build -- --github-private-backup-policy
           dotnet run --project src/Yanzi.SyncVerification -c Debug --no-build -- --keyboard-remap-doubletap
       - name: Migrated D1 device and SDK regression
+        if: needs.classify.outputs.tier == 'full'
         run: |
           ./scripts/test-worker-ownership.ps1
           ./scripts/test-device-network-foundation.ps1
           ./scripts/test-device-environment.ps1
+      - name: Developer-only scope accepted (no Windows runtime changes)
+        if: needs.classify.outputs.tier == 'dev-tools'
+        run: echo "Dev-tools-only path classification; Windows regression remains mandatory for other changes."
