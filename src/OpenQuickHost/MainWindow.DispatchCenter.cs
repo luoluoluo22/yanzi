@@ -8,6 +8,33 @@ public partial class MainWindow
     public IReadOnlyDictionary<string, DateTime> DispatchNextRunsSnapshot() =>
         _extensionScheduler?.NextRunsSnapshot() ?? new Dictionary<string, DateTime>();
 
+    private readonly object _policyCacheGate = new();
+    private DateTimeOffset _policyCacheAt;
+    private Dictionary<string, LocalExtensionHostExecutionManifest?> _policyCache =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    private LocalExtensionHostExecutionManifest? LookupDispatchExecution(string extensionId)
+    {
+        lock (_policyCacheGate)
+        {
+            if (DateTimeOffset.UtcNow - _policyCacheAt > TimeSpan.FromSeconds(10))
+            {
+                _policyCache = LocalExtensionCatalog.LoadEntries()
+                    .GroupBy(x => x.Manifest.Id, StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(x => x.Key, x => x.First().Manifest.Events?.Execution,
+                        StringComparer.OrdinalIgnoreCase);
+                _policyCacheAt = DateTimeOffset.UtcNow;
+            }
+            return _policyCache.TryGetValue(extensionId, out var execution) ? execution : null;
+        }
+    }
+
+    internal HostDispatchPolicy.Result CheckHostDispatchConditions(CommandItem command)
+    {
+        var execution = LookupDispatchExecution(command.ExtensionId);
+        return HostDispatchPolicy.Evaluate(execution, HostResourceSampler.Read(execution));
+    }
+
     private bool _hostExitPreparing;
     private bool _hostExitPrepared;
     private static readonly HashSet<string> SupportedHostEvents = new(StringComparer.OrdinalIgnoreCase)
@@ -19,11 +46,19 @@ public partial class MainWindow
     /// Host-triggered work uses a shared concurrency limit, one in-flight run
     /// per miniapp, and a durable journal. Existing launchSource values stay intact.
     /// </summary>
-    private async Task DispatchManagedExtensionAsync(CommandItem command, string eventName, string launchSource)
+    private async Task<bool> DispatchManagedExtensionAsync(CommandItem command, string eventName, string launchSource)
     {
-        if (_hostExitPreparing || !IsExtensionEnabled(command.ExtensionId)) return;
-        await HostDispatchJournal.Shared.DispatchAsync(command.ExtensionId, eventName,
-            _ => ExecuteCommandAsync(command, launchSource: launchSource));
+        if (_hostExitPreparing || !IsExtensionEnabled(command.ExtensionId)) return false;
+        var execution = LookupDispatchExecution(command.ExtensionId);
+        var policy = HostDispatchPolicy.Evaluate(execution, HostResourceSampler.Read(execution));
+        if (!policy.Allowed)
+        {
+            HostDispatchJournal.Shared.RecordDecision(command.ExtensionId, eventName, policy.Reason);
+            return false;
+        }
+        return await HostDispatchJournal.Shared.DispatchAsync(command.ExtensionId, eventName,
+            _ => ExecuteCommandAsync(command, launchSource: launchSource),
+            priority: HostDispatchPolicy.Priority(execution));
     }
 
     internal void QueueHostEvent(string eventName)
@@ -79,8 +114,16 @@ public partial class MainWindow
                 continue;
             try
             {
+                var execution = LookupDispatchExecution(record.ExtensionId);
+                var policy = HostDispatchPolicy.Evaluate(execution, HostResourceSampler.Read(execution));
+                if (!policy.Allowed)
+                {
+                    HostDispatchJournal.Shared.RecordDecision(record.ExtensionId, "host.recover", policy.Reason);
+                    continue;
+                }
                 if (await HostDispatchJournal.Shared.DispatchAsync(record.ExtensionId, "host.recover",
-                    _ => ExecuteCommandAsync(command, launchSource: "recovery"), previousId: record.Id))
+                    _ => ExecuteCommandAsync(command, launchSource: "recovery"),
+                    previousId: record.Id, priority: HostDispatchPolicy.Priority(execution)))
                     HostDispatchJournal.Shared.MarkRecovered(record.Id);
             }
             catch (Exception ex)

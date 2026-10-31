@@ -760,9 +760,9 @@ public partial class MainWindow
     /// <summary>
     /// 供 ExtensionSchedulerService 调用，执行定时触发的扩展
     /// </summary>
-    public async Task ExecuteScheduledExtensionAsync(CommandItem command)
+    public async Task<bool> ExecuteScheduledExtensionAsync(CommandItem command)
     {
-        await DispatchManagedExtensionAsync(command, "host.schedule", "scheduler");
+        return await DispatchManagedExtensionAsync(command, "host.schedule", "scheduler");
     }
 
     /// <summary>
