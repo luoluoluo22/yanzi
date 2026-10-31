@@ -168,6 +168,7 @@ internal sealed class TemporaryEasyTierP2pAdapter : ITemporaryTransferAdapter
                 var first = await reader.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(7));
                 var match = Regex.Match(first ?? "", @"^GET /p2p/([a-f0-9]{32}) HTTP/1\.[01]$");
                 string? token = null;
+                string? rangeHeader = null;
                 var headerBytes = (first?.Length ?? 0) + 2;
                 for (int i = 0; i < 48; i++)
                 {
@@ -178,6 +179,8 @@ internal sealed class TemporaryEasyTierP2pAdapter : ITemporaryTransferAdapter
                     if (line.Length == 0) break;
                     if (line.StartsWith("x-yanzi-p2p-token:", StringComparison.OrdinalIgnoreCase))
                         token = line["x-yanzi-p2p-token:".Length..].Trim();
+                    if (line.StartsWith("range:", StringComparison.OrdinalIgnoreCase))
+                        rangeHeader = line["range:".Length..].Trim();
                 }
                 if (!match.Success || !Shares.TryGetValue(match.Groups[1].Value, out var share) ||
                     share.ExpiresAt <= DateTimeOffset.UtcNow || token is null ||
@@ -192,8 +195,29 @@ internal sealed class TemporaryEasyTierP2pAdapter : ITemporaryTransferAdapter
                 await using var file = new FileStream(share.Source, FileMode.Open,
                     FileAccess.Read, FileShare.Read, 131072, FileOptions.Asynchronous | FileOptions.SequentialScan);
                 if (file.Length != share.Bytes) return;
-                var headers = Encoding.ASCII.GetBytes("HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n" +
-                    "Content-Length: " + share.Bytes + "\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n");
+                long offset = 0;
+                if (rangeHeader != null)
+                {
+                    var range = Regex.Match(rangeHeader, @"^bytes=(0|[1-9][0-9]*)-$");
+                    if (!range.Success || !long.TryParse(range.Groups[1].Value, out offset) ||
+                        offset >= share.Bytes)
+                    {
+                        await stream.WriteAsync(Encoding.ASCII.GetBytes(
+                            "HTTP/1.1 416 Range Not Satisfiable\r\nContent-Length: 0\r\n" +
+                            "Content-Range: bytes */" + share.Bytes + "\r\nConnection: close\r\n\r\n"));
+                        return;
+                    }
+                }
+                var partial = rangeHeader != null;
+                var length = share.Bytes - offset;
+                var headers = Encoding.ASCII.GetBytes("HTTP/1.1 " +
+                    (partial ? "206 Partial Content" : "200 OK") +
+                    "\r\nContent-Type: application/octet-stream\r\n" +
+                    "Content-Length: " + length + "\r\n" +
+                    (partial ? "Content-Range: bytes " + offset + "-" +
+                        (share.Bytes - 1) + "/" + share.Bytes + "\r\n" : "") +
+                    "Accept-Ranges: bytes\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n");
+                file.Seek(offset, SeekOrigin.Begin);
                 await stream.WriteAsync(headers);
                 await file.CopyToAsync(stream, 131072);
             }
@@ -236,18 +260,36 @@ internal sealed class TemporaryEasyTierP2pAdapter : ITemporaryTransferAdapter
         using var client = new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
         var url = "http://" + channel.P2pRemoteIp + ":" + channel.P2pListenPort +
                   "/p2p/" + match.Groups[1].Value;
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        request.Headers.TryAddWithoutValidation("x-yanzi-p2p-token", match.Groups[2].Value);
-        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
-        response.EnsureSuccessStatusCode();
-        if (response.Content.Headers.ContentLength != receipt.Bytes)
-            throw new InvalidDataException("p2p_content_length_mismatch");
-        await using var input = await response.Content.ReadAsStreamAsync(token);
-        await using (var output = new FileStream(temporaryPath, FileMode.CreateNew,
-            FileAccess.Write, FileShare.None, 131072, FileOptions.Asynchronous))
+        var existing = File.Exists(temporaryPath) ? new FileInfo(temporaryPath).Length : 0;
+        if (existing > receipt.Bytes) throw new InvalidDataException("p2p_part_exceeds_expected_size");
+        if (existing < receipt.Bytes)
         {
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.TryAddWithoutValidation("x-yanzi-p2p-token", match.Groups[2].Value);
+            if (existing > 0)
+                request.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(existing, null);
+            using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
+            response.EnsureSuccessStatusCode();
+            if (existing == 0 && response.StatusCode != HttpStatusCode.OK ||
+                existing > 0 && response.StatusCode != HttpStatusCode.PartialContent)
+                throw new InvalidDataException("p2p_range_response_status_invalid");
+            if (existing > 0)
+            {
+                var contentRange = response.Content.Headers.ContentRange;
+                if (contentRange?.From != existing || contentRange.To != receipt.Bytes - 1 ||
+                    contentRange.Length != receipt.Bytes)
+                    throw new InvalidDataException("p2p_range_response_mismatch");
+            }
+            if (response.Content.Headers.ContentLength != receipt.Bytes - existing)
+                throw new InvalidDataException("p2p_content_length_mismatch");
+            await using var input = await response.Content.ReadAsStreamAsync(token);
+            await using var output = new FileStream(temporaryPath,
+                existing > 0 ? FileMode.Open : FileMode.CreateNew,
+                FileAccess.Write, FileShare.None, 131072, FileOptions.Asynchronous);
+            if (output.Length != existing) throw new IOException("p2p_part_changed_concurrently");
+            output.Position = existing;
             var buffer = new byte[131072];
-            long received = 0;
+            long received = existing;
             int count;
             while ((count = await input.ReadAsync(buffer, token)) > 0)
             {
@@ -255,8 +297,8 @@ internal sealed class TemporaryEasyTierP2pAdapter : ITemporaryTransferAdapter
                 if (received > receipt.Bytes) throw new InvalidDataException("p2p_exceeds_expected_size");
                 await output.WriteAsync(buffer.AsMemory(0, count), token);
             }
-            if (received != receipt.Bytes) throw new InvalidDataException("p2p_short_read");
+            if (received != receipt.Bytes) throw new IOException("p2p_short_read");
         }
-        await EnsureDirectAsync(channel, token);
+                await EnsureDirectAsync(channel, token);
     }
 }

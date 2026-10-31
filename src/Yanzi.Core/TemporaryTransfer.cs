@@ -228,7 +228,13 @@ public sealed class TemporaryTransferCoordinator
         Directory.CreateDirectory(root);
         var target = Path.Combine(root, receipt.FileName);
         if (File.Exists(target)) throw new IOException("target_already_exists");
-        var part = Path.Combine(root, "." + Guid.NewGuid().ToString("N") + ".part");
+        var resumable = channel.Kind == ChannelKind.DirectP2p;
+        // Name depends on this exact signed receipt, but does not expose the bearer secret.
+        var resumeKey = resumable ? Convert.ToHexString(SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(receipt.Location + "|" + receipt.Sha256 + "|" + receipt.FileName)))
+            .ToLowerInvariant() : Guid.NewGuid().ToString("N");
+        var part = Path.Combine(root, (resumable ? ".p2p-" : ".") + resumeKey + ".part");
+        bool preservePartial = false;
         try
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -242,9 +248,26 @@ public sealed class TemporaryTransferCoordinator
             File.Move(part, target);  // atomic, never silently overwrite
             return new TransferReceiveResult(target, info.Length, hash, receipt.ChannelId);
         }
+        catch (Exception ex) when (resumable &&
+            (ex is IOException or HttpRequestException or OperationCanceledException))
+        {
+            if (File.Exists(part))
+            {
+                var size = new FileInfo(part).Length;
+                preservePartial = size > 0 && size < receipt.Bytes;
+                // A fully received file is retained only if the final hash really matches.
+                if (size == receipt.Bytes)
+                {
+                    await using var existing = File.OpenRead(part);
+                    preservePartial = Convert.ToHexString(await SHA256.HashDataAsync(existing,
+                        CancellationToken.None)) == hash;
+                }
+            }
+            throw;
+        }
         finally
         {
-            if (File.Exists(part)) File.Delete(part);
+            if (!preservePartial && File.Exists(part)) File.Delete(part);
         }
     }
 }
