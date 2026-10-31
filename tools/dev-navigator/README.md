@@ -10,6 +10,8 @@
 
 **第四阶段故障诊断入口：** `scripts/dev-diagnose.ps1 -Description 'Gemini 401 CREDENTIALS_MISSING'` 可综合错误指纹、已登记功能及测试、近期 Git 改动与本机 QA 记录，生成证据限定的排查候选。仅在明确传入 `-Log` 时读取受限本机日志并提取已知指纹；`-ScreenshotNote` 是观察文字，不读取原图。参见 [故障诊断](../../docs/dev-diagnostics.md)。
 
+**CI 快速通道（2026-10-31）：** 当一次 PR 或主线提交的所有变更仅涉及本目录，以及经过明确白名单核验的开发导航脚本与文档时，`engineering-checks.yml` 仍保留原有 `portable-contracts`、`desktop-and-worker` 检查，但改为运行 Python 开发工具回归与隔离运行范围检查；任何客户端、工作流、安全策略或未知文件改动都执行原有全量 CI。规则、失败回退与如何复核见 [CI 分层策略](../../docs/ci-path-policy.md)。本目录仍是开发辅助索引，不是客户端运行时依赖。
+
 ## 一条命令定位功能
 
 在项目仓库根目录执行：
