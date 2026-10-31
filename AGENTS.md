@@ -13,6 +13,8 @@
 
 **故障定位优先（2026-10-31）。** 收到故障描述、错误截图文字或授权的本机日志后，先执行 `scripts/dev-diagnose.ps1 -Description '<症状>'`；需要时显式传入 `-ScreenshotNote`（人工/视觉读出的文字）或白名单 `-Log`。诊断工具只返回可能相关功能、源码、最近改动、QA 记录及下一步检查，不宣称已定位根因，不自动上传原始日志/密钥。再使用 `dev-preflight.ps1` 制定可验证的修改计划，按 PR/CI 门禁集成。详见 [故障诊断规范](docs/dev-diagnostics.md)。
 
+**CI 分层门禁（2026-10-31）。** `Engineering foundation regression` 对纯 `tools/dev-navigator` 开发工具变更执行快速 Python 回归，其他一切变更按全量 Windows/SDK/Worker 门禁执行。分类规则以严格文件白名单为准，未知或出错必须回退全量；不得通过修改 PR 标签、跳过工作流或删掉检查来加速。详见 [CI 分层策略](docs/ci-path-policy.md)。
+
 **Windows 小程序唯一开发位置：`%LOCALAPPDATA%\OpenQuickHost\Extensions\<extensionId>\`。** 直接修改用户已安装的小程序，由原有账号同步机制处理，不要为业务小程序新建宿主仓库副本、PR 或安装包；该规范的完整操作和验收门禁见上述七步工作流。
 
 **开发任务的强制结束条件：已验证的代码必须进入 GitHub main。** 每个 AI（含并行子 Agent）在任务完成后先提交自己的隔离分支，再运行 `scripts/finish-agent-task.ps1 -VerificationScript <仓库内验收脚本> -Apply` 创建 PR、等待 CI、无冲突时合并，并回读 main 的合并提交。不得把“本地已修改、已 Commit、已 Push、安装包已发布”说成“开发集成完成”。若存在 CI 失败、PR 冲突、生产部署风险或超时，必须明确标记 `awaiting-integration`，保留独立 worktree 并继续协调修复；不得静默遗留在其他分支。详见 [自动集成门禁](docs/development-integration-release-policy.md#多-ai-开发任务强制收尾门禁2026-10-22)。
