@@ -171,7 +171,7 @@ public partial class MainWindow
     private static async Task AwaitMiniappExitAckAsync(string extensionId, TimeSpan timeout,
         CancellationToken cancellationToken)
     {
-        var webAck = await AppExtensionWindow.TryPrepareForHostExitAsync(extensionId, timeout);
+        var webAck = await AppExtensionWindow.TryPrepareForHostExitAsync(extensionId, timeout, cancellationToken);
         if (webAck.HasValue)
         {
             if (!webAck.Value) throw new InvalidOperationException("WebView beforeExit handler missing or rejected");

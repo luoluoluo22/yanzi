@@ -125,3 +125,29 @@ Cron 触发时条件不满足则保留本次到期记录，30 秒后重新评估
 托盘“调度中心”新增优先级、条件诊断与执行槽数量。测试脚本验证 AND 条件、未知传感器
 安全拒绝、优先级顺序、公平老化、队列容量、取消释放与第一阶段兼容性。
 正式安装包的真实 Windows 电源/网络状态、后台启动、退出前保存仍需真机验收。
+
+## 第三阶段：真实 Windows / WebView2 事件交付 QA
+
+在 Windows 桌面执行 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-host-runtime-dispatch.ps1`。
+
+这项测试不会重启正式燕子或修改用户小程序。测试使用临时 WPF/WebView2 窗口（屏幕外、
+不激活）和独立临时 WebView2 用户数据目录，验证实际浏览器执行流程；结束后
+释放资源并尝试清理 profile。另通过只读 Windows API 读取 CPU 差分、
+键鼠闲置、电源和网络状态。
+
+事件触发统一行为：运行中的小程序由宿主向其现有页面发送
+`yanzi:host-event` DOM CustomEvent，`detail` 包含 `eventName` 和 `occurredUtc`；
+若页面设置 `window.yanzi.onHostEvent = async detail => { ... }`，宿主会等待
+该 Promise 完成后才确认事件交付。首次打开的 WebView 页面导航成功后，同样发送事件
+并等待确认。旧 `idle` 与 `scheduler` 对应 `host.idle` 和 `host.schedule`，保持
+现有配置兼容性；配置了 `app.runInBackground=true` 的小程序由宿主事件触发时不应
+突然弹出窗口。**事件已交付不等于小程序后续同步/上传的最终业务完成**。
+
+真正退出宿主前，已声明 `events.beforeExit.enabled` 且正在运行的 WebView 小程序
+必须提供 `window.yanzi.beforeExit = async () => { await saveCheckpoint(); return true; }`。
+返回 `false`、未安装处理函数、抛异常、Promise 拒绝或超时都不能记为保存成功。
+保存确认是 Promise 解决之后的结果，而不是只发送一条消息。
+
+隔离 WebView2 验收包括真实页面事件接收、DOM 和异步回调、保存后回读、
+返回 `false`、未注册、拒绝和超时。**不能将该隔离验收冒称为真实系统休眠/断网、
+正式宿主退出或升级卸载的完整 E2E**；这些需要在隔离的正式宿主安装/VM 中执行。
