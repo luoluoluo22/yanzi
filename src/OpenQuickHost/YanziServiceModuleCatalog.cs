@@ -32,6 +32,9 @@ internal static class YanziServiceModuleCatalog
         public string Repository { get; set; } = "";
         public string Revision { get; set; } = "";
         public string InstallScript { get; set; } = "";
+        public string ManagedTaskName { get; set; } = "";
+        public string ManagedEntryPoint { get; set; } = "";
+        public string ManagedStopRoute { get; set; } = "";
         public string LocalDirectory { get; set; } = "";
         public string TokenHeader { get; set; } = "";
         public string TokenFile { get; set; } = "";
@@ -83,6 +86,10 @@ internal static class YanziServiceModuleCatalog
         m.Repository.StartsWith("https://github.com/luoluoluo22/", StringComparison.OrdinalIgnoreCase) &&
         m.Repository.EndsWith(".git", StringComparison.OrdinalIgnoreCase) &&
         Regex.IsMatch(m.InstallScript, @"^scripts/[a-zA-Z0-9-]+\.ps1$") &&
+        Regex.IsMatch(m.ManagedTaskName, @"^[A-Za-z][A-Za-z0-9-]{2,100}$") &&
+        Regex.IsMatch(m.ManagedEntryPoint, @"^app/[A-Za-z0-9/.-]+\.(?:mjs|js|exe)$") &&
+        !m.ManagedEntryPoint.Split('/').Any(s => s is "." or "..") &&
+        (string.IsNullOrEmpty(m.ManagedStopRoute) || Regex.IsMatch(m.ManagedStopRoute, @"^/v1/[A-Za-z0-9/-]{1,100}$")) &&
         Regex.IsMatch(m.TokenHeader, "^[a-zA-Z0-9-]{5,80}$") &&
         Regex.IsMatch(m.TokenFile, "^[a-zA-Z0-9.-]+$") &&
         Regex.IsMatch(m.ConfigFile, "^[a-zA-Z0-9.-]+$") &&
@@ -224,6 +231,9 @@ internal static class YanziServiceModuleCatalog
 
     private static async Task InstallAsync(Module module, CancellationToken token)
     {
+        // Record ownership before starting an external installer; interrupted installs stay accountable.
+        YanziManagedServiceInstallations.Begin(module.Id, module.Repository, module.Revision,
+            module.LocalDirectory, module.ManagedTaskName, module.ManagedEntryPoint);
         // Only a release-bundled, pinned GitHub descriptor may reach this method.
         var baseDir = DirectoryFor(module);
         var repo = Path.Combine(baseDir, "repo");
@@ -256,6 +266,7 @@ internal static class YanziServiceModuleCatalog
         await RunAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy",
             "Bypass", "-File", script, "-Start"], token);
         if (!Installed(module)) throw new IOException("service_module_configuration_required");
+        YanziManagedServiceInstallations.Complete(module.Id);
     }
 
     private static async Task<string> RunAsync(string executable, IReadOnlyList<string> args,

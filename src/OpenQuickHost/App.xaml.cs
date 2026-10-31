@@ -130,11 +130,20 @@ public partial class App : WpfApplication
                     // 停止所有关联的 Everything 进程，防止目录被占用无法删除
                     EverythingRuntimeService.KillAllYanziEverythingProcesses();
 
-                    // 卸载仅清理安装注册，保留配置、账号及小程序数据，便于重装或回滚。
+                    // 保留账号配置、小程序与传输的用户数据，便于重装或回滚。
                 }
                 catch (System.Exception ex)
                 {
                     HostAssets.AppendLog($"Velopack BeforeUninstall Hook error: {ex.Message}");
+                }
+                try
+                {
+                    // 仅清理燕子按需安装时登记所有权的服务；与其他卸载步骤隔离。
+                    YanziManagedServiceInstallations.StartUninstallCleanup();
+                }
+                catch (System.Exception ex)
+                {
+                    HostAssets.AppendLog($"Owned service uninstall error: {ex.Message}");
                 }
                 System.Environment.Exit(0);
             })
