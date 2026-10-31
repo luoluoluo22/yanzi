@@ -50,6 +50,7 @@ public partial class MainWindow
         var previousSelectedCommand = SelectedCommand;
         _activeFilterScopeKey = parsed.ScopeKey;
         OnPropertyChanged(nameof(IsAllScopeActive));
+        OnPropertyChanged(nameof(IsCapabilityScopeActive));
         UpdateSearchScopeCounts(parsed);
         _activeQueryArgument = string.Empty;
 

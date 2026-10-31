@@ -288,10 +288,16 @@ public partial class MainWindow
             Placement = keyboardInvoked ? PlacementMode.Right : PlacementMode.MousePoint
         };
 
-        var help = new MenuItem { Header = "帮帮忙 · 复制定位上下文" };
+        var help = new MenuItem { Header = "帮帮忙" };
         help.Click += (_, _) => CopyCapabilityText(BuildCapabilityHelpContext(entry),
             $"已复制“{entry.Descriptor.Name}”定位上下文，可直接发给开发助手");
         menu.Items.Add(help);
+
+        var integration = new MenuItem { Header = "复制接入说明" };
+        integration.Click += (_, _) => CopyCapabilityText(
+            BuildCapabilityIntegrationText(entry, AppSettingsStore.LoadCached().AgentApiPort),
+            $"已复制“{entry.Descriptor.Name}”接入说明");
+        menu.Items.Add(integration);
         menu.Items.Add(new Separator());
 
         var details = new MenuItem { Header = "查看能力详情" };

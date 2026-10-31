@@ -599,6 +599,19 @@
                     </Grid>
                 </Border>
 
+                <!-- 置顶的能力接入文档入口，复用现有本地 Agent 网页控制台 -->
+                <Button Grid.Row="0"
+                        Content="能力接入文档"
+                        ToolTip="在浏览器中打开本地 Agent 能力目录、OpenAPI 与在线调用控制台"
+                        Margin="4,2,4,4"
+                        HorizontalContentAlignment="Left"
+                        Padding="12,10"
+                        FontSize="{DynamicResource FontSizeSmallPlus}"
+                        Cursor="Hand"
+                        Style="{DynamicResource GhostButtonStyle}"
+                        Click="OpenCapabilityDocs_Click"
+                        Visibility="{Binding IsCapabilityScopeActive, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+
                 <ListBox Grid.Row="1"
                          x:Name="CommandList"
                          IsHitTestVisible="{Binding CanUseSearchResults}"
