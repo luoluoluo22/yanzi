@@ -56,6 +56,7 @@
     </Content>
     <None Update="BrowserHelper\ego-browser-helper.mjs" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Include="ServiceModules\*.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="ServiceModules\uninstall-owned-services.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <!-- Verified Quark transfer adapter scripts bundled into Yanzi host releases. -->
     <None Include="CapabilityScripts\QuarkDrive\*.py" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Include="CapabilityScripts\BaiduNetdisk\*.py" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
