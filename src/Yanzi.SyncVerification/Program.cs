@@ -14,6 +14,7 @@ if (args.Contains("--github-private-backup-policy")) { GitHubPrivateBackupPolicy
 if (args.Contains("--github-secondary-backup-verify")) { await GitHubSecondaryBackupVerification.RunAsync(args.Contains("--live")); return; }
 
 if (args.Contains("--task-recovery")) { PlatformTaskVerification.Run(); return; }
+if (args.Contains("--host-dispatch")) { await HostDispatchVerification.RunAsync(); return; }
 
 if (args.Length == 2 && args[0] == "--release-readiness")
 {

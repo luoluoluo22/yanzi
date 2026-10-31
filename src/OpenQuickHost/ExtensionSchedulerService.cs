@@ -13,6 +13,8 @@ public sealed class ExtensionSchedulerService
     private readonly HashSet<string> _runningExtensions = new(StringComparer.OrdinalIgnoreCase);
     private bool _started;
     public bool IsStarted => _started;
+    public IReadOnlyDictionary<string, DateTime> NextRunsSnapshot() =>
+        new Dictionary<string, DateTime>(_nextRunTimes, StringComparer.OrdinalIgnoreCase);
 
     public ExtensionSchedulerService(MainWindow mainWindow)
     {

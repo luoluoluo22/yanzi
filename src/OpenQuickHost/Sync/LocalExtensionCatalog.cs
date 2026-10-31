@@ -1211,6 +1211,9 @@ public sealed record LocalExtensionManifest
 
     public LocalExtensionStartupManifest? Startup { get; init; }
 
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public LocalExtensionHostEventsManifest? Events { get; init; }
+
     public LocalExtensionSearchProviderManifest? SearchProvider { get; init; }
 
     public LocalExtensionMouseGestureManifest? MouseGesture { get; init; }
@@ -1279,6 +1282,20 @@ public sealed class LocalExtensionAppStorageManifest
 public sealed class LocalExtensionAppBridgeManifest
 {
     public string[]? Apis { get; init; }
+}
+
+/// <summary>Explicit, opt-in host events. Existing manifests retain their prior behavior.</summary>
+public sealed record LocalExtensionHostEventsManifest
+{
+    public string[]? Subscribe { get; init; }
+    public LocalExtensionBeforeExitManifest? BeforeExit { get; init; }
+    public bool RecoverInterrupted { get; init; }
+}
+
+public sealed record LocalExtensionBeforeExitManifest
+{
+    public bool Enabled { get; init; }
+    public int TimeoutMs { get; init; } = 1200;
 }
 
 public sealed record LocalExtensionStartupManifest

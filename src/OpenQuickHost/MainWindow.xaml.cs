@@ -578,6 +578,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     {
                         InputHookService.RestartHooks("power-resume");
                         MouseGestureService.RestartHook("power-resume");
+                        QueueHostEvent("host.resume");
                     }), System.Windows.Threading.DispatcherPriority.Background);
                 }
             };
@@ -591,6 +592,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     {
                         InputHookService.RestartHooks("session-unlock");
                         MouseGestureService.RestartHook("session-unlock");
+                        QueueHostEvent("host.unlock");
                     }), System.Windows.Threading.DispatcherPriority.Background);
                 }
             };
@@ -3665,8 +3667,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 HideToTray();
             }
 
+            var backgroundHostEvent = runnable.App.RunInBackground &&
+                launchSource is "app-startup" or "host.resume" or "host.unlock" or "network.online" or "recovery";
             if (AppExtensionWindow.TryActivateExisting(runnable,
-                activate: !(runnable.App.RunInBackground && launchSource == "app-startup")))
+                activate: !backgroundHostEvent))
             {
                 HostAssets.AppendRecent(runnable.Title);
                 LastRunMessage = $"已激活应用{BrandTerms.Current.MiniApp}：{runnable.Title}";
@@ -3675,7 +3679,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             var window = new AppExtensionWindow(runnable, explicitInput, launchSource)
             {
-                ShowInTaskbar = !(runnable.App.RunInBackground && launchSource == "app-startup")
+                ShowInTaskbar = !backgroundHostEvent,
+                ShowActivated = !backgroundHostEvent
             };
 
             if (runnable.ExtensionDirectoryPath != null && runnable.ExtensionDirectoryPath.Contains("_temp_run_"))

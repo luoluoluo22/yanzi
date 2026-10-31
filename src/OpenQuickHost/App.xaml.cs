@@ -50,6 +50,7 @@ public partial class App : WpfApplication
     private Yanzi.UI.Wpf.YanziDropdownMenu? _trayMenu;
     private SettingsWindow? _settingsWindow;
     private RunningExtensionsWindow? _runningExtensionsWindow;
+    private DispatchCenterWindow? _dispatchCenterWindow;
     private InputStateWindow? _inputStateWindow;
     private QuestWindow? _questWindow;
     private LocalAgentApiServer? _agentApiServer;
@@ -780,9 +781,9 @@ public partial class App : WpfApplication
             if (string.Equals(message, "__shutdown__", StringComparison.Ordinal))
             {
                 HostAssets.AppendLog("[Shutdown] Graceful shutdown requested through single-instance pipe.");
-                window.AllowClose = true;
+                // Dispatch subscribed exit notifications before shutdown.
                 DisposeNotifyIcon();
-                Shutdown();
+                await window.RequestGracefulShutdownAsync();
                 return;
             }
 
@@ -1259,8 +1260,7 @@ public partial class App : WpfApplication
     {
         if (MainWindow is MainWindow mw)
         {
-            mw.AllowClose = true;
-            Shutdown();
+            _ = mw.RequestGracefulShutdownAsync();
         }
     }
 
@@ -1517,6 +1517,7 @@ public partial class App : WpfApplication
         var running = menu.AddAction($"正在运行的小程序 ({count})",
             () => TrayRunningExtensions_Click(this, new RoutedEventArgs()), icon: TrayMenuIcon("running"));
         running.IsEnabled = count > 0;
+        menu.AddAction("调度中心", OpenDispatchCenterWindow, icon: TrayMenuIcon("running"));
         menu.AddSubmenu("工具与排错", child =>
         {
             child.AddAction("重置键盘和鼠标状态",
@@ -1775,6 +1776,21 @@ public partial class App : WpfApplication
                 HostAssets.AppendLog($"Error reloading settings window: {ex.Message}");
             }
         });
+    }
+
+    private void OpenDispatchCenterWindow()
+    {
+        if (_dispatchCenterWindow == null || !_dispatchCenterWindow.IsLoaded)
+        {
+            _dispatchCenterWindow = new DispatchCenterWindow(() =>
+                (MainWindow as MainWindow)?.DispatchNextRunsSnapshot()
+                    ?? new Dictionary<string, DateTime>());
+            _dispatchCenterWindow.Closed += (_, _) => _dispatchCenterWindow = null;
+        }
+        if (!_dispatchCenterWindow.IsVisible) _dispatchCenterWindow.Show();
+        if (_dispatchCenterWindow.WindowState == WindowState.Minimized)
+            _dispatchCenterWindow.WindowState = WindowState.Normal;
+        _dispatchCenterWindow.Activate();
     }
 
     public void OpenRunningExtensionsWindow()

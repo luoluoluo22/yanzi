@@ -733,6 +733,12 @@ public partial class MainWindow
                 await StartStartupCommandAsync(command);
             }
 
+            _ = Dispatcher.BeginInvoke(new Action(async () =>
+            {
+                try { await RecoverInterruptedDispatchesAsync(); }
+                catch (Exception ex) { HostAssets.AppendLog($"Dispatch recovery failed: {ex.Message}"); }
+            }), DispatcherPriority.Background);
+
         });
     }
 
@@ -756,7 +762,7 @@ public partial class MainWindow
     /// </summary>
     public async Task ExecuteScheduledExtensionAsync(CommandItem command)
     {
-        await ExecuteCommandAsync(command, launchSource: "scheduler");
+        await DispatchManagedExtensionAsync(command, "host.schedule", "scheduler");
     }
 
     /// <summary>
@@ -764,7 +770,7 @@ public partial class MainWindow
     /// </summary>
     public async Task ExecuteIdleTriggeredExtensionAsync(CommandItem command)
     {
-        await ExecuteCommandAsync(command, launchSource: "idle");
+        await DispatchManagedExtensionAsync(command, "host.idle", "idle");
     }
 
     /// <summary>
@@ -1792,6 +1798,13 @@ public partial class MainWindow
 
     private void MainWindow_Closing(object? sender, CancelEventArgs e)
     {
+        if (AllowClose && !_hostExitPrepared)
+        {
+            e.Cancel = true;
+            if (!_hostExitPreparing)
+                _ = Dispatcher.BeginInvoke(new Action(async () => await RequestGracefulShutdownAsync()));
+            return;
+        }
         if (AllowClose)
         {
             _extensionScheduler?.Stop();
@@ -1838,8 +1851,8 @@ public partial class MainWindow
 
         if (!AppSettingsStore.Load().CloseToTray)
         {
-            AllowClose = true;
-            System.Windows.Application.Current.Shutdown();
+            e.Cancel = true;
+            _ = Dispatcher.BeginInvoke(new Action(async () => await RequestGracefulShutdownAsync()));
             return;
         }
 
