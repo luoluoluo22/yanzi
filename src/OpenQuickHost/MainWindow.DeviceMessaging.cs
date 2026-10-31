@@ -431,6 +431,13 @@ public partial class MainWindow
         if (message.Kind == "capability.invoke")
         {
             var name = GetPayloadString(message, "name") ?? "";
+            if (name == "files.p2p.connect" && !YanziCapabilityRegistry.Contains(name) &&
+                message.Payload.TryGetValue("authorization", out var proof) &&
+                proof.ValueKind == JsonValueKind.Object &&
+                proof.TryGetProperty("type", out var typeProof) &&
+                typeProof.GetString() == "account-owner")
+                await YanziServiceModuleCatalog.EnsureCapabilityAsync(name,
+                    YanziCapabilityCaller.LocalAgent, targetDeviceQuery: message.SourceDeviceId);
             if (!YanziCapabilityRegistry.TryGet(name, out var definition) || definition == null)
                 return (true, false, "capability_not_found");
             if (!message.Payload.TryGetValue("authorization", out var authorization)) return (true, false, "permission_denied");

@@ -1,7 +1,7 @@
 {
   "id": "yanzi-transfer-service",
   "repository": "https://github.com/luoluoluo22/yanzi-transfer-service.git",
-  "revision": "3381213e509c03ef0d6fe305a09f0ea91800f352",
+  "revision": "e7d4307bf8aadd8016da74da34fb7637f227fb1b",
   "installScript": "scripts/install-windows.ps1",
   "managedTaskName": "Yanzi-Independent-Transfer-Service",
   "managedEntryPoint": "app/src/main.mjs",
@@ -11,6 +11,7 @@
   "tokenFile": "control.token",
   "configFile": "config.json",
   "portField": "controlPort",
+  "coordinationPeers": ["tcp://public.easytier.top:11010"],
   "capabilities": [
     {
       "name": "files.p2p.connect",

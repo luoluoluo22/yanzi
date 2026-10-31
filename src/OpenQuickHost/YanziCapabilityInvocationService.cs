@@ -29,7 +29,11 @@ public static class YanziCapabilityInvocationService
             {
                 try
                 {
-                    if (!await YanziServiceModuleCatalog.EnsureCapabilityAsync(capabilityName, caller))
+                    var target = payload is JsonElement element && element.ValueKind == JsonValueKind.Object &&
+                        element.TryGetProperty("targetDeviceId", out var targetProperty) &&
+                        targetProperty.ValueKind == JsonValueKind.String ? targetProperty.GetString() : null;
+                    if (!await YanziServiceModuleCatalog.EnsureCapabilityAsync(capabilityName, caller,
+                        targetDeviceQuery: target))
                         providerLease = await YanziFileWorkflow.AcquireProviderAsync(capabilityName);
                 }
                 catch (IOException ex) when (ex.Message.StartsWith("workflow_provider_not_installed", StringComparison.Ordinal))

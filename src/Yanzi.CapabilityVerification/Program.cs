@@ -15,6 +15,19 @@ void Check(bool condition, string message)
 
 if (args.Length == 1 && args[0] == "--warehouse-capability-ui") { WarehouseCapabilityVerification.Run(); return; }
 if (args.Length == 1 && args[0] == "--windows-env") { WindowsEnvironmentVerification.Run(); return; }
+if (args.Length == 1 && args[0] == "--account-p2p") { AccountTransferVerification.Run(); return; }
+if (args.Length == 2 && args[0] == "--account-p2p-readonly")
+{
+    var bootstrap = typeof(YanziBuiltinCapabilityRegistration).Assembly.GetType(
+        "OpenQuickHost.YanziAccountTransferBootstrap", true)!;
+    var invoke = bootstrap.GetMethod("PrepareAsync", BindingFlags.Static | BindingFlags.NonPublic)!;
+    var result = await (Task<object>)invoke.Invoke(null, [args[1], CancellationToken.None])!;
+    using var qaResultDocument = JsonDocument.Parse(JsonSerializer.Serialize(result));
+    if (qaResultDocument.RootElement.GetProperty("existingWorker").ValueKind != JsonValueKind.True)
+        throw new InvalidOperationException("Existing worker was modified or replaced");
+    Console.WriteLine("ACCOUNT_P2P_LIVE_READONLY=PASSED");
+    return;
+}
 if (args.Length == 1 && args[0] == "--secure-lan") { await SecureLanVerification.RunAsync(); return; }
 if (args.Length == 1 && args[0] == "--transfer-sessions") { await TransferSessionsVerification.RunAsync(); return; }
 if (args.Length == 1 && args[0] == "--outbox") { await OutboxVerification.RunAsync(); return; }

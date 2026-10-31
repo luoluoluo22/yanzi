@@ -127,7 +127,8 @@ internal static class YanziServiceModuleCatalog
         Manifests().Any(m => m.Capabilities.Any(c => c.Name.Equals(capability, StringComparison.OrdinalIgnoreCase)));
 
     public static async Task<bool> EnsureCapabilityAsync(string capability,
-        YanziCapabilityCaller? caller = null, CancellationToken token = default)
+        YanziCapabilityCaller? caller = null, CancellationToken token = default,
+        string? targetDeviceQuery = null)
     {
         var module = Manifests().FirstOrDefault(m =>
             m.Capabilities.Any(c => c.Name.Equals(capability, StringComparison.OrdinalIgnoreCase)));
@@ -142,7 +143,11 @@ internal static class YanziServiceModuleCatalog
         try
         {
             if (!Installed(module))
+            {
+                if (module.Id == "yanzi-transfer-service")
+                    await YanziAccountTransferBootstrap.PrepareAsync(targetDeviceQuery, token);
                 await InstallAsync(module, token);
+            }
             Register(module);
             return true;
         }
@@ -178,7 +183,9 @@ internal static class YanziServiceModuleCatalog
             Name = capability.Name, Description = capability.Description,
             Category = capability.Category, Permissions = capability.Permissions,
             RiskLevel = capability.Method == "POST" ? "medium" : "low",
-            InputSchema = YanziCapabilitySchema.EmptyObject,
+            InputSchema = capability.Name == "files.p2p.connect"
+                ? YanziCapabilitySchema.Parse("""{"type":"object","properties":{"targetDeviceId":{"type":"string"},"suppressPeerNotification":{"type":"boolean"}},"additionalProperties":false}""")
+                : YanziCapabilitySchema.EmptyObject,
             OutputSchema = YanziCapabilitySchema.Parse("""{"type":"object"}"""),
             Handler = payload => InvokeAsync(module, capability, payload)
         });
@@ -187,6 +194,23 @@ internal static class YanziServiceModuleCatalog
 
     private static async Task<object?> InvokeAsync(Module module, ModuleCapability capability, object? body)
     {
+        string? peerDeviceId = null;
+        bool notifyAutoPaired = false;
+        bool suppressPeerNotification = false;
+        if (module.Id == "yanzi-transfer-service" && capability.Name == "files.p2p.connect")
+        {
+            var payload = body is JsonElement el && el.ValueKind == JsonValueKind.Object ? el : default;
+            var target = payload.ValueKind == JsonValueKind.Object &&
+                payload.TryGetProperty("targetDeviceId", out var tid) && tid.ValueKind == JsonValueKind.String
+                ? tid.GetString() : null;
+            suppressPeerNotification = payload.ValueKind == JsonValueKind.Object &&
+                payload.TryGetProperty("suppressPeerNotification", out var suppress) &&
+                suppress.ValueKind == JsonValueKind.True;
+            var prepared = await YanziAccountTransferBootstrap.PrepareAsync(target);
+            using var detail = JsonDocument.Parse(JsonSerializer.Serialize(prepared));
+            peerDeviceId = detail.RootElement.GetProperty("peerDeviceId").GetString();
+            notifyAutoPaired = detail.RootElement.GetProperty("autoPaired").GetBoolean();
+        }
         var dir = DirectoryFor(module);
         var token = (await File.ReadAllTextAsync(Path.Combine(dir, module.TokenFile))).Trim();
         if (!Regex.IsMatch(token, "^[a-f0-9]{64}$", RegexOptions.IgnoreCase))
@@ -210,6 +234,8 @@ internal static class YanziServiceModuleCatalog
         if (!result.RootElement.TryGetProperty("ok", out var ok) || ok.ValueKind != JsonValueKind.True)
             throw new IOException("service_module_request_failed");
 
+        if (peerDeviceId is not null && notifyAutoPaired && !suppressPeerNotification)
+            await YanziAccountTransferBootstrap.NotifyPeerAsync(peerDeviceId);
         if (capability.Project is null) return result.RootElement.Clone();
         var output = new Dictionary<string, object?>(StringComparer.Ordinal);
         foreach (var (name, expr) in capability.Project)
@@ -231,6 +257,16 @@ internal static class YanziServiceModuleCatalog
 
     private static async Task InstallAsync(Module module, CancellationToken token)
     {
+        // Reuse the host's dependency installer when Git is not available.
+        var gitPresent = (Environment.GetEnvironmentVariable("PATH") ?? "")
+            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+            .Any(directory => File.Exists(Path.Combine(directory.Trim('"'), "git.exe")));
+        if (!gitPresent)
+        {
+            var git = await YanziSystemDependencyProvider.EnsureAsync(
+                new YanziCapabilityRequirement("git", "git", null), token);
+            if (!git.Available) throw new IOException("service_module_git_dependency_unavailable: " + git.Error);
+        }
         // Record ownership before starting an external installer; interrupted installs stay accountable.
         YanziManagedServiceInstallations.Begin(module.Id, module.Repository, module.Revision,
             module.LocalDirectory, module.ManagedTaskName, module.ManagedEntryPoint);
@@ -263,14 +299,20 @@ internal static class YanziServiceModuleCatalog
 
         // Configuration/peer pairing is owned by the service installer, not the host.
         // Existing configurations and active jobs are never overwritten.
+        var installedNode = (Environment.GetEnvironmentVariable("PATH") ?? "")
+            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+            .Select(directory => Path.Combine(directory.Trim('"'), "node.exe"))
+            .FirstOrDefault(File.Exists);
+        var node = installedNode ?? await YanziPortableNodeInstaller.EnsureAsync(null, token);
         await RunAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy",
-            "Bypass", "-File", script, "-Start"], token);
+            "Bypass", "-File", script, "-Start"], token,
+            Path.GetDirectoryName(node));
         if (!Installed(module)) throw new IOException("service_module_configuration_required");
         YanziManagedServiceInstallations.Complete(module.Id);
     }
 
     private static async Task<string> RunAsync(string executable, IReadOnlyList<string> args,
-        CancellationToken token)
+        CancellationToken token, string? additionalPath = null)
     {
         using var process = new Process
         {
@@ -282,6 +324,9 @@ internal static class YanziServiceModuleCatalog
         };
         foreach (var argument in args) process.StartInfo.ArgumentList.Add(argument);
         process.StartInfo.Environment["GIT_TERMINAL_PROMPT"] = "0";
+        if (!string.IsNullOrWhiteSpace(additionalPath))
+            process.StartInfo.Environment["PATH"] = additionalPath + Path.PathSeparator +
+                (process.StartInfo.Environment["PATH"] ?? string.Empty);
         if (!process.Start()) throw new IOException("service_module_process_start_failed");
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
         deadline.CancelAfter(TimeSpan.FromMinutes(3));

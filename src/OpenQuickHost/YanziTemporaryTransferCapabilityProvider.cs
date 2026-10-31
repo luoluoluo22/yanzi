@@ -29,6 +29,7 @@ public static class YanziTemporaryTransferCapabilityProvider
           "allowPublicUpload":{"type":"boolean"},
           "domesticOnly":{"type":"boolean"},
           "preferredChannel":{"type":"string"},
+          "targetDeviceId":{"type":"string","minLength":1},
           "backupCount":{"type":"integer","minimum":0,"maximum":2},
           "notifyTarget":{"type":"string"}
         },"required":["path","source","destination"],"additionalProperties":false}
@@ -137,7 +138,17 @@ public static class YanziTemporaryTransferCapabilityProvider
         var request = BuildRequest(input, new FileInfo(file).Length);
         if (request.PreferredChannel == "easytier-p2p" ||
             YanziTemporaryTransferAdapters.LoadChannels().Any(c => c.Id == "easytier-p2p" && c.Enabled))
-            await YanziServiceModuleCatalog.EnsureCapabilityAsync("files.p2p.connect", YanziCapabilityCaller.LocalAgent);
+        {
+            var targetDeviceId = input.TryGetProperty("targetDeviceId", out var targetDevice) &&
+                targetDevice.ValueKind == JsonValueKind.String ? targetDevice.GetString() : null;
+            await YanziServiceModuleCatalog.EnsureCapabilityAsync("files.p2p.connect",
+                YanziCapabilityCaller.LocalAgent, targetDeviceQuery: targetDeviceId);
+            object connectArguments = !string.IsNullOrWhiteSpace(targetDeviceId)
+                ? new { targetDeviceId } : new { };
+            var connection = await YanziCapabilityInvocationService.InvokeAsync(
+                "files.p2p.connect", connectArguments, YanziCapabilityCaller.LocalAgent);
+            if (!connection.Success) throw new IOException("p2p_account_connect_failed: " + connection.Error);
+        }
         var backups = input.TryGetProperty("backupCount", out var b) ? b.GetInt32() : 0;
         var result = await Engine().PublishWithBackupsAsync(file, request, backups, CancellationToken.None);
         object? notification = null;
