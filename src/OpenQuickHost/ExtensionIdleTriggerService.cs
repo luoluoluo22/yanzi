@@ -242,6 +242,7 @@ public sealed class ExtensionIdleTriggerService
             var tempPath = path + ".tmp";
             File.WriteAllText(tempPath, json, new UTF8Encoding(false));
             File.Move(tempPath, path, overwrite: true);
+            HostDispatchJournal.Shared.RecordDecision(command.ExtensionId, "host.idle", reason);
         }
         catch (Exception ex)
         {

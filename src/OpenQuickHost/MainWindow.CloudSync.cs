@@ -841,6 +841,7 @@ public partial class MainWindow
             }
 
             HostAssets.AppendLog("Network availability restored, scheduling silent cloud reconnect.");
+            QueueHostEvent("network.online");
             _cloudSyncClient?.ResumeTransportAfterNetworkChange();
             _cloudReconnectAttemptCount = 0;
             _backgroundPersonalSyncFailureCount = 0;

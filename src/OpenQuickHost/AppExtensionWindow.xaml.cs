@@ -30,6 +30,7 @@ public partial class AppExtensionWindow : Window
     private static readonly object SingleInstanceGate = new();
     private static readonly Dictionary<string, WeakReference<AppExtensionWindow>> SingleInstanceWindows = new(StringComparer.OrdinalIgnoreCase);
     private static readonly HashSet<AppExtensionWindow> BackgroundWindows = [];
+    private static readonly HashSet<AppExtensionWindow> ActiveWindows = [];
     private readonly CommandItem _command;
     private TaskCompletionSource<bool> _navigationReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly string _initialInput;
@@ -43,6 +44,7 @@ public partial class AppExtensionWindow : Window
             !Sync.ExtensionDevicePolicy.CanRun(command.ExtensionId))
             throw new InvalidOperationException("此小程序不允许在当前设备上打开。");
         InitializeComponent();
+        lock (SingleInstanceGate) ActiveWindows.Add(this);
         _command = command;
         _initialInput = initialInput ?? string.Empty;
         _launchSource = launchSource;
@@ -63,7 +65,8 @@ public partial class AppExtensionWindow : Window
                 e.Cancel = true;
                 Hide();
             };
-            if (launchSource == "app-startup") { WindowState = WindowState.Minimized; ShowActivated = false; ShowInTaskbar = false; }
+            if (launchSource is "app-startup" or "host.resume" or "host.unlock" or "network.online" or "recovery")
+            { WindowState = WindowState.Minimized; ShowActivated = false; ShowInTaskbar = false; }
         }
     }
 
@@ -179,10 +182,39 @@ public partial class AppExtensionWindow : Window
         foreach (var window in TrackedWindows()) window.DispatchStorageEvent("yanzi:account-connected", new { });
     }
 
+    /// <summary>
+    /// Await a WebView miniapp's explicit promise-based shutdown hook.
+    /// A DOM event alone is not an acknowledgement of asynchronous persistence.
+    /// </summary>
+    internal static async Task<bool?> TryPrepareForHostExitAsync(string extensionId, TimeSpan timeout)
+    {
+        var windows = TrackedWindows()
+            .Where(w => w._command.ExtensionId.Equals(extensionId, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (windows.Length == 0) return null;
+        foreach (var window in windows)
+        {
+            if (window.Browser.CoreWebView2 == null) return false;
+            const string expression = "(async()=>{if(typeof window.yanzi?.beforeExit!=='function')return false;await window.yanzi.beforeExit();return true;})()";
+            var json = await window.Browser.CoreWebView2
+                .CallDevToolsProtocolMethodAsync("Runtime.evaluate",
+                    JsonSerializer.Serialize(new { expression, awaitPromise = true, returnByValue = true }))
+                .WaitAsync(timeout);
+            using var result = JsonDocument.Parse(json);
+            if (result.RootElement.TryGetProperty("exceptionDetails", out _)) return false;
+            if (!result.RootElement.GetProperty("result").TryGetProperty("value", out var value)
+                || value.ValueKind != JsonValueKind.True) return false;
+        }
+        return true;
+    }
+
+    internal static bool HasActiveInstance(string extensionId) =>
+        TrackedWindows().Any(x => x._command.ExtensionId.Equals(extensionId, StringComparison.OrdinalIgnoreCase));
+
     private static AppExtensionWindow[] TrackedWindows()
     {
         lock (SingleInstanceGate)
-            return BackgroundWindows.Concat(SingleInstanceWindows.Values.Select(r => r.TryGetTarget(out var w) ? w : null)
+            return ActiveWindows.Concat(BackgroundWindows).Concat(SingleInstanceWindows.Values.Select(r => r.TryGetTarget(out var w) ? w : null)
                 .OfType<AppExtensionWindow>()).Distinct().ToArray();
     }
 
@@ -199,7 +231,8 @@ public partial class AppExtensionWindow : Window
         await InitializeAsync();
         if (_definition.RunInBackground)
         {
-            if (_launchSource == "app-startup") { Hide(); WindowState = WindowState.Normal; }
+            if (_launchSource is "app-startup" or "host.resume" or "host.unlock" or "network.online" or "recovery")
+            { Hide(); WindowState = WindowState.Normal; }
         }
     }
 
@@ -222,6 +255,7 @@ public partial class AppExtensionWindow : Window
 
     private void AppExtensionWindow_Closed(object? sender, EventArgs e)
     {
+        lock (SingleInstanceGate) ActiveWindows.Remove(this);
         BackgroundWindows.Remove(this);
         Browser.Dispose();
         if (!_definition.SingleInstance)
