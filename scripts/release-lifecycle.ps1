@@ -93,6 +93,12 @@ function Assert-Release($release) {
     $script:report.releaseUrl=if ($release.html_url) {[string]$release.html_url} else {
         "https://github.com/$script:publisher/releases/tag/v$Version"
     }
+    if (-not $script:fixture -and -not $StatusOnly) {
+        $tagHash=(Run-Checked 'gh' @('api',"repos/$script:publisher/commits/v$Version",'--jq','.sha')).Trim()
+        if ($tagHash -ne $script:report.sourceCommit) {
+            throw 'Published version points to another source commit; bump version before a new release'
+        }
+    }
     $script:report.publishedAtUtc=[string]$release.published_at
     if (-not $script:report.publishedAtUtc) {throw 'Missing release publication timestamp'}
 }
@@ -214,7 +220,7 @@ function Finish([string]$outcome,[string]$why,[int]$exitCode) {
 try {
     if (-not $Version) {$Version=Read-ProjectVersion}
     if ($Version -notmatch '^\d+\.\d+\.\d+$') {throw 'Invalid version format'}
-    if (-not $script:fixture -and $Version -ne (Read-ProjectVersion)) {
+    if (-not $script:fixture -and -not $StatusOnly -and $Version -ne (Read-ProjectVersion)) {
         throw 'Requested version does not match source project'
     }
     if ($script:fixture -and -not $DryRun) {throw 'Fixture mode requires -DryRun'}
