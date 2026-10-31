@@ -78,6 +78,49 @@ try
     Check("p2p SOCKS5 receive verified", result.Bytes == bytes.Length &&
         File.ReadAllBytes(result.FilePath).SequenceEqual(bytes));
     Check("sha256 matches", result.Sha256 == Convert.ToHexString(SHA256.HashData(bytes)));
+    var resumeRoot = Path.Combine(temp, "resume");
+    Directory.CreateDirectory(resumeRoot);
+    var key = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
+        published.Receipt.Location + "|" + published.Receipt.Sha256 + "|" + published.Receipt.FileName)))
+        .ToLowerInvariant();
+    var partPath = Path.Combine(resumeRoot, ".p2p-" + key + ".part");
+    await File.WriteAllBytesAsync(partPath, bytes[..(384 * 1024)]);
+    Environment.SetEnvironmentVariable("YANZI_P2P_TEST_RELAY", "1");
+    try
+    {
+        await core.ReceiveAsync(published.Receipt, resumeRoot, CancellationToken.None);
+        Check("partial retained while peer is offline", false);
+    }
+    catch (IOException)
+    {
+        Check("partial retained while peer is offline",
+            File.Exists(partPath) && new FileInfo(partPath).Length == 384 * 1024);
+    }
+    finally { Environment.SetEnvironmentVariable("YANZI_P2P_TEST_RELAY", null); }
+    var resumed = await core.ReceiveAsync(published.Receipt, resumeRoot, CancellationToken.None);
+    Check("resumed only missing suffix via HTTP Range",
+        File.ReadAllBytes(resumed.FilePath).SequenceEqual(bytes) && !File.Exists(partPath));
+    using var invalidRangeRequest = new HttpRequestMessage(HttpMethod.Get,
+        "http://127.0.0.1:" + port + "/p2p/" + published.Receipt.Location[..32]);
+    invalidRangeRequest.Headers.TryAddWithoutValidation("x-yanzi-p2p-token",
+        published.Receipt.Location[33..]);
+    invalidRangeRequest.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(bytes.Length, null);
+    using var invalidRangeResponse = await unauthenticated.SendAsync(invalidRangeRequest);
+    Check("out of bounds range rejected",
+        invalidRangeResponse.StatusCode == HttpStatusCode.RequestedRangeNotSatisfiable);
+    var corruptRoot = Path.Combine(temp, "corrupt-resume");
+    Directory.CreateDirectory(corruptRoot);
+    var corruptPart = Path.Combine(corruptRoot, ".p2p-" + key + ".part");
+    await File.WriteAllBytesAsync(corruptPart, new byte[bytes.Length]);
+    try
+    {
+        await core.ReceiveAsync(published.Receipt, corruptRoot, CancellationToken.None);
+        Check("invalid completed partial rejected", false);
+    }
+    catch (InvalidDataException)
+    {
+        Check("invalid completed partial rejected and deleted", !File.Exists(corruptPart));
+    }
     var tampered = published.Receipt with { Location = published.Receipt.Location[..33] + new string('0', 64) };
     try
     {

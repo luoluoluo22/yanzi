@@ -10,6 +10,7 @@ This transport integrates with the existing `files.temporary.plan`, `publish`, a
 - A peer is accepted only if EasyTier CLI shows its expected hostname, `cost=p2p` and `tunnel_proto=udp`. This is rechecked after file delivery.
 - Publisher starts an ephemeral HTTP file endpoint protected by a 256-bit unguessable bearer secret, expires the receipt in 90 minutes and never exposes an arbitrary filesystem browsing API. Receipts contain no local source path or public file URL.
 - Receiver uses localhost SOCKS5, downloads to an isolated `.part` file, verifies length and SHA-256, then atomically moves into the inbox without overwriting existing files.
+- For P2P receives, the `.p2p-<receipt-hash>.part` name is stable across retries. HTTP Range / 206 downloads only the missing suffix. On transient loss a nonempty incomplete part is preserved; the same receipt can be passed to `files.temporary.receive` again after direct connectivity returns. Invalid completed parts are removed rather than accepted.
 - Stop terminates only the Yanzi-owned process and invalidates local shares. There is no automatic public relay fallback.
 - Download deadline is 45 minutes for direct P2P (other providers keep their existing limits).
 - **Important:** sender and receiver must remain online with running Yanzi for the live transfer. The existing cloud channels are separate opt-in paths for asynchronous delivery.
@@ -74,8 +75,8 @@ The current home/office pair is behind CGNAT/symmetric NAT. Prior isolated tests
 
 An administrator-capable process may be necessary to create the local-only SOCKS5 firewall rule. If permissions are insufficient, the module reports `p2p_socks5_inbound_firewall_required` and refuses to start.
 
-**Not yet a full background transfer manager:** The current adapter does not provide durable resume, adaptive multipart scheduling, automatic installation/update of EasyTier binaries, mobile clients, cross-process reattachment after crashes, or asynchronous/offline delivery. Keep the feature disabled by default until independent two-device QA and the installed-host integration gate pass.
+**Not yet a full background transfer manager:** The adapter supports receipt-bound resume while the sender stays online, but not sender-restart recovery, indefinite retention of partial files, automatic reconnect loops inside one invocation, adaptive multipart scheduling, automatic installation/update of EasyTier binaries, mobile clients, or asynchronous/offline delivery. Receipts expire after 90 minutes. Keep the feature disabled by default until independent two-device QA and the installed-host integration gate pass.
 
 ## Validation
 
-Run `scripts/verify-easytier-p2p-integration.ps1`. The isolated verification harness uses a mock EasyTier CLI plus a local SOCKS5 test proxy; it exercises authentication, fail-closed selection, length and SHA-256 checking and owned-session lifetime without modifying production routes or services. This is distinct from the earlier real two-device EasyTier throughput tests.
+Run `scripts/verify-easytier-p2p-integration.ps1`. The isolated verification harness uses a mock EasyTier CLI plus a local SOCKS5 test proxy; it exercises authentication, fail-closed selection, Range resumption after simulated disconnect, rejection of corrupt parts, length and SHA-256 checking and owned-session lifetime without modifying production routes or services. This is distinct from the earlier real two-device EasyTier throughput tests.
