@@ -59,8 +59,10 @@ function Latest-Version {
  $result=@(& gh release list --repo $githubRepo --limit 40 --json tagName 2>&1)
  if($LASTEXITCODE -ne 0){throw 'release_list_unavailable'}
  $versions=@()
- foreach($r in @(($result -join [Environment]::NewLine)|ConvertFrom-Json)){
-  if($r.tagName -match '^v(\d+\.\d+\.\d+)$'){$versions += [version]$Matches[1]}
+ $parsed=($result -join [Environment]::NewLine)|ConvertFrom-Json
+ foreach($r in $parsed){
+  $tag=[string]$r.tagName
+  if($tag -match '^v(\d+\.\d+\.\d+)$'){$versions += [version]::Parse($Matches[1])}
  }
  $versions=@($versions|Sort-Object -Descending)
  if($versions.Count){return $versions[0]}
@@ -149,7 +151,8 @@ function Reconcile($item,$state){
  if(!$item.runId){
   $r=@(& gh run list --repo $githubRepo --workflow publish-yanzi-device-release.yml --limit 20 --json databaseId,headSha,event,createdAt 2>&1)
   if($LASTEXITCODE){throw 'run_lookup_error'}
-  $matches=@((($r -join [Environment]::NewLine)|ConvertFrom-Json)|Where-Object {
+  $parsed=($r -join [Environment]::NewLine)|ConvertFrom-Json
+  $matches=@($parsed|Where-Object {
    $_.headSha -eq $item.releaseSha -and $_.event -eq 'workflow_dispatch' -and
    [DateTime]::Parse($_.createdAt).ToUniversalTime() -ge [DateTime]::Parse($item.startedUtc).ToUniversalTime()
   })
