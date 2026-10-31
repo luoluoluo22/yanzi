@@ -6,6 +6,8 @@
 
 **统一开发前入口（第二阶段）：** 优先使用 `scripts/dev-preflight.ps1 -Query '模型列表不能滚动' -UiQuery AiChatModelMenuButton_Click`，在一次调用中同时输出功能、界面、影响和测试计划。测试默认不执行，按需 `-RunTargeted`、`-RunHiddenUi`。参见 [开发前统一检查](../../docs/dev-preflight.md)。以下保留细粒度定位命令。
 
+**第三阶段开发知识库：** `scripts/dev-knowledge.ps1 -Mode coverage -Query '设置'` 可发现尚未登记的 XAML 事件入口；统一开发前检查在执行专项/隐藏桌面测试后自动生成带 Git 版本和测试范围的本机 QA 回执。它不会把测试结果冒充真实客户端 UI 验收。详见 [开发知识库](../../docs/dev-knowledge.md)。
+
 ## 一条命令定位功能
 
 在项目仓库根目录执行：

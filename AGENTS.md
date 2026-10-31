@@ -9,6 +9,8 @@
 
 **开发前统一检查（2026-10-31）。** 宿主/共享 UI/接口开发前，优先执行 `scripts/dev-preflight.ps1 -Query '<功能描述>'`，一次返回功能源码、界面事件、改动影响和测试清单；有明确行为的 UI 修复补充 `-Expect` 与 `-Preserve`，需要时显式启用 `-RunTargeted` 和 `-RunHiddenUi`。其专项 UI 测试仍不等于真实用户桌面操作验收。详见 [开发前检查](docs/dev-preflight.md)。单独追查底层符号时可继续运行 `scripts/dev-locate.ps1 -Mode find -Query '<用户描述>'`；如果涉及界面，再运行 `-Mode ui -Query '<控件文案或事件名>'`，并在修改前记录预期行为、保持不变的约束及对应测试。修改后运行 `-Mode impact -Paths <改动文件>`（或 `-Base <基线提交>`），核对建议测试及 `REVIEW_UNMAPPED`。索引未匹配不表示零风险，不得因此跳过代码审查与测试。详情：[开发功能导航](tools/dev-navigator/README.md)。该索引仅作为代码导航辅助，不改变小程序唯一真实开发目录与按需发布规则。
 
+**功能索引候选与 QA 知识库（2026-10-31）。** 如果功能没有业务映射，可用 `scripts/dev-knowledge.ps1 -Mode coverage -Query '<关键词>'` 查找真实 XAML 控件与事件候选，不得把候选关系直接当已确认实现。`dev-preflight.ps1` 显式运行测试后会把有来源的本机 QA 回执关联到功能，但工作区未提交变更或 Git SHA 不同的记录不能被标为当前通过；隔离桌面测试不能冒充真机验收。详见 [知识库规范](docs/dev-knowledge.md)。
+
 **Windows 小程序唯一开发位置：`%LOCALAPPDATA%\OpenQuickHost\Extensions\<extensionId>\`。** 直接修改用户已安装的小程序，由原有账号同步机制处理，不要为业务小程序新建宿主仓库副本、PR 或安装包；该规范的完整操作和验收门禁见上述七步工作流。
 
 **开发任务的强制结束条件：已验证的代码必须进入 GitHub main。** 每个 AI（含并行子 Agent）在任务完成后先提交自己的隔离分支，再运行 `scripts/finish-agent-task.ps1 -VerificationScript <仓库内验收脚本> -Apply` 创建 PR、等待 CI、无冲突时合并，并回读 main 的合并提交。不得把“本地已修改、已 Commit、已 Push、安装包已发布”说成“开发集成完成”。若存在 CI 失败、PR 冲突、生产部署风险或超时，必须明确标记 `awaiting-integration`，保留独立 worktree 并继续协调修复；不得静默遗留在其他分支。详见 [自动集成门禁](docs/development-integration-release-policy.md#多-ai-开发任务强制收尾门禁2026-10-22)。

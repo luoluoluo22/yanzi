@@ -8,6 +8,7 @@ param(
     [string[]]$Preserve=@(),
     [switch]$RunTargeted,
     [switch]$RunHiddenUi,
+    [switch]$DiscoverUnmapped,
     [string]$Out='',
     [switch]$Json
 )
@@ -24,6 +25,7 @@ foreach($x in $Expect){$argsList+=@('--expect',$x)}
 foreach($x in $Preserve){$argsList+=@('--preserve',$x)}
 if($RunTargeted){$argsList+='--run-targeted'}
 if($RunHiddenUi){$argsList+='--run-hidden-ui'}
+if($DiscoverUnmapped){$argsList+='--discover-unmapped'}
 if($Out){$argsList+=@('--out',$Out)}
 if($Json){$argsList+='--json'}
 & $python.Source @argsList

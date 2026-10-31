@@ -14,6 +14,7 @@ import sys
 import time
 
 import navigator
+import knowledge
 
 # Only verified isolated test projects may be run by the preflight executor.
 SAFE_PROJECTS = frozenset({
@@ -191,6 +192,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--run-targeted", action="store_true")
     parser.add_argument("--run-hidden-ui", action="store_true")
     parser.add_argument("--out", type=Path, default=None, help="Optional report file; no report is saved by default")
+    parser.add_argument("--discover-unmapped", action="store_true")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     root = args.repo_root.resolve()
@@ -198,10 +200,15 @@ def main(argv: list[str] | None = None) -> int:
         plan = make_plan(root, query=args.query, ui_query=args.ui_query,
                          paths=args.path, base=args.base, expect=args.expect,
                          preserve=args.preserve)
+        if args.discover_unmapped:
+            plan["discovery"] = knowledge.discover_ui(navigator.build_index(root),
+                                                        navigator.features_from(root), limit=20)
         if args.run_targeted or args.run_hidden_ui:
             plan["execution"] = run_opt_in_tests(root, plan,
                                                   targeted=args.run_targeted,
                                                   hidden_ui=args.run_hidden_ui)
+            plan["qaRecorded"] = knowledge.record_executed(root, plan, plan["execution"])
+        plan["qaHistory"] = knowledge.qa_status(root, plan["source"]["mappedFeatureIds"])
         if args.out:
             out = args.out if args.out.is_absolute() else root / args.out
             if root == out or (root in out.parents and not (
@@ -220,6 +227,11 @@ def main(argv: list[str] | None = None) -> int:
             if plan["validation"]["hiddenUiSmoke"]["recommended"]:
                 print("UI_SMOKE=optional/" + plan["validation"]["hiddenUiSmoke"]["scope"] + "; installed-app UI verification still required")
             for c in plan["review"]["concerns"]: print("REVIEW", c)
+            for feature, status in plan["qaHistory"].items():
+                print("QA_HISTORY", feature, "isolatedCurrent=" + str(status["isolatedChecksCurrent"]),
+                      "installedAppUi=" + status["installedAppUi"])
+            if "discovery" in plan:
+                print("UNMAPPED_UI_CANDIDATES=" + str(plan["discovery"]["unmappedCandidates"]))
             for test in plan.get("execution", {}).get("targeted", []):
                 print("TEST_RESULT", test["name"], test["status"])
             hidden = plan.get("execution", {}).get("hiddenUiSmoke")
