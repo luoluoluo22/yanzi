@@ -36,6 +36,7 @@ namespace OpenQuickHost
                         "yanyu" => BrandTerms.Current.YanVoice,
                         "ai" => "AI对话",
                         "store" => $"{BrandTerms.Current.MiniApp}商店",
+                        "capability" => "能力",
                         _ => config.Label
                     };
                 }

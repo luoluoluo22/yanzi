@@ -238,6 +238,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private const string SearchScopeFile = "file";
     private const string SearchScopeSystem = "system";
     private const string SearchScopeYanyu = "yanyu";
+    private const string SearchScopeCapability = "capability";
 
     private readonly List<CommandItem> _allCommands;
     private readonly CloudSyncClient? _cloudSyncClient;
@@ -807,6 +808,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     case SearchScopeAi:
                         yield return new SearchScopeTab(SearchScopeAi, "AI对话", "切换到 AI 对话模式");
                         break;
+                    case SearchScopeCapability:
+                        yield return new SearchScopeTab(SearchScopeCapability, "能力", "搜索和查看已注册能力的调用信息");
+                        break;
                     case SearchScopeStore:
                         yield return new SearchScopeTab(SearchScopeStore, $"{BrandTerms.Current.MiniApp}商店", $"浏览与安装云端{BrandTerms.Current.MiniApp}");
                         break;
@@ -874,7 +878,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
 
             _selectedCommand = value;
-            if (value != null && !IsInternalCommand(value))
+            if (value != null && value.Source != CommandSource.Capability && !IsInternalCommand(value))
             {
                 _lastActionableCommand = value;
             }
@@ -1187,6 +1191,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ? "Everything 文件搜索已关闭 · 点击上方开关即可启用"
         : SelectedCommand == null
             ? "Up / Down 切换   Enter 执行   → 菜单   Esc 收起"
+            : SelectedCommand.Source == CommandSource.Capability
+                ? "Up / Down 切换   Enter 查看能力详情   → 菜单   Esc 收起"
             : SelectedCommand.IsFileSystemResult
                 ? "Up / Down 切换   Enter 打开   右键原生菜单   Esc 收起"
             : SelectedCommand.SupportsQueryArgument && !string.IsNullOrWhiteSpace(_activeQueryArgument)
@@ -2921,6 +2927,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void CommandList_ContextMenuOpening(object sender, System.Windows.Controls.ContextMenuEventArgs? e)
     {
         _commandActionsMenuOrigin = CommandActionsMenuOrigin.MouseRightClick;
+        if (SelectedCommand?.Source == CommandSource.Capability)
+        {
+            if (e != null) e.Handled = true;
+            OpenCapabilityContextMenu(SelectedCommand);
+            return;
+        }
 
         if (SelectedCommand?.IsFileSystemResult == true || SelectedCommand?.IsProviderResult == true)
         {
@@ -3586,6 +3598,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (SelectedCommand == null)
         {
             LastRunMessage = "没有可执行的命令。";
+            return;
+        }
+
+        if (SelectedCommand.Source == CommandSource.Capability)
+        {
+            ShowCapabilityDetails(SelectedCommand);
             return;
         }
 
@@ -5870,7 +5888,8 @@ public enum CommandSource
     Cloud,
     WebSearch,
     Application,
-    File
+    File,
+    Capability
 }
 
 public sealed class AttachedFileItem : INotifyPropertyChanged

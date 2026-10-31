@@ -250,6 +250,11 @@ public partial class MainWindow
 
     private IEnumerable<CommandItem> EnumerateScopeCommands(string scopeKey)
     {
+        if (string.Equals(scopeKey, SearchScopeCapability, StringComparison.OrdinalIgnoreCase))
+        {
+            return BuildCapabilityCommands();
+        }
+
         var baseCommands = _allCommands.Where(command => SearchScopeAllows(command, scopeKey));
         if (!string.Equals(scopeKey, SearchScopeAll, StringComparison.OrdinalIgnoreCase))
         {
@@ -348,6 +353,7 @@ public partial class MainWindow
             "file" or "files" or "everything" or "文件" => SearchScopeFile,
             "system" or "sys" or "设置" or "系统" => SearchScopeSystem,
             "yanyu" or "yan" or "燕语" or "文本指令" => SearchScopeYanyu,
+            "capability" or "capabilities" or "能力" => SearchScopeCapability,
             _ => string.Empty
         };
 
@@ -593,7 +599,8 @@ public partial class MainWindow
     {
         return scope switch
         {
-            SearchScopeAll => true,
+            SearchScopeAll => command.Source != CommandSource.Capability,
+            SearchScopeCapability => command.Source == CommandSource.Capability,
             SearchScopeExtension => command.Source == CommandSource.LocalExtension || command.Source == CommandSource.WebSearch,
             SearchScopeStore => command.Source == CommandSource.Cloud,
             SearchScopeApplication => command.Source == CommandSource.Application,
@@ -652,6 +659,11 @@ public partial class MainWindow
 
             // 燕语数量单次计算，避免在命令遍历中重复执行数百次 LINQ
             countsByKey[SearchScopeYanyu] = CountYanyuResults(term);
+            if (SearchScopes.Any(scope => scope.Key == SearchScopeCapability))
+            {
+                countsByKey[SearchScopeCapability] = BuildCapabilityCommands().Count(command =>
+                    BuildCommandMatch(command, term, false).IsMatch);
+            }
 
             var allowRawLookup = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
             foreach (var scope in SearchScopes)
@@ -750,7 +762,7 @@ public partial class MainWindow
     }
 
     private bool IsSearchResultEnabled(CommandItem command) =>
-        command.Source == CommandSource.Cloud || IsExtensionEnabled(command.ExtensionId);
+        command.Source is CommandSource.Cloud or CommandSource.Capability || IsExtensionEnabled(command.ExtensionId);
 
     private static bool AllowsRawQueryArgument(string scopeKey) => false;
 
@@ -834,9 +846,9 @@ public partial class MainWindow
         }
 
         var command = ResolveRunnableCommand(sourceCommand);
-        if (command.IsFileSystemResult)
+        if (command.IsFileSystemResult || command.Source == CommandSource.Capability)
         {
-            SyncStatus = "文件结果不支持固定为顶部扩展标签。";
+            SyncStatus = "能力和文件结果不支持固定为小程序标签。";
             return;
         }
 
