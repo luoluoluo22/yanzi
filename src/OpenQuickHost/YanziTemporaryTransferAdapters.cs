@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -18,7 +18,8 @@ namespace OpenQuickHost;
 internal static class YanziTemporaryTransferAdapters
 {
     public static IReadOnlyList<ITemporaryTransferAdapter> Create() =>
-        [new TemporaryEasyTierP2pAdapter(YanziEasyTierSessionManager.IsOwned), new TemporarySftpAdapter(), new TemporaryPublicUploadAdapter("83blue"),
+        [YanziTransferServiceBridge.Installed ? (ITemporaryTransferAdapter)new TemporaryDaemonP2pAdapter() :
+            new TemporaryEasyTierP2pAdapter(YanziEasyTierSessionManager.IsOwned), new TemporarySftpAdapter(), new TemporaryPublicUploadAdapter("83blue"),
          new TemporaryPublicUploadAdapter("tflink")];
 
     public static IReadOnlyList<TransferChannel> LoadChannels()

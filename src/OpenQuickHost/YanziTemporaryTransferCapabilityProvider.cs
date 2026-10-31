@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Text.Json;
 using Yanzi.Core.TemporaryTransfer;
 
@@ -46,6 +46,8 @@ public static class YanziTemporaryTransferCapabilityProvider
 
     private static async Task<object?> P2pStatusAsync(object? _)
     {
+        if (YanziTransferServiceBridge.Installed)
+            return await YanziTransferServiceBridge.StatusAsync();
         var profile = P2pChannel();
         var managed = YanziEasyTierSessionManager.IsOwned(profile);
         bool connected = false;
@@ -65,7 +67,9 @@ public static class YanziTemporaryTransferCapabilityProvider
             Category = "files", Permissions = ["files.read"], RiskLevel = "medium",
             InputSchema = YanziCapabilitySchema.Parse("""{"type":"object","properties":{},"additionalProperties":false}"""),
             OutputSchema = YanziCapabilitySchema.Parse("""{"type":"object"}"""),
-            Handler = _ => Task.FromResult<object?>(YanziEasyTierSessionManager.Start(P2pChannel()))
+            Handler = _ => YanziTransferServiceBridge.Installed ?
+                YanziTransferServiceBridge.ConnectAsync() :
+                Task.FromResult<object?>(YanziEasyTierSessionManager.Start(P2pChannel()))
         };
         yield return new()
         {
@@ -83,7 +87,20 @@ public static class YanziTemporaryTransferCapabilityProvider
             Category = "files", Permissions = ["files.read"], RiskLevel = "medium",
             InputSchema = YanziCapabilitySchema.Parse("""{"type":"object","properties":{},"additionalProperties":false}"""),
             OutputSchema = YanziCapabilitySchema.Parse("""{"type":"object"}"""),
-            Handler = _ => Task.FromResult<object?>(YanziEasyTierSessionManager.Stop())
+            Handler = _ => YanziTransferServiceBridge.Installed ?
+                YanziTransferServiceBridge.StopAsync() :
+                Task.FromResult<object?>(YanziEasyTierSessionManager.Stop())
+        };
+        yield return new()
+        {
+            Name = "files.p2p.jobs",
+            Description = "查询独立燕子传输服务的持久化传输任务（宿主重启后仍可查询）",
+            Category = "files", Permissions = ["files.read"],
+            InputSchema = YanziCapabilitySchema.Parse("""{"type":"object","properties":{},"additionalProperties":false}"""),
+            OutputSchema = YanziCapabilitySchema.Parse("""{"type":"object"}"""),
+            Handler = _ => YanziTransferServiceBridge.Installed
+                ? YanziTransferServiceBridge.JobsAsync()
+                : Task.FromResult<object?>(new { jobs = Array.Empty<object>(), independentWorker = false })
         };
         yield return new()
         {
