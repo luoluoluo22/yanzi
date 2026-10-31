@@ -7,7 +7,7 @@
 3. [正式部署与回滚门禁](docs/continuous-improvement/PRODUCTION_DEPLOYMENT_POLICY.md)（仅在确实需要安装/发布时适用）
 4. [**Windows 小程序开发七步工作流（必读）**](docs/miniapps/DEVELOPMENT_WORKFLOW.md)（凡新增、修复、测试或安装用户小程序，均先查真实用户目录，不能在宿主 Git 仓库写小程序源码）
 
-**开发前功能定位（2026-10-31）。** 宿主/共享 UI/接口源码修改前，先运行 `scripts/dev-locate.ps1 -Mode find -Query '<用户描述>'`；如果涉及界面，再运行 `-Mode ui -Query '<控件文案或事件名>'`，并在修改前记录预期行为、保持不变的约束及对应测试。修改后运行 `-Mode impact -Paths <改动文件>`（或 `-Base <基线提交>`），核对建议测试及 `REVIEW_UNMAPPED`。索引未匹配不表示零风险，不得因此跳过代码审查与测试。详情：[开发功能导航](tools/dev-navigator/README.md)。该索引仅作为代码导航辅助，不改变小程序唯一真实开发目录与按需发布规则。
+**开发前统一检查（2026-10-31）。** 宿主/共享 UI/接口开发前，优先执行 `scripts/dev-preflight.ps1 -Query '<功能描述>'`，一次返回功能源码、界面事件、改动影响和测试清单；有明确行为的 UI 修复补充 `-Expect` 与 `-Preserve`，需要时显式启用 `-RunTargeted` 和 `-RunHiddenUi`。其专项 UI 测试仍不等于真实用户桌面操作验收。详见 [开发前检查](docs/dev-preflight.md)。单独追查底层符号时可继续运行 `scripts/dev-locate.ps1 -Mode find -Query '<用户描述>'`；如果涉及界面，再运行 `-Mode ui -Query '<控件文案或事件名>'`，并在修改前记录预期行为、保持不变的约束及对应测试。修改后运行 `-Mode impact -Paths <改动文件>`（或 `-Base <基线提交>`），核对建议测试及 `REVIEW_UNMAPPED`。索引未匹配不表示零风险，不得因此跳过代码审查与测试。详情：[开发功能导航](tools/dev-navigator/README.md)。该索引仅作为代码导航辅助，不改变小程序唯一真实开发目录与按需发布规则。
 
 **Windows 小程序唯一开发位置：`%LOCALAPPDATA%\OpenQuickHost\Extensions\<extensionId>\`。** 直接修改用户已安装的小程序，由原有账号同步机制处理，不要为业务小程序新建宿主仓库副本、PR 或安装包；该规范的完整操作和验收门禁见上述七步工作流。
 

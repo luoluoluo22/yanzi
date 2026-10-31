@@ -46,13 +46,17 @@ public sealed class AiChatHierarchicalModelScenario : IUiTestScenario
         window.Content = container;
 
         var selection = "";
-        var menu = new YanziDropdownMenu { PreferAbove = true, SubmenuWidth = 242 };
+        var menu = new YanziDropdownMenu { PreferAbove = true, SubmenuWidth = 242, SubmenuMaxHeight = 300 };
         menu.UseStandaloneTheme(YanziTheme.Dark);
         menu.UseContentWidth(190);
         var alpha = menu.AddSubmenu("Provider Alpha", child =>
         {
             child.AddAction("alpha-fast", () => selection = "Alpha/alpha-fast");
             child.AddAction("alpha-reasoning-preview", () => selection = "Alpha/alpha-reasoning-preview");
+            for (int i = 0; i < 50; i++)
+            {
+                child.AddAction($"alpha-catalog-{i:D2}", () => selection = "Alpha/catalog");
+            }
         });
         var beta = menu.AddSubmenu("Provider Beta", child =>
         {
@@ -93,7 +97,15 @@ public sealed class AiChatHierarchicalModelScenario : IUiTestScenario
                 "Model child pane is inside stable popup canvas");
             var modelsPanel = viewport.Children.OfType<Border>().FirstOrDefault(b => b != menu.Surface);
             context.Require(modelsPanel is not null, "Second-level panel exists");
-            var list = modelsPanel.Child as StackPanel;
+            var scroll = modelsPanel.Child as ScrollViewer;
+            context.Require(scroll is not null, "Large model menu contains a scroll viewer");
+            scroll.UpdateLayout();
+            context.Check(scroll.ScrollableHeight > 0, "50+ model submenu has scrollable overflow");
+            scroll.ScrollToBottom();
+            scroll.UpdateLayout();
+            context.Check(scroll.VerticalOffset > 0, "Can scroll to last available model");
+            scroll.ScrollToTop();
+            scroll.UpdateLayout();
             // Panel contains a Border + StackPanel hierarchy; locate action recursively.
             Button? selected = null;
             void Visit(DependencyObject node)

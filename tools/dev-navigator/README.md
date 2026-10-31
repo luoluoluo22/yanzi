@@ -4,6 +4,8 @@
 
 本工具是独立开发工具，仅扫描 Git 已跟踪的 src/、tests/、scripts/、tools/ 中的 C#、XAML、PowerShell 和项目文件；不会扫描 .env、安装用户数据、小程序真实目录或密钥。它不是运行在 Yanzi.exe 中的驻留服务。
 
+**统一开发前入口（第二阶段）：** 优先使用 `scripts/dev-preflight.ps1 -Query '模型列表不能滚动' -UiQuery AiChatModelMenuButton_Click`，在一次调用中同时输出功能、界面、影响和测试计划。测试默认不执行，按需 `-RunTargeted`、`-RunHiddenUi`。参见 [开发前统一检查](../../docs/dev-preflight.md)。以下保留细粒度定位命令。
+
 ## 一条命令定位功能
 
 在项目仓库根目录执行：
