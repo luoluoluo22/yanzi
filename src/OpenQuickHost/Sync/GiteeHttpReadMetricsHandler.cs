@@ -17,6 +17,10 @@ internal sealed class GiteeHttpReadMetricsHandler : DelegatingHandler
     private readonly Func<DateTimeOffset> _clock;
     private readonly TimeSpan _window;
     private readonly System.Threading.Timer _flushTimer;
+    // Snapshots are queued while holding _gate, so timer/GET callbacks cannot log
+    // newer cumulative counters before an earlier window. Logging runs outside _gate.
+    private readonly Queue<GiteeHttpReadMetricsSnapshot> _reportQueue = new();
+    private bool _reportDrainActive;
     private DateTimeOffset _windowStart;
     private long _sentTotal;
     private long _completedTotal;
@@ -54,14 +58,14 @@ internal sealed class GiteeHttpReadMetricsHandler : DelegatingHandler
         if (request.Method != HttpMethod.Get)
             return await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
-        GiteeHttpReadMetricsSnapshot? due;
+        bool drain;
         lock (_gate)
         {
-            due = TakeDueSnapshot();
+            drain = QueueReportUnderLock(TakeDueSnapshot());
             _sent++;
             _sentTotal++;
         }
-        ReportSafely(due);
+        if (drain) DrainReports();
 
         var start = Stopwatch.GetTimestamp();
         try
@@ -102,9 +106,38 @@ internal sealed class GiteeHttpReadMetricsHandler : DelegatingHandler
 
     private void FlushDue()
     {
-        GiteeHttpReadMetricsSnapshot? due;
-        lock (_gate) due = TakeDueSnapshot();
-        ReportSafely(due);
+        bool drain;
+        lock (_gate) drain = QueueReportUnderLock(TakeDueSnapshot());
+        if (drain) DrainReports();
+    }
+
+    // Must be called under _gate. Exactly one caller drains; concurrent producers
+    // only enqueue, avoiding out-of-order sentTotal/completedTotal in log files.
+    private bool QueueReportUnderLock(GiteeHttpReadMetricsSnapshot? snapshot)
+    {
+        if (snapshot is null) return false;
+        _reportQueue.Enqueue(snapshot);
+        if (_reportDrainActive) return false;
+        _reportDrainActive = true;
+        return true;
+    }
+
+    private void DrainReports()
+    {
+        while (true)
+        {
+            GiteeHttpReadMetricsSnapshot snapshot;
+            lock (_gate)
+            {
+                if (_reportQueue.Count == 0)
+                {
+                    _reportDrainActive = false;
+                    return;
+                }
+                snapshot = _reportQueue.Dequeue();
+            }
+            ReportSafely(snapshot);
+        }
     }
 
     protected override void Dispose(bool disposing)
