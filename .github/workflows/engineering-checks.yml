@@ -83,6 +83,10 @@ jobs:
       - name: Reject Windows miniapp packages in the host Git repository
         if: needs.classify.outputs.tier == 'full'
         run: ./scripts/verify-miniapp-repository-isolation.ps1
+      - name: Phase-one sync log window boundary and redaction regression
+        if: needs.classify.outputs.tier == 'full'
+        shell: pwsh
+        run: ./scripts/verify-phase1-log-window.ps1
       - name: Browser helper install and connection regression
         if: needs.classify.outputs.tier == 'full'
         run: |
