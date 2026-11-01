@@ -16,7 +16,7 @@ internal sealed class GiteeHttpReadMetricsHandler : DelegatingHandler
     private readonly Action<GiteeHttpReadMetricsSnapshot> _report;
     private readonly Func<DateTimeOffset> _clock;
     private readonly TimeSpan _window;
-    private readonly Timer _flushTimer;
+    private readonly System.Threading.Timer _flushTimer;
     private DateTimeOffset _windowStart;
     private long _sentTotal;
     private long _completedTotal;
@@ -44,7 +44,7 @@ internal sealed class GiteeHttpReadMetricsHandler : DelegatingHandler
         _windowStart = _clock();
         // One timer per handler; the production handler is process-wide, not per sync cycle.
         // Flush short-lived GET bursts even when no later request arrives.
-        _flushTimer = new Timer(static state => ((GiteeHttpReadMetricsHandler)state!).FlushDue(),
+        _flushTimer = new System.Threading.Timer(static state => ((GiteeHttpReadMetricsHandler)state!).FlushDue(),
             this, _window, _window);
     }
 
