@@ -26,4 +26,12 @@
 
 ## Remaining release gate
 
-An installed build has NOT yet been independently exercised. Before release or marking the incident fixed in production, QA should repeatedly open the running extensions window, start and stop mini-apps under load, verify refresh and terminate operations, examine Running extensions refresh timing logs, and confirm no UI heartbeat timeouts over representative usage. Do not treat compilation alone as a production-level stability signoff.
+An isolated local Windows development build was installed and executed on the real home computer on 2026-11-01, without replacing the installed Yanzi v1.0.85 or publishing a GitHub Release.
+
+- Stage: %LOCALAPPDATA%\OpenQuickHost\DevBuilds\qa-runningextensions-stress-20261101\Yanzi.exe, launched with --dev --show --running-extensions-preview --running-extensions-qa. This is a real executable in an isolated development data channel, not just a build result.
+- The actual RunningExtensionsWindow (HWND 787954) opened and logged loaded count=0, snapshotMs=1, uiMs=1, totalMs=2.
+- Dev-only stress registered 24 synthetic running extension entries, then removed all 24. The actual WPF UI logged the insertion refresh at 17:07:55.837 (count=24, changes=24, totalMs=2) and removal refresh at 17:07:58.897 (count=0, changes=24, totalMs=8).
+- An independent SendMessageTimeout WM_NULL probe after the churn produced 60/60 successful responses, maximum 14 ms. An earlier empty-window run produced 40/40 successful responses, maximum 11 ms.
+- The official Yanzi.exe stayed running in its production directory; no public GitHub Release was created by this test.
+
+Remaining before declaring the issue fixed across production users: test actual running customer mini-apps and the terminate button (synthetic fixtures test only collection churn), measure representative long-duration performance under extension synchronization, and perform deployment QA via the authorized publication process. The original freeze's precise stack trace remains unknown.
