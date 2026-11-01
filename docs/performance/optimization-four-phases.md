@@ -89,3 +89,11 @@
 - 其他 Agent 于 21:18–21:42 已完成真实 Gitee 专用 QA 对象的双端读写/删除及 32 并发合并为一次底层读取，证据位于家里 `%LOCALAPPDATA%\\OpenQuickHost\\Diagnostics\\PerfQA\\phase1-dual-install-report-20261101.md`；该验证不是正式自动同步全链路，不能替代冲突/墓碑恢复一致性。阶段一仍进行中。
 
 - 21:59 双端独立脚本 QA：家里 PC-202409131508 与办公室 CHINAMI-3IF988E 均在各自临时隔离目录执行 PowerShell 5.1 `verify-phase1-physical-get.ps1`，均返回 `PASS: 2 closed windows, 13 physical GET sends, handler counter reset, exclusive boundaries, redaction, invalid interval`，退出码均为 0。办公室只写入临时 QA 文件，没有更改正式实例。GitHub Engineering foundation regression run #359 截至检查时为 `in_progress`；需等待通过并完成独立 Canary 业务 QA 后才能合并 PR #126。
+
+### 2026-11-02 02:32 远端夜间修复（PR #126，尚未完成 Canary 门禁）
+
+- 时间门禁：北京时间 02:32，未连接、唤醒或修改家里/办公室电脑；仅通过 GitHub 修改 PR #126 隔离分支，正式实例和 main 不变。
+- 修复 `scripts/measure-phase1-physical-get.ps1`：非法日期使用 `TryParseExact` 跳过并计数；补齐 `otherHttp`（401/403 等）字段；对 `completed` 与全部响应/异常分类之和做一致性校验，不错误地要求跨窗口的 `completed <= sent`；对无闭合窗口标记 `INSUFFICIENT_NO_CLOSED_WINDOWS`，其余也标明仅部分覆盖，不能据此推断精确自然时间 HTTP 请求总数。
+- 扩充 `scripts/verify-phase1-physical-get.ps1` 合成样本：401/403 分类、非法日期、分类总和不符、缺失字段、无闭合窗口、原有跨窗在途完成、窗口边界和脱敏。待 CI Windows PowerShell 5.1 执行并核对。
+- 额外架构阻塞：后台同步周期性新建 `PersonalSyncService`/HTTP 处理器；指标只在 60 秒后下一次 GET 输出，短周期结束后可能完全无窗口日志。必须单独修复计数器生命周期或加入可验证的安全 flush（不记录 token/URL），并测试短任务、重建、异常和累计一致性；PR #126 的解析器修复本身**不能**解决漏计。
+- 合并门禁：脚本回归/CI 通过后，仍需北京时间 08:00–22:00 的隔离 Canary 安装、业务 QA 和双端一致性证据；不得在夜间合并或覆盖正式实例。第一阶段继续进行中。
