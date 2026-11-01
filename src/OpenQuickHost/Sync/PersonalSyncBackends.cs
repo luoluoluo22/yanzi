@@ -722,6 +722,8 @@ internal sealed class GiteePersonalSyncBackend : PersonalSyncBackendBase
     private static readonly HttpClient SharedHttpClient = new(new GiteeHttpReadMetricsHandler(
         new SocketsHttpHandler
         {
+            // Gitee API authentication is request-scoped; never share cookies across accounts.
+            UseCookies = false,
             // Long-lived clients must periodically refresh DNS and idle connections.
             PooledConnectionLifetime = TimeSpan.FromMinutes(5),
             PooledConnectionIdleTimeout = TimeSpan.FromMinutes(2)
