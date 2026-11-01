@@ -716,26 +716,27 @@ internal sealed class GitHubPersonalSyncBackend : PersonalSyncBackendBase
 
 internal sealed class GiteePersonalSyncBackend : PersonalSyncBackendBase
 {
+    // Backend instances are recreated for periodic syncs. A single process-wide client
+    // keeps transport metrics and connection pooling alive across those short cycles.
+    // Credentials are request-scoped (URL or JSON body), never DefaultRequestHeaders.
+    private static readonly HttpClient SharedHttpClient = new(new GiteeHttpReadMetricsHandler(
+        new HttpClientHandler(),
+        static m => CloudSyncDiagnostics.Log("GiteeBackend.Http", "GET transport window",
+            ("windowSeconds", m.WindowSeconds), ("sent", m.Sent), ("completed", m.Completed),
+            ("sentTotal", m.SentTotal), ("completedTotal", m.CompletedTotal),
+            ("success2xx", m.Success2xx), ("notFound404", m.NotFound404),
+            ("retryable429Or5xx", m.Retryable429Or5xx), ("otherHttp", m.OtherHttp),
+            ("transportErrors", m.TransportErrors), ("canceled", m.Canceled),
+            ("durationMsTotal", m.DurationMsTotal), ("durationMsMax", m.DurationMsMax))));
     private readonly PersonalSyncGiteeConfig _config;
     private readonly PersonalSyncSecretBag _secrets;
-    private readonly HttpClient _httpClient;
+    private readonly HttpClient _httpClient = SharedHttpClient;
     private string? _resolvedOwner;
 
     public GiteePersonalSyncBackend(PersonalSyncGiteeConfig config, PersonalSyncSecretBag secrets)
     {
         _config = config;
         _secrets = secrets;
-        // Count physical HTTP GET sends (including retries and probe/owner/SHA reads),
-        // not logical TryReadBytesAsync calls. Never log URL/token/path or payload.
-        _httpClient = new HttpClient(new GiteeHttpReadMetricsHandler(
-            new HttpClientHandler(),
-            static m => CloudSyncDiagnostics.Log("GiteeBackend.Http", "GET transport window",
-                ("windowSeconds", m.WindowSeconds), ("sent", m.Sent), ("completed", m.Completed),
-                ("sentTotal", m.SentTotal), ("completedTotal", m.CompletedTotal),
-                ("success2xx", m.Success2xx), ("notFound404", m.NotFound404),
-                ("retryable429Or5xx", m.Retryable429Or5xx), ("otherHttp", m.OtherHttp),
-                ("transportErrors", m.TransportErrors), ("canceled", m.Canceled),
-                ("durationMsTotal", m.DurationMsTotal), ("durationMsMax", m.DurationMsMax))));
     }
 
     public override string DisplayRoot => $"gitee://{GetConfiguredOwnerDisplay()}/{_config.Repo}@{ResolveBranch()}";
