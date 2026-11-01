@@ -104,6 +104,9 @@ jobs:
       - name: Desktop build
         if: needs.classify.outputs.tier == 'full'
         run: dotnet build OpenQuickHost.sln -c Debug -v:minimal
+      - name: Gitee physical GET metrics and idle-window regression
+        if: needs.classify.outputs.tier == 'full'
+        run: dotnet run --project tests/GiteeHttpReadMetricsVerification/GiteeHttpReadMetricsVerification.csproj -c Release
       - name: Settings ownership and object conflict regression
         if: needs.classify.outputs.tier == 'full'
         run: |
