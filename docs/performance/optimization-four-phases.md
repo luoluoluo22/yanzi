@@ -9,7 +9,7 @@
 ## 阶段一：同步引擎降频与去重（进行中）
 
 - 基线（先前日志样本，非准确的全量 HTTP 计数）：扩展文件变更调度 4,920 条；约五小时 Gitee 读取请求 5,996 条；同版本冲突 2,271 条。
-- 子任务 1：FileSystemWatcher 事件在后台按扩展 ID 聚合，700ms 窗口仅向 Dispatcher 投递一次，保留 manifest/C# 变化的 UI 刷新及两个同步入口。分支 `fix/perf-phase1-watcher-batch-20261101`；独立 worktree `F:\Desktop\kaifa\yanzi-perf-phase1-watcher-20261101`。当前：Debug 主程序构建成功（原仓库已有 7 项 nullable/unused-field 警告）；独立验证程序通过 10,000 并发事件测试，真实 Windows FileSystemWatcher 在临时目录产生 401 次事件、仅 1 次批处理，事件计数无丢失；等待独立 --dev/Canary 安装 QA。
+- 子任务 1：FileSystemWatcher 事件在后台按扩展 ID 聚合，700ms 窗口仅向 Dispatcher 投递一次，保留 manifest/C# 变化的 UI 刷新及两个同步入口。分支 `fix/perf-phase1-watcher-batch-20261101`；独立 worktree `F:\Desktop\kaifa\yanzi-perf-phase1-watcher-20261101`。当前：Debug 主程序构建成功（14 项既有警告、0 错误）；独立验证程序通过 10,000 并发事件测试，真实 Windows FileSystemWatcher 在临时目录产生 401 次事件、仅 1 次批处理，事件计数无丢失。隔离 Runtime QA（%LOCALAPPDATA%\\OpenQuickHost\\DevBuilds\\qa-perf-phase1-runtime-data-20261101）实际 200 次文件写入触发 296 次事件合并为 1 批；3 个扩展共 135 次写入触发 297 次事件合并为 1 批；隔离 Runtime 已关闭。独立 --dev Canary（PID 18972）启动成功、5 秒后仍响应、私有内存约 235.5MB，QA 后已关闭。正式版 PID 23788 未触碰。注意：隔离 Runtime 的 UI 隐藏，未带真实云凭据，因此本子任务已验证事件合并但没有宣称跨端同步一致性验收。
 - 子任务 2：Gitee 对象重复读取分析及带版本失效的 singleflight 缓存；未开始。不能直接缓存可变对象而破坏多端冲突检测。
 - 子任务 3：重复冲突扫描和调度归并；未开始。
 - 阶段验收：相同文件事件压测下记录事件数/Dispatcher 投递数/HTTP 请求数/同步时长；本机与办公室多端数据最终一致，且断网、并发修改、删除标记、重启恢复通过。当前 **未达成**。

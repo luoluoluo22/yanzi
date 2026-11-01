@@ -2048,6 +2048,8 @@ public partial class MainWindow
         {
             _ = Dispatcher.BeginInvoke(new Action(() =>
             {
+                if (batch.EventCount > 1)
+                    HostAssets.AppendLog($"Extension watcher coalesced: events={batch.EventCount}, extensions={batch.ExtensionCount}");
                 if (!IsLoaded || Dispatcher.HasShutdownStarted)
                     return;
                 if (batch.CatalogChanged)
@@ -2057,8 +2059,6 @@ public partial class MainWindow
                 }
                 QueueBackgroundWebDavSync("extension-file-change");
                 SyncLocalExtensionsToCloud();
-                if (batch.EventCount > 1)
-                    HostAssets.AppendLog($"Extension watcher coalesced: events={batch.EventCount}, extensions={batch.ExtensionCount}");
             }));
         }
         catch (InvalidOperationException)
