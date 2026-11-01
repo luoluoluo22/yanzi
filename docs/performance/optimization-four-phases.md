@@ -25,7 +25,9 @@
 - 回归：`dotnet run --project tests/GiteeReadFlightVerification/GiteeReadFlightVerification.csproj -c Release` 退出码 0：64 个并发读请求只执行 1 个实际底层读、等待者取消独立、失败后能再取、写入失效前后的两代在途请求不互相误清理、跨账号/路径隔离、任务结束后 ActiveCount=0；独立测试计数 networkFlights=7、sharedWaiters=65（仅虚拟请求，不是生产网络数据）。
 - 主程序 Release 编译退出码 0。本机验证：独立开发版安装到 `%LOCALAPPDATA%\OpenQuickHost\DevBuilds\qa-phase1-gitee-read-20261101`，Yanzi.dll SHA-256 `719E4CCFDD22F3479135E1116CFB8AEFB7732B2B7E1DC12554D742213C797E57`，进程 PID 3296，窗口消息 50/50 成功、最慢 8ms；测试进程已退出，正式版 PID 23788 未更改。
 - 未完成：该轮不使用生产 Gitee 凭证，也未在开发版启用真实账户同步。还需采样并发比例，验证实际 HTTP 请求下降、失败重试与家↔公司变更/冲突/删除一致性；顺序重复 GET 不会被本 singleflight 改善，后续仍需增量索引和版本检测。
-- 实施需保留 ETag/哈希失效、跨设备更新检测和删除墓碑语义；不得直接将长 TTL 缓存当作权威值。考虑同一请求 singleflight、版本校验与增量批量索引。
+- 2026-11-01 后续子修复：`Sync/PersonalSyncService.cs` 的启动器配置同步将“检查配置对象是否存在”与“读取配置对象”合并成单次遍历，每个定义只读取一次。旧流程在找到首个存在对象时先做一次存在性 GET，再重新完整遍历，额外读取 1 至 N 条路径；新流程保留“非空但损坏对象也算存在”、旧配置回退和逐项最新读取语义，不采用长期缓存。该优化只消除一次同步内的重复读取，不能代替 Gitee 大量周期性顺序请求的后续治理。
+- 验收：`scripts/verify-launcher-config-singlepass.ps1` 检查两处调用方仍使用相同的存在性语义、每个配置对象在单次扫描只读取一次，且旧燕幕兼容入口保留；14 个定义时仅作静态请求模型测试，首个存在对象位于第 1/3/14 个时模拟请求数从 15/17/28 降为 14，**不是线上 HTTP 实测减少数量**。Release 编译成功退出码 0；本机复制到 `%LOCALAPPDATA%\OpenQuickHost\DevBuilds\qa-launcher-singlepass-20261101`，SHA-256 `D2B303CDEFD00904DCC34467534CB2BE8E1211D0390547972DD99B2D723CFF11`，独立 `--dev --show` 实例 PID 18612 启动成功，窗口消息 50/50 成功、最慢 9ms；测试实例已停止，正式版 PID 23788 始终运行。开发版未启用真实 Gitee 写入、未完成双端一致性验收。
+- 实施需保留 ETag/哈希失效、跨设备更新检测和删除墓碑语义；不得直接将长 TTL 缓存当作权威值。后续考虑基于经验证的版本/哈希增量索引。
 - 验收：对相同业务负载采集真实发送到 Gitee 的 HTTP 请求数、延迟、失败率，并在家里↔公司双端变更、冲突、删除恢复测试中保持一致。
 
 ### 子任务 1C：账户同版本扩展冲突重复扫描（未开始修复）
