@@ -100,6 +100,7 @@ public static partial class ExtensionStorageService
         var published = 0;
         var skipped = 0;
         var existingBinaryReadsAvoided = 0;
+        var binaryKeyIndexReadsAvoided = 0;
         foreach (var extensionId in known)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -124,9 +125,15 @@ public static partial class ExtensionStorageService
                         continue;
                     if (IsPortableBinaryAsset(file.Key))
                     {
-                        if (await service.PublishExtensionBinaryAssetIfAbsentAsync(extensionId,
+                        // indexKeys, including every localFiles key, were published
+                        // and confirmed above. Avoid a redundant catalog roundtrip
+                        // for every binary while retaining remote content comparison.
+                        if (await service.PublishPreIndexedExtensionBinaryAssetAsync(extensionId,
                                 file.Key, await File.ReadAllBytesAsync(file.Value, cancellationToken), cancellationToken))
+                        {
                             published++;
+                            binaryKeyIndexReadsAvoided++;
+                        }
                         else skipped++;
                     }
                     else
@@ -240,7 +247,7 @@ public static partial class ExtensionStorageService
                 HostAssets.AppendLog($"Extension data recovery failed: id={extensionId}, error={ex.Message}");
             }
         }
-        HostAssets.AppendLog($"Extension data recovery completed: restored={restored}, published={published}, skipped={skipped}, existingBinaryReadsAvoided={existingBinaryReadsAvoided}");
+        HostAssets.AppendLog($"Extension data recovery completed: restored={restored}, published={published}, skipped={skipped}, existingBinaryReadsAvoided={existingBinaryReadsAvoided}, binaryKeyIndexReadsAvoided={binaryKeyIndexReadsAvoided}");
         return new ExtensionDataRecoveryResult(restored, published, skipped);
     }
 
