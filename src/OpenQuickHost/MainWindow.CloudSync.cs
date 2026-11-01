@@ -1525,6 +1525,7 @@ public partial class MainWindow
         }
     }
 
+    private readonly AccountExtensionConflictMemo _accountExtensionConflictMemo = new();
     private int _privateExtensionPullRunning;
     internal void RefreshMissingPrivateExtensionsFromCloud() => _ = PullMissingPrivateExtensionsFromCloudAsync();
     private async Task PullMissingPrivateExtensionsFromCloudAsync()
@@ -1578,7 +1579,18 @@ public partial class MainWindow
                             (candidate.DeclaredVersion ?? "").Trim().TrimStart('v', 'V'),
                             (item.LatestVersion ?? "").Trim().TrimStart('v', 'V'),
                             StringComparison.OrdinalIgnoreCase);
-                        if (sameVersion || IsAccountExtensionNewer(candidate, item))
+                        // Same-version source is never overwritten. A short-lived memo
+                        // avoids repeatedly building the same local ZIP every pull.
+                        // Watcher invalidation, remote revision/hash and periodic
+                        // recheck ensure changed source is examined again.
+                        var generation = _accountExtensionConflictMemo.CaptureGeneration(item.ExtensionId);
+                        if (sameVersion && _accountExtensionConflictMemo.TryGetSameVersionDecision(
+                                item.ExtensionId, candidate.DeclaredVersion, item.LatestVersion,
+                                item.ArchiveSha256, item.ArchiveRevision, candidate.ExtensionDirectoryPath,
+                                DateTime.UtcNow, out _))
+                            continue;
+                        if ((sameVersion && !string.IsNullOrWhiteSpace(item.ArchiveSha256)) ||
+                            IsAccountExtensionNewer(candidate, item))
                         {
                             try { localHashBeforeDownload = CalculateLocalAccountArchiveSha256(candidate, item); }
                             catch (Exception ex)
@@ -1590,10 +1602,19 @@ public partial class MainWindow
                         var decision = AccountExtensionPullPolicy.Decide(
                             true, candidate.DeclaredVersion, item.LatestVersion,
                             localHashBeforeDownload, item.ArchiveSha256);
+                        if (sameVersion)
+                            _accountExtensionConflictMemo.RememberSameVersionDecision(
+                                item.ExtensionId, candidate.DeclaredVersion, item.LatestVersion,
+                                item.ArchiveSha256, item.ArchiveRevision, candidate.ExtensionDirectoryPath,
+                                generation, decision, DateTime.UtcNow);
                         if (decision != AccountExtensionPullDecision.InstallNewerVersion)
                         {
-                            if (decision is AccountExtensionPullDecision.SameVersionConflict or
-                                AccountExtensionPullDecision.UnorderedVersionConflict)
+                            if ((decision is AccountExtensionPullDecision.SameVersionConflict or
+                                AccountExtensionPullDecision.UnorderedVersionConflict) &&
+                                _accountExtensionConflictMemo.ShouldLogConflict(
+                                    item.ExtensionId, candidate.DeclaredVersion, item.LatestVersion,
+                                    item.ArchiveSha256, item.ArchiveRevision,
+                                    localHashBeforeDownload, DateTime.UtcNow))
                                 HostAssets.AppendLog($"Account extension code conflict: local source preserved id={item.ExtensionId}, local={candidate.DeclaredVersion}, remote={item.LatestVersion}, remoteRevision={item.ArchiveRevision}. Update manifest version and publish deliberately.");
                             continue;
                         }
@@ -2077,6 +2098,8 @@ public partial class MainWindow
         catch (IOException) { return; }
         catch (UnauthorizedAccessException) { return; }
         catch (ArgumentException) { return; }
+        // Invalidate before the next cloud pull, even while a hash is in progress.
+        _accountExtensionConflictMemo.Invalidate(segments[0]);
         var catalogChanged = string.Equals(segments[1], "manifest.json", StringComparison.OrdinalIgnoreCase) ||
             e.FullPath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase);
         lock (_extensionFileChangeGate)
