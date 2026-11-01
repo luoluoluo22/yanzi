@@ -327,6 +327,58 @@ public partial class App : WpfApplication
                     System.Windows.Threading.DispatcherPriority.ApplicationIdle);
             }
 
+            // Development-only real UI test for running mini-apps. Never opens
+            // the production singleton or modifies its installed package.
+            if (HostRuntimeProfile.IsDevelopment && e.Args.Any(static arg =>
+                    arg.Equals("--running-extensions-preview", StringComparison.OrdinalIgnoreCase)))
+            {
+                _ = Dispatcher.BeginInvoke(
+                    new Action(OpenRunningExtensionsWindow),
+                    System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            }
+
+            // Development-only churn test for the real running-extensions window.
+            // Synthetic records exist only in memory; no user mini-apps are launched.
+            if (HostRuntimeProfile.IsDevelopment && e.Args.Any(static arg =>
+                    arg.Equals("--running-extensions-qa", StringComparison.OrdinalIgnoreCase)))
+            {
+                _ = Task.Run(async () =>
+                {
+                    var ids = new List<Guid>();
+                    try
+                    {
+                        await Task.Delay(1500);
+                        for (var i = 0; i < 24; i++)
+                        {
+                            RunningExtensionRegistry.RegisterManagedExtension(
+                                $"qa-running-{i:D2}", $"窗口性能测试 {i:D2}",
+                                "qa", "dev-only-stress",
+                                isAliveFunc: static () => true,
+                                abortAction: static () => { },
+                                out var id);
+                            ids.Add(id);
+                            await Task.Delay(25);
+                        }
+
+                        HostAssets.AppendLog($"Running extensions QA fixtures registered: count={ids.Count}");
+                        await Task.Delay(2500);
+                    }
+                    catch (Exception ex)
+                    {
+                        HostAssets.AppendLog($"Running extensions QA fixture failed: {ex}");
+                    }
+                    finally
+                    {
+                        foreach (var id in ids)
+                        {
+                            RunningExtensionRegistry.Remove(id, "dev-only-qa-cleanup");
+                            await Task.Delay(25);
+                        }
+                        HostAssets.AppendLog($"Running extensions QA fixtures cleaned: count={ids.Count}");
+                    }
+                });
+            }
+
             // Development-only visual review of the actual Yanyu editor. Never persists preview edits.
             if (HostRuntimeProfile.IsDevelopment && e.Args.Any(static arg =>
                     arg.Equals("--yanyu-preview", StringComparison.OrdinalIgnoreCase)))
