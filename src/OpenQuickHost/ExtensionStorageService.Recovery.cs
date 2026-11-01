@@ -99,6 +99,7 @@ public static partial class ExtensionStorageService
         var restored = 0;
         var published = 0;
         var skipped = 0;
+        var existingBinaryReadsAvoided = 0;
         foreach (var extensionId in known)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -167,14 +168,23 @@ public static partial class ExtensionStorageService
                     if (!localPath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
                     if (IsPortableBinaryAsset(key))
                     {
-                        var raw = await service.TryReadExtensionBinaryAssetAsync(extensionId, key, cancellationToken);
-                        if (raw == null) continue;
+                        // Existing local binary assets are never overwritten by recovery.
+                        // The earlier publish phase already compared the remote bytes
+                        // against each existing local asset, so downloading them a
+                        // second time here adds network and disk I/O without changing
+                        // any result. Fresh devices still fetch every missing asset.
                         if (File.Exists(localPath))
                         {
-                            if (!PersonalSyncService.BinaryAssetContentMatches(
-                                    await File.ReadAllBytesAsync(localPath, cancellationToken), raw)) skipped++;
+                            existingBinaryReadsAvoided++;
                             continue;
                         }
+                        var raw = await service.TryReadExtensionBinaryAssetAsync(
+                            extensionId, key, cancellationToken);
+                        if (raw == null) continue;
+                        // A file can appear while its cloud copy is downloading.
+                        // Preserve it instead of applying the late remote result.
+                        if (File.Exists(localPath))
+                            continue;
                         await AtomicRestoreBytesAsync(localPath, raw, cancellationToken);
                         restored++;
                         continue;
@@ -230,7 +240,7 @@ public static partial class ExtensionStorageService
                 HostAssets.AppendLog($"Extension data recovery failed: id={extensionId}, error={ex.Message}");
             }
         }
-        HostAssets.AppendLog($"Extension data recovery completed: restored={restored}, published={published}, skipped={skipped}");
+        HostAssets.AppendLog($"Extension data recovery completed: restored={restored}, published={published}, skipped={skipped}, existingBinaryReadsAvoided={existingBinaryReadsAvoided}");
         return new ExtensionDataRecoveryResult(restored, published, skipped);
     }
 
