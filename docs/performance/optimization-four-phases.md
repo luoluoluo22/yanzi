@@ -113,3 +113,10 @@
 - 回归提交 `91471fe`：新增阻塞日志回调测试，明确要求触发窗口的 GET 在日志未解锁时完成；将异步窗口断言改为等待并使用线程安全队列；并发测试时钟改为原子 ticks，避免测试自身的数据竞争。
 - **本轮未连接家里/办公室电脑**（北京时间 08:00 前），没有 Release 本机编译、独立 Canary 安装、真实 Gitee 请求对照或双端一致性 QA；新提交 CI 尚待结果，PR #127 仍为草稿，不合并、不改正式版或 ReleaseQueue。
 - 下一步：回读新 CI 的 Windows Desktop build 和 `Gitee physical GET metrics and idle-window regression`，若失败先修复；工作窗口内先完成双端隔离安装/业务 QA，再合并；PR #126 仍需独立 Canary 验收，合并时重新核对 workflow 和台账冲突。
+
+### 2026-11-02 07:33–07:45 北京时间：CI 复核与跨窗口空闲结算回归（仅远端）
+
+- 已通过 GitHub Actions API 回读 PR #127 上一提交 `042535f389bfbc358f12132467ff556bcaf66d0e` 的运行 `41358379011`：run completed/success，`classify`、`portable-contracts`、`desktop-and-worker` 均 success；Windows `Desktop build` 和 `Gitee physical GET metrics and idle-window regression` 两个具体步骤也 success。此结论**只适用于该提交**。
+- 发现原有自动测试仅验证“请求发出后短周期空闲结算”与“跨窗口完成但后续有新 GET 触发结算”两种情形，缺少“跨窗口完成且始终没有后续 GET”的组合。已在 PR #127 的 `tests/GiteeHttpReadMetricsVerification/Program.cs` 新增真实计时回归：未完成 GET 先经 Timer 输出 sent=1/completed=0；完成后无需新请求，再经 Timer 输出 sent=0/completed=1、2xx=1，且累计发送/完成均为 1。提交 `380c2567c343aef3e05f0dd5bd0791f13dd0c013`。
+- 新测试提交**尚未取得 CI 通过证据**；不得用上一提交的成功结论代替。北京时间 08:00 前未连接/唤醒家里或办公室电脑，没有本地 Release 编译、独立 Canary 安装、正式账户实网对照或跨端一致性 QA；PR #127 继续 draft，PR #126 继续开放，第一阶段未验收完成。
+- 下一步：先核查新提交 CI；工作窗口内按隔离构建→双端 `--dev`/Canary 安装→窗口心跳及业务操作→安全的真实 Gitee 双端新增/修改/冲突/删除恢复→相同负载 HTTP 统计与耗时对照，失败修复重测后再考虑合并。禁止修改正式 ReleaseQueue、账号密钥、IndexedDB 和回滚包。
