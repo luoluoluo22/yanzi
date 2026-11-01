@@ -1942,6 +1942,9 @@ public partial class MainWindow
     {
         Interval = TimeSpan.FromMilliseconds(650)
     };
+    // FileSystemWatcher raises multiple notifications per write. The gate merges
+    // them on the watcher thread before any work reaches the UI dispatcher.
+    private readonly ExtensionWatcherBatchGate _extensionWatcherBatch = new();
     private string _lastCatalogContentSignature = string.Empty;
 
     private string GetCatalogContentSignature()
@@ -2027,19 +2030,41 @@ public partial class MainWindow
         catch (IOException) { return; }
         catch (UnauthorizedAccessException) { return; }
         catch (ArgumentException) { return; }
-        Dispatcher.BeginInvoke(new Action(() =>
+        var catalogChanged =
+            string.Equals(segments[1], "manifest.json", StringComparison.OrdinalIgnoreCase) ||
+            e.FullPath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase);
+        if (_extensionWatcherBatch.Record(segments[0], catalogChanged))
+            _ = Task.Run(DispatchExtensionWatcherBatchAsync);
+    }
+
+    private async Task DispatchExtensionWatcherBatchAsync()
+    {
+        // One dispatcher operation per burst, not one per filesystem notification.
+        await Task.Delay(700).ConfigureAwait(false);
+        var batch = _extensionWatcherBatch.Drain();
+        if (batch.ExtensionCount == 0 || Dispatcher.HasShutdownStarted)
+            return;
+        try
         {
-            if (!IsLoaded)
-                return;
-            if (string.Equals(segments[1], "manifest.json", StringComparison.OrdinalIgnoreCase) ||
-                e.FullPath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
+            _ = Dispatcher.BeginInvoke(new Action(() =>
             {
-                _extensionCatalogRefreshTimer.Stop();
-                _extensionCatalogRefreshTimer.Start();
-            }
-            QueueBackgroundWebDavSync("extension-file-change");
-            SyncLocalExtensionsToCloud();
-        }));
+                if (!IsLoaded || Dispatcher.HasShutdownStarted)
+                    return;
+                if (batch.CatalogChanged)
+                {
+                    _extensionCatalogRefreshTimer.Stop();
+                    _extensionCatalogRefreshTimer.Start();
+                }
+                QueueBackgroundWebDavSync("extension-file-change");
+                SyncLocalExtensionsToCloud();
+                if (batch.EventCount > 1)
+                    HostAssets.AppendLog($"Extension watcher coalesced: events={batch.EventCount}, extensions={batch.ExtensionCount}");
+            }));
+        }
+        catch (InvalidOperationException)
+        {
+            // Dispatcher can shut down between the guard and BeginInvoke.
+        }
     }
 
     private static HashSet<string> LoadPersonalSyncDeletedExtensionIds()
