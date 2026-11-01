@@ -814,6 +814,15 @@ internal sealed class GiteePersonalSyncBackend : PersonalSyncBackendBase
     {
         var path = BuildPath(relativePath);
         var owner = await ResolveOwnerAsync(cancellationToken);
+        var key = GiteeReadFlightCoordinator.CreateKey(
+            owner, _config.Repo, ResolveBranch(), path, _secrets.GiteeToken);
+        return await GiteeReadFlightCoordinator.ReadAsync(
+            key, () => ReadDirectBytesCoreAsync(path, owner, CancellationToken.None), cancellationToken);
+    }
+
+    private async Task<byte[]?> ReadDirectBytesCoreAsync(
+        string path, string owner, CancellationToken cancellationToken)
+    {
         CloudSyncDiagnostics.Log("GiteeBackend", "Read requested", ("owner", owner), ("repo", _config.Repo), ("path", path));
         var uri = $"https://gitee.com/api/v5/repos/{Uri.EscapeDataString(owner)}/{Uri.EscapeDataString(_config.Repo)}/contents/{EncodePath(path)}?access_token={Uri.EscapeDataString(_secrets.GiteeToken.Trim())}&ref={Uri.EscapeDataString(ResolveBranch())}";
         using var response = await ReadGiteeWithRetryAsync(uri, cancellationToken);
@@ -911,6 +920,9 @@ internal sealed class GiteePersonalSyncBackend : PersonalSyncBackendBase
     {
         var path = BuildPath(relativePath);
         var owner = await ResolveOwnerAsync(cancellationToken);
+        var flightKey = GiteeReadFlightCoordinator.CreateKey(
+            owner, _config.Repo, ResolveBranch(), path, _secrets.GiteeToken);
+        GiteeReadFlightCoordinator.Invalidate(flightKey);
         var sha = await TryGetShaAsync(path, cancellationToken);
         var method = string.IsNullOrWhiteSpace(sha) ? HttpMethod.Post : HttpMethod.Put;
         CloudSyncDiagnostics.Log(
@@ -939,6 +951,7 @@ internal sealed class GiteePersonalSyncBackend : PersonalSyncBackendBase
             CloudSyncDiagnostics.Log("GiteeBackend", "Write failed", ("path", path), ("statusCode", (int)response.StatusCode));
             throw await PersonalSyncFailure.CreateFailureAsync("Gitee", response, cancellationToken);
         }
+        GiteeReadFlightCoordinator.Invalidate(flightKey);
         CloudSyncDiagnostics.Log("GiteeBackend", "Write completed", ("path", path), ("bytes", content.Length));
     }
 
@@ -946,6 +959,9 @@ internal sealed class GiteePersonalSyncBackend : PersonalSyncBackendBase
     {
         var path = BuildPath(relativePath);
         var owner = await ResolveOwnerAsync(cancellationToken);
+        var flightKey = GiteeReadFlightCoordinator.CreateKey(
+            owner, _config.Repo, ResolveBranch(), path, _secrets.GiteeToken);
+        GiteeReadFlightCoordinator.Invalidate(flightKey);
         var sha = await TryGetShaAsync(path, cancellationToken);
         if (string.IsNullOrWhiteSpace(sha))
         {
@@ -972,6 +988,7 @@ internal sealed class GiteePersonalSyncBackend : PersonalSyncBackendBase
             throw await PersonalSyncFailure.CreateFailureAsync("Gitee", response, cancellationToken);
         }
 
+        GiteeReadFlightCoordinator.Invalidate(flightKey);
         CloudSyncDiagnostics.Log("GiteeBackend", "Delete completed", ("path", path), ("statusCode", (int)response.StatusCode));
     }
 
