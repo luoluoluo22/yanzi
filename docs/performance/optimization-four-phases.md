@@ -80,3 +80,10 @@
 ## 自动化工作要求
 
 每轮先确认北京时间 08:00–22:00；非工作窗口不访问或唤醒家里电脑。检查已合并与未合并修复，优先补缺失的本地安装和跨端测试；每轮推进可核验的修复或验收。每项按源码→编译→立即隔离本机安装 QA→回归→PR/CI→合并 main→回读验证。延迟的仅为正式 GitHub Release 发布，不是开发版安装验证。所有阶段验证通过后停用定时任务。
+
+### 2026-11-01 21:58 真实 GET 已闭合窗口诊断（PR #126，待 CI/独立 Canary）
+
+- 新增 `scripts/measure-phase1-physical-get.ps1`，只解析 Gitee 专属 HTTP 发送入口实际输出的 `GET transport window`，汇总已闭合窗口 `sent/completed`、2xx/404/429或5xx/传输错误/取消；明确 `exactWallClockCount=false`，最后未刷新的窗口和处理器重建不可作为精确自然时间段计数。拒绝将逻辑 `Read requested` 当作真实 HTTP。
+- 本机 PowerShell 5.1 合成日志回归通过：2 个闭合窗口、13 次物理 GET、累计计数重置、边界、敏感信息不泄露和非法时间窗口检查。20:25–21:50 的正式版样本为 0 个新指标窗口，原因是正式版未安装含计数器的代码；不能据此判断 0 次请求。
+- 独立分支 `test/phase1-physical-get-closed-window-20261101`，PR #126；本轮仅诊断脚本，无正式版修改。CI、两端脚本回归、独立 Canary 和同业务负载 HTTP 减量尚待核验；PR 在完成门禁前不合并。
+- 其他 Agent 于 21:18–21:42 已完成真实 Gitee 专用 QA 对象的双端读写/删除及 32 并发合并为一次底层读取，证据位于家里 `%LOCALAPPDATA%\\OpenQuickHost\\Diagnostics\\PerfQA\\phase1-dual-install-report-20261101.md`；该验证不是正式自动同步全链路，不能替代冲突/墓碑恢复一致性。阶段一仍进行中。
