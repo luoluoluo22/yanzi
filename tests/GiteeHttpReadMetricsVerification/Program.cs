@@ -128,6 +128,32 @@ using (var periodicClient = new HttpClient(new GiteeHttpReadMetricsHandler(
     Check(Volatile.Read(ref periodicReports) == 1,
         "idle timer does not emit empty windows");
 }
+// A GET may remain in flight beyond its dispatch window. With no subsequent
+// requests, the timer must still report its completion in the next window.
+var lateSnapshots = new ConcurrentQueue<GiteeHttpReadMetricsSnapshot>();
+var lateResponse = new TaskCompletionSource<HttpResponseMessage>(
+    TaskCreationOptions.RunContinuationsAsynchronously);
+using (var lateClient = new HttpClient(new GiteeHttpReadMetricsHandler(
+    new FakeHandler((_, _) => lateResponse.Task),
+    lateSnapshots.Enqueue, TimeSpan.FromMilliseconds(150))))
+{
+    var pending = lateClient.GetAsync("https://example.test/late");
+    await WaitForAsync(() => lateSnapshots.Count >= 1,
+        "timer reports an in-flight GET without a later dispatch");
+    var firstWindow = lateSnapshots.ElementAt(0);
+    Check(firstWindow.Sent == 1 && firstWindow.Completed == 0 &&
+          firstWindow.SentTotal == 1 && firstWindow.CompletedTotal == 0,
+        "dispatch-only window retains an outstanding request");
+    lateResponse.SetResult(new HttpResponseMessage(HttpStatusCode.OK));
+    using (var response = await pending) { }
+    await WaitForAsync(() => lateSnapshots.Count >= 2,
+        "timer reports a late completion without a later GET");
+    var secondWindow = lateSnapshots.ElementAt(1);
+    Check(secondWindow.Sent == 0 && secondWindow.Completed == 1 &&
+          secondWindow.Success2xx == 1 && secondWindow.SentTotal == 1 &&
+          secondWindow.CompletedTotal == 1,
+        "completion-only window preserves counters and status classification");
+}
 // Timer and GET can close consecutive windows concurrently. A slow logger must
 // not cause later cumulative totals to appear before earlier ones in the log.
 long orderedTicks = new DateTimeOffset(2026, 11, 1, 15, 0, 0, TimeSpan.Zero).Ticks;
