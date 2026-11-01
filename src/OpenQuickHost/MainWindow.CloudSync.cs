@@ -1942,6 +1942,17 @@ public partial class MainWindow
     {
         Interval = TimeSpan.FromMilliseconds(650)
     };
+    // Merge bursts of FileSystemWatcher notifications before hitting the WPF dispatcher.
+    // This preserves every extension's dirty state while limiting UI work to one batch.
+    private readonly object _extensionFileChangeGate = new();
+    private readonly HashSet<string> _pendingExtensionFileIds = new(StringComparer.OrdinalIgnoreCase);
+    private int _pendingExtensionFileEventCount;
+    private bool _pendingExtensionCatalogChange;
+    private bool _extensionFileFlushPosted;
+    private readonly System.Windows.Threading.DispatcherTimer _extensionFileChangeFlushTimer = new()
+    {
+        Interval = TimeSpan.FromMilliseconds(400)
+    };
     private string _lastCatalogContentSignature = string.Empty;
 
     private string GetCatalogContentSignature()
@@ -1970,8 +1981,47 @@ public partial class MainWindow
 
     private void StartExtensionContentWatcher()
     {
-        if (!HostRuntimeProfile.OwnsBackgroundServices) return;
+        // A dev-only opt-in enables isolated real FileSystemWatcher QA without
+        // enabling account sync or any other production background services.
+        if (!HostRuntimeProfile.OwnsBackgroundServices &&
+            !(HostRuntimeProfile.IsDevelopment && Environment.GetCommandLineArgs().Any(
+                static arg => arg.Equals("--watcher-qa", StringComparison.OrdinalIgnoreCase)))) return;
         _lastCatalogContentSignature = GetCatalogContentSignature();
+        _extensionFileChangeFlushTimer.Tick += (_, _) =>
+        {
+            _extensionFileChangeFlushTimer.Stop();
+            int eventCount;
+            int extensionCount;
+            bool catalogChanged;
+            // Clear queued work and release the scheduling gate under the same
+            // lock that the watcher uses, so no concurrent change can be lost.
+            lock (_extensionFileChangeGate)
+            {
+                eventCount = _pendingExtensionFileEventCount;
+                extensionCount = _pendingExtensionFileIds.Count;
+                catalogChanged = _pendingExtensionCatalogChange;
+                _pendingExtensionFileEventCount = 0;
+                _pendingExtensionFileIds.Clear();
+                _pendingExtensionCatalogChange = false;
+                _extensionFileFlushPosted = false;
+            }
+
+            if (eventCount == 0 || !IsLoaded || Dispatcher.HasShutdownStarted)
+                return;
+
+            if (catalogChanged)
+            {
+                _extensionCatalogRefreshTimer.Stop();
+                _extensionCatalogRefreshTimer.Start();
+            }
+
+            QueueBackgroundWebDavSync("extension-file-change");
+            SyncLocalExtensionsToCloud();
+
+            if (eventCount >= 3)
+                HostAssets.AppendLog(
+                    $"Extension watcher batch: events={eventCount}, extensions={extensionCount}, catalogChanged={catalogChanged}");
+        };
         _extensionCatalogRefreshTimer.Tick += (_, _) =>
         {
             _extensionCatalogRefreshTimer.Stop();
@@ -2027,19 +2077,32 @@ public partial class MainWindow
         catch (IOException) { return; }
         catch (UnauthorizedAccessException) { return; }
         catch (ArgumentException) { return; }
-        Dispatcher.BeginInvoke(new Action(() =>
+        var catalogChanged = string.Equals(segments[1], "manifest.json", StringComparison.OrdinalIgnoreCase) ||
+            e.FullPath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase);
+        lock (_extensionFileChangeGate)
         {
-            if (!IsLoaded)
+            _pendingExtensionFileIds.Add(segments[0]);
+            _pendingExtensionFileEventCount++;
+            _pendingExtensionCatalogChange |= catalogChanged;
+            if (_extensionFileFlushPosted)
                 return;
-            if (string.Equals(segments[1], "manifest.json", StringComparison.OrdinalIgnoreCase) ||
-                e.FullPath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
+            _extensionFileFlushPosted = true;
+        }
+
+        try
+        {
+            // Keep the scheduling gate set until the timer flushes the batch.
+            // A storm generates at most one Dispatcher post per 400ms interval.
+            _ = Dispatcher.BeginInvoke(new Action(() =>
             {
-                _extensionCatalogRefreshTimer.Stop();
-                _extensionCatalogRefreshTimer.Start();
-            }
-            QueueBackgroundWebDavSync("extension-file-change");
-            SyncLocalExtensionsToCloud();
-        }));
+                if (!Dispatcher.HasShutdownStarted)
+                    _extensionFileChangeFlushTimer.Start();
+            }), System.Windows.Threading.DispatcherPriority.Background);
+        }
+        catch (InvalidOperationException) when (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished)
+        {
+            // Ignore late watcher notifications during application shutdown.
+        }
     }
 
     private static HashSet<string> LoadPersonalSyncDeletedExtensionIds()

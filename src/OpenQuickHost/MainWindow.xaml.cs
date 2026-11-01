@@ -560,6 +560,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _extensionContentWatcher?.Dispose();
             _extensionContentWatcher = null;
             _extensionCatalogRefreshTimer.Stop();
+            _extensionFileChangeFlushTimer.Stop();
             _accountExtensionSyncTimer.Stop();
             _privateExtensionReconcileTimer.Stop();
         };
