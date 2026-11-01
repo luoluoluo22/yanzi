@@ -70,6 +70,32 @@ using var failReportClient = new HttpClient(new GiteeHttpReadMetricsHandler(
 using (var response = await failReportClient.GetAsync("https://example.test/first")) { }
 now += TimeSpan.FromSeconds(2);
 using (var response = await failReportClient.GetAsync("https://example.test/second")) { }
+// Completion after a window closes must not be lost when that later window
+// contains no new dispatches. A GET in a subsequent window triggers the flush.
+var crossNow = new DateTimeOffset(2026, 11, 1, 12, 0, 0, TimeSpan.Zero);
+var crossSnapshots = new List<GiteeHttpReadMetricsSnapshot>();
+var inFlight = new TaskCompletionSource<HttpResponseMessage>(
+    TaskCreationOptions.RunContinuationsAsynchronously);
+var crossRequests = 0;
+using (var crossClient = new HttpClient(new GiteeHttpReadMetricsHandler(
+    new FakeHandler((_, _) => Interlocked.Increment(ref crossRequests) == 1
+        ? inFlight.Task
+        : Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK))),
+    crossSnapshots.Add, TimeSpan.FromMinutes(1), () => crossNow)))
+{
+    var first = crossClient.GetAsync("https://example.test/inflight");
+    crossNow += TimeSpan.FromSeconds(61);
+    using (var response = await crossClient.GetAsync("https://example.test/trigger")) { }
+    Check(crossSnapshots.Count == 1 && crossSnapshots[0].Sent == 1 &&
+          crossSnapshots[0].Completed == 0, "in-flight request is not marked completed");
+    inFlight.SetResult(new HttpResponseMessage(HttpStatusCode.OK));
+    using (var response = await first) { }
+    crossNow += TimeSpan.FromSeconds(61);
+    using (var response = await crossClient.GetAsync("https://example.test/later")) { }
+    Check(crossSnapshots.Count == 2 && crossSnapshots[1].Sent == 1 &&
+          crossSnapshots[1].Completed == 2 && crossSnapshots[1].Success2xx == 2,
+        "cross-window completions are retained and fully classified");
+}
 // A short sync must be counted even when no later GET arrives. The handler is
 // process-wide in production, so its low-frequency timer can flush an idle burst.
 var periodicReports = 0;
