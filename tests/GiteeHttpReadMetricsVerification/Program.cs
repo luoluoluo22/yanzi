@@ -70,6 +70,25 @@ using var failReportClient = new HttpClient(new GiteeHttpReadMetricsHandler(
 using (var response = await failReportClient.GetAsync("https://example.test/first")) { }
 now += TimeSpan.FromSeconds(2);
 using (var response = await failReportClient.GetAsync("https://example.test/second")) { }
+// A short sync must be counted even when no later GET arrives. The handler is
+// process-wide in production, so its low-frequency timer can flush an idle burst.
+var periodicReports = 0;
+var periodicFlush = new TaskCompletionSource<GiteeHttpReadMetricsSnapshot>(
+    TaskCreationOptions.RunContinuationsAsynchronously);
+using (var periodicClient = new HttpClient(new GiteeHttpReadMetricsHandler(
+    new FakeHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK))),
+    m => { Interlocked.Increment(ref periodicReports); periodicFlush.TrySetResult(m); },
+    TimeSpan.FromMilliseconds(100))))
+{
+    using (var response = await periodicClient.GetAsync("https://example.test/short-cycle")) { }
+    var flushed = await periodicFlush.Task.WaitAsync(TimeSpan.FromSeconds(5));
+    Check(flushed.Sent == 1 && flushed.Completed == 1 &&
+          flushed.SentTotal == 1 && flushed.Success2xx == 1,
+        "timer flushes short sync without requiring another GET");
+    await Task.Delay(250);
+    Check(Volatile.Read(ref periodicReports) == 1,
+        "idle timer does not emit empty windows");
+}
 Console.WriteLine("GITEE_HTTP_METRICS_PASS sentTotal=8 firstWindow=6 summaries=2");
 sealed class FakeHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send) : HttpMessageHandler
 {
