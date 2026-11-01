@@ -1892,6 +1892,17 @@ public partial class MainWindow
             return;
         }
 
+        // Native-window mini-apps (such as the clipboard popup) can steal focus
+        // without being WPF OwnedWindows. Keep the warehouse visible when another
+        // Yanzi window within this process becomes the foreground window.
+        var foregroundWindow = Win32Native.GetForegroundWindow();
+        if (foregroundWindow != IntPtr.Zero &&
+            foregroundWindow != new WindowInteropHelper(this).Handle &&
+            WindowSensorHelper.IsCurrentProcessWindow(foregroundWindow))
+        {
+            return;
+        }
+
         if (OwnedWindows.OfType<Window>().Any(static window => window.IsVisible))
         {
             return;
