@@ -7,7 +7,8 @@ namespace OpenQuickHost.Sync;
 /// <summary>
 /// Counts actual Gitee GET dispatches at HttpMessageHandler, including retries,
 /// without retaining or logging request URLs, paths, credentials or response bodies.
-/// A completed one-minute window is reported on the next GET; idle periods are silent.
+/// A completed one-minute window is reported by a low-frequency timer (or the next GET).
+/// Idle windows are silent. Production uses one shared handler for all Gitee backends.
 /// </summary>
 internal sealed class GiteeHttpReadMetricsHandler : DelegatingHandler
 {
@@ -15,6 +16,7 @@ internal sealed class GiteeHttpReadMetricsHandler : DelegatingHandler
     private readonly Action<GiteeHttpReadMetricsSnapshot> _report;
     private readonly Func<DateTimeOffset> _clock;
     private readonly TimeSpan _window;
+    private readonly Timer _flushTimer;
     private DateTimeOffset _windowStart;
     private long _sentTotal;
     private long _completedTotal;
@@ -40,6 +42,10 @@ internal sealed class GiteeHttpReadMetricsHandler : DelegatingHandler
         _window = window ?? TimeSpan.FromMinutes(1);
         if (_window <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(window));
         _windowStart = _clock();
+        // One timer per handler; the production handler is process-wide, not per sync cycle.
+        // Flush short-lived GET bursts even when no later request arrives.
+        _flushTimer = new Timer(static state => ((GiteeHttpReadMetricsHandler)state!).FlushDue(),
+            this, _window, _window);
     }
 
     protected override async Task<HttpResponseMessage> SendAsync(
@@ -94,13 +100,27 @@ internal sealed class GiteeHttpReadMetricsHandler : DelegatingHandler
         }
     }
 
+    private void FlushDue()
+    {
+        GiteeHttpReadMetricsSnapshot? due;
+        lock (_gate) due = TakeDueSnapshot();
+        ReportSafely(due);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) _flushTimer.Dispose();
+        base.Dispose(disposing);
+    }
+
     private GiteeHttpReadMetricsSnapshot? TakeDueSnapshot()
     {
         var now = _clock();
         if (now - _windowStart < _window) return null;
         var elapsed = Math.Max(1, (long)(now - _windowStart).TotalSeconds);
         _windowStart = now;
-        if (_sent == 0) return null;
+        // A request sent in the previous window may complete during this window.
+        if (_sent == 0 && _completed == 0) return null;
         var result = new GiteeHttpReadMetricsSnapshot(
             elapsed, _sent, _completed, _sentTotal, _completedTotal,
             _success, _notFound, _retryable, _otherHttp, _transportErrors,
