@@ -1,4 +1,6 @@
 using System.Net;
+using System.Collections.Concurrent;
+using System.Diagnostics;
 using OpenQuickHost.Sync;
 
 static void Check(bool condition, string name)
@@ -7,8 +9,16 @@ static void Check(bool condition, string name)
     Console.WriteLine("PASS: " + name);
 }
 
+static async Task WaitForAsync(Func<bool> ready, string name)
+{
+    var timer = Stopwatch.StartNew();
+    while (!ready() && timer.Elapsed < TimeSpan.FromSeconds(5))
+        await Task.Delay(10);
+    Check(ready(), name);
+}
+
 var now = new DateTimeOffset(2026, 11, 1, 10, 0, 0, TimeSpan.Zero);
-var snapshots = new List<GiteeHttpReadMetricsSnapshot>();
+var snapshots = new ConcurrentQueue<GiteeHttpReadMetricsSnapshot>();
 var physical = 0;
 using var client = new HttpClient(new GiteeHttpReadMetricsHandler(
     new FakeHandler((request, ct) =>
@@ -26,7 +36,7 @@ using var client = new HttpClient(new GiteeHttpReadMetricsHandler(
         };
         return Task.FromResult(new HttpResponseMessage(code));
     }),
-    snapshots.Add, TimeSpan.FromMinutes(1), () => now));
+    snapshots.Enqueue, TimeSpan.FromMinutes(1), () => now));
 
 async Task Get(string path)
 {
@@ -46,8 +56,8 @@ Check(snapshots.Count == 0, "no per-request log storm before window expires");
 
 now += TimeSpan.FromSeconds(61);
 await Get("/ok");
-Check(snapshots.Count == 1, "one aggregate log emitted after elapsed minute");
-var m = snapshots[0];
+await WaitForAsync(() => snapshots.Count == 1, "one aggregate log emitted after elapsed minute");
+var m = snapshots.ElementAt(0);
 Check(m.Sent == 6 && m.Completed == 6 && m.SentTotal == 6 && m.CompletedTotal == 6,
     "counts real GET dispatches including retry/error attempts, excludes POST");
 Check(m.Success2xx == 1 && m.NotFound404 == 1 && m.Retryable429Or5xx == 1 &&
@@ -60,8 +70,9 @@ Check(m.ToString()!.IndexOf("example.test", StringComparison.Ordinal) < 0 &&
 
 now += TimeSpan.FromSeconds(61);
 await Get("/ok");
-Check(snapshots.Count == 2 && snapshots[1].Sent == 1 &&
-      snapshots[1].SentTotal == 7 && snapshots[1].CompletedTotal == 7,
+await WaitForAsync(() => snapshots.Count == 2, "second aggregate log emitted");
+Check(snapshots.ElementAt(1).Sent == 1 &&
+      snapshots.ElementAt(1).SentTotal == 7 && snapshots.ElementAt(1).CompletedTotal == 7,
     "per-window count resets while cumulative transport count stays monotonic");
 using var failReportClient = new HttpClient(new GiteeHttpReadMetricsHandler(
     new FakeHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK))),
@@ -73,7 +84,7 @@ using (var response = await failReportClient.GetAsync("https://example.test/seco
 // Completion after a window closes must not be lost when that later window
 // contains no new dispatches. A GET in a subsequent window triggers the flush.
 var crossNow = new DateTimeOffset(2026, 11, 1, 12, 0, 0, TimeSpan.Zero);
-var crossSnapshots = new List<GiteeHttpReadMetricsSnapshot>();
+var crossSnapshots = new ConcurrentQueue<GiteeHttpReadMetricsSnapshot>();
 var inFlight = new TaskCompletionSource<HttpResponseMessage>(
     TaskCreationOptions.RunContinuationsAsynchronously);
 var crossRequests = 0;
@@ -81,19 +92,21 @@ using (var crossClient = new HttpClient(new GiteeHttpReadMetricsHandler(
     new FakeHandler((_, _) => Interlocked.Increment(ref crossRequests) == 1
         ? inFlight.Task
         : Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK))),
-    crossSnapshots.Add, TimeSpan.FromMinutes(1), () => crossNow)))
+    crossSnapshots.Enqueue, TimeSpan.FromMinutes(1), () => crossNow)))
 {
     var first = crossClient.GetAsync("https://example.test/inflight");
     crossNow += TimeSpan.FromSeconds(61);
     using (var response = await crossClient.GetAsync("https://example.test/trigger")) { }
-    Check(crossSnapshots.Count == 1 && crossSnapshots[0].Sent == 1 &&
-          crossSnapshots[0].Completed == 0, "in-flight request is not marked completed");
+    await WaitForAsync(() => crossSnapshots.Count == 1, "in-flight window logged");
+    Check(crossSnapshots.ElementAt(0).Sent == 1 &&
+          crossSnapshots.ElementAt(0).Completed == 0, "in-flight request is not marked completed");
     inFlight.SetResult(new HttpResponseMessage(HttpStatusCode.OK));
     using (var response = await first) { }
     crossNow += TimeSpan.FromSeconds(61);
     using (var response = await crossClient.GetAsync("https://example.test/later")) { }
-    Check(crossSnapshots.Count == 2 && crossSnapshots[1].Sent == 1 &&
-          crossSnapshots[1].Completed == 2 && crossSnapshots[1].Success2xx == 2,
+    await WaitForAsync(() => crossSnapshots.Count == 2, "cross-window completion logged");
+    Check(crossSnapshots.ElementAt(1).Sent == 1 &&
+          crossSnapshots.ElementAt(1).Completed == 2 && crossSnapshots.ElementAt(1).Success2xx == 2,
         "cross-window completions are retained and fully classified");
 }
 // A short sync must be counted even when no later GET arrives. The handler is
@@ -117,7 +130,8 @@ using (var periodicClient = new HttpClient(new GiteeHttpReadMetricsHandler(
 }
 // Timer and GET can close consecutive windows concurrently. A slow logger must
 // not cause later cumulative totals to appear before earlier ones in the log.
-var orderedNow = new DateTimeOffset(2026, 11, 1, 15, 0, 0, TimeSpan.Zero);
+long orderedTicks = new DateTimeOffset(2026, 11, 1, 15, 0, 0, TimeSpan.Zero).Ticks;
+var orderedStep = TimeSpan.FromHours(1).Ticks + TimeSpan.FromSeconds(1).Ticks;
 var orderedReports = new List<long>();
 var reportStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 using var releaseReport = new ManualResetEventSlim(false);
@@ -132,10 +146,10 @@ using (var orderedClient = new HttpClient(new GiteeHttpReadMetricsHandler(
             releaseReport.Wait(TimeSpan.FromSeconds(5));
         }
         lock (orderedReports) orderedReports.Add(snapshot.SentTotal);
-    }, TimeSpan.FromHours(1), () => orderedNow)))
+    }, TimeSpan.FromHours(1), () => new DateTimeOffset(Interlocked.Read(ref orderedTicks), TimeSpan.Zero))))
 {
     using (var response = await orderedClient.GetAsync("https://example.test/first")) { }
-    orderedNow += TimeSpan.FromHours(1) + TimeSpan.FromSeconds(1);
+    Interlocked.Add(ref orderedTicks, orderedStep);
     var firstFlush = Task.Run(async () =>
     {
         using var response = await orderedClient.GetAsync("https://example.test/second");
@@ -143,12 +157,17 @@ using (var orderedClient = new HttpClient(new GiteeHttpReadMetricsHandler(
     try
     {
         await reportStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        orderedNow += TimeSpan.FromHours(1) + TimeSpan.FromSeconds(1);
+        // The GET that closed the first window must finish even while logging is blocked.
+        await firstFlush.WaitAsync(TimeSpan.FromSeconds(2));
+        Check(true, "slow metrics sink does not delay the triggering HTTP GET");
+        Interlocked.Add(ref orderedTicks, orderedStep);
         // This GET must not wait for the first logger, and must not overtake it.
         using (var response = await orderedClient.GetAsync("https://example.test/third")) { }
     }
     finally { releaseReport.Set(); }
     await firstFlush.WaitAsync(TimeSpan.FromSeconds(5));
+    await WaitForAsync(() => { lock (orderedReports) return orderedReports.Count == 2; },
+        "both ordered windows logged");
     lock (orderedReports)
         Check(orderedReports.SequenceEqual(new long[] { 1, 2 }),
             "concurrent window closures preserve monotonic log ordering");
