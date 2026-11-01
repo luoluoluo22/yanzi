@@ -17,8 +17,8 @@ internal sealed class GiteeHttpReadMetricsHandler : DelegatingHandler
     private readonly Func<DateTimeOffset> _clock;
     private readonly TimeSpan _window;
     private readonly System.Threading.Timer _flushTimer;
-    // Snapshots are queued while holding _gate, so timer/GET callbacks cannot log
-    // newer cumulative counters before an earlier window. Logging runs outside _gate.
+    // Snapshots are queued under _gate and drained by one background worker.
+    // Diagnostics must never block a real HTTP GET, even if the log sink stalls.
     private readonly Queue<GiteeHttpReadMetricsSnapshot> _reportQueue = new();
     private bool _reportDrainActive;
     private DateTimeOffset _windowStart;
@@ -65,7 +65,7 @@ internal sealed class GiteeHttpReadMetricsHandler : DelegatingHandler
             _sent++;
             _sentTotal++;
         }
-        if (drain) DrainReports();
+        if (drain) ScheduleReportDrain();
 
         var start = Stopwatch.GetTimestamp();
         try
@@ -108,7 +108,7 @@ internal sealed class GiteeHttpReadMetricsHandler : DelegatingHandler
     {
         bool drain;
         lock (_gate) drain = QueueReportUnderLock(TakeDueSnapshot());
-        if (drain) DrainReports();
+        if (drain) ScheduleReportDrain();
     }
 
     // Must be called under _gate. Exactly one caller drains; concurrent producers
@@ -120,6 +120,14 @@ internal sealed class GiteeHttpReadMetricsHandler : DelegatingHandler
         if (_reportDrainActive) return false;
         _reportDrainActive = true;
         return true;
+    }
+
+    private void ScheduleReportDrain()
+    {
+        // Only one worker is scheduled for a nonempty queue. The drain flag is
+        // cleared under _gate after the last snapshot, preserving log order.
+        ThreadPool.QueueUserWorkItem(static state =>
+            ((GiteeHttpReadMetricsHandler)state!).DrainReports(), this);
     }
 
     private void DrainReports()
