@@ -720,7 +720,12 @@ internal sealed class GiteePersonalSyncBackend : PersonalSyncBackendBase
     // keeps transport metrics and connection pooling alive across those short cycles.
     // Credentials are request-scoped (URL or JSON body), never DefaultRequestHeaders.
     private static readonly HttpClient SharedHttpClient = new(new GiteeHttpReadMetricsHandler(
-        new HttpClientHandler(),
+        new SocketsHttpHandler
+        {
+            // Long-lived clients must periodically refresh DNS and idle connections.
+            PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+            PooledConnectionIdleTimeout = TimeSpan.FromMinutes(2)
+        },
         static m => CloudSyncDiagnostics.Log("GiteeBackend.Http", "GET transport window",
             ("windowSeconds", m.WindowSeconds), ("sent", m.Sent), ("completed", m.Completed),
             ("sentTotal", m.SentTotal), ("completedTotal", m.CompletedTotal),
