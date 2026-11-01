@@ -19,9 +19,12 @@
 - 验收状态：**局部真实事件压力验证通过，跨端云同步一致性仍待验收，因此第一阶段整体未完成**。
 - 注意：开发版禁用账户/个人同步，所以以上实验仅验证 watcher→dispatcher 合并和清单刷新，不构成实际 Gitee 上传、冲突合并或跨端一致性通过。
 
-### 子任务 1B：Gitee/个人同步读取去重（未开始修复）
+### 子任务 1B：Gitee/个人同步读取去重（进行中：并发 singleflight 已实现、实网仍待验收）
 
-- 待调查：`Sync/PersonalSyncBackends.cs` 的实际 HTTP 读取；`PersonalSyncService.ExtensionDataCatalog.cs` 与扩展状态对象、键索引路径的重复读取。
+- 本轮修复（2026-11-01，北京时间）：`Sync/GiteeReadFlightCoordinator.cs` 在进程内对“同 Gitee 账号 token、owner、仓库、分支和完整路径”的在途 GET 请求执行 singleflight。只共享正在等待的请求；请求一结束立即移除，不缓存成功、404 或错误结果。各等待者使用独立取消语义，响应字节数组分别复制。写入/删除前后打断旧请求的合并资格，防止后续读取错误地加入旧 GET。密钥哈希后作隔离键，禁止明文存储 token。
+- 回归：`dotnet run --project tests/GiteeReadFlightVerification/GiteeReadFlightVerification.csproj -c Release` 退出码 0：64 个并发读请求只执行 1 个实际底层读、等待者取消独立、失败后能再取、写入失效前后的两代在途请求不互相误清理、跨账号/路径隔离、任务结束后 ActiveCount=0；独立测试计数 networkFlights=7、sharedWaiters=65（仅虚拟请求，不是生产网络数据）。
+- 主程序 Release 编译退出码 0。本机验证：独立开发版安装到 `%LOCALAPPDATA%\OpenQuickHost\DevBuilds\qa-phase1-gitee-read-20261101`，Yanzi.dll SHA-256 `719E4CCFDD22F3479135E1116CFB8AEFB7732B2B7E1DC12554D742213C797E57`，进程 PID 3296，窗口消息 50/50 成功、最慢 8ms；测试进程已退出，正式版 PID 23788 未更改。
+- 未完成：该轮不使用生产 Gitee 凭证，也未在开发版启用真实账户同步。还需采样并发比例，验证实际 HTTP 请求下降、失败重试与家↔公司变更/冲突/删除一致性；顺序重复 GET 不会被本 singleflight 改善，后续仍需增量索引和版本检测。
 - 实施需保留 ETag/哈希失效、跨设备更新检测和删除墓碑语义；不得直接将长 TTL 缓存当作权威值。考虑同一请求 singleflight、版本校验与增量批量索引。
 - 验收：对相同业务负载采集真实发送到 Gitee 的 HTTP 请求数、延迟、失败率，并在家里↔公司双端变更、冲突、删除恢复测试中保持一致。
 
