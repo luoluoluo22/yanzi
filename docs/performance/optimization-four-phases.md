@@ -89,3 +89,11 @@
 - 2026-11-02 夜间只允许远端代码/CI，不触碰家里或办公室电脑。**尚未取得本分支 CI 结果、Release 编译、双端独立 Canary 安装及实网请求数**；PR 不得在这些门禁完成前合并。
 - 共享连接池安全边界：禁用 CookieContainer（`UseCookies=false`），设置 5 分钟连接寿命和 2 分钟空闲回收以允许 DNS 刷新；新 Windows CI 步骤执行 `tests/GiteeHttpReadMetricsVerification`，覆盖空闲计时器结算及跨窗口请求完成。
 - 风险/后续：共享 HttpClient 的长期连接池与账号隔离、计时器退出释放、跨窗口完成数、两端实际同步一致性仍需真实验收；真实 HTTP 降幅必须与相同业务负载的对照组比较。PR #126 的日志解析改动独立进行，需待各自 QA 后按合并顺序回读主线，避免覆盖。
+
+### 2026-11-02 04:37–04:42 北京时间：PR #127 CI 失败修复（远端，不构成本机 QA）
+
+- 旧提交 `73ba7bc` 的 GitHub Actions `41343159894`：`classify` 与 `portable-contracts` 通过，`desktop-and-worker` 在 Desktop build 失败；日志明确为 `GiteeHttpReadMetricsHandler.cs(19,22)` 的 `CS0104`，`Timer` 同时匹配 `System.Windows.Forms.Timer` 和 `System.Threading.Timer`，不是业务测试失败或网络超时。
+- 已在同一隔离分支将字段与构造函数明确限定为 `System.Threading.Timer`，提交 `ba4da06b2e3982805f4e9dda3079157646442572`，回读源码确认两处均已修改；修复不改变同步行为或用户数据。
+- 新 CI `41347866007` 已触发，**在本记录时尚未通过**。此轮为北京时间凌晨，严格不连接/唤醒家里或办公室电脑，Release 编译、独立 `--dev`/Canary 安装及真实 Gitee 跨端 QA 尚待工作时段补齐。
+- PR #126 的 `d2008bde8f4d3433137d0d16992e76aa6fb03df4` 已通过 Windows CI `41337286788`，但仍缺独立 Canary 业务 QA；两个 PR 均不得据 CI 单独合并。
+- 下一步：核对 PR #127 最新 Windows CI 的 Desktop build 和新增 GET 计数回归；若失败继续修复；08:00–22:00 北京时间执行隔离安装、真实同步、同负载请求量/失败率及跨端一致性测试后，才允许合并。四阶段均未完成。
