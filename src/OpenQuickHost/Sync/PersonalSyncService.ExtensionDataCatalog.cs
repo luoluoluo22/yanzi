@@ -46,8 +46,19 @@ public sealed partial class PersonalSyncService
             throw new IOException($"Extension data catalog confirmation failed for {extensionId}");
     }
 
-    public async Task<bool> PublishExtensionBinaryAssetIfAbsentAsync(
-        string extensionId, string key, byte[] data, CancellationToken cancellationToken = default)
+    public Task<bool> PublishExtensionBinaryAssetIfAbsentAsync(
+        string extensionId, string key, byte[] data, CancellationToken cancellationToken = default) =>
+        PublishExtensionBinaryAssetCoreAsync(extensionId, key, data, publishIndex: true, cancellationToken);
+
+    // The bulk recovery path has already published and confirmed the complete
+    // key index for its local files. Do not reread it once for every image.
+    // Other callers always use the public path that publishes the key itself.
+    internal Task<bool> PublishPreIndexedExtensionBinaryAssetAsync(
+        string extensionId, string key, byte[] data, CancellationToken cancellationToken = default) =>
+        PublishExtensionBinaryAssetCoreAsync(extensionId, key, data, publishIndex: false, cancellationToken);
+
+    private async Task<bool> PublishExtensionBinaryAssetCoreAsync(
+        string extensionId, string key, byte[] data, bool publishIndex, CancellationToken cancellationToken)
     {
         if (!ExtensionDevicePolicy.ShouldSyncData(extensionId))
             throw new InvalidOperationException("设备独立数据禁止上传云端。");
@@ -59,7 +70,8 @@ public sealed partial class PersonalSyncService
                 return false; // never overwrite a divergent remote binary asset
         }
         else await _backend.WriteBytesAsync(path, data, "application/octet-stream", cancellationToken);
-        await PublishExtensionDataKeysAsync(extensionId, [key], cancellationToken);
+        if (publishIndex)
+            await PublishExtensionDataKeysAsync(extensionId, [key], cancellationToken);
         return true;
     }
 
