@@ -87,3 +87,5 @@
 - 本机 PowerShell 5.1 合成日志回归通过：2 个闭合窗口、13 次物理 GET、累计计数重置、边界、敏感信息不泄露和非法时间窗口检查。20:25–21:50 的正式版样本为 0 个新指标窗口，原因是正式版未安装含计数器的代码；不能据此判断 0 次请求。
 - 独立分支 `test/phase1-physical-get-closed-window-20261101`，PR #126；本轮仅诊断脚本，无正式版修改。CI、两端脚本回归、独立 Canary 和同业务负载 HTTP 减量尚待核验；PR 在完成门禁前不合并。
 - 其他 Agent 于 21:18–21:42 已完成真实 Gitee 专用 QA 对象的双端读写/删除及 32 并发合并为一次底层读取，证据位于家里 `%LOCALAPPDATA%\\OpenQuickHost\\Diagnostics\\PerfQA\\phase1-dual-install-report-20261101.md`；该验证不是正式自动同步全链路，不能替代冲突/墓碑恢复一致性。阶段一仍进行中。
+
+- 21:59 双端独立脚本 QA：家里 PC-202409131508 与办公室 CHINAMI-3IF988E 均在各自临时隔离目录执行 PowerShell 5.1 `verify-phase1-physical-get.ps1`，均返回 `PASS: 2 closed windows, 13 physical GET sends, handler counter reset, exclusive boundaries, redaction, invalid interval`，退出码均为 0。办公室只写入临时 QA 文件，没有更改正式实例。GitHub Engineering foundation regression run #359 截至检查时为 `in_progress`；需等待通过并完成独立 Canary 业务 QA 后才能合并 PR #126。
