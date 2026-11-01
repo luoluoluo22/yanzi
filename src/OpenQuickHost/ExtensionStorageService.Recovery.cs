@@ -87,6 +87,7 @@ public static partial class ExtensionStorageService
         if (!PersonalSyncBackendFactory.IsConfigured(settings))
             return new ExtensionDataRecoveryResult(0, 0, 0);
 
+        await ResolveSafeConflictsAsync(cancellationToken);
         var states = ExtensionDataSyncStateStore.Load();
         var known = states.Select(static s => s.ExtensionId)
             .Concat(["yanzi-notes", "clipboard-history", "inspiration-board", "yanzi-album",

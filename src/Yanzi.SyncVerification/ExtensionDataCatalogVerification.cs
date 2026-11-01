@@ -49,6 +49,11 @@ internal static class ExtensionDataCatalogVerification
             ExtensionStorageService.IsPortableDataForExtension("vpn-manager", "vpn/settings.json") ||
             ExtensionStorageService.IsPortableDataForExtension("vpn-manager", "proxy-lease.json"))
             throw new Exception("VPN runtime or account state escaped the explicit synced-metadata boundary");
+        if (ExtensionDevicePolicy.ShouldSyncData("github-repo-sync", "repo-state.json") ||
+            ExtensionDevicePolicy.ShouldSyncData("github-repo-sync", "bandizip-meta.json") ||
+            ExtensionDevicePolicy.ShouldSyncData("github-repo-sync", "cleanup-state.json") ||
+            !ExtensionDevicePolicy.ShouldSyncData("github-repo-sync", "bandizip-settings.reg"))
+            throw new Exception("Device runtime metadata escaped the per-key sync boundary");
         if (!ExtensionStorageService.IsPortableDataForExtension("taskbar-calendar", "calendar_reminders.json") ||
             ExtensionStorageService.IsPortableDataForExtension("taskbar-calendar", "calendar_cache.json") ||
             ExtensionStorageService.IsPortableDataForExtension("taskbar-calendar", "calendar_reminders.json.tmp"))
@@ -70,6 +75,29 @@ internal static class ExtensionDataCatalogVerification
             GiteePersonalSyncBackend.IsRetryableGiteeReadStatus(System.Net.HttpStatusCode.Unauthorized) ||
             GiteePersonalSyncBackend.IsRetryableGiteeReadStatus(System.Net.HttpStatusCode.NotFound))
             throw new Exception("Gitee read retry classification is unsafe");
+        var dailyOld = "{\"Date\":\"2026-10-31\",\"CapturedAt\":\"2026-10-31T15:36:00+08:00\",\"Reason\":\"old\",\"TotalJobs\":1500}";
+        var dailyNew = "{\"Date\":\"2026-10-31\",\"CapturedAt\":\"2026-10-31T15:56:00+08:00\",\"Reason\":\"refreshed\",\"TotalJobs\":1500}";
+        var dailyRemote = new ExtensionDataObject
+        {
+            ExtensionId = job,
+            Key = "daily/2026-10-31--chinami-3if988e.json",
+            Content = dailyOld,
+            UpdatedByDeviceId = ExtensionDevicePolicy.CurrentDeviceId
+        };
+        var dailyItem = new ExtensionDataSyncState
+        {
+            ExtensionId = job,
+            Key = dailyRemote.Key,
+            Conflict = new ExtensionDataConflict { Remote = dailyRemote }
+        };
+        if (!ExtensionStorageService.CanAutoResolveDailySnapshot(dailyItem, dailyNew) ||
+            ExtensionStorageService.CanAutoResolveDailySnapshot(
+                dailyItem, dailyNew.Replace("1500", "1501")) ||
+            ExtensionStorageService.CanAutoResolveDailySnapshot(dailyItem, dailyOld))
+            throw new Exception("Daily snapshot merge must require newer time and identical metrics");
+        dailyRemote.UpdatedByDeviceId = "some-other-device";
+        if (ExtensionStorageService.CanAutoResolveDailySnapshot(dailyItem, dailyNew))
+            throw new Exception("Daily snapshot merge crossed device ownership boundary");
         Console.WriteLine("Extension data catalog verification passed: discovery, merging, assets, scoped personal data, backup exclusion");
     }
 

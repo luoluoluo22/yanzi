@@ -55,7 +55,7 @@ public sealed partial class PersonalSyncService
         string key,
         CancellationToken cancellationToken = default)
     {
-        if (!ExtensionDevicePolicy.ShouldSyncData(extensionId))
+        if (!ExtensionDevicePolicy.ShouldSyncData(extensionId, key))
             return new ExtensionDataReadResult(null, null, false);
         var objectBytes = await _backend.TryReadBytesAsync(
             ExtensionDataObjectStore.BuildObjectPath(extensionId, key),
@@ -104,7 +104,7 @@ public sealed partial class PersonalSyncService
         bool deleted,
         CancellationToken cancellationToken)
     {
-        if (!ExtensionDevicePolicy.ShouldSyncData(extensionId))
+        if (!ExtensionDevicePolicy.ShouldSyncData(extensionId, key))
             throw new InvalidOperationException("设备独立数据不能写入个人云端。");
         var currentBytes = await _backend.TryReadBytesAsync(
             ExtensionDataObjectStore.BuildObjectPath(extensionId, key),

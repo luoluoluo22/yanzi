@@ -111,4 +111,12 @@ public static class ExtensionDevicePolicy
     public static bool ShouldSyncData(string extensionId) =>
         ForExtension(extensionId) is var policy &&
         policy.AllowsDevice(CurrentDeviceId) && policy.SyncsData;
+
+    // Per-device runtime snapshots are not global account state.
+    public static bool ShouldSyncData(string extensionId, string key) =>
+        ShouldSyncData(extensionId) &&
+        !(string.Equals(extensionId, "github-repo-sync", StringComparison.OrdinalIgnoreCase) &&
+          (string.Equals(key, "repo-state.json", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(key, "bandizip-meta.json", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(key, "cleanup-state.json", StringComparison.OrdinalIgnoreCase)));
 }

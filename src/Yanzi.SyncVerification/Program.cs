@@ -125,6 +125,12 @@ if (args.Contains("--extension-data-audit"))
     }
     return;
 }
+if (args.Contains("--resolve-safe-sync-conflicts"))
+{
+    var result = await ExtensionStorageService.ResolveSafeConflictsAsync();
+    Console.WriteLine($"SAFE_EXTENSION_CONFLICTS resolved={result.ResolvedCount} skipped={result.SkippedCount} failed={result.FailedCount}");
+    return;
+}
 if (args.Contains("--resolve-stale-conflicts"))
 {
     var result = await ExtensionStorageService.ResolveStaleLocalConflictsAsync();

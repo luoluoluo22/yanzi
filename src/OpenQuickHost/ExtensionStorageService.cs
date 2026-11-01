@@ -28,7 +28,7 @@ public static partial class ExtensionStorageService
         string? scope,
         CancellationToken cancellationToken = default)
     {
-        var normalizedScope = ExtensionDevicePolicy.ShouldSyncData(extensionId)
+        var normalizedScope = ExtensionDevicePolicy.ShouldSyncData(extensionId, NormalizeStorageKey(key))
             ? ParseScope(scope) : ExtensionStorageScope.Local;
         var normalizedKey = NormalizeStorageKey(key);
         var localPath = ResolveLocalFilePath(extensionId, normalizedKey);
@@ -149,7 +149,7 @@ public static partial class ExtensionStorageService
         string? scope,
         CancellationToken cancellationToken = default)
     {
-        var normalizedScope = ExtensionDevicePolicy.ShouldSyncData(extensionId)
+        var normalizedScope = ExtensionDevicePolicy.ShouldSyncData(extensionId, NormalizeStorageKey(key))
             ? ParseScope(scope) : ExtensionStorageScope.Local;
         var normalizedKey = NormalizeStorageKey(key);
         var localPath = ResolveLocalFilePath(extensionId, normalizedKey);
@@ -211,7 +211,7 @@ public static partial class ExtensionStorageService
         string? scope,
         CancellationToken cancellationToken = default)
     {
-        var normalizedScope = ExtensionDevicePolicy.ShouldSyncData(extensionId)
+        var normalizedScope = ExtensionDevicePolicy.ShouldSyncData(extensionId, NormalizeStorageKey(key))
             ? ParseScope(scope) : ExtensionStorageScope.Local;
         var normalizedKey = NormalizeStorageKey(key);
         var localPath = ResolveLocalFilePath(extensionId, normalizedKey);
