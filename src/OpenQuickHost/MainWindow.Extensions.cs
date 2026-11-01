@@ -1912,7 +1912,13 @@ public partial class MainWindow
 
     private void Window_Deactivated(object? sender, EventArgs e)
     {
-        SetSearchScopePopupOpen(false);
+        // SearchScopePopup is a separate HWND. Losing focus to a native mini-app
+        // must not detach the visible warehouse's tabs from its window.
+        var foregroundWindow = Win32Native.GetForegroundWindow();
+        var focusMovedWithinYanzi = foregroundWindow != IntPtr.Zero &&
+            foregroundWindow != new WindowInteropHelper(this).Handle &&
+            WindowSensorHelper.IsCurrentProcessWindow(foregroundWindow);
+        SetSearchScopePopupOpen(focusMovedWithinYanzi || _isPinned || IsAiChatMode);
         if (CapsGuidePopup != null)
         {
             CapsGuidePopup.IsOpen = false;
@@ -1929,13 +1935,9 @@ public partial class MainWindow
             return;
         }
 
-        // Native-window mini-apps (such as the clipboard popup) can steal focus
-        // without being WPF OwnedWindows. Keep the warehouse visible when another
-        // Yanzi window within this process becomes the foreground window.
-        var foregroundWindow = Win32Native.GetForegroundWindow();
-        if (foregroundWindow != IntPtr.Zero &&
-            foregroundWindow != new WindowInteropHelper(this).Handle &&
-            WindowSensorHelper.IsCurrentProcessWindow(foregroundWindow))
+        // Native-window mini-apps are not necessarily WPF OwnedWindows.
+        // Preserve both the warehouse and its tabs on internal focus transfers.
+        if (focusMovedWithinYanzi)
         {
             return;
         }
