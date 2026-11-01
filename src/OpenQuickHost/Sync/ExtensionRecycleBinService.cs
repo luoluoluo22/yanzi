@@ -91,6 +91,8 @@ public static class ExtensionRecycleBinService
         index.Items.Add(recycleEntry);
         SaveIndex(index);
         HostAssets.AppendLog($"Extension moved to recycle bin: id={recycleEntry.ExtensionId}, itemId={recycleEntry.ItemId}, title={recycleEntry.Title}");
+        // Covers every extension-deletion entrypoint and checks the installation receipt.
+        global::OpenQuickHost.YanziManagedDependencyLifecycle.TryCleanupForExtension(extensionId);
         return recycleEntry;
     }
 
