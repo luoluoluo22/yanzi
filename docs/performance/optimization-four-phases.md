@@ -95,5 +95,6 @@
 - 时间门禁：北京时间 02:32，未连接、唤醒或修改家里/办公室电脑；仅通过 GitHub 修改 PR #126 隔离分支，正式实例和 main 不变。
 - 修复 `scripts/measure-phase1-physical-get.ps1`：非法日期使用 `TryParseExact` 跳过并计数；补齐 `otherHttp`（401/403 等）字段；对 `completed` 与全部响应/异常分类之和做一致性校验，不错误地要求跨窗口的 `completed <= sent`；对无闭合窗口标记 `INSUFFICIENT_NO_CLOSED_WINDOWS`，其余也标明仅部分覆盖，不能据此推断精确自然时间 HTTP 请求总数。
 - 扩充 `scripts/verify-phase1-physical-get.ps1` 合成样本：401/403 分类、非法日期、分类总和不符、缺失字段、无闭合窗口、原有跨窗在途完成、窗口边界和脱敏。待 CI Windows PowerShell 5.1 执行并核对。
+- 发现既有 CI 只运行 `verify-phase1-log-window.ps1`，未执行新增物理 GET 解析器回归；已在 `.github/workflows/engineering-checks.yml` 新增 Windows `pwsh` 验证步骤，提交 `debc29f`，等待新一轮 CI 真实执行并核对结果。
 - 额外架构阻塞：后台同步周期性新建 `PersonalSyncService`/HTTP 处理器；指标只在 60 秒后下一次 GET 输出，短周期结束后可能完全无窗口日志。必须单独修复计数器生命周期或加入可验证的安全 flush（不记录 token/URL），并测试短任务、重建、异常和累计一致性；PR #126 的解析器修复本身**不能**解决漏计。
 - 合并门禁：脚本回归/CI 通过后，仍需北京时间 08:00–22:00 的隔离 Canary 安装、业务 QA 和双端一致性证据；不得在夜间合并或覆盖正式实例。第一阶段继续进行中。
