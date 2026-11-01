@@ -56,6 +56,9 @@
 - Release 主程序编译成功（退出码 0，既有其他文件的可空性警告）；独立 `--dev --show` Canary 目录 `%LOCALAPPDATA%\OpenQuickHost\DevBuilds\qa-phase1-httpmetrics-20261101-190431`，Yanzi.dll SHA-256 `3FDD6855FD083C6468BD0C88E3650A93F0D7216A9B199A5CB3525387662E6CC2`，测试 PID 19236，WM_NULL 50/50、最大 8ms；Canary 已关闭，正式版 PID 23788 前后保持不变。开发版不连接正式账户同步，因此不能宣称真实云端减量或双端一致性通过。
 - 后续：提交/PR/CI/合并主线后，需以相同业务负载的真实日志窗口对比 Gitee `sentTotal` 增量、失败率、冲突重复与跨端更新/删除恢复；不能从模拟数值推断生产降幅。第一阶段仍为进行中。
 
+### 2026-11-01 19:41 双端独立 Canary 安装证据（阶段一仍未验收完成）
+主线 `a372d14` 的相同 `Yanzi.dll`（SHA-256 `BBEFB21FC46A0B8C223914C6D5870A4412F03EEDD2571CC735F14C796CD23CF6`）已在家里/办公室隔离安装；窗口消息心跳分别 100/100、100/100，P95 0.0952/0.2721 ms；正式版 PID 均未变化。办公室无全局 .NET Runtime，使用正式安装目录已有的 .NET 9.0.21 运行时修复独立启动（仅改 Canary）。Gitee HTTP 计数、singleflight、扩展索引批处理自动回归通过。`--dev` 禁用真实账户同步，因此真实 HTTP 降幅、家↔公司更新/冲突/删除恢复仍待实网验收，不能据此宣称阶段一完成。完整证据见 [qa-phase1-dual-canary-20261101.md](qa-phase1-dual-canary-20261101.md)。
+
 ## 第二阶段：UI 主线程减负（未开始）
 
 后台化目录签名/全量清单扫描，治理同步 Dispatcher.Invoke 与高频计时器。验收：仓库和小程序在同步压力下 UI 心跳/P95/P99 与故障复现对比。
