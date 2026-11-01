@@ -84,7 +84,8 @@
 ### 子任务 1F：Gitee HTTP 计数器跨同步周期存活及空闲结算（2026-11-02，北京时间夜间，待 QA）
 
 - 发现：后台每轮可能新建 `PersonalSyncService` 和 Gitee backend，原 `GiteeHttpReadMetricsHandler` 只有经过 60 秒且出现**下一次 GET** 才输出窗口，短周期的真实 GET 会因实例重建而未被统计。
-- 隔离分支：`fix/phase1-gitee-http-lifecycle-20261102`。Gitee backend 改用进程内共享的专用 `HttpClient`，其 Handler/计数器跨同步周期持续存在，连接池复用；认证仍只随单次请求的 URL 或 JSON 正文发送，不放入共享默认请求头。计数器每分钟由唯一低频 Timer 主动结算；没有 GET/完成事件时不输出空窗口；跨窗口完成的请求不会被遗漏。
+- 隔离分支：`fix/phase1-gitee-http-lifecycle-20261102`，草稿 PR #127（最新 CI run #370 / 41343134698，创建时尚未结束）。Gitee backend 改用进程内共享的专用 `HttpClient`，其 Handler/计数器跨同步周期持续存在，连接池复用；认证仍只随单次请求的 URL 或 JSON 正文发送，不放入共享默认请求头。计数器每分钟由唯一低频 Timer 主动结算；没有 GET/完成事件时不输出空窗口；跨窗口完成的请求不会被遗漏。
 - 新增 `GiteeHttpReadMetricsVerification` 真实计时自动回归：一次短 GET 后不再发送新请求，100ms 计时窗口必须自动报告 sent=completed=1，后续空闲窗口不重复报告。原有状态分类、异常、取消、重试和跨窗口累计测试保留。
 - 2026-11-02 夜间只允许远端代码/CI，不触碰家里或办公室电脑。**尚未取得本分支 CI 结果、Release 编译、双端独立 Canary 安装及实网请求数**；PR 不得在这些门禁完成前合并。
+- 共享连接池安全边界：禁用 CookieContainer（`UseCookies=false`），设置 5 分钟连接寿命和 2 分钟空闲回收以允许 DNS 刷新；新 Windows CI 步骤执行 `tests/GiteeHttpReadMetricsVerification`，覆盖空闲计时器结算及跨窗口请求完成。
 - 风险/后续：共享 HttpClient 的长期连接池与账号隔离、计时器退出释放、跨窗口完成数、两端实际同步一致性仍需真实验收；真实 HTTP 降幅必须与相同业务负载的对照组比较。PR #126 的日志解析改动独立进行，需待各自 QA 后按合并顺序回读主线，避免覆盖。
