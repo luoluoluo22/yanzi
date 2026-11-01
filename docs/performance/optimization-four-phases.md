@@ -47,6 +47,15 @@
 - 回归：`scripts/verify-extension-binary-recovery-skip.ps1` 检查先判断文件存在、再发远端请求、恢复前再次检查竞态、文本同步路径未被误改。模型测算：已有 30 个/缺失 2 个时，第二轮远端读取由 32 减至 2；**模型不是生产 HTTP 实测**。本机 QA：Release 编译退出码 0，复制独立安装目录 `%LOCALAPPDATA%\OpenQuickHost\DevBuilds\qa-phase1-binary-recovery-20261101`，程序集 SHA-256 `5B979B52310F13D0E9B5CC3067F2FC159E2E0030168C862FBB826EE315CF8525` 一致；以 `--dev --show` 启动 PID 18616，窗口消息 50/50 全成功、最长 9ms。测试后仅关闭开发实例，正式版 PID 23788 未中断。开发通道未连接真实同步，仍需对已存在/缺失云端资源、删除恢复及家里↔办公室双端一致性进行真实网络验收，不能仅凭模型宣布第一阶段完成。
 - 与“同版本冲突重复处理”并行开发分支 `fix/phase1-conflict-memo-20261101` 相互独立，本修复不修改其代码或状态。
 
+### 子任务 1E：Gitee 真实 HTTP GET 计数与失败分布（2026-11-01 19:05，北京时间；代码/本机 QA 通过，待 PR 与双端实网）
+
+- 分支：`fix/phase1-gitee-httpmetrics-20261101`（基于 `origin/main` 的 `37c308e`），独立工作树，不触碰其他 Agent 的开发分支。
+- 变更：`Sync/GiteeHttpReadMetricsHandler.cs` 在 Gitee 专属 `HttpMessageHandler.SendAsync` 真实发送入口计数，覆盖内容读取、SHA/owner/probe GET 与自动重试；不把 `Read requested` 逻辑日志当作网络请求。只按一分钟窗口输出一条聚合日志，包含 `sent/completed/sentTotal/completedTotal`、2xx/404/429或5xx/其他状态、传输异常、取消、耗时总计与最大值；请求 URL、路径、token、响应内容均不进入新指标。空闲不主动唤醒，窗口到期后在下一次 GET 输出；窗口边界可能存在跨窗在途请求，以累计 sentTotal/completedTotal 为准。
+- 自动验证：`dotnet run --project tests/GiteeHttpReadMetricsVerification/GiteeHttpReadMetricsVerification.csproj -c Release` 退出码 0；模拟 6 次 GET + 1 次 POST，首窗口真实传输计数 GET=6，状态分类 2xx/404/503/401/异常/取消各 1，POST 不计；61 秒后只输出 1 条窗口日志，累计计数跨窗保持单调；日志异常不影响同步。以上均为本地模拟 HTTP，不是生产 Gitee 请求。
+- 既有 singleflight 回归：`tests/GiteeReadFlightVerification` 退出码 0，64 个并发逻辑读取只触发 1 次底层请求；测试记录 networkFlights=7、sharedWaiters=65。
+- Release 主程序编译成功（退出码 0，既有其他文件的可空性警告）；独立 `--dev --show` Canary 目录 `%LOCALAPPDATA%\OpenQuickHost\DevBuilds\qa-phase1-httpmetrics-20261101-190431`，Yanzi.dll SHA-256 `3FDD6855FD083C6468BD0C88E3650A93F0D7216A9B199A5CB3525387662E6CC2`，测试 PID 19236，WM_NULL 50/50、最大 8ms；Canary 已关闭，正式版 PID 23788 前后保持不变。开发版不连接正式账户同步，因此不能宣称真实云端减量或双端一致性通过。
+- 后续：提交/PR/CI/合并主线后，需以相同业务负载的真实日志窗口对比 Gitee `sentTotal` 增量、失败率、冲突重复与跨端更新/删除恢复；不能从模拟数值推断生产降幅。第一阶段仍为进行中。
+
 ## 第二阶段：UI 主线程减负（未开始）
 
 后台化目录签名/全量清单扫描，治理同步 Dispatcher.Invoke 与高频计时器。验收：仓库和小程序在同步压力下 UI 心跳/P95/P99 与故障复现对比。
