@@ -115,6 +115,44 @@ using (var periodicClient = new HttpClient(new GiteeHttpReadMetricsHandler(
     Check(Volatile.Read(ref periodicReports) == 1,
         "idle timer does not emit empty windows");
 }
+// Timer and GET can close consecutive windows concurrently. A slow logger must
+// not cause later cumulative totals to appear before earlier ones in the log.
+var orderedNow = new DateTimeOffset(2026, 11, 1, 15, 0, 0, TimeSpan.Zero);
+var orderedReports = new List<long>();
+var reportStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+using var releaseReport = new ManualResetEventSlim(false);
+var reportCalls = 0;
+using (var orderedClient = new HttpClient(new GiteeHttpReadMetricsHandler(
+    new FakeHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK))),
+    snapshot =>
+    {
+        if (Interlocked.Increment(ref reportCalls) == 1)
+        {
+            reportStarted.TrySetResult(true);
+            releaseReport.Wait(TimeSpan.FromSeconds(5));
+        }
+        lock (orderedReports) orderedReports.Add(snapshot.SentTotal);
+    }, TimeSpan.FromHours(1), () => orderedNow)))
+{
+    using (var response = await orderedClient.GetAsync("https://example.test/first")) { }
+    orderedNow += TimeSpan.FromHours(1) + TimeSpan.FromSeconds(1);
+    var firstFlush = Task.Run(async () =>
+    {
+        using var response = await orderedClient.GetAsync("https://example.test/second");
+    });
+    try
+    {
+        await reportStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        orderedNow += TimeSpan.FromHours(1) + TimeSpan.FromSeconds(1);
+        // This GET must not wait for the first logger, and must not overtake it.
+        using (var response = await orderedClient.GetAsync("https://example.test/third")) { }
+    }
+    finally { releaseReport.Set(); }
+    await firstFlush.WaitAsync(TimeSpan.FromSeconds(5));
+    lock (orderedReports)
+        Check(orderedReports.SequenceEqual(new long[] { 1, 2 }),
+            "concurrent window closures preserve monotonic log ordering");
+}
 Console.WriteLine("GITEE_HTTP_METRICS_PASS sentTotal=8 firstWindow=6 summaries=2");
 sealed class FakeHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send) : HttpMessageHandler
 {
