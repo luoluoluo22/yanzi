@@ -87,6 +87,10 @@ public QuickPanelMouseTriggerSettings QuickPanelMouseTriggers { get; set; } = ne
     public List<string> UnreadNewExtensionIds { get; set; } = new();
 
     public List<string> KnownExtensionIds { get; set; } = new();
+    // Device-local version inventory, used to detect upgrades rather than only first installs.
+    public Dictionary<string, string> KnownExtensionVersions { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    // Account-scoped monotonic read receipts; device unread flags are presentation state only.
+    public Dictionary<string, string> SeenExtensionVersions { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
     public int AchievementPoints { get; set; } = 0;
 

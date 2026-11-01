@@ -23,6 +23,7 @@ internal static class LauncherConfigObjectStore
         new("settings.mouseTriggers", "settings-mouse-triggers.json"),
         new("quickPanel.groups", "quick-panel-groups.json"),
         new("quickPanel.favorites", "quick-panel-favorites.json"),
+        new("extensions.seen", "extension-seen.json"),
         new("radialMenu.pages", "radial-menu-pages.json"),
         new("yanyu.rules", "yanyu-rules.json"),
         new("window.controls", "window-controls.json")
@@ -92,6 +93,10 @@ internal static class LauncherConfigObjectStore
                 DisabledExtensionIds = snapshot.DisabledExtensionIds,
                 PinnedSearchScopeCommandIds = snapshot.PinnedSearchScopeCommandIds,
                 SearchScopeConfigs = snapshot.SearchScopeConfigs
+            }),
+            Create("extensions.seen", updatedAt, sourceDeviceId, sourceDeviceName, new ExtensionSeenPayload
+            {
+                SeenExtensionVersions = snapshot.SeenExtensionVersions
             }),
             Create("radialMenu.pages", updatedAt, sourceDeviceId, sourceDeviceName, new RadialMenuPayload
             {
@@ -437,6 +442,11 @@ internal static class LauncherConfigObjectStore
                     snapshot.PinnedSearchScopeCommandIds = favorites.PinnedSearchScopeCommandIds ?? snapshot.PinnedSearchScopeCommandIds;
                     snapshot.SearchScopeConfigs = favorites.SearchScopeConfigs ?? snapshot.SearchScopeConfigs;
                     return true;
+                case "extensions.seen":
+                    var seen = envelope.Payload.Deserialize<ExtensionSeenPayload>(JsonOptions);
+                    if (seen == null) return false;
+                    snapshot.SeenExtensionVersions = ExtensionSeenVersions.Merge(snapshot.SeenExtensionVersions, seen.SeenExtensionVersions);
+                    return true;
                 case "radialMenu.pages":
                     var radial = envelope.Payload.Deserialize<RadialMenuPayload>(JsonOptions);
                     if (radial == null) return false;
@@ -715,6 +725,11 @@ internal sealed class QuickPanelFavoritesPayload
     public List<string>? DisabledExtensionIds { get; set; }
     public List<string>? PinnedSearchScopeCommandIds { get; set; }
     public List<SearchScopeConfigItem>? SearchScopeConfigs { get; set; }
+}
+
+internal sealed class ExtensionSeenPayload
+{
+    public Dictionary<string, string>? SeenExtensionVersions { get; set; }
 }
 
 internal sealed class RadialMenuPayload

@@ -4408,7 +4408,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             _previousForegroundWindow = previousForeground;
         }
-        _ = ExecuteCommandAsync(ResolveRunnableCommand(command), explicitInput ?? string.Empty, launchSource);
+        var runnable = ResolveRunnableCommand(command);
+        // Quick-panel and shortcut launches must acknowledge the same version as the main launcher.
+        if (runnable.Source == CommandSource.LocalExtension) MarkExtensionAsSeen(runnable);
+        _ = ExecuteCommandAsync(runnable, explicitInput ?? string.Empty, launchSource);
     }
 
     private void RecordCommandUsage(CommandItem command)
@@ -4918,6 +4921,10 @@ public sealed class CloudQuickPanelConfigSnapshot
     [JsonPropertyName("contextFavoriteExtensionIds")]
     public List<string> ContextFavoriteExtensionIds { get; set; } = [];
 
+    [JsonPropertyName("seenExtensionVersions")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, string>? SeenExtensionVersions { get; set; }
+
     [JsonPropertyName("quickPanelMouseTriggers")]
     public QuickPanelMouseTriggerSettings QuickPanelMouseTriggers { get; set; } = new();
 
@@ -5022,6 +5029,7 @@ public sealed class CloudQuickPanelConfigSnapshot
             SelectedQuickPanelContextGroupId = settings.SelectedQuickPanelContextGroupId,
             GlobalFavoriteExtensionIds = settings.GlobalFavoriteExtensionIds.ToList(),
             ContextFavoriteExtensionIds = settings.ContextFavoriteExtensionIds.ToList(),
+            SeenExtensionVersions = ExtensionSeenVersions.Merge(settings.SeenExtensionVersions, null),
             QuickPanelMouseTriggers = CloneTriggers(settings.QuickPanelMouseTriggers),
             MouseGestureAppBindings = CloneByJson(settings.MouseGestureAppBindings),
             MouseGestureTriggerMode = MouseGestureTriggerModes.Normalize(settings.MouseGestureTriggerMode),
@@ -5085,6 +5093,7 @@ public sealed class CloudQuickPanelConfigSnapshot
             SelectedQuickPanelContextGroupId = SelectedQuickPanelContextGroupId,
             GlobalFavoriteExtensionIds = GlobalFavoriteExtensionIds.ToList(),
             ContextFavoriteExtensionIds = ContextFavoriteExtensionIds.ToList(),
+            SeenExtensionVersions = ExtensionSeenVersions.Merge(SeenExtensionVersions, null),
             QuickPanelMouseTriggers = CloneTriggers(QuickPanelMouseTriggers),
             MouseGestureAppBindings = MouseGestureAppBindings == null ? [] : CloneByJson(MouseGestureAppBindings),
             MouseGestureTriggerMode = MouseGestureTriggerModes.Normalize(MouseGestureTriggerMode),
@@ -5133,6 +5142,7 @@ public sealed class CloudQuickPanelConfigSnapshot
                HasQuickPanelGroupContent(snapshot.QuickPanelContextGroups) ||
                snapshot.GlobalFavoriteExtensionIds.Count > 0 ||
                snapshot.ContextFavoriteExtensionIds.Count > 0 ||
+               (snapshot.SeenExtensionVersions?.Count ?? 0) > 0 ||
                (snapshot.AppShortcutBindings?.Count ?? 0) > 0 ||
                snapshot.DisabledExtensionIds.Count > 0 ||
                snapshot.PinnedSearchScopeCommandIds.Count > 0 ||

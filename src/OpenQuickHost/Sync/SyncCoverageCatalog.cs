@@ -122,7 +122,10 @@ internal static class SyncCoverageCatalog
         yield return Device(nameof(AppSettings.EnableWanPush), "本机公网推送入口开关。");
         yield return Device(nameof(AppSettings.WebDavSyncManuallyDisabled), "本机显式停用状态，防止云配置重新开启。");
         yield return Device(nameof(AppSettings.RecentlyAddedExtensionIds), "本机商店提示状态。");
-        yield return Device(nameof(AppSettings.UnreadNewExtensionIds), "本机未读提示状态。");
+        yield return Device(nameof(AppSettings.UnreadNewExtensionIds), "本机未读提示缓存；真实已读状态由账户回执决定。");
+        yield return Device(nameof(AppSettings.KnownExtensionVersions), "本机检测到的版本，用于发现更新。");
+        yield return Account(nameof(AppSettings.SeenExtensionVersions), SyncPayloadPolicy.FullPayload,
+            "按小程序 ID+已使用版本跨设备同步；合并采用版本最大值，避免其他设备回滚已读。");
         yield return Device(nameof(AppSettings.KnownExtensionIds), "本机已发现的小程序集合，用于判断新增提示。");
         yield return Device(nameof(AppSettings.LegacyCleanupDismissed), "本机迁移提示状态。");
         yield return Device(nameof(AppSettings.SettingsWindowLeft), "本机窗口几何信息。");

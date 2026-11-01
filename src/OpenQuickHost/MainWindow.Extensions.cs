@@ -166,6 +166,33 @@ public partial class MainWindow
         return localAtIndex == null ? _allCommands.Count : _allCommands.IndexOf(localAtIndex);
     }
 
+    private static DateTime GetLocalExtensionModificationUtc(CommandItem command)
+    {
+        if (command.Source != CommandSource.LocalExtension ||
+            string.IsNullOrWhiteSpace(command.ExtensionDirectoryPath)) return DateTime.MinValue;
+        try
+        {
+            var root = Path.GetFullPath(command.ExtensionDirectoryPath).TrimEnd(Path.DirectorySeparatorChar) +
+                Path.DirectorySeparatorChar;
+            var manifest = Path.Combine(root, "manifest.json");
+            var latest = File.Exists(manifest) ? File.GetLastWriteTimeUtc(manifest) : DateTime.MinValue;
+            if (!string.IsNullOrWhiteSpace(command.EntryPoint))
+            {
+                var entry = Path.GetFullPath(Path.Combine(root, command.EntryPoint));
+                if (entry.StartsWith(root, StringComparison.OrdinalIgnoreCase) && File.Exists(entry))
+                {
+                    var updated = File.GetLastWriteTimeUtc(entry);
+                    if (updated > latest) latest = updated;
+                }
+            }
+            return latest;
+        }
+        catch (IOException) { return DateTime.MinValue; }
+        catch (UnauthorizedAccessException) { return DateTime.MinValue; }
+        catch (ArgumentException) { return DateTime.MinValue; }
+        catch (NotSupportedException) { return DateTime.MinValue; }
+    }
+
     private int GetLocalExtensionDisplayOrder(CommandItem command)
     {
         if (command.Source != CommandSource.LocalExtension)
@@ -196,7 +223,9 @@ public partial class MainWindow
         settings.RecentlyAddedExtensionIds.RemoveAll(id => id.Equals(extensionId, StringComparison.OrdinalIgnoreCase));
         settings.UnreadNewExtensionIds.RemoveAll(id => id.Equals(extensionId, StringComparison.OrdinalIgnoreCase));
         settings.RecentlyAddedExtensionIds.Insert(0, extensionId);
-        settings.UnreadNewExtensionIds.Insert(0, extensionId);
+        if (!_localExtensionIndex.TryGetValue(extensionId, out var current) ||
+            !ExtensionSeenVersions.IncludesVersion(settings.SeenExtensionVersions, extensionId, current.DeclaredVersion))
+            settings.UnreadNewExtensionIds.Insert(0, extensionId);
         if (settings.RecentlyAddedExtensionIds.Count > 50)
         {
             settings.RecentlyAddedExtensionIds = settings.RecentlyAddedExtensionIds.Take(50).ToList();
@@ -242,94 +271,101 @@ public partial class MainWindow
         var localCommands = commands
             .Where(static x => x.Source == CommandSource.LocalExtension && !string.IsNullOrWhiteSpace(x.ExtensionId))
             .ToList();
-        if (localCommands.Count == 0)
-        {
-            return;
-        }
+        if (localCommands.Count == 0) return;
 
         var settings = AppSettingsStore.Load();
         settings.KnownExtensionIds ??= [];
         settings.RecentlyAddedExtensionIds ??= [];
         settings.UnreadNewExtensionIds ??= [];
-
-        var currentLocalIds = localCommands
-            .Select(static x => x.ExtensionId)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
+        settings.KnownExtensionVersions ??= new(StringComparer.OrdinalIgnoreCase);
+        settings.SeenExtensionVersions ??= new(StringComparer.OrdinalIgnoreCase);
+        var known = new HashSet<string>(settings.KnownExtensionIds, StringComparer.OrdinalIgnoreCase);
+        var initialInventory = known.Count == 0;
         var changed = false;
 
-        if (settings.KnownExtensionIds.Count == 0)
+        foreach (var command in localCommands)
         {
-            // 首次引入已知列表基准（或全新纯净安装）：将当前磁盘全部已有扩展登记为基准
-            settings.KnownExtensionIds = new List<string>(currentLocalIds);
-            changed = true;
-        }
-        else
-        {
-            // 找出当前磁盘存在但尚未在 KnownExtensionIds 中记录的全新扩展
-            var newlyDiscoveredIds = currentLocalIds
-                .Where(id => !settings.KnownExtensionIds.Contains(id, StringComparer.OrdinalIgnoreCase))
-                .ToList();
+            var id = command.ExtensionId;
+            var version = command.DeclaredVersion ?? "0.1.0";
+            var newInstallation = known.Add(id);
+            var hasPreviousVersion = settings.KnownExtensionVersions.TryGetValue(id, out var previousVersion);
+            var upgraded = hasPreviousVersion && ExtensionSeenVersions.Compare(version, previousVersion) > 0;
 
-            if (newlyDiscoveredIds.Count > 0)
+            if (newInstallation)
             {
+                settings.KnownExtensionIds.Add(id);
                 changed = true;
-                foreach (var newId in newlyDiscoveredIds)
-                {
-                    settings.KnownExtensionIds.Add(newId);
-                    settings.RecentlyAddedExtensionIds.RemoveAll(id => id.Equals(newId, StringComparison.OrdinalIgnoreCase));
-                    settings.UnreadNewExtensionIds.RemoveAll(id => id.Equals(newId, StringComparison.OrdinalIgnoreCase));
-                    settings.RecentlyAddedExtensionIds.Insert(0, newId);
-                    settings.UnreadNewExtensionIds.Insert(0, newId);
-                }
-
-                if (settings.RecentlyAddedExtensionIds.Count > 50)
-                {
-                    settings.RecentlyAddedExtensionIds = settings.RecentlyAddedExtensionIds.Take(50).ToList();
-                }
-
-                if (settings.UnreadNewExtensionIds.Count > 50)
-                {
-                    settings.UnreadNewExtensionIds = settings.UnreadNewExtensionIds.Take(50).ToList();
-                }
             }
+            if (!hasPreviousVersion || upgraded)
+            {
+                settings.KnownExtensionVersions[id] = version;
+                changed = true;
+            }
+
+            if (upgraded || (newInstallation && !initialInventory))
+            {
+                settings.RecentlyAddedExtensionIds.RemoveAll(x => x.Equals(id, StringComparison.OrdinalIgnoreCase));
+                settings.RecentlyAddedExtensionIds.Insert(0, id);
+                settings.UnreadNewExtensionIds.RemoveAll(x => x.Equals(id, StringComparison.OrdinalIgnoreCase));
+                if (!ExtensionSeenVersions.IncludesVersion(settings.SeenExtensionVersions, id, version))
+                    settings.UnreadNewExtensionIds.Insert(0, id);
+                changed = true;
+            }
+            // A read receipt synced from another computer always wins over a stale local badge.
+            if (ExtensionSeenVersions.IncludesVersion(settings.SeenExtensionVersions, id, version))
+                changed |= settings.UnreadNewExtensionIds.RemoveAll(x => x.Equals(id, StringComparison.OrdinalIgnoreCase)) > 0;
         }
 
-        if (changed)
-        {
-            AppSettingsStore.Save(settings);
-            _appSettings = settings;
-            _windowBoundExtensionsService?.Reload(_appSettings.WindowBindings);
-        }
+        if (!changed) return;
+        settings.RecentlyAddedExtensionIds = settings.RecentlyAddedExtensionIds.Take(50).ToList();
+        settings.UnreadNewExtensionIds = settings.UnreadNewExtensionIds.Take(50).ToList();
+        AppSettingsStore.Save(settings);
+        _appSettings = settings;
+        _windowBoundExtensionsService?.Reload(_appSettings.WindowBindings);
     }
 
     private void ApplyNewExtensionState(CommandItem command)
     {
         command.SetHasNewBadge(
             command.Source == CommandSource.LocalExtension &&
-            (_appSettings.UnreadNewExtensionIds ?? []).Contains(command.ExtensionId, StringComparer.OrdinalIgnoreCase));
+            (_appSettings.UnreadNewExtensionIds ?? []).Contains(command.ExtensionId, StringComparer.OrdinalIgnoreCase) &&
+            !ExtensionSeenVersions.IncludesVersion(_appSettings.SeenExtensionVersions,
+                command.ExtensionId, command.DeclaredVersion));
+    }
+
+    private void RefreshExtensionReadBadges()
+    {
+        foreach (var command in _allCommands.Where(static x => x.Source == CommandSource.LocalExtension))
+            ApplyNewExtensionState(command);
     }
 
     private void MarkExtensionAsSeen(CommandItem? command)
     {
-        if (command == null ||
-            command.Source != CommandSource.LocalExtension ||
-            !command.HasNewBadge)
-        {
-            return;
-        }
-
+        if (command == null || command.Source != CommandSource.LocalExtension) return;
         var settings = AppSettingsStore.Load();
         settings.UnreadNewExtensionIds ??= [];
-        if (settings.UnreadNewExtensionIds.RemoveAll(id => id.Equals(command.ExtensionId, StringComparison.OrdinalIgnoreCase)) == 0)
+        settings.SeenExtensionVersions ??= new(StringComparer.OrdinalIgnoreCase);
+        var version = command.DeclaredVersion ?? "0.1.0";
+        var newerReceipt = !ExtensionSeenVersions.IncludesVersion(
+            settings.SeenExtensionVersions, command.ExtensionId, version);
+        var removed = settings.UnreadNewExtensionIds.RemoveAll(
+            id => id.Equals(command.ExtensionId, StringComparison.OrdinalIgnoreCase)) > 0;
+        if (newerReceipt)
         {
-            return;
+            settings.SeenExtensionVersions[command.ExtensionId] = version;
+            settings.LauncherConfigUpdatedAtUtc = DateTime.UtcNow.ToString("O");
         }
-
-        AppSettingsStore.Save(settings);
-        _appSettings = settings;
-        _windowBoundExtensionsService.Reload(_appSettings.WindowBindings);
+        if (newerReceipt || removed)
+        {
+            AppSettingsStore.Save(settings);
+            _appSettings = settings;
+            _windowBoundExtensionsService?.Reload(_appSettings.WindowBindings);
+            if (newerReceipt)
+            {
+                QueueCloudQuickPanelConfigSync("extension-seen");
+                QueueBackgroundWebDavSync("extension-seen");
+            }
+        }
         command.SetHasNewBadge(false);
     }
 
@@ -1480,7 +1516,8 @@ public partial class MainWindow
                 command.Subtitle.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
                 command.Category.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
                 (!string.IsNullOrWhiteSpace(command.OpenTarget) && command.OpenTarget.Contains(keyword, StringComparison.OrdinalIgnoreCase)))
-            .OrderBy(GetLocalExtensionDisplayOrder)
+            .OrderByDescending(GetLocalExtensionModificationUtc)
+            .ThenBy(GetLocalExtensionDisplayOrder)
             .ThenBy(static command => command.Title, StringComparer.OrdinalIgnoreCase)
             .Take(string.IsNullOrWhiteSpace(keyword) ? 60 : 40)
             .ToList();
@@ -2673,7 +2710,8 @@ public partial class MainWindow
     public IReadOnlyList<CommandItem> GetLocalExtensionsForSettings()
     {
         return _localExtensionIndex.Values
-            .OrderBy(GetLocalExtensionDisplayOrder)
+            .OrderByDescending(GetLocalExtensionModificationUtc)
+            .ThenBy(GetLocalExtensionDisplayOrder)
             .ThenBy(static x => x.Title, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
@@ -2681,7 +2719,8 @@ public partial class MainWindow
     public IReadOnlyList<CommandItem> GetExtensionsForSettings()
     {
         return _localExtensionIndex.Values
-            .OrderBy(GetLocalExtensionDisplayOrder)
+            .OrderByDescending(GetLocalExtensionModificationUtc)
+            .ThenBy(GetLocalExtensionDisplayOrder)
             .ThenBy(static x => x.Category, StringComparer.OrdinalIgnoreCase)
             .ThenBy(static x => x.Title, StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -2763,7 +2802,8 @@ public partial class MainWindow
         {
             _allCommands.RemoveAll(x => x.Source == CommandSource.LocalExtension);
             _localExtensionIndex.Clear();
-            foreach (var command in commands.OrderBy(GetLocalExtensionDisplayOrder).ThenBy(static x => x.Title, StringComparer.OrdinalIgnoreCase))
+            foreach (var command in commands.OrderByDescending(GetLocalExtensionModificationUtc)
+            .ThenBy(GetLocalExtensionDisplayOrder).ThenBy(static x => x.Title, StringComparer.OrdinalIgnoreCase))
             {
                 UpsertLocalExtensionCommand(command);
             }

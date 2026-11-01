@@ -80,6 +80,8 @@ internal static class AppSettingsMigration
         settings.RecentlyAddedExtensionIds ??= [];
         settings.UnreadNewExtensionIds ??= [];
         settings.KnownExtensionIds ??= [];
+        settings.KnownExtensionVersions ??= new(StringComparer.OrdinalIgnoreCase);
+        settings.SeenExtensionVersions ??= new(StringComparer.OrdinalIgnoreCase);
         settings.CustomCommandShortcuts ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         settings.AppShortcutBindings ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         settings.AppShortcutBindings = settings.AppShortcutBindings

@@ -640,7 +640,14 @@ public partial class MainWindow
 
         var index = (_appSettings.RecentlyAddedExtensionIds ?? []).FindIndex(id =>
             id.Equals(command.ExtensionId, StringComparison.OrdinalIgnoreCase));
-        return index < 0 ? 0 : Math.Max(0, 5000 - index);
+        var packageUpdatedUtc = GetLocalExtensionModificationUtc(command);
+        var age = DateTime.UtcNow - packageUpdatedUtc;
+        // Freshly changed/updated packages precede old discovery-order records.
+        // Restrict this boost to recent files so an old installation cannot dominate forever.
+        var updateBoost = age >= TimeSpan.Zero && age < TimeSpan.FromDays(3)
+            ? Math.Max(0, 20000 - (int)age.TotalMinutes)
+            : 0;
+        return updateBoost > 0 ? updateBoost : index < 0 ? 0 : Math.Max(0, 5000 - index);
     }
 
     private void UpdateSearchScopeCounts(SearchQueryState parsed)

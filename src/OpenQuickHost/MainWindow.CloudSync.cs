@@ -2512,6 +2512,15 @@ public partial class MainWindow
         var shouldBackfillAiConfig = !HasAiConfigPayload(snapshot) && HasAiSettings(settings);
         var shouldBackfillExtendedConfig = HasMissingExtendedConfigPayload(snapshot);
         var incoming = snapshot.ToAppSettings();
+        var mergedSeen = ExtensionSeenVersions.Merge(settings.SeenExtensionVersions, snapshot.SeenExtensionVersions);
+        var seenChanged = !ExtensionSeenVersions.Equivalent(settings.SeenExtensionVersions, mergedSeen);
+        if (seenChanged)
+        {
+            settings.SeenExtensionVersions = mergedSeen;
+            AppSettingsStore.Save(settings);
+            _appSettings = settings;
+            RefreshExtensionReadBadges();
+        }
         var changed =
             !string.Equals(settings.ThemeMode, incoming.ThemeMode, StringComparison.Ordinal) ||
             snapshot.AutoCloseToastEnabled != null && settings.AutoCloseToastEnabled != incoming.AutoCloseToastEnabled ||
@@ -2644,6 +2653,7 @@ public partial class MainWindow
     private void RefreshRuntimeAfterCloudLauncherPull(AppSettings settings, CloudQuickPanelConfigSnapshot snapshot)
     {
         _appSettings = AppSettingsStore.Load();
+        RefreshExtensionReadBadges();
         _windowBoundExtensionsService.Reload(_appSettings.WindowBindings);
         if (!_listenerServicesPaused)
         {
@@ -2697,6 +2707,7 @@ public partial class MainWindow
         settings.SelectedQuickPanelContextGroupId = incoming.SelectedQuickPanelContextGroupId;
         settings.GlobalFavoriteExtensionIds = incoming.GlobalFavoriteExtensionIds;
         settings.ContextFavoriteExtensionIds = incoming.ContextFavoriteExtensionIds;
+        settings.SeenExtensionVersions = ExtensionSeenVersions.Merge(settings.SeenExtensionVersions, incoming.SeenExtensionVersions);
         settings.DisabledExtensionIds = incoming.DisabledExtensionIds;
         settings.PinnedSearchScopeCommandIds = incoming.PinnedSearchScopeCommandIds;
         settings.QuickPanelMouseTriggers = incoming.QuickPanelMouseTriggers;
@@ -2764,6 +2775,22 @@ public partial class MainWindow
 
         await _cloudSyncClient.EnsureAuthenticatedAsync();
         var settings = AppSettingsStore.Load();
+        if (string.Equals(reason, "extension-seen", StringComparison.OrdinalIgnoreCase))
+        {
+            // Read before write: use the union of receipts so a second device cannot
+            // overwrite an acknowledged version with an older local view.
+            var remoteSeen = await _cloudSyncClient.GetUserConfigAsync<CloudQuickPanelConfigSnapshot>(CloudQuickPanelConfigId);
+            remoteSeen = await TryComposeCloudObjectSnapshotAsync(remoteSeen);
+            var merged = ExtensionSeenVersions.Merge(settings.SeenExtensionVersions, remoteSeen?.SeenExtensionVersions);
+            if (!ExtensionSeenVersions.Equivalent(settings.SeenExtensionVersions, merged))
+            {
+                settings.SeenExtensionVersions = merged;
+                settings.LauncherConfigUpdatedAtUtc = DateTime.UtcNow.ToString("O");
+                AppSettingsStore.Save(settings);
+                _appSettings = settings;
+                RefreshExtensionReadBadges();
+            }
+        }
         var localSnapshot = CloudQuickPanelConfigSnapshot.FromSettings(settings);
         if (CloudQuickPanelConfigSnapshot.IsInitialDefaultSnapshot(localSnapshot))
         {
@@ -3069,6 +3096,27 @@ public partial class MainWindow
                         UpdateKnownDynamicObjectAfterWrite(state, write);
                         state.Conflicts.Remove(objectId);
                         RemovePendingCloudObject(state, objectId);
+                        continue;
+                    }
+                    if (string.Equals(objectId, "extensions.seen", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // Read receipts are grow-only max-version maps, not user conflicts.
+                        // Merge concurrent writes and retry with the new remote revision.
+                        var remoteReceipt = latestRemote.Payload.Deserialize<ExtensionSeenPayload>(
+                            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+                        var current = AppSettingsStore.Load();
+                        current.SeenExtensionVersions = ExtensionSeenVersions.Merge(
+                            current.SeenExtensionVersions, remoteReceipt?.SeenExtensionVersions);
+                        current.LauncherConfigUpdatedAtUtc = DateTime.UtcNow.ToString("O");
+                        AppSettingsStore.Save(current);
+                        _appSettings = current;
+                        RefreshExtensionReadBadges();
+                        pending.LastExpectedRevision = latestRemote.Revision;
+                        pending.LastError = string.Empty;
+                        state.Conflicts.Remove(objectId);
+                        CloudObjectSyncStateStore.Save(state);
+                        QueueCloudQuickPanelConfigSync("extension-seen");
+                        HostAssets.AppendLog("Extension seen receipt revision auto-merged; retry queued.");
                         continue;
                     }
                     var isSameDevice = string.Equals(latestRemote.UpdatedByDeviceId, currentDeviceId, StringComparison.OrdinalIgnoreCase);
