@@ -765,10 +765,13 @@ public sealed partial class PersonalSyncService
         var remote = remoteBytes is { Length: > 0 }
             ? JsonSerializer.Deserialize<WebDavLauncherConfigSnapshot>(Encoding.UTF8.GetString(remoteBytes), JsonOptions)
             : null;
-        var hasRemoteObjects = await HasLauncherConfigObjectsAsync(cancellationToken);
-        remote = hasRemoteObjects
-            ? await TryLoadLauncherConfigObjectsAsync(remote?.Config, cancellationToken) ?? remote
-            : remote;
+        // A single pass determines presence and reads the objects. Previously
+        // HasLauncherConfigObjectsAsync read the first present object, then
+        // TryLoadLauncherConfigObjectsAsync fetched that object again.
+        var (objectSnapshot, hasRemoteObjects) =
+            await TryLoadLauncherConfigObjectsAsync(remote?.Config, cancellationToken);
+        if (hasRemoteObjects)
+            remote = objectSnapshot ?? remote;
         if (remote?.Config != null)
         {
             // 独立 yanm-state 是燕幕的唯一写入权威；旧主快照字段仅供迁移读取。
@@ -894,7 +897,8 @@ public sealed partial class PersonalSyncService
         var remote = remoteBytes is { Length: > 0 }
             ? JsonSerializer.Deserialize<WebDavLauncherConfigSnapshot>(Encoding.UTF8.GetString(remoteBytes), JsonOptions)
             : null;
-        remote = await TryLoadLauncherConfigObjectsAsync(remote?.Config, cancellationToken) ?? remote;
+        var (objectSnapshot, _) = await TryLoadLauncherConfigObjectsAsync(remote?.Config, cancellationToken);
+        remote = objectSnapshot ?? remote;
         return remote?.Config?.Yanm == null
             ? null
             : new WebDavYanmStateSnapshot
@@ -1039,23 +1043,27 @@ public sealed partial class PersonalSyncService
             $"Personal sync restore point written: id={point.RestorePointId}, objects={point.Objects.Count}, changed={point.ChangedObjectIds.Count}, bytes={pointBytes.Length}");
     }
 
-    private async Task<WebDavLauncherConfigSnapshot?> TryLoadLauncherConfigObjectsAsync(
-        CloudQuickPanelConfigSnapshot? baseSnapshot,
-        CancellationToken cancellationToken)
+    private async Task<(WebDavLauncherConfigSnapshot? Snapshot, bool HasRemoteObjects)>
+        TryLoadLauncherConfigObjectsAsync(
+            CloudQuickPanelConfigSnapshot? baseSnapshot,
+            CancellationToken cancellationToken)
     {
         var objects = new List<LauncherConfigObjectEnvelope>();
+        var hasRemoteObjects = false;
         foreach (var definition in LauncherConfigObjectStore.Definitions)
         {
-            var bytes = await _backend.TryReadBytesAsync(LauncherConfigObjectStore.GetPath(definition.ObjectId), cancellationToken);
+            var bytes = await _backend.TryReadBytesAsync(
+                LauncherConfigObjectStore.GetPath(definition.ObjectId), cancellationToken);
+            // Preserve the old presence check: even an invalid/non-deserializable
+            // remote object is evidence that the cloud object store exists.
+            hasRemoteObjects |= bytes is { Length: > 0 };
             var obj = LauncherConfigObjectStore.Deserialize(bytes);
             if (obj != null && obj.ObjectId.Equals(definition.ObjectId, StringComparison.OrdinalIgnoreCase))
-            {
                 objects.Add(obj);
-            }
         }
 
         var snapshot = LauncherConfigObjectStore.Compose(baseSnapshot, objects, out var updatedAtUtc);
-        return snapshot == null
+        var result = snapshot == null
             ? null
             : new WebDavLauncherConfigSnapshot
             {
@@ -1065,20 +1073,7 @@ public sealed partial class PersonalSyncService
                     : updatedAtUtc.ToString("O"),
                 Config = snapshot
             };
-    }
-
-    private async Task<bool> HasLauncherConfigObjectsAsync(CancellationToken cancellationToken)
-    {
-        foreach (var definition in LauncherConfigObjectStore.Definitions)
-        {
-            var bytes = await _backend.TryReadBytesAsync(LauncherConfigObjectStore.GetPath(definition.ObjectId), cancellationToken);
-            if (bytes is { Length: > 0 })
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return (result, hasRemoteObjects);
     }
 
     private async Task<bool> UploadYanmStateAsync(YanmSettings yanm, DateTime updatedAtUtc, CancellationToken cancellationToken)
