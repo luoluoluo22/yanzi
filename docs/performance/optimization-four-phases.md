@@ -154,3 +154,36 @@
 - 新增自动集成回归：64 个并发逻辑读取只触发 **1 次模拟 HttpMessageHandler GET**，累计 63 个共享等待者；下一次顺序读取发起第二次 GET 而非复用旧结果。完整回归通过，新增测试 **5/5** 连续通过；这是测试网络替身，不是 Gitee 实网。
 - 办公室隔离 .NET 9.0.320 SDK Release 自包含 publish 成功，Yanzi.dll SHA-256 `9A4B69AFFD965E131A36E4BFC7B26C2079118DDA85DBC932E7D1A1C80C4728B8`；独立 `--dev --show` Canary 首轮 386/400 WM_NULL（启动 13 秒，14 次未响应），第二轮等待 20 秒后 8 个 HWND **160/160**，正式 PID 29104 未变，两个 Canary PID 已退出。不能将 WM_NULL 当成仓库业务 QA。
 - 详细报告 [qa-phase1-pr127-office-singleflight-metrics-20261102.md](qa-phase1-pr127-office-singleflight-metrics-20261102.md)。家里浣熊连接仍 pending，实网 Gitee 同负载请求降幅及双端同步一致性仍缺；第一阶段继续进行，PR #127 不合并。
+
+## 合并主线 PR #126 历史诊断记录（保留原时间与状态）
+
+### 2026-11-01 21:58 真实 GET 已闭合窗口诊断（PR #126，待 CI/独立 Canary）
+
+- 新增 `scripts/measure-phase1-physical-get.ps1`，只解析 Gitee 专属 HTTP 发送入口实际输出的 `GET transport window`，汇总已闭合窗口 `sent/completed`、2xx/404/429或5xx/传输错误/取消；明确 `exactWallClockCount=false`，最后未刷新的窗口和处理器重建不可作为精确自然时间段计数。拒绝将逻辑 `Read requested` 当作真实 HTTP。
+- 本机 PowerShell 5.1 合成日志回归通过：2 个闭合窗口、13 次物理 GET、累计计数重置、边界、敏感信息不泄露和非法时间窗口检查。20:25–21:50 的正式版样本为 0 个新指标窗口，原因是正式版未安装含计数器的代码；不能据此判断 0 次请求。
+- 独立分支 `test/phase1-physical-get-closed-window-20261101`，PR #126；本轮仅诊断脚本，无正式版修改。CI、两端脚本回归、独立 Canary 和同业务负载 HTTP 减量尚待核验；PR 在完成门禁前不合并。
+- 其他 Agent 于 21:18–21:42 已完成真实 Gitee 专用 QA 对象的双端读写/删除及 32 并发合并为一次底层读取，证据位于家里 `%LOCALAPPDATA%\\OpenQuickHost\\Diagnostics\\PerfQA\\phase1-dual-install-report-20261101.md`；该验证不是正式自动同步全链路，不能替代冲突/墓碑恢复一致性。阶段一仍进行中。
+
+- 21:59 双端独立脚本 QA：家里 PC-202409131508 与办公室 CHINAMI-3IF988E 均在各自临时隔离目录执行 PowerShell 5.1 `verify-phase1-physical-get.ps1`，均返回 `PASS: 2 closed windows, 13 physical GET sends, handler counter reset, exclusive boundaries, redaction, invalid interval`，退出码均为 0。办公室只写入临时 QA 文件，没有更改正式实例。GitHub Engineering foundation regression run #359 截至检查时为 `in_progress`；需等待通过并完成独立 Canary 业务 QA 后才能合并 PR #126。
+
+### 2026-11-02 02:32 远端夜间修复（PR #126，尚未完成 Canary 门禁）
+
+- 时间门禁：北京时间 02:32，未连接、唤醒或修改家里/办公室电脑；仅通过 GitHub 修改 PR #126 隔离分支，正式实例和 main 不变。
+- 修复 `scripts/measure-phase1-physical-get.ps1`：非法日期使用 `TryParseExact` 跳过并计数；补齐 `otherHttp`（401/403 等）字段；对 `completed` 与全部响应/异常分类之和做一致性校验，不错误地要求跨窗口的 `completed <= sent`；对无闭合窗口标记 `INSUFFICIENT_NO_CLOSED_WINDOWS`，其余也标明仅部分覆盖，不能据此推断精确自然时间 HTTP 请求总数。
+- 扩充 `scripts/verify-phase1-physical-get.ps1` 合成样本：401/403 分类、非法日期、分类总和不符、缺失字段、无闭合窗口、原有跨窗在途完成、窗口边界和脱敏。待 CI Windows PowerShell 5.1 执行并核对。
+- 发现既有 CI 只运行 `verify-phase1-log-window.ps1`，未执行新增物理 GET 解析器回归；已在 `.github/workflows/engineering-checks.yml` 新增 Windows `pwsh` 验证步骤，提交 `debc29f`，等待新一轮 CI 真实执行并核对结果。
+- 额外架构阻塞：后台同步周期性新建 `PersonalSyncService`/HTTP 处理器；指标只在 60 秒后下一次 GET 输出，短周期结束后可能完全无窗口日志。必须单独修复计数器生命周期或加入可验证的安全 flush（不记录 token/URL），并测试短任务、重建、异常和累计一致性；PR #126 的解析器修复本身**不能**解决漏计。
+- 合并门禁：脚本回归/CI 通过后，仍需北京时间 08:00–22:00 的隔离 Canary 安装、业务 QA 和双端一致性证据；不得在夜间合并或覆盖正式实例。第一阶段继续进行中。
+
+
+### 2026-11-02 12:49 北京时间：PR #126 办公室独立 QA（诊断工具，不等于阶段一验收）
+- PR #126 原 head d2008bd，CI 41337286788 completed/success；PowerShell 5.1 合成窗口回归 PASS。
+- 办公室隔离 Release 编译退出码 0（本地 QA clone 使用 PR #127 的 DOTNET_ROOT 构建脚本临时兼容修复，未随 PR #126 提交）；独立 --dev Canary PID 8020 存活 20 秒，Yanzi.dll SHA-256 419AC4C7956163DDECA8BE0EA381478F5FC49C4AE9832B83654AA23B3B721109；正式版 PID 29104 保持不变，Canary 已退出。
+- 详细证据：[qa-phase1-pr126-office-20261102.md](qa-phase1-pr126-office-20261102.md)。PR #126 只涉及只读诊断脚本/CI/文档，可独立合并，不代表阶段一已完成；家里相同版本 Canary、真实 Gitee 同负载 HTTP 请求降幅及双端同步一致性仍待验收。
+- 同时发现其他 Agent 的独立 PR #128（Retry-After 退避）CI 41386040430 已 success；该 PR 仍需真实业务验收，避免与 PR #127 重复修改同一代码路径。
+
+### 2026-11-02 13:54 北京时间：PR #127 安全整合已合并的 PR #126
+
+- GitHub 已合并 PR #126（main `49de494`）；PR #127 当前存在一处 `docs/performance/optimization-four-phases.md` 文档冲突，`.github/workflows/engineering-checks.yml` 可自动合并。
+- 在 PR #127 **隔离工作树**按三方共同祖先 `d067ec8` 核对：主线台账仅新增 25 行 PR #126 历史诊断记录。保留 PR #127 台账全部内容，并将这 25 行原样并入“合并主线 PR #126 历史诊断记录”；未使用丢弃主线内容的 `-X ours`。
+- 合并后办公室再次执行 Gitee HTTP metrics + singleflight + PR #126 PowerShell 物理 GET 解析器回归，均通过。合并内容只涉及诊断脚本、文档和 CI，不修改此前已 Canary 验证的运行时代码；正式 PID 29104 未变。下一步回读新 merge commit 的 GitHub CI，仍缺家里同提交 Canary 和 Gitee 实网/跨端一致性，第一阶段不完成。
