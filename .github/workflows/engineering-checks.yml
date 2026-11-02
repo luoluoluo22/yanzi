@@ -87,6 +87,10 @@ jobs:
         if: needs.classify.outputs.tier == 'full'
         shell: pwsh
         run: ./scripts/verify-phase1-log-window.ps1
+      - name: Phase-one physical GET closed-window parser regression
+        if: needs.classify.outputs.tier == 'full'
+        shell: pwsh
+        run: ./scripts/verify-phase1-physical-get.ps1
       - name: Browser helper install and connection regression
         if: needs.classify.outputs.tier == 'full'
         run: |
