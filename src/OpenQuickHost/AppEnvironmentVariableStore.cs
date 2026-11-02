@@ -18,7 +18,8 @@ public static class AppEnvironmentVariableStore
         "YANZI_MAIL_QQ_EMAIL",
         "YANZI_MAIL_QQ_AUTH_CODE",
         "YANZI_MAIL_GMAIL_EMAIL",
-        "YANZI_MAIL_GMAIL_APP_PASSWORD"
+        "YANZI_MAIL_GMAIL_APP_PASSWORD",
+        "YANZI_MAIL_ACCOUNTS_V2"
     };
 
     private static readonly HashSet<string> ReservedNames = new(StringComparer.OrdinalIgnoreCase)
