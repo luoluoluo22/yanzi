@@ -165,7 +165,10 @@ internal sealed class GiteeHttpReadMetricsHandler : DelegatingHandler
         var result = new GiteeHttpReadMetricsSnapshot(
             elapsed, _sent, _completed, _sentTotal, _completedTotal,
             _success, _notFound, _retryable, _otherHttp, _transportErrors,
-            _canceled, _durationMsTotal, _durationMsMax);
+            _canceled, _durationMsTotal, _durationMsMax,
+            GiteeReadFlightCoordinator.NetworkFlights,
+            GiteeReadFlightCoordinator.SharedWaiters,
+            GiteeReadFlightCoordinator.ActiveCount);
         _sent = _completed = _success = _notFound = _retryable = _otherHttp =
             _transportErrors = _canceled = _durationMsTotal = _durationMsMax = 0;
         return result;
@@ -184,4 +187,6 @@ internal sealed record GiteeHttpReadMetricsSnapshot(
     long SentTotal, long CompletedTotal,
     long Success2xx, long NotFound404, long Retryable429Or5xx,
     long OtherHttp, long TransportErrors, long Canceled,
-    long DurationMsTotal, long DurationMsMax);
+    long DurationMsTotal, long DurationMsMax,
+    long SingleflightLeadersTotal, long SingleflightSharedWaitersTotal,
+    int SingleflightActiveFlights);

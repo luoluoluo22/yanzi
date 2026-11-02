@@ -145,3 +145,12 @@
 - 在 CHINAMI-3IF988E 的独立 PR #127 Canary `--dev --show --watcher-qa` 上完成三批、两个扩展 ID、660 次文本文件写入，真实观察到 1,148 次 FileSystemWatcher 通知被合并成 3 条批处理日志（373/440/335，均 extensions=2）；**办公室实际事件合并测试通过**，但不代表实际 HTTP 请求数减少。首轮仅等待 7 秒导致启动扫描未完成、0 批次，已修正 QA 脚本等待 25 秒后重测通过，产品代码未改。
 - 正式版 PID 29104 前后不变，测试进程已退出，两个唯一 QA 扩展目录全部清除；`--dev` 禁用真实云同步。机器本地 JSON SHA-256 `8A7A96489287A674DA7EB7D1FD6CD84B5B66ED3E0253D9948EDAF40523739D79`。详细证据见 [qa-phase1-pr127-office-watcher-storm-20261102.md](qa-phase1-pr127-office-watcher-storm-20261102.md)。
 - PR #127 上一 head `7752c79` 的 CI `41379153854` 三个作业均通过；本轮新增证据提交 `df4206c` 为文档变更，需独立核对其 CI。家里浣熊调用仍 pending；真实 Gitee 同负载 GET 计数、失败重试及跨端数据一致性仍缺，第一阶段保持进行中，PR 不合并。
+
+
+### 2026-11-02 13:34–13:48 北京时间：PR #127 增加 singleflight 与物理 GET 联合观测
+
+- 已回读 PR #127/#128 和台账，确认 PR #126 已合并；PR #127 的上一 head `2ba219ad` CI `41387206654` success，PR #128 `e9bdd7b` CI `41386040430` success，二者仍为 Draft。未改动 PR #128。
+- 在 PR #127 隔离办公室工作树增加三个无敏感信息的窗口快照字段：`singleflightLeadersTotal`、`singleflightSharedWaitersTotal`、`singleflightActiveFlights`，配合真实 `sentTotal` 区分逻辑共享与底层 GET；窗口快照采样而非日志写入时采样。
+- 新增自动集成回归：64 个并发逻辑读取只触发 **1 次模拟 HttpMessageHandler GET**，累计 63 个共享等待者；下一次顺序读取发起第二次 GET 而非复用旧结果。完整回归通过，新增测试 **5/5** 连续通过；这是测试网络替身，不是 Gitee 实网。
+- 办公室隔离 .NET 9.0.320 SDK Release 自包含 publish 成功，Yanzi.dll SHA-256 `9A4B69AFFD965E131A36E4BFC7B26C2079118DDA85DBC932E7D1A1C80C4728B8`；独立 `--dev --show` Canary 首轮 386/400 WM_NULL（启动 13 秒，14 次未响应），第二轮等待 20 秒后 8 个 HWND **160/160**，正式 PID 29104 未变，两个 Canary PID 已退出。不能将 WM_NULL 当成仓库业务 QA。
+- 详细报告 [qa-phase1-pr127-office-singleflight-metrics-20261102.md](qa-phase1-pr127-office-singleflight-metrics-20261102.md)。家里浣熊连接仍 pending，实网 Gitee 同负载请求降幅及双端同步一致性仍缺；第一阶段继续进行，PR #127 不合并。

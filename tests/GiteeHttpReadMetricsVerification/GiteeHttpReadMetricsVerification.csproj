@@ -7,5 +7,6 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../src/OpenQuickHost/Sync/GiteeHttpReadMetricsHandler.cs" Link="GiteeHttpReadMetricsHandler.cs" />
+    <Compile Include="../../src/OpenQuickHost/Sync/GiteeReadFlightCoordinator.cs" Link="GiteeReadFlightCoordinator.cs" />
   </ItemGroup>
 </Project>

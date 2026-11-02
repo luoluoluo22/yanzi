@@ -734,7 +734,10 @@ internal sealed class GiteePersonalSyncBackend : PersonalSyncBackendBase
             ("success2xx", m.Success2xx), ("notFound404", m.NotFound404),
             ("retryable429Or5xx", m.Retryable429Or5xx), ("otherHttp", m.OtherHttp),
             ("transportErrors", m.TransportErrors), ("canceled", m.Canceled),
-            ("durationMsTotal", m.DurationMsTotal), ("durationMsMax", m.DurationMsMax))));
+            ("durationMsTotal", m.DurationMsTotal), ("durationMsMax", m.DurationMsMax),
+            ("singleflightLeadersTotal", m.SingleflightLeadersTotal),
+            ("singleflightSharedWaitersTotal", m.SingleflightSharedWaitersTotal),
+            ("singleflightActiveFlights", m.SingleflightActiveFlights))));
     private readonly PersonalSyncGiteeConfig _config;
     private readonly PersonalSyncSecretBag _secrets;
     private readonly HttpClient _httpClient = SharedHttpClient;

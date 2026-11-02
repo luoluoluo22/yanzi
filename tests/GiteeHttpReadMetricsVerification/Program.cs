@@ -198,7 +198,59 @@ using (var orderedClient = new HttpClient(new GiteeHttpReadMetricsHandler(
         Check(orderedReports.SequenceEqual(new long[] { 1, 2 }),
             "concurrent window closures preserve monotonic log ordering");
 }
-Console.WriteLine("GITEE_HTTP_METRICS_PASS sentTotal=8 firstWindow=6 summaries=2");
+// Integration regression: 64 logical reads share one actual HTTP handler dispatch.
+// The metrics window records both physical transport and deduplication totals.
+var integratedReports = new ConcurrentQueue<GiteeHttpReadMetricsSnapshot>();
+var integratedPending = new TaskCompletionSource<HttpResponseMessage>(
+    TaskCreationOptions.RunContinuationsAsynchronously);
+var integratedPhysical = 0;
+using (var integratedClient = new HttpClient(new GiteeHttpReadMetricsHandler(
+    new FakeHandler((_, _) =>
+    {
+        var call = Interlocked.Increment(ref integratedPhysical);
+        return call == 1 ? integratedPending.Task : Task.FromResult(
+            new HttpResponseMessage(HttpStatusCode.OK)
+            { Content = new ByteArrayContent(new byte[] { 2 }) });
+    }), integratedReports.Enqueue, TimeSpan.FromMilliseconds(150))))
+{
+    var integratedKey = GiteeReadFlightCoordinator.CreateKey(
+        "qa-owner", "qa-repo", "main", "qa-object.json", "test-only-token");
+    Func<Task<byte[]?>> integratedFetch = async () =>
+        await integratedClient.GetByteArrayAsync("https://example.test/object");
+    var logicalReads = Enumerable.Range(0, 64)
+        .Select(_ => GiteeReadFlightCoordinator.ReadAsync(
+            integratedKey, integratedFetch, CancellationToken.None))
+        .ToArray();
+    Check(Volatile.Read(ref integratedPhysical) == 1,
+        "64 concurrent logical reads dispatch exactly one physical GET");
+    integratedPending.SetResult(new HttpResponseMessage(HttpStatusCode.OK)
+    { Content = new ByteArrayContent(new byte[] { 1 }) });
+    var logicalResults = await Task.WhenAll(logicalReads);
+    Check(logicalResults.All(x => x is { Length: 1 } && x[0] == 1),
+        "every coalesced waiter receives the first HTTP response");
+    await WaitForAsync(() => integratedReports.Count >= 1,
+        "singleflight integration produces a physical GET metrics window");
+    var integratedFirst = integratedReports.ElementAt(0);
+    Check(integratedFirst.Sent == 1 && integratedFirst.Completed == 1 &&
+          integratedFirst.SingleflightLeadersTotal == 1 &&
+          integratedFirst.SingleflightSharedWaitersTotal == 63 &&
+          integratedFirst.SingleflightActiveFlights == 0,
+        "metrics distinguish physical GET, singleflight leader and 63 shared waiters");
+    var sequential = await GiteeReadFlightCoordinator.ReadAsync(
+        integratedKey, integratedFetch, CancellationToken.None);
+    Check(sequential is { Length: 1 } && sequential[0] == 2 &&
+          Volatile.Read(ref integratedPhysical) == 2,
+        "sequential read performs a fresh physical GET, never a stale cache hit");
+    await WaitForAsync(() => integratedReports.Count >= 2,
+        "second physical GET metrics window is flushed");
+    var integratedSecond = integratedReports.ElementAt(1);
+    Check(integratedSecond.SentTotal == 2 &&
+          integratedSecond.CompletedTotal == 2 &&
+          integratedSecond.SingleflightLeadersTotal == 2 &&
+          integratedSecond.SingleflightSharedWaitersTotal == 63,
+        "physical and singleflight totals remain monotonic across windows");
+}
+Console.WriteLine("GITEE_HTTP_METRICS_PASS sentTotal=8 firstWindow=6 summaries=2 integratedPhysical=2 sharedWaiters=63");
 sealed class FakeHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send) : HttpMessageHandler
 {
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
