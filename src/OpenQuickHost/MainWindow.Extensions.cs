@@ -1921,7 +1921,10 @@ public partial class MainWindow
         var focusMovedWithinYanzi = foregroundWindow != IntPtr.Zero &&
             foregroundWindow != new WindowInteropHelper(this).Handle &&
             WindowSensorHelper.IsCurrentProcessWindow(foregroundWindow);
-        SetSearchScopePopupOpen(focusMovedWithinYanzi || _isPinned || IsAiChatMode);
+        // The tabs are a separate native Popup HWND. Keep them for focus transfers
+        // inside Yanzi (clipboard, file picker), but do not let them float over
+        // unrelated applications when the regular warehouse loses focus.
+        SetSearchScopePopupOpen(focusMovedWithinYanzi);
         if (CapsGuidePopup != null)
         {
             CapsGuidePopup.IsOpen = false;

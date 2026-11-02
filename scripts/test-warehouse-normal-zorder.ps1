@@ -21,5 +21,6 @@ Assert-WindowContract ($front.Contains('SetForegroundWindow(handle)')) 'hotkey a
 Assert-WindowContract ($show.Contains('if (!IsVisible || !IsActive) return;')) 'queued activation cannot steal focus back from modal picker'
 Assert-WindowContract ($picker.Contains('dialog.ShowDialog(this)')) 'native file picker has the warehouse as owner'
 Assert-WindowContract (-not $picker.Contains('new System.Threading.Thread')) 'native file picker is on owner UI dispatcher'
+Assert-WindowContract ($ext.Contains('SetSearchScopePopupOpen(focusMovedWithinYanzi);')) 'detached scope tabs do not float above external applications'
 Assert-WindowContract ($ext.Contains('if (_isPinned || IsAiChatMode || !IsVisible || IsRadialPickerMode)')) 'AI chat remains visible on focus transfer'
 Write-Output 'WAREHOUSE_NORMAL_ZORDER_CONTRACT_PASSED'
