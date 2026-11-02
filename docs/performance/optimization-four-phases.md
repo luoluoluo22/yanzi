@@ -120,3 +120,11 @@
 - 发现原有自动测试仅验证“请求发出后短周期空闲结算”与“跨窗口完成但后续有新 GET 触发结算”两种情形，缺少“跨窗口完成且始终没有后续 GET”的组合。已在 PR #127 的 `tests/GiteeHttpReadMetricsVerification/Program.cs` 新增真实计时回归：未完成 GET 先经 Timer 输出 sent=1/completed=0；完成后无需新请求，再经 Timer 输出 sent=0/completed=1、2xx=1，且累计发送/完成均为 1。提交 `380c2567c343aef3e05f0dd5bd0791f13dd0c013`。
 - 新测试提交**尚未取得 CI 通过证据**；不得用上一提交的成功结论代替。北京时间 08:00 前未连接/唤醒家里或办公室电脑，没有本地 Release 编译、独立 Canary 安装、正式账户实网对照或跨端一致性 QA；PR #127 继续 draft，PR #126 继续开放，第一阶段未验收完成。
 - 下一步：先核查新提交 CI；工作窗口内按隔离构建→双端 `--dev`/Canary 安装→窗口心跳及业务操作→安全的真实 Gitee 双端新增/修改/冲突/删除恢复→相同负载 HTTP 统计与耗时对照，失败修复重测后再考虑合并。禁止修改正式 ReleaseQueue、账号密钥、IndexedDB 和回滚包。
+
+### 2026-11-02 08:32–08:45 北京时间：最新 CI 与办公室只读诊断、PR #126 独立脚本 QA
+
+- 已核验 PR #127 当前 head `f829fdc2711d0844d56cec8a3754992de0b6da86` 的 GitHub Actions `41362740261`：`classify`、`portable-contracts`、`desktop-and-worker` 均 completed/success，具体 `Desktop build`、`Gitee physical GET metrics and idle-window regression` 和阶段一日志边界/脱敏回归步骤均 success。此为**当前 head 的 CI**，不代表两端 Canary 或实网通过。
+- 北京时间 08:34 办公室 CHINAMI-3IF988E 独立 MCP 在线；正式 Yanzi.exe PID 29104，前后未变化。对正式 `cloud-sync-diagnostics.log` 的 2026-11-02 07:00–07:35 左闭右开窗口执行**只读**诊断：419 行、逻辑 `Read requested` 198、`Read completed` 194、冲突行 1、真实 `GET transport window` 行 0。198 条逻辑读取归一化后有 99 种日志文本指纹，最高重复 11 次；指纹不是 URL 或实际 HTTP 去重键。此正式实例未装 PR #127，故**0 条计数窗口表示覆盖不足，绝非 0 次物理 GET**。
+- 办公室本地证据：`%LOCALAPPDATA%\\OpenQuickHost\\QA\\phase1\\office-readonly-20261102-0700-0735.json`，SHA-256 `585EEC305B9B4A3B4E4919BABF0A378426E3BDC44A7B56F26E90055F0CAF76F7`。仅聚合指标、文件哈希与正式 PID，不包含 token、URL、路径正文；未修改正式进程或用户数据。
+- 从 PR #126 的 head 拉取 `measure-phase1-physical-get.ps1` / `verify-phase1-physical-get.ps1` 到办公室隔离 QA 目录，在 Windows PowerShell 5.1 执行合成回归成功：`PASS: 2 closed windows, 13 physical GET sends, otherHttp classification, malformed timestamp, invalid status sum, missing fields, incomplete coverage, redaction, invalid interval`。对上述正式日志窗口运行解析器得到 `INSUFFICIENT_NO_CLOSED_WINDOWS`，符合预期；此为**诊断脚本 QA，不是主程序 Canary 安装**。
+- 家里 PC-202409131508 浣熊连接调用本轮持续 pending，未取得本机编译/安装证据；办公室没有可用 `dotnet` SDK，无法直接在该机编译 PR #127。没有为规避门禁而合并 PR #126/#127，也没有触发正式 Release。下一步：家里浣熊恢复后在隔离工作树构建 PR #127、独立 `--dev` Canary 双端安装和可见 UI/同步业务 QA；真实物理 GET 同负载对照、失败重试、冲突/删除恢复一致性通过后再合并。
