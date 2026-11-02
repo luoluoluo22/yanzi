@@ -1,0 +1,30 @@
+{
+    "id":  "mail-verification",
+    "name":  "验证码",
+    "version":  "0.4.1",
+    "category":  "效率工具",
+    "description":  "原生验证码窗口，支持直接绑定 QQ / Gmail、加密环境变量同步与问号授权指引。",
+    "keywords":  [
+                     "邮箱",
+                     "邮件",
+                     "验证码",
+                     "QQ",
+                     "Gmail",
+                     "IMAP",
+                     "登录"
+                 ],
+    "icon":  "mdi:email-lock",
+    "accentHex":  "#FF2563EB",
+    "runtime":  "csharp",
+    "uiMode":  "native-window",
+    "entryMode":  "entry",
+    "entry":  "mail.cs",
+    "toggleWindow":  false,
+    "permissions":  [
+                        "network",
+                        "clipboard.write"
+                    ],
+    "runAsAdmin":  false,
+    "waitForExit":  false,
+    "isPublished":  false
+}
