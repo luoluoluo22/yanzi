@@ -871,26 +871,38 @@ internal sealed class GiteePersonalSyncBackend : PersonalSyncBackendBase
         const int attempts = 4;
         for (var attempt = 1; ; attempt++)
         {
+            // Jitter avoids synchronized retry bursts from concurrent sync components.
+            // A server throttle beyond the bounded wait is surfaced, never retried early.
+            var delay = GiteeReadRetryPolicy.ExponentialDelay(attempt, Random.Shared.Next(0, 201));
             try
             {
                 var response = await _httpClient.GetAsync(uri, cancellationToken);
                 if (!IsRetryableGiteeReadStatus(response.StatusCode) || attempt >= attempts)
                     return response;
+                var serverDelay = GiteeReadRetryPolicy.ComputeDelay(response, delay, DateTimeOffset.UtcNow);
+                if (serverDelay is null)
+                {
+                    CloudSyncDiagnostics.Log("GiteeBackend", "Transient read deferred by server",
+                        ("statusCode", (int)response.StatusCode), ("attempt", attempt));
+                    return response;
+                }
+                delay = serverDelay.Value;
                 CloudSyncDiagnostics.Log("GiteeBackend", "Transient read; retry",
-                    ("statusCode", (int)response.StatusCode), ("attempt", attempt));
+                    ("statusCode", (int)response.StatusCode), ("attempt", attempt),
+                    ("delayMs", (long)delay.TotalMilliseconds));
                 response.Dispose();
             }
             catch (HttpRequestException) when (attempt < attempts)
             {
                 CloudSyncDiagnostics.Log("GiteeBackend", "Transient transport read; retry",
-                    ("attempt", attempt));
+                    ("attempt", attempt), ("delayMs", (long)delay.TotalMilliseconds));
             }
             catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested && attempt < attempts)
             {
                 CloudSyncDiagnostics.Log("GiteeBackend", "Transient read timeout; retry",
-                    ("attempt", attempt));
+                    ("attempt", attempt), ("delayMs", (long)delay.TotalMilliseconds));
             }
-            await Task.Delay(TimeSpan.FromMilliseconds(400 * (1 << (attempt - 1))), cancellationToken);
+            await Task.Delay(delay, cancellationToken);
         }
     }
 

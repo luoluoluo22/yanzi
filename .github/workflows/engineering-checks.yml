@@ -104,6 +104,9 @@ jobs:
       - name: Desktop build
         if: needs.classify.outputs.tier == 'full'
         run: dotnet build OpenQuickHost.sln -c Debug -v:minimal
+      - name: Gitee Retry-After throttling and bounded backoff regression
+        if: needs.classify.outputs.tier == 'full'
+        run: dotnet run --project tests/GiteeReadRetryPolicyVerification/GiteeReadRetryPolicyVerification.csproj -c Debug
       - name: Settings ownership and object conflict regression
         if: needs.classify.outputs.tier == 'full'
         run: |
