@@ -12,7 +12,13 @@ public static class AppEnvironmentVariableStore
     // Provider-only credentials are not injected into general extension environments.
     private static readonly HashSet<string> ProviderOnlySecrets = new(StringComparer.OrdinalIgnoreCase)
     {
-        "CNBLOGS_TOKEN"
+        "CNBLOGS_TOKEN",
+        // Email app passwords and IMAP authorization codes must never be published
+        // to HKCU\\Environment or injected into unrelated mini-app runtimes.
+        "YANZI_MAIL_QQ_EMAIL",
+        "YANZI_MAIL_QQ_AUTH_CODE",
+        "YANZI_MAIL_GMAIL_EMAIL",
+        "YANZI_MAIL_GMAIL_APP_PASSWORD"
     };
 
     private static readonly HashSet<string> ReservedNames = new(StringComparer.OrdinalIgnoreCase)
