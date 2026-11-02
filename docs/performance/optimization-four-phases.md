@@ -140,3 +140,8 @@
 - 同提交 5702d804 在办公室隔离 .NET 9.0.320 SDK 上重复执行 GiteeReadFlightVerification 30/30 通过、GiteeHttpReadMetricsVerification 15/15 通过；使用已编译 Release 测试二进制 --no-build，无失败。详细数据见 [qa-phase1-pr127-office-stress-20261102.md](qa-phase1-pr127-office-stress-20261102.md)。
 - 本地证据 %LOCALAPPDATA%\OpenQuickHost\QA\phase1\office-pr127-stress-20261102.json SHA-256 7CC3527709C4C93A59B4F05EAFFD782BDE70733CFD7C7E6647160F5F07E48A44。正式版 PID 29104 未变，未修改账号、密钥、IndexedDB、回滚包或 ReleaseQueue。
 - 这是模拟网络重复回归，不是实网物理 GET 降幅或跨端一致性。家里 MCP 仍 pending；继续等待同提交家里 Canary、真实业务同步、失败重试和同负载对照。PR #127 继续 draft，第一阶段不验收。
+### 2026-11-02 12:09–12:12 北京时间：办公室 PR #127 watcher 真实风暴隔离 QA
+
+- 在 CHINAMI-3IF988E 的独立 PR #127 Canary `--dev --show --watcher-qa` 上完成三批、两个扩展 ID、660 次文本文件写入，真实观察到 1,148 次 FileSystemWatcher 通知被合并成 3 条批处理日志（373/440/335，均 extensions=2）；**办公室实际事件合并测试通过**，但不代表实际 HTTP 请求数减少。首轮仅等待 7 秒导致启动扫描未完成、0 批次，已修正 QA 脚本等待 25 秒后重测通过，产品代码未改。
+- 正式版 PID 29104 前后不变，测试进程已退出，两个唯一 QA 扩展目录全部清除；`--dev` 禁用真实云同步。机器本地 JSON SHA-256 `8A7A96489287A674DA7EB7D1FD6CD84B5B66ED3E0253D9948EDAF40523739D79`。详细证据见 [qa-phase1-pr127-office-watcher-storm-20261102.md](qa-phase1-pr127-office-watcher-storm-20261102.md)。
+- PR #127 上一 head `7752c79` 的 CI `41379153854` 三个作业均通过；本轮新增证据提交 `df4206c` 为文档变更，需独立核对其 CI。家里浣熊调用仍 pending；真实 Gitee 同负载 GET 计数、失败重试及跨端数据一致性仍缺，第一阶段保持进行中，PR 不合并。
