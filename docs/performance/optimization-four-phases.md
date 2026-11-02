@@ -98,3 +98,10 @@
 - 发现既有 CI 只运行 `verify-phase1-log-window.ps1`，未执行新增物理 GET 解析器回归；已在 `.github/workflows/engineering-checks.yml` 新增 Windows `pwsh` 验证步骤，提交 `debc29f`，等待新一轮 CI 真实执行并核对结果。
 - 额外架构阻塞：后台同步周期性新建 `PersonalSyncService`/HTTP 处理器；指标只在 60 秒后下一次 GET 输出，短周期结束后可能完全无窗口日志。必须单独修复计数器生命周期或加入可验证的安全 flush（不记录 token/URL），并测试短任务、重建、异常和累计一致性；PR #126 的解析器修复本身**不能**解决漏计。
 - 合并门禁：脚本回归/CI 通过后，仍需北京时间 08:00–22:00 的隔离 Canary 安装、业务 QA 和双端一致性证据；不得在夜间合并或覆盖正式实例。第一阶段继续进行中。
+
+
+### 2026-11-02 12:49 北京时间：PR #126 办公室独立 QA（诊断工具，不等于阶段一验收）
+- PR #126 原 head d2008bd，CI 41337286788 completed/success；PowerShell 5.1 合成窗口回归 PASS。
+- 办公室隔离 Release 编译退出码 0（本地 QA clone 使用 PR #127 的 DOTNET_ROOT 构建脚本临时兼容修复，未随 PR #126 提交）；独立 --dev Canary PID 8020 存活 20 秒，Yanzi.dll SHA-256 419AC4C7956163DDECA8BE0EA381478F5FC49C4AE9832B83654AA23B3B721109；正式版 PID 29104 保持不变，Canary 已退出。
+- 详细证据：[qa-phase1-pr126-office-20261102.md](qa-phase1-pr126-office-20261102.md)。PR #126 只涉及只读诊断脚本/CI/文档，可独立合并，不代表阶段一已完成；家里相同版本 Canary、真实 Gitee 同负载 HTTP 请求降幅及双端同步一致性仍待验收。
+- 同时发现其他 Agent 的独立 PR #128（Retry-After 退避）CI 41386040430 已 success；该 PR 仍需真实业务验收，避免与 PR #127 重复修改同一代码路径。
