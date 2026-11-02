@@ -23,6 +23,8 @@
 
 **本地安装验证 ≠ GitHub 正式 Release（2026-11-01 修订）。** 宿主修改后应立即构建、在本机独立开发/Canary 通道安装真实程序并进行目标场景 QA；只有通过/记录未通过，才能汇报验证结论。72 小时或闲置 10 分钟的 ReleaseQueue 只延迟正式 GitHub 安装包发布，不允许被用作跳过本机安装验收的理由。详见 `docs/development-integration-release-policy.md`。正式生产目录及活跃进程依旧要求独立安全门禁。
 
+**宿主修复的正式安装闭环（2026-11-02，维护者已授权的设备）。** 维护者明确要求并已授予持续安装权限时，Windows 宿主修改必须完成「隔离开发/Canary 真机 QA → PR CI 通过并合并远程 main → 从已合并 main 构建版本号高于所有目标设备已装版本的本地 Velopack 安装包 → 在家里、办公室等已授权设备正式安装并启动 → 核对每端 `Yanzi.exe`/`Yanzi.dll` 的版本、DLL SHA-256、正式目录、单实例运行进程及本次目标 UI/功能」后才可报告完成。使用 `scripts/verify-production-install.ps1` 核对每台设备；任一设备失败应报告 `installation-pending` 并继续修复，绝不能把开发版验收、PR merged 或 GitHub Release 排队冒充正式安装。发布公开 GitHub Release 仍独立遵守延迟队列；不要为正式本机安装而提前公开发行，未经设备授权或存在生产安全风险时保持门禁。
+
 **Commit ≠ Merge ≠ Release。** 开发允许隔离分支 WIP 提交，合并 main 前必须完成必要验证；验证通过后及时集成，不要攒到发布前。默认只推送代码，不自动打 Tag、发布安装包、更新正式宿主或重启用户程序。已有 Cloudflare main 自动部署属于例外，涉及其触发路径时须先批准生产部署并确认迁移安全。旧规则冲突时，以新开发规范为准。
 
 **工作树数量控制**：创建任何新 Git worktree 之前，先阅读 [工作树生命周期规范](docs/worktree-retention-policy.md)，运行 scripts/check-worktree-cap.ps1。长期最多保留 5 个活动工作树；合并后立即清理，旧代码不优先于 origin/main。有未提交修改先做完整离线备份和哈希验证，不得强制删除用户数据。
