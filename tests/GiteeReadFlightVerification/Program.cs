@@ -40,6 +40,26 @@ await GiteeReadFlightCoordinator.ReadAsync(baseKey,
     }, CancellationToken.None);
 Check(newCount == 1, "sequential next read is not cached");
 
+// Stress the completion-to-next-read boundary. A completed in-flight entry
+// must never be observed as a cache by a subsequent sequential caller.
+for (var round = 0; round < 20; round++)
+{
+    var stressKey = baseKey + "-sequential-" + round;
+    var completion = new TaskCompletionSource<byte[]?>(TaskCreationOptions.RunContinuationsAsynchronously);
+    var physical = 0;
+    var pending = GiteeReadFlightCoordinator.ReadAsync(stressKey,
+        () => { Interlocked.Increment(ref physical); return completion.Task; }, CancellationToken.None);
+    completion.SetResult([(byte)round]);
+    var initial = await pending;
+    var followup = await GiteeReadFlightCoordinator.ReadAsync(stressKey,
+        () => { Interlocked.Increment(ref physical); return Task.FromResult<byte[]?>([(byte)(round + 1)]); },
+        CancellationToken.None);
+    Check(initial is { Length: 1 } && initial[0] == round &&
+          followup is { Length: 1 } && followup[0] == round + 1 && physical == 2 &&
+          GiteeReadFlightCoordinator.ActiveCount == 0,
+        "completed flights are evicted before next sequential read " + round);
+}
+
 using (var token = new CancellationTokenSource())
 {
     var unblock = new TaskCompletionSource<byte[]?>(TaskCreationOptions.RunContinuationsAsynchronously);

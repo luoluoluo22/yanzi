@@ -128,3 +128,10 @@
 - 办公室本地证据：`%LOCALAPPDATA%\\OpenQuickHost\\QA\\phase1\\office-readonly-20261102-0700-0735.json`，SHA-256 `585EEC305B9B4A3B4E4919BABF0A378426E3BDC44A7B56F26E90055F0CAF76F7`。仅聚合指标、文件哈希与正式 PID，不包含 token、URL、路径正文；未修改正式进程或用户数据。
 - 从 PR #126 的 head 拉取 `measure-phase1-physical-get.ps1` / `verify-phase1-physical-get.ps1` 到办公室隔离 QA 目录，在 Windows PowerShell 5.1 执行合成回归成功：`PASS: 2 closed windows, 13 physical GET sends, otherHttp classification, malformed timestamp, invalid status sum, missing fields, incomplete coverage, redaction, invalid interval`。对上述正式日志窗口运行解析器得到 `INSUFFICIENT_NO_CLOSED_WINDOWS`，符合预期；此为**诊断脚本 QA，不是主程序 Canary 安装**。
 - 家里 PC-202409131508 浣熊连接调用本轮持续 pending，未取得本机编译/安装证据；办公室没有可用 `dotnet` SDK，无法直接在该机编译 PR #127。没有为规避门禁而合并 PR #126/#127，也没有触发正式 Release。下一步：家里浣熊恢复后在隔离工作树构建 PR #127、独立 `--dev` Canary 双端安装和可见 UI/同步业务 QA；真实物理 GET 同负载对照、失败重试、冲突/删除恢复一致性通过后再合并。
+
+### 2026-11-02 09:38–09:55 北京时间：办公室独立构建、singleflight 竞态修复与 Canary QA
+
+- PR #127 原 head `ea113a5` 的 CI `41368283691` 三个作业均 success（含 Windows Desktop build 和 HTTP 指标回归），但这是本轮新修复之前的提交。
+- 办公室安装隔离 .NET SDK 9.0.320、独立克隆 PR #127。复测既有 singleflight 回归 5 次出现 3 次竞态失败：完成任务的清理 continuation 可能晚于等待者返回，顺序读取有短暂复用已完成请求的风险。已在协调器等待者 `finally` 中按精确 entry 清理完成任务，保留取消隔离；增加 20 轮顺序复读测试和 Windows CI 步骤。修复后 10/10 轮通过；HTTP 计数回归通过。
+- 自包含 publish 首次因原 `copy-native-window-refs.ps1` 仅搜索系统级 dotnet 而失败；已支持隔离 `DOTNET_ROOT`，5 个参考程序集复制验证通过，随后 `win-x64 --self-contained true` 发布成功。独立 Canary `--dev --show` 启动成功；8 个顶层 HWND，WM_NULL 100/100，P95 0.222ms、P99 1.098ms，正式 PID 29104 不变，测试进程均已退出。
+- 完整证据见 [qa-phase1-pr127-office-20261102.md](qa-phase1-pr127-office-20261102.md)。**仍缺家里双端同提交 Canary、真实 Gitee 同负载请求数和跨端新增/修改/冲突/删除恢复 QA**，故 PR #127 继续 draft、第一阶段继续进行。此次新提交尚需 GitHub CI，不得沿用旧提交成功状态。

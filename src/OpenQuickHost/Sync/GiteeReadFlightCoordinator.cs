@@ -63,9 +63,19 @@ internal static class GiteeReadFlightCoordinator
 
         // Cancellation belongs to each waiter. One caller must not cancel the
         // shared transport while other devices/components still await it.
-        var result = await shared.WaitAsync(callerCancellation).ConfigureAwait(false);
-        // Preserve the prior contract: callers own their returned byte arrays.
-        return result?.ToArray();
+        try
+        {
+            var result = await shared.WaitAsync(callerCancellation).ConfigureAwait(false);
+            // Preserve the prior contract: callers own their returned byte arrays.
+            return result?.ToArray();
+        }
+        finally
+        {
+            // Continuations may run after waiters resume. Remove a completed flight
+            // before any waiter returns so a sequential read cannot reuse stale data.
+            // A canceled waiter must not evict a still-running shared request.
+            if (shared.IsCompleted) RemoveExact(key, entry);
+        }
     }
 
     internal static void Invalidate(string key) => Active.TryRemove(key, out _);

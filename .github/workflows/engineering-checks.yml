@@ -107,6 +107,9 @@ jobs:
       - name: Gitee physical GET metrics and idle-window regression
         if: needs.classify.outputs.tier == 'full'
         run: dotnet run --project tests/GiteeHttpReadMetricsVerification/GiteeHttpReadMetricsVerification.csproj -c Release
+      - name: Gitee singleflight completion and eviction regression
+        if: needs.classify.outputs.tier == 'full'
+        run: dotnet run --project tests/GiteeReadFlightVerification/GiteeReadFlightVerification.csproj -c Release
       - name: Settings ownership and object conflict regression
         if: needs.classify.outputs.tier == 'full'
         run: |
