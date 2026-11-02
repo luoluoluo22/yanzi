@@ -670,32 +670,17 @@ public partial class MainWindow
         }
     }
 
-    private static Task<string[]?> ShowAttachmentPickerAsync()
+    private Task<string[]?> ShowAttachmentPickerAsync()
     {
-        var tcs = new TaskCompletionSource<string[]?>();
-        var thread = new System.Threading.Thread(() =>
+        // Owned modal picker: stays above its warehouse without forcing the warehouse topmost.
+        var dialog = new Microsoft.Win32.OpenFileDialog
         {
-            try
-            {
-                var dialog = new Microsoft.Win32.OpenFileDialog
-                {
-                    Multiselect = true,
-                    Filter = "所有文件|*.*|文本文件|*.txt;*.md;*.json;*.xml;*.cs;*.js;*.py|图片文件|*.png;*.jpg;*.jpeg;*.gif"
-                };
+            Multiselect = true,
+            Filter = "所有文件|*.*|文本文件|*.txt;*.md;*.json;*.xml;*.cs;*.js;*.py|图片文件|*.png;*.jpg;*.jpeg;*.gif"
+        };
 
-                var result = dialog.ShowDialog();
-                tcs.SetResult(result == true ? dialog.FileNames : null);
-            }
-            catch (Exception ex)
-            {
-                tcs.SetException(ex);
-            }
-        });
-
-        thread.SetApartmentState(System.Threading.ApartmentState.STA);
-        thread.IsBackground = true;
-        thread.Start();
-        return tcs.Task;
+        var result = dialog.ShowDialog(this);
+        return Task.FromResult<string[]?>(result == true ? dialog.FileNames : null);
     }
 
     // ==================== 消息操作 ====================

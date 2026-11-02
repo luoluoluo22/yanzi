@@ -664,13 +664,16 @@ public partial class MainWindow
         ResumeSearchAfterShow();
         RefreshWindowDpiIfNeeded(_dpiRefreshRequested);
 
-        Topmost = true;
+        // Warehouse is a regular foreground window, not an always-on-top overlay.
+        // File pickers and other applications must be allowed above it.
+        Topmost = false;
         BringMainWindowToFront();
         SetSearchScopePopupOpen(true);
 
         Dispatcher.BeginInvoke(() =>
         {
-            BringMainWindowToFront();
+            // Do not reclaim foreground focus after another window (e.g. a file picker) opens.
+            if (!IsVisible || !IsActive) return;
             SearchBox.SelectAll();
             RepositionSearchScopePopup();
         }, DispatcherPriority.ApplicationIdle);
@@ -690,18 +693,18 @@ public partial class MainWindow
 
     public void BringMainWindowToFront()
     {
-        Activate();
-        Focus();
-
+        // Return legacy topmost windows to the normal Z-order band.
+        Topmost = false;
         var handle = new WindowInteropHelper(this).Handle;
         if (handle != IntPtr.Zero)
         {
-            NativeMethods.SetForegroundWindow(handle);
-            Win32Native.SetWindowPos(handle, Win32Native.HWND_TOPMOST, 0, 0, 0, 0,
-                Win32Native.SWP_NOMOVE | Win32Native.SWP_NOSIZE);
+            Win32Native.SetWindowPos(handle, Win32Native.HWND_NOTOPMOST, 0, 0, 0, 0,
+                Win32Native.SWP_NOMOVE | Win32Native.SWP_NOSIZE | Win32Native.SWP_NOACTIVATE);
         }
 
-        Topmost = true;
+        Activate();
+        Focus();
+        if (handle != IntPtr.Zero) NativeMethods.SetForegroundWindow(handle);
         SearchBox.Focus();
         Keyboard.Focus(SearchBox);
     }
