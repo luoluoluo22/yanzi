@@ -135,3 +135,8 @@
 - 办公室安装隔离 .NET SDK 9.0.320、独立克隆 PR #127。复测既有 singleflight 回归 5 次出现 3 次竞态失败：完成任务的清理 continuation 可能晚于等待者返回，顺序读取有短暂复用已完成请求的风险。已在协调器等待者 `finally` 中按精确 entry 清理完成任务，保留取消隔离；增加 20 轮顺序复读测试和 Windows CI 步骤。修复后 10/10 轮通过；HTTP 计数回归通过。
 - 自包含 publish 首次因原 `copy-native-window-refs.ps1` 仅搜索系统级 dotnet 而失败；已支持隔离 `DOTNET_ROOT`，5 个参考程序集复制验证通过，随后 `win-x64 --self-contained true` 发布成功。独立 Canary `--dev --show` 启动成功；8 个顶层 HWND，WM_NULL 100/100，P95 0.222ms、P99 1.098ms，正式 PID 29104 不变，测试进程均已退出。
 - 完整证据见 [qa-phase1-pr127-office-20261102.md](qa-phase1-pr127-office-20261102.md)。**仍缺家里双端同提交 Canary、真实 Gitee 同负载请求数和跨端新增/修改/冲突/删除恢复 QA**，故 PR #127 继续 draft、第一阶段继续进行。此次新提交尚需 GitHub CI，不得沿用旧提交成功状态。
+### 2026-11-02 10:37–10:41 北京时间：办公室 PR #127 独立重复回归
+
+- 同提交 5702d804 在办公室隔离 .NET 9.0.320 SDK 上重复执行 GiteeReadFlightVerification 30/30 通过、GiteeHttpReadMetricsVerification 15/15 通过；使用已编译 Release 测试二进制 --no-build，无失败。详细数据见 [qa-phase1-pr127-office-stress-20261102.md](qa-phase1-pr127-office-stress-20261102.md)。
+- 本地证据 %LOCALAPPDATA%\OpenQuickHost\QA\phase1\office-pr127-stress-20261102.json SHA-256 7CC3527709C4C93A59B4F05EAFFD782BDE70733CFD7C7E6647160F5F07E48A44。正式版 PID 29104 未变，未修改账号、密钥、IndexedDB、回滚包或 ReleaseQueue。
+- 这是模拟网络重复回归，不是实网物理 GET 降幅或跨端一致性。家里 MCP 仍 pending；继续等待同提交家里 Canary、真实业务同步、失败重试和同负载对照。PR #127 继续 draft，第一阶段不验收。
