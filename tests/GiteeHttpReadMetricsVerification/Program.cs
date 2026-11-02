@@ -250,6 +250,36 @@ using (var integratedClient = new HttpClient(new GiteeHttpReadMetricsHandler(
           integratedSecond.SingleflightSharedWaitersTotal == 63,
         "physical and singleflight totals remain monotonic across windows");
 }
+// Optional read-only public Gitee transport probe. This is deliberately not a
+// CI prerequisite and never reads local credentials or writes remote objects.
+// It proves the metrics handler counts actual HTTPS GET dispatches (not merely
+// simulated handlers), but does not measure production account sync reduction.
+if (Environment.GetEnvironmentVariable("YANZI_GITEE_PUBLIC_PROBE") == "1")
+{
+    var publicReports = new ConcurrentQueue<GiteeHttpReadMetricsSnapshot>();
+    using var publicClient = new HttpClient(new GiteeHttpReadMetricsHandler(
+        new HttpClientHandler { UseCookies = false, AllowAutoRedirect = false },
+        publicReports.Enqueue, TimeSpan.FromMilliseconds(250)));
+    publicClient.Timeout = TimeSpan.FromSeconds(20);
+    for (var i = 0; i < 2; i++)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get, "https://gitee.com/api/v5/repos/openharmony/docs");
+        using var response = await publicClient.SendAsync(
+            request, HttpCompletionOption.ResponseHeadersRead);
+        Check(response.StatusCode == HttpStatusCode.OK,
+            $"public Gitee HTTPS GET {i + 1} succeeds without credentials");
+    }
+    await WaitForAsync(() => publicReports.Sum(s => s.Completed) == 2,
+        "public Gitee transport windows report both completed GETs");
+    Check(publicReports.Sum(s => s.Sent) == 2 &&
+          publicReports.Sum(s => s.Completed) == 2 &&
+          publicReports.Sum(s => s.Success2xx) == 2 &&
+          publicReports.Sum(s => s.OtherHttp + s.Retryable429Or5xx +
+              s.TransportErrors + s.Canceled) == 0,
+        "actual public Gitee HTTPS transport is counted exactly twice");
+    Console.WriteLine("GITEE_PUBLIC_TRANSPORT_PASS sent=2 completed=2 status2xx=2");
+}
 Console.WriteLine("GITEE_HTTP_METRICS_PASS sentTotal=8 firstWindow=6 summaries=2 integratedPhysical=2 sharedWaiters=63");
 sealed class FakeHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send) : HttpMessageHandler
 {

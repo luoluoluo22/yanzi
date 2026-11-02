@@ -187,3 +187,10 @@
 - GitHub 已合并 PR #126（main `49de494`）；PR #127 当前存在一处 `docs/performance/optimization-four-phases.md` 文档冲突，`.github/workflows/engineering-checks.yml` 可自动合并。
 - 在 PR #127 **隔离工作树**按三方共同祖先 `d067ec8` 核对：主线台账仅新增 25 行 PR #126 历史诊断记录。保留 PR #127 台账全部内容，并将这 25 行原样并入“合并主线 PR #126 历史诊断记录”；未使用丢弃主线内容的 `-X ours`。
 - 合并后办公室再次执行 Gitee HTTP metrics + singleflight + PR #126 PowerShell 物理 GET 解析器回归，均通过。合并内容只涉及诊断脚本、文档和 CI，不修改此前已 Canary 验证的运行时代码；正式 PID 29104 未变。下一步回读新 merge commit 的 GitHub CI，仍缺家里同提交 Canary 和 Gitee 实网/跨端一致性，第一阶段不完成。
+
+### 2026-11-02 14:35–14:42 北京时间：PR #127 真实公网 Gitee 物理 GET 探针与办公室 Canary
+- PR #127 先前合并 main 后 head bcc71cd9 的 CI #41396755237 三个作业全部 success；检查 PR #128 仍为独立 Draft（Retry-After），未覆盖其工作树。
+- 在 GiteeHttpReadMetricsVerification 增加可选 YANZI_GITEE_PUBLIC_PROBE=1：办公室向公开 Gitee API 匿名发送两次真实 HTTPS GET，均 200；共享 metrics handler 真实计数 sent=2、completed=2、success2xx=2，未读取 token 或写云端。原有模拟指标和 singleflight 回归通过。该证据只证明公网计数正确，不代表生产同负载请求降幅。
+- 办公室隔离 SDK 9.0.320 Release 自包含 publish 成功（586 文件），Yanzi.dll SHA-256 868911355A463DD7F9611E7576DA3E7748315ABE0DF29E8391C1F36A77ADF30C；独立 --dev --show Canary PID 12668 启动后，20 个 HWND 共 400/400 WM_NULL 成功，P95 0.1059ms/P99 0.1771ms；正式版 PID 29104 不变，Canary 已退出。
+- 证据：docs/performance/qa-phase1-pr127-office-public-http-20261102.md 和办公室 %LOCALAPPDATA%\OpenQuickHost\QA\phase1\office-pr127-public-http-20261102.json。家里 Raccoon 仍 pending、Desktop Commander 显示 Offline，未尝试唤醒。
+- 下一步：本提交推送后回读 CI；恢复家里同提交 Canary，并用隔离 QA 凭证/对象对照真实账号 Gitee HTTP sentTotal、失败重试与跨设备新增/修改/冲突/删除恢复；阶段一未完成，PR 保持 Draft，正式发布队列不变。
