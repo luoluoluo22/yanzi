@@ -270,15 +270,53 @@ if (Environment.GetEnvironmentVariable("YANZI_GITEE_PUBLIC_PROBE") == "1")
         Check(response.StatusCode == HttpStatusCode.OK,
             $"public Gitee HTTPS GET {i + 1} succeeds without credentials");
     }
-    await WaitForAsync(() => publicReports.Sum(s => s.Completed) == 2,
-        "public Gitee transport windows report both completed GETs");
-    Check(publicReports.Sum(s => s.Sent) == 2 &&
-          publicReports.Sum(s => s.Completed) == 2 &&
-          publicReports.Sum(s => s.Success2xx) == 2 &&
+    // Real-network singleflight: hold the leader before its public HTTPS GET
+    // until all 32 callers have joined. This avoids relying on network latency
+    // to keep the shared flight alive and never touches a private Gitee object.
+    const int concurrentReaders = 32;
+    var publicKey = GiteeReadFlightCoordinator.CreateKey(
+        "openharmony", "docs", "main", "public-repo-metadata", "no-auth-qa");
+    var leadersBefore = GiteeReadFlightCoordinator.NetworkFlights;
+    var waitersBefore = GiteeReadFlightCoordinator.SharedWaiters;
+    var releasePublicFetch = new TaskCompletionSource<bool>(
+        TaskCreationOptions.RunContinuationsAsynchronously);
+    Func<Task<byte[]?>> publicFetch = async () =>
+    {
+        await releasePublicFetch.Task;
+        return await publicClient.GetByteArrayAsync(
+            "https://gitee.com/api/v5/repos/openharmony/docs");
+    };
+    var concurrentReads = Enumerable.Range(0, concurrentReaders)
+        .Select(_ => GiteeReadFlightCoordinator.ReadAsync(
+            publicKey, publicFetch, CancellationToken.None))
+        .ToArray();
+    Check(GiteeReadFlightCoordinator.NetworkFlights - leadersBefore == 1 &&
+          GiteeReadFlightCoordinator.SharedWaiters - waitersBefore ==
+              concurrentReaders - 1,
+        "32 public Gitee readers coalesce into one pending network flight");
+    releasePublicFetch.SetResult(true);
+    var publicBodies = await Task.WhenAll(concurrentReads);
+    Check(publicBodies.All(b => b is { Length: > 0 }) &&
+          publicBodies.All(b => b!.SequenceEqual(publicBodies[0]!)) &&
+          GiteeReadFlightCoordinator.ActiveCount == 0,
+        "all 32 readers receive identical public HTTPS content; flight evicted");
+    var freshPublicRead = await GiteeReadFlightCoordinator.ReadAsync(
+        publicKey, publicFetch, CancellationToken.None);
+    Check(freshPublicRead is { Length: > 0 } &&
+          freshPublicRead.SequenceEqual(publicBodies[0]!) &&
+          GiteeReadFlightCoordinator.NetworkFlights - leadersBefore == 2,
+        "sequential public Gitee read performs a fresh HTTPS request");
+    await WaitForAsync(() => publicReports.Sum(s => s.Completed) == 4,
+        "public Gitee transport windows report all four completed GETs");
+    Check(publicReports.Sum(s => s.Sent) == 4 &&
+          publicReports.Sum(s => s.Completed) == 4 &&
+          publicReports.Sum(s => s.Success2xx) == 4 &&
           publicReports.Sum(s => s.OtherHttp + s.Retryable429Or5xx +
               s.TransportErrors + s.Canceled) == 0,
-        "actual public Gitee HTTPS transport is counted exactly twice");
-    Console.WriteLine("GITEE_PUBLIC_TRANSPORT_PASS sent=2 completed=2 status2xx=2");
+        "two direct plus coalesced plus fresh real HTTPS GETs counted exactly");
+    Console.WriteLine(
+        "GITEE_PUBLIC_TRANSPORT_PASS sent=4 completed=4 status2xx=4 " +
+        "logicalReads=35 sharedWaiters=31");
 }
 Console.WriteLine("GITEE_HTTP_METRICS_PASS sentTotal=8 firstWindow=6 summaries=2 integratedPhysical=2 sharedWaiters=63");
 sealed class FakeHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send) : HttpMessageHandler

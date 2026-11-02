@@ -194,3 +194,10 @@
 - 办公室隔离 SDK 9.0.320 Release 自包含 publish 成功（586 文件），Yanzi.dll SHA-256 868911355A463DD7F9611E7576DA3E7748315ABE0DF29E8391C1F36A77ADF30C；独立 --dev --show Canary PID 12668 启动后，20 个 HWND 共 400/400 WM_NULL 成功，P95 0.1059ms/P99 0.1771ms；正式版 PID 29104 不变，Canary 已退出。
 - 证据：docs/performance/qa-phase1-pr127-office-public-http-20261102.md 和办公室 %LOCALAPPDATA%\OpenQuickHost\QA\phase1\office-pr127-public-http-20261102.json。家里 Raccoon 仍 pending、Desktop Commander 显示 Offline，未尝试唤醒。
 - 下一步：本提交推送后回读 CI；恢复家里同提交 Canary，并用隔离 QA 凭证/对象对照真实账号 Gitee HTTP sentTotal、失败重试与跨设备新增/修改/冲突/删除恢复；阶段一未完成，PR 保持 Draft，正式发布队列不变。
+
+### 2026-11-02 15:39-15:53 Beijing: office real public HTTPS singleflight and isolated Canary QA
+- PR #127 optional public Gitee probe now verifies 32 concurrent read-only logical readers -> 1 real HTTPS GET (31 shared waiters), then a sequential fresh GET; with two direct requests the sample is 35 logical reads -> 4 physical GETs, all HTTP 200. This is a controlled public endpoint, NOT production account sync or a production HTTP reduction percentage.
+- Gitee HTTP metrics and singleflight regressions passed, office .NET 9.0.320 Release build exited 0 (0 warnings/errors); isolated self-contained Canary ran with 8 HWNDs and WM_NULL 80/80, official PID 29104 unchanged, test PID exited. The long publish tool response did not provide an exit code; artifact and runtime smoke were verified independently.
+- Canary wall-clock WM_NULL P95 99.09ms / P99 1160.23ms showed noisy tail latency; investigate during stage 2 instead of treating it as a UI benchmark.
+- Evidence: [qa-phase1-pr127-office-public-singleflight-20261102.md](qa-phase1-pr127-office-public-singleflight-20261102.md); local JSON SHA-256 DC9D49A9C9CE4D1181A23464458E751579E33787849CE2EDD05DA212D520A11E.
+- Home PC offline. Same-commit home Canary, production Gitee same-load GET reduction, retry/429/503 and dual-device add/update/conflict/delete/restore remain missing. PR #127 remains Draft; stage 1 NOT accepted. PR #128 was not edited.
