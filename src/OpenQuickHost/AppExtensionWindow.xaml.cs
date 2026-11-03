@@ -52,6 +52,7 @@ public partial class AppExtensionWindow : Window
         Title = command.Title;
         LoadingTitle.Text = $"正在打开 {command.Title}";
         Icon = command.IconSource ?? TryRenderVectorIcon(command.VectorIcon, command.AccentBrush) ?? TryLoadDefaultIcon();
+        MiniAppTaskbarIdentity.Attach(this, command);
         ApplyHostedWindowChrome();
         ApplyWindowMetrics();
         Loaded += AppExtensionWindow_Loaded;
@@ -1029,6 +1030,7 @@ public partial class AppExtensionWindow : Window
     {
         ShowInTaskbar = true;
         ShowActivated = true;
+        MiniAppTaskbarIdentity.Ensure(this, _command);
         if (WindowState == WindowState.Minimized)
         {
             WindowState = WindowState.Normal;
