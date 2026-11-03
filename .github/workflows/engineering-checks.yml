@@ -102,6 +102,7 @@ jobs:
           node --check browser-extension/workflow-checkpoints.js
           node --check browser-extension/popup/popup.js
           node scripts/test-browser-helper-release-contract.cjs
+          node --test tests/opencli-extension-bridge.test.cjs
       - name: Agent task integration policy regression
         if: needs.classify.outputs.tier == 'full'
         shell: pwsh
