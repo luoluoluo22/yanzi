@@ -8,6 +8,7 @@
   <ItemGroup>
     <Compile Include="../../src/OpenQuickHost/BrowserOpenCliReader.cs" Link="BrowserOpenCliReader.cs" />
     <Compile Include="../../src/OpenQuickHost/BrowserMediaApi.cs" Link="BrowserMediaApi.cs" />
+    <Compile Include="../../src/OpenQuickHost/OpenCliExtensionOnboarding.cs" Link="OpenCliExtensionOnboarding.cs" />
     <Compile Include="../../src/OpenQuickHost/OpenCliDaemonSupervisor.cs" Link="OpenCliDaemonSupervisor.cs" />
     <Compile Include="../../src/OpenQuickHost/LocalAgentApiServer.OpenCli.cs" Link="LocalAgentApiServer.OpenCli.cs" />
   </ItemGroup>

@@ -142,6 +142,8 @@
         return await douyinPublic(site, operation, value, limit);
       if (!globalThis.yanziBrowserHost?.isConnected())
         return { ok: false, error: "燕子本地宿主未连接，无法通过 OpenCLI 执行搜索和作品读取。" };
+      const setup = await globalThis.yanziOpenCliStoreOnboarding?.preflight();
+      if (setup && !setup.ok) return setup;
       return await globalThis.yanziMediaReadHost(site, operation, value, limit, profile);
     } catch (error) {
       return { ok: false, error: error?.message || String(error) };

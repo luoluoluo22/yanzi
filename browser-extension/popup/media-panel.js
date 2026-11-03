@@ -89,7 +89,10 @@ document.addEventListener("DOMContentLoaded", () => {
         action: "yanzi_media_api", site: site.value, operation,
         value: (value || "").trim(), limit: Number(limit.value)
       });
-      if (!response?.ok || !response.data) throw Error(response?.error || "统一媒体接口未返回数据");
+      if (!response?.ok || !response.data) {
+        await window.yanziOpenCliShowGuideIfMissing?.(response, status);
+        throw Error(response?.error || "统一媒体接口未返回数据");
+      }
       last = response.data;
       raw.textContent = JSON.stringify(last, null, 2);
       copy.disabled = false;

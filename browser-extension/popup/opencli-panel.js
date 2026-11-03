@@ -166,7 +166,10 @@ document.addEventListener("DOMContentLoaded", () => {
           page: isPaged() ? page : 1,
           profile: siteSelect.value === "xiaohongshu" ? profileInput.value.trim() : ""
         });
-      if (!reply?.ok) throw new Error(reply?.error || "读取未成功");
+      if (!reply?.ok) {
+        await window.yanziOpenCliShowGuideIfMissing?.(reply, status);
+        throw new Error(reply?.error || "读取未成功");
+      }
       latest = reply.data;
       currentPage = isPaged() ? page : 1;
       const records = getRecords(latest);

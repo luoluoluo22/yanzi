@@ -362,7 +362,7 @@ function sendOpenCliHostRequest(site, operation, page, profile, timeoutMs, media
     }, timeoutMs);
     yanziOpenCliPending.set(requestId, { resolve, timer });
     try {
-      globalThis.yanziBrowserHost.send({ type: "opencli_request", requestId, site, operation, page, profile, ...(mediaArgs || {}) });
+      globalThis.yanziBrowserHost.send({ type: "opencli_request", requestId, site, operation, page, profile, callerExtensionId: chrome.runtime.id, ...(mediaArgs || {}) });
     } catch (error) {
       clearTimeout(timer);
       yanziOpenCliPending.delete(requestId);
@@ -386,6 +386,10 @@ async function requestYanziOpenCliRead(site, operation, page = 1, profile = "") 
       return readXiaohongshuDirect(operation);
     if (!globalThis.yanziBrowserHost?.isConnected())
       return { ok: false, error: "燕子主程序未连接，请先启动燕子。" };
+    if (globalThis.yanziOpenCliStoreOnboarding?.preflight) {
+      const setup = await globalThis.yanziOpenCliStoreOnboarding.preflight();
+      if (setup && !setup.ok) return setup;
+    }
     const capabilities = await sendOpenCliHostRequest(site, "capabilities", 1, "", 5000);
     if (!capabilities.ok) return capabilities;
     return sendOpenCliHostRequest(site, operation, page, profile, 100000);
@@ -399,7 +403,14 @@ async function requestYanziOpenCliRead(site, operation, page = 1, profile = "") 
     return directResult;
   }
 
-  // 2. 如果直读未命中，且燕子主程序已连接，尝试通过燕子宿主转发，设置 3 秒短超时防止死锁
+  // 2. 如果直读未命中且需要 OpenCLI，先检查扩展是否缺失。
+  if (globalThis.yanziBrowserHost?.isConnected()) {
+    if (globalThis.yanziOpenCliStoreOnboarding?.preflight) {
+      const setup = await globalThis.yanziOpenCliStoreOnboarding.preflight();
+      if (setup && !setup.ok) return setup;
+    }
+  }
+  // 3. 如果直读未命中，且燕子主程序已连接，尝试通过燕子宿主转发，设置 3 秒短超时防止死锁
   if (globalThis.yanziBrowserHost?.isConnected()) {
     const hostPromise = new Promise(resolve => {
       const requestId = crypto.randomUUID();
@@ -428,6 +439,11 @@ async function requestYanziOpenCliRead(site, operation, page = 1, profile = "") 
   return directResult;
 }
 
+globalThis.yanziOpenCliCheckExtension = async () => {
+  if (!globalThis.yanziBrowserHost?.isConnected())
+    return { ok: false, error: "燕子宿主未连接，无法检测 OpenCLI 扩展安装状态。" };
+  return sendOpenCliHostRequest("opencli", "extension_status", 1, "", 10000);
+};
 globalThis.yanziMediaReadHost = (site, operation, value, limit, profile = "") =>
   sendOpenCliHostRequest(site, "media." + operation, 1, profile, 95000, { value, limit });
 globalThis.yanziOpenCliPerformRead = requestYanziOpenCliRead;
