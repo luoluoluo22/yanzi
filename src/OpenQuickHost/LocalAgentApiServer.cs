@@ -791,6 +791,7 @@ public sealed partial class LocalAgentApiServer : IDisposable
         router.AddHandled(TryHandleConsoleSessionApiAsync);
         router.AddHandled(TryPairingApiAsync);
         router.AddHandled(TryHandleCapabilityApiAsync);
+        router.Add((request, path) => request.HttpMethod == "POST" && path == "/v1/media/read", HandleMediaReadRouteAsync);
         router.AddHandled(TryTransferSessionsAsync);
         router.AddHandled(TryHandleLanTransferApiAsync);
         router.AddHandled(TryHandleUiApiAsync);

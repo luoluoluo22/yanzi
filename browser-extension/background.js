@@ -243,6 +243,15 @@ function handleTask(task) {
     handleAiPromptTransferTask(task, targetUrl);
     return;
   }
+  if (task.action === "media_read") {
+    void globalThis.yanziMediaRequest({
+      site: task.site, operation: task.operation, value: task.value,
+      limit: task.limit ?? 5, profile: task.profile || ""
+    }).then(result => sendBrowserTaskResponse(
+      task, result?.ok ? "success" : "error", result?.data || null, result?.error || ""))
+      .catch(error => sendBrowserTaskResponse(task, "error", null, error?.message || String(error)));
+    return;
+  }
   if (task.action === "opencli_read") {
     void globalThis.yanziOpenCliPerformRead(task.site, task.operation, task.page ?? 1)
       .then(result => sendBrowserTaskResponse(task, result?.ok ? "success" : "error", result?.data || null, result?.error || ""))
@@ -764,4 +773,4 @@ globalThis.yanziBrowserHost = {
   isConnected: () => Boolean(ws && ws.readyState === WebSocket.OPEN),
   log: logEvent
 };
-importScripts("chatgpt-network-observer.js", "chatgpt-background.js", "gemini-network-observer.js", "gemini-background.js", "webapps/runtime-background.js", "opencli-background.js");
+importScripts("chatgpt-network-observer.js", "chatgpt-background.js", "gemini-network-observer.js", "gemini-background.js", "webapps/runtime-background.js", "opencli-background.js", "media-api.js");
