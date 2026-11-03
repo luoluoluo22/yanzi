@@ -3245,6 +3245,9 @@ extends Activity {
         Button accessibilityButton = this.button("\u65e0\u969c\u788d\u670d\u52a1");
 
         this.setupProfileHeader();
+        this.profileTabPage.addView(YanziUiKit.row(this, "robot-outline", YanziUiKit.BLUE,
+                "模型服务", "查看同账号同步的模型提供商及可用模型",
+                () -> this.showAccountModelServices()), YanziUiKit.cardLp(this));
 
         this.profileTabPage.addView(YanziUiKit.row(this, "clipboard-check-outline", YanziUiKit.BLUE, "任务中心＋数据恢复", "查询执行结果、预览并恢复云端历史", () -> startActivity(new Intent(this, TaskRecoveryActivity.class))), YanziUiKit.cardLp(this));
 
@@ -7375,6 +7378,40 @@ extends Activity {
             this.setStatus("\u63d0\u793a\u8bcd\u5df2\u4fdd\u5b58\u3002");
             dialog.dismiss();
         });
+    }
+
+    private void showAccountModelServices() {
+        JSONArray providers = MobileModelServiceCatalog.read(this);
+        String[] items = MobileModelServiceCatalog.displayItems(this);
+        if (items.length == 0) {
+            new AlertDialog.Builder(this).setTitle("账号模型服务")
+                .setMessage("尚未收到账号模型服务配置。请确认手机与电脑已登录同一账号，等待账号同步完成。")
+                .setPositiveButton("知道了", null).show();
+            return;
+        }
+        new AlertDialog.Builder(this).setTitle("账号模型服务 · " + items.length)
+            .setItems(items, (dialog, index) -> {
+                JSONObject provider = providers.optJSONObject(index);
+                if (provider == null) return;
+                JSONArray models = provider.optJSONArray("models");
+                StringBuilder text = new StringBuilder();
+                text.append("类型：").append(provider.optString("providerType", "")).append("\n");
+                text.append("状态：").append(provider.optBoolean("enabled", true) ? "已启用" : "已停用").append("\n");
+                text.append("可选模型：");
+                if (models != null && models.length() > 0) {
+                    for (int i = 0; i < models.length(); i++)
+                        text.append(i == 0 ? "" : "、").append(models.optString(i));
+                } else text.append("暂无");
+                text.append("\n\n");
+                if (provider.optBoolean("localOnly")) {
+                    text.append("该模型服务位于电脑本地网络。手机已同步目录，但需通过在线电脑的模型代理才能调用；不能直接访问手机的 127.0.0.1。");
+                } else {
+                    text.append("已同步账号模型服务元数据。API 密钥不会保存在账号模型目录中；是否可调用取决于手机对应的认证和网络配置。");
+                }
+                new AlertDialog.Builder(this).setTitle(provider.optString("name", "模型服务"))
+                    .setMessage(text.toString()).setPositiveButton("返回", null).show();
+            })
+            .setPositiveButton("完成", null).show();
     }
 
     private void showAiSettingsDialog() {
