@@ -42,3 +42,11 @@
 - `ProcessPickerWindow.xaml.cs`：窗口初始化后按用户主题注入共享 WPF 资源，不改变全局样式。
 - Linux 侧通过 XML 解析、资源键存在、事件/控件名称保持、源码审计、`git diff --check`；Windows Release 构建、进程列表过滤、窗口拾取、全屏开关、黑名单移除、深浅主题与键盘焦点尚未真机验收。
 - `inventory.json` 的 `source-migrated-awaiting-windows-qa` 只代表静态迁移，不代表交互通过。
+
+## 第六轮：已安装程序选择窗口（源码迁移，待 Windows 验收）
+
+- `InstalledAppPickerDialog.xaml`：底部取消/确认使用公共 `Yanzi.Button.Outline` / `Yanzi.Button.Default`；窗口背景与程序图标底色移除硬编码，改为现有语义资源。
+- `InstalledAppPickerDialog.xaml.cs`：构造时调用 `YanziUi.ApplyTo`，依据现有 `ThemeMode` 选择浅/深色公共资源，保留异步扫描、列表虚拟化、双击选择、搜索及关闭事件。
+- **有意未替换**：局部 ScrollViewer/ScrollBar 模板、搜索框与顶部关闭按钮模板；需先验证公共组件的滚动、键盘和提示文字行为兼容性，不以改样式冒充验收。
+- 静态证据：XAML XML 解析、按钮样式与资源引用、五个关键事件仍绑定、硬编码背景消除、Python 清单与 `git diff --check` 通过。
+- **未完成**：Windows Release 构建、深浅主题截图、扫描/筛选/双击/键盘/关闭实际交互；不能标为最终验收。

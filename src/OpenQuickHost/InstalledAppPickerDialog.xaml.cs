@@ -33,6 +33,11 @@ public partial class InstalledAppPickerDialog : Window
     public InstalledAppPickerDialog(Window? owner = null)
     {
         InitializeComponent();
+        // Shared control styles and theme tokens are scoped to this dialog.
+        var theme = AppSettingsStore.Load().ThemeMode;
+        Yanzi.UI.Wpf.YanziUi.ApplyTo(this,
+            string.Equals(theme, "Light", StringComparison.OrdinalIgnoreCase)
+                ? Yanzi.UI.Wpf.YanziTheme.Light : Yanzi.UI.Wpf.YanziTheme.Dark);
         if (owner != null)
         {
             Owner = owner;
