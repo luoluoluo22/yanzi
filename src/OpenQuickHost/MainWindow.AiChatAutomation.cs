@@ -391,7 +391,7 @@ public partial class MainWindow
                 status.Text = "名称和消息不能为空"; return;
             }
             if (date.SelectedDate is not DateTime d ||
-                !TimeSpan.TryParseExact(time.Text.Trim(), @"hh\\:mm",
+                !TimeSpan.TryParseExact(time.Text.Trim(), @"hh\:mm",
                     System.Globalization.CultureInfo.InvariantCulture, out var clock))
             {
                 status.Text = "时间格式应为 HH:mm，例如 09:30"; return;
