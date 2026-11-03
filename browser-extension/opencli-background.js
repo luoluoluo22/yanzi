@@ -158,63 +158,123 @@ async function readBilibiliDirect(operation, page = 1) {
   }
 }
 
-// 3. 抖音读取：自动后台静默打开临时标签页，提取作品或用户信息后自动秒关！
-async function readDouyinDirect(operation, page = 1) {
+// Read creator data in the existing browser profile, not an OpenCLI-owned
+// window. Temporary inactive tabs always close in withEphemeralTab's finally.
+async function readCreatorDashboard(site, operation, page = 1) {
+  const xhs = site === "xiaohongshu";
+  const expectedHost = xhs ? "creator.xiaohongshu.com" : "creator.douyin.com";
+  const url = xhs ? "https://creator.xiaohongshu.com/new/home"
+                  : "https://creator.douyin.com/creator-micro/home";
   try {
-    return await withEphemeralTab(
-      "*://*.douyin.com/*",
-      "https://www.douyin.com/",
-      async (tabId) => {
-        const results = await chrome.scripting.executeScript({
+    return await withEphemeralTab("*://" + expectedHost + "/*", url,
+      async (tabId, temporary) => {
+        const replies = await chrome.scripting.executeScript({
           target: { tabId },
-          func: (op) => {
+          world: "MAIN",
+          func: async (platform, requested, requestedPage) => {
+            const host = platform === "xiaohongshu" ? "creator.xiaohongshu.com" : "creator.douyin.com";
+            if (location.hostname !== host)
+              return { ok: false, error: "创作者中心未打开，请确认已登录 " + host };
+            async function readJson(api) {
+              const ctrl = new AbortController();
+              const timer = setTimeout(() => ctrl.abort(), 12000);
+              try {
+                const response = await fetch(api, { credentials: "include", signal: ctrl.signal });
+                if (!response.ok) throw Error("HTTP " + response.status);
+                const json = await response.json();
+                if (!json || typeof json !== "object") throw Error("接口返回格式异常");
+                if (Number.isInteger(json.status_code) && json.status_code !== 0)
+                  throw Error("接口状态码 " + json.status_code);
+                if (Number.isInteger(json.code) && json.code !== 0)
+                  throw Error("接口状态码 " + json.code);
+                return json;
+              } finally { clearTimeout(timer); }
+            }
             try {
-              if (op === "profile") {
-                const name = document.querySelector(".Nu4AIdPl, .account-name, [data-e2e='user-title'], .user-info-name")?.textContent?.trim();
-                const desc = document.querySelector(".user-desc, [data-e2e='user-desc']")?.textContent?.trim();
-                const follows = document.querySelector("[data-e2e='follow-count']")?.textContent?.trim();
-                const fans = document.querySelector("[data-e2e='fans-count']")?.textContent?.trim();
-                const likes = document.querySelector("[data-e2e='liked-count']")?.textContent?.trim();
-                if (name) {
-                  return {
-                    nickname: name,
-                    desc: desc || "",
-                    follows: follows || 0,
-                    fans: fans || 0,
-                    likes: likes || 0
-                  };
+              if (platform === "douyin") {
+                // Account-scoped read-only APIs from the OpenCLI Douyin adapter.
+                // A homepage nickname alone must never count as logged-in proof.
+                const details = await readJson("https://creator.douyin.com/web/api/media/user/info/?aid=1128");
+                const user = details.user_info ?? details.user;
+                if (!user || typeof user.nickname !== "string" || !user.nickname.trim())
+                  throw Error("无法确认抖音创作者登录身份，请先登录 creator.douyin.com");
+                if (requested === "profile") {
+                  const fields = ["uid","nickname","follower_count","following_count","aweme_count"];
+                  const data = Object.fromEntries(fields.filter(k => user[k] !== undefined && user[k] !== null)
+                    .map(k => [k, user[k]]));
+                  if (!("follower_count" in data) && !("following_count" in data) && !("uid" in data))
+                    throw Error("创作者身份字段不完整，拒绝将缺失数据当作零");
+                  return { ok: true, data };
                 }
+                const list = await readJson("https://creator.douyin.com/janus/douyin/creator/pc/work_list?page_size=20&page_num=" + requestedPage + "&status=0");
+                const works = list.data?.work_list ?? list.aweme_list;
+                if (!Array.isArray(works)) throw Error("作品列表结构异常，不能将缺失数据当作空列表");
+                return { ok: true, data: works.slice(0,20).map(v => ({
+                  aweme_id: v.aweme_id,
+                  title: v.desc ?? "",
+                  status: v.status ?? "unknown",
+                  play_count: v.statistics?.play_count ?? null,
+                  digg_count: v.statistics?.digg_count ?? null,
+                  create_time: v.create_time ?? v.public_time ?? null
+                })) };
               }
-              if (op === "videos") {
-                const items = Array.from(document.querySelectorAll("ul[data-e2e='user-post-list'] li, .flow-item, .video-card"));
-                if (items.length) {
-                  return items.slice(0, 20).map(li => ({
-                    title: li.querySelector("img")?.alt || li.querySelector(".title")?.textContent?.trim() || "未命名视频",
-                    likes: li.querySelector(".like-count, .like")?.textContent?.trim() || "0",
-                    link: li.querySelector("a")?.href || ""
-                  }));
-                }
+              if (requested === "profile") {
+                const json = await readJson("/api/galaxy/creator/home/personal_info");
+                const d = json.data, growth = d?.grow_info ?? {};
+                if (!d || (!d.name && d.fans_count === undefined))
+                  throw Error("小红书创作者信息不存在，请先登录 creator.xiaohongshu.com");
+                return { ok: true, data: [
+                  { field: "Name", value: d.name ?? "" },
+                  { field: "Followers", value: d.fans_count ?? null },
+                  { field: "Following", value: d.follow_count ?? null },
+                  { field: "Likes & Collects", value: d.faved_count ?? null },
+                  { field: "Creator Level", value: growth.level ?? null },
+                  { field: "Level Progress", value: growth.fans_count == null ? null : growth.fans_count + "/" + (growth.max_fans_count ?? "?") },
+                  { field: "Bio", value: d.personal_desc ?? "" }
+                ] };
               }
-              if (document.querySelector("[data-e2e='login-panel'], .login-mask")) {
-                return { error: "当前浏览器尚未登录抖音账号，请先完成登录" };
+              if (requested === "stats") {
+                const json = await readJson("/api/galaxy/creator/data/note_detail_new");
+                const d = json.data?.seven;
+                if (!d || typeof d !== "object" || !Object.keys(d).some(k => k.endsWith("_count")))
+                  throw Error("近七天统计接口未返回有效数据");
+                const metrics = [
+                  ["观看数","view_count","view_list"], ["点赞数","like_count","like_list"],
+                  ["收藏数","collect_count","collect_list"], ["评论数","comment_count","comment_list"],
+                  ["分享数","share_count","share_list"], ["新增粉丝","rise_fans_count","rise_fans_list"]
+                ];
+                return { ok: true, data: metrics.map(([metric,key,trend]) => ({
+                  metric, total: d[key] ?? null,
+                  trend: Array.isArray(d[trend]) ? d[trend].map(x => x.count).join(" → ") : "-"
+                })) };
               }
-              return { error: "未在当前抖音页面中提取到数据" };
-            } catch (e) {
-              return { error: e.message };
+              return { ok: false, error: "此操作暂不能在浏览器当前窗口直读" };
+            } catch (error) {
+              return { ok: false, error: "创作者数据读取失败：" + (error?.message || String(error)) };
             }
           },
-          args: [operation]
+          args: [site, operation, page]
         });
-
-        const output = results?.[0]?.result;
-        if (output && !output.error) return { ok: true, data: output };
-        if (output?.error) return { ok: false, error: output.error };
-        return { ok: false, error: "未能提取到抖音数据" };
+        const result = replies?.[0]?.result;
+        if (!result || typeof result.ok !== "boolean")
+          return { ok: false, error: "创作者页面未返回可信的读取结果" };
+        return result.ok ? { ...result, source: "browser-session", temporaryTabClosed: temporary }
+                         : result;
       }
     );
-  } catch (err) {
-    return { ok: false, error: "自动读取抖音失败: " + (err?.message || err) };
+  } catch (error) {
+    return { ok: false, error: "浏览器直读失败：" + (error?.message || String(error)) };
   }
+}
+
+// The old homepage CSS selectors could extract a navigation handle as
+// nickname and silently replace every missing account metric with 0.
+async function readDouyinDirect(operation, page = 1) {
+  return readCreatorDashboard("douyin", operation, page);
+}
+
+async function readXiaohongshuDirect(operation) {
+  return readCreatorDashboard("xiaohongshu", operation, 1);
 }
 
 function sendOpenCliHostRequest(site, operation, page, profile, timeoutMs) {
@@ -245,6 +305,10 @@ async function requestYanziOpenCliRead(site, operation, page = 1, profile = "") 
   }
 
   if (site === "xiaohongshu") {
+    // Profile and stats now reuse the current Chromium profile. The legacy
+    // signed notes adapter remains on OpenCLI until browser capture is ported.
+    if (operation === "profile" || operation === "stats")
+      return readXiaohongshuDirect(operation);
     if (!globalThis.yanziBrowserHost?.isConnected())
       return { ok: false, error: "燕子主程序未连接，请先启动燕子。" };
     const capabilities = await sendOpenCliHostRequest(site, "capabilities", 1, "", 5000);
