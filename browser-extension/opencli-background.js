@@ -390,7 +390,9 @@ async function requestYanziOpenCliRead(site, operation, page = 1, profile = "") 
 
   // 1. 优先使用浏览器会话直读（支持后台临时标签页自动开合，秒级无感、不卡顿）
   const directResult = await readDirectFromBrowser(site, operation, page);
-  if (directResult.ok) {
+  if (directResult.ok || site === "douyin") {
+    // Douyin is handled by validated creator API calls. Never silently
+    // substitute a second, unsupported host path for a failed account read.
     return directResult;
   }
 
