@@ -132,7 +132,7 @@ function connectWebSocket(reason = "auto") {
           }
           chrome.storage.local.set({
             lastExtensionReloadRequestedAt: Date.now(),
-            yanziPendingExtensionReloadRefresh: true
+            yanziPendingExtensionReloadRefresh: message.forceTabReload ? "force" : true
           }).finally(() => {
             setTimeout(() => chrome.runtime.reload(), 80);
           });
