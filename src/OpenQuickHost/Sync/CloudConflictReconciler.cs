@@ -17,7 +17,8 @@ internal static class CloudConflictReconciler
             {
                 ObjectId = id, Deleted = remote.Deleted, Payload = remote.Payload
             };
-            if (LauncherConfigObjectStore.HasEquivalentPayload(localEnvelope, remoteEnvelope))
+            if (LauncherConfigObjectStore.HasEquivalentPayload(localEnvelope, remoteEnvelope) ||
+                RuntimeDescriptionConflictPolicy.CanAdoptRemote(localEnvelope, remoteEnvelope))
             {
                 state.Conflicts.Remove(id);
                 removed++;

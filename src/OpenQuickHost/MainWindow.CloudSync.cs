@@ -3184,6 +3184,17 @@ public partial class MainWindow
                         RemovePendingCloudObject(state, objectId);
                         continue;
                     }
+                    // A remote device only supplied missing variable descriptions. Credentials and
+                    // every unrelated runtime field remain identical: no manual choice is needed.
+                    if (RuntimeDescriptionConflictPolicy.CanAdoptRemote(write.Envelope, ToEnvelope(latestRemote)))
+                    {
+                        state.Conflicts.Remove(objectId);
+                        RemovePendingCloudObject(state, objectId);
+                        remoteWonConflict = true;
+                        CloudObjectSyncStateStore.Save(state);
+                        HostAssets.AppendLog($"Runtime descriptions auto-adopted: object={objectId}, revision={latestRemote.Revision}");
+                        continue;
+                    }
                     if (string.Equals(objectId, "extensions.seen", StringComparison.OrdinalIgnoreCase))
                     {
                         // Read receipts are grow-only max-version maps, not user conflicts.

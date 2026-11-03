@@ -28,6 +28,7 @@ if (args.Contains("--ai-chat-sse")) { await AiChatSseVerification.RunAsync(); re
 if (args.Contains("--single-process")) { SingleProcessVerification.Run(); return; }
 
 if (args.Contains("--cloud-login-retry")) { CloudLoginRetryVerification.Run(); return; }
+if (args.Contains("--runtime-description-conflicts")) { RuntimeDescriptionConflictVerification.Run(); return; }
 
 if (args.Contains("--vip-version-policy")) { VipVersionPolicyVerification.Run(); return; }
 
