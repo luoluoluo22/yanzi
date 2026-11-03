@@ -50,36 +50,39 @@ function waitForTabComplete(tabId, timeoutMs = 8000) {
 // 辅助函数：静默后台临时标签页调度器
 // 若已有打开网页则直接复用；若未打开则在后台静默打开 (active: false)，提取完后自动关闭！
 async function withEphemeralTab(urlPattern, targetUrl, extractFn, timeoutMs = 7000, preferExisting = true) {
-  // 1. 优先复用用户已打开的未休眠标签页
-  try {
-    const existingTabs = preferExisting ? await chrome.tabs.query({ url: urlPattern }) : [];
-    const reusableTab = existingTabs.find(t => !t.discarded);
-    if (reusableTab) {
-      return await extractFn(reusableTab.id, false);
-    }
-  } catch {}
+  // Query failures should not disable the read, but an existing-tab extraction
+  // failure must NOT create another browser tab behind the user's back.
+  let existingTabs = [];
+  if (preferExisting) {
+    try { existingTabs = await chrome.tabs.query({ url: urlPattern }); }
+    catch (error) { console.warn("[Yanzi] creator tab lookup failed:", error?.name || "error"); }
+  }
+  const reusable = existingTabs.find(tab => !tab.discarded);
+  if (reusable) return extractFn(reusable.id, false);
 
-  // 2. 用户未打开该网页：扩展在后台静默打开一个临时标签页 (不抢占前台焦点)
-  let tempTab = null;
+  // This creates an INACTIVE TAB in the existing browser window, NOT a window.
+  let tempTab = null, result = null, closed = false;
   try {
-    tempTab = await chrome.tabs.create({
-      url: targetUrl,
-      active: false // 关键：静默后台打开，用户前台完全不受打扰
-    });
-
+    tempTab = await chrome.tabs.create({ url: targetUrl, active: false });
+    if (!tempTab?.id) throw new Error("未能创建临时标签页");
     await waitForTabComplete(tempTab.id, timeoutMs);
-    // 稍微等待页面脚本完成水合渲染
-    await new Promise(r => setTimeout(r, 600));
-
-    return await extractFn(tempTab.id, true);
+    await new Promise(resolve => setTimeout(resolve, 600));
+    result = await extractFn(tempTab.id, true);
   } finally {
-    // 3. 提取完成后，自动关闭临时后台标签页，不留垃圾页面
-    if (tempTab && tempTab.id) {
+    if (tempTab?.id) {
       try {
         await chrome.tabs.remove(tempTab.id);
-      } catch {}
+        closed = true;
+      } catch (error) {
+        console.warn("[Yanzi] creator tab cleanup failed:", error?.name || "error");
+        if (result && typeof result === "object")
+          result.cleanupWarning = "临时后台标签页未能关闭，请在浏览器中检查";
+      }
     }
   }
+  if (result && typeof result === "object")
+    result.temporaryTabClosed = closed;
+  return result;
 }
 
 // 浏览器内直接读取已登录的会话数据 (无需依赖外部终端 CLI，几毫秒内秒级响应)
