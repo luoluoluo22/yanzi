@@ -140,6 +140,7 @@ public partial class App : WpfApplication
                 try
                 {
                     // 仅清理燕子按需安装时登记所有权的服务；与其他卸载步骤隔离。
+                    YanziAgyModelBridge.Stop();
                     YanziManagedDependencyLifecycle.OnYanziUninstall();
                     YanziManagedServiceInstallations.StartUninstallCleanup();
                 }

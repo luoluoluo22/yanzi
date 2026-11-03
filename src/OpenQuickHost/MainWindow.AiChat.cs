@@ -1087,6 +1087,8 @@ public partial class MainWindow
             settings.AiBaseUrl.Trim(), settings.AiApiKey.Trim(), settings.AiModel.Trim(),
             string.Equals(settings.ActiveServiceProviderId, ChatGptPlanProviderId,
                 StringComparison.OrdinalIgnoreCase));
+        if (string.Equals(profile.BaseUrl.TrimEnd('/'), YanziAgyModelBridge.BaseUrl, StringComparison.OrdinalIgnoreCase))
+            YanziAgyModelBridge.EnsureStarted();
         AiChatDiagnostics.Record(topic.Id, profile.Model, "created", $"mode={mode} transport={(GeminiNativeChatClient.IsGeminiApi(profile.BaseUrl) ? "gemini-native" : "compatible")}");
         _aiTopicErrors.Remove(topic.Id);
         if (ReferenceEquals(_selectedAiChatTopic, topic)) AiChatSendErrorText = string.Empty;

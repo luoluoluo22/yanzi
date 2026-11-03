@@ -15,6 +15,7 @@ public partial class AddProviderWindow : Window
             "OpenAI",
             "OpenAI-Response",
             "Ego ChatGPT",
+            "AGY CLI",
             "Gemini",
             "Anthropic",
             "Azure OpenAI",

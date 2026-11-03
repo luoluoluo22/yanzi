@@ -28,6 +28,8 @@ internal static class SettingsAiController
 
     internal static async Task<IReadOnlyList<string>> FetchAvailableModelsAsync(AiProviderSnapshot provider)
     {
+        if (provider.ProviderType == YanziAgyModelBridge.ProviderType)
+            YanziAgyModelBridge.EnsureStarted();
         using var client = new HttpClient
         {
             Timeout = TimeSpan.FromSeconds(15)

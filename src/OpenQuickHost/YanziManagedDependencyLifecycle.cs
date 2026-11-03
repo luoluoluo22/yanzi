@@ -31,6 +31,14 @@ internal static class YanziManagedDependencyLifecycle
     public static void OnYanziUninstall()
     {
         TryCleanupForExtension(RemoteExtensionId);
+        try
+        {
+            HostAssets.AppendLog("[AGY] Uninstall: " + YanziAgyManagedInstaller.CleanupOwnedOnUninstall());
+        }
+        catch (Exception exception)
+        {
+            HostAssets.AppendLog("[AGY] Uninstall cleanup deferred: " + exception.GetType().Name);
+        }
     }
 
     public static void TryCleanupForExtension(string? extensionId)
