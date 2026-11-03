@@ -145,6 +145,25 @@ public sealed partial class LocalAgentApiServer
                 return true;
             }
 
+            // A model service registered by a miniapp must be usable without opening
+            // the miniapp's management window. Start the owned AGY adapter lazily.
+            if (type.Equals(YanziAgyModelBridge.ProviderType, StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    if (YanziAgyModelBridge.FindExistingBinary() is null)
+                        await YanziAgyModelBridge.EnsureAgyInstalledAsync(_cts.Token);
+                    YanziAgyModelBridge.EnsureStarted();
+                }
+                catch (Exception ex) when (ex is IOException or InvalidOperationException or HttpRequestException or UnauthorizedAccessException)
+                {
+                    HostAssets.AppendLog($"[LLM] AGY adapter unavailable: {ex.GetType().Name}");
+                    await WriteLlmErrorAsync(response, 503, "agy_not_ready",
+                        "AGY CLI could not start. Open the AGY miniapp to inspect the local CLI installation.");
+                    return true;
+                }
+            }
+
             var stream = payload["stream"] is JsonValue streamValue &&
                          streamValue.TryGetValue<bool>(out var streamFlag) && streamFlag;
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
