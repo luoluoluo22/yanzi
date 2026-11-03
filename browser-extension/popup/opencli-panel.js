@@ -91,7 +91,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const profileInput = document.createElement("input");
   profileInput.type = "text";
-  profileInput.placeholder = "浏览器配置：留空自动选择唯一在线配置";
+  profileInput.placeholder = "留空复用当前浏览器；填写 OpenCLI Profile 才使用独立桥接";
   profileInput.setAttribute("aria-label", "OpenCLI 浏览器配置名称或 ID");
   profileInput.maxLength = 64;
   profileInput.style.cssText = "width:100%;box-sizing:border-box;margin-top:8px;padding:6px";
@@ -128,7 +128,7 @@ document.addEventListener("DOMContentLoaded", () => {
     latest = null;
     currentPage = 1;
     loadedPages.clear();
-    if (status) status.textContent = "需要运行中的燕子、OpenCLI Browser Bridge 和已登录的网站";
+    if (status) status.textContent = "请先在对应创作者中心登录；普通读取复用当前浏览器，无需额外窗口";
     if (summary) summary.textContent = "";
     if (raw) raw.textContent = "";
     if (copyButton) copyButton.disabled = true;
