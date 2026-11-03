@@ -392,34 +392,72 @@
         color: #fff !important;
         cursor: pointer !important;
       }
-      .yanzi-xhs-rule-list { overflow: auto !important; padding: 6px !important; }
-      .yanzi-xhs-rule-empty { padding: 28px 12px !important; text-align: center !important; color: #8b8b93 !important; }
-      .yanzi-xhs-rule-row {
+      .yanzi-xhs-rule-list {
         display: flex !important;
+        flex-wrap: wrap !important;
+        gap: 6px !important;
         align-items: center !important;
-        justify-content: space-between !important;
-        gap: 10px !important;
-        min-height: 42px !important;
-        padding: 7px 8px !important;
-        border-radius: 8px !important;
+        max-height: 280px !important;
+        overflow-y: auto !important;
+        padding: 8px 6px !important;
       }
-      .yanzi-xhs-rule-row:hover { background: rgba(255,255,255,.05) !important; }
-      .yanzi-xhs-rule-main { min-width: 0 !important; }
+      .yanzi-xhs-rule-empty { width: 100% !important; padding: 28px 12px !important; text-align: center !important; color: #8b8b93 !important; }
+      .yanzi-xhs-rule-row {
+        display: inline-flex !important;
+        align-items: center !important;
+        gap: 6px !important;
+        padding: 4px 8px 4px 10px !important;
+        border-radius: 999px !important;
+        background: rgba(255,255,255,.06) !important;
+        border: 1px solid rgba(255,255,255,.1) !important;
+        transition: all .15s ease !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+      }
+      .yanzi-xhs-rule-row:hover {
+        background: rgba(255,255,255,.1) !important;
+        border-color: rgba(96,165,250,.35) !important;
+      }
+      .yanzi-xhs-rule-main {
+        display: inline-flex !important;
+        align-items: center !important;
+        gap: 5px !important;
+        min-width: 0 !important;
+      }
       .yanzi-xhs-rule-label {
         overflow: hidden !important;
         text-overflow: ellipsis !important;
         white-space: nowrap !important;
+        max-width: 160px !important;
         color: #f4f4f5 !important;
+        font-size: 12px !important;
       }
-      .yanzi-xhs-rule-type { margin-top: 2px !important; color: #85858e !important; font-size: 10px !important; }
+      .yanzi-xhs-rule-type {
+        color: #93c5fd !important;
+        font-size: 9px !important;
+        background: rgba(59,130,246,.18) !important;
+        padding: 1px 4px !important;
+        border-radius: 4px !important;
+      }
       .yanzi-xhs-rule-remove {
         flex-shrink: 0 !important;
-        padding: 5px 8px !important;
-        border-radius: 7px !important;
-        color: #fca5a5 !important;
+        width: 16px !important;
+        height: 16px !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        border-radius: 50% !important;
+        background: rgba(255,255,255,.1) !important;
+        color: #94a3b8 !important;
+        font-size: 12px !important;
+        line-height: 1 !important;
         cursor: pointer !important;
+        transition: all .15s !important;
       }
-      .yanzi-xhs-rule-remove:hover { background: rgba(239,68,68,.14) !important; }
+      .yanzi-xhs-rule-remove:hover {
+        background: rgba(239,68,68,.4) !important;
+        color: #fff !important;
+      }
       .yanzi-xhs-custom-host > :not(.yanzi-xhs-custom-card) {
         visibility: hidden !important;
         pointer-events: none !important;
@@ -6413,13 +6451,13 @@
       type === "author" ? "作者" : type === "note" ? "笔记" : "关键词";
 
     list.innerHTML = visibleRules.map(rule => `
-      <div class="yanzi-xhs-rule-row">
+      <div class="yanzi-xhs-rule-row" title="${escapeHtml(rule.label || rule.value || "")} (${typeName(rule.type)})">
         <div class="yanzi-xhs-rule-main">
-          <div class="yanzi-xhs-rule-label">${escapeHtml(rule.label || rule.value || "")}</div>
-          <div class="yanzi-xhs-rule-type">${typeName(rule.type)}</div>
+          <span class="yanzi-xhs-rule-label">${escapeHtml(rule.label || rule.value || "")}</span>
+          <span class="yanzi-xhs-rule-type">${typeName(rule.type)}</span>
         </div>
-        <div class="yanzi-xhs-rule-remove" data-remove-rule="${escapeHtml(rule.id || "")}">移出</div>
-      </div>
+        <div class="yanzi-xhs-rule-remove" data-remove-rule="${escapeHtml(rule.id || "")}" title="移出">×</div>
+      </div></div>
     `).join("");
   }
 

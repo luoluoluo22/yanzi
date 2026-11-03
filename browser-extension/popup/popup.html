@@ -36,8 +36,8 @@
             <span class="sidebar-item-copy"><strong>连接与服务</strong><small>账号 · 同步 · 存储</small></span>
           </button>
           <button type="button" data-panel="opencli" aria-pressed="false">
-            <span class="sidebar-icon" aria-hidden="true">⌘</span>
-            <span class="sidebar-item-copy"><strong>个人数据读取</strong><small>小红书 · B 站 · 抖音</small></span>
+            <span class="sidebar-icon" aria-hidden="true">⚡</span>
+            <span class="sidebar-item-copy"><strong>网页 API</strong><small>专有 API · 公开站点</small></span>
           </button>
           <button type="button" data-panel="logs" aria-pressed="false">
             <span class="sidebar-icon" aria-hidden="true">◷</span>
@@ -73,79 +73,361 @@
     <footer class="app-footer"><button id="reconnect-btn" class="btn primary-btn btn-glow">重新连接燕子主程序</button></footer>
     </div>
     <div class="panel-content" id="panel-market">
-      <section class="market-intro">
-        <div class="market-intro-heading">
-          <div>
-            <h2>网页小程序</h2>
-            <p>按网站组合燕子能力。搜索名称、功能或标签，快速定位需要维护的小程序。</p>
-          </div>
-          <span class="log-count" id="market-count">0 个</span>
-        </div>
-        <div class="market-intro-actions">
-          <span class="market-sync-status" id="market-sync-status" role="status" aria-live="polite"></span>
-          <button type="button" id="sync-webapps">立即同步</button>
-        </div>
-      </section>
-      <label class="market-search">
-        <span class="market-search-icon" aria-hidden="true">⌕</span>
-        <input id="market-search" type="search" autocomplete="off" placeholder="搜索小程序、功能、标签…" aria-label="搜索小程序、功能和标签">
-        <kbd id="market-search-shortcut">Ctrl K</kbd>
-      </label>
+      <div class="market-top-bar">
+        <label class="market-search">
+          <span class="market-search-icon" aria-hidden="true">⌕</span>
+          <input id="market-search" type="search" autocomplete="off" placeholder="搜索小程序、功能、标签…" aria-label="搜索小程序、功能和标签">
+          <kbd id="market-search-shortcut">Ctrl K</kbd>
+        </label>
+        <button type="button" id="sync-webapps" class="btn-sync-compact" title="立即同步小程序数据">立即同步</button>
+        <span class="market-sync-status" id="market-sync-status" role="status" aria-live="polite"></span>
+      </div>
       <nav id="market-categories" class="market-categories" aria-label="小程序分类筛选">
         <button type="button" class="market-category-chip" data-market-category="全部" aria-pressed="true"><span>全部</span><small>0</small></button>
       </nav>
       <section id="market-list" class="market-list" aria-live="polite">
         <div class="market-empty">正在读取网页小程序…</div>
       </section>
-      <section class="glass-card webapp-rules-card" id="xhs-rules-card">
-        <div class="section-title-row">
-          <h2>小红书内容规则</h2>
-          <span class="log-count" id="xhs-rule-count">0 条</span>
+          </div>
+        <div class="panel-content" id="panel-opencli" hidden>
+      <!-- 顶部 Tab 栏：专有 API vs 公开开放站点 -->
+      <div class="webapi-tabs-bar" role="tablist">
+        <button type="button" class="webapi-tab-btn active" id="tab-btn-prop" data-webapi-tab="prop" role="tab" aria-selected="true" aria-controls="pane-webapi-prop">
+          <span class="webapi-tab-dot prop"></span>
+          <span class="webapi-tab-title">燕子专有 API</span>
+          <span class="webapi-tab-count">3 平台接管</span>
+        </button>
+        <button type="button" class="webapi-tab-btn" id="tab-btn-pub" data-webapi-tab="pub" role="tab" aria-selected="false" aria-controls="pane-webapi-pub">
+          <span class="webapi-tab-dot pub"></span>
+          <span class="webapi-tab-title">公开开放站点</span>
+          <span class="webapi-tab-count">4 类开放协议</span>
+        </button>
+      </div>
+
+      <!-- 面板内容容器 -->
+      <div class="webapi-panes-wrapper">
+        <!-- 面板 1：燕子专有 API (全宽展开) -->
+        <div id="pane-webapi-prop" class="webapi-pane active" role="tabpanel">
+          <div class="webapi-pane-scroll">
+            <!-- 小红书专有卡片 -->
+            <article class="webapi-card">
+              <div class="webapi-card-head">
+                <div class="webapi-card-name">
+                  <svg class="site-brand-icon" viewBox="0 0 24 24" width="20" height="20">
+                    <rect width="24" height="24" rx="5" fill="#ff2442"/>
+                    <path d="M7 6.5h3v11H7zm7 0h3v11h-3z" fill="#fff"/>
+                  </svg>
+                  <a href="https://www.xiaohongshu.com" target="_blank" rel="noopener noreferrer" class="webapi-site-link" title="在浏览器打开小红书官网">
+                    <strong>小红书 (Xiaohongshu)</strong>
+                    <span class="site-link-arrow">↗</span>
+                  </a>
+                </div>
+                <span class="webapi-status-badge active">OpenCLI 接入</span>
+              </div>
+              <p class="webapi-card-desc">通过 OpenCLI 读取当前登录账号的资料、创作者笔记与近7天统计。</p>
+              <div class="webapi-api-list">
+                <div class="webapi-api-item">
+                  <span class="api-method get">GET</span>
+                  <span class="api-path">creator-notes</span>
+                  <span class="api-desc">我的笔记列表与观看、点赞、收藏、评论数</span>
+                </div>
+                <div class="webapi-api-item highlight">
+                  <span class="api-method get">GET</span>
+                  <span class="api-path">creator-stats</span>
+                  <span class="api-desc">创作者近7天数据与每日趋势</span>
+                </div>
+                <div class="webapi-api-item">
+                  <span class="api-method get">GET</span>
+                  <span class="api-path">creator-profile</span>
+                  <span class="api-desc">账号名称、粉丝、关注与获赞收藏</span>
+                </div>
+                <div class="webapi-api-item">
+                  <span class="api-method get">GET</span>
+                  <span class="api-path">按需读取</span>
+                  <span class="api-desc">在下方选择数据类型并点击读取；需要新版宿主</span>
+                </div>
+              </div>
+            </article>
+
+            <!-- 抖音专有卡片 -->
+            <article class="webapi-card">
+              <div class="webapi-card-head">
+                <div class="webapi-card-name">
+                  <svg class="site-brand-icon" viewBox="0 0 24 24" width="20" height="20">
+                    <rect width="24" height="24" rx="5" fill="#000"/>
+                    <path d="M15 6a3 3 0 0 0 1.5.5V9a5 5 0 0 1-2.5-.7v4.5a3.5 3.5 0 1 1-3.5-3.5v2.2a1.5 1.5 0 1 0 1.5 1.5V5z" fill="#00f2fe"/>
+                    <path d="M15 6a3 3 0 0 0 1.5.5V8a5 5 0 0 1-2.5-.7v4.5a3.5 3.5 0 1 1-3.5-3.5v1.2a1.5 1.5 0 1 0 1.5 1.5V5z" fill="#fe2c55" opacity="0.8"/>
+                  </svg>
+                  <a href="https://www.douyin.com" target="_blank" rel="noopener noreferrer" class="webapi-site-link" title="在浏览器打开抖音官网">
+                    <strong>抖音 (Douyin)</strong>
+                    <span class="site-link-arrow">↗</span>
+                  </a>
+                </div>
+                <span class="webapi-status-badge active">已接入</span>
+              </div>
+              <p class="webapi-card-desc">本地无感拦截与数据抽取，自动规避滑动拼图验证码。</p>
+              <div class="webapi-api-list">
+                <div class="webapi-api-item">
+                  <span class="api-method get">GET</span>
+                  <span class="api-path">/v1/videos</span>
+                  <span class="api-desc">个人作品列表读取（支持分页）</span>
+                </div>
+                <div class="webapi-api-item">
+                  <span class="api-method post">POST</span>
+                  <span class="api-path">/v1/filter</span>
+                  <span class="api-desc">视频标题/带货广告/商品卡全局自动跳过</span>
+                </div>
+                <div class="webapi-api-item">
+                  <span class="api-method get">GET</span>
+                  <span class="api-path">/v1/profile</span>
+                  <span class="api-desc">主页作品与账号基础数据</span>
+                </div>
+              </div>
+            </article>
+
+            <!-- ChatGPT 专有卡片 -->
+            <article class="webapi-card">
+              <div class="webapi-card-head">
+                <div class="webapi-card-name">
+                  <svg class="site-brand-icon" viewBox="0 0 24 24" width="20" height="20">
+                    <rect width="24" height="24" rx="5" fill="#10a37f"/>
+                    <circle cx="12" cy="12" r="6" fill="none" stroke="#fff" stroke-width="2.2"/>
+                    <circle cx="12" cy="12" r="2.2" fill="#fff"/>
+                  </svg>
+                  <a href="https://chatgpt.com" target="_blank" rel="noopener noreferrer" class="webapi-site-link" title="在浏览器打开 ChatGPT">
+                    <strong>ChatGPT (对话协同)</strong>
+                    <span class="site-link-arrow">↗</span>
+                  </a>
+                </div>
+                <span class="webapi-status-badge active">已接入</span>
+              </div>
+              <p class="webapi-card-desc">完全脱离输入框 DOM 流的外浮层架构，对原生界面实现零侵入协同。</p>
+              <div class="webapi-api-list">
+                <div class="webapi-api-item">
+                  <span class="api-method auto">AUTO</span>
+                  <span class="api-path">/always-allow</span>
+                  <span class="api-desc">MCP / 工具调用授权弹窗 15s 自动点击确认</span>
+                </div>
+                <div class="webapi-api-item">
+                  <span class="api-method auto">AUTO</span>
+                  <span class="api-path">/keep-going</span>
+                  <span class="api-desc">自动续发“继续”、定时停止与关键词熔断停止</span>
+                </div>
+              </div>
+            </article>
+
+            <!-- 专有 API 在线读取调试区 (保留原有 OpenCLI 功能) -->
+            <article class="webapi-card debugger-card">
+              <div class="webapi-card-head">
+                <div class="webapi-card-name">
+                  <svg class="site-brand-icon" viewBox="0 0 24 24" width="20" height="20">
+                    <rect width="24" height="24" rx="5" fill="#334155"/>
+                    <path d="M7 8l4 4-4 4m6 0h4" stroke="#60a5fa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                  </svg>
+                  <strong>专有 API 在线调试 (OpenCLI)</strong>
+                </div>
+                <span class="webapi-status-badge debug">实时读取</span>
+              </div>
+              <p class="guide-help" style="margin-bottom:8px;">从已登录的本地浏览器即时读取账号数据，只读安全、不同步至云端。</p>
+              <div class="opencli-controls-row">
+                <div class="control-group">
+                  <label for="opencli-site">目标平台</label>
+                  <select id="opencli-site">
+                    <option value="xiaohongshu">小红书</option>
+                    <option value="bilibili">哔哩哔哩</option>
+                    <option value="douyin">抖音</option>
+                  </select>
+                </div>
+                <div class="control-group">
+                  <label for="opencli-operation">数据类型</label>
+                  <select id="opencli-operation"></select>
+                </div>
+              </div>
+              <div class="opencli-actions" style="margin-top:8px;">
+                <button id="opencli-read" type="button" class="btn-primary-compact">读取数据</button>
+                <button id="opencli-copy" type="button" class="btn-subtle-compact" disabled>复制 JSON</button>
+              </div>
+              <div id="opencli-pagination" class="opencli-pagination" hidden style="margin-top:6px;">
+                <button type="button" id="opencli-prev" disabled>上一页</button>
+                <span id="opencli-page-label">第 1 页</span>
+                <button type="button" id="opencli-next" disabled>下一页</button>
+              </div>
+              <p class="opencli-status" id="opencli-status" role="status" aria-live="polite"></p>
+              <p class="opencli-summary" id="opencli-summary"></p>
+              <pre class="opencli-result" id="opencli-result" aria-label="读取结果"></pre>
+            </article>
+          </div>
         </div>
-        <div id="xhs-rule-list" class="webapp-rule-list">
-          <div class="market-empty compact">暂无屏蔽规则</div>
+
+        <!-- 面板 2：公开开放站点 (全宽展开) -->
+        <div id="pane-webapi-pub" class="webapi-pane" role="tabpanel" hidden>
+          <div class="webapi-pane-scroll">
+            <!-- B 站开放接口清单 (已去掉多余的全开放标签，图标改用高精SVG，名称可点击跳转) -->
+            <article class="webapi-card">
+              <div class="webapi-card-head">
+                <div class="webapi-card-name">
+                  <svg class="site-brand-icon" viewBox="0 0 24 24" width="20" height="20">
+                    <rect width="24" height="24" rx="5" fill="#00aeec"/>
+                    <path d="M8.5 5.5L6.5 3.5m9 2l2-2M6 8h12a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2zm2.5 4v2m7-2v2" stroke="#fff" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+                  </svg>
+                  <a href="https://www.bilibili.com" target="_blank" rel="noopener noreferrer" class="webapi-site-link" title="在浏览器打开哔哩哔哩官网">
+                    <strong>哔哩哔哩 (B站)</strong>
+                    <span class="site-link-arrow">↗</span>
+                  </a>
+                </div>
+              </div>
+              <p class="webapi-card-desc">全网开放度极高的长视频平台，支持榜单、搜索、抽帧与流媒体提取。</p>
+              
+              <div class="webapi-schema-box">
+                <div class="schema-row">
+                  <div class="schema-info">
+                    <span class="schema-tag">综合热门榜</span>
+                    <code>https://r.jina.ai/https://www.bilibili.com/v/popular/all</code>
+                  </div>
+                  <button type="button" class="btn-copy-template" data-copy-template="https://r.jina.ai/https://www.bilibili.com/v/popular/all" title="复制调用 URL">复制</button>
+                </div>
+                <div class="schema-row">
+                  <div class="schema-info">
+                    <span class="schema-tag">关键词搜索</span>
+                    <code>https://r.jina.ai/https://search.bilibili.com/all?keyword={KEYWORD}</code>
+                  </div>
+                  <button type="button" class="btn-copy-template" data-copy-template="https://r.jina.ai/https://search.bilibili.com/all?keyword={KEYWORD}" title="复制调用 URL">复制</button>
+                </div>
+                <div class="schema-row">
+                  <div class="schema-info">
+                    <span class="schema-tag">高清封面图</span>
+                    <code>&lt;meta property=&quot;og:image&quot;&gt; 或 videoData.pic</code>
+                  </div>
+                  <button type="button" class="btn-copy-template" data-copy-template="https://api.bilibili.com/x/web-interface/view?bvid={BVID}" title="复制查看接口">复制</button>
+                </div>
+                <div class="schema-row">
+                  <div class="schema-info">
+                    <span class="schema-tag">关键帧缩略图</span>
+                    <code>api.bilibili.com/x/player/videoshot?bvid={BVID}&cid={CID}</code>
+                  </div>
+                  <button type="button" class="btn-copy-template" data-copy-template="https://api.bilibili.com/x/player/videoshot?bvid={BVID}&cid={CID}" title="复制抽帧接口">复制</button>
+                </div>
+                <div class="schema-row">
+                  <div class="schema-info">
+                    <span class="schema-tag">视频下载流</span>
+                    <code>api.bilibili.com/x/player/playurl?bvid={BVID}&cid={CID}</code>
+                  </div>
+                  <button type="button" class="btn-copy-template" data-copy-template="https://api.bilibili.com/x/player/playurl?bvid={BVID}&cid={CID}" title="复制流直链接口">复制</button>
+                </div>
+              </div>
+            </article>
+
+            <!-- 百度与必应 (已去掉多余全开放标签，图标改用高精SVG，名称可点击跳转) -->
+            <article class="webapi-card">
+              <div class="webapi-card-head">
+                <div class="webapi-card-name">
+                  <svg class="site-brand-icon" viewBox="0 0 24 24" width="20" height="20">
+                    <rect width="24" height="24" rx="5" fill="#2932e1"/>
+                    <path d="M12 11.5c-1.8 0-3.3 1.3-3.3 3 0 1.2.8 2.2 2 2.7v.1c.4.2.8.2 1.3.2s.9 0 1.3-.2v-.1c1.2-.5 2-1.5 2-2.7 0-1.7-1.5-3-3.3-3zm-3.8-1.7c.8 0 1.4-.7 1.4-1.6 0-.8-.6-1.5-1.4-1.5s-1.4.7-1.4 1.5c0 .9.6 1.6 1.4 1.6zm7.6 0c.8 0 1.4-.7 1.4-1.6 0-.8-.6-1.5-1.4-1.5s-1.4.7-1.4 1.5c0 .9.6 1.6 1.4 1.6zm-5.7-2.3c.7 0 1.3-.7 1.3-1.5s-.6-1.5-1.3-1.5-1.3.7-1.3 1.5.6 1.5 1.3 1.5zm3.8 0c.7 0 1.3-.7 1.3-1.5s-.6-1.5-1.3-1.5-1.3.7-1.3 1.5.6 1.5 1.3 1.5z" fill="#fff"/>
+                  </svg>
+                  <span class="webapi-site-links-group">
+                    <a href="https://www.baidu.com" target="_blank" rel="noopener noreferrer" class="webapi-site-link" title="在浏览器打开百度">
+                      <strong>百度</strong>
+                      <span class="site-link-arrow">↗</span>
+                    </a>
+                    <span class="link-divider">/</span>
+                    <a href="https://cn.bing.com" target="_blank" rel="noopener noreferrer" class="webapi-site-link" title="在浏览器打开必应中国">
+                      <strong>必应中国</strong>
+                      <span class="site-link-arrow">↗</span>
+                    </a>
+                  </span>
+                </div>
+              </div>
+              <p class="webapi-card-desc">零门槛网页搜索索引，直接带 query 参数返回结构化 Markdown/JSON。</p>
+              
+              <div class="webapi-schema-box">
+                <div class="schema-row">
+                  <div class="schema-info">
+                    <span class="schema-tag">百度检索</span>
+                    <code>https://r.jina.ai/https://www.baidu.com/s?wd={KEYWORD}</code>
+                  </div>
+                  <button type="button" class="btn-copy-template" data-copy-template="https://r.jina.ai/https://www.baidu.com/s?wd={KEYWORD}" title="复制调用 URL">复制</button>
+                </div>
+                <div class="schema-row">
+                  <div class="schema-info">
+                    <span class="schema-tag">必应检索</span>
+                    <code>https://r.jina.ai/https://cn.bing.com/search?q={KEYWORD}</code>
+                  </div>
+                  <button type="button" class="btn-copy-template" data-copy-template="https://r.jina.ai/https://cn.bing.com/search?q={KEYWORD}" title="复制调用 URL">复制</button>
+                </div>
+              </div>
+            </article>
+
+            <!-- GitHub 开源生态 (已去掉多余全开放标签，图标改用高精SVG，名称可点击跳转) -->
+            <article class="webapi-card">
+              <div class="webapi-card-head">
+                <div class="webapi-card-name">
+                  <svg class="site-brand-icon" viewBox="0 0 24 24" width="20" height="20">
+                    <rect width="24" height="24" rx="5" fill="#181717"/>
+                    <path fill="#fff" d="M12 4a8 8 0 0 0-2.5 15.6c.4.1.5-.2.5-.4v-1.4c-2.2.5-2.7-1.1-2.7-1.1-.4-.9-.9-1.2-.9-1.2-.7-.5.1-.5.1-.5.8.1 1.2.8 1.2.8.7 1.2 1.9.9 2.3.7.1-.5.3-.9.5-1.1-1.8-.2-3.6-.9-3.6-4 0-.9.3-1.6.8-2.2 0-.2-.4-1 .1-2.1 0 0 .7-.2 2.2.8a7.7 7.7 0 0 1 4 0c1.5-1 2.2-.8 2.2-.8.5 1.1.1 1.9.1 2.1.5.6.8 1.3.8 2.2 0 3.1-1.9 3.8-3.7 4 .3.3.6.8.6 1.6v2.4c0 .2.2.5.5.4A8 8 0 0 0 12 4z"/>
+                  </svg>
+                  <a href="https://github.com" target="_blank" rel="noopener noreferrer" class="webapi-site-link" title="在浏览器打开 GitHub">
+                    <strong>GitHub (全球开发者生态)</strong>
+                    <span class="site-link-arrow">↗</span>
+                  </a>
+                </div>
+              </div>
+              <p class="webapi-card-desc">开源项目趋势与代码/Issue 全文检索，开发者大模型首选数据源。</p>
+              
+              <div class="webapi-schema-box">
+                <div class="schema-row">
+                  <div class="schema-info">
+                    <span class="schema-tag">热门趋势榜</span>
+                    <code>https://r.jina.ai/https://github.com/trending</code>
+                  </div>
+                  <button type="button" class="btn-copy-template" data-copy-template="https://r.jina.ai/https://github.com/trending" title="复制调用 URL">复制</button>
+                </div>
+                <div class="schema-row">
+                  <div class="schema-info">
+                    <span class="schema-tag">代码仓库检索</span>
+                    <code>https://r.jina.ai/https://github.com/search?q={KEYWORD}&type=repositories</code>
+                  </div>
+                  <button type="button" class="btn-copy-template" data-copy-template="https://r.jina.ai/https://github.com/search?q={KEYWORD}&type=repositories" title="复制调用 URL">复制</button>
+                </div>
+              </div>
+            </article>
+
+            <!-- 技术社区与科技媒体 (已去掉多余全开放标签，图标改用高精SVG，名称可点击跳转) -->
+            <article class="webapi-card">
+              <div class="webapi-card-head">
+                <div class="webapi-card-name">
+                  <svg class="site-brand-icon" viewBox="0 0 24 24" width="20" height="20">
+                    <rect width="24" height="24" rx="5" fill="#4f46e5"/>
+                    <path d="M6 7h12M6 11h12M6 15h7" stroke="#fff" stroke-width="2" stroke-linecap="round" fill="none"/>
+                  </svg>
+                  <a href="https://juejin.cn" target="_blank" rel="noopener noreferrer" class="webapi-site-link" title="在浏览器打开技术社区">
+                    <strong>技术社区与商业科技媒体</strong>
+                    <span class="site-link-arrow">↗</span>
+                  </a>
+                </div>
+              </div>
+              <p class="webapi-card-desc">自动剔除杂质广告与导航，文章一秒脱水为干净的结构化 Markdown。</p>
+              
+              <div class="webapi-schema-box">
+                <div class="schema-row">
+                  <div class="schema-info">
+                    <span class="schema-tag">社区文章提纯</span>
+                    <code>https://r.jina.ai/{ARTICLE_URL} (CSDN/掘金/博客园/V2EX)</code>
+                  </div>
+                  <button type="button" class="btn-copy-template" data-copy-template="https://r.jina.ai/{ARTICLE_URL}" title="复制调用 URL">复制</button>
+                </div>
+                <div class="schema-row">
+                  <div class="schema-info">
+                    <span class="schema-tag">创投深度报道</span>
+                    <code>https://r.jina.ai/{NEWS_URL} (36氪/虎嗅/少数派)</code>
+                  </div>
+                  <button type="button" class="btn-copy-template" data-copy-template="https://r.jina.ai/{NEWS_URL}" title="复制调用 URL">复制</button>
+                </div>
+              </div>
+            </article>
+          </div>
         </div>
-      </section>
-      <section class="glass-card webapp-rules-card" id="douyin-rules-card">
-        <div class="section-title-row">
-          <h2>抖音屏蔽关键词</h2>
-          <span class="log-count" id="douyin-rule-count">0 条</span>
-        </div>
-        <form id="douyin-rule-form" class="webapp-rule-form">
-          <input id="douyin-rule-input" type="text" maxlength="80" placeholder="输入关键词，如：购物、直播">
-          <button type="submit">添加</button>
-        </form>
-        <p class="guide-help">默认同时匹配标题、话题标签和作者，命中后自动跳到下一条。</p>
-        <div id="douyin-rule-list" class="webapp-rule-list">
-          <div class="market-empty compact">暂无屏蔽关键词</div>
-        </div>
-      </section>
-    </div>
-    <div class="panel-content" id="panel-opencli" hidden>
-      <section class="glass-card opencli-panel">
-        <h2>个人数据读取</h2>
-        <p class="guide-help">通过本机 OpenCLI 和已登录浏览器读取账号数据。只读、手动触发，不同步至云端。</p>
-        <label for="opencli-site">平台</label>
-        <select id="opencli-site">
-          <option value="xiaohongshu">小红书</option>
-          <option value="bilibili">哔哩哔哩</option>
-          <option value="douyin">抖音</option>
-        </select>
-        <label for="opencli-operation">数据类型</label>
-        <select id="opencli-operation"></select>
-        <div class="opencli-actions">
-          <button id="opencli-read" type="button">读取数据</button>
-          <button id="opencli-copy" type="button" disabled>复制 JSON</button>
-        </div>
-        <div id="opencli-pagination" class="opencli-pagination" hidden>
-          <button type="button" id="opencli-prev" disabled>上一页</button>
-          <span id="opencli-page-label">第 1 页</span>
-          <button type="button" id="opencli-next" disabled>下一页</button>
-        </div>
-        <p class="opencli-status" id="opencli-status" role="status" aria-live="polite"></p>
-        <p class="opencli-summary" id="opencli-summary"></p>
-        <pre class="opencli-result" id="opencli-result" aria-label="读取结果"></pre>
-      </section>
+      </div>
     </div>
     <div class="panel-content" id="panel-logs" hidden>
     <section class="logs-section glass-card">

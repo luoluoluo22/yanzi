@@ -269,6 +269,29 @@ internal static class BrowserHelperDistribution
     private static System.Threading.Timer? _egoManagementTimer;
     private static int _egoManagementCheckRunning;
     private static DateTime _lastMissingEgoRecoveryUtc = DateTime.MinValue;
+
+    // A version label alone is insufficient: two diverged source channels once
+    // shipped different popup/webapp code under the same manifest version.
+    // Never silently restore a source checkout that disagrees with the release.
+    private static bool MatchesBundledEgoPayload(string managedDirectory)
+    {
+        var bundledDirectory = BrowserHelperBootstrap.FindBundledDirectory();
+        if (bundledDirectory == null) return false;
+        foreach (var file in new[]
+        {
+            "manifest.json", "background.js", "popup/popup.html",
+            "popup/popup.js", "webapps/catalog.json", "webapps/runtime-background.js"
+        })
+        {
+            var managedFile = Path.Combine(managedDirectory, file);
+            var bundledFile = Path.Combine(bundledDirectory, file);
+            if (!File.Exists(managedFile) || !File.Exists(bundledFile)) return false;
+            if (!SHA256.HashData(File.ReadAllBytes(managedFile)).AsSpan()
+                    .SequenceEqual(SHA256.HashData(File.ReadAllBytes(bundledFile))))
+                return false;
+        }
+        return true;
+    }
     private static DateTime _lastEgoMonitorWarningUtc = DateTime.MinValue;
 
     private static void LogManagedEgoWarning(string message)
@@ -307,6 +330,15 @@ internal static class BrowserHelperDistribution
             var probe = await ConfigureEgoAsync(state.Path, allowInstall: false);
             if (probe.Status == "missing")
             {
+                // A managed source checkout may be older than the packaged helper
+                // even when both manifests show the same version (channel split).
+                // Do not resurrect that older UI after Ego loses registration.
+                if (!MatchesBundledEgoPayload(state.Path))
+                {
+                    LogManagedEgoWarning("Ego managed source differs from bundled browser helper; " +
+                        "automatic restore blocked to prevent UI/function rollback.");
+                    return;
+                }
                 // This marker was created after explicit managed-install consent.
                 // Recover only the same source path and same expected ID.
                 if (DateTime.UtcNow - _lastMissingEgoRecoveryUtc < TimeSpan.FromMinutes(10))

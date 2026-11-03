@@ -28,6 +28,34 @@
       "defaultInstalled": true,
       "syncKeys": ["rules", "settings"],
       "capabilities": ["标题关键词过滤", "话题标签过滤", "作者关键词过滤", "直播类型识别", "商品卡识别", "广告标签识别", "命中词红色高亮", "观察诊断面板", "侧栏原生Switch", "即时自动跳过", "失败重试", "燕子云同步"]
+    },
+    {
+      "id": "chatgpt.auto-allow",
+      "name": "始终允许",
+      "description": "ChatGPT 对话中出现 MCP 或外部工具调用授权确认框时，15 秒倒计时后自动点击“始终允许”，可随时手动取消或干预。",
+      "version": "0.1.0",
+      "category": "自动化",
+      "summaryCapabilities": ["MCP授权监听", "15秒倒计时", "自动始终允许", "手动打断"],
+      "contextDoc": "webapps/chatgpt-auto-allow/DEVELOPMENT_CONTEXT.md",
+      "matches": ["https://chatgpt.com/*", "https://chat.openai.com/*"],
+      "contentScript": "webapps/chatgpt-auto-allow/content.js",
+      "defaultInstalled": true,
+      "syncKeys": ["settings"],
+      "capabilities": ["MCP授权弹窗检测", "15秒自动点击始终允许", "倒计时状态提示", "用户随时打断", "自定义等待秒数"]
+    },
+    {
+      "id": "chatgpt.keep-going",
+      "name": "不要停",
+      "description": "在 ChatGPT 生成结束或回复完成后自动续发“继续”，支持最多续发次数、指定时间停止与关键词停止规则，按钮位于对话框正上方偏右侧，不影响原生布局。",
+      "version": "0.2.0",
+      "category": "自动化",
+      "summaryCapabilities": ["自动续聊", "倒计时展示", "停止条件设置", "次数与定时"],
+      "contextDoc": "webapps/chatgpt-keep-going/DEVELOPMENT_CONTEXT.md",
+      "matches": ["https://chatgpt.com/*", "https://chat.openai.com/*"],
+      "contentScript": "webapps/chatgpt-keep-going/content.js",
+      "defaultInstalled": true,
+      "syncKeys": ["settings"],
+      "capabilities": ["自动续发继续", "自定义提示词", "回复完成后等待倒计时", "最多续发次数限制", "到指定时间停止", "命中关键词/正则停止", "对话切换安全停止", "手动草稿保护", "AI回复错误保护", "燕子云同步"]
     }
   ]
 }
