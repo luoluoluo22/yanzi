@@ -62,10 +62,10 @@ public sealed class SingleInstanceService : IDisposable
                 _pipeName,
                 PipeDirection.Out,
                 PipeOptions.Asynchronous);
-            await client.ConnectAsync(200, cancellationToken);
-            await using var writer = new StreamWriter(client);
-            await writer.WriteAsync(message);
-            await writer.FlushAsync();
+            await client.ConnectAsync(1200, cancellationToken).ConfigureAwait(false);
+            using var writer = new StreamWriter(client);
+            await writer.WriteAsync(message).ConfigureAwait(false);
+            await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
             return true;
         }
         catch
