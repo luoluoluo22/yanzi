@@ -384,6 +384,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         HostAssets.EnsureCreated();
         _syncOptions = SyncConfigLoader.Load();
         _appSettings = AppSettingsStore.Load();
+        InitializeAiConversationScheduler();
         _searchUsageMemory = SearchUsageMemory.Load();
         LocalExtensionCatalog.EnsureSampleExtension();
         if (_syncOptions.IsConfigured)
