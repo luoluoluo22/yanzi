@@ -91,7 +91,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const profileInput = document.createElement("input");
   profileInput.type = "text";
-  profileInput.placeholder = "浏览器配置：留空自动选择唯一在线配置";
+  profileInput.placeholder = "留空复用当前浏览器；填写 OpenCLI Profile 才使用独立桥接";
   profileInput.setAttribute("aria-label", "OpenCLI 浏览器配置名称或 ID");
   profileInput.maxLength = 64;
   profileInput.style.cssText = "width:100%;box-sizing:border-box;margin-top:8px;padding:6px";
@@ -128,7 +128,7 @@ document.addEventListener("DOMContentLoaded", () => {
     latest = null;
     currentPage = 1;
     loadedPages.clear();
-    if (status) status.textContent = "需要运行中的燕子、OpenCLI Browser Bridge 和已登录的网站";
+    if (status) status.textContent = "请先在对应创作者中心登录；普通读取复用当前浏览器，无需额外窗口";
     if (summary) summary.textContent = "";
     if (raw) raw.textContent = "";
     if (copyButton) copyButton.disabled = true;
@@ -184,6 +184,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const totalText = isPaged() && Number.isInteger(latest?.total)
         ? " / 共 " + latest.total + " 条" : "";
       const issues = [
+        reply.cleanupWarning || "",
         withinDuplicates ? "本页重复 ID " + withinDuplicates + " 个" : "",
         acrossDuplicates ? "与其他页重复 " + acrossDuplicates + " 个" : ""
       ].filter(Boolean);
@@ -191,9 +192,11 @@ document.addEventListener("DOMContentLoaded", () => {
         records.filter(record => !String(record?.title || "").trim()).length : 0;
       if (missingTitles) issues.push(missingTitles + " 条作品无标题描述");
       if (status) {
-        status.textContent = "读取成功 · " + prefix + records.length +
+        const provenance = reply.source === "browser-session" ? "浏览器直读 · " : "OpenCLI · ";
+        const partial = reply.incomplete ? "；当前仅完成首批读取，后续数据仍需加载" : "";
+        status.textContent = "读取成功 · " + provenance + prefix + records.length +
           (isList ? " 条记录" : " 项数据") + totalText +
-          (issues.length ? "；提示：" + issues.join("、") : "");
+          (issues.length ? "；提示：" + issues.join("、") : "") + partial;
       }
       const first = records[0];
       const previewFields = ["nickname", "name", "title", "date",
