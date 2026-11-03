@@ -10,6 +10,13 @@ using System.Windows.Data;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using Button = System.Windows.Controls.Button;
+using CheckBox = System.Windows.Controls.CheckBox;
+using ComboBox = System.Windows.Controls.ComboBox;
+using ListBox = System.Windows.Controls.ListBox;
+using TextBox = System.Windows.Controls.TextBox;
+using Orientation = System.Windows.Controls.Orientation;
+using Point = System.Windows.Point;
 
 namespace OpenQuickHost;
 
