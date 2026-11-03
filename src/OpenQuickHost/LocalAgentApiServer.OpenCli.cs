@@ -24,7 +24,15 @@ public sealed partial class LocalAgentApiServer
             else
             {
                 var page = request.TryGetProperty("page", out var pageValue) ? pageValue.GetInt32() : 1;
-                BrowserOpenCliReader.Command(site, operation, page);
+                var media = operation.StartsWith("media.", StringComparison.Ordinal);
+                var mediaOperation = media ? operation["media.".Length..] : "";
+                var value = media && request.TryGetProperty("value", out var mediaValue) && mediaValue.ValueKind == JsonValueKind.String
+                    ? mediaValue.GetString() ?? "" : "";
+                var limit = media && request.TryGetProperty("limit", out var limitValue) && limitValue.TryGetInt32(out var n)
+                    ? n : 5;
+                // Validate the strict read-only allowlist before attempting CLI access.
+                if (media) BrowserMediaApi.Command(site, mediaOperation, value, limit);
+                else BrowserOpenCliReader.Command(site, operation, page);
                 var profile = request.TryGetProperty("profile", out var profileValue) && profileValue.ValueKind == JsonValueKind.String
                     ? profileValue.GetString() : null;
                 using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
@@ -33,7 +41,9 @@ public sealed partial class LocalAgentApiServer
                     throw new InvalidOperationException("已有数据读取任务正在运行，请稍后重试。");
                 try
                 {
-                    var result = await BrowserOpenCliReader.ReadAsync(site, operation, page, profile, deadline.Token);
+                    var result = media
+                        ? await BrowserMediaApi.ReadAsync(site, mediaOperation, value, limit, profile, deadline.Token)
+                        : await BrowserOpenCliReader.ReadAsync(site, operation, page, profile, deadline.Token);
                     response = new { type = "opencli_response", requestId, ok = true, result };
                 }
                 finally { OpenCliReadGate.Release(); }

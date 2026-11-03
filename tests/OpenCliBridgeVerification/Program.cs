@@ -32,6 +32,60 @@ void Reject(Action action, string name)
     catch (InvalidOperationException) { Console.WriteLine("PASS " + name); return; }
     throw new Exception("Expected rejection: " + name);
 }
+Assert(BrowserMediaApi.Command("douyin", "search", "人工智能", 5)[1] == "search", "Douyin search read-only command");
+Assert(BrowserMediaApi.Command("bilibili", "detail", "BV1atCRYsE7x", 5)[1] == "video", "Bilibili video detail command");
+Assert(BrowserMediaApi.Command("xiaohongshu", "comments",
+    "https://www.xiaohongshu.com/search_result/6ae890890000000032022adf?xsec_token=testtoken", 5)[1] == "comments",
+    "Xiaohongshu comments read-only command");
+Reject(() => BrowserMediaApi.Command("douyin", "publish", "123", 5), "media write operation blocked");
+Reject(() => BrowserMediaApi.Command("unknown", "search", "AI", 5), "unknown media platform blocked");
+Reject(() => BrowserMediaApi.Command("bilibili", "search", "--help", 5), "flag-shaped media keyword blocked");
+Reject(() => BrowserMediaApi.Command("bilibili", "search", "AI", 21), "unbounded search blocked");
+Reject(() => BrowserMediaApi.Command("bilibili", "detail", "https://attacker.example/video/BV1atCRYsE7x", 5), "unsafe target host blocked");
+Reject(() => BrowserMediaApi.Command("xiaohongshu", "detail", "file:///etc/passwd", 5), "local file URL blocked");
+Reject(() => BrowserMediaApi.Command("douyin", "detail", "7427381362337778980", 5), "Douyin creator-only details blocked");
+using (var fixture = JsonDocument.Parse("""
+    [{"rank":1,"desc":"Video title","author":"Test author",
+      "url":"https://www.douyin.com/video/7427381362337778980",
+      "likes":68000,"plays":0,"comments":0,"shares":0}]
+    """))
+{
+    var normalized = JsonSerializer.Serialize(BrowserMediaApi.Normalize("douyin", "search", "AI", fixture.RootElement));
+    using var parsed = JsonDocument.Parse(normalized);
+    var first = parsed.RootElement.GetProperty("items")[0].GetProperty("metrics");
+    Assert(first.GetProperty("plays").GetProperty("status").GetString() == "unverified" &&
+           first.GetProperty("plays").GetProperty("value").ValueKind == JsonValueKind.Null,
+           "Douyin search zero metrics are not fabricated");
+    Assert(first.GetProperty("likes").GetProperty("value").GetInt64() == 68000,
+           "real reported likes retained");
+    Assert(first.GetProperty("collects").GetProperty("status").GetString() == "not_provided",
+           "absent metric explicitly marked not provided");
+}
+using (var fixture = JsonDocument.Parse("""
+    [{"field":"title","value":"Test Bili"},{"field":"author","value":"Test creator"},
+     {"field":"view","value":"1477391"},{"field":"reply","value":"2293"}]
+    """))
+{
+    var normalized = JsonSerializer.Serialize(BrowserMediaApi.Normalize("bilibili", "detail", "BV1atCRYsE7x", fixture.RootElement));
+    using var parsed = JsonDocument.Parse(normalized);
+    var first = parsed.RootElement.GetProperty("item").GetProperty("metrics");
+    Assert(first.GetProperty("plays").GetProperty("value").GetInt64() == 1477391 &&
+           first.GetProperty("comments").GetProperty("value").GetInt64() == 2293,
+           "Bilibili detail play/comment metrics normalized");
+    Assert(first.GetProperty("shares").GetProperty("status").GetString() == "not_provided",
+           "missing Bilibili shares never become zero");
+}
+using (var fixture = JsonDocument.Parse("""
+    [{"rank":1,"author":"Tester","text":"Interesting detail","likes":3,"replies":2}]
+    """))
+{
+    var normalized = JsonSerializer.Serialize(BrowserMediaApi.Normalize("bilibili", "comments", "BV1atCRYsE7x", fixture.RootElement));
+    using var parsed = JsonDocument.Parse(normalized);
+    Assert(parsed.RootElement.GetProperty("returned").GetInt32() == 1 &&
+           parsed.RootElement.GetProperty("items")[0].GetProperty("text").GetString() == "Interesting detail",
+           "Bilibili comment content normalized");
+}
+
 Assert(BrowserOpenCliReader.Command("xiaohongshu", "stats", 1).SequenceEqual(new[] { "creator-stats", "--period", "seven" }), "seven-day command");
 Reject(() => BrowserOpenCliReader.Command("xiaohongshu", "publish", 1), "write command blocked");
 Reject(() => BrowserOpenCliReader.Command("xiaohongshu", "notes", 2), "unsupported pagination blocked");
@@ -61,6 +115,41 @@ if (args.Contains("--live-safe"))
     var result = await BrowserOpenCliReader.ReadAsync("xiaohongshu", "profile", 1, null, deadline.Token);
     Console.WriteLine("OPENCLI_LIVE_SAFE_OK (personal data redacted)");
 }
+if (args.Contains("--media-live-safe"))
+{
+    using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(4));
+    var examples = new (string site, string operation, string value, int limit)[]
+    {
+        ("xiaohongshu", "search", "人工智能", 2),
+        ("douyin", "search", "人工智能", 2),
+        ("bilibili", "search", "人工智能", 2),
+        ("bilibili", "detail", "BV1atCRYsE7x", 5),
+        ("bilibili", "comments", "BV1atCRYsE7x", 3),
+        ("xiaohongshu", "detail", "https://www.xiaohongshu.com/search_result/6ae890890000000032022adf?xsec_token=ABS3kWIaE_p5ZL9E-_LC9aEo4SBgP64YsHhnD7zzyN2Rc=&xsec_source=", 5)
+    };
+    foreach (var example in examples)
+    {
+        try
+        {
+            var reply = await BrowserMediaApi.ReadAsync(example.site, example.operation,
+                example.value, example.limit, null, deadline.Token);
+            using var json = JsonDocument.Parse(JsonSerializer.Serialize(reply));
+            var data = json.RootElement.GetProperty("data");
+            var returned = data.TryGetProperty("returned", out var length) ? length.GetInt32()
+                : data.TryGetProperty("item", out var item) && item.ValueKind == JsonValueKind.Object ? 1 : -1;
+            var titleAvailable = example.operation != "detail"
+                || data.GetProperty("item").GetProperty("title").ValueKind == JsonValueKind.String;
+            Console.WriteLine("MEDIA_LIVE_SAFE_OK " + example.site + "/" + example.operation
+                + " returned=" + returned + " titleAvailable=" + titleAvailable);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("MEDIA_LIVE_SAFE_FAILED " + example.site + "/" + example.operation
+                + " reason=" + ex.GetType().Name);
+        }
+    }
+}
+
 if (args.Contains("--live"))
 {
     using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(90));

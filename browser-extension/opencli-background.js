@@ -351,7 +351,7 @@ async function readXiaohongshuDirect(operation) {
   return readCreatorDashboard("xiaohongshu", operation, 1);
 }
 
-function sendOpenCliHostRequest(site, operation, page, profile, timeoutMs) {
+function sendOpenCliHostRequest(site, operation, page, profile, timeoutMs, mediaArgs = null) {
   return new Promise(resolve => {
     const requestId = crypto.randomUUID();
     const timer = setTimeout(() => {
@@ -362,7 +362,7 @@ function sendOpenCliHostRequest(site, operation, page, profile, timeoutMs) {
     }, timeoutMs);
     yanziOpenCliPending.set(requestId, { resolve, timer });
     try {
-      globalThis.yanziBrowserHost.send({ type: "opencli_request", requestId, site, operation, page, profile });
+      globalThis.yanziBrowserHost.send({ type: "opencli_request", requestId, site, operation, page, profile, ...(mediaArgs || {}) });
     } catch (error) {
       clearTimeout(timer);
       yanziOpenCliPending.delete(requestId);
@@ -428,6 +428,8 @@ async function requestYanziOpenCliRead(site, operation, page = 1, profile = "") 
   return directResult;
 }
 
+globalThis.yanziMediaReadHost = (site, operation, value, limit, profile = "") =>
+  sendOpenCliHostRequest(site, "media." + operation, 1, profile, 95000, { value, limit });
 globalThis.yanziOpenCliPerformRead = requestYanziOpenCliRead;
 globalThis.handleYanziOpenCliResponse = message => {
   const pending = yanziOpenCliPending.get(message?.requestId);
