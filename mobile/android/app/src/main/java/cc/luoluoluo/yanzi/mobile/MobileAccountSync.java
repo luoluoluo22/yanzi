@@ -14,7 +14,7 @@ final class MobileAccountSync {
             return context.getSharedPreferences(key.toString(),0);
         } catch (Exception error) { throw new IllegalStateException(error); }
     }
-    static boolean supported(String id) { return id.startsWith("yanm.") || id.startsWith("extensionData.v1.") || id.startsWith("mobileExtension.v1.") || id.equals("mobileExtensions.index.v1"); }
+    static boolean supported(String id) { return id.startsWith("yanm.") || id.startsWith("extensionData.v1.") || id.startsWith("mobileExtension.v1.") || id.equals("mobileExtensions.index.v1") || id.equals(MobileModelServiceCatalog.OBJECT_ID); }
     static JSONObject status(Context context) throws Exception {
         android.content.SharedPreferences state = store(context);
         return new JSONObject().put("revision",state.getLong("cursor",0)).put("lastCheckedAt",state.getString("lastCheckedAt",""))
@@ -25,7 +25,9 @@ final class MobileAccountSync {
     static synchronized void synchronize(Context context, String base, String token, String device) throws Exception {
         android.content.SharedPreferences login = context.getSharedPreferences("yanzi-mobile",0), state = store(context);
         JSONObject objects = new JSONObject(state.getString("objects","{}"));
-        long cursor = state.getLong("cursor",0); boolean changed = false, yanm = false, extensions = false;
+        // Replay the account object feed once for users whose sync cursor already passed settings.ai.
+        boolean backfillModels = !state.getBoolean("modelServicesBackfilledV1", false);
+        long cursor = backfillModels ? 0 : state.getLong("cursor",0); boolean changed = false, yanm = false, extensions = false;
         try {
             for (int page=0;page<100;page++) {
                 JSONObject response = MobileMessageClient.requestWithoutQueue(base,"/v1/sync/objects?since="+cursor+"&limit=100",token,"GET",null);
@@ -36,7 +38,8 @@ final class MobileAccountSync {
                     if (!supported(id)) continue;
                     JSONObject old = objects.optJSONObject(id);
                     if (old != null && old.optLong("revision") >= object.getLong("revision")) continue;
-                    objects.put(id,object); changed=true;
+                    objects.put(id, id.equals(MobileModelServiceCatalog.OBJECT_ID)
+                            ? MobileModelServiceCatalog.sanitizeObject(object) : object); changed=true;
                     yanm |= id.startsWith("yanm."); extensions |= id.startsWith("mobileExtension") || id.equals("mobileExtensions.index.v1");
                 }
                 long next = response.getLong("cursorRevision");
@@ -67,6 +70,7 @@ final class MobileAccountSync {
             String now = java.time.Instant.now().toString();
             android.content.SharedPreferences.Editor edit = state.edit().putString("objects",objects.toString()).putLong("cursor",cursor).putString("lastCheckedAt",now).remove("error");
             if (changed) edit.putString("lastChangedAt",now);
+            if (backfillModels) edit.putBoolean("modelServicesBackfilledV1", true);
             // Commit rendered cache first: a crash before cursor commit merely repeats an idempotent read.
             android.content.SharedPreferences.Editor cache = login.edit();
             if (definitions != null) cache.putString("mobileExtensions",definitions.getJSONArray("extensions").toString());
