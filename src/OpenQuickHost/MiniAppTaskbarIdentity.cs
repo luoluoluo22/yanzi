@@ -104,7 +104,7 @@ internal static class MiniAppTaskbarIdentity
             return;
         try
         {
-            var app = Application.Current;
+            var app = System.Windows.Application.Current;
             if (app is null || app.Dispatcher.HasShutdownStarted)
                 return;
             var iconPath = app.Dispatcher.Invoke(() =>
