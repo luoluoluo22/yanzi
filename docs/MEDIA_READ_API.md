@@ -2,7 +2,7 @@
 
 ## 能力
 
-三站（小红书 / 抖音 / B 站）的搜索 → 详情 → 评论，统一结果结构，数据仅在本机处理，不同步账号内容到云端。Requires Yanzi host v1.1.1 and browser helper v0.5.91.
+三站（小红书 / 抖音 / B 站）的搜索 → 详情 → 评论，统一结果结构，数据仅在本机处理，不同步账号内容到云端。Requires Yanzi host v1.1.2 and browser helper v0.5.91.
 
 ## 本机 Agent API（需现有本地 API Token）
 
