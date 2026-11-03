@@ -2828,6 +2828,9 @@ public partial class MainWindow
             SyncStatus = statusText;
         }
         SyncLocalExtensionsToCloud();
+        OnAiSettingsChanged();
+        foreach (var window in System.Windows.Application.Current.Windows.OfType<SettingsWindow>())
+            window.RefreshAiConfigFromExternal();
         _yanmOverlay?.ReloadSettings();
     }
 
