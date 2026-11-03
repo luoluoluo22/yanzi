@@ -21,6 +21,11 @@ public partial class PastedTextEditorWindow : Window
     public PastedTextEditorWindow(string filePath, string displayTitle, Action<string, string>? onSaved = null)
     {
         InitializeComponent();
+        // Apply shared theme resources to this window only; do not mutate app-wide styles.
+        var theme = AppSettingsStore.Load().ThemeMode;
+        Yanzi.UI.Wpf.YanziUi.ApplyTo(this,
+            string.Equals(theme, "Light", StringComparison.OrdinalIgnoreCase)
+                ? Yanzi.UI.Wpf.YanziTheme.Light : Yanzi.UI.Wpf.YanziTheme.Dark);
         _filePath = Path.GetFullPath(filePath);
         _onSaved = onSaved;
 

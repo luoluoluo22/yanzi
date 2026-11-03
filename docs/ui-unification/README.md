@@ -57,3 +57,11 @@
 - `ColorPickerDialog.xaml.cs`：构造时依据用户 `ThemeMode` 使用 `YanziUi.ApplyTo` 加载共享 WPF 资源。
 - **有意保留**：颜色棋盘格、色相渐变、画布游标和色板的硬编码颜色属于颜色选择器本身的功能性颜色，不应被主题替换；顶部关闭按钮模板也暂不替换，待实际行为核查。
 - Linux 静态验收：XML 解析、公共样式键及事件存在性、Python 语法与 `git diff --check`。Windows Release 编译、吸管取色、透明度/HEX 双向更新、拖动、深浅主题、键盘焦点及视觉对照仍待完成。
+
+## 第八轮：便签编辑窗口（源码迁移，待 Windows 验收）
+
+- `PastedTextEditorWindow.xaml`：标题输入使用 `Yanzi.Input`，三个次要按钮使用 `Yanzi.Button.Outline`、保存按钮使用 `Yanzi.Button.Default`；窗口背景、输入框、统计文字、边框和状态文字改用公共主题资源。保留控件名称、文件读写、Ctrl+S、搜索/复制全文/打开位置、修改提示与全部事件绑定。
+- `PastedTextEditorWindow.xaml.cs`：仅在窗口初始化时应用当前用户的共享 WPF 深浅主题，避免改变其他窗口。
+- **有意保留**：正文多行 TextBox 的原生 Tab/回车、滚动和键盘事件；必须先在 Windows 真机验证公共 Textarea 模板完全兼容后再迁移。便签图标的绿色为功能识别色，暂保留。
+- Linux 静态测试：XML 解析、4 个按钮样式、标题输入样式、关键事件和控件名称、主题调用、清单状态、Python 编译与 `git diff --check` 均通过。**Windows 编译与真实 UI 操作未验收**。
+- 当前清单 176 个仍是候选源码文件，不是页面总数；9 个 WPF XAML 已完成部分迁移，均处于待 Windows QA 状态。推送与合并仍须验证。
