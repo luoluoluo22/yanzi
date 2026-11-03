@@ -88,26 +88,66 @@ internal static class MiniAppTaskbarIdentity
     private static void Configure(Window window, CommandItem command)
     {
         var handle = new WindowInteropHelper(window).Handle;
+        if (handle == IntPtr.Zero || window.Icon is null) return;
+        var hash = HashId(command.ExtensionId);
+        ConfigureHandle(handle, command, WriteStableIcon(window.Icon, hash));
+    }
+
+    /// <summary>
+    /// Native C# mini-apps may open WPF windows on their own STA dispatcher
+    /// instead of AppExtensionWindow. Assign the SAME mini-app AppID and icon
+    /// on that window's HWND without changing the host/overlay taskbar entries.
+    /// </summary>
+    internal static void EnsureNativeHandle(IntPtr handle, CommandItem command)
+    {
+        if (handle == IntPtr.Zero || string.IsNullOrWhiteSpace(command.ExtensionId))
+            return;
+        try
+        {
+            var app = Application.Current;
+            if (app is null || app.Dispatcher.HasShutdownStarted)
+                return;
+            var iconPath = app.Dispatcher.Invoke(() =>
+            {
+                ImageSource? icon = command.IconSource;
+                if (icon is null && command.VectorIcon is not null)
+                    icon = new DrawingImage(new GeometryDrawing(
+                        command.AccentBrush, null, command.VectorIcon));
+                return icon is null ? null : WriteStableIcon(icon, HashId(command.ExtensionId));
+            });
+            if (string.IsNullOrEmpty(iconPath)) return;
+            ConfigureHandle(handle, command, iconPath);
+            NativeMiniAppWindowHook.ApplyWindowIcon(handle, iconPath);
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog("[MiniAppTaskbar] Native identity skipped: " +
+                                 command.ExtensionId + " " + ex.GetType().Name);
+        }
+    }
+
+    private static string HashId(string id) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(id.Trim().ToLowerInvariant())))
+            .ToLowerInvariant();
+
+    private static void ConfigureHandle(IntPtr handle, CommandItem command, string iconPath)
+    {
         var processPath = Environment.ProcessPath;
         if (handle == IntPtr.Zero || string.IsNullOrWhiteSpace(processPath) ||
             !Path.IsPathFullyQualified(processPath))
             return;
 
-        var id = command.ExtensionId.Trim().ToLowerInvariant();
-        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(id))).ToLowerInvariant();
+        var hash = HashId(command.ExtensionId);
         var appId = "Yanzi.MiniApp." + hash[..24] +
                     (HostRuntimeProfile.IsDevelopment ? ".Dev" : "");
         var encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(command.ExtensionId))
             .TrimEnd('=').Replace('+', '-').Replace('/', '_');
         var argument = LaunchPrefix + encoded;
-        var iconPath = WriteStableIcon(window.Icon, hash);
         var title = string.IsNullOrWhiteSpace(command.Title) ? "小程序" : command.Title.Trim();
         var filename = "燕子 · " + SanitizeFileName(title, 35) + " [" + hash[..8] + "]" +
                        (HostRuntimeProfile.IsDevelopment ? " (开发)" : "") + ".lnk";
 
-        // Explorer persists a pin only when it can match a normal launch shortcut
-        // to the same window-level AppID. The executable's default icon is not
-        // enough, nor are just the Relaunch* properties on the HWND.
+        // A matching persistent Start Menu shortcut is required for pinning.
         EnsureLaunchShortcut(processPath, argument, iconPath, appId, title, filename, hash);
 
         var iid = PropertyStoreId;
