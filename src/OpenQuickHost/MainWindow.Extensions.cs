@@ -32,6 +32,34 @@ public partial class MainWindow
     private static readonly IntPtr SimulatedInputMarker = new(0x59414E5B);
     private static readonly SemaphoreSlim CSharpPrebuildGate = new(1, 1);
 
+    internal void OpenMiniAppFromTaskbar(string extensionId)
+    {
+        // Never execute arbitrary commands supplied by a shortcut. Only locally
+        // installed mini-apps registered in the current launcher are eligible.
+        if (string.IsNullOrWhiteSpace(extensionId) ||
+            !_localExtensionIndex.TryGetValue(extensionId, out var command) ||
+            (command.App is null &&
+             !string.Equals(command.UiMode, "native-window", StringComparison.OrdinalIgnoreCase)))
+        {
+            HostAssets.AppendLog("[MiniAppTaskbar] Missing local mini-app: " + extensionId);
+            LastRunMessage = "此小程序尚未安装或已移除。";
+            ShowPanel();
+            return;
+        }
+        try
+        {
+            MarkExtensionAsSeen(command);
+            HideToTray();
+            ExecuteCommandExternally(command, explicitInput: null, launchSource: "taskbar");
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog("[MiniAppTaskbar] Relaunch failed: " + extensionId + " " + ex);
+            LastRunMessage = "打开小程序失败：" + ex.Message;
+            ShowPanel();
+        }
+    }
+
     private void UpsertLocalExtensionCommand(CommandItem command)
     {
         _allCommands.RemoveAll(x =>
