@@ -1686,7 +1686,7 @@ public partial class MainWindow
 
         var hasAction = actionMarkers.Any(marker => lower.Contains(marker, StringComparison.OrdinalIgnoreCase));
         var hasEnvironmentTarget = environmentTargets.Any(marker => lower.Contains(marker, StringComparison.OrdinalIgnoreCase));
-        var contextMessages = topic?.Messages ?? _aiChatMessages;
+        IEnumerable<AiChatMessage> contextMessages = topic is null ? _aiChatMessages : topic.Messages;
         var recentContext = string.Join(
             "\n",
             contextMessages
