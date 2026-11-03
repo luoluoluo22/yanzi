@@ -28,7 +28,7 @@ for rel in tracked:
     shared=bool(re.search(r'Yanzi\.UI\.Wpf|YanziUi\.|Yanzi\.(?:Button|Input|Switch|Card)|YanziTheme',data))
     legacy=len(re.findall(r'(?:StaticResource|DynamicResource)\s+(?:PrimaryBtn|SecondaryBtn|BaseButton)|#[0-9a-fA-F]{6,8}\b',data))
     state='pending-manual-review'
-    if rel in ('src/OpenQuickHost/HotkeyCaptureWindow.xaml', 'src/OpenQuickHost/MouseTriggerCaptureWindow.xaml', 'src/OpenQuickHost/SkillExportOptionsWindow.xaml', 'src/OpenQuickHost/SimpleTextInputWindow.xaml'):
+    if rel in ('src/OpenQuickHost/HotkeyCaptureWindow.xaml', 'src/OpenQuickHost/MouseTriggerCaptureWindow.xaml', 'src/OpenQuickHost/SkillExportOptionsWindow.xaml', 'src/OpenQuickHost/SimpleTextInputWindow.xaml', 'src/OpenQuickHost/WebDavCredentialWindow.xaml'):
         state='source-migrated-awaiting-windows-qa'
         shared=True
     records.append(dict(path=rel,kind=group,shared_ui_reference=shared,legacy_style_signals=legacy,status=state,evidence=['source: shared button styles + per-window YanziUi.ApplyTo; git diff --check'] if state.startswith('source-migrated') else []))

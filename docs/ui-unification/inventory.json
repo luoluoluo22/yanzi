@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "base_commit": "74f9e1f",
+  "base_commit": "575456a",
   "note": "Candidate source inventory; every candidate requires manual verification; includes docs previews and code-behind candidates; not a count of distinct runtime screens.",
   "items": [
     {
@@ -1166,10 +1166,12 @@
     {
       "path": "src/OpenQuickHost/WebDavCredentialWindow.xaml",
       "kind": "desktop-xaml",
-      "shared_ui_reference": false,
-      "legacy_style_signals": 9,
-      "status": "pending-manual-review",
-      "evidence": []
+      "shared_ui_reference": true,
+      "legacy_style_signals": 0,
+      "status": "source-migrated-awaiting-windows-qa",
+      "evidence": [
+        "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check"
+      ]
     },
     {
       "path": "src/OpenQuickHost/WindowBindingDropOverlayWindow.xaml",

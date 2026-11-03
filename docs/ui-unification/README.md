@@ -28,3 +28,10 @@
 - 两个窗口的构造函数调用 `YanziUi.ApplyTo` 加载窗口级公共主题资源，未修改应用全局主题；保留回车确认、非空校验、焦点和选择逻辑。
 - 静态测试：两份 XAML XML 解析、公共控件样式和事件绑定断言、`git diff --check` 通过；服务器没有 .NET SDK，**Windows 编译与真实界面交互未验收**。
 - GitHub 推送仍受远程 Ubuntu 的 HTTPS/`gh` 未登录阻塞；本地提交须保留，认证恢复后推送并进行主线合并。
+
+## 第四轮：WebDAV 凭据窗口（源码迁移，待 Windows 验收）
+
+- `WebDavCredentialWindow.xaml`：将用户名输入、密码输入、保存/取消按钮接入 `Yanzi.Input`、`Yanzi.Password`、`Yanzi.Button.Default/Outline`，并将硬编码背景、标签、已保存用户名和错误提示颜色替换为主题资源（错误提示使用语义色 `Yanzi.Brush.Danger`）。
+- `WebDavCredentialWindow.xaml.cs`：构造时通过 `YanziUi.ApplyTo` 加载当前用户主题的窗口级资源，保留 DPAPI 存储、原验证与聚焦逻辑。
+- 静态检查：XML 解析、共享样式键存在性、旧按钮样式消除、事件/控件名称保持、审计清单状态、Python 语法、`git diff --check`；Linux 无 dotnet，Windows Release 编译、实际深浅主题、密码显示及键盘焦点待验收。
+- 本次迁移不等于视觉/交互验收；清单中的 176 项仍是候选源码而非实际页面总数。
