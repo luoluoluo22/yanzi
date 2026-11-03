@@ -38,7 +38,8 @@ public partial class MainWindow
         // installed mini-apps registered in the current launcher are eligible.
         if (string.IsNullOrWhiteSpace(extensionId) ||
             !_localExtensionIndex.TryGetValue(extensionId, out var command) ||
-            command.App is null)
+            (command.App is null &&
+             !string.Equals(command.UiMode, "native-window", StringComparison.OrdinalIgnoreCase)))
         {
             HostAssets.AppendLog("[MiniAppTaskbar] Missing local mini-app: " + extensionId);
             LastRunMessage = "此小程序尚未安装或已移除。";
