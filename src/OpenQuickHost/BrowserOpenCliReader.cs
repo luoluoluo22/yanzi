@@ -9,6 +9,13 @@ namespace OpenQuickHost;
 // The browser supplies a capability name, never a command line or executable.
 internal static class BrowserOpenCliReader
 {
+    internal static string CliScriptPath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "npm", "node_modules", "@jackwener", "opencli", "dist", "src", "main.js");
+    internal static bool IsCliInstalled => File.Exists(CliScriptPath);
+
+    internal static bool HasConnectedBridge(string listing)
+        => Regex.IsMatch(listing, @"(?m)^\s*[A-Za-z0-9_-]+[^\r\n]* — connected v");
     internal static string[] Command(string site, string operation, int page)
     {
         if (site != "xiaohongshu" || page != 1)
@@ -35,7 +42,7 @@ internal static class BrowserOpenCliReader
         return profiles.Length switch
         {
             1 => profiles[0],
-            0 => throw new InvalidOperationException("OpenCLI Browser Bridge 未连接，请在浏览器启用 OpenCLI 扩展。"),
+            0 => throw new InvalidOperationException("OpenCLI Browser Bridge 尚未连接。燕子已尝试唤醒本地 Daemon，请确认浏览器 OpenCLI 扩展已启用并完成重连。"),
             _ => throw new InvalidOperationException("检测到多个浏览器配置，请在读取区填写要使用的 OpenCLI 配置名称或 ID。")
         };
     }
@@ -64,8 +71,15 @@ internal static class BrowserOpenCliReader
         string? requestedProfile, CancellationToken cancellation)
     {
         var command = Command(site, operation, page);
-        var listing = string.IsNullOrWhiteSpace(requestedProfile)
-            ? await RunAsync(["profile", "list"], cancellation) : "";
+        // Listing wakes a stopped daemon. Give the browser extension time to
+        // reconnect, including for explicitly selected profiles.
+        var listing = "";
+        for (var attempt = 0; attempt < 7; attempt++)
+        {
+            listing = await RunAsync(["profile", "list"], cancellation);
+            if (HasConnectedBridge(listing)) break;
+            await Task.Delay(TimeSpan.FromMilliseconds(650), cancellation);
+        }
         var profile = SelectProfile(listing, requestedProfile);
         var output = await RunAsync(["--profile", profile, site, .. command, "--format", "json"], cancellation);
         return new
@@ -79,10 +93,9 @@ internal static class BrowserOpenCliReader
         };
     }
 
-    private static async Task<string> RunAsync(string[] arguments, CancellationToken cancellation)
+    internal static async Task<string> RunAsync(string[] arguments, CancellationToken cancellation)
     {
-        var script = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "npm", "node_modules", "@jackwener", "opencli", "dist", "src", "main.js");
+        var script = CliScriptPath;
         if (!File.Exists(script)) throw new FileNotFoundException("本机尚未安装 OpenCLI。");
         var node = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "nodejs", "node.exe");
         var start = new ProcessStartInfo(File.Exists(node) ? node : "node.exe")

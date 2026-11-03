@@ -37,6 +37,15 @@ Reject(() => BrowserOpenCliReader.Command("xiaohongshu", "publish", 1), "write c
 Reject(() => BrowserOpenCliReader.Command("xiaohongshu", "notes", 2), "unsupported pagination blocked");
 Reject(() => BrowserOpenCliReader.Command("unknown", "profile", 1), "unknown site blocked");
 Assert(BrowserOpenCliReader.SelectProfile("\n  liveid — connected v1.0.26\n  oldid ego — not connected", "") == "liveid", "stale saved default ignored");
+Assert(BrowserOpenCliReader.HasConnectedBridge("\n  liveid — connected v1.0.26"), "connected bridge detected");
+Assert(!BrowserOpenCliReader.HasConnectedBridge("\n  oldid ego — not connected"), "stale bridge not considered live");
+Assert(OpenCliDaemonSupervisor.ShouldWake(true, true, true), "existing CLI/browser/extension eligible for warmup");
+Assert(!OpenCliDaemonSupervisor.ShouldWake(true, true, false), "no extension means no daemon warmup");
+Assert(!OpenCliDaemonSupervisor.ShouldWake(false, true, true), "absent CLI means no daemon warmup");
+Assert(OpenCliDaemonSupervisor.DaemonIsReady("Daemon: running\nExtension: connected"), "healthy daemon recognized");
+Assert(OpenCliDaemonSupervisor.ShouldRestartDaemon("Daemon: not running"), "explicitly stopped daemon requires restart");
+Assert(!OpenCliDaemonSupervisor.ShouldRestartDaemon("Daemon: running\nExtension: disconnected"), "reconnecting extension does not restart daemon");
+Assert(!OpenCliDaemonSupervisor.DaemonIsReady("Daemon: running\nExtension: disconnected"), "disconnected bridge not considered ready");
 Reject(() => BrowserOpenCliReader.SelectProfile("  aa — connected v1\n  bb work — connected v1", ""), "ambiguous browsers rejected");
 Reject(() => BrowserOpenCliReader.SelectProfile("", ""), "disconnected browser rejected");
 Reject(() => BrowserOpenCliReader.SelectProfile("", "--help" + ";cmd"), "profile injection blocked");
@@ -46,6 +55,12 @@ Reject(() => BrowserOpenCliReader.ParseOutput("plain text"), "invalid JSON rejec
 Assert(LocalAgentApiServer.IsOpenCliExtensionOrigin("chrome-extension://abcdefghijklmnopabcdefghijklmnop"), "extension origin accepted");
 Assert(!LocalAgentApiServer.IsOpenCliExtensionOrigin("https://example.com"), "website origin rejected");
 Assert(!LocalAgentApiServer.IsOpenCliExtensionOrigin(null), "missing origin rejected");
+if (args.Contains("--live-safe"))
+{
+    using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(55));
+    var result = await BrowserOpenCliReader.ReadAsync("xiaohongshu", "profile", 1, null, deadline.Token);
+    Console.WriteLine("OPENCLI_LIVE_SAFE_OK (personal data redacted)");
+}
 if (args.Contains("--live"))
 {
     using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(90));

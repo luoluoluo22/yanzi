@@ -449,6 +449,9 @@ public partial class App : WpfApplication
                     BrowserHelperBootstrap.WriteRuntimeConfiguration(settings.AgentApiPort);
                     await BrowserHelperDistribution.UpdateManagedEgoIfRunningAsync();
                     BrowserHelperDistribution.StartManagedEgoMonitor();
+                    // Supervise the existing OpenCLI daemon only when installed.
+                    // Never take ownership of an independent CLI/store extension.
+                    OpenCliDaemonSupervisor.Start();
                     var profiles = BrowserHelperBootstrap.Inspect();
                     if (profiles.Count == 0 || profiles.Any(p => p.Installed)) return;
                     var notice = System.IO.Path.Combine(
