@@ -30,7 +30,7 @@ final class MobileAccountSync {
         long cursor = backfillModels ? 0 : state.getLong("cursor",0); boolean changed = false, yanm = false, extensions = false;
         try {
             for (int page=0;page<100;page++) {
-                JSONObject response = MobileMessageClient.readSystemFirst(base,"/v1/sync/objects?since="+cursor+"&limit=100",token);
+                JSONObject response = MobileMessageClient.readSystemFirst(base,"/v1/sync/changes?since="+cursor+"&limit=100",token);
                 if (!base.equals(login.getString("baseUrl","https://sync.luoluoluo.cc.cd").replaceAll("/+$", "")) || !token.equals(login.getString("token","")) || !device.equals(login.getString("deviceId",""))) return;
                 JSONArray changes = response.getJSONArray("objects");
                 for (int i=0;i<changes.length();i++) {
