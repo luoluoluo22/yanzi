@@ -1,0 +1,32 @@
+name: Android mobile model sync QA
+on:
+  pull_request:
+    paths:
+      - "mobile/android/**"
+      - ".github/workflows/android-model-sync-qa.yml"
+permissions:
+  contents: read
+jobs:
+  android-dev:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - name: Install Android compile SDK
+        run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
+      - name: Build isolated development APK
+        working-directory: mobile/android
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleDev --no-daemon --console=plain
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yanzi-model-sync-dev-apk
+          path: mobile/android/app/build/outputs/apk/dev/*.apk
+          if-no-files-found: error
+          retention-days: 2
