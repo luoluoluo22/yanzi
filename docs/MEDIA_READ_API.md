@@ -6,7 +6,7 @@
 
 ## 本机 Agent API（需现有本地 API Token）
 
-POST http://127.0.0.1:53919/v1/media/read
+POST http://127.0.0.1:{apiPort}/v1/media/read
 Content-Type: application/json
 Authorization: Bearer <燕子本地 API Token>
 
@@ -19,7 +19,7 @@ operation：search、detail、comments。
 value：search 时为关键词（1～80 字）；detail / comments 时为官方 HTTPS 作品地址，B 站亦可使用 BV 号。
 limit：1～20，默认 5。
 profile：可选，指定已连接的 OpenCLI 浏览器配置。
-本机 API 端口应读取当前燕子配置，53919 只是默认值。
+本机 API 端口**不是固定值**：Windows 上从 `%LOCALAPPDATA%\OpenQuickHost\BrowserHelper\yanzi-connection.json` 的 `apiPort` 读取。`{apiPort}` 是占位符，必须替换为本机实际数值；不要硬编码 53919。家里电脑本次实测端口为 42980。
 
 浏览器助手内部调用：
 
