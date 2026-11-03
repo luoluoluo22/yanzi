@@ -1078,7 +1078,7 @@ public partial class MainWindow
         var userInput = (scheduledPrompt ?? (AiChatInputBox?.Text ?? AiChatInputText)).Trim();
         var pendingAttachments = scheduledPrompt == null ? _aiChatAttachments.ToArray() : [];
         if (string.IsNullOrEmpty(userInput) && pendingAttachments.Length == 0) return;
-        var mode = DetermineAiConversationMode(userInput);
+        var mode = DetermineAiConversationMode(userInput, topic);
         var settings = _appSettings;
         if (!IsAiConfigured(settings))
         {
@@ -1149,7 +1149,7 @@ public partial class MainWindow
                     reply.Text = buffer.Length == 0 ? "生成已停止，原始问题已保留。"
                         : buffer + Environment.NewLine + Environment.NewLine + "> 已停止生成，保留部分回复。";
                     reply.IsStreaming = false;
-                    SetAiTopicStatus(topic, "生成已停止");
+                    SetAiTopicStatus(topic, "生成已停止", scheduledPrompt == null ? null : "定时请求被取消或超时");
                 }
                 catch
                 {
@@ -1201,7 +1201,7 @@ public partial class MainWindow
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {
-            SetAiTopicStatus(topic, "生成已停止");
+            SetAiTopicStatus(topic, "生成已停止", scheduledPrompt == null ? null : "定时请求被取消或超时");
         }
         catch (Exception ex)
         {
@@ -1641,7 +1641,7 @@ public partial class MainWindow
         }
     }
 
-    private AiConversationMode DetermineAiConversationMode(string userInput)
+    private AiConversationMode DetermineAiConversationMode(string userInput, AiChatTopic? topic = null)
     {
         var text = (userInput ?? string.Empty).Trim();
         if (string.IsNullOrWhiteSpace(text))
@@ -1686,9 +1686,10 @@ public partial class MainWindow
 
         var hasAction = actionMarkers.Any(marker => lower.Contains(marker, StringComparison.OrdinalIgnoreCase));
         var hasEnvironmentTarget = environmentTargets.Any(marker => lower.Contains(marker, StringComparison.OrdinalIgnoreCase));
+        var contextMessages = topic?.Messages ?? _aiChatMessages;
         var recentContext = string.Join(
             "\n",
-            _aiChatMessages
+            contextMessages
                 .TakeLast(8)
                 .Select(static message => message.Text)
                 .Where(static messageText => !string.IsNullOrWhiteSpace(messageText)));
@@ -1716,7 +1717,7 @@ public partial class MainWindow
 
         if (text.Length <= 16 &&
             continuationMarkers.Any(marker => lower.Contains(marker, StringComparison.OrdinalIgnoreCase)) &&
-            (_aiChatMessages.TakeLast(6).Any(static message => message.IsToolCall) || recentContextHasEnvironmentTarget))
+            (contextMessages.TakeLast(6).Any(static message => message.IsToolCall) || recentContextHasEnvironmentTarget))
         {
             return AiConversationMode.Agent;
         }
