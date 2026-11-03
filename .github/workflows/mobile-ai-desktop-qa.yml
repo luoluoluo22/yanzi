@@ -18,7 +18,7 @@ jobs:
       - name: Build desktop host with model relay
         shell: pwsh
         run: |
-          dotnet restore src/OpenQuickHost/OpenQuickHost.csproj --source https://api.nuget.org/v3/index.json
+          dotnet restore src/OpenQuickHost/OpenQuickHost.csproj -r win-x64 --source https://api.nuget.org/v3/index.json
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           dotnet build src/OpenQuickHost/OpenQuickHost.csproj -c Release --no-restore --nologo -v:q
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
