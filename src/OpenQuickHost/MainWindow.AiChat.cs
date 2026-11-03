@@ -733,6 +733,11 @@ public partial class MainWindow
     
     private void ActivateAiChatMode()
     {
+        if (_detachedAiChatWindow != null)
+        {
+            ActivateDetachedAiChat();
+            return;
+        }
         LoadTopicsFromStorage();
         RefreshAiModelSelector();
         StartAiModelDiscovery();
@@ -1066,12 +1071,12 @@ public partial class MainWindow
         }
     }
 
-    private async Task SubmitAiChatMessageCore(AiChatTopic topic)
+    private async Task SubmitAiChatMessageCore(AiChatTopic topic, string? scheduledPrompt = null)
     {
         // Snapshot editor, attachments, mode, and provider before the first await: topic switching
         // or model changes cannot redirect a request already in progress.
-        var userInput = (AiChatInputBox?.Text ?? AiChatInputText).Trim();
-        var pendingAttachments = _aiChatAttachments.ToArray();
+        var userInput = (scheduledPrompt ?? (AiChatInputBox?.Text ?? AiChatInputText)).Trim();
+        var pendingAttachments = scheduledPrompt == null ? _aiChatAttachments.ToArray() : [];
         if (string.IsNullOrEmpty(userInput) && pendingAttachments.Length == 0) return;
         var mode = DetermineAiConversationMode(userInput);
         var settings = _appSettings;
@@ -1098,7 +1103,7 @@ public partial class MainWindow
         if (topic.Messages.Count == 1)
             topic.Title = userInput.Length > 30 ? userInput[..30] + "..." : userInput;
         SaveTopicsToStorage();
-        if (ReferenceEquals(_selectedAiChatTopic, topic))
+        if (scheduledPrompt == null && ReferenceEquals(_selectedAiChatTopic, topic))
         {
             // Don't erase a second conversation's input if the user switched while attachments loaded.
             AiChatInputText = string.Empty;
@@ -1213,8 +1218,8 @@ public partial class MainWindow
             AiChatDiagnostics.Record(topic.Id, profile.Model, "finished");
             topic.IsGenerating = false;
             RefreshAiTopicRequestState();
-            // Do not steal keyboard focus from a different conversation.
-            if (ReferenceEquals(_selectedAiChatTopic, topic))
+            // Scheduled requests must never steal focus from a user editing another prompt.
+            if (scheduledPrompt == null && ReferenceEquals(_selectedAiChatTopic, topic))
                 _ = Dispatcher.BeginInvoke(() => FocusAiInput(), DispatcherPriority.Background);
         }
     }
@@ -2195,7 +2200,9 @@ public partial class MainWindow
             foreach (var topicElement in topicsArray.EnumerateArray())
             {
                 var title = topicElement.GetProperty("title").GetString() ?? "未命名";
-                var topic = new AiChatTopic(title);
+                var topicId = topicElement.TryGetProperty("id", out var idElement)
+                    ? idElement.GetString() : null;
+                var topic = new AiChatTopic(title, topicId);
 
                 if (topicElement.TryGetProperty("isPinned", out var isPinnedElement))
                 {
@@ -2437,9 +2444,9 @@ public sealed class AiChatTopic : INotifyPropertyChanged
     private string _title;
     private bool _isSelected;
 
-    public AiChatTopic(string title)
+    public AiChatTopic(string title, string? id = null)
     {
-        Id = Guid.NewGuid().ToString();
+        Id = string.IsNullOrWhiteSpace(id) ? Guid.NewGuid().ToString() : id;
         _title = title;
         CreatedAt = DateTimeOffset.Now;
         UpdatedAt = DateTimeOffset.Now;
