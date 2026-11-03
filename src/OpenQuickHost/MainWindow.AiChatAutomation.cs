@@ -17,6 +17,9 @@ using ListBox = System.Windows.Controls.ListBox;
 using TextBox = System.Windows.Controls.TextBox;
 using Orientation = System.Windows.Controls.Orientation;
 using Point = System.Windows.Point;
+using Color = System.Windows.Media.Color;
+using Brushes = System.Windows.Media.Brushes;
+using Binding = System.Windows.Data.Binding;
 
 namespace OpenQuickHost;
 
