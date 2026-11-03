@@ -4927,6 +4927,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private readonly SemaphoreSlim _environmentSaveGate = new(1, 1);
     private DispatcherTimer? _envVarsSaveTimer;
     private DispatcherTimer? _envVarsStatusHideTimer;
     private bool _isEnvVarsSaveStatusVisible;
@@ -4971,8 +4972,10 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         SaveEnvironmentVariables();
     }
 
-    private void SaveEnvironmentVariables()
+    private async void SaveEnvironmentVariables()
     {
+        // Capture bindings on the UI thread; never block it on disk/DPAPI,
+        // cloud-vault caching or a Windows environment-change broadcast.
         var variables = EnvironmentVariables
             .Where(static item => !string.IsNullOrWhiteSpace(item.Name))
             .Select(static item => new AppEnvironmentVariableSettings
@@ -4985,15 +4988,33 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             .Where(static item => AppEnvironmentVariableStore.IsValidEnvironmentName(item.Name))
             .ToArray();
 
-        // Mail account credentials remain in the mini-app vault and are not visible in the global editor.
-        var privateEntries = AppEnvironmentVariableStore.Load()
-            .Where(static item => AppEnvironmentVariableStore.IsMiniAppPrivateName(item.Name));
-        AppEnvironmentVariableStore.Save(variables.Concat(privateEntries));
-        _mainWindow.NotifyQuickPanelSettingsChanged("environment-variables-saved", refreshYanmOverlay: false);
-        _settings = AppSettingsStore.Load();
-        _settingsPersistence.Reset(_settings);
-        EnvironmentStatusText = BuildEnvironmentSummary();
-        _envVarsStatusHideTimer = ShowSaveStatusTemporarily(_envVarsStatusHideTimer, visible => IsEnvVarsSaveStatusVisible = visible);
+        await _environmentSaveGate.WaitAsync();
+        try
+        {
+            var updatedSettings = await Task.Run(() =>
+            {
+                // Read mini-app-owned entries when saving, not on click. This
+                // preserves credentials added by the mini-app in the meantime.
+                var privateEntries = AppEnvironmentVariableStore.Load()
+                    .Where(static item => AppEnvironmentVariableStore.IsMiniAppPrivateName(item.Name));
+                AppEnvironmentVariableStore.Save(variables.Concat(privateEntries));
+                return AppSettingsStore.Load();
+            });
+            _mainWindow.NotifyQuickPanelSettingsChanged("environment-variables-saved", refreshYanmOverlay: false);
+            _settings = updatedSettings;
+            _settingsPersistence.Reset(_settings);
+            EnvironmentStatusText = BuildEnvironmentSummary();
+            _envVarsStatusHideTimer = ShowSaveStatusTemporarily(_envVarsStatusHideTimer, visible => IsEnvVarsSaveStatusVisible = visible);
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"Environment variable save failed: {ex.GetType().Name}");
+            EnvironmentStatusText = "环境变量保存失败，请查看燕子日志。";
+        }
+        finally
+        {
+            _environmentSaveGate.Release();
+        }
     }
 
     private void CheckAiSettingsChanged()
