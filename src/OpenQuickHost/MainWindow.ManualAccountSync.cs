@@ -105,7 +105,8 @@ public partial class MainWindow
                 // First download on a populated device preserves divergent local content for explicit choice.
                 foreach (var write in writes.Values.Where(w => !previouslyKnown.Contains(w.ObjectId)))
                     if (!state.Conflicts.ContainsKey(write.ObjectId) && state.Objects.TryGetValue(write.ObjectId, out var remote) &&
-                        !LauncherConfigObjectStore.HasEquivalentPayload(write.Envelope, ToEnvelope(remote)))
+                        !LauncherConfigObjectStore.HasEquivalentPayload(write.Envelope, ToEnvelope(remote)) &&
+                        !RuntimeDescriptionConflictPolicy.CanAdoptRemote(write.Envelope, ToEnvelope(remote)))
                         PreserveManualSyncConflict(state, write, remote);
                 CloudObjectSyncStateStore.Save(state);
                 ApplyDownloadedAccountSettings(state);
