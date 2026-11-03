@@ -268,6 +268,16 @@ internal static class BrowserHelperDistribution
 
     private static System.Threading.Timer? _egoManagementTimer;
     private static int _egoManagementCheckRunning;
+    private static DateTime _lastMissingEgoRecoveryUtc = DateTime.MinValue;
+    private static DateTime _lastEgoMonitorWarningUtc = DateTime.MinValue;
+
+    private static void LogManagedEgoWarning(string message)
+    {
+        // Avoid flooding logs if Ego refuses to load or the user disables an extension.
+        if (DateTime.UtcNow - _lastEgoMonitorWarningUtc < TimeSpan.FromMinutes(15)) return;
+        _lastEgoMonitorWarningUtc = DateTime.UtcNow;
+        HostAssets.AppendLog("[BrowserHelper] " + message);
+    }
 
     internal static void StartManagedEgoMonitor()
     {
@@ -292,15 +302,46 @@ internal static class BrowserHelperDistribution
         try
         {
             var fingerprint = GetBundleFingerprint(state.Path);
-            if (fingerprint == state.Fingerprint) return;
-            // Never overwrite the developer's Git worktree with a store package:
-            // reload its existing path after the developer updates the source.
-            var result = await ConfigureEgoAsync(state.Path, allowInstall: false,
-                forceReload: true);
-            if (!result.Success || result.ExtensionId != state.ExtensionId)
+            // Check registration even if the files have not changed: Ego can lose
+            // an unpacked extension while keeping its toolbar pin and local data.
+            var probe = await ConfigureEgoAsync(state.Path, allowInstall: false);
+            if (probe.Status == "missing")
             {
-                HostAssets.AppendLog($"[BrowserHelper] Ego managed reload skipped: {result.Message}");
+                // This marker was created after explicit managed-install consent.
+                // Recover only the same source path and same expected ID.
+                if (DateTime.UtcNow - _lastMissingEgoRecoveryUtc < TimeSpan.FromMinutes(10))
+                    return;
+                _lastMissingEgoRecoveryUtc = DateTime.UtcNow;
+                var restored = await ConfigureEgoAsync(state.Path, allowInstall: true);
+                if (!restored.Success || restored.ExtensionId != state.ExtensionId)
+                {
+                    LogManagedEgoWarning($"Ego managed extension restore failed: {restored.Message}; " +
+                        $"expected ID {state.ExtensionId}, observed {restored.ExtensionId ?? "none"}.");
+                    return;
+                }
+                SaveManagedEgo(state with { Fingerprint = fingerprint });
+                HostAssets.AppendLog($"[BrowserHelper] Ego managed {state.Mode} extension restored after missing registration, ID preserved.");
                 return;
+            }
+
+            // Never force-enable a disabled extension or overwrite another path.
+            if (!probe.Success || probe.ExtensionId != state.ExtensionId)
+            {
+                LogManagedEgoWarning($"Ego managed extension check skipped: {probe.Message}");
+                return;
+            }
+            if (fingerprint == state.Fingerprint) return;
+            // The probe already upgrades an older manifest version. If its version
+            // is unchanged, reload to pick up content edits in the source worktree.
+            if (probe.Status == "ready")
+            {
+                var reloaded = await ConfigureEgoAsync(state.Path, allowInstall: false,
+                    forceReload: true);
+                if (!reloaded.Success || reloaded.ExtensionId != state.ExtensionId)
+                {
+                    LogManagedEgoWarning($"Ego managed extension reload skipped: {reloaded.Message}");
+                    return;
+                }
             }
             SaveManagedEgo(state with { Fingerprint = fingerprint });
             HostAssets.AppendLog($"[BrowserHelper] Ego managed {state.Mode} extension reloaded, ID preserved.");
