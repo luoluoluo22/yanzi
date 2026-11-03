@@ -154,10 +154,16 @@ public partial class MainWindow
         {
             HostAssets.AppendLog("AI schedule load error: " + ex.GetType().Name);
         }
-        _aiScheduleTimer.Tick += async (_, _) => await CheckAiSchedulesAsync();
+        // A prior process may have been terminated after checkpointing but before
+        // receiving the reply. Do not send twice; make the interrupted result explicit.
+        var interrupted = _aiSchedules.Where(s => s.LastStatus == "正在执行").ToArray();
+        foreach (var item in interrupted)
+            item.LastStatus = "上次执行中断，需核对会话结果";
+        if (interrupted.Length != 0) SaveAiConversationSchedules();
+        _aiScheduleTimer.Tick += (_, _) => CheckAiSchedules();
         _aiScheduleTimer.Start();
         Closed += (_, _) => _aiScheduleTimer.Stop();
-        Dispatcher.BeginInvoke(async () => await CheckAiSchedulesAsync(),
+        Dispatcher.BeginInvoke((Action)CheckAiSchedules,
             DispatcherPriority.ApplicationIdle);
     }
 
@@ -177,21 +183,37 @@ public partial class MainWindow
         }
     }
 
-    private async Task CheckAiSchedulesAsync()
+    private void CheckAiSchedules()
     {
         if (_aiScheduleTickRunning) return;
         _aiScheduleTickRunning = true;
         try
         {
-            foreach (var task in _aiSchedules
-                .Where(t => t.Enabled && t.NextRunAt <= DateTimeOffset.Now).ToArray())
-                await RunAiScheduleAsync(task, manual: false);
+            // Never hold the timer hostage for a full LLM response.
+            // Separate topics may run concurrently; request tracker rejects duplicate sends.
+            var due = _aiSchedules
+                .Where(t => t.Enabled && t.NextRunAt <= DateTimeOffset.Now)
+                .Take(8).ToArray();
+            foreach (var task in due)
+                _ = RunAiScheduleSafeAsync(task, manual: false);
         }
         catch (Exception ex)
         {
             HostAssets.AppendLog("AI scheduler error: " + ex.GetType().Name);
         }
         finally { _aiScheduleTickRunning = false; }
+    }
+
+    private async Task RunAiScheduleSafeAsync(AiConversationSchedule task, bool manual)
+    {
+        try { await RunAiScheduleAsync(task, manual); }
+        catch (Exception ex)
+        {
+            task.LastStatus = "失败：" + ex.GetType().Name;
+            SaveAiConversationSchedules();
+            HostAssets.AppendLog("AI scheduler unhandled error: id=" + task.Id +
+                ", type=" + ex.GetType().Name);
+        }
     }
 
     private async Task RunAiScheduleAsync(AiConversationSchedule task, bool manual)
@@ -438,7 +460,7 @@ public partial class MainWindow
         Action("立即执行", () =>
         {
             if (list.SelectedItem is not AiConversationSchedule task) return;
-            _ = RunAiScheduleAsync(task, manual: true);
+            _ = RunAiScheduleSafeAsync(task, manual: true);
             status.Text = "已发起，不会修改下次定时执行时间";
         });
         Action("删除", () =>
