@@ -1153,6 +1153,12 @@ public static class ScriptExtensionRunner
         var completed = new TaskCompletionSource<ScriptExecutionResult>(TaskCreationOptions.RunContinuationsAsynchronously);
         var thread = new Thread(() =>
         {
+            // A native-window C# mini-app owns a dedicated STA. Capture only
+            // windows created/activated by this execution thread so their
+            // taskbar identity cannot leak to another mini-app or Yanzi itself.
+            using var miniAppWindowHook = useNativeWindowMode
+                ? NativeMiniAppWindowHook.Install(command)
+                : null;
             try
             {
                 var result = ExecuteManagedAssemblyInCurrentThread(
