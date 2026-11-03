@@ -65,3 +65,10 @@
 - **有意保留**：正文多行 TextBox 的原生 Tab/回车、滚动和键盘事件；必须先在 Windows 真机验证公共 Textarea 模板完全兼容后再迁移。便签图标的绿色为功能识别色，暂保留。
 - Linux 静态测试：XML 解析、4 个按钮样式、标题输入样式、关键事件和控件名称、主题调用、清单状态、Python 编译与 `git diff --check` 均通过。**Windows 编译与真实 UI 操作未验收**。
 - 当前清单 176 个仍是候选源码文件，不是页面总数；9 个 WPF XAML 已完成部分迁移，均处于待 Windows QA 状态。推送与合并仍须验证。
+
+## 第九轮：AI 模型选择窗口（源码迁移，待 Windows 验收）
+
+- `AiModelPickerWindow.xaml`：旧 `PrimaryBtn/SecondaryBtn` 改用共享 `Yanzi.Button.Default/Outline`，模型勾选框接入 `Yanzi.CheckBox`，窗口、列表容器及分隔线改用 `BrushDialogBG/BrushInputBG/BrushBorder`；“已添加”标识保留原显示逻辑并改用主题前景色。保留 `ItemsSource`、`IsSelected` 双向绑定、`CanSelect` 禁用逻辑及确认/取消事件。
+- `AiModelPickerWindow.xaml.cs`：按用户设置向当前窗口加载共享 WPF 深浅主题资源，不修改全局主题。
+- 静态验收：XML 解析、共享资源及原有事件/绑定断言、清单状态和 `git diff --check` 均通过。服务器没有 dotnet，Windows Release 编译、模型勾选与禁用、确认取消、深浅主题截图、键盘/无障碍测试仍未完成，**不能标记为最终验收**。
+- `inventory.json` 仍为 176 个候选源码文件，当前 10 个 WPF XAML 标记为部分源码迁移、待 Windows QA。此数字不代表全部运行时页面，动态 UI/小程序仍需扩大覆盖。

@@ -21,6 +21,10 @@ public partial class AiModelPickerWindow : Window, INotifyPropertyChanged
     public AiModelPickerWindow(string providerName, IEnumerable<string> availableModels, IEnumerable<string> existingModels)
     {
         InitializeComponent();
+        var theme = AppSettingsStore.Load().ThemeMode;
+        Yanzi.UI.Wpf.YanziUi.ApplyTo(this,
+            string.Equals(theme, "Light", StringComparison.OrdinalIgnoreCase)
+                ? Yanzi.UI.Wpf.YanziTheme.Light : Yanzi.UI.Wpf.YanziTheme.Dark);
         DataContext = this;
 
         Title = $"选择模型 - {providerName}";
