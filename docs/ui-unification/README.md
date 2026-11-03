@@ -12,3 +12,11 @@
 - **待验收**：Linux 服务器缺少 dotnet，无法编译 WPF 或运行 Windows UI；需 Windows 设备完成 Release 编译、快捷键录制/清空/取消/确认、浅深主题、键盘焦点及截图比对后才能把该窗口标为通过。
 
 下一轮：补全真实 UI 入口枚举并按运行时页面建立逐页状态，优先修复现存 WPF 窗口的旧按钮/输入控件与共享库接入；持续对 Android、扩展、动态小程序进行独立技术栈组件复用审计。
+
+## 第二轮：鼠标触发录制窗口（源码迁移，等待 Windows 验收）
+
+- `MouseTriggerCaptureWindow.xaml`：移除窗口及录制区域硬编码深色背景/文字颜色，改用现有 `DialogWindow`、`BrushDialogBG`、`BrushTextMain`、`BrushTextSec`；取消按钮使用 `Yanzi.Button.Outline`，目标选择框使用 `Yanzi.Select`。保留原控件名称、Tag、SelectedIndex、事件绑定和录制逻辑。
+- `MouseTriggerCaptureWindow.xaml.cs`：仅在此窗口初始化后按 `AppSettingsStore.Load().ThemeMode` 加载共享 WPF 主题，不更改宿主全局资源。
+- 修复清单扫描器的 Java/C# 文件名及共享 UI 引用正则转义错误；该错误此前可能漏报或误报。重新生成 176 个源码候选项，仍非 176 个运行时界面。
+- Linux 静态验收：XAML XML 解析、共享样式与主题调用断言、清单状态检查、Python 语法检查、`git diff --check` 均通过。
+- Windows 真机待验：深浅主题、下拉选项、鼠标录制、Esc/取消及焦点行为；Linux 服务器没有 dotnet，不能将本次标为 UI 已验收。
