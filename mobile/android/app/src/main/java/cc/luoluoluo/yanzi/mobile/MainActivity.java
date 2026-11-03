@@ -2146,6 +2146,20 @@ extends Activity {
         }
     }
 
+    private void showAiModelSettings() {
+        try {
+            MobileAiModelPicker.show(this, this.prefs, this.executor,
+                this.normalizedBaseUrl(), this.requireToken(), this::updateAiModelHeader);
+        } catch (Exception error) {
+            Toast.makeText(this, "请先登录燕子账号并同步模型服务", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void updateAiModelHeader() {
+        if (this.aiModelInfoText == null) return;
+        this.aiModelInfoText.setText((CharSequence)MobileAiModelPicker.title(this, this.prefs));
+    }
+
     private void setupAiTabPage() {
         String savedPrompt = this.prefs.getString("aiSystemPrompt", DEFAULT_SYSTEM_PROMPT);
         if (!savedPrompt.contains("\u3010\u5de5\u5177\u8c03\u7528\u793a\u4f8b\u3011") || !savedPrompt.contains("PowerShell 5.1") || !savedPrompt.contains("mobile-js") || !savedPrompt.contains("view_yanm_state") || !savedPrompt.contains("update_yanm_state") || !savedPrompt.contains("\u3010\u683c\u5f0f\u7ea6\u675f\u3011")) {
@@ -2163,8 +2177,21 @@ extends Activity {
         topBar.setGravity(16);
         topBar.setBackgroundColor(ThemeConfig.COLOR_BACKGROUND);
 
-        View aiToolbarSpacer = new View((Context)this);
-        topBar.addView(aiToolbarSpacer, (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, 1, 1.0f));
+        TextView aiSettingsButton = YanziUiKit.text(this, "⚙", 21, YanziUiKit.BLUE, true);
+        aiSettingsButton.setContentDescription("AI 对话设置与模型选择");
+        aiSettingsButton.setGravity(Gravity.CENTER);
+        aiSettingsButton.setPadding(this.dp(6), this.dp(8), this.dp(10), this.dp(8));
+        aiSettingsButton.setOnClickListener(v -> this.showAiModelSettings());
+        topBar.addView((View)aiSettingsButton, (ViewGroup.LayoutParams)
+            new LinearLayout.LayoutParams(this.dp(44), this.dp(44)));
+        this.aiModelInfoText = YanziUiKit.text(this, "选择模型", 12, YanziUiKit.SECONDARY, false);
+        this.aiModelInfoText.setGravity(Gravity.CENTER_VERTICAL);
+        this.aiModelInfoText.setSingleLine(true);
+        this.aiModelInfoText.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        this.aiModelInfoText.setOnClickListener(v -> this.showAiModelSettings());
+        topBar.addView((View)this.aiModelInfoText,
+            (ViewGroup.LayoutParams)new LinearLayout.LayoutParams(0, this.dp(44), 1.0f));
+        this.updateAiModelHeader();
 
         TextView aiDataBtn = YanziUiKit.text(this, "数据", 13, YanziUiKit.SECONDARY, true);
         aiDataBtn.setGravity(Gravity.CENTER);
@@ -6580,7 +6607,7 @@ extends Activity {
                     String aiModel = loadedSettings.optString("aiModel", "");
                     this.prefs.edit().putString("aiBaseUrl", aiBaseUrl).putString("aiApiKey", aiApiKey).putString("aiModel", aiModel).apply();
                     if (this.aiModelInfoText != null) {
-                        this.aiModelInfoText.setText((CharSequence)(aiModel.isEmpty() ? "\u5c1a\u672a\u8fde\u63a5\u5230 PC \u7aef AI\uff0c\u4e0b\u62c9\u5237\u65b0\u91cd\u8bd5\u3002" : "\u5f53\u524d AI: " + aiModel));
+                        this.updateAiModelHeader();
                     }
                 });
             }
@@ -6870,6 +6897,8 @@ extends Activity {
         String aiBaseUrl = this.prefs.getString("aiBaseUrl", "");
         String aiApiKey = this.prefs.getString("aiApiKey", "");
         String aiModel = this.prefs.getString("aiModel", "");
+        final String routedModel = MobileAiModelPicker.selectedModelId(this, this.prefs);
+        final String routedDesktopId = this.prefs.getString("aiSelectedDesktopDeviceId", "");
         String requestSessionId = this.currentAiSessionId;
         JSONArray requestHistory = this.snapshotAiHistoryForRequest(requestSessionId);
         this.executor.execute(() -> {
@@ -6985,6 +7014,12 @@ extends Activity {
                     boolean success = false;
                     String body = "";
 
+                    if (!routedModel.isEmpty()) {
+                        body = MobileAccountModelChat.complete(
+                            this.normalizedBaseUrl(), this.requireToken(), this.deviceId,
+                            routedDesktopId, routedModel, messages,
+                            () -> this.isAiCancelled).toString();
+                    } else {
                     while (attempt < maxRetry && !success) {
                         if (this.isAiCancelled) {
                             this.currentAiConnection = null;
@@ -7062,6 +7097,7 @@ extends Activity {
                             }
                             throw ex;
                         }
+                    }
                     }
 
                     this.currentAiConnection = null;
@@ -12947,6 +12983,7 @@ extends Activity {
         if (activity != null) activity.runOnUiThread(() -> {
             if (sInstance != activity || activity.isFinishing()) return;
             if (activity.yanmList != null) activity.renderCachedYanm();
+            activity.updateAiModelHeader();
             activity.updateAllAppWidgets();
         });
     }
