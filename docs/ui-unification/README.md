@@ -35,3 +35,10 @@
 - `WebDavCredentialWindow.xaml.cs`：构造时通过 `YanziUi.ApplyTo` 加载当前用户主题的窗口级资源，保留 DPAPI 存储、原验证与聚焦逻辑。
 - 静态检查：XML 解析、共享样式键存在性、旧按钮样式消除、事件/控件名称保持、审计清单状态、Python 语法、`git diff --check`；Linux 无 dotnet，Windows Release 编译、实际深浅主题、密码显示及键盘焦点待验收。
 - 本次迁移不等于视觉/交互验收；清单中的 176 项仍是候选源码而非实际页面总数。
+
+## 第五轮：进程黑名单选择窗口（源码迁移，待 Windows 验收）
+
+- `ProcessPickerWindow.xaml`：窗口定位、取消、确认按钮分别使用共享 `Yanzi.Button.Outline/Default`；错误提示色改为 `Yanzi.Brush.Danger`。保留所有按钮事件、黑名单模板及可编辑进程下拉框行为；全屏开关沿用旧 `RaycastSwitchStyle`，须先验证公共开关与其状态语义兼容后再迁移，不能直接替换。
+- `ProcessPickerWindow.xaml.cs`：窗口初始化后按用户主题注入共享 WPF 资源，不改变全局样式。
+- Linux 侧通过 XML 解析、资源键存在、事件/控件名称保持、源码审计、`git diff --check`；Windows Release 构建、进程列表过滤、窗口拾取、全屏开关、黑名单移除、深浅主题与键盘焦点尚未真机验收。
+- `inventory.json` 的 `source-migrated-awaiting-windows-qa` 只代表静态迁移，不代表交互通过。
