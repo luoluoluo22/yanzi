@@ -53,6 +53,16 @@ internal static class AiChatTaskbarIdentity
 
         var iconPath = EnsurePersistentIcon(window);
         var appId = HostRuntimeProfile.IsDevelopment ? DevelopmentAppId : OfficialAppId;
+
+        // A window-level AppID alone is not enough to produce a persistent pin.
+        // Explorer must find a real shortcut with the same AppID, icon and --ai-chat
+        // argument; otherwise the pin falls back to Yanzi.exe without arguments.
+        try { EnsureLaunchShortcut(appId, processPath, iconPath); }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog("[AiChatTaskbar] Shortcut registration failed: " + ex);
+        }
+
         var iid = PropertyStoreInterfaceId;
         var hr = SHGetPropertyStoreForWindow(hwnd, ref iid, out var store);
         Marshal.ThrowExceptionForHR(hr);
@@ -61,10 +71,10 @@ internal static class AiChatTaskbarIdentity
 
         try
         {
-            // Set relaunch properties BEFORE the ID: Explorer updates its taskbar
-            // representation when PKEY_AppUserModel_ID is assigned.
-            SetString(store, 2, "\"" + processPath + "\" " + RelaunchArgument);
-            SetString(store, 3, iconPath + ",0");
+            // The matching Start Menu .lnk owns the relaunch command, name and
+            // icon. Setting RelaunchCommand on a window without its mandatory
+            // RelaunchDisplayNameResource was silently ignored by Explorer.
+            // For installed apps, the shortcut is the canonical pin target.
             SetString(store, 5, appId);
             Marshal.ThrowExceptionForHR(store.Commit());
         }
@@ -115,6 +125,196 @@ internal static class AiChatTaskbarIdentity
             File.WriteAllBytes(path, iconBytes);
         return path;
     }
+
+    private static void EnsureLaunchShortcut(string appId, string processPath, string iconPath)
+    {
+        var programs = Environment.GetFolderPath(Environment.SpecialFolder.Programs);
+        if (string.IsNullOrWhiteSpace(programs))
+            throw new InvalidOperationException("Windows Start Menu programs folder is unavailable.");
+
+        var shortcutPath = Path.Combine(programs, HostRuntimeProfile.IsDevelopment
+            ? "燕子 AI 对话 (开发).lnk" : "燕子 AI 对话.lnk");
+        Directory.CreateDirectory(programs);
+        if (File.Exists(shortcutPath))
+        {
+            var existingId = ReadShortcutAppId(shortcutPath);
+            var existingTarget = ReadShortcutTarget(shortcutPath);
+            if (!string.IsNullOrEmpty(existingId) &&
+                !string.Equals(existingId, appId, StringComparison.Ordinal))
+                throw new IOException("The AI Start Menu shortcut belongs to a different app.");
+            if (!string.IsNullOrEmpty(existingTarget) &&
+                !string.Equals(existingTarget, processPath, StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(existingId, appId, StringComparison.Ordinal))
+                throw new IOException("Refusing to overwrite an unrelated Start Menu shortcut.");
+        }
+        if (!File.Exists(shortcutPath) ||
+            !string.Equals(ReadShortcutAppId(shortcutPath), appId, StringComparison.Ordinal) ||
+            !IsShortcutCorrect(shortcutPath, processPath, iconPath))
+            UpdateShortcut(shortcutPath, processPath, iconPath, appId);
+
+        // Repair only existing AI pins. Never rewrite the ordinary Yanzi host
+        // pin (velopack.Yanzi), other programs, or shortcuts targeting a
+        // different executable. Save one backup before modifying a user's pin.
+        var pinnedDirectory = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            @"Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar");
+        if (!Directory.Exists(pinnedDirectory))
+            return;
+
+        foreach (var pin in Directory.EnumerateFiles(pinnedDirectory, "*.lnk"))
+        {
+            try
+            {
+                if (!string.Equals(ReadShortcutAppId(pin), appId, StringComparison.Ordinal))
+                    continue;
+                if (!string.Equals(ReadShortcutTarget(pin), processPath,
+                        StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (IsShortcutCorrect(pin, processPath, iconPath))
+                    continue;
+
+                var backupDir = HostAssets.ResolveDataDirectoryPath("Backups");
+                Directory.CreateDirectory(backupDir);
+                var backup = Path.Combine(backupDir,
+                    "ai-chat-taskbar-pin-" + Path.GetFileName(pin) + ".bak");
+                if (!File.Exists(backup))
+                    File.Copy(pin, backup);
+
+                UpdateShortcut(pin, processPath, iconPath, appId);
+                HostAssets.AppendLog("[AiChatTaskbar] Repaired pinned shortcut: " +
+                                     Path.GetFileName(pin));
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog("[AiChatTaskbar] Pinned shortcut repair skipped: " +
+                    Path.GetFileName(pin) + " " + ex.GetType().Name);
+            }
+        }
+    }
+
+    private static bool IsShortcutCorrect(string path, string processPath, string iconPath)
+    {
+        dynamic? shell = null;
+        dynamic? link = null;
+        try
+        {
+            shell = Activator.CreateInstance(Type.GetTypeFromProgID("WScript.Shell")!);
+            link = shell!.CreateShortcut(path);
+            return string.Equals((string)link.TargetPath, processPath,
+                       StringComparison.OrdinalIgnoreCase) &&
+                   string.Equals((string)link.Arguments, RelaunchArgument,
+                       StringComparison.Ordinal) &&
+                   string.Equals((string)link.IconLocation, iconPath + ",0",
+                       StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            if (link is not null) Marshal.FinalReleaseComObject(link);
+            if (shell is not null) Marshal.FinalReleaseComObject(shell);
+        }
+    }
+
+    private static string? ReadShortcutTarget(string path)
+    {
+        dynamic? shell = null;
+        dynamic? link = null;
+        try
+        {
+            shell = Activator.CreateInstance(Type.GetTypeFromProgID("WScript.Shell")!);
+            link = shell!.CreateShortcut(path);
+            return (string)link.TargetPath;
+        }
+        finally
+        {
+            if (link is not null) Marshal.FinalReleaseComObject(link);
+            if (shell is not null) Marshal.FinalReleaseComObject(shell);
+        }
+    }
+
+    private static void UpdateShortcut(
+        string path, string processPath, string iconPath, string appId)
+    {
+        dynamic? shell = null;
+        dynamic? link = null;
+        try
+        {
+            shell = Activator.CreateInstance(Type.GetTypeFromProgID("WScript.Shell")!);
+            link = shell!.CreateShortcut(path);
+            link.TargetPath = processPath;
+            link.Arguments = RelaunchArgument;
+            link.IconLocation = iconPath + ",0";
+            link.Description = "燕子 · AI 对话";
+            link.WorkingDirectory = Path.GetDirectoryName(processPath)!;
+            link.Save();
+        }
+        finally
+        {
+            if (link is not null) Marshal.FinalReleaseComObject(link);
+            if (shell is not null) Marshal.FinalReleaseComObject(shell);
+        }
+
+        // WScript.Shell cannot set AppUserModelID. The Shell property store is
+        // mandatory; without it Windows pins this under velopack.Yanzi.
+        var iid = PropertyStoreInterfaceId;
+        Marshal.ThrowExceptionForHR(SHGetPropertyStoreFromParsingName(
+            path, IntPtr.Zero, 2 /* GPS_READWRITE */, ref iid, out var store));
+        if (store is null)
+            throw new InvalidOperationException("No shortcut property store.");
+        try
+        {
+            SetString(store, 5, appId);
+            Marshal.ThrowExceptionForHR(store.Commit());
+        }
+        finally
+        {
+            Marshal.ReleaseComObject(store);
+        }
+
+        if (!string.Equals(ReadShortcutAppId(path), appId, StringComparison.Ordinal) ||
+            !IsShortcutCorrect(path, processPath, iconPath))
+            throw new InvalidOperationException("AI shortcut verification failed.");
+
+        // Explorer caches icons and pinned links, so notify it about updates
+        // rather than restarting explorer.exe or changing unrelated pins.
+        SHChangeNotify(0x00002000 /* SHCNE_UPDATEITEM */,
+            0x0005 /* SHCNF_PATHW */, path, IntPtr.Zero);
+    }
+
+    private static string? ReadShortcutAppId(string path)
+    {
+        // The generic SHGetPropertyStoreFromParsingName reader can expose VT_EMPTY
+        // for a newly saved .lnk even though its AppID was persisted correctly.
+        // Explorer uses Shell.Application's ExtendedProperty; use that same
+        // effective property view for verification and selective pin repair.
+        dynamic? shell = null;
+        dynamic? folder = null;
+        dynamic? item = null;
+        try
+        {
+            shell = Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application")!);
+            folder = shell!.NameSpace(Path.GetDirectoryName(path)!);
+            if (folder is null) return null;
+            item = folder.ParseName(Path.GetFileName(path));
+            if (item is null) return null;
+            object? appId = item.ExtendedProperty("System.AppUserModel.ID");
+            return appId?.ToString();
+        }
+        finally
+        {
+            if (item is not null) Marshal.FinalReleaseComObject(item);
+            if (folder is not null) Marshal.FinalReleaseComObject(folder);
+            if (shell is not null) Marshal.FinalReleaseComObject(shell);
+        }
+    }
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = true)]
+    private static extern int SHGetPropertyStoreFromParsingName(
+        string path, IntPtr bindContext, uint flags, ref Guid iid,
+        [MarshalAs(UnmanagedType.Interface)] out IPropertyStore store);
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern void SHChangeNotify(
+        uint eventId, uint flags, string item1, IntPtr item2);
 
     private static void SetString(IPropertyStore store, uint propertyId, string text)
     {
