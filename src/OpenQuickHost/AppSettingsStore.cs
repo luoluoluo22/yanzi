@@ -217,6 +217,7 @@ public static class AppSettingsStore
                     HasShownInitialWelcomePanel = false
                 });
                 TryImportPlaintextCredentials(defaults);
+                ExtensionModelServiceRegistry.Reconcile(defaults);
                 UpdateCache(defaults);
                 return defaults;
             }
@@ -226,6 +227,7 @@ public static class AppSettingsStore
                 var json = File.ReadAllText(SettingsPath);
                 var settings = Normalize(JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings());
                 TryImportPlaintextCredentials(settings);
+                ExtensionModelServiceRegistry.Reconcile(settings);
                 UpdateCache(settings);
                 return settings;
             }
@@ -237,6 +239,7 @@ public static class AppSettingsStore
                 TryPreserveCorruptSettingsFile();
                 var defaults = Normalize(new AppSettings());
                 TryImportPlaintextCredentials(defaults);
+                ExtensionModelServiceRegistry.Reconcile(defaults);
                 UpdateCache(defaults);
                 return defaults;
             }
@@ -295,6 +298,7 @@ public static class AppSettingsStore
         lock (SettingsIoLock)
         {
             settings = Normalize(settings);
+            ExtensionModelServiceRegistry.Reconcile(settings);
             try
             {
                 AiCredentialStore.Capture(settings);

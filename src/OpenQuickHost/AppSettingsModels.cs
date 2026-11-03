@@ -1843,6 +1843,7 @@ public static class WindowBindingCorners
 public sealed class AiServiceProviderSettings
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string OwnerExtensionId { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public string ProviderType { get; set; } = "OpenAI";
     public string BaseUrl { get; set; } = string.Empty;
