@@ -102,9 +102,13 @@ public partial class MainWindow
             }
             _detachedAiChatWindow = null;
         };
+        // Exit the launcher BEFORE showing the independent window. Otherwise the
+        // launcher search popup can remain topmost and cover the detached chat.
+        ExitAiChatMode();
+        SearchScopePopup.IsOpen = false;
+        HideToTray();
         window.Show();
         window.Activate();
-        ExitAiChatMode(); // Leave the launcher usable independently of the taskbar window.
     }
 
     private void ActivateDetachedAiChat()
