@@ -693,20 +693,41 @@ public partial class MainWindow
 
     public void BringMainWindowToFront()
     {
-        // Return legacy topmost windows to the normal Z-order band.
+        // A launcher shortcut requests a one-time foreground activation, not "always on top".
+        // Keep the warehouse in the normal Z-order band so dialogs can subsequently cover it.
         Topmost = false;
+        if (WindowState == WindowState.Minimized)
+        {
+            WindowState = WindowState.Normal;
+        }
+
         var handle = new WindowInteropHelper(this).Handle;
         if (handle != IntPtr.Zero)
         {
             Win32Native.SetWindowPos(handle, Win32Native.HWND_NOTOPMOST, 0, 0, 0, 0,
                 Win32Native.SWP_NOMOVE | Win32Native.SWP_NOSIZE | Win32Native.SWP_NOACTIVATE);
+            Win32Native.SetWindowPos(handle, Win32Native.HWND_TOP, 0, 0, 0, 0,
+                Win32Native.SWP_NOMOVE | Win32Native.SWP_NOSIZE | Win32Native.SWP_NOACTIVATE);
         }
 
         Activate();
-        Focus();
-        if (handle != IntPtr.Zero) NativeMethods.SetForegroundWindow(handle);
-        SearchBox.Focus();
-        Keyboard.Focus(SearchBox);
+        if (handle != IntPtr.Zero && Win32Native.GetForegroundWindow() != handle)
+        {
+            // Windows sometimes rejects activation from a low-level keyboard-hook callback.
+            // Join the foreground input queue only as a fallback; never leave Topmost enabled.
+            var recovered = WindowSensorHelper.ForceSetForegroundWindow(handle);
+            if (!recovered || Win32Native.GetForegroundWindow() != handle)
+            {
+                HostAssets.AppendLog($"Launcher foreground denied: hwnd=0x{handle.ToInt64():X}, foreground=0x{Win32Native.GetForegroundWindow().ToInt64():X}, recovered={recovered}.");
+            }
+        }
+
+        if (handle == IntPtr.Zero || Win32Native.GetForegroundWindow() == handle)
+        {
+            Focus();
+            SearchBox.Focus();
+            Keyboard.Focus(SearchBox);
+        }
     }
 
     private void StartStartupExtensions()
@@ -1786,12 +1807,17 @@ public partial class MainWindow
     public void TogglePanelVisibility()
     {
         if (HostRuntimeProfile.IsRuntime) { SharedRuntimeHost.Current?.RequestShell("launcher.toggle"); return; }
-        if (IsVisible)
+        if (!IsVisible)
+        {
+            ShowPanel();
+        }
+        else if (IsActive && Win32Native.GetForegroundWindow() == new WindowInteropHelper(this).Handle)
         {
             HideToTray();
         }
         else
         {
+            // If the warehouse is visible but covered, the hotkey must recover it.
             ShowPanel();
         }
     }
@@ -1924,7 +1950,8 @@ public partial class MainWindow
         // The tabs are a separate native Popup HWND. Keep them for focus transfers
         // inside Yanzi (clipboard, file picker), but do not let them float over
         // unrelated applications when the regular warehouse loses focus.
-        SetSearchScopePopupOpen(focusMovedWithinYanzi);
+        // Preserve tabs on a pinned warehouse; their native HWND is no longer topmost.
+        SetSearchScopePopupOpen(focusMovedWithinYanzi || _isPinned || IsAiChatMode);
         if (CapsGuidePopup != null)
         {
             CapsGuidePopup.IsOpen = false;
@@ -1999,7 +2026,23 @@ public partial class MainWindow
         if (shouldOpen)
         {
             RepositionSearchScopePopup();
+            // PopupRoot can be created after IsOpen, so normalize it at Loaded as well.
+            Dispatcher.BeginInvoke(() =>
+            {
+                if (SearchScopePopup?.IsOpen == true) NormalizeSearchScopePopupZOrder();
+            }, DispatcherPriority.Loaded);
         }
+    }
+
+    private void NormalizeSearchScopePopupZOrder()
+    {
+        if (SearchScopePopup?.IsOpen != true || SearchScopePopup.Child is null) return;
+        var popupHandle = (PresentationSource.FromVisual(SearchScopePopup.Child) as HwndSource)?.Handle ?? IntPtr.Zero;
+        if (popupHandle == IntPtr.Zero || popupHandle == new WindowInteropHelper(this).Handle) return;
+
+        // PopupRoot defaults to a separate topmost HWND; keep it in the owner's normal band.
+        Win32Native.SetWindowPos(popupHandle, Win32Native.HWND_NOTOPMOST, 0, 0, 0, 0,
+            Win32Native.SWP_NOMOVE | Win32Native.SWP_NOSIZE | Win32Native.SWP_NOACTIVATE);
     }
 
     private void RepositionSearchScopePopup()
@@ -2015,6 +2058,7 @@ public partial class MainWindow
         var offset = SearchScopePopup.HorizontalOffset;
         SearchScopePopup.HorizontalOffset = offset + 0.1;
         SearchScopePopup.HorizontalOffset = offset;
+        NormalizeSearchScopePopupZOrder();
     }
 
     private void Window_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
