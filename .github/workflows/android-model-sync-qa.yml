@@ -17,11 +17,15 @@ jobs:
           distribution: temurin
           java-version: "17"
       # ubuntu-latest supplies the Android SDK; Gradle resolves installed SDK platforms.
+      - name: Create disposable QA-only debug keystore
+        run: |
+          mkdir -p "$HOME/.android"
+          keytool -genkeypair -noprompt -keystore "$HOME/.android/debug.keystore" -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 365 -dname "CN=Android Debug,O=Yanzi QA,C=US"
       - name: Build isolated development APK
         working-directory: mobile/android
         run: |
           chmod +x gradlew
-          ./gradlew :app:assembleDev -PYANZI_ANDROID_DEV_KEYSTORE=$HOME/.android/debug.keystore --no-daemon --console=plain
+          ./gradlew :app:assembleDev -PYANZI_ANDROID_DEV_SUFFIX=.modelqa.dev -PYANZI_ANDROID_DEV_KEYSTORE=$HOME/.android/debug.keystore --no-daemon --console=plain
       - uses: actions/upload-artifact@v4
         with:
           name: yanzi-model-sync-dev-apk
