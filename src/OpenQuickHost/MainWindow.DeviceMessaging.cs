@@ -262,13 +262,16 @@ public partial class MainWindow
                 foreach (var message in page.Items)
                 {
                     var res = await HandleMobileDeviceMessageAsync(message);
+                    // AI execution may outlast the 20-second inbox poll budget.
+                    // ACK gets its own deadline so successful replies are persisted.
+                    using var ackTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
                     if (res.hasResult)
                     {
-                        await _cloudSyncClient.AckDeviceMessageAsync(message.MessageId, _desktopDeviceId, res.success, res.output, cancellationToken: pollTimeout.Token);
+                        await _cloudSyncClient.AckDeviceMessageAsync(message.MessageId, _desktopDeviceId, res.success, res.output, cancellationToken: ackTimeout.Token);
                     }
                     else
                     {
-                        await _cloudSyncClient.AckDeviceMessageAsync(message.MessageId, _desktopDeviceId, cancellationToken: pollTimeout.Token);
+                        await _cloudSyncClient.AckDeviceMessageAsync(message.MessageId, _desktopDeviceId, cancellationToken: ackTimeout.Token);
                     }
                     total++;
                     HostAssets.AppendLog($"Mobile bridge acked message: id={message.MessageId}, deviceId={_desktopDeviceId}.");
