@@ -204,7 +204,7 @@ public partial class App : WpfApplication
                             : protocolArgument;
 
                 // 普通二次启动只需快速唤起；开发重启则给优雅退出更充足的 IPC 建连时间。
-                using var cts = new CancellationTokenSource(shutdownRequested ? 1500 : 300);
+                using var cts = new CancellationTokenSource(shutdownRequested ? 1500 : chatRequested ? 2000 : 300);
                 _ = _singleInstanceService.SendToPrimaryInstanceAsync(message, cts.Token).GetAwaiter().GetResult();
             }
             catch
