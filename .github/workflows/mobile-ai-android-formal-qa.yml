@@ -1,0 +1,50 @@
+name: AI model Android formal QA
+on:
+  pull_request:
+    paths:
+      - 'mobile/android/**'
+      - '.github/workflows/mobile-ai-android-formal-qa.yml'
+permissions:
+  contents: read
+jobs:
+  signed-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      STORE_B64: ${{ secrets.YANZI_ANDROID_RELEASE_KEYSTORE_BASE64 }}
+      YANZI_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.YANZI_ANDROID_RELEASE_STORE_PASSWORD }}
+      YANZI_ANDROID_KEY_ALIAS: ${{ secrets.YANZI_ANDROID_RELEASE_KEY_ALIAS }}
+      YANZI_ANDROID_KEY_PASSWORD: ${{ secrets.YANZI_ANDROID_RELEASE_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Require stable Android release signer
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$STORE_B64"
+          test -n "$YANZI_ANDROID_KEYSTORE_PASSWORD"
+          test -n "$YANZI_ANDROID_KEY_ALIAS"
+          test -n "$YANZI_ANDROID_KEY_PASSWORD"
+          printf '%s' "$STORE_B64" | base64 -d > "$RUNNER_TEMP/yanzi-release.p12"
+          echo "YANZI_ANDROID_KEYSTORE=$RUNNER_TEMP/yanzi-release.p12" >> "$GITHUB_ENV"
+      - name: Assemble actual production package
+        shell: bash
+        working-directory: mobile/android
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleRelease --no-daemon --console=plain
+      - name: Verify release signature and version
+        shell: bash
+        run: |
+          $ANDROID_HOME/build-tools/35.0.0/apksigner verify --print-certs mobile/android/app/build/outputs/apk/release/app-release.apk
+          $ANDROID_HOME/build-tools/35.0.0/aapt dump badging mobile/android/app/build/outputs/apk/release/app-release.apk | head -n 2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yanzi-android-signed-0.2.79-qa
+          path: mobile/android/app/build/outputs/apk/release/app-release.apk
+          retention-days: 2

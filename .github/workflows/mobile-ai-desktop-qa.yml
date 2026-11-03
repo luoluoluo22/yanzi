@@ -1,0 +1,51 @@
+name: AI model relay Windows QA
+on:
+  pull_request:
+    paths:
+      - "src/OpenQuickHost/**"
+      - ".github/workflows/mobile-ai-desktop-qa.yml"
+permissions:
+  contents: read
+jobs:
+  build-desktop:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+      - name: Build desktop host with model relay
+        shell: pwsh
+        run: |
+          dotnet restore src/OpenQuickHost/OpenQuickHost.csproj -r win-x64 --source https://api.nuget.org/v3/index.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet build src/OpenQuickHost/OpenQuickHost.csproj -c Release --no-restore --nologo -v:q
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Publish self-contained Windows test payload
+        shell: pwsh
+        run: |
+          dotnet publish src/OpenQuickHost/OpenQuickHost.csproj -c Release -r win-x64 --self-contained true --no-restore -o .artifacts/desktop-publish -p:PublishSingleFile=false -p:SkipStopRunningApp=true
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Package private Velopack installer for desktop QA
+        shell: pwsh
+        run: |
+          dotnet tool install --global vpk --version 1.2.0
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $vpk = Join-Path $env:USERPROFILE ".dotnet/tools/vpk.exe"
+          New-Item -ItemType Directory -Force .artifacts/desktop-installer | Out-Null
+          & $vpk pack --packId Yanzi --packTitle Yanzi --packVersion 1.0.97 --packDir .artifacts/desktop-publish --mainExe Yanzi.exe --icon src/OpenQuickHost/yanzi.ico --outputDir .artifacts/desktop-installer --shortcuts Desktop,StartMenuRoot
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yanzi-ai-desktop-installer-1.0.97
+          path: |
+            .artifacts/desktop-installer/*Setup*.exe
+            .artifacts/desktop-installer/*full.nupkg
+            .artifacts/desktop-installer/RELEASES
+          retention-days: 2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yanzi-ai-desktop-qa-win-x64
+          path: .artifacts/desktop-publish/
+          retention-days: 2

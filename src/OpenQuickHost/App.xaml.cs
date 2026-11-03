@@ -267,6 +267,7 @@ public partial class App : WpfApplication
 
         try
         {
+            YanziMobileModelChatCapability.Register();
             var window = new MainWindow();
             MainWindow = window;
             TryRegisterUriProtocol();
