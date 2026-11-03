@@ -86,6 +86,7 @@ public partial class MainWindow
         };
         // Preserve host-local brushes in addition to global shared UI styles.
         window.Resources.MergedDictionaries.Add(Resources);
+        AiChatTaskbarIdentity.Attach(window);
         _detachedAiChatWindow = window;
         window.Closed += (_, _) =>
         {
@@ -109,6 +110,27 @@ public partial class MainWindow
         HideToTray();
         window.Show();
         window.Activate();
+    }
+
+    internal void OpenDetachedAiChatFromTaskbar()
+    {
+        if (_detachedAiChatWindow != null)
+        {
+            ActivateDetachedAiChat();
+            return;
+        }
+
+        // A taskbar relaunch can arrive while the host is hidden in the tray.
+        // Initialize the selected AI topic/model just as opening the AI tab does.
+        if (!IsAiChatMode)
+        {
+            var aiScope = SearchScopes.FirstOrDefault(scope =>
+                string.Equals(scope.Key, SearchScopeAi, StringComparison.OrdinalIgnoreCase));
+            if (aiScope != null)
+                SelectedSearchScope = aiScope;
+        }
+
+        AiChatDetachButton_Click(this, new RoutedEventArgs());
     }
 
     private void ActivateDetachedAiChat()
@@ -311,6 +333,7 @@ public partial class MainWindow
             Background = new SolidColorBrush(Color.FromRgb(28, 30, 39)),
             Foreground = Brushes.White
         };
+        AiChatTaskbarIdentity.Attach(window);
         Yanzi.UI.Wpf.YanziUi.ApplyTo(window,
             string.Equals(AppSettingsStore.Load().ThemeMode, "Light",
                 StringComparison.OrdinalIgnoreCase)
