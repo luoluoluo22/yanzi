@@ -1,4 +1,4 @@
-<Window x:Class="OpenQuickHost.SettingsWindow"
+﻿<Window x:Class="OpenQuickHost.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -1290,7 +1290,11 @@
                                                                     <ColumnDefinition Width="1.5*"/>
                                                                     <ColumnDefinition Width="76"/>
                                                                 </Grid.ColumnDefinitions>
-                                                                <TextBox Grid.Column="0" Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Height="34" Padding="10,7" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}" />
+                                                                <Grid Grid.Column="0">
+                                                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="38"/></Grid.ColumnDefinitions>
+                                                                    <TextBox Grid.Column="0" Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Height="34" Padding="10,7" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}" />
+                                                                    <Button Grid.Column="1" Content="{Binding ScopeLabel}" ToolTip="{Binding ScopeToolTip}" Click="ToggleEnvironmentScopeButton_Click" Height="34" Width="34" Padding="0" Margin="4,0,0,0" Style="{DynamicResource Yanzi.Button.Outline}" AutomationProperties.Name="切换变量内部或全局作用域"/>
+                                                                </Grid>
                                                                 <local:SecretValueEditor Grid.Column="2" Height="34" Value="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" ValueEdited="SecretValueEditor_ValueEdited" AutomationProperties.Name="环境变量值" />
                                                                 <TextBox Grid.Column="4" Text="{Binding Description, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Height="34" Padding="10,7" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}" />
                                                                 <Button Grid.Column="5" Content="删除" Style="{DynamicResource Yanzi.Button.Outline}" Height="34" Width="60" Padding="10,0" Margin="12,0,0,0" Click="RemoveEnvironmentVariableButton_Click" />

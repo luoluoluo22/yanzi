@@ -172,7 +172,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         };
         AiSettingsStatusText = BuildAiSettingsSummary(_settings);
         EnvironmentVariables = new ObservableCollection<EnvironmentVariableEditorItem>(
-            AppEnvironmentVariableStore.Load().Select(static item => new EnvironmentVariableEditorItem(item.Name, item.Value, item.Description)));
+            AppEnvironmentVariableStore.Load().Where(static item => !AppEnvironmentVariableStore.IsMiniAppPrivateName(item.Name)).Select(static item => new EnvironmentVariableEditorItem(item.Name, item.Value, item.Description, item.IsGlobal)));
         EnvironmentStatusText = BuildEnvironmentSummary();
         BaseUrl = _mainWindow.SyncBaseUrl;
         ExtensionsRootPath = LocalExtensionCatalog.CatalogRootPath;
@@ -4903,9 +4903,18 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private void AddEnvironmentVariableButton_Click(object sender, RoutedEventArgs e)
     {
-        EnvironmentVariables.Add(new EnvironmentVariableEditorItem("NOTION_TOKEN", string.Empty, "Notion Integration Token"));
+        EnvironmentVariables.Add(new EnvironmentVariableEditorItem("NOTION_TOKEN", string.Empty, "Notion Integration Token", false));
         EnvironmentStatusText = "已添加一行环境变量。";
         QueueEnvironmentVariablesSave(200);
+    }
+
+    private void ToggleEnvironmentScopeButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: EnvironmentVariableEditorItem item })
+        {
+            item.IsGlobal = !item.IsGlobal;
+            QueueEnvironmentVariablesSave(200);
+        }
     }
 
     private void RemoveEnvironmentVariableButton_Click(object sender, RoutedEventArgs e)
@@ -4970,12 +4979,16 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             {
                 Name = item.Name.Trim(),
                 Value = item.Value ?? string.Empty,
-                Description = item.Description ?? string.Empty
+                Description = item.Description ?? string.Empty,
+                IsGlobal = item.IsGlobal
             })
             .Where(static item => AppEnvironmentVariableStore.IsValidEnvironmentName(item.Name))
             .ToArray();
 
-        AppEnvironmentVariableStore.Save(variables);
+        // Mail account credentials remain in the mini-app vault and are not visible in the global editor.
+        var privateEntries = AppEnvironmentVariableStore.Load()
+            .Where(static item => AppEnvironmentVariableStore.IsMiniAppPrivateName(item.Name));
+        AppEnvironmentVariableStore.Save(variables.Concat(privateEntries));
         _mainWindow.NotifyQuickPanelSettingsChanged("environment-variables-saved", refreshYanmOverlay: false);
         _settings = AppSettingsStore.Load();
         _settingsPersistence.Reset(_settings);

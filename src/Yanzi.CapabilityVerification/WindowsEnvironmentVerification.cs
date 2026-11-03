@@ -35,6 +35,21 @@ internal static class WindowsEnvironmentVerification
             Check(Environment.GetEnvironmentVariable(collision, EnvironmentVariableTarget.User) == "external-value",
                 "Collision must remain intact after removing it from Yanzi settings");
 
+            AppEnvironmentVariableStore.Save([
+                new AppEnvironmentVariableSettings { Name = key, Value = "internal-only", IsGlobal = false },
+                new AppEnvironmentVariableSettings { Name = "YANZI_MAIL_ACCOUNTS_V2", Value = "mail-private-fixture", IsGlobal = true }
+            ]);
+            Check(Environment.GetEnvironmentVariable(key, EnvironmentVariableTarget.User) == null,
+                "Switch to internal must revoke a managed Windows user variable");
+            Check(AppEnvironmentVariableStore.GetValue(key) == "internal-only",
+                "Internal setting must still be readable in Yanzi");
+            Check(Environment.GetEnvironmentVariable("YANZI_MAIL_ACCOUNTS_V2", EnvironmentVariableTarget.User) != "mail-private-fixture",
+                "Mail mini-app credentials must never publish to Windows");
+            Check(AppEnvironmentVariableStore.GetValue("YANZI_MAIL_ACCOUNTS_V2") == "mail-private-fixture",
+                "Mail credentials must remain in encrypted Yanzi storage");
+            Check(AppEnvironmentVariableStore.Load().Single(x => x.Name == "YANZI_MAIL_ACCOUNTS_V2").IsGlobal == false,
+                "Mail credentials must be forced to private scope");
+
             AppEnvironmentVariableStore.Save([]);
             Check(Environment.GetEnvironmentVariable(key, EnvironmentVariableTarget.User) == null,
                 "Removed Yanzi variable should be removed from registry");
