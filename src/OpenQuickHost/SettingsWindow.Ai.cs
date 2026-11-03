@@ -126,7 +126,7 @@ public partial class SettingsWindow
         _aiStatusHideTimer = ShowSaveStatusTemporarily(_aiStatusHideTimer, visible => IsAiSaveStatusVisible = visible);
     }
 
-    private void AddProviderButton_Click(object sender, RoutedEventArgs e)
+    private async void AddProviderButton_Click(object sender, RoutedEventArgs e)
     {
         try
         {
@@ -134,16 +134,21 @@ public partial class SettingsWindow
             dialog.Owner = this;
             if (dialog.ShowDialog() == true)
             {
+                if (dialog.ProviderType == YanziAgyModelBridge.ProviderType)
+                    await YanziAgyManagedInstaller.EnsureInstalledAsync();
                 var newProvider = new AiServiceProviderSettings
                 {
                     Id = Guid.NewGuid().ToString(),
                     Name = dialog.ProviderName,
                     ProviderType = dialog.ProviderType,
                     BaseUrl = BuildDefaultProviderBaseUrl(dialog.ProviderType),
-                    ApiKey = "",
+                    ApiKey = dialog.ProviderType == YanziAgyModelBridge.ProviderType
+                        ? YanziAgyModelBridge.GetLocalKey() : "",
                     IsEnabled = true,
-                    Models = [],
-                    SelectedModel = string.Empty
+                    Models = dialog.ProviderType == YanziAgyModelBridge.ProviderType
+                        ? ["agy-default"] : [],
+                    SelectedModel = dialog.ProviderType == YanziAgyModelBridge.ProviderType
+                        ? "agy-default" : string.Empty
                 };
 
                 var vm = new SettingsAiProviderVM(newProvider);
@@ -320,6 +325,7 @@ public partial class SettingsWindow
         return providerType switch
         {
             "Ego ChatGPT" => "http://127.0.0.1:8765/v1",
+            YanziAgyModelBridge.ProviderType => YanziAgyModelBridge.BaseUrl,
             "Gemini" => "https://generativelanguage.googleapis.com/v1beta",
             "Anthropic" => "https://api.anthropic.com/v1",
             "Ollama" => "http://localhost:11434/v1",
