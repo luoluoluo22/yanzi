@@ -50,3 +50,10 @@
 - **有意未替换**：局部 ScrollViewer/ScrollBar 模板、搜索框与顶部关闭按钮模板；需先验证公共组件的滚动、键盘和提示文字行为兼容性，不以改样式冒充验收。
 - 静态证据：XAML XML 解析、按钮样式与资源引用、五个关键事件仍绑定、硬编码背景消除、Python 清单与 `git diff --check` 通过。
 - **未完成**：Windows Release 构建、深浅主题截图、扫描/筛选/双击/键盘/关闭实际交互；不能标为最终验收。
+
+## 第七轮：颜色选择器（源码迁移，待 Windows 验收）
+
+- `ColorPickerDialog.xaml`：HEX、Alpha 输入框改为公共 `Yanzi.Input`，吸管按钮改为 `Yanzi.Button.Ghost`，底部取消/确认按钮改为 `Yanzi.Button.Outline/Default`；主面板背景改为共享宿主 `BrushDialogBG`。保留输入控件名、`TextChanged`、吸管、画布拖动、色相/透明度拖动及确认/取消事件。
+- `ColorPickerDialog.xaml.cs`：构造时依据用户 `ThemeMode` 使用 `YanziUi.ApplyTo` 加载共享 WPF 资源。
+- **有意保留**：颜色棋盘格、色相渐变、画布游标和色板的硬编码颜色属于颜色选择器本身的功能性颜色，不应被主题替换；顶部关闭按钮模板也暂不替换，待实际行为核查。
+- Linux 静态验收：XML 解析、公共样式键及事件存在性、Python 语法与 `git diff --check`。Windows Release 编译、吸管取色、透明度/HEX 双向更新、拖动、深浅主题、键盘焦点及视觉对照仍待完成。

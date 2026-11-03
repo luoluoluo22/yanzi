@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "base_commit": "ec6e896",
+  "base_commit": "b078fda",
   "note": "Candidate source inventory; every candidate requires manual verification; includes docs previews and code-behind candidates; not a count of distinct runtime screens.",
   "items": [
     {
@@ -798,10 +798,12 @@
     {
       "path": "src/OpenQuickHost/ColorPickerDialog.xaml",
       "kind": "desktop-xaml",
-      "shared_ui_reference": false,
-      "legacy_style_signals": 18,
-      "status": "pending-manual-review",
-      "evidence": []
+      "shared_ui_reference": true,
+      "legacy_style_signals": 17,
+      "status": "source-migrated-awaiting-windows-qa",
+      "evidence": [
+        "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check"
+      ]
     },
     {
       "path": "src/OpenQuickHost/DispatchCenterWindow.cs",
@@ -884,8 +886,7 @@
       "legacy_style_signals": 0,
       "status": "source-migrated-awaiting-windows-qa",
       "evidence": [
-        "static: XML parse, shared button/theme resources, five original event handlers preserved, git diff --check",
-        "pending: Windows Release build and light/dark/scan/search/selection/keyboard QA"
+        "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check"
       ]
     },
     {

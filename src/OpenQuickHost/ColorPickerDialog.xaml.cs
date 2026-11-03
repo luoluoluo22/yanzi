@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
@@ -26,6 +26,11 @@ namespace OpenQuickHost
         public ColorPickerDialog(Window owner, System.Windows.Media.Color initialColor)
         {
             InitializeComponent();
+            // Scope shared component styles to this picker without changing global resources.
+            var theme = AppSettingsStore.Load().ThemeMode;
+            Yanzi.UI.Wpf.YanziUi.ApplyTo(this,
+                string.Equals(theme, "Light", StringComparison.OrdinalIgnoreCase)
+                    ? Yanzi.UI.Wpf.YanziTheme.Light : Yanzi.UI.Wpf.YanziTheme.Dark);
             Owner = owner;
 
             ColorToHsb(initialColor, out _h, out _s, out _b);
