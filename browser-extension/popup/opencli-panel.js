@@ -191,9 +191,11 @@ document.addEventListener("DOMContentLoaded", () => {
         records.filter(record => !String(record?.title || "").trim()).length : 0;
       if (missingTitles) issues.push(missingTitles + " 条作品无标题描述");
       if (status) {
-        status.textContent = "读取成功 · " + prefix + records.length +
+        const provenance = reply.source === "browser-session" ? "浏览器直读 · " : "OpenCLI · ";
+        const partial = reply.incomplete ? "；当前仅完成首批读取，后续数据仍需加载" : "";
+        status.textContent = "读取成功 · " + provenance + prefix + records.length +
           (isList ? " 条记录" : " 项数据") + totalText +
-          (issues.length ? "；提示：" + issues.join("、") : "");
+          (issues.length ? "；提示：" + issues.join("、") : "") + partial;
       }
       const first = records[0];
       const previewFields = ["nickname", "name", "title", "date",
