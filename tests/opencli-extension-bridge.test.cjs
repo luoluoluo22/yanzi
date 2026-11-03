@@ -127,6 +127,7 @@ test('inactive same-window tab is removed after read, even when creator API is e
   const result = await context.yanziOpenCliPerformRead('douyin', 'profile');
   assert.equal(result.ok, false);
   assert.deepEqual(removed, [23]);
+  assert.equal(result.temporaryTabClosed, true);
 });
 
 test('XHS profile direct read does not contact OpenCLI host or spawn another window', async () => {
@@ -166,4 +167,15 @@ test('XHS notes capture runs only on owned temporary tab, which is removed', asy
   assert.equal(result.data[0].views, 12);
   assert.deepEqual(removed, [23]);
   assert.equal(sent.length, 0);
+});
+
+test('existing creator tab execution errors must not spawn a second tab', async () => {
+  const { context } = setup();
+  configureCreatorTab(context, 'douyin', {});
+  let created = 0;
+  context.chrome.tabs.create = async () => { created++; return { id: 24 }; };
+  context.chrome.scripting.executeScript = async () => { throw Error('script execution blocked'); };
+  const result = await context.yanziOpenCliPerformRead('douyin', 'profile');
+  assert.equal(result.ok, false);
+  assert.equal(created, 0);
 });
