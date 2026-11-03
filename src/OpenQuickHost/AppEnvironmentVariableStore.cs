@@ -49,7 +49,8 @@ public static class AppEnvironmentVariableStore
                 {
                     Name = name,
                     Value = secretValues.TryGetValue(name, out var secretValue) ? secretValue : item.Value ?? string.Empty,
-                    Description = item.Description ?? string.Empty
+                    Description = item.Description ?? string.Empty,
+                    IsGlobal = item.IsGlobal && !ProviderOnlySecrets.Contains(name)
                 };
             })
             .Where(static item => !ReservedNames.Contains(item.Name))
@@ -88,7 +89,8 @@ public static class AppEnvironmentVariableStore
             {
                 Name = NormalizeName(item.Name),
                 Value = item.Value ?? string.Empty,
-                Description = item.Description ?? string.Empty
+                Description = item.Description ?? string.Empty,
+                IsGlobal = item.IsGlobal && !ProviderOnlySecrets.Contains(NormalizeName(item.Name))
             })
             .Where(static item => !ReservedNames.Contains(item.Name))
             .GroupBy(static item => item.Name, StringComparer.OrdinalIgnoreCase)
@@ -106,7 +108,8 @@ public static class AppEnvironmentVariableStore
             {
                 Name = item.Name,
                 Value = string.Empty,
-                Description = item.Description ?? string.Empty
+                Description = item.Description ?? string.Empty,
+                IsGlobal = item.IsGlobal && !ProviderOnlySecrets.Contains(NormalizeName(item.Name))
             })
             .ToList();
     }
@@ -126,7 +129,8 @@ public static class AppEnvironmentVariableStore
         {
             Name = item.Name,
             Value = localValues.TryGetValue(item.Name, out var value) ? value : string.Empty,
-            Description = item.Description
+            Description = item.Description,
+            IsGlobal = item.IsGlobal
         }));
     }
 
@@ -158,6 +162,8 @@ public static class AppEnvironmentVariableStore
             }
         }
     }
+
+    public static bool IsMiniAppPrivateName(string name) => NormalizeName(name).StartsWith("YANZI_MAIL_", StringComparison.OrdinalIgnoreCase);
 
     public static IReadOnlyList<string> GetEnvironmentNames()
     {
@@ -213,7 +219,8 @@ public static class AppEnvironmentVariableStore
             {
                 Name = NormalizeName(item.Name),
                 Value = string.Empty,
-                Description = item.Description ?? string.Empty
+                Description = item.Description ?? string.Empty,
+                IsGlobal = item.IsGlobal && !ProviderOnlySecrets.Contains(NormalizeName(item.Name))
             })
             .ToList();
         AppSettingsStore.Save(settings);
@@ -256,4 +263,5 @@ public sealed class AppEnvironmentVariableSettings
     public string Value { get; set; } = string.Empty;
 
     public string Description { get; set; } = string.Empty;
+    public bool IsGlobal { get; set; } = true; // Existing entries retain Windows-user scope.
 }

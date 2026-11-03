@@ -2004,13 +2004,31 @@ public sealed class EnvironmentVariableEditorItem : INotifyPropertyChanged
     private string _name;
     private string _value;
     private string _description;
+    private bool _isGlobal;
 
-    public EnvironmentVariableEditorItem(string name, string value, string description)
+    public EnvironmentVariableEditorItem(string name, string value, string description, bool isGlobal = false)
     {
         _name = name;
         _value = value;
         _description = description;
+        _isGlobal = isGlobal;
     }
+
+    public bool IsGlobal
+    {
+        get => _isGlobal;
+        set
+        {
+            if (_isGlobal == value) return;
+            _isGlobal = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(ScopeLabel));
+            OnPropertyChanged(nameof(ScopeToolTip));
+        }
+    }
+
+    public string ScopeLabel => IsGlobal ? "🌐" : "◉";
+    public string ScopeToolTip => IsGlobal ? "全局：Windows 用户环境变量可读取；点击切换为内部" : "内部：仅燕子宿主和小程序可读取；点击切换为全局";
 
     public string Name
     {

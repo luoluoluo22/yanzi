@@ -40,7 +40,7 @@ internal static class WindowsEnvironmentVariablePublisher
             var skipped = 0;
             foreach (var item in entries)
             {
-                if (!allowed.Contains(item.Name) || ProtectedNames.Contains(item.Name) ||
+                if (!item.IsGlobal || !allowed.Contains(item.Name) || ProtectedNames.Contains(item.Name) ||
                     string.IsNullOrWhiteSpace(item.Value) || item.Name.IndexOf('\0') >= 0 ||
                     item.Name.Contains('\r') || item.Name.Contains('\n'))
                 {
