@@ -16,14 +16,7 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-      # ubuntu-latest already provides a licensed Android SDK and sdkmanager.
-      - name: Check runner SDK
-        run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          test -d "$ANDROID_HOME"
-          command -v sdkmanager
-      - name: Install Android compile SDK
-        run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
+      # ubuntu-latest supplies the Android SDK; Gradle resolves installed SDK platforms.
       - name: Build isolated development APK
         working-directory: mobile/android
         run: |
