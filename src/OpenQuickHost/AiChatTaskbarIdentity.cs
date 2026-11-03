@@ -135,7 +135,22 @@ internal static class AiChatTaskbarIdentity
         var shortcutPath = Path.Combine(programs, HostRuntimeProfile.IsDevelopment
             ? "燕子 AI 对话 (开发).lnk" : "燕子 AI 对话.lnk");
         Directory.CreateDirectory(programs);
-        UpdateShortcut(shortcutPath, processPath, iconPath, appId);
+        if (File.Exists(shortcutPath))
+        {
+            var existingId = ReadShortcutAppId(shortcutPath);
+            var existingTarget = ReadShortcutTarget(shortcutPath);
+            if (!string.IsNullOrEmpty(existingId) &&
+                !string.Equals(existingId, appId, StringComparison.Ordinal))
+                throw new IOException("The AI Start Menu shortcut belongs to a different app.");
+            if (!string.IsNullOrEmpty(existingTarget) &&
+                !string.Equals(existingTarget, processPath, StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(existingId, appId, StringComparison.Ordinal))
+                throw new IOException("Refusing to overwrite an unrelated Start Menu shortcut.");
+        }
+        if (!File.Exists(shortcutPath) ||
+            !string.Equals(ReadShortcutAppId(shortcutPath), appId, StringComparison.Ordinal) ||
+            !IsShortcutCorrect(shortcutPath, processPath, iconPath))
+            UpdateShortcut(shortcutPath, processPath, iconPath, appId);
 
         // Repair only existing AI pins. Never rewrite the ordinary Yanzi host
         // pin (velopack.Yanzi), other programs, or shortcuts targeting a
