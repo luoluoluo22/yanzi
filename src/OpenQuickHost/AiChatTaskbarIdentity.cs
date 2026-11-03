@@ -267,21 +267,29 @@ internal static class AiChatTaskbarIdentity
 
     private static string? ReadShortcutAppId(string path)
     {
-        var iid = PropertyStoreInterfaceId;
-        Marshal.ThrowExceptionForHR(SHGetPropertyStoreFromParsingName(
-            path, IntPtr.Zero, 0 /* GPS_DEFAULT */, ref iid, out var store));
-        if (store is null) return null;
+        // The generic SHGetPropertyStoreFromParsingName reader can expose VT_EMPTY
+        // for a newly saved .lnk even though its AppID was persisted correctly.
+        // Explorer uses Shell.Application's ExtendedProperty; use that same
+        // effective property view for verification and selective pin repair.
+        dynamic? shell = null;
+        dynamic? folder = null;
+        dynamic? item = null;
         try
         {
-            var key = new PropertyKey(AppModelFormatId, 5);
-            Marshal.ThrowExceptionForHR(store.GetValue(ref key, out var value));
-            try
-            {
-                return value.VarType == 31 ? Marshal.PtrToStringUni(value.Pointer) : null;
-            }
-            finally { PropVariantClear(ref value); }
+            shell = Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application")!);
+            folder = shell!.NameSpace(Path.GetDirectoryName(path)!);
+            if (folder is null) return null;
+            item = folder.ParseName(Path.GetFileName(path));
+            if (item is null) return null;
+            object? appId = item.ExtendedProperty("System.AppUserModel.ID");
+            return appId?.ToString();
         }
-        finally { Marshal.ReleaseComObject(store); }
+        finally
+        {
+            if (item is not null) Marshal.FinalReleaseComObject(item);
+            if (folder is not null) Marshal.FinalReleaseComObject(folder);
+            if (shell is not null) Marshal.FinalReleaseComObject(shell);
+        }
     }
 
     [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = true)]
