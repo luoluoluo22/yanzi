@@ -19,7 +19,12 @@ public sealed partial class LocalAgentApiServer
                 throw new ArgumentException("仅允许浏览器扩展发起读取请求。");
             var site = request.GetProperty("site").GetString() ?? "";
             var operation = request.GetProperty("operation").GetString() ?? "";
-            if (site == "xiaohongshu" && operation == "capabilities")
+            if (site == "opencli" && operation == "extension_status")
+                response = new { type = "opencli_response", requestId, ok = true,
+                    data = OpenCliExtensionOnboarding.Inspect(
+                        request.TryGetProperty("callerExtensionId", out var caller) &&
+                        caller.ValueKind == JsonValueKind.String ? caller.GetString() : null) };
+            else if (site == "xiaohongshu" && operation == "capabilities")
                 response = new { type = "opencli_response", requestId, ok = true, data = new { available = true } };
             else
             {

@@ -773,4 +773,4 @@ globalThis.yanziBrowserHost = {
   isConnected: () => Boolean(ws && ws.readyState === WebSocket.OPEN),
   log: logEvent
 };
-importScripts("chatgpt-network-observer.js", "chatgpt-background.js", "gemini-network-observer.js", "gemini-background.js", "webapps/runtime-background.js", "opencli-background.js", "media-api.js");
+importScripts("chatgpt-network-observer.js", "chatgpt-background.js", "gemini-network-observer.js", "gemini-background.js", "webapps/runtime-background.js", "opencli-background.js", "opencli-store-onboarding.js", "media-api.js");

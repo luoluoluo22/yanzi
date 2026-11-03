@@ -32,6 +32,52 @@ void Reject(Action action, string name)
     catch (InvalidOperationException) { Console.WriteLine("PASS " + name); return; }
     throw new Exception("Expected rejection: " + name);
 }
+// OpenCLI store onboarding: use synthetic browser preferences, never remove
+// or disable the user's actually-installed bridge during testing.
+var prefsFile = Path.Combine(Path.GetTempPath(), "opencli-onboarding-" + Guid.NewGuid().ToString("N") + ".json");
+try
+{
+    var missing = """{"extensions":{"settings":{}}}""";
+    File.WriteAllText(prefsFile, missing);
+    var absent = OpenCliExtensionOnboarding.InspectFiles([prefsFile]);
+    Assert(absent.Status == "missing" && absent.ProfilesChecked == 1,
+        "missing extension detected from browser registration, not daemon state");
+    Assert(absent.StoreUrl == "https://chromewebstore.google.com/detail/opencli/ildkmabpimmkaediidaifkhjpohdnifk",
+        "official OpenCLI Chrome Web Store link is exact");
+
+    var installed = """{"extensions":{"settings":{"ildkmabpimmkaediidaifkhjpohdnifk":{"state":1}}}}""";
+    File.WriteAllText(prefsFile, installed);
+    Assert(OpenCliExtensionOnboarding.InspectFiles([prefsFile]).Status == "installed",
+        "installed extension does not get reinstall prompt");
+    var disabled = """{"extensions":{"settings":{"ildkmabpimmkaediidaifkhjpohdnifk":{"state":0,"disable_reasons":1}}}}""";
+    File.WriteAllText(prefsFile, disabled);
+    Assert(OpenCliExtensionOnboarding.InspectFiles([prefsFile]).Status == "disabled",
+        "disabled extension prompts enable instead of reinstall");
+    File.WriteAllText(prefsFile, "{malformed");
+    Assert(OpenCliExtensionOnboarding.InspectFiles([prefsFile]).Status == "unknown",
+        "unreadable preferences never misdiagnosed as missing");
+
+    var tempRoot = Path.Combine(Path.GetTempPath(), "opencli-scoped-" + Guid.NewGuid().ToString("N"));
+    var egoDir = Path.Combine(tempRoot, "Ego", "Profile 4");
+    var chromeDir = Path.Combine(tempRoot, "Chrome", "Default");
+    Directory.CreateDirectory(egoDir);
+    Directory.CreateDirectory(chromeDir);
+    var egoPrefs = Path.Combine(egoDir, "Secure Preferences");
+    var chromePrefs = Path.Combine(chromeDir, "Secure Preferences");
+    const string caller = "hbbaogocjdkfbffpcoiaacdjioamjfef";
+    File.WriteAllText(egoPrefs, """{"extensions":{"settings":{"hbbaogocjdkfbffpcoiaacdjioamjfef":{}}}}""");
+    File.WriteAllText(chromePrefs, """{"extensions":{"settings":{"ildkmabpimmkaediidaifkhjpohdnifk":{"state":1}}}}""");
+    Assert(OpenCliExtensionOnboarding.InspectForCaller([egoPrefs, chromePrefs], caller).Status == "missing",
+        "OpenCLI installed in another browser profile cannot conceal missing Ego extension");
+    File.WriteAllText(egoPrefs, """{"extensions":{"settings":{"hbbaogocjdkfbffpcoiaacdjioamjfef":{},"ildkmabpimmkaediidaifkhjpohdnifk":{"state":1}}}}""");
+    Assert(OpenCliExtensionOnboarding.InspectForCaller([egoPrefs, chromePrefs], caller).Status == "installed",
+        "same-profile OpenCLI installation is recognized");
+    Assert(OpenCliExtensionOnboarding.InspectForCaller([chromePrefs], caller).Status == "unknown",
+        "no invoking extension profile yields unknown, not missing");
+    Directory.Delete(tempRoot, recursive: true);
+}
+finally { try { File.Delete(prefsFile); } catch (IOException) { } }
+
 Assert(BrowserMediaApi.Command("douyin", "search", "人工智能", 5)[1] == "search", "Douyin search read-only command");
 Assert(BrowserMediaApi.Command("bilibili", "detail", "BV1atCRYsE7x", 5)[1] == "video", "Bilibili video detail command");
 Assert(BrowserMediaApi.Command("xiaohongshu", "comments",
