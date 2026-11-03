@@ -15,6 +15,42 @@ final class MobileAccountSync {
         } catch (Exception error) { throw new IllegalStateException(error); }
     }
     static boolean supported(String id) { return id.startsWith("yanm.") || id.startsWith("extensionData.v1.") || id.startsWith("mobileExtension.v1.") || id.equals("mobileExtensions.index.v1") || id.equals(MobileModelServiceCatalog.OBJECT_ID); }
+    /** Lightweight authoritative model catalog pull, independent of full account-history replay. */
+    private static void updateModelCatalog(String base, String token, String device,
+            android.content.SharedPreferences login, android.content.SharedPreferences state,
+            JSONObject objects) {
+        try {
+            JSONObject response = MobileMessageClient.readSystemFirst(base,
+                    "/v1/sync/objects/settings.ai", token);
+            if (!base.equals(login.getString("baseUrl", "https://sync.luoluoluo.cc.cd").replaceAll("/+$", ""))
+                    || !token.equals(login.getString("token", ""))
+                    || !device.equals(login.getString("deviceId", ""))) return;
+
+            JSONObject object = response.getJSONObject("object");
+            if (!MobileModelServiceCatalog.OBJECT_ID.equals(object.optString("objectId"))) return;
+            JSONObject old = objects.optJSONObject(MobileModelServiceCatalog.OBJECT_ID);
+            long revision = object.getLong("revision");
+            boolean changed = old == null || revision > old.optLong("revision");
+            android.content.SharedPreferences.Editor editor = state.edit()
+                    .putBoolean("modelServicesBackfilledV1", true)
+                    .remove("modelServiceSyncError");
+            if (changed) {
+                JSONObject sanitized = MobileModelServiceCatalog.sanitizeObject(object);
+                objects.put(MobileModelServiceCatalog.OBJECT_ID, sanitized);
+                editor.putString("objects", objects.toString())
+                      .putString("lastChangedAt", java.time.Instant.now().toString());
+            }
+            if (!editor.commit()) throw new java.io.IOException("model_catalog_commit_failed");
+            if (changed) MainActivity.onAccountSnapshotChanged();
+        } catch (Exception error) {
+            // Do not block extension and other account objects when the model endpoint is unavailable.
+            state.edit().putString("modelServiceSyncError", error.getClass().getSimpleName()).apply();
+            android.util.Log.w("YanziDeviceSync", "Model catalog refresh deferred: "
+                    + error.getClass().getSimpleName());
+        }
+    }
+
+
     static JSONObject status(Context context) throws Exception {
         android.content.SharedPreferences state = store(context);
         return new JSONObject().put("revision",state.getLong("cursor",0)).put("lastCheckedAt",state.getString("lastCheckedAt",""))
@@ -25,6 +61,7 @@ final class MobileAccountSync {
     static synchronized void synchronize(Context context, String base, String token, String device) throws Exception {
         android.content.SharedPreferences login = context.getSharedPreferences("yanzi-mobile",0), state = store(context);
         JSONObject objects = new JSONObject(state.getString("objects","{}"));
+        updateModelCatalog(base, token, device, login, state, objects);
         // Replay the account object feed once for users whose sync cursor already passed settings.ai.
         boolean backfillModels = !state.getBoolean("modelServicesBackfilledV1", false);
         long cursor = backfillModels ? 0 : state.getLong("cursor",0); boolean changed = false, yanm = false, extensions = false;
