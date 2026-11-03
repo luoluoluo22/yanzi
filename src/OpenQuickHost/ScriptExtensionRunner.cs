@@ -1196,6 +1196,8 @@ public static class ScriptExtensionRunner
             Name = $"Yanzi C# {command.ExtensionId}"
         };
         thread.SetApartmentState(ApartmentState.STA);
+        if (useNativeWindowMode)
+            NativeMiniAppWindowObserver.Arm(command);
         thread.Start();
 
         HostAssets.AppendLog(
