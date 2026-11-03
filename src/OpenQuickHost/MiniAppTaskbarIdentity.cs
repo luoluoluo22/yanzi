@@ -142,7 +142,9 @@ internal static class MiniAppTaskbarIdentity
                     (HostRuntimeProfile.IsDevelopment ? ".Dev" : "");
         var encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(command.ExtensionId))
             .TrimEnd('=').Replace('+', '-').Replace('/', '_');
-        var argument = LaunchPrefix + encoded;
+        // Development pins must keep --dev so they cannot accidentally route
+        // into the user's official singleton when clicked from the taskbar.
+        var argument = (HostRuntimeProfile.IsDevelopment ? "--dev " : "") + LaunchPrefix + encoded;
         var title = string.IsNullOrWhiteSpace(command.Title) ? "小程序" : command.Title.Trim();
         var filename = "燕子 · " + SanitizeFileName(title, 35) + " [" + hash[..8] + "]" +
                        (HostRuntimeProfile.IsDevelopment ? " (开发)" : "") + ".lnk";
