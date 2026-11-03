@@ -184,6 +184,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const totalText = isPaged() && Number.isInteger(latest?.total)
         ? " / 共 " + latest.total + " 条" : "";
       const issues = [
+        reply.cleanupWarning || "",
         withinDuplicates ? "本页重复 ID " + withinDuplicates + " 个" : "",
         acrossDuplicates ? "与其他页重复 " + acrossDuplicates + " 个" : ""
       ].filter(Boolean);
