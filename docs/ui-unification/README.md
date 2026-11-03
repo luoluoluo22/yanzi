@@ -20,3 +20,11 @@
 - 修复清单扫描器的 Java/C# 文件名及共享 UI 引用正则转义错误；该错误此前可能漏报或误报。重新生成 176 个源码候选项，仍非 176 个运行时界面。
 - Linux 静态验收：XAML XML 解析、共享样式与主题调用断言、清单状态检查、Python 语法检查、`git diff --check` 均通过。
 - Windows 真机待验：深浅主题、下拉选项、鼠标录制、Esc/取消及焦点行为；Linux 服务器没有 dotnet，不能将本次标为 UI 已验收。
+
+## 第三轮：Skill 导出与通用文本输入窗口（源码迁移，等待 Windows 验收）
+
+- `SkillExportOptionsWindow.xaml`：两个 Agent/作用域下拉框统一为 `Yanzi.Select`，取消/导出按钮改用 `Yanzi.Button.Outline/Default`，保留 `Tag`、`SelectedIndex` 和原事件。
+- `SimpleTextInputWindow.xaml`：输入框改用 `Yanzi.Input`，取消/确认按钮使用共享按钮；移除背景/边框硬编码色值，改为 `BrushDialogBG` 和 `BrushBorder`；校验提示改用共享 `BrushAccent`，**警示语义色仍需 Windows 视觉复核**。
+- 两个窗口的构造函数调用 `YanziUi.ApplyTo` 加载窗口级公共主题资源，未修改应用全局主题；保留回车确认、非空校验、焦点和选择逻辑。
+- 静态测试：两份 XAML XML 解析、公共控件样式和事件绑定断言、`git diff --check` 通过；服务器没有 .NET SDK，**Windows 编译与真实界面交互未验收**。
+- GitHub 推送仍受远程 Ubuntu 的 HTTPS/`gh` 未登录阻塞；本地提交须保留，认证恢复后推送并进行主线合并。
