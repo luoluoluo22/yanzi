@@ -24,8 +24,8 @@ android {
         minSdk = 26
         targetSdk = 35
         // Next development build follows the last published Android release (0.2.76).
-        versionCode = 77
-        versionName = "0.2.77"
+        versionCode = 78
+        versionName = "0.2.78"
         providers.gradleProperty("YANZI_ANDROID_VERSION_CODE").orNull?.let {
             val candidate = it.toIntOrNull()
             require(candidate != null && candidate > 0) { "Invalid candidate Android version code" }
