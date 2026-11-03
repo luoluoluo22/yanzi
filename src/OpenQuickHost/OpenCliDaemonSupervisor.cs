@@ -20,6 +20,9 @@ internal static class OpenCliDaemonSupervisor
     internal static bool ShouldWake(bool cliInstalled, bool browserRunning, bool extensionRegistered)
         => cliInstalled && browserRunning && extensionRegistered;
 
+    internal static bool ShouldRestartDaemon(string status)
+        => !status.Contains("Daemon: running", StringComparison.OrdinalIgnoreCase);
+
     internal static bool DaemonIsReady(string status)
         => status.Contains("Daemon: running", StringComparison.OrdinalIgnoreCase)
            && status.Contains("Extension: connected", StringComparison.OrdinalIgnoreCase);
@@ -44,7 +47,7 @@ internal static class OpenCliDaemonSupervisor
         if (!ShouldWake(BrowserOpenCliReader.IsCliInstalled,
                 IsSupportedBrowserRunning(), HasRegisteredOpenCliExtension()))
             return;
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(45));
         try
         {
             string status;
@@ -52,8 +55,13 @@ internal static class OpenCliDaemonSupervisor
             catch (InvalidOperationException) { status = ""; }
             if (DaemonIsReady(status)) return;
 
-            // 'profile list' starts the missing local daemon and lets the already
-            // installed browser extension reconnect. No restart of a healthy daemon.
+            // 'profile list' does not restart a daemon after an explicit stop.
+            // Restart only when the daemon is down, never merely on a disconnected extension.
+            if (ShouldRestartDaemon(status))
+            {
+                await BrowserOpenCliReader.RunAsync(["daemon", "restart"], timeout.Token);
+                HostAssets.AppendLog("[OpenCLI] Stopped local daemon restart requested.");
+            }
             var profiles = await BrowserOpenCliReader.RunAsync(["profile", "list"], timeout.Token);
             if (BrowserOpenCliReader.HasConnectedBridge(profiles))
             {

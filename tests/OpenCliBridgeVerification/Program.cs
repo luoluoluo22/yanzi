@@ -43,6 +43,8 @@ Assert(OpenCliDaemonSupervisor.ShouldWake(true, true, true), "existing CLI/brows
 Assert(!OpenCliDaemonSupervisor.ShouldWake(true, true, false), "no extension means no daemon warmup");
 Assert(!OpenCliDaemonSupervisor.ShouldWake(false, true, true), "absent CLI means no daemon warmup");
 Assert(OpenCliDaemonSupervisor.DaemonIsReady("Daemon: running\nExtension: connected"), "healthy daemon recognized");
+Assert(OpenCliDaemonSupervisor.ShouldRestartDaemon("Daemon: not running"), "explicitly stopped daemon requires restart");
+Assert(!OpenCliDaemonSupervisor.ShouldRestartDaemon("Daemon: running\nExtension: disconnected"), "reconnecting extension does not restart daemon");
 Assert(!OpenCliDaemonSupervisor.DaemonIsReady("Daemon: running\nExtension: disconnected"), "disconnected bridge not considered ready");
 Reject(() => BrowserOpenCliReader.SelectProfile("  aa — connected v1\n  bb work — connected v1", ""), "ambiguous browsers rejected");
 Reject(() => BrowserOpenCliReader.SelectProfile("", ""), "disconnected browser rejected");
