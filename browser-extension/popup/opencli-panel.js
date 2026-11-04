@@ -59,10 +59,16 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch {
       const textarea = document.createElement("textarea");
       textarea.value = template;
-      document.body.appendChild(textarea);
-      textarea.select();
-      document.execCommand("copy");
-      textarea.remove();
+      textarea.classList.add("yanzi-clipboard-fallback");
+      let copied = false;
+      try {
+        document.body.appendChild(textarea);
+        textarea.select();
+        copied = document.execCommand("copy");
+      } finally {
+        textarea.remove();
+      }
+      if (!copied) return;
       copyBtn.textContent = "已复制";
       copyBtn.classList.add("copied");
       setTimeout(() => {
