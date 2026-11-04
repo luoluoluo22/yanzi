@@ -189,6 +189,40 @@ internal static class Program
                     "confirm must retain exact newline and tab");
             }, true);
 
+            Run("AddProviderWindow required name, type selection and submit", () =>
+                new AddProviderWindow(), w =>
+            {
+                var input = (TextBox)w.FindName("ProviderNameBox")!;
+                var types = (ComboBox)w.FindName("ProviderTypeBox")!;
+                var error = (TextBlock)w.FindName("ErrorText")!;
+                CheckShared(w, input, "Yanzi.Input");
+                CheckShared(w, types, "Yanzi.Select");
+                Assert(types.Items.Count >= 8, "provider types unexpectedly missing");
+                Assert((string)types.SelectedItem == "OpenAI", "default provider type changed");
+                Assert(w.TryFindResource("Yanzi.Brush.Danger") != null, "shared error color unavailable");
+                input.Text = "  ";
+                ClickByContent(w, "确定");
+                Assert(w.IsVisible, "empty name must not close dialog");
+                Assert(error.Visibility == Visibility.Visible, "empty name error not displayed");
+                input.Text = "  QA Synthetic Provider  ";
+                types.SelectedItem = "Gemini";
+                ClickByContent(w, "确定");
+                var dialog = (AddProviderWindow)w;
+                Assert(dialog.ProviderName == "QA Synthetic Provider", "provider trim behavior changed");
+                Assert(dialog.ProviderType == "Gemini", "provider type selection lost");
+            }, true);
+
+            Run("AddProviderWindow cancel preserves no result", () =>
+                new AddProviderWindow(), w =>
+            {
+                var outline = w.TryFindResource("Yanzi.Button.Outline") as Style;
+                var cancel = Descendants(w).OfType<Button>().First(b => Equals(b.Content, "取消"));
+                Assert(outline != null && ReferenceEquals(cancel.Style, outline), "shared cancel style not used");
+                ((TextBox)w.FindName("ProviderNameBox")!).Text = "not to be saved";
+                ClickByContent(w, "取消");
+                Assert(((AddProviderWindow)w).ProviderName == "", "cancel must not save name");
+            }, false);
+
             Log($"RESULT pass={_pass} fail={_fail}");
             app.Shutdown();
             return _fail == 0 ? 0 : 1;
