@@ -80,3 +80,10 @@
 - `inventory.json`：该文件标记为 `source-migrated-awaiting-windows-qa`，不将静态检查冒充实际 UI 验收。
 - 静态证据：XAML XML 可解析、公共样式键存在、四个事件与绑定保留、Python 语法与 `git diff --check` 通过。
 - 待验：Windows Release 构建、标签显隐/重排保存、Everything 切换、深浅主题和键盘/无障碍检查；尚未推送与合并。
+
+## 2026-11-04 Windows 运行时冒烟与清单保全
+
+- 家里电脑 PC-202409131508：Release 构建通过，11 个迁移窗口在隔离 WPF 验证进程中逐一成功显示；11/11 冒烟通过，见 `qa-2026-11-04.md` 和 `tests/WpfUiMigrationSmoke/`。
+- 实测发现 `StaticResource Yanzi.*` 先于窗口级 `YanziUi.ApplyTo` 求值导致 WebDAV 窗口初始化崩溃；在 WebDAV、进程选择与便签窗口改为 `DynamicResource` 后再次通过。
+- 清单扫描器现在保留人工状态、提交号与证据；消失的源码候选会被保留为待审，避免因重新扫描掩盖未完成项。
+- **验收边界：** 这仅是实际窗口初始化与部分控件行为的测试；设备联动、热键录制、颜色吸管/拖动、深浅主题视觉、无障碍、搜索标签真实保存仍待验收，不得标记成最终完成。

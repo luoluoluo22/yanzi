@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RestoreIgnoreFailedSources>true</RestoreIgnoreFailedSources>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <!-- Test executable lives next to the already-built WPF host and its runtime dependencies. -->
+    <OutputPath>..\..\src\OpenQuickHost\bin\$(Configuration)\net9.0-windows\</OutputPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Yanzi"><HintPath>..\..\src\OpenQuickHost\bin\$(Configuration)\net9.0-windows\Yanzi.dll</HintPath></Reference>
+    <Reference Include="Yanzi.UI.Wpf"><HintPath>..\..\src\OpenQuickHost\bin\$(Configuration)\net9.0-windows\Yanzi.UI.Wpf.dll</HintPath></Reference>
+  </ItemGroup>
+</Project>

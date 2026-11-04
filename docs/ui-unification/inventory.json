@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "base_commit": "957573e",
-  "note": "Candidate source inventory; every candidate requires manual verification; includes docs previews and code-behind candidates; not a count of distinct runtime screens.",
+  "base_commit": "41181fa",
+  "note": "Persistent candidate-source inventory: re-scan preserves manual status and evidence and retains missing candidates; not a count of distinct runtime screens.",
   "items": [
     {
       "path": "browser-extension/popup/media-panel.js",
@@ -768,10 +768,22 @@
       "kind": "desktop-xaml",
       "shared_ui_reference": true,
       "legacy_style_signals": 0,
-      "status": "source-migrated-awaiting-windows-qa",
+      "status": "windows-runtime-smoke-passed-awaiting-functional-visual-qa",
       "evidence": [
-        "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check"
-      ]
+        "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check",
+        "Windows runtime smoke 2026-11-04 on PC-202409131508: real window rendered; existing model unselectable, new model selection, summary and confirmation; 11/11 runner tests pass; source fix 41181fa; see docs/ui-unification/qa-2026-11-04.md"
+      ],
+      "version_commit": "41181fa199b4975b3f9b2ac5b18cdce71b5143a2",
+      "smoke_qa": {
+        "device": "PC-202409131508",
+        "date": "2026-11-04",
+        "result": "pass",
+        "category": "real-wpf-dialog-synthetic-data",
+        "evidence_command": "dotnet run --project tests/WpfUiMigrationSmoke/WpfUiMigrationSmoke.csproj -c Release --no-restore",
+        "scenario": "real window rendered; existing model unselectable, new model selection, summary and confirmation",
+        "test_result": "RESULT pass=11 fail=0; Windows Release build exit 0; tests/WpfUiMigrationSmoke",
+        "remaining": "Detailed visual, light/dark, keyboard/a11y and application-integrated interactions still pending"
+      }
     },
     {
       "path": "src/OpenQuickHost/App.xaml",
@@ -802,10 +814,22 @@
       "kind": "desktop-xaml",
       "shared_ui_reference": true,
       "legacy_style_signals": 17,
-      "status": "source-migrated-awaiting-windows-qa",
+      "status": "windows-runtime-smoke-passed-awaiting-functional-visual-qa",
       "evidence": [
-        "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check"
-      ]
+        "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check",
+        "Windows runtime smoke 2026-11-04 on PC-202409131508: real window rendered with visible synthetic owner; HEX/alpha inputs and color swatches; 11/11 runner tests pass; source fix 41181fa; see docs/ui-unification/qa-2026-11-04.md"
+      ],
+      "version_commit": "41181fa199b4975b3f9b2ac5b18cdce71b5143a2",
+      "smoke_qa": {
+        "device": "PC-202409131508",
+        "date": "2026-11-04",
+        "result": "pass",
+        "category": "real-wpf-dialog-synthetic-data",
+        "evidence_command": "dotnet run --project tests/WpfUiMigrationSmoke/WpfUiMigrationSmoke.csproj -c Release --no-restore",
+        "scenario": "real window rendered with visible synthetic owner; HEX/alpha inputs and color swatches",
+        "test_result": "RESULT pass=11 fail=0; Windows Release build exit 0; tests/WpfUiMigrationSmoke",
+        "remaining": "Detailed visual, light/dark, keyboard/a11y and application-integrated interactions still pending"
+      }
     },
     {
       "path": "src/OpenQuickHost/DispatchCenterWindow.cs",
@@ -860,10 +884,22 @@
       "kind": "desktop-xaml",
       "shared_ui_reference": true,
       "legacy_style_signals": 1,
-      "status": "source-migrated-awaiting-windows-qa",
+      "status": "windows-runtime-smoke-passed-awaiting-functional-visual-qa",
       "evidence": [
-        "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check"
-      ]
+        "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check",
+        "Windows runtime smoke 2026-11-04 on PC-202409131508: real window rendered; shared default button style; Confirm disabled before recording; 11/11 runner tests pass; source fix 41181fa; see docs/ui-unification/qa-2026-11-04.md"
+      ],
+      "version_commit": "41181fa199b4975b3f9b2ac5b18cdce71b5143a2",
+      "smoke_qa": {
+        "device": "PC-202409131508",
+        "date": "2026-11-04",
+        "result": "pass",
+        "category": "real-wpf-dialog-synthetic-data",
+        "evidence_command": "dotnet run --project tests/WpfUiMigrationSmoke/WpfUiMigrationSmoke.csproj -c Release --no-restore",
+        "scenario": "real window rendered; shared default button style; Confirm disabled before recording",
+        "test_result": "RESULT pass=11 fail=0; Windows Release build exit 0; tests/WpfUiMigrationSmoke",
+        "remaining": "Detailed visual, light/dark, keyboard/a11y and application-integrated interactions still pending"
+      }
     },
     {
       "path": "src/OpenQuickHost/IconPickerDialog.xaml",
@@ -886,10 +922,22 @@
       "kind": "desktop-xaml",
       "shared_ui_reference": true,
       "legacy_style_signals": 0,
-      "status": "source-migrated-awaiting-windows-qa",
+      "status": "windows-runtime-smoke-passed-awaiting-functional-visual-qa",
       "evidence": [
-        "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check"
-      ]
+        "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check",
+        "Windows runtime smoke 2026-11-04 on PC-202409131508: real window rendered; search field and button styles; catalog completion pending; 11/11 runner tests pass; source fix 41181fa; see docs/ui-unification/qa-2026-11-04.md"
+      ],
+      "version_commit": "41181fa199b4975b3f9b2ac5b18cdce71b5143a2",
+      "smoke_qa": {
+        "device": "PC-202409131508",
+        "date": "2026-11-04",
+        "result": "pass",
+        "category": "real-wpf-dialog-synthetic-data",
+        "evidence_command": "dotnet run --project tests/WpfUiMigrationSmoke/WpfUiMigrationSmoke.csproj -c Release --no-restore",
+        "scenario": "real window rendered; search field and button styles; catalog completion pending",
+        "test_result": "RESULT pass=11 fail=0; Windows Release build exit 0; tests/WpfUiMigrationSmoke",
+        "remaining": "Detailed visual, light/dark, keyboard/a11y and application-integrated interactions still pending"
+      }
     },
     {
       "path": "src/OpenQuickHost/LoginWindow.xaml",
@@ -960,10 +1008,22 @@
       "kind": "desktop-xaml",
       "shared_ui_reference": true,
       "legacy_style_signals": 0,
-      "status": "source-migrated-awaiting-windows-qa",
+      "status": "windows-runtime-smoke-passed-awaiting-functional-visual-qa",
       "evidence": [
-        "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check"
-      ]
+        "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check",
+        "Windows runtime smoke 2026-11-04 on PC-202409131508: real window rendered; shared Select and available trigger target choices; 11/11 runner tests pass; source fix 41181fa; see docs/ui-unification/qa-2026-11-04.md"
+      ],
+      "version_commit": "41181fa199b4975b3f9b2ac5b18cdce71b5143a2",
+      "smoke_qa": {
+        "device": "PC-202409131508",
+        "date": "2026-11-04",
+        "result": "pass",
+        "category": "real-wpf-dialog-synthetic-data",
+        "evidence_command": "dotnet run --project tests/WpfUiMigrationSmoke/WpfUiMigrationSmoke.csproj -c Release --no-restore",
+        "scenario": "real window rendered; shared Select and available trigger target choices",
+        "test_result": "RESULT pass=11 fail=0; Windows Release build exit 0; tests/WpfUiMigrationSmoke",
+        "remaining": "Detailed visual, light/dark, keyboard/a11y and application-integrated interactions still pending"
+      }
     },
     {
       "path": "src/OpenQuickHost/NativeShellContextMenu.cs",
@@ -978,20 +1038,44 @@
       "kind": "desktop-xaml",
       "shared_ui_reference": true,
       "legacy_style_signals": 1,
-      "status": "source-migrated-awaiting-windows-qa",
+      "status": "windows-runtime-smoke-passed-awaiting-functional-visual-qa",
       "evidence": [
-        "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check"
-      ]
+        "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check",
+        "Windows runtime smoke 2026-11-04 on PC-202409131508: real window rendered; reads isolated synthetic note and shared input; save path pending; 11/11 runner tests pass; source fix 41181fa; see docs/ui-unification/qa-2026-11-04.md"
+      ],
+      "version_commit": "41181fa199b4975b3f9b2ac5b18cdce71b5143a2",
+      "smoke_qa": {
+        "device": "PC-202409131508",
+        "date": "2026-11-04",
+        "result": "pass",
+        "category": "real-wpf-dialog-synthetic-data",
+        "evidence_command": "dotnet run --project tests/WpfUiMigrationSmoke/WpfUiMigrationSmoke.csproj -c Release --no-restore",
+        "scenario": "real window rendered; reads isolated synthetic note and shared input; save path pending",
+        "test_result": "RESULT pass=11 fail=0; Windows Release build exit 0; tests/WpfUiMigrationSmoke",
+        "remaining": "Detailed visual, light/dark, keyboard/a11y and application-integrated interactions still pending"
+      }
     },
     {
       "path": "src/OpenQuickHost/ProcessPickerWindow.xaml",
       "kind": "desktop-xaml",
       "shared_ui_reference": true,
       "legacy_style_signals": 0,
-      "status": "source-migrated-awaiting-windows-qa",
+      "status": "windows-runtime-smoke-passed-awaiting-functional-visual-qa",
       "evidence": [
-        "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check"
-      ]
+        "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check",
+        "Windows runtime smoke 2026-11-04 on PC-202409131508: real window rendered; process picker and shared button styles; live target picking pending; 11/11 runner tests pass; source fix 41181fa; see docs/ui-unification/qa-2026-11-04.md"
+      ],
+      "version_commit": "41181fa199b4975b3f9b2ac5b18cdce71b5143a2",
+      "smoke_qa": {
+        "device": "PC-202409131508",
+        "date": "2026-11-04",
+        "result": "pass",
+        "category": "real-wpf-dialog-synthetic-data",
+        "evidence_command": "dotnet run --project tests/WpfUiMigrationSmoke/WpfUiMigrationSmoke.csproj -c Release --no-restore",
+        "scenario": "real window rendered; process picker and shared button styles; live target picking pending",
+        "test_result": "RESULT pass=11 fail=0; Windows Release build exit 0; tests/WpfUiMigrationSmoke",
+        "remaining": "Detailed visual, light/dark, keyboard/a11y and application-integrated interactions still pending"
+      }
     },
     {
       "path": "src/OpenQuickHost/QuestMouseGuideWindow.xaml",
@@ -1062,10 +1146,22 @@
       "kind": "desktop-xaml",
       "shared_ui_reference": true,
       "legacy_style_signals": 0,
-      "status": "source-migrated-awaiting-windows-qa",
+      "status": "windows-runtime-smoke-passed-awaiting-functional-visual-qa",
       "evidence": [
-        "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check"
-      ]
+        "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check",
+        "Windows runtime smoke 2026-11-04 on PC-202409131508: real dialog rendered with synthetic uninitialized MainWindow dependency; read-only checkbox and layout; production settings save pending; 11/11 runner tests pass; source fix 41181fa; see docs/ui-unification/qa-2026-11-04.md"
+      ],
+      "version_commit": "41181fa199b4975b3f9b2ac5b18cdce71b5143a2",
+      "smoke_qa": {
+        "device": "PC-202409131508",
+        "date": "2026-11-04",
+        "result": "pass",
+        "category": "synthetic-owner-layout-only",
+        "evidence_command": "dotnet run --project tests/WpfUiMigrationSmoke/WpfUiMigrationSmoke.csproj -c Release --no-restore",
+        "scenario": "real dialog rendered with synthetic uninitialized MainWindow dependency; read-only checkbox and layout; production settings save pending",
+        "test_result": "RESULT pass=11 fail=0; Windows Release build exit 0; tests/WpfUiMigrationSmoke",
+        "remaining": "Detailed visual, light/dark, keyboard/a11y and application-integrated interactions still pending"
+      }
     },
     {
       "path": "src/OpenQuickHost/SecretValueEditor.xaml",
@@ -1088,20 +1184,44 @@
       "kind": "desktop-xaml",
       "shared_ui_reference": true,
       "legacy_style_signals": 0,
-      "status": "source-migrated-awaiting-windows-qa",
+      "status": "windows-runtime-smoke-passed-awaiting-functional-visual-qa",
       "evidence": [
-        "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check"
-      ]
+        "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check",
+        "Windows runtime smoke 2026-11-04 on PC-202409131508: real window rendered; empty required validation and valid confirmation; 11/11 runner tests pass; source fix 41181fa; see docs/ui-unification/qa-2026-11-04.md"
+      ],
+      "version_commit": "41181fa199b4975b3f9b2ac5b18cdce71b5143a2",
+      "smoke_qa": {
+        "device": "PC-202409131508",
+        "date": "2026-11-04",
+        "result": "pass",
+        "category": "real-wpf-dialog-synthetic-data",
+        "evidence_command": "dotnet run --project tests/WpfUiMigrationSmoke/WpfUiMigrationSmoke.csproj -c Release --no-restore",
+        "scenario": "real window rendered; empty required validation and valid confirmation",
+        "test_result": "RESULT pass=11 fail=0; Windows Release build exit 0; tests/WpfUiMigrationSmoke",
+        "remaining": "Detailed visual, light/dark, keyboard/a11y and application-integrated interactions still pending"
+      }
     },
     {
       "path": "src/OpenQuickHost/SkillExportOptionsWindow.xaml",
       "kind": "desktop-xaml",
       "shared_ui_reference": true,
       "legacy_style_signals": 0,
-      "status": "source-migrated-awaiting-windows-qa",
+      "status": "windows-runtime-smoke-passed-awaiting-functional-visual-qa",
       "evidence": [
-        "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check"
-      ]
+        "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check",
+        "Windows runtime smoke 2026-11-04 on PC-202409131508: real window rendered; target/scope selection and confirmation result true; 11/11 runner tests pass; source fix 41181fa; see docs/ui-unification/qa-2026-11-04.md"
+      ],
+      "version_commit": "41181fa199b4975b3f9b2ac5b18cdce71b5143a2",
+      "smoke_qa": {
+        "device": "PC-202409131508",
+        "date": "2026-11-04",
+        "result": "pass",
+        "category": "real-wpf-dialog-synthetic-data",
+        "evidence_command": "dotnet run --project tests/WpfUiMigrationSmoke/WpfUiMigrationSmoke.csproj -c Release --no-restore",
+        "scenario": "real window rendered; target/scope selection and confirmation result true",
+        "test_result": "RESULT pass=11 fail=0; Windows Release build exit 0; tests/WpfUiMigrationSmoke",
+        "remaining": "Detailed visual, light/dark, keyboard/a11y and application-integrated interactions still pending"
+      }
     },
     {
       "path": "src/OpenQuickHost/SystemPromptEditorWindow.xaml",
@@ -1180,10 +1300,22 @@
       "kind": "desktop-xaml",
       "shared_ui_reference": true,
       "legacy_style_signals": 0,
-      "status": "source-migrated-awaiting-windows-qa",
+      "status": "windows-runtime-smoke-passed-awaiting-functional-visual-qa",
       "evidence": [
-        "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check"
-      ]
+        "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check",
+        "Windows runtime smoke 2026-11-04 on PC-202409131508: real window rendered; synthetic username/password validation and confirmation; previously failed StaticResource fixed; 11/11 runner tests pass; source fix 41181fa; see docs/ui-unification/qa-2026-11-04.md"
+      ],
+      "version_commit": "41181fa199b4975b3f9b2ac5b18cdce71b5143a2",
+      "smoke_qa": {
+        "device": "PC-202409131508",
+        "date": "2026-11-04",
+        "result": "pass",
+        "category": "real-wpf-dialog-synthetic-data",
+        "evidence_command": "dotnet run --project tests/WpfUiMigrationSmoke/WpfUiMigrationSmoke.csproj -c Release --no-restore",
+        "scenario": "real window rendered; synthetic username/password validation and confirmation; previously failed StaticResource fixed",
+        "test_result": "RESULT pass=11 fail=0; Windows Release build exit 0; tests/WpfUiMigrationSmoke",
+        "remaining": "Detailed visual, light/dark, keyboard/a11y and application-integrated interactions still pending"
+      }
     },
     {
       "path": "src/OpenQuickHost/WindowBindingDropOverlayWindow.xaml",
