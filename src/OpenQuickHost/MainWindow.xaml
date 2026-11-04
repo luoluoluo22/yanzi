@@ -1423,7 +1423,7 @@
                                     <Setter Property="ItemsPanel">
                                         <Setter.Value>
                                             <ItemsPanelTemplate>
-                                                <WrapPanel Orientation="Horizontal" Margin="4,0,0,0" />
+                                                <ui:VirtualizingTilePanel TileWidth="92" TileHeight="100" Margin="4,0,0,0" />
                                             </ItemsPanelTemplate>
                                         </Setter.Value>
                                     </Setter>
@@ -1864,13 +1864,35 @@
                     <Border Grid.Row="1" Margin="0,0,0,14"
                             Style="{DynamicResource Yanzi.Chat.Transcript}">
                         <Grid>
-                            <ScrollViewer x:Name="AiChatScrollViewer"
-                                          Padding="18,18,14,18"
-                                          VerticalScrollBarVisibility="Auto"
-                                          HorizontalScrollBarVisibility="Disabled">
-                                <StackPanel>
-                                    <ItemsControl ItemsSource="{Binding AiChatMessages}">
-                                        <ItemsControl.ItemTemplate>
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="*" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <ListBox x:Name="AiChatMessagesList" Grid.Row="0"
+                                         ItemsSource="{Binding AiChatMessages}"
+                                         Padding="18,18,14,18" Background="Transparent" BorderThickness="0"
+                                         ScrollViewer.CanContentScroll="True"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         VirtualizingPanel.IsVirtualizing="True"
+                                         VirtualizingPanel.VirtualizationMode="Recycling"
+                                         VirtualizingPanel.ScrollUnit="Pixel"
+                                         HorizontalContentAlignment="Stretch">
+                                    <ListBox.ItemsPanel>
+                                        <ItemsPanelTemplate><VirtualizingStackPanel /></ItemsPanelTemplate>
+                                    </ListBox.ItemsPanel>
+                                    <ListBox.ItemContainerStyle>
+                                        <Style TargetType="ListBoxItem">
+                                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                            <Setter Property="Focusable" Value="False" />
+                                            <Setter Property="Template">
+                                                <Setter.Value><ControlTemplate TargetType="ListBoxItem">
+                                                    <ContentPresenter HorizontalAlignment="Stretch" />
+                                                </ControlTemplate></Setter.Value>
+                                            </Setter>
+                                        </Style>
+                                    </ListBox.ItemContainerStyle>
+                                        <ListBox.ItemTemplate>
                                             <DataTemplate DataType="{x:Type local:AiChatMessage}">
                                                 <StackPanel Margin="0,0,0,14">
                                                     <TextBlock Text="{Binding TimeDividerText}"
@@ -2045,10 +2067,10 @@
                                                     </DataTrigger>
                                                 </DataTemplate.Triggers>
                                             </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
 
-                                    <Grid Margin="0,2,0,8"
+                                    <Grid Grid.Row="1" Margin="18,2,14,8"
                                           Visibility="{Binding IsAiChatRequestInFlight, Converter={StaticResource BooleanToVisibilityConverter}}">
                                         <Border
                                                 Padding="14,10"
@@ -2093,8 +2115,7 @@
                                             </StackPanel>
                                         </Border>
                                     </Grid>
-                                </StackPanel>
-                            </ScrollViewer>
+                            </Grid>
 
                             <Grid Visibility="{Binding NoTopicVisibility}">
                                 <TextBlock Text="选择左侧对话，或新建一个对话"

@@ -34,6 +34,7 @@ public partial class MainWindow
 
     private void UpsertLocalExtensionCommand(CommandItem command)
     {
+        Interlocked.Increment(ref _catalogFileGeneration);
         _allCommands.RemoveAll(x =>
             x.Source == CommandSource.LocalExtension &&
             x.ExtensionId.Equals(command.ExtensionId, StringComparison.OrdinalIgnoreCase));
@@ -49,15 +50,21 @@ public partial class MainWindow
 
         _localExtensionIndex[command.ExtensionId] = command;
         ApplyNewExtensionState(command);
-        RefreshExtensionHotkeys();
-
-        ExtensionIconLibrary.InvalidateAssociatedIconCache();
-        RadialMenuWindow.InvalidateProcessIconCache();
         if (!string.IsNullOrWhiteSpace(command.IconReference))
         {
             ExtensionIconLibrary.InvalidateImageCache(command.IconReference, command.ExtensionDirectoryPath);
         }
 
+        if (_isReplacingLocalExtensions) return;
+        RefreshExtensionSurfaces();
+        SyncLocalExtensionsToCloud();
+    }
+
+    private void RefreshExtensionSurfaces()
+    {
+        RefreshExtensionHotkeys();
+        ExtensionIconLibrary.InvalidateAssociatedIconCache();
+        RadialMenuWindow.InvalidateProcessIconCache();
         _radialMenu?.LoadRadialMenuPages();
         if (_standbyRadialMenu != null)
         {
@@ -67,10 +74,6 @@ public partial class MainWindow
         }
         _quickPanel?.LoadSlots();
 
-        if (!_isReplacingLocalExtensions)
-        {
-            SyncLocalExtensionsToCloud();
-        }
     }
 
     private void RemoveLocalExtensionCommand(string extensionId)
@@ -2821,6 +2824,7 @@ public partial class MainWindow
             _isReplacingLocalExtensions = false;
         }
 
+        RefreshExtensionSurfaces();
         StartMouseGestureService();
         ApplyFilter(SearchBox.Text);
         if (!string.IsNullOrWhiteSpace(statusText))

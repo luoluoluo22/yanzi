@@ -1976,28 +1976,56 @@ public partial class MainWindow
     };
     private string _lastCatalogContentSignature = string.Empty;
 
-    private string GetCatalogContentSignature()
+    private bool _catalogRefreshRunning, _catalogRefreshQueued, _catalogRefreshSync;
+    private long _catalogFileGeneration;
+
+    private async Task RefreshExtensionCatalogAsync(bool sync = false)
     {
+        _catalogRefreshSync |= sync;
+        if (_catalogRefreshRunning) { _catalogRefreshQueued = true; return; }
+        if (Dispatcher.HasShutdownStarted || _extensionContentWatcher == null) return;
+        if (_isReplacingLocalExtensions)
+        {
+            _extensionCatalogRefreshTimer.Stop();
+            _extensionCatalogRefreshTimer.Start();
+            return;
+        }
+        _catalogRefreshRunning = true;
         try
         {
-            using var hash = SHA256.Create();
-            foreach (var path in Directory.EnumerateFiles(HostAssets.ExtensionsPath, "*.*",
-                SearchOption.AllDirectories)
-                .Where(path => Path.GetFileName(path).Equals("manifest.json", StringComparison.OrdinalIgnoreCase) ||
-                    path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
-                .Where(path => !path.Contains(".yanzi-csharp-cache", StringComparison.OrdinalIgnoreCase))
-                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
+            do
             {
-                var info = new FileInfo(path);
-                var fingerprint = System.Text.Encoding.UTF8.GetBytes(
-                    path + ":" + info.Length + ":" + info.LastWriteTimeUtc.Ticks + "\n");
-                hash.TransformBlock(fingerprint, 0, fingerprint.Length, null, 0);
-            }
-            hash.TransformFinalBlock([], 0, 0);
-            return Convert.ToHexString(hash.Hash!);
+                _catalogRefreshQueued = false;
+                var generation = Interlocked.Read(ref _catalogFileGeneration);
+                var previous = _lastCatalogContentSignature;
+                var snapshot = await Task.Run(() =>
+                {
+                    var signature = ExtensionCatalogFingerprint.Compute(HostAssets.ExtensionsPath);
+                    var entries = signature == previous ? null : LocalExtensionCatalog.LoadEntries();
+                    return (signature, entries);
+                });
+                if (Dispatcher.HasShutdownStarted || _extensionContentWatcher == null) return;
+                if (_isReplacingLocalExtensions || generation != Interlocked.Read(ref _catalogFileGeneration))
+                {
+                    // A write overlapped the scan: never publish the stale catalog.
+                    _extensionCatalogRefreshTimer.Stop();
+                    _extensionCatalogRefreshTimer.Start();
+                    return;
+                }
+                if (snapshot.entries != null)
+                {
+                    ReloadLocalExtensionsFromEntries(snapshot.entries, statusText: null);
+                    _lastCatalogContentSignature = snapshot.signature;
+                    if (_catalogRefreshSync) SyncLocalExtensionsToCloud();
+                }
+                _catalogRefreshSync = false;
+            } while (_catalogRefreshQueued);
         }
-        catch (IOException) { return string.Empty; }
-        catch (UnauthorizedAccessException) { return string.Empty; }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog("Extension catalog background refresh failed: " + ex.Message);
+        }
+        finally { _catalogRefreshRunning = false; }
     }
 
     private void StartExtensionContentWatcher()
@@ -2007,7 +2035,7 @@ public partial class MainWindow
         if (!HostRuntimeProfile.OwnsBackgroundServices &&
             !(HostRuntimeProfile.IsDevelopment && Environment.GetCommandLineArgs().Any(
                 static arg => arg.Equals("--watcher-qa", StringComparison.OrdinalIgnoreCase)))) return;
-        _lastCatalogContentSignature = GetCatalogContentSignature();
+
         _extensionFileChangeFlushTimer.Tick += (_, _) =>
         {
             _extensionFileChangeFlushTimer.Stop();
@@ -2043,17 +2071,10 @@ public partial class MainWindow
                 HostAssets.AppendLog(
                     $"Extension watcher batch: events={eventCount}, extensions={extensionCount}, catalogChanged={catalogChanged}");
         };
-        _extensionCatalogRefreshTimer.Tick += (_, _) =>
+        _extensionCatalogRefreshTimer.Tick += async (_, _) =>
         {
             _extensionCatalogRefreshTimer.Stop();
-            if ((!IsLoaded && !HostRuntimeProfile.IsRuntime) || Dispatcher.HasShutdownStarted || _isReplacingLocalExtensions)
-                return;
-            var current = GetCatalogContentSignature();
-            if (string.IsNullOrEmpty(current) || current == _lastCatalogContentSignature)
-                return;
-            _lastCatalogContentSignature = current;
-            HostAssets.AppendLog("Local manifest changed: refreshing launcher, wheel and quick panel.");
-            ReloadLocalExtensionsFromExternal();
+            await RefreshExtensionCatalogAsync();
         };
 
         try
@@ -2069,6 +2090,7 @@ public partial class MainWindow
             _extensionContentWatcher.Created += ExtensionContentWatcher_Changed;
             _extensionContentWatcher.Deleted += ExtensionContentWatcher_Changed;
             _extensionContentWatcher.Renamed += ExtensionContentWatcher_Changed;
+            _extensionCatalogRefreshTimer.Start();
         }
         catch (Exception ex)
         {
@@ -2098,6 +2120,7 @@ public partial class MainWindow
         catch (IOException) { return; }
         catch (UnauthorizedAccessException) { return; }
         catch (ArgumentException) { return; }
+        Interlocked.Increment(ref _catalogFileGeneration);
         // Invalidate before the next cloud pull, even while a hash is in progress.
         _accountExtensionConflictMemo.Invalidate(segments[0]);
         var catalogChanged = string.Equals(segments[1], "manifest.json", StringComparison.OrdinalIgnoreCase) ||

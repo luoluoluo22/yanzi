@@ -424,19 +424,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // A periodic metadata check covers missed filesystem watcher events.
         // Download checks use the private account API, not the costly Gitee backup.
         _privateExtensionReconcileTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(3) };
-        _privateExtensionReconcileTimer.Tick += (_, _) =>
+        _privateExtensionReconcileTimer.Tick += async (_, _) =>
         {
             if (!IsLoaded || Dispatcher.HasShutdownStarted || _cloudSyncClient?.HasCredential != true)
                 return;
-            var signature = GetCatalogContentSignature();
-            if (!string.IsNullOrWhiteSpace(signature) &&
-                !string.Equals(signature, _lastCatalogContentSignature, StringComparison.Ordinal))
-            {
-                _lastCatalogContentSignature = signature;
-                ReloadLocalExtensionsFromExternal();
-                SyncLocalExtensionsToCloud();
-            }
-            RefreshMissingPrivateExtensionsFromCloud();
+            await RefreshExtensionCatalogAsync(sync: true);
+            if (!Dispatcher.HasShutdownStarted) RefreshMissingPrivateExtensionsFromCloud();
         };
         _privateExtensionReconcileTimer.Start();
 
