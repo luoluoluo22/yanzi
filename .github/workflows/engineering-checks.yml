@@ -123,6 +123,9 @@ jobs:
       - name: Desktop polling, transcript and grid performance regression
         if: needs.classify.outputs.tier == 'full'
         run: dotnet run --project tests/DesktopPerformanceVerification -c Debug -- --dev
+      - name: Search usage memory caching and off-thread persistence regression
+        if: needs.classify.outputs.tier == 'full'
+        run: dotnet run --project tests/SearchUsageMemoryVerification -c Release
       - name: AI chat parallelism, SSE and clipboard regression
         if: needs.classify.outputs.tier == 'full'
         shell: pwsh
