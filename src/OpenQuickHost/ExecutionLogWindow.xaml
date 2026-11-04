@@ -10,8 +10,8 @@
         Style="{StaticResource DialogWindow}">
     <Border Margin="1"
             CornerRadius="0"
-            Background="#F2161616"
-            BorderBrush="#22FFFFFF"
+            Background="{DynamicResource Yanzi.Brush.Window}"
+            BorderBrush="{DynamicResource Yanzi.Brush.Border}"
             BorderThickness="1">
         <Grid Margin="24">
             <Grid.RowDefinitions>
@@ -42,12 +42,12 @@
                     <StackPanel>
                         <TextBlock x:Name="StatusText"
                                    Text="执行完成"
-                                   Foreground="#FFDCFCE7"
+                                   Foreground="{DynamicResource Yanzi.Brush.Success}"
                                    FontSize="{DynamicResource FontSizeNormal}"
                                    FontWeight="SemiBold" />
                         <TextBlock x:Name="MetaText"
                                    Margin="0,6,0,0"
-                                   Foreground="#FF9CA3AF"
+                                   Foreground="{DynamicResource Yanzi.Brush.TextSecondary}"
                                    FontSize="{DynamicResource FontSizeSmallPlus}"
                                    TextWrapping="Wrap" />
                     </StackPanel>
@@ -58,14 +58,14 @@
                             Height="32"
                             Margin="16,0,0,0"
                             Click="CopyOutputButton_Click"
-                            Style="{StaticResource SecondaryBtn}" />
+                            Style="{DynamicResource Yanzi.Button.Outline}" />
                 </Grid>
             </Border>
 
             <TextBlock Grid.Row="2"
                        Margin="0,16,0,8"
                        Text="标准输出"
-                       Foreground="White"
+                       Foreground="{DynamicResource Yanzi.Brush.Text}"
                        FontSize="{DynamicResource FontSizeNormal}"
                        FontWeight="SemiBold"
                        VerticalAlignment="Top" />
@@ -73,6 +73,7 @@
                      Grid.Row="2"
                      Margin="0,42,0,0"
                      Padding="14"
+                     Style="{DynamicResource Yanzi.Input}"
                      IsReadOnly="True"
                      AcceptsReturn="True"
                      TextWrapping="Wrap"
@@ -80,21 +81,22 @@
                      HorizontalScrollBarVisibility="Auto"
                      FontFamily="Consolas"
                      FontSize="{DynamicResource FontSizeSmallPlus}"
-                     Background="#FF111111"
+                     Background="{DynamicResource Yanzi.Brush.InputBG}"
                      BorderBrush="{DynamicResource BrushBorder}"
                      BorderThickness="1"
-                     Foreground="#FFD1FAE5" />
+                     Foreground="{DynamicResource Yanzi.Brush.Text}" />
 
             <TextBlock Grid.Row="3"
                        Margin="0,16,0,8"
                        Text="错误输出"
-                       Foreground="White"
+                       Foreground="{DynamicResource Yanzi.Brush.Text}"
                        FontSize="{DynamicResource FontSizeNormal}"
                        FontWeight="SemiBold"
                        VerticalAlignment="Top" />
             <TextBox x:Name="ErrorTextBox"
                      Grid.Row="4"
                      Padding="14"
+                     Style="{DynamicResource Yanzi.Input}"
                      IsReadOnly="True"
                      AcceptsReturn="True"
                      TextWrapping="Wrap"
@@ -102,10 +104,10 @@
                      HorizontalScrollBarVisibility="Auto"
                      FontFamily="Consolas"
                      FontSize="{DynamicResource FontSizeSmallPlus}"
-                     Background="#FF111111"
+                     Background="{DynamicResource Yanzi.Brush.InputBG}"
                      BorderBrush="{DynamicResource BrushBorder}"
                      BorderThickness="1"
-                     Foreground="#FFFCA5A5" />
+                     Foreground="{DynamicResource Yanzi.Brush.Danger}" />
 
             <Grid Grid.Row="5" Margin="0,18,0,0">
                 <Grid.ColumnDefinitions>
@@ -114,7 +116,7 @@
                 </Grid.ColumnDefinitions>
                 <TextBlock x:Name="HintText"
                            VerticalAlignment="Center"
-                           Foreground="#FF9CA3AF"
+                           Foreground="{DynamicResource Yanzi.Brush.TextSecondary}"
                            FontSize="{DynamicResource FontSizeSmallPlus}"
                            Text="这里显示当前测试执行的详细输出。" />
                 <Button Grid.Column="1"
@@ -124,7 +126,7 @@
                         IsDefault="True"
                         IsCancel="True"
                         Click="CloseButton_Click"
-                        Style="{StaticResource PrimaryBtn}" />
+                        Style="{DynamicResource Yanzi.Button.Default}" />
             </Grid>
         </Grid>
     </Border>

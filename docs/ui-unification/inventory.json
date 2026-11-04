@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "base_commit": "89567af",
+  "base_commit": "e2dc551",
   "note": "Persistent candidate-source inventory: re-scan preserves manual status and evidence and retains missing candidates; not a count of distinct runtime screens.",
   "items": [
     {
@@ -8,16 +8,22 @@
       "kind": "web-dynamic-ui-candidate",
       "shared_ui_reference": false,
       "legacy_style_signals": 0,
-      "status": "pending-manual-review",
-      "evidence": []
+      "status": "shared-css-a11y-static-verified-awaiting-browser-visual-qa",
+      "evidence": [
+        "2026-11-04: media result controls reuse popup.css opencli-actions and theme tokens; added :focus-visible keyboard focus styling; static checks passed; real browser QA pending.",
+        "2026-11-04: shared popup.css compact controls use nine root-scoped palette tokens; static assertions passed; actual browser visual QA pending."
+      ]
     },
     {
       "path": "browser-extension/popup/opencli-panel.js",
       "kind": "web-dynamic-ui-candidate",
       "shared_ui_reference": false,
       "legacy_style_signals": 0,
-      "status": "pending-manual-review",
-      "evidence": []
+      "status": "shared-css-migrated-static-verified-awaiting-browser-visual-qa",
+      "evidence": [
+        "2026-11-04: dynamic OpenCLI profile input inline cssText moved to popup.css .opencli-profile-input; node --check and class assertion passed; browser visual/interaction QA pending",
+        "2026-11-04: shared popup.css compact controls use nine root-scoped palette tokens; static assertions passed; actual browser visual QA pending."
+      ]
     },
     {
       "path": "browser-extension/popup/opencli-store-guide.js",
@@ -28,20 +34,32 @@
       "evidence": []
     },
     {
+      "path": "browser-extension/popup/popup.css",
+      "kind": "web-stylesheet-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 166,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
       "path": "browser-extension/popup/popup.html",
       "kind": "web-ui",
       "shared_ui_reference": false,
       "legacy_style_signals": 10,
-      "status": "pending-manual-review",
-      "evidence": []
+      "status": "shared-css-migrated-static-verified-awaiting-browser-visual-qa",
+      "evidence": [
+        "2026-11-04: extracted 7 shared CSS primitives from popup HTML and dynamic JS; node --check popup.js passed; static class coverage assertion passed; browser interaction/theme QA pending"
+      ]
     },
     {
       "path": "browser-extension/popup/popup.js",
       "kind": "web-dynamic-ui-candidate",
       "shared_ui_reference": false,
-      "legacy_style_signals": 9,
-      "status": "pending-manual-review",
-      "evidence": []
+      "legacy_style_signals": 6,
+      "status": "shared-css-migrated-static-verified-awaiting-browser-visual-qa",
+      "evidence": [
+        "2026-11-04: extracted 7 shared CSS primitives from popup HTML and dynamic JS; node --check popup.js passed; static class coverage assertion passed; browser interaction/theme QA pending"
+      ]
     },
     {
       "path": "cloudflare/src/upgrade-page.js",
@@ -817,10 +835,12 @@
     {
       "path": "src/OpenQuickHost/CloudSyncHistoryWindow.xaml",
       "kind": "desktop-xaml",
-      "shared_ui_reference": false,
-      "legacy_style_signals": 5,
-      "status": "pending-manual-review",
-      "evidence": []
+      "shared_ui_reference": true,
+      "legacy_style_signals": 0,
+      "status": "shared-wpf-controls-static-verified-awaiting-windows-runtime-functional-visual-qa",
+      "evidence": [
+        "2026-11-04: three history/restore/close buttons migrated to Yanzi.Button.Outline; status panel uses BrushInputBG and current-version label Yanzi.Brush.Success; ApplyTo after InitializeComponent; XML and event assertions pending runtime QA."
+      ]
     },
     {
       "path": "src/OpenQuickHost/ColorPickerDialog.xaml",
@@ -879,10 +899,12 @@
     {
       "path": "src/OpenQuickHost/ExecutionLogWindow.xaml",
       "kind": "desktop-xaml",
-      "shared_ui_reference": false,
-      "legacy_style_signals": 11,
-      "status": "pending-manual-review",
-      "evidence": []
+      "shared_ui_reference": true,
+      "legacy_style_signals": 0,
+      "status": "shared-wpf-migrated-static-verified-awaiting-windows-runtime-visual-qa",
+      "evidence": [
+        "2026-11-04: replaced fixed dark colors and legacy button styles with dynamic Yanzi theme tokens, shared buttons/input; XML parse passed; Windows runtime/theme QA pending."
+      ]
     },
     {
       "path": "src/OpenQuickHost/ExtensionCardView.xaml",
@@ -896,11 +918,12 @@
       "path": "src/OpenQuickHost/HotkeyCaptureWindow.xaml",
       "kind": "desktop-xaml",
       "shared_ui_reference": true,
-      "legacy_style_signals": 1,
+      "legacy_style_signals": 0,
       "status": "windows-runtime-smoke-passed-awaiting-functional-visual-qa",
       "evidence": [
         "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check",
-        "Windows runtime smoke 2026-11-04 on PC-202409131508: real window rendered; shared default button style; Confirm disabled before recording; 11/11 runner tests pass; source fix 41181fa; see docs/ui-unification/qa-2026-11-04.md"
+        "Windows runtime smoke 2026-11-04 on PC-202409131508: real window rendered; shared default button style; Confirm disabled before recording; 11/11 runner tests pass; source fix 41181fa; see docs/ui-unification/qa-2026-11-04.md",
+        "2026-11-04: display-name TextBox now uses Yanzi.Input and error text uses Yanzi.Brush.Danger; XML parsing and source assertions passed on Ubuntu; Windows runtime regression and visual QA still pending."
       ],
       "version_commit": "41181fa199b4975b3f9b2ac5b18cdce71b5143a2",
       "smoke_qa": {
@@ -925,10 +948,12 @@
     {
       "path": "src/OpenQuickHost/InputStateWindow.xaml",
       "kind": "desktop-xaml",
-      "shared_ui_reference": false,
-      "legacy_style_signals": 3,
-      "status": "pending-manual-review",
-      "evidence": []
+      "shared_ui_reference": true,
+      "legacy_style_signals": 0,
+      "status": "shared-controls-migrated-static-verified-awaiting-windows-runtime-functional-visual-qa",
+      "evidence": [
+        "2026-11-04: three reset/refresh buttons use DynamicResource Yanzi.Button.Outline; constructor applies host-selected shared WPF theme; handlers and 250ms timer preserved; XML parse and git diff --check passed; Windows runtime and visual QA not yet run"
+      ]
     },
     {
       "path": "src/OpenQuickHost/InstalledAppPickerDialog.xaml",
@@ -1200,7 +1225,8 @@
       "status": "windows-runtime-smoke-passed-awaiting-functional-visual-qa",
       "evidence": [
         "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check",
-        "Windows runtime smoke 2026-11-04 on PC-202409131508: real window rendered; empty required validation and valid confirmation; 11/11 runner tests pass; source fix 41181fa; see docs/ui-unification/qa-2026-11-04.md"
+        "Windows runtime smoke 2026-11-04 on PC-202409131508: real window rendered; empty required validation and valid confirmation; 11/11 runner tests pass; source fix 41181fa; see docs/ui-unification/qa-2026-11-04.md",
+        "2026-11-04: shared Yanzi.Brush.Danger validation error, AutomationProperties.Name and assertive live setting; XML/event/static assertions pass on Ubuntu; new a11y behavior awaiting Windows Narrator and visual QA"
       ],
       "version_commit": "41181fa199b4975b3f9b2ac5b18cdce71b5143a2",
       "smoke_qa": {
@@ -1315,10 +1341,12 @@
     {
       "path": "src/OpenQuickHost/VipActivationWindow.xaml",
       "kind": "desktop-xaml",
-      "shared_ui_reference": false,
-      "legacy_style_signals": 9,
-      "status": "pending-manual-review",
-      "evidence": []
+      "shared_ui_reference": true,
+      "legacy_style_signals": 6,
+      "status": "shared-wpf-controls-static-verified-awaiting-windows-runtime-visual-qa",
+      "evidence": [
+        "2026-11-04: license input and three action buttons use DynamicResource Yanzi.Input/Yanzi.Button.*; window-scoped YanziUi.ApplyTo follows InitializeComponent; XML parse and control reference checks passed; Windows runtime, keyboard, themes and payment/activation flow NOT verified."
+      ]
     },
     {
       "path": "src/OpenQuickHost/WebDavCredentialWindow.xaml",
@@ -1595,6 +1623,174 @@
       "kind": "desktop-dynamic-ui-candidate",
       "shared_ui_reference": true,
       "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "tools/chatgpt-bridge/public/index.html",
+      "kind": "web-ui",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "tools/chatgpt-bridge/public/style.css",
+      "kind": "web-stylesheet-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 7,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "website/assets/auth.css",
+      "kind": "web-stylesheet-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 20,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "website/assets/wish-wall.css",
+      "kind": "web-stylesheet-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 54,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "website/docs/agent-skill-spec.html",
+      "kind": "web-ui",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 2,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "website/docs/ai-extension-test-set.html",
+      "kind": "web-ui",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 2,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "website/docs/extension-authoring-guide.html",
+      "kind": "web-ui",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 107,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "website/docs/extension-guide.html",
+      "kind": "web-ui",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 2,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "website/docs/extension-spec.html",
+      "kind": "web-ui",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 4,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "website/docs/getting-started.html",
+      "kind": "web-ui",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 2,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "website/docs/product-overview.html",
+      "kind": "web-ui",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 2,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "website/docs/search-guide.html",
+      "kind": "web-ui",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 2,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "website/docs/sync-guide.html",
+      "kind": "web-ui",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 2,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "website/docs/yanh-guide.html",
+      "kind": "web-ui",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 2,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "website/docs/yanm-guide.html",
+      "kind": "web-ui",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 2,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "website/index.html",
+      "kind": "web-ui",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 20,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "website/profile.html",
+      "kind": "web-ui",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 5,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "website/store.html",
+      "kind": "web-ui",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 18,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "website/styles.css",
+      "kind": "web-stylesheet-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 54,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "website/wish-wall.html",
+      "kind": "web-ui",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 8,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "website/yanm.html",
+      "kind": "web-ui",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 4,
       "status": "pending-manual-review",
       "evidence": []
     }

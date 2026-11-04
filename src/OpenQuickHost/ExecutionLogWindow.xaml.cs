@@ -16,12 +16,15 @@ public partial class ExecutionLogWindow : Window
         string? extraMeta = null)
     {
         InitializeComponent();
+        var theme = AppSettingsStore.Load().ThemeMode;
+        Yanzi.UI.Wpf.YanziUi.ApplyTo(this,
+            string.Equals(theme, "Light", StringComparison.OrdinalIgnoreCase)
+                ? Yanzi.UI.Wpf.YanziTheme.Light : Yanzi.UI.Wpf.YanziTheme.Dark);
         Title = $"{title} 运行日志";
         TitleText.Text = $"{title} 运行日志";
         StatusText.Text = success ? "执行完成" : "执行失败";
-        StatusText.Foreground = success
-            ? System.Windows.Media.Brushes.LightGreen
-            : System.Windows.Media.Brushes.IndianRed;
+        StatusText.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty,
+            success ? "Yanzi.Brush.Success" : "Yanzi.Brush.Danger");
         MetaText.Text = BuildMetaText(success, exitCode, extraMeta);
         OutputTextBox.Text = string.IsNullOrWhiteSpace(output) ? "无输出。" : output.Trim();
         ErrorTextBox.Text = string.IsNullOrWhiteSpace(error) ? "无错误输出。" : error.Trim();

@@ -10,6 +10,10 @@ public partial class InputStateWindow : Window
     public InputStateWindow()
     {
         InitializeComponent();
+        var theme = AppSettingsStore.Load().ThemeMode;
+        Yanzi.UI.Wpf.YanziUi.ApplyTo(this,
+            string.Equals(theme, "Light", StringComparison.OrdinalIgnoreCase)
+                ? Yanzi.UI.Wpf.YanziTheme.Light : Yanzi.UI.Wpf.YanziTheme.Dark);
         _timer = new DispatcherTimer
         {
             Interval = TimeSpan.FromMilliseconds(250)

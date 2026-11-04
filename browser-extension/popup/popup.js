@@ -191,7 +191,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     marketCategories.innerHTML = categories.map(cat => {
       const isSelected = selectedMarketCategory === cat.id;
-      const currentDot = cat.isCurrent ? '<span class="current-site-dot" style="width:6px;height:6px;background:#10b981;border-radius:50%;display:inline-block;margin-right:4px;"></span>' : '';
+      const currentDot = cat.isCurrent ? '<span class="current-site-dot"></span>' : '';
       return `<button type="button" class="market-category-chip ${cat.isCurrent ? 'is-current-chip' : ''}" data-market-category="${escapeHtml(cat.id)}" aria-pressed="${String(isSelected)}">
         <span>${currentDot}${escapeHtml(cat.label)}</span>
         <small>${cat.count}</small>
@@ -217,7 +217,7 @@ document.addEventListener("DOMContentLoaded", () => {
             <button type="button" class="rule-pill-delete" data-delete-xhs-rule="${escapeHtml(rule.id || '')}" title="移出此条屏蔽">×</button>
           </div>`;
         }).join('')
-      : `<div class="market-empty compact" style="padding:10px 4px;font-size:11px;color:#94a3b8;">
+      : `<div class="market-empty compact yanzi-empty-hint">
           ${allXhsRuleItems.length ? '当前分类下暂无规则' : '暂无屏蔽规则'}
         </div>`;
 
@@ -226,8 +226,8 @@ document.addEventListener("DOMContentLoaded", () => {
         <div class="webapp-card-head">
           <div class="webapp-card-title">
             <div class="webapp-app-icon-box" title="小红书 (xiaohongshu.com)">
-              <img class="webapp-site-favicon" src="${escapeHtml(site.faviconUrl)}" alt="小红书" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-flex';">
-              <span class="webapp-site-svg-fallback" style="display:none;">${site.fallbackSvg}</span>
+              <img class="webapp-site-favicon" src="${escapeHtml(site.faviconUrl)}" alt="小红书" onerror="this.classList.add('yanzi-hidden'); this.nextElementSibling.classList.add('yanzi-fallback-visible');">
+              <span class="webapp-site-svg-fallback">${site.fallbackSvg}</span>
             </div>
             <div class="webapp-card-title-info">
               <div class="webapp-title-row">
@@ -252,7 +252,7 @@ document.addEventListener("DOMContentLoaded", () => {
           </div>
           <div class="webapp-rule-pill-box xhs-adaptive-pill-list">${pillsHtml}</div>
         </div>
-        <div class="webapp-card-actions" style="margin-top:8px;">
+        <div class="webapp-card-actions yanzi-spacing-top-sm">
           <button type="button" class="webapp-context-copy" data-copy-context="xiaohongshu.filter" title="复制小红书模块的开发背景给 AI"><span aria-hidden="true">✦</span>帮帮忙</button>
         </div>
       </div>
@@ -274,15 +274,15 @@ document.addEventListener("DOMContentLoaded", () => {
             <button type="button" class="rule-pill-delete" data-delete-douyin-rule="${escapeHtml(rule.id || '')}" title="删除此关键词">×</button>
           </div>`;
         }).join('')
-      : `<div class="market-empty compact" style="padding:10px 4px;font-size:11px;color:#94a3b8;">暂无屏蔽关键词</div>`;
+      : `<div class="market-empty compact yanzi-empty-hint">暂无屏蔽关键词</div>`;
 
     return `<article class="webapp-card webapp-rule-card" data-rule-card="douyin">
       <div class="webapp-card-main">
         <div class="webapp-card-head">
           <div class="webapp-card-title">
             <div class="webapp-app-icon-box" title="抖音 (douyin.com)">
-              <img class="webapp-site-favicon" src="${escapeHtml(site.faviconUrl)}" alt="抖音" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-flex';">
-              <span class="webapp-site-svg-fallback" style="display:none;">${site.fallbackSvg}</span>
+              <img class="webapp-site-favicon" src="${escapeHtml(site.faviconUrl)}" alt="抖音" onerror="this.classList.add('yanzi-hidden'); this.nextElementSibling.classList.add('yanzi-fallback-visible');">
+              <span class="webapp-site-svg-fallback">${site.fallbackSvg}</span>
             </div>
             <div class="webapp-card-title-info">
               <div class="webapp-title-row">
@@ -299,13 +299,13 @@ document.addEventListener("DOMContentLoaded", () => {
         </div>
         <p class="webapp-description">添加关键词跳过抖音视频，同时自动匹配标题、话题标签和作者。</p>
         <div class="webapp-rule-card-body ${isDouyinRulesCollapsed ? 'collapsed' : ''}">
-          <form class="webapp-rule-form" id="douyin-card-rule-form" style="margin:0 0 8px;">
-            <input id="douyin-card-rule-input" type="text" maxlength="80" placeholder="输入关键词，如：购物、直播" style="flex:1;">
+          <form class="webapp-rule-form" id="douyin-card-rule-form" >
+            <input id="douyin-card-rule-input" type="text" maxlength="80" placeholder="输入关键词，如：购物、直播" >
             <button type="submit">添加</button>
           </form>
           <div class="webapp-rule-pill-box douyin-adaptive-pill-list">${pillsHtml}</div>
         </div>
-        <div class="webapp-card-actions" style="margin-top:8px;">
+        <div class="webapp-card-actions yanzi-spacing-top-sm">
           <button type="button" class="webapp-context-copy" data-copy-context="douyin.filter" title="复制抖音模块的开发背景给 AI"><span aria-hidden="true">✦</span>帮帮忙</button>
         </div>
       </div>
@@ -388,8 +388,8 @@ document.addEventListener("DOMContentLoaded", () => {
             <div class="webapp-card-head">
               <div class="webapp-card-title">
                 <div class="webapp-app-icon-box" title="${escapeHtml(site.siteName)} (${escapeHtml(site.domain)})">
-                  <img class="webapp-site-favicon" src="${escapeHtml(site.faviconUrl)}" alt="${escapeHtml(site.siteName)}" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-flex';">
-                  <span class="webapp-site-svg-fallback" style="display:none;">${site.fallbackSvg}</span>
+                  <img class="webapp-site-favicon" src="${escapeHtml(site.faviconUrl)}" alt="${escapeHtml(site.siteName)}" onerror="this.classList.add('yanzi-hidden'); this.nextElementSibling.classList.add('yanzi-fallback-visible');">
+                  <span class="webapp-site-svg-fallback">${site.fallbackSvg}</span>
                 </div>
                 <div class="webapp-card-title-info">
                   <div class="webapp-title-row">
@@ -428,7 +428,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return `<div class="webapp-site-group">
         <div class="webapp-site-header">
           <div class="webapp-site-title">
-            <img class="webapp-site-mini-icon" src="${escapeHtml(site.faviconUrl)}" onerror="this.style.display='none';">
+            <img class="webapp-site-mini-icon" src="${escapeHtml(site.faviconUrl)}" onerror="this.classList.add('yanzi-hidden');">
             <span>${escapeHtml(site.siteName)}</span>
             <span class="webapp-site-domain-tag">${escapeHtml(site.domain)}</span>
             ${currentBadge}
@@ -495,12 +495,15 @@ document.addEventListener("DOMContentLoaded", () => {
         const textarea = document.createElement('textarea');
         textarea.value = context;
         textarea.setAttribute('readonly', '');
-        textarea.style.position = 'fixed';
-        textarea.style.opacity = '0';
+        textarea.classList.add('yanzi-clipboard-fallback');
         document.body.appendChild(textarea);
-        textarea.select();
-        const copied = document.execCommand('copy');
-        textarea.remove();
+        let copied = false;
+        try {
+          textarea.select();
+          copied = document.execCommand('copy');
+        } finally {
+          textarea.remove();
+        }
         if (!copied) throw new Error('浏览器未允许访问剪贴板');
       }
       button.textContent = '已复制';
@@ -734,17 +737,17 @@ document.addEventListener("DOMContentLoaded", () => {
       statusDot.className = "led-dot connected";
       statusText.textContent = "已连接并处于活动状态";
       statusText.className = "status-text text-connected";
-      reconnectBtn.style.display = "none";
+      reconnectBtn.classList.add("yanzi-hidden");
     } else if (status === "connecting") {
       statusDot.className = "led-dot connecting";
       statusText.textContent = "正在尝试建立连接...";
       statusText.className = "status-text text-connecting";
-      reconnectBtn.style.display = "none";
+      reconnectBtn.classList.add("yanzi-hidden");
     } else {
       statusDot.className = "led-dot disconnected";
       statusText.textContent = "未连接至燕子主程序";
       statusText.className = "status-text text-disconnected";
-      reconnectBtn.style.display = "block";
+      reconnectBtn.classList.remove("yanzi-hidden");
     }
   }
 
