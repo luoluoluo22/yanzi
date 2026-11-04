@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Threading;
@@ -55,8 +55,8 @@ public static class KeyboardDoubleTapService
     private static bool _rightWinDown;
     private static bool _doubleCtrlEnabled = true;
     private static bool _doubleAltEnabled = true;
-    private static bool _suppressCurrentAltTap;
-    private static bool _suppressCurrentCtrlTap;
+    // Keep the decision for each physical press, including auto-repeat, until its key-up.
+    private static readonly HashSet<int> SuppressedModifierKeys = new();
     private static bool _winOverlayActive;
     private static bool _winOverlayEnabled = true;
     private static bool _winHoldEnabled = true;
@@ -120,7 +120,17 @@ public static class KeyboardDoubleTapService
         if (_leftWinDown) pressed.Add("左Win");
         if (_rightWinDown) pressed.Add("右Win");
         if (_winOverlayActive) pressed.Add("燕幕触发键");
-        return $"键盘钩子={(IsRunning ? "运行" : "停止")}，按下={pressed.Count switch { 0 => "无", _ => string.Join("、", pressed) }}";
+        var systemPressed = new List<string>();
+        foreach (var (vk, name) in new[] {
+            (VkLControl, "左Ctrl"), (VkRControl, "右Ctrl"),
+            (VkLMenu, "左Alt"), (VkRMenu, "右Alt"),
+            (VkLShift, "左Shift"), (VkRShift, "右Shift"),
+            (VkLWin, "左Win"), (VkRWin, "右Win") })
+        {
+            if ((GetAsyncKeyState(vk) & 0x8000) != 0) systemPressed.Add(name);
+        }
+        var systemState = systemPressed.Count == 0 ? "无" : string.Join("、", systemPressed);
+        return $"Windows 系统按下={systemState}{Environment.NewLine}燕子内部记录：键盘钩子={(IsRunning ? "运行" : "停止")}，按下={pressed.Count switch { 0 => "无", _ => string.Join("、", pressed) }}";
     }
 
     public static void Start(
@@ -160,8 +170,6 @@ public static class KeyboardDoubleTapService
     {
         _doubleCtrlEnabled = string.Equals(shortcut, "DoubleCtrl", StringComparison.OrdinalIgnoreCase);
         _doubleAltEnabled = string.Equals(shortcut, "DoubleAlt", StringComparison.OrdinalIgnoreCase);
-        _suppressCurrentAltTap = false;
-        _suppressCurrentCtrlTap = false;
     }
 
     public static void Stop()
@@ -200,6 +208,7 @@ public static class KeyboardDoubleTapService
 
     public static void ResetStuckKeyboardState()
     {
+        HostAssets.AppendLog($"Keyboard reset before: {GetKeyboardStateSummary()}");
         ResetKeyState();
         _lastTapKind = ModifierTapKind.None;
         _lastTapTimestamp = 0;
@@ -340,45 +349,13 @@ public static class KeyboardDoubleTapService
         switch (vkCode)
         {
             case VkLControl:
-                if (ShouldSuppressCurrentCtrlTap())
-                {
-                    _leftCtrlDown = true;
-                    _suppressCurrentCtrlTap = true;
-                    return true;
-                }
-
-                _leftCtrlDown = true;
-                return false;
+                return HandleModifierDown(vkCode, ref _leftCtrlDown, ShouldSuppressCurrentCtrlTap);
             case VkRControl:
-                if (ShouldSuppressCurrentCtrlTap())
-                {
-                    _rightCtrlDown = true;
-                    _suppressCurrentCtrlTap = true;
-                    return true;
-                }
-
-                _rightCtrlDown = true;
-                return false;
+                return HandleModifierDown(vkCode, ref _rightCtrlDown, ShouldSuppressCurrentCtrlTap);
             case VkLMenu:
-                if (ShouldSuppressCurrentAltTap())
-                {
-                    _leftAltDown = true;
-                    _suppressCurrentAltTap = true;
-                    return true;
-                }
-
-                _leftAltDown = true;
-                return false;
+                return HandleModifierDown(vkCode, ref _leftAltDown, ShouldSuppressCurrentAltTap);
             case VkRMenu:
-                if (ShouldSuppressCurrentAltTap())
-                {
-                    _rightAltDown = true;
-                    _suppressCurrentAltTap = true;
-                    return true;
-                }
-
-                _rightAltDown = true;
-                return false;
+                return HandleModifierDown(vkCode, ref _rightAltDown, ShouldSuppressCurrentAltTap);
             case VkLShift:
                 _leftShiftDown = true;
                 return false;
@@ -400,6 +377,18 @@ public static class KeyboardDoubleTapService
 
         _sequenceDirty = true;
         return false;
+    }
+
+    private static bool HandleModifierDown(int vkCode, ref bool down, Func<bool> shouldSuppress)
+    {
+        // Re-evaluating the double-tap timeout on repeat can leak a key-down after
+        // the first down was swallowed, leaving Windows stuck when up is swallowed.
+        if (down) return SuppressedModifierKeys.Contains(vkCode);
+        var suppress = shouldSuppress();
+        down = true;
+        if (suppress) SuppressedModifierKeys.Add(vkCode);
+        else SuppressedModifierKeys.Remove(vkCode);
+        return suppress;
     }
 
     private static bool HandleKeyUp(int vkCode)
@@ -459,12 +448,12 @@ public static class KeyboardDoubleTapService
                 return false;
         }
 
+        // Pair up with its own down even after a timeout, settings change or another modifier.
+        var suppressRelease = SuppressedModifierKeys.Remove(vkCode);
         if (HasOtherModifiersPressed(releasedKind))
         {
             _sequenceDirty = true;
-            _suppressCurrentAltTap = false;
-            _suppressCurrentCtrlTap = false;
-            return false;
+            return suppressRelease;
         }
 
         var now = Environment.TickCount64;
@@ -472,37 +461,21 @@ public static class KeyboardDoubleTapService
             _lastTapKind == releasedKind &&
             now - _lastTapTimestamp <= 350)
         {
-            var shouldSuppress = (releasedKind == ModifierTapKind.Alt && _doubleAltEnabled && _suppressCurrentAltTap) ||
-                                 (releasedKind == ModifierTapKind.Control && _doubleCtrlEnabled && _suppressCurrentCtrlTap);
             _lastTapKind = ModifierTapKind.None;
             _lastTapTimestamp = 0;
-            _suppressCurrentAltTap = false;
-            _suppressCurrentCtrlTap = false;
             HostAssets.AppendLog($"Keyboard double tap: triggered {releasedKind}.");
-            if (releasedKind == ModifierTapKind.Alt && shouldSuppress)
+            if (releasedKind == ModifierTapKind.Alt && suppressRelease)
             {
                 CancelForegroundAltMenuMode();
             }
-
-            // 面板切换经统一派发，避免完整 UI 布局内联在 WH_KEYBOARD_LL 回调里执行
             UiDispatcher.Post(() => _onDoubleTap?.Invoke(releasedKind.ToString()));
-            return shouldSuppress;
+            return suppressRelease;
         }
 
         _lastTapKind = releasedKind;
         _lastTapTimestamp = now;
         _sequenceDirty = false;
-        if (releasedKind != ModifierTapKind.Alt)
-        {
-            _suppressCurrentAltTap = false;
-        }
-        if (releasedKind != ModifierTapKind.Control)
-        {
-            _suppressCurrentCtrlTap = false;
-        }
-
-        return (releasedKind == ModifierTapKind.Alt && _doubleAltEnabled && _suppressCurrentAltTap) ||
-               (releasedKind == ModifierTapKind.Control && _doubleCtrlEnabled && _suppressCurrentCtrlTap);
+        return suppressRelease;
     }
 
     private static bool IsYanmTriggerKey(string key)
@@ -653,6 +626,7 @@ public static class KeyboardDoubleTapService
 
     private static void ResetKeyState()
     {
+        SuppressedModifierKeys.Clear();
         _leftCtrlDown = false;
         _rightCtrlDown = false;
         _leftAltDown = false;
@@ -661,8 +635,6 @@ public static class KeyboardDoubleTapService
         _rightShiftDown = false;
         _leftWinDown = false;
         _rightWinDown = false;
-        _suppressCurrentAltTap = false;
-        _suppressCurrentCtrlTap = false;
         _winOverlayActive = false;
         _yanmTriggerDownTimestamp = 0;
         _hasReleasedWinForYanmHold = false;
@@ -721,7 +693,8 @@ public static class KeyboardDoubleTapService
         }
 
         var now = Environment.TickCount64;
-        return _lastTapKind == ModifierTapKind.Alt &&
+        return !_leftAltDown && !_rightAltDown &&
+               _lastTapKind == ModifierTapKind.Alt &&
                now - _lastTapTimestamp <= 350 &&
                !_leftCtrlDown &&
                !_rightCtrlDown &&
@@ -739,7 +712,8 @@ public static class KeyboardDoubleTapService
         }
 
         var now = Environment.TickCount64;
-        return _lastTapKind == ModifierTapKind.Control &&
+        return !_leftCtrlDown && !_rightCtrlDown &&
+               _lastTapKind == ModifierTapKind.Control &&
                now - _lastTapTimestamp <= 350 &&
                !_leftAltDown &&
                !_rightAltDown &&
