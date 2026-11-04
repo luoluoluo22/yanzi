@@ -31,6 +31,11 @@ public partial class VipActivationWindow : Window
     {
         HostAssets.AppendLog($"[VipActivationWindow] Ctor called. syncClient is {(syncClient != null ? "Ready" : "Null")}, currentVip={currentVipStatus}");
         InitializeComponent();
+        // Window-scoped shared tokens; do not mutate the running host theme.
+        var theme = AppSettingsStore.Load().ThemeMode;
+        Yanzi.UI.Wpf.YanziUi.ApplyTo(this,
+            string.Equals(theme, "Light", StringComparison.OrdinalIgnoreCase)
+                ? Yanzi.UI.Wpf.YanziTheme.Light : Yanzi.UI.Wpf.YanziTheme.Dark);
         _syncClient = syncClient;
         _onVipStatusChanged = onVipStatusChanged;
 

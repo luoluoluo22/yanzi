@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "base_commit": "fa575ca",
+  "base_commit": "e2dc551",
   "note": "Persistent candidate-source inventory: re-scan preserves manual status and evidence and retains missing candidates; not a count of distinct runtime screens.",
   "items": [
     {
@@ -1341,10 +1341,12 @@
     {
       "path": "src/OpenQuickHost/VipActivationWindow.xaml",
       "kind": "desktop-xaml",
-      "shared_ui_reference": false,
-      "legacy_style_signals": 9,
-      "status": "pending-manual-review",
-      "evidence": []
+      "shared_ui_reference": true,
+      "legacy_style_signals": 6,
+      "status": "shared-wpf-controls-static-verified-awaiting-windows-runtime-visual-qa",
+      "evidence": [
+        "2026-11-04: license input and three action buttons use DynamicResource Yanzi.Input/Yanzi.Button.*; window-scoped YanziUi.ApplyTo follows InitializeComponent; XML parse and control reference checks passed; Windows runtime, keyboard, themes and payment/activation flow NOT verified."
+      ]
     },
     {
       "path": "src/OpenQuickHost/WebDavCredentialWindow.xaml",
