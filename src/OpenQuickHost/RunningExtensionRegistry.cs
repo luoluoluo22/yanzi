@@ -98,8 +98,39 @@ public static class RunningExtensionRegistry
     public static bool IsRunning(string? extensionId)
     {
         if (string.IsNullOrWhiteSpace(extensionId)) return false;
-        var snapshot = GetSnapshot();
-        return snapshot.Any(s => string.Equals(s.ExtensionId, extensionId, StringComparison.OrdinalIgnoreCase));
+
+        // A badge needs one boolean, not a sorted snapshot of every running instance.
+        // Avoid checking unrelated processes and managed extension liveness on each getter.
+        if (HostRuntimeProfile.IsShell && RuntimeConnection.IsConnected)
+        {
+            return RuntimeConnection.Running.Any(s =>
+                string.Equals(s.ExtensionId, extensionId, StringComparison.OrdinalIgnoreCase));
+        }
+
+        List<Guid>? staleIds = null;
+        var found = false;
+        lock (Gate)
+        {
+            foreach (var pair in Entries)
+            {
+                var entry = pair.Value;
+                if (!string.Equals(entry.ExtensionId, extensionId, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var alive = entry.Process != null
+                    ? IsAlive(entry.Process)
+                    : entry.IsAliveFunc?.Invoke() ?? true;
+                if (alive) found = true;
+                else (staleIds ??= []).Add(pair.Key);
+            }
+        }
+
+        // Preserve stale cleanup for the queried extension without inspecting others.
+        if (staleIds != null)
+        {
+            foreach (var staleId in staleIds) Remove(staleId, "running lookup cleanup");
+        }
+        return found;
     }
 
     public static Guid? RegisterProcess(CommandItem command, Process process, string launchSource)

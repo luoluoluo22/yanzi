@@ -5683,7 +5683,7 @@ public sealed class CommandItem : INotifyPropertyChanged
             {
                 return false;
             }
-            return RunningExtensionRegistry.GetSnapshot().Any(x => string.Equals(x.ExtensionId, ExtensionId, StringComparison.OrdinalIgnoreCase));
+            return RunningExtensionRegistry.IsRunning(ExtensionId);
         }
     }
 
