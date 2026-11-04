@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "base_commit": "957573e",
+  "base_commit": "8cd7830",
   "note": "Candidate source inventory; every candidate requires manual verification; includes docs previews and code-behind candidates; not a count of distinct runtime screens.",
   "items": [
     {
@@ -1106,10 +1106,12 @@
     {
       "path": "src/OpenQuickHost/SystemPromptEditorWindow.xaml",
       "kind": "desktop-xaml",
-      "shared_ui_reference": false,
-      "legacy_style_signals": 4,
-      "status": "pending-manual-review",
-      "evidence": []
+      "shared_ui_reference": true,
+      "legacy_style_signals": 0,
+      "status": "source-migrated-awaiting-windows-qa",
+      "evidence": [
+        "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check"
+      ]
     },
     {
       "path": "src/OpenQuickHost/TaskRecoveryWindow.cs",
@@ -1366,6 +1368,14 @@
       "kind": "desktop-xaml",
       "shared_ui_reference": true,
       "legacy_style_signals": 55,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/Yanzi.UI.Wpf/VirtualizingTilePanel.cs",
+      "kind": "desktop-dynamic-ui-candidate",
+      "shared_ui_reference": true,
+      "legacy_style_signals": 0,
       "status": "pending-manual-review",
       "evidence": []
     },

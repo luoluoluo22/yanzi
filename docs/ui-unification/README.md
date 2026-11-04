@@ -80,3 +80,9 @@
 - `inventory.json`：该文件标记为 `source-migrated-awaiting-windows-qa`，不将静态检查冒充实际 UI 验收。
 - 静态证据：XAML XML 可解析、公共样式键存在、四个事件与绑定保留、Python 语法与 `git diff --check` 通过。
 - 待验：Windows Release 构建、标签显隐/重排保存、Everything 切换、深浅主题和键盘/无障碍检查；尚未推送与合并。
+
+## 第十一轮：系统提示词编辑器（源码迁移，待 Windows 交互验收）
+
+- `SystemPromptEditorWindow.xaml`：将确认/取消按钮替换为共享 `Yanzi.Button.Default/Outline`，对话框背景与边框改用 `BrushDialogBG/BrushBorder`，移除原窗口硬编码暗色。
+- `SystemPromptEditorWindow.xaml.cs`：构造时按用户主题加载窗口级 `YanziUi` 资源；保留原提示词赋值、光标置尾、确认/取消 DialogResult 和多行输入框的原生 Tab、回车、滚动行为。多行 TextBox 暂不机械替换为单行共享输入模板。
+- 已在家里 Windows 电脑对前一批 10 个窗口所在提交 `ef2aad8` 完成完整 Release 编译（0 错误、18 警告），并实际启动 `Yanzi.UI.Gallery.exe`，看到“燕子 UI · 组件评估中心”窗口；**不代表十个业务窗口逐项交互验收**。本轮新改动需再次 Windows 编译和真实提示词编辑交互验证。
