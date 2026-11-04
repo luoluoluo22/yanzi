@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "base_commit": "2cd0dea",
+  "base_commit": "1699b28",
   "note": "Persistent candidate-source inventory: re-scan preserves manual status and evidence and retains missing candidates; not a count of distinct runtime screens.",
   "items": [
     {
@@ -827,10 +827,12 @@
     {
       "path": "src/OpenQuickHost/CloudSyncHistoryWindow.xaml",
       "kind": "desktop-xaml",
-      "shared_ui_reference": false,
-      "legacy_style_signals": 5,
-      "status": "pending-manual-review",
-      "evidence": []
+      "shared_ui_reference": true,
+      "legacy_style_signals": 0,
+      "status": "shared-wpf-controls-static-verified-awaiting-windows-runtime-functional-visual-qa",
+      "evidence": [
+        "2026-11-04: three history/restore/close buttons migrated to Yanzi.Button.Outline; status panel uses BrushInputBG and current-version label Yanzi.Brush.Success; ApplyTo after InitializeComponent; XML and event assertions pending runtime QA."
+      ]
     },
     {
       "path": "src/OpenQuickHost/ColorPickerDialog.xaml",

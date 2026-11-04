@@ -24,10 +24,10 @@
                 <TextBlock Text="每次创建、修改、删除和恢复都会形成一个历史备份；恢复也会生成新版本，不会抹掉历史。"
                            Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,9,0,0" TextWrapping="Wrap"/>
             </StackPanel>
-            <Button Grid.Column="1" Content="刷新历史" Style="{StaticResource SecondaryBtn}" Height="30" Padding="12,0" Click="RefreshButton_Click"/>
+            <Button Grid.Column="1" Content="刷新历史" Style="{DynamicResource Yanzi.Button.Outline}" Height="30" Padding="12,0" Click="RefreshButton_Click"/>
         </Grid>
 
-        <Border Grid.Row="1" Background="#0AFFFFFF" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1"
+        <Border Grid.Row="1" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1"
                 CornerRadius="7" Padding="10,7" Margin="0,16,0,10">
             <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" TextWrapping="Wrap"/>
         </Border>
@@ -41,7 +41,7 @@
                             <DataTemplate>
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="{Binding Revision, StringFormat=版本 {0}}" Foreground="{DynamicResource BrushTextMain}" FontWeight="SemiBold"/>
-                                    <TextBlock Text=" 当前" Foreground="#FF22C55E" Margin="5,0,0,0" Visibility="{Binding IsCurrent, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                    <TextBlock Text=" 当前" Foreground="{DynamicResource Yanzi.Brush.Success}" Margin="5,0,0,0" Visibility="{Binding IsCurrent, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                 </StackPanel>
                             </DataTemplate>
                         </GridViewColumn.CellTemplate>
@@ -53,7 +53,7 @@
                     <GridViewColumn Header="操作" Width="86">
                         <GridViewColumn.CellTemplate>
                             <DataTemplate>
-                                <Button Content="恢复此版" Style="{StaticResource SecondaryBtn}" Height="26" Padding="8,0"
+                                <Button Content="恢复此版" Style="{DynamicResource Yanzi.Button.Outline}" Height="26" Padding="8,0"
                                         IsEnabled="{Binding CanRestore}" Click="RestoreVersionButton_Click"/>
                             </DataTemplate>
                         </GridViewColumn.CellTemplate>
@@ -68,7 +68,7 @@
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <TextBlock Text="历史内容不会在列表中展开，以免意外暴露 AI 密钥等敏感配置。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" VerticalAlignment="Center"/>
-            <Button Grid.Column="1" Content="关闭" Style="{StaticResource SecondaryBtn}" Width="80" Height="30" Click="CloseButton_Click"/>
+            <Button Grid.Column="1" Content="关闭" Style="{DynamicResource Yanzi.Button.Outline}" Width="80" Height="30" Click="CloseButton_Click"/>
         </Grid>
     </Grid>
 </Window>
