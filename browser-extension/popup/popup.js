@@ -734,17 +734,17 @@ document.addEventListener("DOMContentLoaded", () => {
       statusDot.className = "led-dot connected";
       statusText.textContent = "已连接并处于活动状态";
       statusText.className = "status-text text-connected";
-      reconnectBtn.style.display = "none";
+      reconnectBtn.classList.add("yanzi-hidden");
     } else if (status === "connecting") {
       statusDot.className = "led-dot connecting";
       statusText.textContent = "正在尝试建立连接...";
       statusText.className = "status-text text-connecting";
-      reconnectBtn.style.display = "none";
+      reconnectBtn.classList.add("yanzi-hidden");
     } else {
       statusDot.className = "led-dot disconnected";
       statusText.textContent = "未连接至燕子主程序";
       statusText.className = "status-text text-disconnected";
-      reconnectBtn.style.display = "block";
+      reconnectBtn.classList.remove("yanzi-hidden");
     }
   }
 

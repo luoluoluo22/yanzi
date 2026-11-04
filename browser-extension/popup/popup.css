@@ -1338,3 +1338,6 @@ body {
 /* Douyin rule editor layout */
 #douyin-card-rule-form { margin: 0 0 8px; }
 #douyin-card-rule-input { flex: 1; }
+
+/* Shared visibility primitive for status-driven popup controls. */
+.yanzi-hidden { display: none !important; }
