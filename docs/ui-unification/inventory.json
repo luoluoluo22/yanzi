@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "base_commit": "a910827",
+  "base_commit": "f6bcb1b",
   "note": "Persistent candidate-source inventory: re-scan preserves manual status and evidence and retains missing candidates; not a count of distinct runtime screens.",
   "items": [
     {
@@ -32,16 +32,20 @@
       "kind": "web-ui",
       "shared_ui_reference": false,
       "legacy_style_signals": 10,
-      "status": "pending-manual-review",
-      "evidence": []
+      "status": "shared-css-migrated-static-verified-awaiting-browser-visual-qa",
+      "evidence": [
+        "2026-11-04: extracted 7 shared CSS primitives from popup HTML and dynamic JS; node --check popup.js passed; static class coverage assertion passed; browser interaction/theme QA pending"
+      ]
     },
     {
       "path": "browser-extension/popup/popup.js",
       "kind": "web-dynamic-ui-candidate",
       "shared_ui_reference": false,
       "legacy_style_signals": 9,
-      "status": "pending-manual-review",
-      "evidence": []
+      "status": "shared-css-migrated-static-verified-awaiting-browser-visual-qa",
+      "evidence": [
+        "2026-11-04: extracted 7 shared CSS primitives from popup HTML and dynamic JS; node --check popup.js passed; static class coverage assertion passed; browser interaction/theme QA pending"
+      ]
     },
     {
       "path": "cloudflare/src/upgrade-page.js",

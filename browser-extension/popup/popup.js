@@ -191,7 +191,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     marketCategories.innerHTML = categories.map(cat => {
       const isSelected = selectedMarketCategory === cat.id;
-      const currentDot = cat.isCurrent ? '<span class="current-site-dot" style="width:6px;height:6px;background:#10b981;border-radius:50%;display:inline-block;margin-right:4px;"></span>' : '';
+      const currentDot = cat.isCurrent ? '<span class="current-site-dot"></span>' : '';
       return `<button type="button" class="market-category-chip ${cat.isCurrent ? 'is-current-chip' : ''}" data-market-category="${escapeHtml(cat.id)}" aria-pressed="${String(isSelected)}">
         <span>${currentDot}${escapeHtml(cat.label)}</span>
         <small>${cat.count}</small>
@@ -217,7 +217,7 @@ document.addEventListener("DOMContentLoaded", () => {
             <button type="button" class="rule-pill-delete" data-delete-xhs-rule="${escapeHtml(rule.id || '')}" title="移出此条屏蔽">×</button>
           </div>`;
         }).join('')
-      : `<div class="market-empty compact" style="padding:10px 4px;font-size:11px;color:#94a3b8;">
+      : `<div class="market-empty compact yanzi-empty-hint">
           ${allXhsRuleItems.length ? '当前分类下暂无规则' : '暂无屏蔽规则'}
         </div>`;
 
@@ -227,7 +227,7 @@ document.addEventListener("DOMContentLoaded", () => {
           <div class="webapp-card-title">
             <div class="webapp-app-icon-box" title="小红书 (xiaohongshu.com)">
               <img class="webapp-site-favicon" src="${escapeHtml(site.faviconUrl)}" alt="小红书" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-flex';">
-              <span class="webapp-site-svg-fallback" style="display:none;">${site.fallbackSvg}</span>
+              <span class="webapp-site-svg-fallback">${site.fallbackSvg}</span>
             </div>
             <div class="webapp-card-title-info">
               <div class="webapp-title-row">
@@ -252,7 +252,7 @@ document.addEventListener("DOMContentLoaded", () => {
           </div>
           <div class="webapp-rule-pill-box xhs-adaptive-pill-list">${pillsHtml}</div>
         </div>
-        <div class="webapp-card-actions" style="margin-top:8px;">
+        <div class="webapp-card-actions yanzi-spacing-top-sm">
           <button type="button" class="webapp-context-copy" data-copy-context="xiaohongshu.filter" title="复制小红书模块的开发背景给 AI"><span aria-hidden="true">✦</span>帮帮忙</button>
         </div>
       </div>
@@ -274,7 +274,7 @@ document.addEventListener("DOMContentLoaded", () => {
             <button type="button" class="rule-pill-delete" data-delete-douyin-rule="${escapeHtml(rule.id || '')}" title="删除此关键词">×</button>
           </div>`;
         }).join('')
-      : `<div class="market-empty compact" style="padding:10px 4px;font-size:11px;color:#94a3b8;">暂无屏蔽关键词</div>`;
+      : `<div class="market-empty compact yanzi-empty-hint">暂无屏蔽关键词</div>`;
 
     return `<article class="webapp-card webapp-rule-card" data-rule-card="douyin">
       <div class="webapp-card-main">
@@ -282,7 +282,7 @@ document.addEventListener("DOMContentLoaded", () => {
           <div class="webapp-card-title">
             <div class="webapp-app-icon-box" title="抖音 (douyin.com)">
               <img class="webapp-site-favicon" src="${escapeHtml(site.faviconUrl)}" alt="抖音" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-flex';">
-              <span class="webapp-site-svg-fallback" style="display:none;">${site.fallbackSvg}</span>
+              <span class="webapp-site-svg-fallback">${site.fallbackSvg}</span>
             </div>
             <div class="webapp-card-title-info">
               <div class="webapp-title-row">
@@ -305,7 +305,7 @@ document.addEventListener("DOMContentLoaded", () => {
           </form>
           <div class="webapp-rule-pill-box douyin-adaptive-pill-list">${pillsHtml}</div>
         </div>
-        <div class="webapp-card-actions" style="margin-top:8px;">
+        <div class="webapp-card-actions yanzi-spacing-top-sm">
           <button type="button" class="webapp-context-copy" data-copy-context="douyin.filter" title="复制抖音模块的开发背景给 AI"><span aria-hidden="true">✦</span>帮帮忙</button>
         </div>
       </div>
@@ -389,7 +389,7 @@ document.addEventListener("DOMContentLoaded", () => {
               <div class="webapp-card-title">
                 <div class="webapp-app-icon-box" title="${escapeHtml(site.siteName)} (${escapeHtml(site.domain)})">
                   <img class="webapp-site-favicon" src="${escapeHtml(site.faviconUrl)}" alt="${escapeHtml(site.siteName)}" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-flex';">
-                  <span class="webapp-site-svg-fallback" style="display:none;">${site.fallbackSvg}</span>
+                  <span class="webapp-site-svg-fallback">${site.fallbackSvg}</span>
                 </div>
                 <div class="webapp-card-title-info">
                   <div class="webapp-title-row">
