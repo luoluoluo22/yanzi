@@ -16,6 +16,16 @@ public sealed class ExtensionIdleTriggerService
     private readonly DispatcherTimer _timer;
     private readonly Dictionary<string, IdleState> _states = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _runningExtensions = new(StringComparer.OrdinalIgnoreCase);
+    private sealed record StatusSnapshot(string ExtensionId, string Json, string Reason);
+    private static readonly LatestSnapshotWriter<StatusSnapshot> StatusWriter = new(snapshot =>
+    {
+        var directory = ExtensionStorageService.GetExtensionStorageDirectoryPath(snapshot.ExtensionId);
+        var path = Path.Combine(directory, "idle-trigger-status.json");
+        var tempPath = path + ".tmp";
+        File.WriteAllText(tempPath, snapshot.Json, new UTF8Encoding(false));
+        File.Move(tempPath, path, overwrite: true);
+        HostDispatchJournal.Shared.RecordDecision(snapshot.ExtensionId, "host.idle", snapshot.Reason);
+    }, ex => HostAssets.AppendLog("ExtensionIdleTrigger: status publish failed: " + ex.Message));
     private bool _started;
     private bool _checking;
     private DateTimeOffset? _lastObservedAt;
@@ -231,6 +241,12 @@ public sealed class ExtensionIdleTriggerService
                 reason = "once-per-idle";
             }
 
+            // Countdown changes stay in memory; persist transitions immediately and a
+            // diagnostic heartbeat every 30s. The file's observedAt is its freshness marker.
+            var signature = $"{reason}|{fullscreen}|{enabled}|{afterMinutes}|{repeatMinutes}|{state.TriggeredInCurrentIdlePeriod}|{state.LastTriggeredAt:O}";
+            var idleReset = idleDuration.TotalSeconds < state.LastStatusIdleSeconds;
+            state.LastStatusIdleSeconds = idleDuration.TotalSeconds;
+            if (!idleReset && signature == state.PublishedSignature && now - state.PublishedAt < TimeSpan.FromSeconds(30)) return;
             var json = JsonSerializer.Serialize(new
             {
                 observedAt = now,
@@ -245,12 +261,9 @@ public sealed class ExtensionIdleTriggerService
                 reason
             });
 
-            var directory = ExtensionStorageService.GetExtensionStorageDirectoryPath(command.ExtensionId);
-            var path = Path.Combine(directory, "idle-trigger-status.json");
-            var tempPath = path + ".tmp";
-            File.WriteAllText(tempPath, json, new UTF8Encoding(false));
-            File.Move(tempPath, path, overwrite: true);
-            HostDispatchJournal.Shared.RecordDecision(command.ExtensionId, "host.idle", reason);
+            StatusWriter.Enqueue(command.ExtensionId, new StatusSnapshot(command.ExtensionId, json, reason));
+            state.PublishedSignature = signature;
+            state.PublishedAt = now;
         }
         catch (Exception ex)
         {
@@ -334,6 +347,9 @@ public sealed class ExtensionIdleTriggerService
 
     private sealed class IdleState
     {
+        public double LastStatusIdleSeconds { get; set; }
+        public string? PublishedSignature { get; set; }
+        public DateTimeOffset PublishedAt { get; set; }
         public bool TriggeredInCurrentIdlePeriod { get; set; }
         public DateTimeOffset? LastTriggeredAt { get; set; }
     }

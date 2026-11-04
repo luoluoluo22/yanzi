@@ -343,11 +343,30 @@ public partial class MainWindow
         e.Handled = true;
     }
 
+    private bool _loadingAiMessages, _aiScrollPosted;
     private void AiChatMessages_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        UpdateAiChatTimeDividers();
+        if (_loadingAiMessages) return;
+        if (e.Action == NotifyCollectionChangedAction.Add && e.NewStartingIndex == _aiChatMessages.Count - 1)
+        {
+            var last = _aiChatMessages[^1];
+            last.ShowTimeDivider = AiChatMessage.NeedsTimeDivider(
+                _aiChatMessages.Count > 1 ? _aiChatMessages[^2] : null, last);
+        }
+        else UpdateAiChatTimeDividers();
         OnPropertyChanged(nameof(VisibleCountText));
-        _ = Dispatcher.BeginInvoke(() => AiChatScrollViewer?.ScrollToEnd(), DispatcherPriority.Background);
+        QueueAiScrollToEnd();
+    }
+
+    private void QueueAiScrollToEnd()
+    {
+        if (_aiScrollPosted) return;
+        _aiScrollPosted = true;
+        _ = Dispatcher.BeginInvoke(() =>
+        {
+            _aiScrollPosted = false;
+            if (_aiChatMessages.Count > 0) AiChatMessagesList?.ScrollIntoView(_aiChatMessages[^1]);
+        }, DispatcherPriority.Background);
     }
 
     private void AiChatAttachments_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -460,15 +479,17 @@ public partial class MainWindow
 
     private void LoadTopicMessages()
     {
-        _aiChatMessages.Clear();
-        if (_selectedAiChatTopic != null)
+        _loadingAiMessages = true;
+        try
         {
-            foreach (var message in _selectedAiChatTopic.Messages)
-            {
-                _aiChatMessages.Add(message);
-            }
+            _aiChatMessages.Clear();
+            if (_selectedAiChatTopic != null)
+                foreach (var message in _selectedAiChatTopic.Messages) _aiChatMessages.Add(message);
         }
+        finally { _loadingAiMessages = false; }
         UpdateAiChatTimeDividers();
+        OnPropertyChanged(nameof(VisibleCountText));
+        QueueAiScrollToEnd();
     }
 
     private void UpdateAiChatTimeDividers()
