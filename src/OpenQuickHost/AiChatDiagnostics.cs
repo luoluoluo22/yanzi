@@ -19,6 +19,8 @@ namespace OpenQuickHost;
 internal static class AiChatDiagnostics
 {
     private static readonly object Gate = new();
+    private static readonly AiChatLogSnapshotCache ReadCache = new();
+    private static long _logRevision;
     internal static string LogPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "OpenQuickHost", "logs", "ai-chat.log");
@@ -36,6 +38,7 @@ internal static class AiChatDiagnostics
                     File.Move(LogPath, LogPath + ".old", true);
                 }
                 File.AppendAllText(LogPath, line + Environment.NewLine, Encoding.UTF8);
+                Interlocked.Increment(ref _logRevision);
             }
         }
         catch
@@ -50,25 +53,16 @@ internal static class AiChatDiagnostics
         return sanitized.Length > 250 ? sanitized[..250] : sanitized;
     }
 
-    internal static string ReadRecent(string? topicId, bool allTopics)
-    {
-        if (!File.Exists(LogPath))
-            return "尚无 AI 对话日志。发送消息后会记录请求阶段、耗时、HTTP 状态和错误类别。\n不会记录密钥、消息正文或模型回复。";
-        try
-        {
-            string[] lines;
-            lock (Gate) { lines = File.ReadAllLines(LogPath, Encoding.UTF8); }
-            var selected = lines.Where(line => allTopics || string.IsNullOrEmpty(topicId) ||
-                    line.Contains("|topic=" + topicId + "|", StringComparison.Ordinal))
-                    .TakeLast(250).ToArray();
-            return selected.Length > 0 ? string.Join(Environment.NewLine, selected)
-                : "当前对话尚无请求日志，可勾选「显示全部对话」查看其他记录。";
-        }
-        catch (IOException e)
-        {
-            return "日志暂时无法读取：" + e.GetType().Name;
-        }
-    }
+    internal static string ReadRecent(string? topicId, bool allTopics) =>
+        ReadCache.ReadRecent(LogPath, topicId, allTopics,
+            () => Interlocked.Read(ref _logRevision),
+            path =>
+            {
+                lock (Gate) return File.ReadAllLines(path, Encoding.UTF8);
+            });
+
+    // Manual refresh bypasses cached snapshots even when an external writer preserves metadata.
+    internal static void ForceReload() => Interlocked.Increment(ref _logRevision);
 }
 
 internal sealed class AiChatLogWindow : Window
@@ -77,6 +71,10 @@ internal sealed class AiChatLogWindow : Window
     private readonly CheckBox _all;
     private readonly Func<string?> _currentTopic;
     private readonly DispatcherTimer _refreshTimer;
+    private bool _isClosed;
+    private bool _refreshRunning;
+    private bool _refreshPending;
+    private readonly AiChatLogRefreshVersion _refreshVersion = new();
 
     internal AiChatLogWindow(Window owner, Func<string?> currentTopic)
     {
@@ -104,7 +102,7 @@ internal sealed class AiChatLogWindow : Window
         _all.Unchecked += (_, _) => Reload();
         actions.Children.Add(_all);
         var refresh = new Button { Content = "刷新", MinWidth = 65, Margin = new Thickness(0, 0, 8, 0) };
-        refresh.Click += (_, _) => Reload();
+        refresh.Click += (_, _) => { AiChatDiagnostics.ForceReload(); Reload(force: true); };
         actions.Children.Add(refresh);
         var copy = new Button { Content = "复制日志", MinWidth = 80 };
         copy.Click += (_, _) => CopyLog();
@@ -143,7 +141,12 @@ internal sealed class AiChatLogWindow : Window
         _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
         _refreshTimer.Tick += (_, _) => Reload();
         Loaded += (_, _) => { Reload(); _refreshTimer.Start(); };
-        Closed += (_, _) => _refreshTimer.Stop();
+        Closed += (_, _) =>
+        {
+            _isClosed = true;
+            _refreshVersion.Cancel();
+            _refreshTimer.Stop();
+        };
     }
 
     private void CopyLog()
@@ -151,9 +154,49 @@ internal sealed class AiChatLogWindow : Window
         if (!string.IsNullOrEmpty(_text.Text)) Clipboard.SetText(_text.Text);
     }
 
-    private void Reload()
+    private void Reload(bool force = false)
     {
-        var updated = AiChatDiagnostics.ReadRecent(_currentTopic(), _all.IsChecked == true);
-        if (_text.Text != updated) _text.Text = updated;
+        if (_isClosed) return;
+        // Repeated timer ticks must not invalidate an in-flight read when the
+        // selected conversation is unchanged, even on a slow disk.
+        if (force) _refreshVersion.Cancel();
+        _refreshVersion.Observe(_currentTopic(), _all.IsChecked == true);
+        _refreshPending = true;
+        if (!_refreshRunning) _ = ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _refreshRunning = true;
+        try
+        {
+            while (_refreshPending && !_isClosed)
+            {
+                _refreshPending = false;
+                var generation = _refreshVersion.Generation;
+                var topic = _currentTopic();
+                var allTopics = _all.IsChecked == true;
+                // Filesystem probes and full-file reads run outside the UI dispatcher.
+                var updated = await Task.Run(() => AiChatDiagnostics.ReadRecent(topic, allTopics));
+                if (_isClosed) return;
+                if (generation != _refreshVersion.Generation ||
+                    !string.Equals(topic, _currentTopic(), StringComparison.Ordinal) ||
+                    allTopics != (_all.IsChecked == true))
+                {
+                    _refreshPending = true;
+                    continue;
+                }
+                if (_text.Text != updated) _text.Text = updated;
+            }
+        }
+        catch (Exception ex)
+        {
+            if (!_isClosed) _text.Text = "日志暂时无法读取：" + ex.GetType().Name;
+        }
+        finally
+        {
+            _refreshRunning = false;
+            if (_refreshPending && !_isClosed) Reload();
+        }
     }
 }
