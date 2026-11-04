@@ -1334,6 +1334,8 @@ body {
 .yanzi-empty-hint { padding: 10px 4px; font-size: 11px; color: var(--text-muted); }
 .current-site-dot { width: 6px; height: 6px; background: var(--success-color); border-radius: 50%; display: inline-block; margin-right: 4px; }
 .webapp-site-svg-fallback { display: none; }
+/* Shared image-error fallback: keep layout and visibility in CSS. */
+.webapp-site-svg-fallback.yanzi-fallback-visible { display: inline-flex; }
 
 /* Douyin rule editor layout */
 #douyin-card-rule-form { margin: 0 0 8px; }

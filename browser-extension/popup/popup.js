@@ -226,7 +226,7 @@ document.addEventListener("DOMContentLoaded", () => {
         <div class="webapp-card-head">
           <div class="webapp-card-title">
             <div class="webapp-app-icon-box" title="小红书 (xiaohongshu.com)">
-              <img class="webapp-site-favicon" src="${escapeHtml(site.faviconUrl)}" alt="小红书" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-flex';">
+              <img class="webapp-site-favicon" src="${escapeHtml(site.faviconUrl)}" alt="小红书" onerror="this.classList.add('yanzi-hidden'); this.nextElementSibling.classList.add('yanzi-fallback-visible');">
               <span class="webapp-site-svg-fallback">${site.fallbackSvg}</span>
             </div>
             <div class="webapp-card-title-info">
@@ -281,7 +281,7 @@ document.addEventListener("DOMContentLoaded", () => {
         <div class="webapp-card-head">
           <div class="webapp-card-title">
             <div class="webapp-app-icon-box" title="抖音 (douyin.com)">
-              <img class="webapp-site-favicon" src="${escapeHtml(site.faviconUrl)}" alt="抖音" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-flex';">
+              <img class="webapp-site-favicon" src="${escapeHtml(site.faviconUrl)}" alt="抖音" onerror="this.classList.add('yanzi-hidden'); this.nextElementSibling.classList.add('yanzi-fallback-visible');">
               <span class="webapp-site-svg-fallback">${site.fallbackSvg}</span>
             </div>
             <div class="webapp-card-title-info">
@@ -388,7 +388,7 @@ document.addEventListener("DOMContentLoaded", () => {
             <div class="webapp-card-head">
               <div class="webapp-card-title">
                 <div class="webapp-app-icon-box" title="${escapeHtml(site.siteName)} (${escapeHtml(site.domain)})">
-                  <img class="webapp-site-favicon" src="${escapeHtml(site.faviconUrl)}" alt="${escapeHtml(site.siteName)}" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-flex';">
+                  <img class="webapp-site-favicon" src="${escapeHtml(site.faviconUrl)}" alt="${escapeHtml(site.siteName)}" onerror="this.classList.add('yanzi-hidden'); this.nextElementSibling.classList.add('yanzi-fallback-visible');">
                   <span class="webapp-site-svg-fallback">${site.fallbackSvg}</span>
                 </div>
                 <div class="webapp-card-title-info">
@@ -428,7 +428,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return `<div class="webapp-site-group">
         <div class="webapp-site-header">
           <div class="webapp-site-title">
-            <img class="webapp-site-mini-icon" src="${escapeHtml(site.faviconUrl)}" onerror="this.style.display='none';">
+            <img class="webapp-site-mini-icon" src="${escapeHtml(site.faviconUrl)}" onerror="this.classList.add('yanzi-hidden');">
             <span>${escapeHtml(site.siteName)}</span>
             <span class="webapp-site-domain-tag">${escapeHtml(site.domain)}</span>
             ${currentBadge}
