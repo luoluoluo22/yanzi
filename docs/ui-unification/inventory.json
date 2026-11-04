@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "base_commit": "32011a6",
+  "base_commit": "eea3f49",
   "note": "Persistent candidate-source inventory: re-scan preserves manual status and evidence and retains missing candidates; not a count of distinct runtime screens.",
   "items": [
     {
@@ -936,10 +936,12 @@
     {
       "path": "src/OpenQuickHost/InputStateWindow.xaml",
       "kind": "desktop-xaml",
-      "shared_ui_reference": false,
-      "legacy_style_signals": 3,
-      "status": "pending-manual-review",
-      "evidence": []
+      "shared_ui_reference": true,
+      "legacy_style_signals": 0,
+      "status": "shared-controls-migrated-static-verified-awaiting-windows-runtime-functional-visual-qa",
+      "evidence": [
+        "2026-11-04: three reset/refresh buttons use DynamicResource Yanzi.Button.Outline; constructor applies host-selected shared WPF theme; handlers and 250ms timer preserved; XML parse and git diff --check passed; Windows runtime and visual QA not yet run"
+      ]
     },
     {
       "path": "src/OpenQuickHost/InstalledAppPickerDialog.xaml",
