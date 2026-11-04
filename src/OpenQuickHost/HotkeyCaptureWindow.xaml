@@ -57,6 +57,7 @@
                            FontSize="{DynamicResource FontSizeNormal}"
                            FontWeight="SemiBold" />
                 <TextBox x:Name="DisplayNameTextBox"
+                         Style="{DynamicResource Yanzi.Input}"
                          Margin="0,6,0,0"
                          Height="34"
                          VerticalContentAlignment="Center"
@@ -67,7 +68,7 @@
                        Grid.Row="4"
                        Margin="0,6,0,0"
                        VerticalAlignment="Center"
-                       Foreground="#FFEF4444"
+                       Foreground="{DynamicResource Yanzi.Brush.Danger}"
                        FontSize="{DynamicResource FontSizeSmallPlus}"
                        TextWrapping="NoWrap"
                        TextTrimming="CharacterEllipsis"

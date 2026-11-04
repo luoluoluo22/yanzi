@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "base_commit": "6e20339",
+  "base_commit": "32011a6",
   "note": "Persistent candidate-source inventory: re-scan preserves manual status and evidence and retains missing candidates; not a count of distinct runtime screens.",
   "items": [
     {
       "path": "browser-extension/popup/media-panel.js",
       "kind": "web-dynamic-ui-candidate",
-      "shared_ui_reference": true,
+      "shared_ui_reference": false,
       "legacy_style_signals": 0,
       "status": "shared-css-a11y-static-verified-awaiting-browser-visual-qa",
       "evidence": [
@@ -906,11 +906,12 @@
       "path": "src/OpenQuickHost/HotkeyCaptureWindow.xaml",
       "kind": "desktop-xaml",
       "shared_ui_reference": true,
-      "legacy_style_signals": 1,
+      "legacy_style_signals": 0,
       "status": "windows-runtime-smoke-passed-awaiting-functional-visual-qa",
       "evidence": [
         "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check",
-        "Windows runtime smoke 2026-11-04 on PC-202409131508: real window rendered; shared default button style; Confirm disabled before recording; 11/11 runner tests pass; source fix 41181fa; see docs/ui-unification/qa-2026-11-04.md"
+        "Windows runtime smoke 2026-11-04 on PC-202409131508: real window rendered; shared default button style; Confirm disabled before recording; 11/11 runner tests pass; source fix 41181fa; see docs/ui-unification/qa-2026-11-04.md",
+        "2026-11-04: display-name TextBox now uses Yanzi.Input and error text uses Yanzi.Brush.Danger; XML parsing and source assertions passed on Ubuntu; Windows runtime regression and visual QA still pending."
       ],
       "version_commit": "41181fa199b4975b3f9b2ac5b18cdce71b5143a2",
       "smoke_qa": {
