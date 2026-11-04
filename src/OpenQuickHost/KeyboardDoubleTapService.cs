@@ -57,6 +57,8 @@ public static class KeyboardDoubleTapService
     private static bool _doubleAltEnabled = true;
     private static bool _suppressCurrentAltTap;
     private static bool _suppressCurrentCtrlTap;
+    // The second Ctrl press fires immediately; its release must not start a new tap sequence.
+    private static int _triggeredCtrlVk;
     private static bool _winOverlayActive;
     private static bool _winOverlayEnabled = true;
     private static bool _winHoldEnabled = true;
@@ -162,6 +164,7 @@ public static class KeyboardDoubleTapService
         _doubleAltEnabled = string.Equals(shortcut, "DoubleAlt", StringComparison.OrdinalIgnoreCase);
         _suppressCurrentAltTap = false;
         _suppressCurrentCtrlTap = false;
+        _triggeredCtrlVk = 0;
     }
 
     public static void Stop()
@@ -340,25 +343,8 @@ public static class KeyboardDoubleTapService
         switch (vkCode)
         {
             case VkLControl:
-                if (ShouldSuppressCurrentCtrlTap())
-                {
-                    _leftCtrlDown = true;
-                    _suppressCurrentCtrlTap = true;
-                    return true;
-                }
-
-                _leftCtrlDown = true;
-                return false;
             case VkRControl:
-                if (ShouldSuppressCurrentCtrlTap())
-                {
-                    _rightCtrlDown = true;
-                    _suppressCurrentCtrlTap = true;
-                    return true;
-                }
-
-                _rightCtrlDown = true;
-                return false;
+                return HandleControlKeyDown(vkCode);
             case VkLMenu:
                 if (ShouldSuppressCurrentAltTap())
                 {
@@ -400,6 +386,42 @@ public static class KeyboardDoubleTapService
 
         _sequenceDirty = true;
         return false;
+    }
+
+    private static bool HandleControlKeyDown(int vkCode)
+    {
+        var isLeft = vkCode == VkLControl;
+        // Ignore keyboard auto-repeat while held; do not treat two key-down events as two taps.
+        if (isLeft ? _leftCtrlDown : _rightCtrlDown)
+        {
+            return _triggeredCtrlVk == vkCode;
+        }
+
+        // The first tap has already been completed on key-up. Recognize the second
+        // distinct physical press immediately, without waiting for its key-up.
+        var isSecondTap = !_leftCtrlDown && !_rightCtrlDown && ShouldSuppressCurrentCtrlTap();
+        if (isLeft)
+        {
+            _leftCtrlDown = true;
+        }
+        else
+        {
+            _rightCtrlDown = true;
+        }
+
+        if (!isSecondTap)
+        {
+            return false;
+        }
+
+        _triggeredCtrlVk = vkCode;
+        _suppressCurrentCtrlTap = true;
+        _lastTapKind = ModifierTapKind.None;
+        _lastTapTimestamp = 0;
+        HostAssets.AppendLog("Keyboard double tap: triggered Control on second key down.");
+        // Never execute UI work inside the low-level keyboard hook.
+        UiDispatcher.Post(() => _onDoubleTap?.Invoke(ModifierTapKind.Control.ToString()));
+        return true;
     }
 
     private static bool HandleKeyUp(int vkCode)
@@ -459,6 +481,18 @@ public static class KeyboardDoubleTapService
                 return false;
         }
 
+        // The second Ctrl key-down has already opened the launcher. Consume its
+        // matching release and do not record it as the first tap of another pair.
+        if (releasedKind == ModifierTapKind.Control && _triggeredCtrlVk == vkCode)
+        {
+            _triggeredCtrlVk = 0;
+            _lastTapKind = ModifierTapKind.None;
+            _lastTapTimestamp = 0;
+            _sequenceDirty = false;
+            _suppressCurrentCtrlTap = false;
+            return true;
+        }
+
         if (HasOtherModifiersPressed(releasedKind))
         {
             _sequenceDirty = true;
@@ -468,7 +502,20 @@ public static class KeyboardDoubleTapService
         }
 
         var now = Environment.TickCount64;
-        if (!_sequenceDirty &&
+        // A Ctrl used in a chord (for example Ctrl+C) must not become the first
+        // tap of a new double-Ctrl gesture.
+        if (releasedKind == ModifierTapKind.Control && _sequenceDirty)
+        {
+            _lastTapKind = ModifierTapKind.None;
+            _lastTapTimestamp = 0;
+            _sequenceDirty = false;
+            _suppressCurrentCtrlTap = false;
+            return false;
+        }
+
+        // Double Alt retains its existing release-based behavior; Ctrl fires on press.
+        if (releasedKind == ModifierTapKind.Alt &&
+            !_sequenceDirty &&
             _lastTapKind == releasedKind &&
             now - _lastTapTimestamp <= 350)
         {
@@ -645,7 +692,7 @@ public static class KeyboardDoubleTapService
     {
         return releasedKind switch
         {
-            ModifierTapKind.Control => _leftAltDown || _rightAltDown || _leftShiftDown || _rightShiftDown || _leftWinDown || _rightWinDown,
+            ModifierTapKind.Control => _leftCtrlDown || _rightCtrlDown || _leftAltDown || _rightAltDown || _leftShiftDown || _rightShiftDown || _leftWinDown || _rightWinDown,
             ModifierTapKind.Alt => _leftCtrlDown || _rightCtrlDown || _leftShiftDown || _rightShiftDown || _leftWinDown || _rightWinDown,
             _ => true
         };
@@ -663,6 +710,7 @@ public static class KeyboardDoubleTapService
         _rightWinDown = false;
         _suppressCurrentAltTap = false;
         _suppressCurrentCtrlTap = false;
+        _triggeredCtrlVk = 0;
         _winOverlayActive = false;
         _yanmTriggerDownTimestamp = 0;
         _hasReleasedWinForYanmHold = false;
