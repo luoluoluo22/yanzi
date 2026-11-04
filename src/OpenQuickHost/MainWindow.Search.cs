@@ -16,6 +16,8 @@ namespace OpenQuickHost;
 
 public partial class MainWindow
 {
+    private readonly SearchExtensionTimestampCache _searchSortTimestampCache = new();
+
     private bool TryHandleSearchScopeTabNavigation(System.Windows.Input.KeyEventArgs e)
     {
         if (e.Key != Key.Tab || IsHostedViewOpen)
@@ -640,7 +642,9 @@ public partial class MainWindow
 
         var index = (_appSettings.RecentlyAddedExtensionIds ?? []).FindIndex(id =>
             id.Equals(command.ExtensionId, StringComparison.OrdinalIgnoreCase));
-        var packageUpdatedUtc = GetLocalExtensionModificationUtc(command);
+        var packageUpdatedUtc = _searchSortTimestampCache.Get(
+            command.ExtensionDirectoryPath ?? string.Empty, command.EntryPoint,
+            () => GetLocalExtensionModificationUtc(command));
         var age = DateTime.UtcNow - packageUpdatedUtc;
         // Freshly changed/updated packages precede old discovery-order records.
         // Restrict this boost to recent files so an old installation cannot dominate forever.
@@ -659,6 +663,11 @@ public partial class MainWindow
 
         var isFileScopeSelected = string.Equals(SelectedSearchScope?.Key, SearchScopeFile, StringComparison.OrdinalIgnoreCase);
         var currentPinnedProvider = string.IsNullOrEmpty(parsed.ScopeKey) ? null : (SelectedSearchScope?.Key ?? string.Empty);
+        // Resolve pinned provider scopes once: each resolution scans the command catalog.
+        // Doing so inside the command/scope nested loop made per-keystroke work quadratic.
+        var pinnedProviderScopes = SearchPinnedScopeLookup.Resolve(
+            SearchScopes.Select(scope => scope.Key),
+            scopeKey => TryGetPinnedSearchProviderCommand(scopeKey, out _));
 
         if (!parsed.IsEmpty)
         {
@@ -704,7 +713,7 @@ public partial class MainWindow
                     {
                         continue;
                     }
-                    if (TryGetPinnedSearchProviderCommand(scope.Key, out _))
+                    if (pinnedProviderScopes.Contains(scope.Key))
                     {
                         if (string.Equals(scope.Key, currentPinnedProvider, StringComparison.OrdinalIgnoreCase))
                         {
@@ -760,7 +769,7 @@ public partial class MainWindow
                 scope.Count = CountYanyuResults(string.Empty);
                 continue;
             }
-            if (TryGetPinnedSearchProviderCommand(scope.Key, out _))
+            if (pinnedProviderScopes.Contains(scope.Key))
             {
                 scope.Count = string.Equals(scope.Key, currentPinnedProvider, StringComparison.OrdinalIgnoreCase) ? FilteredCommands.Count : 0;
                 continue;

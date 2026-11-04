@@ -126,6 +126,9 @@ jobs:
       - name: Search usage memory caching and off-thread persistence regression
         if: needs.classify.outputs.tier == 'full'
         run: dotnet run --project tests/SearchUsageMemoryVerification -c Release
+      - name: Search ranking cache and pinned provider scope regression
+        if: needs.classify.outputs.tier == 'full'
+        run: dotnet run --project tests/SearchHotpathVerification -c Release
       - name: AI chat parallelism, SSE and clipboard regression
         if: needs.classify.outputs.tier == 'full'
         shell: pwsh
