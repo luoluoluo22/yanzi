@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "base_commit": "a87b63f",
+  "base_commit": "2cd0dea",
   "note": "Persistent candidate-source inventory: re-scan preserves manual status and evidence and retains missing candidates; not a count of distinct runtime screens.",
   "items": [
     {
@@ -1213,7 +1213,8 @@
       "status": "windows-runtime-smoke-passed-awaiting-functional-visual-qa",
       "evidence": [
         "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check",
-        "Windows runtime smoke 2026-11-04 on PC-202409131508: real window rendered; empty required validation and valid confirmation; 11/11 runner tests pass; source fix 41181fa; see docs/ui-unification/qa-2026-11-04.md"
+        "Windows runtime smoke 2026-11-04 on PC-202409131508: real window rendered; empty required validation and valid confirmation; 11/11 runner tests pass; source fix 41181fa; see docs/ui-unification/qa-2026-11-04.md",
+        "2026-11-04: shared Yanzi.Brush.Danger validation error, AutomationProperties.Name and assertive live setting; XML/event/static assertions pass on Ubuntu; new a11y behavior awaiting Windows Narrator and visual QA"
       ],
       "version_commit": "41181fa199b4975b3f9b2ac5b18cdce71b5143a2",
       "smoke_qa": {
