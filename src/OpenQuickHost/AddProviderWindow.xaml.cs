@@ -10,6 +10,11 @@ public partial class AddProviderWindow : Window
     public AddProviderWindow()
     {
         InitializeComponent();
+        // Load shared UI resources on this dialog; do not mutate the host-wide theme.
+        var theme = AppSettingsStore.Load().ThemeMode;
+        Yanzi.UI.Wpf.YanziUi.ApplyTo(this,
+            string.Equals(theme, "Light", StringComparison.OrdinalIgnoreCase)
+                ? Yanzi.UI.Wpf.YanziTheme.Light : Yanzi.UI.Wpf.YanziTheme.Dark);
         ProviderTypeBox.ItemsSource = new string[]
         {
             "OpenAI",

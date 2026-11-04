@@ -9,8 +9,8 @@
         Style="{StaticResource DialogWindow}">
     <Border Margin="1"
             CornerRadius="0"
-            Background="#F2161616"
-            BorderBrush="#22FFFFFF"
+            Background="{DynamicResource BrushDialogBG}"
+            BorderBrush="{DynamicResource BrushBorder}"
             BorderThickness="1">
         <Grid Margin="25">
             <Grid.RowDefinitions>
@@ -26,6 +26,7 @@
             <StackPanel Grid.Row="1" Margin="0,15,0,0">
                 <TextBlock Text="提供商名称" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" />
                 <TextBox x:Name="ProviderNameBox"
+                         Style="{DynamicResource Yanzi.Input}"
                          Height="38"
                          Margin="0,6,0,0"
                          Padding="12,8"
@@ -38,14 +39,14 @@
                 <ComboBox x:Name="ProviderTypeBox"
                           Height="38"
                           Margin="0,6,0,0"
-                          Style="{StaticResource GlobalComboBoxStyle}"
+                          Style="{DynamicResource Yanzi.Select}"
                           VerticalContentAlignment="Center" />
             </StackPanel>
 
             <TextBlock x:Name="ErrorText"
                        Grid.Row="3"
                        Margin="0,10,0,0"
-                       Foreground="#FFEF4444"
+                       Foreground="{DynamicResource Yanzi.Brush.Danger}"
                        FontSize="{DynamicResource FontSizeSmallPlus}"
                        TextWrapping="Wrap"
                        Visibility="Collapsed" />
@@ -58,7 +59,7 @@
                 </Grid.ColumnDefinitions>
                 <Button Grid.Column="1"
                         Content="取消"
-                        Style="{StaticResource SecondaryBtn}"
+                        Style="{DynamicResource Yanzi.Button.Outline}"
                         Width="90"
                         Height="32"
                         Margin="0,0,10,0"
@@ -66,7 +67,7 @@
                         Click="CancelButton_Click" />
                 <Button Grid.Column="2"
                         Content="确定"
-                        Style="{StaticResource PrimaryBtn}"
+                        Style="{DynamicResource Yanzi.Button.Default}"
                         Width="90"
                         Height="32"
                         IsDefault="True"
