@@ -425,19 +425,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // A periodic metadata check covers missed filesystem watcher events.
         // Download checks use the private account API, not the costly Gitee backup.
         _privateExtensionReconcileTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(3) };
-        _privateExtensionReconcileTimer.Tick += (_, _) =>
+        _privateExtensionReconcileTimer.Tick += async (_, _) =>
         {
             if (!IsLoaded || Dispatcher.HasShutdownStarted || _cloudSyncClient?.HasCredential != true)
                 return;
-            var signature = GetCatalogContentSignature();
-            if (!string.IsNullOrWhiteSpace(signature) &&
-                !string.Equals(signature, _lastCatalogContentSignature, StringComparison.Ordinal))
-            {
-                _lastCatalogContentSignature = signature;
-                ReloadLocalExtensionsFromExternal();
-                SyncLocalExtensionsToCloud();
-            }
-            RefreshMissingPrivateExtensionsFromCloud();
+            await RefreshExtensionCatalogAsync(sync: true);
+            if (!Dispatcher.HasShutdownStarted) RefreshMissingPrivateExtensionsFromCloud();
         };
         _privateExtensionReconcileTimer.Start();
 
@@ -769,10 +762,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private int GetGridColumnCount()
     {
-        var width = CommandList.ActualWidth;
-        if (width <= 0) width = 580;
-        var cols = (int)Math.Floor(width / 88.0);
-        return Math.Max(1, cols);
+        static Yanzi.UI.Wpf.VirtualizingTilePanel? FindPanel(DependencyObject parent)
+        {
+            if (parent is Yanzi.UI.Wpf.VirtualizingTilePanel panel) return panel;
+            for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+                if (FindPanel(VisualTreeHelper.GetChild(parent, i)) is { } child) return child;
+            return null;
+        }
+        return FindPanel(CommandList)?.Columns ?? 1;
     }
 
     private IEnumerable<SearchScopeTab> BuildSearchScopes()
