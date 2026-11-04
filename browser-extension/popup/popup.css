@@ -1310,6 +1310,20 @@ body {
   font-weight: 600;
   cursor: pointer;
 }
+/* Shared keyboard focus for compact OpenCLI controls; no mouse-only focus ring. */
+.opencli-controls-row select:focus-visible,
+.btn-primary-compact:focus-visible,
+.btn-subtle-compact:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
+@media (forced-colors: active) {
+  .opencli-controls-row select:focus-visible,
+  .btn-primary-compact:focus-visible,
+  .btn-subtle-compact:focus-visible {
+    outline-color: Highlight;
+  }
+}
 .btn-subtle-compact:disabled {
   opacity: 0.5;
   cursor: not-allowed;

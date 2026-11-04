@@ -93,3 +93,9 @@
 - `SystemPromptEditorWindow.xaml`：将确认/取消按钮替换为共享 `Yanzi.Button.Default/Outline`，对话框背景与边框改用 `BrushDialogBG/BrushBorder`，移除原窗口硬编码暗色。
 - `SystemPromptEditorWindow.xaml.cs`：构造时按用户主题加载窗口级 `YanziUi` 资源；保留原提示词赋值、光标置尾、确认/取消 DialogResult 和多行输入框的原生 Tab、回车、滚动行为。多行 TextBox 暂不机械替换为单行共享输入模板。
 - 已在家里 Windows 电脑对前一批 10 个窗口所在提交 `ef2aad8` 完成完整 Release 编译（0 错误、18 警告），并实际启动 `Yanzi.UI.Gallery.exe`，看到“燕子 UI · 组件评估中心”窗口；**不代表十个业务窗口逐项交互验收**。本轮新改动需再次 Windows 编译和真实提示词编辑交互验证。
+
+### 2026-11-04 OpenCLI compact controls keyboard focus (awaiting browser QA)
+
+- `browser-extension/popup/popup.css`: shared `:focus-visible` outline for OpenCLI compact primary/subtle buttons and profile selectors; uses `--primary-color` and Windows high-contrast `Highlight` under `forced-colors: active`.
+- Static evidence: Node syntax checks for `opencli-panel.js` and `popup.js`, CSS focus/forced-colors assertions, and `git diff --check` passed on Ubuntu.
+- **Not complete:** browser keyboard navigation, high-contrast rendering and visual screenshots are still required. This is a stylesheet supporting existing inventory candidates, not a newly verified screen.
