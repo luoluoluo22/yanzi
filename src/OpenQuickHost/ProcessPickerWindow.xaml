@@ -124,7 +124,7 @@
                         Padding="14,0"
                         Content="🎯 窗口定位"
                         ToolTip="点击后，在屏幕上直接点击目标应用或游戏窗口，即可自动将其加入黑名单 (按 ESC 取消)"
-                        Style="{StaticResource Yanzi.Button.Outline}"
+                        Style="{DynamicResource Yanzi.Button.Outline}"
                         Click="PickWindowButton_Click" />
             </Grid>
 
@@ -144,13 +144,13 @@
                            Visibility="Collapsed" />
                 <Button Grid.Column="1"
                         Content="取消"
-                        Style="{StaticResource Yanzi.Button.Outline}"
+                        Style="{DynamicResource Yanzi.Button.Outline}"
                         Width="90"
                         Margin="0,0,10,0"
                         Click="CancelButton_Click" />
                 <Button Grid.Column="2"
                         Content="确认"
-                        Style="{StaticResource Yanzi.Button.Default}"
+                        Style="{DynamicResource Yanzi.Button.Default}"
                         Width="90"
                         Click="OkButton_Click" />
             </Grid>

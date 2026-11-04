@@ -37,7 +37,7 @@
                 </StackPanel>
 
                 <TextBox x:Name="TitleTextBox"
-                         Style="{StaticResource Yanzi.Input}"
+                         Style="{DynamicResource Yanzi.Input}"
                          Grid.Column="1"
                          Height="34"
                          Padding="10,6"
@@ -52,14 +52,14 @@
                 <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="12,0,0,0">
                     <Button x:Name="CopyAllButton"
                             Content="复制全文"
-                            Style="{StaticResource Yanzi.Button.Outline}"
+                            Style="{DynamicResource Yanzi.Button.Outline}"
                             Height="32"
                             Padding="12,0"
                             Margin="0,0,6,0"
                             Click="CopyAllButton_Click" />
                     <Button x:Name="OpenFolderButton"
                             Content="打开位置"
-                            Style="{StaticResource Yanzi.Button.Outline}"
+                            Style="{DynamicResource Yanzi.Button.Outline}"
                             Height="32"
                             Padding="10,0"
                             Click="OpenFolderButton_Click" />
@@ -122,7 +122,7 @@
 
                 <Button Grid.Column="1"
                         Content="取消"
-                        Style="{StaticResource Yanzi.Button.Outline}"
+                        Style="{DynamicResource Yanzi.Button.Outline}"
                         Width="90"
                         Height="32"
                         Margin="0,0,10,0"
@@ -130,7 +130,7 @@
 
                 <Button Grid.Column="2"
                         Content="保存 (Ctrl+S)"
-                        Style="{StaticResource Yanzi.Button.Default}"
+                        Style="{DynamicResource Yanzi.Button.Default}"
                         Width="120"
                         Height="32"
                         Click="SaveButton_Click" />
