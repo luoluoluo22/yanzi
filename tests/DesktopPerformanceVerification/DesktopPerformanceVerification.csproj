@@ -5,6 +5,8 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/OpenQuickHost/OpenQuickHost.csproj" />
+    <ProjectReference Include="../../src/Yanzi.UiTesting/Yanzi.UiTesting.csproj" />
+    <None Include="../../src/OpenQuickHost/App.xaml" Link="App.xaml" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../src/OpenQuickHost/MainWindow.xaml" Link="MainWindow.xaml" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../../src/OpenQuickHost/LatestSnapshotWriter.cs" Link="LatestSnapshotWriter.cs" />
     <Compile Include="../../src/OpenQuickHost/ExtensionCatalogFingerprint.cs" Link="ExtensionCatalogFingerprint.cs" />

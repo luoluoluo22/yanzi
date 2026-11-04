@@ -14,12 +14,6 @@ internal static class Program
     [STAThread]
     private static int Main()
     {
-        if (Environment.GetCommandLineArgs().Contains("--native-host"))
-        {
-            var desktop = CreateDesktop("YanziPerf-" + Guid.NewGuid().ToString("N"), IntPtr.Zero, IntPtr.Zero, 0, 0x000F01FF, IntPtr.Zero);
-            if (desktop == IntPtr.Zero) throw new System.ComponentModel.Win32Exception(System.Runtime.InteropServices.Marshal.GetLastWin32Error(), "CreateDesktop");
-            if (!SetThreadDesktop(desktop)) throw new System.ComponentModel.Win32Exception(System.Runtime.InteropServices.Marshal.GetLastWin32Error(), "SetThreadDesktop");
-        }
         VerifyWriter().GetAwaiter().GetResult();
         VerifyFingerprint();
         var application = new OpenQuickHost.App();
@@ -27,7 +21,6 @@ internal static class Program
         VerifyTiles();
         VerifyTranscript();
         VerifyWindowEventCoalescing();
-        if (Environment.GetCommandLineArgs().Contains("--native-host")) VerifyNativeHost();
         Console.WriteLine("DESKTOP_PERFORMANCE_PASS");
         return 0;
     }
@@ -121,12 +114,7 @@ internal static class Program
         }
         return null;
     }
-    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
-    private static extern IntPtr CreateDesktop(string name, IntPtr device, IntPtr devmode, uint flags, uint access, IntPtr attributes);
-    [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
-    private static extern bool SetThreadDesktop(IntPtr desktop);
-
-    private static void VerifyNativeHost()
+    internal static async Task VerifyNativeHost(Yanzi.UiTesting.UiTestContext context)
     {
         Check(HostRuntimeProfile.IsDevelopment && !HostRuntimeProfile.OwnsBackgroundServices, "native host uses isolated dev profile");
         var root = Path.Combine(Path.GetTempPath(), "yanzi-native-performance-" + Guid.NewGuid().ToString("N"));
@@ -136,7 +124,7 @@ internal static class Program
         var host = new MainWindow { ShowActivated = false, ShowInTaskbar = false, AllowClose = true };
         try
         {
-            host.Show();
+            context.ShowWindow(host);
             host.SelectedSearchScope = host.SearchScopes.Single(item => item.Key == "ai");
             var topic = new AiChatTopic("Performance fixture");
             for (var i = 0; i < 2000; i++) topic.Messages.Add(new AiChatMessage(i % 2 == 0, "Native message " + i + " **markdown**"));
@@ -150,15 +138,49 @@ internal static class Program
             list.ScrollIntoView(topic.Messages[0]); Layout(list, 650);
             list.ScrollIntoView(topic.Messages[^1]); Layout(list, 650);
             Check(list.ItemContainerGenerator.ContainerFromIndex(1999) != null, "native MainWindow scrolls entire history");
-            var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap((int)host.ActualWidth, (int)host.ActualHeight, 96, 96, PixelFormats.Pbgra32);
-            bitmap.Render(host);
-            var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder(); encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
-            using (var output = File.Create(Path.Combine(root, "transcript.png"))) encoder.Save(output);
+            context.CaptureWindow(host, "native-transcript");
+            host.SelectedSearchScope = host.SearchScopes.First(item => item.Key != "ai" && item.Key != "store");
+            host.IsGridViewMode = true;
+            host.FilteredCommands.ReplaceAll(Enumerable.Range(0, 1000).Select(i =>
+                new CommandItem("*", "Tile " + i, "Fixture", "Fixture", "#4488CC", null, Array.Empty<string>())));
+            var grid = (ListBox)host.FindName("CommandList");
+            host.UpdateLayout(); Layout(grid, 650);
+            var tiles = Find<VirtualizingTilePanel>(grid);
+            Check(VisualTreeHelper.GetChildrenCount(tiles) is > 0 and < 100, "native launcher grid virtualizes 1000 commands");
+            grid.SelectedIndex = 999; grid.ScrollIntoView(grid.SelectedItem); Layout(grid, 650);
+            Check(grid.ItemContainerGenerator.ContainerFromIndex(999) is ListBoxItem { IsSelected: true }, "native grid selects last command");
+            var columns = (int)typeof(MainWindow).GetMethod("GetGridColumnCount", flags)!.Invoke(host, null)!;
+            Check(columns == tiles.Columns, "native keyboard navigation uses actual grid columns");
+            context.CaptureWindow(host, "native-grid");
             var quick = (QuickPanelWindow)typeof(MainWindow).GetField("_quickPanel", flags)!.GetValue(host)!;
             var timer = (DispatcherTimer)typeof(QuickPanelWindow).GetField("_mobileDetectTimer", flags)!.GetValue(quick)!;
             Check(!timer.IsEnabled, "native hidden quick panel has no badge polling");
             quick.Show(); Check(timer.IsEnabled, "native visible quick panel starts badge polling");
             quick.Hide(); Check(!timer.IsEnabled, "native quick panel stops badge polling when hidden again");
+            // Exercise the actual asynchronous host refresh against synthetic files.
+            var extensionDir = Path.Combine(HostAssets.ExtensionsPath, "perf-fixture");
+            Directory.CreateDirectory(extensionDir);
+            File.WriteAllText(Path.Combine(extensionDir, "manifest.json"),
+                """{"id":"perf-fixture","name":"Performance fixture","version":"1.0.0","runtime":"shell","entryPoint":"entry.ps1"}""");
+            File.WriteAllText(Path.Combine(extensionDir, "entry.ps1"), "# Never executed");
+            using var watcher = new FileSystemWatcher(HostAssets.ExtensionsPath);
+            typeof(MainWindow).GetField("_extensionContentWatcher", flags)!.SetValue(host, watcher);
+            var refresh = typeof(MainWindow).GetMethod("RefreshExtensionCatalogAsync", flags)!;
+            var uiAdvanced = false;
+            var scan = (Task)refresh.Invoke(host, new object[] { false })!;
+            _ = host.Dispatcher.BeginInvoke(DispatcherPriority.Send, new Action(() => uiAdvanced = true));
+            await scan;
+            Check(uiAdvanced, "UI dispatcher advances during catalog scan");
+            Check(host.GetAllCommands().Any(c => c.ExtensionId == "perf-fixture"), "background catalog scan applies new manifest");
+            File.WriteAllText(Path.Combine(extensionDir, "manifest.json"),
+                """{"id":"perf-fixture","name":"Updated fixture","version":"1.0.1","runtime":"shell","entryPoint":"entry.ps1"}""");
+            var scans = Enumerable.Range(0, 12).Select(_ => (Task)refresh.Invoke(host, new object[] { false })!).ToArray();
+            await Task.WhenAll(scans);
+            Check(host.GetAllCommands().Any(c => c.ExtensionId == "perf-fixture" && c.Title == "Updated fixture"), "overlapping refreshes retain latest catalog");
+            File.Delete(Path.Combine(extensionDir, "manifest.json"));
+            await (Task)refresh.Invoke(host, new object[] { false })!;
+            Check(!host.GetAllCommands().Any(c => c.ExtensionId == "perf-fixture"), "background catalog refresh removes deleted manifest");
+            context.Check(true, "Native transcript, grid, quick-panel lifecycle and asynchronous catalog refresh");
             Console.WriteLine("NATIVE_HOST_QA_ARTIFACT=" + root);
         }
         finally { host.AllowClose = true; host.Close(); }
@@ -257,6 +279,15 @@ internal static class Program
         panel.SetVerticalOffset(0); Layout(list, 220);
         data.Insert(0, "inserted"); Layout(list, 220);
         Check(((ListBoxItem)list.ItemContainerGenerator.ContainerFromIndex(0)).Content.Equals("inserted"), "move/remove/replace/insert keep generator consistent");
+        for (var i = 0; i < 40; i++)
+        {
+            data.RemoveAt(0); data.Insert(0, "new " + i); data.Move(0, 2); data[1] = "replaced " + i;
+            Layout(list, 220);
+            for (var j = 0; j < Math.Min(10, data.Count); j++)
+                if (list.ItemContainerGenerator.ContainerFromIndex(j) is ListBoxItem item)
+                    if (!Equals(item.Content, data[j])) throw new InvalidOperationException("stale container after collection mutation");
+        }
+        Check(true, "40 collection mutation batches preserve realized data");
         data.Clear(); Layout(list);
         Check(VisualTreeHelper.GetChildrenCount(panel) == 0 && panel.VerticalOffset == 0, "reset clears containers and clamps offset");
         data.Add("restart"); Layout(list);

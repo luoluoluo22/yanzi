@@ -43,7 +43,11 @@ public sealed class WindowBoundExtensionsService : IDisposable
         _fallbackTickHandler = (_, _) => SafeTick();
         _fallbackTimer.Tick += _fallbackTickHandler;
         _winEventCallback = HandleWinEvent;
-        _hoverTimer.Tick += (_, _) => RefreshHoverOnly();
+        _hoverTimer.Tick += (_, _) =>
+        {
+            try { RefreshHoverOnly(); }
+            catch (Exception ex) { HostAssets.AppendLog("Window binding hover refresh failed: " + ex.Message); }
+        };
         _eventTimer.Tick += (_, _) => FlushWindowEvents();
     }
 

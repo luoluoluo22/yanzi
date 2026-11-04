@@ -19,6 +19,7 @@ public sealed class VirtualizingTilePanel : VirtualizingPanel, IScrollInfo
     public double TileWidth { get => (double)GetValue(TileWidthProperty); set => SetValue(TileWidthProperty, value); }
     public double TileHeight { get => (double)GetValue(TileHeightProperty); set => SetValue(TileHeightProperty, value); }
     private int _columns = 1;
+    public int Columns => _columns;
     private double _offset;
     private Size _extent, _viewport;
 
