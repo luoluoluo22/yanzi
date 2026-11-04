@@ -1694,7 +1694,7 @@
                 </Grid>
             </Grid>
 
-            <Grid Grid.RowSpan="3"
+            <Grid x:Name="AiChatDockPanel" Grid.RowSpan="3"
                   Margin="16,12,16,14"
                   Panel.ZIndex="25"
                   Visibility="{Binding AiChatVisibility}">
@@ -1825,7 +1825,15 @@
                             </ItemsControl>
                         </ScrollViewer>
                         <StackPanel Grid.Row="3" Margin="12,6,12,12" Orientation="Horizontal">
-                        <Button Width="132" Margin="0,0,8,0"
+                        <Button Width="42" Height="38" Margin="0,0,8,0"
+                                Style="{DynamicResource Yanzi.Button.Outline}"
+                                ToolTip="管理 AI 定时任务"
+                                Click="AiChatScheduleButton_Click">
+                            <Path Data="{local:IconGeometry alarm}" Width="17" Height="17"
+                                  Stretch="Uniform"
+                                  Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                        </Button>
+                        <Button Width="104" Margin="0,0,8,0"
                                 Height="38" HorizontalContentAlignment="Left"
                                 Style="{DynamicResource Yanzi.Button.Outline}"
                                 Click="AiChatSettingsButton_Click">
@@ -1836,7 +1844,7 @@
                                 <TextBlock Text="设置" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
-                        <Button Width="132" Height="38"
+                        <Button Width="104" Height="38"
                                 Style="{DynamicResource Yanzi.Button.Outline}"
                                 ToolTip="查看模型请求日志（不包含密钥和对话内容）"
                                 Click="AiChatLogButton_Click">
@@ -1859,6 +1867,21 @@
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
+
+                    <Button Grid.Row="0" HorizontalAlignment="Right"
+                            Margin="0,0,0,7" Padding="10,3"
+                            Height="30"
+                            Style="{DynamicResource Yanzi.Button.Ghost}"
+                            ToolTip="分离为任务栏中的独立 AI 对话窗口"
+                            Click="AiChatDetachButton_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Data="{local:IconGeometry open-in-new}"
+                                  Width="15" Height="15" Stretch="Uniform"
+                                  Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                            <TextBlock Text="分离窗口" Margin="7,0,0,0"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
 
                     <!-- 消息区 -->
                     <Border Grid.Row="1" Margin="0,0,0,14"

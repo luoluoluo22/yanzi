@@ -216,6 +216,42 @@
               </div>
             </article>
 
+                        <article class="webapi-card debugger-card" id="media-unified-card">
+              <div class="webapi-card-head">
+                <div class="webapi-card-name"><strong>跨平台作品检索与详情 API</strong></div>
+                <span class="webapi-status-badge debug">media.v1 · 只读</span>
+              </div>
+              <p class="guide-help">三平台统一流程：关键词搜索 → 选择作品 → 详情／评论。使用本机登录会话；缺失指标明确标记，不填充为 0。</p>
+              <div class="opencli-controls-row">
+                <div class="control-group"><label for="media-site">搜索平台</label>
+                  <select id="media-site">
+                    <option value="xiaohongshu">小红书</option>
+                    <option value="douyin">抖音</option>
+                    <option value="bilibili">B 站</option>
+                  </select>
+                </div>
+                <div class="control-group"><label for="media-limit">最多读取</label>
+                  <select id="media-limit"><option value="5">5 条</option><option value="10">10 条</option><option value="20">20 条</option></select>
+                </div>
+              </div>
+              <div class="media-search-row">
+                <input id="media-keyword" maxlength="80" type="search" placeholder="搜索关键词，例如：人工智能" aria-label="作品搜索关键词" />
+                <button id="media-search" type="button">搜索作品</button>
+              </div>
+              <div class="media-search-row">
+                <input id="media-target" type="url" maxlength="550" placeholder="粘贴作品 URL，可直接读取详情与评论" aria-label="作品 URL" />
+                <button id="media-detail" type="button">获取详情</button>
+                <button id="media-comments" type="button">读取评论</button>
+              </div>
+              <p class="opencli-status" id="media-status" role="status" aria-live="polite">本地只读 · 数据不上传云端</p>
+              <div id="media-results" class="media-results" aria-label="作品搜索结果"></div>
+              <div class="opencli-actions">
+                <button id="media-copy" type="button" disabled>复制统一 JSON</button>
+                <button id="media-copy-example" type="button">复制接入示例</button>
+              </div>
+              <pre id="media-result" class="opencli-result" aria-label="统一媒体 API JSON 结果"></pre>
+            </article>
+
             <!-- 专有 API 在线读取调试区 (保留原有 OpenCLI 功能) -->
             <article class="webapi-card debugger-card">
               <div class="webapi-card-head">
@@ -446,6 +482,8 @@
   
   <script src="popup.js"></script>
   
+  <script src="opencli-store-guide.js"></script>
   <script src="opencli-panel.js"></script>
+  <script src="media-panel.js"></script>
 </body>
 </html>

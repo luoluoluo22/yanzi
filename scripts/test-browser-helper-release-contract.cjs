@@ -24,7 +24,7 @@ assert.ok(html.includes('网页 API') && html.includes('market-top-bar'), 'old e
 const scripts = [
   'background.js', 'webapps/runtime-background.js',
   'webapps/common/webapp-bridge.js',
-  'popup/popup.js', 'popup/opencli-panel.js',
+  'popup/popup.js', 'popup/opencli-panel.js', 'popup/media-panel.js', 'popup/opencli-store-guide.js', 'media-api.js', 'opencli-store-onboarding.js',
   ...catalog.apps.map(x => x.contentScript).filter(Boolean)
 ];
 for (const name of scripts) execFileSync(process.execPath, ['--check', path.join(root, name)], {stdio:'pipe'});

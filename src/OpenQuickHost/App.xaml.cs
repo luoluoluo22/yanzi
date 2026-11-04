@@ -193,14 +193,21 @@ public partial class App : WpfApplication
                     arg.StartsWith("yanzi://", StringComparison.OrdinalIgnoreCase));
                 var shutdownRequested = e.Args.Any(static arg =>
                     arg.Equals("--shutdown", StringComparison.OrdinalIgnoreCase));
+                var chatRequested = e.Args.Any(static arg =>
+                    arg.Equals(AiChatTaskbarIdentity.RelaunchArgument, StringComparison.OrdinalIgnoreCase));
+                var miniAppToken = MiniAppTaskbarIdentity.FindLaunchToken(e.Args);
                 var message = shutdownRequested
                     ? "__shutdown__"
-                    : string.IsNullOrWhiteSpace(protocolArgument)
-                        ? "__show__"
-                        : protocolArgument;
+                    : chatRequested
+                        ? "__ai_chat__"
+                        : miniAppToken != null
+                            ? MiniAppTaskbarIdentity.ToMessage(miniAppToken)
+                            : string.IsNullOrWhiteSpace(protocolArgument)
+                            ? "__show__"
+                            : protocolArgument;
 
                 // 普通二次启动只需快速唤起；开发重启则给优雅退出更充足的 IPC 建连时间。
-                using var cts = new CancellationTokenSource(shutdownRequested ? 1500 : 300);
+                using var cts = new CancellationTokenSource(shutdownRequested ? 1500 : chatRequested || miniAppToken != null ? 2000 : 300);
                 _ = _singleInstanceService.SendToPrimaryInstanceAsync(message, cts.Token).GetAwaiter().GetResult();
             }
             catch
@@ -277,7 +284,8 @@ public partial class App : WpfApplication
             if (HostRuntimeProfile.OwnsBackgroundServices) _externalAccessApproval = new ExternalAccessApprovalService();
             window.EnsureStandbyRadialMenu();
 
-            bool explicitlyHidden = ShouldStartHidden(e.Args);
+            bool explicitlyHidden = ShouldStartHidden(e.Args) ||
+                MiniAppTaskbarIdentity.FindLaunchToken(e.Args) != null;
             bool explicitlyShown = ShouldStartExplicitlyShown(e.Args);
 
             if (explicitlyHidden)
@@ -320,6 +328,18 @@ public partial class App : WpfApplication
             StartLocalAgentApi(window, settings);
             _singleInstanceService.StartServer(message => HandleSecondaryLaunchMessageAsync(window, message));
             _ = HandleLaunchArgumentsAsync(window, e.Args);
+            var initialMiniAppToken = MiniAppTaskbarIdentity.FindLaunchToken(e.Args);
+            if (MiniAppTaskbarIdentity.TryDecodeToken(initialMiniAppToken, out var initialMiniAppId))
+            {
+                _ = Dispatcher.BeginInvoke(new Action(() => window.OpenMiniAppFromTaskbar(initialMiniAppId)),
+                    System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            }
+            if (e.Args.Any(static arg => arg.Equals(
+                    AiChatTaskbarIdentity.RelaunchArgument, StringComparison.OrdinalIgnoreCase)))
+            {
+                _ = Dispatcher.BeginInvoke(new Action(window.OpenDetachedAiChatFromTaskbar),
+                    System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            }
             // Development-only preview of the REAL SettingsWindow; production is untouched.
             if (HostRuntimeProfile.IsDevelopment && e.Args.Any(static arg =>
                     arg.Equals("--settings-preview", StringComparison.OrdinalIgnoreCase)))
@@ -841,6 +861,21 @@ public partial class App : WpfApplication
                 // Dispatch subscribed exit notifications before shutdown.
                 DisposeNotifyIcon();
                 await window.RequestGracefulShutdownAsync();
+                return;
+            }
+
+            if (string.Equals(message, "__ai_chat__", StringComparison.Ordinal))
+            {
+                window.OpenDetachedAiChatFromTaskbar();
+                return;
+            }
+
+            if (message.StartsWith("__miniapp__:", StringComparison.Ordinal))
+            {
+                if (MiniAppTaskbarIdentity.TryDecodeMessage(message, out var extensionId))
+                    window.OpenMiniAppFromTaskbar(extensionId);
+                else
+                    HostAssets.AppendLog("[MiniAppTaskbar] Rejected invalid relaunch token.");
                 return;
             }
 
