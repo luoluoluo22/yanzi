@@ -16,6 +16,7 @@ internal static class Program
     {
         VerifyWriter().GetAwaiter().GetResult();
         VerifyFingerprint();
+        VerifySelectiveRunningState();
         var application = new OpenQuickHost.App();
         application.InitializeComponent();
         VerifyTiles();
@@ -29,6 +30,34 @@ internal static class Program
         if (!value) throw new InvalidOperationException(label);
         Console.WriteLine("PASS " + label);
     }
+    private static void VerifySelectiveRunningState()
+    {
+        var unrelatedProbes = 0;
+        var targetAlive = true;
+        RunningExtensionRegistry.RegisterManagedExtension(
+            "perf-lookup-unrelated", "Unrelated", "managed", "verification",
+            () => { Interlocked.Increment(ref unrelatedProbes); return true; },
+            () => { }, out var unrelatedId);
+        RunningExtensionRegistry.RegisterManagedExtension(
+            "perf-lookup-target", "Target", "managed", "verification",
+            () => targetAlive, () => { }, out var targetId);
+        try
+        {
+            Check(RunningExtensionRegistry.IsRunning("perf-lookup-target"), "targeted running lookup detects active extension");
+            Check(!RunningExtensionRegistry.IsRunning("perf-lookup-absent"), "targeted running lookup rejects missing extension");
+            Check(unrelatedProbes == 0, "running lookup does not probe unrelated managed extensions");
+            targetAlive = false;
+            Check(!RunningExtensionRegistry.IsRunning("perf-lookup-target"), "targeted running lookup rejects expired extension");
+            Check(!RunningExtensionRegistry.GetSnapshot().Any(e => e.InstanceId == targetId),
+                "targeted running lookup cleans expired entry");
+        }
+        finally
+        {
+            RunningExtensionRegistry.Remove(targetId, "verification cleanup");
+            RunningExtensionRegistry.Remove(unrelatedId, "verification cleanup");
+        }
+    }
+
     private static async Task VerifyWriter()
     {
         using var entered = new ManualResetEventSlim();

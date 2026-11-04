@@ -6438,7 +6438,7 @@ public class SlotViewModel : INotifyPropertyChanged
             {
                 return false;
             }
-            return RunningExtensionRegistry.GetSnapshot().Any(x => string.Equals(x.ExtensionId, _command.ExtensionId, System.StringComparison.OrdinalIgnoreCase));
+            return RunningExtensionRegistry.IsRunning(_command.ExtensionId);
         }
     }
 
@@ -6451,7 +6451,7 @@ public class SlotViewModel : INotifyPropertyChanged
 
     // Gaming Equipment Stat Card Properties
     public int UsageCount => _command != null
-        ? (_command.UsageCount > 0 ? _command.UsageCount : SearchUsageMemory.Load().GetUsageCount(_command.ExtensionId))
+        ? (_command.UsageCount > 0 ? _command.UsageCount : SearchUsageMemory.GetCachedUsageCount(_command.ExtensionId))
         : 0;
 
     public string RarityText

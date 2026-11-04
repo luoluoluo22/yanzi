@@ -817,6 +817,9 @@ public partial class App : WpfApplication
         }
 
         _externalAccessApproval?.Dispose();
+        // Persist the latest debounced search usage before normal process exit.
+        try { SearchUsageMemory.FlushPendingSaves(); }
+        catch (Exception ex) { HostAssets.AppendLog($"Search usage flush on exit failed: {ex.Message}"); }
         base.OnExit(e);
     }
 

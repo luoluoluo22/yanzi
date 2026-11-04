@@ -5492,7 +5492,7 @@ public sealed class CommandItem : INotifyPropertyChanged
         ToggleWindow = toggleWindow;
         RunAsAdmin = runAsAdmin;
         WaitForExit = waitForExit;
-        UsageCount = SearchUsageMemory.Load().GetUsageCount(ExtensionId);
+        UsageCount = SearchUsageMemory.GetCachedUsageCount(ExtensionId);
     }
 
     public string Glyph { get; }
@@ -5683,7 +5683,7 @@ public sealed class CommandItem : INotifyPropertyChanged
             {
                 return false;
             }
-            return RunningExtensionRegistry.GetSnapshot().Any(x => string.Equals(x.ExtensionId, ExtensionId, StringComparison.OrdinalIgnoreCase));
+            return RunningExtensionRegistry.IsRunning(ExtensionId);
         }
     }
 
