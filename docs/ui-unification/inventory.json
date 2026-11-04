@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "base_commit": "d19b223",
+  "base_commit": "a910827",
   "note": "Persistent candidate-source inventory: re-scan preserves manual status and evidence and retains missing candidates; not a count of distinct runtime screens.",
   "items": [
     {
@@ -1228,11 +1228,20 @@
       "kind": "desktop-xaml",
       "shared_ui_reference": true,
       "legacy_style_signals": 0,
-      "status": "source-migrated-awaiting-windows-qa",
+      "status": "windows-runtime-smoke-passed-awaiting-functional-visual-qa",
       "evidence": [
-        "Ubuntu isolated branch 8b8fc53: shared public buttons, window-scoped theme. NOT yet Windows runtime QA. Merge source retained alongside PR #160 verified Windows QA evidence."
+        "Windows 2026-11-04 PC-202409131508: Release build passed; real WPF prompt editor window displayed; cancel preserved original input, confirm preserved newline/tab, shared buttons loaded; extended suite 13/13 tests passed. docs/ui-unification/qa-system-prompt-2026-11-04.md"
       ],
-      "version_commit": "8b8fc53e381c5c933c66ad57d74e47cb136367e2"
+      "version_commit": "server:8b8fc53e381c5c933c66ad57d74e47cb136367e2 + merge:40b1e9317a7d7ae90a31a40b40277538b302e94f",
+      "smoke_qa": {
+        "device": "PC-202409131508",
+        "date": "2026-11-04",
+        "result": "pass",
+        "scenario": "SystemPromptEditorWindow cancel and confirm with multiline input; app verification harness, no user settings modified",
+        "test_result": "RESULT pass=13 fail=0; Windows Release build exit 0",
+        "evidence_command": "dotnet run --project tests/WpfUiMigrationSmoke/WpfUiMigrationSmoke.csproj -c Release --no-restore",
+        "remaining": "Visual light/dark, keyboard/a11y, real AI conversation setting propagation are pending"
+      }
     },
     {
       "path": "src/OpenQuickHost/TaskRecoveryWindow.cs",

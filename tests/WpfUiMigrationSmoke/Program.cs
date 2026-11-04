@@ -161,6 +161,34 @@ internal static class Program
                 CheckShared(w, everything, "Yanzi.CheckBox");
             }, false);
 
+            Run("SystemPromptEditorWindow cancel preserves original", () =>
+                new SystemPromptEditorWindow("original prompt"), w =>
+            {
+                var editor = (TextBox)w.FindName("PromptTextBox")!;
+                Assert(editor.Text == "original prompt", "initial system prompt lost");
+                Assert(editor.AcceptsReturn && editor.AcceptsTab, "multiline input behavior changed");
+                var outline = w.TryFindResource("Yanzi.Button.Outline") as Style;
+                var cancel = Descendants(w).OfType<Button>().First(b => Equals(b.Content, "取消"));
+                Assert(outline != null && ReferenceEquals(cancel.Style, outline), "shared cancel style missing");
+                ClickByContent(w, "取消");
+                Assert(((SystemPromptEditorWindow)w).PromptText == string.Empty,
+                    "cancel must not commit edited prompt");
+            }, false);
+
+            Run("SystemPromptEditorWindow confirms multiline prompt", () =>
+                new SystemPromptEditorWindow("old text"), w =>
+            {
+                var editor = (TextBox)w.FindName("PromptTextBox")!;
+                Assert(editor.IsVisible && editor.IsEnabled, "editor must be interactive");
+                editor.Text = "line one\n\tline two";
+                var primary = w.TryFindResource("Yanzi.Button.Default") as Style;
+                var confirm = Descendants(w).OfType<Button>().First(b => Equals(b.Content, "确认"));
+                Assert(primary != null && ReferenceEquals(confirm.Style, primary), "shared primary style missing");
+                ClickByContent(w, "确认");
+                Assert(((SystemPromptEditorWindow)w).PromptText == "line one\n\tline two",
+                    "confirm must retain exact newline and tab");
+            }, true);
+
             Log($"RESULT pass={_pass} fail={_fail}");
             app.Shutdown();
             return _fail == 0 ? 0 : 1;
