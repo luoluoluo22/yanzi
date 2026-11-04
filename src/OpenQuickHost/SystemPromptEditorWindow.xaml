@@ -11,8 +11,8 @@
         Style="{StaticResource DialogWindow}">
     <Border Margin="1"
             CornerRadius="0"
-            Background="#F2161616"
-            BorderBrush="#22FFFFFF"
+            Background="{DynamicResource BrushDialogBG}"
+            BorderBrush="{DynamicResource BrushBorder}"
             BorderThickness="1">
         <Grid Margin="25">
             <Grid.RowDefinitions>
@@ -50,14 +50,14 @@
                 
                 <Button Grid.Column="1"
                         Content="取消"
-                        Style="{StaticResource SecondaryBtn}"
+                        Style="{DynamicResource Yanzi.Button.Outline}"
                         Width="95"
                         Height="32"
                         Margin="0,0,10,0"
                         Click="CancelButton_Click" />
                 <Button Grid.Column="2"
                         Content="确认"
-                        Style="{StaticResource PrimaryBtn}"
+                        Style="{DynamicResource Yanzi.Button.Default}"
                         Width="95"
                         Height="32"
                         Click="OkButton_Click" />

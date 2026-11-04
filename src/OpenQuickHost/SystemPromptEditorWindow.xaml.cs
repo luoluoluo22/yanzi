@@ -9,6 +9,11 @@ public partial class SystemPromptEditorWindow : Window
     public SystemPromptEditorWindow(string initialText)
     {
         InitializeComponent();
+        // Scope shared theme resources to this dialog without overriding the host theme.
+        var theme = AppSettingsStore.Load().ThemeMode;
+        Yanzi.UI.Wpf.YanziUi.ApplyTo(this,
+            string.Equals(theme, "Light", System.StringComparison.OrdinalIgnoreCase)
+                ? Yanzi.UI.Wpf.YanziTheme.Light : Yanzi.UI.Wpf.YanziTheme.Dark);
         PromptTextBox.Text = initialText;
         Loaded += (_, _) =>
         {

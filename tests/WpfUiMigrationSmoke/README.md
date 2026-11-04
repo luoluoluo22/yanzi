@@ -1,6 +1,6 @@
 # WPF migrated-dialog runtime smoke verification
 
-This standalone Windows test runner instantiates **11 real migrated WPF windows** against the current built Yanzi host DLL and validates their XAML resource resolution and a subset of runtime interaction.
+This standalone Windows test runner instantiates **12 real migrated WPF windows** against the current built Yanzi host DLL and validates their XAML resource resolution and a subset of runtime interaction.
 
 Run on a Windows machine with .NET 9 and an interactive desktop, in this order:
 
@@ -17,4 +17,6 @@ Coverage: input validation, WebDAV required fields and public styles, AI model a
 
 **Important limitations:** the search-scope window uses a synthetic uninitialized \`MainWindow\` dependency solely to test XAML/resource loading; this is not a test of saving actual search settings. Similarly, color eyedropper/dragging, fullscreen window pick, hotkey recording, application scanning completion, real storage writes, light/dark screenshots, and keyboard/accessibility behavior still require targeted independent QA before final acceptance. No application installation or global configuration is performed.
 
-The report is written to \`%TEMP%\yanzi-wpf-ui-smoke-<PID>.log\`. Successful completion prints \`RESULT pass=11 fail=0\` and exits with code 0. Keep this tool limited to trusted Windows devices and synthetic test data.
+The report is written to \`%TEMP%\yanzi-wpf-ui-smoke-<PID>.log\`. Successful completion prints \`RESULT pass=13 fail=0\` and exits with code 0. Keep this tool limited to trusted Windows devices and synthetic test data.
+
+Additional system prompt editor tests verify cancel/non-persistence and exact multiline confirmation (including tab/newline) using the WPF shared button styles. Full application-level AI settings storage and visual/a11y checks are still pending.
