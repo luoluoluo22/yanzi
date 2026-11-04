@@ -63,6 +63,7 @@ public partial class MainWindow
     private void UpsertLocalExtensionCommand(CommandItem command)
     {
         Interlocked.Increment(ref _catalogFileGeneration);
+        if (!_isReplacingLocalExtensions) _searchSortTimestampCache.Invalidate();
         _allCommands.RemoveAll(x =>
             x.Source == CommandSource.LocalExtension &&
             x.ExtensionId.Equals(command.ExtensionId, StringComparison.OrdinalIgnoreCase));
@@ -2875,6 +2876,7 @@ public partial class MainWindow
 
     private void ReplaceLocalExtensions(IReadOnlyList<CommandItem> commands, string? statusText)
     {
+        _searchSortTimestampCache.Invalidate();
         SyncNewlyDiscoveredLocalExtensions(commands);
 
         // Refresh all cached launcher, wheel and quick-panel command entries in
