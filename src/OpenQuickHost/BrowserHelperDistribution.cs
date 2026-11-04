@@ -330,13 +330,18 @@ internal static class BrowserHelperDistribution
             var probe = await ConfigureEgoAsync(state.Path, allowInstall: false);
             if (probe.Status == "missing")
             {
-                // A managed source checkout may be older than the packaged helper
-                // even when both manifests show the same version (channel split).
-                // Do not resurrect that older UI after Ego loses registration.
-                if (!MatchesBundledEgoPayload(state.Path))
+                // Preserve the installed extension's ID and approved source bytes
+                // across an Ego profile reset, even when same-version release
+                // channels contain different payloads. Reject changed or older code.
+                var bundledPath = BrowserHelperBootstrap.FindBundledDirectory();
+                if (!BrowserHelperRecoveryPolicy.MayRestorePreviouslyManaged(
+                        state.Mode, state.Fingerprint, fingerprint,
+                        BrowserHelperRecoveryPolicy.ReadManifestVersion(state.Path),
+                        BrowserHelperRecoveryPolicy.ReadManifestVersion(bundledPath),
+                        MatchesBundledEgoPayload(state.Path)))
                 {
-                    LogManagedEgoWarning("Ego managed source differs from bundled browser helper; " +
-                        "automatic restore blocked to prevent UI/function rollback.");
+                    LogManagedEgoWarning("Ego managed source changed since approval or is older " +
+                        "than the bundled helper; automatic restore requires verification.");
                     return;
                 }
                 // This marker was created after explicit managed-install consent.
