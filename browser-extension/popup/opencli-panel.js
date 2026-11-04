@@ -94,7 +94,7 @@ document.addEventListener("DOMContentLoaded", () => {
   profileInput.placeholder = "留空复用当前浏览器；填写 OpenCLI Profile 才使用独立桥接";
   profileInput.setAttribute("aria-label", "OpenCLI 浏览器配置名称或 ID");
   profileInput.maxLength = 64;
-  profileInput.style.cssText = "width:100%;box-sizing:border-box;margin-top:8px;padding:6px";
+  profileInput.className = "opencli-profile-input";
   (siteSelect.closest(".opencli-controls-row") || siteSelect.parentElement).after(profileInput);
 
   const PAGE_SIZE = 20;

@@ -16,8 +16,10 @@
       "kind": "web-dynamic-ui-candidate",
       "shared_ui_reference": false,
       "legacy_style_signals": 0,
-      "status": "pending-manual-review",
-      "evidence": []
+      "status": "shared-css-migrated-static-verified-awaiting-browser-visual-qa",
+      "evidence": [
+        "2026-11-04: dynamic OpenCLI profile input inline cssText moved to popup.css .opencli-profile-input; node --check and class assertion passed; browser visual/interaction QA pending"
+      ]
     },
     {
       "path": "browser-extension/popup/opencli-store-guide.js",

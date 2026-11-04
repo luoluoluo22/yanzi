@@ -583,6 +583,7 @@ body {
 .opencli-actions button:disabled {opacity:.4; cursor:default;}
 .opencli-status,.opencli-summary {font-size:12px; line-height:1.5; overflow-wrap:anywhere;}
 .opencli-status {color:var(--text-muted);}
+.opencli-profile-input { width: 100%; box-sizing: border-box; margin-top: 8px; padding: 6px; }
 .opencli-result {min-height:70px; max-height:290px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; background:#0c1422; border:1px solid var(--glass-border); padding:10px; border-radius:8px; font:11px/1.55 Consolas,monospace;}
 
 .opencli-pagination:not([hidden]) { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
