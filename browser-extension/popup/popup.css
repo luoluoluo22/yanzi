@@ -1278,17 +1278,29 @@ body {
   flex-direction: column;
   gap: 2px;
 }
+/* Shared compact-control tokens apply to both media and OpenCLI cards. */
+:root {
+  --opencli-control-border: rgba(148, 163, 184, 0.2);
+  --opencli-control-bg: rgba(15, 23, 42, 0.85);
+  --opencli-control-fg: #f1f5f9;
+  --opencli-subtle-border: rgba(148, 163, 184, 0.25);
+  --opencli-subtle-bg: rgba(148, 163, 184, 0.1);
+  --opencli-subtle-fg: #cbd5e1;
+  --opencli-result-bg: rgba(10, 15, 26, 0.85);
+  --opencli-result-border: rgba(148, 163, 184, 0.12);
+  --opencli-result-fg: #93c5fd;
+}
 .opencli-controls-row label {
   font-size: 9px;
-  color: #94a3b8;
+  color: var(--text-muted);
 }
 .opencli-controls-row select {
   font-size: 10px;
   padding: 4px 6px;
   border-radius: 5px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  background: rgba(15, 23, 42, 0.85);
-  color: #f1f5f9;
+  border: 1px solid var(--opencli-control-border);
+  background: var(--opencli-control-bg);
+  color: var(--opencli-control-fg);
 }
 .btn-primary-compact {
   padding: 4px 10px;
@@ -1303,9 +1315,9 @@ body {
 .btn-subtle-compact {
   padding: 4px 10px;
   border-radius: 6px;
-  border: 1px solid rgba(148, 163, 184, 0.25);
-  background: rgba(148, 163, 184, 0.1);
-  color: #cbd5e1;
+  border: 1px solid var(--opencli-subtle-border);
+  background: var(--opencli-subtle-bg);
+  color: var(--opencli-subtle-fg);
   font-size: 10px;
   font-weight: 600;
   cursor: pointer;
@@ -1334,9 +1346,9 @@ body {
   font-size: 9px;
   padding: 6px;
   border-radius: 6px;
-  background: rgba(10, 15, 26, 0.85);
-  border: 1px solid rgba(148, 163, 184, 0.12);
-  color: #93c5fd;
+  background: var(--opencli-result-bg);
+  border: 1px solid var(--opencli-result-border);
+  color: var(--opencli-result-fg);
   margin-top: 6px;
 }
 

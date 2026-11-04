@@ -99,3 +99,5 @@
 - `browser-extension/popup/popup.css`: shared `:focus-visible` outline for OpenCLI compact primary/subtle buttons and profile selectors; uses `--primary-color` and Windows high-contrast `Highlight` under `forced-colors: active`.
 - Static evidence: Node syntax checks for `opencli-panel.js` and `popup.js`, CSS focus/forced-colors assertions, and `git diff --check` passed on Ubuntu.
 - **Not complete:** browser keyboard navigation, high-contrast rendering and visual screenshots are still required. This is a stylesheet supporting existing inventory candidates, not a newly verified screen.
+
+- OpenCLI/media compact controls: nine shared root-scoped palette tokens replace duplicated control/select/result colors; static CSS token/DOM/focus assertions and Node syntax passed; browser visual and interaction QA remain pending.
