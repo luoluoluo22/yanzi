@@ -69,7 +69,7 @@
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
-                                <CheckBox IsChecked="{Binding IsVisible, Mode=TwoWay}"
+                                <CheckBox Style="{DynamicResource Yanzi.CheckBox}" IsChecked="{Binding IsVisible, Mode=TwoWay}"
                                           VerticalAlignment="Center"
                                           Margin="0,0,8,0" />
                                 <TextBlock Grid.Column="1"
@@ -84,12 +84,12 @@
 
                 <StackPanel Grid.Column="1" VerticalAlignment="Top">
                     <Button Content="上移"
-                            Style="{StaticResource SecondaryBtn}"
+                            Style="{DynamicResource Yanzi.Button.Outline}"
                             Width="80"
                             Margin="0,0,0,10"
                             Click="MoveUpButton_Click" />
                     <Button Content="下移"
-                            Style="{StaticResource SecondaryBtn}"
+                            Style="{DynamicResource Yanzi.Button.Outline}"
                             Width="80"
                             Click="MoveDownButton_Click" />
                 </StackPanel>
@@ -102,18 +102,19 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <CheckBox x:Name="EnableEverythingCheckBox"
+                          Style="{DynamicResource Yanzi.CheckBox}"
                           Content="启用 Everything 文件搜索"
                           VerticalAlignment="Center"
                           Foreground="{DynamicResource BrushTextMain}" />
                 <Button Grid.Column="1"
                         Content="取消"
-                        Style="{StaticResource SecondaryBtn}"
+                        Style="{DynamicResource Yanzi.Button.Outline}"
                         Width="90"
                         Margin="0,0,10,0"
                         Click="CancelButton_Click" />
                 <Button Grid.Column="2"
                         Content="保存"
-                        Style="{StaticResource PrimaryBtn}"
+                        Style="{DynamicResource Yanzi.Button.Default}"
                         Width="90"
                         Click="SaveButton_Click" />
             </Grid>

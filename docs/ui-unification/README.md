@@ -72,3 +72,11 @@
 - `AiModelPickerWindow.xaml.cs`：按用户设置向当前窗口加载共享 WPF 深浅主题资源，不修改全局主题。
 - 静态验收：XML 解析、共享资源及原有事件/绑定断言、清单状态和 `git diff --check` 均通过。服务器没有 dotnet，Windows Release 编译、模型勾选与禁用、确认取消、深浅主题截图、键盘/无障碍测试仍未完成，**不能标记为最终验收**。
 - `inventory.json` 仍为 176 个候选源码文件，当前 10 个 WPF XAML 标记为部分源码迁移、待 Windows QA。此数字不代表全部运行时页面，动态 UI/小程序仍需扩大覆盖。
+
+## 第十轮：搜索标签管理窗口（源码迁移，待 Windows 验收）
+
+- `SearchScopesManagerWindow.xaml`：上移、下移、取消、保存四个按钮改用 `Yanzi.Button.Outline/Default`；标签可见性与 Everything 启用开关改用公共 `Yanzi.CheckBox`。保留 `IsVisible` 双向绑定、列表顺序及四个 Click 事件。
+- `SearchScopesManagerWindow.xaml.cs`：构造时根据 ThemeMode（忽略大小写）调用 `YanziUi.ApplyTo`，只加载窗口级主题。
+- `inventory.json`：该文件标记为 `source-migrated-awaiting-windows-qa`，不将静态检查冒充实际 UI 验收。
+- 静态证据：XAML XML 可解析、公共样式键存在、四个事件与绑定保留、Python 语法与 `git diff --check` 通过。
+- 待验：Windows Release 构建、标签显隐/重排保存、Everything 切换、深浅主题和键盘/无障碍检查；尚未推送与合并。
