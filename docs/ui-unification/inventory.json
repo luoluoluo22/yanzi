@@ -6,10 +6,12 @@
     {
       "path": "browser-extension/popup/media-panel.js",
       "kind": "web-dynamic-ui-candidate",
-      "shared_ui_reference": false,
+      "shared_ui_reference": true,
       "legacy_style_signals": 0,
-      "status": "pending-manual-review",
-      "evidence": []
+      "status": "shared-css-a11y-static-verified-awaiting-browser-visual-qa",
+      "evidence": [
+        "2026-11-04: media result controls reuse popup.css opencli-actions and theme tokens; added :focus-visible keyboard focus styling; static checks passed; real browser QA pending."
+      ]
     },
     {
       "path": "browser-extension/popup/opencli-panel.js",
