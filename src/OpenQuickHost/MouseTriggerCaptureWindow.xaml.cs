@@ -19,6 +19,10 @@ public partial class MouseTriggerCaptureWindow : Window
     public MouseTriggerCaptureWindow()
     {
         InitializeComponent();
+        var theme = AppSettingsStore.Load().ThemeMode;
+        Yanzi.UI.Wpf.YanziUi.ApplyTo(this,
+            string.Equals(theme, "Light", StringComparison.OrdinalIgnoreCase)
+                ? Yanzi.UI.Wpf.YanziTheme.Light : Yanzi.UI.Wpf.YanziTheme.Dark);
     }
 
     private void Window_MouseDown(object sender, MouseButtonEventArgs e)

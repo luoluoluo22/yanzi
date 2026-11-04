@@ -37,7 +37,7 @@
                            FontWeight="SemiBold"
                            Margin="2,0,0,8" />
                 <ComboBox x:Name="TargetComboBox"
-                          Style="{DynamicResource GlobalComboBoxStyle}"
+                          Style="{DynamicResource Yanzi.Select}"
                           Height="36"
                           SelectedIndex="0">
                     <ComboBoxItem Tag="Codex">Codex</ComboBoxItem>
@@ -51,7 +51,7 @@
                            FontWeight="SemiBold"
                            Margin="2,18,0,8" />
                 <ComboBox x:Name="ScopeComboBox"
-                          Style="{DynamicResource GlobalComboBoxStyle}"
+                          Style="{DynamicResource Yanzi.Select}"
                           Height="36"
                           SelectedIndex="0">
                     <ComboBoxItem Tag="Project">项目级</ComboBoxItem>
@@ -73,12 +73,12 @@
                 </Grid.ColumnDefinitions>
                 <Button Grid.Column="0"
                         Content="取消"
-                        Style="{StaticResource SecondaryBtn}"
+                        Style="{DynamicResource Yanzi.Button.Outline}"
                         Margin="0,0,6,0"
                         Click="CancelButton_Click" />
                 <Button Grid.Column="1"
                         Content="开始导出"
-                        Style="{StaticResource PrimaryBtn}"
+                        Style="{DynamicResource Yanzi.Button.Default}"
                         Margin="6,0,0,0"
                         Click="ConfirmButton_Click" />
             </Grid>

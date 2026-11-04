@@ -9,6 +9,11 @@ public partial class SimpleTextInputWindow : Window
     public SimpleTextInputWindow(string title, string description, string initialValue, bool allowEmpty = false)
     {
         InitializeComponent();
+        // Use shared window-scoped theme resources; leave the host theme untouched.
+        var theme = AppSettingsStore.Load().ThemeMode;
+        Yanzi.UI.Wpf.YanziUi.ApplyTo(this,
+            string.Equals(theme, "Light", StringComparison.OrdinalIgnoreCase)
+                ? Yanzi.UI.Wpf.YanziTheme.Light : Yanzi.UI.Wpf.YanziTheme.Dark);
         _allowEmpty = allowEmpty;
         Title = title;
         DescriptionText.Text = description;

@@ -14,6 +14,9 @@ namespace OpenQuickHost
         public SearchScopesManagerWindow(MainWindow mainWindow)
         {
             InitializeComponent();
+            Yanzi.UI.Wpf.YanziUi.ApplyTo(this,
+                string.Equals(AppSettingsStore.Load().ThemeMode, "Light", System.StringComparison.OrdinalIgnoreCase)
+                    ? Yanzi.UI.Wpf.YanziTheme.Light : Yanzi.UI.Wpf.YanziTheme.Dark);
             _mainWindow = mainWindow;
             _settings = AppSettingsStore.Load();
 
