@@ -12,7 +12,15 @@ namespace OpenQuickHost;
 public sealed class WindowBoundExtensionsService : IDisposable
 {
     private readonly MainWindow _host;
+    private readonly Dispatcher _dispatcher;
     private readonly DispatcherTimer _fallbackTimer;
+    private readonly DispatcherTimer _hoverTimer = new(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(150) };
+    private readonly DispatcherTimer _eventTimer = new(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(32) };
+    private readonly object _eventGate = new();
+    private readonly HashSet<IntPtr> _pendingWindows = [];
+    private bool _eventPosted, _pendingFullScan, _started;
+    private readonly Dictionary<int, (string Name, long At)> _processNames = [];
+
     private readonly EventHandler _fallbackTickHandler;
     private readonly Dictionary<string, WindowBoundExtensionOverlayWindow> _overlays = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DispatcherTimer> _hideTimers = new(StringComparer.OrdinalIgnoreCase);
@@ -27,47 +35,86 @@ public sealed class WindowBoundExtensionsService : IDisposable
     public WindowBoundExtensionsService(MainWindow host)
     {
         _host = host;
+        _dispatcher = Dispatcher.CurrentDispatcher;
         _fallbackTimer = new DispatcherTimer
         {
-            Interval = TimeSpan.FromMilliseconds(150)
+            Interval = TimeSpan.FromSeconds(2)
         };
         _fallbackTickHandler = (_, _) => SafeTick();
         _fallbackTimer.Tick += _fallbackTickHandler;
         _winEventCallback = HandleWinEvent;
+        _hoverTimer.Tick += (_, _) =>
+        {
+            try { RefreshHoverOnly(); }
+            catch (Exception ex) { HostAssets.AppendLog("Window binding hover refresh failed: " + ex.Message); }
+        };
+        _eventTimer.Tick += (_, _) => FlushWindowEvents();
     }
 
     public void Start(WindowBindingSettings settings)
     {
         if (!HostRuntimeProfile.GlobalListenersEnabled) return;
-        _settings = settings ?? new WindowBindingSettings();
-        EnsureWinEventHooks();
-        if (!_fallbackTimer.IsEnabled)
-        {
-            _fallbackTimer.Start();
-        }
-
-        _lastForegroundWindow = GetForegroundWindow();
-        SafeTick();
+        _started = true;
+        Reload(settings);
     }
 
     public void Reload(WindowBindingSettings settings)
     {
         if (!HostRuntimeProfile.GlobalListenersEnabled) return;
         _settings = settings ?? new WindowBindingSettings();
-        if (!_settings.Enabled)
+        _fallbackTimer.Stop();
+        _hoverTimer.Stop();
+        if (!_started || !_settings.Enabled || !_settings.Rules.Any(rule => rule.Enabled))
         {
+            RemoveWinEventHooks();
             HideAll();
             return;
         }
-
+        EnsureWinEventHooks();
+        _fallbackTimer.Start();
+        if (_settings.Rules.Any(rule => rule.Enabled && rule.HoverMode)) _hoverTimer.Start();
         SafeTick();
     }
 
     public void Stop()
     {
+        _started = false;
         _fallbackTimer.Stop();
+        _hoverTimer.Stop();
+        _eventTimer.Stop();
+        lock (_eventGate) { _pendingWindows.Clear(); _eventPosted = _pendingFullScan = false; }
         RemoveWinEventHooks();
         HideAll();
+        _processNames.Clear();
+    }
+
+    private void RefreshHoverOnly()
+    {
+        foreach (var hwnd in _trackedTargetWindows)
+            foreach (var rule in _settings.Rules.Where(rule => rule.Enabled && rule.HoverMode))
+                if (_overlays.TryGetValue(BuildOverlayKey(rule.Id, hwnd), out var overlay))
+                {
+                    UpdateHoverVisibility(BuildOverlayKey(rule.Id, hwnd), rule, overlay);
+                    SyncOverlayZOrder(hwnd, rule, overlay);
+                }
+    }
+
+    private void FlushWindowEvents()
+    {
+        _eventTimer.Stop();
+        IntPtr[] windows;
+        bool fullScan;
+        lock (_eventGate)
+        {
+            windows = _pendingWindows.ToArray();
+            fullScan = _pendingFullScan;
+            _pendingWindows.Clear();
+            _eventPosted = _pendingFullScan = false;
+        }
+        if (!_started || !_settings.Enabled) return;
+        if (fullScan) SafeTick();
+        else foreach (var hwnd in windows)
+            if (_trackedTargetWindows.Contains(hwnd)) RefreshForWindow(hwnd);
     }
 
     private void SafeTick()
@@ -92,6 +139,8 @@ public sealed class WindowBoundExtensionsService : IDisposable
             return;
         }
 
+        foreach (var pid in _processNames.Where(pair => Environment.TickCount64 - pair.Value.At > 2000).Select(pair => pair.Key).ToArray())
+            _processNames.Remove(pid);
         var foregroundWindow = GetForegroundWindow();
         var foregroundChanged = foregroundWindow != _lastForegroundWindow;
         if (foregroundChanged)
@@ -209,8 +258,11 @@ public sealed class WindowBoundExtensionsService : IDisposable
 
     private void RefreshForWindowCore(IntPtr hwnd)
     {
-        if (!_settings.Enabled || _settings.Rules.Count == 0 || !IsValidTargetWindow(hwnd))
+        if (!_settings.Enabled || _settings.Rules.Count == 0) return;
+        if (!IsValidTargetWindow(hwnd))
         {
+            foreach (var rule in _settings.Rules) CloseOverlay(BuildOverlayKey(rule.Id, hwnd));
+            _trackedTargetWindows.Remove(hwnd);
             return;
         }
 
@@ -603,7 +655,7 @@ public sealed class WindowBoundExtensionsService : IDisposable
         return true;
     }
 
-    private static bool TryDescribeWindow(IntPtr hwnd, out string processName, out string className, out string title, out RECT rect, out uint dpi)
+    private bool TryDescribeWindow(IntPtr hwnd, out string processName, out string className, out string title, out RECT rect, out uint dpi)
     {
         processName = string.Empty;
         className = string.Empty;
@@ -623,7 +675,14 @@ public sealed class WindowBoundExtensionsService : IDisposable
                 return false;
             }
 
-            processName = pid == 0 ? string.Empty : Process.GetProcessById((int)pid).ProcessName;
+            if (pid == 0) return false;
+            if (!_processNames.TryGetValue((int)pid, out var cached) || Environment.TickCount64 - cached.At > 2000)
+            {
+                using var process = Process.GetProcessById((int)pid);
+                cached = (process.ProcessName, Environment.TickCount64);
+                _processNames[(int)pid] = cached;
+            }
+            processName = cached.Name;
 
             var classBuilder = new StringBuilder(256);
             _ = GetClassName(hwnd, classBuilder, classBuilder.Capacity);
@@ -697,20 +756,22 @@ public sealed class WindowBoundExtensionsService : IDisposable
 
     private void HandleWinEvent(IntPtr hWinEventHook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint dwEventThread, uint dwmsEventTime)
     {
-        if (eventType == EventObjectLocationchange)
+        // Ignore child-object location events and merge bursts before posting to WPF.
+        if (hwnd == IntPtr.Zero || (eventType == EventObjectLocationchange && (idObject != 0 || idChild != 0))) return;
+        lock (_eventGate)
         {
-            var movedWindow = hwnd;
-            _host.Dispatcher.BeginInvoke(() =>
-            {
-                if (_trackedTargetWindows.Contains(movedWindow))
-                {
-                    SafeTick();
-                }
-            }, DispatcherPriority.Background);
-            return;
+            if (!_started) return;
+            if (eventType != EventObjectLocationchange || _pendingWindows.Count >= 256)
+                _pendingFullScan = true;
+            else _pendingWindows.Add(hwnd);
+            if (_eventPosted) return;
+            _eventPosted = true;
         }
-
-        _host.Dispatcher.BeginInvoke(SafeTick, DispatcherPriority.Background);
+        if (_dispatcher.HasShutdownStarted || _dispatcher.HasShutdownFinished) return;
+        _dispatcher.BeginInvoke(() =>
+        {
+            if (_started) _eventTimer.Start();
+        }, DispatcherPriority.Background);
     }
 
     [StructLayout(LayoutKind.Sequential)]

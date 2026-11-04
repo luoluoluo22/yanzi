@@ -68,6 +68,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
     private IntPtr _previousForegroundWindow;
     private IntPtr _previousFocusWindow;
     private readonly DispatcherTimer _releaseTargetTimer;
+    private readonly DispatcherTimer _mobileDetectTimer;
     private ForegroundAppContext? _foregroundAppContext;
     private QuickPanelGroupItem? _selectedGlobalGroup;
     private QuickPanelGroupItem? _selectedContextGroup;
@@ -282,11 +283,11 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         };
         _imagePreviewTimer.Tick += ImagePreviewTimer_Tick;
         
-        var mobileDetectTimer = new DispatcherTimer
+        _mobileDetectTimer = new DispatcherTimer
         {
             Interval = TimeSpan.FromSeconds(2)
         };
-        mobileDetectTimer.Tick += (_, _) =>
+        void RefreshMobileBadges()
         {
             if (HasUnreadMessages)
             {
@@ -300,9 +301,14 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
                     ? Visibility.Visible
                     : Visibility.Collapsed;
             }
+        }
+        _mobileDetectTimer.Tick += (_, _) => RefreshMobileBadges();
+        IsVisibleChanged += (_, _) =>
+        {
+            if (IsVisible) { RefreshMobileBadges(); _mobileDetectTimer.Start(); }
+            else _mobileDetectTimer.Stop();
         };
-        mobileDetectTimer.Start();
-        
+
         LoadSlots();
         DataContext = this;
 
@@ -340,7 +346,7 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
         {
             _showGeneration++;
             _slotSnapshot.Dispose();
-            mobileDetectTimer.Stop();
+            _mobileDetectTimer.Stop();
             _releaseTargetTimer.Stop();
             _folderCreationTimer.Stop();
             InputHookService.OnGlobalMouseDown -= InputHookService_OnGlobalMouseDown;
