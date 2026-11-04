@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "base_commit": "eea3f49",
+  "base_commit": "a87b63f",
   "note": "Persistent candidate-source inventory: re-scan preserves manual status and evidence and retains missing candidates; not a count of distinct runtime screens.",
   "items": [
     {
