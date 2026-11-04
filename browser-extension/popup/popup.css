@@ -1332,3 +1332,7 @@ body {
 .yanzi-empty-hint { padding: 10px 4px; font-size: 11px; color: #94a3b8; }
 .current-site-dot { width: 6px; height: 6px; background: #10b981; border-radius: 50%; display: inline-block; margin-right: 4px; }
 .webapp-site-svg-fallback { display: none; }
+
+/* Douyin rule editor layout */
+#douyin-card-rule-form { margin: 0 0 8px; }
+#douyin-card-rule-input { flex: 1; }

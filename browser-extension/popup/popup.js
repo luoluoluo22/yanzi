@@ -299,8 +299,8 @@ document.addEventListener("DOMContentLoaded", () => {
         </div>
         <p class="webapp-description">添加关键词跳过抖音视频，同时自动匹配标题、话题标签和作者。</p>
         <div class="webapp-rule-card-body ${isDouyinRulesCollapsed ? 'collapsed' : ''}">
-          <form class="webapp-rule-form" id="douyin-card-rule-form" style="margin:0 0 8px;">
-            <input id="douyin-card-rule-input" type="text" maxlength="80" placeholder="输入关键词，如：购物、直播" style="flex:1;">
+          <form class="webapp-rule-form" id="douyin-card-rule-form" >
+            <input id="douyin-card-rule-input" type="text" maxlength="80" placeholder="输入关键词，如：购物、直播" >
             <button type="submit">添加</button>
           </form>
           <div class="webapp-rule-pill-box douyin-adaptive-pill-list">${pillsHtml}</div>
