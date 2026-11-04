@@ -12,6 +12,9 @@ public static class KeyboardDoubleTapService
     private const int WmKeyUp = 0x0101;
     private const int WmSysKeyDown = 0x0104;
     private const int WmSysKeyUp = 0x0105;
+    private const int VkControl = 0x11;
+    private const int VkMenu = 0x12;
+    private const int VkShift = 0x10;
     private const int VkLControl = 0xA2;
     private const int VkRControl = 0xA3;
     private const int VkLMenu = 0xA4;
@@ -22,15 +25,45 @@ public static class KeyboardDoubleTapService
     private const int VkRWin = 0x5C;
     private const int VkCapsLock = 0x14;
     private const uint LlkhfInjected = 0x00000010;
-    // Only synthetic Ctrl/Alt events from the installed key mapper may be used for
-    // double-tap recognition. Unmarked SendInput/keybd_event traffic remains excluded.
+    // Remapped keys have a marker, but remote-control software sends unmarked
+    // injected modifiers. Only Ctrl/Alt is admitted for double-tap recognition.
     public const uint MappedModifierInputTag = 0x594B4D50; // 'YKMP'
+
+    private const uint LlkhfExtended = 0x00000001;
+
+    internal static int NormalizeModifierVk(int vk, uint flags, uint scanCode) => vk switch
+    {
+        VkControl => (flags & LlkhfExtended) != 0 ? VkRControl : VkLControl,
+        VkMenu => (flags & LlkhfExtended) != 0 ? VkRMenu : VkLMenu,
+        VkShift => scanCode == 0x36 ? VkRShift : VkLShift,
+        _ => vk
+    };
 
     internal static bool ShouldProcessDoubleTapKey(uint flags, nint extraInfo, int vkCode)
     {
         if ((flags & LlkhfInjected) == 0) return true;
-        return extraInfo == (nint)MappedModifierInputTag &&
-               vkCode is VkLControl or VkRControl or VkLMenu or VkRMenu;
+        return vkCode is VkLControl or VkRControl or VkLMenu or VkRMenu;
+    }
+
+    private static void TrackIgnoredInjectedKey(int vkCode, int message)
+    {
+        bool down = message is WmKeyDown or WmSysKeyDown;
+        bool up = message is WmKeyUp or WmSysKeyUp;
+        if (!down && !up) return;
+        // Do not accidentally count remote Ctrl+C or Ctrl+Shift as double Ctrl.
+        switch (vkCode)
+        {
+            case VkLShift: _leftShiftDown = down; break;
+            case VkRShift: _rightShiftDown = down; break;
+            case VkLWin: _leftWinDown = down; break;
+            case VkRWin: _rightWinDown = down; break;
+        }
+        if (down)
+        {
+            _sequenceDirty = true;
+            _lastTapKind = ModifierTapKind.None;
+            _lastTapTimestamp = 0;
+        }
     }
 
 
@@ -257,9 +290,11 @@ public static class KeyboardDoubleTapService
         {
             var message = wParam.ToInt32();
             var info = Marshal.PtrToStructure<KbdLlHookStruct>(lParam);
-            var vkCode = (int)info.vkCode;
+            var vkCode = NormalizeModifierVk((int)info.vkCode, info.flags, info.scanCode);
             if (!ShouldProcessDoubleTapKey(info.flags, info.dwExtraInfo, vkCode))
             {
+                if ((info.flags & LlkhfInjected) != 0)
+                    TrackIgnoredInjectedKey(vkCode, message);
                 return CallNextHookEx(_hookId, nCode, wParam, lParam);
             }
             var suppress = false;
