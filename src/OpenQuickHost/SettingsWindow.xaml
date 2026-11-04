@@ -5535,13 +5535,14 @@
                                  ItemsSource="{Binding FilteredProviders}"
                                  SelectedItem="{Binding SelectedServiceProvider, Mode=TwoWay}"
                                  Style="{StaticResource SidebarListBoxStyle}"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                  ItemContainerStyle="{StaticResource SidebarListBoxItemStyle}">
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
                                     <Grid Height="40">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" MinWidth="0" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         <Border Width="26" Height="26" CornerRadius="13" Background="#1A3B82F6" VerticalAlignment="Center">
@@ -5554,6 +5555,9 @@
                                         </Border>
                                         <TextBlock Grid.Column="1"
                                                    Text="{Binding Name}"
+                                                   ToolTip="{Binding Name}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   TextWrapping="NoWrap"
                                                    Foreground="{DynamicResource BrushTextMain}"
                                                    FontSize="{DynamicResource FontSizeSmallPlus}"
                                                    VerticalAlignment="Center"
@@ -5563,6 +5567,8 @@
                                                   IsChecked="{Binding IsEnabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                                   Click="SaveSettingsToggle_Click"
                                                   ToolTip="启用或停用此模型服务"
+                                                  HorizontalAlignment="Right"
+                                                  Margin="8,0,0,0"
                                                   VerticalAlignment="Center" />
                                     </Grid>
                                 </DataTemplate>
