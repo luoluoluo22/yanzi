@@ -216,28 +216,6 @@
                                  DragOver="SearchBox_DragOver"
                                  Drop="SearchBox_Drop" />
 
-                        <!-- Search Box Placeholder -->
-                        <TextBlock IsHitTestVisible="False"
-                                   Text="搜索软件、小程序、系统项，或输入 @软件 / @系统 ..."
-                                   VerticalAlignment="Center"
-                                   Foreground="{DynamicResource BrushTextMuted}"
-                                   FontSize="{DynamicResource FontSizeTitle}"
-                                   Margin="2,0,0,0">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                    <Style.Triggers>
-                                        <MultiDataTrigger>
-                                            <MultiDataTrigger.Conditions>
-                                                <Condition Binding="{Binding Text, ElementName=SearchBox}" Value=""/>
-                                                <Condition Binding="{Binding IsKeyboardFocused, ElementName=SearchBox}" Value="False"/>
-                                            </MultiDataTrigger.Conditions>
-                                            <Setter Property="Visibility" Value="Visible"/>
-                                        </MultiDataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
                     </Grid>
                     <Button Grid.Column="2"
                             Width="32"

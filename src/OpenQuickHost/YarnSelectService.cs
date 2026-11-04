@@ -297,19 +297,35 @@ public static class YarnSelectService
     private static void Trigger(YarnSelectRuleSettings rule, string gesture)
     {
         _triggeredThisHold = true;
-        HostAssets.AppendLog($"YarnSelect: triggered {rule.ActionType}, gesture={gesture}, extensionId={rule.ExtensionId}.");
         var request = new YarnSelectActionRequest(
             YarnSelectActionTypes.Normalize(rule.ActionType),
             rule.ExtensionId,
             gesture,
             GetForegroundProcessName());
-        _ = Task.Run(() => ExecuteRequest(request));
+        // Read the clipboard on a background STA; never block the WPF dispatcher or input hook.
+        if (request.ActionType is YarnSelectActionTypes.Search or YarnSelectActionTypes.Run or
+            YarnSelectActionTypes.RunExtension or YarnSelectActionTypes.SmartCopyPaste)
+        {
+            var worker = new Thread(() => ExecuteRequest(request))
+            {
+                IsBackground = true,
+                Name = "Yanzi-YarnSelect-Clipboard"
+            };
+            worker.SetApartmentState(ApartmentState.STA);
+            worker.Start();
+        }
+        else
+        {
+            _ = Task.Run(() => ExecuteRequest(request));
+        }
     }
 
     private static void ExecuteRequest(YarnSelectActionRequest request)
     {
         try
         {
+            var stopwatch = Stopwatch.StartNew();
+            HostAssets.AppendLog($"YarnSelect: triggered {request.ActionType}, gesture={request.Gesture}, extensionId={request.ExtensionId}.");
             switch (request.ActionType)
             {
                 case YarnSelectActionTypes.Copy:
@@ -340,6 +356,7 @@ public static class YarnSelectService
                     }
                     break;
             }
+            HostAssets.AppendLog($"YarnSelect: request queued/executed, action={request.ActionType}, elapsedMs={stopwatch.ElapsedMilliseconds}, thread={Thread.CurrentThread.ManagedThreadId}.");
         }
         catch (Exception ex)
         {
@@ -355,28 +372,36 @@ public static class YarnSelectService
             return;
         }
 
-        System.Windows.Application.Current.Dispatcher.BeginInvoke(
+        System.Windows.Application.Current?.Dispatcher.BeginInvoke(
             () => callback(request),
             DispatcherPriority.Background);
     }
 
     private static bool TryCopySelectedText(out string text)
     {
+        // This method runs on the background STA clipboard worker.
+        // Sequence changes detect new copies even when text is identical to the previous text.
         text = string.Empty;
-        var before = ReadClipboardText();
+        var before = GetClipboardSequenceNumber();
+        var stopwatch = Stopwatch.StartNew();
         SendCtrlKey(VkC);
-        for (var index = 0; index < 10; index++)
+        for (var index = 0; index < 15; index++)
         {
-            Thread.Sleep(20);
-            var current = ReadClipboardText();
-            if (!string.IsNullOrWhiteSpace(current) &&
-                !string.Equals(current, before, StringComparison.Ordinal))
+            Thread.Sleep(20); // Never blocks WPF's dispatcher or the mouse hook.
+            if (GetClipboardSequenceNumber() == before)
             {
-                text = current;
+                continue;
+            }
+
+            text = ReadClipboardText();
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                HostAssets.AppendLog($"YarnSelect: clipboard copied, elapsedMs={stopwatch.ElapsedMilliseconds}, length={text.Length}.");
                 return true;
             }
         }
 
+        HostAssets.AppendLog($"YarnSelect: clipboard copy timeout/empty, elapsedMs={stopwatch.ElapsedMilliseconds}, sequenceChanged={GetClipboardSequenceNumber() != before}.");
         return false;
     }
 
@@ -384,11 +409,11 @@ public static class YarnSelectService
     {
         try
         {
-            return System.Windows.Application.Current.Dispatcher.Invoke(() =>
-                System.Windows.Clipboard.ContainsText() ? System.Windows.Clipboard.GetText() : string.Empty);
+            return System.Windows.Clipboard.ContainsText() ? System.Windows.Clipboard.GetText() : string.Empty;
         }
-        catch
+        catch (ExternalException)
         {
+            // Clipboard can be briefly locked by the source application.
             return string.Empty;
         }
     }
@@ -530,6 +555,9 @@ public static class YarnSelectService
 
     [DllImport("user32.dll", CharSet = CharSet.Auto)]
     private static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetClipboardSequenceNumber();
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
