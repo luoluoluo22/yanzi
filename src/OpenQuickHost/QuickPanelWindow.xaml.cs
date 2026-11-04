@@ -6438,7 +6438,7 @@ public class SlotViewModel : INotifyPropertyChanged
             {
                 return false;
             }
-            return RunningExtensionRegistry.GetSnapshot().Any(x => string.Equals(x.ExtensionId, _command.ExtensionId, System.StringComparison.OrdinalIgnoreCase));
+            return RunningExtensionRegistry.IsRunning(_command.ExtensionId);
         }
     }
 
