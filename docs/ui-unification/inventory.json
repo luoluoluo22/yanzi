@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "base_commit": "af311b4",
+  "base_commit": "c631a52",
   "note": "Persistent candidate-source inventory: re-scan preserves manual status and evidence and retains missing candidates; not a count of distinct runtime screens.",
   "items": [
     {
@@ -30,6 +30,14 @@
       "kind": "web-dynamic-ui-candidate",
       "shared_ui_reference": false,
       "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "browser-extension/popup/popup.css",
+      "kind": "web-stylesheet-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 166,
       "status": "pending-manual-review",
       "evidence": []
     },
@@ -1611,6 +1619,174 @@
       "kind": "desktop-dynamic-ui-candidate",
       "shared_ui_reference": true,
       "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "tools/chatgpt-bridge/public/index.html",
+      "kind": "web-ui",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "tools/chatgpt-bridge/public/style.css",
+      "kind": "web-stylesheet-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 7,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "website/assets/auth.css",
+      "kind": "web-stylesheet-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 20,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "website/assets/wish-wall.css",
+      "kind": "web-stylesheet-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 54,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "website/docs/agent-skill-spec.html",
+      "kind": "web-ui",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 2,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "website/docs/ai-extension-test-set.html",
+      "kind": "web-ui",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 2,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "website/docs/extension-authoring-guide.html",
+      "kind": "web-ui",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 107,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "website/docs/extension-guide.html",
+      "kind": "web-ui",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 2,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "website/docs/extension-spec.html",
+      "kind": "web-ui",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 4,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "website/docs/getting-started.html",
+      "kind": "web-ui",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 2,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "website/docs/product-overview.html",
+      "kind": "web-ui",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 2,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "website/docs/search-guide.html",
+      "kind": "web-ui",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 2,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "website/docs/sync-guide.html",
+      "kind": "web-ui",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 2,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "website/docs/yanh-guide.html",
+      "kind": "web-ui",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 2,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "website/docs/yanm-guide.html",
+      "kind": "web-ui",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 2,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "website/index.html",
+      "kind": "web-ui",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 20,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "website/profile.html",
+      "kind": "web-ui",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 5,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "website/store.html",
+      "kind": "web-ui",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 18,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "website/styles.css",
+      "kind": "web-stylesheet-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 54,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "website/wish-wall.html",
+      "kind": "web-ui",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 8,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "website/yanm.html",
+      "kind": "web-ui",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 4,
       "status": "pending-manual-review",
       "evidence": []
     }
