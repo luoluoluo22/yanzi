@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "base_commit": "41181fa",
+  "base_commit": "d19b223",
   "note": "Persistent candidate-source inventory: re-scan preserves manual status and evidence and retains missing candidates; not a count of distinct runtime screens.",
   "items": [
     {
@@ -1498,6 +1498,14 @@
       "kind": "desktop-xaml",
       "shared_ui_reference": true,
       "legacy_style_signals": 55,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/Yanzi.UI.Wpf/VirtualizingTilePanel.cs",
+      "kind": "desktop-dynamic-ui-candidate",
+      "shared_ui_reference": true,
+      "legacy_style_signals": 0,
       "status": "pending-manual-review",
       "evidence": []
     },
