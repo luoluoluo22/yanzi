@@ -65,6 +65,20 @@ try
     var after = Read("A");
     Check(after.Contains("overlap") && reads >= before + 2,
         "overlapping write invalidates next snapshot");
+    var version = new AiChatLogRefreshVersion();
+    version.Observe("topic-A", allTopics: false);
+    var firstGeneration = version.Generation;
+    for (var i = 0; i < 10000; i++)
+        version.Observe("topic-A", allTopics: false);
+    Check(version.Generation == firstGeneration,
+        "slow in-flight read survives repeated timer ticks with identical filter");
+    version.Observe("topic-B", allTopics: false);
+    Check(version.Generation == firstGeneration + 1, "conversation switch invalidates stale result");
+    version.Observe("topic-B", allTopics: true);
+    Check(version.Generation == firstGeneration + 2, "all-topics toggle invalidates stale result");
+    version.Cancel();
+    Check(version.Generation == firstGeneration + 3, "close or forced refresh invalidates pending result");
+
     Console.WriteLine("AI_CHAT_LOG_PERFORMANCE_VERIFIED");
 }
 finally

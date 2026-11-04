@@ -95,3 +95,25 @@ internal sealed class AiChatLogSnapshotCache
         _filteredText = null;
     }
 }
+
+internal sealed class AiChatLogRefreshVersion
+{
+    private bool _initialized;
+    private string? _topic;
+    private bool _allTopics;
+
+    internal long Generation { get; private set; }
+
+    internal void Observe(string? topic, bool allTopics)
+    {
+        if (_initialized && string.Equals(topic, _topic, StringComparison.Ordinal) &&
+            _allTopics == allTopics) return;
+
+        _initialized = true;
+        _topic = topic;
+        _allTopics = allTopics;
+        ++Generation;
+    }
+
+    internal void Cancel() => ++Generation;
+}

@@ -74,7 +74,7 @@ internal sealed class AiChatLogWindow : Window
     private bool _isClosed;
     private bool _refreshRunning;
     private bool _refreshPending;
-    private long _refreshGeneration;
+    private readonly AiChatLogRefreshVersion _refreshVersion = new();
 
     internal AiChatLogWindow(Window owner, Func<string?> currentTopic)
     {
@@ -102,7 +102,7 @@ internal sealed class AiChatLogWindow : Window
         _all.Unchecked += (_, _) => Reload();
         actions.Children.Add(_all);
         var refresh = new Button { Content = "刷新", MinWidth = 65, Margin = new Thickness(0, 0, 8, 0) };
-        refresh.Click += (_, _) => { AiChatDiagnostics.ForceReload(); Reload(); };
+        refresh.Click += (_, _) => { AiChatDiagnostics.ForceReload(); Reload(force: true); };
         actions.Children.Add(refresh);
         var copy = new Button { Content = "复制日志", MinWidth = 80 };
         copy.Click += (_, _) => CopyLog();
@@ -144,7 +144,7 @@ internal sealed class AiChatLogWindow : Window
         Closed += (_, _) =>
         {
             _isClosed = true;
-            _refreshGeneration++;
+            _refreshVersion.Cancel();
             _refreshTimer.Stop();
         };
     }
@@ -154,10 +154,13 @@ internal sealed class AiChatLogWindow : Window
         if (!string.IsNullOrEmpty(_text.Text)) Clipboard.SetText(_text.Text);
     }
 
-    private void Reload()
+    private void Reload(bool force = false)
     {
         if (_isClosed) return;
-        ++_refreshGeneration;
+        // Repeated timer ticks must not invalidate an in-flight read when the
+        // selected conversation is unchanged, even on a slow disk.
+        if (force) _refreshVersion.Cancel();
+        _refreshVersion.Observe(_currentTopic(), _all.IsChecked == true);
         _refreshPending = true;
         if (!_refreshRunning) _ = ReloadAsync();
     }
@@ -170,13 +173,13 @@ internal sealed class AiChatLogWindow : Window
             while (_refreshPending && !_isClosed)
             {
                 _refreshPending = false;
-                var generation = _refreshGeneration;
+                var generation = _refreshVersion.Generation;
                 var topic = _currentTopic();
                 var allTopics = _all.IsChecked == true;
                 // Filesystem probes and full-file reads run outside the UI dispatcher.
                 var updated = await Task.Run(() => AiChatDiagnostics.ReadRecent(topic, allTopics));
                 if (_isClosed) return;
-                if (generation != _refreshGeneration ||
+                if (generation != _refreshVersion.Generation ||
                     !string.Equals(topic, _currentTopic(), StringComparison.Ordinal) ||
                     allTopics != (_all.IsChecked == true))
                 {
