@@ -24,7 +24,7 @@
                 <TextBlock Text="每次创建、修改、删除和恢复都会形成一个历史备份；恢复也会生成新版本，不会抹掉历史。"
                            Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,9,0,0" TextWrapping="Wrap"/>
             </StackPanel>
-            <Button Grid.Column="1" Content="刷新历史" Style="{DynamicResource Yanzi.Button.Outline}" Height="30" Padding="12,0" Click="RefreshButton_Click"/>
+            <Button Grid.Column="1" Content="刷新历史" AutomationProperties.Name="刷新账号同步历史" Style="{DynamicResource Yanzi.Button.Outline}" Height="30" Padding="12,0" Click="RefreshButton_Click"/>
         </Grid>
 
         <Border Grid.Row="1" Background="{DynamicResource BrushInputBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1"
@@ -32,7 +32,7 @@
             <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" TextWrapping="Wrap"/>
         </Border>
 
-        <ListView Grid.Row="2" ItemsSource="{Binding Versions}" Background="Transparent"
+        <ListView Grid.Row="2" AutomationProperties.Name="账号同步版本历史" ItemsSource="{Binding Versions}" Background="Transparent"
                   BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
             <ListView.View>
                 <GridView>
@@ -53,7 +53,7 @@
                     <GridViewColumn Header="操作" Width="86">
                         <GridViewColumn.CellTemplate>
                             <DataTemplate>
-                                <Button Content="恢复此版" Style="{DynamicResource Yanzi.Button.Outline}" Height="26" Padding="8,0"
+                                <Button Content="恢复此版" AutomationProperties.Name="恢复所选历史版本" Style="{DynamicResource Yanzi.Button.Outline}" Height="26" Padding="8,0"
                                         IsEnabled="{Binding CanRestore}" Click="RestoreVersionButton_Click"/>
                             </DataTemplate>
                         </GridViewColumn.CellTemplate>
