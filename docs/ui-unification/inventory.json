@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "base_commit": "a910827",
+  "base_commit": "89567af",
   "note": "Persistent candidate-source inventory: re-scan preserves manual status and evidence and retains missing candidates; not a count of distinct runtime screens.",
   "items": [
     {
@@ -758,10 +758,23 @@
     {
       "path": "src/OpenQuickHost/AddProviderWindow.xaml",
       "kind": "desktop-xaml",
-      "shared_ui_reference": false,
-      "legacy_style_signals": 5,
-      "status": "pending-manual-review",
-      "evidence": []
+      "shared_ui_reference": true,
+      "legacy_style_signals": 0,
+      "status": "windows-runtime-smoke-passed-awaiting-functional-visual-qa",
+      "evidence": [
+        "2026-11-04 Windows PC-202409131508: AddProviderWindow real ShowDialog via App.IsVerificationHarness, blank name guarded, Gemini type confirmed with trimmed name, cancel does not save; public input/select/buttons load; Release build and WPF runner 15/15 passed; source commit 89567af; see docs/ui-unification/qa-add-provider-2026-11-04.md"
+      ],
+      "version_commit": "89567af2e7cacbcf068719272d3e935aa470bcc1",
+      "smoke_qa": {
+        "date": "2026-11-04",
+        "device": "PC-202409131508",
+        "result": "pass",
+        "category": "real-wpf-dialog-synthetic-data",
+        "scenario": "provider name validation, provider type selection, confirm, cancel, shared style keys and window resource resolution",
+        "test_result": "Windows Release build exit 0; RESULT pass=15 fail=0",
+        "evidence_command": "dotnet run --project tests/WpfUiMigrationSmoke/WpfUiMigrationSmoke.csproj -c Release --no-restore",
+        "remaining": "real settings persistence, visual light/dark screenshots, keyboard/screen-reader navigation and complete provider integration"
+      }
     },
     {
       "path": "src/OpenQuickHost/AiModelPickerWindow.xaml",
