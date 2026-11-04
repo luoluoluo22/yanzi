@@ -1329,8 +1329,8 @@ body {
 .yanzi-spacing-bottom-sm { margin-bottom: 8px; }
 .yanzi-spacing-top-sm { margin-top: 8px; }
 .yanzi-spacing-top-xs { margin-top: 6px; }
-.yanzi-empty-hint { padding: 10px 4px; font-size: 11px; color: #94a3b8; }
-.current-site-dot { width: 6px; height: 6px; background: #10b981; border-radius: 50%; display: inline-block; margin-right: 4px; }
+.yanzi-empty-hint { padding: 10px 4px; font-size: 11px; color: var(--text-muted); }
+.current-site-dot { width: 6px; height: 6px; background: var(--success-color); border-radius: 50%; display: inline-block; margin-right: 4px; }
 .webapp-site-svg-fallback { display: none; }
 
 /* Douyin rule editor layout */
