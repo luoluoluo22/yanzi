@@ -10,7 +10,8 @@
       "legacy_style_signals": 0,
       "status": "shared-css-a11y-static-verified-awaiting-browser-visual-qa",
       "evidence": [
-        "2026-11-04: media result controls reuse popup.css opencli-actions and theme tokens; added :focus-visible keyboard focus styling; static checks passed; real browser QA pending."
+        "2026-11-04: media result controls reuse popup.css opencli-actions and theme tokens; added :focus-visible keyboard focus styling; static checks passed; real browser QA pending.",
+        "2026-11-04: shared popup.css compact controls use nine root-scoped palette tokens; static assertions passed; actual browser visual QA pending."
       ]
     },
     {
@@ -20,7 +21,8 @@
       "legacy_style_signals": 0,
       "status": "shared-css-migrated-static-verified-awaiting-browser-visual-qa",
       "evidence": [
-        "2026-11-04: dynamic OpenCLI profile input inline cssText moved to popup.css .opencli-profile-input; node --check and class assertion passed; browser visual/interaction QA pending"
+        "2026-11-04: dynamic OpenCLI profile input inline cssText moved to popup.css .opencli-profile-input; node --check and class assertion passed; browser visual/interaction QA pending",
+        "2026-11-04: shared popup.css compact controls use nine root-scoped palette tokens; static assertions passed; actual browser visual QA pending."
       ]
     },
     {
