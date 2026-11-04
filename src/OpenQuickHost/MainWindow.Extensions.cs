@@ -1621,6 +1621,60 @@ public partial class MainWindow
 
     public bool AreListenerServicesPaused => _listenerServicesPaused;
 
+    private int _yarnSelectPrewarmQueued;
+
+    private void QueueYarnSelectConfiguredPrewarm()
+    {
+        if (!YarnSelectService.IsRunning || Interlocked.Exchange(ref _yarnSelectPrewarmQueued, 1) != 0)
+        {
+            return;
+        }
+
+        // Only compile configured C# mini-apps. Do not launch them or touch the clipboard.
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(6)).ConfigureAwait(false);
+                var settings = AppSettingsStore.Load().YarnSelect;
+                if (settings?.Enabled != true)
+                {
+                    return;
+                }
+
+                var extensionIds = (settings.Rules ?? [])
+                    .Where(static rule => rule.Enabled &&
+                        string.Equals(rule.ActionType, YarnSelectActionTypes.RunExtension, StringComparison.OrdinalIgnoreCase) &&
+                        !string.IsNullOrWhiteSpace(rule.ExtensionId))
+                    .Select(static rule => rule.ExtensionId)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Take(4)
+                    .ToArray();
+                if (extensionIds.Length == 0)
+                {
+                    return;
+                }
+
+                var commands = await Dispatcher.InvokeAsync(() => _allCommands
+                    .Where(command => extensionIds.Contains(command.ExtensionId, StringComparer.OrdinalIgnoreCase))
+                    .Select(ResolveRunnableCommand)
+                    .Where(IsCSharpRuntime)
+                    .ToArray());
+
+                foreach (var command in commands)
+                {
+                    var stopwatch = Stopwatch.StartNew();
+                    var result = await ScriptExtensionRunner.PreparePortableAssetsAsync(command).ConfigureAwait(false);
+                    HostAssets.AppendLog($"YarnSelect prewarm: id={command.ExtensionId}, success={result.Success}, elapsedMs={stopwatch.ElapsedMilliseconds}, error={result.Error}");
+                }
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"YarnSelect prewarm failed: {ex.Message}");
+            }
+        });
+    }
+
     private void HandleYarnSelectAction(YarnSelectActionRequest request)
     {
         var text = (request.Text ?? string.Empty).Trim();
@@ -1670,8 +1724,8 @@ public partial class MainWindow
                 return;
             }
 
+            LastRunMessage = $"燕选正在启动小程序：{command.Title}";
             _ = ExecuteCommandAsync(ResolveRunnableCommand(command), text, "yarnselect");
-            LastRunMessage = $"燕选运行小程序：{command.Title}";
         }
     }
 
@@ -1702,6 +1756,7 @@ public partial class MainWindow
         StartKeyboardTriggerService();
         YanyuTriggerService.Start(HandleYanyuRuleTriggered);
         YarnSelectService.Start(HandleYarnSelectAction);
+        QueueYarnSelectConfiguredPrewarm();
         StartMouseGestureService();
         RefreshYanyuRules();
         _windowBoundExtensionsService.Start(_appSettings.WindowBindings);
@@ -1883,6 +1938,7 @@ public partial class MainWindow
             StartKeyboardTriggerService();
             YanyuTriggerService.Start(HandleYanyuRuleTriggered);
             YarnSelectService.Start(HandleYarnSelectAction);
+            QueueYarnSelectConfiguredPrewarm();
             StartMouseGestureService();
             RefreshYanyuRules();
             RefreshLauncherHotkeyRegistration();

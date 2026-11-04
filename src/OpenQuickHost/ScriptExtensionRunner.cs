@@ -649,7 +649,11 @@ public static class ScriptExtensionRunner
         await buildLock.WaitAsync(cancellationToken);
         try
         {
-            return await EnsureCSharpBuildCoreAsync(command, source, useNativeWindowMode, buildRoot, dllPath, cancellationToken);
+            // Parsing references and Roslyn Emit can block for seconds on a cold cache.
+            // Always schedule the CPU-bound build outside WPF's dispatcher.
+            return await Task.Run(
+                () => EnsureCSharpBuildCoreAsync(command, source, useNativeWindowMode, buildRoot, dllPath, cancellationToken),
+                cancellationToken).ConfigureAwait(false);
         }
         finally
         {
