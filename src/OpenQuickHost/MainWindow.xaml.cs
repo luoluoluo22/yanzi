@@ -5492,7 +5492,7 @@ public sealed class CommandItem : INotifyPropertyChanged
         ToggleWindow = toggleWindow;
         RunAsAdmin = runAsAdmin;
         WaitForExit = waitForExit;
-        UsageCount = SearchUsageMemory.Load().GetUsageCount(ExtensionId);
+        UsageCount = SearchUsageMemory.GetCachedUsageCount(ExtensionId);
     }
 
     public string Glyph { get; }
