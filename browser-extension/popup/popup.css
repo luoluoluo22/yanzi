@@ -1343,3 +1343,6 @@ body {
 
 /* Shared visibility primitive for status-driven popup controls. */
 .yanzi-hidden { display: none !important; }
+
+/* Off-screen clipboard fallback: keep temporary input out of the visible popup. */
+.yanzi-clipboard-fallback { position: fixed; opacity: 0; pointer-events: none; }

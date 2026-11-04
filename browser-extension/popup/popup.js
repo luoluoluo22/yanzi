@@ -495,12 +495,15 @@ document.addEventListener("DOMContentLoaded", () => {
         const textarea = document.createElement('textarea');
         textarea.value = context;
         textarea.setAttribute('readonly', '');
-        textarea.style.position = 'fixed';
-        textarea.style.opacity = '0';
+        textarea.classList.add('yanzi-clipboard-fallback');
         document.body.appendChild(textarea);
-        textarea.select();
-        const copied = document.execCommand('copy');
-        textarea.remove();
+        let copied = false;
+        try {
+          textarea.select();
+          copied = document.execCommand('copy');
+        } finally {
+          textarea.remove();
+        }
         if (!copied) throw new Error('浏览器未允许访问剪贴板');
       }
       button.textContent = '已复制';
