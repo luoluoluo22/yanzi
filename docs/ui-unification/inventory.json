@@ -1,0 +1,1437 @@
+{
+  "schema_version": 1,
+  "base_commit": "957573e",
+  "note": "Candidate source inventory; every candidate requires manual verification; includes docs previews and code-behind candidates; not a count of distinct runtime screens.",
+  "items": [
+    {
+      "path": "browser-extension/popup/media-panel.js",
+      "kind": "web-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "browser-extension/popup/opencli-panel.js",
+      "kind": "web-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "browser-extension/popup/opencli-store-guide.js",
+      "kind": "web-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "browser-extension/popup/popup.html",
+      "kind": "web-ui",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 10,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "browser-extension/popup/popup.js",
+      "kind": "web-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 9,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "cloudflare/src/upgrade-page.js",
+      "kind": "web-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 13,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/accordion-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/alert-dialog-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/alert-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/aspect-ratio-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/attachment-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/avatar-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/badge-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/breadcrumb-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/bubble-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/button-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/button-group-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/calendar-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/card-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/carousel-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/chart-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/checkbox-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/collapsible-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/combobox-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/command-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/context-menu-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/dialog-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/drawer-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/dropdown-menu-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/empty-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/field-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/hover-card-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/input-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/input-group-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/input-otp-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/item-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/kbd-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/label-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/marker-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/menubar-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/message-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/message-scroller-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/native-select-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/navigation-menu-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/pagination-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/popover-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/progress-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/questionnaire-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/radio-group-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/resizable-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/scroll-area-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/select-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/separator-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/sheet-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/sidebar-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/skeleton-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/slider-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/spinner-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/switch-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/table-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/tabs-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/textarea-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/toast-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/toggle-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/toggle-group-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "docs/yanzi-ui-official-catalog/reference-package/examples/tooltip-example.tsx",
+      "kind": "web-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "mobile/android/app/src/main/java/cc/luoluoluo/yanzi/mobile/AiDataAccessActivity.java",
+      "kind": "android-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "mobile/android/app/src/main/java/cc/luoluoluo/yanzi/mobile/ApplicationCatalogActivity.java",
+      "kind": "android-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "mobile/android/app/src/main/java/cc/luoluoluo/yanzi/mobile/ApplicationCatalogView.java",
+      "kind": "android-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "mobile/android/app/src/main/java/cc/luoluoluo/yanzi/mobile/ChatConversationAdapter.java",
+      "kind": "android-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "mobile/android/app/src/main/java/cc/luoluoluo/yanzi/mobile/DesktopDashboardView.java",
+      "kind": "android-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "mobile/android/app/src/main/java/cc/luoluoluo/yanzi/mobile/DeveloperDashboardView.java",
+      "kind": "android-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "mobile/android/app/src/main/java/cc/luoluoluo/yanzi/mobile/DeviceRemarksDialog.java",
+      "kind": "android-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "mobile/android/app/src/main/java/cc/luoluoluo/yanzi/mobile/EnvironmentSettingsActivity.java",
+      "kind": "android-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "mobile/android/app/src/main/java/cc/luoluoluo/yanzi/mobile/ExternalAccessActivity.java",
+      "kind": "android-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "mobile/android/app/src/main/java/cc/luoluoluo/yanzi/mobile/HomeDashboardView.java",
+      "kind": "android-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 13,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "mobile/android/app/src/main/java/cc/luoluoluo/yanzi/mobile/LanPairingActivity.java",
+      "kind": "android-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "mobile/android/app/src/main/java/cc/luoluoluo/yanzi/mobile/MainActivity.java",
+      "kind": "android-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 1,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "mobile/android/app/src/main/java/cc/luoluoluo/yanzi/mobile/NotificationSettingsActivity.java",
+      "kind": "android-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "mobile/android/app/src/main/java/cc/luoluoluo/yanzi/mobile/RemoteDesktopActivity.java",
+      "kind": "android-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "mobile/android/app/src/main/java/cc/luoluoluo/yanzi/mobile/TaskRecoveryActivity.java",
+      "kind": "android-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "mobile/android/app/src/main/java/cc/luoluoluo/yanzi/mobile/VoiceMemoryActivity.java",
+      "kind": "android-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "mobile/android/app/src/main/java/cc/luoluoluo/yanzi/mobile/YanmComponentEditActivity.java",
+      "kind": "android-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "mobile/android/app/src/main/java/cc/luoluoluo/yanzi/mobile/YanmComponentWidgetConfigActivity.java",
+      "kind": "android-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "mobile/android/app/src/main/res/layout/activity_yanm_component_edit.xml",
+      "kind": "android-layout",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 5,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "mobile/android/app/src/main/res/layout/activity_yanm_component_widget_config.xml",
+      "kind": "android-layout",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 8,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "mobile/android/app/src/main/res/layout/floating_wheel_menu_left.xml",
+      "kind": "android-layout",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 6,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "mobile/android/app/src/main/res/layout/floating_wheel_menu_right.xml",
+      "kind": "android-layout",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 6,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "mobile/android/app/src/main/res/layout/widget_extensions.xml",
+      "kind": "android-layout",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 12,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "mobile/android/app/src/main/res/layout/widget_yanm.xml",
+      "kind": "android-layout",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 4,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "mobile/android/app/src/main/res/layout/widget_yanm_component.xml",
+      "kind": "android-layout",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 6,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "mobile/android/app/src/main/res/layout/widget_yanm_item.xml",
+      "kind": "android-layout",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 4,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "mobile/android/calendar/src/main/java/cc/luoluoluo/yanzi/calendar/CalendarActivity.java",
+      "kind": "android-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/AddJsonExtensionWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 82,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/AddProviderWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 5,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/AiModelPickerWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": true,
+      "legacy_style_signals": 0,
+      "status": "source-migrated-awaiting-windows-qa",
+      "evidence": [
+        "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check"
+      ]
+    },
+    {
+      "path": "src/OpenQuickHost/App.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 3,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/AppExtensionWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/CloudSyncHistoryWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 5,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/ColorPickerDialog.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": true,
+      "legacy_style_signals": 17,
+      "status": "source-migrated-awaiting-windows-qa",
+      "evidence": [
+        "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check"
+      ]
+    },
+    {
+      "path": "src/OpenQuickHost/DispatchCenterWindow.cs",
+      "kind": "desktop-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/EditModeGuideBannerWindow.cs",
+      "kind": "desktop-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/EditModeHoverDemoWindow.cs",
+      "kind": "desktop-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/EditModeMidGuideWindow.cs",
+      "kind": "desktop-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/ExecutionLogWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 11,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/ExtensionCardView.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 25,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/HotkeyCaptureWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": true,
+      "legacy_style_signals": 1,
+      "status": "source-migrated-awaiting-windows-qa",
+      "evidence": [
+        "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check"
+      ]
+    },
+    {
+      "path": "src/OpenQuickHost/IconPickerDialog.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 1,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/InputStateWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 3,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/InstalledAppPickerDialog.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": true,
+      "legacy_style_signals": 0,
+      "status": "source-migrated-awaiting-windows-qa",
+      "evidence": [
+        "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check"
+      ]
+    },
+    {
+      "path": "src/OpenQuickHost/LoginWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 7,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/MainWindow.HostedView.cs",
+      "kind": "desktop-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 14,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/MainWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": true,
+      "legacy_style_signals": 129,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/MobileMessageNotificationCard.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 3,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/MobileMessageToastWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": true,
+      "legacy_style_signals": 1,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/MouseGestureBindingDialog.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 34,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/MouseGestureRecorderWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 22,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/MouseGestureTraceWindow.cs",
+      "kind": "desktop-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/MouseTriggerCaptureWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": true,
+      "legacy_style_signals": 0,
+      "status": "source-migrated-awaiting-windows-qa",
+      "evidence": [
+        "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check"
+      ]
+    },
+    {
+      "path": "src/OpenQuickHost/NativeShellContextMenu.cs",
+      "kind": "desktop-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/PastedTextEditorWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": true,
+      "legacy_style_signals": 1,
+      "status": "source-migrated-awaiting-windows-qa",
+      "evidence": [
+        "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check"
+      ]
+    },
+    {
+      "path": "src/OpenQuickHost/ProcessPickerWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": true,
+      "legacy_style_signals": 0,
+      "status": "source-migrated-awaiting-windows-qa",
+      "evidence": [
+        "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check"
+      ]
+    },
+    {
+      "path": "src/OpenQuickHost/QuestMouseGuideWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 8,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/QuestWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 40,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/QuickPanelDragGhostWindow.cs",
+      "kind": "desktop-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/QuickPanelWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 122,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/RadialMenuWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 51,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/RunningExtensionsWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 9,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/SampleFileGuideOverlayWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 7,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/ScheduleConfigWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 28,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/SearchScopesManagerWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": true,
+      "legacy_style_signals": 0,
+      "status": "source-migrated-awaiting-windows-qa",
+      "evidence": [
+        "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check"
+      ]
+    },
+    {
+      "path": "src/OpenQuickHost/SecretValueEditor.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": true,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/SettingsWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": true,
+      "legacy_style_signals": 326,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/SimpleTextInputWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": true,
+      "legacy_style_signals": 0,
+      "status": "source-migrated-awaiting-windows-qa",
+      "evidence": [
+        "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check"
+      ]
+    },
+    {
+      "path": "src/OpenQuickHost/SkillExportOptionsWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": true,
+      "legacy_style_signals": 0,
+      "status": "source-migrated-awaiting-windows-qa",
+      "evidence": [
+        "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check"
+      ]
+    },
+    {
+      "path": "src/OpenQuickHost/SystemPromptEditorWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 4,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/TaskRecoveryWindow.cs",
+      "kind": "desktop-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/Themes/DarkTheme.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 38,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/Themes/LightTheme.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 41,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/Themes/Styles.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 1,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/Themes/TermsResources.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/Themes/Typography.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/UiSessionOverlay.cs",
+      "kind": "desktop-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/VipActivationWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 9,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/WebDavCredentialWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": true,
+      "legacy_style_signals": 0,
+      "status": "source-migrated-awaiting-windows-qa",
+      "evidence": [
+        "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check"
+      ]
+    },
+    {
+      "path": "src/OpenQuickHost/WindowBindingDropOverlayWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 6,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/WindowBoundExtensionOverlayWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 2,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/WindowPickerOverlay.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 8,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/WindowSnapAssistOverlayWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 24,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/YanmComponentEditorWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 10,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/YanmOverlayWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 34,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/YanyuEditorWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": true,
+      "legacy_style_signals": 1,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/YanziTaskProgressWindow.cs",
+      "kind": "desktop-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 26,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/Yanzi.Avalonia/App.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 6,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/Yanzi.Avalonia/LauncherWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 41,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/Yanzi.Avalonia/MainWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 16,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/Yanzi.Avalonia/PermissionGuideWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 24,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/Yanzi.Avalonia/QuickPanelWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 33,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/Yanzi.Avalonia/RadialSlotActionWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 18,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/Yanzi.Avalonia/SettingsWindow.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 18,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/Yanzi.Capture/CaptureOverlayWindow.cs",
+      "kind": "desktop-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/Yanzi.Capture/CaptureWorkspaceWindow.cs",
+      "kind": "desktop-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 47,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/Yanzi.Capture/EditorWindow.cs",
+      "kind": "desktop-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 25,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/Yanzi.Capture/PinWindow.cs",
+      "kind": "desktop-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/Yanzi.Capture/TextInputWindow.cs",
+      "kind": "desktop-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 5,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/Yanzi.UI.Wpf/Themes/Controls.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": true,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/Yanzi.UI.Wpf/Themes/Tokens.Dark.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": true,
+      "legacy_style_signals": 55,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/Yanzi.UI.Wpf/Themes/Tokens.Light.xaml",
+      "kind": "desktop-xaml",
+      "shared_ui_reference": true,
+      "legacy_style_signals": 55,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/Yanzi.UI.Wpf/YanziAlertDialog.cs",
+      "kind": "desktop-dynamic-ui-candidate",
+      "shared_ui_reference": true,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/Yanzi.UI.Wpf/YanziContentDialog.cs",
+      "kind": "desktop-dynamic-ui-candidate",
+      "shared_ui_reference": true,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/Yanzi.UI.Wpf/YanziContextMenu.cs",
+      "kind": "desktop-dynamic-ui-candidate",
+      "shared_ui_reference": true,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/Yanzi.UI.Wpf/YanziDialog.cs",
+      "kind": "desktop-dynamic-ui-candidate",
+      "shared_ui_reference": true,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/Yanzi.UI.Wpf/YanziDropdownMenu.cs",
+      "kind": "desktop-dynamic-ui-candidate",
+      "shared_ui_reference": true,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/Yanzi.UI.Wpf/YanziNavigationMenu.cs",
+      "kind": "desktop-dynamic-ui-candidate",
+      "shared_ui_reference": true,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/Yanzi.UI.Wpf/YanziSheetOverlay.cs",
+      "kind": "desktop-dynamic-ui-candidate",
+      "shared_ui_reference": true,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    },
+    {
+      "path": "src/Yanzi.UI.Wpf/YanziToast.cs",
+      "kind": "desktop-dynamic-ui-candidate",
+      "shared_ui_reference": true,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
+    }
+  ]
+}

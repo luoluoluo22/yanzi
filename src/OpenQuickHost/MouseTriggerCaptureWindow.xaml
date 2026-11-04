@@ -5,8 +5,7 @@
         Width="460"
         Height="320"
         WindowStartupLocation="CenterOwner"
-        Background="#FF111113"
-        Foreground="White"
+        Style="{StaticResource DialogWindow}"
         KeyDown="Window_KeyDown"
         MouseDown="Window_MouseDown"
         MouseUp="Window_MouseUp"
@@ -19,26 +18,26 @@
                        Margin="0,10,0,0"
                        Foreground="{DynamicResource BrushTextSec}"
                        TextWrapping="Wrap"/>
-            <Border Height="92" Margin="0,18,0,0" CornerRadius="10" Background="#FF101014" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1">
+            <Border Height="92" Margin="0,18,0,0" CornerRadius="10" Background="{DynamicResource BrushDialogBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1">
                 <Grid>
                     <TextBlock x:Name="StatusText"
                                Text="等待鼠标动作..."
                                HorizontalAlignment="Center"
                                VerticalAlignment="Center"
                                FontSize="{DynamicResource FontSizeLargePlus}"
-                               Foreground="#FFE5E5E5"/>
+                               Foreground="{DynamicResource BrushTextMain}"/>
                 </Grid>
             </Border>
             <TextBlock Text="录制到的触发方式会分配给："
-                       Foreground="#FFB8B8B8"
+                       Foreground="{DynamicResource BrushTextSec}"
                        Margin="0,16,0,6"/>
-            <ComboBox x:Name="TargetComboBox" Height="34" SelectedIndex="0">
+            <ComboBox x:Name="TargetComboBox" Height="34" SelectedIndex="0" Style="{DynamicResource Yanzi.Select}">
                 <ComboBoxItem Tag="Panel" Content="面板"/>
                 <ComboBoxItem Tag="Radial" Content="燕环"/>
                 <ComboBoxItem Tag="Yanm" Content="燕幕"/>
             </ComboBox>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
-                <Button Content="取消" Width="82" Height="32" Click="CancelButton_Click"/>
+                <Button Content="取消" Width="82" Height="32" Style="{DynamicResource Yanzi.Button.Outline}" Click="CancelButton_Click"/>
             </StackPanel>
         </StackPanel>
     </Border>

@@ -9,7 +9,7 @@
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         ResizeMode="NoResize" ShowInTaskbar="False">
 
-    <Border Background="#FF16161B" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1.5" CornerRadius="16" SnapsToDevicePixels="True">
+    <Border Background="{DynamicResource BrushDialogBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1.5" CornerRadius="16" SnapsToDevicePixels="True">
         <Grid Margin="16">
             <Grid.RowDefinitions>
                 <!-- 顶部标题 -->
@@ -155,15 +155,15 @@
                     <ColumnDefinition Width="65" />
                 </Grid.ColumnDefinitions>
                 <!-- 吸管按钮 -->
-                <Button x:Name="DropperBtn" Grid.Column="0" Style="{DynamicResource GhostButtonStyle}" Width="34" Height="30" Padding="0" Click="DropperBtn_Click" ToolTip="屏幕拾色吸管">
+                <Button x:Name="DropperBtn" Grid.Column="0" Style="{DynamicResource Yanzi.Button.Ghost}" Width="34" Height="30" Padding="0" Click="DropperBtn_Click" ToolTip="屏幕拾色吸管">
                     <Path Data="M19.35,10.04C18.67,10.04 18.06,10.3 17.59,10.73L16.27,9.41L17.59,8.09L15.47,5.97L14.15,7.29L12.83,5.97C13.26,5.5 13.52,4.89 13.52,4.21C13.52,2.99 12.53,2 11.31,2C10.74,2 10.23,2.22 9.85,2.58L10.91,3.64C11.05,3.5 11.23,3.41 11.43,3.41C11.87,3.41 12.23,3.77 12.23,4.21C12.23,4.41 12.14,4.59 12,4.73L6.87,9.86C6.73,9.72 6.55,9.63 6.35,9.63C5.91,9.63 5.55,9.99 5.55,10.43C5.55,10.63 5.64,10.81 5.78,10.95L2,14.73V19H6.27L10.05,15.22C10.19,15.36 10.37,15.45 10.57,15.45C11.01,15.45 11.37,15.09 11.37,14.65C11.37,14.45 11.28,14.27 11.14,14.13L16.27,9C16.41,9.14 16.59,9.23 16.79,9.23C17.23,9.23 17.59,8.87 17.59,8.43L19.35,10.04M4.86,17.59H3.41V16.14L6,13.55L7.45,15L4.86,17.59Z"
                           Fill="{DynamicResource BrushTextMain}" Width="14" Height="14" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" />
                 </Button>
                 <!-- HEX 输入框 -->
-                <TextBox x:Name="HexInput" Grid.Column="1" Style="{DynamicResource FormTextBoxStyle}" Height="30" Margin="8,0,8,0"
+                <TextBox x:Name="HexInput" Grid.Column="1" Style="{DynamicResource Yanzi.Input}" Height="30" Margin="8,0,8,0"
                          VerticalContentAlignment="Center" HorizontalContentAlignment="Center" FontSize="{DynamicResource FontSizeNormal}" TextChanged="HexInput_TextChanged" />
                 <!-- Alpha 百分比 -->
-                <TextBox x:Name="AlphaInput" Grid.Column="2" Style="{DynamicResource FormTextBoxStyle}" Height="30"
+                <TextBox x:Name="AlphaInput" Grid.Column="2" Style="{DynamicResource Yanzi.Input}" Height="30"
                          VerticalContentAlignment="Center" HorizontalContentAlignment="Center" FontSize="{DynamicResource FontSizeNormal}" TextChanged="AlphaInput_TextChanged" />
             </Grid>
 
@@ -180,8 +180,8 @@
             <!-- 7. 底部按钮 -->
             <Grid Grid.Row="6" Margin="0,4,0,0">
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                    <Button Content="取消" Style="{DynamicResource GhostButtonStyle}" Height="30" Padding="14,0" Click="CancelButton_Click" Cursor="Hand" />
-                    <Button Content="确定" Style="{DynamicResource GhostButtonStyle}" BorderBrush="{DynamicResource BrushAccent}" Height="30" Padding="14,0" Margin="8,0,0,0" Click="ConfirmButton_Click" Cursor="Hand" />
+                    <Button Content="取消" Style="{DynamicResource Yanzi.Button.Outline}" Height="30" Padding="14,0" Click="CancelButton_Click" Cursor="Hand" />
+                    <Button Content="确定" Style="{DynamicResource Yanzi.Button.Default}" Height="30" Padding="14,0" Margin="8,0,0,0" Click="ConfirmButton_Click" Cursor="Hand" />
                 </StackPanel>
             </Grid>
         </Grid>

@@ -8,6 +8,11 @@ public partial class SkillExportOptionsWindow : Window
     public SkillExportOptionsWindow()
     {
         InitializeComponent();
+        // Use shared window-scoped theme resources; leave the host theme untouched.
+        var theme = AppSettingsStore.Load().ThemeMode;
+        Yanzi.UI.Wpf.YanziUi.ApplyTo(this,
+            string.Equals(theme, "Light", StringComparison.OrdinalIgnoreCase)
+                ? Yanzi.UI.Wpf.YanziTheme.Light : Yanzi.UI.Wpf.YanziTheme.Dark);
     }
 
     public SkillExportTarget SelectedTarget =>

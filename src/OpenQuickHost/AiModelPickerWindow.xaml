@@ -8,8 +8,8 @@
         Style="{StaticResource DialogWindow}">
     <Border Margin="1"
             CornerRadius="0"
-            Background="#F2161616"
-            BorderBrush="#22FFFFFF"
+            Background="{DynamicResource BrushDialogBG}"
+            BorderBrush="{DynamicResource BrushBorder}"
             BorderThickness="1">
         <Grid Margin="22">
             <Grid.RowDefinitions>
@@ -29,15 +29,15 @@
 
             <Border Grid.Row="2"
                     Margin="0,16,0,0"
-                    Background="#0FFFFFFF"
-                    BorderBrush="#22FFFFFF"
+                    Background="{DynamicResource BrushInputBG}"
+                    BorderBrush="{DynamicResource BrushBorder}"
                     BorderThickness="1"
                     CornerRadius="10">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <ItemsControl ItemsSource="{Binding Items}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Border BorderBrush="#12FFFFFF" BorderThickness="0,0,0,1" Padding="12,10">
+                                <Border BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1" Padding="12,10">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto" />
@@ -46,6 +46,7 @@
                                         </Grid.ColumnDefinitions>
                                         <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}"
                                                   IsEnabled="{Binding CanSelect}"
+                                                  Style="{DynamicResource Yanzi.CheckBox}"
                                                   VerticalAlignment="Center" />
                                         <TextBlock Grid.Column="1"
                                                    Margin="10,0,0,0"
@@ -58,10 +59,10 @@
                                                 Margin="10,0,0,0"
                                                 Padding="8,2"
                                                 CornerRadius="4"
-                                                Background="#1A3B82F6"
+                                                Background="{DynamicResource BrushInputBG}"
                                                 Visibility="{Binding AlreadyAddedVisibility}">
                                             <TextBlock Text="已添加"
-                                                       Foreground="#FF60A5FA"
+                                                       Foreground="{DynamicResource BrushAccent}"
                                                        FontSize="{DynamicResource FontSizeTiny}"
                                                        FontWeight="SemiBold" />
                                         </Border>
@@ -85,13 +86,13 @@
                            FontSize="{DynamicResource FontSizeSmallPlus}" />
                 <Button Grid.Column="1"
                         Content="取消"
-                        Style="{StaticResource SecondaryBtn}"
+                        Style="{DynamicResource Yanzi.Button.Outline}"
                         Width="96"
                         Margin="0,0,10,0"
                         Click="CancelButton_Click" />
                 <Button Grid.Column="2"
                         Content="添加所选"
-                        Style="{StaticResource PrimaryBtn}"
+                        Style="{DynamicResource Yanzi.Button.Default}"
                         Width="110"
                         Click="ConfirmButton_Click" />
             </Grid>

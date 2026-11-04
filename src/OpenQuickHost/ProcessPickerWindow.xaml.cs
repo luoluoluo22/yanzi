@@ -39,6 +39,11 @@ public partial class ProcessPickerWindow : Window
         bool disableInFullscreen = false)
     {
         InitializeComponent();
+        // Scope shared theme resources to this dialog; do not mutate application defaults.
+        var theme = AppSettingsStore.Load().ThemeMode;
+        Yanzi.UI.Wpf.YanziUi.ApplyTo(this,
+            string.Equals(theme, "Light", StringComparison.OrdinalIgnoreCase)
+                ? Yanzi.UI.Wpf.YanziTheme.Light : Yanzi.UI.Wpf.YanziTheme.Dark);
         Title = title;
         DescriptionText.Text = description;
         ShowFullscreenSwitch = showFullscreenSwitch;

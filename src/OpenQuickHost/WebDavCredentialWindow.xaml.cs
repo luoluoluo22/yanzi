@@ -9,6 +9,11 @@ public partial class WebDavCredentialWindow : Window
     public WebDavCredentialWindow(string username, bool requireUsername, string password = "")
     {
         InitializeComponent();
+        // Apply the reusable theme to this dialog without changing the host's global styles.
+        var theme = AppSettingsStore.Load().ThemeMode;
+        Yanzi.UI.Wpf.YanziUi.ApplyTo(this,
+            string.Equals(theme, "Light", StringComparison.OrdinalIgnoreCase)
+                ? Yanzi.UI.Wpf.YanziTheme.Light : Yanzi.UI.Wpf.YanziTheme.Dark);
         _requireUsername = requireUsername;
         UsernameBox.Text = username;
         PasswordBox.Password = password;

@@ -52,7 +52,7 @@
         </Style>
     </Window.Resources>
 
-    <Border Background="#FF16161B" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1.5" CornerRadius="16" SnapsToDevicePixels="True">
+    <Border Background="{DynamicResource BrushDialogBG}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1.5" CornerRadius="16" SnapsToDevicePixels="True">
         <Grid Margin="18">
             <Grid.RowDefinitions>
                 <!-- 顶部标题栏 -->
@@ -145,7 +145,7 @@
                                             </Grid.ColumnDefinitions>
 
                                             <!-- 程序图标 -->
-                                            <Border Grid.Column="0" Width="40" Height="40" CornerRadius="8" Background="#14FFFFFF" Margin="0,0,12,0" VerticalAlignment="Center">
+                                            <Border Grid.Column="0" Width="40" Height="40" CornerRadius="8" Background="{DynamicResource BrushSecondaryBtnBG}" Margin="0,0,12,0" VerticalAlignment="Center">
                                                 <Image Source="{Binding IconSource}" Width="32" Height="32" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                             </Border>
 
@@ -177,8 +177,8 @@
             <Grid Grid.Row="3" Margin="2,0,2,2">
                 <TextBlock x:Name="SelectedHintText" Text="提示：双击任意程序即可直接选定并填充。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center" Opacity="0.7" />
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                    <Button Content="取消" Style="{DynamicResource GhostButtonStyle}" Height="32" Padding="16,0" Click="CancelButton_Click" Cursor="Hand" />
-                    <Button x:Name="ConfirmButton" Content="确认选择" Style="{DynamicResource GhostButtonStyle}" BorderBrush="{DynamicResource BrushAccent}" Height="32" Padding="16,0" Margin="10,0,0,0" Click="ConfirmButton_Click" Cursor="Hand" />
+                    <Button Content="取消" Style="{DynamicResource Yanzi.Button.Outline}" Height="32" Padding="16,0" Click="CancelButton_Click" Cursor="Hand" />
+                    <Button x:Name="ConfirmButton" Content="确认选择" Style="{DynamicResource Yanzi.Button.Default}" Height="32" Padding="16,0" Margin="10,0,0,0" Click="ConfirmButton_Click" Cursor="Hand" />
                 </StackPanel>
             </Grid>
         </Grid>

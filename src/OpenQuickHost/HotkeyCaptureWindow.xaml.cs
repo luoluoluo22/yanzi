@@ -56,6 +56,11 @@ public partial class HotkeyCaptureWindow : Window
     public HotkeyCaptureWindow(string title, string description, string? initialValue = null, string? initialDisplayName = null, bool allowEmpty = false, bool allowDoubleTap = false, bool allowModifierless = false)
     {
         InitializeComponent();
+        // Keep this dialog on the shared WPF design system without changing global resources.
+        var theme = AppSettingsStore.Load().ThemeMode;
+        Yanzi.UI.Wpf.YanziUi.ApplyTo(this,
+            string.Equals(theme, "Light", StringComparison.OrdinalIgnoreCase)
+                ? Yanzi.UI.Wpf.YanziTheme.Light : Yanzi.UI.Wpf.YanziTheme.Dark);
         _keyboardHookProc = LowLevelKeyboardCallback;
         _allowEmpty = allowEmpty;
         _allowDoubleTap = allowDoubleTap;
