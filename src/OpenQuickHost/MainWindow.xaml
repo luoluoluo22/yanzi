@@ -1868,7 +1868,6 @@
                             <Grid>
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="*" />
-                                    <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
                                 <ListBox x:Name="AiChatMessagesList" Grid.Row="0"
                                          ItemsSource="{Binding AiChatMessages}"
@@ -1912,16 +1911,38 @@
                                                                 MouseRightButtonUp="AiChatMessageBubble_MouseRightButtonUp">
                                                             <Grid>
                                                                 <StackPanel Margin="0,0,64,0">
+                                                                    <!-- First-token indicator lives inside this assistant message, never as a footer row. -->
+                                                                    <StackPanel x:Name="AssistantWaitingIndicator"
+                                                                                Height="22" Orientation="Horizontal"
+                                                                                VerticalAlignment="Center"
+                                                                                IsHitTestVisible="False"
+                                                                                ToolTip="正在等待模型回复"
+                                                                                Visibility="{Binding WaitingIndicatorVisibility}">
+                                                                        <Ellipse Style="{DynamicResource Yanzi.Chat.GenerationDot.First}"/>
+                                                                        <Ellipse Style="{DynamicResource Yanzi.Chat.GenerationDot.Second}"/>
+                                                                        <Ellipse Style="{DynamicResource Yanzi.Chat.GenerationDot.Third}"/>
+                                                                        <TextBlock Text="正在回复" Margin="5,0,0,0"
+                                                                                   Foreground="{DynamicResource Yanzi.Color.MutedForeground}"
+                                                                                   VerticalAlignment="Center"
+                                                                                   FontSize="{DynamicResource FontSizeSmallPlus}" />
+                                                                    </StackPanel>
                                                                     <TextBlock x:Name="NormalTextBlock"
                                                                                                                                                local:MarkdownTextBehavior.MarkdownText="{Binding FormattedText}"
                                                                                                                                                Foreground="{DynamicResource Yanzi.Color.Foreground}"
                                                                                                                                                FontSize="{DynamicResource FontSizeNormalPlus}"
                                                                                                                                                LineHeight="22"
                                                                                                                                                TextWrapping="Wrap" />
-                                                                    <TextBlock Text="{Binding Text}" TextWrapping="Wrap"
+                                                                    <!-- Keep the caret in the same TextBlock as streamed tokens. -->
+                                                                    <TextBlock x:Name="AssistantStreamingTextBlock" TextWrapping="Wrap"
                                                                                Visibility="{Binding StreamingTextVisibility}"
                                                                                Foreground="{DynamicResource Yanzi.Color.Foreground}"
-                                                                               FontSize="{DynamicResource FontSizeNormalPlus}" />
+                                                                               FontSize="{DynamicResource FontSizeNormalPlus}"
+                                                                               LineHeight="22">
+                                                                        <Run Text="{Binding Text}" />
+                                                                        <InlineUIContainer BaselineAlignment="Center">
+                                                                            <Border Style="{DynamicResource Yanzi.Chat.GenerationCaret}" />
+                                                                        </InlineUIContainer>
+                                                                    </TextBlock>
 
                                                                                                                                     <Expander x:Name="ToolCallExpander"
                                                                                                                                               Style="{DynamicResource Yanzi.Expander}"
@@ -1947,6 +1968,17 @@
                                                                                                                                                            FontSize="{DynamicResource FontSizeSmallPlus}"
                                                                                                                                                            FontWeight="SemiBold"
                                                                                                                                                            VerticalAlignment="Center" />
+                                                                                                                                                <StackPanel Orientation="Horizontal"
+                                                                                                                                                            Margin="10,0,0,0"
+                                                                                                                                                            VerticalAlignment="Center"
+                                                                                                                                                            IsHitTestVisible="False"
+                                                                                                                                                            Visibility="{Binding ToolRunningVisibility}">
+                                                                                                                                                    <Ellipse Style="{DynamicResource Yanzi.Chat.ToolRunningDot}" />
+                                                                                                                                                    <TextBlock Text="执行中" Margin="5,0,0,0"
+                                                                                                                                                               Foreground="{DynamicResource Yanzi.Color.MutedForeground}"
+                                                                                                                                                               FontSize="{DynamicResource FontSizeSmall}"
+                                                                                                                                                               VerticalAlignment="Center" />
+                                                                                                                                                </StackPanel>
                                                                                                                                             </StackPanel>
                                                                                                                                         </Expander.Header>
                                                                                                                                         <StackPanel>
@@ -2088,51 +2120,6 @@
                                         </ListBox.ItemTemplate>
                                     </ListBox>
 
-                                    <Grid Grid.Row="1" Margin="18,2,14,8"
-                                          Visibility="{Binding IsAiChatRequestInFlight, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                        <Border
-                                                Padding="14,10"
-                                                Background="{DynamicResource Yanzi.Color.Card}"
-                                                BorderBrush="{DynamicResource Yanzi.Color.Border}"
-                                                BorderThickness="1"
-                                                CornerRadius="10">
-                                            <StackPanel Orientation="Horizontal">
-                                                <Grid Width="18"
-                                                      Height="18"
-                                                      Margin="0,0,9,0"
-                                                      VerticalAlignment="Center">
-                                                    <Ellipse Stroke="{DynamicResource Yanzi.Color.Border}"
-                                                             StrokeThickness="2" />
-                                                    <Path Data="M 9,1 A 8,8 0 0 1 17,9"
-                                                          Stroke="{DynamicResource Yanzi.Color.Foreground}"
-                                                          StrokeThickness="2"
-                                                          StrokeStartLineCap="Round"
-                                                          StrokeEndLineCap="Round"
-                                                          Fill="Transparent"
-                                                          RenderTransformOrigin="0.5,0.5">
-                                                        <Path.RenderTransform>
-                                                            <RotateTransform Angle="0" />
-                                                        </Path.RenderTransform>
-                                                        <Path.Triggers>
-                                                            <EventTrigger RoutedEvent="Loaded">
-                                                                <BeginStoryboard>
-                                                                    <Storyboard RepeatBehavior="Forever">
-                                                                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
-                                                                                         From="0" To="360"
-                                                                                         Duration="0:0:0.8" />
-                                                                    </Storyboard>
-                                                                </BeginStoryboard>
-                                                            </EventTrigger>
-                                                        </Path.Triggers>
-                                                    </Path>
-                                                </Grid>
-                                                <TextBlock Text="{Binding AiChatStatusText}"
-                                                           Foreground="{DynamicResource Yanzi.Color.MutedForeground}"
-                                                           FontSize="{DynamicResource FontSizeNormal}"
-                                                           VerticalAlignment="Center" />
-                                            </StackPanel>
-                                        </Border>
-                                    </Grid>
                             </Grid>
 
                             <Grid Visibility="{Binding NoTopicVisibility}">

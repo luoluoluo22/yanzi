@@ -1209,19 +1209,34 @@ public partial class MainWindow
                 for (int round = 0; round < 5; round++)
                 {
                     cancellation.Token.ThrowIfCancellationRequested();
-                    var reply = await RequestAiChatCompletionStreamingAsync(
-                        BuildAiRequestMessages(mode, topic), profile, mode, topic.Id, _ => { }, cancellation.Token);
+                    // Tool-mode responses are also messages: show the same unobtrusive
+                    // in-bubble activity indicator while awaiting the model.
+                    var call = new AiChatMessage(false, string.Empty) { IsStreaming = true };
+                    AppendAiTopicMessage(topic, call);
+                    string reply;
+                    try
+                    {
+                        reply = await RequestAiChatCompletionStreamingAsync(
+                            BuildAiRequestMessages(mode, topic), profile, mode, topic.Id, _ => { }, cancellation.Token);
+                        call.Text = reply;
+                    }
+                    catch
+                    {
+                        call.Text = cancellation.IsCancellationRequested
+                            ? "生成已停止，原始问题已保留。"
+                            : "回复中断，请重试。";
+                        throw;
+                    }
+                    finally
+                    {
+                        call.IsStreaming = false;
+                    }
                     var toolCall = ParseToolCall(reply);
                     if (toolCall == null)
-                    {
-                        AppendAiTopicMessage(topic, new AiChatMessage(false, reply));
                         break;
-                    }
-                    var call = new AiChatMessage(false, reply)
-                    {
-                        IsToolCall = true, ToolName = toolCall.ToolName
-                    };
-                    AppendAiTopicMessage(topic, call);
+                    call.IsToolCall = true;
+                    call.ToolName = toolCall.ToolName;
+                    call.IsToolRunning = true;
                     SetAiTopicStatus(topic, $"AI 正在调用工具：{toolCall.ToolName}…");
                     try
                     {
@@ -1235,6 +1250,10 @@ public partial class MainWindow
                     catch (Exception ex)
                     {
                         call.ToolFeedback = $"【系统反馈】执行工具失败：{ex.Message}";
+                    }
+                    finally
+                    {
+                        call.IsToolRunning = false;
                     }
                     topic.NotifyMessagesChanged();
                     SetAiTopicStatus(topic, "AI 正在分析工具结果…");
@@ -2326,6 +2345,19 @@ public sealed class AiChatMessage : INotifyPropertyChanged
     private string? _toolFeedback;
     private bool _isExpanded = true; // 默认展开，让用户能够直观看到执行状态
     private bool _isStreaming;
+    private bool _isToolRunning;
+    public bool IsToolRunning
+    {
+        get => _isToolRunning;
+        set
+        {
+            if (_isToolRunning == value) return;
+            _isToolRunning = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(ToolRunningVisibility));
+        }
+    }
+    public Visibility ToolRunningVisibility => IsToolRunning ? Visibility.Visible : Visibility.Collapsed;
     public bool IsStreaming
     {
         get => _isStreaming;
@@ -2336,12 +2368,20 @@ public sealed class AiChatMessage : INotifyPropertyChanged
             OnPropertyChanged();
             OnPropertyChanged(nameof(FormattedText));
             OnPropertyChanged(nameof(StreamingTextVisibility));
+            OnPropertyChanged(nameof(WaitingIndicatorVisibility));
+            OnPropertyChanged(nameof(IsAwaitingFirstToken));
+            OnPropertyChanged(nameof(IsReceivingTokens));
             OnPropertyChanged(nameof(HasHtmlContent));
         }
     }
     public string FormattedText => IsStreaming ? string.Empty : Text;
     public bool HasHtmlContent => !IsUser && !IsStreaming && AiChatHtmlContent.IsHtmlMessage(Text);
-    public Visibility StreamingTextVisibility => IsStreaming ? Visibility.Visible : Visibility.Collapsed;
+    // One in-message lifecycle: quiet dots before first token, inline caret while streaming,
+    // and no animated element once the reply is complete or canceled.
+    public bool IsAwaitingFirstToken => !IsUser && IsStreaming && string.IsNullOrEmpty(Text);
+    public bool IsReceivingTokens => !IsUser && IsStreaming && !string.IsNullOrEmpty(Text);
+    public Visibility WaitingIndicatorVisibility => IsAwaitingFirstToken ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility StreamingTextVisibility => IsReceivingTokens ? Visibility.Visible : Visibility.Collapsed;
     private bool _showTimeDivider;
 
     public bool IsToolCall
@@ -2393,6 +2433,10 @@ public sealed class AiChatMessage : INotifyPropertyChanged
 
             _text = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(StreamingTextVisibility));
+            OnPropertyChanged(nameof(WaitingIndicatorVisibility));
+            OnPropertyChanged(nameof(IsAwaitingFirstToken));
+            OnPropertyChanged(nameof(IsReceivingTokens));
             if (!IsStreaming)
             {
                 OnPropertyChanged(nameof(FormattedText));
