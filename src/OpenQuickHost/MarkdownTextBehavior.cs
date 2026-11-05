@@ -24,6 +24,8 @@ namespace OpenQuickHost
             textBlock.Inlines.Clear();
             var text = e.NewValue as string;
             if (string.IsNullOrEmpty(text)) return;
+            // Render untrusted HTML as inert WPF elements, never a browser.
+            if (AiChatHtmlContent.TryRender(textBlock, text)) return;
 
             // 逐行解析
             var lines = text.Split(new[] { "\r\n", "\r", "\n" }, System.StringSplitOptions.None);
@@ -115,7 +117,11 @@ namespace OpenQuickHost
             }
         }
 
-        private static void ParseAndAddInlineSegment(InlineCollection inlines, string text)
+        private static bool IsSafeWebLink(string url) =>
+            System.Uri.TryCreate(url, System.UriKind.Absolute, out var uri) &&
+            (uri.Scheme == System.Uri.UriSchemeHttps || uri.Scheme == System.Uri.UriSchemeHttp);
+
+        internal static void ParseAndAddInlineSegment(InlineCollection inlines, string text)
         {
             if (string.IsNullOrEmpty(text)) return;
 
@@ -140,7 +146,7 @@ namespace OpenQuickHost
                         {
                             var hyperlink = new Hyperlink(new Run(linkText))
                             {
-                                NavigateUri = new System.Uri(linkUrl),
+                                NavigateUri = IsSafeWebLink(linkUrl) ? new System.Uri(linkUrl, System.UriKind.Absolute) : throw new System.UriFormatException("Unsafe link"),
                                 Foreground = new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF60A5FA")),
                                 TextDecorations = TextDecorations.Underline,
                                 Cursor = System.Windows.Input.Cursors.Hand

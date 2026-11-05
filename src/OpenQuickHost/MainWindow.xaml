@@ -1911,7 +1911,7 @@
                                                                 Style="{DynamicResource Yanzi.Chat.Bubble}"
                                                                 MouseRightButtonUp="AiChatMessageBubble_MouseRightButtonUp">
                                                             <Grid>
-                                                                <StackPanel Margin="0,0,26,0">
+                                                                <StackPanel Margin="0,0,64,0">
                                                                     <TextBlock x:Name="NormalTextBlock"
                                                                                                                                                local:MarkdownTextBehavior.MarkdownText="{Binding FormattedText}"
                                                                                                                                                Foreground="{DynamicResource Yanzi.Color.Foreground}"
@@ -2000,6 +2000,16 @@
                                                                                                                                         </ItemsControl.ItemTemplate>
                                                                                                                                     </ItemsControl>
                                                                 </StackPanel>
+                                                                <Button x:Name="AssistantHtmlCopyButton" Tag="{Binding}"
+                                                                        Width="30" Height="28" Padding="0" Margin="0,0,34,0"
+                                                                        HorizontalAlignment="Right" VerticalAlignment="Top"
+                                                                        Visibility="Collapsed"
+                                                                        Style="{DynamicResource Yanzi.Button.Ghost}"
+                                                                        ToolTip="复制网页内容（保留富文本格式）"
+                                                                        Click="AiChatCopyHtmlButton_Click">
+                                                                    <Path Data="{local:IconGeometry code-tags}" Width="14" Height="14"
+                                                                          Stretch="Uniform" Fill="{DynamicResource Yanzi.Color.MutedForeground}"/>
+                                                                </Button>
                                                                 <Button x:Name="AssistantCopyButton" Tag="{Binding}"
                                                                         Width="30" Height="28" Padding="0"
                                                                         HorizontalAlignment="Right"
@@ -2058,6 +2068,13 @@
                                                     <DataTrigger Binding="{Binding IsMouseOver, ElementName=AssistantBubble}" Value="True">
                                                         <Setter TargetName="AssistantCopyButton" Property="Visibility" Value="Visible"/>
                                                     </DataTrigger>
+                                                    <MultiDataTrigger>
+                                                        <MultiDataTrigger.Conditions>
+                                                            <Condition Binding="{Binding IsMouseOver, ElementName=AssistantBubble}" Value="True" />
+                                                            <Condition Binding="{Binding HasHtmlContent}" Value="True" />
+                                                        </MultiDataTrigger.Conditions>
+                                                        <Setter TargetName="AssistantHtmlCopyButton" Property="Visibility" Value="Visible" />
+                                                    </MultiDataTrigger>
                                                     <DataTrigger Binding="{Binding IsUser}" Value="True">
                                                         <Setter TargetName="AssistantMessageRoot" Property="Visibility" Value="Collapsed" />
                                                         <Setter TargetName="UserMessageRoot" Property="Visibility" Value="Visible" />
