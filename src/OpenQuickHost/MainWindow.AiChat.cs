@@ -2372,10 +2372,19 @@ public sealed class AiChatMessage : INotifyPropertyChanged
             OnPropertyChanged(nameof(IsAwaitingFirstToken));
             OnPropertyChanged(nameof(IsReceivingTokens));
             OnPropertyChanged(nameof(HasHtmlContent));
+            OnPropertyChanged(nameof(HtmlVisibility));
+            OnPropertyChanged(nameof(MarkdownVisibility));
         }
     }
     public string FormattedText => IsStreaming ? string.Empty : Text;
     public bool HasHtmlContent => !IsUser && !IsStreaming && AiChatHtmlContent.IsHtmlMessage(Text);
+    // A stand-alone HTML document keeps its inert WPF renderer. Inline HTML or
+    // HTML examples inside Markdown belong to the Markdown engine instead.
+    public bool IsStandaloneHtml => !IsUser && !IsStreaming &&
+        Text.TrimStart().StartsWith("<", StringComparison.Ordinal) &&
+        AiChatHtmlContent.IsHtmlMessage(Text);
+    public Visibility HtmlVisibility => IsStandaloneHtml ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility MarkdownVisibility => IsStandaloneHtml ? Visibility.Collapsed : Visibility.Visible;
     // One in-message lifecycle: quiet dots before first token, inline caret while streaming,
     // and no animated element once the reply is complete or canceled.
     public bool IsAwaitingFirstToken => !IsUser && IsStreaming && string.IsNullOrEmpty(Text);
@@ -2441,6 +2450,8 @@ public sealed class AiChatMessage : INotifyPropertyChanged
             {
                 OnPropertyChanged(nameof(FormattedText));
                 OnPropertyChanged(nameof(HasHtmlContent));
+            OnPropertyChanged(nameof(HtmlVisibility));
+            OnPropertyChanged(nameof(MarkdownVisibility));
             }
         }
     }

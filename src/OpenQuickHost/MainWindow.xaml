@@ -5,6 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:OpenQuickHost"
         xmlns:ui="clr-namespace:Yanzi.UI.Wpf;assembly=Yanzi.UI.Wpf"
+        xmlns:mdx="clr-namespace:MdXaml;assembly=MdXaml"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         mc:Ignorable="d"
         Title="燕子"
@@ -1926,12 +1927,26 @@
                                                                                    VerticalAlignment="Center"
                                                                                    FontSize="{DynamicResource FontSizeSmallPlus}" />
                                                                     </StackPanel>
-                                                                    <TextBlock x:Name="NormalTextBlock"
-                                                                                                                                               local:MarkdownTextBehavior.MarkdownText="{Binding FormattedText}"
-                                                                                                                                               Foreground="{DynamicResource Yanzi.Color.Foreground}"
-                                                                                                                                               FontSize="{DynamicResource FontSizeNormalPlus}"
-                                                                                                                                               LineHeight="22"
-                                                                                                                                               TextWrapping="Wrap" />
+                                                                    <!-- Mature Markdown engine: block layout, code fences, tables and nested lists. -->
+                                                                    <mdx:MarkdownScrollViewer x:Name="NormalMarkdownViewer"
+                                                                                              MarkdownStyleName="Sasabune"
+                                                                                              ClickAction="SafetyOpenBrowser"
+                                                                                              Markdown="{Binding FormattedText}"
+                                                                                              Visibility="{Binding MarkdownVisibility}"
+                                                                                              Background="Transparent"
+                                                                                              Foreground="{DynamicResource Yanzi.Color.Foreground}"
+                                                                                              FontSize="{DynamicResource FontSizeNormalPlus}"
+                                                                                              VerticalScrollBarVisibility="Disabled"
+                                                                                              HorizontalScrollBarVisibility="Disabled"
+                                                                                              Padding="0" Margin="0"
+                                                                                              IsToolBarVisible="False" />
+                                                                    <!-- Preserve the existing inert WPF HTML path for standalone HTML replies. -->
+                                                                    <TextBlock x:Name="NormalHtmlTextBlock"
+                                                                               local:MarkdownTextBehavior.MarkdownText="{Binding FormattedText}"
+                                                                               Visibility="{Binding HtmlVisibility}"
+                                                                               Foreground="{DynamicResource Yanzi.Color.Foreground}"
+                                                                               FontSize="{DynamicResource FontSizeNormalPlus}"
+                                                                               LineHeight="22" TextWrapping="Wrap" />
                                                                     <!-- Keep the caret in the same TextBlock as streamed tokens. -->
                                                                     <TextBlock x:Name="AssistantStreamingTextBlock" TextWrapping="Wrap"
                                                                                Visibility="{Binding StreamingTextVisibility}"
@@ -2067,7 +2082,7 @@
                                                                                                                         Style="{DynamicResource Yanzi.Chat.UserBubble}"
                                                                                                                         MouseRightButtonUp="AiChatMessageBubble_MouseRightButtonUp">
                                                                                                                     <StackPanel>
-                                                                                                                        <TextBlock local:MarkdownTextBehavior.MarkdownText="{Binding Text}"
+                                                                                                                        <TextBlock Text="{Binding Text}"
                                                                                                                                    Foreground="{DynamicResource Yanzi.Color.ChatUserForeground}"
                                                                                                                                    FontSize="{DynamicResource FontSizeNormalPlus}"
                                                                                                                                    LineHeight="22"
@@ -2112,7 +2127,8 @@
                                                         <Setter TargetName="UserMessageRoot" Property="Visibility" Value="Visible" />
                                                     </DataTrigger>
                                                     <DataTrigger Binding="{Binding IsToolCall}" Value="True">
-                                                        <Setter TargetName="NormalTextBlock" Property="Visibility" Value="Collapsed" />
+                                                        <Setter TargetName="NormalMarkdownViewer" Property="Visibility" Value="Collapsed" />
+                                                        <Setter TargetName="NormalHtmlTextBlock" Property="Visibility" Value="Collapsed" />
                                                         <Setter TargetName="ToolCallExpander" Property="Visibility" Value="Visible" />
                                                     </DataTrigger>
                                                 </DataTemplate.Triggers>
