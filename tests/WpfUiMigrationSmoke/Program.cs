@@ -223,6 +223,28 @@ internal static class Program
                 Assert(((AddProviderWindow)w).ProviderName == "", "cancel must not save name");
             }, false);
 
+            Run("ScheduleConfigWindow shared actions + disabled schedule", () =>
+                new ScheduleConfigWindow(""), w =>
+            {
+                var outline = w.TryFindResource("Yanzi.Button.Outline") as Style;
+                var primary = w.TryFindResource("Yanzi.Button.Default") as Style;
+                var cancel = Descendants(w).OfType<Button>().First(b => Equals(b.Content, "取消"));
+                var confirm = Descendants(w).OfType<Button>().First(b => Equals(b.Content, "确认"));
+                Assert(outline != null && ReferenceEquals(cancel.Style, outline), "schedule cancel shared style missing");
+                Assert(primary != null && ReferenceEquals(confirm.Style, primary), "schedule confirm shared style missing");
+                Assert(((CheckBox)w.FindName("EnableToggle")!).IsChecked == false, "empty schedule must be disabled");
+                ClickByContent(w, "确认");
+                Assert(((ScheduleConfigWindow)w).ResultSchedule == "", "disabled schedule should stay empty");
+            }, true);
+
+            Run("ScheduleConfigWindow cancel does not overwrite schedule", () =>
+                new ScheduleConfigWindow("0 9 * * *"), w =>
+            {
+                Assert(((CheckBox)w.FindName("EnableToggle")!).IsChecked == true, "existing schedule must be enabled");
+                ClickByContent(w, "取消");
+                Assert(((ScheduleConfigWindow)w).ResultSchedule == "", "cancel must not save a new schedule");
+            }, false);
+
             Log($"RESULT pass={_pass} fail={_fail}");
             app.Shutdown();
             return _fail == 0 ? 0 : 1;

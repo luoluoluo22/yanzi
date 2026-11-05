@@ -37,6 +37,10 @@ public partial class ScheduleConfigWindow : Window
     public ScheduleConfigWindow(string currentSchedule)
     {
         InitializeComponent();
+        var theme = AppSettingsStore.Load().ThemeMode;
+        Yanzi.UI.Wpf.YanziUi.ApplyTo(this,
+            string.Equals(theme, "Light", StringComparison.OrdinalIgnoreCase)
+                ? Yanzi.UI.Wpf.YanziTheme.Light : Yanzi.UI.Wpf.YanziTheme.Dark);
 
         PopulateTimeCombos();
         PopulateMonthDayChips();
@@ -296,8 +300,7 @@ public partial class ScheduleConfigWindow : Window
             RefreshMonthDayChips();
         }
 
-        // Preview
-        ResultSchedule = BuildCron();
+        // Preview is display-only; ResultSchedule is committed exclusively on confirmation.
         var friendly   = BuildFriendly();
         if (!string.IsNullOrEmpty(friendly) && enabled)
         {
