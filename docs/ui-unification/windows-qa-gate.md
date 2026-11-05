@@ -6,7 +6,7 @@ Windows PowerShell 5.1+ 运行：
 
     powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\qa-ui-windows.ps1 -RepoPath <绝对路径到独立worktree> -ExpectedSha <本轮Git提交40位SHA> -MinimumPassingTests 15
 
-该脚本核对 Git SHA 和工作区状态，使用真实 Windows .NET WPF 宿主 Release 编译、NuGet 恢复并运行 tests/WpfUiMigrationSmoke 的 STA/ShowDialog 测试；任何非零退出码或未满足测试数都失败。结果写入系统 TEMP 目录的 windows-ui-qa.json 和各步骤日志。运行前必须保证实际受影响窗口已覆盖在冒烟测试项目中；未覆盖的窗口不得借其他窗口通过来标记验收。新窗口应新增功能测试，提升本次 MinimumPassingTests 或增加对应断言。
+该脚本核对 Git SHA 和工作区状态，使用真实 Windows .NET WPF 宿主 Release 编译、NuGet 恢复并运行 tests/WpfUiMigrationSmoke 的 STA/ShowDialog 测试；任何非零退出码或未满足测试数都失败。每步默认最多执行 240 秒（可用 -StepTimeoutSeconds 修改）；超时会终止本次步骤的子进程并输出失败记录，而不是无限挂起。结果写入系统 TEMP 目录的 windows-ui-qa.json 和各步骤日志。运行前必须保证实际受影响窗口已覆盖在冒烟测试项目中；未覆盖的窗口不得借其他窗口通过来标记验收。新窗口应新增功能测试，提升本次 MinimumPassingTests 或增加对应断言。
 
 **该脚本仅代表 WPF 运行冒烟；不代表 UI 全面验收。** 仍需在目标设备核查深浅主题截图、键盘焦点/快捷键、屏幕阅读器与无障碍播报、真实服务与业务数据。浏览器扩展需在 Edge/Chrome 安装运行验证，Android 界面须在手机实测。若这些步骤缺失，清单标记为待功能/视觉验收，不能改成已完成。
 

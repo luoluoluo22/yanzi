@@ -9,6 +9,7 @@ param(
   [string]$ExpectedSha = '',
   [ValidateSet('Release','Debug')][string]$Configuration = 'Release',
   [ValidateRange(1,1000)][int]$MinimumPassingTests = 15,
+  [ValidateRange(30,3600)][int]$StepTimeoutSeconds = 240,
   [string]$EvidenceDirectory = ''
 )
 $ErrorActionPreference = 'Stop'
@@ -37,8 +38,16 @@ $report = [ordered]@{
 }
 function Run-Step([string]$label,[string[]]$argv) {
  $path=Join-Path $EvidenceDirectory ($label+'.log')
- $out=@(& dotnet @argv 2>&1 | ForEach-Object { $_.ToString() })
- $code=$LASTEXITCODE
+ $stdoutPath=$path+'.stdout'
+ $stderrPath=$path+'.stderr'
+ $argumentString=($argv|ForEach-Object {if($_ -match '\s'){ '"'+$_+'"' }else{$_}}) -join ' '
+ $proc=Start-Process -FilePath (Get-Command dotnet).Source -ArgumentList $argumentString -PassThru -NoNewWindow -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
+ if(-not $proc.WaitForExit($StepTimeoutSeconds*1000)) {
+  & taskkill.exe /F /T /PID $proc.Id 2>$null | Out-Null
+  throw ("Step timed out after $StepTimeoutSeconds seconds: $label")
+ }
+ $code=$proc.ExitCode
+ $out=@(Get-Content -LiteralPath $stdoutPath -ErrorAction SilentlyContinue)+@(Get-Content -LiteralPath $stderrPath -ErrorAction SilentlyContinue)
  $out | Set-Content -LiteralPath $path -Encoding UTF8
  $report.checks += [ordered]@{step=$label;exit_code=$code;log=$path}
  Write-Output ("STEP "+$label+" exit="+$code)
