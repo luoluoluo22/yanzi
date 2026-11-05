@@ -59,10 +59,16 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch {
       const textarea = document.createElement("textarea");
       textarea.value = template;
-      document.body.appendChild(textarea);
-      textarea.select();
-      document.execCommand("copy");
-      textarea.remove();
+      textarea.classList.add("yanzi-clipboard-fallback");
+      let copied = false;
+      try {
+        document.body.appendChild(textarea);
+        textarea.select();
+        copied = document.execCommand("copy");
+      } finally {
+        textarea.remove();
+      }
+      if (!copied) return;
       copyBtn.textContent = "已复制";
       copyBtn.classList.add("copied");
       setTimeout(() => {
@@ -94,7 +100,7 @@ document.addEventListener("DOMContentLoaded", () => {
   profileInput.placeholder = "留空复用当前浏览器；填写 OpenCLI Profile 才使用独立桥接";
   profileInput.setAttribute("aria-label", "OpenCLI 浏览器配置名称或 ID");
   profileInput.maxLength = 64;
-  profileInput.style.cssText = "width:100%;box-sizing:border-box;margin-top:8px;padding:6px";
+  profileInput.className = "opencli-profile-input";
   (siteSelect.closest(".opencli-controls-row") || siteSelect.parentElement).after(profileInput);
 
   const PAGE_SIZE = 20;

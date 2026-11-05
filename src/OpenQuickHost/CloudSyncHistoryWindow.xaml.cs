@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 ﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
@@ -28,6 +28,10 @@ public partial class CloudSyncHistoryWindow : Window, INotifyPropertyChanged
         long currentObjectRevision)
     {
         InitializeComponent();
+        var theme = AppSettingsStore.Load().ThemeMode;
+        Yanzi.UI.Wpf.YanziUi.ApplyTo(this,
+            string.Equals(theme, "Light", StringComparison.OrdinalIgnoreCase)
+                ? Yanzi.UI.Wpf.YanziTheme.Light : Yanzi.UI.Wpf.YanziTheme.Dark);
         _mainWindow = mainWindow;
         _client = client;
         _account = client.TaskJournalAccount;

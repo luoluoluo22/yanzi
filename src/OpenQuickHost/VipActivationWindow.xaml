@@ -83,6 +83,7 @@
                              Padding="10,0"
                              FontSize="{DynamicResource FontSizeNormalPlus}"
                              FontFamily="Consolas, monospace"
+                             Style="{DynamicResource Yanzi.Input}"
                              TextChanged="LicenseCodeTextBox_TextChanged"
                              TextWrapping="NoWrap" />
                     <TextBlock Margin="0,6,0,0"
@@ -101,7 +102,7 @@
                             Content="购买VIP"
                             Margin="0,0,6,0"
                             Height="36"
-                            Style="{StaticResource SecondaryBtn}"
+                            Style="{DynamicResource Yanzi.Button.Outline}"
                             Click="BuyButton_Click" />
                     <Button x:Name="ActivateButton"
                             Grid.Column="1"
@@ -109,14 +110,14 @@
                             Margin="6,0,0,0"
                             Height="36"
                             IsEnabled="False"
-                            Style="{StaticResource PrimaryBtn}"
+                            Style="{DynamicResource Yanzi.Button.Default}"
                             Click="ActivateButton_Click" />
                 </Grid>
 
                 <Button x:Name="ExportHistoricalCloudButton" Grid.Row="4" Margin="0,14,0,0"
                         Height="34" Content="导出历史云同步数据（无需有效 VIP）"
                         ToolTip="只读导出云同步对象 JSON；不包括附件和第三方网盘"
-                        Style="{StaticResource SecondaryBtn}"
+                        Style="{DynamicResource Yanzi.Button.Outline}"
                         Click="ExportHistoricalCloudButton_Click" />
 
                 <TextBlock x:Name="StatusMessageText"

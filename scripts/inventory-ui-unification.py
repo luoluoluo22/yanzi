@@ -18,6 +18,7 @@ tracked=subprocess.check_output(['git','ls-files','-z'],cwd=root).decode().split
 records=[]
 for rel in tracked:
     if not rel: continue
+    if '/test/' in rel or '/tests/' in rel or (rel.startswith('website/google') and rel.endswith('.html')): continue
     p=root/rel
     if not p.is_file(): continue
     suffix=p.suffix.lower()
@@ -26,11 +27,13 @@ for rel in tracked:
         group='desktop-xaml'
     elif suffix=='.xml' and '/res/layout/' in rel and rel.startswith('mobile/'):
         group='android-layout'
-    elif suffix=='.java' and rel.startswith('mobile/') and re.search(r'(Activity|Fragment|Dialog|View|Popup|Overlay|Widget|Screen|Adapter)\.java$',rel):
+    elif suffix in ('.java','.kt') and rel.startswith('mobile/') and re.search(r'(Activity|Fragment|Dialog|View|Popup|Overlay|Widget|Screen|Adapter)\.(?:java|kt)$',rel):
         group='android-dynamic-ui-candidate'
-    elif suffix in ('.html','.tsx','.jsx','.vue','.svelte') and (rel.startswith(('browser-extension/','cloudflare/','server/','mobile/')) or rel.startswith('docs/')):
+    elif suffix in ('.html','.tsx','.jsx','.vue','.svelte') and (rel.startswith(('browser-extension/','cloudflare/','server/','mobile/','website/','tools/')) or rel.startswith('docs/')):
         group='web-ui-candidate' if rel.startswith('docs/') else 'web-ui'
-    elif suffix in ('.js','.mjs','.ts') and rel.startswith(('browser-extension/','cloudflare/','server/')) and re.search(r'(popup|page|view|dialog|panel|ui|overlay|toast|menu)',p.stem,re.I):
+    elif suffix=='.css' and rel.startswith(('browser-extension/','cloudflare/','server/','website/','tools/')):
+        group='web-stylesheet-candidate'
+    elif suffix in ('.js','.mjs','.ts') and rel.startswith(('browser-extension/','cloudflare/','server/','website/','tools/')) and re.search(r'(popup|page|view|dialog|panel|ui|overlay|toast|menu)',p.stem,re.I):
         group='web-dynamic-ui-candidate'
     elif suffix=='.cs' and rel.startswith('src/') and re.search(r'(Window|Dialog|Overlay|Toast|Menu|Popup|View|Panel)\.cs$',rel):
         group='desktop-dynamic-ui-candidate'

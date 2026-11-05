@@ -25,6 +25,7 @@
 
             <TextBox Style="{DynamicResource Yanzi.Input}" x:Name="ValueBox"
                       Grid.Row="1"
+                      AutomationProperties.Name="输入内容"
                       Height="40"
                       Margin="0,20,0,0"
                       Padding="12,10"
@@ -40,18 +41,21 @@
                 <TextBlock x:Name="ErrorText"
                            Grid.Column="0"
                            VerticalAlignment="Center"
-                           Foreground="{DynamicResource BrushAccent}"
+                           Foreground="{DynamicResource Yanzi.Brush.Danger}"
                            FontSize="{DynamicResource FontSizeSmallPlus}"
                            TextWrapping="Wrap"
+                           AutomationProperties.LiveSetting="Assertive"
                            Visibility="Collapsed" />
                 <Button Grid.Column="1"
                         Content="取消"
+                        IsCancel="True"
                         Style="{DynamicResource Yanzi.Button.Outline}"
                         Width="90"
                         Margin="0,0,10,0"
                         Click="CancelButton_Click" />
                 <Button Grid.Column="2"
                         Content="确认"
+                        IsDefault="True"
                         Style="{DynamicResource Yanzi.Button.Default}"
                         Width="90"
                         Click="OkButton_Click" />

@@ -61,7 +61,7 @@
         </div>
       </div>
       <p class="server-info"><label for="server-port">燕子 API 端口</label>
-        <input id="server-port" type="number" min="1" max="65535" value="53919" style="width:90px">
+        <input id="server-port" type="number" min="1" max="65535" value="53919" class="yanzi-field-port">
         <button id="save-port">保存</button></p>
       <p class="guide-help">两个通道独立。燕子 API 端口应与主程序设置一致。</p>
     </section>
@@ -264,7 +264,7 @@
                 </div>
                 <span class="webapi-status-badge debug">实时读取</span>
               </div>
-              <p class="guide-help" style="margin-bottom:8px;">优先复用当前浏览器登录状态；必要时只开后台临时标签页，读取后关闭。手动指定 OpenCLI 配置时才使用独立桥接窗口。</p>
+              <p class="guide-help yanzi-spacing-bottom-sm">优先复用当前浏览器登录状态；必要时只开后台临时标签页，读取后关闭。手动指定 OpenCLI 配置时才使用独立桥接窗口。</p>
               <div class="opencli-controls-row">
                 <div class="control-group">
                   <label for="opencli-site">目标平台</label>
@@ -279,11 +279,11 @@
                   <select id="opencli-operation"></select>
                 </div>
               </div>
-              <div class="opencli-actions" style="margin-top:8px;">
+              <div class="opencli-actions yanzi-spacing-top-sm">
                 <button id="opencli-read" type="button" class="btn-primary-compact">读取数据</button>
                 <button id="opencli-copy" type="button" class="btn-subtle-compact" disabled>复制 JSON</button>
               </div>
-              <div id="opencli-pagination" class="opencli-pagination" hidden style="margin-top:6px;">
+              <div id="opencli-pagination" class="opencli-pagination yanzi-spacing-top-xs" hidden>
                 <button type="button" id="opencli-prev" disabled>上一页</button>
                 <span id="opencli-page-label">第 1 页</span>
                 <button type="button" id="opencli-next" disabled>下一页</button>

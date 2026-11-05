@@ -564,14 +564,15 @@ body {
 }
 /* On-demand OpenCLI personal-data reader */
 .media-search-row { display: flex; align-items: stretch; gap: 7px; flex-wrap: wrap; margin: 8px 0; }
-.media-search-row input { flex: 1 1 175px; min-width: 0; background: #111827; color: var(--text-main); border: 1px solid var(--glass-border); border-radius: 8px; padding: 9px; }
+.media-search-row input { flex: 1 1 175px; min-width: 0; background: var(--bg-color); color: var(--text-main); border: 1px solid var(--glass-border); border-radius: 8px; padding: 9px; }
 .media-search-row button, .media-results button, #media-copy, #media-copy-example { padding: 8px 12px; border: 1px solid rgba(6,182,212,.3); border-radius: 8px; background: rgba(6,182,212,.1); color: var(--text-main); cursor: pointer; }
 .media-results { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; }
 .media-result-row { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 6px; padding: 9px; border-radius: 8px; background: rgba(15,23,42,.5); border: 1px solid var(--glass-border); }
 .media-result-row > div:first-child { min-width: 165px; flex: 1; display: flex; flex-direction: column; gap: 4px; }
 .media-result-row small { color: var(--text-muted); font-size: 11px; }
 .media-result-row .opencli-actions { justify-content: flex-start; align-items: center; }
-.media-result-row .opencli-actions a { font-size: 11px; color: #67e8f9; }
+.media-result-row .opencli-actions a { font-size: 11px; color: var(--primary-color); }
+.media-search-row input:focus-visible, .media-search-row button:focus-visible, .media-results button:focus-visible, .media-result-row a:focus-visible, #media-copy:focus-visible, #media-copy-example:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
 #media-unified-card .opencli-result { max-height: 330px; overflow: auto; }
 
 .opencli-panel { display:flex; flex-direction:column; gap:10px; min-width:0; }
@@ -583,6 +584,7 @@ body {
 .opencli-actions button:disabled {opacity:.4; cursor:default;}
 .opencli-status,.opencli-summary {font-size:12px; line-height:1.5; overflow-wrap:anywhere;}
 .opencli-status {color:var(--text-muted);}
+.opencli-profile-input { width: 100%; box-sizing: border-box; margin-top: 8px; padding: 6px; }
 .opencli-result {min-height:70px; max-height:290px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; background:#0c1422; border:1px solid var(--glass-border); padding:10px; border-radius:8px; font:11px/1.55 Consolas,monospace;}
 
 .opencli-pagination:not([hidden]) { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
@@ -1276,17 +1278,29 @@ body {
   flex-direction: column;
   gap: 2px;
 }
+/* Shared compact-control tokens apply to both media and OpenCLI cards. */
+:root {
+  --opencli-control-border: rgba(148, 163, 184, 0.2);
+  --opencli-control-bg: rgba(15, 23, 42, 0.85);
+  --opencli-control-fg: #f1f5f9;
+  --opencli-subtle-border: rgba(148, 163, 184, 0.25);
+  --opencli-subtle-bg: rgba(148, 163, 184, 0.1);
+  --opencli-subtle-fg: #cbd5e1;
+  --opencli-result-bg: rgba(10, 15, 26, 0.85);
+  --opencli-result-border: rgba(148, 163, 184, 0.12);
+  --opencli-result-fg: #93c5fd;
+}
 .opencli-controls-row label {
   font-size: 9px;
-  color: #94a3b8;
+  color: var(--text-muted);
 }
 .opencli-controls-row select {
   font-size: 10px;
   padding: 4px 6px;
   border-radius: 5px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  background: rgba(15, 23, 42, 0.85);
-  color: #f1f5f9;
+  border: 1px solid var(--opencli-control-border);
+  background: var(--opencli-control-bg);
+  color: var(--opencli-control-fg);
 }
 .btn-primary-compact {
   padding: 4px 10px;
@@ -1301,12 +1315,26 @@ body {
 .btn-subtle-compact {
   padding: 4px 10px;
   border-radius: 6px;
-  border: 1px solid rgba(148, 163, 184, 0.25);
-  background: rgba(148, 163, 184, 0.1);
-  color: #cbd5e1;
+  border: 1px solid var(--opencli-subtle-border);
+  background: var(--opencli-subtle-bg);
+  color: var(--opencli-subtle-fg);
   font-size: 10px;
   font-weight: 600;
   cursor: pointer;
+}
+/* Shared keyboard focus for compact OpenCLI controls; no mouse-only focus ring. */
+.opencli-controls-row select:focus-visible,
+.btn-primary-compact:focus-visible,
+.btn-subtle-compact:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
+@media (forced-colors: active) {
+  .opencli-controls-row select:focus-visible,
+  .btn-primary-compact:focus-visible,
+  .btn-subtle-compact:focus-visible {
+    outline-color: Highlight;
+  }
 }
 .btn-subtle-compact:disabled {
   opacity: 0.5;
@@ -1318,8 +1346,29 @@ body {
   font-size: 9px;
   padding: 6px;
   border-radius: 6px;
-  background: rgba(10, 15, 26, 0.85);
-  border: 1px solid rgba(148, 163, 184, 0.12);
-  color: #93c5fd;
+  background: var(--opencli-result-bg);
+  border: 1px solid var(--opencli-result-border);
+  color: var(--opencli-result-fg);
   margin-top: 6px;
 }
+
+/* Shared popup primitives: use classes in both static and dynamic UI. */
+.yanzi-field-port { width: 90px; }
+.yanzi-spacing-bottom-sm { margin-bottom: 8px; }
+.yanzi-spacing-top-sm { margin-top: 8px; }
+.yanzi-spacing-top-xs { margin-top: 6px; }
+.yanzi-empty-hint { padding: 10px 4px; font-size: 11px; color: var(--text-muted); }
+.current-site-dot { width: 6px; height: 6px; background: var(--success-color); border-radius: 50%; display: inline-block; margin-right: 4px; }
+.webapp-site-svg-fallback { display: none; }
+/* Shared image-error fallback: keep layout and visibility in CSS. */
+.webapp-site-svg-fallback.yanzi-fallback-visible { display: inline-flex; }
+
+/* Douyin rule editor layout */
+#douyin-card-rule-form { margin: 0 0 8px; }
+#douyin-card-rule-input { flex: 1; }
+
+/* Shared visibility primitive for status-driven popup controls. */
+.yanzi-hidden { display: none !important; }
+
+/* Off-screen clipboard fallback: keep temporary input out of the visible popup. */
+.yanzi-clipboard-fallback { position: fixed; opacity: 0; pointer-events: none; }
