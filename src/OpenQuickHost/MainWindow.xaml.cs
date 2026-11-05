@@ -634,6 +634,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         get => _selectedSearchScope;
         set
         {
+            // The chat panel belongs to the detached window. Keep the launcher
+            // on its current scope rather than hiding its content for an empty
+            // AI tab. Intercept before selection/visibility notifications.
+            if (_detachedAiChatWindow != null &&
+                string.Equals(value?.Key, SearchScopeAi, StringComparison.OrdinalIgnoreCase))
+            {
+                ActivateDetachedAiChat();
+                return;
+            }
+
             if (Equals(value, _selectedSearchScope))
             {
                 return;
