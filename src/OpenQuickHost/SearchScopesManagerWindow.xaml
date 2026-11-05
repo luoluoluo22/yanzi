@@ -33,6 +33,7 @@
                 </Grid.ColumnDefinitions>
 
                 <ListBox x:Name="ScopesListBox"
+                         AutomationProperties.Name="搜索标签顺序与可见性"
                          Background="Transparent"
                          BorderThickness="0"
                          Margin="0,0,12,0"
@@ -47,7 +48,6 @@
                     </ListBox.Template>
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">
-                            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
                             <Setter Property="Background" Value="Transparent" />
                             <Setter Property="BorderBrush" Value="Transparent" />
                             <Setter Property="BorderThickness" Value="0" />
@@ -70,6 +70,7 @@
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
                                 <CheckBox Style="{DynamicResource Yanzi.CheckBox}" IsChecked="{Binding IsVisible, Mode=TwoWay}"
+                                          AutomationProperties.Name="{Binding Label}"
                                           VerticalAlignment="Center"
                                           Margin="0,0,8,0" />
                                 <TextBlock Grid.Column="1"
@@ -108,12 +109,14 @@
                           Foreground="{DynamicResource BrushTextMain}" />
                 <Button Grid.Column="1"
                         Content="取消"
+                        IsCancel="True"
                         Style="{DynamicResource Yanzi.Button.Outline}"
                         Width="90"
                         Margin="0,0,10,0"
                         Click="CancelButton_Click" />
                 <Button Grid.Column="2"
                         Content="保存"
+                        IsDefault="True"
                         Style="{DynamicResource Yanzi.Button.Default}"
                         Width="90"
                         Click="SaveButton_Click" />

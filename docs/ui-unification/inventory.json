@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "base_commit": "b64e4c1",
+  "base_commit": "6cd83e8",
   "note": "Persistent candidate-source inventory: re-scan preserves manual status and evidence and retains missing candidates; not a count of distinct runtime screens.",
   "items": [
     {
@@ -1187,7 +1187,8 @@
       "status": "windows-runtime-smoke-passed-awaiting-functional-visual-qa",
       "evidence": [
         "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check",
-        "Windows runtime smoke 2026-11-04 on PC-202409131508: real dialog rendered with synthetic uninitialized MainWindow dependency; read-only checkbox and layout; production settings save pending; 11/11 runner tests pass; source fix 41181fa; see docs/ui-unification/qa-2026-11-04.md"
+        "Windows runtime smoke 2026-11-04 on PC-202409131508: real dialog rendered with synthetic uninitialized MainWindow dependency; read-only checkbox and layout; production settings save pending; 11/11 runner tests pass; source fix 41181fa; see docs/ui-unification/qa-2026-11-04.md",
+        "2026-11-05: SearchScopesManagerWindow: removed suppressed ListBoxItem keyboard focus visual, added per-item checkbox automation name, list accessible name, Esc cancel/Enter save. XML parse and git diff --check passed on Ubuntu; Windows keyboard/screen-reader and functional QA pending."
       ],
       "version_commit": "41181fa199b4975b3f9b2ac5b18cdce71b5143a2",
       "smoke_qa": {
