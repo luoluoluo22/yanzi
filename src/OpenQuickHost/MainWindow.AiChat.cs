@@ -710,6 +710,8 @@ public partial class MainWindow
     {
         var menu = CreateAiChatMenu();
         menu.AddAction("复制内容", () => CopyMessage(message));
+        if (message.HasHtmlContent)
+            menu.AddAction("复制网页内容（富文本）", () => CopyHtmlMessage(message));
         if (message.IsUser)
             menu.AddAction("重新发送", () => ResendMessage(message));
         OpenAiChatContextMenu(menu, placementTarget);
@@ -720,6 +722,26 @@ public partial class MainWindow
         if (sender is FrameworkElement { Tag: AiChatMessage message })
         {
             CopyMessage(message);
+        }
+    }
+
+    private void AiChatCopyHtmlButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: AiChatMessage message })
+            CopyHtmlMessage(message);
+    }
+
+    private void CopyHtmlMessage(AiChatMessage message)
+    {
+        if (!message.HasHtmlContent) return;
+        try
+        {
+            AiChatHtmlContent.CopyRich(message.Text);
+            AiChatStatusText = "已复制网页内容（保留富文本格式）";
+        }
+        catch (Exception ex)
+        {
+            AiChatStatusText = $"复制网页内容失败：{ex.Message}";
         }
     }
 
@@ -2314,9 +2336,11 @@ public sealed class AiChatMessage : INotifyPropertyChanged
             OnPropertyChanged();
             OnPropertyChanged(nameof(FormattedText));
             OnPropertyChanged(nameof(StreamingTextVisibility));
+            OnPropertyChanged(nameof(HasHtmlContent));
         }
     }
     public string FormattedText => IsStreaming ? string.Empty : Text;
+    public bool HasHtmlContent => !IsUser && !IsStreaming && AiChatHtmlContent.IsHtmlMessage(Text);
     public Visibility StreamingTextVisibility => IsStreaming ? Visibility.Visible : Visibility.Collapsed;
     private bool _showTimeDivider;
 
@@ -2369,7 +2393,11 @@ public sealed class AiChatMessage : INotifyPropertyChanged
 
             _text = value;
             OnPropertyChanged();
-            if (!IsStreaming) OnPropertyChanged(nameof(FormattedText));
+            if (!IsStreaming)
+            {
+                OnPropertyChanged(nameof(FormattedText));
+                OnPropertyChanged(nameof(HasHtmlContent));
+            }
         }
     }
     public DateTimeOffset Timestamp { get; }
