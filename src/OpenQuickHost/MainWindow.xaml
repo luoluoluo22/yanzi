@@ -1930,6 +1930,7 @@
                                                                     <!-- Mature Markdown engine: block layout, code fences, tables and nested lists. -->
                                                                     <mdx:MarkdownScrollViewer x:Name="NormalMarkdownViewer"
                                                                                               MarkdownStyleName="Sasabune"
+                                                                                              local:AiChatMarkdownCodeBlockSpacing.IsEnabled="True"
                                                                                               ClickAction="SafetyOpenBrowser"
                                                                                               Markdown="{Binding FormattedText}"
                                                                                               Visibility="{Binding MarkdownVisibility}"

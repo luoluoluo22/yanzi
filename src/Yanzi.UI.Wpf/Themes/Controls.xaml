@@ -1570,6 +1570,9 @@
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="CornerRadius" Value="{DynamicResource Yanzi.Radius.Xl}"/>
     </Style>
+    <!-- Shared AI message code-block spacing: container gutter is distinct from source text padding. -->
+    <Thickness x:Key="Yanzi.Chat.CodeBlock.Margin">8,10,8,14</Thickness>
+    <Thickness x:Key="Yanzi.Chat.CodeBlock.Padding">16,12,16,14</Thickness>
     <Style x:Key="Yanzi.Chat.Bubble" TargetType="{x:Type Border}">
         <Setter Property="TextElement.Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
         <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Card}"/>

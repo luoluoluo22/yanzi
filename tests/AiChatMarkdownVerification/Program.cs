@@ -104,6 +104,55 @@ def hello(name):
                 !content.Contains("```python"));
             Assert("not all text flattened into one paragraph",
                 blocks.OfType<Paragraph>().Count() > 2);
+            var codeViewer = new MarkdownScrollViewer
+            {
+                MarkdownStyleName = "Sasabune",
+                Markdown = MdText,
+                FontSize = 15,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Disabled
+            };
+            OpenQuickHost.AiChatMarkdownCodeBlockSpacing.SetIsEnabled(codeViewer, true);
+            var codeBlock = Walk(codeViewer.Document.Blocks).OfType<BlockUIContainer>().FirstOrDefault();
+            var codeEditor = codeBlock?.Child as Control;
+            Assert("MdXaml emits the original AvalonEdit syntax-highlighting editor",
+                codeEditor?.GetType().FullName == "ICSharpCode.AvalonEdit.TextEditor");
+            Assert("code block has independent outer gutter",
+                codeBlock?.Margin.Left == 8 && codeBlock.Margin.Right == 8 &&
+                codeBlock.Margin.Top == 10 && codeBlock.Margin.Bottom == 14);
+            Assert("code editor text is padded on all four sides",
+                codeEditor?.Padding.Left == 16 && codeEditor.Padding.Right == 16 &&
+                codeEditor.Padding.Top == 12 && codeEditor.Padding.Bottom == 14);
+            var normalParagraph = Walk(codeViewer.Document.Blocks).OfType<Paragraph>().First();
+            Assert("ordinary paragraphs retain their Markdown margins",
+                normalParagraph.Margin.Left == 0 && normalParagraph.Padding.Left == 0);
+            var stage = new Window
+            {
+                Content = codeViewer, Width = 620, Height = 470,
+                ShowActivated = false, ShowInTaskbar = false,
+                WindowStyle = WindowStyle.None, Left = -15000, Top = -15000
+            };
+            try
+            {
+                stage.Show();
+                stage.UpdateLayout();
+                codeViewer.Markdown = "测试更新后代码边距。\\n\\n```html\\n<h1>你好</h1>\\n```";
+                stage.UpdateLayout();
+                var updatedCode = Walk(codeViewer.Document.Blocks).OfType<BlockUIContainer>().FirstOrDefault();
+                Assert("new AI message document automatically keeps the code gutter",
+                    updatedCode?.Margin.Left == 8 && updatedCode.Margin.Top == 10);
+                Assert("new AI message code text automatically keeps the padding",
+                    (updatedCode?.Child as Control)?.Padding.Left == 16 &&
+                    (updatedCode.Child as Control)?.Padding.Top == 12);
+                codeViewer.Markdown = "没有代码围栏的正常回复。";
+                stage.UpdateLayout();
+                Assert("switching back to ordinary text adds no artificial code block",
+                    !Walk(codeViewer.Document.Blocks).OfType<BlockUIContainer>().Any());
+            }
+            finally
+            {
+                stage.Close();
+            }
             var view = new MarkdownScrollViewer
             {
                 Markdown = MdText,
