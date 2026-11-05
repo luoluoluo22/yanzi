@@ -100,6 +100,7 @@
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3912.50" />
     <PackageReference Include="Sdcb.SimdPaddleOCR" Version="1.4.2" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <PackageReference Include="HtmlAgilityPack" Version="1.13.1" />
     <PackageReference Include="System.Diagnostics.EventLog" Version="9.0.16" />
     <PackageReference Include="System.DirectoryServices" Version="9.0.16" />
     <PackageReference Include="System.Drawing.Common" Version="9.0.16" />
