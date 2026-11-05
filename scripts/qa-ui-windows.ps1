@@ -51,7 +51,11 @@ try {
  $testProject=Join-Path $root 'tests\WpfUiMigrationSmoke\WpfUiMigrationSmoke.csproj'
  $nuget=Join-Path $root 'tests\WpfUiMigrationSmoke\NuGet.Config'
  if (-not(Test-Path $testProject) -or -not(Test-Path $nuget)){throw 'WPF smoke test project or NuGet config missing'}
- $null=Run-Step 'host-build' @('build',$hostProject,'-c',$Configuration,'--nologo','-v','quiet','-m:4')
+ $hostAssets=Join-Path $root 'src\OpenQuickHost\obj\project.assets.json'
+ if (-not(Test-Path $hostAssets)) {
+  $null=Run-Step 'host-restore' @('restore',$hostProject,'--nologo','-v','quiet','--ignore-failed-sources')
+ }
+ $null=Run-Step 'host-build' @('build',$hostProject,'-c',$Configuration,'--no-restore','--nologo','-v','quiet','-m:4')
  $null=Run-Step 'test-restore' @('restore',$testProject,'--configfile',$nuget,'--nologo','-v','quiet')
  $lines=@(Run-Step 'wpf-smoke' @('run','--project',$testProject,'-c',$Configuration,'--no-restore','-v','quiet'))
  $lastLine=($lines|Where-Object {$_ -match 'RESULT pass=\d+ fail=\d+'}|Select-Object -Last 1)
