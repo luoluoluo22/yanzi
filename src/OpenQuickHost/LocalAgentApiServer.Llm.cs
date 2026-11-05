@@ -164,6 +164,17 @@ public sealed partial class LocalAgentApiServer
                 }
             }
 
+            if (type.Equals(YanziCookieApiBridge.ProviderType, StringComparison.OrdinalIgnoreCase))
+            {
+                try { YanziCookieApiBridge.EnsureStarted(); }
+                catch (Exception ex) when (ex is IOException or HttpListenerException or InvalidOperationException)
+                {
+                    HostAssets.AppendLog($"[LLM] Cookie API adapter unavailable: {ex.GetType().Name}");
+                    await WriteLlmErrorAsync(response, 503, "cookie_api_not_ready", "Cookie API adapter failed to start.");
+                    return true;
+                }
+            }
+
             var stream = payload["stream"] is JsonValue streamValue &&
                          streamValue.TryGetValue<bool>(out var streamFlag) && streamFlag;
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);

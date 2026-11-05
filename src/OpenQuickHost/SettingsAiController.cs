@@ -30,6 +30,8 @@ internal static class SettingsAiController
     {
         if (provider.ProviderType == YanziAgyModelBridge.ProviderType)
             YanziAgyModelBridge.EnsureStarted();
+        if (provider.ProviderType == YanziCookieApiBridge.ProviderType)
+            YanziCookieApiBridge.EnsureStarted();
         using var client = new HttpClient
         {
             Timeout = TimeSpan.FromSeconds(15)

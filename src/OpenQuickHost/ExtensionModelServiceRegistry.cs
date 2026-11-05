@@ -53,11 +53,15 @@ internal static class ExtensionModelServiceRegistry
 
                             var credential = GetString(entry, "credential");
                             var isAgy = StringEquals(credential, "agy-local");
+                            var isCookieApi = StringEquals(credential, "cookie-api-local");
                             if (isAgy && (!StringEquals(extensionId, "agy-model-service") ||
                                 !StringEquals(type, YanziAgyModelBridge.ProviderType) ||
                                 !StringEquals(baseUrl.TrimEnd('/'), YanziAgyModelBridge.BaseUrl))) continue;
+                            if (isCookieApi && (!StringEquals(extensionId, "cookie-api") ||
+                                !StringEquals(type, YanziCookieApiBridge.ProviderType) ||
+                                !StringEquals(baseUrl.TrimEnd('/'), YanziCookieApiBridge.BaseUrl))) continue;
                             // No manifest can reference another local user's authentication token.
-                            if (!string.IsNullOrEmpty(credential) && !isAgy) continue;
+                            if (!string.IsNullOrEmpty(credential) && !isAgy && !isCookieApi) continue;
 
                             var key = Prefix + extensionId + ":" + serviceId;
                             var models = new List<string>();
@@ -85,7 +89,8 @@ internal static class ExtensionModelServiceRegistry
                                 Name = GetString(entry, "name") is { Length: > 0 } providerName ? providerName : extensionId,
                                 ProviderType = type,
                                 BaseUrl = baseUrl,
-                                ApiKey = isAgy ? YanziAgyModelBridge.GetLocalKey() : string.Empty,
+                                ApiKey = isAgy ? YanziAgyModelBridge.GetLocalKey()
+                                    : isCookieApi ? YanziCookieApiBridge.GetLocalKey() : string.Empty,
                                 IsEnabled = true,
                                 Models = models,
                                 SelectedModel = initialModel
@@ -126,7 +131,9 @@ internal static class ExtensionModelServiceRegistry
             current.ProviderType = discovered.ProviderType;
             current.BaseUrl = discovered.BaseUrl;
             // Device-local AGY token is never taken from a synced account setting.
-            if (StringEquals(discovered.ProviderType, YanziAgyModelBridge.ProviderType))
+            if (StringEquals(discovered.ProviderType, YanziAgyModelBridge.ProviderType) ||
+                (StringEquals(discovered.ProviderType, YanziCookieApiBridge.ProviderType) &&
+                 StringEquals(discovered.OwnerExtensionId, "cookie-api")))
                 current.ApiKey = discovered.ApiKey;
             if (current.Models is null || current.Models.Count == 0)
                 current.Models = discovered.Models;
