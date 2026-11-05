@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "base_commit": "cdbc499",
+  "base_commit": "bb10fdf",
   "note": "Persistent candidate-source inventory: re-scan preserves manual status and evidence and retains missing candidates; not a count of distinct runtime screens.",
   "items": [
     {
@@ -1158,10 +1158,12 @@
     {
       "path": "src/OpenQuickHost/RunningExtensionsWindow.xaml",
       "kind": "desktop-xaml",
-      "shared_ui_reference": false,
-      "legacy_style_signals": 9,
-      "status": "pending-manual-review",
-      "evidence": []
+      "shared_ui_reference": true,
+      "legacy_style_signals": 8,
+      "status": "partial-shared-button-theme-migrated-awaiting-windows-build-functional-visual-qa",
+      "evidence": [
+        "2026-11-05: XML parse passed; refresh button now Yanzi.Button.Outline and window applies shared theme; terminate action custom template deliberately retained pending behavioral review. Linux host has no dotnet/WPF runtime; Windows build and interactive QA outstanding."
+      ]
     },
     {
       "path": "src/OpenQuickHost/SampleFileGuideOverlayWindow.xaml",

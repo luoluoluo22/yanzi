@@ -33,7 +33,7 @@
                     Height="34"
                     HorizontalAlignment="Right"
                     VerticalAlignment="Center"
-                    Style="{StaticResource SecondaryBtn}"
+                    Style="{DynamicResource Yanzi.Button.Outline}"
                     Click="RefreshButton_Click"
                     Content="刷新" />
         </Grid>
