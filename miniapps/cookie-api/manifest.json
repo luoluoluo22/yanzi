@@ -1,0 +1,42 @@
+{
+  "id": "cookie-api",
+  "name": "Cookie API",
+  "version": "0.1.0",
+  "category": "AI工具",
+  "description": "管理 Ego 会话桥接和 ChatGPT/Gemini 模型服务",
+  "keywords": [
+    "Cookie API",
+    "Ego",
+    "ChatGPT",
+    "Gemini",
+    "模型服务"
+  ],
+  "icon": "mdi:cookie-outline",
+  "accentHex": "#FF0EA5E9",
+  "runtime": "csharp",
+  "uiMode": "native-window",
+  "entryMode": "entry",
+  "entry": "cookie_api.cs",
+  "modelServices": [
+    {
+      "id": "cookie-api",
+      "name": "Cookie API (Ego)",
+      "providerType": "Cookie API",
+      "baseUrl": "http://127.0.0.1:18765/v1",
+      "credential": "cookie-api-local",
+      "models": [
+        "chatgpt-web",
+        "gemini-3.5-flash-lite"
+      ],
+      "selectedModel": "chatgpt-web",
+      "startMode": "on-demand"
+    }
+  ],
+  "toggleWindow": false,
+  "permissions": [
+    "network"
+  ],
+  "runAsAdmin": false,
+  "waitForExit": false,
+  "isPublished": false
+}
