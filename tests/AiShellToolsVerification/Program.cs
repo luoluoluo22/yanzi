@@ -27,14 +27,14 @@ internal static class Program
     private static async Task<(JsonElement End, string Out, string Err)> Finish(AiShellSessionManager manager, JsonElement response)
     {
         var output = new StringBuilder(); var error = new StringBuilder();
-        for (int i = 0; i < 40; i++)
+        for (int i = 0; i < 80; i++)
         {
             output.Append(response.GetProperty("stdout").GetString());
             error.Append(response.GetProperty("stderr").GetString());
             if (response.GetProperty("session_id").ValueKind == JsonValueKind.Null) return (response, output.ToString(), error.ToString());
             response = Parse(await manager.InvokeAsync("write_stdin", Json(new { session_id = response.GetProperty("session_id").GetString(), yield_time_ms = 500 }), default));
         }
-        throw new Exception("Command failed to complete within test deadline.");
+        throw new Exception("Command failed to complete within test deadline: " + response.GetRawText() + " stdout=" + output + " stderr=" + error);
     }
     private static async Task ProcessTests()
     {
