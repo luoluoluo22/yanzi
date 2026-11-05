@@ -1,0 +1,21 @@
+{
+  "result": "passed",
+  "machine": "PC-202409131508",
+  "startedAt": "2026-11-05T21:39:55.3742001\u002B08:00",
+  "finishedAt": "2026-11-05T21:41:02.5048425\u002B08:00",
+  "root": "C:\\Users\\Administrator\\AppData\\Local\\Temp\\yanzi-pr180-schedule-e2e-05e5eacfb16b4a77a9ad34a945d43e95",
+  "id": "qa-schedule-isolated-98a74c6a042f4e29b4df4acb9bf57a0b",
+  "cron": "41 21 * * *",
+  "due": "2026-11-05T21:41:00.0000000",
+  "dispatchedAtUtc": "2026-11-05T13:41:02.2577004\u002B00:00",
+  "actualDispatchCount": 1,
+  "isolated": true,
+  "verified": [
+    "real WPF dialog confirm and cancel",
+    "real MainWindow startup settings save API",
+    "manifest disk readback",
+    "ExtensionSchedulerService cron calculation and DispatcherTimer",
+    "HostDispatchJournal and PowerShell extension execution",
+    "disable schedule updates and removes queued next-run"
+  ]
+}

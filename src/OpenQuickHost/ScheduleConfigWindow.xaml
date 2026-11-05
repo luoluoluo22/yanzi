@@ -13,14 +13,14 @@
     <Window.Resources>
         <!-- Switch Style (copied from SettingsWindow) -->
         <Style x:Key="ScheduleSwitchStyle" TargetType="CheckBox">
-            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Focusable" Value="True" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="CheckBox">
                         <Grid Width="36" Height="20">
-                            <Border x:Name="Track" CornerRadius="10" Background="#FF333333" />
+                            <Border x:Name="Track" CornerRadius="10" Background="{DynamicResource Yanzi.Color.Border}" />
                             <Ellipse x:Name="Thumb" Width="16" Height="16" Margin="2,0,0,0"
-                                     HorizontalAlignment="Left" VerticalAlignment="Center" Fill="White">
+                                     HorizontalAlignment="Left" VerticalAlignment="Center" Fill="{DynamicResource Yanzi.Color.PrimaryForeground}">
                                 <Ellipse.RenderTransform>
                                     <TranslateTransform X="0" />
                                 </Ellipse.RenderTransform>
@@ -28,7 +28,7 @@
                         </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Track" Property="Background" Value="#FF3B82F6" />
+                                <Setter TargetName="Track" Property="Background" Value="{DynamicResource Yanzi.Color.Ring}" />
                                 <Trigger.EnterActions>
                                     <BeginStoryboard>
                                         <Storyboard>
@@ -57,7 +57,7 @@
         <!-- Segment Button -->
         <Style x:Key="SegBtnBase" TargetType="Border">
             <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="BorderBrush" Value="#FF2E2E2E"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Border}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="CornerRadius" Value="6"/>
             <Setter Property="Padding" Value="0,9"/>
@@ -67,7 +67,7 @@
         <!-- Day-of-week chip -->
         <Style x:Key="DowChipBase" TargetType="Border">
             <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="BorderBrush" Value="#FF2E2E2E"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Border}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="CornerRadius" Value="6"/>
             <Setter Property="Width" Value="46"/>
@@ -78,7 +78,7 @@
         <!-- Interval chip -->
         <Style x:Key="IntervalChipBase" TargetType="Border">
             <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="BorderBrush" Value="#FF2E2E2E"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Border}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="CornerRadius" Value="6"/>
             <Setter Property="Padding" Value="14,8"/>
@@ -87,7 +87,7 @@
 
         <!-- Dark ComboBoxItem -->
         <Style TargetType="ComboBoxItem">
-            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="Padding" Value="10,6"/>
             <Setter Property="Template">
@@ -99,11 +99,11 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Root" Property="Background" Value="#FF2D2D2D"/>
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource Yanzi.Color.Muted}"/>
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="Root" Property="Background" Value="#1A3B82F6"/>
-                                <Setter Property="Foreground" Value="#FF93C5FD"/>
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource Yanzi.Color.Accent}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource Yanzi.Color.AccentForeground}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -113,8 +113,8 @@
 
         <!-- Dark ComboBox -->
         <Style TargetType="ComboBox">
-            <Setter Property="Background" Value="#FF1E1E1E"/>
-            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Input}"/>
+            <Setter Property="Foreground" Value="{DynamicResource Yanzi.Color.Foreground}"/>
             <Setter Property="BorderBrush" Value="#FF2A2A2A"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="8,0"/>
@@ -152,7 +152,7 @@
                                      HorizontalAlignment="Stretch"
                                      Background="Transparent"
                                      BorderThickness="0"
-                                     Foreground="White"
+                                     Foreground="{DynamicResource Yanzi.Color.Foreground}"
                                      CaretBrush="White"
                                      FontSize="{TemplateBinding FontSize}"
                                      IsReadOnly="{TemplateBinding IsReadOnly}"
@@ -161,7 +161,7 @@
                                   HorizontalAlignment="Right" Margin="0,0,10,0"
                                   VerticalAlignment="Center"
                                   Data="M 0 0 L 5 5 L 10 0"
-                                  Stroke="#FF8E8E8E" StrokeThickness="1.5"
+                                  Stroke="{DynamicResource Yanzi.Color.MutedForeground}" StrokeThickness="1.5"
                                   IsHitTestVisible="False"/>
                             <Popup x:Name="PART_Popup"
                                    IsOpen="{TemplateBinding IsDropDownOpen}"
@@ -184,7 +184,7 @@
                         </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Border" Property="BorderBrush" Value="#FF3B82F6"/>
+                                <Setter TargetName="Border" Property="BorderBrush" Value="{DynamicResource Yanzi.Color.Ring}"/>
                             </Trigger>
                             <Trigger Property="IsEditable" Value="True">
                                 <Setter TargetName="ContentSite" Property="Visibility" Value="Collapsed"/>
@@ -199,8 +199,8 @@
 
     <Border Margin="1"
             CornerRadius="0"
-            Background="#F2161616"
-            BorderBrush="#22FFFFFF"
+            Background="{DynamicResource Yanzi.Color.Background}"
+            BorderBrush="{DynamicResource Yanzi.Color.Border}"
             BorderThickness="1">
         <StackPanel Margin="24,20,24,20">
 
@@ -211,11 +211,11 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel VerticalAlignment="Center">
-                    <TextBlock Text="定时运行" Foreground="White" FontSize="{DynamicResource FontSizeNormalPlus}" FontWeight="SemiBold"/>
+                    <TextBlock Text="定时运行" Foreground="{DynamicResource Yanzi.Color.Foreground}" FontSize="{DynamicResource FontSizeNormalPlus}" FontWeight="SemiBold"/>
                     <TextBlock Text="按设定的时间周期自动运行此扩展" Foreground="{DynamicResource BrushTextMuted}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,3,0,0"/>
                 </StackPanel>
                 <CheckBox Grid.Column="1"
-                          x:Name="EnableToggle"
+                          x:Name="EnableToggle" AutomationProperties.Name="启用定时运行"
                           Style="{StaticResource ScheduleSwitchStyle}"
                           VerticalAlignment="Center"
                           Checked="EnableToggle_Changed"
@@ -226,7 +226,7 @@
             <StackPanel x:Name="ConfigPanel" Visibility="Collapsed" Margin="0,18,0,0">
 
                 <!-- Divider -->
-                <Rectangle Height="1" Fill="#FF232323" Margin="0,0,0,18"/>
+                <Rectangle Height="1" Fill="{DynamicResource Yanzi.Color.Border}" Margin="0,0,0,18"/>
 
                 <!-- ── 调度模式 ── -->
                 <TextBlock Text="调度模式" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold" Margin="0,0,0,10"/>
@@ -236,12 +236,12 @@
                         <ColumnDefinition Width="8"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
-                    <Border x:Name="ModeSimpBtn" Grid.Column="0" Style="{StaticResource SegBtnBase}" MouseLeftButtonDown="ModeSimpBtn_Click">
-                        <TextBlock x:Name="ModeSimpText" Text="简单设置" FontSize="{DynamicResource FontSizeNormal}" FontWeight="Medium" Foreground="White" HorizontalAlignment="Center"/>
-                    </Border>
-                    <Border x:Name="ModeCronBtn" Grid.Column="2" Style="{StaticResource SegBtnBase}" MouseLeftButtonDown="ModeCronBtn_Click">
+                    <local:ScheduleChoiceBorder x:Name="ModeSimpBtn" Grid.Column="0" Style="{StaticResource SegBtnBase}" MouseLeftButtonDown="ModeSimpBtn_Click">
+                        <TextBlock x:Name="ModeSimpText" Text="简单设置" FontSize="{DynamicResource FontSizeNormal}" FontWeight="Medium" Foreground="{DynamicResource Yanzi.Color.Foreground}" HorizontalAlignment="Center"/>
+                    </local:ScheduleChoiceBorder>
+                    <local:ScheduleChoiceBorder x:Name="ModeCronBtn" Grid.Column="2" Style="{StaticResource SegBtnBase}" MouseLeftButtonDown="ModeCronBtn_Click">
                         <TextBlock x:Name="ModeCronText" Text="Cron 表达式" FontSize="{DynamicResource FontSizeNormal}" FontWeight="Medium" Foreground="{DynamicResource BrushTextSec}" HorizontalAlignment="Center"/>
-                    </Border>
+                    </local:ScheduleChoiceBorder>
                 </Grid>
 
                 <!-- ═══════ SIMPLE PANEL ═══════ -->
@@ -250,47 +250,47 @@
                     <!-- ── 频率 ── -->
                     <TextBlock Text="运行频率" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold" Margin="0,0,0,10"/>
                     <WrapPanel Margin="0,0,0,18">
-                        <Border x:Name="FreqMinBtn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="FreqBtn_Click" Tag="min">
+                        <local:ScheduleChoiceBorder x:Name="FreqMinBtn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="FreqBtn_Click" Tag="min">
                             <TextBlock Text="按分钟" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="{DynamicResource BrushTextSec}" HorizontalAlignment="Center"/>
-                        </Border>
-                        <Border x:Name="FreqHourBtn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="FreqBtn_Click" Tag="hour">
+                        </local:ScheduleChoiceBorder>
+                        <local:ScheduleChoiceBorder x:Name="FreqHourBtn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="FreqBtn_Click" Tag="hour">
                             <TextBlock Text="按小时" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="{DynamicResource BrushTextSec}" HorizontalAlignment="Center"/>
-                        </Border>
-                        <Border x:Name="FreqDailyBtn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="FreqBtn_Click" Tag="daily">
+                        </local:ScheduleChoiceBorder>
+                        <local:ScheduleChoiceBorder x:Name="FreqDailyBtn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="FreqBtn_Click" Tag="daily">
                             <TextBlock Text="每天" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="{DynamicResource BrushTextSec}" HorizontalAlignment="Center"/>
-                        </Border>
-                        <Border x:Name="FreqWeekBtn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="FreqBtn_Click" Tag="week">
+                        </local:ScheduleChoiceBorder>
+                        <local:ScheduleChoiceBorder x:Name="FreqWeekBtn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="FreqBtn_Click" Tag="week">
                             <TextBlock Text="每周" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="{DynamicResource BrushTextSec}" HorizontalAlignment="Center"/>
-                        </Border>
-                        <Border x:Name="FreqMonthBtn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="FreqBtn_Click" Tag="month">
+                        </local:ScheduleChoiceBorder>
+                        <local:ScheduleChoiceBorder x:Name="FreqMonthBtn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="FreqBtn_Click" Tag="month">
                             <TextBlock Text="每月" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="{DynamicResource BrushTextSec}" HorizontalAlignment="Center"/>
-                        </Border>
+                        </local:ScheduleChoiceBorder>
                     </WrapPanel>
 
                     <!-- ── 按分钟 ── -->
                     <StackPanel x:Name="MinutePanel" Visibility="Collapsed" Margin="0,0,0,18">
                         <TextBlock Text="间隔" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold" Margin="0,0,0,10"/>
                         <WrapPanel Margin="0,0,0,10">
-                            <Border x:Name="Min5Btn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="MinChip_Click" Tag="5">
+                            <local:ScheduleChoiceBorder x:Name="Min5Btn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="MinChip_Click" Tag="5">
                                 <TextBlock Text="5 分钟" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="{DynamicResource BrushTextSec}" HorizontalAlignment="Center"/>
-                            </Border>
-                            <Border x:Name="Min10Btn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="MinChip_Click" Tag="10">
+                            </local:ScheduleChoiceBorder>
+                            <local:ScheduleChoiceBorder x:Name="Min10Btn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="MinChip_Click" Tag="10">
                                 <TextBlock Text="10 分钟" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="{DynamicResource BrushTextSec}" HorizontalAlignment="Center"/>
-                            </Border>
-                            <Border x:Name="Min15Btn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="MinChip_Click" Tag="15">
+                            </local:ScheduleChoiceBorder>
+                            <local:ScheduleChoiceBorder x:Name="Min15Btn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="MinChip_Click" Tag="15">
                                 <TextBlock Text="15 分钟" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="{DynamicResource BrushTextSec}" HorizontalAlignment="Center"/>
-                            </Border>
-                            <Border x:Name="Min30Btn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="MinChip_Click" Tag="30">
+                            </local:ScheduleChoiceBorder>
+                            <local:ScheduleChoiceBorder x:Name="Min30Btn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="MinChip_Click" Tag="30">
                                 <TextBlock Text="30 分钟" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="{DynamicResource BrushTextSec}" HorizontalAlignment="Center"/>
-                            </Border>
-                            <Border x:Name="Min45Btn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="MinChip_Click" Tag="45">
+                            </local:ScheduleChoiceBorder>
+                            <local:ScheduleChoiceBorder x:Name="Min45Btn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="MinChip_Click" Tag="45">
                                 <TextBlock Text="45 分钟" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="{DynamicResource BrushTextSec}" HorizontalAlignment="Center"/>
-                            </Border>
+                            </local:ScheduleChoiceBorder>
                         </WrapPanel>
                         <!-- 自定义分钟输入 -->
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="自定义：" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                            <TextBox x:Name="CustomMinuteBox" Width="60" Height="32" Padding="8,6"
+                            <TextBox x:Name="CustomMinuteBox" AutomationProperties.Name="自定义分钟间隔" Style="{DynamicResource Yanzi.Input}" Width="60" Height="32" Padding="8,6"
                                      FontSize="{DynamicResource FontSizeNormal}" TextChanged="CustomMinuteBox_TextChanged"
                                      ToolTip="输入 1-59 之间的数字"/>
                             <TextBlock Text="分钟" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center" Margin="6,0,0,0"/>
@@ -301,31 +301,31 @@
                     <StackPanel x:Name="HourPanel" Visibility="Collapsed" Margin="0,0,0,18">
                         <TextBlock Text="间隔" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold" Margin="0,0,0,10"/>
                         <WrapPanel>
-                            <Border x:Name="Hr1Btn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="HrChip_Click" Tag="1">
+                            <local:ScheduleChoiceBorder x:Name="Hr1Btn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="HrChip_Click" Tag="1">
                                 <TextBlock Text="1 小时" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="{DynamicResource BrushTextSec}" HorizontalAlignment="Center"/>
-                            </Border>
-                            <Border x:Name="Hr2Btn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="HrChip_Click" Tag="2">
+                            </local:ScheduleChoiceBorder>
+                            <local:ScheduleChoiceBorder x:Name="Hr2Btn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="HrChip_Click" Tag="2">
                                 <TextBlock Text="2 小时" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="{DynamicResource BrushTextSec}" HorizontalAlignment="Center"/>
-                            </Border>
-                            <Border x:Name="Hr3Btn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="HrChip_Click" Tag="3">
+                            </local:ScheduleChoiceBorder>
+                            <local:ScheduleChoiceBorder x:Name="Hr3Btn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="HrChip_Click" Tag="3">
                                 <TextBlock Text="3 小时" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="{DynamicResource BrushTextSec}" HorizontalAlignment="Center"/>
-                            </Border>
-                            <Border x:Name="Hr4Btn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="HrChip_Click" Tag="4">
+                            </local:ScheduleChoiceBorder>
+                            <local:ScheduleChoiceBorder x:Name="Hr4Btn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="HrChip_Click" Tag="4">
                                 <TextBlock Text="4 小时" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="{DynamicResource BrushTextSec}" HorizontalAlignment="Center"/>
-                            </Border>
-                            <Border x:Name="Hr6Btn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="HrChip_Click" Tag="6">
+                            </local:ScheduleChoiceBorder>
+                            <local:ScheduleChoiceBorder x:Name="Hr6Btn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="HrChip_Click" Tag="6">
                                 <TextBlock Text="6 小时" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="{DynamicResource BrushTextSec}" HorizontalAlignment="Center"/>
-                            </Border>
-                            <Border x:Name="Hr12Btn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="HrChip_Click" Tag="12">
+                            </local:ScheduleChoiceBorder>
+                            <local:ScheduleChoiceBorder x:Name="Hr12Btn" Style="{StaticResource IntervalChipBase}" Margin="0,0,8,8" MouseLeftButtonDown="HrChip_Click" Tag="12">
                                 <TextBlock Text="12 小时" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="{DynamicResource BrushTextSec}" HorizontalAlignment="Center"/>
-                            </Border>
+                            </local:ScheduleChoiceBorder>
                         </WrapPanel>
                     </StackPanel>
 
                     <!-- ── 每天 ── -->
                     <StackPanel x:Name="DailyPanel" Visibility="Collapsed" Margin="0,0,0,18">
                         <TextBlock Text="时间" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold" Margin="0,0,0,10"/>
-                        <Border Background="#FF1A1A1A" BorderBrush="#FF2E2E2E" BorderThickness="1" CornerRadius="8" Padding="16,0" Height="44">
+                        <Border Background="{DynamicResource Yanzi.Color.Card}" BorderBrush="{DynamicResource Yanzi.Color.Border}" BorderThickness="1" CornerRadius="8" Padding="16,0" Height="44">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <ComboBox x:Name="DailyHourBox" Width="64" Height="32" IsEditable="True" SelectionChanged="TimeChanged" LostFocus="EditableCombo_LostFocus"/>
                                 <TextBlock Text=" : " Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeLargePlus}" VerticalAlignment="Center" Margin="4,0"/>
@@ -338,30 +338,30 @@
                     <StackPanel x:Name="WeeklyPanel" Visibility="Collapsed" Margin="0,0,0,18">
                         <TextBlock Text="星期" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold" Margin="0,0,0,10"/>
                         <WrapPanel Margin="0,0,0,14">
-                            <Border x:Name="DowMon" Style="{StaticResource DowChipBase}" Margin="0,0,6,0" MouseLeftButtonDown="DowChip_Click" Tag="1">
+                            <local:ScheduleChoiceBorder x:Name="DowMon" Style="{StaticResource DowChipBase}" Margin="0,0,6,0" MouseLeftButtonDown="DowChip_Click" Tag="1">
                                 <TextBlock Text="一" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="{DynamicResource BrushTextSec}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
-                            <Border x:Name="DowTue" Style="{StaticResource DowChipBase}" Margin="0,0,6,0" MouseLeftButtonDown="DowChip_Click" Tag="2">
+                            </local:ScheduleChoiceBorder>
+                            <local:ScheduleChoiceBorder x:Name="DowTue" Style="{StaticResource DowChipBase}" Margin="0,0,6,0" MouseLeftButtonDown="DowChip_Click" Tag="2">
                                 <TextBlock Text="二" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="{DynamicResource BrushTextSec}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
-                            <Border x:Name="DowWed" Style="{StaticResource DowChipBase}" Margin="0,0,6,0" MouseLeftButtonDown="DowChip_Click" Tag="3">
+                            </local:ScheduleChoiceBorder>
+                            <local:ScheduleChoiceBorder x:Name="DowWed" Style="{StaticResource DowChipBase}" Margin="0,0,6,0" MouseLeftButtonDown="DowChip_Click" Tag="3">
                                 <TextBlock Text="三" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="{DynamicResource BrushTextSec}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
-                            <Border x:Name="DowThu" Style="{StaticResource DowChipBase}" Margin="0,0,6,0" MouseLeftButtonDown="DowChip_Click" Tag="4">
+                            </local:ScheduleChoiceBorder>
+                            <local:ScheduleChoiceBorder x:Name="DowThu" Style="{StaticResource DowChipBase}" Margin="0,0,6,0" MouseLeftButtonDown="DowChip_Click" Tag="4">
                                 <TextBlock Text="四" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="{DynamicResource BrushTextSec}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
-                            <Border x:Name="DowFri" Style="{StaticResource DowChipBase}" Margin="0,0,6,0" MouseLeftButtonDown="DowChip_Click" Tag="5">
+                            </local:ScheduleChoiceBorder>
+                            <local:ScheduleChoiceBorder x:Name="DowFri" Style="{StaticResource DowChipBase}" Margin="0,0,6,0" MouseLeftButtonDown="DowChip_Click" Tag="5">
                                 <TextBlock Text="五" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="{DynamicResource BrushTextSec}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
-                            <Border x:Name="DowSat" Style="{StaticResource DowChipBase}" Margin="0,0,6,0" MouseLeftButtonDown="DowChip_Click" Tag="6">
+                            </local:ScheduleChoiceBorder>
+                            <local:ScheduleChoiceBorder x:Name="DowSat" Style="{StaticResource DowChipBase}" Margin="0,0,6,0" MouseLeftButtonDown="DowChip_Click" Tag="6">
                                 <TextBlock Text="六" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="{DynamicResource BrushTextSec}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
-                            <Border x:Name="DowSun" Style="{StaticResource DowChipBase}" Margin="0,0,0,0" MouseLeftButtonDown="DowChip_Click" Tag="7">
+                            </local:ScheduleChoiceBorder>
+                            <local:ScheduleChoiceBorder x:Name="DowSun" Style="{StaticResource DowChipBase}" Margin="0,0,0,0" MouseLeftButtonDown="DowChip_Click" Tag="7">
                                 <TextBlock Text="日" FontSize="{DynamicResource FontSizeSmallPlus}" Foreground="{DynamicResource BrushTextSec}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
+                            </local:ScheduleChoiceBorder>
                         </WrapPanel>
                         <TextBlock Text="时间" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold" Margin="0,0,0,10"/>
-                        <Border Background="#FF1A1A1A" BorderBrush="#FF2E2E2E" BorderThickness="1" CornerRadius="8" Padding="16,0" Height="44">
+                        <Border Background="{DynamicResource Yanzi.Color.Card}" BorderBrush="{DynamicResource Yanzi.Color.Border}" BorderThickness="1" CornerRadius="8" Padding="16,0" Height="44">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <ComboBox x:Name="WeeklyHourBox" Width="64" Height="32" IsEditable="True" SelectionChanged="TimeChanged" LostFocus="EditableCombo_LostFocus"/>
                                 <TextBlock Text=" : " Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeLargePlus}" VerticalAlignment="Center" Margin="4,0"/>
@@ -375,7 +375,7 @@
                         <TextBlock Text="日期（每月第几天）" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold" Margin="0,0,0,10"/>
                         <WrapPanel Margin="0,0,0,14" x:Name="MonthDayWrap"/>
                         <TextBlock Text="时间" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold" Margin="0,0,0,10"/>
-                        <Border Background="#FF1A1A1A" BorderBrush="#FF2E2E2E" BorderThickness="1" CornerRadius="8" Padding="16,0" Height="44">
+                        <Border Background="{DynamicResource Yanzi.Color.Card}" BorderBrush="{DynamicResource Yanzi.Color.Border}" BorderThickness="1" CornerRadius="8" Padding="16,0" Height="44">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <ComboBox x:Name="MonthlyHourBox" Width="64" Height="32" IsEditable="True" SelectionChanged="TimeChanged" LostFocus="EditableCombo_LostFocus"/>
                                 <TextBlock Text=" : " Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeLargePlus}" VerticalAlignment="Center" Margin="4,0"/>
@@ -388,35 +388,35 @@
                 <!-- ═══════ CRON PANEL ═══════ -->
                 <StackPanel x:Name="CronModePanel" Visibility="Collapsed" Margin="0,0,0,18">
                     <TextBlock Text="Cron 表达式" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold" Margin="0,0,0,10"/>
-                    <TextBox x:Name="CronBox" Height="44" Padding="14,12" FontFamily="Consolas" FontSize="{DynamicResource FontSizeNormalPlus}" TextChanged="CronBox_TextChanged"
+                    <TextBox x:Name="CronBox" AutomationProperties.Name="Cron 表达式" Style="{DynamicResource Yanzi.Input}" Height="44" Padding="14,12" FontFamily="Consolas" FontSize="{DynamicResource FontSizeNormalPlus}" TextChanged="CronBox_TextChanged"
                              ToolTip="例：0 9 * * * 表示每天 09:00"/>
-                    <TextBlock Text="格式：分 时 日 月 周  （* 表示任意）" Foreground="#FF555555" FontSize="{DynamicResource FontSizeSmall}" Margin="0,6,0,0"/>
+                    <TextBlock Text="格式：分 时 日 月 周  （* 表示任意）" Foreground="{DynamicResource Yanzi.Color.MutedForeground}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,6,0,0"/>
                     <WrapPanel Margin="0,10,0,0">
-                        <Border Style="{StaticResource IntervalChipBase}" Margin="0,0,8,6" MouseLeftButtonDown="CronExample_Click" Tag="*/30 * * * *">
+                        <local:ScheduleChoiceBorder Style="{StaticResource IntervalChipBase}" Margin="0,0,8,6" MouseLeftButtonDown="CronExample_Click" Tag="*/30 * * * *">
                             <TextBlock Text="每30分钟" FontSize="{DynamicResource FontSizeSmall}" Foreground="{DynamicResource BrushTextSec}"/>
-                        </Border>
-                        <Border Style="{StaticResource IntervalChipBase}" Margin="0,0,8,6" MouseLeftButtonDown="CronExample_Click" Tag="0 * * * *">
+                        </local:ScheduleChoiceBorder>
+                        <local:ScheduleChoiceBorder Style="{StaticResource IntervalChipBase}" Margin="0,0,8,6" MouseLeftButtonDown="CronExample_Click" Tag="0 * * * *">
                             <TextBlock Text="每小时" FontSize="{DynamicResource FontSizeSmall}" Foreground="{DynamicResource BrushTextSec}"/>
-                        </Border>
-                        <Border Style="{StaticResource IntervalChipBase}" Margin="0,0,8,6" MouseLeftButtonDown="CronExample_Click" Tag="0 9 * * *">
+                        </local:ScheduleChoiceBorder>
+                        <local:ScheduleChoiceBorder Style="{StaticResource IntervalChipBase}" Margin="0,0,8,6" MouseLeftButtonDown="CronExample_Click" Tag="0 9 * * *">
                             <TextBlock Text="每天9点" FontSize="{DynamicResource FontSizeSmall}" Foreground="{DynamicResource BrushTextSec}"/>
-                        </Border>
-                        <Border Style="{StaticResource IntervalChipBase}" Margin="0,0,8,6" MouseLeftButtonDown="CronExample_Click" Tag="0 9 * * 1-5">
+                        </local:ScheduleChoiceBorder>
+                        <local:ScheduleChoiceBorder Style="{StaticResource IntervalChipBase}" Margin="0,0,8,6" MouseLeftButtonDown="CronExample_Click" Tag="0 9 * * 1-5">
                             <TextBlock Text="工作日9点" FontSize="{DynamicResource FontSizeSmall}" Foreground="{DynamicResource BrushTextSec}"/>
-                        </Border>
-                        <Border Style="{StaticResource IntervalChipBase}" Margin="0,0,8,6" MouseLeftButtonDown="CronExample_Click" Tag="0 9 1 * *">
+                        </local:ScheduleChoiceBorder>
+                        <local:ScheduleChoiceBorder Style="{StaticResource IntervalChipBase}" Margin="0,0,8,6" MouseLeftButtonDown="CronExample_Click" Tag="0 9 1 * *">
                             <TextBlock Text="每月1日" FontSize="{DynamicResource FontSizeSmall}" Foreground="{DynamicResource BrushTextSec}"/>
-                        </Border>
+                        </local:ScheduleChoiceBorder>
                     </WrapPanel>
                 </StackPanel>
 
                 <!-- ── Preview ── -->
                 <Border x:Name="PreviewBorder"
-                        Background="#0D3B82F6" BorderBrush="#1A3B82F6" BorderThickness="1"
+                        Background="{DynamicResource Yanzi.Color.Muted}" BorderBrush="{DynamicResource Yanzi.Color.Border}" BorderThickness="1"
                         CornerRadius="8" Padding="14,10" Margin="0,0,0,18" Visibility="Collapsed">
                     <StackPanel Orientation="Horizontal">
                         <Path Data="{local:IconGeometry check-circle-outline}" Width="{DynamicResource FontSizeNormal}" Height="{DynamicResource FontSizeNormal}" Stretch="Uniform" Fill="{DynamicResource BrushAccent}" VerticalAlignment="Center"/>
-                        <TextBlock x:Name="PreviewText" Foreground="#FFD1D5DB" FontSize="{DynamicResource FontSizeNormal}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                        <TextBlock x:Name="PreviewText" Foreground="{DynamicResource Yanzi.Color.Foreground}" FontSize="{DynamicResource FontSizeNormal}" VerticalAlignment="Center" TextWrapping="Wrap"/>
                     </StackPanel>
                 </Border>
             </StackPanel>
@@ -429,9 +429,9 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <TextBlock x:Name="ErrorText" Grid.Column="0" VerticalAlignment="Center"
-                           Foreground="#FFEF4444" FontSize="{DynamicResource FontSizeSmallPlus}" TextWrapping="Wrap" Visibility="Collapsed"/>
-                <Button Grid.Column="1" Content="取消" Style="{StaticResource SecondaryBtn}" Width="90" Margin="0,0,10,0" Click="CancelButton_Click"/>
-                <Button Grid.Column="2" Content="确认" Style="{StaticResource PrimaryBtn}" Width="90" Click="OkButton_Click"/>
+                           Foreground="{DynamicResource Yanzi.Color.Destructive}" FontSize="{DynamicResource FontSizeSmallPlus}" TextWrapping="Wrap" Visibility="Collapsed"/>
+                <Button Grid.Column="1" Content="取消" IsCancel="True" Style="{DynamicResource Yanzi.Button.Outline}" Width="90" Margin="0,0,10,0" Click="CancelButton_Click"/>
+                <Button Grid.Column="2" Content="确认" IsDefault="True" Style="{DynamicResource Yanzi.Button.Default}" Width="90" Click="OkButton_Click"/>
             </Grid>
         </StackPanel>
     </Border>
