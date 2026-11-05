@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "base_commit": "2607ef5",
+  "base_commit": "c0e4439",
   "note": "Persistent candidate-source inventory: re-scan preserves manual status and evidence and retains missing candidates; not a count of distinct runtime screens.",
   "items": [
     {
@@ -793,6 +793,14 @@
         "evidence_command": "dotnet run --project tests/WpfUiMigrationSmoke/WpfUiMigrationSmoke.csproj -c Release --no-restore",
         "remaining": "real settings persistence, visual light/dark screenshots, keyboard/screen-reader navigation and complete provider integration"
       }
+    },
+    {
+      "path": "src/OpenQuickHost/AiChatHtmlPreviewWindow.cs",
+      "kind": "desktop-dynamic-ui-candidate",
+      "shared_ui_reference": false,
+      "legacy_style_signals": 0,
+      "status": "pending-manual-review",
+      "evidence": []
     },
     {
       "path": "src/OpenQuickHost/AiModelPickerWindow.xaml",
