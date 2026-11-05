@@ -48,12 +48,14 @@
                            Visibility="Collapsed" />
                 <Button Grid.Column="1"
                         Content="取消"
+                        IsCancel="True"
                         Style="{DynamicResource Yanzi.Button.Outline}"
                         Width="90"
                         Margin="0,0,10,0"
                         Click="CancelButton_Click" />
                 <Button Grid.Column="2"
                         Content="确认"
+                        IsDefault="True"
                         Style="{DynamicResource Yanzi.Button.Default}"
                         Width="90"
                         Click="OkButton_Click" />
