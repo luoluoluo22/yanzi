@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "base_commit": "bb10fdf",
+  "base_commit": "2607ef5",
   "note": "Persistent candidate-source inventory: re-scan preserves manual status and evidence and retains missing candidates; not a count of distinct runtime screens.",
   "items": [
     {
@@ -1176,10 +1176,12 @@
     {
       "path": "src/OpenQuickHost/ScheduleConfigWindow.xaml",
       "kind": "desktop-xaml",
-      "shared_ui_reference": false,
-      "legacy_style_signals": 28,
-      "status": "pending-manual-review",
-      "evidence": []
+      "shared_ui_reference": true,
+      "legacy_style_signals": 26,
+      "status": "shared-dialog-buttons-theme-migrated-awaiting-windows-runtime-and-visual-qa",
+      "evidence": [
+        "2026-11-05: replaced Cancel/Confirm with Yanzi.Button.Outline/Default; applied runtime theme; XML parse and git diff --check pass; Windows build/functional QA pending. Existing custom switch and chip templates remain under review."
+      ]
     },
     {
       "path": "src/OpenQuickHost/SearchScopesManagerWindow.xaml",
