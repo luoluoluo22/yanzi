@@ -1911,7 +1911,7 @@
                                                                 Style="{DynamicResource Yanzi.Chat.Bubble}"
                                                                 MouseRightButtonUp="AiChatMessageBubble_MouseRightButtonUp">
                                                             <Grid>
-                                                                <StackPanel Margin="0,0,64,0">
+                                                                <StackPanel x:Name="AssistantContentPanel" Margin="0,0,64,0">
                                                                     <!-- First-token indicator lives inside this assistant message, never as a footer row. -->
                                                                     <StackPanel x:Name="AssistantWaitingIndicator"
                                                                                 Height="22" Orientation="Horizontal"
@@ -2047,6 +2047,21 @@
                                                                                                                                         </ItemsControl.ItemTemplate>
                                                                                                                                     </ItemsControl>
                                                                 </StackPanel>
+                                                                <Button x:Name="AssistantHtmlPreviewButton" Tag="{Binding}"
+                                                                        Width="72" Height="28" Padding="3,0" Margin="0,0,70,0"
+                                                                        HorizontalAlignment="Right" VerticalAlignment="Top"
+                                                                        Visibility="{Binding HtmlPreviewVisibility}"
+                                                                        Style="{DynamicResource Yanzi.Button.Ghost}"
+                                                                        ToolTip="安全预览网页 · SVG 与 CSS 动画"
+                                                                        Click="AiChatPreviewHtmlButton_Click">
+                                                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                                                        <Path Data="{local:IconGeometry eye-outline}" Width="14" Height="14"
+                                                                              Stretch="Uniform" Fill="{DynamicResource Yanzi.Color.MutedForeground}"
+                                                                              VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                                                        <TextBlock Text="预览" FontSize="12" VerticalAlignment="Center"
+                                                                                   Foreground="{DynamicResource Yanzi.Color.Foreground}"/>
+                                                                    </StackPanel>
+                                                                </Button>
                                                                 <Button x:Name="AssistantHtmlCopyButton" Tag="{Binding}"
                                                                         Width="30" Height="28" Padding="0" Margin="0,0,34,0"
                                                                         HorizontalAlignment="Right" VerticalAlignment="Top"
@@ -2112,6 +2127,9 @@
                                                 </StackPanel>
 
                                                 <DataTemplate.Triggers>
+                                                    <DataTrigger Binding="{Binding HasHtmlPreview}" Value="True">
+                                                        <Setter TargetName="AssistantContentPanel" Property="Margin" Value="0,0,145,0"/>
+                                                    </DataTrigger>
                                                     <DataTrigger Binding="{Binding IsMouseOver, ElementName=AssistantBubble}" Value="True">
                                                         <Setter TargetName="AssistantCopyButton" Property="Visibility" Value="Visible"/>
                                                     </DataTrigger>
