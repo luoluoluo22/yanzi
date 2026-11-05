@@ -1179,7 +1179,8 @@
       "status": "windows-theme-keyboard-uia-isolated-scheduler-passed-awaiting-screenreader-speech-cloud-sync",
       "evidence": [
         "2026-11-05 PC-202409131508 Windows Release build=0, WPF STA ShowDialog 20/20 pass=20 fail=0; original PR180 SHA f8fc5b0f2cf75902b9062bedd85b69e01230060c; see docs/ui-unification/qa-pr180-schedule-2026-11-05.md",
-        "Real Windows screenshots: light/dark verified; physical keyboard Tab Space Escape; accessible UIA 61 choices; 2026-11-05 isolated live scheduler at 21:41:00 executed PowerShell at 21:41:02 exactly once, result schedule-pr180-e2e-result-20261105.json. Real account cloud sync and audible screen reader speech pending"
+        "Real Windows screenshots: light/dark verified; physical keyboard Tab Space Escape; accessible UIA 61 choices; 2026-11-05 isolated live scheduler at 21:41:00 executed PowerShell at 21:41:02 exactly once, result schedule-pr180-e2e-result-20261105.json. Real account cloud sync and audible screen reader speech pending",
+        "2026-11-05 home PC-202409131508 official installed 1.1.18.0 local Release package from merged main 6dc5f3efaa5f3242f8b5a29ae1dfde21f1a07d87, installer exit=0 and PRODUCTION_INSTALL_VERIFIED, DLL SHA256 F91F68D59758081DB418507CAD70A88629864FDAE7BCD50D3D5A7EDFB3E5A572, 1 stable Yanzi.exe process, extensions count 94 preserved. See docs/ui-unification/qa-pr180-formal-install-home-20261105.md; formal ScheduleConfigWindow UI interaction still pending"
       ]
     },
     {
