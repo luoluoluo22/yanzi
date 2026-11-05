@@ -300,8 +300,7 @@ public partial class ScheduleConfigWindow : Window
             RefreshMonthDayChips();
         }
 
-        // Preview
-        ResultSchedule = BuildCron();
+        // Preview is display-only; ResultSchedule is committed exclusively on confirmation.
         var friendly   = BuildFriendly();
         if (!string.IsNullOrEmpty(friendly) && enabled)
         {
