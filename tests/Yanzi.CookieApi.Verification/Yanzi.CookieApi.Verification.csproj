@@ -8,7 +8,5 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\OpenQuickHost\OpenQuickHost.csproj" />
-    <ProjectReference Include="..\..\src\Yanzi.Capture\Yanzi.Capture.csproj" />
-    <Compile Include="..\..\miniapps\cookie-api\cookie_api.cs" Link="MiniApp\cookie_api.cs" />
   </ItemGroup>
 </Project>
