@@ -1578,6 +1578,119 @@
         <Setter Property="CornerRadius" Value="{DynamicResource Yanzi.Radius.Lg}"/>
         <Setter Property="Padding" Value="14,12"/>
     </Style>
+    <!-- Public chat generation indicators: lifecycle-bound animations stop as messages complete. -->
+    <Style x:Key="Yanzi.Chat.GenerationDot.First" TargetType="{x:Type Ellipse}">
+        <Setter Property="Width" Value="5"/>
+        <Setter Property="Height" Value="5"/>
+        <Setter Property="Margin" Value="0,0,5,0"/>
+        <Setter Property="Fill" Value="{DynamicResource Yanzi.Color.MutedForeground}"/>
+        <Setter Property="Opacity" Value="0.35"/>
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding IsAwaitingFirstToken}" Value="True">
+                <DataTrigger.EnterActions>
+                    <BeginStoryboard Name="ChatDotPulseFirst">
+                        <Storyboard RepeatBehavior="Forever">
+                            <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                             From="0.35" To="0.95" BeginTime="0:0:0.000"
+                                             Duration="0:0:0.52" AutoReverse="True"/>
+                        </Storyboard>
+                    </BeginStoryboard>
+                </DataTrigger.EnterActions>
+                <DataTrigger.ExitActions>
+                    <StopStoryboard BeginStoryboardName="ChatDotPulseFirst"/>
+                </DataTrigger.ExitActions>
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+    <Style x:Key="Yanzi.Chat.GenerationDot.Second" TargetType="{x:Type Ellipse}">
+        <Setter Property="Width" Value="5"/>
+        <Setter Property="Height" Value="5"/>
+        <Setter Property="Margin" Value="0,0,5,0"/>
+        <Setter Property="Fill" Value="{DynamicResource Yanzi.Color.MutedForeground}"/>
+        <Setter Property="Opacity" Value="0.35"/>
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding IsAwaitingFirstToken}" Value="True">
+                <DataTrigger.EnterActions>
+                    <BeginStoryboard Name="ChatDotPulseSecond">
+                        <Storyboard RepeatBehavior="Forever">
+                            <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                             From="0.35" To="0.95" BeginTime="0:0:0.170"
+                                             Duration="0:0:0.52" AutoReverse="True"/>
+                        </Storyboard>
+                    </BeginStoryboard>
+                </DataTrigger.EnterActions>
+                <DataTrigger.ExitActions>
+                    <StopStoryboard BeginStoryboardName="ChatDotPulseSecond"/>
+                </DataTrigger.ExitActions>
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+    <Style x:Key="Yanzi.Chat.GenerationDot.Third" TargetType="{x:Type Ellipse}">
+        <Setter Property="Width" Value="5"/>
+        <Setter Property="Height" Value="5"/>
+        <Setter Property="Margin" Value="0,0,5,0"/>
+        <Setter Property="Fill" Value="{DynamicResource Yanzi.Color.MutedForeground}"/>
+        <Setter Property="Opacity" Value="0.35"/>
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding IsAwaitingFirstToken}" Value="True">
+                <DataTrigger.EnterActions>
+                    <BeginStoryboard Name="ChatDotPulseThird">
+                        <Storyboard RepeatBehavior="Forever">
+                            <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                             From="0.35" To="0.95" BeginTime="0:0:0.340"
+                                             Duration="0:0:0.52" AutoReverse="True"/>
+                        </Storyboard>
+                    </BeginStoryboard>
+                </DataTrigger.EnterActions>
+                <DataTrigger.ExitActions>
+                    <StopStoryboard BeginStoryboardName="ChatDotPulseThird"/>
+                </DataTrigger.ExitActions>
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+    <Style x:Key="Yanzi.Chat.ToolRunningDot" TargetType="{x:Type Ellipse}">
+        <Setter Property="Width" Value="5"/>
+        <Setter Property="Height" Value="5"/>
+        <Setter Property="Fill" Value="{DynamicResource Yanzi.Color.MutedForeground}"/>
+        <Setter Property="Opacity" Value="0.35"/>
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding IsToolRunning}" Value="True">
+                <DataTrigger.EnterActions>
+                    <BeginStoryboard Name="ChatToolPulse">
+                        <Storyboard RepeatBehavior="Forever">
+                            <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                             From="0.35" To="0.95" Duration="0:0:0.58" AutoReverse="True"/>
+                        </Storyboard>
+                    </BeginStoryboard>
+                </DataTrigger.EnterActions>
+                <DataTrigger.ExitActions>
+                    <StopStoryboard BeginStoryboardName="ChatToolPulse"/>
+                </DataTrigger.ExitActions>
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+    <Style x:Key="Yanzi.Chat.GenerationCaret" TargetType="{x:Type Border}">
+        <Setter Property="Width" Value="2"/>
+        <Setter Property="Height" Value="15"/>
+        <Setter Property="Margin" Value="2,0,0,0"/>
+        <Setter Property="Background" Value="{DynamicResource Yanzi.Color.MutedForeground}"/>
+        <Setter Property="Opacity" Value="0.8"/>
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding IsReceivingTokens}" Value="True">
+                <DataTrigger.EnterActions>
+                    <BeginStoryboard Name="ChatCaretPulse">
+                        <Storyboard RepeatBehavior="Forever">
+                            <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                             From="0.8" To="0.2" Duration="0:0:0.6" AutoReverse="True"/>
+                        </Storyboard>
+                    </BeginStoryboard>
+                </DataTrigger.EnterActions>
+                <DataTrigger.ExitActions>
+                    <StopStoryboard BeginStoryboardName="ChatCaretPulse"/>
+                </DataTrigger.ExitActions>
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
     <Style x:Key="Yanzi.Chat.UserBubble" TargetType="{x:Type Border}">
         <Setter Property="Background" Value="{DynamicResource Yanzi.Color.ChatUserBubble}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource Yanzi.Color.ChatUserBubble}"/>
