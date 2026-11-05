@@ -111,6 +111,8 @@ internal sealed class AiShellSessionManager(string defaultWorkdir) : IAsyncDispo
         public string Id { get; } = Guid.NewGuid().ToString("N");
         private readonly Process process;
         private readonly AiShellJob job;
+        private readonly EventWaitHandle launchGate;
+        private readonly EventWaitHandle inputReadyGate;
         private readonly OutputBuffer stdout = new(), stderr = new();
         private readonly Stopwatch clock = Stopwatch.StartNew();
         private readonly CancellationTokenSource deadline;
@@ -125,10 +127,22 @@ internal sealed class AiShellSessionManager(string defaultWorkdir) : IAsyncDispo
             this.workdir = workdir;
             // Wait for the parent's handshake BEFORE executing any model code;
             // this closes the race between process creation and job assignment.
-            var script = "$null = [Console]::ReadLine();\n" +
+            // Configure stdin encoding before the handshake. Resetting the reader
+            // after a buffered read can lose a fast follow-up write_stdin call.
+            // Readiness travels over a named event, NEVER the same stdin pipe
+            // used by write_stdin. Fast user input must remain untouched.
+            launchGate = new EventWaitHandle(false, EventResetMode.ManualReset,
+                @"Local\YanziAiShell_" + Id);
+            inputReadyGate = new EventWaitHandle(false, EventResetMode.ManualReset,
+                @"Local\YanziAiShellReady_" + Id);
+            var script =
                 "$ProgressPreference='SilentlyContinue'; $ErrorActionPreference='Stop';\n" +
                 "[Console]::OutputEncoding=New-Object System.Text.UTF8Encoding($false); " +
                 "[Console]::InputEncoding=New-Object System.Text.UTF8Encoding($false); $OutputEncoding=[Console]::OutputEncoding;\n" +
+                "$gate=[System.Threading.EventWaitHandle]::OpenExisting('Local\\YanziAiShell_" + Id + "');" +
+                "try { if (-not $gate.WaitOne(30000)) { throw 'shell_start_gate_timeout' } } finally { $gate.Dispose() };\n" +
+                "$null=[Console]::ReadLine();\n" +
+                "$ready=[System.Threading.EventWaitHandle]::OpenExisting('Local\\YanziAiShellReady_" + Id + "'); $null=$ready.Set(); $ready.Dispose();\n" +
                 command;
             process = new Process { StartInfo = new ProcessStartInfo
             {
@@ -146,13 +160,16 @@ internal sealed class AiShellSessionManager(string defaultWorkdir) : IAsyncDispo
             {
                 process.Start();
                 job = new AiShellJob(process);
+                _ = launchGate.Set();
                 process.StandardInput.WriteLine("start");
                 process.StandardInput.Flush();
+
             }
             catch
             {
                 try { if (!process.HasExited) process.Kill(true); } catch { }
                 job?.Dispose();
+                launchGate.Dispose(); inputReadyGate.Dispose();
                 process.Dispose();
                 throw;
             }
@@ -190,6 +207,11 @@ internal sealed class AiShellSessionManager(string defaultWorkdir) : IAsyncDispo
         public async Task WriteAsync(string chars, CancellationToken token)
         {
             if (Completion.IsCompleted) throw new ArgumentException("Session has already exited; poll without chars to collect its final output.");
+            // Wait until the PowerShell engine has initialized redirected stdin;
+            // input written before -EncodedCommand starts can be silently lost.
+            var ready = Task.Run(() => inputReadyGate.WaitOne(12000), token);
+            if (await Task.WhenAny(ready, Completion) != ready || !await ready)
+                throw new IOException("PowerShell did not become ready to accept stdin.");
             await process.StandardInput.WriteAsync(chars.AsMemory(), token);
             await process.StandardInput.FlushAsync(token);
         }
@@ -225,6 +247,7 @@ internal sealed class AiShellSessionManager(string defaultWorkdir) : IAsyncDispo
             await Completion;
             await timeoutRegistration.DisposeAsync();
             deadline.Dispose();
+            launchGate.Dispose(); inputReadyGate.Dispose();
             process.Dispose();
         }
     }
