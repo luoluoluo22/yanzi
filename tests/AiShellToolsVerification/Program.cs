@@ -56,6 +56,18 @@ internal static class Program
         result = await Finish(manager, start);
         Check(result.Out.Split("first").Length == 2 && result.Out.Split("last").Length == 2, "poll returns incremental output once");
 
+        // Stress the earliest possible stdin write: it may arrive while the
+        // PowerShell child is still waiting for the job-assignment handshake.
+        for (var attempt = 0; attempt < 8; attempt++)
+        {
+            var fastStart = Parse(await manager.InvokeAsync("exec_command",
+                Json(new { cmd = "$line=[Console]::ReadLine(); [Console]::WriteLine('burst:' + $line)", yield_time_ms = 0 }), default));
+            var fastInput = Parse(await manager.InvokeAsync("write_stdin",
+                Json(new { session_id = fastStart.GetProperty("session_id").GetString(), chars = "rapid\n", yield_time_ms = 0 }), default));
+            var fastResult = await Finish(manager, fastInput);
+            Check(fastResult.Out.Contains("burst:rapid"), "early stdin write survives handshake buffering #" + (attempt + 1));
+        }
+
         start = Parse(await manager.InvokeAsync("exec_command", Json(new { cmd = "$line=[Console]::ReadLine(); [Console]::WriteLine('received:'+ $line)", yield_time_ms = 1000 }), default));
         var input = Parse(await manager.InvokeAsync("write_stdin", Json(new { session_id = start.GetProperty("session_id").GetString(), chars = "hello\n", yield_time_ms = 1000 }), default));
         result = await Finish(manager, input);
