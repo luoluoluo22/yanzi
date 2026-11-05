@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.IO;
@@ -1234,61 +1234,7 @@ public partial class MainWindow
             }
             else
             {
-                // Agent tool calls are parsed only after a complete SSE response, but the HTTP
-                // transport itself streams so upstream gateways don't wait for the full answer.
-                for (int round = 0; round < 5; round++)
-                {
-                    cancellation.Token.ThrowIfCancellationRequested();
-                    // Tool-mode responses are also messages: show the same unobtrusive
-                    // in-bubble activity indicator while awaiting the model.
-                    var call = new AiChatMessage(false, string.Empty) { IsStreaming = true };
-                    AppendAiTopicMessage(topic, call);
-                    string reply;
-                    try
-                    {
-                        reply = await RequestAiChatCompletionStreamingAsync(
-                            BuildAiRequestMessages(mode, topic), profile, mode, topic.Id, _ => { }, cancellation.Token);
-                        call.Text = reply;
-                    }
-                    catch
-                    {
-                        call.Text = cancellation.IsCancellationRequested
-                            ? "生成已停止，原始问题已保留。"
-                            : "回复中断，请重试。";
-                        throw;
-                    }
-                    finally
-                    {
-                        call.IsStreaming = false;
-                    }
-                    var toolCall = ParseToolCall(reply);
-                    if (toolCall == null)
-                        break;
-                    call.IsToolCall = true;
-                    call.ToolName = toolCall.ToolName;
-                    call.IsToolRunning = true;
-                    SetAiTopicStatus(topic, $"AI 正在调用工具：{toolCall.ToolName}…");
-                    try
-                    {
-                        cancellation.Token.ThrowIfCancellationRequested();
-                        call.ToolFeedback = await ExecuteToolAsync(toolCall);
-                    }
-                    catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
-                    {
-                        throw;
-                    }
-                    catch (Exception ex)
-                    {
-                        call.ToolFeedback = $"【系统反馈】执行工具失败：{ex.Message}";
-                    }
-                    finally
-                    {
-                        call.IsToolRunning = false;
-                    }
-                    topic.NotifyMessagesChanged();
-                    SetAiTopicStatus(topic, "AI 正在分析工具结果…");
-                }
-                SetAiTopicStatus(topic, "继续对话");
+                await RunAiToolTurnAsync(topic, profile, cancellation.Token);
             }
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
@@ -1322,76 +1268,7 @@ public partial class MainWindow
         public JsonElement RawPayload { get; set; }
     }
 
-    private ToolCallInfo? ParseToolCall(string content)
-    {
-        if (string.IsNullOrWhiteSpace(content)) return null;
-
-        string jsonContent = content.Trim();
-        int startIdx = content.IndexOf("```json");
-        int endIdx;
-        if (startIdx != -1 && (endIdx = content.IndexOf("```", startIdx + 7)) != -1)
-        {
-            jsonContent = content.Substring(startIdx + 7, endIdx - startIdx - 7).Trim();
-        }
-
-        if (jsonContent.StartsWith("{") && jsonContent.EndsWith("}"))
-        {
-            try
-            {
-                using var doc = JsonDocument.Parse(jsonContent);
-                var root = doc.RootElement.Clone();
-                if (root.TryGetProperty("tool", out var toolProp))
-                {
-                    var toolName = toolProp.GetString();
-                    if (!string.IsNullOrWhiteSpace(toolName) && IsKnownAiTool(toolName))
-                    {
-                        return new ToolCallInfo
-                        {
-                            ToolName = toolName,
-                            RawPayload = root
-                        };
-                    }
-                }
-            }
-            catch
-            {
-                // Ignore and fallback
-            }
-        }
-
-        // 正则备用
-        try
-        {
-            var match = System.Text.RegularExpressions.Regex.Match(jsonContent, @"""tool""\s*:\s*""([^""]+)""");
-            if (match.Success)
-            {
-                var toolName = match.Groups[1].Value;
-                if (!string.IsNullOrWhiteSpace(toolName) && IsKnownAiTool(toolName))
-                {
-                    var minimalJson = $"{{\"tool\":\"{toolName}\"}}";
-                    using var doc = JsonDocument.Parse(minimalJson);
-                    return new ToolCallInfo
-                    {
-                        ToolName = toolName,
-                        RawPayload = doc.RootElement.Clone()
-                    };
-                }
-            }
-        }
-        catch
-        {
-            // Ignore
-        }
-
-        return null;
-    }
-
-    private bool IsKnownAiTool(string toolName)
-    {
-        return toolName is "query_extensions" or "execute_extension" or "execute_command" or "create_extension" or "delete_extension" or "run_extension" or "stop_extension";
-    }
-
-    private async Task<string> ExecuteToolAsync(ToolCallInfo toolCall)
+    private async Task<string> ExecuteToolAsync(ToolCallInfo toolCall, CancellationToken cancellationToken)
     {
         switch (toolCall.ToolName)
         {
@@ -1449,23 +1326,6 @@ public partial class MainWindow
                     {
                         return $"【系统反馈】执行失败：未能找到启用状态的小程序 ID \"{extId}\"。";
                     }
-                }
-
-            case "execute_command":
-                {
-                    string command = string.Empty;
-                    if (toolCall.RawPayload.TryGetProperty("command", out var cmdProp))
-                    {
-                        command = cmdProp.GetString() ?? string.Empty;
-                    }
-
-                    if (string.IsNullOrWhiteSpace(command))
-                    {
-                        return "【系统反馈】执行失败：未指定 command 参数。";
-                    }
-
-                    var result = await RunPowerShellCommandAsync(command);
-                    return $"【系统反馈】命令行执行结果(退出码:{result.ExitCode})：\n{result.Output}\n请根据结果直接使用自然语言回复用户，绝对不要再次调用本工具！";
                 }
 
             case "create_extension":
@@ -1600,7 +1460,8 @@ public partial class MainWindow
                             if (TryResolveExtensionCommand(extIdToRun, out var command))
                             {
                                 MarkExtensionAsSeen(command);
-                                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                                using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                                cts.CancelAfter(TimeSpan.FromSeconds(30));
                                 try
                                 {
                                     var result = await ScriptExtensionRunner.ExecuteAsync(command, inputStr, "ai-agent", cts.Token);
@@ -1687,52 +1548,6 @@ public partial class MainWindow
         }
     }
 
-    private async Task<(int ExitCode, string Output)> RunPowerShellCommandAsync(string command)
-    {
-        try
-        {
-            using var process = new System.Diagnostics.Process();
-            process.StartInfo.FileName = "powershell.exe";
-            var prependedCommand = "$ProgressPreference = 'SilentlyContinue';\r\n" + command;
-            var bytes = System.Text.Encoding.Unicode.GetBytes(prependedCommand);
-            var base64 = Convert.ToBase64String(bytes);
-            
-            process.StartInfo.Arguments = $"-NoProfile -NonInteractive -EncodedCommand {base64}";
-            process.StartInfo.RedirectStandardOutput = true;
-            process.StartInfo.RedirectStandardError = true;
-            process.StartInfo.UseShellExecute = false;
-            process.StartInfo.CreateNoWindow = true;
-
-            var outputBuilder = new System.Text.StringBuilder();
-            var errorBuilder = new System.Text.StringBuilder();
-
-            process.OutputDataReceived += (s, e) => { if (e.Data != null) outputBuilder.AppendLine(e.Data); };
-            process.ErrorDataReceived += (s, e) => { if (e.Data != null) errorBuilder.AppendLine(e.Data); };
-
-            process.Start();
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
-
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-            try
-            {
-                await process.WaitForExitAsync(cts.Token);
-            }
-            catch (OperationCanceledException)
-            {
-                process.Kill(true);
-                return (-1, outputBuilder.ToString() + "\r\n[错误] 命令执行超时 (15秒)\r\n" + errorBuilder.ToString());
-            }
-
-            var fullOutput = outputBuilder.ToString() + errorBuilder.ToString();
-            return (process.ExitCode, fullOutput);
-        }
-        catch (Exception ex)
-        {
-            return (-1, $"[执行异常] {ex.Message}");
-        }
-    }
-
     private AiConversationMode DetermineAiConversationMode(string userInput, AiChatTopic? topic = null)
     {
         var text = (userInput ?? string.Empty).Trim();
@@ -1745,7 +1560,7 @@ public partial class MainWindow
 
         string[] chatOnlyMarkers =
         [
-            "不要调用工具", "不用调用工具", "不要操作电脑", "不要执行", "只回答", "只解释",
+            "不要调用工具", "不用调用工具", "不要使用工具", "不用工具", "禁止调用工具", "纯聊天", "不要操作电脑", "不要执行", "只回答", "只解释",
             "只分析", "先讨论", "先不要操作", "不需要操作"
         ];
 
@@ -1756,7 +1571,9 @@ public partial class MainWindow
 
         if (lower.Contains("调用工具", StringComparison.OrdinalIgnoreCase) ||
             lower.Contains("使用工具", StringComparison.OrdinalIgnoreCase) ||
-            lower.Contains("直接执行", StringComparison.OrdinalIgnoreCase))
+            lower.Contains("直接执行", StringComparison.OrdinalIgnoreCase) ||
+            lower.Contains("工具", StringComparison.OrdinalIgnoreCase) ||
+            lower.Contains("shell", StringComparison.OrdinalIgnoreCase))
         {
             return AiConversationMode.Agent;
         }
@@ -1766,14 +1583,14 @@ public partial class MainWindow
             "打开", "关闭", "启动", "运行", "执行", "安装", "卸载", "删除", "新建", "创建",
             "修改", "修复", "保存", "复制", "移动", "重命名", "下载", "上传", "发送", "截图",
             "关机", "重启", "停止", "暂停", "继续执行", "切换", "设置", "调整", "清理",
-            "查看", "检查", "读取", "找到", "定位", "搜索本地"
+            "查看", "检查", "读取", "找到", "定位", "搜索本地", "列出", "查询", "诊断", "排查", "核对", "统计", "run", "execute", "check", "list", "read"
         ];
 
         string[] environmentTargets =
         [
             "电脑", "本机", "windows", "文件", "文件夹", "目录", "桌面", "进程", "服务",
             "注册表", "剪贴板", "小程序", "扩展", "燕子", "微信", "qq", "浏览器", "硬盘",
-            "磁盘", "cpu", "内存", "网络", "服务器", "程序", "应用", "界面"
+            "磁盘", "cpu", "内存", "网络", "服务器", "程序", "应用", "界面", "shell", "powershell", "终端", "命令", "命令行", "脚本", "git", "仓库", "项目", "代码", "日志", "file", "directory", "process"
         ];
 
         var hasAction = actionMarkers.Any(marker => lower.Contains(marker, StringComparison.OrdinalIgnoreCase));
@@ -1932,30 +1749,10 @@ public partial class MainWindow
         "5. 不要为了显得详细而重复同一句话；详细意味着增加有效机制、例子、条件和推演。\n" +
         "6. 除非用户明确要求短答，否则优先完整回答其隐含问题，而不仅回答字面问题。";
 
-    private const string DEFAULT_SYSTEM_PROMPT = 
-        "你是燕子电脑端 AI 助手。你可以解答问题，也可以调用本地电脑端工具。\n" +
-        "你可以自主判断是否需要调用工具。如果需要调用工具，请输出一段包裹在 ```json 内部的 JSON 代码块：\n" +
-        "```json\n" +
-        "{\"tool\": \"工具名\", \"参数名\": \"参数值\"}\n" +
-        "```\n\n" +
-        "【工具调用示例】\n" +
-        "用户：查看插件列表\n" +
-        "AI回复：\n" +
-        "```json\n" +
-        "{\"tool\": \"query_extensions\"}\n" +
-        "```\n" +
-        "系统反馈：\n" +
-        "[{\"id\": \"ext_calculator\", \"name\": \"计算器\"}, {\"id\": \"ext_weather\", \"name\": \"天气助手\"}]\n" +
-        "AI回复：\n" +
-        "目前已安装的插件列表如下：\n" +
-        "1. 计算器 (ID: ext_calculator)\n" +
-        "2. 天气助手 (ID: ext_weather)\n" +
-        "你可以告诉我你想执行哪一个。\n\n" +
-        "【可用工具列表】\n" +
-        "1. query_extensions: 获取可用小程序列表。无参数。\n" +
-        "2. execute_extension: 执行某个扩展. 参数: id (扩展ID)。\n" +
-        "3. execute_command: 在电脑端执行命令行命令。参数: command (要执行的命令文本)。【重要】电脑端已默认在 PowerShell 5.1 环境中执行命令，请直接输入 PowerShell 的 Cmdlet 或表达式，严禁外层嵌套调用 powershell、powershell.exe -Command 或 cmd /c，避免转义错误和执行超时。\n\n" +
-        "【注意】如果你调用了工具，系统会在后台真实执行，并在执行完成后将真实的结果反馈给你，之后你再根据执行结果来决定是继续调用工具还是输出最终的自然语言回复。";
+    private const string DEFAULT_SYSTEM_PROMPT =
+        "你是燕子电脑端 AI 助手。可以解答问题，也可以使用本次真实工具目录中的工具。\n" +
+        "根据用户目标决定是否调用工具；普通解释可直接回答。需要操作电脑时先检查现状，再执行并验证结果。\n" +
+        "工具参数、执行状态和结果必须以实际反馈为准，不能声称尚未执行或仍在运行的任务已完成。";
 
     private IReadOnlyList<object> BuildAiRequestMessages(AiConversationMode conversationMode, AiChatTopic requestTopic)
     {
@@ -2008,6 +1805,9 @@ public partial class MainWindow
 
         var finalPrompt = "【系统指令（严格遵守）】\n" + basePrompt +
                           "\n\n" + YanziCapabilityRequirementResolver.BuildAuthoringPrompt() +
+                          (conversationMode == AiConversationMode.Agent
+                              ? AiToolRegistry.BuildPrompt(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile))
+                              : "\n本轮为纯文本答复，不提供可执行工具。不得声称已在本机执行操作。") +
                           "\n当前可用小程序有:\n" + extListJson;
 
         var messages = new List<object>
