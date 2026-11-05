@@ -712,6 +712,8 @@ public partial class MainWindow
         menu.AddAction("复制内容", () => CopyMessage(message));
         if (message.HasHtmlContent)
             menu.AddAction("复制网页内容（富文本）", () => CopyHtmlMessage(message));
+        if (message.HasHtmlPreview)
+            menu.AddAction("预览网页（SVG / CSS 动画）", () => PreviewHtmlMessage(message, placementTarget));
         if (message.IsUser)
             menu.AddAction("重新发送", () => ResendMessage(message));
         OpenAiChatContextMenu(menu, placementTarget);
@@ -731,12 +733,38 @@ public partial class MainWindow
             CopyHtmlMessage(message);
     }
 
+    private void AiChatPreviewHtmlButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: AiChatMessage message } target)
+            PreviewHtmlMessage(message, target);
+    }
+
+    private void PreviewHtmlMessage(AiChatMessage message, FrameworkElement target)
+    {
+        if (!AiChatHtmlPreviewContent.TryExtractHtml(message.Text, out var html)) return;
+        try
+        {
+            var preview = new AiChatHtmlPreviewWindow(html);
+            var owner = Window.GetWindow(target);
+            if (owner?.IsVisible == true) preview.Owner = owner;
+            preview.Show();
+            preview.Activate();
+        }
+        catch (Exception ex)
+        {
+            AiChatStatusText = $"网页预览失败：{ex.Message}";
+            HostAssets.AppendLog("AI chat HTML preview failed: " + ex);
+        }
+    }
+
     private void CopyHtmlMessage(AiChatMessage message)
     {
         if (!message.HasHtmlContent) return;
         try
         {
-            AiChatHtmlContent.CopyRich(message.Text);
+            var content = AiChatHtmlPreviewContent.TryExtractHtml(message.Text, out var html)
+                ? html : message.Text;
+            AiChatHtmlContent.CopyRich(content);
             AiChatStatusText = "已复制网页内容（保留富文本格式）";
         }
         catch (Exception ex)
@@ -2372,16 +2400,20 @@ public sealed class AiChatMessage : INotifyPropertyChanged
             OnPropertyChanged(nameof(IsAwaitingFirstToken));
             OnPropertyChanged(nameof(IsReceivingTokens));
             OnPropertyChanged(nameof(HasHtmlContent));
+            OnPropertyChanged(nameof(HasHtmlPreview));
+            OnPropertyChanged(nameof(HtmlPreviewVisibility));
             OnPropertyChanged(nameof(HtmlVisibility));
             OnPropertyChanged(nameof(MarkdownVisibility));
         }
     }
-    public string FormattedText => IsStreaming ? string.Empty : Text;
+    public string FormattedText => IsStreaming ? string.Empty : AiChatHtmlPreviewContent.NormalizeCodeBlocks(Text);
     public bool HasHtmlContent => !IsUser && !IsStreaming && AiChatHtmlContent.IsHtmlMessage(Text);
+    public bool HasHtmlPreview => !IsUser && !IsStreaming && AiChatHtmlPreviewContent.TryExtractHtml(Text, out _);
+    public Visibility HtmlPreviewVisibility => HasHtmlPreview ? Visibility.Visible : Visibility.Collapsed;
     // A stand-alone HTML document keeps its inert WPF renderer. Inline HTML or
     // HTML examples inside Markdown belong to the Markdown engine instead.
     public bool IsStandaloneHtml => !IsUser && !IsStreaming &&
-        Text.TrimStart().StartsWith("<", StringComparison.Ordinal) &&
+        AiChatHtmlPreviewContent.IsStandaloneHtml(Text) &&
         AiChatHtmlContent.IsHtmlMessage(Text);
     public Visibility HtmlVisibility => IsStandaloneHtml ? Visibility.Visible : Visibility.Collapsed;
     public Visibility MarkdownVisibility => IsStandaloneHtml ? Visibility.Collapsed : Visibility.Visible;
@@ -2450,8 +2482,10 @@ public sealed class AiChatMessage : INotifyPropertyChanged
             {
                 OnPropertyChanged(nameof(FormattedText));
                 OnPropertyChanged(nameof(HasHtmlContent));
-            OnPropertyChanged(nameof(HtmlVisibility));
-            OnPropertyChanged(nameof(MarkdownVisibility));
+                OnPropertyChanged(nameof(HasHtmlPreview));
+                OnPropertyChanged(nameof(HtmlPreviewVisibility));
+                OnPropertyChanged(nameof(HtmlVisibility));
+                OnPropertyChanged(nameof(MarkdownVisibility));
             }
         }
     }
