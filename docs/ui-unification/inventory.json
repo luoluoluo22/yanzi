@@ -1160,9 +1160,10 @@
       "kind": "desktop-xaml",
       "shared_ui_reference": true,
       "legacy_style_signals": 8,
-      "status": "partial-shared-button-theme-migrated-awaiting-windows-build-functional-visual-qa",
+      "status": "windows-runtime-smoke-passed-awaiting-functional-visual-qa",
       "evidence": [
-        "2026-11-05: XML parse passed; refresh button now Yanzi.Button.Outline and window applies shared theme; terminate action custom template deliberately retained pending behavioral review. Linux host has no dotnet/WPF runtime; Windows build and interactive QA outstanding."
+        "2026-11-05: XML parse passed; refresh button now Yanzi.Button.Outline and window applies shared theme; terminate action custom template deliberately retained pending behavioral review. Linux host has no dotnet/WPF runtime; Windows build and interactive QA outstanding.",
+        "2026-11-05: On PC-202409131508 isolated worktree a15e310, WpfUiMigrationSmoke actual WPF ShowDialog test RunningExtensionsWindow loaded, shared refresh style, list presence, Refresh Click event: PASS; full suite pass=16 fail=0, exit=0; test csproj Release compile 0 warnings/0 errors. Manual termination, refresh async content, visual and keyboard/a11y still pending."
       ]
     },
     {

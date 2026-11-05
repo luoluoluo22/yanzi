@@ -97,6 +97,16 @@ internal static class Program
                 Assert(w.TryFindResource("Yanzi.Button.Outline") is Style, "shared outline button missing");
             }, false);
 
+            Run("RunningExtensionsWindow shared refresh and window load", () =>
+                new RunningExtensionsWindow(), w =>
+            {
+                var refresh = Descendants(w).OfType<Button>().FirstOrDefault(b => b.Content is string label && label == "刷新");
+                Assert(refresh != null, "refresh button missing");
+                CheckShared(w, refresh!, "Yanzi.Button.Outline");
+                Assert(w.FindName("ExtensionListView") is ListView, "running extensions list missing");
+                refresh!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Assert(w.IsLoaded, "running extensions window was not loaded");
+            }, false);
             Run("HotkeyCaptureWindow shared button and initial value", () =>
                 new HotkeyCaptureWindow("QA 快捷键", "仅验证渲染", null, "QA", true), w =>
             {
