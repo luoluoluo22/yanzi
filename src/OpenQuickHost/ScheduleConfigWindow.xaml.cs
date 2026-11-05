@@ -25,13 +25,7 @@ public partial class ScheduleConfigWindow : Window
     private int    _monthDay = 1;
     private int    _monthlyH = 9, _monthlyM = 0;
 
-    // Active selection visuals
-    private static readonly SolidColorBrush AccentBg     = new(WpfColor.FromArgb(0x1A, 0x3B, 0x82, 0xF6));
-    private static readonly SolidColorBrush AccentBorder = new(WpfColor.FromArgb(0xFF, 0x3B, 0x82, 0xF6));
-    private static readonly SolidColorBrush AccentFg     = new(WpfColor.FromArgb(0xFF, 0x93, 0xC5, 0xFD));
-    private static readonly SolidColorBrush NormalBg     = new(WpfColor.FromArgb(0x00, 0, 0, 0)); // transparent
-    private static readonly SolidColorBrush NormalBorder = new(WpfColor.FromArgb(0xFF, 0x2E, 0x2E, 0x2E));
-    private static readonly SolidColorBrush NormalFg     = new(WpfColor.FromArgb(0xFF, 0x8E, 0x8E, 0x8E));
+    private System.Windows.Media.Brush ThemeBrush(string key) => (System.Windows.Media.Brush)FindResource(key);
 
     // ─── Constructor ─────────────────────────────────────
     public ScheduleConfigWindow(string currentSchedule)
@@ -75,7 +69,7 @@ public partial class ScheduleConfigWindow : Window
     {
         for (int d = 1; d <= 31; d++)
         {
-            var chip = new Border
+            var chip = new ScheduleChoiceBorder
             {
                 Width = 36, Height = 36,
                 Margin = new Thickness(0, 0, 6, 6),
@@ -91,6 +85,7 @@ public partial class ScheduleConfigWindow : Window
                     VerticalAlignment = System.Windows.VerticalAlignment.Center
                 }
             };
+            System.Windows.Automation.AutomationProperties.SetName(chip, $"每月{d}日");
             chip.MouseLeftButtonDown += MonthDayChip_Click;
             MonthDayWrap.Children.Add(chip);
         }
@@ -314,21 +309,21 @@ public partial class ScheduleConfigWindow : Window
     }
 
     // ─── Chip active-state helpers ────────────────────────
-    private static void SetSegActive(Border border, TextBlock text, bool active)
+    private void SetSegActive(Border border, TextBlock text, bool active)
     {
-        border.Background   = active ? AccentBg     : NormalBg;
-        border.BorderBrush  = active ? AccentBorder : NormalBorder;
-        text.Foreground     = active ? AccentFg     : NormalFg;
+        border.Background   = active ? ThemeBrush("Yanzi.Color.Accent") : System.Windows.Media.Brushes.Transparent;
+        border.BorderBrush  = active ? ThemeBrush("Yanzi.Color.Ring") : ThemeBrush("Yanzi.Color.Border");
+        text.Foreground     = active ? ThemeBrush("Yanzi.Color.Foreground") : ThemeBrush("Yanzi.Color.MutedForeground");
         text.FontWeight     = active ? FontWeights.SemiBold : FontWeights.Normal;
     }
 
-    private static void SetChipActive(Border chip, bool active)
+    private void SetChipActive(Border chip, bool active)
     {
-        chip.Background  = active ? AccentBg     : NormalBg;
-        chip.BorderBrush = active ? AccentBorder : NormalBorder;
+        chip.Background  = active ? ThemeBrush("Yanzi.Color.Accent") : System.Windows.Media.Brushes.Transparent;
+        chip.BorderBrush = active ? ThemeBrush("Yanzi.Color.Ring") : ThemeBrush("Yanzi.Color.Border");
         if (chip.Child is TextBlock tb)
         {
-            tb.Foreground  = active ? AccentFg  : NormalFg;
+            tb.Foreground  = active ? ThemeBrush("Yanzi.Color.Foreground") : ThemeBrush("Yanzi.Color.MutedForeground");
             tb.FontWeight  = active ? FontWeights.SemiBold : FontWeights.Normal;
         }
     }
