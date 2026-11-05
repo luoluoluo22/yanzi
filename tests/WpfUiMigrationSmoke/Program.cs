@@ -28,6 +28,8 @@ internal static class Program
             Log("AFTER app.InitializeComponent");
             app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
             Log("AFTER ShutdownMode");
+            if (args.Contains("--schedule-isolated-e2e", StringComparer.OrdinalIgnoreCase))
+                return ScheduleSchedulerE2E.Run(app);
             if (args.Length > 0 && args[0].StartsWith("--schedule-visual-", StringComparison.Ordinal))
                 return ScheduleVisualPreview(app, args[0].EndsWith("light", StringComparison.Ordinal));
             Run("SimpleTextInputWindow empty guard + valid submit", () =>
@@ -289,6 +291,13 @@ internal static class Program
                     choice.RaiseEvent(key);
                     Assert(key.Handled, "space activation not handled: " + choice.Name);
                 }
+                Assert(System.Windows.Automation.AutomationProperties.GetItemStatus(simple) == "已选中",
+                    "screen reader selection status missing for simple mode");
+                Assert(System.Windows.Automation.AutomationProperties.GetItemStatus(minute) == "已选中" &&
+                    System.Windows.Automation.AutomationProperties.GetItemStatus(interval) == "已选中",
+                    "screen reader selection status missing for minute interval");
+                Assert(System.Windows.Automation.AutomationProperties.GetItemStatus(cron) == "未选中",
+                    "inactive mode should be exposed as unselected");
                 Assert(((StackPanel)w.FindName("SimpleModePanel")!).Visibility == Visibility.Visible,
                     "keyboard mode switch did not restore simple panel");
                 ClickByContent(w, "确认");

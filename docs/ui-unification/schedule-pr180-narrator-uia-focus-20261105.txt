@@ -1,0 +1,4 @@
+21:44:57.025 | name=启用定时运行 | type=ControlType.CheckBox | class=CheckBox | hwnd=0
+21:44:57.240 | name=简单设置 | type=ControlType.Button | class=ScheduleChoiceBorder | hwnd=0
+21:44:57.878 | name=Cron 表达式 | type=ControlType.Button | class=ScheduleChoiceBorder | hwnd=0
+21:44:59.165 | name=Cron 表达式 | type=ControlType.Edit | class=TextBox | hwnd=0

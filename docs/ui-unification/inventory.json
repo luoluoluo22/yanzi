@@ -1176,10 +1176,10 @@
       "kind": "desktop-xaml",
       "shared_ui_reference": true,
       "legacy_style_signals": 28,
-      "status": "windows-functional-theme-keyboard-uia-passed-awaiting-live-scheduler-qa",
+      "status": "windows-theme-keyboard-uia-isolated-scheduler-passed-awaiting-screenreader-speech-cloud-sync",
       "evidence": [
         "2026-11-05 PC-202409131508 Windows Release build=0, WPF STA ShowDialog 20/20 pass=20 fail=0; original PR180 SHA f8fc5b0f2cf75902b9062bedd85b69e01230060c; see docs/ui-unification/qa-pr180-schedule-2026-11-05.md",
-        "Real Windows screenshots: docs/ui-unification/schedule-pr180-light-verified-20261105.png and schedule-pr180-dark-verified-20261105.png; physical keyboard Tab Space Escape; accessible UIA 61 choices; live scheduler and screen reader pending"
+        "Real Windows screenshots: light/dark verified; physical keyboard Tab Space Escape; accessible UIA 61 choices; 2026-11-05 isolated live scheduler at 21:41:00 executed PowerShell at 21:41:02 exactly once, result schedule-pr180-e2e-result-20261105.json. Real account cloud sync and audible screen reader speech pending"
       ]
     },
     {

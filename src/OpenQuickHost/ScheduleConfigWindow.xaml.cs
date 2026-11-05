@@ -315,12 +315,14 @@ public partial class ScheduleConfigWindow : Window
         border.BorderBrush  = active ? ThemeBrush("Yanzi.Color.Ring") : ThemeBrush("Yanzi.Color.Border");
         text.Foreground     = active ? ThemeBrush("Yanzi.Color.Foreground") : ThemeBrush("Yanzi.Color.MutedForeground");
         text.FontWeight     = active ? FontWeights.SemiBold : FontWeights.Normal;
+        System.Windows.Automation.AutomationProperties.SetItemStatus(border, active ? "已选中" : "未选中");
     }
 
     private void SetChipActive(Border chip, bool active)
     {
         chip.Background  = active ? ThemeBrush("Yanzi.Color.Accent") : System.Windows.Media.Brushes.Transparent;
         chip.BorderBrush = active ? ThemeBrush("Yanzi.Color.Ring") : ThemeBrush("Yanzi.Color.Border");
+        System.Windows.Automation.AutomationProperties.SetItemStatus(chip, active ? "已选中" : "未选中");
         if (chip.Child is TextBlock tb)
         {
             tb.Foreground  = active ? ThemeBrush("Yanzi.Color.Foreground") : ThemeBrush("Yanzi.Color.MutedForeground");
