@@ -12,8 +12,9 @@ namespace OpenQuickHost;
 
 /// <summary>
 /// Account-local authenticated model adapter for the browser Cookie Suite.
-/// Only forwards the two explicitly registered model IDs. No Cookie/Token endpoint is
-/// exposed; no request content or upstream credentials are logged or synchronized.
+/// Models are discovered from the existing local backend; unverified reverse
+/// routes and special image/research capabilities are not exposed as chat models.
+/// No Cookie/Token endpoint is exposed and credentials are never synchronized.
 /// </summary>
 public static class YanziCookieApiBridge
 {
@@ -23,7 +24,6 @@ public static class YanziCookieApiBridge
     private const string Backend = "http://127.0.0.1:18800";
     private const string Hub = "http://127.0.0.1:18888/status";
     private static readonly object Gate = new();
-    private static readonly string[] Models = ["chatgpt-web", "gemini-3.5-flash-lite"];
     private static readonly HttpClient Client = new(new HttpClientHandler { UseProxy = false })
     {
         Timeout = TimeSpan.FromSeconds(110)
@@ -102,6 +102,7 @@ public static class YanziCookieApiBridge
             _listener = listener;
             _stop = new CancellationTokenSource();
             _ = AcceptAsync(listener, _stop.Token);
+            _ = YanziCookieModelCatalog.RunSyncLoopAsync(_stop.Token);
         }
     }
 
@@ -248,10 +249,32 @@ public static class YanziCookieApiBridge
             var path = request.Url?.AbsolutePath;
             if (request.HttpMethod == "GET" && path == "/v1/models")
             {
+                var modelsCatalog = await YanziCookieModelCatalog.SyncRegisteredModelsAsync(
+                    cancellationToken: stop);
                 await RespondAsync(ctx.Response, 200, new
                 {
                     @object = "list",
-                    data = Models.Select(m => new { id = m, @object = "model", owned_by = "cookie-api" })
+                    data = modelsCatalog.SelectableModels.Select(m => new
+                    {
+                        id = m, @object = "model", owned_by = "cookie-api"
+                    }),
+                    catalog_stale = modelsCatalog.IsStale
+                });
+                return;
+            }
+            if (request.HttpMethod == "GET" && path == "/v1/catalog")
+            {
+                var directory = await YanziCookieModelCatalog.RefreshAsync(
+                    cancellationToken: stop);
+                await RespondAsync(ctx.Response, 200, new
+                {
+                    backend_online = directory.BackendOnline,
+                    reverse_online = directory.ReverseOnline,
+                    stale = directory.IsStale,
+                    checked_at = directory.CheckedAt,
+                    discovered = directory.Models.Count,
+                    selectable = directory.SelectableModels.Count,
+                    models = directory.Models
                 });
                 return;
             }
@@ -282,16 +305,18 @@ public static class YanziCookieApiBridge
                 return;
             }
             var model = specified.GetString() ?? "";
-            if (!Models.Contains(model, StringComparer.Ordinal))
-            {
-                await RespondAsync(ctx.Response, 404, Error("unknown_model"));
-                return;
-            }
             var streaming = input.TryGetProperty("stream", out var streamProp) &&
                             streamProp.ValueKind == JsonValueKind.True;
             if (!await EnsureBackendStartedAsync(stop))
             {
                 await RespondAsync(ctx.Response, 503, Error("backend_not_installed_or_offline"));
+                return;
+            }
+            var catalog = await YanziCookieModelCatalog.RefreshAsync(
+                cancellationToken: stop);
+            if (!catalog.SelectableModels.Contains(model, StringComparer.Ordinal))
+            {
+                await RespondAsync(ctx.Response, 404, Error("model_not_selectable_or_unverified"));
                 return;
             }
             var online = await GetStatusAsync(stop);
