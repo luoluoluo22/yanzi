@@ -1,0 +1,108 @@
+﻿F:\Desktop\kaifa\yanzi-ui-schedule-visual-qa-20261105\tests\WpfUiMigrationSmoke\Program.cs(261,28): warning CS8602: 瑙ｅ紩鐢ㄥ彲鑳藉嚭鐜扮┖寮曠敤銆?[F:\Desktop\kaifa\yanzi-ui-schedule-visual-qa-20261105\tests\WpfUiMigrationSmoke\WpfUiMigrationSmoke.csproj]
+F:\Desktop\kaifa\yanzi-ui-schedule-visual-qa-20261105\tests\WpfUiMigrationSmoke\Program.cs(309,55): warning CS8602: 瑙ｅ紩鐢ㄥ彲鑳藉嚭鐜扮┖寮曠敤銆?[F:\Desktop\kaifa\yanzi-ui-schedule-visual-qa-20261105\tests\WpfUiMigrationSmoke\WpfUiMigrationSmoke.csproj]
+BEFORE app constructor
+AFTER app constructor
+VERIFICATION HARNESS ENABLED
+AFTER app.InitializeComponent
+AFTER ShutdownMode
+BEFORE make SimpleTextInputWindow empty guard + valid submit
+AFTER make SimpleTextInputWindow empty guard + valid submit
+BEFORE ShowDialog SimpleTextInputWindow empty guard + valid submit
+AFTER ShowDialog SimpleTextInputWindow empty guard + valid submit
+PASS SimpleTextInputWindow empty guard + valid submit result=True
+BEFORE make WebDavCredentialWindow username/password validation
+AFTER make WebDavCredentialWindow username/password validation
+BEFORE ShowDialog WebDavCredentialWindow username/password validation
+AFTER ShowDialog WebDavCredentialWindow username/password validation
+PASS WebDavCredentialWindow username/password validation result=True
+BEFORE make AiModelPickerWindow selection + already-added disabled
+AFTER make AiModelPickerWindow selection + already-added disabled
+BEFORE ShowDialog AiModelPickerWindow selection + already-added disabled
+AFTER ShowDialog AiModelPickerWindow selection + already-added disabled
+PASS AiModelPickerWindow selection + already-added disabled result=True
+BEFORE make SkillExportOptionsWindow combo interaction
+AFTER make SkillExportOptionsWindow combo interaction
+BEFORE ShowDialog SkillExportOptionsWindow combo interaction
+AFTER ShowDialog SkillExportOptionsWindow combo interaction
+PASS SkillExportOptionsWindow combo interaction result=True
+BEFORE make MouseTriggerCaptureWindow shared Select
+AFTER make MouseTriggerCaptureWindow shared Select
+BEFORE ShowDialog MouseTriggerCaptureWindow shared Select
+AFTER ShowDialog MouseTriggerCaptureWindow shared Select
+PASS MouseTriggerCaptureWindow shared Select result=False
+BEFORE make HotkeyCaptureWindow shared button and initial value
+AFTER make HotkeyCaptureWindow shared button and initial value
+BEFORE ShowDialog HotkeyCaptureWindow shared button and initial value
+AFTER ShowDialog HotkeyCaptureWindow shared button and initial value
+PASS HotkeyCaptureWindow shared button and initial value result=False
+BEFORE make ProcessPickerWindow shared buttons + process list
+AFTER make ProcessPickerWindow shared buttons + process list
+BEFORE ShowDialog ProcessPickerWindow shared buttons + process list
+AFTER ShowDialog ProcessPickerWindow shared buttons + process list
+PASS ProcessPickerWindow shared buttons + process list result=False
+BEFORE make PastedTextEditorWindow synthetic note load
+AFTER make PastedTextEditorWindow synthetic note load
+BEFORE ShowDialog PastedTextEditorWindow synthetic note load
+AFTER ShowDialog PastedTextEditorWindow synthetic note load
+PASS PastedTextEditorWindow synthetic note load result=False
+BEFORE make ColorPickerDialog hexadecimal and alpha inputs
+AFTER make ColorPickerDialog hexadecimal and alpha inputs
+BEFORE ShowDialog ColorPickerDialog hexadecimal and alpha inputs
+AFTER ShowDialog ColorPickerDialog hexadecimal and alpha inputs
+PASS ColorPickerDialog hexadecimal and alpha inputs result=False
+BEFORE make InstalledAppPickerDialog open and close
+AFTER make InstalledAppPickerDialog open and close
+BEFORE ShowDialog InstalledAppPickerDialog open and close
+AFTER ShowDialog InstalledAppPickerDialog open and close
+PASS InstalledAppPickerDialog open and close result=False
+BEFORE make SearchScopesManagerWindow read-only XAML + controls
+AFTER make SearchScopesManagerWindow read-only XAML + controls
+BEFORE ShowDialog SearchScopesManagerWindow read-only XAML + controls
+AFTER ShowDialog SearchScopesManagerWindow read-only XAML + controls
+PASS SearchScopesManagerWindow read-only XAML + controls result=False
+BEFORE make SystemPromptEditorWindow cancel preserves original
+AFTER make SystemPromptEditorWindow cancel preserves original
+BEFORE ShowDialog SystemPromptEditorWindow cancel preserves original
+AFTER ShowDialog SystemPromptEditorWindow cancel preserves original
+PASS SystemPromptEditorWindow cancel preserves original result=False
+BEFORE make SystemPromptEditorWindow confirms multiline prompt
+AFTER make SystemPromptEditorWindow confirms multiline prompt
+BEFORE ShowDialog SystemPromptEditorWindow confirms multiline prompt
+AFTER ShowDialog SystemPromptEditorWindow confirms multiline prompt
+PASS SystemPromptEditorWindow confirms multiline prompt result=True
+BEFORE make AddProviderWindow required name, type selection and submit
+AFTER make AddProviderWindow required name, type selection and submit
+BEFORE ShowDialog AddProviderWindow required name, type selection and submit
+AFTER ShowDialog AddProviderWindow required name, type selection and submit
+PASS AddProviderWindow required name, type selection and submit result=True
+BEFORE make AddProviderWindow cancel preserves no result
+AFTER make AddProviderWindow cancel preserves no result
+BEFORE ShowDialog AddProviderWindow cancel preserves no result
+AFTER ShowDialog AddProviderWindow cancel preserves no result
+PASS AddProviderWindow cancel preserves no result result=False
+BEFORE make ScheduleConfigWindow shared actions + disabled schedule
+AFTER make ScheduleConfigWindow shared actions + disabled schedule
+BEFORE ShowDialog ScheduleConfigWindow shared actions + disabled schedule
+AFTER ShowDialog ScheduleConfigWindow shared actions + disabled schedule
+PASS ScheduleConfigWindow shared actions + disabled schedule result=True
+BEFORE make ScheduleConfigWindow cancel does not overwrite schedule
+AFTER make ScheduleConfigWindow cancel does not overwrite schedule
+BEFORE ShowDialog ScheduleConfigWindow cancel does not overwrite schedule
+AFTER ShowDialog ScheduleConfigWindow cancel does not overwrite schedule
+PASS ScheduleConfigWindow cancel does not overwrite schedule result=False
+BEFORE make Schedule accessible choices + native dialog keyboard defaults
+AFTER make Schedule accessible choices + native dialog keyboard defaults
+BEFORE ShowDialog Schedule accessible choices + native dialog keyboard defaults
+AFTER ShowDialog Schedule accessible choices + native dialog keyboard defaults
+PASS Schedule accessible choices + native dialog keyboard defaults result=False
+BEFORE make Schedule keyboard choice interaction + cron integration
+AFTER make Schedule keyboard choice interaction + cron integration
+BEFORE ShowDialog Schedule keyboard choice interaction + cron integration
+AFTER ShowDialog Schedule keyboard choice interaction + cron integration
+PASS Schedule keyboard choice interaction + cron integration result=True
+BEFORE make Schedule semantic colors in both theme variants
+AFTER make Schedule semantic colors in both theme variants
+BEFORE ShowDialog Schedule semantic colors in both theme variants
+AFTER ShowDialog Schedule semantic colors in both theme variants
+PASS Schedule semantic colors in both theme variants result=False
+RESULT pass=20 fail=0
