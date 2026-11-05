@@ -97,12 +97,12 @@ public static class AiChatMarkdownCodeBlockSpacing
         foreach (Block block in blocks)
         {
             if (block is BlockUIContainer codeBlock &&
-                codeBlock.Child is Control codeEditor &&
+                codeBlock.Child is System.Windows.Controls.Control codeEditor &&
                 string.Equals(codeEditor.GetType().FullName, CodeEditorType, StringComparison.Ordinal))
             {
                 codeBlock.Margin = margin;
                 codeEditor.Padding = padding;
-                codeEditor.HorizontalAlignment = HorizontalAlignment.Stretch;
+                codeEditor.HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch;
             }
             else if (block is Section section)
             {
