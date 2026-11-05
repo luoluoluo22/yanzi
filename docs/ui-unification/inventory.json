@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "base_commit": "f99e23a",
+  "base_commit": "b64e4c1",
   "note": "Persistent candidate-source inventory: re-scan preserves manual status and evidence and retains missing candidates; not a count of distinct runtime screens.",
   "items": [
     {
@@ -1248,7 +1248,8 @@
       "status": "windows-runtime-smoke-passed-awaiting-functional-visual-qa",
       "evidence": [
         "source: shared button styles + per-window YanziUi.ApplyTo; git diff --check",
-        "Windows runtime smoke 2026-11-04 on PC-202409131508: real window rendered; target/scope selection and confirmation result true; 11/11 runner tests pass; source fix 41181fa; see docs/ui-unification/qa-2026-11-04.md"
+        "Windows runtime smoke 2026-11-04 on PC-202409131508: real window rendered; target/scope selection and confirmation result true; 11/11 runner tests pass; source fix 41181fa; see docs/ui-unification/qa-2026-11-04.md",
+        "2026-11-05 Ubuntu static XML verification: both selectors have AutomationProperties.Name; Enter/Escape default/cancel semantics declared; real keyboard and screen reader QA pending"
       ],
       "version_commit": "41181fa199b4975b3f9b2ac5b18cdce71b5143a2",
       "smoke_qa": {
