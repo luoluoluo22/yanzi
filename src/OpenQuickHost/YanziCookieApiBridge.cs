@@ -12,8 +12,9 @@ namespace OpenQuickHost;
 
 /// <summary>
 /// Account-local authenticated model adapter for the browser Cookie Suite.
-/// Models are discovered from the existing local backend; unverified reverse
-/// routes and special image/research capabilities are not exposed as chat models.
+/// Models are discovered from the local backend and all published model IDs
+/// may be selected, including reverse, Work, image and research routes.
+/// Invalid or temporarily unavailable models return upstream failures.
 /// No Cookie/Token endpoint is exposed and credentials are never synchronized.
 /// </summary>
 public static class YanziCookieApiBridge
@@ -316,16 +317,24 @@ public static class YanziCookieApiBridge
                 cancellationToken: stop);
             if (!catalog.SelectableModels.Contains(model, StringComparer.Ordinal))
             {
-                await RespondAsync(ctx.Response, 404, Error("model_not_selectable_or_unverified"));
+                await RespondAsync(ctx.Response, 404, Error("model_not_in_backend_catalog"));
                 return;
             }
-            var online = await GetStatusAsync(stop);
-            if (!online.Extension)
+            // Only the DOM-based ChatGPT models need an active Ego extension.
+            // Reverse and Gemini models must not be gated by the browser connection.
+            var requiresEgo = catalog.Models.Any(m =>
+                string.Equals(m.Id, model, StringComparison.Ordinal) &&
+                m.Category == "browser");
+            if (requiresEgo)
             {
-                await RespondAsync(ctx.Response, 503, Error("ego_extension_not_connected"));
-                return;
+                var online = await GetStatusAsync(stop);
+                if (!online.Extension)
+                {
+                    await RespondAsync(ctx.Response, 503, Error("ego_extension_not_connected"));
+                    return;
+                }
             }
-            if (model == "chatgpt-web")
+            if (requiresEgo)
             {
                 // The browser-backed ChatGPT transport requires an actual tab.
                 // Restore it on demand rather than silently turning every call into HTTP 502.
@@ -357,7 +366,8 @@ public static class YanziCookieApiBridge
                     await RespondAsync(ctx.Response, 503, Error("chatgpt_tab_check_failed"));
                     return;
                 }
-            }            var payload = JsonNode.Parse(input.GetRawText())!.AsObject();
+            }
+            var payload = JsonNode.Parse(input.GetRawText())!.AsObject();
             payload["stream"] = false; // Convert complete upstream response to SSE below if requested.
             using var forward = new HttpRequestMessage(HttpMethod.Post, Backend + "/v1/chat/completions")
             {

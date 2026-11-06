@@ -8,8 +8,9 @@ namespace OpenQuickHost;
 /// <summary>
 /// Discovers model IDs from the local Cookie Suite. The backend also advertises
 /// static fallback IDs; advertising an ID is not proof of a working session.
-/// Only browser/pooled conversational models enter the normal model selector.
-/// Other models remain visible in /v1/catalog with an explicit unverified status.
+/// Every discovered model ID is selectable. The category and availability fields
+/// remain informational: an offline or special-purpose model must return its real
+/// upstream outcome instead of being hidden by a client-side whitelist.
 /// </summary>
 public static class YanziCookieModelCatalog
 {
@@ -21,7 +22,18 @@ public static class YanziCookieModelCatalog
 
     private const string BackendUrl = "http://127.0.0.1:18800";
     private const string ProviderId = "miniapp:cookie-api:cookie-api";
-    private static readonly string[] FallbackModels = ["chatgpt-web", "gemini-3.5-flash-lite"];
+    private static readonly string[] FallbackModels =
+    [
+        "chatgpt-web", "gemini-3.5-flash-lite",
+        "auto", "gpt-6-thinking", "gpt-6", "gpt-6-instant", "gpt-6-mini",
+        "gpt-6-t-mini", "gpt-5-6-thinking", "gpt-5-6", "gpt-5-6-instant",
+        "gpt-5-6-mini", "gpt-5-6-t-mini", "research", "gpt-image-2",
+        "codex-gpt-image-2", "gpt-6-sol-wm", "gpt-6-luna-wm",
+        "gpt-6-astra-wm", "gpt-6.1-sol-wm", "gpt-6.1-terra-wm",
+        "gpt-5.6-sol-wm", "gpt-5.6-luna-wm", "gpt-5.6-terra-wm",
+        "chatgpt-web-moni", "gemini-3.1-pro", "gemini-3.6-flash",
+        "gemini-3.8-flash", "gemini-3.1-pro-thinking"
+    ];
     private static readonly Regex SafeModelId = new(
         @"^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
@@ -34,8 +46,13 @@ public static class YanziCookieModelCatalog
     private static DateTimeOffset _nextRefresh;
 
     private static Snapshot Fallback => new(false, false, true, DateTimeOffset.MinValue,
-        FallbackModels.Select(m => new Entry(m, m.StartsWith("gemini-", StringComparison.Ordinal)
-            ? "gemini" : "browser", "offline", "")).ToArray(), FallbackModels);
+        FallbackModels.Select(m => new Entry(m,
+            m.StartsWith("gemini-", StringComparison.Ordinal) ? "gemini" :
+            m.StartsWith("chatgpt-web", StringComparison.Ordinal) ? "browser" :
+            m is "gpt-image-2" or "codex-gpt-image-2" ? "image" :
+            m == "research" ? "research" :
+            m.EndsWith("-wm", StringComparison.Ordinal) ? "work" : "reverse",
+            "offline", "")).ToArray(), FallbackModels);
 
     public static Snapshot Cached => Volatile.Read(ref _snapshot) ?? Fallback;
 
@@ -70,8 +87,8 @@ public static class YanziCookieModelCatalog
                     data.ValueKind != JsonValueKind.Array || data.GetArrayLength() is < 1 or > 128)
                     throw new InvalidDataException("invalid model catalog");
 
-                // For a transport that is down, a static fallback catalog is not
-                // the same as a running model. Never promote reverse IDs blindly.
+                // Reverse transport health is metadata, not an entitlement gate.
+                // Keep all discovered IDs even when its reverse service is offline.
                 bool reverseOnline = false;
                 try
                 {
@@ -120,14 +137,13 @@ public static class YanziCookieModelCatalog
                 }
                 if (list.Count == 0)
                     throw new InvalidDataException("empty model catalog");
-                var selectable = list.Where(m => m.Category is "browser" or "gemini")
-                    .Select(m => m.Id)
+                // No category-based whitelist: publish every backend-discovered ID.
+                // Sort only for usability. The full catalog still carries availability.
+                var selectable = list.Select(m => m.Id)
                     .OrderBy(m => m == "chatgpt-web" ? 0 :
                         m == "gemini-3.5-flash-lite" ? 1 : 2)
                     .ThenBy(m => m, StringComparer.OrdinalIgnoreCase)
-                    .Take(64).ToArray();
-                if (selectable.Length == 0)
-                    throw new InvalidDataException("no supported conversational models");
+                    .ToArray();
 
                 var result = new Snapshot(true, reverseOnline, false,
                     DateTimeOffset.UtcNow, list.ToArray(), selectable);
