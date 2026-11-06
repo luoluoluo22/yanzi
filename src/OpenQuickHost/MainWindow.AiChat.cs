@@ -194,9 +194,7 @@ public partial class MainWindow
     public Visibility AiChatSendErrorVisibility => string.IsNullOrWhiteSpace(_aiChatSendErrorText)
         ? Visibility.Collapsed : Visibility.Visible;
 
-    public string AiChatModelDisplayText => string.IsNullOrWhiteSpace(_appSettings.AiModel)
-        ? "AI 未配置"
-        : _appSettings.AiModel;
+    public string AiChatModelDisplayText => ResolveAiRequestProfile(_appSettings)?.Model ?? "AI 未配置";
 
     // ==================== 事件处理 ====================
 
@@ -810,6 +808,7 @@ public partial class MainWindow
             return;
         }
         LoadTopicsFromStorage();
+        _appSettings = AppSettingsStore.Load();
         RefreshAiModelSelector();
         StartAiModelDiscovery();
         
@@ -1150,19 +1149,24 @@ public partial class MainWindow
         var pendingAttachments = scheduledPrompt == null ? _aiChatAttachments.ToArray() : [];
         if (string.IsNullOrEmpty(userInput) && pendingAttachments.Length == 0) return;
         var mode = DetermineAiConversationMode(userInput, topic);
-        var settings = _appSettings;
-        if (!IsAiConfigured(settings))
+        // Refresh before every request so a live chat observes settings changes.
+        // An in-flight request keeps its own immutable profile.
+        var settings = AppSettingsStore.Load();
+        _appSettings = settings;
+        RefreshAiModelSelector();
+        var profile = ResolveAiRequestProfile(settings);
+        if (profile is null)
         {
-            var msg = string.IsNullOrWhiteSpace(settings.AiApiKey)
-                ? "无法发送：当前服务商缺少 API Key。请打开「模型服务」重新配置。"
-                : "无法发送：当前服务商的模型或接口地址尚未配置。";
+            var selected = (settings.AiServiceProviders ?? []).FirstOrDefault(provider =>
+                string.Equals(provider.Id, settings.ActiveServiceProviderId, StringComparison.OrdinalIgnoreCase));
+            var msg = selected is null || !selected.IsEnabled
+                ? "无法发送：没有已启用的当前模型渠道，请在「模型服务」中启用并选择供应商。"
+                : string.IsNullOrWhiteSpace(selected.ApiKey)
+                    ? "无法发送：当前服务商缺少 API Key。请打开「模型服务」重新配置。"
+                    : "无法发送：当前服务商的模型或接口地址尚未配置。";
             SetAiTopicStatus(topic, msg, msg);
             return;
         }
-        var profile = new AiRequestProfile(
-            settings.AiBaseUrl.Trim(), settings.AiApiKey.Trim(), settings.AiModel.Trim(),
-            string.Equals(settings.ActiveServiceProviderId, ChatGptPlanProviderId,
-                StringComparison.OrdinalIgnoreCase));
         if (string.Equals(profile.BaseUrl.TrimEnd('/'), YanziAgyModelBridge.BaseUrl, StringComparison.OrdinalIgnoreCase))
             YanziAgyModelBridge.EnsureStarted();
         if (string.Equals(profile.BaseUrl.TrimEnd('/'), YanziCookieApiBridge.BaseUrl, StringComparison.OrdinalIgnoreCase))
@@ -2004,12 +2008,39 @@ public partial class MainWindow
         return $"{trimmed}/v1/chat/completions";
     }
 
-    private static bool IsAiConfigured(AppSettings settings)
+    private static AiRequestProfile? ResolveAiRequestProfile(AppSettings settings)
     {
-        return !string.IsNullOrWhiteSpace(settings.AiBaseUrl) &&
-               !string.IsNullOrWhiteSpace(settings.AiApiKey) &&
-               !string.IsNullOrWhiteSpace(settings.AiModel);
+        var providers = settings.AiServiceProviders ?? [];
+        if (providers.Count > 0 || !string.IsNullOrWhiteSpace(settings.ActiveServiceProviderId))
+        {
+            var provider = providers.FirstOrDefault(item =>
+                item.IsEnabled && string.Equals(item.Id, settings.ActiveServiceProviderId,
+                    StringComparison.OrdinalIgnoreCase));
+            if (provider is null)
+                return null;
+
+            // Provider-specific selection must override stale legacy request fields.
+            var model = !string.IsNullOrWhiteSpace(provider.SelectedModel)
+                ? provider.SelectedModel
+                : provider.Models?.FirstOrDefault() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(provider.BaseUrl) ||
+                string.IsNullOrWhiteSpace(provider.ApiKey) ||
+                string.IsNullOrWhiteSpace(model))
+                return null;
+            return new AiRequestProfile(provider.BaseUrl.Trim(), provider.ApiKey.Trim(), model.Trim(),
+                string.Equals(provider.Id, ChatGptPlanProviderId, StringComparison.OrdinalIgnoreCase));
+        }
+
+        // Preserve old single-provider setups, never bypass a disabled provider.
+        if (string.IsNullOrWhiteSpace(settings.AiBaseUrl) ||
+            string.IsNullOrWhiteSpace(settings.AiApiKey) ||
+            string.IsNullOrWhiteSpace(settings.AiModel))
+            return null;
+        return new AiRequestProfile(settings.AiBaseUrl.Trim(), settings.AiApiKey.Trim(),
+            settings.AiModel.Trim(), false);
     }
+
+    private static bool IsAiConfigured(AppSettings settings) => ResolveAiRequestProfile(settings) is not null;
 
     private void FocusAiInput(bool selectAll = false)
     {
