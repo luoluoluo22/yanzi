@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../src/OpenQuickHost/AiAgentPrompt.cs" Link="AiAgentPrompt.cs" />
     <Compile Include="../../src/OpenQuickHost/AiShellJob.cs" Link="AiShellJob.cs" />
     <Compile Include="../../src/OpenQuickHost/AiShellSessionManager.cs" Link="AiShellSessionManager.cs" />
     <Compile Include="../../src/OpenQuickHost/AiToolRegistry.cs" Link="AiToolRegistry.cs" />

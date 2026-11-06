@@ -1753,11 +1753,6 @@ public partial class MainWindow
         "5. 不要为了显得详细而重复同一句话；详细意味着增加有效机制、例子、条件和推演。\n" +
         "6. 除非用户明确要求短答，否则优先完整回答其隐含问题，而不仅回答字面问题。";
 
-    private const string DEFAULT_SYSTEM_PROMPT =
-        "你是燕子电脑端 AI 助手。可以解答问题，也可以使用本次真实工具目录中的工具。\n" +
-        "根据用户目标决定是否调用工具；普通解释可直接回答。需要操作电脑时先检查现状，再执行并验证结果。\n" +
-        "工具参数、执行状态和结果必须以实际反馈为准，不能声称尚未执行或仍在运行的任务已完成。";
-
     private IReadOnlyList<object> BuildAiRequestMessages(AiConversationMode conversationMode, AiChatTopic requestTopic)
     {
         var settings = AppSettingsStore.Load();
@@ -1790,29 +1785,8 @@ public partial class MainWindow
             return chatMessages;
         }
 
-        var basePrompt = string.IsNullOrWhiteSpace(settings.AiSystemPrompt)
-            ? DEFAULT_SYSTEM_PROMPT
-            : settings.AiSystemPrompt;
-
-        // 获取可用小程序列表
-        var extList = new List<object>();
-        foreach (var cmd in GetExtensionsForSettings())
-        {
-            extList.Add(new
-            {
-                id = cmd.ExtensionId,
-                name = cmd.Title,
-                desc = cmd.Subtitle
-            });
-        }
-        var extListJson = JsonSerializer.Serialize(extList);
-
-        var finalPrompt = "【系统指令（严格遵守）】\n" + basePrompt +
-                          "\n\n" + YanziCapabilityRequirementResolver.BuildAuthoringPrompt() +
-                          (conversationMode == AiConversationMode.Agent
-                              ? AiToolRegistry.BuildPrompt(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile))
-                              : "\n本轮为纯文本答复，不提供可执行工具。不得声称已在本机执行操作。") +
-                          "\n当前可用小程序有:\n" + extListJson;
+        var finalPrompt = AiAgentPrompt.Build(settings.AiSystemPrompt,
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
 
         var messages = new List<object>
         {

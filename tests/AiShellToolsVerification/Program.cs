@@ -126,57 +126,71 @@ internal static class Program
     private static bool Alive(int id)
     { try { using var p = Process.GetProcessById(id); return !p.HasExited; } catch (ArgumentException) { return false; } }
 
+    private static object Call(string id = "native1", string arguments = "{\"cmd\":\"[Console]::WriteLine('MODEL_ROUNDTRIP')\",\"yield_time_ms\":3000}") =>
+        new { type = "function_call", call_id = id, name = "exec_command", arguments, status = "completed" };
+    private static object Completed(params object[] output) => new { status = "completed", output };
+    private static object Answer(string text) => new { type = "message", role = "assistant", content = new[] { new { type = "output_text", text } } };
     private static async Task ProtocolTests()
     {
-        Check(AiToolRegistry.ParseLegacy("```json\n{\"tool\":\"exec_command\",\"cmd\":\"Get-Location\"}\n```") != null, "legacy whole JSON envelope accepted");
-        Check(AiToolRegistry.ParseLegacy("Example: ```json\n{\"tool\":\"exec_command\",\"cmd\":\"Get-Location\"}\n```") == null, "quoted example never executed");
-        Check(AiToolRegistry.ParseLegacy("{\"tool\":\"exec_command\", broken") == null, "malformed arguments never regex-recovered");
-        Check(AiToolRegistry.BuildPrompt(Root).Contains("write_stdin") && AiToolRegistry.NativeTools.Length == 9, "catalog exposes schemas and shell lifecycle");
-
-        var sse = "data: " + JsonSerializer.Serialize(new { choices = new[] { new { delta = new { tool_calls = new[] { new { index = 0, id = "call_1", function = new { name = "exec_command", arguments = "{\"cmd\":\"'" } } } } } } }) + "\n\n" +
-            "data: " + JsonSerializer.Serialize(new { choices = new[] { new { delta = new { tool_calls = new[] { new { index = 0, function = new { arguments = "OK'\"}" } } } }, finish_reason = "tool_calls" } } }) + "\n\ndata: [DONE]\n";
-        var parsed = await AiToolCompletionClient.ReadStreamAsync(new MemoryStream(Encoding.UTF8.GetBytes(sse)), default);
-        Check(parsed.Calls.Single().Arguments == "{\"cmd\":\"'OK'\"}", "SSE fragmented function arguments reassembled");
-        try { await AiToolCompletionClient.ReadStreamAsync(new MemoryStream(Encoding.UTF8.GetBytes(sse.Split("\n\n")[0])), default); throw new Exception("Expected stream failure"); }
-        catch (IOException) { Check(true, "truncated stream does not execute partial call"); }
-
+        var legacy = "你是燕子电脑端 AI 助手。【可用工具列表】 execute_command ```json";
+        var prompt = AiAgentPrompt.Build(legacy, Root);
+        Check(!prompt.Contains("```json") && !prompt.Contains("query_extensions") && !prompt.Contains("execute_command"), "legacy prompt and miniapp catalog not injected");
+        Check(AiAgentPrompt.NormalizeCustomPrompt(legacy) == "" && AiAgentPrompt.NormalizeCustomPrompt("简洁回答") == "简洁回答", "legacy migration preserves unrelated preferences");
+        var backupDir = Path.Combine(Root, "prompt-backup");
+        AiAgentPrompt.BackupLegacy(legacy, backupDir); AiAgentPrompt.BackupLegacy(legacy, backupDir);
+        Check(Directory.GetFiles(backupDir).Length == 1 && File.ReadAllText(Directory.GetFiles(backupDir)[0]) == legacy, "legacy prompt backup is exact and idempotent");
+        Check(AiToolRegistry.NativeTools.Length == 3 && !AiToolRegistry.IsKnown("query_extensions") && !AiToolRegistry.IsKnown("execute_command"), "only implemented native shell tools advertised");
+        Check(AiToolCompletionClient.BuildEndpoint("https://unit.test/v1/chat/completions") == "https://unit.test/v1/responses" && AiToolCompletionClient.BuildEndpoint("https://unit.test/v1") == "https://unit.test/v1/responses", "Responses endpoint normalization");
+        var parsed = AiToolCompletionClient.ParseResponse(JsonSerializer.Serialize(Completed(Answer("{\"tool\":\"exec_command\",\"cmd\":\"evil\"}"))));
+        Check(parsed.Calls.Count == 0, "JSON in assistant text is never executable");
+        foreach (var invalid in new[] {
+            JsonSerializer.Serialize(new { status = "incomplete", output = new[] { Call() } }),
+            JsonSerializer.Serialize(Completed(Call(), Call())),
+            JsonSerializer.Serialize(Completed(Call(arguments: "[]"))),
+            JsonSerializer.Serialize(Completed(Call(arguments: "{broken"))) })
+        {
+            try { AiToolCompletionClient.ParseResponse(invalid); throw new Exception("Accepted invalid response"); }
+            catch (Exception ex) when (ex is IOException or JsonException) { Check(true, "invalid/incomplete call batch rejected before execution"); }
+        }
+        var sse = "data: " + JsonSerializer.Serialize(new { type = "response.function_call_arguments.delta", delta = "{broken" }) + "\n\n" +
+            "data: " + JsonSerializer.Serialize(new { type = "response.completed", response = Completed(Call()) }) + "\n\n";
+        parsed = await AiToolCompletionClient.ReadStreamAsync(new MemoryStream(Encoding.UTF8.GetBytes(sse)), default);
+        Check(parsed.Calls.Single().Id == "native1", "only complete Responses event authorizes execution");
+        try { await AiToolCompletionClient.ReadStreamAsync(new MemoryStream(Encoding.UTF8.GetBytes("data: {\"type\":\"response.function_call_arguments.delta\",\"delta\":\"{}\"}\n\ndata: [DONE]\n")), default); throw new Exception("Accepted incomplete stream"); }
+        catch (IOException) { Check(true, "partial SSE call never executes"); }
         int step = 0;
-        var handler = new FakeHandler(async request =>
+        using var http = new HttpClient(new FakeHandler(async request =>
         {
             var body = Parse(await request.Content!.ReadAsStringAsync());
-            Check(body.GetProperty("tools").GetArrayLength() == 9, "request advertises native tools");
-            if (step++ == 0) return Response(new { choices = new[] { new { finish_reason = "tool_calls", message = new { content = "", tool_calls = new[] { new { id = "native1", type = "function", function = new { name = "exec_command", arguments = JsonSerializer.Serialize(new { cmd = "[Console]::WriteLine('MODEL_ROUNDTRIP')", yield_time_ms = 3000 }) } } } } } } });
-            var last = body.GetProperty("messages").EnumerateArray().Last();
-            Check(last.GetProperty("role").GetString() == "tool" && last.GetProperty("tool_call_id").GetString() == "native1", "tool result associated with native call ID");
-            Check(last.GetProperty("content").GetString()!.Contains("MODEL_ROUNDTRIP"), "real shell output sent back to model");
-            return Response(new { choices = new[] { new { finish_reason = "stop", message = new { content = "Verified command output." } } } });
-        });
-        using var http = new HttpClient(handler);
+            Check(body.GetProperty("tools")[0].GetProperty("name").GetString() == "exec_command" && !body.TryGetProperty("messages", out _), "Responses tools and input envelope used");
+            if (step++ == 0) return Response(Completed(new { type = "reasoning", id = "r1", encrypted_content = "opaque", summary = Array.Empty<object>() }, Call()));
+            var items = body.GetProperty("input").EnumerateArray().ToArray();
+            var last = items.Last();
+            Check(last.GetProperty("type").GetString() == "function_call_output" && last.GetProperty("call_id").GetString() == "native1", "result linked using call_id");
+            Check(last.GetProperty("output").GetString()!.Contains("MODEL_ROUNDTRIP"), "real shell output returned to model");
+            Check(items.Any(i => i.TryGetProperty("encrypted_content", out var v) && v.GetString() == "opaque"), "reasoning items preserved across tool rounds");
+            return Response(Completed(Answer("Verified command output.")));
+        }));
         var client = new AiToolCompletionClient();
         await using var shell = new AiShellSessionManager(Root);
         var progress = new List<AiToolProgress>();
-        var finished = await AiAgentTurnRunner.RunAsync([new { role = "user", content = "Run the test command" }],
-            (messages, ct) => client.SendAsync(http, "https://unit.test/v1/chat/completions", "fake", "test", messages, false, ct),
+        var finished = await AiAgentTurnRunner.RunAsync([new { role = "user", content = "Run test" }],
+            (messages, ct) => client.SendAsync(http, "https://unit.test/v1/responses", "fake", "test", messages, false, ct),
             (call, ct) => shell.InvokeAsync(call.Name, Parse(call.Arguments), ct), progress.Add, default);
-        Check(finished && progress.Last().Phase == "answer" && step == 2, "model -> tool -> real shell -> model loop completes");
-
-        int requests = 0;
-        using var fallbackHttp = new HttpClient(new FakeHandler(request =>
+        Check(finished && progress.Last().Phase == "answer" && step == 2, "model -> native function call -> real shell -> native result -> model");
+        foreach (var status in new[] { HttpStatusCode.BadRequest, HttpStatusCode.NotFound, HttpStatusCode.NotImplemented, HttpStatusCode.BadGateway })
         {
-            requests++;
-            return Task.FromResult(requests == 1 ? new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = new StringContent("tools not supported") }
-                : Response(new { choices = new[] { new { finish_reason = "stop", message = new { content = "{\"tool\":\"query_extensions\"}" } } } }));
-        }));
-        parsed = await new AiToolCompletionClient().SendAsync(fallbackHttp, "https://unit.test", "fake", "test", [], false, default);
-        Check(requests == 2 && !parsed.Native && parsed.Calls.Single().Name == "query_extensions", "explicit unsupported-tools response falls back once");
-        requests = 0;
-        using var failedHttp = new HttpClient(new FakeHandler(_ => { requests++; return Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadGateway) { Content = new StringContent("failure") }); }));
-        try { await new AiToolCompletionClient().SendAsync(failedHttp, "https://unit.test", "fake", "test", [], false, default); throw new Exception("Expected HTTP error"); }
-        catch (IOException) { Check(requests == 1, "5xx never retried as a second model request"); }
+            int requests = 0;
+            using var failedHttp = new HttpClient(new FakeHandler(_ => { requests++; return Task.FromResult(new HttpResponseMessage(status) { Content = new StringContent("unsupported tools") }); }));
+            try { await client.SendAsync(failedHttp, "https://unit.test/v1/responses", "fake", "test", [], false, default); throw new Exception("Expected error"); }
+            catch (IOException) { Check(requests == 1, "no silent downgrade/retry: " + status); }
+        }
         int executes = 0;
-        finished = await AiAgentTurnRunner.RunAsync([], (_, _) => Task.FromResult(new AiToolCompletion("", [new("same", "query_extensions", "{}")])),
+        finished = await AiAgentTurnRunner.RunAsync([], (_, _) => Task.FromResult(new AiToolCompletion("", [new("same", "exec_command", "{}")])),
             (_, _) => { executes++; return Task.FromResult("ok"); }, _ => { }, default, maxRounds: 2);
-        Check(!finished && executes == 1, "round budget and duplicate call IDs prevent repeated effects");
+        Check(!finished && executes == 1, "duplicate call IDs cannot repeat side effects");
+        var budget = await Finish(shell, Parse(await shell.InvokeAsync("exec_command", Json(new { cmd = "[Console]::Write('x'*5000)", max_output_tokens = 128 }), default)));
+        Check(budget.Out.Length <= 256, "native output budget enforced by shell");
     }
     private static async Task ExperienceTests()
     {

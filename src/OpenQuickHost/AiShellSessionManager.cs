@@ -21,12 +21,14 @@ internal sealed class AiShellSessionManager(string defaultWorkdir) : IAsyncDispo
         {
             ObjectDisposedException.ThrowIf(disposed, this);
             if (args.ValueKind != JsonValueKind.Object) throw new ArgumentException("Arguments must be an object.");
-            var limit = Integer(args, "max_output_chars", 16000, 256, 64000);
-            var wait = Integer(args, "yield_time_ms", 1000, 0, 30000);
+            var limit = args.TryGetProperty("max_output_tokens", out _)
+                ? Integer(args, "max_output_tokens", 10000, 128, 32000) * 2
+                : Integer(args, "max_output_chars", 16000, 256, 64000);
+            var wait = Integer(args, "yield_time_ms", name == "exec_command" ? 10000 : 1000, 0, 30000);
             Session session;
             if (name is "exec_command" or "execute_command")
             {
-                var allowed = new[] { "tool", "cmd", "command", "workdir", "timeout_ms", "yield_time_ms", "max_output_chars" };
+                var allowed = new[] { "tool", "cmd", "command", "workdir", "timeout_ms", "yield_time_ms", "max_output_chars", "max_output_tokens" };
                 ValidateKeys(args, allowed);
                 if (sessions.Count >= 4) throw new ArgumentException("Session limit reached; finish or terminate an existing session first.");
                 var command = Text(args, name == "execute_command" ? "command" : "cmd", required: true)!;
@@ -40,7 +42,7 @@ internal sealed class AiShellSessionManager(string defaultWorkdir) : IAsyncDispo
             }
             else
             {
-                ValidateKeys(args, ["tool", "session_id", "chars", "yield_time_ms", "max_output_chars"]);
+                ValidateKeys(args, ["tool", "session_id", "chars", "yield_time_ms", "max_output_chars", "max_output_tokens"]);
                 var id = Text(args, "session_id", required: true)!;
                 if (!sessions.TryGetValue(id, out session!)) throw new ArgumentException("Session not found in this turn (expired or belongs to another conversation).");
                 if (name == "terminate_command") session.Stop("terminated");
