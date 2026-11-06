@@ -322,6 +322,52 @@ internal static class Program
                 }
                 ClickByContent(w, "取消");
             }, false);
+            foreach (var theme in new[] { Yanzi.UI.Wpf.YanziTheme.Dark, Yanzi.UI.Wpf.YanziTheme.Light })
+            {
+                Run("AI tool execution card " + theme, () =>
+                {
+                    var execution = new AiToolExecution("exec_command", System.Text.Json.JsonSerializer.Serialize(new { cmd = "dotnet test --no-restore", workdir = @"C:\Projects\Demo" }));
+                    execution.ApplyResult("{\"status\":\"running\",\"stdout\":\"Starting verification...\\n\",\"wall_time_seconds\":1.2}");
+                    var card = new AiToolExecutionCard { DataContext = execution };
+                    var window = new Window { Title = "Yanzi tool execution QA", Width = 780, Height = 410, Content = card };
+                    Yanzi.UI.Wpf.YanziUi.ApplyTo(window, theme);
+                    return window;
+                }, w =>
+                {
+                    var card = (AiToolExecutionCard)w.Content;
+                    var execution = (AiToolExecution)card.DataContext;
+                    var command = (TextBox)card.FindName("CommandBox");
+                    var output = (TextBox)card.FindName("OutputBox");
+                    var status = (TextBlock)card.FindName("StatusLabel");
+                    var stop = (Button)card.FindName("StopTurnButton");
+                    Assert(command.Text == "dotnet test --no-restore" && command.IsReadOnly, "command must be readable and selectable");
+                    Assert(status.Text == "执行中" && stop.IsEnabled, "running state and cancel availability");
+                    execution.SetPreview("{\"stdout\":\"Still running...\"}");
+                    w.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+                    Assert(output.Text.Contains("Still running"), "live preview binding");
+                    bool cancelled = false;
+                    execution.CancelTurn = () => cancelled = true;
+                    stop.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent, stop));
+                    Assert(cancelled, "stop action routed to owning execution");
+                    execution.ApplyResult("{\"status\":\"completed\",\"exit_code\":2,\"stdout\":\"Verification finished.\",\"stderr\":\"One assertion failed.\",\"wall_time_seconds\":3.4}");
+                    w.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+                    Assert(status.Text == "执行失败" && !stop.IsEnabled, "nonzero exit shown as failure and stop disabled");
+                    Assert(((TextBox)card.FindName("ErrorBox")).IsVisible, "stderr shown separately");
+                    Assert(command.Focus(), "command supports keyboard selection/copy focus");
+                    var expander = (Expander)card.FindName("OutputExpander");
+                    expander.IsExpanded = false; w.UpdateLayout();
+                    Assert(!output.IsVisible, "output can be collapsed");
+                    expander.IsExpanded = true; w.UpdateLayout();
+                    var folder = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "yanzi-tool-execution-ui-qa");
+                    System.IO.Directory.CreateDirectory(folder);
+                    var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap((int)w.ActualWidth, (int)w.ActualHeight, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+                    bitmap.Render(w);
+                    var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                    encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
+                    using var file = System.IO.File.Create(System.IO.Path.Combine(folder, "tool-card-" + theme + ".png"));
+                    encoder.Save(file);
+                }, false);
+            }
             Log($"RESULT pass={_pass} fail={_fail}");
             app.Shutdown();
             return _fail == 0 ? 0 : 1;

@@ -8,7 +8,9 @@ public partial class MainWindow
     private async Task RunAiToolTurnAsync(AiChatTopic topic, AiRequestProfile profile, CancellationToken token)
     {
         var cwd = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        await using var shell = new AiShellSessionManager(cwd);
+        var shell = new AiShellSessionManager(cwd);
+        var transcript = new AiToolTranscript();
+        var cards = new Dictionary<AiToolExecution, AiChatMessage>();
         var transport = new AiToolCompletionClient();
         AiChatMessage? current = null;
         try
@@ -33,7 +35,8 @@ public partial class MainWindow
                     if (args.RootElement.ValueKind != JsonValueKind.Object)
                         throw new ArgumentException("Tool arguments must be a JSON object.");
                     if (call.Name is "exec_command" or "execute_command" or "write_stdin" or "terminate_command")
-                        return await shell.InvokeAsync(call.Name, args.RootElement, cancellation);
+                        return await shell.InvokeAsync(call.Name, args.RootElement, cancellation,
+                            preview => transcript.Find(call.Id)?.SetPreview(preview));
                     return await ExecuteToolAsync(new ToolCallInfo
                     { ToolName = call.Name, RawPayload = args.RootElement.Clone() }, cancellation);
                 },
@@ -51,23 +54,47 @@ public partial class MainWindow
                             current.IsStreaming = false;
                             break;
                         case "tool_start":
-                            if (current!.IsToolCall)
+                            // Keep model commentary once; replace empty placeholders
+                            // with the operation's stable card, even across polls.
+                            if (current is { IsStreaming: true })
                             {
-                                current = new AiChatMessage(false, string.Empty);
+                                current.IsStreaming = false;
+                                if (string.IsNullOrWhiteSpace(progress.Text))
+                                {
+                                    topic.Messages.Remove(current);
+                                    if (ReferenceEquals(_selectedAiChatTopic, topic)) _aiChatMessages.Remove(current);
+                                }
+                                else current.Text = progress.Text;
+                            }
+                            var execution = transcript.Begin(progress.Call!);
+                            execution.CancelTurn = () =>
+                            {
+                                if (_aiRequestTracker.TryGetActive(topic.Id, out var active)) active.Cancel();
+                            };
+                            if (!cards.TryGetValue(execution, out current))
+                            {
+                                current = new AiChatMessage(false, execution.Command)
+                                { IsToolCall = true, ToolName = execution.Name, ToolExecution = execution };
+                                cards.Add(execution, current);
                                 AppendAiTopicMessage(topic, current);
                             }
-                            current.Text = (string.IsNullOrWhiteSpace(progress.Text) ? "" : progress.Text + "\n\n") +
-                                "```json\n" + JsonSerializer.Serialize(new { tool = progress.Call!.Name, arguments = progress.Call.Arguments }) + "\n```";
-                            current.IsStreaming = false;
-                            current.IsToolCall = true;
-                            current.ToolName = progress.Call!.Name;
                             current.IsToolRunning = true;
-                            SetAiTopicStatus(topic, $"AI 正在调用工具：{progress.Call.Name}…");
+                            SetAiTopicStatus(topic, $"AI 正在调用工具：{progress.Call!.Name}…");
                             break;
                         case "tool_result":
-                            current!.ToolFeedback = progress.Text;
-                            current.IsToolRunning = false;
+                            var completed = transcript.Apply(progress.Call!, progress.Text);
+                            if (!cards.TryGetValue(completed, out current))
+                            {
+                                current = new AiChatMessage(false, completed.Command)
+                                { IsToolCall = true, ToolName = completed.Name, ToolExecution = completed };
+                                cards.Add(completed, current);
+                                AppendAiTopicMessage(topic, current);
+                            }
+                            current.ToolFeedback = completed.BuildContext();
+                            current.IsToolRunning = completed.IsRunning;
                             topic.NotifyMessagesChanged();
+                            // Persist at tool boundaries, not every output chunk.
+                            SaveTopicsToStorage();
                             SetAiTopicStatus(topic, "AI 正在分析工具结果…");
                             break;
                     }
@@ -85,7 +112,18 @@ public partial class MainWindow
         }
         finally
         {
-            if (current != null) { current.IsStreaming = false; current.IsToolRunning = false; }
+            try { await shell.DisposeAsync(); }
+            finally
+            {
+                transcript.Finish(token.IsCancellationRequested);
+                foreach (var (execution, message) in cards)
+                {
+                    message.ToolFeedback = execution.BuildContext();
+                    message.IsToolRunning = false;
+                }
+                if (current != null) current.IsStreaming = false;
+                SaveTopicsToStorage();
+            }
         }
     }
 }

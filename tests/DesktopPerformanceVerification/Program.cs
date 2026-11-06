@@ -251,6 +251,10 @@ internal static class Program
         var document = System.Xml.Linq.XDocument.Load(Path.Combine(AppContext.BaseDirectory, "MainWindow.xaml"));
         var element = document.Descendants().Single(e => (string?)e.Attribute(x + "Name") == "AiChatMessagesList");
         element.SetAttributeValue(System.Xml.Linq.XNamespace.Xmlns + "x", x.NamespaceName);
+        // Preserve the presentation default namespace for markup extensions on
+        // local controls when XElement serializes this extracted template.
+        foreach (var node in element.DescendantsAndSelf().Where(e => e.Name.NamespaceName == "clr-namespace:OpenQuickHost"))
+            node.Name = XName.Get(node.Name.LocalName, "clr-namespace:OpenQuickHost;assembly=Yanzi");
         element.SetAttributeValue(System.Xml.Linq.XNamespace.Xmlns + "local", "clr-namespace:OpenQuickHost;assembly=Yanzi");
         element.SetAttributeValue(System.Xml.Linq.XNamespace.Xmlns + "ui", "clr-namespace:Yanzi.UI.Wpf;assembly=Yanzi.UI.Wpf");
         foreach (var attr in element.DescendantsAndSelf().Attributes().Where(a =>
@@ -273,6 +277,16 @@ internal static class Program
         Check(list.ItemContainerGenerator.ContainerFromIndex(0) != null, "transcript returns to first message after streaming and recycling");
         messages.Clear(); messages.Add(new AiChatMessage(false, "New topic")); Layout(list, 650);
         Check(list.Items.Count == 1 && list.ItemContainerGenerator.ContainerFromIndex(0) != null, "topic replacement renders without stale containers");
+        var execution = new AiToolExecution("exec_command", "{\"cmd\":\"echo fixture\"}");
+        messages.Clear();
+        messages.Add(new AiChatMessage(false, execution.Command) { IsToolCall = true, ToolExecution = execution });
+        Layout(list, 650);
+        var card = Find<AiToolExecutionCard>(list);
+        Check(card.Visibility == Visibility.Visible && ReferenceEquals(card.DataContext, execution), "production transcript binds visible execution card");
+        execution.ApplyResult("{\"status\":\"completed\",\"exit_code\":0,\"stdout\":\"fixture\"}");
+        Layout(list, 650);
+        Check(((TextBox)card.FindName("OutputBox")).Text == "fixture", "production transcript updates execution output");
+
     }
 
     private static void VerifyTiles()

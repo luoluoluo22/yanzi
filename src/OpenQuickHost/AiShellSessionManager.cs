@@ -13,7 +13,8 @@ internal sealed class AiShellSessionManager(string defaultWorkdir) : IAsyncDispo
     private readonly SemaphoreSlim gate = new(1);
     private bool disposed;
 
-    public async Task<string> InvokeAsync(string name, JsonElement args, CancellationToken cancellationToken)
+    public async Task<string> InvokeAsync(string name, JsonElement args, CancellationToken cancellationToken,
+        Action<string>? onProgress = null)
     {
         await gate.WaitAsync(cancellationToken);
         try
@@ -52,7 +53,15 @@ internal sealed class AiShellSessionManager(string defaultWorkdir) : IAsyncDispo
                 else throw new ArgumentException("Unknown shell tool.");
             }
             using var registration = cancellationToken.Register(() => session.Stop("cancelled"));
-            await Task.WhenAny(session.Completion, Task.Delay(wait, cancellationToken));
+            var waiting = Stopwatch.StartNew();
+            do
+            {
+                var remaining = Math.Max(0, wait - (int)waiting.ElapsedMilliseconds);
+                await Task.WhenAny(session.Completion, Task.Delay(Math.Min(200, remaining), cancellationToken));
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!session.Completion.IsCompleted && onProgress != null)
+                    onProgress(JsonSerializer.Serialize(session.Snapshot(limit, drain: false).Value));
+            } while (!session.Completion.IsCompleted && waiting.ElapsedMilliseconds < wait);
             cancellationToken.ThrowIfCancellationRequested();
             var result = session.Snapshot(limit);
             if (result.Completed)
@@ -221,14 +230,14 @@ internal sealed class AiShellSessionManager(string defaultWorkdir) : IAsyncDispo
             Interlocked.CompareExchange(ref stopReason, reason, null);
             job.Dispose();
         }
-        public (object Value, bool Completed) Snapshot(int limit)
+        public (object Value, bool Completed) Snapshot(int limit, bool drain = true)
         {
             // Capture completion BEFORE draining. If the readers complete while
             // we drain, retain the session for a final poll instead of losing
             // the last bytes or reporting a premature completed state.
             var completed = Completion.IsCompleted;
-            var (output, outDropped) = stdout.Drain(limit / 2);
-            var (error, errDropped) = stderr.Drain(limit / 2);
+            var (output, outDropped) = stdout.Read(limit / 2, drain);
+            var (error, errDropped) = stderr.Read(limit / 2, drain);
             return (new
             {
                 session_id = completed ? null : Id,
@@ -268,7 +277,7 @@ internal sealed class AiShellSessionManager(string defaultWorkdir) : IAsyncDispo
                 }
             }
         }
-        public (string, long) Drain(int limit)
+        public (string, long) Read(int limit, bool drain)
         {
             lock (text)
             {
@@ -279,7 +288,7 @@ internal sealed class AiShellSessionManager(string defaultWorkdir) : IAsyncDispo
                 var result = text.Length <= limit ? text.ToString() : text.ToString(0, head) +
                     marker + text.ToString(text.Length - tail, tail);
                 var omitted = dropped + text.Length - retained;
-                text.Clear(); dropped = 0;
+                if (drain) { text.Clear(); dropped = 0; }
                 return (result, omitted);
             }
         }

@@ -1959,7 +1959,8 @@
                                                                         </InlineUIContainer>
                                                                     </TextBlock>
 
-                                                                                                                                    <Expander x:Name="ToolCallExpander"
+                                                                                                                                    <local:AiToolExecutionCard x:Name="ToolExecutionCard" DataContext="{Binding ToolExecution}" Visibility="Collapsed" />
+                                               <Expander x:Name="ToolCallExpander"
                                                                                                                                               Style="{DynamicResource Yanzi.Expander}"
                                                                                                                                               IsExpanded="{Binding IsExpanded, Mode=TwoWay}"
                                                                                                                                               Visibility="Collapsed"
@@ -2149,6 +2150,10 @@
                                                         <Setter TargetName="NormalHtmlTextBlock" Property="Visibility" Value="Collapsed" />
                                                         <Setter TargetName="ToolCallExpander" Property="Visibility" Value="Visible" />
                                                     </DataTrigger>
+                                                      <DataTrigger Binding="{Binding HasToolExecution}" Value="True">
+                                                          <Setter TargetName="ToolCallExpander" Property="Visibility" Value="Collapsed" />
+                                                          <Setter TargetName="ToolExecutionCard" Property="Visibility" Value="Visible" />
+                                                      </DataTrigger>
                                                 </DataTemplate.Triggers>
                                             </DataTemplate>
                                         </ListBox.ItemTemplate>

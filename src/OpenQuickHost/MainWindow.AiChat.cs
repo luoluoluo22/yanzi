@@ -2045,6 +2045,10 @@ public partial class MainWindow
                         isUser = m.IsUser,
                         text = m.Text,
                         timestamp = m.Timestamp,
+                        isToolCall = m.IsToolCall,
+                        toolName = m.ToolName,
+                        toolFeedback = m.ToolFeedback,
+                        toolExecution = m.ToolExecution?.Snapshot(),
                         attachments = m.Attachments.Select(a => new
                         {
                             fileName = a.FileName,
@@ -2127,7 +2131,23 @@ public partial class MainWindow
                             timeElement.ValueKind == JsonValueKind.String &&
                             timeElement.TryGetDateTimeOffset(out var originalTime))
                             restoredTime = originalTime;
-                        topic.Messages.Add(new AiChatMessage(isUser, text, attachments, restoredTime));
+                        var restored = new AiChatMessage(isUser, text, attachments, restoredTime);
+                        if (msgElement.TryGetProperty("isToolCall", out var toolFlag) && toolFlag.ValueKind == JsonValueKind.True)
+                        {
+                            restored.IsToolCall = true;
+                            restored.ToolName = msgElement.TryGetProperty("toolName", out var toolName) && toolName.ValueKind == JsonValueKind.String ? toolName.GetString() : null;
+                            restored.ToolFeedback = msgElement.TryGetProperty("toolFeedback", out var feedback) && feedback.ValueKind == JsonValueKind.String ? feedback.GetString() : null;
+                            if (msgElement.TryGetProperty("toolExecution", out var execution) && execution.ValueKind == JsonValueKind.Object)
+                            {
+                                var snapshot = execution.Deserialize<AiToolExecutionSnapshot>();
+                                if (snapshot != null)
+                                {
+                                    restored.ToolExecution = AiToolExecution.Restore(snapshot);
+                                    restored.ToolFeedback = restored.ToolExecution.BuildContext();
+                                }
+                            }
+                        }
+                        topic.Messages.Add(restored);
                     }
                 }
 
@@ -2244,6 +2264,14 @@ public sealed class AiChatMessage : INotifyPropertyChanged
         get => _toolFeedback;
         set { _toolFeedback = value; OnPropertyChanged(); }
     }
+
+    private AiToolExecution? _toolExecution;
+    public AiToolExecution? ToolExecution
+    {
+        get => _toolExecution;
+        set { _toolExecution = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasToolExecution)); }
+    }
+    public bool HasToolExecution => ToolExecution != null;
 
     public bool IsExpanded
     {

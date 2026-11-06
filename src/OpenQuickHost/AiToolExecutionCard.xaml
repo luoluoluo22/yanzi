@@ -1,0 +1,50 @@
+<UserControl x:Class="OpenQuickHost.AiToolExecutionCard"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             AutomationProperties.Name="工具执行详情">
+    <Border Padding="12" CornerRadius="8" BorderThickness="1"
+            BorderBrush="{DynamicResource Yanzi.Color.Border}" Background="{DynamicResource Yanzi.Color.Background}">
+        <StackPanel>
+            <DockPanel LastChildFill="True">
+                <Button x:Name="StopTurnButton" DockPanel.Dock="Right" Content="停止本轮" Click="StopTurn_Click"
+                        Style="{DynamicResource Yanzi.Button.Outline}"
+                        IsEnabled="{Binding IsRunning}" Margin="12,0,0,0" Padding="8,4"
+                        ToolTip="取消此对话当前轮次，并清理其命令进程。" AutomationProperties.Name="停止此对话的本轮执行" />
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" Foreground="{DynamicResource Yanzi.Color.Foreground}" />
+                    <TextBlock x:Name="StatusLabel" Text="{Binding StatusText}" Margin="12,0,0,0"
+                               AutomationProperties.LiveSetting="Polite">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Foreground" Value="{DynamicResource Yanzi.Color.MutedForeground}" />
+                                <Style.Triggers><DataTrigger Binding="{Binding IsFailure}" Value="True"><Setter Property="Foreground" Value="{DynamicResource Yanzi.Brush.Danger}" /></DataTrigger></Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </StackPanel>
+            </DockPanel>
+            <TextBlock Text="{Binding DetailText}" Foreground="{DynamicResource Yanzi.Color.MutedForeground}" FontSize="11" Margin="0,6,0,4" />
+            <TextBox x:Name="CommandBox" Text="{Binding Command, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="120"
+                     VerticalScrollBarVisibility="Auto" FontFamily="Consolas" Background="Transparent" BorderThickness="0"
+                     Foreground="{DynamicResource Yanzi.Color.Foreground}" AutomationProperties.Name="执行命令或工具参数" />
+            <TextBlock Text="{Binding Workdir}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Workdir}"
+                       Foreground="{DynamicResource Yanzi.Color.MutedForeground}" FontSize="11" Margin="0,4,0,8" />
+            <Expander x:Name="OutputExpander" Header="输出与错误" IsExpanded="True" Style="{DynamicResource Yanzi.Expander}">
+                <StackPanel Margin="0,8,0,0">
+                    <TextBox x:Name="OutputBox" Text="{Binding DisplayOutput, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap"
+                             MaxHeight="240" VerticalScrollBarVisibility="Auto" FontFamily="Consolas" BorderThickness="0"
+                             Background="Transparent" Foreground="{DynamicResource Yanzi.Color.Foreground}" AutomationProperties.Name="标准输出" />
+                    <TextBox x:Name="ErrorBox" Text="{Binding DisplayError, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap"
+                             MaxHeight="140" VerticalScrollBarVisibility="Auto" FontFamily="Consolas" BorderThickness="0"
+                             Background="Transparent" Foreground="{DynamicResource Yanzi.Brush.Danger}" AutomationProperties.Name="标准错误">
+                        <TextBox.Style>
+                            <Style TargetType="TextBox">
+                                <Style.Triggers><DataTrigger Binding="{Binding DisplayError}" Value=""><Setter Property="Visibility" Value="Collapsed" /></DataTrigger></Style.Triggers>
+                            </Style>
+                        </TextBox.Style>
+                    </TextBox>
+                </StackPanel>
+            </Expander>
+        </StackPanel>
+    </Border>
+</UserControl>

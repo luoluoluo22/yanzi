@@ -999,7 +999,9 @@
       "shared_ui_reference": true,
       "legacy_style_signals": 129,
       "status": "pending-manual-review",
-      "evidence": []
+      "evidence": [
+        "2026-11-06 PC-202409131508 source SHA 44f89ded6feb9b45045b11fe192e73f7326c68bd: scripts/qa-ui-windows.ps1 -RepoPath . -ExpectedSha 44f89ded6feb9b45045b11fe192e73f7326c68bd -MinimumPassingTests 22; pass=22 fail=0. AI tool card Dark/Light runtime checks cover output binding, owning-turn cancellation callback, exit failure, disabled stop, keyboard focus, collapse. Screenshots visually reviewed: %TEMP%/yanzi-tool-execution-ui-qa/tool-card-{Dark,Light}.png. Pending full conversation/live-provider, physical desktop and screen-reader acceptance; no formal installation."
+      ]
     },
     {
       "path": "src/OpenQuickHost/MobileMessageNotificationCard.xaml",
@@ -1798,6 +1800,16 @@
       "legacy_style_signals": 4,
       "status": "pending-manual-review",
       "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/AiToolExecutionCard.xaml",
+      "kind": "wpf-xaml",
+      "shared_ui_reference": true,
+      "legacy_style_signals": 0,
+      "status": "windows-runtime-smoke-passed-awaiting-functional-visual-qa",
+      "evidence": [
+        "2026-11-06 PC-202409131508 source SHA 44f89ded6feb9b45045b11fe192e73f7326c68bd: scripts/qa-ui-windows.ps1 -RepoPath . -ExpectedSha 44f89ded6feb9b45045b11fe192e73f7326c68bd -MinimumPassingTests 22; pass=22 fail=0. AI tool card Dark/Light runtime checks cover output binding, owning-turn cancellation callback, exit failure, disabled stop, keyboard focus, collapse. Screenshots visually reviewed: %TEMP%/yanzi-tool-execution-ui-qa/tool-card-{Dark,Light}.png. Pending full conversation/live-provider, physical desktop and screen-reader acceptance; no formal installation."
+      ]
     }
   ]
 }

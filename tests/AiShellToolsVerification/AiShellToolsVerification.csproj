@@ -11,5 +11,6 @@
     <Compile Include="../../src/OpenQuickHost/AiToolRegistry.cs" Link="AiToolRegistry.cs" />
     <Compile Include="../../src/OpenQuickHost/AiToolCompletionClient.cs" Link="AiToolCompletionClient.cs" />
     <Compile Include="../../src/OpenQuickHost/AiAgentTurnRunner.cs" Link="AiAgentTurnRunner.cs" />
+    <Compile Include="../../src/OpenQuickHost/AiToolExecution.cs" Link="AiToolExecution.cs" />
   </ItemGroup>
 </Project>
