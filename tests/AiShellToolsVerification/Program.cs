@@ -15,6 +15,7 @@ internal static class Program
         {
             await ProcessTests();
             await ProtocolTests();
+            await ExperienceTests();
             Console.WriteLine($"AI_SHELL_TOOLS_PASSED checks={passed} root={Root}");
             return 0;
         }
@@ -177,6 +178,54 @@ internal static class Program
             (_, _) => { executes++; return Task.FromResult("ok"); }, _ => { }, default, maxRounds: 2);
         Check(!finished && executes == 1, "round budget and duplicate call IDs prevent repeated effects");
     }
+    private static async Task ExperienceTests()
+    {
+        var transcript = new AiToolTranscript();
+        var run = new AiToolCall("run", "exec_command", "{\"cmd\":\"Get-Location\"}");
+        var execution = transcript.Begin(run);
+        transcript.Apply(run, "{\"session_id\":\"session-one\",\"status\":\"running\",\"stdout\":\"first\",\"stderr\":\"\",\"wall_time_seconds\":1}");
+        var poll = new AiToolCall("poll", "write_stdin", "{\"session_id\":\"session-one\"}");
+        Check(ReferenceEquals(execution, transcript.Begin(poll)), "poll reuses original execution card");
+        execution.SetPreview("{\"stdout\":\" second\",\"stderr\":\"\"}");
+        Check(execution.DisplayOutput == "first second", "live preview appended without altering committed output");
+        transcript.Apply(poll, "{\"status\":\"completed\",\"exit_code\":0,\"stdout\":\" second\",\"stderr\":\"\",\"wall_time_seconds\":2}");
+        Check(execution.Output == "first second" && execution.State == AiToolExecutionState.Succeeded && execution.Calls == 2, "final output not duplicated and success requires zero exit");
+        var saved = JsonSerializer.Serialize(execution.Snapshot());
+        var restored = AiToolExecution.Restore(JsonSerializer.Deserialize<AiToolExecutionSnapshot>(saved)!);
+        Check(restored.Output == execution.Output && restored.Command == "Get-Location" && !restored.IsRunning, "execution snapshot round trip retains command and result");
+        var running = new AiToolExecution("exec_command", "{}");
+        Check(AiToolExecution.Restore(running.Snapshot()).State == AiToolExecutionState.Interrupted, "history never restores a fictitious running process");
+        foreach (var pair in new[] { ("completed", 3, AiToolExecutionState.Failed), ("timed_out", -1, AiToolExecutionState.TimedOut), ("cancelled", -1, AiToolExecutionState.Cancelled), ("terminated", -1, AiToolExecutionState.Stopped) })
+        {
+            var item = new AiToolExecution("exec_command", "{}");
+            item.ApplyResult(JsonSerializer.Serialize(new { status = pair.Item1, exit_code = pair.Item2 }));
+            Check(item.State == pair.Item3 && !item.IsRunning, "terminal execution state: " + pair.Item1);
+        }
+        running.SetPreview("{\"stdout\":\"partial\"}");
+        running.ApplyResult("{\"status\":\"cancelled\"}");
+        Check(running.Output == "partial", "cancelled execution retains last visible output");
+        var separate = new AiToolTranscript();
+        Check(!ReferenceEquals(execution, separate.Begin(poll)), "execution cards remain scoped to their own turn");
+        var activeCall = new AiToolCall("active", "exec_command", "{}");
+        var active = transcript.Begin(activeCall);
+        transcript.Apply(activeCall, "{\"status\":\"running\",\"session_id\":\"active\"}");
+        var badPoll = new AiToolCall("bad-poll", "write_stdin", "{\"session_id\":\"active\",\"chars\":1}");
+        transcript.Begin(badPoll);
+        var error = transcript.Apply(badPoll, "{\"status\":\"error\",\"error\":\"invalid stdin\"}");
+        Check(active.IsRunning && !ReferenceEquals(active, error) && error.State == AiToolExecutionState.Failed, "invalid poll does not misreport original process as exited");
+        transcript.Finish(false);
+        Check(active.State == AiToolExecutionState.Stopped, "turn end marks outstanding command stopped after disposal");
+        var bounded = new AiToolExecution("exec_command", "{}");
+        bounded.ApplyResult(JsonSerializer.Serialize(new { status = "completed", exit_code = 0, stdout = new string('x', 100000) }));
+        Check(bounded.Output.Length == 32000 && bounded.OmittedChars == 68000, "aggregated UI history bounded independently of per-call budgets");
+        await using var shell = new AiShellSessionManager(Root);
+        var previews = new List<string>();
+        var first = Parse(await shell.InvokeAsync("exec_command", Json(new { cmd = "[Console]::WriteLine('LIVE'); Start-Sleep -Seconds 2", yield_time_ms = 1800 }), default, previews.Add));
+        var result = await Finish(shell, first);
+        Check(previews.Any(p => p.Contains("LIVE")), "shell emits output preview before returning tool result");
+        Check(result.Out.Split("LIVE").Length == 2, "preview does not consume or duplicate model output");
+    }
+
     private static HttpResponseMessage Response(object body) => new(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json") };
     private sealed class FakeHandler(Func<HttpRequestMessage, Task<HttpResponseMessage>> send) : HttpMessageHandler
     { protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token) => send(request); }
