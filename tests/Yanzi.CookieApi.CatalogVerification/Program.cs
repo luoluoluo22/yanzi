@@ -32,9 +32,16 @@ Check(snapshot.Models.Count >= 7, "live model discovery");
 Check(snapshot.SelectableModels.Contains("chatgpt-web"), "browser model included");
 Check(snapshot.SelectableModels.Contains("gemini-3.5-flash-lite"), "Gemini model included");
 Check(snapshot.SelectableModels.Contains("gemini-3.1-pro"), "other Gemini model included");
-Check(!snapshot.SelectableModels.Contains("gpt-6"), "untested reverse unavailable from chat selection");
-Check(!snapshot.SelectableModels.Contains("gpt-image-2"), "image endpoint isolated from chat");
-Check(!snapshot.SelectableModels.Contains("research"), "research endpoint isolated from chat");
+Check(snapshot.SelectableModels.Contains("gpt-6"), "GPT reverse models selectable even offline");
+Check(snapshot.SelectableModels.Contains("auto"), "auto route selectable");
+Check(snapshot.SelectableModels.Contains("gpt-image-2"), "image model exposed in selector");
+Check(snapshot.SelectableModels.Contains("codex-gpt-image-2"), "Codex image model exposed");
+Check(snapshot.SelectableModels.Contains("research"), "research model exposed");
+Check(snapshot.SelectableModels.Contains("gpt-6.1-terra-wm"), "Work model exposed");
+Check(snapshot.Models.Count == snapshot.SelectableModels.Count,
+    "no discovered model blocked by category filtering");
+Check(snapshot.SelectableModels.Distinct(StringComparer.OrdinalIgnoreCase).Count() ==
+      snapshot.SelectableModels.Count, "no duplicate published model ids");
 Check(snapshot.Models.Any(m => m.Id == "gpt-6" && m.Category == "reverse"),
     "reverse candidate visible");
 var synced = await YanziCookieModelCatalog.SyncRegisteredModelsAsync(force: true);
