@@ -14,6 +14,9 @@ internal static class Program
     [STAThread]
     private static int Main()
     {
+        using var dataScope = (IDisposable)typeof(HostAssets).GetMethod("UseIsolatedDataRootForVerification",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.Invoke(null,
+                new object[] { Path.Combine(Path.GetTempPath(), "yanzi-desktop-verification-" + Guid.NewGuid().ToString("N")) })!;
         VerifyWriter().GetAwaiter().GetResult();
         VerifyFingerprint();
         VerifySelectiveRunningState();
