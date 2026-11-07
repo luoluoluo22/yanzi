@@ -30,6 +30,11 @@ public partial class RunningExtensionsWindow : Window
     public RunningExtensionsWindow()
     {
         InitializeComponent();
+        // Resolve shared styles per window, preserving the user's selected theme.
+        var theme = AppSettingsStore.Load().ThemeMode;
+        Yanzi.UI.Wpf.YanziUi.ApplyTo(this,
+            string.Equals(theme, "Light", StringComparison.OrdinalIgnoreCase)
+                ? Yanzi.UI.Wpf.YanziTheme.Light : Yanzi.UI.Wpf.YanziTheme.Dark);
         ExtensionListView.ItemsSource = _items;
         Loaded += RunningExtensionsWindow_Loaded;
         Closed += RunningExtensionsWindow_Closed;
