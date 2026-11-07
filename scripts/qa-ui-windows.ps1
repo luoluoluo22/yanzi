@@ -41,7 +41,7 @@ function Run-Step([string]$label,[string[]]$argv) {
  $stdoutPath=$path+'.stdout'
  $stderrPath=$path+'.stderr'
  $argumentString=($argv|ForEach-Object {if($_ -match '\s'){ '"'+$_+'"' }else{$_}}) -join ' '
- $proc=Start-Process -FilePath (Get-Command dotnet).Source -ArgumentList $argumentString -Wait -PassThru -NoNewWindow -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
+ $proc=Start-Process -FilePath (Get-Command dotnet).Source -ArgumentList $argumentString -PassThru -NoNewWindow -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
  if(-not $proc.WaitForExit($StepTimeoutSeconds*1000)) {
   & taskkill.exe /F /T /PID $proc.Id 2>$null | Out-Null
   throw ("Step timed out after $StepTimeoutSeconds seconds: $label")
