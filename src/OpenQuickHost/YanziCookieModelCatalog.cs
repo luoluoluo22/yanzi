@@ -166,13 +166,27 @@ public static class YanziCookieModelCatalog
         finally { RefreshGate.Release(); }
     }
 
+    private static List<string> MergeVisibleModels(
+        IEnumerable<string>? current, IEnumerable<string>? hidden, IReadOnlyList<string> catalog)
+    {
+        var hiddenIds = new HashSet<string>(hidden ?? [], StringComparer.OrdinalIgnoreCase);
+        var catalogIds = new HashSet<string>(catalog, StringComparer.OrdinalIgnoreCase);
+        return catalog.Where(id => !hiddenIds.Contains(id))
+            .Concat((current ?? []).Where(id =>
+                !string.IsNullOrWhiteSpace(id) &&
+                !hiddenIds.Contains(id) &&
+                !catalogIds.Contains(id)))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
     private static string ReadString(JsonElement item, string property) =>
         item.TryGetProperty(property, out var field) && field.ValueKind == JsonValueKind.String
             ? field.GetString()?.Trim() ?? "" : "";
 
     /// <summary>
-    /// Updates only the miniapp-owned provider, preserving enablement and the
-    /// user's selected model when still present. Never mutate unrelated providers.
+    /// Updates only the miniapp-owned provider. Newly discovered IDs are added,
+    /// manually added IDs are kept, and IDs the user removed stay removed.
     /// </summary>
     public static async Task<Snapshot> SyncRegisteredModelsAsync(
         bool force = false, CancellationToken cancellationToken = default)
@@ -187,8 +201,9 @@ public static class YanziCookieModelCatalog
         if (provider == null) return snapshot;
 
         var desired = snapshot.SelectableModels.ToArray();
-        if (provider.Models != null && provider.Models.SequenceEqual(desired, StringComparer.OrdinalIgnoreCase) &&
-            desired.Contains(provider.SelectedModel ?? "", StringComparer.OrdinalIgnoreCase))
+        var merged = MergeVisibleModels(provider.Models, provider.HiddenModelIds, desired);
+        if (SettingsAiController.SameModelIds(provider.Models, merged) &&
+            SettingsAiController.SameModelIds(provider.DiscoveredModels, desired))
             return snapshot;
 
         AppSettingsStore.Update(current =>
@@ -197,11 +212,16 @@ public static class YanziCookieModelCatalog
                 string.Equals(p.Id, ProviderId, StringComparison.OrdinalIgnoreCase) &&
                 string.Equals(p.OwnerExtensionId, "cookie-api", StringComparison.OrdinalIgnoreCase));
             if (owned == null) return current;
-            var previousSelection = owned.SelectedModel;
-            owned.Models = desired.ToList();
-            if (!desired.Contains(previousSelection ?? "", StringComparer.OrdinalIgnoreCase))
-                owned.SelectedModel = desired.Contains("chatgpt-web", StringComparer.OrdinalIgnoreCase)
-                    ? "chatgpt-web" : desired[0];
+            var visible = MergeVisibleModels(owned.Models, owned.HiddenModelIds, desired);
+            var discovered = desired.ToList();
+            if (SettingsAiController.SameModelIds(owned.Models, visible) &&
+                SettingsAiController.SameModelIds(owned.DiscoveredModels, discovered))
+                return current;
+            owned.Models = visible;
+            owned.DiscoveredModels = discovered;
+            if (!string.IsNullOrWhiteSpace(owned.SelectedModel) &&
+                !visible.Contains(owned.SelectedModel, StringComparer.OrdinalIgnoreCase))
+                owned.SelectedModel = visible.FirstOrDefault() ?? string.Empty;
             return current;
         });
         return snapshot;

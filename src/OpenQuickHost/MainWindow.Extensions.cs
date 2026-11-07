@@ -163,6 +163,52 @@ public partial class MainWindow
         ReplaceLocalExtensions(entries, statusText);
     }
 
+    public void ApplyLocalExtensionsIfChanged(IReadOnlyList<LocalExtensionCatalogEntry> entries, string signature)
+    {
+        if (string.Equals(signature, _localExtensionCatalogSignature, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (_localExtensionCatalogSignature == null && LocalExtensionCommandsMatch(entries))
+        {
+            _localExtensionCatalogSignature = signature;
+            return;
+        }
+
+        _localExtensionCatalogSignature = signature;
+        ReplaceLocalExtensions(entries, null);
+    }
+
+    private bool LocalExtensionCommandsMatch(IReadOnlyList<LocalExtensionCatalogEntry> entries)
+    {
+        var loaded = _allCommands
+            .Where(command => command.Source == CommandSource.LocalExtension)
+            .Select(command => (command.ExtensionId, command.DeclaredVersion ?? string.Empty, command.Title ?? string.Empty))
+            .OrderBy(command => command.ExtensionId, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var incoming = entries
+            .Select(entry => (entry.Manifest.Id ?? string.Empty, entry.Manifest.Version ?? string.Empty, entry.Manifest.Name ?? string.Empty))
+            .OrderBy(entry => entry.Item1, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (loaded.Count != incoming.Count)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < loaded.Count; index++)
+        {
+            if (!string.Equals(loaded[index].ExtensionId, incoming[index].Item1, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(loaded[index].Item2, incoming[index].Item2, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(loaded[index].Item3, incoming[index].Item3, StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     public void ReloadLocalExtensionsFromCommands(IReadOnlyList<CommandItem> commands, string? statusText = null)
     {
         ReplaceLocalExtensions(commands, statusText);

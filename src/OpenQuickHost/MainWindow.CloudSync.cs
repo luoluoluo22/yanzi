@@ -4230,12 +4230,6 @@ public partial class MainWindow
             changed = true;
         }
 
-        if (string.IsNullOrWhiteSpace(target.AiSystemPrompt) && !string.IsNullOrWhiteSpace(incoming.AiSystemPrompt))
-        {
-            target.AiSystemPrompt = incoming.AiSystemPrompt;
-            changed = true;
-        }
-
         return changed;
     }
 
