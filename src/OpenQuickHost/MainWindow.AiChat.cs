@@ -4,12 +4,17 @@ using System.ComponentModel;
 using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using System.Linq;
 using OpenQuickHost.Sync;
@@ -47,7 +52,11 @@ public partial class MainWindow
     private readonly Dictionary<string, DateTimeOffset> _aiModelDiscoveryAttempts = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _aiModelDiscoveryInFlight = new(StringComparer.OrdinalIgnoreCase);
     private DispatcherTimer? _aiModelDiscoveryTimer;
+    private DispatcherTimer? _aiTopicAgeTimer;
     private string _aiChatInputText = string.Empty;
+    private bool _aiChatInputCompositionHooked;
+    private bool _aiChatInputComposing;
+    private int _aiChatInputCompositionGeneration;
     private string _aiChatStatusText = "选择或新建话题开始对话";
     private string _aiChatSendErrorText = string.Empty;
     // A request belongs to a conversation, not to the window. All mutations occur on the WPF dispatcher.
@@ -120,6 +129,8 @@ public partial class MainWindow
             if (_selectedAiChatTopic != null)
             {
                 _selectedAiChatTopic.IsSelected = true;
+                if (IsAiChatMode)
+                    MarkTopicRead(_selectedAiChatTopic);
                 foreach (var t in _aiChatTopics)
                 {
                     t.IsDeleteConfirming = false;
@@ -160,9 +171,10 @@ public partial class MainWindow
         }
     }
 
-    public Visibility AiChatInputPlaceholderVisibility => string.IsNullOrWhiteSpace(AiChatInputText)
-        ? Visibility.Visible
-        : Visibility.Collapsed;
+    public Visibility AiChatInputPlaceholderVisibility =>
+        !_aiChatInputComposing && string.IsNullOrWhiteSpace(AiChatInputText)
+            ? Visibility.Visible
+            : Visibility.Collapsed;
 
     public string AiChatStatusText
     {
@@ -215,8 +227,106 @@ public partial class MainWindow
         Window_KeyDown(sender, e);
     }
     
+    private void AiChatMarkdown_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (e.Handled || AiChatMessagesList == null)
+        {
+            return;
+        }
+
+        // The markdown viewer is a document scroller. It consumes the wheel even
+        // when its own bars are disabled, so the conversation list never moves.
+        var scrollViewer = FindVisualChildren<System.Windows.Controls.ScrollViewer>(AiChatMessagesList).FirstOrDefault();
+        if (scrollViewer == null)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        var redirected = new MouseWheelEventArgs(e.MouseDevice, e.Timestamp, e.Delta)
+        {
+            RoutedEvent = UIElement.MouseWheelEvent,
+            Source = scrollViewer
+        };
+        scrollViewer.RaiseEvent(redirected);
+    }
+
+    private void AiChatMarkdown_RequestBringIntoView(object sender, RequestBringIntoViewEventArgs e)
+    {
+        // Selecting text asks every caret position to scroll into view. That request
+        // bubbles into the conversation list and remeasures it on each mouse move.
+        if (AiChatMessagesList == null)
+        {
+            e.Handled = true;
+            return;
+        }
+
+        var position = Mouse.GetPosition(AiChatMessagesList);
+        var nearEdge = position.Y < 28 || position.Y > AiChatMessagesList.ActualHeight - 28;
+        if (!nearEdge)
+        {
+            e.Handled = true;
+        }
+    }
+
+    private void AiChatMarkdown_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key != Key.C || Keyboard.Modifiers != ModifierKeys.Control)
+        {
+            return;
+        }
+
+        if (TryCopyMarkdownSelection(sender, "key"))
+        {
+            e.Handled = true;
+        }
+    }
+
+    private void AiChatMarkdown_PreviewExecuted(object sender, ExecutedRoutedEventArgs e)
+    {
+        if (e.Command != ApplicationCommands.Copy)
+        {
+            return;
+        }
+
+        if (TryCopyMarkdownSelection(sender, "command"))
+        {
+            e.Handled = true;
+        }
+    }
+
+    private static bool TryCopyMarkdownSelection(object sender, string source)
+    {
+        if (sender is not FlowDocumentScrollViewer viewer)
+        {
+            return false;
+        }
+
+        var text = viewer.Selection?.Text;
+        if (string.IsNullOrEmpty(text))
+        {
+            return false;
+        }
+
+        // FlowDocument's own Copy builds RTF, XAML and HTML, then flushes the clipboard
+        // on this same UI thread. Plain text is written once, with no flush and no retry sleep.
+        var started = Stopwatch.GetTimestamp();
+        var ok = ClipboardService.TrySetPlainTextFast(text, out var error);
+        var elapsed = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+        HostAssets.AppendLog($"AI chat selection copy: source={source}, chars={text.Length}, elapsedMs={elapsed:F1}, ok={ok}, error={error}");
+        return ok;
+    }
+
     private void AiChatInputBox_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
+        if (e.Key == Key.V && Keyboard.Modifiers == ModifierKeys.Control &&
+            TryCaptureClipboardAttachment(out var files, out var bitmap))
+        {
+            e.Handled = true;
+            _ = AddCapturedClipboardAttachmentAsync(files, bitmap);
+            return;
+        }
+
         if (e.Key == Key.Escape)
         {
             ExitAiChatMode();
@@ -232,9 +342,64 @@ public partial class MainWindow
 
         if (e.Key == Key.Enter && Keyboard.Modifiers != ModifierKeys.Shift)
         {
+            // Enter confirms the current IME candidate; don't send until it is committed.
+            if (_aiChatInputComposing)
+                return;
             SubmitAiChatMessage();
             e.Handled = true;
         }
+    }
+
+    private void AiChatInputBox_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (_aiChatInputCompositionHooked || sender is not System.Windows.Controls.TextBox input) return;
+        _aiChatInputCompositionHooked = true;
+        TextCompositionManager.AddPreviewTextInputStartHandler(input, AiChatInputBox_CompositionStarted);
+        TextCompositionManager.AddPreviewTextInputUpdateHandler(input, AiChatInputBox_CompositionUpdated);
+        TextCompositionManager.AddPreviewTextInputHandler(input, AiChatInputBox_CompositionCompleted);
+    }
+
+    private void AiChatInputBox_CompositionStarted(object sender, TextCompositionEventArgs e) =>
+        BeginAiChatInputComposition();
+
+    private void AiChatInputBox_CompositionUpdated(object sender, TextCompositionEventArgs e)
+    {
+        if (HasPendingAiChatComposition(e))
+            BeginAiChatInputComposition();
+        else
+            EndAiChatInputComposition();
+    }
+
+    private void AiChatInputBox_CompositionCompleted(object sender, TextCompositionEventArgs e) =>
+        EndAiChatInputComposition();
+
+    private static bool HasPendingAiChatComposition(TextCompositionEventArgs e)
+    {
+        var composition = e.TextComposition;
+        if (composition == null) return false;
+        if (!string.IsNullOrEmpty(composition.CompositionText) || !string.IsNullOrEmpty(composition.Text))
+            return true;
+        return composition.AutoComplete == TextCompositionAutoComplete.Off;
+    }
+
+    private void BeginAiChatInputComposition()
+    {
+        _aiChatInputCompositionGeneration++;
+        if (_aiChatInputComposing) return;
+        _aiChatInputComposing = true;
+        OnPropertyChanged(nameof(AiChatInputPlaceholderVisibility));
+    }
+
+    private void EndAiChatInputComposition()
+    {
+        if (!_aiChatInputComposing) return;
+        var generation = _aiChatInputCompositionGeneration;
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (generation != _aiChatInputCompositionGeneration || !_aiChatInputComposing) return;
+            _aiChatInputComposing = false;
+            OnPropertyChanged(nameof(AiChatInputPlaceholderVisibility));
+        }, DispatcherPriority.DataBind);
     }
 
     private void AiChatSendButton_Click(object sender, RoutedEventArgs e)
@@ -321,6 +486,82 @@ public partial class MainWindow
         if (sender is FrameworkElement { Tag: AiChatAttachment attachment })
         {
             _aiChatAttachments.Remove(attachment);
+        }
+    }
+
+    private static bool TryCaptureClipboardAttachment(out string[] files, out System.Windows.Media.Imaging.BitmapSource? bitmap)
+    {
+        files = [];
+        bitmap = null;
+        try
+        {
+            var data = System.Windows.Clipboard.GetDataObject();
+            if (data == null)
+            {
+                return false;
+            }
+
+            var hasFiles = data.GetDataPresent(System.Windows.DataFormats.FileDrop);
+            var hasImage = data.GetDataPresent(System.Windows.DataFormats.Bitmap) ||
+                           data.GetDataPresent(System.Windows.DataFormats.Dib) ||
+                           data.GetDataPresent("PNG");
+            if (!hasFiles && !hasImage)
+            {
+                return false;
+            }
+
+            // A text selection wins over an incidental image format so ordinary Ctrl+V still inserts text.
+            if (!hasFiles &&
+                data.GetDataPresent(System.Windows.DataFormats.UnicodeText) &&
+                data.GetData(System.Windows.DataFormats.UnicodeText) is string text &&
+                !string.IsNullOrWhiteSpace(text))
+            {
+                return false;
+            }
+
+            if (!MobileMessageAttachmentInput.TryReadPastedAttachments(data, out bitmap, out files))
+            {
+                return false;
+            }
+
+            if (bitmap is { CanFreeze: true, IsFrozen: false })
+            {
+                bitmap.Freeze();
+            }
+
+            return bitmap != null || files.Length > 0;
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog("AI chat clipboard attachment probe failed: " + ex.GetType().Name + " " + ex.Message);
+            return false;
+        }
+    }
+
+    private async Task AddCapturedClipboardAttachmentAsync(string[] files, System.Windows.Media.Imaging.BitmapSource? bitmap)
+    {
+        try
+        {
+            if (bitmap != null)
+            {
+                var path = MobileMessageAttachmentInput.SavePastedBitmap(
+                    bitmap,
+                    HostAssets.PastedImagesPath,
+                    MaxAttachmentSize,
+                    "粘贴的图片-");
+                await AddAttachmentsFromPathsAsync([path]);
+                return;
+            }
+
+            if (files.Length > 0)
+            {
+                await AddAttachmentsFromPathsAsync(files);
+            }
+        }
+        catch (Exception ex)
+        {
+            AiChatStatusText = "粘贴附件失败：" + ex.Message;
+            HostAssets.AppendLog("AI chat paste attachment failed: " + ex.Message);
         }
     }
 
@@ -465,6 +706,49 @@ public partial class MainWindow
             }
             OnPropertyChanged(nameof(SelectedAiChatTopic));
         }
+    }
+
+    private void MarkTopicRead(AiChatTopic topic)
+    {
+        if (!topic.HasUnreadReply)
+            return;
+        topic.HasUnreadReply = false;
+        SaveTopicsToStorage();
+    }
+
+    private void NoteTopicReplyReadState(AiChatTopic topic)
+    {
+        if (IsAiChatMode && ReferenceEquals(_selectedAiChatTopic, topic))
+        {
+            topic.HasUnreadReply = false;
+            return;
+        }
+
+        if (topic.Messages.LastOrDefault() is { IsUser: false })
+            topic.HasUnreadReply = true;
+    }
+
+    private void StartAiTopicAgeRefresh()
+    {
+        RefreshAiTopicAges();
+        if (_aiTopicAgeTimer == null)
+        {
+            _aiTopicAgeTimer = new DispatcherTimer(DispatcherPriority.Background)
+            {
+                Interval = TimeSpan.FromSeconds(30)
+            };
+            _aiTopicAgeTimer.Tick += (_, _) => RefreshAiTopicAges();
+        }
+
+        _aiTopicAgeTimer.Start();
+    }
+
+    private void StopAiTopicAgeRefresh() => _aiTopicAgeTimer?.Stop();
+
+    private void RefreshAiTopicAges()
+    {
+        foreach (var topic in _aiChatTopics)
+            topic.RefreshUpdatedAtLabel();
     }
 
     private void SelectTopic(AiChatTopic topic)
@@ -713,7 +997,10 @@ public partial class MainWindow
         if (message.HasHtmlPreview)
             menu.AddAction("预览网页（SVG / CSS 动画）", () => PreviewHtmlMessage(message, placementTarget));
         if (message.IsUser)
+        {
+            menu.AddAction("编辑", () => EditUserMessage(message));
             menu.AddAction("重新发送", () => ResendMessage(message));
+        }
         OpenAiChatContextMenu(menu, placementTarget);
     }
 
@@ -723,6 +1010,145 @@ public partial class MainWindow
         {
             CopyMessage(message);
         }
+    }
+
+    private void AiChatEditMessageButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: AiChatMessage message })
+            EditUserMessage(message);
+    }
+
+    private void AiChatResendMessageButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: AiChatMessage message })
+            ResendMessage(message);
+    }
+
+    private const int UserMessageActionHideDelayMs = 450;
+    private DispatcherTimer? _userMessageActionHideTimer;
+    private Grid? _userMessageActionRoot;
+    private Popup? _userMessageActionPopup;
+
+    private static readonly CustomPopupPlacementCallback UserMessagePopupPlacement = (popupSize, targetSize, _) =>
+    {
+        var x = targetSize.Width - popupSize.Width;
+        return [new CustomPopupPlacement(new System.Windows.Point(x, targetSize.Height + 4), PopupPrimaryAxis.Horizontal)];
+    };
+
+    private void UserMessageRoot_MouseEnter(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        if (sender is not Grid root) return;
+        _userMessageActionHideTimer?.Stop();
+        if (!ReferenceEquals(_userMessageActionRoot, root))
+            HideUserMessageActions();
+        ShowUserMessageActions(root);
+    }
+
+    private void UserMessageRoot_MouseLeave(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        if (sender is not Grid root || !ReferenceEquals(root, _userMessageActionRoot)) return;
+        ScheduleUserMessageActionHide();
+    }
+
+    private void UserMessageActions_MouseEnter(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        _userMessageActionHideTimer?.Stop();
+    }
+
+    private void UserMessageActions_MouseLeave(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        ScheduleUserMessageActionHide();
+    }
+
+    private void UserMessageRoot_DataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (sender is Grid root)
+            ReleaseUserMessageActions(root);
+    }
+
+    private void UserMessageRoot_Unloaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is Grid root)
+            ReleaseUserMessageActions(root);
+    }
+
+    private void ScheduleUserMessageActionHide()
+    {
+        _userMessageActionHideTimer ??= CreateUserMessageActionHideTimer();
+        _userMessageActionHideTimer.Stop();
+        _userMessageActionHideTimer.Start();
+    }
+
+    private DispatcherTimer CreateUserMessageActionHideTimer()
+    {
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(UserMessageActionHideDelayMs) };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            if (_userMessageActionRoot?.IsMouseOver == true || _userMessageActionPopup?.IsMouseOver == true)
+                return;
+            HideUserMessageActions();
+        };
+        return timer;
+    }
+
+    private void ShowUserMessageActions(Grid root)
+    {
+        if (FindNamedDescendant<Popup>(root, "UserMessageActionPopup") is not { } popup)
+            return;
+        var bubble = FindNamedDescendant<Border>(root, "UserMessageBubble");
+        popup.PlacementTarget = bubble is UIElement target ? target : root;
+        popup.Placement = PlacementMode.Custom;
+        popup.CustomPopupPlacementCallback = UserMessagePopupPlacement;
+        popup.DataContext = root.DataContext;
+        popup.IsOpen = true;
+        _userMessageActionPopup = popup;
+        _userMessageActionRoot = root;
+    }
+
+    private void HideUserMessageActions()
+    {
+        if (_userMessageActionRoot != null)
+            ReleaseUserMessageActions(_userMessageActionRoot);
+    }
+
+    private void ReleaseUserMessageActions(Grid root)
+    {
+        var popup = FindNamedDescendant<Popup>(root, "UserMessageActionPopup");
+        if (popup != null)
+            popup.IsOpen = false;
+        if (ReferenceEquals(root, _userMessageActionRoot) || ReferenceEquals(popup, _userMessageActionPopup))
+        {
+            _userMessageActionHideTimer?.Stop();
+            _userMessageActionRoot = null;
+            _userMessageActionPopup = null;
+        }
+    }
+
+    private static T? FindNamedDescendant<T>(DependencyObject parent, string name) where T : FrameworkElement
+    {
+        var count = VisualTreeHelper.GetChildrenCount(parent);
+        for (var i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is T match && match.Name == name)
+                return match;
+            var nested = FindNamedDescendant<T>(child, name);
+            if (nested != null)
+                return nested;
+        }
+        return null;
+    }
+
+    private static T? FindVisualAncestor<T>(DependencyObject? node) where T : DependencyObject
+    {
+        while (node != null)
+        {
+            if (node is T match)
+                return match;
+            node = VisualTreeHelper.GetParent(node);
+        }
+        return null;
     }
 
     private void AiChatCopyHtmlButton_Click(object sender, RoutedEventArgs e)
@@ -775,7 +1201,10 @@ public partial class MainWindow
     {
         try
         {
-            ClipboardService.SetText(message.Text);
+            var visible = message.IsUser
+                ? message.Text
+                : AiChatHtmlPreviewContent.NormalizeCodeBlocks(AiChatGptMarkup.Normalize(message.Text));
+            ClipboardService.SetText(visible);
             AiChatStatusText = "已复制到剪贴板";
         }
         catch (Exception ex)
@@ -784,18 +1213,65 @@ public partial class MainWindow
         }
     }
 
+    private void EditUserMessage(AiChatMessage message)
+    {
+        if (!TryReturnUserMessageToComposer(message, out _))
+            return;
+        FocusAiInput();
+        AiChatStatusText = "已放回输入框";
+    }
+
     private void ResendMessage(AiChatMessage message)
     {
         if (IsAiChatRequestInFlight)
         {
+            AiChatStatusText = "此对话正在生成，请稍后再重发";
             return;
         }
 
+        if (!IsAiConfigured(_appSettings))
+        {
+            AiChatStatusText = "无法发送：当前服务商尚未配置完成";
+            return;
+        }
+
+        var text = message.Text ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(text) && message.Attachments.Count == 0)
+            return;
+
+        HideUserMessageActions();
+        if (!RemoveMessagesFrom(message))
+            return;
         RestorePendingAttachmentsFromMessage(message);
+        AiChatInputText = text;
+        if (AiChatInputBox != null)
+            AiChatInputBox.Text = text;
+        // The clicked popup is closing as its message leaves the list. Send on the
+        // next turn with the captured text, so a single-message thread still goes out.
+        Dispatcher.BeginInvoke(() =>
+        {
+            AiChatInputText = text;
+            if (AiChatInputBox != null)
+                AiChatInputBox.Text = text;
+            SubmitAiChatMessage(text);
+        }, DispatcherPriority.Background);
+    }
+
+    private bool TryReturnUserMessageToComposer(AiChatMessage message, out string text)
+    {
+        text = message.Text ?? string.Empty;
+        if (IsAiChatRequestInFlight)
+        {
+            AiChatStatusText = "此对话正在生成，请稍后再操作";
+            return false;
+        }
+
         RemoveMessageForResend(message);
-        AiChatInputText = message.Text;
-        FocusAiInput();
-        AiChatStatusText = "已恢复到输入框，可重新编辑后发送";
+        AiChatInputText = text;
+        if (AiChatInputBox != null)
+            AiChatInputBox.Text = text;
+        RestorePendingAttachmentsFromMessage(message);
+        return true;
     }
 
     // ==================== 核心功能 ====================
@@ -841,6 +1317,10 @@ public partial class MainWindow
         {
             SelectTopic(_aiChatTopics.First());
         }
+
+        if (_selectedAiChatTopic != null)
+            MarkTopicRead(_selectedAiChatTopic);
+        StartAiTopicAgeRefresh();
 
         _aiChatAttachments.CollectionChanged += AiChatAttachments_CollectionChanged;
         _aiChatMessages.CollectionChanged += AiChatMessages_CollectionChanged;
@@ -914,7 +1394,7 @@ public partial class MainWindow
         }
         else
         {
-            var widestModel = providers.SelectMany(provider => (provider.Models ?? []).Concat(provider.DiscoveredModels ?? []))
+            var widestModel = providers.SelectMany(provider => VisibleProviderModels(provider))
                 .Where(model => !string.IsNullOrWhiteSpace(model))
                 .DefaultIfEmpty("").MaxBy(model => model.Length) ?? "";
             // Give full model IDs enough room, including provider-specific suffixes.
@@ -926,9 +1406,14 @@ public partial class MainWindow
                 var preferredModel = string.Equals(providerId, _appSettings.ActiveServiceProviderId,
                     StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(_appSettings.AiModel)
                     ? _appSettings.AiModel : provider.SelectedModel;
-                var configured = new HashSet<string>(provider.Models ?? [], StringComparer.OrdinalIgnoreCase);
-                var models = AiModelMenuOrdering.Order(provider.Models,
-                    provider.DiscoveredModels, preferredModel);
+                var hidden = new HashSet<string>(provider.HiddenModelIds ?? [], StringComparer.OrdinalIgnoreCase);
+                var configured = new HashSet<string>(
+                    (provider.Models ?? []).Where(model => !hidden.Contains(model)),
+                    StringComparer.OrdinalIgnoreCase);
+                var models = AiModelMenuOrdering.Order(
+                    configured,
+                    (provider.DiscoveredModels ?? []).Where(model => !hidden.Contains(model)),
+                    preferredModel);
                 var isActive = string.Equals(providerId, _appSettings.ActiveServiceProviderId,
                     StringComparison.OrdinalIgnoreCase);
                 var item = menu.AddSubmenu(provider.Name, submenu =>
@@ -967,6 +1452,13 @@ public partial class MainWindow
         OpenAiChatContextMenu(menu, anchor);
     }
 
+    private static IEnumerable<string> VisibleProviderModels(AiServiceProviderSettings provider)
+    {
+        var hidden = new HashSet<string>(provider.HiddenModelIds ?? [], StringComparer.OrdinalIgnoreCase);
+        return (provider.Models ?? []).Concat(provider.DiscoveredModels ?? [])
+            .Where(model => !string.IsNullOrWhiteSpace(model) && !hidden.Contains(model));
+    }
+
     private void SelectAiChatProviderModel(string providerId, string model)
     {
         var settings = AppSettingsStore.Load();
@@ -977,6 +1469,7 @@ public partial class MainWindow
             return;
 
         provider.Models ??= [];
+        provider.HiddenModelIds?.RemoveAll(id => string.Equals(id, model, StringComparison.OrdinalIgnoreCase));
         if (!provider.Models.Contains(model, StringComparer.OrdinalIgnoreCase))
             provider.Models.Add(model);
         settings.ActiveServiceProviderId = provider.Id;
@@ -1117,7 +1610,7 @@ public partial class MainWindow
     }
 
 
-    private async void SubmitAiChatMessage()
+    private async void SubmitAiChatMessage(string? inputOverride = null)
     {
         if (_selectedAiChatTopic == null) CreateNewTopic();
         var topic = _selectedAiChatTopic!;
@@ -1127,7 +1620,7 @@ public partial class MainWindow
         RefreshAiTopicRequestState();
         try
         {
-            await SubmitAiChatMessageCore(topic);
+            await SubmitAiChatMessageCore(topic, inputOverride: inputOverride);
         }
         catch (Exception ex)
         {
@@ -1141,11 +1634,11 @@ public partial class MainWindow
         }
     }
 
-    private async Task SubmitAiChatMessageCore(AiChatTopic topic, string? scheduledPrompt = null)
+    private async Task SubmitAiChatMessageCore(AiChatTopic topic, string? scheduledPrompt = null, string? inputOverride = null)
     {
         // Snapshot editor, attachments, mode, and provider before the first await: topic switching
         // or model changes cannot redirect a request already in progress.
-        var userInput = (scheduledPrompt ?? (AiChatInputBox?.Text ?? AiChatInputText)).Trim();
+        var userInput = (scheduledPrompt ?? inputOverride ?? (AiChatInputBox?.Text ?? AiChatInputText)).Trim();
         var pendingAttachments = scheduledPrompt == null ? _aiChatAttachments.ToArray() : [];
         if (string.IsNullOrEmpty(userInput) && pendingAttachments.Length == 0) return;
         var mode = DetermineAiConversationMode(userInput, topic);
@@ -1255,11 +1748,12 @@ public partial class MainWindow
         }
         finally
         {
-            SaveTopicsToStorage();
             _aiRequestTracker.Finish(topic.Id);
             AiChatDiagnostics.Record(topic.Id, profile.Model, "finished");
             topic.IsGenerating = false;
+            NoteTopicReplyReadState(topic);
             RefreshAiTopicRequestState();
+            SaveTopicsToStorage();
             // Scheduled requests must never steal focus from a user editing another prompt.
             if (scheduledPrompt == null && ReferenceEquals(_selectedAiChatTopic, topic))
                 _ = Dispatcher.BeginInvoke(() => FocusAiInput(), DispatcherPriority.Background);
@@ -1949,7 +2443,33 @@ public partial class MainWindow
         }
 
         _selectedAiChatTopic.NotifyMessagesChanged();
+        UpdateAiChatTimeDividers();
         SaveTopicsToStorage();
+    }
+
+    private bool RemoveMessagesFrom(AiChatMessage message)
+    {
+        if (_selectedAiChatTopic == null)
+            return false;
+
+        var messageIndex = _selectedAiChatTopic.Messages.IndexOf(message);
+        if (messageIndex < 0)
+        {
+            _aiChatMessages.Remove(message);
+            return false;
+        }
+
+        var removed = _selectedAiChatTopic.Messages.Skip(messageIndex).ToList();
+        foreach (var item in removed)
+        {
+            _selectedAiChatTopic.Messages.Remove(item);
+            _aiChatMessages.Remove(item);
+        }
+
+        _selectedAiChatTopic.NotifyMessagesChanged();
+        UpdateAiChatTimeDividers();
+        SaveTopicsToStorage();
+        return true;
     }
 
     private static string TrimForLog(string? value, int maxLength)
@@ -2042,6 +2562,7 @@ public partial class MainWindow
                     id = t.Id,
                     title = t.Title,
                     isPinned = t.IsPinned,
+                    hasUnreadReply = t.HasUnreadReply,
                     createdAt = t.CreatedAt,
                     updatedAt = t.UpdatedAt,
                     messages = t.Messages.Select(m => new
@@ -2109,6 +2630,12 @@ public partial class MainWindow
                 if (topicElement.TryGetProperty("isPinned", out var isPinnedElement))
                 {
                     topic.IsPinned = isPinnedElement.GetBoolean();
+                }
+
+                if (topicElement.TryGetProperty("hasUnreadReply", out var unreadElement) &&
+                    unreadElement.ValueKind == JsonValueKind.True)
+                {
+                    topic.HasUnreadReply = true;
                 }
 
                 if (topicElement.TryGetProperty("messages", out var messagesArray))
@@ -2233,7 +2760,10 @@ public sealed class AiChatMessage : INotifyPropertyChanged
             OnPropertyChanged(nameof(MarkdownVisibility));
         }
     }
-    public string FormattedText => IsStreaming ? string.Empty : AiChatHtmlPreviewContent.NormalizeCodeBlocks(Text);
+    public string FormattedText => IsStreaming
+        ? string.Empty
+        : AiChatHtmlPreviewContent.NormalizeCodeBlocks(AiChatGptMarkup.Normalize(Text));
+    public string StreamingText => AiChatGptMarkup.Normalize(Text);
     public bool HasHtmlContent => !IsUser && !IsStreaming && AiChatHtmlContent.IsHtmlMessage(Text);
     public bool HasHtmlPreview => !IsUser && !IsStreaming && AiChatHtmlPreviewContent.TryExtractHtml(Text, out _);
     public Visibility HtmlPreviewVisibility => HasHtmlPreview ? Visibility.Visible : Visibility.Collapsed;
@@ -2309,6 +2839,7 @@ public sealed class AiChatMessage : INotifyPropertyChanged
 
             _text = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(StreamingText));
             OnPropertyChanged(nameof(StreamingTextVisibility));
             OnPropertyChanged(nameof(WaitingIndicatorVisibility));
             OnPropertyChanged(nameof(IsAwaitingFirstToken));
@@ -2395,6 +2926,12 @@ public sealed class AiChatMessageAttachment
     public string? Content { get; }
     public string? Note { get; }
     public string FileSizeText => AiChatAttachment.FormatFileSize(FileSize);
+    public ImageSource? PreviewImage => AiChatImagePreview.Get(FilePath, ref _previewAttempted, ref _preview);
+    public Visibility ImagePreviewVisibility => PreviewImage != null ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility FileChipVisibility => PreviewImage != null ? Visibility.Collapsed : Visibility.Visible;
+
+    private bool _previewAttempted;
+    private ImageSource? _preview;
 
     public string BuildRequestSection()
     {
@@ -2417,6 +2954,8 @@ public sealed class AiChatTopic : INotifyPropertyChanged
 {
     private string _title;
     private bool _isSelected;
+    private bool _hasUnreadReply;
+    private DateTimeOffset _updatedAt;
 
     public AiChatTopic(string title, string? id = null)
     {
@@ -2469,6 +3008,17 @@ public sealed class AiChatTopic : INotifyPropertyChanged
         }
     }
 
+    public bool HasUnreadReply
+    {
+        get => _hasUnreadReply;
+        set
+        {
+            if (_hasUnreadReply == value) return;
+            _hasUnreadReply = value;
+            OnPropertyChanged();
+        }
+    }
+
     private bool _isPinned;
     private bool _isDeleteConfirming;
 
@@ -2500,7 +3050,39 @@ public sealed class AiChatTopic : INotifyPropertyChanged
     }
 
     public DateTimeOffset CreatedAt { get; }
-    public DateTimeOffset UpdatedAt { get; set; }
+    public DateTimeOffset UpdatedAt
+    {
+        get => _updatedAt;
+        set
+        {
+            if (_updatedAt == value) return;
+            _updatedAt = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(UpdatedAtLabel));
+        }
+    }
+
+    public string UpdatedAtLabel => FormatListAge(UpdatedAt, DateTimeOffset.Now);
+
+    public void RefreshUpdatedAtLabel() => OnPropertyChanged(nameof(UpdatedAtLabel));
+
+    public static string FormatListAge(DateTimeOffset updatedAt, DateTimeOffset now)
+    {
+        var elapsed = now - updatedAt;
+        if (elapsed < TimeSpan.FromMinutes(1)) return "刚刚";
+        if (elapsed < TimeSpan.FromHours(1))
+            return $"{Math.Max(1, (int)elapsed.TotalMinutes)}m";
+        if (elapsed < TimeSpan.FromDays(1))
+            return $"{Math.Max(1, (int)elapsed.TotalHours)}h";
+        if (elapsed < TimeSpan.FromDays(7))
+            return $"{Math.Max(1, (int)elapsed.TotalDays)}d";
+
+        var local = updatedAt.ToLocalTime();
+        return local.Year == now.ToLocalTime().Year
+            ? local.ToString("M/d")
+            : local.ToString("yyyy/M/d");
+    }
+
     public List<AiChatMessage> Messages { get; }
 
     public string PreviewText
@@ -2547,6 +3129,12 @@ public sealed class AiChatAttachment
     public string FilePath { get; }
     public string FileName { get; }
     public long FileSize { get; }
+    public ImageSource? PreviewImage => AiChatImagePreview.Get(FilePath, ref _previewAttempted, ref _preview);
+    public Visibility ImagePreviewVisibility => PreviewImage != null ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility FileChipVisibility => PreviewImage != null ? Visibility.Collapsed : Visibility.Visible;
+
+    private bool _previewAttempted;
+    private ImageSource? _preview;
 
     public string FileSizeText => FormatFileSize(FileSize);
 
@@ -2563,6 +3151,103 @@ public sealed class AiChatAttachment
         }
 
         return $"{fileSize / (1024.0 * 1024.0):F1} MB";
+    }
+}
+
+public static class AiChatImagePreview
+{
+    public static ImageSource? TryCreate(string? path) => Create(path);
+
+    internal static ImageSource? Get(string? path, ref bool attempted, ref ImageSource? preview)
+    {
+        if (attempted)
+        {
+            return preview;
+        }
+
+        attempted = true;
+        preview = Create(path);
+        return preview;
+    }
+
+    private static ImageSource? Create(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path) || !IsImage(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            var image = new BitmapImage();
+            image.BeginInit();
+            image.CacheOption = BitmapCacheOption.OnLoad;
+            image.CreateOptions = BitmapCreateOptions.IgnoreColorProfile;
+            image.DecodePixelWidth = 480;
+            image.StreamSource = stream;
+            image.EndInit();
+            if (image.CanFreeze)
+            {
+                image.Freeze();
+            }
+
+            return image;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static bool IsImage(string path)
+    {
+        var extension = Path.GetExtension(path);
+        if (extension.Equals(".png", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".jpg", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".jpeg", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".gif", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".bmp", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".webp", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".tif", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".tiff", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        try
+        {
+            using var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            Span<byte> header = stackalloc byte[12];
+            var read = stream.Read(header);
+            if (read >= 8 && header[0] == 0x89 && header[1] == (byte)'P' && header[2] == (byte)'N' && header[3] == (byte)'G')
+            {
+                return true;
+            }
+
+            if (read >= 3 && header[0] == 0xFF && header[1] == 0xD8 && header[2] == 0xFF)
+            {
+                return true;
+            }
+
+            if (read >= 6 && header[0] == (byte)'G' && header[1] == (byte)'I' && header[2] == (byte)'F')
+            {
+                return true;
+            }
+
+            if (read >= 2 && header[0] == (byte)'B' && header[1] == (byte)'M')
+            {
+                return true;
+            }
+
+            return read >= 12 &&
+                   header[0] == (byte)'R' && header[1] == (byte)'I' && header[2] == (byte)'F' && header[3] == (byte)'F' &&
+                   header[8] == (byte)'W' && header[9] == (byte)'E' && header[10] == (byte)'B' && header[11] == (byte)'P';
+        }
+        catch
+        {
+            return false;
+        }
     }
 }
 

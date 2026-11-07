@@ -7,7 +7,7 @@ using System.Windows.Shapes;
 
 namespace Yanzi.UI.Wpf;
 
-/// <summary>Reusable WPF indeterminate circular loading indicator. Animation runs only while loaded.</summary>
+/// <summary>Reusable WPF indeterminate circular loading indicator. Animation runs only while loaded and visible.</summary>
 public sealed class YanziLoadingRing : UserControl
 {
     private readonly RotateTransform _rotation = new();
@@ -36,7 +36,19 @@ public sealed class YanziLoadingRing : UserControl
         canvas.Children.Add(path);
         root.Child = canvas;
         Content = root;
-        Loaded += (_, _) => _rotation.BeginAnimation(RotateTransform.AngleProperty, _animation);
-        Unloaded += (_, _) => _rotation.BeginAnimation(RotateTransform.AngleProperty, null);
+        Loaded += (_, _) => UpdateAnimation();
+        Unloaded += (_, _) => StopAnimation();
+        IsVisibleChanged += (_, _) => UpdateAnimation();
     }
+
+    private void UpdateAnimation()
+    {
+        if (IsLoaded && IsVisible)
+            _rotation.BeginAnimation(RotateTransform.AngleProperty, _animation);
+        else
+            StopAnimation();
+    }
+
+    private void StopAnimation() =>
+        _rotation.BeginAnimation(RotateTransform.AngleProperty, null);
 }

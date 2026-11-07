@@ -1851,6 +1851,8 @@ public sealed class AiServiceProviderSettings
     public bool IsEnabled { get; set; } = true;
     // Models explicitly chosen in Settings; never replaced by automatic discovery.
     public List<string> Models { get; set; } = [];
+    // IDs removed in Settings. Catalog sync may refresh discoveries, but must not put these back.
+    public List<string> HiddenModelIds { get; set; } = [];
     public List<string> DiscoveredModels { get; set; } = [];
     public string SelectedModel { get; set; } = string.Empty;
 }

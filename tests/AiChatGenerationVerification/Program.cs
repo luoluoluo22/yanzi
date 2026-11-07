@@ -92,7 +92,7 @@ internal static class Program
                 waiting.Attribute("Visibility")?.Value == "{Binding WaitingIndicatorVisibility}");
             Assert("streaming block contains bound Run and inline caret",
                 streaming is not null && streaming.Elements().Any(e =>
-                e.Name.LocalName == "Run" && e.Attribute("Text")?.Value == "{Binding Text}") &&
+                e.Name.LocalName == "Run" && e.Attribute("Text")?.Value == "{Binding StreamingText, Mode=OneWay}") &&
                 streaming.Descendants().Any(e => e.Name.LocalName == "InlineUIContainer" &&
                     e.Descendants().Any(d => d.Attribute("Style")?.Value ==
                         "{DynamicResource Yanzi.Chat.GenerationCaret}")));

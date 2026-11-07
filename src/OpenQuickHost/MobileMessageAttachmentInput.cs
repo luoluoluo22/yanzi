@@ -75,16 +75,17 @@ internal static class MobileMessageAttachmentInput
         return false;
     }
 
-    internal static string SavePastedBitmap(BitmapSource bitmap)
+    internal static string SavePastedBitmap(BitmapSource bitmap) =>
+        SavePastedBitmap(bitmap, HostAssets.ResolveDataDirectoryPath("mobile-chat-pasted-images"), MaxAttachmentBytes, "clipboard-");
+
+    internal static string SavePastedBitmap(BitmapSource bitmap, string directory, long maxBytes, string namePrefix)
     {
         if (bitmap.PixelWidth <= 0 || bitmap.PixelHeight <= 0)
             throw new InvalidDataException("剪贴板图片尺寸无效。");
 
-        var directory = HostAssets.ResolveDataDirectoryPath("mobile-chat-pasted-images");
         Directory.CreateDirectory(directory);
         var file = Path.Combine(directory,
-            "clipboard-" + DateTimeOffset.Now.ToString("yyyyMMdd-HHmmss") +
-            "-" + Guid.NewGuid().ToString("N") + ".png");
+            namePrefix + DateTimeOffset.Now.ToString("yyyyMMdd-HHmmss-fff") + ".png");
         var saved = false;
         try
         {
@@ -93,8 +94,8 @@ internal static class MobileMessageAttachmentInput
             using (var stream = new FileStream(file, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             {
                 png.Save(stream);
-                if (stream.Length > MaxAttachmentBytes)
-                    throw new IOException("图片超过 30 MB，无法发送。");
+                if (stream.Length > maxBytes)
+                    throw new IOException("图片超过大小限制，无法添加。");
             }
             saved = true;
             return file;

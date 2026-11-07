@@ -1696,7 +1696,13 @@
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
-                        <Button Grid.Row="0" Height="44" Margin="12,12,12,0"
+                        <Grid Grid.Row="0" Margin="12,12,12,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="8"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                        <Button Grid.Column="0" Height="44"
                                 Style="{DynamicResource Yanzi.Button.Outline}"
                                 Click="AiChatNewTopicButton_Click">
                             <Grid Margin="10,0">
@@ -1716,6 +1722,16 @@
                                              VerticalAlignment="Center"/>
                             </Grid>
                         </Button>
+                        <Button x:Name="AiChatDetachButton" Grid.Column="2"
+                                Width="44" Height="44" MinWidth="0" MinHeight="0" Padding="0"
+                                Style="{DynamicResource Yanzi.Button.Outline}"
+                                ToolTip="分离为任务栏中的独立 AI 对话窗口"
+                                Click="AiChatDetachButton_Click">
+                            <Path Data="{local:IconGeometry open-in-new}"
+                                  Width="16" Height="16" Stretch="Uniform"
+                                  Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                        </Button>
+                        </Grid>
 
                         <TextBlock Grid.Row="1"
                                    Text="对话历史"
@@ -1731,49 +1747,52 @@
                             <ItemsControl ItemsSource="{Binding AiChatTopics}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate DataType="{x:Type local:AiChatTopic}">
-                                        <Border x:Name="TopicItem" Margin="8,3"
+                                        <Border x:Name="TopicItem" Margin="8,1"
+                                                Padding="8,6"
+                                                BorderThickness="0"
                                                 Style="{DynamicResource Yanzi.Chat.Topic}"
                                                 Cursor="Hand"
                                                 MouseLeftButtonUp="AiChatTopicItem_MouseLeftButtonUp"
                                                 MouseRightButtonUp="AiChatTopicItem_MouseRightButtonUp">
                                             <Grid>
                                                 <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="22" />
+                                                    <ColumnDefinition Width="16" />
                                                     <ColumnDefinition Width="*" />
                                                     <ColumnDefinition Width="Auto" />
                                                 </Grid.ColumnDefinitions>
 
-                                                <Path Grid.Column="0"
-                                                      Data="{local:IconGeometry message-outline}"
-                                                      Width="15" Height="15"
-                                                      Stretch="Uniform"
-                                                      Fill="{DynamicResource Yanzi.Color.MutedForeground}"
-                                                      VerticalAlignment="Center"
-                                                      HorizontalAlignment="Left" />
+                                                <Grid Grid.Column="0" Width="14" Height="14"
+                                                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                      IsHitTestVisible="False">
+                                                    <Ellipse x:Name="UnreadDot"
+                                                             Width="7" Height="7"
+                                                             Fill="#FFFF3B30"
+                                                             HorizontalAlignment="Center"
+                                                             VerticalAlignment="Center"
+                                                             Visibility="Collapsed" />
+                                                    <ui:YanziLoadingRing x:Name="TopicSpinner"
+                                                                         Width="13" Height="13"
+                                                                         Foreground="{DynamicResource Yanzi.Color.Foreground}"
+                                                                         HorizontalAlignment="Center"
+                                                                         VerticalAlignment="Center"
+                                                                         Visibility="Collapsed" />
+                                                </Grid>
 
-                                                <StackPanel Grid.Column="1" Margin="2,0,10,0">
-                                                    <TextBlock Text="{Binding Title}"
-                                                               Foreground="{DynamicResource Yanzi.Color.Foreground}"
-                                                               FontSize="{DynamicResource FontSizeNormal}"
-                                                               FontWeight="SemiBold"
-                                                               TextTrimming="CharacterEllipsis" />
-                                                    <TextBlock Text="{Binding PreviewText}"
-                                                               Margin="0,5,0,0"
-                                                               Foreground="{DynamicResource Yanzi.Color.MutedForeground}"
-                                                               FontSize="{DynamicResource FontSizeSmallPlus}"
-                                                               TextTrimming="CharacterEllipsis" />
-                                                </StackPanel>
+                                                <TextBlock Grid.Column="1"
+                                                           Margin="4,0,10,0"
+                                                           Text="{Binding Title}"
+                                                           Foreground="{DynamicResource Yanzi.Color.Foreground}"
+                                                           FontSize="{DynamicResource FontSizeNormal}"
+                                                           FontWeight="SemiBold"
+                                                           VerticalAlignment="Center"
+                                                           TextTrimming="CharacterEllipsis" />
 
-                                                <Grid Grid.Column="2" Width="34" VerticalAlignment="Center">
+                                                <Grid Grid.Column="2" MinWidth="36" VerticalAlignment="Center">
                                                     <TextBlock x:Name="TopicUpdatedAt"
-                                                               Text="{Binding UpdatedAt, StringFormat={}{0:HH:mm}}"
+                                                               Text="{Binding UpdatedAtLabel}"
                                                                Foreground="{DynamicResource Yanzi.Color.MutedForeground}"
                                                                FontSize="{DynamicResource FontSizeSmall}"
                                                                HorizontalAlignment="Right" VerticalAlignment="Center"/>
-                                                    <TextBlock x:Name="TopicGenerating" Text="生成中…"
-                                                               Visibility="Collapsed" FontSize="{DynamicResource FontSizeSmall}"
-                                                               Foreground="{DynamicResource Yanzi.Color.Primary}"
-                                                               HorizontalAlignment="Right" VerticalAlignment="Center" />
                                                     <Button x:Name="TopicEditButton" Visibility="Collapsed"
                                                             Width="30" Height="30" Padding="0"
                                                             HorizontalAlignment="Right"
@@ -1789,12 +1808,14 @@
                                         </Border>
 
                                     <DataTemplate.Triggers>
+                                            <DataTrigger Binding="{Binding HasUnreadReply}" Value="True">
+                                                <Setter TargetName="UnreadDot" Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
                                             <DataTrigger Binding="{Binding IsGenerating}" Value="True">
-                                                <Setter TargetName="TopicUpdatedAt" Property="Visibility" Value="Collapsed"/>
-                                                <Setter TargetName="TopicGenerating" Property="Visibility" Value="Visible"/>
+                                                <Setter TargetName="TopicSpinner" Property="Visibility" Value="Visible"/>
+                                                <Setter TargetName="UnreadDot" Property="Visibility" Value="Collapsed"/>
                                             </DataTrigger>
                                             <DataTrigger Binding="{Binding IsMouseOver, ElementName=TopicItem}" Value="True">
-                                                <Setter TargetName="TopicGenerating" Property="Visibility" Value="Collapsed"/>
                                                 <Setter TargetName="TopicEditButton" Property="Visibility" Value="Visible"/>
                                                 <Setter TargetName="TopicUpdatedAt" Property="Visibility" Value="Collapsed"/>
                                             </DataTrigger>
@@ -1841,29 +1862,13 @@
                 <!-- 右侧聊天区域 -->
                 <Grid Grid.Column="2">
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
 
-                    <Button Grid.Row="0" HorizontalAlignment="Right"
-                            Margin="0,0,0,7" Padding="10,3"
-                            Height="30"
-                            Style="{DynamicResource Yanzi.Button.Ghost}"
-                            ToolTip="分离为任务栏中的独立 AI 对话窗口"
-                            Click="AiChatDetachButton_Click">
-                        <StackPanel Orientation="Horizontal">
-                            <Path Data="{local:IconGeometry open-in-new}"
-                                  Width="15" Height="15" Stretch="Uniform"
-                                  Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
-                            <TextBlock Text="分离窗口" Margin="7,0,0,0"
-                                       VerticalAlignment="Center" />
-                        </StackPanel>
-                    </Button>
-
                     <!-- 消息区 -->
-                    <Border Grid.Row="1" Margin="0,0,0,14"
+                    <Border Grid.Row="0" Margin="0,0,0,14"
                             Style="{DynamicResource Yanzi.Chat.Transcript}">
                         <Grid>
                             <Grid>
@@ -1888,7 +1893,7 @@
                                             <Setter Property="Focusable" Value="False" />
                                             <Setter Property="Template">
                                                 <Setter.Value><ControlTemplate TargetType="ListBoxItem">
-                                                    <ContentPresenter HorizontalAlignment="Stretch" />
+                                                    <ContentPresenter HorizontalAlignment="Stretch" ClipToBounds="False" />
                                                 </ControlTemplate></Setter.Value>
                                             </Setter>
                                         </Style>
@@ -1908,10 +1913,12 @@
                                                     <Grid x:Name="AssistantMessageRoot"
                                                           HorizontalAlignment="Stretch">
                                                         <Border x:Name="AssistantBubble"
-                                                                Style="{DynamicResource Yanzi.Chat.Bubble}"
+                                                                Background="Transparent"
+                                                                BorderThickness="0"
+                                                                Padding="0,2"
                                                                 MouseRightButtonUp="AiChatMessageBubble_MouseRightButtonUp">
                                                             <Grid>
-                                                                <StackPanel x:Name="AssistantContentPanel" Margin="0,0,64,0">
+                                                                <StackPanel x:Name="AssistantContentPanel" Margin="0">
                                                                     <!-- First-token indicator lives inside this assistant message, never as a footer row. -->
                                                                     <StackPanel x:Name="AssistantWaitingIndicator"
                                                                                 Height="22" Orientation="Horizontal"
@@ -1929,31 +1936,45 @@
                                                                     </StackPanel>
                                                                     <!-- Mature Markdown engine: block layout, code fences, tables and nested lists. -->
                                                                     <mdx:MarkdownScrollViewer x:Name="NormalMarkdownViewer"
-                                                                                              MarkdownStyleName="Sasabune"
+                                                                                              local:AiChatMarkdownSpacing.IsEnabled="True"
                                                                                               ClickAction="SafetyOpenBrowser"
+                                                                                              PreviewMouseWheel="AiChatMarkdown_PreviewMouseWheel"
+                                                                                              PreviewKeyDown="AiChatMarkdown_PreviewKeyDown"
+                                                                                              RequestBringIntoView="AiChatMarkdown_RequestBringIntoView"
+                                                                                              CommandManager.PreviewExecuted="AiChatMarkdown_PreviewExecuted"
                                                                                               Markdown="{Binding FormattedText}"
                                                                                               Visibility="{Binding MarkdownVisibility}"
                                                                                               Background="Transparent"
                                                                                               Foreground="{DynamicResource Yanzi.Color.Foreground}"
-                                                                                              FontSize="{DynamicResource FontSizeNormalPlus}"
+                                                                                              FontFamily="Segoe UI, Microsoft YaHei"
+                                                                                              FontSize="{DynamicResource Yanzi.Font.Body}"
                                                                                               VerticalScrollBarVisibility="Disabled"
                                                                                               HorizontalScrollBarVisibility="Disabled"
                                                                                               Padding="0" Margin="0"
-                                                                                              IsToolBarVisible="False" />
+                                                                                              IsToolBarVisible="False">
+                                                                        <mdx:MarkdownScrollViewer.MarkdownStyle>
+                                                                            <Style TargetType="FlowDocument" BasedOn="{x:Static mdx:MarkdownStyle.Sasabune}">
+                                                                                <Setter Property="FontFamily" Value="Segoe UI, Microsoft YaHei"/>
+                                                                                <Setter Property="FontSize" Value="{DynamicResource Yanzi.Font.Body}"/>
+                                                                            </Style>
+                                                                        </mdx:MarkdownScrollViewer.MarkdownStyle>
+                                                                    </mdx:MarkdownScrollViewer>
                                                                     <!-- Preserve the existing inert WPF HTML path for standalone HTML replies. -->
                                                                     <TextBlock x:Name="NormalHtmlTextBlock"
                                                                                local:MarkdownTextBehavior.MarkdownText="{Binding FormattedText}"
                                                                                Visibility="{Binding HtmlVisibility}"
                                                                                Foreground="{DynamicResource Yanzi.Color.Foreground}"
-                                                                               FontSize="{DynamicResource FontSizeNormalPlus}"
+                                                                               FontFamily="Segoe UI, Microsoft YaHei"
+                                                                               FontSize="{DynamicResource Yanzi.Font.Body}"
                                                                                LineHeight="22" TextWrapping="Wrap" />
                                                                     <!-- Keep the caret in the same TextBlock as streamed tokens. -->
                                                                     <TextBlock x:Name="AssistantStreamingTextBlock" TextWrapping="Wrap"
                                                                                Visibility="{Binding StreamingTextVisibility}"
                                                                                Foreground="{DynamicResource Yanzi.Color.Foreground}"
-                                                                               FontSize="{DynamicResource FontSizeNormalPlus}"
+                                                                               FontFamily="Segoe UI, Microsoft YaHei"
+                                                                               FontSize="{DynamicResource Yanzi.Font.Body}"
                                                                                LineHeight="22">
-                                                                        <Run Text="{Binding Text}" />
+                                                                        <Run Text="{Binding StreamingText, Mode=OneWay}" />
                                                                         <InlineUIContainer BaselineAlignment="Center">
                                                                             <Border Style="{DynamicResource Yanzi.Chat.GenerationCaret}" />
                                                                         </InlineUIContainer>
@@ -2005,14 +2026,10 @@
                                                                                                                                                     Padding="12,10"
                                                                                                                                                     Margin="0,0,0,8">
                                                                                                                                                 <TextBox Text="{Binding ToolFeedback, Mode=OneWay}"
-                                                                                                                                                         Foreground="{DynamicResource Yanzi.Color.Foreground}"
+                                                                                                                                                         Style="{DynamicResource Yanzi.Textarea.Plain}"
                                                                                                                                                          FontSize="{DynamicResource FontSizeSmallPlus}"
                                                                                                                                                          FontFamily="Consolas, Courier New"
-                                                                                                                                                         IsReadOnly="True"
-                                                                                                                                                         Background="Transparent"
-                                                                                                                                                         BorderThickness="0"
-                                                                                                                                                         TextWrapping="Wrap"
-                                                                                                                                                         AcceptsReturn="True" />
+                                                                                                                                                         IsReadOnly="True" />
                                                                                                                                             </Border>
                                                                                                                                             <TextBlock Text="{Binding Text}"
                                                                                                                                                        Foreground="{DynamicResource Yanzi.Color.MutedForeground}"
@@ -2026,24 +2043,32 @@
                                                                                                                                                   Visibility="{Binding AttachmentsVisibility}">
                                                                                                                                         <ItemsControl.ItemTemplate>
                                                                                                                                             <DataTemplate DataType="{x:Type local:AiChatMessageAttachment}">
-                                                                                                                                                <Border Margin="0,10,0,0"
-                                                                                                                                                        Padding="10,8"
-                                                                                                                                                        Background="{DynamicResource Yanzi.Color.Card}"
-                                                                                                                                                        BorderBrush="{DynamicResource Yanzi.Color.Border}"
-                                                                                                                                                        BorderThickness="1"
-                                                                                                                                                        CornerRadius="8">
-                                                                                                                                                    <StackPanel>
-                                                                                                                                                        <TextBlock Text="{Binding FileName}"
-                                                                                                                                                                   Foreground="{DynamicResource Yanzi.Color.Foreground}"
-                                                                                                                                                                   FontSize="{DynamicResource FontSizeSmallPlus}"
-                                                                                                                                                                   FontWeight="SemiBold"
-                                                                                                                                                                   TextTrimming="CharacterEllipsis" />
-                                                                                                                                                        <TextBlock Text="{Binding FileSizeText}"
-                                                                                                                                                                   Margin="0,3,0,0"
-                                                                                                                                                                   Foreground="{DynamicResource Yanzi.Color.MutedForeground}"
-                                                                                                                                                                   FontSize="{DynamicResource FontSizeSmall}" />
-                                                                                                                                                    </StackPanel>
-                                                                                                                                                </Border>
+                                                                                                                                                <StackPanel>
+                                                                                                                                                    <Border Margin="0,10,0,0" MaxWidth="280" CornerRadius="8" ClipToBounds="True"
+                                                                                                                                                            Visibility="{Binding ImagePreviewVisibility}"
+                                                                                                                                                            ToolTip="{Binding FileName}">
+                                                                                                                                                        <Image Source="{Binding PreviewImage}" MaxHeight="180" Stretch="Uniform" />
+                                                                                                                                                    </Border>
+                                                                                                                                                    <Border Margin="0,10,0,0"
+                                                                                                                                                            Padding="10,8"
+                                                                                                                                                            Background="{DynamicResource Yanzi.Color.Card}"
+                                                                                                                                                            BorderBrush="{DynamicResource Yanzi.Color.Border}"
+                                                                                                                                                            BorderThickness="1"
+                                                                                                                                                            CornerRadius="8"
+                                                                                                                                                            Visibility="{Binding FileChipVisibility}">
+                                                                                                                                                        <StackPanel>
+                                                                                                                                                            <TextBlock Text="{Binding FileName}"
+                                                                                                                                                                       Foreground="{DynamicResource Yanzi.Color.Foreground}"
+                                                                                                                                                                       FontSize="{DynamicResource FontSizeSmallPlus}"
+                                                                                                                                                                       FontWeight="SemiBold"
+                                                                                                                                                                       TextTrimming="CharacterEllipsis" />
+                                                                                                                                                            <TextBlock Text="{Binding FileSizeText}"
+                                                                                                                                                                       Margin="0,3,0,0"
+                                                                                                                                                                       Foreground="{DynamicResource Yanzi.Color.MutedForeground}"
+                                                                                                                                                                       FontSize="{DynamicResource FontSizeSmall}" />
+                                                                                                                                                        </StackPanel>
+                                                                                                                                                    </Border>
+                                                                                                                                                </StackPanel>
                                                                                                                                             </DataTemplate>
                                                                                                                                         </ItemsControl.ItemTemplate>
                                                                                                                                     </ItemsControl>
@@ -2063,66 +2088,123 @@
                                                                                    Foreground="{DynamicResource Yanzi.Color.Foreground}"/>
                                                                     </StackPanel>
                                                                 </Button>
-                                                                <Button x:Name="AssistantHtmlCopyButton" Tag="{Binding}"
-                                                                        Width="30" Height="28" Padding="0" Margin="0,0,34,0"
-                                                                        HorizontalAlignment="Right" VerticalAlignment="Top"
-                                                                        Visibility="Collapsed"
-                                                                        Style="{DynamicResource Yanzi.Button.Ghost}"
-                                                                        ToolTip="复制网页内容（保留富文本格式）"
-                                                                        Click="AiChatCopyHtmlButton_Click">
-                                                                    <Path Data="{local:IconGeometry code-tags}" Width="14" Height="14"
-                                                                          Stretch="Uniform" Fill="{DynamicResource Yanzi.Color.MutedForeground}"/>
-                                                                </Button>
-                                                                <Button x:Name="AssistantCopyButton" Tag="{Binding}"
-                                                                        Width="30" Height="28" Padding="0"
+                                                                <!-- Zero-size overlay: hover actions must not change the card height. -->
+                                                                <Canvas Width="0" Height="0"
                                                                         HorizontalAlignment="Right"
-                                                                        VerticalAlignment="Top"
-                                                                        Visibility="Collapsed"
-                                                                        Style="{DynamicResource Yanzi.Button.Ghost}"
-                                                                        ToolTip="复制"
-                                                                        Click="AiChatCopyMessageButton_Click">
-                                                                    <Path Data="{local:IconGeometry content-copy}"
-                                                                          Width="14" Height="14" Stretch="Uniform"
-                                                                          Fill="{DynamicResource Yanzi.Color.MutedForeground}"/>
-                                                                </Button>
+                                                                        VerticalAlignment="Top">
+                                                                    <Button x:Name="AssistantHtmlCopyButton" Tag="{Binding}"
+                                                                            Canvas.Right="34" Canvas.Top="0"
+                                                                            Width="30" Height="28" MinWidth="0" MinHeight="0" Padding="0"
+                                                                            Visibility="Collapsed"
+                                                                            Style="{DynamicResource Yanzi.Button.Ghost}"
+                                                                            ToolTip="复制网页内容（保留富文本格式）"
+                                                                            Click="AiChatCopyHtmlButton_Click">
+                                                                        <Path Data="{local:IconGeometry code-tags}" Width="14" Height="14"
+                                                                              Stretch="Uniform" Fill="{DynamicResource Yanzi.Color.MutedForeground}"/>
+                                                                    </Button>
+                                                                    <Button x:Name="AssistantCopyButton" Tag="{Binding}"
+                                                                            Canvas.Right="0" Canvas.Top="0"
+                                                                            Width="30" Height="28" MinWidth="0" MinHeight="0" Padding="0"
+                                                                            Visibility="Collapsed"
+                                                                            Style="{DynamicResource Yanzi.Button.Ghost}"
+                                                                            ToolTip="复制"
+                                                                            Click="AiChatCopyMessageButton_Click">
+                                                                        <Path Data="{local:IconGeometry content-copy}"
+                                                                              Width="14" Height="14" Stretch="Uniform"
+                                                                              Fill="{DynamicResource Yanzi.Color.MutedForeground}"/>
+                                                                    </Button>
+                                                                </Canvas>
                                                             </Grid>
                                                         </Border>
                                                     </Grid>
 
-                                                    <!-- 用户消息：右侧对齐的独立气泡，不显示头像或单条时间 -->
+                                                    <!-- 用户消息：操作条用弹出层浮在气泡下方，不占布局，也能接到点击。 -->
                                                     <Grid x:Name="UserMessageRoot"
                                                           Visibility="Collapsed"
                                                           HorizontalAlignment="Right"
-                                                          MaxWidth="760">
-                                                        <Border
-                                                                                                                        Style="{DynamicResource Yanzi.Chat.UserBubble}"
-                                                                                                                        MouseRightButtonUp="AiChatMessageBubble_MouseRightButtonUp">
-                                                                                                                    <StackPanel>
-                                                                                                                        <TextBlock Text="{Binding Text}"
-                                                                                                                                   Foreground="{DynamicResource Yanzi.Color.ChatUserForeground}"
-                                                                                                                                   FontSize="{DynamicResource FontSizeNormalPlus}"
-                                                                                                                                   LineHeight="22"
-                                                                                                                                   TextWrapping="Wrap" />
-                                                                                                                        <ItemsControl ItemsSource="{Binding Attachments}"
-                                                                                                                                      Visibility="{Binding AttachmentsVisibility}">
-                                                                                                                            <ItemsControl.ItemTemplate>
-                                                                                                                                <DataTemplate DataType="{x:Type local:AiChatMessageAttachment}">
-                                                                                                                                    <Border Margin="0,8,0,0"
-                                                                                                                                            Padding="8,6"
-                                                                                                                                            Background="{DynamicResource Yanzi.Color.ChatUserOverlay}"
-                                                                                                                                            BorderBrush="{DynamicResource Yanzi.Color.ChatUserOverlayHover}"
-                                                                                                                                            BorderThickness="1"
-                                                                                                                                            CornerRadius="7">
-                                                                                                                                        <TextBlock Text="{Binding FileName}"
-                                                                                                                                                   Foreground="{DynamicResource Yanzi.Color.ChatUserForeground}"
-                                                                                                                                                   FontSize="{DynamicResource FontSizeSmallPlus}"
-                                                                                                                                                   TextTrimming="CharacterEllipsis" />
-                                                                                                                                    </Border>
-                                                                                                                                </DataTemplate>
-                                                                                                                            </ItemsControl.ItemTemplate>
-                                                                                                                        </ItemsControl>
-                                                                                                                    </StackPanel>
-                                                                                                                </Border>
+                                                          MaxWidth="760"
+                                                          MouseEnter="UserMessageRoot_MouseEnter"
+                                                          MouseLeave="UserMessageRoot_MouseLeave"
+                                                          DataContextChanged="UserMessageRoot_DataContextChanged"
+                                                          Unloaded="UserMessageRoot_Unloaded">
+                                                        <Border x:Name="UserMessageBubble"
+                                                                Style="{DynamicResource Yanzi.Chat.UserBubble}"
+                                                                MouseRightButtonUp="AiChatMessageBubble_MouseRightButtonUp">
+                                                            <StackPanel>
+                                                                <TextBlock Text="{Binding Text}"
+                                                                           Foreground="{DynamicResource Yanzi.Color.ChatUserForeground}"
+                                                                           FontFamily="Segoe UI, Microsoft YaHei"
+                                                                           FontSize="{DynamicResource Yanzi.Font.Body}"
+                                                                           LineHeight="22"
+                                                                           TextWrapping="Wrap" />
+                                                                <ItemsControl ItemsSource="{Binding Attachments}"
+                                                                              Visibility="{Binding AttachmentsVisibility}">
+                                                                    <ItemsControl.ItemTemplate>
+                                                                        <DataTemplate DataType="{x:Type local:AiChatMessageAttachment}">
+                                                                            <StackPanel>
+                                                                                <Border Margin="0,8,0,0" MaxWidth="240" CornerRadius="8" ClipToBounds="True"
+                                                                                        Visibility="{Binding ImagePreviewVisibility}"
+                                                                                        ToolTip="{Binding FileName}">
+                                                                                    <Image Source="{Binding PreviewImage}" MaxHeight="160" Stretch="Uniform" />
+                                                                                </Border>
+                                                                                <Border Margin="0,8,0,0"
+                                                                                        Padding="8,6"
+                                                                                        Background="{DynamicResource Yanzi.Color.ChatUserOverlay}"
+                                                                                        BorderBrush="{DynamicResource Yanzi.Color.ChatUserOverlayHover}"
+                                                                                        BorderThickness="1"
+                                                                                        CornerRadius="7"
+                                                                                        Visibility="{Binding FileChipVisibility}">
+                                                                                    <TextBlock Text="{Binding FileName}"
+                                                                                               Foreground="{DynamicResource Yanzi.Color.ChatUserForeground}"
+                                                                                               FontSize="{DynamicResource FontSizeSmallPlus}"
+                                                                                               TextTrimming="CharacterEllipsis" />
+                                                                                </Border>
+                                                                            </StackPanel>
+                                                                        </DataTemplate>
+                                                                    </ItemsControl.ItemTemplate>
+                                                                </ItemsControl>
+                                                            </StackPanel>
+                                                        </Border>
+                                                        <Popup x:Name="UserMessageActionPopup"
+                                                               PlacementTarget="{Binding ElementName=UserMessageBubble}"
+                                                               Placement="Custom"
+                                                               AllowsTransparency="True"
+                                                               StaysOpen="True"
+                                                               PopupAnimation="None">
+                                                            <Border x:Name="UserMessageActions"
+                                                                    DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType={x:Type Popup}}}"
+                                                                    Padding="2,1"
+                                                                    CornerRadius="7"
+                                                                    Background="{DynamicResource Yanzi.Color.Card}"
+                                                                    BorderBrush="{DynamicResource Yanzi.Color.Border}"
+                                                                    BorderThickness="1"
+                                                                    MouseEnter="UserMessageActions_MouseEnter"
+                                                                    MouseLeave="UserMessageActions_MouseLeave">
+                                                                <StackPanel Orientation="Horizontal">
+                                                                    <Button Tag="{Binding}" Width="26" Height="26" MinWidth="0" MinHeight="0" Padding="0"
+                                                                            Style="{DynamicResource Yanzi.Button.Ghost}"
+                                                                            ToolTip="复制"
+                                                                            Click="AiChatCopyMessageButton_Click">
+                                                                        <Path Data="{local:IconGeometry content-copy}" Width="14" Height="14" Stretch="Uniform"
+                                                                              Fill="{DynamicResource Yanzi.Color.MutedForeground}"/>
+                                                                    </Button>
+                                                                    <Button Tag="{Binding}" Width="26" Height="26" MinWidth="0" MinHeight="0" Padding="0" Margin="2,0,0,0"
+                                                                            Style="{DynamicResource Yanzi.Button.Ghost}"
+                                                                            ToolTip="编辑"
+                                                                            Click="AiChatEditMessageButton_Click">
+                                                                        <Path Data="{local:IconGeometry pencil}" Width="14" Height="14" Stretch="Uniform"
+                                                                              Fill="{DynamicResource Yanzi.Color.MutedForeground}"/>
+                                                                    </Button>
+                                                                    <Button Tag="{Binding}" Width="26" Height="26" MinWidth="0" MinHeight="0" Padding="0" Margin="2,0,0,0"
+                                                                            Style="{DynamicResource Yanzi.Button.Ghost}"
+                                                                            ToolTip="重发"
+                                                                            Click="AiChatResendMessageButton_Click">
+                                                                        <Path Data="{local:IconGeometry refresh}" Width="14" Height="14" Stretch="Uniform"
+                                                                              Fill="{DynamicResource Yanzi.Color.MutedForeground}"/>
+                                                                    </Button>
+                                                                </StackPanel>
+                                                            </Border>
+                                                        </Popup>
                                                     </Grid>
                                                 </Grid>
                                                 </StackPanel>
@@ -2172,7 +2254,7 @@
                     </Border>
 
                     <!-- 待发送附件 -->
-                    <Border Grid.Row="2" Margin="0,0,0,10" Padding="10"
+                    <Border Grid.Row="1" Margin="0,0,0,10" Padding="10"
                             Style="{DynamicResource Yanzi.Chat.Attachment}"
                             Visibility="{Binding AttachmentsVisibility}">
                         <ItemsControl ItemsSource="{Binding AiChatAttachments}">
@@ -2183,34 +2265,54 @@
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate DataType="{x:Type local:AiChatAttachment}">
-                                    <Border Margin="0,0,8,0"
-                                            Style="{DynamicResource Yanzi.Chat.Attachment}">
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="{Binding FileName}"
-                                                       MaxWidth="220"
-                                                       Foreground="{DynamicResource Yanzi.Color.Foreground}"
-                                                       FontSize="{DynamicResource FontSizeSmallPlus}"
-                                                       TextTrimming="CharacterEllipsis"
-                                                       VerticalAlignment="Center" />
-                                            <Button Tag="{Binding}"
-                                                    Width="24" Height="24"
-                                                    Margin="8,0,0,0"
-                                                    Style="{DynamicResource Yanzi.Button.Ghost}"
-                                                    Click="AiChatRemoveAttachmentButton_Click">
-                                                <TextBlock Text="×"
-                                                           Foreground="{DynamicResource Yanzi.Color.MutedForeground}"
-                                                           FontSize="16"
+                                    <Grid Margin="0,0,8,8">
+                                        <Border Width="96" Height="96" CornerRadius="10" ClipToBounds="True"
+                                                Background="{DynamicResource Yanzi.Color.Card}"
+                                                Visibility="{Binding ImagePreviewVisibility}"
+                                                ToolTip="{Binding FileName}">
+                                            <Grid>
+                                                <Image Source="{Binding PreviewImage}" Stretch="UniformToFill" />
+                                                <Button Tag="{Binding}"
+                                                        Width="22" Height="22" MinWidth="0" MinHeight="0" Padding="0"
+                                                        Margin="0,4,4,0"
+                                                        HorizontalAlignment="Right" VerticalAlignment="Top"
+                                                        Style="{DynamicResource Yanzi.Button.Ghost}"
+                                                        Click="AiChatRemoveAttachmentButton_Click">
+                                                    <TextBlock Text="×" FontSize="14"
+                                                               Foreground="{DynamicResource Yanzi.Color.Foreground}"
+                                                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                </Button>
+                                            </Grid>
+                                        </Border>
+                                        <Border Style="{DynamicResource Yanzi.Chat.Attachment}"
+                                                Visibility="{Binding FileChipVisibility}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding FileName}"
+                                                           MaxWidth="220"
+                                                           Foreground="{DynamicResource Yanzi.Color.Foreground}"
+                                                           FontSize="{DynamicResource FontSizeSmallPlus}"
+                                                           TextTrimming="CharacterEllipsis"
                                                            VerticalAlignment="Center" />
-                                            </Button>
-                                        </StackPanel>
-                                    </Border>
+                                                <Button Tag="{Binding}"
+                                                        Width="24" Height="24"
+                                                        Margin="8,0,0,0"
+                                                        Style="{DynamicResource Yanzi.Button.Ghost}"
+                                                        Click="AiChatRemoveAttachmentButton_Click">
+                                                    <TextBlock Text="×"
+                                                               Foreground="{DynamicResource Yanzi.Color.MutedForeground}"
+                                                               FontSize="16"
+                                                               VerticalAlignment="Center" />
+                                                </Button>
+                                            </StackPanel>
+                                        </Border>
+                                    </Grid>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
                     </Border>
 
                     <!-- 输入工作台 -->
-                    <Border Grid.Row="3"
+                    <Border Grid.Row="2"
                             Style="{DynamicResource Yanzi.Chat.Composer}"
                             AllowDrop="True"
                             Drop="AiChatInputArea_Drop"
@@ -2225,19 +2327,13 @@
 
                             <Grid Grid.Row="0">
                                 <TextBox x:Name="AiChatInputBox"
-                                         Style="{DynamicResource Yanzi.Textarea}"
+                                         Style="{DynamicResource Yanzi.Textarea.Plain}"
                                          Text="{Binding AiChatInputText, UpdateSourceTrigger=PropertyChanged}"
                                          FontSize="{DynamicResource FontSizeNormalPlus}"
-                                         Foreground="{DynamicResource Yanzi.Color.Foreground}"
-                                         Background="Transparent"
-                                         BorderThickness="0"
-                                         CaretBrush="{DynamicResource Yanzi.Color.Foreground}"
                                          Padding="2,4"
-                                         AcceptsReturn="True"
-                                         TextWrapping="Wrap"
-                                         VerticalScrollBarVisibility="Auto"
                                          MinHeight="34"
                                          MaxHeight="150"
+                                         Loaded="AiChatInputBox_Loaded"
                                          PreviewKeyDown="AiChatInputBox_PreviewKeyDown" />
                                 <TextBlock IsHitTestVisible="False"
                                            Margin="2,4,0,0"
@@ -2250,28 +2346,44 @@
                             <Grid Grid.Row="2">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="10"/>
+                                    <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
 
-                                <Button Grid.Column="0"
-                                        Style="{DynamicResource Yanzi.Button.Outline}"
+                                <Button x:Name="AiChatAddFileButton" Grid.Column="0"
+                                        Width="36" Height="36" MinWidth="0" MinHeight="0" Padding="0"
+                                        VerticalAlignment="Center"
+                                        Background="{DynamicResource Yanzi.Color.Secondary}"
+                                        BorderThickness="0"
+                                        ToolTip="添加文件"
+                                        Cursor="Hand"
                                         Click="AiChatAddAttachmentButton_Click">
-                                    <StackPanel Orientation="Horizontal">
-                                        <Path Data="{local:IconGeometry paperclip}"
-                                              Width="15" Height="15"
-                                              Stretch="Uniform"
-                                              Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-                                              Margin="0,0,7,0"
-                                              VerticalAlignment="Center" />
-                                        <TextBlock Text="添加附件" VerticalAlignment="Center" />
-                                    </StackPanel>
+                                    <Button.Template>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border Width="36" Height="36" CornerRadius="18"
+                                                    Background="{TemplateBinding Background}">
+                                                <Path Data="M18,11 L18,25 M11,18 L25,18"
+                                                      Stroke="{DynamicResource Yanzi.Color.Foreground}"
+                                                      StrokeThickness="1.6"
+                                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                                      Width="14" Height="14" Stretch="Uniform"
+                                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter Property="Background" Value="{DynamicResource Yanzi.Color.Input}"/>
+                                                </Trigger>
+                                                <Trigger Property="IsPressed" Value="True">
+                                                    <Setter Property="Opacity" Value="0.75"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Button.Template>
                                 </Button>
 
-<Button x:Name="AiChatModelMenuButton" Grid.Column="2"
-                                        Width="185" Height="38" Padding="10,0"
+<Button x:Name="AiChatModelMenuButton" Grid.Column="1"
+                                        MinWidth="140" MaxWidth="240" Height="36" Padding="10,0" Margin="8,0,0,0"
                                         HorizontalContentAlignment="Stretch"
                                         Style="{DynamicResource Yanzi.Button.Outline}"
                                         ToolTip="选择供应商和模型"
@@ -2292,20 +2404,63 @@
                                     </Grid>
                                 </Button>
 
-                                <Button Grid.Column="4" MinWidth="96" Height="38" Padding="12,0"
-                                        Style="{DynamicResource Yanzi.Button.Outline}"
+                                <Button x:Name="AiChatStopButton" Grid.Column="3"
+                                        Width="36" Height="36" MinWidth="0" MinHeight="0" Padding="0"
+                                        VerticalAlignment="Center"
+                                        Background="{DynamicResource Yanzi.Color.ChatUserBubble}"
+                                        BorderThickness="0"
                                         Visibility="{Binding AiChatCancelVisibility}"
-                                        Click="AiChatStopButton_Click" Content="停止" ToolTip="停止当前对话的生成" />
-                                <Button Grid.Column="4" MinWidth="96" Height="38" Padding="12,0"
+                                        ToolTip="停止当前对话的生成"
+                                        Click="AiChatStopButton_Click"
+                                        Cursor="Hand">
+                                    <Button.Template>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border Width="36" Height="36" CornerRadius="8"
+                                                    Background="{TemplateBinding Background}"/>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter Property="Opacity" Value="0.82"/>
+                                                </Trigger>
+                                                <Trigger Property="IsPressed" Value="True">
+                                                    <Setter Property="Opacity" Value="0.68"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Button.Template>
+                                </Button>
+                                <Button x:Name="AiChatSendButton" Grid.Column="3"
+                                        Width="36" Height="36" MinWidth="0" MinHeight="0" Padding="0"
+                                        VerticalAlignment="Center"
+                                        Background="{DynamicResource Yanzi.Color.ChatUserBubble}"
+                                        BorderThickness="0"
                                         Visibility="{Binding AiChatSendVisibility}"
-                                        Style="{DynamicResource Yanzi.Button.Default}"
-                                        Click="AiChatSendButton_Click">
-                                    <StackPanel Orientation="Horizontal">
-                                        <Path Data="{local:IconGeometry send}" Width="15" Height="15"
-                                              Stretch="Uniform" Margin="0,0,8,0"
-                                              Fill="{DynamicResource Yanzi.Color.PrimaryForeground}"/>
-                                        <TextBlock Text="发送" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                    </StackPanel>
+                                        ToolTip="发送"
+                                        Click="AiChatSendButton_Click"
+                                        Cursor="Hand">
+                                    <Button.Template>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border Width="36" Height="36" CornerRadius="18"
+                                                    Background="{TemplateBinding Background}">
+                                                <Path Data="M12,19 L12,6 M12,6 L6.5,11.5 M12,6 L17.5,11.5"
+                                                      Stroke="White" StrokeThickness="1.8"
+                                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                                      StrokeLineJoin="Round"
+                                                      Width="16" Height="16" Stretch="Uniform"
+                                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter Property="Opacity" Value="0.88"/>
+                                                </Trigger>
+                                                <Trigger Property="IsPressed" Value="True">
+                                                    <Setter Property="Opacity" Value="0.72"/>
+                                                </Trigger>
+                                                <Trigger Property="IsEnabled" Value="False">
+                                                    <Setter Property="Opacity" Value="0.4"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Button.Template>
                                 </Button>
                             </Grid>
                             <TextBlock Grid.Row="3"

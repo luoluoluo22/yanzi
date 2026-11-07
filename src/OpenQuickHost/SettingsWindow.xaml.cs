@@ -6177,11 +6177,34 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                         item.Category,
                         item.GlobalShortcut))
                     .ToList();
+                var prepared = entries
+                    .Select(entry =>
+                    {
+                        long ticks = 0;
+                        try
+                        {
+                            ticks = File.GetLastWriteTimeUtc(entry.ManifestPath).Ticks;
+                        }
+                        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                        {
+                        }
+
+                        return (entry, ticks, command: LocalExtensionCatalog.CreateCommand(entry));
+                    })
+                    .ToList();
+                var commands = prepared
+                    .OrderByDescending(item => item.ticks)
+                    .ThenBy(item => item.command.Title, StringComparer.OrdinalIgnoreCase)
+                    .Select(item => item.command)
+                    .ToList();
+                var signature = string.Join('\n', prepared
+                    .OrderBy(item => item.entry.Manifest.Id, StringComparer.OrdinalIgnoreCase)
+                    .Select(item => $"{item.entry.Manifest.Id}\t{item.entry.Manifest.Version}\t{item.entry.Manifest.Name}\t{item.ticks}"));
                 HostAssets.AppendLog(
                     $"Settings extensions refresh background prepared: version={refreshVersion}, " +
                     $"entries={entries.Count}, recycleBinItems={recycleBinItems.Count}, shortcutItems={shortcutItems.Count}, " +
                     $"elapsedMs={backgroundStartedAt.ElapsedMilliseconds}");
-                return (entries, recycleBinItems, shortcutItems);
+                return (entries, commands, recycleBinItems, shortcutItems, signature);
             });
 
             if (refreshVersion != _extensionsRefreshVersion)
@@ -6193,8 +6216,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             var uiApplyStartedAt = Stopwatch.StartNew();
             await Dispatcher.InvokeAsync(() =>
             {
-                _mainWindow.ReloadLocalExtensionsFromEntries(data.entries, "已刷新本地小程序。");
-                _cachedExtensionItems = BuildSettingsExtensionItems(_mainWindow.GetExtensionsForSettings(), publishedMap);
+                _cachedExtensionItems = BuildSettingsExtensionItems(data.commands, publishedMap);
                 _cachedRecycleBinItems = data.recycleBinItems;
                 if (IsExtensionsSelected)
                 {
@@ -6209,6 +6231,17 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                     RefreshRecycleBinItems();
                 }
             }, DispatcherPriority.Background);
+            var extensionEntries = data.entries;
+            var extensionSignature = data.signature;
+            _ = Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (refreshVersion != _extensionsRefreshVersion)
+                {
+                    return;
+                }
+
+                _mainWindow.ApplyLocalExtensionsIfChanged(extensionEntries, extensionSignature);
+            }), DispatcherPriority.ApplicationIdle);
             HostAssets.AppendLog(
                 $"Settings extensions refresh UI applied: version={refreshVersion}, elapsedMs={uiApplyStartedAt.ElapsedMilliseconds}");
 
@@ -6225,8 +6258,18 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
                         await Dispatcher.InvokeAsync(() =>
                         {
                             if (refreshVersion != _extensionsRefreshVersion) return;
-                            _cachedExtensionItems = BuildSettingsExtensionItems(_mainWindow.GetExtensionsForSettings(), cloudMap);
-                            if (IsExtensionsSelected)
+                            foreach (var item in _cachedExtensionItems)
+                            {
+                                if (!cloudMap.TryGetValue(item.ExtensionId, out var record))
+                                {
+                                    continue;
+                                }
+
+                                item.IsPublished = record.IsPublished != 0;
+                                item.PublisherName = record.PublisherUsername ?? string.Empty;
+                            }
+
+                            if (IsExtensionsSelected && _extensionFilterMode == "published")
                             {
                                 RefreshExtensionItems();
                             }
@@ -8401,9 +8444,20 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         const double cardGap = 14;
         const double viewportPaddingAllowance = 24;
 
+        if (!IsExtensionsSelected)
+        {
+            return;
+        }
+
         var viewportWidth = ExtensionCardsScrollViewer.ViewportWidth > 0
             ? ExtensionCardsScrollViewer.ViewportWidth
             : ExtensionCardsScrollViewer.ActualWidth;
+        // Collapsing the section reports a zero width. Keep the last real card width
+        // so showing the tab again does not resize every card.
+        if (viewportWidth <= 1)
+        {
+            return;
+        }
 
         var availableWidth = Math.Max(0, viewportWidth - viewportPaddingAllowance);
         if (availableWidth <= 0)

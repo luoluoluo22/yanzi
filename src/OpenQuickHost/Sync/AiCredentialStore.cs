@@ -67,6 +67,39 @@ public static class AiCredentialStore
         return importedPlaintext;
     }
 
+    public static bool ForgetProvider(string? providerId)
+    {
+        var id = providerId?.Trim() ?? string.Empty;
+        if (id.Length == 0)
+        {
+            return false;
+        }
+
+        var removed = false;
+        lock (BagIoLock)
+        {
+            var bag = Load();
+            if (bag.FailedToRead)
+            {
+                HostAssets.AppendLog("AI credential forget skipped because encrypted source was unreadable.");
+                return false;
+            }
+
+            removed = bag.ProviderApiKeys.Remove(id);
+            if (removed)
+            {
+                Save(bag);
+            }
+        }
+
+        if (removed)
+        {
+            AccountEnvironmentSecretVault.QueueUploadFromLocal(deletedNames: [ProviderVaultKey(id)]);
+        }
+
+        return removed;
+    }
+
     public static void Capture(AppSettings settings)
     {
         var changedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
