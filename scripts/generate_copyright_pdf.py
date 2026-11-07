@@ -271,7 +271,7 @@ def build_manual_pdf():
     story.append(t)
     story.append(Spacer(1, 4 * mm))
     
-    img_cover = os.path.join(ROOT, "readme-cover-16x9.png")
+    img_cover = os.path.join(ROOT, "docs", "assets", "screenshots", "readme-cover-16x9.png")
     if os.path.exists(img_cover):
         story.append(Image(img_cover, width=155 * mm, height=87 * mm))
         story.append(Paragraph("图 1-1 燕子桌面效率启动系统整体架构概览", caption_style))
@@ -286,7 +286,7 @@ def build_manual_pdf():
     story.append(Paragraph("2.2 全局启动器与命令检索", h2_style))
     story.append(Paragraph("按下全局热键后即刻平滑呼出搜索中心。用户输入中文全拼、简拼首字母或英文指令，系统即刻通过流水线索引算法高亮匹配本地程序、系统功能与小程序。", p_style))
     
-    img_launcher = os.path.join(ROOT, "launcher-and-quick-panel.png")
+    img_launcher = os.path.join(ROOT, "docs", "assets", "screenshots", "launcher-and-quick-panel.png")
     if os.path.exists(img_launcher):
         story.append(Image(img_launcher, width=155 * mm, height=87 * mm))
         story.append(Paragraph("图 2-1 全局热键唤醒启动器检索与操作面板", caption_style))
@@ -304,7 +304,7 @@ def build_manual_pdf():
     story.append(Paragraph("（1）白名单应用限定：支持将手势限定在特定应用中生效（如仅在 Edge 浏览器中触发网页后退）。目标应用在前台时手势命中，其余应用中静默放行。", p_style))
     story.append(Paragraph("（2）黑名单应用禁用：用户可将全屏游戏、专业绘图或远程控制软件添加至黑名单。前台处于黑名单程序时完全放行右键拖拽，彻底杜绝手势按键冲突。", p_style))
     
-    img_grid = os.path.join(ROOT, "quick-panel-grid.png")
+    img_grid = os.path.join(ROOT, "docs", "assets", "screenshots", "quick-panel-grid.png")
     if os.path.exists(img_grid):
         story.append(Image(img_grid, width=155 * mm, height=87 * mm))
         story.append(Paragraph("图 3-1 常用手势快速绑定与多应用前台规则配置", caption_style))
@@ -316,7 +316,7 @@ def build_manual_pdf():
     story.append(Paragraph("4.1 JSON 小程序热加载机制", h2_style))
     story.append(Paragraph("软件支持开放的标准 JSON 扩展协议。用户点击状态栏 + 按钮即可进入可视化编辑器，配置指令 ID、名称、图标、打开路径或参数模板，保存后即可即时热生效。", p_style))
     
-    img_editor = os.path.join(ROOT, "json-extension-editor.png")
+    img_editor = os.path.join(ROOT, "docs", "assets", "screenshots", "json-extension-editor.png")
     if os.path.exists(img_editor):
         story.append(Image(img_editor, width=155 * mm, height=87 * mm))
         story.append(Paragraph("图 4-1 JSON 小程序可视化配置与管理编辑器", caption_style))

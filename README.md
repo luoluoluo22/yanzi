@@ -1,5 +1,7 @@
 # 燕子启动器 (Yanzi)
 
+开发入口：[目录约定](docs/development/repository-layout.md) · [本地常用命令](docs/development/local-commands.md)
+
 > [!NOTE]
 > **关于燕子 1.0.0 正式版与 VIP 维护计划的说明**
 > - **1.0.0 正式版发布**：燕子正式迈入 1.0.0 阶段，提供更强的性能、全新的 VIP 维护计划以及跨端体验。
@@ -16,7 +18,7 @@
 
 燕子把常用东西放进轮盘菜单和鼠标面板里，**长按右键就能直接用**；需要新工具时，还能让 AI 帮你**一句话做出来**。所有数据都存本地，不用担心隐私泄露。
 
-![燕子主界面与鼠标面板](launcher-and-quick-panel.png)
+![燕子主界面与鼠标面板](docs/assets/screenshots/launcher-and-quick-panel.png)
 
 **一句话说清楚燕子能干嘛：**
 
@@ -57,19 +59,19 @@
 
 ### 1. 主启动器 + 鼠标面板
 
-![主启动器与鼠标面板](launcher-and-quick-panel.png)
+![主启动器与鼠标面板](docs/assets/screenshots/launcher-and-quick-panel.png)
 
 ### 2. JSON 扩展编辑器
 
-![JSON 扩展编辑器](json-extension-editor.png)
+![JSON 扩展编辑器](docs/assets/screenshots/json-extension-editor.png)
 
 ### 3. 前缀搜索 / 传参预览
 
-![前缀搜索预览](query-prefix-preview.png)
+![前缀搜索预览](docs/assets/screenshots/query-prefix-preview.png)
 
 ### 4. 脚本执行日志
 
-![脚本执行日志](script-execution-log.png)
+![脚本执行日志](website/assets/script-execution-log.png)
 
 ---
 
