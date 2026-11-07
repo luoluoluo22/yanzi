@@ -19,26 +19,20 @@ public partial class MainWindow
                 BuildAiRequestMessages(AiConversationMode.Agent, topic),
                 async (messages, cancellation) =>
                 {
-                    if (GeminiNativeChatClient.IsGeminiApi(profile.BaseUrl))
-                    {
-                        var text = await GeminiNativeChatClient.SendAsync(_aiHttpClient, profile.BaseUrl,
-                            profile.ApiKey, profile.Model, AiToolCompletionClient.ToLegacyMessages(messages), cancellation,
-                            stage => AiChatDiagnostics.Record(topic.Id, profile.Model, stage));
-                        return AiToolRegistry.FromLegacy(text);
-                    }
-                    return await transport.SendAsync(_aiHttpClient, BuildAiChatEndpoint(profile.BaseUrl),
-                        profile.ApiKey, profile.Model, messages, profile.IsChatGptPlan, cancellation);
+                    AiChatDiagnostics.Record(topic.Id, profile.Model, "responses-request", "tools=3 nativeOnly=true");
+                    var completion = await transport.SendAsync(_aiHttpClient,
+                        AiToolCompletionClient.BuildEndpoint(profile.BaseUrl), profile.ApiKey,
+                        profile.Model, messages, profile.IsChatGptPlan, cancellation);
+                    AiChatDiagnostics.Record(topic.Id, profile.Model, "responses-completed", $"toolCalls={completion.Calls.Count}");
+                    return completion;
                 },
                 async (call, cancellation) =>
                 {
                     using var args = JsonDocument.Parse(call.Arguments);
                     if (args.RootElement.ValueKind != JsonValueKind.Object)
                         throw new ArgumentException("Tool arguments must be a JSON object.");
-                    if (call.Name is "exec_command" or "execute_command" or "write_stdin" or "terminate_command")
-                        return await shell.InvokeAsync(call.Name, args.RootElement, cancellation,
-                            preview => transcript.Find(call.Id)?.SetPreview(preview));
-                    return await ExecuteToolAsync(new ToolCallInfo
-                    { ToolName = call.Name, RawPayload = args.RootElement.Clone() }, cancellation);
+                    return await shell.InvokeAsync(call.Name, args.RootElement, cancellation,
+                        preview => transcript.Find(call.Id)?.SetPreview(preview));
                 },
                 progress =>
                 {

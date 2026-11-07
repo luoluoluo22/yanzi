@@ -18,6 +18,9 @@ internal static class Program
     {
         try
         {
+            using var dataScope = (IDisposable)typeof(HostAssets).GetMethod("UseIsolatedDataRootForVerification",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.Invoke(null,
+                    new object[] { System.IO.Path.Combine(System.IO.Path.GetTempPath(), "yanzi-wpf-smoke-data-" + Guid.NewGuid().ToString("N")) })!;
             System.IO.File.WriteAllText(AuditLog, "START " + DateTime.UtcNow.ToString("O") + Environment.NewLine);
             Log("BEFORE app constructor");
             var app = new App();

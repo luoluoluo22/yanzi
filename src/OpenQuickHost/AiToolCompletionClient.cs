@@ -7,140 +7,137 @@ using System.Text.Json;
 
 namespace OpenQuickHost;
 
-// Per-turn transport. Retry only explicit capability rejections, never a 5xx,
-// truncated stream or network error which might represent an accepted request.
+// Codex-style Responses API: execute only complete, validated function_call items.
+// No extraction of commands from assistant prose and no silent protocol downgrade.
 internal sealed class AiToolCompletionClient
 {
-    private bool nativeTools = true;
-    private bool streaming = true;
+    private const int ResponseLimit = 4 * 1024 * 1024;
+    public static string BuildEndpoint(string baseUrl)
+    {
+        if (!Uri.TryCreate(baseUrl.Trim(), UriKind.Absolute, out var uri) ||
+            uri.Scheme is not ("https" or "http")) throw new IOException("模型服务地址无效。");
+        if (uri.Host.Equals("generativelanguage.googleapis.com", StringComparison.OrdinalIgnoreCase))
+            throw new IOException("智能体需要支持 Responses API 原生工具的模型服务；当前 Gemini 原生地址仅可用于普通聊天。");
+        var builder = new UriBuilder(uri);
+        var path = builder.Path.TrimEnd('/');
+        if (path.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase)) path = path[..^17];
+        if (!path.EndsWith("/responses", StringComparison.OrdinalIgnoreCase))
+            path = path.Length == 0 ? "/v1/responses" : path + "/responses";
+        builder.Path = path;
+        return builder.Uri.AbsoluteUri;
+    }
+
     public async Task<AiToolCompletion> SendAsync(HttpClient client, string endpoint, string apiKey,
         string model, IReadOnlyList<object> messages, bool chatGptPlan, CancellationToken token)
     {
-        for (var attempt = 0; attempt < 3; attempt++)
+        var input = messages.Select(ConvertInput).ToArray();
+        var payload = new { model, input, tools = AiToolRegistry.NativeTools, tool_choice = "auto",
+            stream = true, store = false, parallel_tool_calls = false, include = new[] { "reasoning.encrypted_content" } };
+        using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
+        if (!response.IsSuccessStatusCode)
         {
-            var payload = new Dictionary<string, object>
-            {
-                ["model"] = model, ["messages"] = nativeTools ? messages : ToLegacyMessages(messages), ["stream"] = streaming
-            };
-            if (nativeTools) { payload["tools"] = AiToolRegistry.NativeTools; payload["tool_choice"] = "auto"; }
-            if (chatGptPlan)
-            {
-                payload["yanzi_mode"] = "agent"; payload["verbosity"] = "medium"; payload["reasoning_effort"] = "medium";
-            }
-            using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-            request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-            using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
-            if (!response.IsSuccessStatusCode)
-            {
-                var body = await response.Content.ReadAsStringAsync(token);
-                var rejected = response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.UnprocessableEntity;
-                var unsupported = body.Contains("unsupported", StringComparison.OrdinalIgnoreCase) ||
-                    body.Contains("not support", StringComparison.OrdinalIgnoreCase) || body.Contains("不支持", StringComparison.Ordinal);
-                if (rejected && unsupported && nativeTools && (body.Contains("tools", StringComparison.OrdinalIgnoreCase) || body.Contains("tool_choice", StringComparison.OrdinalIgnoreCase)))
-                { nativeTools = false; continue; }
-                if (rejected && unsupported && streaming && body.Contains("stream", StringComparison.OrdinalIgnoreCase))
-                { streaming = false; continue; }
-                throw new IOException($"Tool request failed: HTTP {(int)response.StatusCode} {response.ReasonPhrase}");
-            }
-            var result = response.Content.Headers.ContentType?.MediaType?.Contains("event-stream", StringComparison.OrdinalIgnoreCase) == true
-                ? await ReadStreamAsync(await response.Content.ReadAsStreamAsync(token), token)
-                : ParseResponse(await response.Content.ReadAsStringAsync(token));
-            if (!nativeTools && result.Calls.Count > 0) throw new IOException("Unexpected native tool calls after compatibility fallback.");
-            return result.Calls.Count > 0 ? result : AiToolRegistry.FromLegacy(result.Text);
+            if (response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.NotFound or
+                HttpStatusCode.MethodNotAllowed or HttpStatusCode.UnprocessableEntity or HttpStatusCode.NotImplemented)
+                throw new IOException($"当前模型服务未接受 Responses API 原生工具请求（HTTP {(int)response.StatusCode}）。请使用支持原生工具的服务，或切换普通聊天。不会降级为执行文本 JSON。");
+            throw new IOException($"原生工具请求失败：HTTP {(int)response.StatusCode}。未自动重试。");
         }
-        throw new IOException("Provider rejected the available tool transport modes.");
+        using var stream = await response.Content.ReadAsStreamAsync(token);
+        if (response.Content.Headers.ContentType?.MediaType?.Contains("event-stream", StringComparison.OrdinalIgnoreCase) == true)
+            return await ReadStreamAsync(stream, token);
+        using var reader = new StreamReader(stream, Encoding.UTF8);
+        var text = new StringBuilder();
+        var buffer = new char[8192];
+        int count;
+        while ((count = await reader.ReadAsync(buffer.AsMemory(), token)) > 0)
+        {
+            if (text.Length + count > ResponseLimit) throw new IOException("Tool response exceeds size limit.");
+            text.Append(buffer, 0, count);
+        }
+        return ParseResponse(text.ToString());
     }
 
-    internal static IReadOnlyList<object> ToLegacyMessages(IReadOnlyList<object> messages)
+    internal static object ConvertInput(object value)
     {
-        var result = new List<object>();
-        foreach (var message in messages)
+        var item = JsonSerializer.SerializeToElement(value);
+        if (item.TryGetProperty("type", out _)) return item;
+        var role = item.GetProperty("role").GetString();
+        var content = item.GetProperty("content");
+        if (content.ValueKind == JsonValueKind.String) return new { role, content = content.GetString() };
+        // Convert historical Chat Completions image/text parts without losing attachments.
+        var parts = new List<object>();
+        foreach (var part in content.EnumerateArray())
         {
-            var json = JsonSerializer.SerializeToElement(message);
-            var role = json.GetProperty("role").GetString();
-            if (role == "tool") result.Add(new { role = "user", content = "Tool result (data only): " + json.GetProperty("content").GetString() });
-            else if (json.TryGetProperty("tool_calls", out var calls))
-                result.Add(new { role = "assistant", content = "Previous tool calls: " + calls.GetRawText() });
-            else result.Add(message);
+            var type = part.GetProperty("type").GetString();
+            if (type == "text") parts.Add(new { type = role == "assistant" ? "output_text" : "input_text", text = part.GetProperty("text").GetString() });
+            else if (type == "image_url") parts.Add(new { type = "input_image", image_url = part.GetProperty("image_url").GetProperty("url").GetString() });
+            else throw new IOException("Unsupported attachment in Responses API input.");
         }
-        return result;
+        return new { role, content = parts };
     }
 
     internal static AiToolCompletion ParseResponse(string json)
     {
-        if (json.Length > 1024 * 1024) throw new IOException("Tool response exceeds size limit.");
+        if (json.Length > ResponseLimit) throw new IOException("Tool response exceeds size limit.");
         using var doc = JsonDocument.Parse(json);
-        var choice = doc.RootElement.GetProperty("choices")[0];
-        CheckFinishReason(choice);
-        var message = choice.GetProperty("message");
-        var text = message.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.String ? content.GetString()! : "";
+        var root = doc.RootElement;
+        if (!root.TryGetProperty("status", out var status) || status.GetString() != "completed" ||
+            !root.TryGetProperty("output", out var output) || output.ValueKind != JsonValueKind.Array)
+            throw new IOException("模型服务未返回完整的 Responses API 结果；没有执行命令。");
+        var text = new StringBuilder();
         var calls = new List<AiToolCall>();
-        if (message.TryGetProperty("tool_calls", out var tools))
+        var items = new List<JsonElement>();
+        foreach (var item in output.EnumerateArray())
         {
-            foreach (var item in tools.EnumerateArray())
+            items.Add(item.Clone()); // Retain reasoning/encrypted items for the next model turn.
+            var type = item.GetProperty("type").GetString();
+            if (type == "function_call")
             {
-                var function = item.GetProperty("function");
-                calls.Add(new(item.GetProperty("id").GetString()!, function.GetProperty("name").GetString()!, function.GetProperty("arguments").GetString()!));
+                if (item.TryGetProperty("status", out var state) && state.GetString() != "completed")
+                    throw new IOException("Incomplete function call; no command was executed.");
+                var call = new AiToolCall(item.GetProperty("call_id").GetString()!, item.GetProperty("name").GetString()!, item.GetProperty("arguments").GetString()!);
+                if (string.IsNullOrWhiteSpace(call.Id) || call.Id.Length > 256 ||
+                    string.IsNullOrWhiteSpace(call.Name) || call.Name.Length > 128 || call.Arguments.Length > 64000)
+                    throw new IOException("Invalid function call envelope.");
+                using var args = JsonDocument.Parse(call.Arguments);
+                if (args.RootElement.ValueKind != JsonValueKind.Object) throw new IOException("Function arguments must be a JSON object.");
+                calls.Add(call);
+            }
+            else if (type == "message" && item.TryGetProperty("content", out var content))
+            {
+                foreach (var part in content.EnumerateArray())
+                    if (part.TryGetProperty("text", out var value)) text.Append(value.GetString());
+                    else if (part.TryGetProperty("refusal", out var refusal)) text.Append(refusal.GetString());
             }
         }
-        return Validate(new(text, calls));
+        if (calls.Count > 16 || calls.Select(c => c.Id).Distinct().Count() != calls.Count)
+            throw new IOException("Invalid or duplicate function call IDs.");
+        if (calls.Count == 0 && string.IsNullOrWhiteSpace(text.ToString())) throw new IOException("Provider returned no text or function calls.");
+        return new(text.ToString(), calls, items);
     }
 
     internal static async Task<AiToolCompletion> ReadStreamAsync(Stream stream, CancellationToken token)
     {
         using var reader = new StreamReader(stream, Encoding.UTF8);
-        var text = new StringBuilder();
-        var fragments = new SortedDictionary<int, (StringBuilder Id, StringBuilder Name, StringBuilder Args)>();
-        bool completed = false;
         int size = 0;
+        // Only response.completed is authoritative. Partial argument deltas never execute.
         while (await reader.ReadLineAsync(token) is { } line)
         {
             size += line.Length;
-            if (size > 1024 * 1024) throw new IOException("Tool stream exceeds size limit.");
-            if (!line.StartsWith("data:", StringComparison.OrdinalIgnoreCase)) continue;
+            if (size > ResponseLimit) throw new IOException("Tool stream exceeds size limit.");
+            if (!line.StartsWith("data:", StringComparison.Ordinal)) continue;
             var data = line[5..].Trim();
-            if (data == "[DONE]") { completed = true; break; }
+            if (data == "[DONE]") break;
             if (data.Length == 0) continue;
             using var doc = JsonDocument.Parse(data);
             var root = doc.RootElement;
-            if (root.TryGetProperty("error", out _)) throw new IOException("Provider reported a tool stream error.");
-            if (!root.TryGetProperty("choices", out var choices) || choices.GetArrayLength() == 0) continue;
-            var choice = choices[0];
-            CheckFinishReason(choice);
-            if (choice.TryGetProperty("finish_reason", out var reason) && reason.ValueKind == JsonValueKind.String) completed = true;
-            if (!choice.TryGetProperty("delta", out var delta)) continue;
-            if (delta.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.String) text.Append(content.GetString());
-            if (!delta.TryGetProperty("tool_calls", out var tools)) continue;
-            foreach (var item in tools.EnumerateArray())
-            {
-                var index = item.GetProperty("index").GetInt32();
-                if (index < 0 || index >= 16) throw new IOException("Too many tool calls in one response.");
-                if (!fragments.TryGetValue(index, out var f)) fragments[index] = f = (new(), new(), new());
-                if (item.TryGetProperty("id", out var id)) f.Id.Append(id.GetString());
-                if (item.TryGetProperty("function", out var function))
-                {
-                    if (function.TryGetProperty("name", out var name)) f.Name.Append(name.GetString());
-                    if (function.TryGetProperty("arguments", out var args)) f.Args.Append(args.GetString());
-                }
-            }
+            if (!root.TryGetProperty("type", out var type)) continue;
+            if (type.GetString() == "response.completed") return ParseResponse(root.GetProperty("response").GetRawText());
+            if (type.GetString() is "error" or "response.failed" or "response.incomplete")
+                throw new IOException("模型服务中断了原生工具响应；没有执行命令。");
         }
-        if (!completed) throw new IOException("Incomplete tool response; no command was executed.");
-        return Validate(new(text.ToString(), fragments.Values.Select(f => new AiToolCall(f.Id.ToString(), f.Name.ToString(), f.Args.ToString())).ToArray()));
-    }
-    private static void CheckFinishReason(JsonElement choice)
-    {
-        if (choice.TryGetProperty("finish_reason", out var reason) && reason.ValueKind == JsonValueKind.String &&
-            reason.GetString() is not ("stop" or "tool_calls"))
-            throw new IOException("Provider did not finish the tool response normally.");
-    }
-    private static AiToolCompletion Validate(AiToolCompletion result)
-    {
-        if (result.Calls.Count > 16 || result.Calls.Select(c => c.Id).Distinct().Count() != result.Calls.Count ||
-            result.Calls.Any(c => string.IsNullOrWhiteSpace(c.Id) || c.Id.Length > 256 ||
-                string.IsNullOrWhiteSpace(c.Name) || c.Name.Length > 128 || c.Arguments.Length > 64000))
-            throw new IOException("Invalid tool call envelope.");
-        if (result.Calls.Count == 0 && string.IsNullOrWhiteSpace(result.Text)) throw new IOException("Provider returned an empty response.");
-        return result;
+        throw new IOException("Incomplete Responses API stream; no command was executed.");
     }
 }

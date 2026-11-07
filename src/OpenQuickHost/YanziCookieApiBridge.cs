@@ -286,7 +286,7 @@ public static class YanziCookieApiBridge
                     new { backend = status.Backend, extension = status.Extension });
                 return;
             }
-            if (request.HttpMethod != "POST" || path != "/v1/chat/completions")
+            if (request.HttpMethod != "POST" || path is not ("/v1/chat/completions" or "/v1/responses"))
             {
                 await RespondAsync(ctx.Response, 404, Error("not_found"));
                 return;
@@ -318,6 +318,27 @@ public static class YanziCookieApiBridge
             if (!catalog.SelectableModels.Contains(model, StringComparer.Ordinal))
             {
                 await RespondAsync(ctx.Response, 404, Error("model_not_in_backend_catalog"));
+                return;
+            }
+            if (path == "/v1/responses")
+            {
+                // Preserve function calls, call IDs, reasoning items, errors and SSE events.
+                // Text-only backends must fail explicitly rather than simulate native tools.
+                using var nativeRequest = new HttpRequestMessage(HttpMethod.Post, Backend + "/v1/responses")
+                {
+                    Content = new StringContent(input.GetRawText(), Encoding.UTF8, "application/json")
+                };
+                using var nativeResponse = await Client.SendAsync(nativeRequest, HttpCompletionOption.ResponseHeadersRead, stop);
+                if (nativeResponse.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.MethodNotAllowed)
+                {
+                    await RespondAsync(ctx.Response, 501, Error("responses_native_tools_not_supported_by_backend"));
+                    return;
+                }
+                ctx.Response.StatusCode = (int)nativeResponse.StatusCode;
+                ctx.Response.ContentType = nativeResponse.Content.Headers.ContentType?.ToString() ?? "application/json";
+                ctx.Response.SendChunked = true;
+                ctx.Response.Headers["Cache-Control"] = "no-store";
+                await nativeResponse.Content.CopyToAsync(ctx.Response.OutputStream, stop);
                 return;
             }
             // Only the DOM-based ChatGPT models need an active Ego extension.

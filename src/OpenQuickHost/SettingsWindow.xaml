@@ -5700,7 +5700,7 @@
                                         <TextBlock Text="系统提示词配置" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" VerticalAlignment="Center"/>
                                         <Button Grid.Column="1" Content="独立窗口编辑" Style="{DynamicResource Yanzi.Button.Outline}" Padding="10,4" Click="EditSystemPromptInNewWindow_Click"/>
                                     </Grid>
-                                    <TextBlock Text="配置 AI 助手的全局人格、工作指令和可用工具规范。修改后请点击“保存”按钮保存。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,8,0,0" TextWrapping="Wrap"/>
+                                    <TextBlock Text="仅设置补充偏好，可留空。工具协议由程序管理，燕子能力后续通过 Skill 按需加载。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,8,0,0" TextWrapping="Wrap"/>
                                     <TextBox x:Name="AiSystemPromptTextBox" Text="{Binding AiSystemPrompt, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,12,0,0" Height="180" TextWrapping="Wrap" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" TextChanged="AiSettings_TextChanged" Style="{DynamicResource Yanzi.Textarea.Soft}"/>
                                     <Grid Margin="0,16,0,0">
                                         <Grid.ColumnDefinitions>

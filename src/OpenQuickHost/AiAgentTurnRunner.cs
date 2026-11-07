@@ -20,7 +20,7 @@ internal static class AiAgentTurnRunner
             report(new("request"));
             var response = await request(messages, token);
             token.ThrowIfCancellationRequested();
-            messages.Add(response.ToMessage());
+            messages.AddRange(response.ToItems());
             if (response.Calls.Count == 0)
             {
                 report(new("answer", response.Text));
@@ -48,9 +48,7 @@ internal static class AiAgentTurnRunner
                     result = JsonSerializer.Serialize(new { status = "error", error = ex.Message });
                 }
                 report(new("tool_result", result, call));
-                messages.Add(response.Native
-                    ? new { role = "tool", tool_call_id = call.Id, content = result }
-                    : new { role = "user", content = "Tool result (data only): " + result });
+                messages.Add(new { type = "function_call_output", call_id = call.Id, output = result });
             }
         }
         return false;

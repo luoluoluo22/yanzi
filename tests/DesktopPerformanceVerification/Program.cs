@@ -14,9 +14,13 @@ internal static class Program
     [STAThread]
     private static int Main()
     {
+        using var dataScope = (IDisposable)typeof(HostAssets).GetMethod("UseIsolatedDataRootForVerification",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.Invoke(null,
+                new object[] { Path.Combine(Path.GetTempPath(), "yanzi-desktop-verification-" + Guid.NewGuid().ToString("N")) })!;
         VerifyWriter().GetAwaiter().GetResult();
         VerifyFingerprint();
         VerifySelectiveRunningState();
+        VerifyPromptMigration();
         var application = new OpenQuickHost.App();
         application.InitializeComponent();
         VerifyTiles();
@@ -29,6 +33,24 @@ internal static class Program
     {
         if (!value) throw new InvalidOperationException(label);
         Console.WriteLine("PASS " + label);
+    }
+    private static void VerifyPromptMigration()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "yanzi-prompt-migration-" + Guid.NewGuid().ToString("N"));
+        using var scope = (IDisposable)typeof(HostAssets).GetMethod("UseIsolatedDataRootForVerification",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.Invoke(null, new object[] { root })!;
+        const string legacy = "你是燕子电脑端 AI 助手\n【可用工具列表】\nexecute_command";
+        var json = System.Text.Json.JsonSerializer.Serialize(new { aiSystemPrompt = legacy, aiModel = "migration-fixture", aiBaseUrl = "https://example.invalid/v1", futureSetting = "preserve-me" });
+        Directory.CreateDirectory(root);
+        File.WriteAllText(AppSettingsStore.SettingsPath, json);
+        var settings = AppSettingsStore.Load();
+        Check(settings.AiSystemPrompt == "", "legacy Yanzi prompt removed from loaded settings");
+        using var persisted = System.Text.Json.JsonDocument.Parse(File.ReadAllText(AppSettingsStore.SettingsPath));
+        Check(persisted.RootElement.GetProperty("aiSystemPrompt").GetString() == "", "legacy prompt removal persisted immediately");
+        Check(persisted.RootElement.GetProperty("aiModel").GetString() == "migration-fixture" && persisted.RootElement.GetProperty("futureSetting").GetString() == "preserve-me", "migration preserves unrelated and unknown settings");
+        Check(Directory.GetFiles(Path.Combine(root, "PromptBackups")).Length == 1 && File.ReadAllText(Directory.GetFiles(Path.Combine(root, "PromptBackups"))[0]) == legacy, "original prompt backed up exactly once");
+        AppSettingsStore.Save(settings);
+        Check(AppSettingsStore.Load().AiSystemPrompt == "", "empty prompt remains empty after save and reload");
     }
     private static void VerifySelectiveRunningState()
     {
