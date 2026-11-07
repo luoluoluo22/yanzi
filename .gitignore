@@ -78,6 +78,11 @@ cards_*.txt
 # Python validation caches
 __pycache__/
 
+# Editor backups and one-off Android investigation diffs
+*.xaml.bak
+*_wpftmp.csproj
+/mobile/android/clean_diff*.patch
+
 # JavaScript dependencies
 **/node_modules/
 
