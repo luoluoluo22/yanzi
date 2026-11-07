@@ -46,7 +46,9 @@ function Run-Step([string]$label,[string[]]$argv) {
   & taskkill.exe /F /T /PID $proc.Id 2>$null | Out-Null
   throw ("Step timed out after $StepTimeoutSeconds seconds: $label")
  }
+ $proc.Refresh()
  $code=$proc.ExitCode
+ if ($null -eq $code) { throw ("Step exited without a readable exit code: "+$label) }
  $out=@(Get-Content -LiteralPath $stdoutPath -ErrorAction SilentlyContinue)+@(Get-Content -LiteralPath $stderrPath -ErrorAction SilentlyContinue)
  $out | Set-Content -LiteralPath $path -Encoding UTF8
  $report.checks += [ordered]@{step=$label;exit_code=$code;log=$path}
