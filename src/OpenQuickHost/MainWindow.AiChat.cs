@@ -2625,7 +2625,13 @@ public partial class MainWindow
                 var title = topicElement.GetProperty("title").GetString() ?? "未命名";
                 var topicId = topicElement.TryGetProperty("id", out var idElement)
                     ? idElement.GetString() : null;
-                var topic = new AiChatTopic(title, topicId);
+                DateTimeOffset? createdAt = topicElement.TryGetProperty("createdAt", out var createdElement) &&
+                    createdElement.ValueKind == JsonValueKind.String && createdElement.TryGetDateTimeOffset(out var createdTime)
+                    ? createdTime : null;
+                DateTimeOffset? updatedAt = topicElement.TryGetProperty("updatedAt", out var updatedElement) &&
+                    updatedElement.ValueKind == JsonValueKind.String && updatedElement.TryGetDateTimeOffset(out var updatedTime)
+                    ? updatedTime : null;
+                var topic = new AiChatTopic(title, topicId, createdAt, updatedAt);
 
                 if (topicElement.TryGetProperty("isPinned", out var isPinnedElement))
                 {
@@ -2663,7 +2669,9 @@ public partial class MainWindow
                             timeElement.ValueKind == JsonValueKind.String &&
                             timeElement.TryGetDateTimeOffset(out var originalTime))
                             restoredTime = originalTime;
-                        var restored = new AiChatMessage(isUser, text, attachments, restoredTime);
+                        var messageId = msgElement.TryGetProperty("id", out var messageIdElement) &&
+                            messageIdElement.ValueKind == JsonValueKind.String ? messageIdElement.GetString() : null;
+                        var restored = new AiChatMessage(isUser, text, attachments, restoredTime, messageId);
                         if (msgElement.TryGetProperty("isToolCall", out var toolFlag) && toolFlag.ValueKind == JsonValueKind.True)
                         {
                             restored.IsToolCall = true;
@@ -2816,9 +2824,9 @@ public sealed class AiChatMessage : INotifyPropertyChanged
 
     public AiChatMessage(bool isUser, string text,
         IEnumerable<AiChatMessageAttachment>? attachments = null,
-        DateTimeOffset? timestamp = null)
+        DateTimeOffset? timestamp = null, string? id = null)
     {
-        Id = Guid.NewGuid().ToString();
+        Id = string.IsNullOrWhiteSpace(id) ? Guid.NewGuid().ToString() : id;
         IsUser = isUser;
         _text = text;
         Timestamp = timestamp ?? DateTimeOffset.Now;
@@ -2957,12 +2965,13 @@ public sealed class AiChatTopic : INotifyPropertyChanged
     private bool _hasUnreadReply;
     private DateTimeOffset _updatedAt;
 
-    public AiChatTopic(string title, string? id = null)
+    public AiChatTopic(string title, string? id = null,
+        DateTimeOffset? createdAt = null, DateTimeOffset? updatedAt = null)
     {
         Id = string.IsNullOrWhiteSpace(id) ? Guid.NewGuid().ToString() : id;
         _title = title;
-        CreatedAt = DateTimeOffset.Now;
-        UpdatedAt = DateTimeOffset.Now;
+        CreatedAt = createdAt ?? DateTimeOffset.Now;
+        UpdatedAt = updatedAt ?? CreatedAt;
         Messages = [];
     }
 

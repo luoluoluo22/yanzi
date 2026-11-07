@@ -204,7 +204,9 @@ internal static class Program
         {
             context.ShowWindow(host);
             host.SelectedSearchScope = host.SearchScopes.Single(item => item.Key == "ai");
-            var topic = new AiChatTopic("Performance fixture");
+            var originalCreated = DateTimeOffset.Now.AddDays(-2);
+            var originalUpdated = DateTimeOffset.Now.AddHours(-3);
+            var topic = new AiChatTopic("Performance fixture", "stable-topic", originalCreated, originalUpdated);
             for (var i = 0; i < 2000; i++) topic.Messages.Add(new AiChatMessage(i % 2 == 0, "Native message " + i + " **markdown**"));
             host.AiChatTopics.Add(topic);
             host.SelectedAiChatTopic = topic;
@@ -215,6 +217,15 @@ internal static class Program
             Check(backgroundTopic.HasUnreadReply, "native host marks a background reply unread");
             host.SelectedAiChatTopic = backgroundTopic;
             Check(!backgroundTopic.HasUnreadReply, "native host clears unread state on selecting conversation");
+            host.SelectedAiChatTopic = topic;
+            var originalMessageId = topic.Messages[0].Id;
+            typeof(MainWindow).GetMethod("SaveTopicsToStorage", flags)!.Invoke(host, null);
+            host.AiChatTopics.Clear();
+            typeof(MainWindow).GetMethod("LoadTopicsFromStorage", flags)!.Invoke(host, null);
+            topic = host.AiChatTopics.Single(item => item.Id == "stable-topic");
+            Check(topic.CreatedAt == originalCreated && topic.UpdatedAt == originalUpdated &&
+                topic.Messages[0].Id == originalMessageId && topic.Messages.Count == 2000,
+                "native history reload preserves topic dates, message IDs and all content");
             host.SelectedAiChatTopic = topic;
             host.UpdateLayout();
             var list = (ListBox)host.FindName("AiChatMessagesList");
