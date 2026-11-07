@@ -16,6 +16,8 @@ namespace OpenQuickHost;
 internal static class AiChatTaskbarIdentity
 {
     internal const string RelaunchArgument = "--ai-chat";
+    private static string RelaunchArguments => HostRuntimeProfile.IsDevelopment
+        ? "--dev " + RelaunchArgument : RelaunchArgument;
     private const string OfficialAppId = "Yanzi.Desktop.AiChat";
     private const string DevelopmentAppId = "Yanzi.Desktop.AiChat.Dev";
     private static readonly Guid AppModelFormatId =
@@ -63,6 +65,15 @@ internal static class AiChatTaskbarIdentity
             HostAssets.AppendLog("[AiChatTaskbar] Shortcut registration failed: " + ex);
         }
 
+        ConfigureWindowProperties(hwnd, processPath, iconPath, appId, window.Title);
+
+        HostAssets.AppendLog("[AiChatTaskbar] Configured window AppID=" + appId +
+                             " hwnd=" + hwnd + " icon=" + iconPath);
+    }
+
+    internal static void ConfigureWindowProperties(
+        IntPtr hwnd, string processPath, string iconPath, string appId, string title)
+    {
         var iid = PropertyStoreInterfaceId;
         var hr = SHGetPropertyStoreForWindow(hwnd, ref iid, out var store);
         Marshal.ThrowExceptionForHR(hr);
@@ -71,10 +82,12 @@ internal static class AiChatTaskbarIdentity
 
         try
         {
-            // The matching Start Menu .lnk owns the relaunch command, name and
-            // icon. Setting RelaunchCommand on a window without its mandatory
-            // RelaunchDisplayNameResource was silently ignored by Explorer.
-            // For installed apps, the shortcut is the canonical pin target.
+            // Explorer can create a new pin directly from this HWND instead of
+            // selecting the Start Menu link. Supply the complete relaunch tuple
+            // before the AppID: command and display name must be set together.
+            SetString(store, 2, "\"" + processPath + "\" " + RelaunchArguments);
+            SetString(store, 3, iconPath + ",0");
+            SetString(store, 4, title);
             SetString(store, 5, appId);
             Marshal.ThrowExceptionForHR(store.Commit());
         }
@@ -82,9 +95,6 @@ internal static class AiChatTaskbarIdentity
         {
             Marshal.ReleaseComObject(store);
         }
-
-        HostAssets.AppendLog("[AiChatTaskbar] Configured window AppID=" + appId +
-                             " hwnd=" + hwnd + " icon=" + iconPath);
     }
 
     private static string EnsurePersistentIcon(Window window)
@@ -202,7 +212,7 @@ internal static class AiChatTaskbarIdentity
             link = shell!.CreateShortcut(path);
             return string.Equals((string)link.TargetPath, processPath,
                        StringComparison.OrdinalIgnoreCase) &&
-                   string.Equals((string)link.Arguments, RelaunchArgument,
+                   string.Equals((string)link.Arguments, RelaunchArguments,
                        StringComparison.Ordinal) &&
                    string.Equals((string)link.IconLocation, iconPath + ",0",
                        StringComparison.OrdinalIgnoreCase);
@@ -241,7 +251,7 @@ internal static class AiChatTaskbarIdentity
             shell = Activator.CreateInstance(Type.GetTypeFromProgID("WScript.Shell")!);
             link = shell!.CreateShortcut(path);
             link.TargetPath = processPath;
-            link.Arguments = RelaunchArgument;
+            link.Arguments = RelaunchArguments;
             link.IconLocation = iconPath + ",0";
             link.Description = "燕子 · AI 对话";
             link.WorkingDirectory = Path.GetDirectoryName(processPath)!;

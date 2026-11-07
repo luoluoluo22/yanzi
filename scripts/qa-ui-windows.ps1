@@ -41,14 +41,18 @@ function Run-Step([string]$label,[string[]]$argv) {
  $stdoutPath=$path+'.stdout'
  $stderrPath=$path+'.stderr'
  $argumentString=($argv|ForEach-Object {if($_ -match '\s'){ '"'+$_+'"' }else{$_}}) -join ' '
- $proc=Start-Process -FilePath (Get-Command dotnet).Source -ArgumentList $argumentString -PassThru -NoNewWindow -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
+ $startInfo=New-Object System.Diagnostics.ProcessStartInfo
+ $startInfo.FileName=$env:ComSpec
+ $dotnetPath=(Get-Command dotnet).Source
+ $startInfo.Arguments='/d /s /c ""'+$dotnetPath+'" '+$argumentString+' 1>"'+$stdoutPath+'" 2>"'+$stderrPath+'""'
+ $startInfo.UseShellExecute=$false
+ $startInfo.CreateNoWindow=$true
+ $proc=[System.Diagnostics.Process]::Start($startInfo)
  if(-not $proc.WaitForExit($StepTimeoutSeconds*1000)) {
   & taskkill.exe /F /T /PID $proc.Id 2>$null | Out-Null
   throw ("Step timed out after $StepTimeoutSeconds seconds: $label")
  }
- $proc.Refresh()
- $code=$proc.ExitCode
- if ($null -eq $code) { throw ("Step exited without a readable exit code: "+$label) }
+ $proc.WaitForExit(); $proc.Refresh(); $code=$proc.ExitCode
  $out=@(Get-Content -LiteralPath $stdoutPath -ErrorAction SilentlyContinue)+@(Get-Content -LiteralPath $stderrPath -ErrorAction SilentlyContinue)
  $out | Set-Content -LiteralPath $path -Encoding UTF8
  $report.checks += [ordered]@{step=$label;exit_code=$code;log=$path}

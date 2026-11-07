@@ -14,9 +14,14 @@ internal static class Program
     [STAThread]
     private static int Main()
     {
+        using var dataScope = (IDisposable)typeof(HostAssets).GetMethod("UseIsolatedDataRootForVerification",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.Invoke(null,
+                new object[] { Path.Combine(Path.GetTempPath(), "yanzi-desktop-verification-" + Guid.NewGuid().ToString("N")) })!;
         VerifyWriter().GetAwaiter().GetResult();
         VerifyFingerprint();
         VerifySelectiveRunningState();
+        VerifyPromptMigration();
+        VerifyCombinedAiState();
         var application = new OpenQuickHost.App();
         application.InitializeComponent();
         VerifyTiles();
@@ -29,6 +34,50 @@ internal static class Program
     {
         if (!value) throw new InvalidOperationException(label);
         Console.WriteLine("PASS " + label);
+    }
+    private static void VerifyPromptMigration()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "yanzi-prompt-migration-" + Guid.NewGuid().ToString("N"));
+        using var scope = (IDisposable)typeof(HostAssets).GetMethod("UseIsolatedDataRootForVerification",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.Invoke(null, new object[] { root })!;
+        const string legacy = "你是燕子电脑端 AI 助手\n【可用工具列表】\nexecute_command";
+        var json = System.Text.Json.JsonSerializer.Serialize(new { aiSystemPrompt = legacy, aiModel = "migration-fixture", aiBaseUrl = "https://example.invalid/v1", futureSetting = "preserve-me" });
+        Directory.CreateDirectory(root);
+        File.WriteAllText(AppSettingsStore.SettingsPath, json);
+        var settings = AppSettingsStore.Load();
+        Check(settings.AiSystemPrompt == "", "legacy Yanzi prompt removed from loaded settings");
+        using var persisted = System.Text.Json.JsonDocument.Parse(File.ReadAllText(AppSettingsStore.SettingsPath));
+        Check(persisted.RootElement.GetProperty("aiSystemPrompt").GetString() == "", "legacy prompt removal persisted immediately");
+        Check(persisted.RootElement.GetProperty("aiModel").GetString() == "migration-fixture" && persisted.RootElement.GetProperty("futureSetting").GetString() == "preserve-me", "migration preserves unrelated and unknown settings");
+        Check(Directory.GetFiles(Path.Combine(root, "PromptBackups")).Length == 1 && File.ReadAllText(Directory.GetFiles(Path.Combine(root, "PromptBackups"))[0]) == legacy, "original prompt backed up exactly once");
+        AppSettingsStore.Save(settings);
+        Check(AppSettingsStore.Load().AiSystemPrompt == "", "empty prompt remains empty after save and reload");
+    }
+    private static void VerifyCombinedAiState()
+    {
+        var now = new DateTimeOffset(2026, 11, 7, 10, 0, 0, TimeSpan.FromHours(8));
+        Check(AiChatTopic.FormatListAge(now.AddSeconds(-20), now) == "刚刚" &&
+            AiChatTopic.FormatListAge(now.AddMinutes(-12), now) == "12m" &&
+            AiChatTopic.FormatListAge(now.AddHours(-3), now) == "3h", "history relative ages survive native tool integration");
+        var topic = new AiChatTopic("fixture");
+        var notifications = new HashSet<string>();
+        topic.PropertyChanged += (_, e) => notifications.Add(e.PropertyName ?? "");
+        topic.HasUnreadReply = true;
+        topic.UpdatedAt = now;
+        Check(topic.HasUnreadReply && notifications.Contains(nameof(AiChatTopic.HasUnreadReply)) &&
+            notifications.Contains(nameof(AiChatTopic.UpdatedAtLabel)), "history unread and age bindings notify UI");
+        var merger = typeof(YanziCookieModelCatalog).GetMethod("MergeVisibleModels",
+            System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
+        var visible = (List<string>)merger.Invoke(null, new object[] {
+            new[] { "visible", "hidden", "custom" }, new[] { "HIDDEN" }, new[] { "visible", "hidden", "new-model" } })!;
+        Check(visible.SequenceEqual(new[] { "visible", "new-model", "custom" }), "catalog refresh preserves hidden IDs and custom models");
+        var settings = new AppSettings { AiSystemPrompt = "", AiServiceProviders = [new AiServiceProviderSettings {
+            Id = "hidden-model-fixture", Name = "Fixture", BaseUrl = "https://example.invalid/v1",
+            Models = ["visible"], HiddenModelIds = ["hidden"], SelectedModel = "visible" }] };
+        AppSettingsStore.Save(settings);
+        var restored = AppSettingsStore.Load();
+        Check(restored.AiSystemPrompt == "" && restored.AiServiceProviders.Single(p => p.Id == "hidden-model-fixture").HiddenModelIds.SequenceEqual(new[] { "hidden" }),
+            "empty native prompt and hidden models roundtrip together");
     }
     private static void VerifySelectiveRunningState()
     {
@@ -155,9 +204,28 @@ internal static class Program
         {
             context.ShowWindow(host);
             host.SelectedSearchScope = host.SearchScopes.Single(item => item.Key == "ai");
-            var topic = new AiChatTopic("Performance fixture");
+            var originalCreated = DateTimeOffset.Now.AddDays(-2);
+            var originalUpdated = DateTimeOffset.Now.AddHours(-3);
+            var topic = new AiChatTopic("Performance fixture", "stable-topic", originalCreated, originalUpdated);
             for (var i = 0; i < 2000; i++) topic.Messages.Add(new AiChatMessage(i % 2 == 0, "Native message " + i + " **markdown**"));
             host.AiChatTopics.Add(topic);
+            host.SelectedAiChatTopic = topic;
+            var backgroundTopic = new AiChatTopic("Unread fixture");
+            backgroundTopic.Messages.Add(new AiChatMessage(false, "Background reply"));
+            host.AiChatTopics.Add(backgroundTopic);
+            typeof(MainWindow).GetMethod("NoteTopicReplyReadState", flags)!.Invoke(host, new object[] { backgroundTopic });
+            Check(backgroundTopic.HasUnreadReply, "native host marks a background reply unread");
+            host.SelectedAiChatTopic = backgroundTopic;
+            Check(!backgroundTopic.HasUnreadReply, "native host clears unread state on selecting conversation");
+            host.SelectedAiChatTopic = topic;
+            var originalMessageId = topic.Messages[0].Id;
+            typeof(MainWindow).GetMethod("SaveTopicsToStorage", flags)!.Invoke(host, null);
+            host.AiChatTopics.Clear();
+            typeof(MainWindow).GetMethod("LoadTopicsFromStorage", flags)!.Invoke(host, null);
+            topic = host.AiChatTopics.Single(item => item.Id == "stable-topic");
+            Check(topic.CreatedAt == originalCreated && topic.UpdatedAt == originalUpdated &&
+                topic.Messages[0].Id == originalMessageId && topic.Messages.Count == 2000,
+                "native history reload preserves topic dates, message IDs and all content");
             host.SelectedAiChatTopic = topic;
             host.UpdateLayout();
             var list = (ListBox)host.FindName("AiChatMessagesList");
@@ -251,10 +319,16 @@ internal static class Program
         var document = System.Xml.Linq.XDocument.Load(Path.Combine(AppContext.BaseDirectory, "MainWindow.xaml"));
         var element = document.Descendants().Single(e => (string?)e.Attribute(x + "Name") == "AiChatMessagesList");
         element.SetAttributeValue(System.Xml.Linq.XNamespace.Xmlns + "x", x.NamespaceName);
+        // Preserve the presentation default namespace for markup extensions on
+        // local controls when XElement serializes this extracted template.
+        foreach (var node in element.DescendantsAndSelf().Where(e => e.Name.NamespaceName == "clr-namespace:OpenQuickHost"))
+            node.Name = XName.Get(node.Name.LocalName, "clr-namespace:OpenQuickHost;assembly=Yanzi");
         element.SetAttributeValue(System.Xml.Linq.XNamespace.Xmlns + "local", "clr-namespace:OpenQuickHost;assembly=Yanzi");
         element.SetAttributeValue(System.Xml.Linq.XNamespace.Xmlns + "ui", "clr-namespace:Yanzi.UI.Wpf;assembly=Yanzi.UI.Wpf");
         foreach (var attr in element.DescendantsAndSelf().Attributes().Where(a =>
-            a.Name.LocalName is "Click" or "MouseRightButtonUp" or "MouseLeftButtonUp" or "MouseDown" or "MouseUp").ToArray()) attr.Remove();
+            a.Name.LocalName is "Click" or "MouseRightButtonUp" or "MouseLeftButtonUp" or "MouseDown" or "MouseUp" or
+                "PreviewMouseWheel" or "PreviewKeyDown" or "CommandManager.PreviewExecuted" or "RequestBringIntoView" or
+                "MouseEnter" or "MouseLeave" or "DataContextChanged" or "Unloaded").ToArray()) attr.Remove();
         var list = (ListBox)System.Windows.Markup.XamlReader.Parse(element.ToString().Replace("clr-namespace:OpenQuickHost\"", "clr-namespace:OpenQuickHost;assembly=Yanzi\""));
         var messages = new ObservableCollection<AiChatMessage>(Enumerable.Range(0, 2000).Select(i =>
             new AiChatMessage(i % 2 == 0, $"Message {i}\n**Bold** and a long wrapped paragraph " + new string('x', i % 200))));
@@ -273,6 +347,16 @@ internal static class Program
         Check(list.ItemContainerGenerator.ContainerFromIndex(0) != null, "transcript returns to first message after streaming and recycling");
         messages.Clear(); messages.Add(new AiChatMessage(false, "New topic")); Layout(list, 650);
         Check(list.Items.Count == 1 && list.ItemContainerGenerator.ContainerFromIndex(0) != null, "topic replacement renders without stale containers");
+        var execution = new AiToolExecution("exec_command", "{\"cmd\":\"echo fixture\"}");
+        messages.Clear();
+        messages.Add(new AiChatMessage(false, execution.Command) { IsToolCall = true, ToolExecution = execution });
+        Layout(list, 650);
+        var card = Find<AiToolExecutionCard>(list);
+        Check(card.Visibility == Visibility.Visible && ReferenceEquals(card.DataContext, execution), "production transcript binds visible execution card");
+        execution.ApplyResult("{\"status\":\"completed\",\"exit_code\":0,\"stdout\":\"fixture\"}");
+        Layout(list, 650);
+        Check(((TextBox)card.FindName("OutputBox")).Text == "fixture", "production transcript updates execution output");
+
     }
 
     private static void VerifyTiles()

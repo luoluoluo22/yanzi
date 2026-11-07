@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../src/OpenQuickHost/AiAgentPrompt.cs" Link="AiAgentPrompt.cs" />
+    <Compile Include="../../src/OpenQuickHost/AiShellJob.cs" Link="AiShellJob.cs" />
+    <Compile Include="../../src/OpenQuickHost/AiShellSessionManager.cs" Link="AiShellSessionManager.cs" />
+    <Compile Include="../../src/OpenQuickHost/AiToolRegistry.cs" Link="AiToolRegistry.cs" />
+    <Compile Include="../../src/OpenQuickHost/AiToolCompletionClient.cs" Link="AiToolCompletionClient.cs" />
+    <Compile Include="../../src/OpenQuickHost/AiAgentTurnRunner.cs" Link="AiAgentTurnRunner.cs" />
+    <Compile Include="../../src/OpenQuickHost/AiToolExecution.cs" Link="AiToolExecution.cs" />
+  </ItemGroup>
+</Project>

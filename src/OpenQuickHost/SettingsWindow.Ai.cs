@@ -32,6 +32,8 @@ public partial class SettingsWindow
     private DispatcherTimer? _aiStatusHideTimer;
     private bool _isAiSaveStatusVisible;
     private bool _deferredAiCredentialRefresh;
+    private bool _retainActiveProviderOnSave;
+    private SettingsAiProviderVM? _providerContextMenuTarget;
 
     public bool IsAiSaveStatusVisible
     {
@@ -84,13 +86,32 @@ public partial class SettingsWindow
         // 2. 同步提示词
         _settings.AiSystemPrompt = AiSystemPrompt;
 
-        // 3. 将当前选中的提供商设为 Active 默认提供商并同步参数
-        if (SelectedServiceProvider != null)
+        // Retain an enabled active channel when deleting another provider.
+        var retainActiveProvider = _retainActiveProviderOnSave;
+        _retainActiveProviderOnSave = false;
+        var retainedProvider = retainActiveProvider
+            ? AiServiceProvidersList.FirstOrDefault(item => item.IsEnabled &&
+                string.Equals(item.Id, _settings.ActiveServiceProviderId, StringComparison.OrdinalIgnoreCase))
+            : null;
+        var activeProvider = retainedProvider ?? (SelectedServiceProvider?.IsEnabled == true
+            ? SelectedServiceProvider
+            : AiServiceProvidersList.FirstOrDefault(item => item.IsEnabled &&
+                string.Equals(item.Id, _settings.ActiveServiceProviderId, StringComparison.OrdinalIgnoreCase))
+              ?? AiServiceProvidersList.FirstOrDefault(item => item.IsEnabled));
+        if (activeProvider != null)
         {
-            _settings.ActiveServiceProviderId = SelectedServiceProvider.Id;
-            _settings.AiBaseUrl = SelectedServiceProvider.BaseUrl;
-            _settings.AiApiKey = SelectedServiceProvider.ApiKey;
-            _settings.AiModel = SelectedServiceProvider.SelectedModel;
+            _settings.ActiveServiceProviderId = activeProvider.Id;
+            _settings.AiBaseUrl = activeProvider.BaseUrl;
+            _settings.AiApiKey = activeProvider.ApiKey;
+            _settings.AiModel = !string.IsNullOrWhiteSpace(activeProvider.SelectedModel)
+                ? activeProvider.SelectedModel : activeProvider.Models.FirstOrDefault() ?? string.Empty;
+        }
+        else
+        {
+            _settings.ActiveServiceProviderId = string.Empty;
+            _settings.AiBaseUrl = string.Empty;
+            _settings.AiApiKey = string.Empty;
+            _settings.AiModel = string.Empty;
         }
 
         // 4. 保存设置并同步至主窗口
@@ -124,6 +145,109 @@ public partial class SettingsWindow
             RefreshAiConfigFromExternal();
         }
         _aiStatusHideTimer = ShowSaveStatusTemporarily(_aiStatusHideTimer, visible => IsAiSaveStatusVisible = visible);
+    }
+
+    private void AiProviderEnabledToggle_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.CheckBox toggle ||
+            toggle.DataContext is not SettingsAiProviderVM provider)
+            return;
+
+        // Both the list switch and details switch use the same activation flow.
+        provider.IsEnabled = toggle.IsChecked == true;
+        if (provider.IsEnabled)
+        {
+            SelectedServiceProvider = provider;
+        }
+        else if (ReferenceEquals(SelectedServiceProvider, provider) ||
+                 string.Equals(_settings.ActiveServiceProviderId, provider.Id, StringComparison.OrdinalIgnoreCase))
+        {
+            SelectedServiceProvider = AiServiceProvidersList.FirstOrDefault(item => item.IsEnabled)
+                                      ?? provider;
+        }
+
+        _aiSaveTimer?.Stop();
+        HasAiSettingsChanged = true;
+        SaveAiSettings();
+    }
+
+    private void AiProviderItem_MouseRightButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: SettingsAiProviderVM provider } anchor)
+            return;
+
+        var menu = new Yanzi.UI.Wpf.YanziDropdownMenu();
+        menu.UseStandaloneTheme(Yanzi.UI.Wpf.YanziUi.GetTheme(this));
+        menu.UseContentWidth(182);
+        menu.AddAction("设为当前渠道", () => ActivateAiProvider(provider));
+        menu.AddSeparator();
+        menu.AddAction("删除供应商", () => DeleteAiProvider(provider));
+        var physical = anchor.PointToScreen(System.Windows.Input.Mouse.GetPosition(anchor));
+        var source = System.Windows.PresentationSource.FromVisual(anchor);
+        if (source?.CompositionTarget is null)
+            return;
+        var matrix = source.CompositionTarget.TransformFromDevice;
+        var screen = System.Windows.Forms.Screen.FromPoint(
+            new System.Drawing.Point((int)Math.Round(physical.X), (int)Math.Round(physical.Y))).WorkingArea;
+        menu.ShowAtScreenPoint(matrix.Transform(physical),
+            new System.Windows.Rect(matrix.Transform(new System.Windows.Point(screen.Left, screen.Top)),
+                matrix.Transform(new System.Windows.Point(screen.Right, screen.Bottom))));
+        e.Handled = true;
+    }
+
+    private void ActivateAiProvider(SettingsAiProviderVM provider)
+    {
+        if (!AiServiceProvidersList.Contains(provider))
+            return;
+        if (!provider.IsEnabled)
+        {
+            System.Windows.MessageBox.Show(this, "请先启用此供应商，再将它设为当前渠道。",
+                "模型服务", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        SelectedServiceProvider = provider;
+        _aiSaveTimer?.Stop();
+        HasAiSettingsChanged = true;
+        SaveAiSettings();
+    }
+
+    private void DeleteAiProvider(SettingsAiProviderVM provider)
+    {
+        if (!AiServiceProvidersList.Contains(provider))
+            return;
+
+        // Extension-owned registrations reappear on manifest reconciliation.
+        if (!string.IsNullOrWhiteSpace(provider.RawSettings.OwnerExtensionId) ||
+            provider.Id.StartsWith("miniapp:", StringComparison.OrdinalIgnoreCase))
+        {
+            System.Windows.MessageBox.Show(this,
+                "此供应商由小程序自动注册。请在对应小程序中卸载或移除模型服务注册，不能在这里直接删除。",
+                "模型服务", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        if (System.Windows.MessageBox.Show(this,
+                $"确定删除供应商「{provider.Name}」及其模型配置吗？此操作无法撤销。",
+                "删除供应商", MessageBoxButton.YesNo, MessageBoxImage.Warning,
+                MessageBoxResult.No) != MessageBoxResult.Yes)
+            return;
+
+        _aiSaveTimer?.Stop();
+        var previouslyActiveId = _settings.ActiveServiceProviderId;
+        AiServiceProvidersList.Remove(provider);
+        if (ReferenceEquals(SelectedServiceProvider, provider) ||
+            string.Equals(previouslyActiveId, provider.Id, StringComparison.OrdinalIgnoreCase))
+        {
+            SelectedServiceProvider = AiServiceProvidersList.FirstOrDefault(item =>
+                item.IsEnabled && string.Equals(item.Id, previouslyActiveId, StringComparison.OrdinalIgnoreCase))
+                ?? AiServiceProvidersList.FirstOrDefault(item => item.IsEnabled)
+                ?? AiServiceProvidersList.FirstOrDefault();
+        }
+
+        OnPropertyChanged(nameof(FilteredProviders));
+        HasAiSettingsChanged = true;
+        SaveAiSettings();
     }
 
     private async void AddProviderButton_Click(object sender, RoutedEventArgs e)
@@ -166,18 +290,144 @@ public partial class SettingsWindow
         }
     }
 
+    private void ProvidersListBox_ContextMenuOpening(object sender, ContextMenuEventArgs e)
+    {
+        _providerContextMenuTarget = null;
+        if (e.OriginalSource is not DependencyObject source)
+        {
+            e.Handled = true;
+            return;
+        }
+
+        if (ItemsControl.ContainerFromElement(ProvidersListBox, source) is not ListBoxItem item ||
+            item.DataContext is not SettingsAiProviderVM provider)
+        {
+            e.Handled = true;
+            return;
+        }
+
+        _providerContextMenuTarget = provider;
+        if (ProvidersListBox.ContextMenu?.Items.OfType<MenuItem>().FirstOrDefault() is MenuItem deleteItem)
+        {
+            deleteItem.Tag = provider;
+        }
+    }
+
+    private void ProviderContextMenu_Closed(object sender, RoutedEventArgs e)
+    {
+        _providerContextMenuTarget = null;
+    }
+
+    private void DeleteProviderMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        var provider = (sender as MenuItem)?.Tag as SettingsAiProviderVM ?? _providerContextMenuTarget;
+        _providerContextMenuTarget = null;
+        if (provider == null || !_aiServiceProvidersList.Contains(provider))
+        {
+            return;
+        }
+
+        var name = string.IsNullOrWhiteSpace(provider.Name) ? "未命名服务" : provider.Name.Trim();
+        var confirm = System.Windows.MessageBox.Show(
+            this,
+            $"确认删除模型服务“{name}”吗？本机保存的密钥会一并移除。",
+            "删除模型服务",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+        if (confirm != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        var activeId = _settings.ActiveServiceProviderId;
+        var deletedWasActive = string.Equals(activeId, provider.Id, StringComparison.OrdinalIgnoreCase);
+        var visible = FilteredProviders.Where(item => !ReferenceEquals(item, provider)).ToList();
+        var visibleIndex = FilteredProviders.ToList().FindIndex(item => ReferenceEquals(item, provider));
+        _aiServiceProvidersList.Remove(provider);
+
+        if (deletedWasActive)
+        {
+            var nextIndex = visible.Count == 0 ? -1 : Math.Clamp(visibleIndex, 0, visible.Count - 1);
+            SelectedServiceProvider = nextIndex >= 0 ? visible[nextIndex] : null;
+            if (SelectedServiceProvider == null)
+            {
+                _settings.ActiveServiceProviderId = string.Empty;
+                _settings.AiBaseUrl = string.Empty;
+                _settings.AiApiKey = string.Empty;
+                _settings.AiModel = string.Empty;
+            }
+        }
+        else
+        {
+            var activeProvider = _aiServiceProvidersList.FirstOrDefault(item =>
+                string.Equals(item.Id, activeId, StringComparison.OrdinalIgnoreCase));
+            _retainActiveProviderOnSave = activeProvider != null;
+            if (activeProvider != null &&
+                (string.IsNullOrWhiteSpace(ProviderSearchText) ||
+                 activeProvider.Name.Contains(ProviderSearchText, StringComparison.OrdinalIgnoreCase)))
+            {
+                SelectedServiceProvider = activeProvider;
+            }
+            else if (visible.Count > 0)
+            {
+                var nextIndex = Math.Clamp(visibleIndex, 0, visible.Count - 1);
+                SelectedServiceProvider = visible[nextIndex];
+            }
+            else
+            {
+                SelectedServiceProvider = activeProvider;
+            }
+        }
+
+        OnPropertyChanged(nameof(FilteredProviders));
+        if (_aiSaveTimer is { IsEnabled: true })
+        {
+            _aiSaveTimer.Stop();
+        }
+
+        SaveAiSettings();
+        try
+        {
+            AiCredentialStore.ForgetProvider(provider.Id);
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"SettingsWindow.Ai: forget provider credential failed: {ex.GetType().Name}");
+        }
+    }
+
     private void DeleteModelButton_Click(object sender, RoutedEventArgs e)
     {
         if (sender is System.Windows.Controls.Button btn && btn.Tag is string modelName && SelectedServiceProvider != null)
         {
+            RememberHiddenModel(SelectedServiceProvider, modelName);
             SelectedServiceProvider.Models.Remove(modelName);
             if (SelectedServiceProvider.SelectedModel == modelName)
             {
                 SelectedServiceProvider.SelectedModel = SelectedServiceProvider.Models.FirstOrDefault() ?? string.Empty;
             }
             HasAiSettingsChanged = true;
-            QueueAiSettingsSave();
+            SaveAiModelListNow();
         }
+    }
+
+    private static void RememberHiddenModel(SettingsAiProviderVM provider, string modelName)
+    {
+        provider.RawSettings.HiddenModelIds ??= [];
+        if (!provider.RawSettings.HiddenModelIds.Any(id => string.Equals(id, modelName, StringComparison.OrdinalIgnoreCase)))
+            provider.RawSettings.HiddenModelIds.Add(modelName);
+    }
+
+    private static void ForgetHiddenModel(SettingsAiProviderVM provider, string modelName)
+    {
+        provider.RawSettings.HiddenModelIds?.RemoveAll(id => string.Equals(id, modelName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void SaveAiModelListNow()
+    {
+        if (_aiSaveTimer is { IsEnabled: true })
+            _aiSaveTimer.Stop();
+        SaveAiSettings();
     }
 
     private void AddNewModelButton_Click(object sender, RoutedEventArgs e)
@@ -193,13 +443,14 @@ public partial class SettingsWindow
             {
                 if (!SelectedServiceProvider.Models.Contains(modelName))
                 {
+                    ForgetHiddenModel(SelectedServiceProvider, modelName);
                     SelectedServiceProvider.Models.Add(modelName);
                     if (string.IsNullOrWhiteSpace(SelectedServiceProvider.SelectedModel))
                     {
                         SelectedServiceProvider.SelectedModel = modelName;
                     }
                     HasAiSettingsChanged = true;
-                    QueueAiSettingsSave();
+                    SaveAiModelListNow();
                 }
             }
         }
@@ -245,6 +496,7 @@ public partial class SettingsWindow
                         continue;
                     }
 
+                    ForgetHiddenModel(SelectedServiceProvider, modelName);
                     SelectedServiceProvider.Models.Add(modelName);
                     addedCount++;
                 }
@@ -257,7 +509,7 @@ public partial class SettingsWindow
                     }
 
                     HasAiSettingsChanged = true;
-                    QueueAiSettingsSave();
+                    SaveAiModelListNow();
                     ShowToast($"已添加 {addedCount} 个模型");
                 }
             }

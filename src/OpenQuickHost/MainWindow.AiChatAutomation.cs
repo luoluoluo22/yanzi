@@ -136,6 +136,8 @@ public partial class MainWindow
     private void ActivateDetachedAiChat()
     {
         if (_detachedAiChatWindow == null) return;
+        SearchScopePopup.IsOpen = false;
+        HideToTray();
         if (_detachedAiChatWindow.WindowState == WindowState.Minimized)
             _detachedAiChatWindow.WindowState = WindowState.Normal;
         _detachedAiChatWindow.Activate();

@@ -152,11 +152,11 @@ function Get-Base64Image($relPath) {
     return ""
 }
 
-$imgCover = Get-Base64Image "readme-cover-16x9.png"
-$imgLauncher = Get-Base64Image "launcher-and-quick-panel.png"
-$imgGrid = Get-Base64Image "quick-panel-grid.png"
-$imgEditor = Get-Base64Image "json-extension-editor.png"
-$imgQuery = Get-Base64Image "query-prefix-preview.png"
+$imgCover = Get-Base64Image "docs/assets/screenshots/readme-cover-16x9.png"
+$imgLauncher = Get-Base64Image "docs/assets/screenshots/launcher-and-quick-panel.png"
+$imgGrid = Get-Base64Image "docs/assets/screenshots/quick-panel-grid.png"
+$imgEditor = Get-Base64Image "docs/assets/screenshots/json-extension-editor.png"
+$imgQuery = Get-Base64Image "docs/assets/screenshots/query-prefix-preview.png"
 
 $manualHtml = @"
 <!DOCTYPE html>

@@ -1007,7 +1007,9 @@
       "shared_ui_reference": true,
       "legacy_style_signals": 129,
       "status": "pending-manual-review",
-      "evidence": []
+      "evidence": [
+        "2026-11-06 PC-202409131508 source SHA 44f89ded6feb9b45045b11fe192e73f7326c68bd: scripts/qa-ui-windows.ps1 -RepoPath . -ExpectedSha 44f89ded6feb9b45045b11fe192e73f7326c68bd -MinimumPassingTests 22; pass=22 fail=0. AI tool card Dark/Light runtime checks cover output binding, owning-turn cancellation callback, exit failure, disabled stop, keyboard focus, collapse. Screenshots visually reviewed: %TEMP%/yanzi-tool-execution-ui-qa/tool-card-{Dark,Light}.png. Pending full conversation/live-provider, physical desktop and screen-reader acceptance; no formal installation."
+      ]
     },
     {
       "path": "src/OpenQuickHost/MobileMessageNotificationCard.xaml",
@@ -1186,11 +1188,12 @@
       "path": "src/OpenQuickHost/ScheduleConfigWindow.xaml",
       "kind": "desktop-xaml",
       "shared_ui_reference": true,
-      "legacy_style_signals": 26,
-      "status": "windows-runtime-smoke-passed-awaiting-functional-visual-qa",
+      "legacy_style_signals": 28,
+      "status": "windows-theme-keyboard-uia-isolated-scheduler-passed-awaiting-screenreader-speech-cloud-sync",
       "evidence": [
-        "2026-11-05: replaced Cancel/Confirm with Yanzi.Button.Outline/Default; applied runtime theme; XML parse and git diff --check pass; Windows build/functional QA pending. Existing custom switch and chip templates remain under review.",
-        "docs/ui-unification/windows-qa-pr180-20261107.md"
+        "2026-11-05 PC-202409131508 Windows Release build=0, WPF STA ShowDialog 20/20 pass=20 fail=0; original PR180 SHA f8fc5b0f2cf75902b9062bedd85b69e01230060c; see docs/ui-unification/qa-pr180-schedule-2026-11-05.md",
+        "Real Windows screenshots: light/dark verified; physical keyboard Tab Space Escape; accessible UIA 61 choices; 2026-11-05 isolated live scheduler at 21:41:00 executed PowerShell at 21:41:02 exactly once, result schedule-pr180-e2e-result-20261105.json. Real account cloud sync and audible screen reader speech pending",
+        "docs/ui-unification/windows-qa-pr180-20261107.md (earlier feature-branch smoke; superseded by main visual/keyboard evidence)"
       ]
     },
     {
@@ -1809,6 +1812,16 @@
       "legacy_style_signals": 4,
       "status": "pending-manual-review",
       "evidence": []
+    },
+    {
+      "path": "src/OpenQuickHost/AiToolExecutionCard.xaml",
+      "kind": "wpf-xaml",
+      "shared_ui_reference": true,
+      "legacy_style_signals": 0,
+      "status": "windows-runtime-smoke-passed-awaiting-functional-visual-qa",
+      "evidence": [
+        "2026-11-06 PC-202409131508 source SHA 44f89ded6feb9b45045b11fe192e73f7326c68bd: scripts/qa-ui-windows.ps1 -RepoPath . -ExpectedSha 44f89ded6feb9b45045b11fe192e73f7326c68bd -MinimumPassingTests 22; pass=22 fail=0. AI tool card Dark/Light runtime checks cover output binding, owning-turn cancellation callback, exit failure, disabled stop, keyboard focus, collapse. Screenshots visually reviewed: %TEMP%/yanzi-tool-execution-ui-qa/tool-card-{Dark,Light}.png. Pending full conversation/live-provider, physical desktop and screen-reader acceptance; no formal installation."
+      ]
     }
   ]
 }

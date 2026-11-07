@@ -307,9 +307,7 @@ internal static class AppSettingsMigration
         settings.AiBaseUrl = settings.AiBaseUrl?.Trim() ?? string.Empty;
         settings.AiApiKey = settings.AiApiKey?.Trim() ?? string.Empty;
         settings.AiModel = settings.AiModel?.Trim() ?? string.Empty;
-        settings.AiSystemPrompt = string.IsNullOrWhiteSpace(settings.AiSystemPrompt)
-            ? AppSettingsStore.DefaultAiSystemPrompt
-            : settings.AiSystemPrompt.Trim();
+        settings.AiSystemPrompt = AiAgentPrompt.NormalizeCustomPrompt(settings.AiSystemPrompt);
 
         settings.AiServiceProviders ??= [];
         if (settings.AiServiceProviders.Count == 0)

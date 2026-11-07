@@ -163,6 +163,52 @@ public partial class MainWindow
         ReplaceLocalExtensions(entries, statusText);
     }
 
+    public void ApplyLocalExtensionsIfChanged(IReadOnlyList<LocalExtensionCatalogEntry> entries, string signature)
+    {
+        if (string.Equals(signature, _localExtensionCatalogSignature, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (_localExtensionCatalogSignature == null && LocalExtensionCommandsMatch(entries))
+        {
+            _localExtensionCatalogSignature = signature;
+            return;
+        }
+
+        _localExtensionCatalogSignature = signature;
+        ReplaceLocalExtensions(entries, null);
+    }
+
+    private bool LocalExtensionCommandsMatch(IReadOnlyList<LocalExtensionCatalogEntry> entries)
+    {
+        var loaded = _allCommands
+            .Where(command => command.Source == CommandSource.LocalExtension)
+            .Select(command => (command.ExtensionId, command.DeclaredVersion ?? string.Empty, command.Title ?? string.Empty))
+            .OrderBy(command => command.ExtensionId, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var incoming = entries
+            .Select(entry => (entry.Manifest.Id ?? string.Empty, entry.Manifest.Version ?? string.Empty, entry.Manifest.Name ?? string.Empty))
+            .OrderBy(entry => entry.Item1, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (loaded.Count != incoming.Count)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < loaded.Count; index++)
+        {
+            if (!string.Equals(loaded[index].ExtensionId, incoming[index].Item1, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(loaded[index].Item2, incoming[index].Item2, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(loaded[index].Item3, incoming[index].Item3, StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     public void ReloadLocalExtensionsFromCommands(IReadOnlyList<CommandItem> commands, string? statusText = null)
     {
         ReplaceLocalExtensions(commands, statusText);
@@ -771,11 +817,12 @@ public partial class MainWindow
             await Task.Delay(3000);
 
             // Scheduler 属于宿主级后台能力，不依赖小程序启动完成。
-            await Dispatcher.InvokeAsync(StartExtensionScheduler);
+            await Dispatcher.InvokeAsync(StartExtensionScheduler, DispatcherPriority.Background);
 
-            var startupCommands = _allCommands
+            // Snapshot on the UI thread; cloud refresh can change the command list concurrently.
+            var startupCommands = await Dispatcher.InvokeAsync(() => _allCommands
                 .Where(x => x.Startup?.Mode == "on_app_launch")
-                .ToList();
+                .ToList(), DispatcherPriority.Background);
 
             async Task StartStartupCommandAsync(CommandItem command)
             {
@@ -785,7 +832,9 @@ public partial class MainWindow
                     return;
                 }
 
-                await Dispatcher.InvokeAsync(async () =>
+                // Await the nested Task: otherwise startup work overlaps on the UI thread.
+                // Background priority keeps input and rendering responsive.
+                var launch = Dispatcher.InvokeAsync((Func<Task>)(async () =>
                 {
                     try
                     {
@@ -796,9 +845,11 @@ public partial class MainWindow
                     {
                         HostAssets.AppendLog($"Failed to start extension {command.Title}: {ex.Message}");
                     }
-                });
+                }), DispatcherPriority.Background);
+                await launch.Task.Unwrap();
 
-                await Task.Delay(500);
+                // Reduce fixed delay without allowing overlapping launches.
+                await Task.Delay(150);
             }
 
             // 同时配置了 on_app_launch 与 idle 的小程序必须先以 app-startup 身份常驻，
@@ -817,7 +868,7 @@ public partial class MainWindow
             finally
             {
                 // Even if a startup extension fails, the idle dispatcher must survive Runtime startup.
-                await Dispatcher.InvokeAsync(StartExtensionIdleTriggerService);
+                await Dispatcher.InvokeAsync(StartExtensionIdleTriggerService, DispatcherPriority.Background);
             }
 
             foreach (var command in startupCommands.Except(idleStartupCommands))

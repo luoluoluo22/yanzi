@@ -1,0 +1,13 @@
+[2026-11-05 21:40:02.563] ExtensionScheduler: refreshed, 1 scheduled extension(s).
+[2026-11-05 21:41:00.325] ExtensionScheduler: executing Isolated Scheduler QA (qa-schedule-isolated-98a74c6a042f4e29b4df4acb9bf57a0b).
+[2026-11-05 21:41:00.475] Main execute script start: id=qa-schedule-isolated-98a74c6a042f4e29b4df4acb9bf57a0b, title=Isolated Scheduler QA, launchSource=scheduler, nativeWindow=False, inputLength=0
+[2026-11-05 21:41:00.591] ScriptRunner execute start: id=qa-schedule-isolated-98a74c6a042f4e29b4df4acb9bf57a0b, title=Isolated Scheduler QA, runtime=powershell, uiMode=none, launchSource=scheduler, inputLength=0
+[2026-11-05 21:41:01.052] ExtensionScheduler: skipping qa-schedule-isolated-98a74c6a042f4e29b4df4acb9bf57a0b, already running.
+[2026-11-05 21:41:01.897] ExtensionScheduler: skipping qa-schedule-isolated-98a74c6a042f4e29b4df4acb9bf57a0b, already running.
+[2026-11-05 21:41:02.311] ExtensionScheduler: skipping qa-schedule-isolated-98a74c6a042f4e29b4df4acb9bf57a0b, already running.
+[2026-11-05 21:41:02.327] ScriptRunner process exited: label=鑴氭湰, pid=31072, exitCode=0, elapsedMs=547, outputLength=32, errorLength=0, isCancelled=False
+[2026-11-05 21:41:02.329] ScriptRunner execute done: id=qa-schedule-isolated-98a74c6a042f4e29b4df4acb9bf57a0b, title=Isolated Scheduler QA, success=True, exitCode=0, isCancelled=False, elapsedMs=1749, outputLength=32, errorLength=0
+[2026-11-05 21:41:02.332] Main execute script success: id=qa-schedule-isolated-98a74c6a042f4e29b4df4acb9bf57a0b, title=Isolated Scheduler QA, launchSource=scheduler, nativeWindowStarted=False, elapsedMs=1856, outputLength=32, errorLength=0
+[2026-11-05 21:41:02.332] Script execution detail: id=qa-schedule-isolated-98a74c6a042f4e29b4df4acb9bf57a0b, title=Isolated Scheduler QA, success=True, exitCode=0, launchSource=scheduler, output=ISOLATED_SCHEDULE_PROBE_EXECUTED, error=(empty)
+[2026-11-05 21:41:02.504] ExtensionScheduler: removed schedule for qa-schedule-isolated-98a74c6a042f4e29b4df4acb9bf57a0b.
+[2026-11-05 21:41:02.517] ExtensionScheduler: stopped.

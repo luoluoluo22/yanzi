@@ -365,146 +365,6 @@
         </DataTemplate>
 
 
-        <Style x:Key="DarkComboBoxItemStyle" TargetType="ComboBoxItem">
-            <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}" />
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="Padding" Value="10,7" />
-            <Setter Property="Margin" Value="2" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ComboBoxItem">
-                        <Border x:Name="Root"
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="Transparent"
-                                BorderThickness="1"
-                                CornerRadius="5"
-                                Padding="{TemplateBinding Padding}">
-                            <ContentPresenter VerticalAlignment="Center"
-                                              Content="{TemplateBinding Content}"
-                                              ContentTemplate="{TemplateBinding ContentTemplate}"
-                                              TextElement.Foreground="{TemplateBinding Foreground}" />
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsHighlighted" Value="True">
-                                <Setter TargetName="Root" Property="Background" Value="#FF2F3440" />
-                                <Setter TargetName="Root" Property="BorderBrush" Value="#443B82F6" />
-                            </Trigger>
-                            <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="Root" Property="Background" Value="#1F3B82F6" />
-                                <Setter TargetName="Root" Property="BorderBrush" Value="#803B82F6" />
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Opacity" Value="0.45" />
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <Style x:Key="DarkComboBoxStyle" TargetType="ComboBox">
-            <Setter Property="SnapsToDevicePixels" Value="True" />
-            <Setter Property="OverridesDefaultStyle" Value="True" />
-            <Setter Property="Background" Value="{DynamicResource BrushInputBG}" />
-            <Setter Property="Foreground" Value="{DynamicResource BrushTextMain}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource BrushBorder}" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="Padding" Value="10,0" />
-            <Setter Property="MaxDropDownHeight" Value="320" />
-            <Setter Property="ItemContainerStyle" Value="{StaticResource DarkComboBoxItemStyle}" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ComboBox">
-                        <Grid>
-                            <ToggleButton x:Name="ToggleButton"
-                                          Background="{TemplateBinding Background}"
-                                          BorderBrush="{TemplateBinding BorderBrush}"
-                                          BorderThickness="{TemplateBinding BorderThickness}"
-                                          Foreground="{TemplateBinding Foreground}"
-                                          Tag="{Binding SelectedItem.Label, RelativeSource={RelativeSource TemplatedParent}}"
-                                          Focusable="False"
-                                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
-                                          ClickMode="Press">
-                                <ToggleButton.Template>
-                                    <ControlTemplate TargetType="ToggleButton">
-                                        <Border x:Name="Root"
-                                                Background="{TemplateBinding Background}"
-                                                BorderBrush="{TemplateBinding BorderBrush}"
-                                                BorderThickness="{TemplateBinding BorderThickness}"
-                                                CornerRadius="7"
-                                                SnapsToDevicePixels="True">
-                                            <Grid>
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*" />
-                                                    <ColumnDefinition Width="30" />
-                                                </Grid.ColumnDefinitions>
-                                                <TextBlock Margin="10,0,4,0"
-                                                           VerticalAlignment="Center"
-                                                           HorizontalAlignment="Left"
-                                                           Text="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}"
-                                                           Foreground="{TemplateBinding Foreground}"
-                                                           TextTrimming="CharacterEllipsis" />
-                                                <Path x:Name="Arrow"
-                                                      Grid.Column="1"
-                                                      Width="9"
-                                                      Height="5"
-                                                      HorizontalAlignment="Center"
-                                                      VerticalAlignment="Center"
-                                                      Data="M0,0 L4.5,5 L9,0 Z"
-                                                      Fill="#FF9CA3AF"
-                                                      Stretch="Fill" />
-                                            </Grid>
-                                        </Border>
-                                        <ControlTemplate.Triggers>
-                                            <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter TargetName="Root" Property="BorderBrush" Value="#FF4B5563" />
-                                                <Setter TargetName="Root" Property="Background" Value="#FF252832" />
-                                            </Trigger>
-                                            <Trigger Property="IsChecked" Value="True">
-                                                <Setter TargetName="Root" Property="BorderBrush" Value="#FF3B82F6" />
-                                                <Setter TargetName="Root" Property="Background" Value="#FF1F2533" />
-                                                <Setter TargetName="Arrow" Property="Fill" Value="#FF60A5FA" />
-                                            </Trigger>
-                                            <Trigger Property="IsEnabled" Value="False">
-                                                <Setter TargetName="Root" Property="Opacity" Value="0.45" />
-                                            </Trigger>
-                                        </ControlTemplate.Triggers>
-                                    </ControlTemplate>
-                                </ToggleButton.Template>
-                            </ToggleButton>
-
-                            <Popup x:Name="PART_Popup"
-                                   Placement="Bottom"
-                                   IsOpen="{TemplateBinding IsDropDownOpen}"
-                                   AllowsTransparency="True"
-                                   Focusable="False"
-                                   PopupAnimation="Slide">
-                                <Border Background="{DynamicResource BrushBG}"
-                                        BorderBrush="#FF303642"
-                                        BorderThickness="1"
-                                        CornerRadius="8"
-                                        Margin="0,5,0,0"
-                                        MinWidth="{TemplateBinding ActualWidth}"
-                                        MaxHeight="{TemplateBinding MaxDropDownHeight}">
-                                    <ScrollViewer Padding="3"
-                                                  SnapsToDevicePixels="True"
-                                                  CanContentScroll="True"
-                                                  VerticalScrollBarVisibility="Auto">
-                                        <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained" />
-                                    </ScrollViewer>
-                                </Border>
-                            </Popup>
-                        </Grid>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsKeyboardFocusWithin" Value="True">
-                                <Setter Property="BorderBrush" Value="#FF3B82F6" />
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
         <!-- Icon Button Style -->
         <Style x:Key="IconButtonStyle" TargetType="Button">
             <Setter Property="Background" Value="Transparent" />
@@ -2337,6 +2197,7 @@
                                               DisplayMemberPath="Label"
                                               SelectedValuePath="Value"
                                               SelectedValue="{Binding YanmActivationKey, Mode=TwoWay}"
+                                              Style="{DynamicResource Yanzi.Select}"
                                               Margin="0,6,0,0"
                                               Height="36"
                                               SelectionChanged="YanmActivationKey_SelectionChanged"/>
@@ -4328,6 +4189,7 @@
                                                   DisplayMemberPath="Label"
                                                   SelectedValuePath="Value"
                                                   SelectedValue="{Binding RadialActivationKey, Mode=TwoWay}"
+                                                  Style="{DynamicResource Yanzi.Select}"
                                                   Width="150"
                                                   Height="30"
                                                   SelectionChanged="SaveQuickPanelTrigger_Click"/>
@@ -4711,7 +4573,8 @@
                                                                   ItemsSource="{Binding DataContext.YarnSelectActionOptions, RelativeSource={RelativeSource AncestorType=Window}}"
                                                                   DisplayMemberPath="Label"
                                                                   SelectedValuePath="Value"
-                                                                  SelectedValue="{Binding ActionType, Mode=TwoWay}"/>
+                                                                  SelectedValue="{Binding ActionType, Mode=TwoWay}"
+                                                                  Style="{DynamicResource Yanzi.Select}"/>
                                                         <Grid Grid.Column="3"
                                                                Margin="0,0,8,0"
                                                                Visibility="{Binding IsRunExtension, Converter={StaticResource BooleanToVisibilityConverter}}">
@@ -5536,10 +5399,22 @@
                                  SelectedItem="{Binding SelectedServiceProvider, Mode=TwoWay}"
                                  Style="{StaticResource SidebarListBoxStyle}"
                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                 ItemContainerStyle="{StaticResource SidebarListBoxItemStyle}">
+                                 ItemContainerStyle="{StaticResource SidebarListBoxItemStyle}"
+                                 ContextMenuOpening="ProvidersListBox_ContextMenuOpening">
+                            <ListBox.ContextMenu>
+                                <ContextMenu Closed="ProviderContextMenu_Closed">
+                                    <MenuItem Header="删除" Click="DeleteProviderMenuItem_Click" Foreground="#FFEF4444">
+                                        <MenuItem.Icon>
+                                            <Viewbox Width="14" Height="14">
+                                                <Path Data="{local:IconGeometry trash}" Fill="#FFEF4444" Stretch="Uniform"/>
+                                            </Viewbox>
+                                        </MenuItem.Icon>
+                                    </MenuItem>
+                                </ContextMenu>
+                            </ListBox.ContextMenu>
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
-                                    <Grid Height="40">
+                                    <Grid Height="40" MouseRightButtonUp="AiProviderItem_MouseRightButtonUp">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="*" MinWidth="0" />
@@ -5565,8 +5440,8 @@
                                         <CheckBox Grid.Column="2"
                                                   Style="{DynamicResource Yanzi.Switch.Shadcn}"
                                                   IsChecked="{Binding IsEnabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                  Click="SaveSettingsToggle_Click"
-                                                  ToolTip="启用或停用此模型服务"
+                                                  Click="AiProviderEnabledToggle_Click"
+                                                  ToolTip="启用并切换到此模型服务，或停用此服务"
                                                   HorizontalAlignment="Right"
                                                   Margin="8,0,0,0"
                                                   VerticalAlignment="Center" />
@@ -5607,7 +5482,7 @@
                                         </StackPanel>
                                         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                                             <TextBlock Text="启用平台 " Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                            <CheckBox Style="{DynamicResource Yanzi.Switch.Shadcn}" IsChecked="{Binding IsEnabled, Mode=TwoWay}" Click="SaveSettingsToggle_Click" VerticalAlignment="Center"/>
+                                            <CheckBox Style="{DynamicResource Yanzi.Switch.Shadcn}" IsChecked="{Binding IsEnabled, Mode=TwoWay}" Click="AiProviderEnabledToggle_Click" VerticalAlignment="Center"/>
                                         </StackPanel>
                                     </Grid>
 
@@ -5643,7 +5518,7 @@
                                     </Grid>
 
                                     <TextBlock Text="默认激活模型" Foreground="#FFB8B8B8" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,14,0,0" />
-                                    <ComboBox ItemsSource="{Binding Models}" SelectedItem="{Binding SelectedModel, Mode=TwoWay}" Margin="0,6,0,0" Height="36" Style="{StaticResource DarkComboBoxStyle}" VerticalContentAlignment="Center" SelectionChanged="AiModelComboBox_SelectionChanged"/>
+                                    <ComboBox ItemsSource="{Binding Models}" SelectedItem="{Binding SelectedModel, Mode=TwoWay}" Margin="0,6,0,0" Height="36" Style="{DynamicResource Yanzi.Select}" VerticalContentAlignment="Center" SelectionChanged="AiModelComboBox_SelectionChanged"/>
 
                                     <ItemsControl ItemsSource="{Binding Models}" Margin="0,12,0,0">
                                         <ItemsControl.ItemTemplate>
@@ -5662,7 +5537,7 @@
                                                                        HorizontalAlignment="Center" VerticalAlignment="Center" />
                                                         </Border>
                                                         <TextBlock Grid.Column="1" Text="{Binding}" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center" Margin="8,0,0,0" />
-                                                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,10,0">
+                                                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,10,0" Visibility="Collapsed">
                                                             <Border Width="14" Height="14" CornerRadius="7" Background="#1A22C55E" ToolTip="支持视觉" Margin="0,0,3,0">
                                                                 <Path Data="{local:IconGeometry eye-outline}" Width="8" Height="8" Stretch="Uniform" Fill="#FF22C55E" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                                             </Border>
@@ -5676,7 +5551,42 @@
                                                                 <Path Data="{local:IconGeometry tools}" Width="8" Height="8" Stretch="Uniform" Fill="#FFF97316" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                                             </Border>
                                                         </StackPanel>
-                                                        <Button Grid.Column="3" Content="-" Width="20" Height="20" Style="{StaticResource IconButtonStyle}" Click="DeleteModelButton_Click" Tag="{Binding}" Padding="0" VerticalAlignment="Center"/>
+                                                        <Button Grid.Column="3" Width="28" Height="28" Padding="0" Cursor="Hand" ToolTip="删除模型" Click="DeleteModelButton_Click" Tag="{Binding}" VerticalAlignment="Center">
+                                                            <Button.Style>
+                                                                <Style TargetType="Button">
+                                                                    <Setter Property="Foreground" Value="#FF9CA3AF"/>
+                                                                    <Setter Property="Background" Value="Transparent"/>
+                                                                    <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+                                                                    <Setter Property="Template">
+                                                                        <Setter.Value>
+                                                                            <ControlTemplate TargetType="Button">
+                                                                                <Border x:Name="Root" Background="{TemplateBinding Background}" CornerRadius="6">
+                                                                                    <Viewbox Width="15" Height="15" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                                                        <Path Data="{local:IconGeometry trash}" Stretch="Uniform" Fill="{TemplateBinding Foreground}"/>
+                                                                                    </Viewbox>
+                                                                                </Border>
+                                                                                <ControlTemplate.Triggers>
+                                                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                                                        <Setter TargetName="Root" Property="Background" Value="#33EF4444"/>
+                                                                                    </Trigger>
+                                                                                    <Trigger Property="IsPressed" Value="True">
+                                                                                        <Setter TargetName="Root" Property="Background" Value="#55EF4444"/>
+                                                                                    </Trigger>
+                                                                                </ControlTemplate.Triggers>
+                                                                            </ControlTemplate>
+                                                                        </Setter.Value>
+                                                                    </Setter>
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Border}}" Value="True">
+                                                                            <Setter Property="Foreground" Value="#FFEF4444"/>
+                                                                        </DataTrigger>
+                                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                                            <Setter Property="Foreground" Value="#FFFF6B7A"/>
+                                                                        </Trigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Button.Style>
+                                                        </Button>
                                                     </Grid>
                                                 </Border>
                                             </DataTemplate>
@@ -5700,7 +5610,7 @@
                                         <TextBlock Text="系统提示词配置" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormal}" FontWeight="SemiBold" VerticalAlignment="Center"/>
                                         <Button Grid.Column="1" Content="独立窗口编辑" Style="{DynamicResource Yanzi.Button.Outline}" Padding="10,4" Click="EditSystemPromptInNewWindow_Click"/>
                                     </Grid>
-                                    <TextBlock Text="配置 AI 助手的全局人格、工作指令和可用工具规范。修改后请点击“保存”按钮保存。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,8,0,0" TextWrapping="Wrap"/>
+                                    <TextBlock Text="仅设置补充偏好，可留空。工具协议由程序管理，燕子能力后续通过 Skill 按需加载。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" Margin="0,8,0,0" TextWrapping="Wrap"/>
                                     <TextBox x:Name="AiSystemPromptTextBox" Text="{Binding AiSystemPrompt, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,12,0,0" Height="180" TextWrapping="Wrap" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" TextChanged="AiSettings_TextChanged" Style="{DynamicResource Yanzi.Textarea.Soft}"/>
                                     <Grid Margin="0,16,0,0">
                                         <Grid.ColumnDefinitions>

@@ -69,11 +69,10 @@ $env:GITHUB_TOKEN = "你的 GitHub Token"
 ```bash
 /Users/mac/.dotnet/dotnet publish src/Yanzi.Avalonia/Yanzi.Avalonia.csproj -c Release -r osx-x64 --self-contained -o publish
 ```
-```
 
 ### 2. 生成标准 `.app` 应用包结构
 ```bash
-./create_app_bundle.sh
+./scripts/create_app_bundle.sh
 ```
 该脚本会将 `publish/` 目录下的程序文件使用 `ditto` 拷贝至 `Yanzi.app/Contents/MacOS/` 并正确设置可执行权限、放置 `Info.plist` 和 `yanzi.icns` 图标资源，且完整保留其底层相对动态链接库软链。
 
@@ -132,14 +131,7 @@ cc88cc0084b504db93ccd9462af37212
 gradle -p .\mobile\android assembleDebug
 ```
 
-移动端消息队列需要先发布 Cloudflare Worker 并应用 D1 迁移：
-
-```powershell
-cd cloudflare
-npx wrangler d1 migrations apply openquickhost-sync-db --remote
-npx wrangler deploy
-cd ..
-```
+移动端后端部署与 D1 迁移须遵守[持续开发与按需发布规范](../development-integration-release-policy.md)及[正式部署门禁](../continuous-improvement/PRODUCTION_DEPLOYMENT_POLICY.md)。生产部署使用既有 GitHub/Cloudflare 流程，执行前确认部署授权与迁移安全。
 
 当前机器 Maven/Google TLS 链路不稳定时，可以使用不依赖 Gradle/Maven 的兜底构建脚本直接产出 debug APK：
 

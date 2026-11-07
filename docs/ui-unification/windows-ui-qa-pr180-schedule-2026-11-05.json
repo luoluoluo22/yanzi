@@ -1,0 +1,34 @@
+﻿{
+    "schema_version":  1,
+    "result":  "windows-runtime-smoke-passed-awaiting-functional-visual-qa",
+    "machine":  "PC-202409131508",
+    "git_sha":  "a29835dd41a87b2864001e8d2f1171e8ee494eb9",
+    "started_utc":  "2026-11-05T13:26:16.2028265+00:00",
+    "finished_utc":  "2026-11-05T13:26:43.1761201+00:00",
+    "configuration":  "Release",
+    "checks":  [
+                   {
+                       "step":  "host-build",
+                       "exit_code":  0,
+                       "log":  "C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\yanzi-pr180-a298-qa\\host-build.log"
+                   },
+                   {
+                       "step":  "test-restore",
+                       "exit_code":  0,
+                       "log":  "C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\yanzi-pr180-a298-qa\\test-restore.log"
+                   },
+                   {
+                       "step":  "wpf-smoke",
+                       "exit_code":  0,
+                       "log":  "C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\yanzi-pr180-a298-qa\\wpf-smoke.log"
+                   }
+               ],
+    "passed":  20,
+    "failed":  0,
+    "pending_verification":  [
+                                 "Both light/dark visual screenshots",
+                                 "Keyboard and assistive-technology interaction beyond automated checks",
+                                 "Live account and external service interactions"
+                             ],
+    "error":  null
+}

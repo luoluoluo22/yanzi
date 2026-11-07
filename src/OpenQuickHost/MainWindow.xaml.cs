@@ -291,6 +291,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _backgroundWebDavSyncRequested;
     private string? _backgroundWebDavSyncRequestedReason;
     private bool _isReplacingLocalExtensions;
+    private string? _localExtensionCatalogSignature;
     private string? _pendingBackgroundWebDavSyncReason;
     private bool _cloudReconnectInProgress;
     private bool _desktopPresenceHeartbeatRunning;
@@ -634,6 +635,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         get => _selectedSearchScope;
         set
         {
+            // The chat panel belongs to the detached window. Keep the launcher
+            // on its current scope rather than hiding its content for an empty
+            // AI tab. Intercept before selection/visibility notifications.
+            if (_detachedAiChatWindow != null &&
+                string.Equals(value?.Key, SearchScopeAi, StringComparison.OrdinalIgnoreCase))
+            {
+                ActivateDetachedAiChat();
+                return;
+            }
+
             if (Equals(value, _selectedSearchScope))
             {
                 return;
@@ -688,6 +699,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             if (wasAiMode && !IsAiChatMode)
             {
+                StopAiTopicAgeRefresh();
                 // 从 AI Chat 模式切换到其他模式时，恢复窗口尺寸
                 RestoreDefaultWindowSize();
                 if (!IsStoreMode)
@@ -5114,7 +5126,7 @@ public sealed class CloudQuickPanelConfigSnapshot
             AiBaseUrl = AiBaseUrl ?? string.Empty,
             AiApiKey = AiApiKey ?? string.Empty,
             AiModel = AiModel ?? string.Empty,
-            AiSystemPrompt = string.IsNullOrWhiteSpace(AiSystemPrompt) ? AppSettingsStore.DefaultAiSystemPrompt : AiSystemPrompt,
+            AiSystemPrompt = AiSystemPrompt?.Trim() ?? string.Empty,
             AiServiceProviders = AiServiceProviders == null ? [] : CloneByJson(AiServiceProviders),
             ActiveServiceProviderId = ActiveServiceProviderId ?? string.Empty,
             LauncherConfigUpdatedAtUtc = UpdatedAtUtc ?? string.Empty

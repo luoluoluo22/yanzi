@@ -14,10 +14,13 @@ internal static class Program
     private static void Log(string message) { System.IO.File.AppendAllText(AuditLog, message + Environment.NewLine); Console.WriteLine(message); }
 
     [STAThread]
-    public static int Main()
+    public static int Main(string[] args)
     {
         try
         {
+            using var dataScope = (IDisposable)typeof(HostAssets).GetMethod("UseIsolatedDataRootForVerification",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.Invoke(null,
+                    new object[] { System.IO.Path.Combine(System.IO.Path.GetTempPath(), "yanzi-wpf-smoke-data-" + Guid.NewGuid().ToString("N")) })!;
             System.IO.File.WriteAllText(AuditLog, "START " + DateTime.UtcNow.ToString("O") + Environment.NewLine);
             Log("BEFORE app constructor");
             var app = new App();
@@ -28,6 +31,10 @@ internal static class Program
             Log("AFTER app.InitializeComponent");
             app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
             Log("AFTER ShutdownMode");
+            if (args.Contains("--schedule-isolated-e2e", StringComparer.OrdinalIgnoreCase))
+                return ScheduleSchedulerE2E.Run(app);
+            if (args.Length > 0 && args[0].StartsWith("--schedule-visual-", StringComparison.Ordinal))
+                return ScheduleVisualPreview(app, args[0].EndsWith("light", StringComparison.Ordinal));
             Run("SimpleTextInputWindow empty guard + valid submit", () =>
                 new SimpleTextInputWindow("QA 输入框", "测试输入", "", false), w =>
             {
@@ -245,6 +252,125 @@ internal static class Program
                 Assert(((ScheduleConfigWindow)w).ResultSchedule == "", "cancel must not save a new schedule");
             }, false);
 
+
+            Run("Schedule accessible choices + native dialog keyboard defaults", () =>
+                new ScheduleConfigWindow("0 9 * * *"), w =>
+            {
+                var choices = Descendants(w).OfType<ScheduleChoiceBorder>().ToArray();
+                Assert(choices.Length == 61, $"expected 61 accessible choices, got {choices.Length}");
+                Assert(choices.All(c => c.Focusable), "some schedule choices cannot receive keyboard focus");
+                foreach (var choice in choices)
+                {
+                    var peer = System.Windows.Automation.Peers.UIElementAutomationPeer.CreatePeerForElement(choice);
+                    Assert(peer != null, "schedule choice has no UI Automation peer");
+                    Assert(peer.GetAutomationControlType() == System.Windows.Automation.Peers.AutomationControlType.Button, "choice not announced as button");
+                    Assert(!string.IsNullOrWhiteSpace(peer.GetName()), "choice has missing accessibility name");
+                    Assert(peer.GetPattern(System.Windows.Automation.Peers.PatternInterface.Invoke) is
+                        System.Windows.Automation.Provider.IInvokeProvider, "choice missing invoke pattern");
+                }
+                Assert(((CheckBox)w.FindName("EnableToggle")!).Focusable, "schedule toggle not keyboard focusable");
+                Assert(Descendants(w).OfType<Button>().Any(b => b.IsCancel && Equals(b.Content, "取消")),
+                    "Esc cancel button missing");
+                Assert(Descendants(w).OfType<Button>().Any(b => b.IsDefault && Equals(b.Content, "确认")),
+                    "Enter confirm button missing");
+                ClickByContent(w, "取消");
+            }, false);
+
+            Run("Schedule keyboard choice interaction + cron integration", () =>
+                new ScheduleConfigWindow("0 9 * * *"), w =>
+            {
+                var cron = (ScheduleChoiceBorder)w.FindName("ModeCronBtn")!;
+                var simple = (ScheduleChoiceBorder)w.FindName("ModeSimpBtn")!;
+                var minute = (ScheduleChoiceBorder)w.FindName("FreqMinBtn")!;
+                var interval = (ScheduleChoiceBorder)w.FindName("Min15Btn")!;
+                foreach (var choice in new[] { cron, simple, minute, interval })
+                {
+                    choice.Focus();
+                    var source = System.Windows.PresentationSource.FromVisual(w);
+                    var key = new System.Windows.Input.KeyEventArgs(
+                        System.Windows.Input.Keyboard.PrimaryDevice, source, Environment.TickCount,
+                        System.Windows.Input.Key.Space)
+                    { RoutedEvent = System.Windows.Input.Keyboard.KeyDownEvent };
+                    choice.RaiseEvent(key);
+                    Assert(key.Handled, "space activation not handled: " + choice.Name);
+                }
+                Assert(System.Windows.Automation.AutomationProperties.GetItemStatus(simple) == "已选中",
+                    "screen reader selection status missing for simple mode");
+                Assert(System.Windows.Automation.AutomationProperties.GetItemStatus(minute) == "已选中" &&
+                    System.Windows.Automation.AutomationProperties.GetItemStatus(interval) == "已选中",
+                    "screen reader selection status missing for minute interval");
+                Assert(System.Windows.Automation.AutomationProperties.GetItemStatus(cron) == "未选中",
+                    "inactive mode should be exposed as unselected");
+                Assert(((StackPanel)w.FindName("SimpleModePanel")!).Visibility == Visibility.Visible,
+                    "keyboard mode switch did not restore simple panel");
+                ClickByContent(w, "确认");
+                Assert(((ScheduleConfigWindow)w).ResultSchedule == "*/15 * * * *",
+                    "keyboard setting should round-trip to 15-minute cron");
+            }, true);
+
+            Run("Schedule semantic colors in both theme variants", () =>
+                new ScheduleConfigWindow("0 9 * * *"), w =>
+            {
+                foreach (var theme in new[] { Yanzi.UI.Wpf.YanziTheme.Light, Yanzi.UI.Wpf.YanziTheme.Dark })
+                {
+                    Yanzi.UI.Wpf.YanziUi.ApplyTo(w, theme);
+                    var bg = Descendants(w).OfType<Border>().FirstOrDefault(
+                        b => b.Child is StackPanel && b.Margin.Left == 1);
+                    Assert(bg != null, "schedule outer surface not found");
+                    var expected = w.TryFindResource("Yanzi.Color.Background") as System.Windows.Media.Brush;
+                    Assert(expected != null && Equals(bg.Background, expected),
+                        "schedule background is not bound to semantic theme " + theme);
+                    Assert(Descendants(w).OfType<TextBlock>().Any(t => Equals(t.Foreground,
+                        w.TryFindResource("Yanzi.Color.Foreground"))), "semantic text color missing " + theme);
+                }
+                ClickByContent(w, "取消");
+            }, false);
+            foreach (var theme in new[] { Yanzi.UI.Wpf.YanziTheme.Dark, Yanzi.UI.Wpf.YanziTheme.Light })
+            {
+                Run("AI tool execution card " + theme, () =>
+                {
+                    var execution = new AiToolExecution("exec_command", System.Text.Json.JsonSerializer.Serialize(new { cmd = "dotnet test --no-restore", workdir = @"C:\Projects\Demo" }));
+                    execution.ApplyResult("{\"status\":\"running\",\"stdout\":\"Starting verification...\\n\",\"wall_time_seconds\":1.2}");
+                    var card = new AiToolExecutionCard { DataContext = execution };
+                    var window = new Window { Title = "Yanzi tool execution QA", Width = 780, Height = 410, Content = card };
+                    Yanzi.UI.Wpf.YanziUi.ApplyTo(window, theme);
+                    return window;
+                }, w =>
+                {
+                    var card = (AiToolExecutionCard)w.Content;
+                    var execution = (AiToolExecution)card.DataContext;
+                    var command = (TextBox)card.FindName("CommandBox");
+                    var output = (TextBox)card.FindName("OutputBox");
+                    var status = (TextBlock)card.FindName("StatusLabel");
+                    var stop = (Button)card.FindName("StopTurnButton");
+                    Assert(command.Text == "dotnet test --no-restore" && command.IsReadOnly, "command must be readable and selectable");
+                    Assert(status.Text == "执行中" && stop.IsEnabled, "running state and cancel availability");
+                    execution.SetPreview("{\"stdout\":\"Still running...\"}");
+                    w.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+                    Assert(output.Text.Contains("Still running"), "live preview binding");
+                    bool cancelled = false;
+                    execution.CancelTurn = () => cancelled = true;
+                    stop.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent, stop));
+                    Assert(cancelled, "stop action routed to owning execution");
+                    execution.ApplyResult("{\"status\":\"completed\",\"exit_code\":2,\"stdout\":\"Verification finished.\",\"stderr\":\"One assertion failed.\",\"wall_time_seconds\":3.4}");
+                    w.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+                    Assert(status.Text == "执行失败" && !stop.IsEnabled, "nonzero exit shown as failure and stop disabled");
+                    Assert(((TextBox)card.FindName("ErrorBox")).IsVisible, "stderr shown separately");
+                    Assert(command.Focus(), "command supports keyboard selection/copy focus");
+                    var expander = (Expander)card.FindName("OutputExpander");
+                    expander.IsExpanded = false; w.UpdateLayout();
+                    Assert(!output.IsVisible, "output can be collapsed");
+                    expander.IsExpanded = true; w.UpdateLayout();
+                    var folder = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "yanzi-tool-execution-ui-qa");
+                    System.IO.Directory.CreateDirectory(folder);
+                    var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap((int)w.ActualWidth, (int)w.ActualHeight, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+                    bitmap.Render(w);
+                    var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                    encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
+                    using var file = System.IO.File.Create(System.IO.Path.Combine(folder, "tool-card-" + theme + ".png"));
+                    encoder.Save(file);
+                }, false);
+            }
             Log($"RESULT pass={_pass} fail={_fail}");
             app.Shutdown();
             return _fail == 0 ? 0 : 1;
@@ -254,6 +380,44 @@ internal static class Program
             Log("BOOT_FAILURE "+ex);
             return 2;
         }
+    }
+
+    private static int ScheduleVisualPreview(App app, bool light)
+    {
+        var output = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "yanzi-schedule-visual-qa");
+        System.IO.Directory.CreateDirectory(output);
+        var w = new ScheduleConfigWindow("0 9 * * *");
+        var theme = light ? Yanzi.UI.Wpf.YanziTheme.Light : Yanzi.UI.Wpf.YanziTheme.Dark;
+        Yanzi.UI.Wpf.YanziUi.ApplyTo(w, theme);
+        w.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        w.Topmost = true;
+        w.PreviewKeyDown += (_, e) => Log("PHYSICAL_KEY=" + e.Key + " focus=" + (System.Windows.Input.Keyboard.FocusedElement as FrameworkElement)?.Name);
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(90) };
+        timer.Tick += (_, _) => { timer.Stop(); w.Close(); };
+        w.Loaded += (_, _) =>
+        {
+            w.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () =>
+            {
+                w.Activate();
+                w.UpdateLayout();
+                var width = Math.Max(1, (int)Math.Ceiling(w.ActualWidth));
+                var height = Math.Max(1, (int)Math.Ceiling(w.ActualHeight));
+                var bmp = new System.Windows.Media.Imaging.RenderTargetBitmap(width, height, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+                bmp.Render(w);
+                var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bmp));
+                var png = System.IO.Path.Combine(output, "schedule-" + (light ? "light" : "dark") + ".png");
+                using (var fs = System.IO.File.Create(png)) encoder.Save(fs);
+                var rootBorder = Descendants(w).OfType<Border>().FirstOrDefault();
+                var bg = rootBorder?.Background as System.Windows.Media.SolidColorBrush;
+                Log("VISUAL_UI theme=" + theme + " visual_background=" + bg?.Color.ToString() +
+                    " png=" + png + " hwnd=" + new System.Windows.Interop.WindowInteropHelper(w).Handle);
+                timer.Start();
+            });
+        };
+        w.ShowDialog();
+        app.Shutdown();
+        return 0;
     }
 
     private static void Run(string label, Func<Window> make, Action<Window> check, bool expectSubmit)
