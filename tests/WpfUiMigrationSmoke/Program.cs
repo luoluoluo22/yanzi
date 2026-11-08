@@ -511,8 +511,9 @@ internal static class Program
         RunningExtensionRegistry.RegisterManagedExtension(
             "qa.visual.preview", "示例小程序（视觉验收）", "managed", "verification",
             () => true, () => { }, out var previewInstanceId);
-        var w = new RunningExtensionsWindow();
         var theme = light ? Yanzi.UI.Wpf.YanziTheme.Light : Yanzi.UI.Wpf.YanziTheme.Dark;
+        App.ApplyTheme(light ? "Light" : "Dark");
+        var w = new RunningExtensionsWindow();
         Yanzi.UI.Wpf.YanziUi.ApplyTo(w, theme);
         w.WindowStartupLocation = WindowStartupLocation.CenterScreen;
         w.Topmost = true;
