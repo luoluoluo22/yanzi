@@ -35,6 +35,8 @@ internal static class Program
                 return ScheduleSchedulerE2E.Run(app);
             if (args.Length > 0 && args[0].StartsWith("--schedule-visual-", StringComparison.Ordinal))
                 return ScheduleVisualPreview(app, args[0].EndsWith("light", StringComparison.Ordinal));
+            if (args.Length > 0 && args[0].StartsWith("--running-extensions-visual-", StringComparison.Ordinal))
+                return RunningExtensionsVisualPreview(app, args[0].EndsWith("light", StringComparison.Ordinal));
             Run("SimpleTextInputWindow empty guard + valid submit", () =>
                 new SimpleTextInputWindow("QA 输入框", "测试输入", "", false), w =>
             {
@@ -364,6 +366,49 @@ internal static class Program
                 Assert(list.Items.Count == 0 && empty.Visibility == Visibility.Visible,
                     "manual refresh should preserve the empty state without external processes");
             }, false);
+
+            var syntheticAbortInvoked = false;
+            RunningExtensionRegistry.RegisterManagedExtension(
+                "qa.synthetic.running", "QA Synthetic Running Extension", "managed", "verification",
+                () => true, () => syntheticAbortInvoked = true, out var syntheticInstanceId);
+            RunAsync("RunningExtensionsWindow synthetic row + manual refresh", () =>
+                new RunningExtensionsWindow(), async w =>
+            {
+                var list = (System.Windows.Controls.ListView)w.FindName("ExtensionListView")!;
+                var empty = (TextBlock)w.FindName("EmptyStateTextBlock")!;
+                var summary = (TextBlock)w.FindName("SummaryTextBlock")!;
+                var refresh = (Button)w.FindName("RefreshButton")!;
+                await Task.Delay(600);
+                await w.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+                w.UpdateLayout();
+                Assert(list.Items.Count == 1, "synthetic running extension should render one row");
+                Assert(empty.Visibility == Visibility.Collapsed, "empty state must hide when a row exists");
+                Assert(summary.Text.Contains("1"), "summary should report one running extension");
+                var item = list.Items[0];
+                var title = item.GetType().GetProperty("Title")?.GetValue(item)?.ToString();
+                var extensionId = item.GetType().GetProperty("ExtensionId")?.GetValue(item)?.ToString();
+                Assert(title == "QA Synthetic Running Extension", "synthetic row title binding failed");
+                Assert(extensionId == "qa.synthetic.running", "synthetic row extension ID binding failed");
+                var row = Descendants(list).OfType<ListViewItem>().FirstOrDefault();
+                Assert(row != null, "ListViewItem container was not generated");
+                var terminate = Descendants(row!).OfType<Button>().FirstOrDefault(b => Equals(b.Content, "强制结束"));
+                Assert(terminate != null && Equals(terminate.Tag, syntheticInstanceId),
+                    "terminate action must bind to the correct running instance");
+                var terminatePeer = System.Windows.Automation.Peers.UIElementAutomationPeer.CreatePeerForElement(terminate!);
+                Assert(terminatePeer != null && terminatePeer.GetName() == "强制结束",
+                    "terminate action should expose its accessible name");
+                Assert(terminate!.Focusable && terminate.IsTabStop, "terminate action must remain keyboard reachable");
+                refresh.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent, refresh));
+                await Task.Delay(450);
+                await w.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+                Assert(list.Items.Count == 1 && summary.Text.Contains("1"),
+                    "manual refresh must preserve the live synthetic row");
+            }, false);
+            RunningExtensionRegistry.Remove(syntheticInstanceId, "WPF verification cleanup");
+            Assert(!syntheticAbortInvoked, "closing the window must not terminate the synthetic extension");
+            Assert(!RunningExtensionRegistry.GetSnapshot().Any(item => item.InstanceId == syntheticInstanceId),
+                "synthetic registry entry was not cleaned up");
+
             foreach (var theme in new[] { Yanzi.UI.Wpf.YanziTheme.Dark, Yanzi.UI.Wpf.YanziTheme.Light })
             {
                 Run("AI tool execution card " + theme, () =>
@@ -455,6 +500,48 @@ internal static class Program
             });
         };
         w.ShowDialog();
+        app.Shutdown();
+        return 0;
+    }
+
+    private static int RunningExtensionsVisualPreview(App app, bool light)
+    {
+        var output = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "yanzi-running-extensions-visual-qa");
+        System.IO.Directory.CreateDirectory(output);
+        RunningExtensionRegistry.RegisterManagedExtension(
+            "qa.visual.preview", "示例小程序（视觉验收）", "managed", "verification",
+            () => true, () => { }, out var previewInstanceId);
+        var w = new RunningExtensionsWindow();
+        var theme = light ? Yanzi.UI.Wpf.YanziTheme.Light : Yanzi.UI.Wpf.YanziTheme.Dark;
+        Yanzi.UI.Wpf.YanziUi.ApplyTo(w, theme);
+        w.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        w.Topmost = true;
+        w.PreviewKeyDown += (_, e) => Log("RUNNING_EXTENSIONS_PHYSICAL_KEY=" + e.Key +
+            " focus=" + (System.Windows.Input.Keyboard.FocusedElement as FrameworkElement)?.Name);
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(120) };
+        timer.Tick += (_, _) => { timer.Stop(); w.Close(); };
+        w.Loaded += (_, _) =>
+        {
+            w.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() =>
+            {
+                w.Activate();
+                w.UpdateLayout();
+                var width = Math.Max(1, (int)Math.Ceiling(w.ActualWidth));
+                var height = Math.Max(1, (int)Math.Ceiling(w.ActualHeight));
+                var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap(width, height, 96, 96,
+                    System.Windows.Media.PixelFormats.Pbgra32);
+                bitmap.Render(w);
+                var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
+                var png = System.IO.Path.Combine(output, "running-extensions-" + (light ? "light" : "dark") + ".png");
+                using (var stream = System.IO.File.Create(png)) encoder.Save(stream);
+                Log("RUNNING_EXTENSIONS_VISUAL theme=" + theme + " png=" + png +
+                    " hwnd=" + new System.Windows.Interop.WindowInteropHelper(w).Handle);
+                timer.Start();
+            }));
+        };
+        w.ShowDialog();
+        RunningExtensionRegistry.Remove(previewInstanceId, "visual preview cleanup");
         app.Shutdown();
         return 0;
     }
