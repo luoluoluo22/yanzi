@@ -28,12 +28,14 @@
                 <TextBlock Text="正在运行的小程序" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" />
                 <TextBlock x:Name="SummaryTextBlock" Margin="0,6,0,0" Foreground="{DynamicResource BrushTextSec}" />
             </StackPanel>
-            <Button Grid.Column="1"
+            <Button x:Name="RefreshButton"
+                    Grid.Column="1"
                     Width="90"
                     Height="34"
                     HorizontalAlignment="Right"
                     VerticalAlignment="Center"
                     Style="{DynamicResource Yanzi.Button.Outline}"
+                    AutomationProperties.Name="刷新正在运行的小程序列表"
                     Click="RefreshButton_Click"
                     Content="刷新" />
         </Grid>

@@ -325,6 +325,45 @@ internal static class Program
                 }
                 ClickByContent(w, "取消");
             }, false);
+
+            RunAsync("RunningExtensionsWindow shared refresh + theme + empty state", () =>
+                new RunningExtensionsWindow(), async w =>
+            {
+                var refresh = (Button)w.FindName("RefreshButton")!;
+                CheckShared(w, refresh, "Yanzi.Button.Outline");
+                Assert(refresh.Focusable && refresh.IsTabStop, "refresh action must remain keyboard reachable");
+                var peer = System.Windows.Automation.Peers.UIElementAutomationPeer.CreatePeerForElement(refresh);
+                Assert(peer != null && peer.GetName() == "刷新正在运行的小程序列表",
+                    "refresh action must expose its accessible name");
+                var list = (System.Windows.Controls.ListView)w.FindName("ExtensionListView")!;
+                var empty = (TextBlock)w.FindName("EmptyStateTextBlock")!;
+                var summary = (TextBlock)w.FindName("SummaryTextBlock")!;
+                Assert(list.ItemsSource is System.Collections.IList,
+                    "running extension list must be bound to observable items");
+
+                foreach (var theme in new[] { Yanzi.UI.Wpf.YanziTheme.Light, Yanzi.UI.Wpf.YanziTheme.Dark })
+                {
+                    Yanzi.UI.Wpf.YanziUi.ApplyTo(w, theme);
+                    Assert(Yanzi.UI.Wpf.YanziUi.GetTheme(w) == theme, "window theme did not update to " + theme);
+                    var expectedForeground = w.TryFindResource("Yanzi.Color.Foreground") as System.Windows.Media.Brush;
+                    Assert(expectedForeground != null && Equals(refresh.Foreground, expectedForeground),
+                        "shared refresh button foreground did not follow " + theme);
+                    Assert(ReferenceEquals(refresh.Style, w.TryFindResource("Yanzi.Button.Outline")),
+                        "shared refresh button style changed during theme update");
+                }
+
+                await Task.Delay(450);
+                await w.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+                Assert(list.Items.Count == 0, "isolated verification registry should have no running entries");
+                Assert(empty.Visibility == Visibility.Visible, "empty state should appear when no extensions run");
+                Assert(summary.Text.Contains("0"), "running extension summary should report zero items");
+
+                refresh.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent, refresh));
+                await Task.Delay(450);
+                await w.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+                Assert(list.Items.Count == 0 && empty.Visibility == Visibility.Visible,
+                    "manual refresh should preserve the empty state without external processes");
+            }, false);
             foreach (var theme in new[] { Yanzi.UI.Wpf.YanziTheme.Dark, Yanzi.UI.Wpf.YanziTheme.Light })
             {
                 Run("AI tool execution card " + theme, () =>
@@ -445,6 +484,48 @@ internal static class Program
             Log("AFTER ShowDialog " + label);
             if (fail != null) throw fail;
             Assert(called, "loaded check not invoked");
+            if (expectSubmit) Assert(result == true, $"submit dialog result must be true, got {result}");
+            Log($"PASS {label} result={result}");
+            _pass++;
+        }
+        catch (Exception ex)
+        {
+            Log($"FAIL {label}: {ex}");
+            _fail++;
+            try { w?.Close(); } catch { }
+        }
+    }
+
+    private static void RunAsync(string label, Func<Window> make, Func<Window, Task> check, bool expectSubmit)
+    {
+        Window? w = null;
+        Exception? fail = null;
+        bool called = false;
+        bool? result = null;
+        try
+        {
+            Log("BEFORE make " + label);
+            w = make();
+            Log("AFTER make " + label);
+            var window = w;
+            window.Loaded += (_, _) =>
+            {
+                window.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(async () =>
+                {
+                    try
+                    {
+                        called = true;
+                        await check(window);
+                    }
+                    catch (Exception e) { fail = e; }
+                    finally { if (window.IsVisible) window.Close(); }
+                }));
+            };
+            Log("BEFORE ShowDialog " + label);
+            result = window.ShowDialog();
+            Log("AFTER ShowDialog " + label);
+            if (fail != null) throw fail;
+            Assert(called, "loaded async check not invoked");
             if (expectSubmit) Assert(result == true, $"submit dialog result must be true, got {result}");
             Log($"PASS {label} result={result}");
             _pass++;
