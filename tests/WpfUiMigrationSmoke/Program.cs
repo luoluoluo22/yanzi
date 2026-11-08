@@ -409,6 +409,55 @@ internal static class Program
             Assert(!RunningExtensionRegistry.GetSnapshot().Any(item => item.InstanceId == syntheticInstanceId),
                 "synthetic registry entry was not cleaned up");
 
+            var qaProcessStartInfo = new System.Diagnostics.ProcessStartInfo(
+                Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe",
+                "/d /s /c ping 127.0.0.1 -n 60 > nul")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden
+            };
+            var qaProcess = System.Diagnostics.Process.Start(qaProcessStartInfo)
+                ?? throw new InvalidOperationException("Could not start isolated verification process.");
+            var qaCommand = new CommandItem("E", "QA Synthetic OS Process", "verification process",
+                "小程序", "#4B83C4", null, Array.Empty<string>(),
+                extensionId: "qa.synthetic.process", runtime: "cmd");
+            var qaProcessInstanceId = RunningExtensionRegistry.RegisterProcess(qaCommand, qaProcess, "verification");
+            if (qaProcessInstanceId is null)
+            {
+                try { if (!qaProcess.HasExited) qaProcess.Kill(entireProcessTree: true); } catch { }
+                qaProcess.Dispose();
+                throw new InvalidOperationException("Could not register isolated verification process.");
+            }
+            try
+            {
+                RunAsync("RunningExtensionsWindow real OS process + termination", () =>
+                    new RunningExtensionsWindow(), async w =>
+                {
+                    var list = (System.Windows.Controls.ListView)w.FindName("ExtensionListView")!;
+                    await Task.Delay(500);
+                    await w.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+                    Assert(list.Items.Count == 1, "real verification process should render one row");
+                    var processId = list.Items[0].GetType().GetProperty("ProcessId")?.GetValue(list.Items[0])?.ToString();
+                    Assert(processId == qaProcess.Id.ToString(), "running row must expose the actual process ID");
+                    Assert(RunningExtensionRegistry.TryTerminate(qaProcessInstanceId.Value, out var message),
+                        "registry should accept termination of the isolated verification process: " + message);
+                    Assert(qaProcess.WaitForExit(3000), "isolated verification process did not exit after termination");
+                    await Task.Delay(350);
+                    await w.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+                    Assert(list.Items.Count == 0, "terminated OS process should disappear from the running list");
+                    Assert(!RunningExtensionRegistry.GetSnapshot().Any(item =>
+                        item.InstanceId == qaProcessInstanceId.Value), "terminated process remained in the registry");
+                }, false);
+            }
+            finally
+            {
+                try { if (!qaProcess.HasExited) qaProcess.Kill(entireProcessTree: true); } catch { }
+                try { qaProcess.WaitForExit(3000); } catch { }
+                RunningExtensionRegistry.Remove(qaProcessInstanceId.Value, "verification cleanup");
+                qaProcess.Dispose();
+            }
+
             foreach (var theme in new[] { Yanzi.UI.Wpf.YanziTheme.Dark, Yanzi.UI.Wpf.YanziTheme.Light })
             {
                 Run("AI tool execution card " + theme, () =>
