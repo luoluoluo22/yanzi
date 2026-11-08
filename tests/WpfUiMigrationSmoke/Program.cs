@@ -35,6 +35,8 @@ internal static class Program
                 return ScheduleSchedulerE2E.Run(app);
             if (args.Length > 0 && args[0].StartsWith("--schedule-visual-", StringComparison.Ordinal))
                 return ScheduleVisualPreview(app, args[0].EndsWith("light", StringComparison.Ordinal));
+            if (args.Length > 0 && args[0].StartsWith("--running-extensions-visual-", StringComparison.Ordinal))
+                return RunningExtensionsVisualPreview(app, args[0].EndsWith("light", StringComparison.Ordinal));
             Run("SimpleTextInputWindow empty guard + valid submit", () =>
                 new SimpleTextInputWindow("QA 输入框", "测试输入", "", false), w =>
             {
@@ -325,6 +327,137 @@ internal static class Program
                 }
                 ClickByContent(w, "取消");
             }, false);
+
+            RunAsync("RunningExtensionsWindow shared refresh + theme + empty state", () =>
+                new RunningExtensionsWindow(), async w =>
+            {
+                var refresh = (Button)w.FindName("RefreshButton")!;
+                CheckShared(w, refresh, "Yanzi.Button.Outline");
+                Assert(refresh.Focusable && refresh.IsTabStop, "refresh action must remain keyboard reachable");
+                var peer = System.Windows.Automation.Peers.UIElementAutomationPeer.CreatePeerForElement(refresh);
+                Assert(peer != null && peer.GetName() == "刷新正在运行的小程序列表",
+                    "refresh action must expose its accessible name");
+                var list = (System.Windows.Controls.ListView)w.FindName("ExtensionListView")!;
+                var empty = (TextBlock)w.FindName("EmptyStateTextBlock")!;
+                var summary = (TextBlock)w.FindName("SummaryTextBlock")!;
+                Assert(list.ItemsSource is System.Collections.IList,
+                    "running extension list must be bound to observable items");
+
+                foreach (var theme in new[] { Yanzi.UI.Wpf.YanziTheme.Light, Yanzi.UI.Wpf.YanziTheme.Dark })
+                {
+                    Yanzi.UI.Wpf.YanziUi.ApplyTo(w, theme);
+                    Assert(Yanzi.UI.Wpf.YanziUi.GetTheme(w) == theme, "window theme did not update to " + theme);
+                    var expectedForeground = w.TryFindResource("Yanzi.Color.Foreground") as System.Windows.Media.Brush;
+                    Assert(expectedForeground != null && Equals(refresh.Foreground, expectedForeground),
+                        "shared refresh button foreground did not follow " + theme);
+                    Assert(ReferenceEquals(refresh.Style, w.TryFindResource("Yanzi.Button.Outline")),
+                        "shared refresh button style changed during theme update");
+                }
+
+                await Task.Delay(450);
+                await w.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+                Assert(list.Items.Count == 0, "isolated verification registry should have no running entries");
+                Assert(empty.Visibility == Visibility.Visible, "empty state should appear when no extensions run");
+                Assert(summary.Text.Contains("0"), "running extension summary should report zero items");
+
+                refresh.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent, refresh));
+                await Task.Delay(450);
+                await w.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+                Assert(list.Items.Count == 0 && empty.Visibility == Visibility.Visible,
+                    "manual refresh should preserve the empty state without external processes");
+            }, false);
+
+            var syntheticAbortInvoked = false;
+            RunningExtensionRegistry.RegisterManagedExtension(
+                "qa.synthetic.running", "QA Synthetic Running Extension", "managed", "verification",
+                () => true, () => syntheticAbortInvoked = true, out var syntheticInstanceId);
+            RunAsync("RunningExtensionsWindow synthetic row + manual refresh", () =>
+                new RunningExtensionsWindow(), async w =>
+            {
+                var list = (System.Windows.Controls.ListView)w.FindName("ExtensionListView")!;
+                var empty = (TextBlock)w.FindName("EmptyStateTextBlock")!;
+                var summary = (TextBlock)w.FindName("SummaryTextBlock")!;
+                var refresh = (Button)w.FindName("RefreshButton")!;
+                await Task.Delay(600);
+                await w.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+                w.UpdateLayout();
+                Assert(list.Items.Count == 1, "synthetic running extension should render one row");
+                Assert(empty.Visibility == Visibility.Collapsed, "empty state must hide when a row exists");
+                Assert(summary.Text.Contains("1"), "summary should report one running extension");
+                var item = list.Items[0];
+                var title = item.GetType().GetProperty("Title")?.GetValue(item)?.ToString();
+                var extensionId = item.GetType().GetProperty("ExtensionId")?.GetValue(item)?.ToString();
+                Assert(title == "QA Synthetic Running Extension", "synthetic row title binding failed");
+                Assert(extensionId == "qa.synthetic.running", "synthetic row extension ID binding failed");
+                var row = Descendants(list).OfType<ListViewItem>().FirstOrDefault();
+                Assert(row != null, "ListViewItem container was not generated");
+                var terminate = Descendants(row!).OfType<Button>().FirstOrDefault(b => Equals(b.Content, "强制结束"));
+                Assert(terminate != null && Equals(terminate.Tag, syntheticInstanceId),
+                    "terminate action must bind to the correct running instance");
+                var terminatePeer = System.Windows.Automation.Peers.UIElementAutomationPeer.CreatePeerForElement(terminate!);
+                Assert(terminatePeer != null && terminatePeer.GetName() == "强制结束",
+                    "terminate action should expose its accessible name");
+                Assert(terminate!.Focusable && terminate.IsTabStop, "terminate action must remain keyboard reachable");
+                refresh.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent, refresh));
+                await Task.Delay(450);
+                await w.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+                Assert(list.Items.Count == 1 && summary.Text.Contains("1"),
+                    "manual refresh must preserve the live synthetic row");
+            }, false);
+            RunningExtensionRegistry.Remove(syntheticInstanceId, "WPF verification cleanup");
+            Assert(!syntheticAbortInvoked, "closing the window must not terminate the synthetic extension");
+            Assert(!RunningExtensionRegistry.GetSnapshot().Any(item => item.InstanceId == syntheticInstanceId),
+                "synthetic registry entry was not cleaned up");
+
+            var qaProcessStartInfo = new System.Diagnostics.ProcessStartInfo(
+                Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe",
+                "/d /s /c ping 127.0.0.1 -n 60 > nul")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden
+            };
+            var qaProcess = System.Diagnostics.Process.Start(qaProcessStartInfo)
+                ?? throw new InvalidOperationException("Could not start isolated verification process.");
+            var qaCommand = new CommandItem("E", "QA Synthetic OS Process", "verification process",
+                "小程序", "#4B83C4", null, Array.Empty<string>(),
+                extensionId: "qa.synthetic.process", runtime: "cmd");
+            var qaProcessInstanceId = RunningExtensionRegistry.RegisterProcess(qaCommand, qaProcess, "verification");
+            if (qaProcessInstanceId is null)
+            {
+                try { if (!qaProcess.HasExited) qaProcess.Kill(entireProcessTree: true); } catch { }
+                qaProcess.Dispose();
+                throw new InvalidOperationException("Could not register isolated verification process.");
+            }
+            try
+            {
+                RunAsync("RunningExtensionsWindow real OS process + termination", () =>
+                    new RunningExtensionsWindow(), async w =>
+                {
+                    var list = (System.Windows.Controls.ListView)w.FindName("ExtensionListView")!;
+                    await Task.Delay(500);
+                    await w.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+                    Assert(list.Items.Count == 1, "real verification process should render one row");
+                    var processId = list.Items[0].GetType().GetProperty("ProcessId")?.GetValue(list.Items[0])?.ToString();
+                    Assert(processId == qaProcess.Id.ToString(), "running row must expose the actual process ID");
+                    Assert(RunningExtensionRegistry.TryTerminate(qaProcessInstanceId.Value, out var message),
+                        "registry should accept termination of the isolated verification process: " + message);
+                    Assert(qaProcess.WaitForExit(3000), "isolated verification process did not exit after termination");
+                    await Task.Delay(350);
+                    await w.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+                    Assert(list.Items.Count == 0, "terminated OS process should disappear from the running list");
+                    Assert(!RunningExtensionRegistry.GetSnapshot().Any(item =>
+                        item.InstanceId == qaProcessInstanceId.Value), "terminated process remained in the registry");
+                }, false);
+            }
+            finally
+            {
+                try { if (!qaProcess.HasExited) qaProcess.Kill(entireProcessTree: true); } catch { }
+                try { qaProcess.WaitForExit(3000); } catch { }
+                RunningExtensionRegistry.Remove(qaProcessInstanceId.Value, "verification cleanup");
+                qaProcess.Dispose();
+            }
+
             foreach (var theme in new[] { Yanzi.UI.Wpf.YanziTheme.Dark, Yanzi.UI.Wpf.YanziTheme.Light })
             {
                 Run("AI tool execution card " + theme, () =>
@@ -420,6 +553,49 @@ internal static class Program
         return 0;
     }
 
+    private static int RunningExtensionsVisualPreview(App app, bool light)
+    {
+        var output = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "yanzi-running-extensions-visual-qa");
+        System.IO.Directory.CreateDirectory(output);
+        RunningExtensionRegistry.RegisterManagedExtension(
+            "qa.visual.preview", "示例小程序（视觉验收）", "managed", "verification",
+            () => true, () => { }, out var previewInstanceId);
+        var theme = light ? Yanzi.UI.Wpf.YanziTheme.Light : Yanzi.UI.Wpf.YanziTheme.Dark;
+        App.ApplyTheme(light ? "Light" : "Dark");
+        var w = new RunningExtensionsWindow();
+        Yanzi.UI.Wpf.YanziUi.ApplyTo(w, theme);
+        w.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        w.Topmost = true;
+        w.PreviewKeyDown += (_, e) => Log("RUNNING_EXTENSIONS_PHYSICAL_KEY=" + e.Key +
+            " focus=" + (System.Windows.Input.Keyboard.FocusedElement as FrameworkElement)?.Name);
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(120) };
+        timer.Tick += (_, _) => { timer.Stop(); w.Close(); };
+        w.Loaded += (_, _) =>
+        {
+            w.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() =>
+            {
+                w.Activate();
+                w.UpdateLayout();
+                var width = Math.Max(1, (int)Math.Ceiling(w.ActualWidth));
+                var height = Math.Max(1, (int)Math.Ceiling(w.ActualHeight));
+                var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap(width, height, 96, 96,
+                    System.Windows.Media.PixelFormats.Pbgra32);
+                bitmap.Render(w);
+                var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
+                var png = System.IO.Path.Combine(output, "running-extensions-" + (light ? "light" : "dark") + ".png");
+                using (var stream = System.IO.File.Create(png)) encoder.Save(stream);
+                Log("RUNNING_EXTENSIONS_VISUAL theme=" + theme + " png=" + png +
+                    " hwnd=" + new System.Windows.Interop.WindowInteropHelper(w).Handle);
+                timer.Start();
+            }));
+        };
+        w.ShowDialog();
+        RunningExtensionRegistry.Remove(previewInstanceId, "visual preview cleanup");
+        app.Shutdown();
+        return 0;
+    }
+
     private static void Run(string label, Func<Window> make, Action<Window> check, bool expectSubmit)
     {
         Window? w = null;
@@ -445,6 +621,48 @@ internal static class Program
             Log("AFTER ShowDialog " + label);
             if (fail != null) throw fail;
             Assert(called, "loaded check not invoked");
+            if (expectSubmit) Assert(result == true, $"submit dialog result must be true, got {result}");
+            Log($"PASS {label} result={result}");
+            _pass++;
+        }
+        catch (Exception ex)
+        {
+            Log($"FAIL {label}: {ex}");
+            _fail++;
+            try { w?.Close(); } catch { }
+        }
+    }
+
+    private static void RunAsync(string label, Func<Window> make, Func<Window, Task> check, bool expectSubmit)
+    {
+        Window? w = null;
+        Exception? fail = null;
+        bool called = false;
+        bool? result = null;
+        try
+        {
+            Log("BEFORE make " + label);
+            w = make();
+            Log("AFTER make " + label);
+            var window = w;
+            window.Loaded += (_, _) =>
+            {
+                window.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(async () =>
+                {
+                    try
+                    {
+                        called = true;
+                        await check(window);
+                    }
+                    catch (Exception e) { fail = e; }
+                    finally { if (window.IsVisible) window.Close(); }
+                }));
+            };
+            Log("BEFORE ShowDialog " + label);
+            result = window.ShowDialog();
+            Log("AFTER ShowDialog " + label);
+            if (fail != null) throw fail;
+            Assert(called, "loaded async check not invoked");
             if (expectSubmit) Assert(result == true, $"submit dialog result must be true, got {result}");
             Log($"PASS {label} result={result}");
             _pass++;
